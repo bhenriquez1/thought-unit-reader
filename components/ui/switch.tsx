@@ -24,28 +24,21 @@ const switchVariants = cva(
 )
 
 export interface SwitchProps
-  extends Omit<React.ComponentPropsWithoutRef<typeof HeadlessSwitch>, "checked" | "onChange"> {
+  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   checked: boolean
-  onChange: (checked: boolean) => void
+  onCheckedChange: (checked: boolean) => void
 }
 
 const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
-  ({ className, checked, onChange, ...props }, ref) => {
+  ({ className, checked, onCheckedChange, ...props }, ref) => {
     return (
       <HeadlessSwitch
         ref={ref}
         checked={checked}
-        onChange={onChange}
+        onChange={onCheckedChange}
         className={cn(switchVariants({ checked }), className)}
         {...props}
-      >
-        <span
-          className={cn(
-            "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
-            checked ? "translate-x-5" : "translate-x-0"
-          )}
-        />
-      </HeadlessSwitch>
+      />
     )
   }
 )
