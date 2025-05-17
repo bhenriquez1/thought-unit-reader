@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn } from "@/lib/utils"; // adjust path based on your folder structure
+import { cn } from "../../lib/utils"; // ✅ Corrected import path
 import { cva, type VariantProps } from "class-variance-authority";
 
 const buttonVariants = cva(
@@ -15,7 +15,7 @@ const buttonVariants = cva(
         link: "underline-offset-4 hover:underline text-primary",
       },
       size: {
-        default: "h-10 py-2 px-4",
+        default: "h-10 px-4 py-2",
         sm: "h-9 px-3 rounded-md",
         lg: "h-11 px-8 rounded-md",
         icon: "h-10 w-10",
