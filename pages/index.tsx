@@ -1,4 +1,4 @@
-""import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
@@ -83,7 +83,7 @@ export default function Home() {
   const [fileText, setFileText] = useState<string>("");
   const [output, setOutput] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number | null>(null);
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState<any>(null);
   const [manualEditMode, setManualEditMode] = useState(false);
 
   useEffect(() => {
