@@ -1,32 +1,35 @@
-import * as React from "react"
-import { Switch as HeadlessSwitch } from "@headlessui/react"
-import { cn } from "../../lib/utils"
+import * as React from "react";
+import { Switch as HeadlessSwitch } from "@headlessui/react";
+import { cn } from "../../lib/utils"; // adjust path if needed
 
-export interface SwitchProps {
-  checked: boolean
-  onChange: (checked: boolean) => void
-  className?: string
+export interface SwitchProps extends React.ComponentProps<"button"> {
+  checked?: boolean;
+  onChange?: () => void;
 }
 
-const Switch = ({ checked, onChange, className }: SwitchProps) => {
-  return (
-    <HeadlessSwitch
-      checked={checked}
-      onChange={onChange}
-      className={cn(
-        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none",
-        checked ? "bg-blue-600" : "bg-gray-300",
-        className
-      )}
-    >
-      <span
+export const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
+  ({ className, checked, onChange, ...props }, ref) => {
+    return (
+      <HeadlessSwitch
+        ref={ref}
+        checked={checked}
+        onChange={onChange}
         className={cn(
-          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
-          checked ? "translate-x-6" : "translate-x-1"
+          "relative inline-flex h-[24px] w-[44px] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
+          checked ? "bg-primary" : "bg-input",
+          className
         )}
-      />
-    </HeadlessSwitch>
-  )
-}
-
-export { Switch }
+        {...props}
+      >
+        <span
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none inline-block h-[20px] w-[20px] transform rounded-full bg-background shadow-lg ring-0 transition duration-200 ease-in-out",
+            checked ? "translate-x-5" : "translate-x-0"
+          )}
+        />
+      </HeadlessSwitch>
+    );
+  }
+);
+Switch.displayName = "Switch";
