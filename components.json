@@ -1,21 +1,16 @@
 {
-  "components": [
-    "button",
-    "input",
-    "label",
-    "switch"
-  ],
+  "$schema": "https://ui.shadcn.com/schema.json",
   "style": "default",
   "rsc": false,
   "tsx": true,
   "tailwind": {
     "config": "tailwind.config.js",
     "css": "styles/global.css",
-    "baseColor": "slate",
-    "prefix": ""
+    "baseColor": "zinc",
+    "cssVariables": true
   },
   "aliases": {
-    "@/components": "./components",
-    "@/lib/utils": "./lib/utils"
+    "components": "@/components",
+    "utils": "@/lib/utils"
   }
 }
