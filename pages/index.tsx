@@ -25,7 +25,7 @@ export default function HomePage() {
       <Switch
         id="toggleParser"
         checked={enabled}
-        onCheckedChange={setEnabled}
+        onChange={setEnabled} // ✅ Fixed here
         className={`${enabled ? 'bg-blue-600' : 'bg-gray-300'}
           relative inline-flex h-6 w-11 items-center rounded-full transition`}
       >
