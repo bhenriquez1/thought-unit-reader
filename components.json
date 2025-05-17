@@ -1,0 +1,21 @@
+{
+  "components": [
+    "button",
+    "input",
+    "label",
+    "switch"
+  ],
+  "style": "default",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "tailwind.config.js",
+    "css": "styles/global.css",
+    "baseColor": "slate",
+    "prefix": ""
+  },
+  "aliases": {
+    "@/components": "./components",
+    "@/lib/utils": "./lib/utils"
+  }
+}
