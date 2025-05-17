@@ -1,33 +1,41 @@
-import { useState } from "react"
-import { Document, Page, pdfjs } from "react-pdf"
-import { Input } from "../components/ui/input"
-import { Button } from "../components/ui/button"
-import { Label } from "../components/ui/label"
-import { Switch } from "../components/ui/switch"
+import { useState } from "react";
+import { Switch } from "@headlessui/react";
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`
+// Label Component
+const Label = ({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) => (
+  <label htmlFor={htmlFor} className="text-sm font-medium text-gray-700">
+    {children}
+  </label>
+);
 
-export default function Home() {
-  const [enabled, setEnabled] = useState(false)
+// Button Component
+const Button = ({ children }: { children: React.ReactNode }) => (
+  <button className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
+    {children}
+  </button>
+);
+
+// Main Page Component
+export default function HomePage() {
+  const [enabled, setEnabled] = useState(false);
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-6">
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-3xl">
-        <h1 className="text-3xl font-bold mb-4 text-center">Thought-Unit Parser</h1>
-
-        <div className="mt-6 flex items-center gap-4">
-          <Label htmlFor="toggleParser">Enable Parser</Label>
-          <Switch
-            id="toggleParser"
-            checked={enabled}
-            onChange={setEnabled}
-          />
-        </div>
-
-        <div className="mt-6">
-          <Button>Start Parsing</Button>
-        </div>
-      </div>
+    <div className="mt-6 flex items-center gap-4">
+      <Label htmlFor="toggleParser">Enable Parser</Label>
+      <Switch
+        id="toggleParser"
+        checked={enabled}
+        onCheckedChange={setEnabled}
+        className={`${enabled ? 'bg-blue-600' : 'bg-gray-300'}
+          relative inline-flex h-6 w-11 items-center rounded-full transition`}
+      >
+        <span
+          className={`${
+            enabled ? 'translate-x-6' : 'translate-x-1'
+          } inline-block h-4 w-4 transform rounded-full bg-white transition`}
+        />
+      </Switch>
+      <Button>Start Parsing</Button>
     </div>
-  )
+  );
 }
