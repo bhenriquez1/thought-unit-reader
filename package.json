@@ -2,21 +2,34 @@
   "name": "thought-unit-reader",
   "version": "1.0.0",
   "private": true,
+  "description": "Dual-panel thought-unit reading interface with OCR and AI phrase parsing.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start"
   },
+  "keywords": [
+    "nextjs",
+    "react",
+    "reader",
+    "pdf",
+    "ocr",
+    "thought-unit",
+    "educational-ai"
+  ],
+  "author": "Brian Henriquez",
+  "license": "MIT",
   "dependencies": {
-    "next": "^13.4.7",
+    "next": "^14.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-pdf": "^7.0.0",
     "pdfjs-dist": "^3.11.174",
     "tesseract.js": "^4.1.1"
   },
   "devDependencies": {
+    "tailwindcss": "^3.4.1",
     "autoprefixer": "^10.4.14",
-    "postcss": "^8.4.24",
-    "tailwindcss": "^3.3.2"
+    "postcss": "^8.4.24"
   }
 }
