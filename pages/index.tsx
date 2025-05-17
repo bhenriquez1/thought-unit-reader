@@ -1,109 +1,59 @@
 import { useState, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import PDFViewer from "../components/PDFViewer";
-import { cn } from "../lib/utils";
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.js`;
+// ✅ Corrected relative imports:
+import { Input } from "../components/ui/input";
+import { Button } from "../components/ui/button";
+import { Switch } from "../components/ui/switch";
+import { Label } from "../components/ui/label";
 
-export default function ThoughtUnitReader() {
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+
+export default function Home() {
   const [file, setFile] = useState<File | null>(null);
-  const [text, setText] = useState("");
-  const [formattedText, setFormattedText] = useState("");
-  const [darkMode, setDarkMode] = useState(false);
-  const [dyslexiaFont, setDyslexiaFont] = useState(false);
-  const [parserEditMode, setParserEditMode] = useState(false);
-  const [toc, setToc] = useState<string[]>([]);
+  const [numPages, setNumPages] = useState<number | null>(null);
 
-  useEffect(() => {
-    document.body.className = cn(
-      darkMode ? "dark" : "light",
-      dyslexiaFont && "dyslexia"
-    );
-  }, [darkMode, dyslexiaFont]);
-
-  function parseThoughtUnits(input: string) {
-    const lines = input.split(/(?<=\.|\?|!)\s+/g);
-    return lines
-      .map(
-        (phrase, idx) =>
-          `<span style="color:${idx % 2 === 0 ? "black" : "gray"}">${phrase}</span>`
-      )
-      .join(" ");
-  }
-
-  function extractTOC(text: string) {
-    const lines = text.split("\n");
-    return lines.filter((line) =>
-      /chapter|section|unit|topic|lesson/i.test(line)
-    );
-  }
-
-  function handleTextChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    const raw = e.target.value;
-    setText(raw);
-    setFormattedText(parseThoughtUnits(raw));
-    setToc(extractTOC(raw));
+  function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
+    setNumPages(numPages);
   }
 
   return (
-    <div className="p-4">
-      <h1 className="text-xl font-bold mb-2">Thought-Unit Reader</h1>
+    <div className="min-h-screen p-6 bg-gray-100">
+      <h1 className="text-3xl font-bold mb-4">Thought-Unit Reader</h1>
 
-      <div className="flex gap-4 items-center mb-4">
-        <Label>
-          Dark Mode
-          <Switch checked={darkMode} onCheckedChange={setDarkMode} />
-        </Label>
-        <Label>
-          Dyslexia Font
-          <Switch checked={dyslexiaFont} onCheckedChange={setDyslexiaFont} />
-        </Label>
-        <Label>
-          Parser Edit Mode
-          <Switch checked={parserEditMode} onCheckedChange={setParserEditMode} />
-        </Label>
+      <div className="mb-4">
+        <Label htmlFor="fileUpload">Upload PDF</Label>
+        <Input
+          id="fileUpload"
+          type="file"
+          accept=".pdf"
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+        />
       </div>
 
-      <Input
-        type="file"
-        accept=".pdf,.txt"
-        onChange={(e) => setFile(e.target.files?.[0] || null)}
-      />
-
-      <textarea
-        className="w-full h-40 mt-4 p-2 border rounded"
-        placeholder="Paste or type content..."
-        value={text}
-        onChange={handleTextChange}
-      />
-
-      <h2 className="text-lg font-semibold mt-6">Formatted Thought-Units</h2>
-      <div
-        className="mt-2 border rounded p-4"
-        dangerouslySetInnerHTML={{ __html: formattedText }}
-      />
-
-      {toc.length > 0 && (
-        <>
-          <h2 className="text-lg font-semibold mt-6">Table of Contents</h2>
-          <ul className="list-disc pl-6 mt-2">
-            {toc.map((item, i) => (
-              <li key={i}>{item}</li>
-            ))}
-          </ul>
-        </>
-      )}
-
       {file && (
-        <>
-          <h2 className="text-lg font-semibold mt-6">PDF Preview</h2>
-          <PDFViewer file={file} />
-        </>
+        <div className="border rounded p-4 bg-white shadow">
+          <Document
+            file={file}
+            onLoadSuccess={onDocumentLoadSuccess}
+            className="mb-4"
+          >
+            {Array.from(new Array(numPages), (el, index) => (
+              <Page
+                key={`page_${index + 1}`}
+                pageNumber={index + 1}
+                width={600}
+              />
+            ))}
+          </Document>
+        </div>
       )}
+
+      <div className="mt-6 flex items-center gap-4">
+        <Label htmlFor="toggleParser">Enable Parser</Label>
+        <Switch id="toggleParser" />
+        <Button>Start Parsing</Button>
+      </div>
     </div>
   );
 }
