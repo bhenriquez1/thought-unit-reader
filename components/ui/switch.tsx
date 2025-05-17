@@ -1,9 +1,8 @@
 import * as React from "react";
 import { Switch as HeadlessSwitch } from "@headlessui/react";
-import { cn } from "../../lib/utils"; // Adjust path as needed
+import { cn } from "../../lib/utils"; // ✅ Fixed import path
 
-export interface SwitchProps
-  extends React.ComponentPropsWithoutRef<typeof HeadlessSwitch> {
+export interface SwitchProps extends React.ComponentPropsWithoutRef<typeof HeadlessSwitch> {
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
 }
@@ -13,8 +12,8 @@ const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
     return (
       <HeadlessSwitch
         ref={ref}
+        onChange={onCheckedChange}
         checked={checked}
-        onChange={onCheckedChange} // boolean value handler
         className={cn(
           "relative inline-flex h-6 w-11 items-center rounded-full transition",
           checked ? "bg-blue-600" : "bg-gray-300",
