@@ -1,26 +1,28 @@
 import * as React from "react"
 import { Switch as HeadlessSwitch } from "@headlessui/react"
-import { cn } from "@/lib/utils"
+import { cn } from "../../lib/utils"
 
 export interface SwitchProps {
   checked: boolean
-  onCheckedChange: (checked: boolean) => void
+  onChange: (checked: boolean) => void
+  className?: string
 }
 
-const Switch = ({ checked, onCheckedChange }: SwitchProps) => {
+const Switch = ({ checked, onChange, className }: SwitchProps) => {
   return (
     <HeadlessSwitch
       checked={checked}
-      onChange={onCheckedChange}
+      onChange={onChange}
       className={cn(
-        "relative inline-flex h-[24px] w-[44px] shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
-        checked ? "bg-primary" : "bg-input"
+        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none",
+        checked ? "bg-blue-600" : "bg-gray-300",
+        className
       )}
     >
       <span
         className={cn(
-          "pointer-events-none inline-block h-[20px] w-[20px] transform rounded-full bg-background shadow-lg ring-0 transition duration-200 ease-in-out",
-          checked ? "translate-x-5" : "translate-x-0"
+          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+          checked ? "translate-x-6" : "translate-x-1"
         )}
       />
     </HeadlessSwitch>
