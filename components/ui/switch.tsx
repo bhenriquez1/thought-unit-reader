@@ -33,13 +33,15 @@ export interface SwitchProps
 
 const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
   ({ className, checked, onCheckedChange, ...props }, ref) => {
+    const handleChange = (event: React.FormEvent<HTMLButtonElement>) => {
+      onCheckedChange(event.currentTarget.checked)
+    }
+
     return (
       <HeadlessSwitch
         ref={ref}
         checked={checked}
-        onChange={(event: React.FormEvent<HTMLButtonElement>) =>
-          onCheckedChange((event.target as HTMLButtonElement).checked)
-        }
+        onChange={handleChange}
         className={cn(switchVariants({ checked }), className)}
         {...props}
       />
