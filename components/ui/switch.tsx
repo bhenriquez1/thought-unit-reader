@@ -1,3 +1,5 @@
+"use client"
+
 import * as React from "react"
 import { Switch as HeadlessSwitch } from "@headlessui/react"
 import { cva } from "class-variance-authority"
@@ -35,14 +37,13 @@ const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
       <HeadlessSwitch
         ref={ref}
         checked={checked}
-        onChange={onCheckedChange}
+        onChange={(event) => onCheckedChange(event.currentTarget.checked)}
         className={cn(switchVariants({ checked }), className)}
         {...props}
       />
     )
   }
 )
-
 Switch.displayName = "Switch"
 
 export { Switch }
