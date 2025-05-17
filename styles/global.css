@@ -1,13 +1,17 @@
-/* File: styles/globals.css */
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-white text-black font-sans;
+/* Optional: Smooth fonts */
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
 }
 
-.dark body {
-  @apply bg-black text-white;
+/* Dyslexia font override */
+.font-dyslexic {
+  font-family: "OpenDyslexic", Arial, sans-serif;
 }
+
+/* Import Dyslexic font (if hosted or linked) */
+@import url("https://cdn.jsdelivr.net/npm/open-dyslexic@1.0.0/open-dyslexic.css");
