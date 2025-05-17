@@ -1,5 +1,3 @@
-"use client"
-
 import * as React from "react"
 import { Switch as HeadlessSwitch } from "@headlessui/react"
 import { cva } from "class-variance-authority"
@@ -18,14 +16,15 @@ const switchVariants = cva(
         false: "",
       },
     },
+    defaultVariants: {
+      checked: false,
+      disabled: false,
+    },
   }
 )
 
-interface SwitchProps
-  extends Omit<
-    React.ComponentPropsWithoutRef<typeof HeadlessSwitch>,
-    "checked" | "onChange"
-  > {
+export interface SwitchProps
+  extends Omit<React.ComponentPropsWithoutRef<typeof HeadlessSwitch>, "checked" | "onChange"> {
   checked: boolean
   onChange: (checked: boolean) => void
 }
@@ -37,19 +36,12 @@ const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
         ref={ref}
         checked={checked}
         onChange={onChange}
-        className={cn(
-          switchVariants({
-            checked,
-            disabled: props.disabled ?? false,
-          }),
-          className
-        )}
+        className={cn(switchVariants({ checked }), className)}
         {...props}
       >
         <span
-          aria-hidden="true"
           className={cn(
-            "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out",
+            "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
             checked ? "translate-x-5" : "translate-x-0"
           )}
         />
