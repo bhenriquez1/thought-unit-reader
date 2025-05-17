@@ -2,16 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Optional: Smooth fonts */
+/* Smooth scrolling & font enhancements */
 html {
   scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Dyslexia font override */
+/* Optional: dyslexic font support */
 .font-dyslexic {
   font-family: "OpenDyslexic", Arial, sans-serif;
 }
 
-/* Import Dyslexic font (if hosted or linked) */
+/* Import OpenDyslexic font */
 @import url("https://cdn.jsdelivr.net/npm/open-dyslexic@1.0.0/open-dyslexic.css");
