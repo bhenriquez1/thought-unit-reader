@@ -20,6 +20,7 @@
   "author": "Brian Henriquez",
   "license": "MIT",
   "dependencies": {
+    "@headlessui/react": "^2.2.3",
     "class-variance-authority": "^0.7.1",
     "next": "^14.0.0",
     "pdfjs-dist": "^5.2.133",
