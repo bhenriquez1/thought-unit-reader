@@ -35,7 +35,8 @@ const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
   ({ className, checked, onCheckedChange, ...props }, ref) => {
     const handleChange = (event: React.FormEvent<HTMLButtonElement>) => {
       const target = event.currentTarget as HTMLInputElement;
-      onCheckedChange(target.checked);
+      const isChecked = target.checked;
+      onCheckedChange(isChecked);
     };
 
     return (
