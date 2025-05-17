@@ -1,0 +1,13 @@
+/* File: styles/globals.css */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-white text-black font-sans;
+}
+
+.dark body {
+  @apply bg-black text-white;
+}
