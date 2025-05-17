@@ -37,8 +37,8 @@ const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
       <HeadlessSwitch
         ref={ref}
         checked={checked}
-        onChange={(event) =>
-          onCheckedChange(event.currentTarget.checked)
+        onChange={(event: React.FormEvent<HTMLButtonElement>) =>
+          onCheckedChange((event.target as HTMLButtonElement).checked)
         }
         className={cn(switchVariants({ checked }), className)}
         {...props}
