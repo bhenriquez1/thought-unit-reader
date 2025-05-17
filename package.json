@@ -23,6 +23,7 @@
     "@headlessui/react": "^2.2.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "firebase": "^11.7.3",
     "next": "^14.0.0",
     "pdfjs-dist": "^5.2.133",
     "react": "^18.2.0",
