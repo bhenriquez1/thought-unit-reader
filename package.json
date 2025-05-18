@@ -14,11 +14,11 @@
     "clsx": "^2.1.0",
     "firebase": "^10.8.0",
     "mammoth": "^1.6.0",
-    "next": "13.5.6",
+    "next": "^13.5.11",
     "pdfjs-dist": "^4.0.379",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "react-pdf": "^7.7.2",
+    "react-pdf": "^9.2.1",
     "tailwind-merge": "^1.4.0",
     "tailwindcss": "^4.1.7"
   },
@@ -26,7 +26,10 @@
     "node": "20.x"
   },
   "devDependencies": {
-    "@types/react": "19.1.4",
+    "@types/react": "^18.2.47",
+    "autoprefixer": "^10.4.14",
+    "postcss": "^8.4.24",
+    "tailwindcss": "^3.4.1",
     "typescript": "5.8.3"
   }
 }
