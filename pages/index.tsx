@@ -127,11 +127,7 @@ export default function Home() {
   };
 
   const parseDocument = () => {
-    if (!enabled || !fileText) {
-      console.log("Parser is disabled or file is empty.");
-      return;
-    }
-
+    if (!enabled || !fileText) return;
     setLoading(true);
     setParsingComplete(false);
 
@@ -182,11 +178,7 @@ export default function Home() {
           <>
             <div className="mb-4 flex items-center justify-between">
               <Label htmlFor="toggleParser" className="text-gray-700">Enable Parser</Label>
-              <Switch
-                id="toggleParser"
-                checked={enabled}
-                onCheckedChange={setEnabled}
-              />
+              <Switch id="toggleParser" checked={enabled} onCheckedChange={setEnabled} />
             </div>
 
             <div className="mb-4">
