@@ -25,10 +25,11 @@
     "node": "20.x"
   },
   "devDependencies": {
-    "tailwindcss": "^4.1.7",
+    "@tailwindcss/postcss": "^4.1.7",
+    "@types/react": "^18.2.47",
     "autoprefixer": "^10.4.14",
     "postcss": "^8.4.24",
-    "@types/react": "^18.2.47",
+    "tailwindcss": "^4.1.7",
     "typescript": "5.8.3"
   }
 }
