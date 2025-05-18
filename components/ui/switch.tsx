@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Switch as HeadlessSwitch } from "@headlessui/react";
-import { cn } from "../../lib/utils"; // ✅ Fixed import path
+import { cn } from '../../lib/utils'; // ✅ Fixed import path
 
 export interface SwitchProps extends React.ComponentPropsWithoutRef<typeof HeadlessSwitch> {
   checked: boolean;
