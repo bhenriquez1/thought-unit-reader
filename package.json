@@ -2,48 +2,30 @@
   "name": "thought-unit-reader",
   "version": "1.0.0",
   "private": true,
-  "description": "Dual-panel thought-unit reading interface with OCR and AI phrase parsing.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start"
   },
-  "keywords": [
-    "nextjs",
-    "react",
-    "reader",
-    "pdf",
-    "ocr",
-    "thought-unit",
-    "educational-ai"
-  ],
-  "author": "Brian Henriquez",
-  "license": "MIT",
   "dependencies": {
     "@headlessui/react": "^1.7.17",
     "@heroicons/react": "^2.1.1",
-    "firebase": "^11.7.3",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.0",
+    "firebase": "^10.8.0",
     "mammoth": "^1.6.0",
-    "next": "14.0.0",
+    "next": "13.5.6",
     "pdfjs-dist": "^4.0.379",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "react-pdf": "^7.7.2",
-    "tailwind-merge": "^1.4.0",
-    "tailwind-variants": "^1.0.0",
-    "class-variance-authority": "^0.7.0",
-    "clsx": "^2.1.1",
-    "tesseract.js": "^4.1.1",
-    "tailwindcss-animate": "^1.0.7"
-  },
-  "devDependencies": {
-    "@types/node": "^22.15.4",
-    "@types/react": "^18.2.14",
-    "autoprefixer": "^10.4.21",
-    "postcss": "^8.4.33",
-    "tailwindcss": "^3.4.17",
-    "typescript": "^5.4.3"
+    "tailwind-merge": "^1.4.0"
   },
   "engines": {
-  "node": "20.x"
+    "node": "20.x"
+  },
+  "devDependencies": {
+    "@types/react": "19.1.4",
+    "typescript": "5.8.3"
+  }
 }
