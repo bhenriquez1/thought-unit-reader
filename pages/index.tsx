@@ -1,38 +1,23 @@
+// pages/index.tsx (or wherever you want to place this full Home component)
+
 import { useEffect, useState } from "react";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
-import { initializeApp } from "firebase/app";
+import { auth, provider, db } from "../lib/firebase"; // 🔁 Use centralized Firebase setup
 import {
-  getAuth,
   onAuthStateChanged,
   signInWithPopup,
-  GoogleAuthProvider,
 } from "firebase/auth";
 import {
-  getFirestore,
   doc,
   getDoc,
   setDoc,
 } from "firebase/firestore";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const provider = new GoogleAuthProvider();
 
 function improveBiomedicalParsing(text: string): string {
   const biomedicalTerms = [
@@ -87,12 +72,13 @@ export default function Home() {
   const [manualEditMode, setManualEditMode] = useState(false);
 
   useEffect(() => {
-    onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         setUser(user);
         loadSession(user.uid);
       }
     });
+    return () => unsubscribe();
   }, []);
 
   const signIn = async () => {
