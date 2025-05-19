@@ -9,6 +9,7 @@ const firebaseConfig = {
   storageBucket: "thought-unit-reader.appspot.com",
   messagingSenderId: "808239475880",
   appId: "1:808239475880:web:c66b9bf6c553477f78269d", // <- replace with actual App ID from Firebase > Project Settings
+  measurementId: "G-5DF8KCFLFG", // ✅ Add this line
 };
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
