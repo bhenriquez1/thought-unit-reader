@@ -1,20 +1,18 @@
 // lib/firebase.ts
-
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
-// ✅ Use your .env variables set in .env.local or Render env vars
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID!,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET!,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID!,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
+  apiKey: "AIzaSyAnMPtQh8-eOL3NBNMMa-izbfIcnijYK5w",
+  authDomain: "thought-unit-reader.firebaseapp.com",
+  projectId: "thought-unit-reader",
+  storageBucket: "thought-unit-reader.appspot.com",
+  messagingSenderId: "808239475880",
+  appId: "1:808239475880:web:c66b9bf6c553477f78269d", // <- replace with actual App ID from Firebase > Project Settings
 };
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 
-export { auth, provider };
+export { app, auth, provider };
