@@ -10,6 +10,8 @@ import { auth, provider, db, storage } from "../lib/firebase";
 import {
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
 } from "firebase/auth";
 import {
   doc,
@@ -51,6 +53,14 @@ export default function Home() {
         loadSession(user.uid);
       }
     });
+
+    getRedirectResult(auth).then((result) => {
+      if (result?.user) {
+        setUser(result.user);
+        loadSession(result.user.uid);
+      }
+    }).catch((err) => console.error("Redirect error", err));
+
     return () => unsubscribe();
   }, []);
 
@@ -59,8 +69,11 @@ export default function Home() {
       const result = await signInWithPopup(auth, provider);
       setUser(result.user);
       await loadSession(result.user.uid);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Sign in error", error);
+      if (error.code === "auth/popup-blocked" || error.code === "auth/popup-closed-by-user") {
+        await signInWithRedirect(auth, provider);
+      }
     }
   };
 
