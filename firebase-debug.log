@@ -1,0 +1,65 @@
+[debug] [2025-05-19T03:51:01.868Z] ----------------------------------------------------------------------
+[debug] [2025-05-19T03:51:01.870Z] Command:       /usr/local/share/nvm/versions/node/v20.19.0/bin/node /home/codespace/nvm/current/bin/firebase init hosting
+[debug] [2025-05-19T03:51:01.870Z] CLI Version:   14.4.0
+[debug] [2025-05-19T03:51:01.870Z] Platform:      linux
+[debug] [2025-05-19T03:51:01.870Z] Node Version:  v20.19.0
+[debug] [2025-05-19T03:51:01.870Z] Time:          Mon May 19 2025 03:51:01 GMT+0000 (Coordinated Universal Time)
+[debug] [2025-05-19T03:51:01.870Z] Env Overrides: GITHUB_API_URL, GITHUB_API_URL
+[debug] [2025-05-19T03:51:01.871Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-05-19T03:51:02.142Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-19T03:51:02.143Z] > authorizing via signed-in user (henriquez.brian2009@gmail.com)
+[info] 
+     ######## #### ########  ######## ########     ###     ######  ########
+     ##        ##  ##     ## ##       ##     ##  ##   ##  ##       ##
+     ######    ##  ########  ######   ########  #########  ######  ######
+     ##        ##  ##    ##  ##       ##     ## ##     ##       ## ##
+     ##       #### ##     ## ######## ########  ##     ##  ######  ########
+
+You're about to initialize a Firebase project in this directory:
+
+  /workspaces/thought-unit-reader
+
+Before we get started, keep in mind:
+
+  * You are currently outside your home directory
+  * You are initializing within an existing Firebase project directory
+
+[info] 
+=== Project Setup
+[info] 
+[info] First, let's associate this project directory with a Firebase project.
+[info] You can create multiple project aliases by running firebase use --add, 
+[info] but for now we'll just set up a default project.
+[info] 
+[debug] [2025-05-19T03:51:02.146Z] Using project from CLI flag: thought-unit-reader
+[debug] [2025-05-19T03:51:02.147Z] Checked if tokens are valid: true, expires at: 1747629565987
+[debug] [2025-05-19T03:51:02.147Z] Checked if tokens are valid: true, expires at: 1747629565987
+[debug] [2025-05-19T03:51:02.148Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/thought-unit-reader [none]
+[debug] [2025-05-19T03:51:02.409Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/thought-unit-reader 200
+[debug] [2025-05-19T03:51:02.409Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/thought-unit-reader {"projectId":"thought-unit-reader","projectNumber":"808239475880","displayName":"thought-unit-reader","name":"projects/thought-unit-reader","resources":{"hostingSite":"thought-unit-reader"},"state":"ACTIVE","etag":"1_6b483973-a021-4ec0-a9f8-35fcac2f129b"}
+[info] i  Using project thought-unit-reader (thought-unit-reader) 
+[info] 
+=== Hosting Setup
+[debug] [2025-05-19T03:51:02.414Z] Checked if tokens are valid: true, expires at: 1747629565987
+[debug] [2025-05-19T03:51:02.414Z] Checked if tokens are valid: true, expires at: 1747629565987
+[debug] [2025-05-19T03:51:02.414Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/thought-unit-reader [none]
+[debug] [2025-05-19T03:51:02.719Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/thought-unit-reader 200
+[debug] [2025-05-19T03:51:02.719Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/thought-unit-reader {"projectId":"thought-unit-reader","projectNumber":"808239475880","displayName":"thought-unit-reader","name":"projects/thought-unit-reader","resources":{"hostingSite":"thought-unit-reader"},"state":"ACTIVE","etag":"1_6b483973-a021-4ec0-a9f8-35fcac2f129b"}
+[info] 
+[info] Your public directory is the folder (relative to your project directory) that
+[info] will contain Hosting assets to be uploaded with firebase deploy. If you
+[info] have a build process for your assets, use your build's output directory.
+[info] 
+[debug] [2025-05-19T03:51:13.530Z] >>> [apiv2][query] GET https://www.gstatic.com/firebasejs/releases.json [none]
+[debug] [2025-05-19T03:51:13.736Z] <<< [apiv2][status] GET https://www.gstatic.com/firebasejs/releases.json 200
+[debug] [2025-05-19T03:51:13.737Z] <<< [apiv2][body] GET https://www.gstatic.com/firebasejs/releases.json {"current":{"version":"11.7.3","browserURL":"https://www.gstatic.com/firebasejs/11.7.3/firebase.js","packageURL":"https://www.gstatic.com/firebasejs/11.7.3/firebase.tgz"},"live":{"version":"11.7","browserURL":"https://www.gstatic.com/firebasejs/live/11.7/firebase.js","packageURL":"https://www.gstatic.com/firebasejs/live/11.7/firebase.tgz"},"components":{"analytics":"https://www.gstatic.com/firebasejs/11.7.3/firebase-analytics.js","app":"https://www.gstatic.com/firebasejs/11.7.3/firebase-app.js","app-check":"https://www.gstatic.com/firebasejs/11.7.3/firebase-app-check.js","auth":"https://www.gstatic.com/firebasejs/11.7.3/firebase-auth.js","auth/cordova":"https://www.gstatic.com/firebasejs/11.7.3/firebase-auth/cordova.js","auth/web-extension":"https://www.gstatic.com/firebasejs/11.7.3/firebase-auth/web-extension.js","functions":"https://www.gstatic.com/firebasejs/11.7.3/firebase-functions.js","firestore":"https://www.gstatic.com/firebasejs/11.7.3/firebase-firestore.js","firestore/lite":"https://www.gstatic.com/firebasejs/11.7.3/firebase-firestore/lite.js","installations":"https://www.gstatic.com/firebasejs/11.7.3/firebase-installations.js","storage":"https://www.gstatic.com/firebasejs/11.7.3/firebase-storage.js","performance":"https://www.gstatic.com/firebasejs/11.7.3/firebase-performance.js","remote-config":"https://www.gstatic.com/firebasejs/11.7.3/firebase-remote-config.js","messaging":"https://www.gstatic.com/firebasejs/11.7.3/firebase-messaging.js","messaging/sw":"https://www.gstatic.com/firebasejs/11.7.3/firebase-messaging/sw.js","database":"https://www.gstatic.com/firebasejs/11.7.3/firebase-database.js","vertexai":"https://www.gstatic.com/firebasejs/11.7.3/firebase-vertexai.js","data-connect":"https://www.gstatic.com/firebasejs/11.7.3/firebase-data-connect.js","firestore.memory":"https://www.gstatic.com/firebasejs/11.7.3/firebase-firestore.memory.js"}}
+[info] ✔  Wrote out/index.html 
+[info] 
+[info] i  Detected a .git folder at /workspaces/thought-unit-reader 
+[info] i  Authorizing with GitHub to upload your service account to a GitHub repository's secrets store. 
+[info] 
+[info] Visit this URL on this device to log in:
+[info] https://github.com/login/oauth/authorize?client_id=89cf50f02ac6aaed3484&state=686328618&redirect_uri=http%3A%2F%2Flocalhost%3A9006&scope=read%3Auser%20repo%20public_repo
+[info] 
+[info] Waiting for authentication...
