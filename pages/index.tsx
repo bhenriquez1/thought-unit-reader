@@ -1,4 +1,4 @@
-// pages/index.tsx (or wherever you want to place this full Home component)
+// pages/index.tsx
 
 import { useEffect, useState } from "react";
 import { Label } from "../components/ui/label";
@@ -42,6 +42,7 @@ export default function Home() {
   const [numPages, setNumPages] = useState<number | null>(null);
   const [user, setUser] = useState<any>(null);
   const [manualEditMode, setManualEditMode] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "done">("idle");
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -86,10 +87,12 @@ export default function Home() {
 
   const handleUpload = async (file: File) => {
     if (!user) return;
+    setUploadStatus("uploading");
     const storageRef = ref(storage, `uploads/${user.uid}/${file.name}`);
     await uploadBytes(storageRef, file);
     const url = await getDownloadURL(storageRef);
     console.log("File uploaded:", url);
+    setUploadStatus("done");
     return url;
   };
 
@@ -157,6 +160,18 @@ export default function Home() {
                 className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
               />
             </div>
+
+            {uploadStatus === "uploading" && (
+              <div className="mt-4 p-2 bg-yellow-100 text-yellow-800 rounded-xl">
+                ⏳ Uploading file...
+              </div>
+            )}
+
+            {uploadStatus === "done" && (
+              <div className="mt-4 p-2 bg-green-100 text-green-800 rounded-xl">
+                ✅ Upload complete!
+              </div>
+            )}
 
             <Button
               onClick={parseDocument}
