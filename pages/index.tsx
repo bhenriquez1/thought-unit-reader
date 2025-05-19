@@ -6,7 +6,7 @@ import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
-import { auth, provider, db } from "../lib/firebase"; // 🔁 Use centralized Firebase setup
+import { auth, provider, db, storage } from "../lib/firebase";
 import {
   onAuthStateChanged,
   signInWithPopup,
@@ -16,42 +16,14 @@ import {
   getDoc,
   setDoc,
 } from "firebase/firestore";
+import {
+  ref,
+  uploadBytes,
+  getDownloadURL,
+} from "firebase/storage";
+import { improveBiomedicalParsing } from "../lib/parser";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-
-function improveBiomedicalParsing(text: string): string {
-  const biomedicalTerms = [
-    "enzyme-substrate complex",
-    "rate-limiting step",
-    "Michaelis-Menten kinetics",
-    "signal transduction",
-    "glycolysis",
-    "DNA replication",
-    "RNA polymerase",
-    "oxidative phosphorylation"
-  ];
-
-  const phrases = text
-    .replace(/\n/g, " ")
-    .split(/(?<=[.!?])\s+/)
-    .flatMap(sentence => {
-      for (let term of biomedicalTerms) {
-        sentence = sentence.replace(new RegExp(term, "gi"), `§${term}§`);
-      }
-      return sentence.split(/(?=§)|(?<=§)/);
-    });
-
-  let toggle = true;
-  return phrases
-    .map(phrase => {
-      const clean = phrase.replace(/§/g, "");
-      const color = toggle ? "black" : "gray";
-      if (!clean.trim()) return "";
-      toggle = !toggle;
-      return `<span style="color:${color}">${clean.trim()} </span>`;
-    })
-    .join("");
-}
 
 function extractTOC(text: string): string[] {
   return Array.from(
@@ -112,6 +84,15 @@ export default function Home() {
     }
   };
 
+  const handleUpload = async (file: File) => {
+    if (!user) return;
+    const storageRef = ref(storage, `uploads/${user.uid}/${file.name}`);
+    await uploadBytes(storageRef, file);
+    const url = await getDownloadURL(storageRef);
+    console.log("File uploaded:", url);
+    return url;
+  };
+
   const parseDocument = () => {
     if (!enabled || !fileText) return;
     setLoading(true);
@@ -131,7 +112,7 @@ export default function Home() {
     }, 800);
   };
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       setFileName(file.name);
@@ -139,10 +120,11 @@ export default function Home() {
       setFileUrl(url);
 
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         const text = e.target?.result;
         if (typeof text === "string") {
           setFileText(text);
+          await handleUpload(file);
         }
       };
       reader.readAsText(file);
