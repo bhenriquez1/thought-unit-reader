@@ -66,7 +66,7 @@ export default function Home() {
       const result = e.target?.result;
       if (file.name.endsWith(".docx") && result) {
         const arrayBuffer = result as ArrayBuffer;
-        const { value } = await mammoth.convertToPlainText({ arrayBuffer });
+        const { value } = await mammoth.extractRawText({ arrayBuffer });
         setFileText(value);
       } else if (typeof result === "string") {
         setFileText(result);
