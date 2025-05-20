@@ -6,23 +6,24 @@ import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
-import { auth, provider, db, storage } from "../lib/firebase";
-import {
-  onAuthStateChanged,
-  signInWithPopup,
-  signInWithRedirect,
-  getRedirectResult,
-} from "firebase/auth";
-import {
-  doc,
-  getDoc,
-  setDoc,
-} from "firebase/firestore";
-import {
-  ref,
-  uploadBytes,
-  getDownloadURL,
-} from "firebase/storage";
+// Firebase temporarily excluded
+// import { auth, provider, db, storage } from "../lib/firebase";
+// import {
+//   onAuthStateChanged,
+//   signInWithPopup,
+//   signInWithRedirect,
+//   getRedirectResult,
+// } from "firebase/auth";
+// import {
+//   doc,
+//   getDoc,
+//   setDoc,
+// } from "firebase/firestore";
+// import {
+//   ref,
+//   uploadBytes,
+//   getDownloadURL,
+// } from "firebase/storage";
 import { improveBiomedicalParsing } from "../lib/parser";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
@@ -42,71 +43,17 @@ export default function Home() {
   const [fileText, setFileText] = useState<string>("");
   const [output, setOutput] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number | null>(null);
-  const [user, setUser] = useState<any>(null);
   const [manualEditMode, setManualEditMode] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "done">("idle");
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setUser(user);
-        loadSession(user.uid);
-      }
-    });
-
-    getRedirectResult(auth).then((result) => {
-      if (result?.user) {
-        setUser(result.user);
-        loadSession(result.user.uid);
-      }
-    }).catch((err) => console.error("Redirect error", err));
-
-    return () => unsubscribe();
-  }, []);
-
-  const signIn = async () => {
-    try {
-      const result = await signInWithPopup(auth, provider);
-      setUser(result.user);
-      await loadSession(result.user.uid);
-    } catch (error: any) {
-      console.error("Sign in error", error);
-      if (error.code === "auth/popup-blocked" || error.code === "auth/popup-closed-by-user") {
-        await signInWithRedirect(auth, provider);
-      }
-    }
-  };
-
-  const loadSession = async (uid: string) => {
-    const sessionDoc = await getDoc(doc(db, "sessions", uid));
-    if (sessionDoc.exists()) {
-      const data = sessionDoc.data();
-      setEnabled(data.enabled || false);
-      setOutput(data.output || null);
-      setFileName(data.fileName || "");
-    }
-  };
-
-  const saveSession = async () => {
-    if (user) {
-      await setDoc(doc(db, "sessions", user.uid), {
-        enabled,
-        output,
-        fileName,
-        timestamp: Date.now()
-      });
-    }
-  };
+  // Firebase login disabled
+  const user = true;
 
   const handleUpload = async (file: File) => {
-    if (!user) return;
     setUploadStatus("uploading");
-    const storageRef = ref(storage, `uploads/${user.uid}/${file.name}`);
-    await uploadBytes(storageRef, file);
-    const url = await getDownloadURL(storageRef);
-    console.log("File uploaded:", url);
+    await new Promise((r) => setTimeout(r, 500));
     setUploadStatus("done");
-    return url;
+    return URL.createObjectURL(file);
   };
 
   const parseDocument = () => {
@@ -119,7 +66,6 @@ export default function Home() {
       setOutput(parsed);
       setParsingComplete(true);
       setLoading(false);
-      saveSession();
 
       setTimeout(() => {
         const rightPanel = document.getElementById("thought-output");
@@ -153,7 +99,7 @@ export default function Home() {
         <h1 className="text-2xl font-bold mb-6 text-center">Thought-Unit Reader</h1>
 
         {!user && (
-          <Button onClick={signIn} className="mb-6 w-full bg-green-600 hover:bg-green-700">
+          <Button className="mb-6 w-full bg-green-600 hover:bg-green-700">
             Sign in with Google
           </Button>
         )}
