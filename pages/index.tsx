@@ -14,7 +14,7 @@ export default function Home() {
   const [parsingComplete, setParsingComplete] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fileName, setFileName] = useState("");
-  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [fileUrl, setFileUrl] = useState<any>(null);
   const [fileText, setFileText] = useState<string>("");
   const [output, setOutput] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number | null>(null);
@@ -27,7 +27,6 @@ export default function Home() {
     setUploadStatus("uploading");
     await new Promise((r) => setTimeout(r, 500));
     setUploadStatus("done");
-    return URL.createObjectURL(file);
   };
 
   const parseDocument = () => {
@@ -52,12 +51,11 @@ export default function Home() {
     if (!file) return;
 
     setFileName(file.name);
-    const url = URL.createObjectURL(file);
-    setFileUrl(url);
-
     await handleUpload(file);
 
     if (file.type === "application/pdf") {
+      const arrayBuffer = await file.arrayBuffer();
+      setFileUrl({ data: new Uint8Array(arrayBuffer) });
       setFileText("");
       return;
     }
