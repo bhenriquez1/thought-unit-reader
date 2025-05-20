@@ -56,20 +56,20 @@ export default function Home() {
     if (file.type === "application/pdf") {
       const arrayBuffer = await file.arrayBuffer();
       setFileUrl({ data: new Uint8Array(arrayBuffer) });
-      setFileText("");
+      const text = await extractTextFromPDF(arrayBuffer);
+      setFileText(text);
       return;
     }
 
     const reader = new FileReader();
     reader.onload = async (e) => {
       const result = e.target?.result;
-
-      if (typeof result === "string") {
-        setFileText(result);
-      } else if (file.name.endsWith(".docx")) {
+      if (file.name.endsWith(".docx") && result) {
         const arrayBuffer = result as ArrayBuffer;
-        const { value } = await mammoth.extractRawText({ arrayBuffer });
+        const { value } = await mammoth.convertToPlainText({ arrayBuffer });
         setFileText(value);
+      } else if (typeof result === "string") {
+        setFileText(result);
       }
     };
 
@@ -80,9 +80,26 @@ export default function Home() {
     }
   };
 
+  async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
+    try {
+      const pdf = await pdfjs.getDocument({ data: buffer }).promise;
+      let fullText = "";
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map((item: any) => item.str).join(" ");
+        fullText += pageText + "\n";
+      }
+      return fullText;
+    } catch (error) {
+      console.error("Error extracting text from PDF:", error);
+      return "";
+    }
+  }
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-6">
-      <div className="bg-white rounded-2xl shadow-lg p-6 w-full max-w-5xl">
+      <div className="bg-white rounded-2xl shadow-lg p-6 w-full max-w-6xl">
         <h1 className="text-3xl font-bold mb-6 text-center">Thought-Unit Reader</h1>
 
         {!user && (
@@ -126,7 +143,7 @@ export default function Home() {
               {loading ? "Parsing..." : "Start Parsing"}
             </Button>
 
-            <div className="mt-6 grid grid-rows-2 gap-4">
+            <div className="mt-6 grid grid-cols-2 gap-4">
               <div className="bg-gray-50 p-4 rounded-xl overflow-auto max-h-[80vh]">
                 <h2 className="text-xl font-semibold mb-2">📘 Original Book View</h2>
                 {fileUrl ? (
