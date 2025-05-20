@@ -55,7 +55,8 @@ export default function Home() {
 
     if (file.type === "application/pdf") {
       const arrayBuffer = await file.arrayBuffer();
-      setFileUrl({ data: new Uint8Array(arrayBuffer) });
+      const blob = new Blob([arrayBuffer], { type: "application/pdf" });
+      setFileUrl(blob);
       const text = await extractTextFromPDF(arrayBuffer);
       setFileText(text);
       return;
