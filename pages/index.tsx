@@ -22,7 +22,7 @@ export default function Home() {
   const [parsingComplete, setParsingComplete] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fileName, setFileName] = useState("");
-  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [fileUrl, setFileUrl] = useState<any>(null);
   const [fileText, setFileText] = useState<string>("");
   const [output, setOutput] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number | null>(null);
@@ -35,7 +35,7 @@ export default function Home() {
     setUploadStatus("uploading");
     await new Promise((r) => setTimeout(r, 500));
     setUploadStatus("done");
-    return URL.createObjectURL(file);
+    return file;
   };
 
   const parseDocument = () => {
@@ -61,33 +61,36 @@ export default function Home() {
     if (!file) return;
 
     setFileName(file.name);
-    const url = URL.createObjectURL(file);
-    setFileUrl(url);
-
     await handleUpload(file);
 
-    if (file.type === "application/pdf") {
-      setFileText("");
-      return;
-    }
-
     const reader = new FileReader();
-    reader.onload = async (e) => {
-      const result = e.target?.result;
 
-      if (typeof result === "string") {
-        setFileText(result);
-      } else if (file.name.endsWith(".docx")) {
-        const arrayBuffer = result as ArrayBuffer;
-        const { value } = await mammoth.extractRawText({ arrayBuffer });
-        setFileText(value);
-      }
-    };
-
-    if (file.name.endsWith(".docx")) {
+    if (file.type === "application/pdf") {
+      reader.onload = (e) => {
+        const buffer = e.target?.result;
+        if (buffer) {
+          setFileUrl({ data: buffer });
+        }
+      };
       reader.readAsArrayBuffer(file);
+      setFileText("");
     } else {
-      reader.readAsText(file);
+      reader.onload = async (e) => {
+        const result = e.target?.result;
+        if (typeof result === "string") {
+          setFileText(result);
+        } else if (file.name.endsWith(".docx")) {
+          const arrayBuffer = result as ArrayBuffer;
+          const { value } = await mammoth.extractRawText({ arrayBuffer });
+          setFileText(value);
+        }
+      };
+
+      if (file.name.endsWith(".docx")) {
+        reader.readAsArrayBuffer(file);
+      } else {
+        reader.readAsText(file);
+      }
     }
   };
 
@@ -137,25 +140,8 @@ export default function Home() {
               {loading ? "Parsing..." : "Start Parsing"}
             </Button>
 
-            {fileText && (
-              <div className="my-6 bg-white p-4 rounded-xl shadow">
-                <h2 className="font-semibold text-lg mb-2">📚 Table of Contents</h2>
-                <ul className="text-sm space-y-1 max-h-48 overflow-y-auto">
-                  {extractTOC(fileText).map((heading, index) => (
-                    <li key={index} className="text-blue-700">🔹 {heading}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {parsingComplete && (
-              <div className="mt-4 p-4 bg-green-100 text-green-800 rounded-xl">
-                ✅ Parsing complete!
-              </div>
-            )}
-
-            {fileUrl && (
-              <div className="mt-6 grid grid-cols-2 gap-4">
+            <div className="mt-6 grid grid-rows-2 gap-4">
+              {fileUrl && (
                 <div className="bg-gray-50 p-4 rounded-xl overflow-auto max-h-[80vh]">
                   <h2 className="text-lg font-semibold mb-2">📘 Original Book View</h2>
                   <Document file={fileUrl} onLoadSuccess={({ numPages }) => setNumPages(numPages)}>
@@ -164,23 +150,23 @@ export default function Home() {
                     ))}
                   </Document>
                 </div>
+              )}
 
-                <div id="thought-output" className="bg-white p-4 rounded-xl shadow-inner overflow-y-auto max-h-[80vh]">
-                  <div className="flex justify-between mb-2">
-                    <h2 className="text-lg font-semibold">🧠 Thought-Unit Output</h2>
-                    <Button onClick={() => setManualEditMode(!manualEditMode)}>
-                      {manualEditMode ? "Disable Edit" : "Improve Parser"}
-                    </Button>
-                  </div>
-                  <div
-                    className="text-gray-700 whitespace-pre-wrap text-sm"
-                    contentEditable={manualEditMode}
-                    suppressContentEditableWarning
-                    dangerouslySetInnerHTML={{ __html: output || "No output yet. Start the parser to generate content." }}
-                  />
+              <div id="thought-output" className="bg-white p-4 rounded-xl shadow-inner overflow-y-auto max-h-[80vh]">
+                <div className="flex justify-between mb-2">
+                  <h2 className="text-lg font-semibold">🧠 Thought-Unit Output</h2>
+                  <Button onClick={() => setManualEditMode(!manualEditMode)}>
+                    {manualEditMode ? "Disable Edit" : "Improve Parser"}
+                  </Button>
                 </div>
+                <div
+                  className="text-gray-700 whitespace-pre-wrap text-sm"
+                  contentEditable={manualEditMode}
+                  suppressContentEditableWarning
+                  dangerouslySetInnerHTML={{ __html: output || "No output yet. Start the parser to generate content." }}
+                />
               </div>
-            )}
+            </div>
           </>
         )}
       </div>
