@@ -79,7 +79,7 @@ export default function Home() {
         setFileText(result);
       } else if (file.name.endsWith(".docx")) {
         const arrayBuffer = result as ArrayBuffer;
-        const { value } = await mammoth.convertToPlainText({ arrayBuffer });
+        const { value } = await mammoth.extractRawText({ arrayBuffer });
         setFileText(value);
       }
     };
