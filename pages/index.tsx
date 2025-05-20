@@ -1,28 +1,20 @@
-// pages/index.tsx
-
 import { useEffect, useState } from "react";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
-import { Document, Page, pdfjs } from 'react-pdf';
-import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
+import { Document, Page, pdfjs } from "react-pdf";
+import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 import mammoth from "mammoth";
 import { improveBiomedicalParsing } from "../lib/parser";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-
-function extractTOC(text: string): string[] {
-  return Array.from(
-    text.matchAll(/^(Chapter|Section|\d+(\.\d+)*)[^\n]{0,80}/gim)
-  ).map(match => match[0].trim());
-}
 
 export default function Home() {
   const [enabled, setEnabled] = useState(false);
   const [parsingComplete, setParsingComplete] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fileName, setFileName] = useState("");
-  const [fileUrl, setFileUrl] = useState<any>(null);
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileText, setFileText] = useState<string>("");
   const [output, setOutput] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number | null>(null);
@@ -35,7 +27,7 @@ export default function Home() {
     setUploadStatus("uploading");
     await new Promise((r) => setTimeout(r, 500));
     setUploadStatus("done");
-    return file;
+    return URL.createObjectURL(file);
   };
 
   const parseDocument = () => {
@@ -48,7 +40,6 @@ export default function Home() {
       setOutput(parsed);
       setParsingComplete(true);
       setLoading(false);
-
       setTimeout(() => {
         const rightPanel = document.getElementById("thought-output");
         if (rightPanel) rightPanel.scrollIntoView({ behavior: "smooth" });
@@ -61,43 +52,40 @@ export default function Home() {
     if (!file) return;
 
     setFileName(file.name);
+    const url = URL.createObjectURL(file);
+    setFileUrl(url);
+
     await handleUpload(file);
 
-    const reader = new FileReader();
-
     if (file.type === "application/pdf") {
-      reader.onload = (e) => {
-        const buffer = e.target?.result;
-        if (buffer) {
-          setFileUrl({ data: buffer });
-        }
-      };
-      reader.readAsArrayBuffer(file);
       setFileText("");
-    } else {
-      reader.onload = async (e) => {
-        const result = e.target?.result;
-        if (typeof result === "string") {
-          setFileText(result);
-        } else if (file.name.endsWith(".docx")) {
-          const arrayBuffer = result as ArrayBuffer;
-          const { value } = await mammoth.extractRawText({ arrayBuffer });
-          setFileText(value);
-        }
-      };
+      return;
+    }
 
-      if (file.name.endsWith(".docx")) {
-        reader.readAsArrayBuffer(file);
-      } else {
-        reader.readAsText(file);
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const result = e.target?.result;
+
+      if (typeof result === "string") {
+        setFileText(result);
+      } else if (file.name.endsWith(".docx")) {
+        const arrayBuffer = result as ArrayBuffer;
+        const { value } = await mammoth.extractRawText({ arrayBuffer });
+        setFileText(value);
       }
+    };
+
+    if (file.name.endsWith(".docx")) {
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.readAsText(file);
     }
   };
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-6">
-      <div className="bg-white rounded-2xl shadow-lg p-6 w-full max-w-6xl">
-        <h1 className="text-2xl font-bold mb-6 text-center">Thought-Unit Reader</h1>
+      <div className="bg-white rounded-2xl shadow-lg p-6 w-full max-w-5xl">
+        <h1 className="text-3xl font-bold mb-6 text-center">Thought-Unit Reader</h1>
 
         {!user && (
           <Button className="mb-6 w-full bg-green-600 hover:bg-green-700">
@@ -141,20 +129,22 @@ export default function Home() {
             </Button>
 
             <div className="mt-6 grid grid-rows-2 gap-4">
-              {fileUrl && (
-                <div className="bg-gray-50 p-4 rounded-xl overflow-auto max-h-[80vh]">
-                  <h2 className="text-lg font-semibold mb-2">📘 Original Book View</h2>
+              <div className="bg-gray-50 p-4 rounded-xl overflow-auto max-h-[80vh]">
+                <h2 className="text-xl font-semibold mb-2">📘 Original Book View</h2>
+                {fileUrl ? (
                   <Document file={fileUrl} onLoadSuccess={({ numPages }) => setNumPages(numPages)}>
                     {Array.from(new Array(numPages), (el, index) => (
                       <Page key={`page_${index + 1}`} pageNumber={index + 1} />
                     ))}
                   </Document>
-                </div>
-              )}
+                ) : (
+                  <p className="text-sm italic text-gray-500">Failed to load PDF file.</p>
+                )}
+              </div>
 
               <div id="thought-output" className="bg-white p-4 rounded-xl shadow-inner overflow-y-auto max-h-[80vh]">
                 <div className="flex justify-between mb-2">
-                  <h2 className="text-lg font-semibold">🧠 Thought-Unit Output</h2>
+                  <h2 className="text-xl font-semibold">🧠 Thought-Unit Output</h2>
                   <Button onClick={() => setManualEditMode(!manualEditMode)}>
                     {manualEditMode ? "Disable Edit" : "Improve Parser"}
                   </Button>
