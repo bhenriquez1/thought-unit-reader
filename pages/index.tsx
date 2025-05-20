@@ -66,7 +66,7 @@ export default function Home() {
       setFileText(text);
     } else if (file.name.endsWith(".epub")) {
       const book = ePub(URL.createObjectURL(file));
-      const text = await book.loaded.spine.then(spine => spine.get(0).load(book.load.bind(book))).then(section => section.text);
+      const text = await book.loaded.spine.then(spine => spine[0].load(book.load.bind(book))).then(section => section.text);
       setFileText(text);
     } else if (file.type.startsWith("image/")) {
       const result = await Tesseract.recognize(file, "eng");
