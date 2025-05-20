@@ -6,24 +6,7 @@ import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
-// Firebase temporarily excluded
-// import { auth, provider, db, storage } from "../lib/firebase";
-// import {
-//   onAuthStateChanged,
-//   signInWithPopup,
-//   signInWithRedirect,
-//   getRedirectResult,
-// } from "firebase/auth";
-// import {
-//   doc,
-//   getDoc,
-//   setDoc,
-// } from "firebase/firestore";
-// import {
-//   ref,
-//   uploadBytes,
-//   getDownloadURL,
-// } from "firebase/storage";
+import mammoth from "mammoth";
 import { improveBiomedicalParsing } from "../lib/parser";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
@@ -46,7 +29,6 @@ export default function Home() {
   const [manualEditMode, setManualEditMode] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "done">("idle");
 
-  // Firebase login disabled
   const user = true;
 
   const handleUpload = async (file: File) => {
@@ -76,19 +58,35 @@ export default function Home() {
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      setFileName(file.name);
-      const url = URL.createObjectURL(file);
-      setFileUrl(url);
+    if (!file) return;
 
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const text = e.target?.result;
-        if (typeof text === "string") {
-          setFileText(text);
-          await handleUpload(file);
-        }
-      };
+    setFileName(file.name);
+    const url = URL.createObjectURL(file);
+    setFileUrl(url);
+
+    await handleUpload(file);
+
+    if (file.type === "application/pdf") {
+      setFileText("");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const result = e.target?.result;
+
+      if (typeof result === "string") {
+        setFileText(result);
+      } else if (file.name.endsWith(".docx")) {
+        const arrayBuffer = result as ArrayBuffer;
+        const { value } = await mammoth.convertToPlainText({ arrayBuffer });
+        setFileText(value);
+      }
+    };
+
+    if (file.name.endsWith(".docx")) {
+      reader.readAsArrayBuffer(file);
+    } else {
       reader.readAsText(file);
     }
   };
