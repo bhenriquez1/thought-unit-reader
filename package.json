@@ -16,7 +16,7 @@
     "firebase": "^10.8.0",
     "mammoth": "^1.9.0",
     "next": "^13.5.11",
-    "pdfjs-dist": "^4.0.379",
+    "pdfjs-dist": "^5.2.133",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "react-pdf": "^9.2.1",
