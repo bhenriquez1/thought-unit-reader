@@ -1,21 +1,21 @@
 // pages/index.tsx
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { Document, Page, pdfjs } from "react-pdf";
+import pdfWorker from "pdfjs-dist/build/pdf.worker.entry";
+import ePub from "epubjs";
+import Tesseract from "tesseract.js";
+import mammoth from "mammoth";
+import { improveBiomedicalParsing } from "../lib/parser";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
-import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
-import mammoth from "mammoth";
-import { improveBiomedicalParsing } from "../lib/parser";
-import Tesseract from "tesseract.js";
-import ePub from "epubjs";
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 export default function Home() {
   const [enabled, setEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [fileName, setFileName] = useState("");
   const [fileUrl, setFileUrl] = useState<Blob | null>(null);
   const [fileText, setFileText] = useState<string>("");
   const [output, setOutput] = useState<string | null>(null);
@@ -29,7 +29,8 @@ export default function Home() {
 
   const handleUpload = async (file: File) => {
     setUploadStatus("uploading");
-    setThumbnail(URL.createObjectURL(file));
+    const previewUrl = URL.createObjectURL(file);
+    setThumbnail(previewUrl);
     await new Promise((r) => setTimeout(r, 500));
     setUploadStatus("done");
   };
@@ -48,7 +49,6 @@ export default function Home() {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setFileName(file.name);
     setPdfError(null);
     await handleUpload(file);
 
@@ -63,14 +63,14 @@ export default function Home() {
       const book = ePub(URL.createObjectURL(file));
       await book.ready;
       const spineItem = book.spine.get(0)!;
-      // load() returns a Document instance
-      const sectionDoc = (await spineItem.load(book.load.bind(book))) as Document;
-      setFileText(sectionDoc.body.textContent || "");
+      const section = await spineItem.load(book.load.bind(book));
+      const text = await section.text();     // <-- use .text() API
+      setFileText(text);
 
     } else if (file.type.startsWith("image/")) {
       // OCR branch
-      const { data: { text } } = await Tesseract.recognize(file, "eng");
-      setFileText(text);
+      const result = await Tesseract.recognize(file, "eng");
+      setFileText(result.data.text);
 
     } else {
       // DOCX / TXT branch
@@ -84,8 +84,7 @@ export default function Home() {
           setFileText(res);
         }
       };
-      if (file.name.endsWith(".docx")) reader.readAsArrayBuffer(file);
-      else reader.readAsText(file);
+      file.name.endsWith(".docx") ? reader.readAsArrayBuffer(file) : reader.readAsText(file);
     }
   };
 
@@ -110,20 +109,18 @@ export default function Home() {
       <div className="bg-white rounded-2xl shadow-lg p-6 w-full max-w-6xl">
         <h1 className="text-3xl font-bold mb-6 text-center">Thought-Unit Reader</h1>
 
-        {!user ? (
+        {!user && (
           <Button className="mb-6 w-full bg-green-600 hover:bg-green-700">
             Sign in with Google
           </Button>
-        ) : (
+        )}
+
+        {user && (
           <>
             {/* Parser toggle */}
             <div className="mb-4 flex items-center justify-between">
               <Label htmlFor="toggleParser">Enable Parser</Label>
-              <Switch
-                id="toggleParser"
-                checked={enabled}
-                onCheckedChange={setEnabled}
-              />
+              <Switch id="toggleParser" checked={enabled} onCheckedChange={setEnabled} />
             </div>
 
             {/* File input + thumbnail */}
@@ -135,24 +132,16 @@ export default function Home() {
                 className="block w-full file:py-2 file:px-4 file:rounded-full file:bg-blue-50 file:text-blue-700"
               />
               {thumbnail && (
-                <img
-                  src={thumbnail}
-                  alt="Preview"
-                  className="mt-2 h-20 object-contain rounded"
-                />
+                <img src={thumbnail} alt="Preview" className="mt-2 h-20 object-contain rounded" />
               )}
             </div>
 
             {/* Upload status */}
             {uploadStatus === "uploading" && (
-              <div className="p-2 bg-yellow-100 text-yellow-800 rounded-xl">
-                ⏳ Uploading file...
-              </div>
+              <div className="p-2 bg-yellow-100 text-yellow-800 rounded-xl">⏳ Uploading file...</div>
             )}
             {uploadStatus === "done" && (
-              <div className="p-2 bg-green-100 text-green-800 rounded-xl">
-                ✅ Upload complete!
-              </div>
+              <div className="p-2 bg-green-100 text-green-800 rounded-xl">✅ Upload complete!</div>
             )}
 
             {/* Parse button */}
@@ -163,13 +152,10 @@ export default function Home() {
               {loading ? "Parsing..." : "Start Parsing"}
             </Button>
 
-            {/* Two-column view */}
             <div className="mt-6 grid grid-cols-2 gap-4">
               {/* PDF / EPUB viewer */}
               <div className="bg-gray-50 p-4 rounded-xl overflow-auto max-h-[80vh]">
-                <h2 className="text-xl font-semibold mb-2">
-                  📘 Original Book View
-                </h2>
+                <h2 className="text-xl font-semibold mb-2">📘 Original Book View</h2>
                 {fileUrl ? (
                   <Document
                     file={fileUrl}
@@ -183,9 +169,7 @@ export default function Home() {
                 ) : (
                   <p className="italic text-gray-500">No file loaded.</p>
                 )}
-                {pdfError && (
-                  <p className="text-red-500 mt-2">❌ {pdfError}</p>
-                )}
+                {pdfError && <p className="text-red-500 mt-2">❌ {pdfError}</p>}
               </div>
 
               {/* Thought-Unit output */}
@@ -194,9 +178,7 @@ export default function Home() {
                 className="bg-white p-4 rounded-xl overflow-y-auto max-h-[80vh]"
               >
                 <div className="flex justify-between mb-2">
-                  <h2 className="text-xl font-semibold">
-                    🧠 Thought-Unit Output
-                  </h2>
+                  <h2 className="text-xl font-semibold">🧠 Thought-Unit Output</h2>
                   <Button onClick={() => setManualEditMode(!manualEditMode)}>
                     {manualEditMode ? "Disable Edit" : "Improve Parser"}
                   </Button>
