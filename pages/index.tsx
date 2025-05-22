@@ -1,4 +1,4 @@
-// Enhanced Thought-Unit Reader
+// pages/index.tsx
 import { useEffect, useState } from "react";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
@@ -25,7 +25,8 @@ export default function Home() {
   const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "done">("idle");
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [thumbnail, setThumbnail] = useState<string | null>(null);
-  const user = true;
+
+  const user = true; // stubbed
 
   const handleUpload = async (file: File) => {
     setUploadStatus("uploading");
@@ -44,10 +45,7 @@ export default function Home() {
       setOutput(parsed);
       setParsingComplete(true);
       setLoading(false);
-      setTimeout(() => {
-        const rightPanel = document.getElementById("thought-output");
-        if (rightPanel) rightPanel.scrollIntoView({ behavior: "smooth" });
-      }, 300);
+      document.getElementById("thought-output")?.scrollIntoView({ behavior: "smooth" });
     }, 800);
   };
 
@@ -59,38 +57,38 @@ export default function Home() {
     await handleUpload(file);
 
     if (file.type === "application/pdf") {
-      const arrayBuffer = await file.arrayBuffer();
-      const blob = new Blob([arrayBuffer], { type: "application/pdf" });
-      setFileUrl(blob);
-      const text = await extractTextFromPDF(arrayBuffer);
-      setFileText(text);
+      const buffer = await file.arrayBuffer();
+      setFileUrl(new Blob([buffer], { type: "application/pdf" }));
+      setFileText(await extractTextFromPDF(buffer));
+
     } else if (file.name.endsWith(".epub")) {
       const book = ePub(URL.createObjectURL(file));
       await book.ready;
       const spineItem = book.spine.get(0);
       const section = await spineItem.load(book.load.bind(book));
-      const text = section?.document?.body?.textContent || "";
-      setFileText(text);
+      // parse via DOMParser
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(section, "text/html");
+      setFileText(doc.body.textContent || "");
+
     } else if (file.type.startsWith("image/")) {
       const result = await Tesseract.recognize(file, "eng");
       setFileText(result.data.text);
+
     } else {
       const reader = new FileReader();
       reader.onload = async (e) => {
-        const result = e.target?.result;
-        if (file.name.endsWith(".docx") && result) {
-          const arrayBuffer = result as ArrayBuffer;
-          const { value } = await mammoth.extractRawText({ arrayBuffer });
+        const res = e.target?.result;
+        if (file.name.endsWith(".docx") && res) {
+          const { value } = await mammoth.extractRawText({ arrayBuffer: res as ArrayBuffer });
           setFileText(value);
-        } else if (typeof result === "string") {
-          setFileText(result);
+        } else if (typeof res === "string") {
+          setFileText(res);
         }
       };
-      if (file.name.endsWith(".docx")) {
-        reader.readAsArrayBuffer(file);
-      } else {
-        reader.readAsText(file);
-      }
+      file.name.endsWith(".docx")
+        ? reader.readAsArrayBuffer(file)
+        : reader.readAsText(file);
     }
   };
 
@@ -100,13 +98,11 @@ export default function Home() {
       let fullText = "";
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items.map((item: any) => item.str).join(" ");
-        fullText += pageText + "\n";
+        const content = await page.getTextContent();
+        fullText += content.items.map((item: any) => item.str).join(" ") + "\n";
       }
       return fullText;
-    } catch (error) {
-      console.error("Error extracting text from PDF:", error);
+    } catch {
       return "";
     }
   }
@@ -120,69 +116,103 @@ export default function Home() {
             Sign in with Google
           </Button>
         )}
+
         {user && (
           <>
             <div className="mb-4 flex items-center justify-between">
-              <Label htmlFor="toggleParser" className="text-gray-700">Enable Parser</Label>
-              <Switch id="toggleParser" checked={enabled} onCheckedChange={setEnabled} />
+              <Label htmlFor="toggleParser">Enable Parser</Label>
+              <Switch
+                id="toggleParser"
+                checked={enabled}
+                onCheckedChange={setEnabled}
+              />
             </div>
+
             <div className="mb-4">
               <input
                 type="file"
                 accept=".pdf,.docx,.txt,.epub,.png,.jpg,.jpeg"
                 onChange={handleFileChange}
-                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                className="block w-full file:py-2 file:px-4 file:rounded-full file:bg-blue-50 file:text-blue-700"
               />
               {thumbnail && (
-                <img src={thumbnail} alt="Preview" className="mt-2 h-20 object-contain rounded" />
+                <img
+                  src={thumbnail}
+                  alt="Preview"
+                  className="mt-2 h-20 object-contain rounded"
+                />
               )}
             </div>
+
             {uploadStatus === "uploading" && (
-              <div className="mt-4 p-2 bg-yellow-100 text-yellow-800 rounded-xl">
+              <div className="p-2 bg-yellow-100 text-yellow-800 rounded-xl">
                 ⏳ Uploading file...
               </div>
             )}
             {uploadStatus === "done" && (
-              <div className="mt-4 p-2 bg-green-100 text-green-800 rounded-xl">
+              <div className="p-2 bg-green-100 text-green-800 rounded-xl">
                 ✅ Upload complete!
               </div>
             )}
+
             <Button
               onClick={parseDocument}
-              className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition"
+              className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl"
             >
               {loading ? "Parsing..." : "Start Parsing"}
             </Button>
+
             <div className="mt-6 grid grid-cols-2 gap-4">
               <div className="bg-gray-50 p-4 rounded-xl overflow-auto max-h-[80vh]">
                 <h2 className="text-xl font-semibold mb-2">📘 Original Book View</h2>
                 {fileUrl ? (
-                  <Document file={fileUrl} onLoadError={(err) => setPdfError(err.message)} onLoadSuccess={({ numPages }) => setNumPages(numPages)}>
-                    {Array.from(new Array(numPages), (el, index) => (
-                      <Page key={`page_${index + 1}`} pageNumber={index + 1} />
+                  <Document
+                    file={fileUrl}
+                    onLoadError={(err) => setPdfError(err.message)}
+                    onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+                  >
+                    {Array.from({ length: numPages || 0 }).map((_, i) => (
+                      <Page
+                        key={i}
+                        pageNumber={i + 1}
+                      />
                     ))}
                   </Document>
                 ) : (
-                  <p className="text-sm italic text-gray-500">No file loaded.</p>
+                  <p className="italic text-gray-500">No file loaded.</p>
                 )}
-                {pdfError && <p className="text-red-500 text-sm mt-2">❌ Failed to render PDF: {pdfError}</p>}
+                {pdfError && (
+                  <p className="text-red-500 mt-2">❌ {pdfError}</p>
+                )}
               </div>
-              <div id="thought-output" className="bg-white p-4 rounded-xl shadow-inner overflow-y-auto max-h-[80vh]">
+
+              <div
+                id="thought-output"
+                className="bg-white p-4 rounded-xl overflow-y-auto max-h-[80vh]"
+              >
                 <div className="flex justify-between mb-2">
-                  <h2 className="text-xl font-semibold">🧠 Thought-Unit Output</h2>
+                  <h2 className="text-xl font-semibold">
+                    🧠 Thought-Unit Output
+                  </h2>
                   <Button onClick={() => setManualEditMode(!manualEditMode)}>
                     {manualEditMode ? "Disable Edit" : "Improve Parser"}
                   </Button>
                 </div>
                 <div
-                  className="text-gray-700 whitespace-pre-wrap text-sm"
+                  className="whitespace-pre-wrap text-sm"
                   contentEditable={manualEditMode}
                   suppressContentEditableWarning
-                  dangerouslySetInnerHTML={{ __html: output || "No output yet. Start the parser to generate content." }}
+                  dangerouslySetInnerHTML={{
+                    __html:
+                      output ||
+                      "No output yet. Enable parser and load a file to start.",
+                  }}
                 />
               </div>
             </div>
-            <div id="viewer" className="hidden"></div>
+
+            {/* EPUB viewer placeholder */}
+            <div id="viewer" className="hidden" />
           </>
         )}
       </div>
