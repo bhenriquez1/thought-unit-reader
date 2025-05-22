@@ -2,23 +2,25 @@
 import { useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
+import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker.entry";
+
 import ePub from "epubjs";
 import Tesseract from "tesseract.js";
 import mammoth from "mammoth";
 import { improveBiomedicalParsing } from "../lib/parser";
+
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 
-// point at the unpkg CDN so we don't have to bundle a worker
-pdfjs.GlobalWorkerOptions.workerSrc = 
-  `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+// point PDF.js at the bundled worker:
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 export default function Home() {
   const [enabled, setEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fileUrl, setFileUrl] = useState<Blob | null>(null);
-  const [fileText, setFileText] = useState("");
+  const [fileText, setFileText] = useState<string>("");
   const [output, setOutput] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [manualEditMode, setManualEditMode] = useState(false);
@@ -26,21 +28,27 @@ export default function Home() {
   const [pdfError, setPdfError] = useState<string|null>(null);
   const [thumbnail, setThumbnail] = useState<string|null>(null);
 
-  const user = true;  // replace with real auth
+  // stubbed auth flag
+  const user = true;
 
-  // PDF → plain-text
+  // helper to extract PDF text page-by-page
   async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
-    const pdf = await pdfjs.getDocument({ data: buffer }).promise;
-    let txt = "";
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      txt += content.items.map((it:any)=>it.str).join(" ") + "\n";
+    try {
+      const pdf = await pdfjs.getDocument({ data: buffer }).promise;
+      let fullText = "";
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        fullText += content.items.map((item: any) => item.str).join(" ") + "\n";
+      }
+      return fullText;
+    } catch (err) {
+      console.error("PDF extract error:", err);
+      return "";
     }
-    return txt;
   }
 
-  // handle file drop
+  // handle file-selection & previews
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -48,34 +56,35 @@ export default function Home() {
     setPdfError(null);
     setUploadStatus("uploading");
 
-    // thumbnail preview
-    const tmp = URL.createObjectURL(file);
-    setThumbnail(tmp);
-    await new Promise(r => setTimeout(r, 300));
+    // show thumbnail
+    const tmpUrl = URL.createObjectURL(file);
+    setThumbnail(tmpUrl);
+    await new Promise(r => setTimeout(r, 200));
     setUploadStatus("done");
 
+    // PDF branch
     if (file.type === "application/pdf") {
-      // PDF
       const buf = await file.arrayBuffer();
       setFileUrl(new Blob([buf], { type: "application/pdf" }));
       setFileText(await extractTextFromPDF(buf));
 
+    // EPUB branch
     } else if (file.name.endsWith(".epub")) {
-      // EPUB
-      const book = ePub(tmp);
+      const book = ePub(tmpUrl);
       await book.ready;
       const spineItem = book.spine.get(0)!;
       const section = await spineItem.load(book.load.bind(book));
-      const text = await (section as any).text();
-      setFileText(text);
+      // use epubjs’s .text() API for plain text
+      const epubText = await (section as any).text();
+      setFileText(epubText);
 
+    // Image OCR
     } else if (file.type.startsWith("image/")) {
-      // OCR
-      const { data:{ text } } = await Tesseract.recognize(file, "eng");
+      const { data: { text } } = await Tesseract.recognize(file, "eng");
       setFileText(text);
 
+    // DOCX / TXT
     } else {
-      // DOCX or TXT
       const reader = new FileReader();
       reader.onload = async ev => {
         const res = ev.target?.result;
@@ -92,16 +101,17 @@ export default function Home() {
     }
   };
 
-  // run your AI parser
+  // kick off the parser
   const parseDocument = () => {
     if (!enabled || !fileText) return;
     setLoading(true);
     const parsed = improveBiomedicalParsing(fileText);
+    // simulate slight async delay
     setTimeout(() => {
       setOutput(parsed);
       setLoading(false);
       document.getElementById("thought-output")?.scrollIntoView({ behavior: "smooth" });
-    }, 500);
+    }, 400);
   };
 
   return (
@@ -116,12 +126,12 @@ export default function Home() {
         ) : (
           <>
             {/* Parser toggle */}
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex justify-between items-center mb-4">
               <Label htmlFor="toggleParser">Enable Parser</Label>
               <Switch id="toggleParser" checked={enabled} onCheckedChange={setEnabled} />
             </div>
 
-            {/* File input + preview */}
+            {/* File input & thumbnail */}
             <div className="mb-4">
               <input
                 type="file"
@@ -151,7 +161,7 @@ export default function Home() {
             </Button>
 
             <div className="grid grid-cols-2 gap-4">
-              {/* Original View */}
+              {/* Original PDF/EPUB viewer */}
               <div className="bg-gray-50 p-4 rounded-xl overflow-auto max-h-[60vh]">
                 <h2 className="font-semibold mb-2">📘 Original View</h2>
                 {fileUrl ? (
@@ -161,16 +171,16 @@ export default function Home() {
                     onLoadSuccess={({ numPages }) => setNumPages(numPages)}
                   >
                     {Array.from({ length: numPages }).map((_, i) => (
-                      <Page key={i} pageNumber={i+1} />
+                      <Page key={i} pageNumber={i + 1} />
                     ))}
                   </Document>
                 ) : (
                   <p className="italic text-gray-500">No PDF loaded.</p>
                 )}
-                {pdfError && <p className="text-red-500 mt-2">{pdfError}</p>}
+                {pdfError && <p className="text-red-500 mt-2">❌ {pdfError}</p>}
               </div>
 
-              {/* Thought-Unit Output */}
+              {/* Thought-Unit output */}
               <div
                 id="thought-output"
                 className="bg-white p-4 rounded-xl overflow-auto max-h-[60vh]"
