@@ -2,7 +2,8 @@
 import { useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
-import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker.entry";
+// pull in the built worker directly from pdfjs-dist:
+import pdfWorker from "pdfjs-dist/build/pdf.worker.entry";
 
 import ePub from "epubjs";
 import Tesseract from "tesseract.js";
@@ -13,14 +14,14 @@ import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 
-// point PDF.js at the bundled worker:
+// point PDF.js at our imported worker:
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 export default function Home() {
   const [enabled, setEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fileUrl, setFileUrl] = useState<Blob | null>(null);
-  const [fileText, setFileText] = useState<string>("");
+  const [fileText, setFileText] = useState("");
   const [output, setOutput] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [manualEditMode, setManualEditMode] = useState(false);
@@ -28,10 +29,10 @@ export default function Home() {
   const [pdfError, setPdfError] = useState<string|null>(null);
   const [thumbnail, setThumbnail] = useState<string|null>(null);
 
-  // stubbed auth flag
+  // stubbed auth
   const user = true;
 
-  // helper to extract PDF text page-by-page
+  // helper to pull plain text out of a PDF
   async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
     try {
       const pdf = await pdfjs.getDocument({ data: buffer }).promise;
@@ -48,7 +49,7 @@ export default function Home() {
     }
   }
 
-  // handle file-selection & previews
+  // handle file load + branching
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -56,34 +57,34 @@ export default function Home() {
     setPdfError(null);
     setUploadStatus("uploading");
 
-    // show thumbnail
-    const tmpUrl = URL.createObjectURL(file);
-    setThumbnail(tmpUrl);
+    // show thumbnail immediately
+    const tmp = URL.createObjectURL(file);
+    setThumbnail(tmp);
     await new Promise(r => setTimeout(r, 200));
     setUploadStatus("done");
 
-    // PDF branch
+    // PDF
     if (file.type === "application/pdf") {
       const buf = await file.arrayBuffer();
       setFileUrl(new Blob([buf], { type: "application/pdf" }));
       setFileText(await extractTextFromPDF(buf));
 
-    // EPUB branch
+    // EPUB
     } else if (file.name.endsWith(".epub")) {
-      const book = ePub(tmpUrl);
+      const book = ePub(tmp);
       await book.ready;
       const spineItem = book.spine.get(0)!;
       const section = await spineItem.load(book.load.bind(book));
-      // use epubjs’s .text() API for plain text
+      // epubjs.text() API → plain text
       const epubText = await (section as any).text();
       setFileText(epubText);
 
-    // Image OCR
+    // IMAGE OCR
     } else if (file.type.startsWith("image/")) {
       const { data: { text } } = await Tesseract.recognize(file, "eng");
       setFileText(text);
 
-    // DOCX / TXT
+    // DOCX or plain TXT
     } else {
       const reader = new FileReader();
       reader.onload = async ev => {
@@ -95,18 +96,16 @@ export default function Home() {
           setFileText(res);
         }
       };
-      file.name.endsWith(".docx")
-        ? reader.readAsArrayBuffer(file)
-        : reader.readAsText(file);
+      if (file.name.endsWith(".docx")) reader.readAsArrayBuffer(file);
+      else reader.readAsText(file);
     }
   };
 
-  // kick off the parser
+  // run your parser
   const parseDocument = () => {
     if (!enabled || !fileText) return;
     setLoading(true);
     const parsed = improveBiomedicalParsing(fileText);
-    // simulate slight async delay
     setTimeout(() => {
       setOutput(parsed);
       setLoading(false);
@@ -131,7 +130,7 @@ export default function Home() {
               <Switch id="toggleParser" checked={enabled} onCheckedChange={setEnabled} />
             </div>
 
-            {/* File input & thumbnail */}
+            {/* File input + thumbnail */}
             <div className="mb-4">
               <input
                 type="file"
