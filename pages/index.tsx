@@ -63,14 +63,14 @@ export default function Home() {
       setFileText(await extractTextFromPDF(buffer));
 
     } else if (file.name.endsWith(".epub")) {
-      // EPUB branch
+      // EPUB branch (fixed)
       const book = ePub(URL.createObjectURL(file));
       await book.ready;
       const spineItem = book.spine.get(0)!;
-      const html = await spineItem.load(book.load.bind(book));      // returns raw XHTML string
-      // parse via DOMParser
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, "text/html");
+      // .text() returns the XHTML string for this section
+      const xhtml = await spineItem.text();
+      // parse via DOMParser to strip tags
+      const doc = new DOMParser().parseFromString(xhtml, "text/html");
       setFileText(doc.body.textContent || "");
 
     } else if (file.type.startsWith("image/")) {
