@@ -66,10 +66,12 @@ export default function Home() {
       // EPUB branch
       const book = ePub(URL.createObjectURL(file));
       await book.ready;
-      const spineItem = book.spine.get(0);
-      const html = await spineItem.load(book.load.bind(book));
-      const parsed = new DOMParser().parseFromString(html, "text/html");
-      setFileText(parsed.body.textContent || "");
+      const spineItem = book.spine.get(0)!;
+      const html = await spineItem.load(book.load.bind(book));      // returns raw XHTML string
+      // parse via DOMParser
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+      setFileText(doc.body.textContent || "");
 
     } else if (file.type.startsWith("image/")) {
       // OCR branch
@@ -88,7 +90,9 @@ export default function Home() {
           setFileText(res);
         }
       };
-      file.name.endsWith(".docx") ? reader.readAsArrayBuffer(file) : reader.readAsText(file);
+      file.name.endsWith(".docx")
+        ? reader.readAsArrayBuffer(file)
+        : reader.readAsText(file);
     }
   };
 
