@@ -1,120 +1,177 @@
-// lib/parser.ts - Advanced Biochemistry Parser
-interface BiomedicalTerm {
+// lib/parser.ts - Universal Academic Text Parser
+interface AcademicTerm {
   term: string;
-  category: 'enzyme' | 'process' | 'structure' | 'molecule' | 'pathway' | 'technique' | 'cofactor' | 'inhibitor';
+  category: 'science' | 'math' | 'literature' | 'history' | 'philosophy' | 'psychology' | 'economics' | 'art' | 'language' | 'general';
+  subcategory?: string;
   color: string;
   description?: string;
+  subjects?: string[];
 }
 
-const biomedicalTerms: BiomedicalTerm[] = [
-  // Enzymes (Blue - #3B82F6)
-  { term: "enzyme-substrate complex", category: "enzyme", color: "#3B82F6", description: "Temporary complex formed between enzyme and substrate" },
-  { term: "RNA polymerase", category: "enzyme", color: "#3B82F6", description: "Enzyme that synthesizes RNA from DNA template" },
-  { term: "DNA polymerase", category: "enzyme", color: "#3B82F6", description: "Enzyme that synthesizes DNA strands" },
-  { term: "ATP synthase", category: "enzyme", color: "#3B82F6", description: "Enzyme that produces ATP from ADP and phosphate" },
-  { term: "cytochrome c oxidase", category: "enzyme", color: "#3B82F6", description: "Final enzyme in electron transport chain" },
-  { term: "catalase", category: "enzyme", color: "#3B82F6", description: "Enzyme that breaks down hydrogen peroxide" },
-  { term: "amylase", category: "enzyme", color: "#3B82F6", description: "Enzyme that breaks down starch" },
-  { term: "pepsin", category: "enzyme", color: "#3B82F6", description: "Digestive enzyme that breaks down proteins" },
-  { term: "trypsin", category: "enzyme", color: "#3B82F6", description: "Pancreatic enzyme that cleaves proteins" },
-  { term: "chymotrypsin", category: "enzyme", color: "#3B82F6", description: "Digestive enzyme that cleaves peptide bonds" },
-  { term: "lipase", category: "enzyme", color: "#3B82F6", description: "Enzyme that breaks down lipids" },
-  { term: "phosphatase", category: "enzyme", color: "#3B82F6", description: "Enzyme that removes phosphate groups" },
-  { term: "kinase", category: "enzyme", color: "#3B82F6", description: "Enzyme that adds phosphate groups" },
-  { term: "dehydrogenase", category: "enzyme", color: "#3B82F6", description: "Enzyme that removes hydrogen atoms" },
-  { term: "oxidase", category: "enzyme", color: "#3B82F6", description: "Enzyme that catalyzes oxidation reactions" },
-  { term: "reductase", category: "enzyme", color: "#3B82F6", description: "Enzyme that catalyzes reduction reactions" },
-  { term: "transferase", category: "enzyme", color: "#3B82F6", description: "Enzyme that transfers functional groups" },
-  { term: "hydrolase", category: "enzyme", color: "#3B82F6", description: "Enzyme that uses water to break bonds" },
-  { term: "isomerase", category: "enzyme", color: "#3B82F6", description: "Enzyme that rearranges molecular structure" },
-  { term: "ligase", category: "enzyme", color: "#3B82F6", description: "Enzyme that joins molecules together" },
+const academicTerms: AcademicTerm[] = [
+  // Science Terms (Blue - #3B82F6)
+  { term: "hypothesis", category: "science", color: "#3B82F6", description: "Testable prediction or explanation", subjects: ["Biology", "Chemistry", "Physics"] },
+  { term: "experiment", category: "science", color: "#3B82F6", description: "Controlled test of a hypothesis" },
+  { term: "variable", category: "science", color: "#3B82F6", description: "Factor that can change in an experiment" },
+  { term: "control group", category: "science", color: "#3B82F6", description: "Standard for comparison in experiments" },
+  { term: "data analysis", category: "science", color: "#3B82F6", description: "Process of examining experimental results" },
+  { term: "scientific method", category: "science", color: "#3B82F6", description: "Systematic approach to research" },
+  { term: "peer review", category: "science", color: "#3B82F6", description: "Evaluation by experts in the field" },
+  { term: "replication", category: "science", color: "#3B82F6", description: "Repeating experiments to verify results" },
+  
+  // Biology
+  { term: "evolution", category: "science", subcategory: "biology", color: "#3B82F6", description: "Change in species over time" },
+  { term: "natural selection", category: "science", subcategory: "biology", color: "#3B82F6", description: "Survival of the fittest mechanism" },
+  { term: "DNA", category: "science", subcategory: "biology", color: "#3B82F6", description: "Genetic material" },
+  { term: "ecosystem", category: "science", subcategory: "biology", color: "#3B82F6", description: "Community of organisms and environment" },
+  { term: "photosynthesis", category: "science", subcategory: "biology", color: "#3B82F6", description: "Process plants use to make energy" },
+  { term: "cell division", category: "science", subcategory: "biology", color: "#3B82F6", description: "Process of cells reproducing" },
+  
+  // Chemistry
+  { term: "chemical reaction", category: "science", subcategory: "chemistry", color: "#3B82F6", description: "Process where substances change" },
+  { term: "atomic structure", category: "science", subcategory: "chemistry", color: "#3B82F6", description: "Organization of atoms" },
+  { term: "periodic table", category: "science", subcategory: "chemistry", color: "#3B82F6", description: "Organization of elements" },
+  { term: "covalent bond", category: "science", subcategory: "chemistry", color: "#3B82F6", description: "Shared electron bond" },
+  { term: "ionic bond", category: "science", subcategory: "chemistry", color: "#3B82F6", description: "Electron transfer bond" },
+  { term: "pH", category: "science", subcategory: "chemistry", color: "#3B82F6", description: "Measure of acidity" },
+  
+  // Physics
+  { term: "force", category: "science", subcategory: "physics", color: "#3B82F6", description: "Push or pull on an object" },
+  { term: "acceleration", category: "science", subcategory: "physics", color: "#3B82F6", description: "Rate of change of velocity" },
+  { term: "energy", category: "science", subcategory: "physics", color: "#3B82F6", description: "Ability to do work" },
+  { term: "wave", category: "science", subcategory: "physics", color: "#3B82F6", description: "Disturbance that transfers energy" },
+  { term: "electromagnetic radiation", category: "science", subcategory: "physics", color: "#3B82F6", description: "Energy transmitted as waves" },
+  { term: "quantum mechanics", category: "science", subcategory: "physics", color: "#3B82F6", description: "Physics of very small particles" },
 
-  // Processes (Green - #10B981)
-  { term: "signal transduction", category: "process", color: "#10B981", description: "Process of cellular communication" },
-  { term: "DNA replication", category: "process", color: "#10B981", description: "Process of copying DNA" },
-  { term: "transcription", category: "process", color: "#10B981", description: "Process of making RNA from DNA" },
-  { term: "translation", category: "process", color: "#10B981", description: "Process of making proteins from RNA" },
-  { term: "oxidative phosphorylation", category: "process", color: "#10B981", description: "Process of ATP synthesis using oxygen" },
-  { term: "apoptosis", category: "process", color: "#10B981", description: "Programmed cell death" },
-  { term: "mitosis", category: "process", color: "#10B981", description: "Cell division process" },
-  { term: "meiosis", category: "process", color: "#10B981", description: "Gamete formation process" },
-  { term: "cell division", category: "process", color: "#10B981", description: "Process of one cell becoming two" },
-  { term: "cellular respiration", category: "process", color: "#10B981", description: "Process of extracting energy from glucose" },
-  { term: "photosynthesis", category: "process", color: "#10B981", description: "Process of converting light to chemical energy" },
-  { term: "protein synthesis", category: "process", color: "#10B981", description: "Process of making proteins" },
-  { term: "enzyme catalysis", category: "process", color: "#10B981", description: "Process of enzymatic reactions" },
+  // Mathematics (Purple - #8B5CF6)
+  { term: "theorem", category: "math", color: "#8B5CF6", description: "Proven mathematical statement" },
+  { term: "proof", category: "math", color: "#8B5CF6", description: "Logical demonstration of truth" },
+  { term: "equation", category: "math", color: "#8B5CF6", description: "Mathematical statement of equality" },
+  { term: "function", category: "math", color: "#8B5CF6", description: "Relationship between input and output" },
+  { term: "derivative", category: "math", color: "#8B5CF6", description: "Rate of change in calculus" },
+  { term: "integral", category: "math", color: "#8B5CF6", description: "Area under curve in calculus" },
+  { term: "limit", category: "math", color: "#8B5CF6", description: "Value a function approaches" },
+  { term: "matrix", category: "math", color: "#8B5CF6", description: "Rectangular array of numbers" },
+  { term: "probability", category: "math", color: "#8B5CF6", description: "Likelihood of an event" },
+  { term: "statistics", category: "math", color: "#8B5CF6", description: "Analysis of numerical data" },
+  { term: "algorithm", category: "math", color: "#8B5CF6", description: "Step-by-step procedure" },
+  { term: "variable", category: "math", color: "#8B5CF6", description: "Symbol representing a number" },
 
-  // Pathways (Purple - #8B5CF6)
-  { term: "glycolysis", category: "pathway", color: "#8B5CF6", description: "Metabolic pathway that breaks down glucose" },
-  { term: "citric acid cycle", category: "pathway", color: "#8B5CF6", description: "Central metabolic pathway" },
-  { term: "Krebs cycle", category: "pathway", color: "#8B5CF6", description: "Another name for citric acid cycle" },
-  { term: "electron transport chain", category: "pathway", color: "#8B5CF6", description: "Pathway for ATP synthesis" },
-  { term: "Calvin cycle", category: "pathway", color: "#8B5CF6", description: "Photosynthetic carbon fixation pathway" },
-  { term: "pentose phosphate pathway", category: "pathway", color: "#8B5CF6", description: "Alternative glucose metabolism pathway" },
-  { term: "gluconeogenesis", category: "pathway", color: "#8B5CF6", description: "Pathway for glucose synthesis" },
-  { term: "fatty acid synthesis", category: "pathway", color: "#8B5CF6", description: "Pathway for making fatty acids" },
-  { term: "beta oxidation", category: "pathway", color: "#8B5CF6", description: "Pathway for breaking down fatty acids" },
+  // Literature (Green - #10B981)
+  { term: "metaphor", category: "literature", color: "#10B981", description: "Comparison without using like or as" },
+  { term: "symbolism", category: "literature", color: "#10B981", description: "Use of symbols to represent ideas" },
+  { term: "irony", category: "literature", color: "#10B981", description: "Expression of meaning through opposite" },
+  { term: "foreshadowing", category: "literature", color: "#10B981", description: "Hints about future events" },
+  { term: "characterization", category: "literature", color: "#10B981", description: "Development of characters" },
+  { term: "theme", category: "literature", color: "#10B981", description: "Central message or meaning" },
+  { term: "narrative", category: "literature", color: "#10B981", description: "Story or account of events" },
+  { term: "protagonist", category: "literature", color: "#10B981", description: "Main character" },
+  { term: "antagonist", category: "literature", color: "#10B981", description: "Character opposing protagonist" },
+  { term: "alliteration", category: "literature", color: "#10B981", description: "Repetition of initial sounds" },
+  { term: "allegory", category: "literature", color: "#10B981", description: "Extended metaphor" },
+  { term: "imagery", category: "literature", color: "#10B981", description: "Vivid descriptive language" },
 
-  // Molecules (Red - #EF4444)
-  { term: "adenosine triphosphate", category: "molecule", color: "#EF4444", description: "Energy currency of the cell" },
-  { term: "ATP", category: "molecule", color: "#EF4444", description: "Adenosine triphosphate" },
-  { term: "ADP", category: "molecule", color: "#EF4444", description: "Adenosine diphosphate" },
-  { term: "NADH", category: "molecule", color: "#EF4444", description: "Reduced nicotinamide adenine dinucleotide" },
-  { term: "NAD+", category: "molecule", color: "#EF4444", description: "Oxidized nicotinamide adenine dinucleotide" },
-  { term: "FADH2", category: "molecule", color: "#EF4444", description: "Reduced flavin adenine dinucleotide" },
-  { term: "FAD", category: "molecule", color: "#EF4444", description: "Flavin adenine dinucleotide" },
-  { term: "glucose", category: "molecule", color: "#EF4444", description: "Simple sugar and energy source" },
-  { term: "pyruvate", category: "molecule", color: "#EF4444", description: "Product of glycolysis" },
-  { term: "acetyl-CoA", category: "molecule", color: "#EF4444", description: "Key metabolic intermediate" },
-  { term: "hemoglobin", category: "molecule", color: "#EF4444", description: "Oxygen-carrying protein" },
-  { term: "insulin", category: "molecule", color: "#EF4444", description: "Hormone that regulates glucose" },
-  { term: "collagen", category: "molecule", color: "#EF4444", description: "Structural protein" },
-  { term: "myosin", category: "molecule", color: "#EF4444", description: "Motor protein for muscle contraction" },
-  { term: "actin", category: "molecule", color: "#EF4444", description: "Cytoskeletal protein" },
+  // History (Red - #EF4444)
+  { term: "primary source", category: "history", color: "#EF4444", description: "Original historical document" },
+  { term: "secondary source", category: "history", color: "#EF4444", description: "Analysis of primary sources" },
+  { term: "chronology", category: "history", color: "#EF4444", description: "Order of events in time" },
+  { term: "causation", category: "history", color: "#EF4444", description: "Cause and effect relationships" },
+  { term: "historiography", category: "history", color: "#EF4444", description: "Study of historical writing" },
+  { term: "civilization", category: "history", color: "#EF4444", description: "Advanced human society" },
+  { term: "revolution", category: "history", color: "#EF4444", description: "Major political or social change" },
+  { term: "empire", category: "history", color: "#EF4444", description: "Large political unit" },
+  { term: "democracy", category: "history", color: "#EF4444", description: "Government by the people" },
+  { term: "feudalism", category: "history", color: "#EF4444", description: "Medieval social system" },
+  { term: "renaissance", category: "history", color: "#EF4444", description: "Period of cultural rebirth" },
+  { term: "enlightenment", category: "history", color: "#EF4444", description: "Age of reason and science" },
 
-  // Structures (Indigo - #6366F1)
-  { term: "mitochondria", category: "structure", color: "#6366F1", description: "Powerhouse of the cell" },
-  { term: "ribosome", category: "structure", color: "#6366F1", description: "Protein synthesis machinery" },
-  { term: "endoplasmic reticulum", category: "structure", color: "#6366F1", description: "Protein and lipid synthesis organelle" },
-  { term: "cell membrane", category: "structure", color: "#6366F1", description: "Barrier that surrounds cells" },
-  { term: "nucleus", category: "structure", color: "#6366F1", description: "Control center containing DNA" },
-  { term: "chloroplast", category: "structure", color: "#6366F1", description: "Photosynthesis organelle" },
-  { term: "Golgi apparatus", category: "structure", color: "#6366F1", description: "Protein modification organelle" },
-  { term: "lysosome", category: "structure", color: "#6366F1", description: "Cellular digestion organelle" },
-  { term: "cytoplasm", category: "structure", color: "#6366F1", description: "Gel-like substance in cells" },
-  { term: "cell wall", category: "structure", color: "#6366F1", description: "Rigid structure around plant cells" },
+  // Philosophy (Indigo - #6366F1)
+  { term: "logic", category: "philosophy", color: "#6366F1", description: "Study of reasoning" },
+  { term: "ethics", category: "philosophy", color: "#6366F1", description: "Study of moral principles" },
+  { term: "metaphysics", category: "philosophy", color: "#6366F1", description: "Study of reality and existence" },
+  { term: "epistemology", category: "philosophy", color: "#6366F1", description: "Study of knowledge" },
+  { term: "determinism", category: "philosophy", color: "#6366F1", description: "Theory that events are predetermined" },
+  { term: "free will", category: "philosophy", color: "#6366F1", description: "Ability to make choices" },
+  { term: "consciousness", category: "philosophy", color: "#6366F1", description: "State of awareness" },
+  { term: "ontology", category: "philosophy", color: "#6366F1", description: "Study of being" },
+  { term: "dialectic", category: "philosophy", color: "#6366F1", description: "Method of philosophical argument" },
+  { term: "empiricism", category: "philosophy", color: "#6366F1", description: "Knowledge from experience" },
 
-  // Techniques/Concepts (Amber - #F59E0B)
-  { term: "Michaelis-Menten kinetics", category: "technique", color: "#F59E0B", description: "Mathematical model of enzyme kinetics" },
-  { term: "rate-limiting step", category: "technique", color: "#F59E0B", description: "Slowest step in a reaction pathway" },
-  { term: "competitive inhibition", category: "technique", color: "#F59E0B", description: "Inhibitor competes with substrate" },
-  { term: "non-competitive inhibition", category: "technique", color: "#F59E0B", description: "Inhibitor binds to different site" },
-  { term: "allosteric regulation", category: "technique", color: "#F59E0B", description: "Regulation through conformational changes" },
-  { term: "enzyme kinetics", category: "technique", color: "#F59E0B", description: "Study of enzyme reaction rates" },
-  { term: "feedback inhibition", category: "technique", color: "#F59E0B", description: "Product inhibits its own synthesis" },
-  { term: "cooperativity", category: "technique", color: "#F59E0B", description: "Binding of one ligand affects others" },
+  // Psychology (Pink - #EC4899)
+  { term: "cognition", category: "psychology", color: "#EC4899", description: "Mental processes of thinking" },
+  { term: "behavior", category: "psychology", color: "#EC4899", description: "Observable actions" },
+  { term: "conditioning", category: "psychology", color: "#EC4899", description: "Learning through association" },
+  { term: "memory", category: "psychology", color: "#EC4899", description: "Process of storing information" },
+  { term: "perception", category: "psychology", color: "#EC4899", description: "Interpretation of sensory input" },
+  { term: "personality", category: "psychology", color: "#EC4899", description: "Individual patterns of thinking" },
+  { term: "motivation", category: "psychology", color: "#EC4899", description: "Drive to act or behave" },
+  { term: "attachment", category: "psychology", color: "#EC4899", description: "Emotional bond" },
+  { term: "cognitive bias", category: "psychology", color: "#EC4899", description: "Systematic error in thinking" },
+  { term: "neuroplasticity", category: "psychology", color: "#EC4899", description: "Brain's ability to reorganize" },
 
-  // Cofactors (Teal - #14B8A6)
-  { term: "coenzyme A", category: "cofactor", color: "#14B8A6", description: "Important metabolic cofactor" },
-  { term: "biotin", category: "cofactor", color: "#14B8A6", description: "Vitamin B7, carboxylation cofactor" },
-  { term: "thiamine", category: "cofactor", color: "#14B8A6", description: "Vitamin B1" },
-  { term: "riboflavin", category: "cofactor", color: "#14B8A6", description: "Vitamin B2, precursor to FAD" },
-  { term: "niacin", category: "cofactor", color: "#14B8A6", description: "Vitamin B3, precursor to NAD+" },
-  { term: "magnesium", category: "cofactor", color: "#14B8A6", description: "Metal cofactor for many enzymes" },
-  { term: "zinc", category: "cofactor", color: "#14B8A6", description: "Metal cofactor" },
-  { term: "iron", category: "cofactor", color: "#14B8A6", description: "Metal cofactor in heme" },
+  // Economics (Amber - #F59E0B)
+  { term: "supply and demand", category: "economics", color: "#F59E0B", description: "Market forces determining price" },
+  { term: "inflation", category: "economics", color: "#F59E0B", description: "General increase in prices" },
+  { term: "GDP", category: "economics", color: "#F59E0B", description: "Gross Domestic Product" },
+  { term: "market economy", category: "economics", color: "#F59E0B", description: "Economy driven by supply and demand" },
+  { term: "capitalism", category: "economics", color: "#F59E0B", description: "Private ownership economic system" },
+  { term: "socialism", category: "economics", color: "#F59E0B", description: "Social ownership economic system" },
+  { term: "monopoly", category: "economics", color: "#F59E0B", description: "Single seller in a market" },
+  { term: "elasticity", category: "economics", color: "#F59E0B", description: "Responsiveness to price changes" },
+  { term: "opportunity cost", category: "economics", color: "#F59E0B", description: "Cost of next best alternative" },
+  { term: "fiscal policy", category: "economics", color: "#F59E0B", description: "Government spending and taxation" },
 
-  // Inhibitors (Pink - #EC4899)
-  { term: "cyanide", category: "inhibitor", color: "#EC4899", description: "Inhibitor of cytochrome c oxidase" },
-  { term: "oligomycin", category: "inhibitor", color: "#EC4899", description: "ATP synthase inhibitor" },
-  { term: "rotenone", category: "inhibitor", color: "#EC4899", description: "Complex I inhibitor" },
-  { term: "antimycin A", category: "inhibitor", color: "#EC4899", description: "Complex III inhibitor" },
+  // Art (Teal - #14B8A6)
+  { term: "composition", category: "art", color: "#14B8A6", description: "Arrangement of visual elements" },
+  { term: "perspective", category: "art", color: "#14B8A6", description: "Representation of 3D space" },
+  { term: "chiaroscuro", category: "art", color: "#14B8A6", description: "Light and shadow contrast" },
+  { term: "renaissance", category: "art", color: "#14B8A6", description: "European art movement" },
+  { term: "impressionism", category: "art", color: "#14B8A6", description: "19th century art movement" },
+  { term: "abstract", category: "art", color: "#14B8A6", description: "Non-representational art" },
+  { term: "medium", category: "art", color: "#14B8A6", description: "Material used in artwork" },
+  { term: "palette", category: "art", color: "#14B8A6", description: "Range of colors used" },
+  { term: "texture", category: "art", color: "#14B8A6", description: "Surface quality" },
+  { term: "symmetry", category: "art", color: "#14B8A6", description: "Balanced proportions" },
+
+  // Language (Cyan - #06B6D4)
+  { term: "syntax", category: "language", color: "#06B6D4", description: "Rules for sentence structure" },
+  { term: "grammar", category: "language", color: "#06B6D4", description: "Rules of language" },
+  { term: "phonetics", category: "language", color: "#06B6D4", description: "Study of speech sounds" },
+  { term: "morphology", category: "language", color: "#06B6D4", description: "Study of word structure" },
+  { term: "semantics", category: "language", color: "#06B6D4", description: "Study of meaning" },
+  { term: "etymology", category: "language", color: "#06B6D4", description: "Origin and history of words" },
+  { term: "dialect", category: "language", color: "#06B6D4", description: "Regional variety of language" },
+  { term: "rhetoric", category: "language", color: "#06B6D4", description: "Art of persuasive speaking" },
+  { term: "literary device", category: "language", color: "#06B6D4", description: "Technique used in writing" },
+  { term: "conjugation", category: "language", color: "#06B6D4", description: "Verb form changes" },
+
+  // General Academic (Gray - #6B7280)
+  { term: "analysis", category: "general", color: "#6B7280", description: "Detailed examination" },
+  { term: "synthesis", category: "general", color: "#6B7280", description: "Combining ideas" },
+  { term: "evaluation", category: "general", color: "#6B7280", description: "Assessment of worth" },
+  { term: "interpretation", category: "general", color: "#6B7280", description: "Explanation of meaning" },
+  { term: "methodology", category: "general", color: "#6B7280", description: "System of methods" },
+  { term: "theory", category: "general", color: "#6B7280", description: "Explanation of phenomena" },
+  { term: "concept", category: "general", color: "#6B7280", description: "Abstract idea" },
+  { term: "principle", category: "general", color: "#6B7280", description: "Fundamental truth" },
+  { term: "criterion", category: "general", color: "#6B7280", description: "Standard for judgment" },
+  { term: "paradigm", category: "general", color: "#6B7280", description: "Framework of ideas" },
+  { term: "correlation", category: "general", color: "#6B7280", description: "Relationship between variables" },
+  { term: "significance", category: "general", color: "#6B7280", description: "Importance or meaning" },
+  { term: "context", category: "general", color: "#6B7280", description: "Surrounding circumstances" },
+  { term: "evidence", category: "general", color: "#6B7280", description: "Information supporting conclusions" },
+  { term: "conclusion", category: "general", color: "#6B7280", description: "Final judgment or decision" },
+  { term: "assumption", category: "general", color: "#6B7280", description: "Something taken for granted" },
+  { term: "implication", category: "general", color: "#6B7280", description: "Logical consequence" },
+  { term: "perspective", category: "general", color: "#6B7280", description: "Point of view" },
+  { term: "framework", category: "general", color: "#6B7280", description: "Basic structure" },
+  { term: "dimension", category: "general", color: "#6B7280", description: "Aspect or feature" }
 ];
 
 interface ParsedSegment {
   text: string;
   isTerm: boolean;
-  term?: BiomedicalTerm;
+  term?: AcademicTerm;
   thoughtUnit: number;
 }
 
@@ -124,6 +181,39 @@ interface AnalysisStats {
   totalWords: number;
   categoryCounts: Record<string, number>;
   uniqueTerms: number;
+  subjectFocus: string;
+  academicLevel: string;
+}
+
+// Subject detection based on term frequency
+function detectSubjectFocus(categoryCounts: Record<string, number>): string {
+  const totalTerms = Object.values(categoryCounts).reduce((sum, count) => sum + count, 0);
+  if (totalTerms === 0) return "General";
+
+  const percentages = Object.entries(categoryCounts).map(([category, count]) => ({
+    category,
+    percentage: (count / totalTerms) * 100
+  }));
+
+  percentages.sort((a, b) => b.percentage - a.percentage);
+
+  const dominant = percentages[0];
+  if (dominant.percentage > 40) {
+    return dominant.category.charAt(0).toUpperCase() + dominant.category.slice(1);
+  } else if (dominant.percentage > 25) {
+    return `${dominant.category.charAt(0).toUpperCase() + dominant.category.slice(1)} (Mixed)`;
+  } else {
+    return "Interdisciplinary";
+  }
+}
+
+function determineAcademicLevel(uniqueTerms: number, totalWords: number): string {
+  const termDensity = (uniqueTerms / totalWords) * 100;
+  
+  if (termDensity > 15 || uniqueTerms > 25) return "Graduate/Advanced";
+  if (termDensity > 8 || uniqueTerms > 15) return "Undergraduate";
+  if (termDensity > 4 || uniqueTerms > 8) return "High School";
+  return "Middle School/Introductory";
 }
 
 export function improveBiomedicalParsing(text: string): string {
@@ -153,10 +243,10 @@ export function improveBiomedicalParsing(text: string): string {
   const categoryCounts: Record<string, number> = {};
 
   sentences.forEach((sentence) => {
-    const foundTerms: Array<{ term: BiomedicalTerm; startIndex: number; endIndex: number }> = [];
+    const foundTerms: Array<{ term: AcademicTerm; startIndex: number; endIndex: number }> = [];
 
-    // Find all biomedical terms in this sentence
-    biomedicalTerms.forEach(termObj => {
+    // Find all academic terms in this sentence
+    academicTerms.forEach(termObj => {
       const regex = new RegExp(`\\b${termObj.term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
       let match;
       
@@ -235,12 +325,17 @@ export function improveBiomedicalParsing(text: string): string {
   // Calculate comprehensive statistics
   const totalWords = normalizedText.split(/\s+/).length;
   const totalTerms = segments.filter(s => s.isTerm).length;
+  const subjectFocus = detectSubjectFocus(categoryCounts);
+  const academicLevel = determineAcademicLevel(foundTermsSet.size, totalWords);
+
   const stats: AnalysisStats = {
     totalSentences: sentences.length,
     totalTerms,
     totalWords,
     categoryCounts,
-    uniqueTerms: foundTermsSet.size
+    uniqueTerms: foundTermsSet.size,
+    subjectFocus,
+    academicLevel
   };
 
   // Generate HTML output with enhanced styling
@@ -248,9 +343,10 @@ export function improveBiomedicalParsing(text: string): string {
     const thoughtUnitClass = segment.thoughtUnit % 2 === 0 ? 'bg-blue-50' : 'bg-gray-50';
     
     if (segment.isTerm && segment.term) {
+      const subcategoryText = segment.term.subcategory ? ` (${segment.term.subcategory})` : '';
       return `<span class="inline-block px-2 py-1 rounded-md text-white font-medium shadow-sm mr-1 mb-1 cursor-help transition-all hover:scale-105" 
                     style="background-color: ${segment.term.color};" 
-                    title="${segment.term.category.toUpperCase()}: ${segment.term.description || segment.term.term}">${segment.text}</span>`;
+                    title="${segment.term.category.toUpperCase()}${subcategoryText}: ${segment.term.description || segment.term.term}">${segment.text}</span>`;
     } else {
       const baseColor = segment.thoughtUnit % 2 === 0 ? '#1F2937' : '#374151';
       return `<span style="color: ${baseColor}; padding: 2px;" class="${thoughtUnitClass} rounded px-1">${segment.text}</span>`;
@@ -258,34 +354,34 @@ export function improveBiomedicalParsing(text: string): string {
   });
 
   // Create enhanced legend with counts
-  const categories = [...new Set(biomedicalTerms.map(t => t.category))];
+  const categories = [...new Set(academicTerms.map(t => t.category))];
   const legend = categories.map(category => {
-    const exampleTerm = biomedicalTerms.find(t => t.category === category);
+    const exampleTerm = academicTerms.find(t => t.category === category);
     const count = categoryCounts[category] || 0;
-    const opacity = count > 0 ? '1' : '0.5';
-    return `<span class="inline-flex items-center px-3 py-1 rounded-full text-white text-xs font-medium mr-2 mb-2 shadow-sm" 
+    const opacity = count > 0 ? '1' : '0.4';
+    const categoryName = category.charAt(0).toUpperCase() + category.slice(1);
+    return `<span class="inline-flex items-center px-3 py-1 rounded-full text-white text-xs font-medium mr-2 mb-2 shadow-sm transition-opacity" 
                   style="background-color: ${exampleTerm?.color}; opacity: ${opacity}">
-              ${category} (${count})
+              ${categoryName} (${count})
             </span>`;
   }).join('');
 
   // Calculate density and complexity metrics
   const termDensity = ((totalTerms / totalWords) * 100).toFixed(1);
-  const complexity = stats.uniqueTerms > 15 ? 'High' : stats.uniqueTerms > 8 ? 'Medium' : 'Low';
 
   return `
     <div class="space-y-6">
       <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-200">
         <h3 class="font-bold text-blue-800 mb-4 flex items-center">
-          📊 Advanced Analysis Results
+          📊 Academic Analysis Results
         </h3>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
           <div class="bg-white p-3 rounded-lg shadow-sm">
             <div class="font-semibold text-gray-700">Sentences</div>
             <div class="text-xl font-bold text-blue-600">${stats.totalSentences}</div>
           </div>
           <div class="bg-white p-3 rounded-lg shadow-sm">
-            <div class="font-semibold text-gray-700">Terms Found</div>
+            <div class="font-semibold text-gray-700">Academic Terms</div>
             <div class="text-xl font-bold text-green-600">${stats.totalTerms}</div>
           </div>
           <div class="bg-white p-3 rounded-lg shadow-sm">
@@ -297,15 +393,21 @@ export function improveBiomedicalParsing(text: string): string {
             <div class="text-xl font-bold text-orange-600">${termDensity}%</div>
           </div>
         </div>
-        <div class="mt-4 text-sm text-gray-600">
-          <strong>Complexity Level:</strong> <span class="font-semibold ${complexity === 'High' ? 'text-red-600' : complexity === 'Medium' ? 'text-yellow-600' : 'text-green-600'}">${complexity}</span>
-          | <strong>Scientific Focus:</strong> ${stats.uniqueTerms > 10 ? 'Highly Technical' : stats.uniqueTerms > 5 ? 'Moderate' : 'Basic'}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div class="bg-white p-3 rounded-lg shadow-sm">
+            <div class="font-semibold text-gray-700">Subject Focus</div>
+            <div class="text-lg font-bold text-indigo-600">${stats.subjectFocus}</div>
+          </div>
+          <div class="bg-white p-3 rounded-lg shadow-sm">
+            <div class="font-semibold text-gray-700">Academic Level</div>
+            <div class="text-lg font-bold text-teal-600">${stats.academicLevel}</div>
+          </div>
         </div>
       </div>
       
       <div class="bg-gray-50 p-4 rounded-xl border">
         <h4 class="font-semibold text-gray-700 mb-3 flex items-center">
-          🏷️ Term Categories Found:
+          🏷️ Academic Categories Found:
         </h4>
         <div class="flex flex-wrap">
           ${legend}
@@ -323,13 +425,13 @@ export function improveBiomedicalParsing(text: string): string {
       
       <div class="text-xs text-gray-500 bg-gray-100 p-3 rounded-lg">
         <div class="flex items-center mb-2">
-          <span class="font-semibold">💡 Analysis Guide:</span>
+          <span class="font-semibold">💡 Universal Analysis Guide:</span>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <div><strong>Thought Units:</strong> Alternating backgrounds separate sentences</div>
+          <div><strong>Subject Detection:</strong> Automatically identifies academic focus</div>
+          <div><strong>Level Assessment:</strong> Determines academic complexity</div>
+          <div><strong>Multi-disciplinary:</strong> Works with all academic subjects</div>
           <div><strong>Hover Terms:</strong> See descriptions and categories</div>
-          <div><strong>Color Coding:</strong> Each category has a unique color</div>
-          <div><strong>Density:</strong> Higher % indicates more technical content</div>
         </div>
       </div>
     </div>
@@ -337,4 +439,4 @@ export function improveBiomedicalParsing(text: string): string {
 }
 
 // Export for potential future use
-export { biomedicalTerms, type BiomedicalTerm, type AnalysisStats };
+export { academicTerms, type AcademicTerm, type AnalysisStats };

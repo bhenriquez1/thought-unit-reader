@@ -1,4 +1,4 @@
-// pages/index.tsx - Enhanced Parser with PDF Support
+// pages/index.tsx - Universal Academic Text Analyzer
 import { useState, useCallback } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
@@ -29,15 +29,23 @@ export default function Home() {
   const [numPages, setNumPages] = useState(0);
   const [fileName, setFileName] = useState("");
 
-  // Sample biochemistry texts for testing
+  // Universal academic sample texts
   const sampleTexts = {
-    enzymes: `Enzymes are biological catalysts that accelerate biochemical reactions. The enzyme-substrate complex forms when a substrate binds to the enzyme's active site. Michaelis-Menten kinetics describes the rate of enzymatic reactions. ATP synthase is crucial for oxidative phosphorylation in mitochondria. The rate-limiting step often determines the overall reaction speed. Competitive inhibition occurs when inhibitors compete with substrates for binding sites.`,
+    science: `The scientific method involves forming a hypothesis, designing an experiment with proper control groups, and analyzing data to test predictions. Variables must be carefully controlled to ensure valid results. Peer review ensures that scientific findings are reliable and reproducible through replication.`,
     
-    metabolism: `Glycolysis is the metabolic pathway that converts glucose into pyruvate, generating ATP and NADH. The citric acid cycle, also known as the Krebs cycle, occurs in mitochondria where acetyl-CoA is oxidized. NADH and FADH2 are important electron carriers in cellular respiration. The electron transport chain creates a proton gradient for ATP synthesis through oxidative phosphorylation.`,
+    mathematics: `A function is a mathematical relationship between input and output values. The derivative of a function represents its rate of change, while the integral represents the area under the curve. These concepts form the foundation of calculus and are used to solve complex equations and prove mathematical theorems.`,
     
-    cellBiology: `The nucleus contains the cell's genetic material and controls gene expression. Ribosomes are responsible for protein synthesis through translation of mRNA. The endoplasmic reticulum processes and modifies proteins after synthesis. Cell division occurs through mitosis in somatic cells and meiosis in gametes. Signal transduction pathways allow cells to respond to environmental changes and hormonal signals.`,
+    literature: `The author uses symbolism and metaphor to convey deeper meaning in the narrative. Characterization develops through dialogue and actions, while foreshadowing hints at future events. The protagonist's journey represents a universal theme about human nature and the conflict between individual desires and social expectations.`,
     
-    pelleyChapter6: `Enzyme kinetics follows Michaelis-Menten principles where the enzyme-substrate complex forms reversibly. Competitive inhibition occurs when inhibitors compete with substrates for the active site. Non-competitive inhibition involves binding to allosteric sites. Cofactors like NAD+ and FAD are essential for many enzymatic reactions. Allosteric regulation affects enzyme activity through conformational changes. The rate-limiting step determines overall pathway flux.`
+    history: `Primary sources provide direct evidence from historical periods, while secondary sources offer analysis and interpretation of events. Understanding causation and chronology helps historians reconstruct civilizations and trace the development of democratic institutions through different revolutionary periods.`,
+    
+    philosophy: `Epistemology examines how we acquire knowledge and what constitutes valid reasoning. The question of free will versus determinism has implications for ethics and moral responsibility. Logic provides the framework for analyzing arguments and distinguishing valid conclusions from fallacious reasoning.`,
+    
+    psychology: `Cognitive psychology studies mental processes including memory, perception, and learning. Conditioning experiments demonstrate how behavior can be modified through association. Research on neuroplasticity shows that the brain can reorganize itself, challenging earlier assumptions about fixed neural pathways.`,
+    
+    economics: `Supply and demand determine market prices in a capitalist economy. Inflation occurs when there is too much money chasing too few goods. GDP measures economic output, while fiscal policy involves government decisions about taxation and spending to influence economic growth and employment.`,
+    
+    biology: `Evolution through natural selection explains the diversity of life on Earth. DNA contains genetic information that is replicated during cell division. Ecosystems maintain balance through complex interactions between organisms and their environment, including processes like photosynthesis that convert solar energy into chemical energy.`
   };
 
   // Helper to extract text from PDF
@@ -144,7 +152,7 @@ export default function Home() {
   // Parse the text
   const parseText = useCallback(() => {
     if (!enabled) {
-      setError("Please enable the biomedical parser first");
+      setError("Please enable the academic text analyzer first");
       return;
     }
     
@@ -202,9 +210,9 @@ export default function Home() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">🧠 Biomedical Text Parser</h1>
-          <p className="text-gray-600">Advanced enzyme and biochemistry analysis with PDF support</p>
-          <p className="text-sm text-gray-500 mt-1">Perfect for analyzing textbooks like Pelley's Biochemistry</p>
+          <h1 className="text-4xl font-bold text-gray-800 mb-2">📚 Universal Academic Text Analyzer</h1>
+          <p className="text-gray-600">Intelligent analysis for ALL academic subjects and textbooks</p>
+          <p className="text-sm text-gray-500 mt-1">Science • Math • Literature • History • Philosophy • Psychology • Economics • Art</p>
         </div>
 
         {/* Controls Section */}
@@ -212,7 +220,7 @@ export default function Home() {
           <div className="flex justify-between items-center mb-6">
             <div className="flex items-center space-x-3">
               <Label htmlFor="toggleParser" className="text-lg font-medium">
-                🔬 Biomedical Parser
+                🎓 Academic Text Analyzer
               </Label>
               <Switch 
                 id="toggleParser" 
@@ -232,47 +240,79 @@ export default function Home() {
 
           {/* Sample Text Buttons */}
           <div className="mb-6">
-            <Label className="block text-sm font-medium mb-3">🧪 Try Sample Texts:</Label>
+            <Label className="block text-sm font-medium mb-3">🎯 Try Different Academic Subjects:</Label>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <Button
-                onClick={() => loadSampleText('enzymes')}
+                onClick={() => loadSampleText('science')}
                 variant="outline"
                 size="sm"
                 className="text-left"
               >
-                🧬 Enzymes
+                🔬 Science
               </Button>
               <Button
-                onClick={() => loadSampleText('metabolism')}
+                onClick={() => loadSampleText('mathematics')}
                 variant="outline"
                 size="sm"
                 className="text-left"
               >
-                ⚡ Metabolism
+                📐 Mathematics
               </Button>
               <Button
-                onClick={() => loadSampleText('cellBiology')}
+                onClick={() => loadSampleText('literature')}
                 variant="outline"
                 size="sm"
                 className="text-left"
               >
-                🧫 Cell Biology
+                📖 Literature
               </Button>
               <Button
-                onClick={() => loadSampleText('pelleyChapter6')}
+                onClick={() => loadSampleText('history')}
                 variant="outline"
                 size="sm"
                 className="text-left"
               >
-                📚 Pelley Ch.6
+                🏛️ History
+              </Button>
+              <Button
+                onClick={() => loadSampleText('philosophy')}
+                variant="outline"
+                size="sm"
+                className="text-left"
+              >
+                🤔 Philosophy
+              </Button>
+              <Button
+                onClick={() => loadSampleText('psychology')}
+                variant="outline"
+                size="sm"
+                className="text-left"
+              >
+                🧠 Psychology
+              </Button>
+              <Button
+                onClick={() => loadSampleText('economics')}
+                variant="outline"
+                size="sm"
+                className="text-left"
+              >
+                💰 Economics
+              </Button>
+              <Button
+                onClick={() => loadSampleText('biology')}
+                variant="outline"
+                size="sm"
+                className="text-left"
+              >
+                🧬 Biology
               </Button>
             </div>
           </div>
 
-          {/* File Upload - Now with PDF Support */}
+          {/* File Upload - Universal for all textbooks */}
           <div className="mb-6">
             <Label className="block text-sm font-medium mb-2">
-              📄 Upload Document (PDF or TXT files supported)
+              📄 Upload Any Academic Document (PDF or TXT files)
             </Label>
             <input
               type="file"
@@ -281,7 +321,7 @@ export default function Home() {
               className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
             />
             <div className="mt-2 text-xs text-gray-500">
-              💡 Upload PDF textbooks, research papers, or text files for analysis
+              💡 Upload textbooks, research papers, lecture notes, or any academic content
             </div>
           </div>
 
@@ -310,10 +350,10 @@ export default function Home() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                Analyzing biomedical content...
+                Analyzing academic content...
               </span>
             ) : (
-              "🔬 Analyze Biomedical Text"
+              "🎓 Analyze Academic Text"
             )}
           </Button>
         </div>
@@ -362,25 +402,32 @@ export default function Home() {
                 <>
                   <div className="mb-4 p-4">
                     <Label className="block text-sm font-medium mb-2">
-                      Enter or paste your biochemistry text:
+                      Enter or paste your academic text:
                     </Label>
                     <textarea
                       value={inputText}
                       onChange={(e) => handleTextChange(e.target.value)}
-                      placeholder="Paste biochemistry text here, upload a PDF, or use the sample buttons above..."
+                      placeholder="Paste academic text here, upload a PDF, or use the sample buttons above..."
                       className="w-full h-64 p-4 border border-gray-300 rounded-lg text-sm leading-relaxed resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
                 </>
               ) : (
                 <div className="p-8 text-center text-gray-500">
-                  <div className="text-4xl mb-4">📁</div>
-                  <p className="text-lg font-medium">Upload a document or enter text</p>
+                  <div className="text-4xl mb-4">📚</div>
+                  <p className="text-lg font-medium">Upload any academic document</p>
                   <p className="text-sm mt-2">
-                    Try uploading a PDF textbook or use the sample buttons
+                    Works with textbooks from any subject
                   </p>
-                  <div className="mt-4 text-xs text-gray-400">
-                    📄 PDF files will be displayed here • 📝 Text will be editable
+                  <div className="mt-4 text-xs text-gray-400 grid grid-cols-2 gap-1">
+                    <div>🔬 Science Textbooks</div>
+                    <div>📐 Math Textbooks</div>
+                    <div>📖 Literature Books</div>
+                    <div>🏛️ History Books</div>
+                    <div>🤔 Philosophy Texts</div>
+                    <div>🧠 Psychology Books</div>
+                    <div>💰 Economics Texts</div>
+                    <div>🎨 Art History Books</div>
                   </div>
                 </div>
               )}
@@ -390,7 +437,7 @@ export default function Home() {
           {/* Parser Output */}
           <div className="bg-white rounded-2xl shadow-xl p-6">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="font-semibold text-lg">🧠 Biomedical Analysis</h2>
+              <h2 className="font-semibold text-lg">🎓 Academic Analysis</h2>
             </div>
             
             <div 
@@ -404,18 +451,20 @@ export default function Home() {
                 />
               ) : (
                 <div className="text-center text-gray-500 py-16">
-                  <div className="text-4xl mb-4">🔬</div>
-                  <p className="text-lg font-medium">Analysis results will appear here</p>
+                  <div className="text-4xl mb-4">🎓</div>
+                  <p className="text-lg font-medium">Universal analysis results</p>
                   <p className="text-sm mt-2">
-                    Upload a PDF, enter text, or use samples, then click "Analyze"
+                    Upload any textbook, enter text, or use samples, then click "Analyze"
                   </p>
                   <div className="mt-6 text-xs text-gray-400 space-y-1">
-                    <div>🧬 Enzymes will be highlighted in blue</div>
-                    <div>⚡ Processes will be highlighted in green</div>
-                    <div>🔗 Pathways will be highlighted in purple</div>
-                    <div>🧪 Molecules will be highlighted in red</div>
-                    <div>🏗️ Structures will be highlighted in indigo</div>
-                    <div>⚙️ Techniques will be highlighted in amber</div>
+                    <div>🔬 Science terms highlighted in blue</div>
+                    <div>📐 Math concepts highlighted in purple</div>
+                    <div>📖 Literature terms highlighted in green</div>
+                    <div>🏛️ History concepts highlighted in red</div>
+                    <div>🤔 Philosophy terms highlighted in indigo</div>
+                    <div>🧠 Psychology terms highlighted in pink</div>
+                    <div>💰 Economics terms highlighted in amber</div>
+                    <div>🎨 Art terms highlighted in teal</div>
                   </div>
                 </div>
               )}
@@ -425,7 +474,7 @@ export default function Home() {
 
         {/* Footer */}
         <div className="text-center mt-8 text-sm text-gray-500">
-          <p>🎯 Perfect for biochemistry textbooks | 📚 Upload PDFs or paste text | 🧬 Advanced biomedical analysis</p>
+          <p>🎯 Works with ALL academic subjects | 📚 Automatic subject detection | 🎓 Academic level assessment | 🔍 Intelligent thought-unit analysis</p>
         </div>
       </div>
     </div>
