@@ -1,70 +1,15 @@
-// lib/parser.ts - Right Brain Thought-Unit Parser
+// lib/parser.ts - Clean Thought Unit Parser
 interface ThoughtUnit {
   text: string;
-  unitType: 'concept' | 'description' | 'action' | 'dialogue' | 'transition' | 'emphasis';
   unitNumber: number;
   wordCount: number;
-  isComplete: boolean;
 }
 
-interface ChunkingStats {
+interface ThoughtUnitStats {
   totalUnits: number;
   averageWordsPerUnit: number;
   totalWords: number;
-  readingTimeEstimate: number; // in minutes
-  comprehensionLevel: 'easy' | 'moderate' | 'challenging';
-}
-
-// Right Brain chunking patterns based on meaning and natural reading flow
-const chunkingPatterns = [
-  // Dialogue patterns
-  { pattern: /"[^"]*"/g, type: 'dialogue' as const },
-  
-  // Action sequences (verbs + objects)
-  { pattern: /\b(he|she|they|it|the\s+\w+)\s+(was|were|is|are|had|have|will|would|could|should|might|may)\s+[^.!?]{10,40}[.!?]/gi, type: 'action' as const },
-  
-  // Descriptive phrases (adjectives + nouns)
-  { pattern: /\b(a|an|the)\s+[a-z]+\s+(and\s+[a-z]+\s+)*[a-z]+/gi, type: 'description' as const },
-  
-  // Transitional phrases
-  { pattern: /\b(however|therefore|meanwhile|suddenly|then|next|finally|first|second|third|in conclusion|as a result|for example|in fact|moreover|furthermore|nevertheless|consequently)\b[^.!?]*[.!?]/gi, type: 'transition' as const },
-  
-  // Emphasis patterns (with strong emotional words)
-  { pattern: /\b(very|extremely|absolutely|completely|totally|entirely|quite|rather|incredibly|amazing|wonderful|terrible|horrible|beautiful|magnificent)\s+[^.!?]*[.!?]/gi, type: 'emphasis' as const }
-];
-
-function determineOptimalChunkSize(text: string): number {
-  const words = text.split(/\s+/);
-  const totalWords = words.length;
-  
-  // Right Brain methodology: 3-7 words per chunk for optimal comprehension
-  if (totalWords < 50) return 4; // Short texts: smaller chunks
-  if (totalWords < 200) return 5; // Medium texts: moderate chunks  
-  if (totalWords < 500) return 6; // Longer texts: slightly larger chunks
-  return 7; // Very long texts: maximum chunk size
-}
-
-function identifyNaturalBreaks(text: string): number[] {
-  const breakPoints: number[] = [];
-  
-  // Natural break indicators
-  const breakPatterns = [
-    /[.!?]\s+/g,  // Sentence endings
-    /[,;]\s+/g,   // Clause separators
-    /\s+(and|but|or|yet|so|for|nor)\s+/g, // Conjunctions
-    /\s+(when|where|while|because|since|although|though|unless|until|if)\s+/g, // Subordinating conjunctions
-    /\s+--\s+/g,  // Dashes
-    /\s+\(\s*/g,  // Parentheses
-  ];
-  
-  breakPatterns.forEach(pattern => {
-    let match;
-    while ((match = pattern.exec(text)) !== null) {
-      breakPoints.push(match.index + match[0].length);
-    }
-  });
-  
-  return breakPoints.sort((a, b) => a - b);
+  readingTimeEstimate: number;
 }
 
 function createThoughtUnits(text: string): ThoughtUnit[] {
@@ -72,122 +17,80 @@ function createThoughtUnits(text: string): ThoughtUnit[] {
     return [];
   }
 
-  const cleanText = text.replace(/\s+/g, ' ').trim();
-  const words = cleanText.split(/\s+/);
-  const optimalChunkSize = determineOptimalChunkSize(cleanText);
-  const naturalBreaks = identifyNaturalBreaks(cleanText);
-  
+  // Clean the text but preserve proper spacing and structure
+  const cleanText = text
+    .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
+    .replace(/\n\s*\n/g, '\n')  // Clean up excessive line breaks
+    .trim();
+
+  // Split into sentences first to maintain natural breaks
+  const sentences = cleanText
+    .split(/(?<=[.!?])\s+/)
+    .filter(sentence => sentence.trim().length > 3);
+
   const units: ThoughtUnit[] = [];
-  let currentPosition = 0;
   let unitNumber = 1;
-  
-  while (currentPosition < cleanText.length) {
-    let chunkEnd = currentPosition;
-    let chunkWords = 0;
-    let bestBreakPoint = -1;
+
+  sentences.forEach(sentence => {
+    const words = sentence.trim().split(/\s+/);
     
-    // Find the optimal chunk end point
-    while (chunkWords < optimalChunkSize * 2 && chunkEnd < cleanText.length) {
-      // Look for next word boundary
-      const nextSpace = cleanText.indexOf(' ', chunkEnd + 1);
-      if (nextSpace === -1) {
-        chunkEnd = cleanText.length;
-        break;
-      }
+    // If sentence is short enough (7 words or less), keep as single unit
+    if (words.length <= 7) {
+      units.push({
+        text: sentence.trim(),
+        unitNumber: unitNumber++,
+        wordCount: words.length
+      });
+    } else {
+      // Break longer sentences into meaningful chunks
+      let currentChunk: string[] = [];
+      let i = 0;
       
-      chunkEnd = nextSpace;
-      chunkWords++;
-      
-      // Check if we hit our target chunk size
-      if (chunkWords >= optimalChunkSize) {
-        // Look for a natural break point within reasonable range
-        const searchEnd = Math.min(chunkEnd + 50, cleanText.length);
-        for (const breakPoint of naturalBreaks) {
-          if (breakPoint > chunkEnd && breakPoint <= searchEnd) {
-            bestBreakPoint = breakPoint;
-            break;
-          }
+      while (i < words.length) {
+        currentChunk.push(words[i]);
+        
+        // Look for natural break points
+        const currentWord = words[i].toLowerCase();
+        const nextWord = words[i + 1]?.toLowerCase() || '';
+        
+        // Break at 5-7 words, but prefer natural breaks
+        const shouldBreak = 
+          currentChunk.length >= 5 && (
+            currentChunk.length >= 7 || // Hard limit
+            currentWord.match(/[.,:;]/) || // Punctuation
+            ['and', 'but', 'or', 'so', 'yet', 'for', 'nor', 'because', 'since', 'when', 'where', 'while', 'although', 'though', 'unless', 'until', 'if'].includes(nextWord) || // Conjunctions
+            ['the', 'a', 'an', 'this', 'that', 'these', 'those'].includes(nextWord) // Articles/determiners
+          );
+        
+        if (shouldBreak || i === words.length - 1) {
+          units.push({
+            text: currentChunk.join(' '),
+            unitNumber: unitNumber++,
+            wordCount: currentChunk.length
+          });
+          currentChunk = [];
         }
         
-        if (bestBreakPoint !== -1) {
-          chunkEnd = bestBreakPoint;
-          break;
-        }
-      }
-      
-      // Hard limit: don't exceed 2x optimal chunk size
-      if (chunkWords >= optimalChunkSize * 2) {
-        break;
+        i++;
       }
     }
-    
-    // Extract the chunk text
-    const chunkText = cleanText.slice(currentPosition, chunkEnd).trim();
-    
-    if (chunkText.length === 0) {
-      break;
-    }
-    
-    // Determine unit type based on content
-    let unitType: ThoughtUnit['unitType'] = 'concept';
-    
-    if (chunkText.includes('"')) {
-      unitType = 'dialogue';
-    } else if (/\b(was|were|is|are|had|have|will|would|could|should|went|came|said|told|looked|saw|heard|felt|thought|knew|found|made|took|gave|put|got|left|right|up|down|in|out|on|off)\b/i.test(chunkText)) {
-      unitType = 'action';
-    } else if (/\b(beautiful|ugly|big|small|tall|short|fat|thin|old|young|new|ancient|modern|bright|dark|loud|quiet|soft|hard|smooth|rough|hot|cold|warm|cool)\b/i.test(chunkText)) {
-      unitType = 'description';
-    } else if (/\b(however|therefore|meanwhile|suddenly|then|next|finally|first|second|third|in conclusion|as a result|for example|in fact|moreover|furthermore|nevertheless|consequently)\b/i.test(chunkText)) {
-      unitType = 'transition';
-    } else if (/\b(very|extremely|absolutely|completely|totally|entirely|quite|rather|incredibly|amazing|wonderful|terrible|horrible|magnificent)\b/i.test(chunkText)) {
-      unitType = 'emphasis';
-    }
-    
-    // Check if unit feels complete (ends with punctuation or natural break)
-    const isComplete = /[.!?]$/.test(chunkText) || naturalBreaks.includes(chunkEnd);
-    
-    units.push({
-      text: chunkText,
-      unitType,
-      unitNumber,
-      wordCount: chunkText.split(/\s+/).length,
-      isComplete
-    });
-    
-    currentPosition = chunkEnd;
-    unitNumber++;
-    
-    // Skip whitespace
-    while (currentPosition < cleanText.length && /\s/.test(cleanText[currentPosition])) {
-      currentPosition++;
-    }
-  }
-  
+  });
+
   return units;
 }
 
-function calculateStats(units: ThoughtUnit[], originalText: string): ChunkingStats {
+function calculateStats(units: ThoughtUnit[], originalText: string): ThoughtUnitStats {
   const totalWords = originalText.split(/\s+/).length;
   const averageWordsPerUnit = units.reduce((sum, unit) => sum + unit.wordCount, 0) / units.length;
   
-  // Reading time estimation (Right Brain method: faster comprehension)
-  // Traditional: 200-250 WPM, Right Brain method: 300-500 WPM
+  // Reading time estimation: faster with thought units (400 WPM vs normal 250 WPM)
   const readingTimeEstimate = totalWords / 400; // minutes
-  
-  // Comprehension level based on chunk complexity
-  let comprehensionLevel: ChunkingStats['comprehensionLevel'] = 'easy';
-  if (averageWordsPerUnit > 8) {
-    comprehensionLevel = 'challenging';
-  } else if (averageWordsPerUnit > 5) {
-    comprehensionLevel = 'moderate';
-  }
   
   return {
     totalUnits: units.length,
     averageWordsPerUnit: Math.round(averageWordsPerUnit * 10) / 10,
     totalWords,
-    readingTimeEstimate: Math.round(readingTimeEstimate * 10) / 10,
-    comprehensionLevel
+    readingTimeEstimate: Math.round(readingTimeEstimate * 10) / 10
   };
 }
 
@@ -203,105 +106,64 @@ export function improveBiomedicalParsing(text: string): string {
     return '<div class="text-gray-500 italic p-4">Could not create thought units from this text</div>';
   }
 
-  // Generate HTML output with Right Brain visual styling
-  const unitTypeColors = {
-    concept: '#3B82F6',      // Blue - main ideas
-    description: '#10B981',   // Green - descriptive content  
-    action: '#EF4444',       // Red - action sequences
-    dialogue: '#8B5CF6',     // Purple - spoken words
-    transition: '#F59E0B',   // Amber - connecting phrases
-    emphasis: '#EC4899'      // Pink - emphasized content
-  };
-
+  // Generate clean HTML output
   const htmlUnits = units.map((unit, index) => {
-    const backgroundColor = unitTypeColors[unit.unitType];
-    const isEvenUnit = index % 2 === 0;
-    const spacing = isEvenUnit ? 'mr-2 mb-2' : 'ml-2 mb-2';
-    const completeness = unit.isComplete ? '✓' : '⋯';
+    const isEven = index % 2 === 0;
+    const bgColor = isEven ? 'bg-blue-50' : 'bg-gray-50';
+    const borderColor = isEven ? 'border-blue-200' : 'border-gray-200';
     
     return `
-      <div class="thought-unit ${spacing} inline-block p-3 rounded-lg shadow-sm border-l-4 transition-all hover:shadow-md cursor-pointer"
-           style="background-color: ${backgroundColor}15; border-left-color: ${backgroundColor};"
-           title="${unit.unitType.toUpperCase()}: ${unit.wordCount} words ${completeness}">
-        <div class="text-sm font-medium" style="color: ${backgroundColor};">
-          Unit ${unit.unitNumber} • ${unit.unitType}
+      <div class="thought-unit mb-3 p-4 rounded-lg border ${bgColor} ${borderColor} hover:shadow-sm transition-shadow">
+        <div class="flex justify-between items-start mb-2">
+          <span class="text-xs font-medium text-blue-600">Unit ${unit.unitNumber}</span>
+          <span class="text-xs text-gray-500">${unit.wordCount} words</span>
         </div>
-        <div class="text-gray-800 leading-relaxed mt-1">
+        <div class="text-gray-800 leading-relaxed">
           ${unit.text}
         </div>
-        <div class="text-xs text-gray-500 mt-1">
-          ${unit.wordCount} words ${completeness}
-        </div>
       </div>
-    `;
-  }).join('');
-
-  // Create legend for unit types
-  const legend = Object.entries(unitTypeColors).map(([type, color]) => {
-    const count = units.filter(u => u.unitType === type).length;
-    return `
-      <span class="inline-flex items-center px-3 py-1 rounded-full text-white text-xs font-medium mr-2 mb-2"
-            style="background-color: ${color};">
-        ${type} (${count})
-      </span>
     `;
   }).join('');
 
   return `
-    <div class="space-y-6">
-      <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-200">
-        <h3 class="font-bold text-blue-800 mb-4 flex items-center">
-          🧠 Right Brain Thought-Unit Analysis
-        </h3>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
-          <div class="bg-white p-3 rounded-lg shadow-sm">
-            <div class="font-semibold text-gray-700">Thought Units</div>
+    <div class="space-y-4">
+      <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+        <h3 class="font-semibold text-blue-800 mb-3">📊 Thought Unit Analysis</h3>
+        <div class="grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <div class="text-gray-600">Total Units</div>
             <div class="text-xl font-bold text-blue-600">${stats.totalUnits}</div>
           </div>
-          <div class="bg-white p-3 rounded-lg shadow-sm">
-            <div class="font-semibold text-gray-700">Avg Words/Unit</div>
+          <div>
+            <div class="text-gray-600">Avg Words/Unit</div>
             <div class="text-xl font-bold text-green-600">${stats.averageWordsPerUnit}</div>
           </div>
-          <div class="bg-white p-3 rounded-lg shadow-sm">
-            <div class="font-semibold text-gray-700">Reading Time</div>
-            <div class="text-xl font-bold text-purple-600">${stats.readingTimeEstimate}m</div>
+          <div>
+            <div class="text-gray-600">Total Words</div>
+            <div class="text-xl font-bold text-purple-600">${stats.totalWords}</div>
           </div>
-          <div class="bg-white p-3 rounded-lg shadow-sm">
-            <div class="font-semibold text-gray-700">Complexity</div>
-            <div class="text-xl font-bold text-orange-600">${stats.comprehensionLevel}</div>
+          <div>
+            <div class="text-gray-600">Reading Time</div>
+            <div class="text-xl font-bold text-orange-600">${stats.readingTimeEstimate}m</div>
           </div>
         </div>
       </div>
       
-      <div class="bg-gray-50 p-4 rounded-xl border">
-        <h4 class="font-semibold text-gray-700 mb-3">
-          🏷️ Thought Unit Types:
-        </h4>
-        <div class="flex flex-wrap">
-          ${legend}
-        </div>
-      </div>
-      
-      <div class="prose max-w-none">
-        <h4 class="font-semibold text-gray-800 mb-4">
-          📖 Right Brain Reading Format:
-        </h4>
-        <div class="bg-white p-6 rounded-lg border shadow-sm">
+      <div class="space-y-2">
+        <h4 class="font-semibold text-gray-800">📖 Thought Units:</h4>
+        <div class="max-h-96 overflow-y-auto">
           ${htmlUnits}
         </div>
       </div>
       
       <div class="text-xs text-gray-500 bg-gray-100 p-3 rounded-lg">
-        <div class="font-semibold mb-2">💡 Right Brain Reading Guide:</div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <div><strong>Chunking:</strong> Text broken into meaningful thought units</div>
-          <div><strong>Preservation:</strong> Original content completely intact</div>
-          <div><strong>Speed Reading:</strong> Optimized for faster comprehension</div>
-          <div><strong>Visual Flow:</strong> Units alternate for easier eye tracking</div>
-        </div>
+        <div class="font-semibold mb-1">💡 Reading Guide:</div>
+        <div>• Read each unit as a complete thought</div>
+        <div>• Pause briefly between units to process</div>
+        <div>• Focus on meaning rather than individual words</div>
       </div>
     </div>
   `;
 }
 
-export { createThoughtUnits, type ThoughtUnit, type ChunkingStats };
+export { createThoughtUnits, type ThoughtUnit, type ThoughtUnitStats };
