@@ -1,16 +1,6 @@
-// pages/_app.js
-import "../styles/globals.css";
-import Head from "next/head";
+This favicon was generated using the following font:
 
-export default function App({ Component, pageProps }) {
-  return (
-    <>
-      <Head>
-        <link rel="icon" href="/favicon.ico" />
-        <title>Thought-Unit Reader</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      </Head>
-      <Component {...pageProps} />
-    </>
-  );
-}
+- Font Title: Leckerli One
+- Font Author: undefined
+- Font Source: https://fonts.gstatic.com/s/leckerlione/v21/V8mCoQH8VCsNttEnxnGQ-1itLZxcBtItFw.ttf
+- Font License: undefined)
