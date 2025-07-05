@@ -1,4 +1,4 @@
-// pages/index.tsx - Thought Unit Reader
+// pages/index.tsx - Side-by-Side Thought Unit Reader
 import { useState, useCallback } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
@@ -39,7 +39,7 @@ export default function Home() {
       }).promise;
       
       let fullText = "";
-      const maxPages = Math.min(pdf.numPages, 50); // Limit for performance
+      const maxPages = Math.min(pdf.numPages, 50);
       
       for (let i = 1; i <= maxPages; i++) {
         const page = await pdf.getPage(i);
@@ -69,14 +69,12 @@ export default function Home() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Reset states
     setError(null);
     setUploadStatus("uploading");
     setFileName(file.name);
     setOutput(null);
 
     try {
-      // File size check (100MB limit)
       if (file.size > 100 * 1024 * 1024) {
         throw new Error("File too large. Please select a file smaller than 100MB.");
       }
@@ -99,11 +97,11 @@ export default function Home() {
         setPdfFile(null);
 
       } else {
-        throw new Error(`Unsupported file type: ${file.type || file.name.split('.').pop()}. Please upload PDF or TXT files.`);
+        throw new Error(`Unsupported file type. Please upload PDF or TXT files.`);
       }
 
       if (!extractedText || extractedText.trim().length === 0) {
-        throw new Error("No text content found in the file. Please try a different file.");
+        throw new Error("No text content found in the file.");
       }
 
       setInputText(extractedText);
@@ -172,16 +170,16 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6">
           <h1 className="text-4xl font-bold text-gray-800 mb-2">🧠 Thought Unit Reader</h1>
           <p className="text-gray-600">Transform any book into thought-units for enhanced comprehension</p>
         </div>
 
         {/* Controls Section */}
-        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
+        <div className="bg-white rounded-xl shadow-lg p-4 mb-6">
           <div className="flex justify-between items-center mb-4">
             <div className="flex items-center space-x-3">
-              <Label htmlFor="toggleParser" className="text-lg font-medium">
+              <Label htmlFor="toggleParser" className="font-medium">
                 🧠 Thought Unit Analyzer
               </Label>
               <Switch 
@@ -193,73 +191,66 @@ export default function Home() {
             <div className="text-sm text-gray-500">
               {inputText.length > 0 && (
                 <span>
-                  📊 {inputText.length.toLocaleString()} characters | {Math.round(inputText.length / 5)} words
+                  📊 {Math.round(inputText.length / 5)} words
                   {fileName && <span className="ml-2">| 📄 {fileName}</span>}
                 </span>
               )}
             </div>
           </div>
 
-          {/* File Upload */}
-          <div className="mb-4">
-            <Label className="block text-sm font-medium mb-2">
-              📄 Upload Book or Document (PDF or TXT files)
-            </Label>
-            <input
-              type="file"
-              accept=".pdf,.txt"
-              onChange={handleFileChange}
-              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
-            />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            {/* File Upload */}
+            <div className="md:col-span-2">
+              <Label className="block text-sm font-medium mb-2">
+                📄 Upload Book or Document
+              </Label>
+              <input
+                type="file"
+                accept=".pdf,.txt"
+                onChange={handleFileChange}
+                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+              />
+            </div>
+
+            {/* Parse Button */}
+            <Button
+              onClick={parseText}
+              disabled={!enabled || !inputText.trim() || loading}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-2 px-4"
+            >
+              {loading ? "Creating..." : "🧠 Create Thought Units"}
+            </Button>
           </div>
 
           {/* Status Messages */}
           {uploadStatus !== "idle" && (
-            <div className={`p-3 rounded-lg mb-4 ${getStatusColor(uploadStatus)}`}>
+            <div className={`p-2 rounded-lg mt-3 text-sm ${getStatusColor(uploadStatus)}`}>
               {getStatusMessage(uploadStatus)}
             </div>
           )}
 
           {error && (
-            <div className="p-3 bg-red-100 text-red-800 rounded-lg mb-4">
+            <div className="p-2 bg-red-100 text-red-800 rounded-lg mt-3 text-sm">
               ⚠️ {error}
             </div>
           )}
-
-          {/* Parse Button */}
-          <Button
-            onClick={parseText}
-            disabled={!enabled || !inputText.trim() || loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-3"
-          >
-            {loading ? (
-              <span className="flex items-center justify-center">
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Creating thought units...
-              </span>
-            ) : (
-              "🧠 Create Thought Units"
-            )}
-          </Button>
         </div>
 
-        {/* Side-by-Side Content Display */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[70vh]">
-          {/* Original Content - Left Side */}
-          <div className="bg-white rounded-2xl shadow-xl p-6">
-            <h2 className="font-semibold text-lg mb-4 flex items-center">
-              📄 Original Content
-              {numPages > 0 && (
-                <span className="ml-2 text-sm text-gray-500">
-                  ({numPages} pages)
-                </span>
-              )}
-            </h2>
+        {/* Main Content - Side by Side Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ height: "calc(100vh - 300px)" }}>
+          
+          {/* LEFT SIDE - Original Content */}
+          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+            <div className="bg-gray-50 px-4 py-3 border-b">
+              <h2 className="font-semibold text-gray-800 flex items-center">
+                📄 Original Content
+                {numPages > 0 && (
+                  <span className="ml-2 text-sm text-gray-500">({numPages} pages)</span>
+                )}
+              </h2>
+            </div>
             
-            <div className="h-full overflow-auto border rounded-lg bg-gray-50">
+            <div className="h-full overflow-auto p-4">
               {fileType === "pdf" && pdfFile ? (
                 <Document
                   file={pdfFile}
@@ -275,7 +266,7 @@ export default function Home() {
                       key={i} 
                       pageNumber={i + 1}
                       className="mb-4"
-                      width={350}
+                      width={400}
                       renderAnnotationLayer={false}
                       renderTextLayer={false}
                     />
@@ -287,9 +278,9 @@ export default function Home() {
                   )}
                 </Document>
               ) : inputText ? (
-                <div className="p-4">
-                  <Label className="block text-sm font-medium mb-2">
-                    Text Content:
+                <div>
+                  <Label className="block text-sm font-medium mb-3 text-gray-700">
+                    Text Content (editable):
                   </Label>
                   <textarea
                     value={inputText}
@@ -299,39 +290,41 @@ export default function Home() {
                   />
                 </div>
               ) : (
-                <div className="p-8 text-center text-gray-500 h-full flex flex-col justify-center">
+                <div className="h-full flex flex-col justify-center items-center text-gray-500">
                   <div className="text-4xl mb-4">📚</div>
                   <p className="text-lg font-medium">Upload any book or document</p>
-                  <p className="text-sm mt-2">
-                    PDF files will be displayed here
+                  <p className="text-sm mt-2 text-center">
+                    PDF files will be displayed here<br/>
+                    Text files can be edited in the textarea
                   </p>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Thought Units - Right Side */}
-          <div className="bg-white rounded-2xl shadow-xl p-6">
-            <h2 className="font-semibold text-lg mb-4">🧠 Thought Units</h2>
+          {/* RIGHT SIDE - Thought Units */}
+          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+            <div className="bg-gray-50 px-4 py-3 border-b">
+              <h2 className="font-semibold text-gray-800">🧠 Thought Units</h2>
+            </div>
             
-            <div className="h-full overflow-auto border rounded-lg p-4 bg-gray-50">
+            <div className="h-full overflow-auto p-4">
               {output ? (
                 <div
                   className="text-sm leading-relaxed"
                   dangerouslySetInnerHTML={{ __html: output }}
                 />
               ) : (
-                <div className="text-center text-gray-500 h-full flex flex-col justify-center">
+                <div className="h-full flex flex-col justify-center items-center text-gray-500">
                   <div className="text-4xl mb-4">🧠</div>
                   <p className="text-lg font-medium">Thought units will appear here</p>
-                  <p className="text-sm mt-2">
+                  <p className="text-sm mt-2 text-center">
                     Upload a book and click "Create Thought Units" to begin
                   </p>
-                  <div className="mt-6 text-xs text-gray-400 space-y-1">
+                  <div className="mt-6 text-xs text-gray-400 text-center space-y-1">
                     <div>📖 Original content preserved completely</div>
                     <div>🧠 Text organized into meaningful units</div>
                     <div>⚡ Optimized for faster reading</div>
-                    <div>🎯 Enhanced comprehension and retention</div>
                   </div>
                 </div>
               )}
