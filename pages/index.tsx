@@ -1,37 +1,78 @@
-// pages/index.tsx - Parser-Focused Version
+// pages/index.tsx - Enhanced Parser with PDF Support
 import { useState, useCallback } from "react";
-import { improveBiomedicalParsing } from "../lib/parser";
+import { Document, Page, pdfjs } from "react-pdf";
+import "react-pdf/dist/esm/Page/AnnotationLayer.css";
+import "react-pdf/dist/esm/Page/TextLayer.css";
 
+import { improveBiomedicalParsing } from "../lib/parser";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 
-type UploadStatus = "idle" | "processing" | "done" | "error";
+// Configure PDF.js worker with reliable CDN
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+
+type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
+type FileType = "text" | "pdf" | "none";
 
 export default function Home() {
-  const [enabled, setEnabled] = useState(true); // Default enabled for testing
+  const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
   const [inputText, setInputText] = useState("");
   const [output, setOutput] = useState<string | null>(null);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  
+  // PDF-specific states
+  const [fileType, setFileType] = useState<FileType>("none");
+  const [pdfFile, setPdfFile] = useState<Blob | null>(null);
+  const [numPages, setNumPages] = useState(0);
+  const [fileName, setFileName] = useState("");
 
-  // Sample biochemistry text for testing
+  // Sample biochemistry texts for testing
   const sampleTexts = {
-    enzymes: `Enzymes are biological catalysts that accelerate biochemical reactions. The enzyme-substrate complex forms when a substrate binds to the enzyme's active site. Michaelis-Menten kinetics describes the rate of enzymatic reactions. ATP synthase is crucial for oxidative phosphorylation in mitochondria. The rate-limiting step often determines the overall reaction speed.`,
+    enzymes: `Enzymes are biological catalysts that accelerate biochemical reactions. The enzyme-substrate complex forms when a substrate binds to the enzyme's active site. Michaelis-Menten kinetics describes the rate of enzymatic reactions. ATP synthase is crucial for oxidative phosphorylation in mitochondria. The rate-limiting step often determines the overall reaction speed. Competitive inhibition occurs when inhibitors compete with substrates for binding sites.`,
     
-    metabolism: `Glycolysis is the metabolic pathway that converts glucose into pyruvate. The citric acid cycle, also known as the Krebs cycle, occurs in mitochondria. NADH and FADH2 are important electron carriers in cellular respiration. The electron transport chain creates a proton gradient for ATP synthesis.`,
+    metabolism: `Glycolysis is the metabolic pathway that converts glucose into pyruvate, generating ATP and NADH. The citric acid cycle, also known as the Krebs cycle, occurs in mitochondria where acetyl-CoA is oxidized. NADH and FADH2 are important electron carriers in cellular respiration. The electron transport chain creates a proton gradient for ATP synthesis through oxidative phosphorylation.`,
     
-    cellBiology: `The nucleus contains the cell's genetic material. Ribosomes are responsible for protein synthesis through translation. The endoplasmic reticulum processes and modifies proteins. Cell division occurs through mitosis in somatic cells and meiosis in gametes. Signal transduction pathways allow cells to respond to environmental changes.`,
+    cellBiology: `The nucleus contains the cell's genetic material and controls gene expression. Ribosomes are responsible for protein synthesis through translation of mRNA. The endoplasmic reticulum processes and modifies proteins after synthesis. Cell division occurs through mitosis in somatic cells and meiosis in gametes. Signal transduction pathways allow cells to respond to environmental changes and hormonal signals.`,
     
-    biochemistry: `DNA replication ensures genetic information is accurately passed to daughter cells. RNA polymerase transcribes DNA into RNA. Hemoglobin transports oxygen in red blood cells. Insulin regulates glucose metabolism. Competitive inhibition occurs when inhibitors compete with substrates for the enzyme's active site.`
+    pelleyChapter6: `Enzyme kinetics follows Michaelis-Menten principles where the enzyme-substrate complex forms reversibly. Competitive inhibition occurs when inhibitors compete with substrates for the active site. Non-competitive inhibition involves binding to allosteric sites. Cofactors like NAD+ and FAD are essential for many enzymatic reactions. Allosteric regulation affects enzyme activity through conformational changes. The rate-limiting step determines overall pathway flux.`
   };
+
+  // Helper to extract text from PDF
+  const extractTextFromPDF = useCallback(async (buffer: ArrayBuffer): Promise<string> => {
+    try {
+      const pdf = await pdfjs.getDocument({ 
+        data: buffer,
+        cMapUrl: `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/cmaps/`,
+        cMapPacked: true,
+      }).promise;
+      
+      let fullText = "";
+      const maxPages = Math.min(pdf.numPages, 50); // Limit for performance
+      
+      for (let i = 1; i <= maxPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const pageText = content.items
+          .map((item: any) => item.str)
+          .join(" ");
+        fullText += pageText + "\n\n";
+      }
+      return fullText.trim();
+    } catch (err) {
+      console.error("PDF extraction error:", err);
+      throw new Error(`Failed to extract text from PDF: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  }, []);
 
   // Handle text input change
   const handleTextChange = useCallback((text: string) => {
     setInputText(text);
     setError(null);
     setOutput(null);
+    setFileType("text");
   }, []);
 
   // Load sample text
@@ -40,30 +81,65 @@ export default function Home() {
     setInputText(text);
     setError(null);
     setOutput(null);
+    setFileType("text");
+    setPdfFile(null);
+    setFileName(`Sample: ${sampleKey}`);
   }, []);
 
-  // Handle file upload (text files only for now)
+  // Handle file upload with PDF support
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Reset states
     setError(null);
-    setUploadStatus("processing");
+    setUploadStatus("uploading");
+    setFileName(file.name);
+    setOutput(null);
 
     try {
-      if (file.type === "text/plain" || file.name.toLowerCase().endsWith(".txt")) {
-        const text = await file.text();
-        setInputText(text);
-        setUploadStatus("done");
-      } else {
-        throw new Error("Please upload a .txt file for now. PDF support coming soon!");
+      // File size check (100MB limit)
+      if (file.size > 100 * 1024 * 1024) {
+        throw new Error("File too large. Please select a file smaller than 100MB.");
       }
+
+      await new Promise(resolve => setTimeout(resolve, 300));
+      setUploadStatus("processing");
+
+      let extractedText = "";
+
+      if (file.type === "application/pdf") {
+        const buffer = await file.arrayBuffer();
+        const pdfBlob = new Blob([buffer], { type: "application/pdf" });
+        setPdfFile(pdfBlob);
+        setFileType("pdf");
+        extractedText = await extractTextFromPDF(buffer);
+
+      } else if (file.type === "text/plain" || file.name.toLowerCase().endsWith(".txt")) {
+        extractedText = await file.text();
+        setFileType("text");
+        setPdfFile(null);
+
+      } else {
+        throw new Error(`Unsupported file type: ${file.type || file.name.split('.').pop()}. Please upload PDF or TXT files.`);
+      }
+
+      if (!extractedText || extractedText.trim().length === 0) {
+        throw new Error("No text content found in the file. Please try a different file.");
+      }
+
+      setInputText(extractedText);
+      setUploadStatus("done");
+
     } catch (err) {
       console.error("File processing error:", err);
       setError(err instanceof Error ? err.message : "Failed to process file");
       setUploadStatus("error");
+      setInputText("");
+      setPdfFile(null);
+      setFileType("none");
     }
-  }, []);
+  }, [extractTextFromPDF]);
 
   // Parse the text
   const parseText = useCallback(() => {
@@ -73,7 +149,7 @@ export default function Home() {
     }
     
     if (!inputText.trim()) {
-      setError("Please enter some text or load a sample to analyze");
+      setError("Please enter some text, upload a file, or load a sample to analyze");
       return;
     }
 
@@ -81,13 +157,11 @@ export default function Home() {
     setError(null);
 
     try {
-      // Simulate processing time for UX
       setTimeout(() => {
         const parsed = improveBiomedicalParsing(inputText);
         setOutput(parsed);
         setLoading(false);
         
-        // Smooth scroll to output
         setTimeout(() => {
           document.getElementById("parser-output")?.scrollIntoView({ 
             behavior: "smooth",
@@ -105,6 +179,7 @@ export default function Home() {
 
   const getStatusColor = (status: UploadStatus) => {
     switch (status) {
+      case "uploading": return "bg-blue-100 text-blue-800";
       case "processing": return "bg-yellow-100 text-yellow-800";
       case "done": return "bg-green-100 text-green-800";
       case "error": return "bg-red-100 text-red-800";
@@ -114,8 +189,9 @@ export default function Home() {
 
   const getStatusMessage = (status: UploadStatus) => {
     switch (status) {
-      case "processing": return "⚙️ Processing file...";
-      case "done": return "✅ File loaded successfully!";
+      case "uploading": return "📤 Uploading file...";
+      case "processing": return "⚙️ Processing content...";
+      case "done": return "✅ File processed successfully!";
       case "error": return "❌ Upload failed";
       default: return "";
     }
@@ -127,7 +203,7 @@ export default function Home() {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-800 mb-2">🧠 Biomedical Text Parser</h1>
-          <p className="text-gray-600">Advanced enzyme and biochemistry term analysis</p>
+          <p className="text-gray-600">Advanced enzyme and biochemistry analysis with PDF support</p>
           <p className="text-sm text-gray-500 mt-1">Perfect for analyzing textbooks like Pelley's Biochemistry</p>
         </div>
 
@@ -148,6 +224,7 @@ export default function Home() {
               {inputText.length > 0 && (
                 <span>
                   📊 {inputText.length.toLocaleString()} characters | {Math.round(inputText.length / 5)} words
+                  {fileName && <span className="ml-2">| 📄 {fileName}</span>}
                 </span>
               )}
             </div>
@@ -182,27 +259,30 @@ export default function Home() {
                 🧫 Cell Biology
               </Button>
               <Button
-                onClick={() => loadSampleText('biochemistry')}
+                onClick={() => loadSampleText('pelleyChapter6')}
                 variant="outline"
                 size="sm"
                 className="text-left"
               >
-                🔬 Biochemistry
+                📚 Pelley Ch.6
               </Button>
             </div>
           </div>
 
-          {/* File Upload */}
+          {/* File Upload - Now with PDF Support */}
           <div className="mb-6">
             <Label className="block text-sm font-medium mb-2">
-              📄 Upload Text File (PDF support coming soon)
+              📄 Upload Document (PDF or TXT files supported)
             </Label>
             <input
               type="file"
-              accept=".txt"
+              accept=".pdf,.txt"
               onChange={handleFileChange}
               className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
             />
+            <div className="mt-2 text-xs text-gray-500">
+              💡 Upload PDF textbooks, research papers, or text files for analysis
+            </div>
           </div>
 
           {/* Status Messages */}
@@ -240,26 +320,70 @@ export default function Home() {
 
         {/* Content Display */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Input Text */}
+          {/* Input Source Display */}
           <div className="bg-white rounded-2xl shadow-xl p-6">
             <h2 className="font-semibold text-lg mb-4 flex items-center">
-              📝 Input Text
+              {fileType === "pdf" ? "📄 PDF Document" : fileType === "text" ? "📝 Text Content" : "📁 Input Source"}
+              {numPages > 0 && (
+                <span className="ml-2 text-sm text-gray-500">
+                  ({numPages} pages)
+                </span>
+              )}
             </h2>
             
-            <div className="mb-4">
-              <Label className="block text-sm font-medium mb-2">
-                Enter or paste your biochemistry text:
-              </Label>
-              <textarea
-                value={inputText}
-                onChange={(e) => handleTextChange(e.target.value)}
-                placeholder="Paste biochemistry text here, or use the sample buttons above..."
-                className="w-full h-96 p-4 border border-gray-300 rounded-lg text-sm leading-relaxed resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            
-            <div className="text-xs text-gray-500">
-              💡 Try pasting content from biochemistry textbooks, research papers, or lecture notes
+            <div className="max-h-96 overflow-auto border rounded-lg bg-gray-50">
+              {fileType === "pdf" && pdfFile ? (
+                <Document
+                  file={pdfFile}
+                  onLoadError={(err) => {
+                    console.error("PDF display error:", err);
+                    setError(`PDF Display Error: ${err.message || 'Failed to display PDF'}`);
+                  }}
+                  onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+                  className="w-full"
+                >
+                  {Array.from({ length: Math.min(numPages, 3) }).map((_, i) => (
+                    <Page 
+                      key={i} 
+                      pageNumber={i + 1}
+                      className="mb-4"
+                      width={400}
+                      renderAnnotationLayer={false}
+                      renderTextLayer={false}
+                    />
+                  ))}
+                  {numPages > 3 && (
+                    <div className="text-center p-4 text-gray-500">
+                      📚 ... and {numPages - 3} more pages (showing first 3 for performance)
+                    </div>
+                  )}
+                </Document>
+              ) : inputText ? (
+                <>
+                  <div className="mb-4 p-4">
+                    <Label className="block text-sm font-medium mb-2">
+                      Enter or paste your biochemistry text:
+                    </Label>
+                    <textarea
+                      value={inputText}
+                      onChange={(e) => handleTextChange(e.target.value)}
+                      placeholder="Paste biochemistry text here, upload a PDF, or use the sample buttons above..."
+                      className="w-full h-64 p-4 border border-gray-300 rounded-lg text-sm leading-relaxed resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="p-8 text-center text-gray-500">
+                  <div className="text-4xl mb-4">📁</div>
+                  <p className="text-lg font-medium">Upload a document or enter text</p>
+                  <p className="text-sm mt-2">
+                    Try uploading a PDF textbook or use the sample buttons
+                  </p>
+                  <div className="mt-4 text-xs text-gray-400">
+                    📄 PDF files will be displayed here • 📝 Text will be editable
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -283,13 +407,15 @@ export default function Home() {
                   <div className="text-4xl mb-4">🔬</div>
                   <p className="text-lg font-medium">Analysis results will appear here</p>
                   <p className="text-sm mt-2">
-                    Enter text and click "Analyze" to see biomedical terms highlighted
+                    Upload a PDF, enter text, or use samples, then click "Analyze"
                   </p>
                   <div className="mt-6 text-xs text-gray-400 space-y-1">
                     <div>🧬 Enzymes will be highlighted in blue</div>
                     <div>⚡ Processes will be highlighted in green</div>
                     <div>🔗 Pathways will be highlighted in purple</div>
                     <div>🧪 Molecules will be highlighted in red</div>
+                    <div>🏗️ Structures will be highlighted in indigo</div>
+                    <div>⚙️ Techniques will be highlighted in amber</div>
                   </div>
                 </div>
               )}
@@ -299,7 +425,7 @@ export default function Home() {
 
         {/* Footer */}
         <div className="text-center mt-8 text-sm text-gray-500">
-          <p>🎯 Focus: Perfect the biomedical parser | 📚 Next: Add PDF support</p>
+          <p>🎯 Perfect for biochemistry textbooks | 📚 Upload PDFs or paste text | 🧬 Advanced biomedical analysis</p>
         </div>
       </div>
     </div>

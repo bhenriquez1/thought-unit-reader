@@ -4,27 +4,28 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && next export",
-    "start": "npx serve out"
+    "build": "next build",
+    "export": "next export",
+    "start": "npx serve out",
+    "lint": "next lint"
   },
   "dependencies": {
     "@headlessui/react": "^1.7.17",
     "@heroicons/react": "^2.1.1",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
-    "epubjs": "^0.3.93",
     "firebase": "^10.8.0",
     "mammoth": "^1.9.0",
-    "next": "^13.5.11",
-    "pdfjs-dist": "^5.2.133",
+    "next": "^14.0.0",
+    "pdfjs-dist": "^3.11.174",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "react-pdf": "^9.2.1",
-    "tailwind-merge": "^1.4.0",
-    "tesseract.js": "^6.0.1"
+    "react-pdf": "^7.5.1",
+    "tailwind-merge": "^2.0.0",
+    "tesseract.js": "^5.0.4"
   },
   "engines": {
-    "node": "20.x"
+    "node": ">=18.0.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.7",
