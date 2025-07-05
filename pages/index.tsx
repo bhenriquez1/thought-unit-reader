@@ -1,4 +1,4 @@
-// pages/index.tsx - Universal Academic Text Analyzer
+// pages/index.tsx - Right Brain Reading Interface
 import { useState, useCallback } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
@@ -29,23 +29,23 @@ export default function Home() {
   const [numPages, setNumPages] = useState(0);
   const [fileName, setFileName] = useState("");
 
-  // Universal academic sample texts
+  // Sample texts from various book types (preserving original content)
   const sampleTexts = {
-    science: `The scientific method involves forming a hypothesis, designing an experiment with proper control groups, and analyzing data to test predictions. Variables must be carefully controlled to ensure valid results. Peer review ensures that scientific findings are reliable and reproducible through replication.`,
+    velveteen: `There was once a velveteen rabbit, and in the beginning he was really splendid. He was fat and bunchy, as a rabbit should be; his coat was spotted brown and white, he had real thread whiskers, and his ears were lined with pink sateen. On Christmas morning, when he sat wedged in the top of the Boy's stocking, with a sprig of holly between his paws, the effect was charming.`,
     
-    mathematics: `A function is a mathematical relationship between input and output values. The derivative of a function represents its rate of change, while the integral represents the area under the curve. These concepts form the foundation of calculus and are used to solve complex equations and prove mathematical theorems.`,
+    mystery: `The room was in darkness when Detective Morrison arrived at the scene. A single lamp cast eerie shadows across the mahogany desk where the victim had been found. The butler, trembling with nerves, led him through the mansion's corridors. "Nothing has been disturbed, sir," he whispered, his voice echoing in the vast hallway. "Everything is exactly as we found it this morning."`,
     
-    literature: `The author uses symbolism and metaphor to convey deeper meaning in the narrative. Characterization develops through dialogue and actions, while foreshadowing hints at future events. The protagonist's journey represents a universal theme about human nature and the conflict between individual desires and social expectations.`,
+    science: `Photosynthesis is the process by which plants convert sunlight into chemical energy. Chlorophyll molecules in the plant's leaves absorb light energy and use it to combine carbon dioxide from the air with water from the roots. This remarkable process not only feeds the plant but also produces oxygen as a byproduct, which is essential for most life on Earth.`,
     
-    history: `Primary sources provide direct evidence from historical periods, while secondary sources offer analysis and interpretation of events. Understanding causation and chronology helps historians reconstruct civilizations and trace the development of democratic institutions through different revolutionary periods.`,
+    history: `The Industrial Revolution began in Britain during the late 18th century and fundamentally changed human society. Steam engines powered new factories, while railways connected distant cities for the first time. Workers left rural farms to seek employment in rapidly growing urban centers. This transformation brought both unprecedented prosperity and significant social challenges that would shape the modern world.`,
     
-    philosophy: `Epistemology examines how we acquire knowledge and what constitutes valid reasoning. The question of free will versus determinism has implications for ethics and moral responsibility. Logic provides the framework for analyzing arguments and distinguishing valid conclusions from fallacious reasoning.`,
+    biography: `Marie Curie was born in Warsaw in 1867, during a time when Poland was under Russian occupation. Despite facing numerous obstacles as a woman in science, she became the first person to win Nobel Prizes in two different scientific fields. Her groundbreaking research on radioactivity opened new frontiers in physics and chemistry, though the dangers of radiation exposure were not yet understood.`,
     
-    psychology: `Cognitive psychology studies mental processes including memory, perception, and learning. Conditioning experiments demonstrate how behavior can be modified through association. Research on neuroplasticity shows that the brain can reorganize itself, challenging earlier assumptions about fixed neural pathways.`,
+    philosophy: `What is the nature of consciousness? This question has puzzled philosophers for centuries. Some argue that consciousness emerges from complex neural activity in the brain, while others believe it represents something beyond mere physical processes. The hard problem of consciousness challenges us to explain how subjective experience arises from objective matter.`,
     
-    economics: `Supply and demand determine market prices in a capitalist economy. Inflation occurs when there is too much money chasing too few goods. GDP measures economic output, while fiscal policy involves government decisions about taxation and spending to influence economic growth and employment.`,
+    literature: `In the dim light of dawn, Elizabeth walked through the garden paths of Pemberley. The morning mist clung to the ancient oak trees, and dewdrops sparkled on the rose petals like tiny diamonds. She had never imagined that circumstances would bring her to this place again, yet here she stood, her heart filled with emotions she dared not name.`,
     
-    biology: `Evolution through natural selection explains the diversity of life on Earth. DNA contains genetic information that is replicated during cell division. Ecosystems maintain balance through complex interactions between organisms and their environment, including processes like photosynthesis that convert solar energy into chemical energy.`
+    adventure: `The ship creaked and groaned as massive waves crashed over the deck. Captain Hayes gripped the wheel with white knuckles, his eyes scanning the horizon for any sign of land. The storm had been raging for three days now, and supplies were running dangerously low. "Hold fast, men!" he shouted over the howling wind. "We'll weather this storm yet!"`
   };
 
   // Helper to extract text from PDF
@@ -149,15 +149,15 @@ export default function Home() {
     }
   }, [extractTextFromPDF]);
 
-  // Parse the text
+  // Parse the text using Right Brain methodology
   const parseText = useCallback(() => {
     if (!enabled) {
-      setError("Please enable the academic text analyzer first");
+      setError("Please enable the Right Brain analyzer first");
       return;
     }
     
     if (!inputText.trim()) {
-      setError("Please enter some text, upload a file, or load a sample to analyze");
+      setError("Please enter some text, upload a book, or load a sample to analyze");
       return;
     }
 
@@ -176,11 +176,11 @@ export default function Home() {
             block: "start"
           });
         }, 100);
-      }, 800);
+      }, 1000); // Slightly longer for the "processing" effect
 
     } catch (err) {
       console.error("Parsing error:", err);
-      setError("Failed to parse text. Please try again.");
+      setError("Failed to create thought units. Please try again.");
       setLoading(false);
     }
   }, [enabled, inputText]);
@@ -197,30 +197,32 @@ export default function Home() {
 
   const getStatusMessage = (status: UploadStatus) => {
     switch (status) {
-      case "uploading": return "📤 Uploading file...";
-      case "processing": return "⚙️ Processing content...";
-      case "done": return "✅ File processed successfully!";
+      case "uploading": return "📤 Uploading book...";
+      case "processing": return "🧠 Extracting content...";
+      case "done": return "✅ Book loaded successfully!";
       case "error": return "❌ Upload failed";
       default: return "";
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">📚 Universal Academic Text Analyzer</h1>
-          <p className="text-gray-600">Intelligent analysis for ALL academic subjects and textbooks</p>
-          <p className="text-sm text-gray-500 mt-1">Science • Math • Literature • History • Philosophy • Psychology • Economics • Art</p>
+          <h1 className="text-5xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent mb-3">
+            📚 Right Brain Reading
+          </h1>
+          <p className="text-xl text-gray-700 font-medium">Read Faster by Reading Ideas Instead of Just Words</p>
+          <p className="text-sm text-gray-600 mt-2">Transform any book into thought-units for enhanced comprehension and speed</p>
         </div>
 
         {/* Controls Section */}
-        <div className="bg-white rounded-2xl shadow-xl p-8 mb-6">
+        <div className="bg-white rounded-2xl shadow-xl p-8 mb-6 border border-orange-200">
           <div className="flex justify-between items-center mb-6">
             <div className="flex items-center space-x-3">
-              <Label htmlFor="toggleParser" className="text-lg font-medium">
-                🎓 Academic Text Analyzer
+              <Label htmlFor="toggleParser" className="text-lg font-medium text-gray-800">
+                🧠 Right Brain Analyzer
               </Label>
               <Switch 
                 id="toggleParser" 
@@ -240,88 +242,88 @@ export default function Home() {
 
           {/* Sample Text Buttons */}
           <div className="mb-6">
-            <Label className="block text-sm font-medium mb-3">🎯 Try Different Academic Subjects:</Label>
+            <Label className="block text-sm font-medium mb-3 text-gray-700">📖 Try Different Book Styles:</Label>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Button
+                onClick={() => loadSampleText('velveteen')}
+                variant="outline"
+                size="sm"
+                className="text-left hover:bg-orange-50 border-orange-200"
+              >
+                🐰 Children's Story
+              </Button>
+              <Button
+                onClick={() => loadSampleText('mystery')}
+                variant="outline"
+                size="sm"
+                className="text-left hover:bg-orange-50 border-orange-200"
+              >
+                🔍 Mystery Novel
+              </Button>
               <Button
                 onClick={() => loadSampleText('science')}
                 variant="outline"
                 size="sm"
-                className="text-left"
+                className="text-left hover:bg-orange-50 border-orange-200"
               >
-                🔬 Science
-              </Button>
-              <Button
-                onClick={() => loadSampleText('mathematics')}
-                variant="outline"
-                size="sm"
-                className="text-left"
-              >
-                📐 Mathematics
-              </Button>
-              <Button
-                onClick={() => loadSampleText('literature')}
-                variant="outline"
-                size="sm"
-                className="text-left"
-              >
-                📖 Literature
+                🔬 Science Book
               </Button>
               <Button
                 onClick={() => loadSampleText('history')}
                 variant="outline"
                 size="sm"
-                className="text-left"
+                className="text-left hover:bg-orange-50 border-orange-200"
               >
-                🏛️ History
+                🏛️ History Text
+              </Button>
+              <Button
+                onClick={() => loadSampleText('biography')}
+                variant="outline"
+                size="sm"
+                className="text-left hover:bg-orange-50 border-orange-200"
+              >
+                👤 Biography
               </Button>
               <Button
                 onClick={() => loadSampleText('philosophy')}
                 variant="outline"
                 size="sm"
-                className="text-left"
+                className="text-left hover:bg-orange-50 border-orange-200"
               >
                 🤔 Philosophy
               </Button>
               <Button
-                onClick={() => loadSampleText('psychology')}
+                onClick={() => loadSampleText('literature')}
                 variant="outline"
                 size="sm"
-                className="text-left"
+                className="text-left hover:bg-orange-50 border-orange-200"
               >
-                🧠 Psychology
+                📖 Classic Literature
               </Button>
               <Button
-                onClick={() => loadSampleText('economics')}
+                onClick={() => loadSampleText('adventure')}
                 variant="outline"
                 size="sm"
-                className="text-left"
+                className="text-left hover:bg-orange-50 border-orange-200"
               >
-                💰 Economics
-              </Button>
-              <Button
-                onClick={() => loadSampleText('biology')}
-                variant="outline"
-                size="sm"
-                className="text-left"
-              >
-                🧬 Biology
+                ⛵ Adventure Story
               </Button>
             </div>
           </div>
 
-          {/* File Upload - Universal for all textbooks */}
+          {/* File Upload */}
           <div className="mb-6">
-            <Label className="block text-sm font-medium mb-2">
-              📄 Upload Any Academic Document (PDF or TXT files)
+            <Label className="block text-sm font-medium mb-2 text-gray-700">
+              📄 Upload Any Book or Document (PDF or TXT files)
             </Label>
             <input
               type="file"
               accept=".pdf,.txt"
               onChange={handleFileChange}
-              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100 cursor-pointer"
             />
             <div className="mt-2 text-xs text-gray-500">
-              💡 Upload textbooks, research papers, lecture notes, or any academic content
+              💡 Upload novels, textbooks, research papers, or any reading material
             </div>
           </div>
 
@@ -342,7 +344,7 @@ export default function Home() {
           <Button
             onClick={parseText}
             disabled={!enabled || !inputText.trim() || loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-4 text-lg"
+            className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 disabled:bg-gray-400 text-white font-medium py-4 text-lg shadow-lg"
           >
             {loading ? (
               <span className="flex items-center justify-center">
@@ -350,10 +352,10 @@ export default function Home() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                Analyzing academic content...
+                Creating thought units...
               </span>
             ) : (
-              "🎓 Analyze Academic Text"
+              "🧠 Create Right Brain Reading Format"
             )}
           </Button>
         </div>
@@ -361,9 +363,9 @@ export default function Home() {
         {/* Content Display */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Input Source Display */}
-          <div className="bg-white rounded-2xl shadow-xl p-6">
-            <h2 className="font-semibold text-lg mb-4 flex items-center">
-              {fileType === "pdf" ? "📄 PDF Document" : fileType === "text" ? "📝 Text Content" : "📁 Input Source"}
+          <div className="bg-white rounded-2xl shadow-xl p-6 border border-orange-200">
+            <h2 className="font-semibold text-lg mb-4 flex items-center text-gray-800">
+              {fileType === "pdf" ? "📄 Original PDF" : fileType === "text" ? "📝 Original Text" : "📚 Book Content"}
               {numPages > 0 && (
                 <span className="ml-2 text-sm text-gray-500">
                   ({numPages} pages)
@@ -401,48 +403,48 @@ export default function Home() {
               ) : inputText ? (
                 <>
                   <div className="mb-4 p-4">
-                    <Label className="block text-sm font-medium mb-2">
-                      Enter or paste your academic text:
+                    <Label className="block text-sm font-medium mb-2 text-gray-700">
+                      Enter or paste your book content:
                     </Label>
                     <textarea
                       value={inputText}
                       onChange={(e) => handleTextChange(e.target.value)}
-                      placeholder="Paste academic text here, upload a PDF, or use the sample buttons above..."
-                      className="w-full h-64 p-4 border border-gray-300 rounded-lg text-sm leading-relaxed resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Paste book content here, upload a PDF, or use the sample buttons above..."
+                      className="w-full h-64 p-4 border border-orange-200 rounded-lg text-sm leading-relaxed resize-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                     />
                   </div>
                 </>
               ) : (
                 <div className="p-8 text-center text-gray-500">
                   <div className="text-4xl mb-4">📚</div>
-                  <p className="text-lg font-medium">Upload any academic document</p>
+                  <p className="text-lg font-medium">Upload any book or document</p>
                   <p className="text-sm mt-2">
-                    Works with textbooks from any subject
+                    Transform traditional text into Right Brain reading format
                   </p>
                   <div className="mt-4 text-xs text-gray-400 grid grid-cols-2 gap-1">
-                    <div>🔬 Science Textbooks</div>
-                    <div>📐 Math Textbooks</div>
-                    <div>📖 Literature Books</div>
-                    <div>🏛️ History Books</div>
-                    <div>🤔 Philosophy Texts</div>
-                    <div>🧠 Psychology Books</div>
-                    <div>💰 Economics Texts</div>
-                    <div>🎨 Art History Books</div>
+                    <div>📖 Fiction & Literature</div>
+                    <div>📚 Non-fiction Books</div>
+                    <div>🔬 Textbooks</div>
+                    <div>📄 Research Papers</div>
+                    <div>📰 Articles & Essays</div>
+                    <div>🗞️ News & Reports</div>
+                    <div>📝 Study Materials</div>
+                    <div>📋 Any Text Content</div>
                   </div>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Parser Output */}
-          <div className="bg-white rounded-2xl shadow-xl p-6">
+          {/* Right Brain Output */}
+          <div className="bg-white rounded-2xl shadow-xl p-6 border border-orange-200">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="font-semibold text-lg">🎓 Academic Analysis</h2>
+              <h2 className="font-semibold text-lg text-gray-800">🧠 Right Brain Format</h2>
             </div>
             
             <div 
               id="parser-output"
-              className="min-h-96 max-h-96 overflow-auto border rounded-lg p-4 bg-gray-50"
+              className="min-h-96 max-h-96 overflow-auto border border-orange-200 rounded-lg p-4 bg-gradient-to-br from-orange-50 to-amber-50"
             >
               {output ? (
                 <div
@@ -451,20 +453,18 @@ export default function Home() {
                 />
               ) : (
                 <div className="text-center text-gray-500 py-16">
-                  <div className="text-4xl mb-4">🎓</div>
-                  <p className="text-lg font-medium">Universal analysis results</p>
+                  <div className="text-4xl mb-4">🧠</div>
+                  <p className="text-lg font-medium">Right Brain reading format</p>
                   <p className="text-sm mt-2">
-                    Upload any textbook, enter text, or use samples, then click "Analyze"
+                    Upload a book, enter text, or use samples, then click "Create Format"
                   </p>
-                  <div className="mt-6 text-xs text-gray-400 space-y-1">
-                    <div>🔬 Science terms highlighted in blue</div>
-                    <div>📐 Math concepts highlighted in purple</div>
-                    <div>📖 Literature terms highlighted in green</div>
-                    <div>🏛️ History concepts highlighted in red</div>
-                    <div>🤔 Philosophy terms highlighted in indigo</div>
-                    <div>🧠 Psychology terms highlighted in pink</div>
-                    <div>💰 Economics terms highlighted in amber</div>
-                    <div>🎨 Art terms highlighted in teal</div>
+                  <div className="mt-6 text-xs text-gray-400 space-y-2">
+                    <div className="font-semibold">Right Brain Method Benefits:</div>
+                    <div>🚀 Read 2-3x faster with better comprehension</div>
+                    <div>🎯 Focus on ideas instead of individual words</div>
+                    <div>🧠 Engage visual thinking for better retention</div>
+                    <div>📚 Preserve original content completely intact</div>
+                    <div>⚡ Reduce eye strain and reading fatigue</div>
                   </div>
                 </div>
               )}
@@ -474,7 +474,7 @@ export default function Home() {
 
         {/* Footer */}
         <div className="text-center mt-8 text-sm text-gray-500">
-          <p>🎯 Works with ALL academic subjects | 📚 Automatic subject detection | 🎓 Academic level assessment | 🔍 Intelligent thought-unit analysis</p>
+          <p>🎯 Based on "Reading with the Right Brain" methodology | 📚 Preserves original book content | 🧠 Optimized for comprehension and speed | ⚡ Transform any reading material</p>
         </div>
       </div>
     </div>
