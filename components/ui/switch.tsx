@@ -1,7 +1,7 @@
-typescript// components/ui/switch.tsx
+// components/ui/switch.tsx
 import * as React from "react";
 import { Switch as HeadlessSwitch } from "@headlessui/react";
-import { cn } from '../../lib/utils';
+import { cn } from "../../lib/utils";
 
 export interface SwitchProps extends React.ComponentPropsWithoutRef<typeof HeadlessSwitch> {
   checked: boolean;
