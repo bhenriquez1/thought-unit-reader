@@ -1,4 +1,4 @@
-// lib/parser.ts - Clean Thought Unit Parser
+// lib/parser.ts - Final Updated Thought Unit Parser
 interface ThoughtUnit {
   text: string;
   unitNumber: number;
@@ -17,49 +17,58 @@ function createThoughtUnits(text: string): ThoughtUnit[] {
     return [];
   }
 
-  // Clean the text but preserve proper spacing and structure
+  // Clean the text - normalize spacing and line breaks
   const cleanText = text
-    .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
-    .replace(/\n\s*\n/g, '\n')  // Clean up excessive line breaks
+    .replace(/\r\n/g, ' ')
+    .replace(/\r/g, ' ')
+    .replace(/\n/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 
-  // Split into sentences first to maintain natural breaks
+  // Split into sentences using multiple delimiters
   const sentences = cleanText
-    .split(/(?<=[.!?])\s+/)
-    .filter(sentence => sentence.trim().length > 3);
+    .split(/[.!?]+\s+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 3 && s.split(/\s+/).length > 1);
 
   const units: ThoughtUnit[] = [];
   let unitNumber = 1;
 
   sentences.forEach(sentence => {
-    const words = sentence.trim().split(/\s+/);
+    const words = sentence.split(/\s+/).filter(w => w.length > 0);
     
-    // If sentence is short enough (7 words or less), keep as single unit
+    // Target 3-7 words per unit for optimal reading
     if (words.length <= 7) {
+      // Short sentence - keep as single unit
       units.push({
-        text: sentence.trim(),
+        text: words.join(' '),
         unitNumber: unitNumber++,
         wordCount: words.length
       });
     } else {
-      // Break longer sentences into meaningful chunks
+      // Longer sentence - break into optimal chunks
       let currentChunk: string[] = [];
-      let i = 0;
       
-      while (i < words.length) {
+      for (let i = 0; i < words.length; i++) {
         currentChunk.push(words[i]);
         
-        // Look for natural break points
         const currentWord = words[i].toLowerCase();
         const nextWord = words[i + 1]?.toLowerCase() || '';
         
-        // Break at 5-7 words, but prefer natural breaks
+        // Natural break conditions
+        const hasComma = currentWord.includes(',');
+        const hasColon = currentWord.includes(':');
+        const hasSemicolon = currentWord.includes(';');
+        const isConjunction = ['and', 'but', 'or', 'so', 'yet', 'for', 'nor'].includes(nextWord);
+        const isSubordinating = ['because', 'since', 'when', 'where', 'while', 'although', 'though', 'unless', 'until', 'if', 'that', 'which', 'who'].includes(nextWord);
+        const isPreposition = ['in', 'on', 'at', 'by', 'for', 'with', 'from', 'to', 'of', 'about'].includes(nextWord);
+        
         const shouldBreak = 
-          currentChunk.length >= 5 && (
+          currentChunk.length >= 3 && (
             currentChunk.length >= 7 || // Hard limit
-            currentWord.match(/[.,:;]/) || // Punctuation
-            ['and', 'but', 'or', 'so', 'yet', 'for', 'nor', 'because', 'since', 'when', 'where', 'while', 'although', 'though', 'unless', 'until', 'if'].includes(nextWord) || // Conjunctions
-            ['the', 'a', 'an', 'this', 'that', 'these', 'those'].includes(nextWord) // Articles/determiners
+            hasComma || hasColon || hasSemicolon ||
+            isConjunction || isSubordinating ||
+            (currentChunk.length >= 5 && isPreposition)
           );
         
         if (shouldBreak || i === words.length - 1) {
@@ -70,8 +79,6 @@ function createThoughtUnits(text: string): ThoughtUnit[] {
           });
           currentChunk = [];
         }
-        
-        i++;
       }
     }
   });
@@ -80,11 +87,9 @@ function createThoughtUnits(text: string): ThoughtUnit[] {
 }
 
 function calculateStats(units: ThoughtUnit[], originalText: string): ThoughtUnitStats {
-  const totalWords = originalText.split(/\s+/).length;
+  const totalWords = originalText.split(/\s+/).filter(w => w.length > 0).length;
   const averageWordsPerUnit = units.reduce((sum, unit) => sum + unit.wordCount, 0) / units.length;
-  
-  // Reading time estimation: faster with thought units (400 WPM vs normal 250 WPM)
-  const readingTimeEstimate = totalWords / 400; // minutes
+  const readingTimeEstimate = totalWords / 400; // WPM for thought unit reading
   
   return {
     totalUnits: units.length,
@@ -96,64 +101,95 @@ function calculateStats(units: ThoughtUnit[], originalText: string): ThoughtUnit
 
 export function improveBiomedicalParsing(text: string): string {
   if (!text || text.trim().length === 0) {
-    return '<div class="text-gray-500 italic p-4">No text content to analyze</div>';
+    return `
+      <div class="flex items-center justify-center h-64 text-gray-500">
+        <div class="text-center">
+          <div class="text-4xl mb-4">📝</div>
+          <p class="text-lg">No text content to analyze</p>
+        </div>
+      </div>
+    `;
   }
 
   const units = createThoughtUnits(text);
   const stats = calculateStats(units, text);
   
   if (units.length === 0) {
-    return '<div class="text-gray-500 italic p-4">Could not create thought units from this text</div>';
+    return `
+      <div class="flex items-center justify-center h-64 text-gray-500">
+        <div class="text-center">
+          <div class="text-4xl mb-4">⚠️</div>
+          <p class="text-lg">Could not create thought units</p>
+          <p class="text-sm mt-2">Please try different text content</p>
+        </div>
+      </div>
+    `;
   }
 
-  // Generate clean HTML output similar to Velveteen Rabbit style
+  // Generate beautiful thought unit cards
   const htmlUnits = units.map((unit) => {
     return `
-      <div class="thought-unit mb-4 p-4 bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-        <div class="flex justify-between items-center mb-2">
-          <span class="text-xs font-semibold text-blue-600">UNIT ${unit.unitNumber}</span>
-          <span class="text-xs text-gray-500">${unit.wordCount} words</span>
+      <div class="thought-unit-card bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 mb-4 overflow-hidden">
+        <div class="bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2 border-b border-gray-100">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-bold text-blue-700 uppercase tracking-wide">Unit ${unit.unitNumber}</span>
+            <span class="text-xs text-gray-600 bg-white px-2 py-1 rounded-full">${unit.wordCount} words</span>
+          </div>
         </div>
-        <div class="text-gray-800 text-base leading-relaxed font-medium">
-          ${unit.text}
+        <div class="p-4">
+          <div class="text-gray-900 text-base leading-relaxed font-medium">
+            ${unit.text}
+          </div>
         </div>
       </div>
     `;
   }).join('');
 
   return `
-    <div class="space-y-4">
-      <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200 mb-6">
-        <h3 class="font-bold text-blue-800 mb-3 text-lg">📊 Thought Unit Analysis</h3>
-        <div class="grid grid-cols-2 gap-4 text-sm">
-          <div class="bg-white p-3 rounded shadow-sm">
-            <div class="text-gray-600 text-xs uppercase tracking-wide">Total Units</div>
+    <div class="thought-units-container">
+      <!-- Stats Overview -->
+      <div class="bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 rounded-lg border border-blue-200 p-6 mb-6 shadow-sm">
+        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+          <span class="text-blue-600 mr-2">📊</span>
+          Thought Unit Analysis
+        </h3>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="bg-white rounded-lg p-4 text-center shadow-sm">
             <div class="text-2xl font-bold text-blue-600">${stats.totalUnits}</div>
+            <div class="text-xs text-gray-600 uppercase tracking-wide">Total Units</div>
           </div>
-          <div class="bg-white p-3 rounded shadow-sm">
-            <div class="text-gray-600 text-xs uppercase tracking-wide">Avg Words/Unit</div>
+          <div class="bg-white rounded-lg p-4 text-center shadow-sm">
             <div class="text-2xl font-bold text-green-600">${stats.averageWordsPerUnit}</div>
+            <div class="text-xs text-gray-600 uppercase tracking-wide">Avg Words/Unit</div>
           </div>
-          <div class="bg-white p-3 rounded shadow-sm">
-            <div class="text-gray-600 text-xs uppercase tracking-wide">Total Words</div>
+          <div class="bg-white rounded-lg p-4 text-center shadow-sm">
             <div class="text-2xl font-bold text-purple-600">${stats.totalWords}</div>
+            <div class="text-xs text-gray-600 uppercase tracking-wide">Total Words</div>
           </div>
-          <div class="bg-white p-3 rounded shadow-sm">
-            <div class="text-gray-600 text-xs uppercase tracking-wide">Reading Time</div>
+          <div class="bg-white rounded-lg p-4 text-center shadow-sm">
             <div class="text-2xl font-bold text-orange-600">${stats.readingTimeEstimate}m</div>
+            <div class="text-xs text-gray-600 uppercase tracking-wide">Reading Time</div>
           </div>
         </div>
       </div>
-      
-      <div class="space-y-3">
+
+      <!-- Thought Units -->
+      <div class="thought-units-list space-y-0">
         ${htmlUnits}
       </div>
-      
-      <div class="text-xs text-gray-500 bg-gray-100 p-3 rounded-lg mt-6">
-        <div class="font-semibold mb-1">💡 Reading Guide:</div>
-        <div>• Read each unit as a complete thought</div>
-        <div>• Pause briefly between units to process</div>
-        <div>• Focus on meaning rather than individual words</div>
+
+      <!-- Reading Tips -->
+      <div class="bg-gray-50 rounded-lg border border-gray-200 p-4 mt-6">
+        <h4 class="font-semibold text-gray-800 mb-2 flex items-center">
+          <span class="text-yellow-500 mr-2">💡</span>
+          Reading Guide
+        </h4>
+        <div class="text-sm text-gray-600 space-y-1">
+          <div>• Read each unit as a complete thought</div>
+          <div>• Pause briefly between units to process the meaning</div>
+          <div>• Focus on understanding concepts rather than individual words</div>
+          <div>• Use the visual breaks to maintain reading rhythm</div>
+        </div>
       </div>
     </div>
   `;
