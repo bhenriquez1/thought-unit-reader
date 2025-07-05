@@ -106,19 +106,15 @@ export function improveBiomedicalParsing(text: string): string {
     return '<div class="text-gray-500 italic p-4">Could not create thought units from this text</div>';
   }
 
-  // Generate clean HTML output
-  const htmlUnits = units.map((unit, index) => {
-    const isEven = index % 2 === 0;
-    const bgColor = isEven ? 'bg-blue-50' : 'bg-gray-50';
-    const borderColor = isEven ? 'border-blue-200' : 'border-gray-200';
-    
+  // Generate clean HTML output similar to Velveteen Rabbit style
+  const htmlUnits = units.map((unit) => {
     return `
-      <div class="thought-unit mb-3 p-4 rounded-lg border ${bgColor} ${borderColor} hover:shadow-sm transition-shadow">
-        <div class="flex justify-between items-start mb-2">
-          <span class="text-xs font-medium text-blue-600">Unit ${unit.unitNumber}</span>
+      <div class="thought-unit mb-4 p-4 bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-xs font-semibold text-blue-600">UNIT ${unit.unitNumber}</span>
           <span class="text-xs text-gray-500">${unit.wordCount} words</span>
         </div>
-        <div class="text-gray-800 leading-relaxed">
+        <div class="text-gray-800 text-base leading-relaxed font-medium">
           ${unit.text}
         </div>
       </div>
@@ -127,36 +123,33 @@ export function improveBiomedicalParsing(text: string): string {
 
   return `
     <div class="space-y-4">
-      <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
-        <h3 class="font-semibold text-blue-800 mb-3">📊 Thought Unit Analysis</h3>
+      <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200 mb-6">
+        <h3 class="font-bold text-blue-800 mb-3 text-lg">📊 Thought Unit Analysis</h3>
         <div class="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <div class="text-gray-600">Total Units</div>
-            <div class="text-xl font-bold text-blue-600">${stats.totalUnits}</div>
+          <div class="bg-white p-3 rounded shadow-sm">
+            <div class="text-gray-600 text-xs uppercase tracking-wide">Total Units</div>
+            <div class="text-2xl font-bold text-blue-600">${stats.totalUnits}</div>
           </div>
-          <div>
-            <div class="text-gray-600">Avg Words/Unit</div>
-            <div class="text-xl font-bold text-green-600">${stats.averageWordsPerUnit}</div>
+          <div class="bg-white p-3 rounded shadow-sm">
+            <div class="text-gray-600 text-xs uppercase tracking-wide">Avg Words/Unit</div>
+            <div class="text-2xl font-bold text-green-600">${stats.averageWordsPerUnit}</div>
           </div>
-          <div>
-            <div class="text-gray-600">Total Words</div>
-            <div class="text-xl font-bold text-purple-600">${stats.totalWords}</div>
+          <div class="bg-white p-3 rounded shadow-sm">
+            <div class="text-gray-600 text-xs uppercase tracking-wide">Total Words</div>
+            <div class="text-2xl font-bold text-purple-600">${stats.totalWords}</div>
           </div>
-          <div>
-            <div class="text-gray-600">Reading Time</div>
-            <div class="text-xl font-bold text-orange-600">${stats.readingTimeEstimate}m</div>
+          <div class="bg-white p-3 rounded shadow-sm">
+            <div class="text-gray-600 text-xs uppercase tracking-wide">Reading Time</div>
+            <div class="text-2xl font-bold text-orange-600">${stats.readingTimeEstimate}m</div>
           </div>
         </div>
       </div>
       
-      <div class="space-y-2">
-        <h4 class="font-semibold text-gray-800">📖 Thought Units:</h4>
-        <div class="max-h-96 overflow-y-auto">
-          ${htmlUnits}
-        </div>
+      <div class="space-y-3">
+        ${htmlUnits}
       </div>
       
-      <div class="text-xs text-gray-500 bg-gray-100 p-3 rounded-lg">
+      <div class="text-xs text-gray-500 bg-gray-100 p-3 rounded-lg mt-6">
         <div class="font-semibold mb-1">💡 Reading Guide:</div>
         <div>• Read each unit as a complete thought</div>
         <div>• Pause briefly between units to process</div>
