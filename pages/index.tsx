@@ -658,7 +658,7 @@ export default function Home() {
                 </div>
               ) : bookStructure ? (
                 <div className="p-6">
-                  <div dangerouslySetInnerHTML={{ __html: output }} />
+                  <div dangerouslySetInnerHTML={{ __html: output || '' }} />
                 </div>
               ) : (
                 <div className="h-full flex flex-col justify-center items-center text-gray-500 p-8">
