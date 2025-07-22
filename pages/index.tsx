@@ -7,7 +7,6 @@ import { parseBookWithChapters, generateProgressiveReadingHTML } from "../lib/pa
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
-import { Play, Pause, RotateCcw, Settings, Upload } from 'lucide-react';
 
 // Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
@@ -450,7 +449,7 @@ export default function Home() {
                         key={i} 
                         pageNumber={i + 1}
                         className="mb-6 shadow-lg rounded-lg overflow-hidden"
-                        width={Math.min(450, window.innerWidth * 0.4)}
+                        width={Math.min(450, typeof window !== 'undefined' ? window.innerWidth * 0.4 : 450)}
                         renderAnnotationLayer={false}
                         renderTextLayer={true}
                       />
@@ -521,7 +520,7 @@ export default function Home() {
                             : 'bg-green-500 hover:bg-green-600 text-white'
                         } disabled:opacity-50 disabled:cursor-not-allowed`}
                       >
-                        {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                        <span>{isPlaying ? '⏸️' : '▶️'}</span>
                         {isPlaying ? 'Pause' : 'Start'}
                       </button>
                       
@@ -529,7 +528,7 @@ export default function Home() {
                         onClick={handleReset}
                         className="flex items-center gap-2 px-3 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-medium transition-all text-sm"
                       >
-                        <RotateCcw className="w-4 h-4" />
+                        <span>🔄</span>
                         Reset
                       </button>
                       
@@ -537,7 +536,8 @@ export default function Home() {
                         onClick={() => setShowSettings(!showSettings)}
                         className="flex items-center gap-2 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-all text-sm"
                       >
-                        <Settings className="w-4 h-4" />
+                        <span>⚙️</span>
+                        Settings
                       </button>
                     </div>
 
@@ -553,7 +553,7 @@ export default function Home() {
                             min="100"
                             max="600"
                             step="25"
-                            value={wmp}
+                            value={wpm}
                             onChange={(e) => setWpm(Number(e.target.value))}
                             className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                           />
@@ -567,7 +567,6 @@ export default function Home() {
                             type="range"
                             min="3"
                             max="10"
-                            value
                             value={maxChunkSize}
                             onChange={(e) => setMaxChunkSize(Number(e.target.value))}
                             className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
@@ -665,40 +664,41 @@ export default function Home() {
                 <div className="h-full flex flex-col justify-center items-center text-gray-500 p-8">
                   <div className="text-6xl mb-6">🧠</div>
                   <p className="text-xl font-semibold text-center mb-2">Thought units will appear here</p>
+                  <p className="text-sm text-center
                   <p className="text-sm text-center text-gray-400 max-w-md mb-6">
-                    Upload a book and click "Create Thought Units" to transform the text into optimized reading chunks.
-                  </p>
-                  
-                  {/* Benefits */}
-                  <div className="text-xs text-gray-400 space-y-2 bg-gray-50 p-4 rounded-lg max-w-md">
-                    <div className="font-semibold text-gray-600 mb-2">Benefits of Thought Unit Reading:</div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-blue-500">📚</span>
-                      <span>Original content preserved completely</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-red-500">🧠</span>
-                      <span>Text organized into meaningful chunks</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-yellow-500">⚡</span>
-                      <span>2-3x faster reading speed</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-green-500">🎯</span>
-                      <span>Enhanced comprehension and retention</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-purple-500">👀</span>
-                      <span>Reduced eye strain and fatigue</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+                   Upload a book and click "Create Thought Units" to transform the text into optimized reading chunks.
+                 </p>
+                 
+                 {/* Benefits */}
+                 <div className="text-xs text-gray-400 space-y-2 bg-gray-50 p-4 rounded-lg max-w-md">
+                   <div className="font-semibold text-gray-600 mb-2">Benefits of Thought Unit Reading:</div>
+                   <div className="flex items-center gap-2">
+                     <span className="text-blue-500">📚</span>
+                     <span>Original content preserved completely</span>
+                   </div>
+                   <div className="flex items-center gap-2">
+                     <span className="text-red-500">🧠</span>
+                     <span>Text organized into meaningful chunks</span>
+                   </div>
+                   <div className="flex items-center gap-2">
+                     <span className="text-yellow-500">⚡</span>
+                     <span>2-3x faster reading speed</span>
+                   </div>
+                   <div className="flex items-center gap-2">
+                     <span className="text-green-500">🎯</span>
+                     <span>Enhanced comprehension and retention</span>
+                   </div>
+                   <div className="flex items-center gap-2">
+                     <span className="text-purple-500">👀</span>
+                     <span>Reduced eye strain and fatigue</span>
+                   </div>
+                 </div>
+               </div>
+             )}
+           </div>
+         </div>
+       </div>
+     </div>
+   </div>
+ );
 }
