@@ -52,7 +52,7 @@ export default function Home() {
     setChunkSpeed(wordMs * maxChunkSize * 1.5);
   }, [wpm, maxChunkSize]);
 
-  // Enhanced text chunking with natural language processing - FIXED TYPE
+  // Enhanced text chunking with natural language processing
   const createThoughtUnits = useCallback((inputText: string) => {
     if (!inputText) return [];
     
@@ -107,6 +107,26 @@ export default function Home() {
   };
 
   const currentWords = getCurrentChunkWords();
+
+  // Get current chapter info based on current chunk
+  const getCurrentChapterInfo = () => {
+    if (!bookStructure) return null;
+    
+    let globalIndex = 0;
+    for (const chapter of bookStructure.chapters) {
+      if (currentChunkIndex >= globalIndex && currentChunkIndex < globalIndex + chapter.units.length) {
+        return {
+          chapter,
+          chapterIndex: bookStructure.chapters.indexOf(chapter),
+          unitInChapter: currentChunkIndex - globalIndex + 1
+        };
+      }
+      globalIndex += chapter.units.length;
+    }
+    return null;
+  };
+
+  const currentChapterInfo = getCurrentChapterInfo();
 
   // Advanced timer management with sync
   useEffect(() => {
@@ -169,7 +189,7 @@ export default function Home() {
       }).promise;
       
       let fullText = "";
-      const maxPages = Math.min(pdf.numPages, 50);
+      const maxPages = Math.min(pdf.numPages, 100); // Increased from 50 to 100
       
       for (let i = 1; i <= maxPages; i++) {
         const page = await pdf.getPage(i);
@@ -305,6 +325,69 @@ export default function Home() {
       case "error": return "❌ Processing failed";
       default: return "";
     }
+  };
+
+  // Render units organized by chapters
+  const renderUnitsByChapters = () => {
+    if (!bookStructure) return null;
+
+    let globalIndex = 0;
+    
+    return bookStructure.chapters.map((chapter: any, chapterIndex: number) => {
+      const chapterStartIndex = globalIndex;
+      globalIndex += chapter.units.length;
+      
+      return (
+        <div key={chapter.id} className="mb-6">
+          {/* Chapter Header */}
+          <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-3 mb-3">
+            <div className="flex items-center justify-between">
+              <h5 className="font-bold text-indigo-800 text-sm flex items-center">
+                <span className="bg-indigo-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold mr-2">
+                  {chapter.number}
+                </span>
+                {chapter.title}
+              </h5>
+              <div className="text-xs text-indigo-600 bg-white px-2 py-1 rounded-full">
+                {chapter.units.length} units
+              </div>
+            </div>
+          </div>
+          
+          {/* Chapter Units */}
+          <div className="space-y-2 pl-4">
+            {chapter.units.map((unit: any, unitIndex: number) => {
+              const globalUnitIndex = chapterStartIndex + unitIndex;
+              return (
+                <button
+                  key={unit.id}
+                  onClick={() => handleChunkClick(globalUnitIndex)}
+                  className={`w-full text-left p-2 rounded-lg transition-all text-xs ${
+                    globalUnitIndex === currentChunkIndex
+                      ? 'bg-blue-100 border border-blue-400 text-blue-900 shadow-md'
+                      : globalUnitIndex < currentChunkIndex
+                      ? 'bg-green-50 text-green-700 border border-green-200'
+                      : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200'
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="text-xs font-bold bg-gray-200 text-gray-600 px-2 py-1 rounded flex-shrink-0">
+                      {unit.unitNumber}
+                    </span>
+                    <span className="flex-1">{unit.text}</span>
+                    {globalUnitIndex === currentChunkIndex && (
+                      <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded flex-shrink-0">
+                        CURRENT
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    });
   };
 
   return (
@@ -444,7 +527,7 @@ export default function Home() {
                     onLoadSuccess={({ numPages }) => setNumPages(numPages)}
                     className="w-full"
                   >
-                    {Array.from({ length: Math.min(numPages, 10) }).map((_, i) => (
+                    {Array.from({ length: Math.min(numPages, 25) }).map((_, i) => (
                       <Page 
                         key={i} 
                         pageNumber={i + 1}
@@ -454,11 +537,11 @@ export default function Home() {
                         renderTextLayer={true}
                       />
                     ))}
-                    {numPages > 10 && (
+                    {numPages > 25 && (
                       <div className="text-center p-6 text-gray-500 bg-gray-50 rounded-lg">
                         <div className="text-2xl mb-2">📚</div>
-                        <p className="font-medium">... and {numPages - 10} more pages</p>
-                        <p className="text-sm mt-1">Showing first 10 pages for performance</p>
+                        <p className="font-medium">... and {numPages - 25} more pages</p>
+                        <p className="text-sm mt-1">Showing first 25 pages for performance</p>
                       </div>
                     )}
                   </Document>
@@ -598,8 +681,18 @@ export default function Home() {
 
                   {/* Current Unit Display */}
                   <div className="text-center">
-                    <div className="text-sm text-gray-500 mb-4 font-medium">
-                      Thought Unit {currentChunkIndex + 1} of {thoughtUnits.length}
+                    <div className="text-sm text-gray-500 mb-2 font-medium">
+                      {currentChapterInfo ? (
+                        <span>
+                          <span className="text-indigo-600 font-semibold">
+                            {currentChapterInfo.chapter.title}
+                          </span>
+                          {" • "}
+                          Unit {currentChapterInfo.unitInChapter} of {currentChapterInfo.chapter.units.length}
+                        </span>
+                      ) : (
+                        `Thought Unit ${currentChunkIndex + 1} of ${thoughtUnits.length}`
+                      )}
                     </div>
                     
                     <div className="text-2xl leading-relaxed font-medium text-gray-800 min-h-[100px] flex items-center justify-center flex-wrap gap-2">
@@ -635,25 +728,13 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* All Units Preview */}
-                  <div className="max-h-48 overflow-y-auto space-y-2">
-                    <h4 className="text-sm font-semibold text-gray-700 mb-2">All Units:</h4>
-                    {thoughtUnits.map((chunk, index) => (
-                      <button
-                        key={index}
-                        onClick={() => handleChunkClick(index)}
-                        className={`w-full text-left p-2 rounded-lg transition-all text-xs ${
-                          index === currentChunkIndex
-                            ? 'bg-blue-100 border border-blue-400 text-blue-900'
-                            : index < currentChunkIndex
-                            ? 'bg-green-50 text-green-700 border border-green-200'
-                            : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
-                        }`}
-                      >
-                        <span className="font-bold mr-2">#{index + 1}</span>
-                        {chunk}
-                      </button>
-                    ))}
+                  {/* All Units by Chapters */}
+                  <div className="max-h-64 overflow-y-auto space-y-2">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
+                      <span className="mr-2">📚</span>
+                      All Units by Chapters:
+                    </h4>
+                    {renderUnitsByChapters()}
                   </div>
                 </div>
               ) : bookStructure ? (
