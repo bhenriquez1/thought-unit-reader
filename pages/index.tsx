@@ -1,4 +1,4 @@
-// pages/index.tsx - Stable Version Without Complex Navigation
+// pages/index.tsx - With Stable Bidirectional Navigation
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 
@@ -42,8 +42,13 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [wpm, setWpm] = useState(200);
   
+  // Simple navigation states
+  const [thoughtUnits, setThoughtUnits] = useState<string[]>([]);
+  const [unitTextPositions, setUnitTextPositions] = useState<Array<{start: number, end: number}>>([]);
+  
   const chunkTimerRef = useRef<NodeJS.Timeout | null>(null);
   const wordTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
   // Calculate reading speeds based on WPM
   useEffect(() => {
@@ -52,13 +57,18 @@ export default function Home() {
     setChunkSpeed(wordMs * maxChunkSize * 1.5);
   }, [wpm, maxChunkSize]);
 
-  // Enhanced text chunking with natural language processing
+  // Enhanced text chunking with position tracking
   const createThoughtUnits = useCallback((inputText: string) => {
-    if (!inputText) return [];
+    if (!inputText) {
+      setThoughtUnits([]);
+      setUnitTextPositions([]);
+      return [];
+    }
     
     const cleanText = inputText.replace(/\s+/g, ' ').trim();
     const sentences = cleanText.match(/[^\.!?]+[\.!?]+/g) || [cleanText];
     const chunks: string[] = [];
+    const positions: Array<{start: number, end: number}> = [];
     
     const breakWords = ['and', 'or', 'but', 'because', 'however', 'therefore', 'meanwhile', 'furthermore', 'moreover', 'consequently'];
     const prepositions = ['in', 'on', 'at', 'by', 'for', 'with', 'from', 'to', 'of', 'about', 'through', 'during'];
@@ -86,20 +96,46 @@ export default function Home() {
           (currentChunk.length >= 4 && afterPreposition);
           
         if (shouldBreak) {
-          chunks.push(currentChunk.join(' '));
+          const chunkText = currentChunk.join(' ');
+          chunks.push(chunkText);
+          
+          // Find position in original text
+          const chunkStart = inputText.toLowerCase().indexOf(chunkText.toLowerCase());
+          if (chunkStart !== -1) {
+            positions.push({
+              start: chunkStart,
+              end: chunkStart + chunkText.length
+            });
+          }
+          
           currentChunk = [];
         }
       }
       
       if (currentChunk.length > 0) {
-        chunks.push(currentChunk.join(' '));
+        const chunkText = currentChunk.join(' ');
+        chunks.push(chunkText);
+        
+        const chunkStart = inputText.toLowerCase().indexOf(chunkText.toLowerCase());
+        if (chunkStart !== -1) {
+          positions.push({
+            start: chunkStart,
+            end: chunkStart + chunkText.length
+          });
+        }
       }
     });
     
-    return chunks.filter(chunk => chunk.trim().length > 0);
+    const finalChunks = chunks.filter(chunk => chunk.trim().length > 0);
+    setThoughtUnits(finalChunks);
+    setUnitTextPositions(positions);
+    return finalChunks;
   }, [maxChunkSize]);
 
-  const thoughtUnits = createThoughtUnits(inputText);
+  // Create thought units when text changes
+  useEffect(() => {
+    createThoughtUnits(inputText);
+  }, [inputText, createThoughtUnits]);
 
   const getCurrentChunkWords = () => {
     if (currentChunkIndex >= thoughtUnits.length) return [];
@@ -107,6 +143,51 @@ export default function Home() {
   };
 
   const currentWords = getCurrentChunkWords();
+
+  // Handle text selection for navigation
+  const handleTextClick = useCallback((e: React.MouseEvent<HTMLTextAreaElement>) => {
+    if (!textAreaRef.current) return;
+    
+    const clickPosition = textAreaRef.current.selectionStart;
+    
+    // Find which unit contains this position
+    const unitIndex = unitTextPositions.findIndex(pos => 
+      clickPosition >= pos.start && clickPosition <= pos.end
+    );
+    
+    if (unitIndex !== -1 && unitIndex !== currentChunkIndex) {
+      setCurrentChunkIndex(unitIndex);
+      setCurrentWordIndex(0);
+      if (isPlaying) {
+        setIsPlaying(false);
+      }
+    }
+  }, [unitTextPositions, currentChunkIndex, isPlaying]);
+
+  // Handle PDF page click navigation
+  const handlePdfPageClick = useCallback((pageNumber: number) => {
+    if (thoughtUnits.length === 0 || numPages === 0) return;
+    
+    // Estimate unit based on page
+    const unitsPerPage = thoughtUnits.length / numPages;
+    const estimatedUnit = Math.floor((pageNumber - 1) * unitsPerPage);
+    const targetUnit = Math.min(estimatedUnit, thoughtUnits.length - 1);
+    
+    setCurrentChunkIndex(targetUnit);
+    setCurrentWordIndex(0);
+    if (isPlaying) {
+      setIsPlaying(false);
+    }
+  }, [thoughtUnits.length, numPages, isPlaying]);
+
+  // Highlight current unit in textarea
+  useEffect(() => {
+    if (textAreaRef.current && unitTextPositions[currentChunkIndex]) {
+      const pos = unitTextPositions[currentChunkIndex];
+      textAreaRef.current.focus();
+      textAreaRef.current.setSelectionRange(pos.start, pos.end);
+    }
+  }, [currentChunkIndex, unitTextPositions]);
 
   // Get current chapter info based on current chunk
   const getCurrentChapterInfo = () => {
@@ -189,7 +270,7 @@ export default function Home() {
       }).promise;
       
       let fullText = "";
-      const maxPages = Math.min(pdf.numPages, 200); // Process up to 200 pages
+      const maxPages = Math.min(pdf.numPages, 200);
       
       for (let i = 1; i <= maxPages; i++) {
         try {
@@ -497,6 +578,14 @@ export default function Home() {
               ⚠️ {error}
             </div>
           )}
+
+          {/* Navigation Help */}
+          {thoughtUnits.length > 0 && (
+            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+              💡 <strong>Navigation:</strong> Click anywhere in the text or PDF pages to jump to that thought unit! 
+              Current unit is highlighted automatically.
+            </div>
+          )}
         </div>
       </div>
 
@@ -504,7 +593,7 @@ export default function Home() {
       <div className="max-w-7xl mx-auto px-6 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ height: "calc(100vh - 200px)" }}>
           
-          {/* LEFT PANEL - Original Content */}
+          {/* LEFT PANEL - Original Content with Navigation */}
           <div className="bg-white rounded-xl shadow-xl overflow-hidden flex flex-col border border-gray-200">
             <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b flex-shrink-0">
               <div className="flex items-center justify-between">
@@ -513,6 +602,11 @@ export default function Home() {
                   {numPages > 0 && (
                     <span className="ml-3 text-sm text-gray-500 bg-white px-3 py-1 rounded-full">
                       {numPages} pages
+                    </span>
+                  )}
+                  {thoughtUnits.length > 0 && (
+                    <span className="ml-3 text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
+                      🔄 Click to jump
                     </span>
                   )}
                 </h2>
@@ -554,14 +648,23 @@ export default function Home() {
                   >
                     {Array.from({ length: Math.min(numPages, 50) }).map((_, i) => (
                       <div key={i} className="mb-4 bg-white shadow-lg rounded-lg overflow-hidden">
-                        <div className="bg-gray-100 px-3 py-2 text-sm text-gray-600 font-medium">
-                          Page {i + 1}
+                        <div className="bg-gray-100 px-3 py-2 text-sm text-gray-600 font-medium flex justify-between items-center">
+                          <span>Page {i + 1}</span>
+                          <button
+                            onClick={() => handlePdfPageClick(i + 1)}
+                            className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 transition-colors"
+                          >
+                            Jump to Units
+                          </button>
                         </div>
-                        <div className="p-4 flex justify-center">
+                        <div 
+                          className="p-4 flex justify-center cursor-pointer hover:bg-gray-50 transition-colors" 
+                          onClick={() => handlePdfPageClick(i + 1)}
+                        >
                           <Page 
                             pageNumber={i + 1}
                             scale={pdfScale}
-                            className="shadow-md"
+                            className="shadow-md hover:shadow-lg transition-shadow"
                             renderAnnotationLayer={false}
                             renderTextLayer={true}
                           />
@@ -581,13 +684,15 @@ export default function Home() {
                 <div className="p-6 h-full">
                   <div className="h-full flex flex-col">
                     <Label className="block text-sm font-semibold mb-3 text-gray-700">
-                      Original Text (editable):
+                      Original Text (click anywhere to jump to units):
                     </Label>
                     <textarea
+                      ref={textAreaRef}
                       value={inputText}
                       onChange={(e) => handleTextChange(e.target.value)}
+                      onClick={handleTextClick}
                       placeholder="Paste your text here or upload a PDF file..."
-                      className="flex-1 w-full p-4 border border-gray-300 rounded-lg text-sm leading-relaxed resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+                      className="flex-1 w-full p-4 border border-gray-300 rounded-lg text-sm leading-relaxed resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 cursor-pointer"
                       style={{ fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace' }}
                     />
                   </div>
