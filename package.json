@@ -45,4 +45,51 @@
     "ts-jest": "^29.1.2",
     "typescript": "^5.4.5"
   }
+  {
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "export": "next build && next export",
+    "serve": "npx serve out",
+    "clean": "rimraf .next out"
+  }
+{
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "export": "next build && next export",
+    "serve": "npx serve out",
+    "clean": "rimraf .next out"
+  {
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "export": "next build && next export",
+    "serve": "npx serve out",
+    "clean": "rimraf .next out"
+  }{
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "export": "next build && next export",
+    "serve": "npx serve out",
+    "clean": "rimraf .next out"
+  }{
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "export": "next build && next export",
+    "serve": "npx serve out",
+    "clean": "rimraf .next out"
+  }
 }
