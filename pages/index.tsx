@@ -42,8 +42,8 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [wpm, setWpm] = useState(200);
   
-  const chunkTimerRef = useRef(null);
-  const wordTimerRef = useRef(null);
+  const chunkTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const wordTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Calculate reading speeds based on WPM
   useEffect(() => {
@@ -52,20 +52,20 @@ export default function Home() {
     setChunkSpeed(wordMs * maxChunkSize * 1.5);
   }, [wpm, maxChunkSize]);
 
-  // Enhanced text chunking with natural language processing
-  const createThoughtUnits = useCallback((inputText) => {
+  // Enhanced text chunking with natural language processing - FIXED TYPE
+  const createThoughtUnits = useCallback((inputText: string) => {
     if (!inputText) return [];
     
     const cleanText = inputText.replace(/\s+/g, ' ').trim();
     const sentences = cleanText.match(/[^\.!?]+[\.!?]+/g) || [cleanText];
-    const chunks = [];
+    const chunks: string[] = [];
     
     const breakWords = ['and', 'or', 'but', 'because', 'however', 'therefore', 'meanwhile', 'furthermore', 'moreover', 'consequently'];
     const prepositions = ['in', 'on', 'at', 'by', 'for', 'with', 'from', 'to', 'of', 'about', 'through', 'during'];
     
     sentences.forEach(sentence => {
       const words = sentence.trim().split(/\s+/).filter(word => word.length > 0);
-      let currentChunk = [];
+      let currentChunk: string[] = [];
       
       for (let i = 0; i < words.length; i++) {
         const word = words[i];
@@ -135,8 +135,8 @@ export default function Home() {
     }
 
     return () => {
-      clearInterval(wordTimerRef.current);
-      clearTimeout(chunkTimerRef.current);
+      if (wordTimerRef.current) clearInterval(wordTimerRef.current);
+      if (chunkTimerRef.current) clearTimeout(chunkTimerRef.current);
     };
   }, [isPlaying, currentChunkIndex, currentWords.length, chunkSpeed, wordSpeed, thoughtUnits.length, viewMode]);
 
@@ -150,7 +150,7 @@ export default function Home() {
     setCurrentWordIndex(0);
   };
 
-  const handleChunkClick = (chunkIndex) => {
+  const handleChunkClick = (chunkIndex: number) => {
     setCurrentChunkIndex(chunkIndex);
     setCurrentWordIndex(0);
     if (isPlaying) {
@@ -664,41 +664,40 @@ export default function Home() {
                 <div className="h-full flex flex-col justify-center items-center text-gray-500 p-8">
                   <div className="text-6xl mb-6">🧠</div>
                   <p className="text-xl font-semibold text-center mb-2">Thought units will appear here</p>
-                  <p className="text-sm text-center
                   <p className="text-sm text-center text-gray-400 max-w-md mb-6">
-                   Upload a book and click "Create Thought Units" to transform the text into optimized reading chunks.
-                 </p>
-                 
-                 {/* Benefits */}
-                 <div className="text-xs text-gray-400 space-y-2 bg-gray-50 p-4 rounded-lg max-w-md">
-                   <div className="font-semibold text-gray-600 mb-2">Benefits of Thought Unit Reading:</div>
-                   <div className="flex items-center gap-2">
-                     <span className="text-blue-500">📚</span>
-                     <span>Original content preserved completely</span>
-                   </div>
-                   <div className="flex items-center gap-2">
-                     <span className="text-red-500">🧠</span>
-                     <span>Text organized into meaningful chunks</span>
-                   </div>
-                   <div className="flex items-center gap-2">
-                     <span className="text-yellow-500">⚡</span>
-                     <span>2-3x faster reading speed</span>
-                   </div>
-                   <div className="flex items-center gap-2">
-                     <span className="text-green-500">🎯</span>
-                     <span>Enhanced comprehension and retention</span>
-                   </div>
-                   <div className="flex items-center gap-2">
-                     <span className="text-purple-500">👀</span>
-                     <span>Reduced eye strain and fatigue</span>
-                   </div>
-                 </div>
-               </div>
-             )}
-           </div>
-         </div>
-       </div>
-     </div>
-   </div>
- );
+                    Upload a book and click "Create Thought Units" to transform the text into optimized reading chunks.
+                  </p>
+                  
+                  {/* Benefits */}
+                  <div className="text-xs text-gray-400 space-y-2 bg-gray-50 p-4 rounded-lg max-w-md">
+                    <div className="font-semibold text-gray-600 mb-2">Benefits of Thought Unit Reading:</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-blue-500">📚</span>
+                      <span>Original content preserved completely</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-red-500">🧠</span>
+                      <span>Text organized into meaningful chunks</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-yellow-500">⚡</span>
+                      <span>2-3x faster reading speed</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">🎯</span>
+                      <span>Enhanced comprehension and retention</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-purple-500">👀</span>
+                      <span>Reduced eye strain and fatigue</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
