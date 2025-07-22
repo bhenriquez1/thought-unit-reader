@@ -1,7 +1,6 @@
-// pages/index.tsx - Enhanced with Bidirectional Navigation
+// pages/index.tsx - Stable Version Without Complex Navigation
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
-// Removed react-pdf CSS imports for deployment compatibility
 
 import { parseBookWithChapters, generateProgressiveReadingHTML } from "../lib/parser";
 import { Label } from "../components/ui/label";
@@ -43,13 +42,8 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [wpm, setWpm] = useState(200);
   
-  // NEW: Text mapping for bidirectional navigation
-  const [textToUnitMapping, setTextToUnitMapping] = useState<Array<{start: number, end: number, unitIndex: number}>>([]);
-  const [highlightedTextRange, setHighlightedTextRange] = useState<{start: number, end: number} | null>(null);
-  
   const chunkTimerRef = useRef<NodeJS.Timeout | null>(null);
   const wordTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
   // Calculate reading speeds based on WPM
   useEffect(() => {
@@ -65,18 +59,13 @@ export default function Home() {
     const cleanText = inputText.replace(/\s+/g, ' ').trim();
     const sentences = cleanText.match(/[^\.!?]+[\.!?]+/g) || [cleanText];
     const chunks: string[] = [];
-    const mappings: Array<{start: number, end: number, unitIndex: number}> = [];
     
     const breakWords = ['and', 'or', 'but', 'because', 'however', 'therefore', 'meanwhile', 'furthermore', 'moreover', 'consequently'];
     const prepositions = ['in', 'on', 'at', 'by', 'for', 'with', 'from', 'to', 'of', 'about', 'through', 'during'];
     
-    let currentPosition = 0;
-    let unitIndex = 0;
-    
     sentences.forEach(sentence => {
       const words = sentence.trim().split(/\s+/).filter(word => word.length > 0);
       let currentChunk: string[] = [];
-      let chunkStartPosition = currentPosition;
       
       for (let i = 0; i < words.length; i++) {
         const word = words[i];
@@ -97,103 +86,20 @@ export default function Home() {
           (currentChunk.length >= 4 && afterPreposition);
           
         if (shouldBreak) {
-          const chunkText = currentChunk.join(' ');
-          chunks.push(chunkText);
-          
-          // Find the exact position in original text
-          const chunkInOriginal = inputText.indexOf(chunkText, chunkStartPosition);
-          if (chunkInOriginal !== -1) {
-            mappings.push({
-              start: chunkInOriginal,
-              end: chunkInOriginal + chunkText.length,
-              unitIndex: unitIndex
-            });
-          }
-          
+          chunks.push(currentChunk.join(' '));
           currentChunk = [];
-          unitIndex++;
-          chunkStartPosition = currentPosition;
         }
       }
       
       if (currentChunk.length > 0) {
-        const chunkText = currentChunk.join(' ');
-        chunks.push(chunkText);
-        
-        const chunkInOriginal = inputText.indexOf(chunkText, chunkStartPosition);
-        if (chunkInOriginal !== -1) {
-          mappings.push({
-            start: chunkInOriginal,
-            end: chunkInOriginal + chunkText.length,
-            unitIndex: unitIndex
-          });
-        }
-        unitIndex++;
+        chunks.push(currentChunk.join(' '));
       }
-      
-      currentPosition += sentence.length;
     });
     
-    setTextToUnitMapping(mappings);
     return chunks.filter(chunk => chunk.trim().length > 0);
   }, [maxChunkSize]);
 
   const thoughtUnits = createThoughtUnits(inputText);
-
-  // NEW: Handle text selection in original content
-  const handleTextSelection = useCallback(() => {
-    if (!textAreaRef.current) return;
-    
-    const selectionStart = textAreaRef.current.selectionStart;
-    const selectionEnd = textAreaRef.current.selectionEnd;
-    
-    if (selectionStart === selectionEnd) return; // No selection
-    
-    // Find corresponding thought unit
-    const mapping = textToUnitMapping.find(m => 
-      selectionStart >= m.start && selectionStart <= m.end
-    );
-    
-    if (mapping) {
-      setCurrentChunkIndex(mapping.unitIndex);
-      setCurrentWordIndex(0);
-      setHighlightedTextRange({start: mapping.start, end: mapping.end});
-      
-      // Pause if playing
-      if (isPlaying) {
-        setIsPlaying(false);
-      }
-    }
-  }, [textToUnitMapping, isPlaying]);
-
-  // NEW: Handle clicking on PDF pages
-  const handlePdfPageClick = useCallback((pageNumber: number) => {
-    // Estimate which thought unit corresponds to this page
-    const wordsPerPage = Math.ceil(thoughtUnits.length / numPages);
-    const estimatedUnitIndex = Math.min((pageNumber - 1) * wordsPerPage, thoughtUnits.length - 1);
-    
-    setCurrentChunkIndex(estimatedUnitIndex);
-    setCurrentWordIndex(0);
-    
-    if (isPlaying) {
-      setIsPlaying(false);
-    }
-  }, [thoughtUnits.length, numPages, isPlaying]);
-
-  // NEW: Sync highlighting when current chunk changes
-  useEffect(() => {
-    if (textToUnitMapping.length > 0 && currentChunkIndex < textToUnitMapping.length) {
-      const mapping = textToUnitMapping[currentChunkIndex];
-      setHighlightedTextRange({start: mapping.start, end: mapping.end});
-      
-      // Scroll to highlighted text in textarea
-      if (textAreaRef.current) {
-        textAreaRef.current.focus();
-        textAreaRef.current.setSelectionRange(mapping.start, mapping.end);
-        textAreaRef.current.scrollTop = Math.max(0, (mapping.start / inputText.length) * textAreaRef.current.scrollHeight - 200);
-      }
-    }
-  }, [currentChunkIndex, textToUnitMapping, inputText.length]);
 
   const getCurrentChunkWords = () => {
     if (currentChunkIndex >= thoughtUnits.length) return [];
@@ -262,7 +168,6 @@ export default function Home() {
     setIsPlaying(false);
     setCurrentChunkIndex(0);
     setCurrentWordIndex(0);
-    setHighlightedTextRange(null);
   };
 
   const handleChunkClick = (chunkIndex: number) => {
@@ -274,7 +179,7 @@ export default function Home() {
     }
   };
 
-  // Helper to extract text from PDF - IMPROVED FOR LARGE FILES
+  // Helper to extract text from PDF
   const extractTextFromPDF = useCallback(async (buffer: ArrayBuffer): Promise<string> => {
     try {
       const pdf = await pdfjs.getDocument({ 
@@ -284,7 +189,7 @@ export default function Home() {
       }).promise;
       
       let fullText = "";
-      const maxPages = pdf.numPages;
+      const maxPages = Math.min(pdf.numPages, 200); // Process up to 200 pages
       
       for (let i = 1; i <= maxPages; i++) {
         try {
@@ -312,12 +217,10 @@ export default function Home() {
     setFileType("text");
     setOutput(null);
     setBookStructure(null);
-    setTextToUnitMapping([]);
-    setHighlightedTextRange(null);
     handleReset();
   }, []);
 
-  // Handle file upload - IMPROVED FOR LARGE FILES
+  // Handle file upload
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -327,8 +230,6 @@ export default function Home() {
     setFileName(file.name);
     setOutput(null);
     setBookStructure(null);
-    setTextToUnitMapping([]);
-    setHighlightedTextRange(null);
     handleReset();
 
     try {
@@ -392,7 +293,6 @@ export default function Home() {
         const bookTitle = fileName.replace(/\.(pdf|txt)$/i, '') || "Untitled Book";
         const structure = parseBookWithChapters(inputText, bookTitle);
         setBookStructure(structure);
-        
         setViewMode("hybrid");
         setLoading(false);
       }, 1000);
@@ -427,17 +327,6 @@ export default function Home() {
       case "error": return "❌ Processing failed";
       default: return "";
     }
-  };
-
-  // NEW: Render highlighted text in textarea
-  const renderHighlightedText = () => {
-    if (!highlightedTextRange || !inputText) return inputText;
-    
-    const before = inputText.slice(0, highlightedTextRange.start);
-    const highlighted = inputText.slice(highlightedTextRange.start, highlightedTextRange.end);
-    const after = inputText.slice(highlightedTextRange.end);
-    
-    return { before, highlighted, after };
   };
 
   // Render units organized by chapters
@@ -608,14 +497,6 @@ export default function Home() {
               ⚠️ {error}
             </div>
           )}
-          
-          {/* NEW: Navigation Help */}
-          {thoughtUnits.length > 0 && (
-            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
-              💡 <strong>Tip:</strong> Click or select text in the original content to jump to the corresponding thought unit! 
-              Click on PDF pages or highlight text to navigate.
-            </div>
-          )}
         </div>
       </div>
 
@@ -623,7 +504,7 @@ export default function Home() {
       <div className="max-w-7xl mx-auto px-6 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ height: "calc(100vh - 200px)" }}>
           
-          {/* LEFT PANEL - Original Content with Navigation */}
+          {/* LEFT PANEL - Original Content */}
           <div className="bg-white rounded-xl shadow-xl overflow-hidden flex flex-col border border-gray-200">
             <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b flex-shrink-0">
               <div className="flex items-center justify-between">
@@ -634,10 +515,6 @@ export default function Home() {
                       {numPages} pages
                     </span>
                   )}
-                  {/* NEW: Navigation indicator */}
-                  <span className="ml-3 text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
-                    🔄 Click to navigate
-                  </span>
                 </h2>
                 
                 {fileType === "pdf" && (
@@ -677,20 +554,14 @@ export default function Home() {
                   >
                     {Array.from({ length: Math.min(numPages, 50) }).map((_, i) => (
                       <div key={i} className="mb-4 bg-white shadow-lg rounded-lg overflow-hidden">
-                        <div className="bg-gray-100 px-3 py-2 text-sm text-gray-600 font-medium flex justify-between items-center">
-                          <span>Page {i + 1}</span>
-                          <button
-                            onClick={() => handlePdfPageClick(i + 1)}
-                            className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 transition-colors"
-                          >
-                            Jump to Units
-                          </button>
+                        <div className="bg-gray-100 px-3 py-2 text-sm text-gray-600 font-medium">
+                          Page {i + 1}
                         </div>
-                        <div className="p-4 flex justify-center cursor-pointer" onClick={() => handlePdfPageClick(i + 1)}>
+                        <div className="p-4 flex justify-center">
                           <Page 
                             pageNumber={i + 1}
                             scale={pdfScale}
-                            className="shadow-md hover:shadow-lg transition-shadow"
+                            className="shadow-md"
                             renderAnnotationLayer={false}
                             renderTextLayer={true}
                           />
@@ -702,9 +573,6 @@ export default function Home() {
                         <div className="text-3xl mb-3">📚</div>
                         <p className="font-medium text-lg">... and {numPages - 50} more pages</p>
                         <p className="text-sm mt-2">Showing first 50 pages for performance</p>
-                        <p className="text-xs mt-2 text-gray-400">
-                          All {numPages} pages have been processed for thought units
-                        </p>
                       </div>
                     )}
                   </Document>
@@ -713,18 +581,13 @@ export default function Home() {
                 <div className="p-6 h-full">
                   <div className="h-full flex flex-col">
                     <Label className="block text-sm font-semibold mb-3 text-gray-700">
-                      Original Text (editable - select text to navigate to units):
+                      Original Text (editable):
                     </Label>
                     <textarea
-                      ref={textAreaRef}
                       value={inputText}
                       onChange={(e) => handleTextChange(e.target.value)}
-                      onSelect={handleTextSelection}
-                      onMouseUp={handleTextSelection}
                       placeholder="Paste your text here or upload a PDF file..."
-                      className={`flex-1 w-full p-4 border border-gray-300 rounded-lg text-sm leading-relaxed resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${
-                        highlightedTextRange ? 'selection:bg-yellow-300' : ''
-                      }`}
+                      className="flex-1 w-full p-4 border border-gray-300 rounded-lg text-sm leading-relaxed resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
                       style={{ fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace' }}
                     />
                   </div>
