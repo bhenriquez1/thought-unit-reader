@@ -1,21 +1,24 @@
-// components/ui/switch.tsx
+// components/ui/switch.tsx - Simple switch without HeadlessUI
 import * as React from "react";
-import { Switch as HeadlessSwitch } from "@headlessui/react";
 import { cn } from "../../lib/utils";
 
-export interface SwitchProps extends React.ComponentPropsWithoutRef<typeof HeadlessSwitch> {
+export interface SwitchProps {
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
   className?: string;
+  id?: string;
 }
 
 const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
-  ({ checked, onCheckedChange, className, ...props }, ref) => {
+  ({ checked, onCheckedChange, className, id, ...props }, ref) => {
     return (
-      <HeadlessSwitch
+      <button
         ref={ref}
-        onChange={onCheckedChange}
-        checked={checked}
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        id={id}
+        onClick={() => onCheckedChange(!checked)}
         className={cn(
           "relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2",
           checked ? "bg-blue-600" : "bg-gray-300",
@@ -31,11 +34,10 @@ const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
             checked ? "translate-x-6" : "translate-x-1"
           )}
         />
-      </HeadlessSwitch>
+      </button>
     );
   }
 );
 
 Switch.displayName = "Switch";
-
 export { Switch };

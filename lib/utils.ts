@@ -1,7 +1,4 @@
-// lib/utils.ts
-import { twMerge } from "tailwind-merge";
-import { ClassValue, clsx } from "clsx";
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+// lib/utils.ts - Simplified without external dependencies
+export function cn(...inputs: (string | undefined | null | false)[]): string {
+  return inputs.filter(Boolean).join(' ');
 }
