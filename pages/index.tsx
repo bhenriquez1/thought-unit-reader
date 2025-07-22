@@ -1,19 +1,20 @@
-// pages/index.tsx - Final Thought Unit Reader Interface
+// pages/index.tsx - Enhanced Thought Unit Reader with Progressive Reading
 import { useState, useCallback } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 import "react-pdf/dist/esm/Page/TextLayer.css";
 
-import { improveBiomedicalParsing } from "../lib/parser";
+import { parseBookWithChapters, generateProgressiveReadingHTML } from "../lib/enhanced-parser";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 
-// Configure PDF.js worker with reliable CDN
+// Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
 type FileType = "text" | "pdf" | "none";
+type ViewMode = "original" | "chapters" | "progressive";
 
 export default function Home() {
   const [enabled, setEnabled] = useState(true);
@@ -22,6 +23,9 @@ export default function Home() {
   const [output, setOutput] = useState<string | null>(null);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("original");
+  const [bookStructure, setBookStructure] = useState<any>(null);
+  const [currentChapter, setCurrentChapter] = useState(0);
   
   // PDF-specific states
   const [fileType, setFileType] = useState<FileType>("none");
@@ -61,11 +65,11 @@ export default function Home() {
     setInputText(text);
     setError(null);
     setFileType("text");
-    // Clear output when text changes
     setOutput(null);
+    setBookStructure(null);
   }, []);
 
-  // Handle file upload with PDF support
+  // Handle file upload
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -73,7 +77,8 @@ export default function Home() {
     setError(null);
     setUploadStatus("uploading");
     setFileName(file.name);
-    setOutput(null); // Clear previous output
+    setOutput(null);
+    setBookStructure(null);
 
     try {
       if (file.size > 100 * 1024 * 1024) {
@@ -91,12 +96,10 @@ export default function Home() {
         setPdfFile(pdfBlob);
         setFileType("pdf");
         extractedText = await extractTextFromPDF(buffer);
-
       } else if (file.type === "text/plain" || file.name.toLowerCase().endsWith(".txt")) {
         extractedText = await file.text();
         setFileType("text");
         setPdfFile(null);
-
       } else {
         throw new Error(`Unsupported file type. Please upload PDF or TXT files.`);
       }
@@ -118,7 +121,7 @@ export default function Home() {
     }
   }, [extractTextFromPDF]);
 
-  // Parse the text using Thought Unit methodology
+  // Parse text into chapters and thought units
   const parseText = useCallback(() => {
     if (!enabled) {
       setError("Please enable the Thought Unit analyzer first");
@@ -135,8 +138,20 @@ export default function Home() {
 
     try {
       setTimeout(() => {
-        const parsed = improveBiomedicalParsing(inputText);
-        setOutput(parsed);
+        const bookTitle = fileName.replace(/\.(pdf|txt)$/i, '') || "Untitled Book";
+        const structure = parseBookWithChapters(inputText, bookTitle);
+        setBookStructure(structure);
+        
+        // Generate initial output based on view mode
+        if (viewMode === "progressive") {
+          const progressiveHTML = generateProgressiveReadingHTML(structure, currentChapter);
+          setOutput(progressiveHTML);
+        } else {
+          // Generate chapter overview
+          const overviewHTML = generateChapterOverview(structure);
+          setOutput(overviewHTML);
+        }
+        
         setLoading(false);
       }, 1000);
 
@@ -145,7 +160,113 @@ export default function Home() {
       setError("Failed to create thought units. Please try again.");
       setLoading(false);
     }
-  }, [enabled, inputText]);
+  }, [enabled, inputText, fileName, viewMode, currentChapter]);
+
+  const generateChapterOverview = (structure: any) => {
+    const chaptersHTML = structure.chapters.map((chapter: any, index: number) => {
+      return `
+        <div class="chapter-overview bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 mb-4 overflow-hidden">
+          <div class="bg-gradient-to-r from-indigo-50 to-purple-50 px-6 py-4 border-b border-gray-100">
+            <div class="flex justify-between items-center">
+              <h3 class="text-lg font-bold text-gray-800">${chapter.title}</h3>
+              <div class="flex items-center space-x-3">
+                <span class="text-sm text-gray-600 bg-white px-3 py-1 rounded-full">
+                  ${chapter.units.length} units
+                </span>
+                <span class="text-sm text-gray-600 bg-white px-3 py-1 rounded-full">
+                  ${chapter.estimatedReadTime}m
+                </span>
+                <button onclick="startProgressiveReading(${index})" 
+                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                  📖 Start Reading
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="p-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <div class="bg-blue-50 p-3 rounded-lg text-center">
+                <div class="text-xl font-bold text-blue-600">${chapter.units.length}</div>
+                <div class="text-xs text-blue-600 uppercase tracking-wide">Thought Units</div>
+              </div>
+              <div class="bg-green-50 p-3 rounded-lg text-center">
+                <div class="text-xl font-bold text-green-600">${chapter.wordCount}</div>
+                <div class="text-xs text-green-600 uppercase tracking-wide">Words</div>
+              </div>
+              <div class="bg-purple-50 p-3 rounded-lg text-center">
+                <div class="text-xl font-bold text-purple-600">${chapter.estimatedReadTime}m</div>
+                <div class="text-xs text-purple-600 uppercase tracking-wide">Est. Time</div>
+              </div>
+            </div>
+            <div class="text-sm text-gray-600">
+              First few units preview: ${chapter.units.slice(0, 3).map((unit: any) => unit.text).join(' • ')}...
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="book-overview">
+        <!-- Book Summary -->
+        <div class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-6 rounded-lg mb-6">
+          <h2 class="text-2xl font-bold mb-2">${structure.title}</h2>
+          <div class="grid grid-cols-3 gap-4 text-center">
+            <div>
+              <div class="text-2xl font-bold">${structure.chapters.length}</div>
+              <div class="text-sm opacity-90">Chapters</div>
+            </div>
+            <div>
+              <div class="text-2xl font-bold">${structure.totalUnits}</div>
+              <div class="text-sm opacity-90">Total Units</div>
+            </div>
+            <div>
+              <div class="text-2xl font-bold">${structure.estimatedReadTime}m</div>
+              <div class="text-sm opacity-90">Est. Time</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chapters -->
+        <div class="chapters-list">
+          ${chaptersHTML}
+        </div>
+
+        <!-- Reading Tips -->
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-6 mt-6">
+          <h4 class="font-semibold text-amber-800 mb-3 flex items-center">
+            <span class="text-2xl mr-2">📚</span>
+            How to Use Progressive Reading
+          </h4>
+          <div class="text-sm text-amber-700 space-y-2">
+            <div>• Click "Start Reading" on any chapter to begin progressive revelation</div>
+            <div>• Units will appear automatically at your chosen speed</div>
+            <div>• Use the controls to pause, adjust speed, or reset</div>
+            <div>• Navigate between chapters using the sidebar</div>
+            <div>• Progress is tracked for each chapter</div>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        function startProgressiveReading(chapterIndex) {
+          // This would reload the page in progressive mode
+          window.currentChapter = chapterIndex;
+          window.switchToProgressiveMode();
+        }
+      </script>
+    `;
+  };
+
+  const switchToProgressiveMode = (chapterIndex: number = 0) => {
+    if (!bookStructure) return;
+    
+    setCurrentChapter(chapterIndex);
+    setViewMode("progressive");
+    
+    const progressiveHTML = generateProgressiveReadingHTML(bookStructure, chapterIndex);
+    setOutput(progressiveHTML);
+  };
 
   const getStatusColor = (status: UploadStatus) => {
     switch (status) {
@@ -160,9 +281,9 @@ export default function Home() {
   const getStatusMessage = (status: UploadStatus) => {
     switch (status) {
       case "uploading": return "📤 Uploading book...";
-      case "processing": return "🧠 Extracting content...";
-      case "done": return "✅ Book loaded successfully!";
-      case "error": return "❌ Upload failed";
+      case "processing": return "🧠 Analyzing chapters and creating thought units...";
+      case "done": return "✅ Book processed successfully!";
+      case "error": return "❌ Processing failed";
       default: return "";
     }
   };
@@ -176,10 +297,38 @@ export default function Home() {
             <div>
               <h1 className="text-3xl font-bold text-gray-800 flex items-center">
                 🧠 <span className="ml-2">Thought Unit Reader</span>
+                <span className="ml-2 text-lg text-blue-600">Progressive</span>
               </h1>
-              <p className="text-sm text-gray-600 mt-1">Transform any book into thought-units for enhanced comprehension</p>
+              <p className="text-sm text-gray-600 mt-1">
+                Transform any book into chapters and thought-units for progressive reading
+              </p>
             </div>
+            
             <div className="flex items-center space-x-4">
+              {/* View Mode Toggle */}
+              {bookStructure && (
+                <div className="flex items-center space-x-2 border border-gray-300 rounded-lg p-1">
+                  <button
+                    onClick={() => setViewMode("original")}
+                    className={`px-3 py-1 text-xs rounded ${viewMode === "original" ? 'bg-blue-500 text-white' : 'text-gray-600'}`}
+                  >
+                    Original
+                  </button>
+                  <button
+                    onClick={() => setViewMode("chapters")}
+                    className={`px-3 py-1 text-xs rounded ${viewMode === "chapters" ? 'bg-blue-500 text-white' : 'text-gray-600'}`}
+                  >
+                    Chapters
+                  </button>
+                  <button
+                    onClick={() => switchToProgressiveMode(0)}
+                    className={`px-3 py-1 text-xs rounded ${viewMode === "progressive" ? 'bg-blue-500 text-white' : 'text-gray-600'}`}
+                  >
+                    Progressive
+                  </button>
+                </div>
+              )}
+              
               <div className="flex items-center space-x-2">
                 <Switch 
                   id="toggleParser" 
@@ -190,6 +339,7 @@ export default function Home() {
                   Analyzer {enabled ? 'ON' : 'OFF'}
                 </Label>
               </div>
+              
               {inputText.length > 0 && (
                 <div className="text-xs text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
                   📊 {Math.round(inputText.length / 5)} words
@@ -221,10 +371,10 @@ export default function Home() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Creating...
+                  Processing...
                 </span>
               ) : (
-                "🧠 Create Thought Units"
+                "🧠 Analyze Book"
               )}
             </Button>
           </div>
@@ -244,7 +394,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Main Content - Side by Side Layout */}
+      {/* Main Content */}
       <div className="max-w-7xl mx-auto px-6 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ height: "calc(100vh - 200px)" }}>
           
@@ -312,20 +462,21 @@ export default function Home() {
                   <div className="text-6xl mb-6">📚</div>
                   <p className="text-xl font-semibold text-center mb-2">Upload any book or document</p>
                   <p className="text-sm text-center text-gray-400 max-w-md">
-                    PDF files will be beautifully displayed here.<br/>
-                    Text files can be edited in a textarea.<br/>
-                    Start by uploading a file or pasting text above.
+                    Progressive reading breaks your content into chapters and reveals thought units automatically as you read.
                   </p>
                 </div>
               )}
             </div>
           </div>
 
-          {/* RIGHT PANEL - Thought Units */}
+          {/* RIGHT PANEL - Processed Content */}
           <div className="bg-white rounded-xl shadow-xl overflow-hidden flex flex-col border border-gray-200">
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-4 border-b flex-shrink-0">
               <h2 className="text-lg font-bold text-gray-800 flex items-center">
-                🧠 <span className="ml-2">Thought Units</span>
+                {viewMode === "progressive" ? "📖" : "🧠"} 
+                <span className="ml-2">
+                  {viewMode === "progressive" ? "Progressive Reading" : "Thought Units & Chapters"}
+                </span>
               </h2>
             </div>
             
@@ -336,18 +487,18 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="h-full flex flex-col justify-center items-center text-gray-500 p-8">
-                  <div className="text-6xl mb-6">🧠</div>
-                  <p className="text-xl font-semibold text-center mb-2">Thought units will appear here</p>
+                  <div className="text-6xl mb-6">📖</div>
+                  <p className="text-xl font-semibold text-center mb-2">Progressive Reading Experience</p>
                   <p className="text-sm text-center text-gray-400 max-w-md mb-6">
-                    Upload a book and click "Create Thought Units" to transform the text into optimized reading chunks.
+                    Upload a book and click "Analyze Book" to automatically detect chapters and create a progressive reading experience.
                   </p>
                   <div className="text-xs text-gray-400 text-center space-y-2 bg-gray-50 p-4 rounded-lg max-w-md">
-                    <div className="font-semibold text-gray-600 mb-2">Benefits of Thought Unit Reading:</div>
-                    <div>📖 Original content preserved completely</div>
-                    <div>🧠 Text organized into meaningful chunks</div>
-                    <div>⚡ 2-3x faster reading speed</div>
-                    <div>🎯 Enhanced comprehension and retention</div>
-                    <div>👁️ Reduced eye strain and fatigue</div>
+                    <div className="font-semibold text-gray-600 mb-2">Progressive Reading Features:</div>
+                    <div>📖 Automatic chapter detection</div>
+                    <div>🎯 Progressive thought unit revelation</div>
+                    <div>⏱️ Adjustable reading speed</div>
+                    <div>📊 Reading progress tracking</div>
+                    <div>🧠 Enhanced comprehension & retention</div>
                   </div>
                 </div>
               )}
@@ -355,6 +506,16 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {/* Global Script for Progressive Reading */}
+      <script dangerouslySetInnerHTML={{
+        __html: `
+          window.switchToProgressiveMode = function() {
+            // This would be handled by React state
+            console.log('Switching to progressive mode');
+          };
+        `
+      }} />
     </div>
   );
 }
