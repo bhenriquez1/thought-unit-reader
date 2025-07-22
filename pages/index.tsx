@@ -1,4 +1,4 @@
-// pages/index.tsx - Enhanced Hybrid Thought Unit Reader
+// pages/index.tsx - Enhanced Hybrid Thought Unit Reader with Better PDF Display
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 // Removed react-pdf CSS imports for deployment compatibility
@@ -31,6 +31,7 @@ export default function Home() {
   const [pdfFile, setPdfFile] = useState<Blob | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [fileName, setFileName] = useState("");
+  const [pdfScale, setPdfScale] = useState(1.0);
 
   // Hybrid reader states
   const [isPlaying, setIsPlaying] = useState(false);
@@ -179,7 +180,7 @@ export default function Home() {
     }
   };
 
-  // Helper to extract text from PDF
+  // Helper to extract text from PDF - IMPROVED FOR LARGE FILES
   const extractTextFromPDF = useCallback(async (buffer: ArrayBuffer): Promise<string> => {
     try {
       const pdf = await pdfjs.getDocument({ 
@@ -189,15 +190,21 @@ export default function Home() {
       }).promise;
       
       let fullText = "";
-      const maxPages = Math.min(pdf.numPages, 100); // Increased from 50 to 100
+      // Process ALL pages for large PDFs
+      const maxPages = pdf.numPages;
       
       for (let i = 1; i <= maxPages; i++) {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        const pageText = content.items
-          .map((item: any) => item.str)
-          .join(" ");
-        fullText += pageText + "\n\n";
+        try {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          const pageText = content.items
+            .map((item: any) => item.str)
+            .join(" ");
+          fullText += pageText + "\n\n";
+        } catch (pageError) {
+          console.warn(`Error processing page ${i}:`, pageError);
+          // Continue with other pages
+        }
       }
       return fullText.trim();
     } catch (err) {
@@ -216,7 +223,7 @@ export default function Home() {
     handleReset();
   }, []);
 
-  // Handle file upload
+  // Handle file upload - IMPROVED FOR LARGE FILES
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -229,8 +236,9 @@ export default function Home() {
     handleReset();
 
     try {
-      if (file.size > 100 * 1024 * 1024) {
-        throw new Error("File too large. Please select a file smaller than 100MB.");
+      // Increased file size limit to 500MB
+      if (file.size > 500 * 1024 * 1024) {
+        throw new Error("File too large. Please select a file smaller than 500MB.");
       }
 
       await new Promise(resolve => setTimeout(resolve, 300));
@@ -327,9 +335,9 @@ export default function Home() {
     }
   };
 
-  // Render units organized by chapters
+  // Render units organized by chapters - NEW FEATURE
   const renderUnitsByChapters = () => {
-    if (!bookStructure) return null;
+    if (!bookStructure || !bookStructure.chapters) return null;
 
     let globalIndex = 0;
     
@@ -502,22 +510,45 @@ export default function Home() {
       <div className="max-w-7xl mx-auto px-6 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ height: "calc(100vh - 200px)" }}>
           
-          {/* LEFT PANEL - Original Content */}
+          {/* LEFT PANEL - Original Content - IMPROVED PDF DISPLAY */}
           <div className="bg-white rounded-xl shadow-xl overflow-hidden flex flex-col border border-gray-200">
             <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b flex-shrink-0">
-              <h2 className="text-lg font-bold text-gray-800 flex items-center">
-                📄 <span className="ml-2">Original Content</span>
-                {numPages > 0 && (
-                  <span className="ml-3 text-sm text-gray-500 bg-white px-3 py-1 rounded-full">
-                    {numPages} pages
-                  </span>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-800 flex items-center">
+                  📄 <span className="ml-2">Original Content</span>
+                  {numPages > 0 && (
+                    <span className="ml-3 text-sm text-gray-500 bg-white px-3 py-1 rounded-full">
+                      {numPages} pages
+                    </span>
+                  )}
+                </h2>
+                
+                {fileType === "pdf" && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Zoom:</span>
+                    <button
+                      onClick={() => setPdfScale(prev => Math.max(0.5, prev - 0.1))}
+                      className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm"
+                    >
+                      -
+                    </button>
+                    <span className="text-sm text-gray-600 min-w-[3rem] text-center">
+                      {Math.round(pdfScale * 100)}%
+                    </span>
+                    <button
+                      onClick={() => setPdfScale(prev => Math.min(2.0, prev + 0.1))}
+                      className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm"
+                    >
+                      +
+                    </button>
+                  </div>
                 )}
-              </h2>
+              </div>
             </div>
             
             <div className="flex-1 overflow-auto">
               {fileType === "pdf" && pdfFile ? (
-                <div className="p-6">
+                <div className="p-4">
                   <Document
                     file={pdfFile}
                     onLoadError={(err) => {
@@ -527,21 +558,31 @@ export default function Home() {
                     onLoadSuccess={({ numPages }) => setNumPages(numPages)}
                     className="w-full"
                   >
-                    {Array.from({ length: Math.min(numPages, 25) }).map((_, i) => (
-                      <Page 
-                        key={i} 
-                        pageNumber={i + 1}
-                        className="mb-6 shadow-lg rounded-lg overflow-hidden"
-                        width={Math.min(450, typeof window !== 'undefined' ? window.innerWidth * 0.4 : 450)}
-                        renderAnnotationLayer={false}
-                        renderTextLayer={true}
-                      />
+                    {/* Show up to 50 pages for better preview */}
+                    {Array.from({ length: Math.min(numPages, 50) }).map((_, i) => (
+                      <div key={i} className="mb-4 bg-white shadow-lg rounded-lg overflow-hidden">
+                        <div className="bg-gray-100 px-3 py-2 text-sm text-gray-600 font-medium">
+                          Page {i + 1}
+                        </div>
+                        <div className="p-4 flex justify-center">
+                          <Page 
+                            pageNumber={i + 1}
+                            scale={pdfScale}
+                            className="shadow-md"
+                            renderAnnotationLayer={false}
+                            renderTextLayer={true}
+                          />
+                        </div>
+                      </div>
                     ))}
-                    {numPages > 25 && (
-                      <div className="text-center p-6 text-gray-500 bg-gray-50 rounded-lg">
-                        <div className="text-2xl mb-2">📚</div>
-                        <p className="font-medium">... and {numPages - 25} more pages</p>
-                        <p className="text-sm mt-1">Showing first 25 pages for performance</p>
+                    {numPages > 50 && (
+                      <div className="text-center p-6 text-gray-500 bg-gray-50 rounded-lg mt-4">
+                        <div className="text-3xl mb-3">📚</div>
+                        <p className="font-medium text-lg">... and {numPages - 50} more pages</p>
+                        <p className="text-sm mt-2">Showing first 50 pages for performance</p>
+                        <p className="text-xs mt-2 text-gray-400">
+                          All {numPages} pages have been processed for thought units
+                        </p>
                       </div>
                     )}
                   </Document>
@@ -565,9 +606,12 @@ export default function Home() {
                 <div className="h-full flex flex-col justify-center items-center text-gray-500 p-8">
                   <div className="text-6xl mb-6">📚</div>
                   <p className="text-xl font-semibold text-center mb-2">Upload any book or document</p>
-                  <p className="text-sm text-center text-gray-400 max-w-md">
+                  <p className="text-sm text-center text-gray-400 max-w-md mb-4">
                     Hybrid reading combines thought units with dynamic word highlighting for enhanced comprehension and speed.
                   </p>
+                  <div className="text-xs text-gray-400 bg-gray-50 p-3 rounded-lg">
+                    <strong>Supported:</strong> PDF files up to 500MB, TXT files
+                  </div>
                 </div>
               )}
             </div>
@@ -728,7 +772,7 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* All Units by Chapters */}
+                  {/* All Units by Chapters - NEW ORGANIZED VIEW */}
                   <div className="max-h-64 overflow-y-auto space-y-2">
                     <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
                       <span className="mr-2">📚</span>
