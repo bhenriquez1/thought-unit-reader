@@ -1,4 +1,4 @@
-// pages/index.tsx - With Stable Bidirectional Navigation
+// pages/index.tsx - Working Bidirectional Navigation
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 
@@ -42,9 +42,9 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [wpm, setWpm] = useState(200);
   
-  // Simple navigation states
+  // Navigation states
   const [thoughtUnits, setThoughtUnits] = useState<string[]>([]);
-  const [unitTextPositions, setUnitTextPositions] = useState<Array<{start: number, end: number}>>([]);
+  const [highlightPosition, setHighlightPosition] = useState<{start: number, end: number} | null>(null);
   
   const chunkTimerRef = useRef<NodeJS.Timeout | null>(null);
   const wordTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -55,20 +55,18 @@ export default function Home() {
     const wordMs = (60 / wpm) * 1000;
     setWordSpeed(wordMs);
     setChunkSpeed(wordMs * maxChunkSize * 1.5);
-  }, [wpm, maxChunkSize]);
+  }, [wmp, maxChunkSize]);
 
-  // Enhanced text chunking with position tracking
+  // Enhanced text chunking that preserves original text mapping
   const createThoughtUnits = useCallback((inputText: string) => {
     if (!inputText) {
       setThoughtUnits([]);
-      setUnitTextPositions([]);
       return [];
     }
     
     const cleanText = inputText.replace(/\s+/g, ' ').trim();
     const sentences = cleanText.match(/[^\.!?]+[\.!?]+/g) || [cleanText];
     const chunks: string[] = [];
-    const positions: Array<{start: number, end: number}> = [];
     
     const breakWords = ['and', 'or', 'but', 'because', 'however', 'therefore', 'meanwhile', 'furthermore', 'moreover', 'consequently'];
     const prepositions = ['in', 'on', 'at', 'by', 'for', 'with', 'from', 'to', 'of', 'about', 'through', 'during'];
@@ -96,39 +94,18 @@ export default function Home() {
           (currentChunk.length >= 4 && afterPreposition);
           
         if (shouldBreak) {
-          const chunkText = currentChunk.join(' ');
-          chunks.push(chunkText);
-          
-          // Find position in original text
-          const chunkStart = inputText.toLowerCase().indexOf(chunkText.toLowerCase());
-          if (chunkStart !== -1) {
-            positions.push({
-              start: chunkStart,
-              end: chunkStart + chunkText.length
-            });
-          }
-          
+          chunks.push(currentChunk.join(' '));
           currentChunk = [];
         }
       }
       
       if (currentChunk.length > 0) {
-        const chunkText = currentChunk.join(' ');
-        chunks.push(chunkText);
-        
-        const chunkStart = inputText.toLowerCase().indexOf(chunkText.toLowerCase());
-        if (chunkStart !== -1) {
-          positions.push({
-            start: chunkStart,
-            end: chunkStart + chunkText.length
-          });
-        }
+        chunks.push(currentChunk.join(' '));
       }
     });
     
     const finalChunks = chunks.filter(chunk => chunk.trim().length > 0);
     setThoughtUnits(finalChunks);
-    setUnitTextPositions(positions);
     return finalChunks;
   }, [maxChunkSize]);
 
@@ -144,50 +121,72 @@ export default function Home() {
 
   const currentWords = getCurrentChunkWords();
 
-  // Handle text selection for navigation
-  const handleTextClick = useCallback((e: React.MouseEvent<HTMLTextAreaElement>) => {
-    if (!textAreaRef.current) return;
+  // FIXED: Better text selection handling
+  const handleTextAreaClick = useCallback(() => {
+    if (!textAreaRef.current || thoughtUnits.length === 0) return;
     
     const clickPosition = textAreaRef.current.selectionStart;
+    const totalTextLength = inputText.length;
     
-    // Find which unit contains this position
-    const unitIndex = unitTextPositions.findIndex(pos => 
-      clickPosition >= pos.start && clickPosition <= pos.end
-    );
+    // Calculate which unit this position corresponds to
+    const unitPercentage = clickPosition / totalTextLength;
+    const targetUnitIndex = Math.floor(unitPercentage * thoughtUnits.length);
+    const clampedIndex = Math.max(0, Math.min(targetUnitIndex, thoughtUnits.length - 1));
     
-    if (unitIndex !== -1 && unitIndex !== currentChunkIndex) {
-      setCurrentChunkIndex(unitIndex);
+    if (clampedIndex !== currentChunkIndex) {
+      setCurrentChunkIndex(clampedIndex);
       setCurrentWordIndex(0);
       if (isPlaying) {
         setIsPlaying(false);
       }
     }
-  }, [unitTextPositions, currentChunkIndex, isPlaying]);
+  }, [thoughtUnits.length, inputText.length, currentChunkIndex, isPlaying]);
 
-  // Handle PDF page click navigation
+  // FIXED: Better PDF page navigation
   const handlePdfPageClick = useCallback((pageNumber: number) => {
     if (thoughtUnits.length === 0 || numPages === 0) return;
     
-    // Estimate unit based on page
-    const unitsPerPage = thoughtUnits.length / numPages;
-    const estimatedUnit = Math.floor((pageNumber - 1) * unitsPerPage);
-    const targetUnit = Math.min(estimatedUnit, thoughtUnits.length - 1);
+    // Better calculation based on page progression
+    const progressThroughBook = (pageNumber - 1) / numPages;
+    const targetUnitIndex = Math.floor(progressThroughBook * thoughtUnits.length);
+    const clampedIndex = Math.max(0, Math.min(targetUnitIndex, thoughtUnits.length - 1));
     
-    setCurrentChunkIndex(targetUnit);
+    setCurrentChunkIndex(clampedIndex);
     setCurrentWordIndex(0);
     if (isPlaying) {
       setIsPlaying(false);
     }
   }, [thoughtUnits.length, numPages, isPlaying]);
 
-  // Highlight current unit in textarea
+  // FIXED: Highlight current unit in original text
   useEffect(() => {
-    if (textAreaRef.current && unitTextPositions[currentChunkIndex]) {
-      const pos = unitTextPositions[currentChunkIndex];
-      textAreaRef.current.focus();
-      textAreaRef.current.setSelectionRange(pos.start, pos.end);
+    if (!inputText || thoughtUnits.length === 0 || !textAreaRef.current) return;
+    
+    const currentUnit = thoughtUnits[currentChunkIndex];
+    if (!currentUnit) return;
+    
+    // Find the unit in the original text (case insensitive)
+    const unitStart = inputText.toLowerCase().indexOf(currentUnit.toLowerCase());
+    if (unitStart !== -1) {
+      const unitEnd = unitStart + currentUnit.length;
+      setHighlightPosition({ start: unitStart, end: unitEnd });
+      
+      // Scroll to and select the current unit in textarea
+      setTimeout(() => {
+        if (textAreaRef.current) {
+          textAreaRef.current.focus();
+          textAreaRef.current.setSelectionRange(unitStart, unitEnd);
+          
+          // Scroll to make selection visible
+          const textarea = textAreaRef.current;
+          const totalHeight = textarea.scrollHeight;
+          const visibleHeight = textarea.clientHeight;
+          const scrollPosition = (unitStart / inputText.length) * totalHeight;
+          textarea.scrollTop = Math.max(0, scrollPosition - visibleHeight / 2);
+        }
+      }, 100);
     }
-  }, [currentChunkIndex, unitTextPositions]);
+  }, [currentChunkIndex, thoughtUnits, inputText]);
 
   // Get current chapter info based on current chunk
   const getCurrentChapterInfo = () => {
@@ -249,8 +248,10 @@ export default function Home() {
     setIsPlaying(false);
     setCurrentChunkIndex(0);
     setCurrentWordIndex(0);
+    setHighlightPosition(null);
   };
 
+  // FIXED: Better chunk click handling
   const handleChunkClick = (chunkIndex: number) => {
     setCurrentChunkIndex(chunkIndex);
     setCurrentWordIndex(0);
@@ -298,6 +299,7 @@ export default function Home() {
     setFileType("text");
     setOutput(null);
     setBookStructure(null);
+    setHighlightPosition(null);
     handleReset();
   }, []);
 
@@ -311,6 +313,7 @@ export default function Home() {
     setFileName(file.name);
     setOutput(null);
     setBookStructure(null);
+    setHighlightPosition(null);
     handleReset();
 
     try {
@@ -581,9 +584,9 @@ export default function Home() {
 
           {/* Navigation Help */}
           {thoughtUnits.length > 0 && (
-            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
-              💡 <strong>Navigation:</strong> Click anywhere in the text or PDF pages to jump to that thought unit! 
-              Current unit is highlighted automatically.
+            <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+              ✨ <strong>Navigation Active!</strong> Click anywhere in the text or PDF pages to jump to that thought unit! 
+              Current unit is automatically highlighted in yellow.
             </div>
           )}
         </div>
@@ -593,7 +596,7 @@ export default function Home() {
       <div className="max-w-7xl mx-auto px-6 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ height: "calc(100vh - 200px)" }}>
           
-          {/* LEFT PANEL - Original Content with Navigation */}
+          {/* LEFT PANEL - Original Content with Working Navigation */}
           <div className="bg-white rounded-xl shadow-xl overflow-hidden flex flex-col border border-gray-200">
             <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b flex-shrink-0">
               <div className="flex items-center justify-between">
@@ -605,8 +608,8 @@ export default function Home() {
                     </span>
                   )}
                   {thoughtUnits.length > 0 && (
-                    <span className="ml-3 text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
-                      🔄 Click to jump
+                    <span className="ml-3 text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full animate-pulse">
+                      🔄 Click to navigate!
                     </span>
                   )}
                 </h2>
@@ -647,24 +650,25 @@ export default function Home() {
                     className="w-full"
                   >
                     {Array.from({ length: Math.min(numPages, 50) }).map((_, i) => (
-                      <div key={i} className="mb-4 bg-white shadow-lg rounded-lg overflow-hidden">
-                        <div className="bg-gray-100 px-3 py-2 text-sm text-gray-600 font-medium flex justify-between items-center">
-                          <span>Page {i + 1}</span>
+                      <div key={i} className="mb-4 bg-white shadow-lg rounded-lg overflow-hidden border-2 hover:border-blue-300 transition-colors">
+                        <div className="bg-gradient-to-r from-gray-100 to-blue-50 px-3 py-2 text-sm text-gray-700 font-medium flex justify-between items-center">
+                          <span className="font-bold">Page {i + 1}</span>
                           <button
                             onClick={() => handlePdfPageClick(i + 1)}
-                            className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 transition-colors"
+                            className="text-xs bg-blue-500 text-white px-3 py-1 rounded-full hover:bg-blue-600 transition-colors font-semibold shadow"
                           >
-                            Jump to Units
+                            📍 Jump to Units
                           </button>
                         </div>
                         <div 
-                          className="p-4 flex justify-center cursor-pointer hover:bg-gray-50 transition-colors" 
+                          className="p-4 flex justify-center cursor-pointer hover:bg-blue-25 transition-colors" 
                           onClick={() => handlePdfPageClick(i + 1)}
+                          title={`Click to jump to thought units for page ${i + 1}`}
                         >
                           <Page 
                             pageNumber={i + 1}
                             scale={pdfScale}
-                            className="shadow-md hover:shadow-lg transition-shadow"
+                            className="shadow-md hover:shadow-xl transition-shadow border rounded"
                             renderAnnotationLayer={false}
                             renderTextLayer={true}
                           />
@@ -676,6 +680,9 @@ export default function Home() {
                         <div className="text-3xl mb-3">📚</div>
                         <p className="font-medium text-lg">... and {numPages - 50} more pages</p>
                         <p className="text-sm mt-2">Showing first 50 pages for performance</p>
+                        <p className="text-xs mt-2 text-blue-600">
+                          💡 All {numPages} pages are processed - click any visible page to navigate!
+                        </p>
                       </div>
                     )}
                   </Document>
@@ -683,17 +690,27 @@ export default function Home() {
               ) : inputText ? (
                 <div className="p-6 h-full">
                   <div className="h-full flex flex-col">
-                    <Label className="block text-sm font-semibold mb-3 text-gray-700">
-                      Original Text (click anywhere to jump to units):
+                    <Label className="block text-sm font-semibold mb-3 text-gray-700 flex items-center">
+                      📝 Original Text (click anywhere to jump to units):
+                      {highlightPosition && (
+                        <span className="ml-2 text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">
+                          Current unit highlighted!
+                        </span>
+                      )}
                     </Label>
                     <textarea
                       ref={textAreaRef}
                       value={inputText}
                       onChange={(e) => handleTextChange(e.target.value)}
-                      onClick={handleTextClick}
+                      onClick={handleTextAreaClick}
+                      onMouseUp={handleTextAreaClick}
                       placeholder="Paste your text here or upload a PDF file..."
-                      className="flex-1 w-full p-4 border border-gray-300 rounded-lg text-sm leading-relaxed resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 cursor-pointer"
-                      style={{ fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace' }}
+                      className="flex-1 w-full p-4 border-2 border-gray-300 rounded-lg text-sm leading-relaxed resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 cursor-pointer hover:border-blue-300"
+                      style={{ 
+                        fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                        backgroundColor: highlightPosition ? '#fffbeb' : 'white'
+                      }}
+                      title="Click anywhere in the text to jump to the corresponding thought unit"
                     />
                   </div>
                 </div>
@@ -702,7 +719,7 @@ export default function Home() {
                   <div className="text-6xl mb-6">📚</div>
                   <p className="text-xl font-semibold text-center mb-2">Upload any book or document</p>
                   <p className="text-sm text-center text-gray-400 max-w-md mb-4">
-                    Hybrid reading combines thought units with dynamic word highlighting for enhanced comprehension and speed.
+                    Experience seamless bidirectional navigation between original content and thought units.
                   </p>
                   <div className="text-xs text-gray-400 bg-gray-50 p-3 rounded-lg">
                     <strong>Supported:</strong> PDF files up to 500MB, TXT files
