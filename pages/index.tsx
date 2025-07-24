@@ -65,7 +65,7 @@ export default function Home() {
     setChunkSpeed(wordMs * maxChunkSize * 1.5);
   }, [wpm, maxChunkSize]);
 
-  // Enhanced text chunking that preserves original text mapping
+  // Preprocess text to remove duplicate chapters
   const createThoughtUnits = useCallback((inputText: string) => {
     if (!inputText) {
       setThoughtUnits([]);
@@ -119,8 +119,10 @@ export default function Home() {
 
   // Create thought units when text changes
   useEffect(() => {
-    createThoughtUnits(inputText);
-  }, [inputText, createThoughtUnits]);
+    if (inputText && !bookStructure) {
+      createThoughtUnits(inputText);
+    }
+  }, [inputText, bookStructure, createThoughtUnits]);
 
   const getCurrentChunkWords = () => {
     if (currentChunkIndex >= thoughtUnits.length) return [];
@@ -129,7 +131,36 @@ export default function Home() {
 
   const currentWords = getCurrentChunkWords();
 
-  // Enhanced text area word click handler
+  // Preprocess text to remove duplicate chapters
+  const preprocessTextForDuplicates = (text: string): string => {
+    const lines = text.split('\n');
+    const chapterRegex = /^(chapter|CHAPTER|Chapter|chap|Chap|CHAP|ch|Ch|CH)\.?\s+(\d+|[IVXLCDM]+|\w+)(?:\s*[:\-—.]?\s*(.*))?$/im;
+    const seenChapters = new Set<string>();
+    const filteredLines: string[] = [];
+    let lastChapterLine = -1;
+    
+    lines.forEach((line, index) => {
+      const match = line.trim().match(chapterRegex);
+      
+      if (match) {
+        const chapterNum = match[2].toUpperCase();
+        
+        // If we've seen this chapter before and it's close to the last chapter line, skip it
+        if (seenChapters.has(chapterNum) && index - lastChapterLine < 50) {
+          return; // Skip duplicate chapter
+        }
+        
+        seenChapters.add(chapterNum);
+        lastChapterLine = index;
+      }
+      
+      filteredLines.push(line);
+    });
+    
+    return filteredLines.join('\n');
+  };
+
+  // Enhanced text area word click handler - FIXED with debugging
   const handleTextAreaClick = useCallback((e: React.MouseEvent<HTMLTextAreaElement>) => {
     if (!textAreaRef.current || thoughtUnits.length === 0) return;
     
@@ -149,30 +180,55 @@ export default function Home() {
       wordEnd++;
     }
     
-    const clickedWord = text.substring(wordStart, wordEnd).trim().toLowerCase();
+    const clickedWord = text.substring(wordStart, wordEnd).replace(/[.,!?;:'"]/g, '').trim().toLowerCase();
     
-    if (clickedWord) {
+    console.log('Clicked word:', clickedWord, 'at position:', clickPosition);
+    console.log('Total thought units:', thoughtUnits.length);
+    
+    if (clickedWord && clickedWord.length > 0) {
       // Find which thought unit contains this word
+      let found = false;
       for (let i = 0; i < thoughtUnits.length; i++) {
-        if (thoughtUnits[i].toLowerCase().includes(clickedWord)) {
-          setCurrentChunkIndex(i);
-          
-          // Find the word index within the chunk
-          const chunkWords = thoughtUnits[i].split(/\s+/);
-          const wordIndex = chunkWords.findIndex(w => 
-            w.toLowerCase().includes(clickedWord)
-          );
-          
-          if (wordIndex !== -1) {
-            setCurrentWordIndex(wordIndex);
-          } else {
+        const unitWords = thoughtUnits[i].toLowerCase().replace(/[.,!?;:'"]/g, '').split(/\s+/);
+        
+        // Check if any word in the unit matches the clicked word
+        for (let j = 0; j < unitWords.length; j++) {
+          if (unitWords[j] === clickedWord || unitWords[j].includes(clickedWord) || clickedWord.includes(unitWords[j])) {
+            console.log('Found word in unit:', i);
+            setCurrentChunkIndex(i);
+            
+            // Find the exact word index within the chunk
+            const originalChunkWords = thoughtUnits[i].split(/\s+/);
+            for (let k = 0; k < originalChunkWords.length; k++) {
+              const cleanWord = originalChunkWords[k].replace(/[.,!?;:'"]/g, '').toLowerCase();
+              if (cleanWord === clickedWord || cleanWord.includes(clickedWord) || clickedWord.includes(cleanWord)) {
+                setCurrentWordIndex(k);
+                break;
+              }
+            }
+            
+            if (isPlaying) {
+              setIsPlaying(false);
+            }
+            found = true;
+            break;
+          }
+        }
+        if (found) break;
+      }
+      
+      // If not found in current form, try to find partial matches
+      if (!found && clickedWord.length > 3) {
+        for (let i = 0; i < thoughtUnits.length; i++) {
+          if (thoughtUnits[i].toLowerCase().includes(clickedWord)) {
+            console.log('Found partial match in unit:', i);
+            setCurrentChunkIndex(i);
             setCurrentWordIndex(0);
+            if (isPlaying) {
+              setIsPlaying(false);
+            }
+            break;
           }
-          
-          if (isPlaying) {
-            setIsPlaying(false);
-          }
-          break;
         }
       }
     }
@@ -425,57 +481,61 @@ export default function Home() {
     }
   }, [extractTextFromPDF]);
 
-  // Enhanced chapter parsing to prevent duplicates
+  // Enhanced chapter parsing to prevent duplicates - FIXED
   const parseTextEnhanced = useCallback((text: string, title: string) => {
     const chapters: any[] = [];
-    const chapterRegex = /^(chapter|CHAPTER|Chapter)\s+(\d+|[IVXLCDM]+)(?:\s*[:\-.]?\s*(.*))?$/im;
+    // More flexible chapter detection regex
+    const chapterRegex = /^(chapter|CHAPTER|Chapter|chap|Chap|CHAP|ch|Ch|CH)\.?\s+(\d+|[IVXLCDM]+|\w+)(?:\s*[:\-—.]?\s*(.*))?$/im;
     const lines = text.split('\n');
     
     let currentChapter: any = null;
     let currentContent: string[] = [];
-    let chapterMap = new Map<string, boolean>(); // Track seen chapters
+    let chapterNumbers = new Set<string>(); // Track unique chapter numbers
+    let lastChapterEnd = -1; // Track where last chapter ended
     
     lines.forEach((line, index) => {
       const trimmedLine = line.trim();
       const match = trimmedLine.match(chapterRegex);
       
-      if (match) {
-        const chapterNum = match[2];
+      if (match && index > lastChapterEnd + 2) { // Ensure we're not too close to the last chapter
+        const chapterNum = match[2].toUpperCase(); // Normalize chapter number
         const chapterTitle = match[3] || '';
-        const chapterKey = `${chapterNum}-${chapterTitle.toLowerCase()}`;
         
-        // Skip if we've seen this exact chapter before
-        if (chapterMap.has(chapterKey)) {
-          return;
-        }
-        
-        chapterMap.set(chapterKey, true);
-        
-        // Save previous chapter
-        if (currentChapter && currentContent.length > 0) {
-          currentChapter.content = currentContent.join('\n').trim();
-          if (currentChapter.content) {
-            chapters.push(currentChapter);
+        // Only process if this is a new chapter number
+        if (!chapterNumbers.has(chapterNum)) {
+          chapterNumbers.add(chapterNum);
+          
+          // Save previous chapter
+          if (currentChapter && currentContent.length > 0) {
+            const content = currentContent.join('\n').trim();
+            if (content.length > 50) { // Only save if content is substantial
+              currentChapter.content = content;
+              chapters.push(currentChapter);
+              lastChapterEnd = index - 1;
+            }
           }
+          
+          // Start new chapter
+          currentChapter = {
+            id: `chapter-${chapterNum}`,
+            number: chapterNum,
+            title: chapterTitle.trim() || `Chapter ${chapterNum}`,
+            content: '',
+            units: []
+          };
+          currentContent = [];
         }
-        
-        // Start new chapter
-        currentChapter = {
-          number: chapterNum,
-          title: chapterTitle || `Chapter ${chapterNum}`,
-          content: '',
-          units: []
-        };
-        currentContent = [];
-      } else if (trimmedLine) {
+      } else if (trimmedLine && (!match || index <= lastChapterEnd + 2)) {
+        // Add content to current chapter
         currentContent.push(line);
       }
     });
     
     // Don't forget the last chapter
     if (currentChapter && currentContent.length > 0) {
-      currentChapter.content = currentContent.join('\n').trim();
-      if (currentChapter.content) {
+      const content = currentContent.join('\n').trim();
+      if (content.length > 50) { // Only save if content is substantial
+        currentChapter.content = content;
         chapters.push(currentChapter);
       }
     }
@@ -483,12 +543,16 @@ export default function Home() {
     // If no chapters found, treat entire text as one chapter
     if (chapters.length === 0) {
       chapters.push({
+        id: 'chapter-full',
         number: '1',
         title: title,
         content: text,
         units: []
       });
     }
+    
+    // Sort chapters by their appearance order (already in order, but ensure consistency)
+    // Don't sort by number as it might mess up the natural flow
     
     // Create thought units for each chapter
     let unitId = 1;
@@ -523,21 +587,35 @@ export default function Home() {
     setLoading(true);
     setError(null);
 
-    try {
-      setTimeout(() => {
+    setTimeout(() => {
+      try {
         const bookTitle = fileName.replace(/\.(pdf|txt)$/i, '') || "Untitled Book";
-        const structure = parseTextEnhanced(inputText, bookTitle);
+        
+        // First, use the enhanced parser to avoid duplicates
+        const cleanedText = preprocessTextForDuplicates(inputText);
+        const structure = parseBookWithChapters(cleanedText, bookTitle);
+        
         setBookStructure(structure);
+        
+        // Update thought units from the parsed structure
+        const allUnits: string[] = [];
+        structure.chapters.forEach((chapter: any) => {
+          chapter.units.forEach((unit: any) => {
+            allUnits.push(unit.text);
+          });
+        });
+        setThoughtUnits(allUnits);
+        
         setViewMode("hybrid");
         setLoading(false);
-      }, 1000);
 
-    } catch (err) {
-      console.error("Parsing error:", err);
-      setError("Failed to create thought units. Please try again.");
-      setLoading(false);
-    }
-  }, [enabled, inputText, fileName, parseTextEnhanced]);
+      } catch (err) {
+        console.error("Parsing error:", err);
+        setError("Failed to create thought units. Please try again.");
+        setLoading(false);
+      }
+    }, 100);
+  }, [enabled, inputText, fileName]);
 
   const totalWords = thoughtUnits.join(' ').split(/\s+/).length;
   const wordsRead = thoughtUnits.slice(0, currentChunkIndex + 1).join(' ').split(/\s+/).length;
@@ -564,7 +642,7 @@ export default function Home() {
     }
   };
 
-  // Render units organized by chapters
+  // Render units organized by chapters - with better key handling
   const renderUnitsByChapters = () => {
     if (!bookStructure || !bookStructure.chapters) return null;
 
@@ -575,7 +653,7 @@ export default function Home() {
       globalIndex += chapter.units.length;
       
       return (
-        <div key={`${chapter.number}-${chapterIndex}`} className="mb-6">
+        <div key={chapter.id || `chapter-${chapterIndex}-${chapter.number}`} className="mb-6">
           {/* Chapter Header */}
           <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900 dark:to-purple-900 border border-indigo-200 dark:border-indigo-700 rounded-lg p-3 mb-3">
             <div className="flex items-center justify-between">
@@ -597,7 +675,7 @@ export default function Home() {
               const globalUnitIndex = chapterStartIndex + unitIndex;
               return (
                 <button
-                  key={unit.id}
+                  key={`${chapter.id}-${unit.id}`}
                   onClick={() => handleChunkClick(globalUnitIndex)}
                   className={`w-full text-left p-2 rounded-lg transition-all text-xs ${
                     globalUnitIndex === currentChunkIndex
@@ -863,7 +941,6 @@ export default function Home() {
                       value={inputText}
                       onChange={(e) => handleTextChange(e.target.value)}
                       onClick={handleTextAreaClick}
-                      onMouseUp={handleTextAreaClick}
                       placeholder="Paste your text here or upload a PDF file..."
                       className="flex-1 w-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg text-sm leading-relaxed resize-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 transition-colors duration-200 cursor-pointer hover:border-blue-300 dark:hover:border-blue-600 dark:bg-gray-800 dark:text-gray-200"
                       style={{ 
