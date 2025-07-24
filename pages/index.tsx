@@ -2,7 +2,76 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 
-import { parseBookWithChapters, generateProgressiveReadingHTML } from "../lib/parser";
+// Import or define parseBookWithChapters
+const parseBookWithChapters = (text: string, title: string) => {
+  const chapters: any[] = [];
+  const chapterRegex = /^(chapter|CHAPTER|Chapter|chap|Chap|CHAP|ch|Ch|CH)\.?\s+(\d+|[IVXLCDM]+|\w+)(?:\s*[:\-—.]?\s*(.*))?$/im;
+  const lines = text.split('\n');
+  
+  let currentChapter: any = null;
+  let currentContent: string[] = [];
+  let chapterNumbers = new Set<string>();
+  let lastChapterEnd = -1;
+  
+  lines.forEach((line, index) => {
+    const trimmedLine = line.trim();
+    const match = trimmedLine.match(chapterRegex);
+    
+    if (match && index > lastChapterEnd + 2) {
+      const chapterNum = match[2].toUpperCase();
+      const chapterTitle = match[3] || '';
+      
+      if (!chapterNumbers.has(chapterNum)) {
+        chapterNumbers.add(chapterNum);
+        
+        if (currentChapter && currentContent.length > 0) {
+          const content = currentContent.join('\n').trim();
+          if (content.length > 50) {
+            currentChapter.content = content;
+            chapters.push(currentChapter);
+            lastChapterEnd = index - 1;
+          }
+        }
+        
+        currentChapter = {
+          id: `chapter-${chapterNum}`,
+          number: chapterNum,
+          title: chapterTitle.trim() || `Chapter ${chapterNum}`,
+          content: '',
+          units: []
+        };
+        currentContent = [];
+      }
+    } else if (trimmedLine && (!match || index <= lastChapterEnd + 2)) {
+      currentContent.push(line);
+    }
+  });
+  
+  if (currentChapter && currentContent.length > 0) {
+    const content = currentContent.join('\n').trim();
+    if (content.length > 50) {
+      currentChapter.content = content;
+      chapters.push(currentChapter);
+    }
+  }
+  
+  if (chapters.length === 0) {
+    chapters.push({
+      id: 'chapter-full',
+      number: '1',
+      title: title,
+      content: text,
+      units: []
+    });
+  }
+  
+  return {
+    title,
+    chapters,
+    totalUnits: 0 // Will be updated after units are created
+  };
+};
+
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
@@ -41,10 +110,13 @@ export default function Home() {
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [chunkSpeed, setChunkSpeed] = useState(2000);
   const [wordSpeed, setWordSpeed] = useState(300);
-  const [maxChunkSize, setMaxChunkSize] = useState(6);
+  const [maxChunkSize, setMaxChunkSize] = useState(5); // Optimal for comprehension
   const [showSettings, setShowSettings] = useState(false);
   const [wpm, setWpm] = useState(200);
   const [showTOC, setShowTOC] = useState(false);
+  const [pdfTOC, setPdfTOC] = useState<any[] | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [showPageNav, setShowPageNav] = useState(false);
   
   // Navigation states
   const [thoughtUnits, setThoughtUnits] = useState<string[]>([]);
@@ -161,7 +233,7 @@ export default function Home() {
     return filteredLines.join('\n');
   };
 
-  // Enhanced text area word click handler - with exact word highlighting
+  // Enhanced text area word click handler - FIXED to sync exact word
   const handleTextAreaClick = useCallback((e: React.MouseEvent<HTMLTextAreaElement>) => {
     if (!textAreaRef.current || thoughtUnits.length === 0) return;
     
@@ -181,124 +253,69 @@ export default function Home() {
       wordEnd++;
     }
     
-    const clickedWord = text.substring(wordStart, wordEnd).replace(/[.,!?;:'"]/g, '').trim().toLowerCase();
-    const clickedWordOriginal = text.substring(wordStart, wordEnd);
+    const clickedWord = text.substring(wordStart, wordEnd).replace(/[.,!?;:'"]/g, '').trim();
     
     if (clickedWord && clickedWord.length > 0) {
-      // Store the exact position of the clicked word
-      setHighlightPosition({ start: wordStart, end: wordEnd });
+      // Get text before clicked word to calculate position
+      const textBeforeWord = text.substring(0, wordStart);
+      const wordsBeforeClick = textBeforeWord.split(/\s+/).filter(w => w.length > 0).length;
       
-      // Find which thought unit contains this word
+      // Find which thought unit contains this word position
+      let totalWordsSeen = 0;
       let found = false;
+      
       for (let i = 0; i < thoughtUnits.length; i++) {
-        const unitWords = thoughtUnits[i].toLowerCase().replace(/[.,!?;:'"]/g, '').split(/\s+/);
+        const unitWords = thoughtUnits[i].split(/\s+/).filter(w => w.length > 0);
+        const unitWordCount = unitWords.length;
         
-        // Check if any word in the unit matches the clicked word
-        for (let j = 0; j < unitWords.length; j++) {
-          if (unitWords[j] === clickedWord || unitWords[j].includes(clickedWord) || clickedWord.includes(unitWords[j])) {
-            setCurrentChunkIndex(i);
-            
-            // Find the exact word index within the chunk
-            const originalChunkWords = thoughtUnits[i].split(/\s+/);
-            for (let k = 0; k < originalChunkWords.length; k++) {
-              const cleanWord = originalChunkWords[k].replace(/[.,!?;:'"]/g, '').toLowerCase();
-              if (cleanWord === clickedWord || cleanWord.includes(clickedWord) || clickedWord.includes(cleanWord)) {
-                setCurrentWordIndex(k);
-                break;
-              }
-            }
-            
-            if (isPlaying) {
-              setIsPlaying(false);
-            }
-            found = true;
-            break;
+        // Check if the clicked word position falls within this unit
+        if (wordsBeforeClick >= totalWordsSeen && wordsBeforeClick < totalWordsSeen + unitWordCount) {
+          setCurrentChunkIndex(i);
+          
+          // Calculate word index within the unit
+          const wordIndexInUnit = wordsBeforeClick - totalWordsSeen;
+          setCurrentWordIndex(Math.max(0, Math.min(wordIndexInUnit, unitWords.length - 1)));
+          
+          if (isPlaying) {
+            setIsPlaying(false);
           }
+          found = true;
+          break;
         }
-        if (found) break;
+        
+        totalWordsSeen += unitWordCount;
       }
       
-      // Highlight the clicked word
-      setTimeout(() => {
-        if (textAreaRef.current) {
-          textAreaRef.current.setSelectionRange(wordStart, wordEnd);
-        }
-      }, 50);
-    }
-  }, [thoughtUnits, isPlaying]); === 0) return;
-    
-    const textarea = textAreaRef.current;
-    const clickPosition = textarea.selectionStart;
-    
-    // Get the word at click position
-    const text = textarea.value;
-    let wordStart = clickPosition;
-    let wordEnd = clickPosition;
-    
-    // Find word boundaries
-    while (wordStart > 0 && !/\s/.test(text[wordStart - 1])) {
-      wordStart--;
-    }
-    while (wordEnd < text.length && !/\s/.test(text[wordEnd])) {
-      wordEnd++;
-    }
-    
-    const clickedWord = text.substring(wordStart, wordEnd).replace(/[.,!?;:'"]/g, '').trim().toLowerCase();
-    
-    if (clickedWord && clickedWord.length > 0) {
-      // Find which thought unit contains this word
-      let found = false;
-      for (let i = 0; i < thoughtUnits.length; i++) {
-        const unitWords = thoughtUnits[i].toLowerCase().replace(/[.,!?;:'"]/g, '').split(/\s+/);
-        
-        // Check if any word in the unit matches the clicked word
-        for (let j = 0; j < unitWords.length; j++) {
-          if (unitWords[j] === clickedWord || unitWords[j].includes(clickedWord) || clickedWord.includes(unitWords[j])) {
-            setCurrentChunkIndex(i);
-            
-            // Find the exact word index within the chunk
-            const originalChunkWords = thoughtUnits[i].split(/\s+/);
-            for (let k = 0; k < originalChunkWords.length; k++) {
-              const cleanWord = originalChunkWords[k].replace(/[.,!?;:'"]/g, '').toLowerCase();
-              if (cleanWord === clickedWord || cleanWord.includes(clickedWord) || clickedWord.includes(cleanWord)) {
-                setCurrentWordIndex(k);
-                break;
-              }
-            }
-            
-            if (isPlaying) {
-              setIsPlaying(false);
-            }
-            found = true;
-            break;
-          }
-        }
-        if (found) break;
-      }
-      
-      // If not found in current form, try to find partial matches
-      if (!found && clickedWord.length > 3) {
+      // If not found by position, fall back to text search
+      if (!found) {
+        const clickedWordClean = clickedWord.toLowerCase();
         for (let i = 0; i < thoughtUnits.length; i++) {
-          if (thoughtUnits[i].toLowerCase().includes(clickedWord)) {
-            setCurrentChunkIndex(i);
-            setCurrentWordIndex(0);
-            if (isPlaying) {
-              setIsPlaying(false);
+          const unitWords = thoughtUnits[i].toLowerCase().replace(/[.,!?;:'"]/g, '').split(/\s+/);
+          
+          for (let j = 0; j < unitWords.length; j++) {
+            if (unitWords[j] === clickedWordClean || unitWords[j].includes(clickedWordClean)) {
+              setCurrentChunkIndex(i);
+              setCurrentWordIndex(j);
+              if (isPlaying) {
+                setIsPlaying(false);
+              }
+              found = true;
+              break;
             }
-            break;
           }
+          if (found) break;
         }
       }
     }
   }, [thoughtUnits, isPlaying]);
 
-  // Smart zoom handler for PDF - FIXED with pan support
+  // Smart zoom handler for PDF with panning - FIXED
   const handlePdfZoom = useCallback((delta: number, e?: React.WheelEvent<HTMLDivElement>) => {
     const newScale = Math.max(0.5, Math.min(3.0, pdfScale + delta));
     setPdfScale(newScale);
   }, [pdfScale]);
 
-  // Handle PDF pan when zoomed
+  // Enable PDF panning when zoomed
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [scrollStart, setScrollStart] = useState({ x: 0, y: 0 });
@@ -317,10 +334,10 @@ export default function Home() {
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (isDragging && pdfContainerRef.current) {
-      const deltaX = dragStart.x - e.clientX;
-      const deltaY = dragStart.y - e.clientY;
-      pdfContainerRef.current.scrollLeft = scrollStart.x + deltaX;
-      pdfContainerRef.current.scrollTop = scrollStart.y + deltaY;
+      const dx = e.clientX - dragStart.x;
+      const dy = e.clientY - dragStart.y;
+      pdfContainerRef.current.scrollLeft = scrollStart.x - dx;
+      pdfContainerRef.current.scrollTop = scrollStart.y - dy;
     }
   }, [isDragging, dragStart, scrollStart]);
 
@@ -411,6 +428,33 @@ export default function Home() {
   }, [bookStructure, isPlaying]);
 
   // Get current chapter info based on current chunk
+  // Track current page on scroll
+  useEffect(() => {
+    if (fileType === "pdf" && pdfContainerRef.current && numPages > 0) {
+      const container = pdfContainerRef.current;
+      
+      const handleScroll = () => {
+        const pages = container.querySelectorAll('[id^="pdf-page-"]');
+        const containerRect = container.getBoundingClientRect();
+        const centerY = containerRect.top + containerRect.height / 2;
+        
+        for (let i = 0; i < pages.length; i++) {
+          const pageRect = pages[i].getBoundingClientRect();
+          if (pageRect.top <= centerY && pageRect.bottom >= centerY) {
+            const pageNum = parseInt(pages[i].id.split('-')[2]);
+            if (pageNum !== currentPage) {
+              setCurrentPage(pageNum);
+            }
+            break;
+          }
+        }
+      };
+      
+      container.addEventListener('scroll', handleScroll);
+      return () => container.removeEventListener('scroll', handleScroll);
+    }
+  }, [fileType, currentPage, numPages]);
+
   // Sync PDF page when chunk changes
   useEffect(() => {
     if (fileType === "pdf" && numPages > 0 && thoughtUnits.length > 0) {
@@ -500,14 +544,60 @@ export default function Home() {
     }
   };
 
-  // Helper to extract text from PDF
-  const extractTextFromPDF = useCallback(async (buffer: ArrayBuffer): Promise<string> => {
+  // Extract TOC from PDF
+  const extractTOCFromPDF = useCallback(async (pdfDoc: any) => {
+    try {
+      const outline = await pdfDoc.getOutline();
+      if (!outline) return null;
+      
+      const processTOCItems = async (items: any[], level: number = 0): Promise<any[]> => {
+        const tocItems = [];
+        for (const item of items) {
+          let pageNumber = null;
+          try {
+            if (item.dest) {
+              const dest = await pdfDoc.getDestination(item.dest);
+              if (dest) {
+                pageNumber = (await pdfDoc.getPageIndex(dest[0])) + 1;
+              }
+            }
+          } catch (e) {
+            console.warn('Could not resolve destination:', e);
+          }
+          
+          tocItems.push({
+            title: item.title,
+            pageNumber,
+            level,
+            items: item.items ? await processTOCItems(item.items, level + 1) : []
+          });
+        }
+        return tocItems;
+      };
+      
+      return await processTOCItems(outline);
+    } catch (err) {
+      console.warn('Could not extract PDF TOC:', err);
+      return null;
+    }
+  }, []);
+
+  // Helper to extract text from PDF with TOC
+  const extractTextFromPDF = useCallback(async (buffer: ArrayBuffer): Promise<{ text: string, toc: any[] | null }> => {
     try {
       const pdf = await pdfjs.getDocument({ 
         data: buffer,
         cMapUrl: `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/cmaps/`,
         cMapPacked: true,
       }).promise;
+      
+      // Extract TOC
+      let toc = null;
+      try {
+        toc = await extractTOCFromPDF(pdf);
+      } catch (tocError) {
+        console.warn('TOC extraction failed:', tocError);
+      }
       
       let fullText = "";
       const maxPages = Math.min(pdf.numPages, 200);
@@ -524,12 +614,12 @@ export default function Home() {
           console.warn(`Error processing page ${i}:`, pageError);
         }
       }
-      return fullText.trim();
+      return { text: fullText.trim(), toc };
     } catch (err) {
       console.error("PDF extraction error:", err);
       throw new Error(`Failed to extract text from PDF: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  }, []);
+  }, [extractTOCFromPDF]);
 
   // Handle text input change
   const handleTextChange = useCallback((text: string) => {
@@ -553,6 +643,8 @@ export default function Home() {
     setOutput(null);
     setBookStructure(null);
     setHighlightPosition(null);
+    setPdfTOC(null);
+    setCurrentPage(1);
     handleReset();
 
     try {
@@ -564,13 +656,22 @@ export default function Home() {
       setUploadStatus("processing");
 
       let extractedText = "";
+      let extractedTOC = null;
 
       if (file.type === "application/pdf") {
         const buffer = await file.arrayBuffer();
         const pdfBlob = new Blob([buffer], { type: "application/pdf" });
         setPdfFile(pdfBlob);
         setFileType("pdf");
-        extractedText = await extractTextFromPDF(buffer);
+        const { text, toc } = await extractTextFromPDF(buffer);
+        extractedText = text;
+        extractedTOC = toc;
+        setPdfTOC(toc);
+        
+        // If PDF has TOC, use it to enhance chapter detection
+        if (toc && toc.length > 0) {
+          console.log('PDF TOC found:', toc);
+        }
       } else if (file.type === "text/plain" || file.name.toLowerCase().endsWith(".txt")) {
         extractedText = await file.text();
         setFileType("text");
@@ -708,7 +809,23 @@ export default function Home() {
         
         // First, use the enhanced parser to avoid duplicates
         const cleanedText = preprocessTextForDuplicates(inputText);
+        
+        // Parse the book structure
         const structure = parseBookWithChapters(cleanedText, bookTitle);
+        
+        // Create thought units for each chapter
+        let unitId = 1;
+        structure.chapters.forEach((chapter: any) => {
+          const chapterUnits = createThoughtUnits(chapter.content);
+          chapter.units = chapterUnits.map((unit, index) => ({
+            id: `unit-${unitId++}`,
+            unitNumber: index + 1,
+            text: unit
+          }));
+        });
+        
+        // Update total units
+        structure.totalUnits = structure.chapters.reduce((sum: number, ch: any) => sum + ch.units.length, 0);
         
         setBookStructure(structure);
         
@@ -730,7 +847,7 @@ export default function Home() {
         setLoading(false);
       }
     }, 100);
-  }, [enabled, inputText, fileName]);
+  }, [enabled, inputText, fileName, createThoughtUnits]);
 
   const totalWords = thoughtUnits.join(' ').split(/\s+/).length;
   const wordsRead = thoughtUnits.slice(0, currentChunkIndex + 1).join(' ').split(/\s+/).length;
@@ -949,11 +1066,12 @@ export default function Home() {
           {/* Navigation Help */}
           {thoughtUnits.length > 0 && (
             <div className="mt-3 p-3 bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-800 dark:text-green-200">
-              ✨ <strong>Navigation Active!</strong> 
-              • Click any word to jump to it in thought units 
-              • Use Ctrl+Scroll to zoom PDFs at mouse position
-              • Click 📑 to see Table of Contents
-              • Content automatically syncs as you read!
+              ✨ <strong>Navigation Features:</strong> 
+              • Click any word to jump to exact position in thought units 
+              • Use Ctrl+Scroll to zoom PDFs, then drag to pan when zoomed
+              • Click 📑 for Table of Contents with PDF bookmarks
+              • Use page navigation or click pages to jump
+              • Optimal chunk size: 4-5 words for best comprehension
             </div>
           )}
         </div>
@@ -1014,6 +1132,11 @@ export default function Home() {
                   handlePdfZoom(delta, e);
                 }
               }}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              style={{ cursor: isDragging ? 'grabbing' : (pdfScale > 1.0 ? 'grab' : 'default') }}
             >
               {fileType === "pdf" && pdfFile ? (
                 <div className="p-4">
@@ -1023,25 +1146,56 @@ export default function Home() {
                       console.error("PDF display error:", err);
                       setError(`PDF Display Error: ${err.message || 'Failed to display PDF'}`);
                     }}
-                    onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+                    onLoadSuccess={({ numPages: pages }) => {
+                      setNumPages(pages);
+                      console.log(`PDF loaded with ${pages} pages`);
+                    }}
                     className="w-full"
                   >
-                    {Array.from({ length: Math.min(numPages, 50) }).map((_, i) => (
-                      <div key={i} id={`pdf-page-${i + 1}`} className="mb-4 bg-white dark:bg-gray-800 shadow-lg rounded-lg overflow-hidden border-2 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600 transition-colors">
-                        <div className="bg-gradient-to-r from-gray-100 to-blue-50 dark:from-gray-700 dark:to-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 font-medium flex justify-between items-center">
-                          <span className="font-bold">Page {i + 1}</span>
-                          <button
-                            onClick={() => handlePdfPageClick(i + 1)}
-                            className="text-xs bg-blue-500 dark:bg-blue-600 text-white px-3 py-1 rounded-full hover:bg-blue-600 dark:hover:bg-blue-700 transition-colors font-semibold shadow"
-                          >
-                            📍 Jump to Units
-                          </button>
-                        </div>
+                    {Array.from({ length: Math.min(numPages, 50) }).map((_, i) => {
+                      const isCurrentPage = currentPage === i + 1;
+                      return (
                         <div 
-                          className="p-4 flex justify-center cursor-pointer hover:bg-blue-25 dark:hover:bg-gray-700 transition-colors" 
-                          onClick={() => handlePdfPageClick(i + 1)}
-                          title={`Click to jump to thought units for page ${i + 1}`}
+                          key={i} 
+                          id={`pdf-page-${i + 1}`} 
+                          className={`mb-4 bg-white dark:bg-gray-800 shadow-lg rounded-lg overflow-hidden border-2 transition-all ${
+                            isCurrentPage 
+                              ? 'border-blue-500 dark:border-blue-400 shadow-xl' 
+                              : 'dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600'
+                          }`}
                         >
+                          <div className="bg-gradient-to-r from-gray-100 to-blue-50 dark:from-gray-700 dark:to-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 font-medium flex justify-between items-center">
+                            <span className="font-bold flex items-center gap-2">
+                              <span className={`text-lg ${isCurrentPage ? 'text-blue-600 dark:text-blue-400' : ''}`}>
+                                📄
+                              </span>
+                              Page {i + 1}
+                              {isCurrentPage && (
+                                <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full ml-2">
+                                  Current
+                                </span>
+                              )}
+                            </span>
+                        <div className="flex gap-2">
+                              <button
+                                onClick={() => {
+                                  setCurrentPage(i + 1);
+                                  handlePdfPageClick(i + 1);
+                                }}
+                                className="text-xs bg-blue-500 dark:bg-blue-600 text-white px-3 py-1 rounded-full hover:bg-blue-600 dark:hover:bg-blue-700 transition-colors font-semibold shadow"
+                              >
+                                📍 Jump to Units
+                              </button>
+                            </div>
+                          </div>
+                          <div 
+                            className="p-4 flex justify-center cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors" 
+                            onClick={() => {
+                              setCurrentPage(i + 1);
+                              handlePdfPageClick(i + 1);
+                            }}
+                            title={`Click to jump to thought units for page ${i + 1}`}
+                          >
                           <Page 
                             pageNumber={i + 1}
                             scale={pdfScale}
@@ -1177,15 +1331,23 @@ export default function Home() {
                         <div>
                           <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Max Chunk Size: {maxChunkSize} words
+                            <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                              (Optimal: 4-5 words)
+                            </span>
                           </label>
                           <input
                             type="range"
                             min="3"
-                            max="10"
+                            max="8"
                             value={maxChunkSize}
                             onChange={(e) => setMaxChunkSize(Number(e.target.value))}
                             className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
                           />
+                          <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            <span>Short</span>
+                            <span className="text-green-600 dark:text-green-400">Optimal</span>
+                            <span>Long</span>
+                          </div>
                         </div>
                       </div>
                     )}
