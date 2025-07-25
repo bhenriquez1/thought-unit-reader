@@ -1,8 +1,20 @@
-// pages/index.tsx - Enhanced with Smart Zoom, Word Navigation, Dark Mode
+// pages/index.tsx - Enhanced Book Reader with Complete Features
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
+import { Label } from "../components/ui/label";
+import { Switch } from "../components/ui/switch";
+import { Button } from "../components/ui/button";
 
-// Import or define parseBookWithChapters
+// Configure PDF.js worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+
+// Type definitions
+type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
+type FileType = "text" | "pdf" | "none";
+type ViewMode = "original" | "chapters" | "progressive" | "hybrid";
+type Theme = "light" | "dark";
+
+// Parse book with chapters function
 const parseBookWithChapters = (text: string, title: string) => {
   const chapters: any[] = [];
   const chapterRegex = /^(chapter|CHAPTER|Chapter|chap|Chap|CHAP|ch|Ch|CH)\.?\s+(\d+|[IVXLCDM]+|\w+)(?:\s*[:\-—.]?\s*(.*))?$/im;
@@ -10,7 +22,7 @@ const parseBookWithChapters = (text: string, title: string) => {
   
   let currentChapter: any = null;
   let currentContent: string[] = [];
-  let chapterNumbers = new Set<string>();
+  const chapterNumbers = new Set<string>();
   let lastChapterEnd = -1;
   
   lines.forEach((line, index) => {
@@ -68,23 +80,12 @@ const parseBookWithChapters = (text: string, title: string) => {
   return {
     title,
     chapters,
-    totalUnits: 0 // Will be updated after units are created
+    totalUnits: 0
   };
 };
 
-import { Label } from "../components/ui/label";
-import { Switch } from "../components/ui/switch";
-import { Button } from "../components/ui/button";
-
-// Configure PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-
-type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
-type FileType = "text" | "pdf" | "none";
-type ViewMode = "original" | "chapters" | "progressive" | "hybrid";
-type Theme = "light" | "dark";
-
 export default function Home() {
+  // Core states
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
   const [inputText, setInputText] = useState("");
@@ -101,11 +102,6 @@ export default function Home() {
   const [pdfFile, setPdfFile] = useState<Blob | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [fileName, setFileName] = useState("");
-  // PDF-specific states
-  const [fileType, setFileType] = useState<FileType>("none");
-  const [pdfFile, setPdfFile] = useState<Blob | null>(null);
-  const [numPages, setNumPages] = useState(0);
-  const [fileName, setFileName] = useState("");
   const [pdfScale, setPdfScale] = useState(1.0);
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
@@ -115,26 +111,27 @@ export default function Home() {
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [chunkSpeed, setChunkSpeed] = useState(2000);
   const [wordSpeed, setWordSpeed] = useState(300);
-  const [maxChunkSize, setMaxChunkSize] = useState(5); // Optimal for comprehension
+  const [maxChunkSize, setMaxChunkSize] = useState(5);
   const [showSettings, setShowSettings] = useState(false);
   const [wpm, setWpm] = useState(200);
   const [showTOC, setShowTOC] = useState(false);
   const [pdfTOC, setPdfTOC] = useState<any[] | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [showPageNav, setShowPageNav] = useState(false);
+  
   // Navigation states
   const [thoughtUnits, setThoughtUnits] = useState<string[]>([]);
   const [highlightPosition, setHighlightPosition] = useState<{start: number, end: number} | null>(null);
   
+  // Refs
   const chunkTimerRef = useRef<NodeJS.Timeout | null>(null);
   const wordTimerRef = useRef<NodeJS.Timeout | null>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
-  const [thoughtUnits, setThoughtUnits] = useState<string[]>([]);
-  const [highlightPosition, setHighlightPosition] = useState<{start: number, end: number} | null>(null);
-  
-  const chunkTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const wordTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Pan and zoom states
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [scrollStart, setScrollStart] = useState({ x: 0, y: 0 });
 
   // Apply theme
   useEffect(() => {
@@ -149,6 +146,34 @@ export default function Home() {
   }, [wpm, maxChunkSize]);
 
   // Preprocess text to remove duplicate chapters
+  const preprocessTextForDuplicates = (text: string): string => {
+    const lines = text.split('\n');
+    const chapterRegex = /^(chapter|CHAPTER|Chapter|chap|Chap|CHAP|ch|Ch|CH)\.?\s+(\d+|[IVXLCDM]+|\w+)(?:\s*[:\-—.]?\s*(.*))?$/im;
+    const seenChapters = new Set<string>();
+    const filteredLines: string[] = [];
+    let lastChapterLine = -1;
+    
+    lines.forEach((line, index) => {
+      const match = line.trim().match(chapterRegex);
+      
+      if (match) {
+        const chapterNum = match[2].toUpperCase();
+        
+        if (seenChapters.has(chapterNum) && index - lastChapterLine < 50) {
+          return;
+        }
+        
+        seenChapters.add(chapterNum);
+        lastChapterLine = index;
+      }
+      
+      filteredLines.push(line);
+    });
+    
+    return filteredLines.join('\n');
+  };
+
+  // Enhanced text chunking for optimal comprehension
   const createThoughtUnits = useCallback((inputText: string) => {
     if (!inputText) {
       setThoughtUnits([]);
@@ -159,8 +184,9 @@ export default function Home() {
     const sentences = cleanText.match(/[^\.!?]+[\.!?]+/g) || [cleanText];
     const chunks: string[] = [];
     
-    const breakWords = ['and', 'or', 'but', 'because', 'however', 'therefore', 'meanwhile', 'furthermore', 'moreover', 'consequently'];
-    const prepositions = ['in', 'on', 'at', 'by', 'for', 'with', 'from', 'to', 'of', 'about', 'through', 'during'];
+    const breakWords = ['and', 'or', 'but', 'because', 'however', 'therefore', 'meanwhile', 'furthermore', 'moreover', 'consequently', 'although', 'though', 'while', 'when', 'if', 'unless', 'since', 'so'];
+    const prepositions = ['in', 'on', 'at', 'by', 'for', 'with', 'from', 'to', 'of', 'about', 'through', 'during', 'before', 'after', 'under', 'over'];
+    const conjunctions = ['that', 'which', 'who', 'whom', 'whose', 'where', 'when'];
     
     sentences.forEach(sentence => {
       const words = sentence.trim().split(/\s+/).filter(word => word.length > 0);
@@ -173,19 +199,32 @@ export default function Home() {
         
         currentChunk.push(word);
         
-        const atMaxSize = currentChunk.length >= maxChunkSize;
-        const atMinSize = currentChunk.length >= 3;
-        const hasPunctuation = word.match(/[,;:]/);
+        const optimalSize = maxChunkSize;
+        const minSize = Math.max(2, optimalSize - 2);
+        const maxSize = optimalSize + 1;
+        
+        const atOptimalSize = currentChunk.length >= optimalSize;
+        const atMinSize = currentChunk.length >= minSize;
+        const atMaxSize = currentChunk.length >= maxSize;
+        const hasPunctuation = word.match(/[,;:—–]/);
+        const hasQuotePunctuation = word.match(/["""'']/);
         const beforeBreakWord = breakWords.includes(nextWord);
         const afterPreposition = prepositions.includes(prevWord);
+        const beforeConjunction = conjunctions.includes(nextWord);
         const isLastWord = i === words.length - 1;
         
-        const shouldBreak = atMaxSize || isLastWord || 
-          (atMinSize && (hasPunctuation || beforeBreakWord)) ||
-          (currentChunk.length >= 4 && afterPreposition);
+        const shouldBreak = 
+          atMaxSize || 
+          isLastWord || 
+          (atOptimalSize && (hasPunctuation || beforeBreakWord || beforeConjunction)) ||
+          (atMinSize && hasQuotePunctuation) ||
+          (currentChunk.length >= 4 && afterPreposition && beforeBreakWord);
           
         if (shouldBreak) {
-          chunks.push(currentChunk.join(' '));
+          const chunk = currentChunk.join(' ');
+          if (chunk.trim()) {
+            chunks.push(chunk);
+          }
           currentChunk = [];
         }
       }
@@ -207,129 +246,13 @@ export default function Home() {
     }
   }, [inputText, bookStructure, createThoughtUnits]);
 
-  const getCurrentChunkWords = () => {
-    if (currentChunkIndex >= thoughtUnits.length) return [];
-    return thoughtUnits[currentChunkIndex].split(/\s+/);
-  };
-
-  const currentWords = getCurrentChunkWords();
-
-  // Preprocess text to remove duplicate chapters
-  const preprocessTextForDuplicates = (text: string): string => {
-    const lines = text.split('\n');
-    const chapterRegex = /^(chapter|CHAPTER|Chapter|chap|Chap|CHAP|ch|Ch|CH)\.?\s+(\d+|[IVXLCDM]+|\w+)(?:\s*[:\-—.]?\s*(.*))?$/im;
-    const seenChapters = new Set<string>();
-    const filteredLines: string[] = [];
-    let lastChapterLine = -1;
-    
-    lines.forEach((line, index) => {
-      const match = line.trim().match(chapterRegex);
-      
-      if (match) {
-        const chapterNum = match[2].toUpperCase();
-        
-        // If we've seen this chapter before and it's close to the last chapter line, skip it
-        if (seenChapters.has(chapterNum) && index - lastChapterLine < 50) {
-          return; // Skip duplicate chapter
-        }
-        
-        seenChapters.add(chapterNum);
-        lastChapterLine = index;
-      }
-      
-      filteredLines.push(line);
-    });
-    
-    return filteredLines.join('\n');
-  };
-
-  // Enhanced text area word click handler - FIXED to sync exact word
-  const handleTextAreaClick = useCallback((e: React.MouseEvent<HTMLTextAreaElement>) => {
-    if (!textAreaRef.current || thoughtUnits.length === 0) return;
-    
-    const textarea = textAreaRef.current;
-    const clickPosition = textarea.selectionStart;
-    
-    // Get the word at click position
-    const text = textarea.value;
-    let wordStart = clickPosition;
-    let wordEnd = clickPosition;
-    
-    // Find word boundaries
-    while (wordStart > 0 && !/\s/.test(text[wordStart - 1])) {
-      wordStart--;
-    }
-    while (wordEnd < text.length && !/\s/.test(text[wordEnd])) {
-      wordEnd++;
-    }
-    
-    const clickedWord = text.substring(wordStart, wordEnd).replace(/[.,!?;:'"]/g, '').trim();
-    
-    if (clickedWord && clickedWord.length > 0) {
-      // Get text before clicked word to calculate position
-      const textBeforeWord = text.substring(0, wordStart);
-      const wordsBeforeClick = textBeforeWord.split(/\s+/).filter(w => w.length > 0).length;
-      
-      // Find which thought unit contains this word position
-      let totalWordsSeen = 0;
-      let found = false;
-      
-      for (let i = 0; i < thoughtUnits.length; i++) {
-        const unitWords = thoughtUnits[i].split(/\s+/).filter(w => w.length > 0);
-        const unitWordCount = unitWords.length;
-        
-        // Check if the clicked word position falls within this unit
-        if (wordsBeforeClick >= totalWordsSeen && wordsBeforeClick < totalWordsSeen + unitWordCount) {
-          setCurrentChunkIndex(i);
-          
-          // Calculate word index within the unit
-          const wordIndexInUnit = wordsBeforeClick - totalWordsSeen;
-          setCurrentWordIndex(Math.max(0, Math.min(wordIndexInUnit, unitWords.length - 1)));
-          
-          if (isPlaying) {
-            setIsPlaying(false);
-          }
-          found = true;
-          break;
-        }
-        
-        totalWordsSeen += unitWordCount;
-      }
-      
-      // If not found by position, fall back to text search
-      if (!found) {
-        const clickedWordClean = clickedWord.toLowerCase();
-        for (let i = 0; i < thoughtUnits.length; i++) {
-          const unitWords = thoughtUnits[i].toLowerCase().replace(/[.,!?;:'"]/g, '').split(/\s+/);
-          
-          for (let j = 0; j < unitWords.length; j++) {
-            if (unitWords[j] === clickedWordClean || unitWords[j].includes(clickedWordClean)) {
-              setCurrentChunkIndex(i);
-              setCurrentWordIndex(j);
-              if (isPlaying) {
-                setIsPlaying(false);
-              }
-              found = true;
-              break;
-            }
-          }
-          if (found) break;
-        }
-      }
-    }
-  }, [thoughtUnits, isPlaying]);
-
-  // Smart zoom handler for PDF with panning - FIXED
+  // Smart zoom handler for PDF with panning
   const handlePdfZoom = useCallback((delta: number, e?: React.WheelEvent<HTMLDivElement>) => {
     const newScale = Math.max(0.5, Math.min(3.0, pdfScale + delta));
     setPdfScale(newScale);
   }, [pdfScale]);
 
   // Enable PDF panning when zoomed
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [scrollStart, setScrollStart] = useState({ x: 0, y: 0 });
-
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (pdfScale > 1.0 && pdfContainerRef.current) {
       setIsDragging(true);
@@ -354,205 +277,6 @@ export default function Home() {
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
   }, []);
-
-  // Enhanced PDF page navigation
-  const handlePdfPageClick = useCallback((pageNumber: number) => {
-    if (thoughtUnits.length === 0 || numPages === 0) return;
-    
-    const progressThroughBook = (pageNumber - 1) / numPages;
-    const targetUnitIndex = Math.floor(progressThroughBook * thoughtUnits.length);
-    const clampedIndex = Math.max(0, Math.min(targetUnitIndex, thoughtUnits.length - 1));
-    
-    setCurrentChunkIndex(clampedIndex);
-    setCurrentWordIndex(0);
-    if (isPlaying) {
-      setIsPlaying(false);
-    }
-  }, [thoughtUnits.length, numPages, isPlaying]);
-
-  // Sync current position when chunk changes
-  useEffect(() => {
-    if (!inputText || thoughtUnits.length === 0 || !textAreaRef.current) return;
-    
-    const currentUnit = thoughtUnits[currentChunkIndex];
-    if (!currentUnit) return;
-    
-    // Find the unit in the original text (case insensitive)
-    const unitStart = inputText.toLowerCase().indexOf(currentUnit.toLowerCase());
-    if (unitStart !== -1) {
-      const unitEnd = unitStart + currentUnit.length;
-      setHighlightPosition({ start: unitStart, end: unitEnd });
-      
-      // Scroll to and select the current unit in textarea
-      requestAnimationFrame(() => {
-        if (textAreaRef.current && document.activeElement !== textAreaRef.current) {
-          textAreaRef.current.setSelectionRange(unitStart, unitEnd);
-          
-          // Scroll to make selection visible
-          const textarea = textAreaRef.current;
-          const totalHeight = textarea.scrollHeight;
-          const visibleHeight = textarea.clientHeight;
-          const scrollPosition = (unitStart / inputText.length) * totalHeight;
-          textarea.scrollTop = Math.max(0, scrollPosition - visibleHeight / 2);
-        }
-      });
-    }
-    
-    // Update current chapter
-    const chapterInfo = getCurrentChapterInfo();
-    if (chapterInfo) {
-      setCurrentChapter(chapterInfo.chapterIndex);
-    }
-  }, [currentChunkIndex, thoughtUnits, inputText]);
-
-  // Handle TOC navigation
-  const handleTOCClick = useCallback((chapterIndex: number) => {
-    if (!bookStructure || !bookStructure.chapters[chapterIndex]) return;
-    
-    // Calculate the first unit index of this chapter
-    let targetUnitIndex = 0;
-    for (let i = 0; i < chapterIndex; i++) {
-      targetUnitIndex += bookStructure.chapters[i].units.length;
-    }
-    
-    setCurrentChunkIndex(targetUnitIndex);
-    setCurrentWordIndex(0);
-    setCurrentChapter(chapterIndex);
-    
-    if (isPlaying) {
-      setIsPlaying(false);
-    }
-    
-    // If on mobile, close TOC after selection
-    if (window.innerWidth < 1024) {
-      setShowTOC(false);
-    }
-    
-    // Scroll the clicked chapter into view in the thought units panel
-    setTimeout(() => {
-      const chapterElement = document.getElementById(`chapter-${bookStructure.chapters[chapterIndex].id}`);
-      if (chapterElement) {
-        chapterElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    }, 100);
-  }, [bookStructure, isPlaying]);
-
-  // Get current chapter info based on current chunk
-  // Track current page on scroll
-  useEffect(() => {
-    if (fileType === "pdf" && pdfContainerRef.current && numPages > 0) {
-      const container = pdfContainerRef.current;
-      
-      const handleScroll = () => {
-        const pages = container.querySelectorAll('[id^="pdf-page-"]');
-        const containerRect = container.getBoundingClientRect();
-        const centerY = containerRect.top + containerRect.height / 2;
-        
-        for (let i = 0; i < pages.length; i++) {
-          const pageRect = pages[i].getBoundingClientRect();
-          if (pageRect.top <= centerY && pageRect.bottom >= centerY) {
-            const pageNum = parseInt(pages[i].id.split('-')[2]);
-            if (pageNum !== currentPage) {
-              setCurrentPage(pageNum);
-            }
-            break;
-          }
-        }
-      };
-      
-      container.addEventListener('scroll', handleScroll);
-      return () => container.removeEventListener('scroll', handleScroll);
-    }
-  }, [fileType, currentPage, numPages]);
-
-  // Sync PDF page when chunk changes
-  useEffect(() => {
-    if (fileType === "pdf" && numPages > 0 && thoughtUnits.length > 0) {
-      // Calculate which page we should be on based on current chunk
-      const progress = currentChunkIndex / thoughtUnits.length;
-      const targetPage = Math.floor(progress * numPages) + 1;
-      
-      // Scroll to the target page
-      if (pdfContainerRef.current) {
-        const pageElement = document.getElementById(`pdf-page-${targetPage}`);
-        if (pageElement) {
-          pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      }
-    }
-  }, [currentChunkIndex, thoughtUnits.length, numPages, fileType]);
-
-  const getCurrentChapterInfo = useCallback(() => {
-    if (!bookStructure) return null;
-    
-    let globalIndex = 0;
-    for (let i = 0; i < bookStructure.chapters.length; i++) {
-      const chapter = bookStructure.chapters[i];
-      if (currentChunkIndex >= globalIndex && currentChunkIndex < globalIndex + chapter.units.length) {
-        return {
-          chapter,
-          chapterIndex: i,
-          unitInChapter: currentChunkIndex - globalIndex + 1
-        };
-      }
-      globalIndex += chapter.units.length;
-    }
-    return null;
-  }, [bookStructure, currentChunkIndex]);
-
-  const currentChapterInfo = getCurrentChapterInfo();
-
-  // Advanced timer management with sync
-  useEffect(() => {
-    if (isPlaying && currentChunkIndex < thoughtUnits.length && viewMode === "hybrid") {
-      wordTimerRef.current = setInterval(() => {
-        setCurrentWordIndex(prev => {
-          const nextIndex = prev + 1;
-          if (nextIndex >= currentWords.length) {
-            return 0;
-          }
-          return nextIndex;
-        });
-      }, wordSpeed);
-
-      chunkTimerRef.current = setTimeout(() => {
-        setCurrentChunkIndex(prev => {
-          const nextIndex = prev + 1;
-          if (nextIndex >= thoughtUnits.length) {
-            setIsPlaying(false);
-            return thoughtUnits.length - 1;
-          }
-          setCurrentWordIndex(0);
-          return nextIndex;
-        });
-      }, chunkSpeed);
-    }
-
-    return () => {
-      if (wordTimerRef.current) clearInterval(wordTimerRef.current);
-      if (chunkTimerRef.current) clearTimeout(chunkTimerRef.current);
-    };
-  }, [isPlaying, currentChunkIndex, currentWords.length, chunkSpeed, wordSpeed, thoughtUnits.length, viewMode]);
-
-  const handlePlayPause = () => {
-    setIsPlaying(!isPlaying);
-  };
-
-  const handleReset = () => {
-    setIsPlaying(false);
-    setCurrentChunkIndex(0);
-    setCurrentWordIndex(0);
-    setHighlightPosition(null);
-  };
-
-  const handleChunkClick = (chunkIndex: number) => {
-    setCurrentChunkIndex(chunkIndex);
-    setCurrentWordIndex(0);
-    if (isPlaying) {
-      setIsPlaying(false);
-      setTimeout(() => setIsPlaying(true), 100);
-    }
-  };
 
   // Extract TOC from PDF
   const extractTOCFromPDF = useCallback(async (pdfDoc: any) => {
@@ -601,7 +325,6 @@ export default function Home() {
         cMapPacked: true,
       }).promise;
       
-      // Extract TOC
       let toc = null;
       try {
         toc = await extractTOCFromPDF(pdf);
@@ -630,6 +353,287 @@ export default function Home() {
       throw new Error(`Failed to extract text from PDF: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   }, [extractTOCFromPDF]);
+
+  // Enhanced text area word click handler
+  const handleTextAreaClick = useCallback((e: React.MouseEvent<HTMLTextAreaElement>) => {
+    if (!textAreaRef.current || thoughtUnits.length === 0) return;
+    
+    const textarea = textAreaRef.current;
+    const clickPosition = textarea.selectionStart;
+    
+    const text = textarea.value;
+    let wordStart = clickPosition;
+    let wordEnd = clickPosition;
+    
+    while (wordStart > 0 && !/\s/.test(text[wordStart - 1])) {
+      wordStart--;
+    }
+    while (wordEnd < text.length && !/\s/.test(text[wordEnd])) {
+      wordEnd++;
+    }
+    
+    const clickedWord = text.substring(wordStart, wordEnd).replace(/[.,!?;:'"]/g, '').trim();
+    
+    if (clickedWord && clickedWord.length > 0) {
+      const textBeforeWord = text.substring(0, wordStart);
+      const wordsBeforeClick = textBeforeWord.split(/\s+/).filter(w => w.length > 0).length;
+      
+      let totalWordsSeen = 0;
+      let found = false;
+      
+      for (let i = 0; i < thoughtUnits.length; i++) {
+        const unitWords = thoughtUnits[i].split(/\s+/).filter(w => w.length > 0);
+        const unitWordCount = unitWords.length;
+        
+        if (wordsBeforeClick >= totalWordsSeen && wordsBeforeClick < totalWordsSeen + unitWordCount) {
+          setCurrentChunkIndex(i);
+          
+          const wordIndexInUnit = wordsBeforeClick - totalWordsSeen;
+          setCurrentWordIndex(Math.max(0, Math.min(wordIndexInUnit, unitWords.length - 1)));
+          
+          if (isPlaying) {
+            setIsPlaying(false);
+          }
+          found = true;
+          break;
+        }
+        
+        totalWordsSeen += unitWordCount;
+      }
+      
+      if (!found) {
+        const clickedWordClean = clickedWord.toLowerCase();
+        for (let i = 0; i < thoughtUnits.length; i++) {
+          const unitWords = thoughtUnits[i].toLowerCase().replace(/[.,!?;:'"]/g, '').split(/\s+/);
+          
+          for (let j = 0; j < unitWords.length; j++) {
+            if (unitWords[j] === clickedWordClean || unitWords[j].includes(clickedWordClean)) {
+              setCurrentChunkIndex(i);
+              setCurrentWordIndex(j);
+              if (isPlaying) {
+                setIsPlaying(false);
+              }
+              found = true;
+              break;
+            }
+          }
+          if (found) break;
+        }
+      }
+    }
+  }, [thoughtUnits, isPlaying]);
+
+  // Handle TOC navigation
+  const handleTOCClick = useCallback((chapterIndex: number) => {
+    if (!bookStructure || !bookStructure.chapters[chapterIndex]) return;
+    
+    let targetUnitIndex = 0;
+    for (let i = 0; i < chapterIndex; i++) {
+      targetUnitIndex += bookStructure.chapters[i].units.length;
+    }
+    
+    setCurrentChunkIndex(targetUnitIndex);
+    setCurrentWordIndex(0);
+    setCurrentChapter(chapterIndex);
+    
+    if (isPlaying) {
+      setIsPlaying(false);
+    }
+    
+    if (window.innerWidth < 1024) {
+      setShowTOC(false);
+    }
+    
+    setTimeout(() => {
+      const chapterElement = document.getElementById(`chapter-${bookStructure.chapters[chapterIndex].id}`);
+      if (chapterElement) {
+        chapterElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 100);
+  }, [bookStructure, isPlaying]);
+
+  // Enhanced PDF page navigation
+  const handlePdfPageClick = useCallback((pageNumber: number) => {
+    if (thoughtUnits.length === 0 || numPages === 0) return;
+    
+    const progressThroughBook = (pageNumber - 1) / numPages;
+    const targetUnitIndex = Math.floor(progressThroughBook * thoughtUnits.length);
+    const clampedIndex = Math.max(0, Math.min(targetUnitIndex, thoughtUnits.length - 1));
+    
+    setCurrentChunkIndex(clampedIndex);
+    setCurrentWordIndex(0);
+    if (isPlaying) {
+      setIsPlaying(false);
+    }
+  }, [thoughtUnits.length, numPages, isPlaying]);
+
+  // Get current chapter info
+  const getCurrentChapterInfo = useCallback(() => {
+    if (!bookStructure) return null;
+    
+    let globalIndex = 0;
+    for (let i = 0; i < bookStructure.chapters.length; i++) {
+      const chapter = bookStructure.chapters[i];
+      if (currentChunkIndex >= globalIndex && currentChunkIndex < globalIndex + chapter.units.length) {
+        return {
+          chapter,
+          chapterIndex: i,
+          unitInChapter: currentChunkIndex - globalIndex + 1
+        };
+      }
+      globalIndex += chapter.units.length;
+    }
+    return null;
+  }, [bookStructure, currentChunkIndex]);
+
+  // Track current page on scroll
+  useEffect(() => {
+    if (fileType === "pdf" && pdfContainerRef.current && numPages > 0) {
+      const container = pdfContainerRef.current;
+      
+      const handleScroll = () => {
+        const pages = container.querySelectorAll('[id^="pdf-page-"]');
+        const containerRect = container.getBoundingClientRect();
+        const centerY = containerRect.top + containerRect.height / 2;
+        
+        for (let i = 0; i < pages.length; i++) {
+          const pageRect = pages[i].getBoundingClientRect();
+          if (pageRect.top <= centerY && pageRect.bottom >= centerY) {
+            const pageNum = parseInt(pages[i].id.split('-')[2]);
+            if (pageNum !== currentPage) {
+              setCurrentPage(pageNum);
+            }
+            break;
+          }
+        }
+      };
+      
+      container.addEventListener('scroll', handleScroll);
+      return () => container.removeEventListener('scroll', handleScroll);
+    }
+  }, [fileType, currentPage, numPages]);
+
+  // Sync current position when chunk changes
+  useEffect(() => {
+    if (!inputText || thoughtUnits.length === 0 || !textAreaRef.current) return;
+    
+    const currentUnit = thoughtUnits[currentChunkIndex];
+    if (!currentUnit) return;
+    
+    const unitStart = inputText.toLowerCase().indexOf(currentUnit.toLowerCase());
+    if (unitStart !== -1) {
+      const unitEnd = unitStart + currentUnit.length;
+      setHighlightPosition({ start: unitStart, end: unitEnd });
+      
+      requestAnimationFrame(() => {
+        if (textAreaRef.current && document.activeElement !== textAreaRef.current) {
+          textAreaRef.current.setSelectionRange(unitStart, unitEnd);
+          
+          const textarea = textAreaRef.current;
+          const totalHeight = textarea.scrollHeight;
+          const visibleHeight = textarea.clientHeight;
+          const scrollPosition = (unitStart / inputText.length) * totalHeight;
+          textarea.scrollTop = Math.max(0, scrollPosition - visibleHeight / 2);
+        }
+      });
+    }
+  }, [currentChunkIndex, thoughtUnits, inputText]);
+
+  // Sync PDF page when chunk changes
+  useEffect(() => {
+    if (fileType === "pdf" && numPages > 0 && thoughtUnits.length > 0) {
+      const progress = currentChunkIndex / thoughtUnits.length;
+      const targetPage = Math.floor(progress * numPages) + 1;
+      
+      if (pdfContainerRef.current) {
+        const pageElement = document.getElementById(`pdf-page-${targetPage}`);
+        if (pageElement) {
+          pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+    }
+  }, [currentChunkIndex, thoughtUnits.length, numPages, fileType]);
+
+  // Get current chapter info
+  const getCurrentChapterInfo = useCallback(() => {
+    if (!bookStructure) return null;
+    
+    let globalIndex = 0;
+    for (let i = 0; i < bookStructure.chapters.length; i++) {
+      const chapter = bookStructure.chapters[i];
+      if (currentChunkIndex >= globalIndex && currentChunkIndex < globalIndex + chapter.units.length) {
+        return {
+          chapter,
+          chapterIndex: i,
+          unitInChapter: currentChunkIndex - globalIndex + 1
+        };
+      }
+      globalIndex += chapter.units.length;
+    }
+    return null;
+  }, [bookStructure, currentChunkIndex]);
+
+  const currentChapterInfo = getCurrentChapterInfo();
+
+  // Get current chunk words
+  const getCurrentChunkWords = () => {
+    if (currentChunkIndex >= thoughtUnits.length) return [];
+    return thoughtUnits[currentChunkIndex].split(/\s+/);
+  };
+
+  const currentWords = getCurrentChunkWords();
+
+  // Advanced timer management
+  useEffect(() => {
+    if (isPlaying && currentChunkIndex < thoughtUnits.length && viewMode === "hybrid") {
+      wordTimerRef.current = setInterval(() => {
+        setCurrentWordIndex(prev => {
+          const nextIndex = prev + 1;
+          if (nextIndex >= currentWords.length) {
+            return 0;
+          }
+          return nextIndex;
+        });
+      }, wordSpeed);
+
+      chunkTimerRef.current = setTimeout(() => {
+        setCurrentChunkIndex(prev => {
+          const nextIndex = prev + 1;
+          if (nextIndex >= thoughtUnits.length) {
+            setIsPlaying(false);
+            return thoughtUnits.length - 1;
+          }
+          setCurrentWordIndex(0);
+          return nextIndex;
+        });
+      }, chunkSpeed);
+    }
+
+    return () => {
+      if (wordTimerRef.current) clearInterval(wordTimerRef.current);
+      if (chunkTimerRef.current) clearTimeout(chunkTimerRef.current);
+    };
+  }, [isPlaying, currentChunkIndex, currentWords.length, thoughtUnits.length, chunkSpeed, wordSpeed, viewMode]);
+
+  const handlePlayPause = () => {
+    setIsPlaying(!isPlaying);
+  };
+
+  const handleReset = () => {
+    setIsPlaying(false);
+    setCurrentChunkIndex(0);
+    setCurrentWordIndex(0);
+    setHighlightPosition(null);
+  };
+
+  const handleChunkClick = (chunkIndex: number) => {
+    setCurrentChunkIndex(chunkIndex);
+    setCurrentWordIndex(0);
+    if (isPlaying) {
+      setIsPlaying(false);
+      setTimeout(() => setIsPlaying(true), 100);
+    }
+  };
 
   // Handle text input change
   const handleTextChange = useCallback((text: string) => {
@@ -678,7 +682,6 @@ export default function Home() {
         extractedText = result.text;
         setPdfTOC(result.toc);
         
-        // If PDF has TOC, use it to enhance chapter detection
         if (result.toc && result.toc.length > 0) {
           console.log('PDF TOC found:', result.toc);
         }
@@ -705,98 +708,7 @@ export default function Home() {
       setPdfFile(null);
       setFileType("none");
     }
-  }, [extractTextFromPDF]);
-
-  // Enhanced chapter parsing to prevent duplicates - FIXED
-  const parseTextEnhanced = useCallback((text: string, title: string) => {
-    const chapters: any[] = [];
-    // More flexible chapter detection regex
-    const chapterRegex = /^(chapter|CHAPTER|Chapter|chap|Chap|CHAP|ch|Ch|CH)\.?\s+(\d+|[IVXLCDM]+|\w+)(?:\s*[:\-—.]?\s*(.*))?$/im;
-    const lines = text.split('\n');
-    
-    let currentChapter: any = null;
-    let currentContent: string[] = [];
-    let chapterNumbers = new Set<string>(); // Track unique chapter numbers
-    let lastChapterEnd = -1; // Track where last chapter ended
-    
-    lines.forEach((line, index) => {
-      const trimmedLine = line.trim();
-      const match = trimmedLine.match(chapterRegex);
-      
-      if (match && index > lastChapterEnd + 2) { // Ensure we're not too close to the last chapter
-        const chapterNum = match[2].toUpperCase(); // Normalize chapter number
-        const chapterTitle = match[3] || '';
-        
-        // Only process if this is a new chapter number
-        if (!chapterNumbers.has(chapterNum)) {
-          chapterNumbers.add(chapterNum);
-          
-          // Save previous chapter
-          if (currentChapter && currentContent.length > 0) {
-            const content = currentContent.join('\n').trim();
-            if (content.length > 50) { // Only save if content is substantial
-              currentChapter.content = content;
-              chapters.push(currentChapter);
-              lastChapterEnd = index - 1;
-            }
-          }
-          
-          // Start new chapter
-          currentChapter = {
-            id: `chapter-${chapterNum}`,
-            number: chapterNum,
-            title: chapterTitle.trim() || `Chapter ${chapterNum}`,
-            content: '',
-            units: []
-          };
-          currentContent = [];
-        }
-      } else if (trimmedLine && (!match || index <= lastChapterEnd + 2)) {
-        // Add content to current chapter
-        currentContent.push(line);
-      }
-    });
-    
-    // Don't forget the last chapter
-    if (currentChapter && currentContent.length > 0) {
-      const content = currentContent.join('\n').trim();
-      if (content.length > 50) { // Only save if content is substantial
-        currentChapter.content = content;
-        chapters.push(currentChapter);
-      }
-    }
-    
-    // If no chapters found, treat entire text as one chapter
-    if (chapters.length === 0) {
-      chapters.push({
-        id: 'chapter-full',
-        number: '1',
-        title: title,
-        content: text,
-        units: []
-      });
-    }
-    
-    // Sort chapters by their appearance order (already in order, but ensure consistency)
-    // Don't sort by number as it might mess up the natural flow
-    
-    // Create thought units for each chapter
-    let unitId = 1;
-    chapters.forEach(chapter => {
-      const chapterUnits = createThoughtUnits(chapter.content);
-      chapter.units = chapterUnits.map((unit, index) => ({
-        id: `unit-${unitId++}`,
-        unitNumber: index + 1,
-        text: unit
-      }));
-    });
-    
-    return {
-      title,
-      chapters,
-      totalUnits: chapters.reduce((sum, ch) => sum + ch.units.length, 0)
-    };
-  }, [createThoughtUnits]);
+  }, [extractTextFromPDF, handleReset]);
 
   // Parse text into chapters and thought units
   const parseText = useCallback(() => {
@@ -817,13 +729,10 @@ export default function Home() {
       try {
         const bookTitle = fileName.replace(/\.(pdf|txt)$/i, '') || "Untitled Book";
         
-        // First, use the enhanced parser to avoid duplicates
         const cleanedText = preprocessTextForDuplicates(inputText);
         
-        // Parse the book structure
         const structure = parseBookWithChapters(cleanedText, bookTitle);
         
-        // Create thought units for each chapter
         let unitId = 1;
         structure.chapters.forEach((chapter: any) => {
           const chapterUnits = createThoughtUnits(chapter.content);
@@ -834,12 +743,10 @@ export default function Home() {
           }));
         });
         
-        // Update total units
         structure.totalUnits = structure.chapters.reduce((sum: number, ch: any) => sum + ch.units.length, 0);
         
         setBookStructure(structure);
         
-        // Update thought units from the parsed structure
         const allUnits: string[] = [];
         structure.chapters.forEach((chapter: any) => {
           chapter.units.forEach((unit: any) => {
@@ -884,7 +791,7 @@ export default function Home() {
     }
   };
 
-  // Render units organized by chapters - with better key handling
+  // Render units organized by chapters
   const renderUnitsByChapters = () => {
     if (!bookStructure || !bookStructure.chapters) return null;
 
@@ -896,7 +803,6 @@ export default function Home() {
       
       return (
         <div key={chapter.id || `chapter-${chapterIndex}-${chapter.number}`} className="mb-6" id={`chapter-${chapter.id}`}>
-          {/* Chapter Header */}
           <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900 dark:to-purple-900 border border-indigo-200 dark:border-indigo-700 rounded-lg p-3 mb-3">
             <div className="flex items-center justify-between">
               <h5 className="font-bold text-indigo-800 dark:text-indigo-200 text-sm flex items-center">
@@ -911,7 +817,6 @@ export default function Home() {
             </div>
           </div>
           
-          {/* Chapter Units */}
           <div className="space-y-2 pl-4">
             {chapter.units.map((unit: any, unitIndex: number) => {
               const globalUnitIndex = chapterStartIndex + unitIndex;
@@ -966,7 +871,6 @@ export default function Home() {
             </div>
             
             <div className="flex items-center space-x-4">
-              {/* Theme Toggle */}
               <button
                 onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
                 className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
@@ -975,7 +879,6 @@ export default function Home() {
                 {theme === 'light' ? '🌙' : '☀️'}
               </button>
               
-              {/* TOC Toggle */}
               {bookStructure && (
                 <button
                   onClick={() => setShowTOC(!showTOC)}
@@ -986,7 +889,6 @@ export default function Home() {
                 </button>
               )}
               
-              {/* View Mode Toggle */}
               {bookStructure && (
                 <div className="flex items-center space-x-2 border border-gray-300 dark:border-gray-600 rounded-lg p-1">
                   <button
@@ -1030,7 +932,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Controls Row */}
           <div className="flex items-center space-x-4">
             <div className="flex-1">
               <input
@@ -1060,7 +961,6 @@ export default function Home() {
             </Button>
           </div>
 
-          {/* Status Messages */}
           {uploadStatus !== "idle" && (
             <div className={`p-3 rounded-lg mt-3 text-sm ${getStatusColor(uploadStatus)}`}>
               {getStatusMessage(uploadStatus)}
@@ -1073,7 +973,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* Navigation Help */}
           {thoughtUnits.length > 0 && (
             <div className="mt-3 p-3 bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-800 dark:text-green-200">
               ✨ <strong>Navigation Features:</strong> 
@@ -1089,9 +988,142 @@ export default function Home() {
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-6 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ height: "calc(100vh - 200px)" }}>
+        <div className={`grid ${showTOC && bookStructure ? 'lg:grid-cols-[250px,2fr,1fr] grid-cols-1' : 'grid-cols-1 lg:grid-cols-[5fr,3fr]'} gap-6`} style={{ height: "calc(100vh - 200px)" }}>
           
-          {/* LEFT PANEL - Original Content with Word Navigation */}
+          {/* TABLE OF CONTENTS PANEL */}
+          {showTOC && bookStructure && (
+            <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl overflow-hidden flex flex-col border border-gray-200 dark:border-gray-700 lg:relative fixed lg:inset-auto inset-0 lg:z-auto z-50">
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900 dark:to-indigo-900 px-6 py-4 border-b dark:border-gray-700 flex-shrink-0">
+                <h2 className="text-lg font-bold text-gray-800 dark:text-gray-200 flex items-center justify-between">
+                  <span className="flex items-center">
+                    📑 <span className="ml-2">Table of Contents</span>
+                  </span>
+                  <button
+                    onClick={() => setShowTOC(false)}
+                    className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  >
+                    ✕
+                  </button>
+                </h2>
+              </div>
+              
+              <div className="flex-1 overflow-auto p-4">
+                <div className="space-y-2">
+                  {pdfTOC && pdfTOC.length > 0 && (
+                    <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900 rounded-lg">
+                      <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2">
+                        📄 PDF Bookmarks
+                      </h4>
+                      <div className="space-y-1 max-h-64 overflow-y-auto">
+                        {(() => {
+                          const flattenTOC = (items: any[], level: number = 0): any[] => {
+                            return items.reduce((acc, item) => {
+                              acc.push({ ...item, level });
+                              if (item.items && item.items.length > 0) {
+                                acc.push(...flattenTOC(item.items, level + 1));
+                              }
+                              return acc;
+                            }, []);
+                          };
+                          const flatTOC = flattenTOC(pdfTOC);
+                          
+                          return flatTOC.map((item, index) => (
+                            <button
+                              key={`pdf-toc-${index}`}
+                              onClick={() => {
+                                if (item.pageNumber) {
+                                  setCurrentPage(item.pageNumber);
+                                  const pageElement = document.getElementById(`pdf-page-${item.pageNumber}`);
+                                  if (pageElement) {
+                                    pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                  }
+                                }
+                              }}
+                              className="w-full text-left text-xs p-2 hover:bg-blue-100 dark:hover:bg-blue-800 rounded transition-colors"
+                              style={{ paddingLeft: `${(item.level + 1) * 0.75}rem` }}
+                            >
+                              {item.title}
+                              {item.pageNumber && (
+                                <span className="text-gray-500 dark:text-gray-400 ml-2">
+                                  (p. {item.pageNumber})
+                                </span>
+                              )}
+                            </button>
+                          ));
+                        })()}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {bookStructure.chapters.map((chapter: any, index: number) => {
+                    const isCurrentChapter = currentChapterInfo?.chapterIndex === index;
+                    return (
+                      <button
+                        key={`toc-${chapter.id}`}
+                        onClick={() => handleTOCClick(index)}
+                        className={`w-full text-left p-3 rounded-lg transition-all ${
+                          isCurrentChapter
+                            ? 'bg-blue-100 dark:bg-blue-900 border-2 border-blue-400 dark:border-blue-600 shadow-md'
+                            : 'bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className={`text-lg font-bold ${
+                            isCurrentChapter ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'
+                          }`}>
+                            {chapter.number}
+                          </span>
+                          <div className="flex-1">
+                            <div className="font-semibold text-sm text-gray-800 dark:text-gray-200">
+                              {chapter.title}
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                              {chapter.units.length} thought units
+                            </div>
+                            {isCurrentChapter && currentChapterInfo && (
+                              <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                                Reading unit {currentChapterInfo.unitInChapter} of {chapter.units.length}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                
+                <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    Reading Progress
+                  </h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-600 dark:text-gray-400">Total Chapters</span>
+                      <span className="font-semibold">{bookStructure.chapters.length}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-600 dark:text-gray-400">Total Units</span>
+                      <span className="font-semibold">{bookStructure.totalUnits}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-600 dark:text-gray-400">Completion</span>
+                      <span className="font-semibold text-green-600 dark:text-green-400">{percentComplete}%</span>
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                      <div
+                        className="bg-gradient-to-r from-blue-500 to-green-500 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${percentComplete}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* LEFT PANEL - Original Content */}
           <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl overflow-hidden flex flex-col border border-gray-200 dark:border-gray-700">
             <div className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 px-6 py-4 border-b dark:border-gray-700 flex-shrink-0">
               <div className="flex items-center justify-between">
@@ -1110,7 +1142,56 @@ export default function Home() {
                 </h2>
                 
                 {fileType === "pdf" && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 border-r pr-4 mr-2">
+                      <button
+                        onClick={() => {
+                          const newPage = Math.max(1, currentPage - 1);
+                          setCurrentPage(newPage);
+                          const pageElement = document.getElementById(`pdf-page-${newPage}`);
+                          if (pageElement) {
+                            pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          }
+                        }}
+                        disabled={currentPage <= 1}
+                        className="px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-sm disabled:opacity-50"
+                      >
+                        ←
+                      </button>
+                      <input
+                        type="number"
+                        value={currentPage}
+                        onChange={(e) => {
+                          const page = parseInt(e.target.value) || 1;
+                          const validPage = Math.max(1, Math.min(page, numPages));
+                          setCurrentPage(validPage);
+                          const pageElement = document.getElementById(`pdf-page-${validPage}`);
+                          if (pageElement) {
+                            pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          }
+                        }}
+                        className="w-16 px-2 py-1 text-center border rounded text-sm dark:bg-gray-700 dark:border-gray-600"
+                        min="1"
+                        max={numPages}
+                      />
+                      <span className="text-sm text-gray-600 dark:text-gray-400">/ {numPages}</span>
+                      <button
+                        onClick={() => {
+                          const newPage = Math.min(numPages, currentPage + 1);
+                          setCurrentPage(newPage);
+                          const pageElement = document.getElementById(`pdf-page-${newPage}`);
+                          if (pageElement) {
+                            pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          }
+                        }}
+                        disabled={currentPage >= numPages}
+                        className="px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-sm disabled:opacity-50"
+                      >
+                        →
+                      </button>
+                    </div>
+                    
+                    <span className="text-xs text-gray-500 mr-2">Ctrl+Scroll to zoom • Drag to pan</span>
                     <span className="text-sm text-gray-600 dark:text-gray-400">Zoom:</span>
                     <button
                       onClick={() => handlePdfZoom(-0.1)}
@@ -1186,7 +1267,7 @@ export default function Home() {
                                 </span>
                               )}
                             </span>
-                        <div className="flex gap-2">
+                            <div className="flex gap-2">
                               <button
                                 onClick={() => {
                                   setCurrentPage(i + 1);
@@ -1206,16 +1287,17 @@ export default function Home() {
                             }}
                             title={`Click to jump to thought units for page ${i + 1}`}
                           >
-                          <Page 
-                            pageNumber={i + 1}
-                            scale={pdfScale}
-                            className="shadow-md hover:shadow-xl transition-shadow border rounded"
-                            renderAnnotationLayer={false}
-                            renderTextLayer={true}
-                          />
+                            <Page 
+                              pageNumber={i + 1}
+                              scale={pdfScale}
+                              className="shadow-md hover:shadow-xl transition-shadow border rounded"
+                              renderAnnotationLayer={false}
+                              renderTextLayer={true}
+                            />
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                     {numPages > 50 && (
                       <div className="text-center p-6 text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg mt-4">
                         <div className="text-3xl mb-3">📚</div>
@@ -1282,7 +1364,6 @@ export default function Home() {
             <div className="flex-1 overflow-auto">
               {viewMode === "hybrid" && thoughtUnits.length > 0 ? (
                 <div className="p-6 space-y-6">
-                  {/* Hybrid Controls */}
                   <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4">
                     <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center">
                       <span className="text-lg mr-2">⚡</span>
@@ -1320,7 +1401,6 @@ export default function Home() {
                       </button>
                     </div>
 
-                    {/* Settings */}
                     {showSettings && (
                       <div className="bg-white dark:bg-gray-900 rounded-lg p-4 space-y-3 border dark:border-gray-700">
                         <div>
@@ -1362,7 +1442,6 @@ export default function Home() {
                       </div>
                     )}
 
-                    {/* Progress Stats */}
                     <div className="grid grid-cols-4 gap-2 text-center">
                       <div className="bg-blue-50 dark:bg-blue-900 rounded-lg p-2">
                         <div className="text-lg font-bold text-blue-600 dark:text-blue-300">{percentComplete}%</div>
@@ -1383,7 +1462,6 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* Current Unit Display */}
                   <div className="text-center">
                     <div className="text-sm text-gray-500 dark:text-gray-400 mb-2 font-medium">
                       {currentChapterInfo ? (
@@ -1416,7 +1494,6 @@ export default function Home() {
                       ))}
                     </div>
                     
-                    {/* Word Progress */}
                     <div className="mt-4 max-w-sm mx-auto">
                       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                         <div
@@ -1432,7 +1509,6 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* All Units by Chapters */}
                   <div className="max-h-64 overflow-y-auto space-y-2">
                     <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center">
                       <span className="mr-2">📚</span>
@@ -1453,7 +1529,6 @@ export default function Home() {
                     Upload a book and click "Create Thought Units" to transform the text into optimized reading chunks.
                   </p>
                   
-                  {/* Benefits */}
                   <div className="text-xs text-gray-400 dark:text-gray-500 space-y-2 bg-gray-50 dark:bg-gray-800 p-4 rounded-lg max-w-md">
                     <div className="font-semibold text-gray-600 dark:text-gray-400 mb-2">Benefits of Thought Unit Reading:</div>
                     <div className="flex items-center gap-2">
