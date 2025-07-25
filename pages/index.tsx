@@ -684,6 +684,25 @@ export default function Home() {
     return null;
   }, [bookStructure, currentChunkIndex]);
 
+  // Get current chapter info
+  const getCurrentChapterInfo = useCallback(() => {
+    if (!bookStructure) return null;
+    
+    let globalIndex = 0;
+    for (let i = 0; i < bookStructure.chapters.length; i++) {
+      const chapter = bookStructure.chapters[i];
+      if (currentChunkIndex >= globalIndex && currentChunkIndex < globalIndex + chapter.units.length) {
+        return {
+          chapter,
+          chapterIndex: i,
+          unitInChapter: currentChunkIndex - globalIndex + 1
+        };
+      }
+      globalIndex += chapter.units.length;
+    }
+    return null;
+  }, [bookStructure, currentChunkIndex]);
+
   const currentChapterInfo = getCurrentChapterInfo();
 
   // Get current chunk words
@@ -866,6 +885,11 @@ export default function Home() {
         });
         setThoughtUnits(allUnits);
         
+        // Auto-show TOC if chapters are detected
+        if (structure.chapters.length > 1) {
+          setShowTOC(true);
+        }
+        
         setViewMode("hybrid");
         setLoading(false);
 
@@ -934,6 +958,7 @@ export default function Home() {
               return (
                 <button
                   key={`${chapter.id}-${unit.id}`}
+                  data-unit-index={globalUnitIndex}
                   onClick={() => handleChunkClick(globalUnitIndex)}
                   className={`w-full text-left p-2 rounded-lg transition-all text-xs ${
                     globalUnitIndex === currentChunkIndex
@@ -965,6 +990,14 @@ export default function Home() {
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${theme === 'dark' ? 'dark' : ''}`} style={{ backgroundColor: theme === 'dark' ? '#0f0f0f' : '#f8fafc' }}>
+      <style jsx>{`
+        .word-clickable:hover {
+          background-color: rgba(59, 130, 246, 0.1);
+          border-radius: 4px;
+          cursor: pointer;
+        }
+      `}</style>
+      
       {/* Fixed Header */}
       <div className="bg-white dark:bg-gray-900 shadow-lg border-b dark:border-gray-800 sticky top-0 z-10 transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-6 py-4">
@@ -1087,12 +1120,17 @@ export default function Home() {
           {thoughtUnits.length > 0 && (
             <div className="mt-3 p-3 bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-800 dark:text-green-200">
               ✨ <strong>Navigation Features:</strong> 
-              • Click any word to jump to exact position in thought units 
-              • <strong>PDF Zoom:</strong> Ctrl+Scroll or use zoom controls (50%-300%)
-              • <strong>PDF Pan:</strong> Drag to move when zoomed in, or use arrow keys
-              • Click 📑 for Table of Contents with PDF bookmarks
-              • Use page navigation or click pages to jump
-              • Optimal chunk size: 4-5 words for best comprehension
+              <br />
+              <strong>Word Navigation:</strong> Click any word to jump to its exact position in thought units
+              <br />
+              <strong>PDF Controls:</strong> 
+              • Zoom: Ctrl+Scroll (50%-300%) or use controls
+              • Pan: Drag when zoomed or use arrow keys
+              • Pages: Click page numbers to jump
+              <br />
+              <strong>Table of Contents:</strong> Click 📑 to see chapters and bookmarks
+              <br />
+              <strong>Optimal Reading:</strong> 5-7 word thought units provide best comprehension
             </div>
           )}
         </div>
@@ -1100,7 +1138,7 @@ export default function Home() {
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-6 py-6">
-        <div className={`grid ${showTOC && bookStructure ? 'lg:grid-cols-[250px,2fr,1fr] grid-cols-1' : 'grid-cols-1 lg:grid-cols-[5fr,3fr]'} gap-6`} style={{ height: "calc(100vh - 200px)" }}>
+        <div className={`grid ${showTOC && bookStructure ? 'lg:grid-cols-[250px,4fr,2fr] grid-cols-1' : 'grid-cols-1 lg:grid-cols-[3fr,2fr]'} gap-6`} style={{ height: "calc(100vh - 200px)" }}>
           
           {/* TABLE OF CONTENTS PANEL */}
           {showTOC && bookStructure && (
@@ -1121,6 +1159,57 @@ export default function Home() {
               
               <div className="flex-1 overflow-auto p-4">
                 <div className="space-y-2">
+                  {/* Quick Page Navigation for PDFs */}
+                  {fileType === "pdf" && numPages > 0 && (
+                    <div className="mb-4 p-3 bg-orange-50 dark:bg-orange-900 rounded-lg">
+                      <h4 className="text-sm font-semibold text-orange-800 dark:text-orange-200 mb-2">
+                        📖 Quick Page Jump
+                      </h4>
+                      <div className="grid grid-cols-5 gap-1">
+                        {Array.from({ length: Math.min(numPages, 20) }).map((_, i) => (
+                          <button
+                            key={`quick-page-${i + 1}`}
+                            onClick={() => {
+                              setCurrentPage(i + 1);
+                              const pageElement = document.getElementById(`pdf-page-${i + 1}`);
+                              if (pageElement) {
+                                pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                              }
+                            }}
+                            className={`text-xs p-2 rounded transition-colors ${
+                              currentPage === i + 1
+                                ? 'bg-orange-500 text-white font-bold'
+                                : 'bg-white dark:bg-gray-700 hover:bg-orange-100 dark:hover:bg-orange-800'
+                            }`}
+                          >
+                            {i + 1}
+                          </button>
+                        ))}
+                        {numPages > 20 && (
+                          <button
+                            className="text-xs p-2 bg-gray-100 dark:bg-gray-700 rounded col-span-5"
+                            onClick={() => {
+                              const page = prompt(`Enter page number (1-${numPages}):`);
+                              if (page) {
+                                const pageNum = parseInt(page);
+                                if (pageNum >= 1 && pageNum <= numPages) {
+                                  setCurrentPage(pageNum);
+                                  const pageElement = document.getElementById(`pdf-page-${pageNum}`);
+                                  if (pageElement) {
+                                    pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                  }
+                                }
+                              }
+                            }}
+                          >
+                            More pages... ({numPages} total)
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* PDF Bookmarks */}
                   {pdfTOC && pdfTOC.length > 0 && (
                     <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900 rounded-lg">
                       <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2">
@@ -1420,15 +1509,31 @@ export default function Home() {
                         >
                           <div className="bg-gradient-to-r from-gray-100 to-blue-50 dark:from-gray-700 dark:to-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 font-medium flex justify-between items-center">
                             <span className="font-bold flex items-center gap-2">
-                              <span className={`text-lg ${isCurrentPage ? 'text-blue-600 dark:text-blue-400' : ''}`}>
-                                📄
+                              <button
+                                onClick={() => {
+                                  setCurrentPage(i + 1);
+                                  const pageElement = document.getElementById(`pdf-page-${i + 1}`);
+                                  if (pageElement) {
+                                    pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                  }
+                                }}
+                                className={`text-lg font-bold px-3 py-1 rounded-lg transition-colors ${
+                                  isCurrentPage 
+                                    ? 'bg-blue-500 text-white' 
+                                    : 'bg-gray-200 dark:bg-gray-600 hover:bg-blue-400 hover:text-white'
+                                }`}
+                                title="Click to go to this page"
+                              >
+                                {i + 1}
+                              </button>
+                              <span>
+                                Page {i + 1}
+                                {isCurrentPage && (
+                                  <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full ml-2">
+                                    Current
+                                  </span>
+                                )}
                               </span>
-                              Page {i + 1}
-                              {isCurrentPage && (
-                                <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full ml-2">
-                                  Current
-                                </span>
-                              )}
                             </span>
                             <div className="flex gap-2">
                               <button
@@ -1490,10 +1595,12 @@ export default function Home() {
                       onChange={(e) => handleTextChange(e.target.value)}
                       onClick={handleTextAreaClick}
                       placeholder="Paste your text here or upload a PDF file..."
-                      className="flex-1 w-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg text-sm leading-relaxed resize-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 transition-colors duration-200 cursor-pointer hover:border-blue-300 dark:hover:border-blue-600 dark:bg-gray-800 dark:text-gray-200"
+                      className="flex-1 w-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg text-sm leading-relaxed resize-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 transition-colors duration-200 hover:border-blue-300 dark:hover:border-blue-600 dark:bg-gray-800 dark:text-gray-200"
                       style={{ 
                         fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                        backgroundColor: highlightPosition ? (theme === 'dark' ? '#1f2937' : '#fffbeb') : (theme === 'dark' ? '#1f2937' : 'white')
+                        backgroundColor: highlightPosition ? (theme === 'dark' ? '#1f2937' : '#fffbeb') : (theme === 'dark' ? '#1f2937' : 'white'),
+                        cursor: 'text',
+                        wordSpacing: '0.1em'
                       }}
                       title="Click any word to jump to it in the thought units"
                     />
@@ -1583,23 +1690,26 @@ export default function Home() {
                         
                         <div>
                           <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Max Chunk Size: {maxChunkSize} words
+                            Thought Unit Size: {maxChunkSize} words
                             <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
-                              (Optimal: 4-5 words)
+                              (Optimal: 5-7 words for comprehension)
                             </span>
                           </label>
                           <input
                             type="range"
                             min="3"
-                            max="8"
+                            max="10"
                             value={maxChunkSize}
                             onChange={(e) => setMaxChunkSize(Number(e.target.value))}
                             className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
                           />
                           <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            <span>Short</span>
-                            <span className="text-green-600 dark:text-green-400">Optimal</span>
-                            <span>Long</span>
+                            <span>Short (3-4)</span>
+                            <span className="text-green-600 dark:text-green-400 font-semibold">Optimal (5-7)</span>
+                            <span>Long (8-10)</span>
+                          </div>
+                          <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+                            <strong>Research shows:</strong> 5-7 word chunks provide the best balance between reading speed and comprehension. Shorter units may break semantic meaning, while longer units can overwhelm working memory.
                           </div>
                         </div>
                       </div>
