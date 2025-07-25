@@ -486,6 +486,117 @@ export default function Home() {
     return null;
   }, [bookStructure, currentChunkIndex]);
 
+  // Touch support for mobile pinch-to-zoom and pan
+  const [touchStart, setTouchStart] = useState<{ x: number, y: number, distance?: number } | null>(null);
+  const [showZoomIndicator, setShowZoomIndicator] = useState(false);
+  const zoomIndicatorTimeout = useRef<NodeJS.Timeout | null>(null);
+  
+  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 1) {
+      // Single touch for panning
+      setTouchStart({ x: e.touches[0].clientX, y: e.touches[0].clientY });
+      if (pdfContainerRef.current) {
+        setScrollStart({
+          x: pdfContainerRef.current.scrollLeft,
+          y: pdfContainerRef.current.scrollTop
+        });
+      }
+    } else if (e.touches.length === 2) {
+      // Two touches for pinch zoom
+      const distance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      setTouchStart({
+        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+        distance
+      });
+    }
+  }, []);
+  
+  const handleTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    if (!touchStart || !pdfContainerRef.current) return;
+    
+    if (e.touches.length === 1 && !touchStart.distance) {
+      // Pan with single touch
+      const dx = touchStart.x - e.touches[0].clientX;
+      const dy = touchStart.y - e.touches[0].clientY;
+      
+      pdfContainerRef.current.scrollLeft = scrollStart.x + dx;
+      pdfContainerRef.current.scrollTop = scrollStart.y + dy;
+    } else if (e.touches.length === 2 && touchStart.distance) {
+      // Pinch zoom
+      const newDistance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      
+      const scaleDelta = (newDistance - touchStart.distance) / 200;
+      handlePdfZoom(scaleDelta);
+      
+      // Update distance for continuous zoom
+      setTouchStart({
+        ...touchStart,
+        distance: newDistance
+      });
+      
+      showZoomLevel();
+    }
+  }, [touchStart, scrollStart, handlePdfZoom, showZoomLevel]);
+  
+  const handleTouchEnd = useCallback(() => {
+    setTouchStart(null);
+  }, []);
+
+  // Add keyboard navigation for PDF panning
+  useEffect(() => {
+    if (fileType === "pdf" && pdfContainerRef.current && pdfScale > 1.0) {
+      const container = pdfContainerRef.current;
+      
+      const handleKeyDown = (e: KeyboardEvent) => {
+        // Only handle arrow keys when PDF container is focused or no input is focused
+        const activeElement = document.activeElement;
+        if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+          return;
+        }
+        
+        const scrollAmount = 50; // pixels to scroll
+        
+        switch (e.key) {
+          case 'ArrowUp':
+            e.preventDefault();
+            container.scrollTop -= scrollAmount;
+            break;
+          case 'ArrowDown':
+            e.preventDefault();
+            container.scrollTop += scrollAmount;
+            break;
+          case 'ArrowLeft':
+            e.preventDefault();
+            container.scrollLeft -= scrollAmount;
+            break;
+          case 'ArrowRight':
+            e.preventDefault();
+            container.scrollLeft += scrollAmount;
+            break;
+          case 'Home':
+            e.preventDefault();
+            container.scrollTop = 0;
+            container.scrollLeft = 0;
+            break;
+          case 'End':
+            e.preventDefault();
+            container.scrollTop = container.scrollHeight;
+            break;
+        }
+      };
+      
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [fileType, pdfScale]);
+
   // Track current page on scroll
   useEffect(() => {
     if (fileType === "pdf" && pdfContainerRef.current && numPages > 0) {
@@ -977,7 +1088,8 @@ export default function Home() {
             <div className="mt-3 p-3 bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-800 dark:text-green-200">
               ✨ <strong>Navigation Features:</strong> 
               • Click any word to jump to exact position in thought units 
-              • Use Ctrl+Scroll to zoom PDFs, then drag to pan when zoomed
+              • <strong>PDF Zoom:</strong> Ctrl+Scroll or use zoom controls (50%-300%)
+              • <strong>PDF Pan:</strong> Drag to move when zoomed in, or use arrow keys
               • Click 📑 for Table of Contents with PDF bookmarks
               • Use page navigation or click pages to jump
               • Optimal chunk size: 4-5 words for best comprehension
@@ -1191,23 +1303,55 @@ export default function Home() {
                       </button>
                     </div>
                     
-                    <span className="text-xs text-gray-500 mr-2">Ctrl+Scroll to zoom • Drag to pan</span>
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Zoom:</span>
-                    <button
-                      onClick={() => handlePdfZoom(-0.1)}
-                      className="px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-sm"
-                    >
-                      -
-                    </button>
-                    <span className="text-sm text-gray-600 dark:text-gray-400 min-w-[3rem] text-center">
-                      {Math.round(pdfScale * 100)}%
-                    </span>
-                    <button
-                      onClick={() => handlePdfZoom(0.1)}
-                      className="px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-sm"
-                    >
-                      +
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 mr-2">
+                        {pdfScale > 1.0 ? '🔄 Drag to pan • Arrow keys to move' : 'Ctrl+Scroll to zoom'}
+                      </span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Zoom:</span>
+                      <button
+                        onClick={() => handlePdfZoom(-0.25)}
+                        className="px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-sm"
+                      >
+                        -
+                      </button>
+                      <select
+                        value={Math.round(pdfScale * 100)}
+                        onChange={(e) => {
+                          const newScale = parseInt(e.target.value) / 100;
+                          setPdfScale(newScale);
+                          showZoomLevel();
+                        }}
+                        className="px-2 py-1 text-center border rounded text-sm dark:bg-gray-700 dark:border-gray-600"
+                      >
+                        <option value="50">50%</option>
+                        <option value="75">75%</option>
+                        <option value="100">100%</option>
+                        <option value="125">125%</option>
+                        <option value="150">150%</option>
+                        <option value="200">200%</option>
+                        <option value="300">300%</option>
+                      </select>
+                      <button
+                        onClick={() => handlePdfZoom(0.25)}
+                        className="px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-sm"
+                      >
+                        +
+                      </button>
+                      <button
+                        onClick={() => {
+                          setPdfScale(1.0);
+                          showZoomLevel();
+                          if (pdfContainerRef.current) {
+                            pdfContainerRef.current.scrollLeft = 0;
+                            pdfContainerRef.current.scrollTop = 0;
+                          }
+                        }}
+                        className="px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-sm"
+                        title="Reset zoom and position"
+                      >
+                        Reset
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1226,11 +1370,26 @@ export default function Home() {
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseUp}
-              style={{ cursor: isDragging ? 'grabbing' : (pdfScale > 1.0 ? 'grab' : 'default') }}
+              onMouseLeave={handleMouseLeave}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              style={{ 
+                cursor: isDragging ? 'grabbing' : (pdfScale > 1.0 ? 'grab' : 'default'),
+                overflow: 'auto',
+                position: 'relative',
+                touchAction: 'none' // Prevent browser default touch behavior
+              }}
             >
               {fileType === "pdf" && pdfFile ? (
-                <div className="p-4">
+                <div className="p-4 relative" style={{ minWidth: `${pdfScale * 100}%` }}>
+                  {/* Zoom Indicator Overlay */}
+                  {showZoomIndicator && (
+                    <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black bg-opacity-75 text-white px-4 py-2 rounded-lg text-lg font-semibold z-50 pointer-events-none">
+                      {Math.round(pdfScale * 100)}%
+                    </div>
+                  )}
+                  
                   <Document
                     file={pdfFile}
                     onLoadError={(err) => {
@@ -1254,6 +1413,10 @@ export default function Home() {
                               ? 'border-blue-500 dark:border-blue-400 shadow-xl' 
                               : 'dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600'
                           }`}
+                          style={{ 
+                            width: 'fit-content',
+                            margin: '0 auto 1rem auto'
+                          }}
                         >
                           <div className="bg-gradient-to-r from-gray-100 to-blue-50 dark:from-gray-700 dark:to-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 font-medium flex justify-between items-center">
                             <span className="font-bold flex items-center gap-2">
