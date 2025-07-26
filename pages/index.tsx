@@ -1,121 +1,186 @@
-// 🧠 Thought-Unit Reader — DOCX + OCR + Real Chapter Parsing (FIXED IMPORTS)
-'use client';
+// pages/index.tsx
+import { useState, useCallback, useEffect, useRef } from "react";
+import { Document, Page, pdfjs } from "react-pdf";
+import { parseBookWithChapters, generateProgressiveReadingHTML } from "../lib/parser";
+import { Label } from "../components/ui/label";
+import { Switch } from "../components/ui/switch";
+import { Button } from "../components/ui/button";
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Document, Page, pdfjs } from 'react-pdf';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
+// PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
-import { useTheme } from 'next-themes';
-import { cn } from '@/lib/utils';
-import mammoth from 'mammoth';
-import Tesseract from 'tesseract.js';
+type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
+type FileType = "text" | "pdf" | "none";
+type ViewMode = "original" | "chapters" | "progressive" | "hybrid";
 
-export default function Reader() {
-  const { theme, setTheme } = useTheme();
-  const [numPages, setNumPages] = useState<number | null>(null);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [pdfScale, setPdfScale] = useState(1.0);
-  const zoomRef = useRef<HTMLDivElement | null>(null);
-  const [inputText, setInputText] = useState('');
-  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [thoughtUnits, setThoughtUnits] = useState<string[]>([]);
-  const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
-  const [toc, setToc] = useState<{ title: string; page: number }[]>([]);
+export default function Home() {
+  // … all your existing state/hooks …
 
-  const handleZoom = (scaleDelta: number) => {
-    const newScale = Math.min(3.0, Math.max(0.5, pdfScale + scaleDelta));
-    setPdfScale(newScale);
-  };
+  // NEW: refs & state for ToC
+  const [toc, setToc] = useState<{ title: string; chunkIndex: number }[]>([]);
+  
+  // AFTER parseBookWithChapters, build ToC
+  const parseText = useCallback(() => {
+    // … existing checks …
+    setLoading(true);
+    parseBookWithChapters(inputText, fileName || "Untitled").then(struct => {
+      setBookStructure(struct);
+      setViewMode("chapters");
+      setLoading(false);
 
-  const handleWordClick = useCallback(() => {
-    if (!textAreaRef.current || thoughtUnits.length === 0) return;
-    const cursor = textAreaRef.current.selectionStart;
-    const word = inputText.substring(cursor).split(/\s+/)[0].toLowerCase();
-    const matchIndex = thoughtUnits.findIndex(tu => tu.toLowerCase().includes(word));
-    if (matchIndex !== -1 && matchIndex !== currentChunkIndex) {
-      setCurrentChunkIndex(matchIndex);
-    }
-  }, [inputText, thoughtUnits, currentChunkIndex]);
-
-  const onDocumentLoadSuccess = (pdf: PDFDocumentProxy) => {
-    setNumPages(pdf.numPages);
-    setPageNumber(1);
-    extractChapters(inputText);
-  };
-
-  const extractChapters = (text: string) => {
-    const chapterRegex = /(Chapter|CHAPTER)?\s?(\d+|[IVXLC]+)[\.:\-\s]+([A-Z][A-Za-z\s\-\(\)]+)(?=\n|$)/gm;
-    const matches = [...text.matchAll(chapterRegex)];
-    const found: { title: string; page: number }[] = [];
-    matches.forEach((m, i) => {
-      found.push({ title: `Chapter ${m[2]}: ${m[3]}`, page: i + 1 });
+      // build a simple TOC from chapters
+      setToc(struct.chapters.map(ch => ({
+        title: ch.title,
+        chunkIndex: ch.units[0].globalIndex
+      })));
     });
-    setToc(found.length > 0 ? found : Array.from({ length: numPages ?? 0 }, (_, i) => ({ title: `Page ${i + 1}`, page: i + 1 })));
-  };
+  }, [inputText, fileName]);
 
-  const handleFileUpload = async (file: File) => {
-    const type = file.type;
-    if (type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-      const arrayBuffer = await file.arrayBuffer();
-      const { value } = await mammoth.convertToHtml({ arrayBuffer });
-      setInputText(value);
-      extractChapters(value);
-    } else if (type.startsWith('image/') || type === 'application/pdf') {
-      const result = await Tesseract.recognize(file, 'eng');
-      setInputText(result.data.text);
-      extractChapters(result.data.text);
-    } else {
-      setPdfFile(file);
+  // NEW: pan container for PDF pages
+  const pdfContainerRef = useRef<HTMLDivElement>(null);
+
+  // NEW: handle word click sync
+  const handleWordClick = (wordIdx: number) => {
+    const unit = thoughtUnits[currentChunkIndex];
+    const words = unit.split(" ");
+    const before = words.slice(0, wordIdx).join(" ");
+    const idxInText = inputText
+      .toLowerCase()
+      .indexOf(unit.toLowerCase());
+    const wordStart = inputText
+      .toLowerCase()
+      .indexOf(words[wordIdx].toLowerCase(), idxInText + before.length);
+    if (wordStart >= 0 && textAreaRef.current) {
+      textAreaRef.current.focus();
+      textAreaRef.current.setSelectionRange(
+        wordStart,
+        wordStart + words[wordIdx].length
+      );
     }
   };
 
   return (
-    <div className="h-screen w-screen flex flex-col">
-      <div className="flex justify-between items-center p-4 border-b">
-        <input type="file" accept=".pdf,.docx,.png,.jpg" onChange={e => e.target.files && handleFileUpload(e.target.files[0])} />
-        <div className="space-x-2">
-          <button onClick={() => handleZoom(-0.1)}>-</button>
-          <button onClick={() => handleZoom(+0.1)}>+</button>
-        </div>
-        <button
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          className="px-3 py-1 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
-        >
-          {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
-        </button>
-      </div>
-
-      <div className="flex overflow-x-auto gap-2 px-4 py-2 border-b">
-        {toc.map((item) => (
-          <button
-            key={item.page}
-            onClick={() => setPageNumber(item.page)}
-            className="text-xs px-2 py-1 border rounded hover:bg-gray-200"
-          >
-            {item.title}
-          </button>
-        ))}
-      </div>
-
-      <div ref={zoomRef} className="flex-1 overflow-auto">
-        {pdfFile && (
-          <Document file={pdfFile} onLoadSuccess={onDocumentLoadSuccess}>
-            <Page pageNumber={pageNumber} scale={pdfScale} />
-          </Document>
+    <div className="min-h-screen bg-gray-50">
+      {/* HEADER */}
+      <div className="sticky top-0 bg-white z-20 p-4 flex items-center justify-between border-b">
+        <h1 className="text-2xl font-bold">Thought Unit Reader</h1>
+        {/* Table of Contents */}
+        {toc.length > 0 && (
+          <nav className="space-x-2">
+            {toc.map((entry, i) => (
+              <button
+                key={i}
+                onClick={() => {
+                  setCurrentChunkIndex(entry.chunkIndex);
+                  setViewMode("original");
+                }}
+                className="text-sm px-2 py-1 border rounded hover:bg-gray-100"
+              >
+                {entry.title}
+              </button>
+            ))}
+          </nav>
         )}
       </div>
 
-      <textarea
-        ref={textAreaRef}
-        onClick={handleWordClick}
-        onMouseUp={handleWordClick}
-        className="w-full h-32 border-t p-4 font-mono"
-        value={inputText}
-        onChange={(e) => setInputText(e.target.value)}
-        placeholder="Click a word to jump to the matching thought-unit"
-      />
+      <div className="grid lg:grid-cols-2 gap-4 p-4">
+        {/* LEFT: PDF or text */}
+        <div className="flex flex-col space-y-4">
+          {fileType === "pdf" && pdfFile ? (
+            <div
+              ref={pdfContainerRef}
+              className="flex-1 overflow-auto border rounded"
+              style={{ touchAction: "pan-x pan-y" }} // enable pan
+            >
+              <Document
+                file={pdfFile}
+                onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+              >
+                {Array.from({ length: numPages }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="relative mb-4"
+                    style={{ transform: `scale(${pdfScale})`, transformOrigin: "0 0" }}
+                  >
+                    <Page pageNumber={i + 1} />
+                    <button
+                      onClick={() => handlePdfPageClick(i + 1)}
+                      className="absolute top-2 right-2 text-xs bg-blue-500 text-white px-1 rounded"
+                    >
+                      ⬇️
+                    </button>
+                  </div>
+                ))}
+              </Document>
+            </div>
+          ) : (
+            <textarea
+              ref={textAreaRef}
+              value={inputText}
+              onChange={e => handleTextChange(e.target.value)}
+              className="flex-1 w-full p-4 text-lg leading-relaxed border overflow-auto"
+              style={{ fontSize: "1.125rem", lineHeight: 1.6 }}
+            />
+          )}
+
+          {/* Zoom Controls */}
+          {fileType === "pdf" && (
+            <div className="flex space-x-2">
+              <Button onClick={() => setPdfScale(s => Math.max(0.5, s - 0.1))}>➖</Button>
+              <span>{Math.round(pdfScale * 100)}%</span>
+              <Button onClick={() => setPdfScale(s => Math.min(3, s + 0.1))}>➕</Button>
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT: Thought Units */}
+        <div className="flex flex-col space-y-4">
+          {viewMode === "hybrid" && thoughtUnits.length > 0 ? (
+            <>
+              <div className="flex flex-wrap space-x-2">
+                <Button onClick={handlePlayPause}>{isPlaying ? "⏸️" : "▶️"}</Button>
+                <Button onClick={handleReset}>🔄 Reset</Button>
+                <Button onClick={() => setShowSettings(s => !s)}>⚙️</Button>
+              </div>
+
+              <div className="text-center text-xl">
+                {currentWords.map((word, idx) => (
+                  <span
+                    key={idx}
+                    onClick={() => handleWordClick(idx)}
+                    className={`inline-block m-1 p-1 rounded cursor-pointer ${
+                      idx === currentWordIndex
+                        ? "bg-yellow-300 font-bold scale-110"
+                        : ""
+                    }`}
+                  >
+                    {word}
+                  </span>
+                ))}
+              </div>
+
+              {showSettings && (
+                <div className="space-y-2">
+                  <Label>WPM: {wpm}</Label>
+                  <input
+                    type="range"
+                    min={100}
+                    max={600}
+                    value={wpm}
+                    onChange={e => setWpm(+e.target.value)}
+                  />
+                </div>
+              )}
+
+              <div className="overflow-y-auto space-y-2">
+                {renderUnitsByChapters()}
+              </div>
+            </>
+          ) : (
+            <div className="text-gray-500">Click “Create Thought Units” to get started.</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
