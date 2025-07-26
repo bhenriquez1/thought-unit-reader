@@ -1,9 +1,11 @@
-// 🧠 Thought-Unit Reader — DOCX + OCR + Real Chapter Parsing
+// 🧠 Thought-Unit Reader — DOCX + OCR + Real Chapter Parsing (FIXED IMPORTS)
 'use client';
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Document, Page, pdfjs, type PDFDocumentProxy } from 'react-pdf';
+import { Document, Page, pdfjs } from 'react-pdf';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+
 import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
 import mammoth from 'mammoth';
