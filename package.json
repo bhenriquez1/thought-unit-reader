@@ -15,7 +15,7 @@
     "@headlessui/react": "^1.7.17",
     "@heroicons/react": "^2.1.1",
     "class-variance-authority": "^0.7.0",
-    "clsx": "^2.1.0",
+    "clsx": "^2.1.1",
     "fabric": "^6.7.0",
     "firebase": "^10.8.0",
     "mammoth": "^1.9.0",
