@@ -20,6 +20,7 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [ocrFallbackText, setOcrFallbackText] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [thumbnails, setThumbnails] = useState<number[]>([]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -31,8 +32,8 @@ export default function Home() {
       reader.onload = async () => {
         try {
           const arrayBuffer = reader.result as ArrayBuffer;
-          setInputText(arrayBuffer);
           const text = new TextDecoder().decode(arrayBuffer);
+          setInputText(arrayBuffer);
           const parsed = await parseBookWithChapters(text);
           setOutput(parsed);
         } catch (error) {
@@ -64,8 +65,20 @@ export default function Home() {
 
   const filteredOutput = output?.text
     ?.split("\n")
-    ?.filter((line: string) => line.toLowerCase().includes(searchQuery.toLowerCase()))
+    ?.map((line: string, i: number) => {
+      if (line.toLowerCase().includes(searchQuery.toLowerCase())) {
+        return `<mark>${line}</mark>`;
+      }
+      return line;
+    })
     ?.join("\n");
+
+  useEffect(() => {
+    if (numPages) {
+      const pages = Array.from({ length: numPages }, (_, i) => i + 1);
+      setThumbnails(pages);
+    }
+  }, [numPages]);
 
   return (
     <div className={`p-4 ${darkMode ? "bg-black text-white" : "bg-white text-black"}`}>
@@ -114,17 +127,26 @@ export default function Home() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
           <div className="border p-4 rounded bg-gray-50 dark:bg-gray-900">
             <Label>PDF Preview</Label>
-            <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
-              <Document file={{ data: inputText }} onLoadSuccess={({ numPages }) => setNumPages(numPages)}>
-                <Page pageNumber={pageNumber} />
-              </Document>
+            <div className="flex flex-col gap-2 overflow-y-auto max-h-[70vh]">
+              {thumbnails.map((p) => (
+                <div key={p} className={`cursor-pointer ${p === pageNumber ? "border-2 border-blue-500" : ""}`} onClick={() => goToPage(p)}>
+                  <Document file={{ data: inputText }}>
+                    <Page pageNumber={p} width={100} />
+                  </Document>
+                </div>
+              ))}
+              <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
+                <Document file={{ data: inputText }} onLoadSuccess={({ numPages }) => setNumPages(numPages)}>
+                  <Page pageNumber={pageNumber} />
+                </Document>
+              </div>
             </div>
           </div>
 
-          <div className="border p-4 rounded bg-gray-50 dark:bg-gray-900">
+          <div className="border p-4 rounded bg-gray-50 dark:bg-gray-900 relative">
             <Label>Thought Unit Output</Label>
 
-            <div className="mb-4">
+            <div className="absolute top-2 right-2 z-10 w-64">
               <Label>Table of Contents</Label>
               <select
                 className="border p-2 rounded w-full"
@@ -141,7 +163,7 @@ export default function Home() {
               </select>
             </div>
 
-            <div className="mb-4">
+            <div className="mb-4 mt-20">
               <Label>🔍 Search Thought Units</Label>
               <input
                 type="text"
@@ -152,9 +174,7 @@ export default function Home() {
               />
             </div>
 
-            <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap">
-              {filteredOutput || output.text}
-            </div>
+            <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: filteredOutput || output.text }} />
           </div>
         </div>
       )}
