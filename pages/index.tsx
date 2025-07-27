@@ -1,103 +1,139 @@
-// Fix TypeError and implement requested features
+// pages/index.tsx - AI Parsing Highlights + Mode Toggle + Full Upload
+import { useState, useCallback, useEffect, useRef } from "react";
+import { Document, Page, pdfjs } from "react-pdf";
+import { parseBookWithChapters, generateProgressiveReadingHTML } from "../lib/parser";
+import { Label } from "../components/ui/label";
+import { Switch } from "../components/ui/switch";
+import { Button } from "../components/ui/button";
+import { useDropzone } from "react-dropzone";
 
-import { useState, useRef } from 'react';
-import { Document, Page, pdfjs } from 'react-pdf';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
-export default function Reader() {
-  const [pdfFile, setPdfFile] = useState(null);
-  const [textContent, setTextContent] = useState('');
-  const [numPages, setNumPages] = useState(0);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [zoom, setZoom] = useState(1.0);
-  const [bookStructure, setBookStructure] = useState(null);
+type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
+type FileType = "text" | "pdf" | "none";
+type ViewMode = "original" | "chapters" | "progressive" | "hybrid";
 
-  const fileInputRef = useRef(null);
+export default function Home() {
+  const [enabled, setEnabled] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [inputText, setInputText] = useState("");
+  const [output, setOutput] = useState<string | null>(null);
+  const [selectedPage, setSelectedPage] = useState(1);
+  const [zoom, setZoom] = useState(1);
+  const [viewMode, setViewMode] = useState<ViewMode>("progressive");
+  const [chapters, setChapters] = useState<string[]>([]);
+  const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
+  const [fileType, setFileType] = useState<FileType>("none");
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileData, setFileData] = useState<File | null>(null);
 
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    const file = acceptedFiles[0];
     if (!file) return;
-    const arrayBuffer = await file.arrayBuffer();
-    const byteArray = new Uint8Array(arrayBuffer);
-    const decoder = new TextDecoder();
-    const decodedText = decoder.decode(byteArray);
+    setFileData(file);
+    setFileName(file.name);
+    setUploadStatus("uploading");
 
-    try {
-      const parsed = await parseBookWithChapters(decodedText);
-      setBookStructure(parsed);
-      setTextContent(JSON.stringify(parsed, null, 2));
-    } catch (err) {
-      console.error('Parser error:', err);
-      setTextContent('Error parsing file.');
-    }
-    setPdfFile(file);
-  };
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const text = reader.result?.toString() || "";
+      setInputText(text);
+      setUploadStatus("processing");
 
-  const handleZoomIn = () => setZoom((z) => z + 0.2);
-  const handleZoomOut = () => setZoom((z) => Math.max(0.2, z - 0.2));
+      const { chapters, parsed } = await parseBookWithChapters(text);
+      setOutput(generateProgressiveReadingHTML(parsed));
+      setChapters(chapters);
+      setUploadStatus("done");
+      setFileType(file.type.includes("pdf") ? "pdf" : "text");
+    };
+    reader.readAsText(file);
+  }, []);
 
-  const handleTocSelect = (e) => {
-    const page = parseInt(e.target.value);
-    setPageNumber(page);
-  };
+  const { getRootProps, getInputProps } = useDropzone({ onDrop });
+
+  const handleZoomIn = () => setZoom((z) => z + 0.1);
+  const handleZoomOut = () => setZoom((z) => Math.max(0.5, z - 0.1));
 
   return (
-    <div className="flex flex-col gap-4 p-4 dark:bg-black min-h-screen">
-      <div className="flex justify-between">
-        <h1 className="text-xl font-bold">🧠 Thought Unit Reader</h1>
-        <input
-          type="file"
-          accept=".pdf,.txt,.docx"
-          onChange={handleFileUpload}
-          className="text-sm"
-          ref={fileInputRef}
-        />
-      </div>
-
-      <div className="grid grid-cols-3 gap-4">
-        {/* PDF Preview */}
-        <div className="border p-2 dark:bg-zinc-900">
-          {pdfFile && (
-            <Document file={pdfFile} onLoadSuccess={({ numPages }) => setNumPages(numPages)}>
-              <Page pageNumber={pageNumber} scale={zoom} />
-            </Document>
-          )}
+    <div className="flex min-h-screen dark:bg-black">
+      {/* Sidebar */}
+      <aside className="w-64 border-r p-4 space-y-4 dark:bg-zinc-900">
+        <h2 className="text-xl font-semibold">📚 Chapters</h2>
+        <div className="space-y-1">
+          {chapters.map((ch, i) => (
+            <Button
+              key={i}
+              variant="ghost"
+              className="w-full justify-start text-left"
+              onClick={() => setSelectedPage(i + 1)}
+            >
+              {ch}
+            </Button>
+          ))}
         </div>
 
-        {/* Thought Unit Output */}
-        <div className="border p-2 dark:bg-zinc-900 overflow-y-auto whitespace-pre-wrap">
-          {textContent || 'Upload a file to get output.'}
+        <div className="mt-6">
+          <Label className="mb-2 block">🌓 Dark Mode</Label>
+          <Switch checked={enabled} onCheckedChange={setEnabled} />
         </div>
 
-        {/* Table of Contents */}
-        <div className="border p-2 dark:bg-zinc-900">
-          <Label htmlFor="toc">Table of Contents</Label>
-          <select id="toc" className="w-full mt-2" onChange={handleTocSelect}>
-            {bookStructure?.chapters?.map((ch, idx) => (
-              <option key={idx} value={ch.page || idx + 1}>
-                {ch.title}
-              </option>
-            ))}
+        <div className="mt-6">
+          <Label className="mb-2 block">🗂️ Reading Mode</Label>
+          <select
+            className="w-full rounded p-1 bg-zinc-100 dark:bg-zinc-800"
+            value={viewMode}
+            onChange={(e) => setViewMode(e.target.value as ViewMode)}
+          >
+            <option value="original">Original View</option>
+            <option value="chapters">Chapter View</option>
+            <option value="progressive">Right Brain View</option>
+            <option value="hybrid">Hybrid</option>
           </select>
         </div>
-      </div>
 
-      <div className="flex gap-2 justify-center mt-4">
-        <Button onClick={() => setPageNumber(Math.max(1, pageNumber - 1))}>Prev</Button>
-        <Button onClick={() => setPageNumber(Math.min(numPages, pageNumber + 1))}>Next</Button>
-        <Button onClick={handleZoomIn}>Zoom In</Button>
-        <Button onClick={handleZoomOut}>Zoom Out</Button>
-      </div>
+        <div className="mt-6">
+          <Label className="mb-2 block">📤 Upload a File</Label>
+          <div
+            {...getRootProps({ className: "border p-4 cursor-pointer bg-white dark:bg-zinc-800" })}
+          >
+            <input {...getInputProps()} />
+            {fileName ? fileName : "Click to select or drag and drop a file"}
+          </div>
+        </div>
+      </aside>
 
-      <div className="text-center mt-2 text-sm">
-        Page {pageNumber} of {numPages}
-      </div>
+      {/* Main Panel */}
+      <main className="flex-1 p-4">
+        <div className="flex justify-between items-center mb-4">
+          <h1 className="text-2xl font-bold">Thought Unit Reader</h1>
+          <div className="flex gap-2">
+            <Button onClick={() => setSelectedPage((p) => Math.max(p - 1, 1))}>←</Button>
+            <Button onClick={() => setSelectedPage((p) => p + 1)}>→</Button>
+            <Button onClick={handleZoomIn}>Zoom In</Button>
+            <Button onClick={handleZoomOut}>Zoom Out</Button>
+          </div>
+        </div>
+
+        {/* AI Parsing Output */}
+        {uploadStatus === "done" && (
+          <div
+            className="prose dark:prose-invert"
+            style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}
+            dangerouslySetInnerHTML={{ __html: output || "" }}
+          />
+        )}
+
+        {/* Loader or Preload state */}
+        {uploadStatus !== "done" && (
+          <div className="text-center text-zinc-500 dark:text-zinc-400">
+            {uploadStatus === "uploading"
+              ? "Uploading file..."
+              : uploadStatus === "processing"
+              ? "Processing file..."
+              : "Upload a file to begin"}
+          </div>
+        )}
+      </main>
     </div>
   );
 }
-
-// NOTE: Ensure parseBookWithChapters returns a BookStructure object with chapters and page numbers for proper integration.
-// Also ensure styles and Tailwind classes are applied as needed to match dark/light mode styles.
-// Add error boundaries where needed for better robustness.
