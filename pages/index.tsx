@@ -11,52 +11,55 @@ import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 
 // Configure PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+pdfjs.GlobalWorkerOptions.workerSrc =
+  `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
-// Simple glossary
+type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
+type FileType = "text" | "pdf" | "none";
+
+// Simple glossary lookup
 const GLOSSARY: Record<string, string> = {
   photosynthesis: "The process plants use to convert light into energy.",
-  mitosis:        "Cell division that results in two daughter cells.",
-  // …add more…
+  mitosis: "Cell division that results in two daughter cells.",
+  // …add more terms here…
 };
-
-type UploadStatus = "idle" | "uploading" | "error" | "done";
-type FileType     = "none" | "text" | "pdf";
 
 export default function Home() {
   // ─── State ───────────────────────────────────────────────────────────────
-  const [inputText, setInputText]       = useState("");
+  const [inputText, setInputText] = useState("");
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
-  const [error, setError]               = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const [fileType, setFileType] = useState<FileType>("none");
-  const [pdfFile, setPdfFile]   = useState<Blob | null>(null);
+  const [pdfFile, setPdfFile] = useState<Blob | null>(null);
   const [numPages, setNumPages] = useState(0);
 
-  const [thoughtUnits, setThoughtUnits]         = useState<string[]>([]);
+  const [thoughtUnits, setThoughtUnits] = useState<string[]>([]);
   const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
 
   const [bookStructure, setBookStructure] = useState<any>(null);
 
-  const textRef = useRef<HTMLDivElement>(null);
+  const textContainerRef = useRef<HTMLDivElement>(null);
 
-  // ─── Thought-Unit Chunking ─────────────────────────────────────────────
+  // ─── Chunking ────────────────────────────────────────────────────────────
   const createThoughtUnits = useCallback((text: string) => {
-    if (!text.trim()) {
+    if (!text) {
       setThoughtUnits([]);
       return;
     }
     const clean = text.replace(/\s+/g, " ").trim();
     const sentences = clean.match(/[^.!?]+[.!?]+/g) || [clean];
     const chunks: string[] = [];
-    const MAX = 6;
+    const maxSize = 6;
 
     sentences.forEach((s) => {
       const words = s.split(/\s+/);
       let chunk: string[] = [];
-      words.forEach((w,i) => {
+      words.forEach((w, i) => {
         chunk.push(w);
-        if (chunk.length >= MAX || i === words.length - 1) {
+        const atMax = chunk.length >= maxSize;
+        const last = i === words.length - 1;
+        if (atMax || last) {
           chunks.push(chunk.join(" "));
           chunk = [];
         }
@@ -70,42 +73,41 @@ export default function Home() {
     createThoughtUnits(inputText);
   }, [inputText, createThoughtUnits]);
 
-  // ─── PDF → Text Extraction ─────────────────────────────────────────────
-  const extractTextFromPDF = useCallback(async (buf: ArrayBuffer) => {
-    const pdf = await pdfjs.getDocument({ data: buf }).promise;
-    let all = "";
-    const P = Math.min(pdf.numPages, 200);
-    for (let i = 1; i <= P; i++) {
+  // ─── PDF Extraction ───────────────────────────────────────────────────────
+  const extractTextFromPDF = useCallback(async (buffer: ArrayBuffer) => {
+    const pdf = await pdfjs.getDocument({ data: buffer }).promise;
+    let txt = "";
+    const pages = Math.min(pdf.numPages, 200);
+    for (let i = 1; i <= pages; i++) {
       const page = await pdf.getPage(i);
-      const txt = (await page.getTextContent())
-        .items.map((it: any) => it.str)
-        .join(" ");
-      all += txt + "\n\n";
+      const content = await page.getTextContent();
+      txt += content.items.map((it: any) => it.str).join(" ") + "\n";
     }
-    return all;
+    return txt;
   }, []);
 
-  // ─── Handlers ───────────────────────────────────────────────────────────
+  // ─── Handlers ────────────────────────────────────────────────────────────
   const handleFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const f = e.target.files?.[0];
-      if (!f) return;
+      const file = e.target.files?.[0];
+      if (!file) return;
       setUploadStatus("uploading");
       setError(null);
 
       try {
-        let txt = "";
-        if (f.type === "application/pdf") {
+        let text = "";
+        if (file.type === "application/pdf") {
           setFileType("pdf");
-          const buf = await f.arrayBuffer();
-          setPdfFile(new Blob([buf], { type: f.type }));
-          txt = await extractTextFromPDF(buf);
+          const buf = await file.arrayBuffer();
+          setPdfFile(new Blob([buf], { type: file.type }));
+          text = await extractTextFromPDF(buf);
         } else {
           setFileType("text");
-          txt = await f.text();
+          text = await file.text();
         }
-        if (!txt.trim()) throw new Error("No text found");
-        setInputText(txt);
+
+        if (!text.trim()) throw new Error("No text found in file");
+        setInputText(text);
         setUploadStatus("done");
       } catch (err) {
         setError((err as Error).message);
@@ -117,15 +119,15 @@ export default function Home() {
 
   const parseText = useCallback(() => {
     if (!inputText.trim()) {
-      setError("Nothing to parse");
+      setError("No text to parse");
       return;
     }
     setBookStructure(parseBookWithChapters(inputText, "Uploaded Book"));
   }, [inputText]);
 
-  const onWordClick = (idx: number, ev: React.MouseEvent) => {
-    setCurrentChunkIndex(idx);
-    (ev.currentTarget as HTMLElement).scrollIntoView({
+  const onWordClick = (unitIdx: number, event: React.MouseEvent) => {
+    setCurrentChunkIndex(unitIdx);
+    (event.currentTarget as HTMLElement).scrollIntoView({
       behavior: "smooth",
       block: "center",
     });
@@ -133,26 +135,28 @@ export default function Home() {
 
   const handleChunkClick = (idx: number) => {
     setCurrentChunkIndex(idx);
-    const el = document.querySelector(`[data-chunk="unit-${idx}"]`);
-    if (el instanceof HTMLElement) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const span = document.querySelector(`[data-chunk="unit-${idx}"]`);
+    if (span instanceof HTMLElement) {
+      span.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   };
 
-  // ─── Concept Map Sub-component ─────────────────────────────────────────
+  // ─── ConceptMap Sub‐component ─────────────────────────────────────────────
   const ConceptMap = ({ chapters }: { chapters: any[] }) => {
-    const nodes = chapters.map((ch,i) => ({
+    const nodes = chapters.map((ch, i) => ({
       id: `n${i}`,
       data: { label: ch.title },
-      position: { x: (i%3)*200, y: Math.floor(i/3)*120 },
+      position: { x: (i % 3) * 200, y: Math.floor(i / 3) * 120 },
     }));
-    const edges = chapters.flatMap((ch,i) =>
-      (ch.links||[]).map((t:number) => ({
-        id: `e${i}-${t}`, source:`n${i}`, target:`n${t}`
+    const edges = chapters.flatMap((ch, i) =>
+      (ch.links || []).map((t: number) => ({
+        id: `e${i}-${t}`,
+        source: `n${i}`,
+        target: `n${t}`,
       }))
     );
     return (
-      <div style={{ height:300, border:"1px solid #ddd", borderRadius:8 }}>
+      <div style={{ height: 300, border: "1px solid #ddd", borderRadius: 8 }}>
         <ReactFlow nodes={nodes} edges={edges}>
           <Background />
           <Controls />
@@ -161,10 +165,10 @@ export default function Home() {
     );
   };
 
-  // ─── Render ─────────────────────────────────────────────────────────────
+  // ─── Render ──────────────────────────────────────────────────────────────
   return (
     <>
-      {/* ─── Upload + Parse ────────────────────────────────── */}
+      {/* Upload & Parse Controls */}
       <div className="p-4 bg-white shadow flex items-center gap-4">
         <input
           type="file"
@@ -174,14 +178,14 @@ export default function Home() {
         />
         <Button onClick={parseText}>Parse Chapters</Button>
         {uploadStatus === "uploading" && <span>⏳ Loading…</span>}
-        {uploadStatus === "error"     && (
+        {uploadStatus === "error" && (
           <span className="text-red-600">⚠️ {error}</span>
         )}
       </div>
 
-      {/* ─── Two-col layout ───────────────────────────────────── */}
+      {/* Main Two‐Column Layout */}
       <div className="grid lg:grid-cols-2 gap-6 p-6">
-        {/* LEFT: PDF viewer or original text */}
+        {/* LEFT: Original Content / PDF */}
         <div className="bg-white p-4 rounded shadow">
           {fileType === "pdf" && pdfFile ? (
             <TransformWrapper>
@@ -189,22 +193,28 @@ export default function Home() {
                 <Document
                   file={pdfFile}
                   onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+                  className="w-full"
                 >
-                  {Array.from({ length: Math.min(numPages,50) }).map((_,i)=>
-                    <Page key={i} pageNumber={i+1} scale={1.2} className="mb-4"/>
-                  )}
+                  {Array.from({ length: Math.min(numPages, 50) }).map((_, i) => (
+                    <Page
+                      key={i}
+                      pageNumber={i + 1}
+                      scale={1.2}
+                      className="mb-4"
+                    />
+                  ))}
                 </Document>
               </TransformComponent>
             </TransformWrapper>
           ) : (
             <div
-              ref={textRef}
+              ref={textContainerRef}
               className="overflow-y-auto"
-              style={{ maxHeight:"80vh", whiteSpace:"pre-wrap" }}
+              style={{ maxHeight: "80vh", whiteSpace: "pre-wrap" }}
             >
-              {inputText.split(/(\s+)/).map((tok,idx) => {
-                const clean = tok.replace(/[^a-zA-Z]/g,"").toLowerCase();
-                const ui = thoughtUnits.findIndex(u=>
+              {inputText.split(/(\s+)/).map((tok, idx) => {
+                const clean = tok.replace(/[^a-zA-Z]/g, "").toLowerCase();
+                const ui = thoughtUnits.findIndex((u) =>
                   u.toLowerCase().split(/\s+/).includes(clean)
                 );
                 return (
@@ -212,14 +222,22 @@ export default function Home() {
                     key={idx}
                     data-tooltip-id={GLOSSARY[clean] ? "glossary" : undefined}
                     data-tooltip-content={GLOSSARY[clean]}
-                    data-chunk={ui>=0?`unit-${ui}`:undefined}
-                    className={ui===currentChunkIndex?"bg-yellow-200":"hover:bg-yellow-100"}
-                    style={{ cursor: ui>=0?"pointer":"inherit" }}
-                    onClick={ui>=0?(e)=>onWordClick(ui,e):undefined}
-                  >{tok}</span>
+                    data-chunk={ui >= 0 ? `unit-${ui}` : undefined}
+                    className={
+                      ui === currentChunkIndex
+                        ? "bg-yellow-200"
+                        : "hover:bg-yellow-100"
+                    }
+                    style={{ cursor: ui >= 0 ? "pointer" : "inherit" }}
+                    onClick={ui >= 0 ? (e) => onWordClick(ui, e) : undefined}
+                  >
+                    {tok}
+                  </span>
                 );
               })}
-              <Tooltip id="glossary" />
+
+              {/* v5 Tooltip */}
+              <Tooltip id="glossary" place="top" style={{ zIndex: 9999 }} />
             </div>
           )}
         </div>
@@ -228,20 +246,23 @@ export default function Home() {
         <div className="bg-white p-4 rounded shadow overflow-auto">
           <h2 className="font-bold mb-2">Thought Units</h2>
           <div className="space-y-2 mb-6">
-            {thoughtUnits.map((u,i) => (
+            {thoughtUnits.map((u, i) => (
               <button
                 key={i}
                 onClick={() => handleChunkClick(i)}
-                className={`block w-full text-left p-2 rounded ${i===currentChunkIndex?"bg-blue-100":""}`}
+                className={`block w-full text-left p-2 rounded ${
+                  i === currentChunkIndex ? "bg-blue-100" : ""
+                }`}
               >
                 {u}
               </button>
             ))}
           </div>
+
           {bookStructure?.chapters && (
             <>
               <h3 className="font-semibold mb-2">Concept Map</h3>
-              <ConceptMap chapters={bookStructure.chapters}/>
+              <ConceptMap chapters={bookStructure.chapters} />
             </>
           )}
         </div>
