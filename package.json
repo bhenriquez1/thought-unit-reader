@@ -5,11 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "export": "next build && next export",
-    "serve": "npx serve out",
-    "clean": "rimraf .next out"
+    "start": "next start"
   },
   "dependencies": {
     "@headlessui/react": "^1.7.17",
@@ -29,10 +25,10 @@
     "react-tooltip": "^5.29.1",
     "react-zoom-pan-pinch": "^3.7.0",
     "tailwind-merge": "^2.2.0",
-    "tesseract.js": "^5.0.5"
+    "tesseract.js": "^5.1.1"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": "20.x"
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.7",
