@@ -5,6 +5,8 @@ import { Document, Page, pdfjs } from "react-pdf";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { Tooltip } from "react-tooltip";
 import ReactFlow, { Background, Controls } from "react-flow-renderer";
+import clsx from "clsx";
+
 import { parseBookWithChapters } from "../lib/parser";
 import { Button } from "../components/ui/button";
 
@@ -14,45 +16,41 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/$
 // Simple glossary
 const GLOSSARY: Record<string, string> = {
   photosynthesis: "The process plants use to convert light into energy.",
-  mitosis: "Cell division that results in two daughter cells.",
+  mitosis:        "Cell division that results in two daughter cells.",
   // …etc
 };
 
 type UploadStatus = "idle" | "uploading" | "done" | "error";
-type FileType = "text" | "pdf" | "none";
+type FileType     = "text" | "pdf"    | "none";
 
 export default function Home() {
-  // Theme hook
+  // theme
   const { theme, setTheme } = useTheme();
 
-  // File/upload state
-  const [inputText, setInputText] = useState("");
-  const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [fileType, setFileType] = useState<FileType>("none");
-  const [pdfFile, setPdfFile] = useState<Blob | null>(null);
-  const [numPages, setNumPages] = useState(0);
-
-  // Thought-unit state
-  const [thoughtUnits, setThoughtUnits] = useState<string[]>([]);
+  // state
+  const [inputText, setInputText]           = useState("");
+  const [uploadStatus, setUploadStatus]     = useState<UploadStatus>("idle");
+  const [error, setError]                   = useState<string|null>(null);
+  const [fileType, setFileType]             = useState<FileType>("none");
+  const [pdfFile, setPdfFile]               = useState<Blob|null>(null);
+  const [numPages, setNumPages]             = useState(0);
+  const [thoughtUnits, setThoughtUnits]     = useState<string[]>([]);
   const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
-  const [bookStructure, setBookStructure] = useState<any>(null);
+  const [bookStructure, setBookStructure]   = useState<any>(null);
 
-  // Refs
   const textContainerRef = useRef<HTMLDivElement>(null);
 
-  // ─── Chunking ────────────────────────────────────────────────────────────
+  // chunker
   const createThoughtUnits = useCallback((text: string) => {
     if (!text) {
       setThoughtUnits([]);
       return;
     }
     const clean = text.replace(/\s+/g, " ").trim();
-    const sentences = clean.match(/[^.!?]+[.!?]+/g) || [clean];
+    const sents = clean.match(/[^.!?]+[.!?]+/g) || [clean];
     const chunks: string[] = [];
     const maxSize = 6;
-
-    sentences.forEach((s) => {
+    sents.forEach((s) => {
       const words = s.split(/\s+/);
       let pack: string[] = [];
       words.forEach((w, i) => {
@@ -63,7 +61,6 @@ export default function Home() {
         }
       });
     });
-
     setThoughtUnits(chunks);
   }, []);
 
@@ -71,7 +68,7 @@ export default function Home() {
     createThoughtUnits(inputText);
   }, [inputText, createThoughtUnits]);
 
-  // ─── PDF Extraction ───────────────────────────────────────────────────────
+  // PDF-to-text
   const extractTextFromPDF = useCallback(async (buffer: ArrayBuffer) => {
     const pdf = await pdfjs.getDocument({ data: buffer }).promise;
     let txt = "";
@@ -84,14 +81,13 @@ export default function Home() {
     return txt;
   }, []);
 
-  // ─── Handlers ────────────────────────────────────────────────────────────
+  // file upload
   const handleFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
       setUploadStatus("uploading");
       setError(null);
-
       try {
         let text = "";
         if (file.type === "application/pdf") {
@@ -103,8 +99,7 @@ export default function Home() {
           setFileType("text");
           text = await file.text();
         }
-
-        if (!text.trim()) throw new Error("No text found in file");
+        if (!text.trim()) throw new Error("No text found");
         setInputText(text);
         setUploadStatus("done");
       } catch (err) {
@@ -115,14 +110,16 @@ export default function Home() {
     [extractTextFromPDF]
   );
 
+  // parse chapters
   const parseText = useCallback(() => {
     if (!inputText.trim()) {
       setError("Nothing to parse");
       return;
     }
-    setBookStructure(parseBookWithChapters(inputText, "Uploaded Book"));
+    setBookStructure(parseBookWithChapters(inputText, "Uploaded"));
   }, [inputText]);
 
+  // click in original text
   const onWordClick = (idx: number, e: React.MouseEvent) => {
     setCurrentChunkIndex(idx);
     (e.currentTarget as HTMLElement).scrollIntoView({
@@ -131,6 +128,7 @@ export default function Home() {
     });
   };
 
+  // click from thought-unit list or TOC
   const handleChunkClick = (idx: number) => {
     setCurrentChunkIndex(idx);
     const span = document.querySelector(`[data-chunk="unit-${idx}"]`);
@@ -139,7 +137,7 @@ export default function Home() {
     }
   };
 
-  // ─── Table of Contents Offsets ──────────────────────────────────────────
+  // precompute chapter-start offsets
   const chapterOffsets = useMemo(() => {
     if (!bookStructure?.chapters) return [];
     let sum = 0;
@@ -150,7 +148,7 @@ export default function Home() {
     });
   }, [bookStructure]);
 
-  // ─── ConceptMap Sub-component ────────────────────────────────────────────
+  // concept-map subcomponent
   const ConceptMap = ({ chapters }: { chapters: any[] }) => {
     const nodes = chapters.map((ch, i) => ({
       id: `n${i}`,
@@ -174,14 +172,14 @@ export default function Home() {
     );
   };
 
-  // ─── Render ──────────────────────────────────────────────────────────────
   return (
     <div
-      className={`min-h-screen flex flex-col ${
-        theme === "dark" ? "bg-gray-900 text-gray-100" : "bg-gray-100 text-gray-900"
-      }`}
+      className={clsx("min-h-screen flex flex-col", {
+        "bg-gray-100 text-gray-900": theme === "light",
+        "bg-gray-900 text-gray-100": theme === "dark",
+      })}
     >
-      {/* ── sticky header ── */}
+      {/* ───── HEADER ───── */}
       <header className="sticky top-0 z-20 border-b border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800">
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -206,11 +204,10 @@ export default function Home() {
         </div>
       </header>
 
-      {/* ── main grid ── */}
+      {/* ───── MAIN GRID ───── */}
       <main className="flex-1 max-w-7xl mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* LEFT PANEL */}
         <section className="flex flex-col bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg overflow-hidden">
-          {/* Table of Contents */}
           {bookStructure?.chapters && (
             <nav className="px-4 py-2 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
               <h3 className="text-sm font-semibold">Contents</h3>
@@ -228,8 +225,6 @@ export default function Home() {
               </ul>
             </nav>
           )}
-
-          {/* Content Viewer */}
           <div className="flex-1 overflow-auto p-4">
             {fileType === "pdf" && pdfFile ? (
               <TransformWrapper>
@@ -239,13 +234,18 @@ export default function Home() {
                     onLoadSuccess={({ numPages }) => setNumPages(numPages)}
                   >
                     {Array.from({ length: Math.min(numPages, 50) }).map((_, i) => (
-                      <Page key={i} pageNumber={i + 1} scale={1.2} className="mb-6" />
+                      <Page
+                        key={i}
+                        pageNumber={i + 1}
+                        scale={1.2}
+                        className="mb-6"
+                      />
                     ))}
                   </Document>
                 </TransformComponent>
               </TransformWrapper>
             ) : (
-              <div ref={textContainerRef} className="whitespace-pre-wrap">
+              <div className="whitespace-pre-wrap">
                 {inputText.split(/(\s+)/).map((tok, idx) => {
                   const clean = tok.replace(/[^a-zA-Z]/g, "").toLowerCase();
                   const ui = thoughtUnits.findIndex((u) =>
@@ -257,14 +257,12 @@ export default function Home() {
                       data-tooltip-id="glossary"
                       data-tooltip-content={GLOSSARY[clean] || ""}
                       data-chunk={ui >= 0 ? `unit-${ui}` : undefined}
-                      className={`
-                        transition-all duration-300 ease-in-out
-                        ${
-                          ui === currentChunkIndex
-                            ? "bg-yellow-200 dark:bg-yellow-600 scale-105 shadow-lg animate-pulse"
-                            : "hover:bg-yellow-100 dark:hover:bg-yellow-700 scale-100"
-                        }
-                      `}
+                      className={clsx(
+                        "inline-block transition-transform duration-300 ease-in-out",
+                        ui === currentChunkIndex
+                          ? "bg-yellow-200 dark:bg-yellow-600 scale-105 shadow-lg animate-pulse"
+                          : "hover:bg-yellow-100 dark:hover:bg-yellow-700 scale-100"
+                      )}
                       style={{ cursor: ui >= 0 ? "pointer" : "auto" }}
                       onClick={ui >= 0 ? (e) => onWordClick(ui, e) : undefined}
                     >
@@ -272,7 +270,7 @@ export default function Home() {
                     </span>
                   );
                 })}
-                <Tooltip id="glossary" place="top" />
+                <Tooltip id="glossary" />
               </div>
             )}
           </div>
@@ -288,11 +286,12 @@ export default function Home() {
               <button
                 key={i}
                 onClick={() => handleChunkClick(i)}
-                className={`w-full text-left p-2 rounded transition ${
+                className={clsx(
+                  "w-full text-left p-2 rounded transition",
                   i === currentChunkIndex
                     ? "bg-blue-100 dark:bg-blue-900"
                     : "hover:bg-gray-50 dark:hover:bg-gray-700"
-                }`}
+                )}
               >
                 {u}
               </button>
