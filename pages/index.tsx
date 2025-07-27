@@ -1,15 +1,20 @@
-// pages/index.tsx - Optimized load time + new layout styling (based on attached image)
-import React, { useState, useCallback, useEffect, useRef, useMemo, Suspense } from "react";
+// pages/index.tsx - Final Version w/ UI Updates + Onboarding Animation
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  Suspense,
+} from "react";
 import { useTheme } from "next-themes";
 import { Document, Page, pdfjs } from "react-pdf";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
-import { Tooltip as ReactTooltip } from "react-tooltip";
 import { Button } from "../components/ui/button";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 export default function Home() {
-  const { theme, setTheme } = useTheme();
+  const { theme } = useTheme();
   const [inputText, setInputText] = useState("");
   const [pdfFile, setPdfFile] = useState<Blob | null>(null);
   const [numPages, setNumPages] = useState(0);
@@ -26,7 +31,7 @@ export default function Home() {
     const sents = clean.match(/[^.!?]+[.!?]+/g) || [clean];
     const chunks: string[] = [];
     const maxSize = 6;
-    sents.forEach(s => {
+    sents.forEach((s) => {
       const words = s.split(/\s+/);
       let pack: string[] = [];
       words.forEach((w, i) => {
@@ -42,7 +47,9 @@ export default function Home() {
 
   const syncToCurrentUnit = () => {
     const page = unitToPageMap[currentChunkIndex];
-    document.querySelector(`#page-${page}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    document
+      .querySelector(`#page-${page}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
   const handleChunkClick = (i: number) => {
@@ -86,42 +93,70 @@ export default function Home() {
   };
 
   return (
-    <div className={`min-h-screen ${theme === "dark" ? "bg-gray-900 text-white" : "bg-white text-black"}`}>
+    <div
+      className={`min-h-screen ${
+        theme === "dark" ? "bg-gray-900 text-white" : "bg-white text-black"
+      }`}
+    >
       <header className="sticky top-0 z-10 flex justify-between p-4 bg-white border-b shadow-sm">
         <div className="flex flex-wrap items-center gap-3 w-full justify-between">
-          <h1 className="text-xl font-bold text-gray-700">Thought Unit Reader</h1>
+          <div className="flex items-center gap-2">
+            <img
+              src="/brain.png"
+              alt="brain"
+              className="w-6 h-6"
+            />
+            <h1 className="text-xl font-bold text-gray-700">
+              Thought Unit Reader
+            </h1>
+          </div>
           <div className="flex flex-wrap gap-2 items-center">
-            <input type="file" onChange={handleFileChange} className="bg-gray-100 text-black rounded px-2 py-1 border" />
+            <input
+              type="file"
+              onChange={handleFileChange}
+              className="bg-gray-100 text-black rounded px-2 py-1 border"
+            />
             <Button onClick={syncToCurrentUnit}>📍 Scroll to Current</Button>
             <input
               type="number"
               placeholder="Page #"
               className="w-20 px-2 py-1 border rounded text-black"
-              onKeyDown={e => {
+              onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   const n = Number((e.target as HTMLInputElement).value);
-                  document.querySelector(`#page-${n}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  document
+                    .querySelector(`#page-${n}`)
+                    ?.scrollIntoView({ behavior: "smooth", block: "center" });
                 }
               }}
             />
-            <button onClick={() => setPdfScale(s => Math.min(3, s + 0.25))}>🔎+</button>
-            <button onClick={() => setPdfScale(s => Math.max(0.5, s - 0.25))}>🔍-</button>
-            <span className="ml-2 text-sm text-gray-600">Page {currentPage} of {numPages}</span>
+            <button onClick={() => setPdfScale((s) => Math.min(3, s + 0.25))}>🔎+</button>
+            <button onClick={() => setPdfScale((s) => Math.max(0.5, s - 0.25))}>🔍-</button>
+            <span className="ml-2 text-sm text-gray-600">
+              Page {currentPage} of {numPages}
+            </span>
           </div>
         </div>
       </header>
 
       <main className="grid grid-cols-1 lg:grid-cols-[minmax(0,_60%)_minmax(0,_40%)] gap-4 p-4">
-        <div className="overflow-y-auto border rounded p-4 relative h-[80vh]" ref={pdfContainerRef} onScroll={updateScrollProgress}>
+        <div
+          className="overflow-y-auto border rounded p-4 relative h-[80vh]"
+          ref={pdfContainerRef}
+          onScroll={updateScrollProgress}
+        >
           {isProcessing ? (
-            <div className="flex items-center justify-center h-full text-lg font-semibold text-gray-600">
-              Processing book... 📚
+            <div className="flex items-center justify-center h-full text-lg font-semibold text-gray-600 animate-pulse">
+              🧠 Parsing... Please wait ⚡
             </div>
-          ) : pdfFile && (
+          ) : pdfFile ? (
             <Suspense fallback={<div>Loading PDF...</div>}>
               <TransformWrapper initialScale={pdfScale}>
                 <TransformComponent>
-                  <Document file={pdfFile} onLoadSuccess={({ numPages }) => setNumPages(numPages)}>
+                  <Document
+                    file={pdfFile}
+                    onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+                  >
                     {Array.from({ length: numPages }, (_, i) => (
                       <div id={`page-${i + 1}`} key={i} className="cursor-pointer my-4">
                         <Page pageNumber={i + 1} scale={pdfScale} />
@@ -131,12 +166,19 @@ export default function Home() {
                 </TransformComponent>
               </TransformWrapper>
             </Suspense>
+          ) : (
+            <div className="text-center mt-20 text-gray-500 text-lg">
+              📄 Upload a PDF to get started
+            </div>
           )}
 
           {/* MiniMap */}
           <div className="absolute right-2 top-2 w-2 bg-gray-400 rounded-full h-full opacity-20">
             <div
-              style={{ height: `${100 / numPages}%`, top: `${((currentPage - 1) / numPages) * 100}%` }}
+              style={{
+                height: `${100 / numPages}%`,
+                top: `${((currentPage - 1) / numPages) * 100}%`,
+              }}
               className="absolute w-full bg-blue-500 rounded-full opacity-80 transition-all duration-200"
             />
           </div>
@@ -149,7 +191,11 @@ export default function Home() {
               <div
                 key={i}
                 onClick={() => handleChunkClick(i)}
-                className={`p-2 rounded transition-all duration-300 cursor-pointer ${i === currentChunkIndex ? "bg-blue-500 text-white scale-105" : "hover:bg-gray-200"}`}
+                className={`p-2 rounded transition-all duration-300 cursor-pointer ${
+                  i === currentChunkIndex
+                    ? 'bg-yellow-400 text-black font-semibold scale-105 shadow'
+                    : 'hover:bg-gray-200'
+                }`}
               >
                 {u}
               </div>
