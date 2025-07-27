@@ -33,7 +33,7 @@ export default function Home() {
         try {
           const arrayBuffer = reader.result as ArrayBuffer;
           const text = new TextDecoder().decode(arrayBuffer);
-          setInputText(arrayBuffer);
+          setInputText(text);
           const parsed = await parseBookWithChapters(text);
           setOutput(parsed);
         } catch (error) {
@@ -124,9 +124,9 @@ export default function Home() {
       )}
 
       {output && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-          <div className="border p-4 rounded bg-gray-50 dark:bg-gray-900">
-            <Label>PDF Preview</Label>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+          <div className="border p-4 rounded bg-gray-50 dark:bg-gray-900 col-span-1">
+            <Label>📄 PDF Preview</Label>
             <div className="flex flex-col gap-2 overflow-y-auto max-h-[70vh]">
               {thumbnails.map((p) => (
                 <div key={p} className={`cursor-pointer ${p === pageNumber ? "border-2 border-blue-500" : ""}`} onClick={() => goToPage(p)}>
@@ -143,27 +143,9 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="border p-4 rounded bg-gray-50 dark:bg-gray-900 relative">
-            <Label>Thought Unit Output</Label>
-
-            <div className="absolute top-2 right-2 z-10 w-64">
-              <Label>Table of Contents</Label>
-              <select
-                className="border p-2 rounded w-full"
-                onChange={(e) => {
-                  const chapter = output.chapters.find((c: any) => c.title === e.target.value);
-                  if (chapter?.pageNumber) goToPage(chapter.pageNumber);
-                }}
-              >
-                {output.chapters.map((ch: any, idx: number) => (
-                  <option key={idx} value={ch.title}>
-                    {ch.title}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="mb-4 mt-20">
+          <div className="border p-4 rounded bg-gray-50 dark:bg-gray-900 col-span-1">
+            <Label>🧠 Thought Unit Output</Label>
+            <div className="mb-4 mt-2">
               <Label>🔍 Search Thought Units</Label>
               <input
                 type="text"
@@ -173,8 +155,24 @@ export default function Home() {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-
             <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: filteredOutput || output.text }} />
+          </div>
+
+          <div className="border p-4 rounded bg-gray-50 dark:bg-gray-900 col-span-1">
+            <Label>📑 Table of Contents</Label>
+            <select
+              className="border p-2 rounded w-full"
+              onChange={(e) => {
+                const chapter = output.chapters.find((c: any) => c.title === e.target.value);
+                if (chapter?.pageNumber) goToPage(chapter.pageNumber);
+              }}
+            >
+              {output.chapters.map((ch: any, idx: number) => (
+                <option key={idx} value={ch.title}>
+                  {ch.title}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       )}
