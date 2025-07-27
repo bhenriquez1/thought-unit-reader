@@ -1,83 +1,97 @@
-// pages/index.tsx
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
-import { parseBookWithChapters, generateProgressiveReadingHTML } from "../lib/parser";
+import { parseBookWithChapters } from "../lib/parser";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 
-// Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 export default function Home() {
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
   const [inputText, setInputText] = useState("");
-  const [output, setOutput] = useState<string | null>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [output, setOutput] = useState<any>(null);
+  const [numPages, setNumPages] = useState<number | null>(null);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [zoom, setZoom] = useState(1);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const extractTextFromPDF = async (file: File): Promise<string> => {
-    const pdf = await pdfjs.getDocument(await file.arrayBuffer()).promise;
-    let fullText = "";
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      const strings = content.items.map((item: any) => item.str);
-      fullText += strings.join(" ") + "\n";
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const text = reader.result as string;
+        setInputText(text);
+        setLoading(true);
+        const parsed = await parseBookWithChapters(text);
+        setOutput(parsed);
+        setLoading(false);
+      };
+      reader.readAsText(file);
     }
-    return fullText;
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setFile(file);
-    setLoading(true);
-    const text = await extractTextFromPDF(file);
-    setInputText(text);
-    const parsed = await parseBookWithChapters(text);
-    setOutput(parsed);
-    setLoading(false);
-  };
+  const handleZoomIn = () => setZoom((z) => Math.min(z + 0.25, 3));
+  const handleZoomOut = () => setZoom((z) => Math.max(z - 0.25, 0.5));
+
+  const goToPage = (page: number) => setPageNumber(page);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* HEADER */}
-      <header className="p-6 text-center bg-white shadow-sm border-b">
-        <div className="flex flex-col items-center justify-center space-y-1">
-          <h1 className="text-3xl font-extrabold text-gray-800 flex items-center gap-2">
-            <span>🧠</span> Thought Unit Reader
-          </h1>
-          <p className="text-md text-gray-500">
-            Transform any book into thought-units for enhanced comprehension
-          </p>
+    <div className="p-4">
+      <h1 className="text-3xl font-bold mb-2">🧠 Thought Unit Reader</h1>
+      <p className="mb-4 text-gray-600">
+        Transform any book into thought-units for enhanced comprehension
+      </p>
+
+      <div className="flex items-center gap-4 mb-4">
+        <input type="file" ref={fileInputRef} onChange={handleFileChange} />
+        <Button onClick={handleZoomIn}>Zoom In</Button>
+        <Button onClick={handleZoomOut}>Zoom Out</Button>
+        <Button onClick={() => goToPage(pageNumber + 1)}>Next Page</Button>
+        <Button onClick={() => goToPage(pageNumber - 1)}>Prev Page</Button>
+      </div>
+
+      {loading && (
+        <div className="text-lg font-medium animate-pulse">
+          Parsing… Please wait 🧠⚡
         </div>
-      </header>
+      )}
 
-      {/* FILE INPUT */}
-      <div className="p-6 flex flex-col items-center space-y-4">
-        <input
-          type="file"
-          accept="application/pdf"
-          onChange={handleFileUpload}
-          className="p-2 border rounded"
-        />
-        {loading && (
-          <div className="text-center py-6 text-lg font-semibold text-gray-600 animate-pulse">
-            🧠 Parsing… Please wait ⚡
+      {output && (
+        <div className="mt-4">
+          <div className="mb-4">
+            <Label>Jump to Chapter:</Label>
+            <select
+              className="border p-2 rounded"
+              onChange={(e) => {
+                const chapter = output.chapters.find(
+                  (c: any) => c.title === e.target.value
+                );
+                if (chapter?.pageNumber) goToPage(chapter.pageNumber);
+              }}
+            >
+              {output.chapters.map((ch: any, idx: number) => (
+                <option key={idx} value={ch.title}>
+                  {ch.title}
+                </option>
+              ))}
+            </select>
           </div>
-        )}
-      </div>
 
-      {/* OUTPUT */}
-      <div className="px-6">
-        {output && (
           <div
-            className="whitespace-pre-wrap bg-white p-4 rounded shadow-sm text-gray-800"
-            dangerouslySetInnerHTML={{ __html: output }}
-          />
-        )}
-      </div>
+            style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}
+          >
+            <Document
+              file={inputText}
+              onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+            >
+              <Page pageNumber={pageNumber} />
+            </Document>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
