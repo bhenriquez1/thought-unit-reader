@@ -1,94 +1,103 @@
-// pages/index.tsx
-import { useState, useCallback, useEffect, useRef } from "react";
-import { Document, Page, pdfjs } from "react-pdf";
-import { parseBookWithChapters, generateProgressiveReadingHTML } from "../lib/parser";
-import { Label } from "../components/ui/label";
-import { Switch } from "../components/ui/switch";
-import { Button } from "../components/ui/button";
-import { cn } from "../lib/utils";
+// Fix TypeError and implement requested features
 
+import { useState, useRef } from 'react';
+import { Document, Page, pdfjs } from 'react-pdf';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
-import { useDropzone } from "react-dropzone";
+export default function Reader() {
+  const [pdfFile, setPdfFile] = useState(null);
+  const [textContent, setTextContent] = useState('');
+  const [numPages, setNumPages] = useState(0);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [zoom, setZoom] = useState(1.0);
+  const [bookStructure, setBookStructure] = useState(null);
 
-type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
-type FileType = "text" | "pdf" | "none";
-type ViewMode = "original" | "chapters" | "progressive" | "hybrid";
+  const fileInputRef = useRef(null);
 
-export default function Home() {
-  const [enabled, setEnabled] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [inputText, setInputText] = useState("");
-  const [output, setOutput] = useState<string | null>(null);
-  const [toc, setToc] = useState<string[]>([]);
-  const [selectedPage, setSelectedPage] = useState<number>(1);
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const arrayBuffer = await file.arrayBuffer();
+    const byteArray = new Uint8Array(arrayBuffer);
+    const decoder = new TextDecoder();
+    const decodedText = decoder.decode(byteArray);
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    if (acceptedFiles.length > 0) {
-      const file = acceptedFiles[0];
-      const reader = new FileReader();
-
-      reader.onload = async (e) => {
-        const byteArray = new Uint8Array(e.target?.result as ArrayBuffer);
-        const textContent = new TextDecoder().decode(byteArray);
-        const result = await parseBookWithChapters(textContent as unknown as string);
-        setOutput(result?.content || "");
-        setToc(result?.toc || []);
-      };
-
-      reader.readAsArrayBuffer(file);
+    try {
+      const parsed = await parseBookWithChapters(decodedText);
+      setBookStructure(parsed);
+      setTextContent(JSON.stringify(parsed, null, 2));
+    } catch (err) {
+      console.error('Parser error:', err);
+      setTextContent('Error parsing file.');
     }
-  }, []);
+    setPdfFile(file);
+  };
 
-  const { getRootProps, getInputProps } = useDropzone({ onDrop });
+  const handleZoomIn = () => setZoom((z) => z + 0.2);
+  const handleZoomOut = () => setZoom((z) => Math.max(0.2, z - 0.2));
 
-  const handleTOCJump = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const page = parseInt(e.target.value, 10);
-    if (!isNaN(page)) setSelectedPage(page);
+  const handleTocSelect = (e) => {
+    const page = parseInt(e.target.value);
+    setPageNumber(page);
   };
 
   return (
-    <div className="min-h-screen bg-black text-white p-4">
-      <h1 className="text-3xl font-bold">🧠 Thought Unit Reader</h1>
-      <p className="mb-4">Transform any book into thought-units for enhanced comprehension</p>
-
-      <div {...getRootProps()} className="border border-dashed border-white p-4 mb-4 cursor-pointer text-center">
-        <input {...getInputProps()} />
-        <p>📄 Drag and drop your file here or click to upload</p>
+    <div className="flex flex-col gap-4 p-4 dark:bg-black min-h-screen">
+      <div className="flex justify-between">
+        <h1 className="text-xl font-bold">🧠 Thought Unit Reader</h1>
+        <input
+          type="file"
+          accept=".pdf,.txt,.docx"
+          onChange={handleFileUpload}
+          className="text-sm"
+          ref={fileInputRef}
+        />
       </div>
 
       <div className="grid grid-cols-3 gap-4">
-        <div className="border p-2">
-          <h2 className="text-lg font-semibold">📄 PDF Preview</h2>
-          {/* Future PDF rendering here */}
+        {/* PDF Preview */}
+        <div className="border p-2 dark:bg-zinc-900">
+          {pdfFile && (
+            <Document file={pdfFile} onLoadSuccess={({ numPages }) => setNumPages(numPages)}>
+              <Page pageNumber={pageNumber} scale={zoom} />
+            </Document>
+          )}
         </div>
 
-        <div className="border p-2">
-          <h2 className="text-lg font-semibold">🧠 Thought Unit Output</h2>
-          <div className="whitespace-pre-wrap max-h-[500px] overflow-y-auto">
-            {output || "Upload a file to begin"}
-          </div>
+        {/* Thought Unit Output */}
+        <div className="border p-2 dark:bg-zinc-900 overflow-y-auto whitespace-pre-wrap">
+          {textContent || 'Upload a file to get output.'}
         </div>
 
-        <div className="border p-2">
-          <h2 className="text-lg font-semibold">📁 Table of Contents</h2>
-          <select onChange={handleTOCJump} className="w-full bg-black text-white border border-white p-1">
-            <option value="">Select Chapter</option>
-            {toc.map((title, index) => (
-              <option key={index} value={index + 1}>
-                {title}
+        {/* Table of Contents */}
+        <div className="border p-2 dark:bg-zinc-900">
+          <Label htmlFor="toc">Table of Contents</Label>
+          <select id="toc" className="w-full mt-2" onChange={handleTocSelect}>
+            {bookStructure?.chapters?.map((ch, idx) => (
+              <option key={idx} value={ch.page || idx + 1}>
+                {ch.title}
               </option>
             ))}
           </select>
         </div>
       </div>
 
-      <div className="mt-4 flex gap-2">
-        <Button onClick={() => setSelectedPage((p) => Math.max(1, p - 1))}>Prev</Button>
-        <Button onClick={() => setSelectedPage((p) => p + 1)}>Next</Button>
-        <Button>Zoom In</Button>
-        <Button>Zoom Out</Button>
+      <div className="flex gap-2 justify-center mt-4">
+        <Button onClick={() => setPageNumber(Math.max(1, pageNumber - 1))}>Prev</Button>
+        <Button onClick={() => setPageNumber(Math.min(numPages, pageNumber + 1))}>Next</Button>
+        <Button onClick={handleZoomIn}>Zoom In</Button>
+        <Button onClick={handleZoomOut}>Zoom Out</Button>
+      </div>
+
+      <div className="text-center mt-2 text-sm">
+        Page {pageNumber} of {numPages}
       </div>
     </div>
   );
 }
+
+// NOTE: Ensure parseBookWithChapters returns a BookStructure object with chapters and page numbers for proper integration.
+// Also ensure styles and Tailwind classes are applied as needed to match dark/light mode styles.
+// Add error boundaries where needed for better robustness.
