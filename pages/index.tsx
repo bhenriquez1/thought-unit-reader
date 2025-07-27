@@ -19,6 +19,7 @@ export default function Home() {
   const [darkMode, setDarkMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [ocrFallbackText, setOcrFallbackText] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -29,8 +30,9 @@ export default function Home() {
       const reader = new FileReader();
       reader.onload = async () => {
         try {
-          const text = reader.result as string;
-          setInputText(text);
+          const arrayBuffer = reader.result as ArrayBuffer;
+          setInputText(arrayBuffer);
+          const text = new TextDecoder().decode(arrayBuffer);
           const parsed = await parseBookWithChapters(text);
           setOutput(parsed);
         } catch (error) {
@@ -41,7 +43,7 @@ export default function Home() {
           setLoading(false);
         }
       };
-      reader.readAsText(file);
+      reader.readAsArrayBuffer(file);
     } catch (err) {
       console.error("File parsing failed", err);
       setLoading(false);
@@ -59,6 +61,11 @@ export default function Home() {
   const handleZoomIn = () => setZoom((z) => Math.min(z + 0.25, 3));
   const handleZoomOut = () => setZoom((z) => Math.max(z - 0.25, 0.5));
   const goToPage = (page: number) => setPageNumber(Math.max(1, Math.min(page, numPages || 1)));
+
+  const filteredOutput = output?.text
+    ?.split("\n")
+    ?.filter((line: string) => line.toLowerCase().includes(searchQuery.toLowerCase()))
+    ?.join("\n");
 
   return (
     <div className={`p-4 ${darkMode ? "bg-black text-white" : "bg-white text-black"}`}>
@@ -87,6 +94,9 @@ export default function Home() {
           className="border rounded px-2 py-1 w-24"
           onChange={(e) => goToPage(Number(e.target.value))}
         />
+        <span>
+          Page {pageNumber} of {numPages || "..."}
+        </span>
       </div>
 
       {loading && <div className="text-lg font-medium animate-pulse">Parsing… Please wait 🧠⚡</div>}
@@ -105,7 +115,7 @@ export default function Home() {
           <div className="border p-4 rounded bg-gray-50 dark:bg-gray-900">
             <Label>PDF Preview</Label>
             <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
-              <Document file={inputText} onLoadSuccess={({ numPages }) => setNumPages(numPages)}>
+              <Document file={{ data: inputText }} onLoadSuccess={({ numPages }) => setNumPages(numPages)}>
                 <Page pageNumber={pageNumber} />
               </Document>
             </div>
@@ -131,8 +141,19 @@ export default function Home() {
               </select>
             </div>
 
+            <div className="mb-4">
+              <Label>🔍 Search Thought Units</Label>
+              <input
+                type="text"
+                placeholder="Search text..."
+                className="border px-3 py-1 w-full rounded"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+
             <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap">
-              {output.text}
+              {filteredOutput || output.text}
             </div>
           </div>
         </div>
