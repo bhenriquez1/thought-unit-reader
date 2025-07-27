@@ -5,28 +5,27 @@ import { Document, Page, pdfjs } from "react-pdf";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { Tooltip } from "react-tooltip";
 import ReactFlow, { Background, Controls } from "react-flow-renderer";
-
 import { parseBookWithChapters } from "../lib/parser";
 import { Button } from "../components/ui/button";
 
-// Configure PDF.js worker
+// PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 // Simple glossary
 const GLOSSARY: Record<string, string> = {
   photosynthesis: "The process plants use to convert light into energy.",
   mitosis: "Cell division that results in two daughter cells.",
-  // …add more here…
+  // …etc
 };
 
 type UploadStatus = "idle" | "uploading" | "done" | "error";
 type FileType = "text" | "pdf" | "none";
 
 export default function Home() {
-  // ─── Theme ─────────────────────────────────────────────────────────────
+  // Theme hook
   const { theme, setTheme } = useTheme();
 
-  // ─── File / Text State ─────────────────────────────────────────────────
+  // File/upload state
   const [inputText, setInputText] = useState("");
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -34,21 +33,26 @@ export default function Home() {
   const [pdfFile, setPdfFile] = useState<Blob | null>(null);
   const [numPages, setNumPages] = useState(0);
 
-  // ─── Thought Unit State ────────────────────────────────────────────────
+  // Thought-unit state
   const [thoughtUnits, setThoughtUnits] = useState<string[]>([]);
   const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
   const [bookStructure, setBookStructure] = useState<any>(null);
 
+  // Refs
   const textContainerRef = useRef<HTMLDivElement>(null);
 
-  // ─── Chunker ───────────────────────────────────────────────────────────
+  // ─── Chunking ────────────────────────────────────────────────────────────
   const createThoughtUnits = useCallback((text: string) => {
-    if (!text) { setThoughtUnits([]); return; }
+    if (!text) {
+      setThoughtUnits([]);
+      return;
+    }
     const clean = text.replace(/\s+/g, " ").trim();
-    const sents = clean.match(/[^.!?]+[.!?]+/g) || [clean];
+    const sentences = clean.match(/[^.!?]+[.!?]+/g) || [clean];
     const chunks: string[] = [];
     const maxSize = 6;
-    sents.forEach(s => {
+
+    sentences.forEach((s) => {
       const words = s.split(/\s+/);
       let pack: string[] = [];
       words.forEach((w, i) => {
@@ -59,6 +63,7 @@ export default function Home() {
         }
       });
     });
+
     setThoughtUnits(chunks);
   }, []);
 
@@ -66,7 +71,7 @@ export default function Home() {
     createThoughtUnits(inputText);
   }, [inputText, createThoughtUnits]);
 
-  // ─── PDF Text Extraction ───────────────────────────────────────────────
+  // ─── PDF Extraction ───────────────────────────────────────────────────────
   const extractTextFromPDF = useCallback(async (buffer: ArrayBuffer) => {
     const pdf = await pdfjs.getDocument({ data: buffer }).promise;
     let txt = "";
@@ -79,32 +84,36 @@ export default function Home() {
     return txt;
   }, []);
 
-  // ─── Handlers ──────────────────────────────────────────────────────────
-  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadStatus("uploading");
-    setError(null);
+  // ─── Handlers ────────────────────────────────────────────────────────────
+  const handleFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setUploadStatus("uploading");
+      setError(null);
 
-    try {
-      let text = "";
-      if (file.type === "application/pdf") {
-        setFileType("pdf");
-        const buf = await file.arrayBuffer();
-        setPdfFile(new Blob([buf], { type: file.type }));
-        text = await extractTextFromPDF(buf);
-      } else {
-        setFileType("text");
-        text = await file.text();
+      try {
+        let text = "";
+        if (file.type === "application/pdf") {
+          setFileType("pdf");
+          const buf = await file.arrayBuffer();
+          setPdfFile(new Blob([buf], { type: file.type }));
+          text = await extractTextFromPDF(buf);
+        } else {
+          setFileType("text");
+          text = await file.text();
+        }
+
+        if (!text.trim()) throw new Error("No text found in file");
+        setInputText(text);
+        setUploadStatus("done");
+      } catch (err) {
+        setError((err as Error).message);
+        setUploadStatus("error");
       }
-      if (!text.trim()) throw new Error("No text found");
-      setInputText(text);
-      setUploadStatus("done");
-    } catch (err) {
-      setError((err as Error).message);
-      setUploadStatus("error");
-    }
-  }, [extractTextFromPDF]);
+    },
+    [extractTextFromPDF]
+  );
 
   const parseText = useCallback(() => {
     if (!inputText.trim()) {
@@ -116,7 +125,10 @@ export default function Home() {
 
   const onWordClick = (idx: number, e: React.MouseEvent) => {
     setCurrentChunkIndex(idx);
-    (e.currentTarget as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+    (e.currentTarget as HTMLElement).scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
   };
 
   const handleChunkClick = (idx: number) => {
@@ -127,7 +139,7 @@ export default function Home() {
     }
   };
 
-  // ─── Chapter Offsets for TOC ───────────────────────────────────────────
+  // ─── Table of Contents Offsets ──────────────────────────────────────────
   const chapterOffsets = useMemo(() => {
     if (!bookStructure?.chapters) return [];
     let sum = 0;
@@ -138,14 +150,18 @@ export default function Home() {
     });
   }, [bookStructure]);
 
-  // ─── Concept Map Sub-component ─────────────────────────────────────────
+  // ─── ConceptMap Sub-component ────────────────────────────────────────────
   const ConceptMap = ({ chapters }: { chapters: any[] }) => {
     const nodes = chapters.map((ch, i) => ({
-      id: `n${i}`, data: { label: ch.title }, position: { x: (i % 3) * 200, y: Math.floor(i / 3) * 120 }
+      id: `n${i}`,
+      data: { label: ch.title },
+      position: { x: (i % 3) * 200, y: Math.floor(i / 3) * 120 },
     }));
     const edges = chapters.flatMap((ch, i) =>
       (ch.links || []).map((t: number) => ({
-        id: `e${i}-${t}`, source: `n${i}`, target: `n${t}`
+        id: `e${i}-${t}`,
+        source: `n${i}`,
+        target: `n${t}`,
       }))
     );
     return (
@@ -158,12 +174,14 @@ export default function Home() {
     );
   };
 
-  // ─── Render ─────────────────────────────────────────────────────────────
+  // ─── Render ──────────────────────────────────────────────────────────────
   return (
-    <div className={`min-h-screen flex flex-col ${
-      theme === "dark" ? "bg-gray-900 text-gray-100" : "bg-gray-100 text-gray-900"
-    }`}>
-      {/* sticky header */}
+    <div
+      className={`min-h-screen flex flex-col ${
+        theme === "dark" ? "bg-gray-900 text-gray-100" : "bg-gray-100 text-gray-900"
+      }`}
+    >
+      {/* ── sticky header ── */}
       <header className="sticky top-0 z-20 border-b border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800">
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -175,7 +193,9 @@ export default function Home() {
             />
             <Button onClick={parseText}>Parse Chapters</Button>
             {uploadStatus === "uploading" && <span>⏳ Loading…</span>}
-            {uploadStatus === "error"    && <span className="text-red-500">⚠️ {error}</span>}
+            {uploadStatus === "error" && (
+              <span className="text-red-500">⚠️ {error}</span>
+            )}
           </div>
           <button
             onClick={() => setTheme(theme === "light" ? "dark" : "light")}
@@ -186,7 +206,7 @@ export default function Home() {
         </div>
       </header>
 
-      {/* main two-column */}
+      {/* ── main grid ── */}
       <main className="flex-1 max-w-7xl mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* LEFT PANEL */}
         <section className="flex flex-col bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg overflow-hidden">
@@ -209,7 +229,7 @@ export default function Home() {
             </nav>
           )}
 
-          {/* Content */}
+          {/* Content Viewer */}
           <div className="flex-1 overflow-auto p-4">
             {fileType === "pdf" && pdfFile ? (
               <TransformWrapper>
@@ -228,7 +248,7 @@ export default function Home() {
               <div ref={textContainerRef} className="whitespace-pre-wrap">
                 {inputText.split(/(\s+)/).map((tok, idx) => {
                   const clean = tok.replace(/[^a-zA-Z]/g, "").toLowerCase();
-                  const ui    = thoughtUnits.findIndex(u =>
+                  const ui = thoughtUnits.findIndex((u) =>
                     u.toLowerCase().split(/\s+/).includes(clean)
                   );
                   return (
@@ -237,11 +257,14 @@ export default function Home() {
                       data-tooltip-id="glossary"
                       data-tooltip-content={GLOSSARY[clean] || ""}
                       data-chunk={ui >= 0 ? `unit-${ui}` : undefined}
-                      className={
-                        ui === currentChunkIndex
-                          ? "bg-yellow-200 dark:bg-yellow-600"
-                          : "hover:bg-yellow-100 dark:hover:bg-yellow-700"
-                      }
+                      className={`
+                        transition-all duration-300 ease-in-out
+                        ${
+                          ui === currentChunkIndex
+                            ? "bg-yellow-200 dark:bg-yellow-600 scale-105 shadow-lg animate-pulse"
+                            : "hover:bg-yellow-100 dark:hover:bg-yellow-700 scale-100"
+                        }
+                      `}
                       style={{ cursor: ui >= 0 ? "pointer" : "auto" }}
                       onClick={ui >= 0 ? (e) => onWordClick(ui, e) : undefined}
                     >
@@ -249,7 +272,7 @@ export default function Home() {
                     </span>
                   );
                 })}
-                <Tooltip id="glossary" effect="solid" />
+                <Tooltip id="glossary" place="top" />
               </div>
             )}
           </div>
