@@ -1,45 +1,42 @@
 // pages/index.tsx
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
-import { Tooltip } from "react-tooltip";
+import ReactTooltip from "react-tooltip";
 import ReactFlow, { Background, Controls } from "react-flow-renderer";
 
 import { parseBookWithChapters } from "../lib/parser";
-import { Label } from "../components/ui/label";
-import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 
 // Configure PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc =
-  `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
 type FileType = "text" | "pdf" | "none";
 
-// Simple glossary lookup
 const GLOSSARY: Record<string, string> = {
   photosynthesis: "The process plants use to convert light into energy.",
-  mitosis: "Cell division that results in two daughter cells.",
+  mitosis:         "Cell division that results in two daughter cells.",
   // …add more terms here…
 };
 
 export default function Home() {
   // ─── State ───────────────────────────────────────────────────────────────
-  const [inputText, setInputText] = useState("");
-  const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
-  const [error, setError] = useState<string | null>(null);
+  const [inputText, setInputText]           = useState("");
+  const [uploadStatus, setUploadStatus]     = useState<UploadStatus>("idle");
+  const [error, setError]                   = useState<string | null>(null);
 
-  const [fileType, setFileType] = useState<FileType>("none");
-  const [pdfFile, setPdfFile] = useState<Blob | null>(null);
-  const [numPages, setNumPages] = useState(0);
+  const [fileType, setFileType]             = useState<FileType>("none");
+  const [pdfFile, setPdfFile]               = useState<Blob | null>(null);
+  const [numPages, setNumPages]             = useState(0);
 
-  const [thoughtUnits, setThoughtUnits] = useState<string[]>([]);
+  const [thoughtUnits, setThoughtUnits]     = useState<string[]>([]);
   const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
-
-  const [bookStructure, setBookStructure] = useState<any>(null);
+  const [bookStructure, setBookStructure]   = useState<any>(null);
 
   const textContainerRef = useRef<HTMLDivElement>(null);
+  const pdfViewerRef    = useRef<HTMLDivElement>(null);
+  const unitsListRef    = useRef<HTMLDivElement>(null);
 
   // ─── Chunking ────────────────────────────────────────────────────────────
   const createThoughtUnits = useCallback((text: string) => {
@@ -47,18 +44,18 @@ export default function Home() {
       setThoughtUnits([]);
       return;
     }
-    const clean = text.replace(/\s+/g, " ").trim();
+    const clean     = text.replace(/\s+/g, " ").trim();
     const sentences = clean.match(/[^.!?]+[.!?]+/g) || [clean];
     const chunks: string[] = [];
     const maxSize = 6;
 
-    sentences.forEach((s) => {
+    sentences.forEach(s => {
       const words = s.split(/\s+/);
       let chunk: string[] = [];
       words.forEach((w, i) => {
         chunk.push(w);
         const atMax = chunk.length >= maxSize;
-        const last = i === words.length - 1;
+        const last  = i === words.length - 1;
         if (atMax || last) {
           chunks.push(chunk.join(" "));
           chunk = [];
@@ -79,7 +76,7 @@ export default function Home() {
     let txt = "";
     const pages = Math.min(pdf.numPages, 200);
     for (let i = 1; i <= pages; i++) {
-      const page = await pdf.getPage(i);
+      const page    = await pdf.getPage(i);
       const content = await page.getTextContent();
       txt += content.items.map((it: any) => it.str).join(" ") + "\n";
     }
@@ -122,35 +119,50 @@ export default function Home() {
       setError("No text to parse");
       return;
     }
-    setBookStructure(parseBookWithChapters(inputText, "Uploaded Book"));
+    const structure = parseBookWithChapters(inputText, "Uploaded Book");
+    setBookStructure(structure);
   }, [inputText]);
 
-  const onWordClick = (unitIdx: number, event: React.MouseEvent) => {
+  const onWordClick = (unitIdx: number, e: React.MouseEvent) => {
     setCurrentChunkIndex(unitIdx);
-    (event.currentTarget as HTMLElement).scrollIntoView({
+    (e.currentTarget as HTMLElement).scrollIntoView({
       behavior: "smooth",
-      block: "center",
+      block:    "center",
     });
   };
 
   const handleChunkClick = (idx: number) => {
     setCurrentChunkIndex(idx);
-    const span = document.querySelector(`[data-chunk="unit-${idx}"]`);
-    if (span instanceof HTMLElement) {
-      span.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
+    // scroll thought‐units list
+    const list = unitsListRef.current;
+    const btn  = list?.querySelector(`[data-unit="${idx}"]`) as HTMLElement;
+    btn?.scrollIntoView({ behavior: "smooth", block: "center" });
+    // scroll original text / PDF view
+    const span = textContainerRef.current?.querySelector(`[data-chunk="unit-${idx}"]`) as HTMLElement;
+    span?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
-  // ─── ConceptMap Sub‐component ─────────────────────────────────────────────
+  // ─── Chapter Offsets (first unit index per chapter) ──────────────────────
+  const chapterOffsets = useMemo<number[]>(() => {
+    if (!bookStructure?.chapters) return [];
+    let offset = 0;
+    return bookStructure.chapters.map((ch: any) => {
+      const start = offset;
+      offset += ch.units.length;
+      return start;
+    });
+  }, [bookStructure]);
+
+  // ─── ConceptMap Sub-component ────────────────────────────────────────────
   const ConceptMap = ({ chapters }: { chapters: any[] }) => {
     const nodes = chapters.map((ch, i) => ({
-      id: `n${i}`,
-      data: { label: ch.title },
+      id:       `n${i}`,
+      data:     { label: ch.title },
       position: { x: (i % 3) * 200, y: Math.floor(i / 3) * 120 },
     }));
     const edges = chapters.flatMap((ch, i) =>
       (ch.links || []).map((t: number) => ({
-        id: `e${i}-${t}`,
+        id:     `e${i}-${t}`,
         source: `n${i}`,
         target: `n${t}`,
       }))
@@ -168,7 +180,7 @@ export default function Home() {
   // ─── Render ──────────────────────────────────────────────────────────────
   return (
     <>
-      {/* Upload & Parse Controls */}
+      {/* ───── Upload & Parse Controls ───────────────────── */}
       <div className="p-4 bg-white shadow flex items-center gap-4">
         <input
           type="file"
@@ -178,50 +190,71 @@ export default function Home() {
         />
         <Button onClick={parseText}>Parse Chapters</Button>
         {uploadStatus === "uploading" && <span>⏳ Loading…</span>}
-        {uploadStatus === "error" && (
-          <span className="text-red-600">⚠️ {error}</span>
-        )}
+        {uploadStatus === "error"    && <span className="text-red-600">⚠️ {error}</span>}
       </div>
 
-      {/* Main Two‐Column Layout */}
+      {/* ───── Two-Column Layout ─────────────────────────── */}
       <div className="grid lg:grid-cols-2 gap-6 p-6">
-        {/* LEFT: Original Content / PDF */}
-        <div className="bg-white p-4 rounded shadow">
+        {/* LEFT: TOC + Original/PDF */}
+        <div className="bg-white p-4 rounded shadow space-y-4">
+          {/* Table of Contents */}
+          {bookStructure?.chapters && (
+            <div>
+              <h3 className="font-semibold mb-2">Contents</h3>
+              <ul className="space-y-1">
+                {bookStructure.chapters.map((ch: any, i: number) => (
+                  <li key={i}>
+                    <button
+                      onClick={() => handleChunkClick(chapterOffsets[i])}
+                      className="text-left w-full hover:underline"
+                    >
+                      {ch.title}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* PDF or Text */}
           {fileType === "pdf" && pdfFile ? (
-            <TransformWrapper>
-              <TransformComponent>
-                <Document
-                  file={pdfFile}
-                  onLoadSuccess={({ numPages }) => setNumPages(numPages)}
-                  className="w-full"
-                >
-                  {Array.from({ length: Math.min(numPages, 50) }).map((_, i) => (
-                    <Page
-                      key={i}
-                      pageNumber={i + 1}
-                      scale={1.2}
-                      className="mb-4"
-                    />
-                  ))}
-                </Document>
-              </TransformComponent>
-            </TransformWrapper>
+            <div
+              ref={pdfViewerRef}
+              className="overflow-auto border rounded"
+              style={{ maxHeight: "70vh" }}
+            >
+              <TransformWrapper>
+                <TransformComponent>
+                  <Document
+                    file={pdfFile}
+                    onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+                    className="w-full"
+                  >
+                    {Array.from({ length: Math.min(numPages, 50) }).map((_, i) => (
+                      <div key={i} data-page={i + 1} className="mb-4">
+                        <Page pageNumber={i + 1} scale={1.2} />
+                      </div>
+                    ))}
+                  </Document>
+                </TransformComponent>
+              </TransformWrapper>
+            </div>
           ) : (
             <div
               ref={textContainerRef}
-              className="overflow-y-auto"
-              style={{ maxHeight: "80vh", whiteSpace: "pre-wrap" }}
+              className="overflow-y-auto border rounded p-4"
+              style={{ maxHeight: "70vh", whiteSpace: "pre-wrap" }}
             >
               {inputText.split(/(\s+)/).map((tok, idx) => {
                 const clean = tok.replace(/[^a-zA-Z]/g, "").toLowerCase();
-                const ui = thoughtUnits.findIndex((u) =>
+                const ui    = thoughtUnits.findIndex(u =>
                   u.toLowerCase().split(/\s+/).includes(clean)
                 );
                 return (
                   <span
                     key={idx}
-                    data-tooltip-id={GLOSSARY[clean] ? "glossary" : undefined}
-                    data-tooltip-content={GLOSSARY[clean]}
+                    data-tip={GLOSSARY[clean]}
+                    data-for="glossary"
                     data-chunk={ui >= 0 ? `unit-${ui}` : undefined}
                     className={
                       ui === currentChunkIndex
@@ -229,26 +262,29 @@ export default function Home() {
                         : "hover:bg-yellow-100"
                     }
                     style={{ cursor: ui >= 0 ? "pointer" : "inherit" }}
-                    onClick={ui >= 0 ? (e) => onWordClick(ui, e) : undefined}
+                    onClick={ui >= 0 ? e => onWordClick(ui, e) : undefined}
                   >
                     {tok}
                   </span>
                 );
               })}
-
-              {/* v5 Tooltip */}
-              <Tooltip id="glossary" place="top" style={{ zIndex: 9999 }} />
+              <ReactTooltip id="glossary" effect="solid" />
             </div>
           )}
         </div>
 
         {/* RIGHT: Thought Units + Concept Map */}
-        <div className="bg-white p-4 rounded shadow overflow-auto">
+        <div
+          ref={unitsListRef}
+          className="bg-white p-4 rounded shadow overflow-auto"
+          style={{ maxHeight: "80vh" }}
+        >
           <h2 className="font-bold mb-2">Thought Units</h2>
           <div className="space-y-2 mb-6">
             {thoughtUnits.map((u, i) => (
               <button
                 key={i}
+                data-unit={i}
                 onClick={() => handleChunkClick(i)}
                 className={`block w-full text-left p-2 rounded ${
                   i === currentChunkIndex ? "bg-blue-100" : ""
