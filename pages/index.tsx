@@ -1,208 +1,83 @@
-// pages/index.tsx - Final Version w/ UI Updates + Onboarding Animation
-import React, {
-  useState,
-  useCallback,
-  useEffect,
-  useRef,
-  Suspense,
-} from "react";
-import { useTheme } from "next-themes";
+// pages/index.tsx
+import { useState, useCallback, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
-import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+import { parseBookWithChapters, generateProgressiveReadingHTML } from "../lib/parser";
+import { Label } from "../components/ui/label";
+import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 
+// Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 export default function Home() {
-  const { theme } = useTheme();
+  const [enabled, setEnabled] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [inputText, setInputText] = useState("");
-  const [pdfFile, setPdfFile] = useState<Blob | null>(null);
-  const [numPages, setNumPages] = useState(0);
-  const [pdfScale, setPdfScale] = useState(1.0);
-  const [thoughtUnits, setThoughtUnits] = useState<string[]>([]);
-  const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
-  const [unitToPageMap, setUnitToPageMap] = useState<Record<number, number>>({});
-  const [currentPage, setCurrentPage] = useState(1);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const pdfContainerRef = useRef<HTMLDivElement>(null);
+  const [output, setOutput] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
 
-  const createThoughtUnits = (text: string) => {
-    const clean = text.replace(/\s+/g, " ").trim();
-    const sents = clean.match(/[^.!?]+[.!?]+/g) || [clean];
-    const chunks: string[] = [];
-    const maxSize = 6;
-    sents.forEach((s) => {
-      const words = s.split(/\s+/);
-      let pack: string[] = [];
-      words.forEach((w, i) => {
-        pack.push(w);
-        if (pack.length >= maxSize || i === words.length - 1) {
-          chunks.push(pack.join(" "));
-          pack = [];
-        }
-      });
-    });
-    setThoughtUnits(chunks);
+  const extractTextFromPDF = async (file: File): Promise<string> => {
+    const pdf = await pdfjs.getDocument(await file.arrayBuffer()).promise;
+    let fullText = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const strings = content.items.map((item: any) => item.str);
+      fullText += strings.join(" ") + "\n";
+    }
+    return fullText;
   };
 
-  const syncToCurrentUnit = () => {
-    const page = unitToPageMap[currentChunkIndex];
-    document
-      .querySelector(`#page-${page}`)
-      ?.scrollIntoView({ behavior: "smooth", block: "center" });
-  };
-
-  const handleChunkClick = (i: number) => {
-    setCurrentChunkIndex(i);
-    syncToCurrentUnit();
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (!file) return;
-    setIsProcessing(true);
-    const buf = await file.arrayBuffer();
-    setPdfFile(new Blob([buf], { type: file.type }));
-    const text = await new Response(buf).text();
+    setFile(file);
+    setLoading(true);
+    const text = await extractTextFromPDF(file);
     setInputText(text);
-    createThoughtUnits(text);
-    setIsProcessing(false);
-  };
-
-  useEffect(() => {
-    if (thoughtUnits.length && numPages) {
-      const unitsPerPage = Math.ceil(thoughtUnits.length / numPages);
-      const map: Record<number, number> = {};
-      thoughtUnits.forEach((_, idx) => {
-        map[idx] = Math.floor(idx / unitsPerPage) + 1;
-      });
-      setUnitToPageMap(map);
-    }
-  }, [thoughtUnits, numPages]);
-
-  const updateScrollProgress = () => {
-    const scroll = pdfContainerRef.current;
-    if (!scroll) return;
-    const children = Array.from(scroll.querySelectorAll('[id^="page-"]'));
-    const top = scroll.scrollTop;
-    const visible = children.find((el: any) => el.offsetTop >= top);
-    if (visible) {
-      const match = visible.id.match(/page-(\d+)/);
-      if (match) setCurrentPage(Number(match[1]));
-    }
+    const parsed = await parseBookWithChapters(text);
+    setOutput(parsed);
+    setLoading(false);
   };
 
   return (
-    <div
-      className={`min-h-screen ${
-        theme === "dark" ? "bg-gray-900 text-white" : "bg-white text-black"
-      }`}
-    >
-      <header className="sticky top-0 z-10 flex justify-between p-4 bg-white border-b shadow-sm">
-        <div className="flex flex-wrap items-center gap-3 w-full justify-between">
-          <div className="flex items-center gap-2">
-            <img
-              src="/brain.png"
-              alt="brain"
-              className="w-6 h-6"
-            />
-            <h1 className="text-xl font-bold text-gray-700">
-              Thought Unit Reader
-            </h1>
-          </div>
-          <div className="flex flex-wrap gap-2 items-center">
-            <input
-              type="file"
-              onChange={handleFileChange}
-              className="bg-gray-100 text-black rounded px-2 py-1 border"
-            />
-            <Button onClick={syncToCurrentUnit}>📍 Scroll to Current</Button>
-            <input
-              type="number"
-              placeholder="Page #"
-              className="w-20 px-2 py-1 border rounded text-black"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  const n = Number((e.target as HTMLInputElement).value);
-                  document
-                    .querySelector(`#page-${n}`)
-                    ?.scrollIntoView({ behavior: "smooth", block: "center" });
-                }
-              }}
-            />
-            <button onClick={() => setPdfScale((s) => Math.min(3, s + 0.25))}>🔎+</button>
-            <button onClick={() => setPdfScale((s) => Math.max(0.5, s - 0.25))}>🔍-</button>
-            <span className="ml-2 text-sm text-gray-600">
-              Page {currentPage} of {numPages}
-            </span>
-          </div>
+    <div className="min-h-screen bg-gray-50">
+      {/* HEADER */}
+      <header className="p-6 text-center bg-white shadow-sm border-b">
+        <div className="flex flex-col items-center justify-center space-y-1">
+          <h1 className="text-3xl font-extrabold text-gray-800 flex items-center gap-2">
+            <span>🧠</span> Thought Unit Reader
+          </h1>
+          <p className="text-md text-gray-500">
+            Transform any book into thought-units for enhanced comprehension
+          </p>
         </div>
       </header>
 
-      <main className="grid grid-cols-1 lg:grid-cols-[minmax(0,_60%)_minmax(0,_40%)] gap-4 p-4">
-        <div
-          className="overflow-y-auto border rounded p-4 relative h-[80vh]"
-          ref={pdfContainerRef}
-          onScroll={updateScrollProgress}
-        >
-          {isProcessing ? (
-            <div className="flex items-center justify-center h-full text-lg font-semibold text-gray-600 animate-pulse">
-              🧠 Parsing... Please wait ⚡
-            </div>
-          ) : pdfFile ? (
-            <Suspense fallback={<div>Loading PDF...</div>}>
-              <TransformWrapper initialScale={pdfScale}>
-                <TransformComponent>
-                  <Document
-                    file={pdfFile}
-                    onLoadSuccess={({ numPages }) => setNumPages(numPages)}
-                  >
-                    {Array.from({ length: numPages }, (_, i) => (
-                      <div id={`page-${i + 1}`} key={i} className="cursor-pointer my-4">
-                        <Page pageNumber={i + 1} scale={pdfScale} />
-                      </div>
-                    ))}
-                  </Document>
-                </TransformComponent>
-              </TransformWrapper>
-            </Suspense>
-          ) : (
-            <div className="text-center mt-20 text-gray-500 text-lg">
-              📄 Upload a PDF to get started
-            </div>
-          )}
-
-          {/* MiniMap */}
-          <div className="absolute right-2 top-2 w-2 bg-gray-400 rounded-full h-full opacity-20">
-            <div
-              style={{
-                height: `${100 / numPages}%`,
-                top: `${((currentPage - 1) / numPages) * 100}%`,
-              }}
-              className="absolute w-full bg-blue-500 rounded-full opacity-80 transition-all duration-200"
-            />
+      {/* FILE INPUT */}
+      <div className="p-6 flex flex-col items-center space-y-4">
+        <input
+          type="file"
+          accept="application/pdf"
+          onChange={handleFileUpload}
+          className="p-2 border rounded"
+        />
+        {loading && (
+          <div className="text-center py-6 text-lg font-semibold text-gray-600 animate-pulse">
+            🧠 Parsing… Please wait ⚡
           </div>
-        </div>
+        )}
+      </div>
 
-        <div className="overflow-y-auto border rounded p-4 h-[80vh] bg-gray-50">
-          <h2 className="text-md font-semibold mb-2">🧠 Thought Units</h2>
-          <div className="space-y-2">
-            {thoughtUnits.map((u, i) => (
-              <div
-                key={i}
-                onClick={() => handleChunkClick(i)}
-                className={`p-2 rounded transition-all duration-300 cursor-pointer ${
-                  i === currentChunkIndex
-                    ? 'bg-yellow-400 text-black font-semibold scale-105 shadow'
-                    : 'hover:bg-gray-200'
-                }`}
-              >
-                {u}
-              </div>
-            ))}
-          </div>
-        </div>
-      </main>
+      {/* OUTPUT */}
+      <div className="px-6">
+        {output && (
+          <div
+            className="whitespace-pre-wrap bg-white p-4 rounded shadow-sm text-gray-800"
+            dangerouslySetInnerHTML={{ __html: output }}
+          />
+        )}
+      </div>
     </div>
   );
 }
