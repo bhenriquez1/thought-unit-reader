@@ -1,32 +1,32 @@
-// pages/index.tsx - Phase 1 Stable Version with Fix
-import { useState } from "react";
+// pages/index.tsx — Organized UI + Drag Upload + TOC Jump Navigation
+import { useState, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { parseBookWithChapters } from "../lib/parser";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 
-// PDF worker setup
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-
-type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
-type FileType = "text" | "pdf" | "none";
-type ViewMode = "original" | "chapters" | "progressive" | "hybrid";
 
 export default function Home() {
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
   const [inputText, setInputText] = useState<Uint8Array | null>(null);
-  const [output, setOutput] = useState<any | null>(null); // ✅ TEMP fix: use BookStructure if defined
+  const [output, setOutput] = useState<any | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState(1);
   const [zoom, setZoom] = useState(1);
   const [toc, setToc] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (event.dataTransfer.files.length > 0) {
+      await handleFile(event.dataTransfer.files[0]);
+    }
+  };
 
+  const handleFile = async (file: File) => {
     setLoading(true);
     const reader = new FileReader();
     reader.readAsArrayBuffer(file);
@@ -38,14 +38,12 @@ export default function Home() {
 
         const textContent = new TextDecoder().decode(byteArray);
         const parsed = await parseBookWithChapters(textContent);
-        setOutput(parsed); // ✅ assign full structure (or convert to string if you prefer)
+        setOutput(parsed);
 
         const tocList = textContent
-          .split('\n')
+          .split("\n")
           .filter(line =>
             line.trim().length > 5 &&
-            !line.includes("endstream") &&
-            !line.includes("endobj") &&
             /chapter|section|unit|lesson/i.test(line)
           );
         setToc(tocList);
@@ -59,7 +57,11 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-background text-foreground">
+    <div
+      className="flex flex-col min-h-screen bg-background text-foreground"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={handleDrop}
+    >
       <header className="p-4 flex items-center justify-between border-b">
         <div>
           <h1 className="text-2xl font-bold">🧠 Thought Unit Reader</h1>
@@ -71,8 +73,22 @@ export default function Home() {
         </div>
       </header>
 
+      {/* Upload Bar */}
+      <div className="p-4 border-b text-center">
+        <Label htmlFor="file" className="font-semibold">Choose File</Label>
+        <input
+          id="file"
+          type="file"
+          ref={fileInputRef}
+          className="ml-2"
+          accept=".pdf,.txt,.docx"
+          onChange={(e) => e.target.files && handleFile(e.target.files[0])}
+        />
+        <p className="text-xs mt-1 text-muted">or drag and drop your file anywhere in the window</p>
+      </div>
+
+      {/* Main Panels */}
       <main className="flex-1 grid grid-cols-3 gap-4 p-4">
-        {/* PDF Viewer */}
         <section className="border rounded-xl p-2">
           <div className="font-semibold mb-2">📄 PDF Preview</div>
           {inputText && (
@@ -84,24 +100,24 @@ export default function Home() {
           )}
         </section>
 
-        {/* Thought Units */}
         <section className="border rounded-xl p-2">
           <div className="font-semibold mb-2">🧠 Thought Unit Output</div>
-          <Label htmlFor="file">Choose File</Label>
-          <input id="file" type="file" accept=".pdf,.txt,.docx" onChange={handleFileUpload} />
           <textarea
-            className="mt-2 w-full h-full bg-background text-foreground border rounded-md p-2"
+            className="w-full h-full bg-background text-foreground border rounded-md p-2"
             value={typeof output === "string" ? output : JSON.stringify(output, null, 2)}
             readOnly
           />
         </section>
 
-        {/* Table of Contents */}
         <section className="border rounded-xl p-2">
           <div className="font-semibold mb-2">📑 Table of Contents</div>
-          <select className="w-full border p-1 rounded bg-background text-foreground">
+          <select
+            className="w-full border p-1 rounded bg-background text-foreground"
+            onChange={(e) => setPageNumber(Number(e.target.value))}
+          >
+            <option>Jump to…</option>
             {toc.map((item, index) => (
-              <option key={index}>{item}</option>
+              <option key={index} value={index + 1}>{item}</option>
             ))}
           </select>
         </section>
