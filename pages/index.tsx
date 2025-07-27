@@ -2,7 +2,7 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
-import ReactTooltip from "react-tooltip";
+import { Tooltip } from "react-tooltip";
 import ReactFlow, { Background, Controls } from "react-flow-renderer";
 
 import { parseBookWithChapters } from "../lib/parser";
@@ -12,7 +12,7 @@ import { Button } from "../components/ui/button";
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
-type FileType = "text" | "pdf" | "none";
+type FileType      = "text" | "pdf" | "none";
 
 const GLOSSARY: Record<string, string> = {
   photosynthesis: "The process plants use to convert light into energy.",
@@ -21,24 +21,23 @@ const GLOSSARY: Record<string, string> = {
 };
 
 export default function Home() {
-  // ─── State ───────────────────────────────────────────────────────────────
-  const [inputText, setInputText]           = useState("");
-  const [uploadStatus, setUploadStatus]     = useState<UploadStatus>("idle");
-  const [error, setError]                   = useState<string | null>(null);
+  // ─── State ─────────────────────────────────────────
+  const [inputText, setInputText]                 = useState("");
+  const [uploadStatus, setUploadStatus]           = useState<UploadStatus>("idle");
+  const [error, setError]                         = useState<string | null>(null);
 
-  const [fileType, setFileType]             = useState<FileType>("none");
-  const [pdfFile, setPdfFile]               = useState<Blob | null>(null);
-  const [numPages, setNumPages]             = useState(0);
+  const [fileType, setFileType]                   = useState<FileType>("none");
+  const [pdfFile, setPdfFile]                     = useState<Blob | null>(null);
+  const [numPages, setNumPages]                   = useState(0);
 
-  const [thoughtUnits, setThoughtUnits]     = useState<string[]>([]);
+  const [thoughtUnits, setThoughtUnits]           = useState<string[]>([]);
   const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
-  const [bookStructure, setBookStructure]   = useState<any>(null);
+  const [bookStructure, setBookStructure]         = useState<any>(null);
 
   const textContainerRef = useRef<HTMLDivElement>(null);
-  const pdfViewerRef    = useRef<HTMLDivElement>(null);
-  const unitsListRef    = useRef<HTMLDivElement>(null);
+  const unitsListRef     = useRef<HTMLDivElement>(null);
 
-  // ─── Chunking ────────────────────────────────────────────────────────────
+  // ─── Chunking ─────────────────────────────────────
   const createThoughtUnits = useCallback((text: string) => {
     if (!text) {
       setThoughtUnits([]);
@@ -70,7 +69,7 @@ export default function Home() {
     createThoughtUnits(inputText);
   }, [inputText, createThoughtUnits]);
 
-  // ─── PDF Extraction ───────────────────────────────────────────────────────
+  // ─── PDF Extraction ─────────────────────────────────
   const extractTextFromPDF = useCallback(async (buffer: ArrayBuffer) => {
     const pdf = await pdfjs.getDocument({ data: buffer }).promise;
     let txt = "";
@@ -83,7 +82,7 @@ export default function Home() {
     return txt;
   }, []);
 
-  // ─── Handlers ────────────────────────────────────────────────────────────
+  // ─── Handlers ──────────────────────────────────────
   const handleFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -134,26 +133,29 @@ export default function Home() {
   const handleChunkClick = (idx: number) => {
     setCurrentChunkIndex(idx);
     // scroll thought‐units list
-    const list = unitsListRef.current;
-    const btn  = list?.querySelector(`[data-unit="${idx}"]`) as HTMLElement;
-    btn?.scrollIntoView({ behavior: "smooth", block: "center" });
-    // scroll original text / PDF view
-    const span = textContainerRef.current?.querySelector(`[data-chunk="unit-${idx}"]`) as HTMLElement;
+    const btn = unitsListRef.current?.querySelector(`[data-unit="${idx}"]`);
+    if (btn instanceof HTMLElement) {
+      btn.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    // scroll original text
+    const span = textContainerRef.current?.querySelector(
+      `[data-chunk="unit-${idx}"]`
+    ) as HTMLElement;
     span?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
-  // ─── Chapter Offsets (first unit index per chapter) ──────────────────────
+  // ─── Chapter Offsets ───────────────────────────────
   const chapterOffsets = useMemo<number[]>(() => {
     if (!bookStructure?.chapters) return [];
-    let offset = 0;
+    let off = 0;
     return bookStructure.chapters.map((ch: any) => {
-      const start = offset;
-      offset += ch.units.length;
+      const start = off;
+      off += ch.units.length;
       return start;
     });
   }, [bookStructure]);
 
-  // ─── ConceptMap Sub-component ────────────────────────────────────────────
+  // ─── ConceptMap ────────────────────────────────────
   const ConceptMap = ({ chapters }: { chapters: any[] }) => {
     const nodes = chapters.map((ch, i) => ({
       id:       `n${i}`,
@@ -177,10 +179,10 @@ export default function Home() {
     );
   };
 
-  // ─── Render ──────────────────────────────────────────────────────────────
+  // ─── Render ────────────────────────────────────────
   return (
     <>
-      {/* ───── Upload & Parse Controls ───────────────────── */}
+      {/* Upload & Parse */}
       <div className="p-4 bg-white shadow flex items-center gap-4">
         <input
           type="file"
@@ -190,14 +192,15 @@ export default function Home() {
         />
         <Button onClick={parseText}>Parse Chapters</Button>
         {uploadStatus === "uploading" && <span>⏳ Loading…</span>}
-        {uploadStatus === "error"    && <span className="text-red-600">⚠️ {error}</span>}
+        {uploadStatus === "error"    && (
+          <span className="text-red-600">⚠️ {error}</span>
+        )}
       </div>
 
-      {/* ───── Two-Column Layout ─────────────────────────── */}
+      {/* Two-column */}
       <div className="grid lg:grid-cols-2 gap-6 p-6">
-        {/* LEFT: TOC + Original/PDF */}
+        {/* LEFT: TOC + PDF/Text */}
         <div className="bg-white p-4 rounded shadow space-y-4">
-          {/* Table of Contents */}
           {bookStructure?.chapters && (
             <div>
               <h3 className="font-semibold mb-2">Contents</h3>
@@ -216,13 +219,8 @@ export default function Home() {
             </div>
           )}
 
-          {/* PDF or Text */}
           {fileType === "pdf" && pdfFile ? (
-            <div
-              ref={pdfViewerRef}
-              className="overflow-auto border rounded"
-              style={{ maxHeight: "70vh" }}
-            >
+            <div className="overflow-auto border rounded" style={{ maxHeight: "70vh" }}>
               <TransformWrapper>
                 <TransformComponent>
                   <Document
@@ -253,8 +251,8 @@ export default function Home() {
                 return (
                   <span
                     key={idx}
-                    data-tip={GLOSSARY[clean]}
-                    data-for="glossary"
+                    data-tooltip-id="glossary"
+                    data-tooltip-content={GLOSSARY[clean] || ""}
                     data-chunk={ui >= 0 ? `unit-${ui}` : undefined}
                     className={
                       ui === currentChunkIndex
@@ -268,12 +266,12 @@ export default function Home() {
                   </span>
                 );
               })}
-              <ReactTooltip id="glossary" effect="solid" />
+              <Tooltip id="glossary" />
             </div>
           )}
         </div>
 
-        {/* RIGHT: Thought Units + Concept Map */}
+        {/* RIGHT: Units + Map */}
         <div
           ref={unitsListRef}
           className="bg-white p-4 rounded shadow overflow-auto"
