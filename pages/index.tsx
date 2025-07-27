@@ -1,11 +1,12 @@
-// pages/index.tsx - Phase 1 Stable Version with Dark Mode, ToC Fix, and PDF Zoom
-import { useState, useCallback, useEffect, useRef } from "react";
+// pages/index.tsx - Phase 1 Stable Version with Fix
+import { useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { parseBookWithChapters } from "../lib/parser";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 
+// PDF worker setup
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
@@ -16,7 +17,7 @@ export default function Home() {
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
   const [inputText, setInputText] = useState<Uint8Array | null>(null);
-  const [output, setOutput] = useState<string | null>(null);
+  const [output, setOutput] = useState<any | null>(null); // ✅ TEMP fix: use BookStructure if defined
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState(1);
   const [zoom, setZoom] = useState(1);
@@ -37,7 +38,7 @@ export default function Home() {
 
         const textContent = new TextDecoder().decode(byteArray);
         const parsed = await parseBookWithChapters(textContent);
-        setOutput(parsed);
+        setOutput(parsed); // ✅ assign full structure (or convert to string if you prefer)
 
         const tocList = textContent
           .split('\n')
@@ -51,8 +52,9 @@ export default function Home() {
       } catch (error) {
         console.error("Error parsing file:", error);
         setOutput("Error parsing file");
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
   };
 
@@ -87,7 +89,11 @@ export default function Home() {
           <div className="font-semibold mb-2">🧠 Thought Unit Output</div>
           <Label htmlFor="file">Choose File</Label>
           <input id="file" type="file" accept=".pdf,.txt,.docx" onChange={handleFileUpload} />
-          <textarea className="mt-2 w-full h-full bg-background text-foreground border rounded-md p-2" value={output || ""} readOnly />
+          <textarea
+            className="mt-2 w-full h-full bg-background text-foreground border rounded-md p-2"
+            value={typeof output === "string" ? output : JSON.stringify(output, null, 2)}
+            readOnly
+          />
         </section>
 
         {/* Table of Contents */}
