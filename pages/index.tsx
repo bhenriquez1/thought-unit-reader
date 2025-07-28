@@ -5,6 +5,8 @@ import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 import { useDropzone } from "react-dropzone";
+import * as pdfjsLib from "pdfjs-dist/build/pdf";
+import "pdfjs-dist/build/pdf.worker.entry";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
@@ -78,11 +80,39 @@ export default function Home() {
 
     if (file.type.includes("pdf")) {
       setFileType("pdf");
-      setUploadStatus("done");
+      setUploadStatus("uploading");
       setOutput(null);
       setChapters([]);
       setParsedUnits([]);
       setInputText("");
+
+      // --- PDF TEXT EXTRACTION ---
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const typedarray = new Uint8Array(reader.result as ArrayBuffer);
+          const pdf = await pdfjsLib.getDocument({ data: typedarray }).promise;
+          let fullText = "";
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            const pageText = content.items.map((item: any) => item.str).join(" ");
+            fullText += pageText + "\n";
+          }
+          setInputText(fullText);
+          setUploadStatus("processing");
+          const { chapters, parsedUnits } = await parseBookWithChapters(fullText);
+          setParsedUnits(parsedUnits);
+          setOutput(generateProgressiveReadingHTML(parsedUnits));
+          setChapters(chapters);
+          setUploadStatus("done");
+          setFileType("text"); // treat as text for all view modes!
+        } catch (err) {
+          setUploadStatus("error");
+          alert("Failed to extract text from PDF.");
+        }
+      };
+      reader.readAsArrayBuffer(file);
       return;
     }
 
@@ -182,15 +212,7 @@ export default function Home() {
           </div>
         </div>
 
-        {uploadStatus === "done" && fileType === "pdf" && fileData && (
-          <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
-            <Document file={fileData} onLoadError={(err) => console.error(err)}>
-              <Page pageNumber={selectedPage} />
-            </Document>
-          </div>
-        )}
-
-        {uploadStatus === "done" && fileType === "text" && (
+        {uploadStatus === "done" && fileData && (
           <div className="prose dark:prose-invert" style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
             {renderTextView()}
             {stickyNotes.map((note, i) => (
