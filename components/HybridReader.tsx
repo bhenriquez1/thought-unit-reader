@@ -15,9 +15,9 @@ interface HybridReaderProps {
   originalText?: string;
   parsedChapters?: string[];
   viewMode: ViewMode;
-  chapters?: { title: string; page: number }[];   // ✅ NEW
-  currentPage?: number;                           // ✅ NEW
-  onJumpToPage?: (page: number) => void;          // ✅ NEW
+  chapters?: { title: string; page: number }[];
+  currentPage?: number;
+  onJumpToPage?: (page: number) => void;
 }
 
 export default function HybridReader({
