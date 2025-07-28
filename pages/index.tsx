@@ -16,8 +16,8 @@ export default function Home() {
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [viewMode, setViewMode] = useState<ViewMode>("chapters");
-  const [zoom, setZoom] = useState<number>(1.0); // 🔍 Zoom level
-  const [goToPageInput, setGoToPageInput] = useState(""); // 🧭 For page jump
+  const [zoom, setZoom] = useState<number>(1.0);
+  const [goToPageInput, setGoToPageInput] = useState("");
   const [chapters, setChapters] = useState<{ title: string; page: number }[]>([]);
 
   useEffect(() => {
@@ -26,7 +26,8 @@ export default function Home() {
     setPdfUrl(url);
 
     file.text().then((text) => {
-      parseBookWithChapters(text).then(setChapters);
+      const { chapters } = parseBookWithChapters(text); // ✅ FIXED: no `.then` on sync function
+      setChapters(chapters);
     });
   }, [file]);
 

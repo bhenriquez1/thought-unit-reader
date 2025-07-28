@@ -29,17 +29,14 @@ export default function HybridReader({
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
   const [htmlContent, setHtmlContent] = useState("");
 
-  // Handle PDF loaded
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
   };
 
-  // Apply zoom
   const handleZoom = () => {
     setZoomLevel((prev) => (prev === 1.0 ? 1.5 : 1.0));
   };
 
-  // Page input
   const handlePageInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseInt(e.target.value);
     if (!isNaN(val) && val > 0 && numPages && val <= numPages) {
@@ -47,21 +44,18 @@ export default function HybridReader({
     }
   };
 
-  // Load progressive HTML content for "progressive" or "hybrid" view
   useEffect(() => {
     if (
       (viewMode === "progressive" || viewMode === "hybrid") &&
-      originalText &&
-      parsedChapters
+      originalText
     ) {
-      const html = generateProgressiveReadingHTML(originalText, parsedChapters);
+      const html = generateProgressiveReadingHTML(originalText);
       setHtmlContent(html);
     }
   }, [originalText, parsedChapters, viewMode]);
 
   return (
     <div className="flex flex-col lg:flex-row w-full h-full gap-4">
-      {/* Left: Original Book View */}
       <div className="w-full lg:w-1/2 h-full overflow-auto border rounded-xl p-4 bg-white dark:bg-zinc-900 shadow">
         <div className="flex items-center justify-between mb-4">
           <div className="flex gap-2">
@@ -91,7 +85,6 @@ export default function HybridReader({
         </div>
       </div>
 
-      {/* Right: Thought-Unit View */}
       <div className="w-full lg:w-1/2 h-full overflow-y-auto border rounded-xl p-4 bg-gray-100 dark:bg-zinc-800 shadow text-[17px] leading-7">
         {viewMode === "original" && (
           <pre className="whitespace-pre-wrap">{originalText}</pre>
