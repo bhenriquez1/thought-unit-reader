@@ -3,7 +3,7 @@ import {
   parseBookWithChapters,
   generateProgressiveReadingHTML,
   generateHybridHTML,
-} from "../../lib/parser"; // ✅ Corrected import path
+} from "@/lib/parser"; // Use alias if configured, or use relative path
 
 interface Chapter {
   title: string;
@@ -42,10 +42,10 @@ export default function HybridReader({
         let generatedHtml = "";
 
         if (mode === "rightbrain") {
-          // 🧠 Right Brain Mode: Alternating black/gray phrases
+          // Right Brain Mode: black/gray alternation for better comprehension
           generatedHtml = generateProgressiveReadingHTML(parsedUnits);
         } else {
-          // 🤝 Hybrid Mode: Chapters + Thought Units
+          // Hybrid Mode: TOC + formatted units
           generatedHtml = generateHybridHTML(
             parsedChapters ?? chapters,
             parsedUnits,
@@ -60,7 +60,7 @@ export default function HybridReader({
       }
     };
 
-    reader.readAsText(file);
+    reader.readAsText(file); // FIX: Converts File → string before parsing
   }, [file, mode, currentPage]);
 
   return (
