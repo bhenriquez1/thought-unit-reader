@@ -17,12 +17,12 @@ export function parseBookWithChapters(text: string): BookStructure {
     const clean = line.trim();
     if (!clean) continue;
 
-    // 📌 Chapter Detection (e.g., "Chapter 1", "Chapter IX")
-    if (/^(chapter\s+\d+|chapter\s+[ivxlc]+)\b/i.test(clean)) {
+    // 📌 Chapter Detection (e.g., "Chapter 1", "Chapter IX", "CHAPTER ONE")
+    if (/^(chapter\s+\d+|chapter\s+[ivxlc]+|chapter\s+\w+)/i.test(clean)) {
       chapters.push(clean);
     }
 
-    // ✂️ Sentence-like splitting
+    // ✂️ Sentence-like splitting (handles . ! ?)
     const sentences = clean.match(/[^.!?]+[.!?]+/g);
     if (sentences) {
       parsedUnits.push(...sentences.map((s) => s.trim()));
@@ -62,7 +62,11 @@ export function generateProgressiveReadingHTML(units: string[]): string {
  * - Contains Right Brain view inside each section
  */
 export function generateHybridHTML(chapters: string[], units: string[]): string {
-  const chunkSize = Math.ceil(units.length / (chapters.length || 1));
+  if (!chapters.length) {
+    // fallback: show all units in one section
+    return `<div>${generateProgressiveReadingHTML(units)}</div>`;
+  }
+  const chunkSize = Math.ceil(units.length / chapters.length);
   let html = "";
 
   chapters.forEach((chapter, i) => {

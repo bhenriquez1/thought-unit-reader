@@ -1,5 +1,4 @@
-// pages/index.tsx - AI Parsing + File Upload + Autosave + Sticky Notes + Enhanced Hybrid View
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { parseBookWithChapters, generateProgressiveReadingHTML, generateHybridHTML } from "../lib/parser";
 import { Label } from "../components/ui/label";
@@ -83,6 +82,7 @@ export default function Home() {
       setOutput(null);
       setChapters([]);
       setParsedUnits([]);
+      setInputText("");
       return;
     }
 
@@ -106,6 +106,34 @@ export default function Home() {
 
   const handleZoomIn = () => setZoom((z) => z + 0.1);
   const handleZoomOut = () => setZoom((z) => Math.max(0.5, z - 0.1));
+
+  // --- View Mode Render Logic ---
+  function renderTextView() {
+    if (viewMode === "original") {
+      return (
+        <pre className="whitespace-pre-wrap">{inputText}</pre>
+      );
+    }
+    if (viewMode === "chapters") {
+      return (
+        <div>
+          {chapters.length === 0 && <div className="text-zinc-500">No chapters detected.</div>}
+          {chapters.map((ch, i) => (
+            <h2 key={i} className="font-bold text-lg my-4">{ch}</h2>
+          ))}
+        </div>
+      );
+    }
+    if (viewMode === "hybrid") {
+      return (
+        <div dangerouslySetInnerHTML={{ __html: generateHybridHTML(chapters, parsedUnits) }} />
+      );
+    }
+    // progressive (right brain) view
+    return (
+      <div dangerouslySetInnerHTML={{ __html: generateProgressiveReadingHTML(parsedUnits) }} />
+    );
+  }
 
   return (
     <div className="flex min-h-screen dark:bg-black">
@@ -164,7 +192,7 @@ export default function Home() {
 
         {uploadStatus === "done" && fileType === "text" && (
           <div className="prose dark:prose-invert" style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
-            <div dangerouslySetInnerHTML={{ __html: viewMode === "hybrid" ? generateHybridHTML(chapters, parsedUnits) : output || "" }} />
+            {renderTextView()}
             {stickyNotes.map((note, i) => (
               <div key={i} className="mt-2 p-2 bg-yellow-100 dark:bg-yellow-300 text-black rounded">
                 🗒️ Sticky Note {note.unitIndex + 1}: {note.content}
