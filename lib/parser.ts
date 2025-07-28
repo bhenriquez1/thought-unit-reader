@@ -84,4 +84,4 @@ export function generateHybridHTML(chapters: string[], units: string[]): string 
     `;
   });
 
-  return
+  return html;
