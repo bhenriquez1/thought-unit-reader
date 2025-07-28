@@ -15,6 +15,7 @@ type ViewMode = "original" | "chapters" | "progressive" | "hybrid";
 
 export default function Home() {
   const [enabled, setEnabled] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [inputText, setInputText] = useState("");
   const [output, setOutput] = useState<string | null>(null);
@@ -26,6 +27,10 @@ export default function Home() {
   const [fileType, setFileType] = useState<FileType>("none");
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileData, setFileData] = useState<File | null>(null);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", darkMode);
+  }, [darkMode]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -66,7 +71,7 @@ export default function Home() {
       {/* Sidebar */}
       <aside className="w-64 border-r p-4 space-y-4 dark:bg-zinc-900">
         <h2 className="text-xl font-semibold">📚 Chapters</h2>
-        <div className="space-y-1">
+        <div className="space-y-1 max-h-60 overflow-y-auto">
           {chapters.map((ch, i) => (
             <Button
               key={i}
@@ -81,7 +86,7 @@ export default function Home() {
 
         <div className="mt-6">
           <Label className="mb-2 block">🌓 Dark Mode</Label>
-          <Switch checked={enabled} onCheckedChange={setEnabled} />
+          <Switch checked={darkMode} onCheckedChange={setDarkMode} />
         </div>
 
         <div className="mt-6">
@@ -111,8 +116,16 @@ export default function Home() {
 
       {/* Main Panel */}
       <main className="flex-1 p-4">
-        <div className="flex justify-between items-center mb-4">
-          <h1 className="text-2xl font-bold">Thought Unit Reader</h1>
+        <div className="flex justify-between items-center mb-2">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              🧠 Thought Unit Reader
+            </h1>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
+              Transform any book into thought-units for enhanced comprehension
+            </p>
+          </div>
+
           <div className="flex gap-2">
             <Button onClick={() => setSelectedPage((p) => Math.max(p - 1, 1))}>←</Button>
             <Button onClick={() => setSelectedPage((p) => p + 1)}>→</Button>
