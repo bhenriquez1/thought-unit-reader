@@ -4,7 +4,6 @@ export function parseBookWithChapters(text: string): {
   chapters: { title: string; page: number }[];
   parsedUnits: string[];
 } {
-  // Extract chapters by looking for lines that start with "Chapter <number>"
   const lines = text.split("\n");
   const chapters = lines
     .map((line, index) => ({
@@ -13,7 +12,6 @@ export function parseBookWithChapters(text: string): {
     }))
     .filter((ch) => ch.title);
 
-  // Break the text into thought units by splitting on paragraph gaps
   const parsedUnits = text
     .split(/\n{2,}/)
     .map((unit) => unit.trim())

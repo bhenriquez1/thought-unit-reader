@@ -8,7 +8,7 @@ import { generateProgressiveReadingHTML } from "@/lib/parser";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
-type ViewMode = "original" | "chapters" | "progressive" | "hybrid";
+type ViewMode = "original" | "chapters" | "progressive" | "hybrid" | "rightbrain";
 
 interface HybridReaderProps {
   file: File;
@@ -46,10 +46,14 @@ export default function HybridReader({
 
   useEffect(() => {
     if (
-      (viewMode === "progressive" || viewMode === "hybrid") &&
+      (viewMode === "progressive" || viewMode === "hybrid" || viewMode === "rightbrain") &&
       originalText
     ) {
-      const html = generateProgressiveReadingHTML(originalText);
+      const parsedUnits = originalText
+        .split(/\n{2,}/)
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0);
+      const html = generateProgressiveReadingHTML(parsedUnits);
       setHtmlContent(html);
     }
   }, [originalText, parsedChapters, viewMode]);
@@ -112,6 +116,12 @@ export default function HybridReader({
               </details>
             ))}
             <hr className="my-6" />
+            <h2 className="text-lg font-bold mb-2">Right Brain View</h2>
+            <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
+          </div>
+        )}
+        {viewMode === "rightbrain" && (
+          <div>
             <h2 className="text-lg font-bold mb-2">Right Brain View</h2>
             <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
           </div>

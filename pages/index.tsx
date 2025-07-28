@@ -26,7 +26,7 @@ export default function Home() {
     setPdfUrl(url);
 
     file.text().then((text) => {
-      const { chapters } = parseBookWithChapters(text); // ✅ FIXED: no `.then` on sync function
+      const { chapters } = parseBookWithChapters(text); // ✅ Synchronously returns `chapters`
       setChapters(chapters);
     });
   }, [file]);
