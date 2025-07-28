@@ -14,7 +14,7 @@ interface HybridReaderProps {
   file: File;
   originalText?: string;
   parsedChapters?: string[];
-  mode: ViewMode;
+  viewMode: ViewMode; // ✅ Renamed to match prop passed in index.tsx
   chapters?: { title: string; page: number }[];
   currentPage?: number;
   onJumpToPage?: (page: number) => void;
@@ -24,7 +24,7 @@ export default function HybridReader({
   file,
   originalText,
   parsedChapters,
-  mode,
+  viewMode,
   chapters,
   currentPage,
   onJumpToPage,
@@ -60,7 +60,7 @@ export default function HybridReader({
 
   useEffect(() => {
     if (
-      (mode === "progressive" || mode === "hybrid" || mode === "rightbrain") &&
+      (viewMode === "progressive" || viewMode === "hybrid" || viewMode === "rightbrain") &&
       originalText
     ) {
       const parsedUnits = originalText
@@ -70,7 +70,7 @@ export default function HybridReader({
       const html = generateProgressiveReadingHTML(parsedUnits);
       setHtmlContent(html);
     }
-  }, [originalText, parsedChapters, mode]);
+  }, [originalText, parsedChapters, viewMode]);
 
   return (
     <div className="flex flex-col lg:flex-row w-full h-full gap-4">
@@ -110,11 +110,11 @@ export default function HybridReader({
 
       {/* Right Panel: Content */}
       <div className="w-full lg:w-1/2 h-full overflow-y-auto border rounded-xl p-4 bg-gray-100 dark:bg-zinc-800 shadow text-[17px] leading-7 text-black dark:text-white">
-        {mode === "original" && (
+        {viewMode === "original" && (
           <pre className="whitespace-pre-wrap">{originalText}</pre>
         )}
 
-        {mode === "chapters" && parsedChapters && (
+        {viewMode === "chapters" && parsedChapters && (
           <div>
             <div className="flex flex-col gap-2 mb-4">
               {parsedChapters.map((_, idx) => (
@@ -139,11 +139,11 @@ export default function HybridReader({
           </div>
         )}
 
-        {mode === "progressive" && (
+        {viewMode === "progressive" && (
           <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
         )}
 
-        {mode === "hybrid" && (
+        {viewMode === "hybrid" && (
           <div>
             <h2 className="text-lg font-bold mb-2">Chapter View</h2>
             {parsedChapters?.map((chapter, i) => (
@@ -160,7 +160,7 @@ export default function HybridReader({
           </div>
         )}
 
-        {mode === "rightbrain" && (
+        {viewMode === "rightbrain" && (
           <div>
             <h2 className="text-lg font-bold mb-2">Right Brain View</h2>
             <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
