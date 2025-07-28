@@ -3,7 +3,7 @@ import {
   parseBookWithChapters,
   generateProgressiveReadingHTML,
   generateHybridHTML,
-} from "../lib/parser";
+} from "../../lib/parser"; // <-- fixed import path
 
 interface Chapter {
   title: string;
@@ -66,7 +66,4 @@ export default function HybridReader({
   return (
     <div
       className="prose max-w-none dark:prose-invert p-4"
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
-}
+      dangerouslySetInnerHTML={{ __html: html
