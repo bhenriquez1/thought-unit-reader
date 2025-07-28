@@ -1,71 +1,34 @@
-import { useEffect, useState } from "react";
-import { parseBookWithChapters } from "../lib/parser";
-
-type Chapter = {
-  title: string;
-  page: number;
-};
+// components/ui/HybridReader.tsx
+import React, { useEffect, useState } from "react";
+import { parseBookWithChapters, generateHybridHTML } from "../lib/parser";
 
 interface HybridReaderProps {
-  file: File;
-  chapters: Chapter[];
+  file: File | null;
   currentPage: number;
-  onJumpToPage?: (page: number) => void;
+  onChaptersDetected?: (chapters: string[]) => void;
 }
 
-export default function HybridReader({
-  file,
-  chapters,
-  currentPage,
-  onJumpToPage,
-}: HybridReaderProps) {
-  const [phrases, setPhrases] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
+const HybridReader: React.FC<HybridReaderProps> = ({ file, currentPage, onChaptersDetected }) => {
+  const [htmlContent, setHtmlContent] = useState<string>("");
 
   useEffect(() => {
-    const process = async () => {
-      setLoading(true);
-      try {
-        const parsed = await parseBookWithChapters(file);
-        const combined = parsed.map((c) => c.title + " ").join(" ");
-        const split = combined
-          .split(/(?<=[.?!])\s+(?=[A-Z])/)
-          .map((s) => s.trim())
-          .filter((s) => s.length > 0);
-        setPhrases(split);
-      } catch (e) {
-        console.error("Failed to parse file", e);
-        setPhrases(["Error parsing document."]);
-      } finally {
-        setLoading(false);
-      }
+    const readFile = async () => {
+      if (!file) return;
+      const text = await file.text();
+      const { chapters, parsedUnits } = await parseBookWithChapters(text);
+      if (onChaptersDetected) onChaptersDetected(chapters);
+      const html = generateHybridHTML(chapters, parsedUnits);
+      setHtmlContent(html);
     };
 
-    process();
+    readFile();
   }, [file]);
 
-  if (loading) return <div>Loading hybrid view...</div>;
-
   return (
-    <div className="space-y-2 max-w-4xl mx-auto">
-      {phrases.map((phrase, i) => (
-        <div
-          key={i}
-          className={`py-2 px-3 rounded-md my-1 ${
-            i % 2 === 0 ? "bg-gray-100 dark:bg-zinc-800" : "bg-white dark:bg-zinc-700"
-          }`}
-        >
-          <p className="leading-relaxed">{phrase}</p>
-          {onJumpToPage && (
-            <button
-              className="mt-2 text-xs text-blue-600 hover:underline"
-              onClick={() => onJumpToPage(currentPage)}
-            >
-              ↩ Jump to Page {currentPage}
-            </button>
-          )}
-        </div>
-      ))}
+    <div className="p-6 overflow-y-auto h-full">
+      <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
     </div>
   );
-}
+};
+
+export default HybridReader;

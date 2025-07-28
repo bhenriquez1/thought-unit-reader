@@ -106,8 +106,20 @@ export default function Home() {
           />
         )}
 
-        {viewMode === "rightbrain" && (
-          <div className="text-xl">🧠 Right Brain View coming soon... (auto diagrams + voice)</div>
+        {viewMode === "rightbrain" && file && (
+          <HybridReader
+            file={file}
+            chapters={chapters}
+            currentPage={currentPage}
+            onJumpToPage={handleJumpToPage}
+            mode="rightbrain"
+          />
+        )}
+
+        {viewMode === "chapters" && (
+          <div className="text-lg font-semibold text-gray-600">
+            Select a chapter or switch to another view mode.
+          </div>
         )}
       </main>
     </div>
