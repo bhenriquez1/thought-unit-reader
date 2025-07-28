@@ -4,7 +4,7 @@ import { Document, Page, pdfjs } from "react-pdf";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { parseBookWithChapters } from "../lib/parser";
+import { parseBookWithChapters } from "@/lib/parser";
 import HybridReader from "@/components/HybridReader";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
