@@ -144,7 +144,7 @@ export default function Home() {
             chapters={chapters}
             currentPage={currentPage}
             onJumpToPage={handleJumpToPage}
-            viewMode={viewMode}
+            viewMode={viewMode} // ✅ Corrected prop name
           />
         )}
 
