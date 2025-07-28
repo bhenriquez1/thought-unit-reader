@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { parseBookWithChapters, generateProgressiveReadingHTML, generateHybridHTML } from "@/lib/parser"; // ✅ fixed path
+import {
+  parseBookWithChapters,
+  generateProgressiveReadingHTML,
+  generateHybridHTML,
+} from "../lib/parser";
 
 interface HybridReaderProps {
   file: File;
@@ -9,34 +13,44 @@ interface HybridReaderProps {
   mode?: "hybrid" | "rightbrain";
 }
 
-export default function HybridReader({ file, chapters = [], currentPage = 1, onJumpToPage, mode = "hybrid" }: HybridReaderProps) {
+export default function HybridReader({
+  file,
+  chapters = [],
+  currentPage = 1,
+  onJumpToPage,
+  mode = "hybrid",
+}: HybridReaderProps) {
   const [text, setText] = useState("");
   const [html, setHtml] = useState("");
 
   useEffect(() => {
     const reader = new FileReader();
-
     reader.onload = async (e) => {
       const content = e.target?.result as string;
+      setText(content);
 
-      // 🛡️ Prevent binary PDF from trying to render as text
-      if (file.type === "application/pdf") {
-        setHtml("<p style='color: red;'>PDF preview not supported in this view. Use the Original view instead.</p>");
-        return;
+      const { chapters: parsedChapters, parsedUnits } = await parseBookWithChapters(content);
+
+      let generated = "";
+
+      if (mode === "rightbrain") {
+        // 🧠 Right Brain Mode: Alternating color units (black/gray) with optional enhancements
+        generated = generateProgressiveReadingHTML(parsedUnits);
+      } else {
+        // 🤝 Hybrid Mode: TOC + Highlighted Units + optional jump logic
+        generated = generateHybridHTML(parsedChapters, parsedUnits, currentPage || 1);
       }
 
-      setText(content);
-      const { chapters, parsedUnits } = await parseBookWithChapters(content);
-      const generated = mode === "rightbrain"
-        ? generateProgressiveReadingHTML(parsedUnits)
-        : generateHybridHTML(chapters, parsedUnits);
       setHtml(generated);
     };
 
     reader.readAsText(file);
-  }, [file, mode]);
+  }, [file, mode, currentPage]);
 
   return (
-    <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: html }} />
+    <div
+      className="prose max-w-none dark:prose-invert p-4"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 }
