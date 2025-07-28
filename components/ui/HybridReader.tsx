@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { parseBookWithChapters, generateProgressiveReadingHTML, generateHybridHTML } from "../lib/parser";
+import { parseBookWithChapters, generateProgressiveReadingHTML, generateHybridHTML } from "@/lib/parser"; // ✅ fixed path
 
 interface HybridReaderProps {
   file: File;
@@ -15,8 +15,16 @@ export default function HybridReader({ file, chapters = [], currentPage = 1, onJ
 
   useEffect(() => {
     const reader = new FileReader();
+
     reader.onload = async (e) => {
       const content = e.target?.result as string;
+
+      // 🛡️ Prevent binary PDF from trying to render as text
+      if (file.type === "application/pdf") {
+        setHtml("<p style='color: red;'>PDF preview not supported in this view. Use the Original view instead.</p>");
+        return;
+      }
+
       setText(content);
       const { chapters, parsedUnits } = await parseBookWithChapters(content);
       const generated = mode === "rightbrain"
