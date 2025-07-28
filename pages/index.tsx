@@ -1,7 +1,7 @@
 // pages/index.tsx - AI Parsing + File Upload + Autosave + Sticky Notes + Enhanced Hybrid View
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
-import { parseBookWithChapters, generateProgressiveReadingHTML } from "../lib/parser";
+import { parseBookWithChapters, generateProgressiveReadingHTML, generateHybridHTML } from "../lib/parser";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
@@ -32,6 +32,7 @@ export default function Home() {
   const [zoom, setZoom] = useState(1);
   const [viewMode, setViewMode] = useState<ViewMode>("progressive");
   const [chapters, setChapters] = useState<string[]>([]);
+  const [parsedUnits, setParsedUnits] = useState<string[]>([]);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
   const [fileType, setFileType] = useState<FileType>("none");
   const [fileName, setFileName] = useState<string | null>(null);
@@ -81,6 +82,7 @@ export default function Home() {
       setUploadStatus("done");
       setOutput(null);
       setChapters([]);
+      setParsedUnits([]);
       return;
     }
 
@@ -90,8 +92,9 @@ export default function Home() {
       const text = reader.result?.toString() || "";
       setInputText(text);
       setUploadStatus("processing");
-      const { chapters, parsed } = await parseBookWithChapters(text);
-      setOutput(generateProgressiveReadingHTML(parsed));
+      const { chapters, parsedUnits } = await parseBookWithChapters(text);
+      setParsedUnits(parsedUnits);
+      setOutput(generateProgressiveReadingHTML(parsedUnits));
       setChapters(chapters);
       setUploadStatus("done");
       setFileType("text");
@@ -161,7 +164,7 @@ export default function Home() {
 
         {uploadStatus === "done" && fileType === "text" && (
           <div className="prose dark:prose-invert" style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
-            <div dangerouslySetInnerHTML={{ __html: output || "" }} />
+            <div dangerouslySetInnerHTML={{ __html: viewMode === "hybrid" ? generateHybridHTML(chapters, parsedUnits) : output || "" }} />
             {stickyNotes.map((note, i) => (
               <div key={i} className="mt-2 p-2 bg-yellow-100 dark:bg-yellow-300 text-black rounded">
                 🗒️ Sticky Note {note.unitIndex + 1}: {note.content}

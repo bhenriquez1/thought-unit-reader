@@ -3,10 +3,13 @@ export type BookStructure = {
   parsedUnits: string[];
 };
 
-// Thought-unit + chapter parser
+/**
+ * 🧠 Parses a raw book text into chapters and thought-units.
+ * - Detects chapters based on "Chapter" keywords.
+ * - Breaks other lines into sentence-like units for Right Brain rendering.
+ */
 export function parseBookWithChapters(text: string): BookStructure {
   const lines = text.split("\n");
-
   const chapters: string[] = [];
   const parsedUnits: string[] = [];
 
@@ -14,12 +17,12 @@ export function parseBookWithChapters(text: string): BookStructure {
     const clean = line.trim();
     if (!clean) continue;
 
-    // Detect chapter headers
+    // 📌 Chapter Detection (e.g., "Chapter 1", "Chapter IX")
     if (/^(chapter\s+\d+|chapter\s+[ivxlc]+)\b/i.test(clean)) {
       chapters.push(clean);
     }
 
-    // Basic sentence-level splitting
+    // ✂️ Sentence-like splitting
     const sentences = clean.match(/[^.!?]+[.!?]+/g);
     if (sentences) {
       parsedUnits.push(...sentences.map((s) => s.trim()));
@@ -31,7 +34,10 @@ export function parseBookWithChapters(text: string): BookStructure {
   return { chapters, parsedUnits };
 }
 
-// 🧠 Right Brain View Renderer (alternating colors, sticky/explain icons)
+/**
+ * 🧠 Renders parsed units in alternating color blocks
+ * - Includes buttons for 💡 Explain and 📌 Sticky per unit
+ */
 export function generateProgressiveReadingHTML(units: string[]): string {
   return units
     .map((unit, i) => {
@@ -50,10 +56,13 @@ export function generateProgressiveReadingHTML(units: string[]): string {
     .join("\n");
 }
 
-// 🌀 Hybrid Mode Renderer (collapsible chapters + Right Brain inside)
+/**
+ * 🌀 Renders Hybrid Mode
+ * - Collapsible chapter sections
+ * - Contains Right Brain view inside each section
+ */
 export function generateHybridHTML(chapters: string[], units: string[]): string {
-  // Estimate units per chapter (even split)
-  const chunkSize = Math.ceil(units.length / chapters.length || 1);
+  const chunkSize = Math.ceil(units.length / (chapters.length || 1));
   let html = "";
 
   chapters.forEach((chapter, i) => {
