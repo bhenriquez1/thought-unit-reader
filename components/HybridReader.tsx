@@ -15,6 +15,9 @@ interface HybridReaderProps {
   originalText?: string;
   parsedChapters?: string[];
   viewMode: ViewMode;
+  chapters?: { title: string; page: number }[];   // ✅ NEW
+  currentPage?: number;                           // ✅ NEW
+  onJumpToPage?: (page: number) => void;          // ✅ NEW
 }
 
 export default function HybridReader({
@@ -22,6 +25,9 @@ export default function HybridReader({
   originalText,
   parsedChapters,
   viewMode,
+  chapters,
+  currentPage,
+  onJumpToPage,
 }: HybridReaderProps) {
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
@@ -82,7 +88,10 @@ export default function HybridReader({
             {zoomLevel === 1.0 ? "Zoom 150%" : "Reset Zoom"}
           </Button>
         </div>
-        <div ref={canvasWrapperRef} style={{ transform: `scale(${zoomLevel})`, transformOrigin: "top left" }}>
+        <div
+          ref={canvasWrapperRef}
+          style={{ transform: `scale(${zoomLevel})`, transformOrigin: "top left" }}
+        >
           <Document file={file} onLoadSuccess={onDocumentLoadSuccess}>
             <Page pageNumber={pageNumber} width={600} />
           </Document>
@@ -111,7 +120,9 @@ export default function HybridReader({
             <h2 className="text-lg font-bold mb-2">Chapter View</h2>
             {parsedChapters?.map((chapter, i) => (
               <details key={i} className="mb-4">
-                <summary className="cursor-pointer text-blue-500 dark:text-blue-300 font-medium">Chapter {i + 1}</summary>
+                <summary className="cursor-pointer text-blue-500 dark:text-blue-300 font-medium">
+                  Chapter {i + 1}
+                </summary>
                 <p className="mt-2">{chapter}</p>
               </details>
             ))}
