@@ -1,4 +1,4 @@
-// pages/index.tsx - AI Parsing Highlights + Mode Toggle + Full Upload
+// pages/index.tsx - AI Parsing Highlights + Mode Toggle + Full Upload + PDF View Fixes
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { parseBookWithChapters, generateProgressiveReadingHTML } from "../lib/parser";
@@ -32,19 +32,26 @@ export default function Home() {
     if (!file) return;
     setFileData(file);
     setFileName(file.name);
-    setUploadStatus("uploading");
 
+    if (file.type.includes("pdf")) {
+      setFileType("pdf");
+      setUploadStatus("done");
+      setOutput(null);
+      setChapters([]);
+      return;
+    }
+
+    setUploadStatus("uploading");
     const reader = new FileReader();
     reader.onload = async () => {
       const text = reader.result?.toString() || "";
       setInputText(text);
       setUploadStatus("processing");
-
       const { chapters, parsed } = await parseBookWithChapters(text);
       setOutput(generateProgressiveReadingHTML(parsed));
       setChapters(chapters);
       setUploadStatus("done");
-      setFileType(file.type.includes("pdf") ? "pdf" : "text");
+      setFileType("text");
     };
     reader.readAsText(file);
   }, []);
@@ -114,8 +121,17 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Render PDF */}
+        {uploadStatus === "done" && fileType === "pdf" && fileData && (
+          <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
+            <Document file={fileData} onLoadError={(err) => console.error(err)}>
+              <Page pageNumber={selectedPage} />
+            </Document>
+          </div>
+        )}
+
         {/* AI Parsing Output */}
-        {uploadStatus === "done" && (
+        {uploadStatus === "done" && fileType === "text" && (
           <div
             className="prose dark:prose-invert"
             style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}
