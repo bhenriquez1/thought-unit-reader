@@ -8,7 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
-    "@headlessui/react": "^1.7.17",
+    "@headlessui/react": "^1.7.19",
     "@heroicons/react": "^2.1.1",
     "@react-pdf-viewer/core": "^3.12.0",
     "class-variance-authority": "^0.7.0",
