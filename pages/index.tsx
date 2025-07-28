@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { parseBookWithChapters } from "@/lib/parser"; // ✅ fixed relative path
-import HybridReader from "@/components/HybridReader"; // ✅ confirmed with alias
+import { parseBookWithChapters } from "@/lib/parser";
+import HybridReader from "@/components/ui/hybridreader"; // ✅ Correct lowercase path for Linux/Render
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
@@ -21,14 +21,14 @@ export default function Home() {
     if (!file) return;
     const url = URL.createObjectURL(file);
     setPdfUrl(url);
-    parseBookWithChapters(file).then(setChapters); // ✅ file now passed instead of content
+    parseBookWithChapters(file).then(setChapters);
   }, [file]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
       setFile(selectedFile);
-      setCurrentPage(1); // ✅ optional reset to first page
+      setCurrentPage(1);
     }
   };
 
@@ -89,7 +89,9 @@ export default function Home() {
           <>
             <div className="flex justify-between items-center mb-4">
               <Button onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}>←</Button>
-              <span>Page {currentPage} / {numPages}</span>
+              <span>
+                Page {currentPage} / {numPages}
+              </span>
               <Button onClick={() => setCurrentPage((prev) => Math.min(prev + 1, numPages))}>→</Button>
             </div>
             <Document file={pdfUrl} onLoadSuccess={({ numPages }) => setNumPages(numPages)}>
