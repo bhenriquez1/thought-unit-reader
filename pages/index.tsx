@@ -128,7 +128,9 @@ export default function Home() {
         <div className="flex justify-between items-center mb-2">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">🧠 Thought Unit Reader</h1>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">Transform any book into thought-units for enhanced comprehension</p>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
+              Transform any book into thought-units for enhanced comprehension
+            </p>
           </div>
           <div className="flex gap-2">
             <Button onClick={() => setSelectedPage((p) => Math.max(p - 1, 1))}>←</Button>
@@ -172,3 +174,4 @@ export default function Home() {
       </main>
     </div>
   );
+}
