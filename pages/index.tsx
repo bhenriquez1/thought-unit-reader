@@ -1,10 +1,8 @@
-// pages/index.tsx
 import { useState, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { parseBookWithChapters } from "@/lib/parser";
+import { parseBookWithChapters } from "../lib/parser";
 import HybridReader from "@/components/HybridReader";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
@@ -38,6 +36,11 @@ export default function Home() {
     setViewMode("original");
   };
 
+  const handleJumpToPage = (page: number) => {
+    setCurrentPage(page);
+    setViewMode("original");
+  };
+
   return (
     <div className="flex">
       <aside className="w-64 p-4 bg-black text-white min-h-screen">
@@ -47,7 +50,7 @@ export default function Home() {
           <input
             id="fileUpload"
             type="file"
-            accept=".pdf"
+            accept=".pdf,.txt"
             onChange={handleFileUpload}
             className="text-black"
           />
@@ -65,7 +68,7 @@ export default function Home() {
             <option value="rightbrain">Right Brain View</option>
           </select>
         </div>
-        {viewMode === "chapters" && chapters.length > 0 && (
+        {chapters.length > 0 && (
           <div className="space-y-2">
             {chapters.map((ch, i) => (
               <Button
@@ -94,7 +97,14 @@ export default function Home() {
           </>
         )}
 
-        {viewMode === "hybrid" && <HybridReader />}
+        {viewMode === "hybrid" && file && (
+          <HybridReader
+            file={file}
+            chapters={chapters}
+            currentPage={currentPage}
+            onJumpToPage={handleJumpToPage}
+          />
+        )}
 
         {viewMode === "rightbrain" && (
           <div className="text-xl">🧠 Right Brain View coming soon... (auto diagrams + voice)</div>

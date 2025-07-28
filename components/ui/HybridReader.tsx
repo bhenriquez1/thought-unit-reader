@@ -1,48 +1,71 @@
-"use client";
-
 import { useEffect, useState } from "react";
-import { generateProgressiveReadingHTML } from "@/lib/parser";
+import { parseBookWithChapters } from "../lib/parser";
 
-export default function HybridReader() {
-  const [rawText, setRawText] = useState<string>("");
+type Chapter = {
+  title: string;
+  page: number;
+};
+
+interface HybridReaderProps {
+  file: File;
+  chapters: Chapter[];
+  currentPage: number;
+  onJumpToPage?: (page: number) => void;
+}
+
+export default function HybridReader({
+  file,
+  chapters,
+  currentPage,
+  onJumpToPage,
+}: HybridReaderProps) {
   const [phrases, setPhrases] = useState<string[]>([]);
-  const [zoom, setZoom] = useState<number>(100);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const sample = [
-      "In biochemistry, proteins are essential macromolecules.",
-      "They perform a vast array of functions.",
-      "This includes catalyzing metabolic reactions.",
-      "Providing structure to cells.",
-      "And responding to stimuli."
-    ];
+    const process = async () => {
+      setLoading(true);
+      try {
+        const parsed = await parseBookWithChapters(file);
+        const combined = parsed.map((c) => c.title + " ").join(" ");
+        const split = combined
+          .split(/(?<=[.?!])\s+(?=[A-Z])/)
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+        setPhrases(split);
+      } catch (e) {
+        console.error("Failed to parse file", e);
+        setPhrases(["Error parsing document."]);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    const output = generateProgressiveReadingHTML(sample);
-    setRawText(output.text);
-    setPhrases(output.phrases);
-  }, []);
+    process();
+  }, [file]);
+
+  if (loading) return <div>Loading hybrid view...</div>;
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold">Hybrid Reader 📖</h2>
-        <div className="flex items-center gap-2">
-          <label className="text-sm">Zoom:</label>
-          <input
-            type="range"
-            min="50"
-            max="200"
-            value={zoom}
-            onChange={(e) => setZoom(Number(e.target.value))}
-          />
-          <span className="text-sm">{zoom}%</span>
+    <div className="space-y-2 max-w-4xl mx-auto">
+      {phrases.map((phrase, i) => (
+        <div
+          key={i}
+          className={`py-2 px-3 rounded-md my-1 ${
+            i % 2 === 0 ? "bg-gray-100 dark:bg-zinc-800" : "bg-white dark:bg-zinc-700"
+          }`}
+        >
+          <p className="leading-relaxed">{phrase}</p>
+          {onJumpToPage && (
+            <button
+              className="mt-2 text-xs text-blue-600 hover:underline"
+              onClick={() => onJumpToPage(currentPage)}
+            >
+              ↩ Jump to Page {currentPage}
+            </button>
+          )}
         </div>
-      </div>
-      <div
-        className="prose max-w-none transition-all"
-        style={{ fontSize: `${zoom}%` }}
-        dangerouslySetInnerHTML={{ __html: rawText }}
-      />
+      ))}
     </div>
   );
 }
