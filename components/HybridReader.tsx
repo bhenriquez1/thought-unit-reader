@@ -14,7 +14,7 @@ interface HybridReaderProps {
   file: File;
   originalText?: string;
   parsedChapters?: string[];
-  viewMode: ViewMode;
+  mode: ViewMode;
   chapters?: { title: string; page: number }[];
   currentPage?: number;
   onJumpToPage?: (page: number) => void;
@@ -24,7 +24,7 @@ export default function HybridReader({
   file,
   originalText,
   parsedChapters,
-  viewMode,
+  mode,
   chapters,
   currentPage,
   onJumpToPage,
@@ -50,9 +50,17 @@ export default function HybridReader({
     }
   };
 
+  const handleChapterClick = (idx: number) => {
+    const chapterId = `chapter-${idx}`;
+    const chapterEl = document.getElementById(chapterId);
+    if (chapterEl) {
+      chapterEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
   useEffect(() => {
     if (
-      (viewMode === "progressive" || viewMode === "hybrid" || viewMode === "rightbrain") &&
+      (mode === "progressive" || mode === "hybrid" || mode === "rightbrain") &&
       originalText
     ) {
       const parsedUnits = originalText
@@ -62,10 +70,11 @@ export default function HybridReader({
       const html = generateProgressiveReadingHTML(parsedUnits);
       setHtmlContent(html);
     }
-  }, [originalText, parsedChapters, viewMode]);
+  }, [originalText, parsedChapters, mode]);
 
   return (
     <div className="flex flex-col lg:flex-row w-full h-full gap-4">
+      {/* Left Panel: PDF + Controls */}
       <div className="w-full lg:w-1/2 h-full overflow-auto border rounded-xl p-4 bg-white dark:bg-zinc-900 shadow">
         <div className="flex items-center justify-between mb-4">
           <div className="flex gap-2">
@@ -82,12 +91,13 @@ export default function HybridReader({
             max={numPages || 1}
             placeholder="Go to page"
             onChange={handlePageInput}
-            className="w-28"
+            className="w-28 text-black dark:text-white bg-white dark:bg-zinc-800"
           />
           <Button onClick={handleZoom}>
             {zoomLevel === 1.0 ? "Zoom 150%" : "Reset Zoom"}
           </Button>
         </div>
+
         <div
           ref={canvasWrapperRef}
           style={{ transform: `scale(${zoomLevel})`, transformOrigin: "top left" }}
@@ -98,28 +108,46 @@ export default function HybridReader({
         </div>
       </div>
 
-      <div className="w-full lg:w-1/2 h-full overflow-y-auto border rounded-xl p-4 bg-gray-100 dark:bg-zinc-800 shadow text-[17px] leading-7">
-        {viewMode === "original" && (
+      {/* Right Panel: Content */}
+      <div className="w-full lg:w-1/2 h-full overflow-y-auto border rounded-xl p-4 bg-gray-100 dark:bg-zinc-800 shadow text-[17px] leading-7 text-black dark:text-white">
+        {mode === "original" && (
           <pre className="whitespace-pre-wrap">{originalText}</pre>
         )}
-        {viewMode === "chapters" && parsedChapters && (
+
+        {mode === "chapters" && parsedChapters && (
           <div>
-            {parsedChapters.map((chapter, idx) => (
-              <div key={idx} className="mb-4">
-                <h2 className="text-lg font-semibold mb-2">Chapter {idx + 1}</h2>
-                <p>{chapter}</p>
-              </div>
-            ))}
+            <div className="flex flex-col gap-2 mb-4">
+              {parsedChapters.map((_, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleChapterClick(idx)}
+                  className="text-left text-blue-600 hover:underline dark:text-blue-400"
+                >
+                  Go to Chapter {idx + 1}
+                </button>
+              ))}
+            </div>
+            <hr className="my-2" />
+            <div>
+              {parsedChapters.map((chapter, idx) => (
+                <div key={idx} id={`chapter-${idx}`} className="mb-6 scroll-mt-20">
+                  <h2 className="text-lg font-semibold mb-2">Chapter {idx + 1}</h2>
+                  <p>{chapter}</p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
-        {viewMode === "progressive" && (
+
+        {mode === "progressive" && (
           <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
         )}
-        {viewMode === "hybrid" && (
+
+        {mode === "hybrid" && (
           <div>
             <h2 className="text-lg font-bold mb-2">Chapter View</h2>
             {parsedChapters?.map((chapter, i) => (
-              <details key={i} className="mb-4">
+              <details key={i} className="mb-4" id={`chapter-${i}`}>
                 <summary className="cursor-pointer text-blue-500 dark:text-blue-300 font-medium">
                   Chapter {i + 1}
                 </summary>
@@ -131,7 +159,8 @@ export default function HybridReader({
             <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
           </div>
         )}
-        {viewMode === "rightbrain" && (
+
+        {mode === "rightbrain" && (
           <div>
             <h2 className="text-lg font-bold mb-2">Right Brain View</h2>
             <div dangerouslySetInnerHTML={{ __html: htmlContent }} />

@@ -67,7 +67,7 @@ export default function Home() {
         <div className="mb-4">
           <Label>Reading Mode</Label>
           <select
-            className="w-full p-2 text-black"
+            className="w-full p-2 text-black dark:bg-zinc-900 dark:text-white"
             value={viewMode}
             onChange={(e) => setViewMode(e.target.value as ViewMode)}
           >

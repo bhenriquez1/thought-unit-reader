@@ -1,15 +1,23 @@
-// lib/parser.ts
-
 export function parseBookWithChapters(text: string): {
   chapters: { title: string; page: number }[];
   parsedUnits: string[];
 } {
   const lines = text.split("\n");
+
   const chapters = lines
-    .map((line, index) => ({
-      title: line.match(/^Chapter\s+\d+/i)?.[0] || "",
-      page: index + 1,
-    }))
+    .map((line, index) => {
+      // Match multiple chapter formats
+      const match =
+        line.match(/^Chapter\s+\d+/i) ||
+        line.match(/^CHAPTER\s+\d+/) ||
+        line.match(/^\d+\.\s+\w+/) || // 1. Introduction
+        line.match(/^\d+\s+\w+/); // 1 Introduction
+
+      return {
+        title: match ? match[0].trim() : "",
+        page: index + 1,
+      };
+    })
     .filter((ch) => ch.title);
 
   const parsedUnits = text
@@ -18,6 +26,20 @@ export function parseBookWithChapters(text: string): {
     .filter((unit) => unit.length > 0);
 
   return { chapters, parsedUnits };
+}
+
+// ➕ New helper: get the closest chapter by page number
+export function getChapterByPage(
+  chapters: { title: string; page: number }[],
+  currentPage: number
+): string {
+  let closest = chapters[0]?.title ?? "";
+  for (const ch of chapters) {
+    if (ch.page <= currentPage) {
+      closest = ch.title;
+    }
+  }
+  return closest;
 }
 
 export function generateProgressiveReadingHTML(units: string[]): string {
@@ -29,16 +51,25 @@ export function generateProgressiveReadingHTML(units: string[]): string {
     .join("\n");
 }
 
+// ✅ Modified: clickable Table of Contents with anchor links
 export function generateHybridHTML(
   chapters: { title: string; page: number }[],
   units: string[],
   currentPage: number
 ): string {
   const toc = chapters
-    .map((ch) => `<li><strong>${ch.title}</strong> — Page ${ch.page}</li>`)
+    .map(
+      (ch, i) =>
+        `<li><a href="#chapter-${i}" style="color:blue;text-decoration:underline">${ch.title}</a> — Page ${ch.page}</li>`
+    )
     .join("");
 
-  const body = generateProgressiveReadingHTML(units);
+  const body = units
+    .map((unit, i) => {
+      const color = i % 2 === 0 ? "black" : "gray";
+      return `<p id="chapter-${i}" style="color:${color};margin-top:1.5rem">${unit}</p>`;
+    })
+    .join("\n");
 
   return `<h2>Table of Contents</h2><ul>${toc}</ul><hr/>${body}`;
 }
