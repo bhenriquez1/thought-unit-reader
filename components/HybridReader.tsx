@@ -14,7 +14,7 @@ interface HybridReaderProps {
   file: File;
   originalText?: string;
   parsedChapters?: string[];
-  viewMode: ViewMode; // ✅ Renamed to match prop passed in index.tsx
+  viewMode: ViewMode;
   chapters?: { title: string; page: number }[];
   currentPage?: number;
   onJumpToPage?: (page: number) => void;
@@ -74,7 +74,7 @@ export default function HybridReader({
 
   return (
     <div className="flex flex-col lg:flex-row w-full h-full gap-4">
-      {/* Left Panel: PDF + Controls */}
+      {/* Left Panel */}
       <div className="w-full lg:w-1/2 h-full overflow-auto border rounded-xl p-4 bg-white dark:bg-zinc-900 shadow">
         <div className="flex items-center justify-between mb-4">
           <div className="flex gap-2">
@@ -108,7 +108,7 @@ export default function HybridReader({
         </div>
       </div>
 
-      {/* Right Panel: Content */}
+      {/* Right Panel */}
       <div className="w-full lg:w-1/2 h-full overflow-y-auto border rounded-xl p-4 bg-gray-100 dark:bg-zinc-800 shadow text-[17px] leading-7 text-black dark:text-white">
         {viewMode === "original" && (
           <pre className="whitespace-pre-wrap">{originalText}</pre>
@@ -162,7 +162,9 @@ export default function HybridReader({
 
         {viewMode === "rightbrain" && (
           <div>
-            <h2 className="text-lg font-bold mb-2">Right Brain View</h2>
+            <h2 className="text-xl font-bold mb-4 text-pink-600 dark:text-pink-400">
+              Right Brain View (Coming Soon…)
+            </h2>
             <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
           </div>
         )}

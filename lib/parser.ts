@@ -1,3 +1,4 @@
+// Parse book into chapters and thought-units
 export function parseBookWithChapters(text: string): {
   chapters: { title: string; page: number }[];
   parsedUnits: string[];
@@ -6,12 +7,12 @@ export function parseBookWithChapters(text: string): {
 
   const chapters = lines
     .map((line, index) => {
-      // Match multiple chapter formats
+      // Match various chapter formats
       const match =
-        line.match(/^Chapter\s+\d+/i) ||
-        line.match(/^CHAPTER\s+\d+/) ||
-        line.match(/^\d+\.\s+\w+/) || // 1. Introduction
-        line.match(/^\d+\s+\w+/); // 1 Introduction
+        line.match(/^Chapter\s+\d+/i) ||           // e.g., "Chapter 1"
+        line.match(/^CHAPTER\s+\d+/) ||            // e.g., "CHAPTER 2"
+        line.match(/^\d+\.\s+\w+/) ||              // e.g., "1. Introduction"
+        line.match(/^\d+\s+\w+/);                  // e.g., "2 Background"
 
       return {
         title: match ? match[0].trim() : "",
@@ -28,7 +29,7 @@ export function parseBookWithChapters(text: string): {
   return { chapters, parsedUnits };
 }
 
-// ➕ New helper: get the closest chapter by page number
+// ➕ Utility to get closest chapter title by current page
 export function getChapterByPage(
   chapters: { title: string; page: number }[],
   currentPage: number
@@ -42,6 +43,7 @@ export function getChapterByPage(
   return closest;
 }
 
+// ✅ Formats units in alternating colors for progressive view
 export function generateProgressiveReadingHTML(units: string[]): string {
   return units
     .map((unit, i) => {
@@ -51,7 +53,7 @@ export function generateProgressiveReadingHTML(units: string[]): string {
     .join("\n");
 }
 
-// ✅ Modified: clickable Table of Contents with anchor links
+// ✅ Generates hybrid HTML: clickable ToC + anchored paragraphs
 export function generateHybridHTML(
   chapters: { title: string; page: number }[],
   units: string[],

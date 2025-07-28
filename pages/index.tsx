@@ -4,7 +4,7 @@ import { Document, Page, pdfjs } from "react-pdf";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { parseBookWithChapters } from "@/lib/parser";
-import HybridReader from "@/components/HybridReader";
+import HybridReader from "@/components/HybridReader"; // ✅ Uses `viewMode` prop internally
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
@@ -26,7 +26,7 @@ export default function Home() {
     setPdfUrl(url);
 
     file.text().then((text) => {
-      const { chapters } = parseBookWithChapters(text); // ✅ Synchronously returns `chapters`
+      const { chapters } = parseBookWithChapters(text);
       setChapters(chapters);
     });
   }, [file]);
@@ -144,7 +144,7 @@ export default function Home() {
             chapters={chapters}
             currentPage={currentPage}
             onJumpToPage={handleJumpToPage}
-            viewMode={viewMode} // ✅ Corrected prop name
+            viewMode={viewMode} // ✅ Ensures HybridReader knows which mode to render
           />
         )}
 
