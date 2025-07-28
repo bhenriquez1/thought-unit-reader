@@ -5,10 +5,8 @@ import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 import { useDropzone } from "react-dropzone";
-import * as pdfjsLib from "pdfjs-dist/build/pdf";
-import "pdfjs-dist/build/pdf.worker.entry";
-
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
+GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js`;
 
 type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
 type FileType = "text" | "pdf" | "none";
@@ -86,12 +84,12 @@ export default function Home() {
       setParsedUnits([]);
       setInputText("");
 
-      // --- PDF TEXT EXTRACTION ---
+      // PDF Text Extraction
       const reader = new FileReader();
       reader.onload = async () => {
         try {
           const typedarray = new Uint8Array(reader.result as ArrayBuffer);
-          const pdf = await pdfjsLib.getDocument({ data: typedarray }).promise;
+          const pdf = await getDocument({ data: typedarray }).promise;
           let fullText = "";
           for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
@@ -137,7 +135,6 @@ export default function Home() {
   const handleZoomIn = () => setZoom((z) => z + 0.1);
   const handleZoomOut = () => setZoom((z) => Math.max(0.5, z - 0.1));
 
-  // --- View Mode Render Logic ---
   function renderTextView() {
     if (viewMode === "original") {
       return (
@@ -159,7 +156,6 @@ export default function Home() {
         <div dangerouslySetInnerHTML={{ __html: generateHybridHTML(chapters, parsedUnits) }} />
       );
     }
-    // progressive (right brain) view
     return (
       <div dangerouslySetInnerHTML={{ __html: generateProgressiveReadingHTML(parsedUnits) }} />
     );

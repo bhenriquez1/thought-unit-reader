@@ -1031,32 +1031,6 @@
     "@jridgewell/resolve-uri" "^3.1.0"
     "@jridgewell/sourcemap-codec" "^1.4.14"
 
-"@napi-rs/canvas-linux-x64-gnu@0.1.74":
-  version "0.1.74"
-  resolved "https://registry.npmjs.org/@napi-rs/canvas-linux-x64-gnu/-/canvas-linux-x64-gnu-0.1.74.tgz"
-  integrity sha512-73DIV4E7Y9CpIJuUXVl9H6+MEQXyRy4VJQoUGA1tOlcKQiStxqhq6UErL4decI28NxjyQXBhtYZKj5q8AJEuOg==
-
-"@napi-rs/canvas-linux-x64-musl@0.1.74":
-  version "0.1.74"
-  resolved "https://registry.npmjs.org/@napi-rs/canvas-linux-x64-musl/-/canvas-linux-x64-musl-0.1.74.tgz"
-  integrity sha512-FgDMEFdGIJT3I2xejflRJ82/ZgDphyirS43RgtoLaIXI6zihLiZcQ7rczpqeWgAwlJNjR0He2EustsKe1SkUOg==
-
-"@napi-rs/canvas@^0.1.74":
-  version "0.1.74"
-  resolved "https://registry.npmjs.org/@napi-rs/canvas/-/canvas-0.1.74.tgz"
-  integrity sha512-pOIyzuS+5Bz1vAhD7tdhaw5/936mMJZUn4aVajojUdjYOGSWmfpDYSgt0nQLZPZVN5GLgWgutqXPOi7Jsm3k+Q==
-  optionalDependencies:
-    "@napi-rs/canvas-android-arm64" "0.1.74"
-    "@napi-rs/canvas-darwin-arm64" "0.1.74"
-    "@napi-rs/canvas-darwin-x64" "0.1.74"
-    "@napi-rs/canvas-linux-arm-gnueabihf" "0.1.74"
-    "@napi-rs/canvas-linux-arm64-gnu" "0.1.74"
-    "@napi-rs/canvas-linux-arm64-musl" "0.1.74"
-    "@napi-rs/canvas-linux-riscv64-gnu" "0.1.74"
-    "@napi-rs/canvas-linux-x64-gnu" "0.1.74"
-    "@napi-rs/canvas-linux-x64-musl" "0.1.74"
-    "@napi-rs/canvas-win32-x64-msvc" "0.1.74"
-
 "@next/env@14.2.30":
   version "14.2.30"
   resolved "https://registry.npmjs.org/@next/env/-/env-14.2.30.tgz"
@@ -1162,6 +1136,11 @@
   version "1.1.0"
   resolved "https://registry.npmjs.org/@protobufjs/utf8/-/utf8-1.1.0.tgz"
   integrity sha512-Vvn3zZrhQZkkBE8LSuW3em98c0FwgO4nxzv6OdSxPKJIEKY2bGbHn+mhGIPerzI4twdxaP8/0+06HBpwf345Lw==
+
+"@react-pdf-viewer/core@^3.12.0":
+  version "3.12.0"
+  resolved "https://registry.npmjs.org/@react-pdf-viewer/core/-/core-3.12.0.tgz"
+  integrity sha512-8MsdlQJ4jaw3GT+zpCHS33nwnvzpY0ED6DEahZg9WngG++A5RMhk8LSlxdHelwaFFHFiXBjmOaj2Kpxh50VQRg==
 
 "@rtsao/scc@^1.1.0":
   version "1.1.0"
@@ -2519,6 +2498,11 @@ domexception@^4.0.0:
   integrity sha512-A2is4PLG+eeSfoTMA95/s4pvAoSo2mKtiM5jlHkAVewmiO8ISFTFKZjH7UAM1Atli/OT/7JHOrJRJiMKUZKYBw==
   dependencies:
     webidl-conversions "^7.0.0"
+
+dommatrix@^1.0.3:
+  version "1.0.3"
+  resolved "https://registry.npmjs.org/dommatrix/-/dommatrix-1.0.3.tgz"
+  integrity sha512-l32Xp/TLgWb8ReqbVJAFIvXmY7go4nTxxlWiAFyhoQw9RKEOHBZNnyGvJWqDVSPmq3Y9HlM4npqF/T6VMOXhww==
 
 duck@^0.1.12:
   version "0.1.12"
@@ -4907,12 +4891,13 @@ path2d@0.1.1:
   resolved "https://registry.npmjs.org/path2d/-/path2d-0.1.1.tgz"
   integrity sha512-/+S03c8AGsDYKKBtRDqieTJv2GlkMb0bWjnqOgtF6MkjdUQ9a8ARAtxWf9NgKLGm2+WQr6+/tqJdU8HNGsIDoA==
 
-pdfjs-dist@*, pdfjs-dist@^5.4.54:
-  version "5.4.54"
-  resolved "https://registry.npmjs.org/pdfjs-dist/-/pdfjs-dist-5.4.54.tgz"
-  integrity sha512-TBAiTfQw89gU/Z4LW98Vahzd2/LoCFprVGvGbTgFt+QCB1F+woyOPmNNVgLa6djX9Z9GGTnj7qE1UzpOVJiINw==
-  optionalDependencies:
-    "@napi-rs/canvas" "^0.1.74"
+pdfjs-dist@*, pdfjs-dist@^2.16.105, "pdfjs-dist@^2.16.105 || ^3.0.279":
+  version "2.16.105"
+  resolved "https://registry.npmjs.org/pdfjs-dist/-/pdfjs-dist-2.16.105.tgz"
+  integrity sha512-J4dn41spsAwUxCpEoVf6GVoz908IAA3mYiLmNxg8J9kfRXc2jxpbUepcP0ocp0alVNLFthTAM8DZ1RaHh8sU0A==
+  dependencies:
+    dommatrix "^1.0.3"
+    web-streams-polyfill "^3.2.1"
 
 pdfjs-dist@3.11.174:
   version "3.11.174"
@@ -5110,7 +5095,7 @@ queue-microtask@^1.2.2:
   resolved "https://registry.npmjs.org/queue-microtask/-/queue-microtask-1.2.3.tgz"
   integrity sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==
 
-react-dom@*, "react-dom@^16 || ^17 || ^18", "react-dom@^16.8 || ^17 || ^18 || ^19 || ^19.0.0-rc", "react-dom@^16.8.0 || ^17.0.0 || ^18.0.0", "react-dom@^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0", react-dom@^18.2.0, react-dom@>=16.14.0, "react-dom@16 || 17 || 18":
+react-dom@*, "react-dom@^16 || ^17 || ^18", "react-dom@^16.8 || ^17 || ^18 || ^19 || ^19.0.0-rc", "react-dom@^16.8.0 || ^17.0.0 || ^18.0.0", "react-dom@^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0", react-dom@^18.2.0, react-dom@>=16.14.0, react-dom@>=16.8.0, "react-dom@16 || 17 || 18":
   version "18.3.1"
   resolved "https://registry.npmjs.org/react-dom/-/react-dom-18.3.1.tgz"
   integrity sha512-5m4nQKp+rZRb09LNH59GM4BxTh9251/ylbKIbpe7TpGxfJ+9kv6BLkLBXIjjspbgbnIBNqlI23tRnTWT0snUIw==
@@ -5151,7 +5136,7 @@ react-is@^18.0.0:
   resolved "https://registry.npmjs.org/react-is/-/react-is-18.3.1.tgz"
   integrity sha512-/LLMVyas0ljjAtoYiPqYiL8VWXzUUdThrmU5+n20DZv+a+ClRoevUzw5JxU+Ieh5/c87ytoTBV9G1FiKfNJdmg==
 
-react-pdf@^7.7.0:
+react-pdf@^7.7.3:
   version "7.7.3"
   resolved "https://registry.npmjs.org/react-pdf/-/react-pdf-7.7.3.tgz"
   integrity sha512-a2VfDl8hiGjugpqezBTUzJHYLNB7IS7a2t7GD52xMI9xHg8LdVaTMsnM9ZlNmKadnStT/tvX5IfV0yLn+JvYmw==
@@ -5179,7 +5164,7 @@ react-zoom-pan-pinch@^3.7.0:
   resolved "https://registry.npmjs.org/react-zoom-pan-pinch/-/react-zoom-pan-pinch-3.7.0.tgz"
   integrity sha512-UmReVZ0TxlKzxSbYiAj+LeGRW8s8LraAFTXRAxzMYnNRgGPsxCudwZKVkjvGmjtx7SW/hZamt69NUmGf4xrkXA==
 
-react@*, "react@^16 || ^17 || ^18", "react@^16.8 || ^17 || ^18 || ^19 || ^19.0.0-rc", "react@^16.8.0 || ^17.0.0 || ^18.0.0", "react@^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0", react@^18.2.0, react@^18.3.1, "react@>= 16 || ^19.0.0-rc", "react@>= 16.8 || 18.0.0", "react@>= 16.8.0 || 17.x.x || ^18.0.0-0", react@>=16.14.0, react@>=16.8, "react@16 || 17 || 18":
+react@*, "react@^16 || ^17 || ^18", "react@^16.8 || ^17 || ^18 || ^19 || ^19.0.0-rc", "react@^16.8.0 || ^17.0.0 || ^18.0.0", "react@^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0", react@^18.2.0, react@^18.3.1, "react@>= 16 || ^19.0.0-rc", "react@>= 16.8 || 18.0.0", "react@>= 16.8.0 || 17.x.x || ^18.0.0-0", react@>=16.14.0, react@>=16.8, react@>=16.8.0, "react@16 || 17 || 18":
   version "18.3.1"
   resolved "https://registry.npmjs.org/react/-/react-18.3.1.tgz"
   integrity sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==
@@ -6118,6 +6103,11 @@ wasm-feature-detect@^1.2.11:
   version "1.8.0"
   resolved "https://registry.npmjs.org/wasm-feature-detect/-/wasm-feature-detect-1.8.0.tgz"
   integrity sha512-zksaLKM2fVlnB5jQQDqKXXwYHLQUVH9es+5TOOHwGOVJOCeRBCiPjwSg+3tN2AdTCzjgli4jijCH290kXb/zWQ==
+
+web-streams-polyfill@^3.2.1:
+  version "3.3.3"
+  resolved "https://registry.npmjs.org/web-streams-polyfill/-/web-streams-polyfill-3.3.3.tgz"
+  integrity sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==
 
 webidl-conversions@^3.0.0:
   version "3.0.1"
