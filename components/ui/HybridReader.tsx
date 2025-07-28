@@ -1,34 +1,34 @@
-// components/ui/HybridReader.tsx
-import React, { useEffect, useState } from "react";
-import { parseBookWithChapters, generateHybridHTML } from "../lib/parser";
+import { useEffect, useState } from "react";
+import { parseBookWithChapters, generateProgressiveReadingHTML, generateHybridHTML } from "../lib/parser";
 
 interface HybridReaderProps {
-  file: File | null;
-  currentPage: number;
-  onChaptersDetected?: (chapters: string[]) => void;
+  file: File;
+  chapters?: { title: string; page: number }[];
+  currentPage?: number;
+  onJumpToPage?: (page: number) => void;
+  mode?: "hybrid" | "rightbrain";
 }
 
-const HybridReader: React.FC<HybridReaderProps> = ({ file, currentPage, onChaptersDetected }) => {
-  const [htmlContent, setHtmlContent] = useState<string>("");
+export default function HybridReader({ file, chapters = [], currentPage = 1, onJumpToPage, mode = "hybrid" }: HybridReaderProps) {
+  const [text, setText] = useState("");
+  const [html, setHtml] = useState("");
 
   useEffect(() => {
-    const readFile = async () => {
-      if (!file) return;
-      const text = await file.text();
-      const { chapters, parsedUnits } = await parseBookWithChapters(text);
-      if (onChaptersDetected) onChaptersDetected(chapters);
-      const html = generateHybridHTML(chapters, parsedUnits);
-      setHtmlContent(html);
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const content = e.target?.result as string;
+      setText(content);
+      const { chapters, parsedUnits } = await parseBookWithChapters(content);
+      const generated = mode === "rightbrain"
+        ? generateProgressiveReadingHTML(parsedUnits)
+        : generateHybridHTML(chapters, parsedUnits);
+      setHtml(generated);
     };
 
-    readFile();
-  }, [file]);
+    reader.readAsText(file);
+  }, [file, mode]);
 
   return (
-    <div className="p-6 overflow-y-auto h-full">
-      <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
-    </div>
+    <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: html }} />
   );
-};
-
-export default HybridReader;
+}

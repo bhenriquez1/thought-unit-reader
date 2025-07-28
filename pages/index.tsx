@@ -97,22 +97,13 @@ export default function Home() {
           </>
         )}
 
-        {viewMode === "hybrid" && file && (
+        {(viewMode === "hybrid" || viewMode === "rightbrain") && file && (
           <HybridReader
             file={file}
             chapters={chapters}
             currentPage={currentPage}
             onJumpToPage={handleJumpToPage}
-          />
-        )}
-
-        {viewMode === "rightbrain" && file && (
-          <HybridReader
-            file={file}
-            chapters={chapters}
-            currentPage={currentPage}
-            onJumpToPage={handleJumpToPage}
-            mode="rightbrain"
+            mode={viewMode === "rightbrain" ? "rightbrain" : "hybrid"}
           />
         )}
 
