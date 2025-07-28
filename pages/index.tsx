@@ -10,7 +10,7 @@ import { useTheme } from "next-themes";
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
-type FileType = "text" | "pdf" | "none";
+type FileType = "text" | "pdf" | "pdf-text" | "none";
 type ViewMode = "original" | "chapters" | "progressive" | "hybrid";
 
 export default function Home() {
@@ -37,12 +37,6 @@ export default function Home() {
     (window as any).handleSticky = handleSticky;
   }, []);
 
-  useEffect(() => {
-    if (fileType === "pdf" && viewMode !== "original") {
-      setViewMode("original");
-    }
-  }, [fileType, viewMode]);
-
   const handleZoomIn = () => setZoom((z) => z + 0.1);
   const handleZoomOut = () => setZoom((z) => Math.max(z - 0.1, 0.5));
 
@@ -60,9 +54,27 @@ export default function Home() {
 
         if (file.type === "application/pdf") {
           setFileData(result);
-          setFileType("pdf");
+
+          const loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer() });
+          const pdf = await loadingTask.promise;
+          let fullText = "";
+
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            const pageText = content.items.map((item: any) => item.str).join(" ");
+            fullText += pageText + "\n";
+          }
+
+          const { chapters, parsedUnits } = await parseBookWithChapters(fullText);
+          setChapters(chapters);
+          setParsedUnits(parsedUnits);
           setUploadStatus("done");
+          setFileType("pdf-text");
+
           localStorage.setItem("uploadedPDF", result as string);
+          localStorage.setItem("parsedUnits", JSON.stringify(parsedUnits));
+          localStorage.setItem("chapters", JSON.stringify(chapters));
         } else {
           const text = result as string;
           const { chapters, parsedUnits } = await parseBookWithChapters(text);
@@ -121,9 +133,9 @@ export default function Home() {
             onChange={(e) => setViewMode(e.target.value as ViewMode)}
           >
             <option value="original">Original View</option>
-            <option value="chapters" disabled={fileType === "pdf"}>Chapter View</option>
-            <option value="progressive" disabled={fileType === "pdf"}>Right Brain View</option>
-            <option value="hybrid" disabled={fileType === "pdf"}>Hybrid</option>
+            <option value="chapters">Chapter View</option>
+            <option value="progressive">Right Brain View</option>
+            <option value="hybrid">Hybrid</option>
           </select>
         </div>
         <div className="mt-6">
@@ -151,7 +163,7 @@ export default function Home() {
           </div>
         </div>
 
-        {uploadStatus === "done" && fileType === "text" && (
+        {uploadStatus === "done" && (fileType === "text" || fileType === "pdf-text") && (
           <div className="prose dark:prose-invert" style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
             {renderTextView()}
             {stickyNotes.map((note, i) => (
@@ -162,14 +174,11 @@ export default function Home() {
           </div>
         )}
 
-        {uploadStatus === "done" && fileType === "pdf" && fileData && (
+        {uploadStatus === "done" && fileData && (
           <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
             <Document file={fileData}>
               <Page pageNumber={selectedPage} />
             </Document>
-            <div className="mt-4 text-zinc-500 dark:text-zinc-400">
-              Reading modes are only available for text files.
-            </div>
           </div>
         )}
 
