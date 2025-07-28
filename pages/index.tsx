@@ -1,9 +1,10 @@
+// ✅ Original imports unchanged
 import { useState, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { parseBookWithChapters } from "@/lib/parser"; // ✅ fixed relative path
-import HybridReader from "@/components/HybridReader"; // ✅ confirmed with alias
+import { parseBookWithChapters } from "@/lib/parser";
+import HybridReader from "@/components/HybridReader";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
@@ -15,6 +16,8 @@ export default function Home() {
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [viewMode, setViewMode] = useState<ViewMode>("chapters");
+  const [zoom, setZoom] = useState<number>(1.0); // 🔍 Zoom level
+  const [goToPageInput, setGoToPageInput] = useState(""); // 🧭 For page jump
   const [chapters, setChapters] = useState<{ title: string; page: number }[]>([]);
 
   useEffect(() => {
@@ -31,7 +34,7 @@ export default function Home() {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
       setFile(selectedFile);
-      setCurrentPage(1); // ✅ optional reset to first page
+      setCurrentPage(1);
     }
   };
 
@@ -59,6 +62,7 @@ export default function Home() {
             className="text-black"
           />
         </div>
+
         <div className="mb-4">
           <Label>Reading Mode</Label>
           <select
@@ -72,6 +76,7 @@ export default function Home() {
             <option value="rightbrain">Right Brain View</option>
           </select>
         </div>
+
         {chapters.length > 0 && (
           <div className="space-y-2">
             {chapters.map((ch, i) => (
@@ -90,13 +95,44 @@ export default function Home() {
       <main className="flex-1 p-4">
         {viewMode === "original" && pdfUrl && (
           <>
-            <div className="flex justify-between items-center mb-4">
-              <Button onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}>←</Button>
-              <span>Page {currentPage} / {numPages}</span>
-              <Button onClick={() => setCurrentPage((prev) => Math.min(prev + 1, numPages))}>→</Button>
+            <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
+              <div className="flex gap-2">
+                <Button onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}>←</Button>
+                <Button onClick={() => setCurrentPage((prev) => Math.min(prev + 1, numPages))}>→</Button>
+              </div>
+
+              <span className="text-sm font-medium">
+                Page {currentPage} / {numPages}
+              </span>
+
+              <Button onClick={() => setZoom((prev) => (prev === 1.5 ? 1.0 : 1.5))}>
+                Zoom {zoom === 1.5 ? "100%" : "150%"}
+              </Button>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const targetPage = parseInt(goToPageInput);
+                  if (!isNaN(targetPage) && targetPage >= 1 && targetPage <= numPages) {
+                    setCurrentPage(targetPage);
+                    setGoToPageInput("");
+                  }
+                }}
+                className="flex gap-2"
+              >
+                <input
+                  type="number"
+                  placeholder="Page #"
+                  value={goToPageInput}
+                  onChange={(e) => setGoToPageInput(e.target.value)}
+                  className="border rounded px-2 py-1 w-24 text-sm"
+                />
+                <Button type="submit" className="text-sm">Go</Button>
+              </form>
             </div>
+
             <Document file={pdfUrl} onLoadSuccess={({ numPages }) => setNumPages(numPages)}>
-              <Page pageNumber={currentPage} width={900} />
+              <Page pageNumber={currentPage} width={900 * zoom} />
             </Document>
           </>
         )}
