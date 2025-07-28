@@ -1,4 +1,6 @@
-// Parse book into chapters and thought-units
+// parser.ts
+
+// Detect chapters and split paragraphs
 export function parseBookWithChapters(text: string): {
   chapters: { title: string; page: number }[];
   parsedUnits: string[];
@@ -7,12 +9,11 @@ export function parseBookWithChapters(text: string): {
 
   const chapters = lines
     .map((line, index) => {
-      // Match various chapter formats
       const match =
-        line.match(/^Chapter\s+\d+/i) ||           // e.g., "Chapter 1"
-        line.match(/^CHAPTER\s+\d+/) ||            // e.g., "CHAPTER 2"
-        line.match(/^\d+\.\s+\w+/) ||              // e.g., "1. Introduction"
-        line.match(/^\d+\s+\w+/);                  // e.g., "2 Background"
+        line.match(/^Chapter\s+\d+/i) ||
+        line.match(/^CHAPTER\s+\d+/i) ||
+        line.match(/^\d+\.\s+[A-Z]/) ||      // 1. Introduction
+        line.match(/^\d+\s+[A-Z]/);          // 1 Introduction
 
       return {
         title: match ? match[0].trim() : "",
@@ -22,14 +23,14 @@ export function parseBookWithChapters(text: string): {
     .filter((ch) => ch.title);
 
   const parsedUnits = text
-    .split(/\n{2,}/)
+    .split(/\n{2,}/) // two or more newlines
     .map((unit) => unit.trim())
     .filter((unit) => unit.length > 0);
 
   return { chapters, parsedUnits };
 }
 
-// ➕ Utility to get closest chapter title by current page
+// Get the closest chapter title for current page
 export function getChapterByPage(
   chapters: { title: string; page: number }[],
   currentPage: number
@@ -43,7 +44,7 @@ export function getChapterByPage(
   return closest;
 }
 
-// ✅ Formats units in alternating colors for progressive view
+// Progressive Reading — Alternating Black/Gray Units
 export function generateProgressiveReadingHTML(units: string[]): string {
   return units
     .map((unit, i) => {
@@ -53,7 +54,7 @@ export function generateProgressiveReadingHTML(units: string[]): string {
     .join("\n");
 }
 
-// ✅ Generates hybrid HTML: clickable ToC + anchored paragraphs
+// Hybrid View — TOC + Alternating Paragraphs
 export function generateHybridHTML(
   chapters: { title: string; page: number }[],
   units: string[],
