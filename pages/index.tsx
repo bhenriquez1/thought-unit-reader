@@ -31,7 +31,6 @@ export default function Home() {
     if (note) setStickyNotes((prev) => [...prev, { unitIndex: index, content: note }]);
   };
 
-  // Make accessible globally
   useEffect(() => {
     (window as any).handleExplain = handleExplain;
     (window as any).handleSticky = handleSticky;
@@ -49,19 +48,24 @@ export default function Home() {
       setFileName(file.name);
       const reader = new FileReader();
 
-      reader.onload = () => {
+      reader.onload = async () => {
         const result = reader.result;
+
         if (file.type === "application/pdf") {
           setFileData(result);
           setFileType("pdf");
           setUploadStatus("done");
+          localStorage.setItem("uploadedPDF", result as string);
         } else {
           const text = result as string;
-          const { chapters, parsedUnits } = parseBookWithChapters(text);
+          const { chapters, parsedUnits } = await parseBookWithChapters(text);
           setChapters(chapters);
           setParsedUnits(parsedUnits);
           setFileType("text");
           setUploadStatus("done");
+          localStorage.setItem("uploadedText", text);
+          localStorage.setItem("parsedUnits", JSON.stringify(parsedUnits));
+          localStorage.setItem("chapters", JSON.stringify(chapters));
         }
       };
 
