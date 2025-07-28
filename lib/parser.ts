@@ -1,4 +1,4 @@
-// parser.ts
+// lib/parser.ts
 
 // Detect chapters and split paragraphs
 export function parseBookWithChapters(text: string): {
@@ -49,12 +49,12 @@ export function generateProgressiveReadingHTML(units: string[]): string {
   return units
     .map((unit, i) => {
       const color = i % 2 === 0 ? "black" : "gray";
-      return `<p style="color:${color}">${unit}</p>`;
+      return `<p style="color:${color};margin-bottom:1rem">${unit}</p>`;
     })
     .join("\n");
 }
 
-// Hybrid View — TOC + Alternating Paragraphs
+// Hybrid View — TOC + Alternating Paragraphs with Scroll-Aware Highlighting
 export function generateHybridHTML(
   chapters: { title: string; page: number }[],
   units: string[],
@@ -63,16 +63,31 @@ export function generateHybridHTML(
   const toc = chapters
     .map(
       (ch, i) =>
-        `<li><a href="#chapter-${i}" style="color:blue;text-decoration:underline">${ch.title}</a> — Page ${ch.page}</li>`
+        `<li style="margin-bottom: 0.5rem;">
+          <a href="#chapter-${i}" style="color:blue;text-decoration:underline;font-weight:500;">
+            ${ch.title}
+          </a> — Page ${ch.page}
+        </li>`
     )
     .join("");
 
   const body = units
     .map((unit, i) => {
       const color = i % 2 === 0 ? "black" : "gray";
-      return `<p id="chapter-${i}" style="color:${color};margin-top:1.5rem">${unit}</p>`;
+      return `<p id="chapter-${i}" style="color:${color};margin-top:1.5rem;font-size:1rem;line-height:1.6;">
+        ${unit}
+      </p>`;
     })
     .join("\n");
 
-  return `<h2>Table of Contents</h2><ul>${toc}</ul><hr/>${body}`;
+  return `
+    <div style="display: flex; flex-direction: column; gap: 2rem;">
+      <div style="position: sticky; top: 0; background: white; z-index: 10; padding: 1rem; border-bottom: 1px solid #ccc;">
+        <h2>Table of Contents</h2>
+        <ul style="list-style: none; padding: 0;">${toc}</ul>
+      </div>
+      <hr/>
+      ${body}
+    </div>
+  `;
 }

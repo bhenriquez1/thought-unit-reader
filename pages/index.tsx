@@ -1,138 +1,169 @@
-// pages/index.tsx - Final Sync with Chapter View, Hybrid View & Coming Soon
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
-import { parseBookWithChapters, generateProgressiveReadingHTML, generateHybridHTML, getChapterByPage } from "../lib/parser";
-import { Button } from "../components/ui/button";
-import { Label } from "../components/ui/label";
-import { Switch } from "../components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
+import { Moon, Sun } from "lucide-react";
+import { parseBookWithChapters } from "@/lib/parser";
+import { useTheme } from "next-themes";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
-type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
-type FileType = "text" | "pdf" | "none";
-type ViewMode = "original" | "chapters" | "progressive" | "hybrid" | "rightbrain";
-
-export default function Home() {
-  const [viewMode, setViewMode] = useState<ViewMode>("original");
+export default function ChapterView() {
+  const [numPages, setNumPages] = useState<number | null>(null);
+  const [pageNumber, setPageNumber] = useState(1);
   const [file, setFile] = useState<File | null>(null);
-  const [text, setText] = useState("");
-  const [status, setStatus] = useState<UploadStatus>("idle");
-  const [chapters, setChapters] = useState<{ title: string; page: number }[]>([]);
-  const [units, setUnits] = useState<string[]>([]);
-  const [output, setOutput] = useState<string | null>(null);
-  const [numPages, setNumPages] = useState<number>(0);
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [zoom, setZoom] = useState<number>(1.5);
+  const [zoom, setZoom] = useState(1.5);
+  const [toc, setToc] = useState<{ title: string; page: number }[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { theme, setTheme } = useTheme();
+  const [showRightBrainModal, setShowRightBrainModal] = useState(false);
 
-  const viewerRef = useRef<HTMLDivElement>(null);
+  const goToPage = () => {
+    const input = document.getElementById("pageNumber") as HTMLInputElement;
+    const targetPage = parseInt(input.value);
+    if (!isNaN(targetPage) && targetPage >= 1 && targetPage <= (numPages ?? 1)) {
+      setPageNumber(targetPage);
+    }
+  };
+
+  const toggleDarkMode = () => {
+    setTheme(theme === "dark" ? "light" : "dark");
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setStatus("uploading");
-    setFile(f);
+    const selectedFile = e.target.files?.[0] || null;
+    setFile(selectedFile);
+    setPageNumber(1);
 
-    if (f.type === "application/pdf") {
-      setStatus("done");
-    } else {
-      const txt = await f.text();
-      setText(txt);
-      setStatus("processing");
-      const { chapters, parsedUnits } = parseBookWithChapters(txt);
-      setChapters(chapters);
-      setUnits(parsedUnits);
-      setStatus("done");
+    if (selectedFile) {
+      const chapters = await parseBookWithChapters(selectedFile);
+      setToc(chapters);
     }
   };
 
-  const handleJumpToPage = (page: number) => setCurrentPage(page);
-  const handleZoom = (factor: number) => setZoom((z) => Math.max(0.5, z + factor));
-
-  const renderSidebar = () => (
-    <div className="w-64 p-4 border-r overflow-y-auto bg-white dark:bg-zinc-900">
-      <h2 className="text-lg font-semibold mb-4">Chapters</h2>
-      <input type="file" onChange={handleFileChange} className="mb-4" />
-      <Label className="block mb-2">Reading Mode</Label>
-      <select
-        value={viewMode}
-        onChange={(e) => setViewMode(e.target.value as ViewMode)}
-        className="mb-4 w-full border px-2 py-1 rounded"
-      >
-        <option value="original">Original View</option>
-        <option value="chapters">Chapter View</option>
-        <option value="progressive">Thought Unit</option>
-        <option value="hybrid">Hybrid View</option>
-        <option value="rightbrain">Right Brain</option>
-      </select>
-      {chapters.map((ch, idx) => (
-        <button
-          key={idx}
-          className="text-left text-blue-500 hover:underline w-full mb-1"
-          onClick={() => handleJumpToPage(ch.page)}
-        >
-          {ch.title} — Page {ch.page}
-        </button>
-      ))}
-    </div>
-  );
-
-  const renderMainContent = () => {
-    if (viewMode === "original" || viewMode === "chapters") {
-      return (
-        <div className="flex-1 p-4 overflow-auto">
-          <div className="flex justify-between mb-2">
-            <span>Page {currentPage} / {numPages}</span>
-            <span>Zoom {Math.round(zoom * 100)}%</span>
-          </div>
-          <div className="mb-4 flex gap-2">
-            <input
-              type="number"
-              value={currentPage}
-              onChange={(e) => setCurrentPage(Number(e.target.value))}
-              className="w-20 px-2 border rounded"
-            />
-            <Button onClick={() => handleJumpToPage(currentPage)}>Go</Button>
-          </div>
-          <div ref={viewerRef} style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
-            <Document file={file!} onLoadSuccess={({ numPages }) => setNumPages(numPages)}>
-              <Page pageNumber={currentPage} width={800} />
-            </Document>
-          </div>
-        </div>
-      );
-    }
-
-    if (viewMode === "progressive") {
-      return (
-        <div className="flex-1 p-4 overflow-auto prose dark:prose-invert">
-          <div dangerouslySetInnerHTML={{ __html: generateProgressiveReadingHTML(units) }} />
-        </div>
-      );
-    }
-
-    if (viewMode === "hybrid") {
-      return (
-        <div className="flex-1 p-4 overflow-auto prose dark:prose-invert">
-          <div dangerouslySetInnerHTML={{ __html: generateHybridHTML(chapters, units, currentPage) }} />
-        </div>
-      );
-    }
-
-    if (viewMode === "rightbrain") {
-      return (
-        <div className="flex-1 p-4 text-center text-xl font-semibold">
-          🎧 Right Brain Mode — Coming Soon…
-        </div>
-      );
-    }
-
-    return null;
-  };
+  function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
+    setNumPages(numPages);
+  }
 
   return (
-    <div className="flex h-screen">
-      {renderSidebar()}
-      {renderMainContent()}
+    <div className="flex h-screen text-sm">
+      {/* Sidebar */}
+      <div className="w-64 bg-background p-4 border-r border-border space-y-4 overflow-y-auto">
+        <div className="text-xl font-bold flex items-center gap-2">
+          <span>🧠</span> Thought Unit Reader
+        </div>
+        <p className="text-muted-foreground text-xs">
+          Transform any book into thought-units for enhanced comprehension
+        </p>
+
+        <div>
+          <Label htmlFor="upload">Upload a File</Label>
+          <input
+            id="upload"
+            type="file"
+            accept="application/pdf"
+            onChange={handleFileChange}
+            className="mt-2"
+          />
+        </div>
+
+        <div>
+          <Label>Reading Mode</Label>
+          <select
+            className="mt-2 w-full border px-2 py-1 rounded"
+            onChange={(e) => {
+              if (e.target.value === "right-brain") {
+                setShowRightBrainModal(true);
+              }
+            }}
+          >
+            <option>Original</option>
+            <option selected>Thought Unit Reader</option>
+            <option>Hybrid</option>
+            <option value="right-brain">Right Brain (Coming Soon)</option>
+          </select>
+        </div>
+
+        {toc.length > 0 && (
+          <div>
+            <Label>Table of Contents</Label>
+            <ul className="mt-2 space-y-1 max-h-48 overflow-y-auto text-xs">
+              {toc.map((chapter, idx) => (
+                <li key={idx}>
+                  <button
+                    className="text-blue-600 hover:underline w-full text-left"
+                    onClick={() => setPageNumber(chapter.page)}
+                  >
+                    {chapter.title}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <Button
+          onClick={toggleDarkMode}
+          variant="outline"
+          className="w-full flex gap-2 items-center mt-2"
+        >
+          {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />} Toggle {theme === "dark" ? "Light" : "Dark"} Mode
+        </Button>
+      </div>
+
+      {/* Main Viewer */}
+      <div className="flex-1 p-4 overflow-auto">
+        {file ? (
+          <>
+            <div className="flex justify-between items-center mb-4 flex-wrap gap-4">
+              <div className="text-muted-foreground text-xs">
+                Page {pageNumber} / {numPages}
+              </div>
+
+              <div className="flex gap-2 items-center">
+                <span className="text-xs">Zoom {Math.round(zoom * 100)}%</span>
+                <Button size="sm" onClick={() => setZoom((z) => Math.min(z + 0.1, 2))}>+</Button>
+                <Button size="sm" onClick={() => setZoom((z) => Math.max(z - 0.1, 0.5))}>-</Button>
+              </div>
+
+              <div className="flex gap-2 items-center">
+                <input
+                  id="pageNumber"
+                  type="number"
+                  className="border px-2 py-1 w-20 text-xs"
+                  placeholder="Page #"
+                  defaultValue={pageNumber}
+                />
+                <Button size="sm" onClick={goToPage}>Go</Button>
+              </div>
+            </div>
+
+            <Document file={file} onLoadSuccess={onDocumentLoadSuccess}>
+              <Page pageNumber={pageNumber} scale={zoom} />
+            </Document>
+          </>
+        ) : (
+          <div className="text-center text-muted-foreground mt-20">
+            Upload a PDF file to begin reading.
+          </div>
+        )}
+      </div>
+
+      {/* Right Brain Modal */}
+      {showRightBrainModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-zinc-900 p-6 rounded-xl shadow-lg w-96 space-y-4">
+            <h2 className="text-lg font-bold">Right Brain View</h2>
+            <p className="text-sm text-muted-foreground">
+              This feature is currently in development and will be available in a future update.
+            </p>
+            <div className="flex justify-end">
+              <Button onClick={() => setShowRightBrainModal(false)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

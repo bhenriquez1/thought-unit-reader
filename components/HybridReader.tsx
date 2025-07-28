@@ -1,173 +1,115 @@
-"use client";
-
-import { useEffect, useRef, useState } from "react";
-import { Document, Page, pdfjs } from "react-pdf";
+import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { generateProgressiveReadingHTML } from "@/lib/parser";
-
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-
-type ViewMode = "original" | "chapters" | "progressive" | "hybrid" | "rightbrain";
 
 interface HybridReaderProps {
-  file: File;
-  originalText?: string;
-  parsedChapters?: string[];
-  viewMode: ViewMode;
-  chapters?: { title: string; page: number }[];
-  currentPage?: number;
-  onJumpToPage?: (page: number) => void;
+  content: string;
 }
 
-export default function HybridReader({
-  file,
-  originalText,
-  parsedChapters,
-  viewMode,
-  chapters,
-  currentPage,
-  onJumpToPage,
-}: HybridReaderProps) {
-  const [numPages, setNumPages] = useState<number | null>(null);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [zoomLevel, setZoomLevel] = useState(1.0);
-  const canvasWrapperRef = useRef<HTMLDivElement>(null);
-  const [htmlContent, setHtmlContent] = useState("");
+export default function HybridReader({ content }: HybridReaderProps) {
+  const units = content.split(".").filter(Boolean);
+  const totalUnits = units.length;
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [wpm, setWpm] = useState(200);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
-    setNumPages(numPages);
-  };
+  const words = units[currentIndex]?.trim().split(" ") || [];
+  const totalWords = words.length;
+  const [wordIndex, setWordIndex] = useState(0);
 
-  const handleZoom = () => {
-    setZoomLevel((prev) => (prev === 1.0 ? 1.5 : 1.0));
-  };
-
-  const handlePageInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseInt(e.target.value);
-    if (!isNaN(val) && val > 0 && numPages && val <= numPages) {
-      setPageNumber(val);
-    }
-  };
-
-  const handleChapterClick = (idx: number) => {
-    const chapterId = `chapter-${idx}`;
-    const chapterEl = document.getElementById(chapterId);
-    if (chapterEl) {
-      chapterEl.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
+  const timePerWord = 60000 / wpm;
+  const timeLeft = Math.ceil(((totalUnits - currentIndex) * totalWords - wordIndex) * timePerWord / 1000);
 
   useEffect(() => {
-    if (
-      (viewMode === "progressive" || viewMode === "hybrid" || viewMode === "rightbrain") &&
-      originalText
-    ) {
-      const parsedUnits = originalText
-        .split(/\n{2,}/)
-        .map((p) => p.trim())
-        .filter((p) => p.length > 0);
-      const html = generateProgressiveReadingHTML(parsedUnits);
-      setHtmlContent(html);
+    if (isPlaying && wordIndex < totalWords) {
+      timerRef.current = setTimeout(() => {
+        setWordIndex((prev) => prev + 1);
+      }, timePerWord);
+    } else if (isPlaying && wordIndex >= totalWords) {
+      if (currentIndex < totalUnits - 1) {
+        setCurrentIndex((prev) => prev + 1);
+        setWordIndex(0);
+      } else {
+        setIsPlaying(false);
+      }
     }
-  }, [originalText, parsedChapters, viewMode]);
+    return () => clearTimeout(timerRef.current as NodeJS.Timeout);
+  }, [isPlaying, wordIndex, currentIndex]);
+
+  const handleStart = () => setIsPlaying(true);
+  const handleReset = () => {
+    setIsPlaying(false);
+    setCurrentIndex(0);
+    setWordIndex(0);
+  };
+
+  const handleWpmChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseInt(e.target.value);
+    if (!isNaN(val) && val > 0) {
+      setWpm(val);
+    }
+  };
+
+  const progress = Math.floor(((currentIndex + wordIndex / totalWords) / totalUnits) * 100);
 
   return (
-    <div className="flex flex-col lg:flex-row w-full h-full gap-4">
-      {/* Left Panel */}
-      <div className="w-full lg:w-1/2 h-full overflow-auto border rounded-xl p-4 bg-white dark:bg-zinc-900 shadow">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex gap-2">
-            <Button onClick={() => setPageNumber(Math.max(1, pageNumber - 1))}>
-              ← Prev
-            </Button>
-            <Button onClick={() => setPageNumber(Math.min(numPages || 1, pageNumber + 1))}>
-              Next →
-            </Button>
+    <div className="w-full p-4 space-y-6">
+      <Card className="p-4 shadow-lg">
+        <div className="flex flex-wrap items-center gap-4">
+          <Button onClick={handleStart} className="bg-green-500 hover:bg-green-600 text-white">▶ Start</Button>
+          <Button onClick={handleReset} className="bg-gray-300 text-black">🔁 Reset</Button>
+          <div className="flex flex-col">
+            <Label htmlFor="wpm" className="text-xs">WPM</Label>
+            <Input
+              id="wpm"
+              type="number"
+              value={wpm}
+              onChange={handleWpmChange}
+              className="w-20 text-black"
+            />
           </div>
-          <Input
-            type="number"
-            min={1}
-            max={numPages || 1}
-            placeholder="Go to page"
-            onChange={handlePageInput}
-            className="w-28 text-black dark:text-white bg-white dark:bg-zinc-800"
-          />
-          <Button onClick={handleZoom}>
-            {zoomLevel === 1.0 ? "Zoom 150%" : "Reset Zoom"}
-          </Button>
+          <div className="text-center">
+            <p className="text-xs">Complete</p>
+            <p className="text-blue-500 font-bold">{progress}%</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs">Current</p>
+            <p className="text-green-500 font-bold">{currentIndex + 1}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs">WPM</p>
+            <p className="text-purple-500 font-bold">{wpm}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs">Left</p>
+            <p className="text-orange-500 font-bold">{timeLeft}s</p>
+          </div>
         </div>
+      </Card>
 
-        <div
-          ref={canvasWrapperRef}
-          style={{ transform: `scale(${zoomLevel})`, transformOrigin: "top left" }}
-        >
-          <Document file={file} onLoadSuccess={onDocumentLoadSuccess}>
-            <Page pageNumber={pageNumber} width={600} />
-          </Document>
+      <div className="text-center mt-6">
+        <h2 className="text-sm text-gray-500">Thought Unit {currentIndex + 1} of {totalUnits}</h2>
+        <div className="flex justify-center flex-wrap gap-2 text-2xl mt-4">
+          {words.map((word, idx) => (
+            <span
+              key={idx}
+              className={`transition-all px-2 py-1 rounded ${idx === wordIndex ? "bg-yellow-400 font-bold" : "text-gray-800"}`}
+            >
+              {word}
+            </span>
+          ))}
         </div>
-      </div>
-
-      {/* Right Panel */}
-      <div className="w-full lg:w-1/2 h-full overflow-y-auto border rounded-xl p-4 bg-gray-100 dark:bg-zinc-800 shadow text-[17px] leading-7 text-black dark:text-white">
-        {viewMode === "original" && (
-          <pre className="whitespace-pre-wrap">{originalText}</pre>
-        )}
-
-        {viewMode === "chapters" && parsedChapters && (
-          <div>
-            <div className="flex flex-col gap-2 mb-4">
-              {parsedChapters.map((_, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handleChapterClick(idx)}
-                  className="text-left text-blue-600 hover:underline dark:text-blue-400"
-                >
-                  Go to Chapter {idx + 1}
-                </button>
-              ))}
-            </div>
-            <hr className="my-2" />
-            <div>
-              {parsedChapters.map((chapter, idx) => (
-                <div key={idx} id={`chapter-${idx}`} className="mb-6 scroll-mt-20">
-                  <h2 className="text-lg font-semibold mb-2">Chapter {idx + 1}</h2>
-                  <p>{chapter}</p>
-                </div>
-              ))}
-            </div>
+        <div className="mt-4">
+          <div className="w-full h-2 bg-gray-200 rounded">
+            <div
+              className="h-2 bg-yellow-400 rounded"
+              style={{ width: `${(wordIndex / totalWords) * 100}%` }}
+            ></div>
           </div>
-        )}
-
-        {viewMode === "progressive" && (
-          <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
-        )}
-
-        {viewMode === "hybrid" && (
-          <div>
-            <h2 className="text-lg font-bold mb-2">Chapter View</h2>
-            {parsedChapters?.map((chapter, i) => (
-              <details key={i} className="mb-4" id={`chapter-${i}`}>
-                <summary className="cursor-pointer text-blue-500 dark:text-blue-300 font-medium">
-                  Chapter {i + 1}
-                </summary>
-                <p className="mt-2">{chapter}</p>
-              </details>
-            ))}
-            <hr className="my-6" />
-            <h2 className="text-lg font-bold mb-2">Right Brain View</h2>
-            <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
-          </div>
-        )}
-
-        {viewMode === "rightbrain" && (
-          <div>
-            <h2 className="text-xl font-bold mb-4 text-pink-600 dark:text-pink-400">
-              Right Brain View (Coming Soon…)
-            </h2>
-            <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
-          </div>
-        )}
+          <p className="text-xs mt-1">Word {wordIndex + 1} of {totalWords}</p>
+        </div>
       </div>
     </div>
   );
