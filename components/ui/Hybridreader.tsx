@@ -5,9 +5,14 @@ import {
   generateHybridHTML,
 } from "../lib/parser";
 
+interface Chapter {
+  title: string;
+  page: number;
+}
+
 interface HybridReaderProps {
   file: File;
-  chapters?: { title: string; page: number }[];
+  chapters?: Chapter[];
   currentPage?: number;
   onJumpToPage?: (page: number) => void;
   mode?: "hybrid" | "rightbrain";
@@ -20,28 +25,39 @@ export default function HybridReader({
   onJumpToPage,
   mode = "hybrid",
 }: HybridReaderProps) {
-  const [text, setText] = useState("");
   const [html, setHtml] = useState("");
 
   useEffect(() => {
+    if (!file) return;
+
     const reader = new FileReader();
+
     reader.onload = async (e) => {
-      const content = e.target?.result as string;
-      setText(content);
+      try {
+        const content = e.target?.result as string;
 
-      const { chapters: parsedChapters, parsedUnits } = await parseBookWithChapters(content);
+        const { chapters: parsedChapters, parsedUnits } =
+          await parseBookWithChapters(content);
 
-      let generated = "";
+        let generatedHtml = "";
 
-      if (mode === "rightbrain") {
-        // 🧠 Right Brain Mode: Alternating color units (black/gray) with optional enhancements
-        generated = generateProgressiveReadingHTML(parsedUnits);
-      } else {
-        // 🤝 Hybrid Mode: TOC + Highlighted Units + optional jump logic
-        generated = generateHybridHTML(parsedChapters, parsedUnits, currentPage || 1);
+        if (mode === "rightbrain") {
+          // 🧠 Right Brain Mode: Alternating colors (black/gray)
+          generatedHtml = generateProgressiveReadingHTML(parsedUnits);
+        } else {
+          // 🤝 Hybrid Mode: TOC + Units
+          generatedHtml = generateHybridHTML(
+            parsedChapters ?? chapters,
+            parsedUnits,
+            currentPage
+          );
+        }
+
+        setHtml(generatedHtml);
+      } catch (error) {
+        console.error("Error parsing file:", error);
+        setHtml("<p>Error parsing the file.</p>");
       }
-
-      setHtml(generated);
     };
 
     reader.readAsText(file);
