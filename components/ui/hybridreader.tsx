@@ -3,7 +3,7 @@ import {
   parseBookWithChapters,
   generateProgressiveReadingHTML,
   generateHybridHTML,
-} from "../../lib/parser"; // <-- fixed import path
+} from "../../lib/parser"; // ✅ Corrected import path
 
 interface Chapter {
   title: string;
@@ -42,10 +42,10 @@ export default function HybridReader({
         let generatedHtml = "";
 
         if (mode === "rightbrain") {
-          // 🧠 Right Brain Mode: Alternating colors (black/gray)
+          // 🧠 Right Brain Mode: Alternating black/gray phrases
           generatedHtml = generateProgressiveReadingHTML(parsedUnits);
         } else {
-          // 🤝 Hybrid Mode: TOC + Units
+          // 🤝 Hybrid Mode: Chapters + Thought Units
           generatedHtml = generateHybridHTML(
             parsedChapters ?? chapters,
             parsedUnits,
@@ -66,4 +66,7 @@ export default function HybridReader({
   return (
     <div
       className="prose max-w-none dark:prose-invert p-4"
-      dangerouslySetInnerHTML={{ __html: html
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
