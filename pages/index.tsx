@@ -163,7 +163,7 @@ export default function Home() {
           </div>
         </div>
 
-        {uploadStatus === "done" && (fileType === "text" || fileType === "pdf-text") && (
+        {uploadStatus === "done" && (fileType === "text" || fileType === "pdf-text" || fileType === "pdf") && (
           <div className="prose dark:prose-invert" style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
             {renderTextView()}
             {stickyNotes.map((note, i) => (
