@@ -66,6 +66,7 @@ export function generateHybridHTML(chapters: string[], units: string[]): string 
     // fallback: show all units in one section
     return `<div>${generateProgressiveReadingHTML(units)}</div>`;
   }
+
   const chunkSize = Math.ceil(units.length / chapters.length);
   let html = "";
 
@@ -85,3 +86,4 @@ export function generateHybridHTML(chapters: string[], units: string[]): string 
   });
 
   return html;
+}
