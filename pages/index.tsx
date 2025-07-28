@@ -154,6 +154,9 @@ export default function Home() {
             <Document file={fileData}>
               <Page pageNumber={selectedPage} />
             </Document>
+            <div className="mt-4 text-zinc-500 dark:text-zinc-400">
+              Reading modes are only available for text files.
+            </div>
           </div>
         )}
 
@@ -169,4 +172,3 @@ export default function Home() {
       </main>
     </div>
   );
-}
