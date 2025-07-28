@@ -1,4 +1,4 @@
-// lib/utils.ts - Simplified without external dependencies
-export function cn(...inputs: (string | undefined | null | false)[]): string {
-  return inputs.filter(Boolean).join(' ');
+// lib/utils.ts
+export function cn(...classes: (string | undefined | null | false)[]): string {
+  return classes.filter(Boolean).join(" ");
 }
