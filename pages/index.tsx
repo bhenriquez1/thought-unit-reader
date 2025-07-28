@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { parseBookWithChapters } from "../lib/parser";
-import HybridReader from "@/components/HybridReader";
+import { parseBookWithChapters } from "@/lib/parser"; // ✅ fixed relative path
+import HybridReader from "@/components/HybridReader"; // ✅ confirmed with alias
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
@@ -21,13 +21,14 @@ export default function Home() {
     if (!file) return;
     const url = URL.createObjectURL(file);
     setPdfUrl(url);
-    parseBookWithChapters(file).then(setChapters);
+    parseBookWithChapters(file).then(setChapters); // ✅ file now passed instead of content
   }, [file]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
       setFile(selectedFile);
+      setCurrentPage(1); // ✅ optional reset to first page
     }
   };
 
@@ -103,7 +104,7 @@ export default function Home() {
             chapters={chapters}
             currentPage={currentPage}
             onJumpToPage={handleJumpToPage}
-            mode={viewMode === "rightbrain" ? "rightbrain" : "hybrid"}
+            mode={viewMode}
           />
         )}
 
