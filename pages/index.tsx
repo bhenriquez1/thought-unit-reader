@@ -5,6 +5,7 @@ import { parseBookWithChapters, generateProgressiveReadingHTML, generateHybridHT
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
+import { useTheme } from "next-themes";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
@@ -13,7 +14,7 @@ type FileType = "text" | "pdf" | "none";
 type ViewMode = "original" | "chapters" | "progressive" | "hybrid";
 
 export default function Home() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { theme, setTheme } = useTheme();
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileData, setFileData] = useState<any>(null);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
@@ -35,6 +36,12 @@ export default function Home() {
     (window as any).handleExplain = handleExplain;
     (window as any).handleSticky = handleSticky;
   }, []);
+
+  useEffect(() => {
+    if (fileType === "pdf" && viewMode !== "original") {
+      setViewMode("original");
+    }
+  }, [fileType, viewMode]);
 
   const handleZoomIn = () => setZoom((z) => z + 0.1);
   const handleZoomOut = () => setZoom((z) => Math.max(z - 0.1, 0.5));
@@ -104,15 +111,19 @@ export default function Home() {
         </div>
         <div className="mt-6">
           <Label className="mb-2 block">🌓 Dark Mode</Label>
-          <Switch checked={darkMode} onCheckedChange={setDarkMode} />
+          <Switch checked={theme === "dark"} onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")} />
         </div>
         <div className="mt-6">
           <Label className="mb-2 block">🗂️ Reading Mode</Label>
-          <select className="w-full rounded p-1 bg-zinc-100 dark:bg-zinc-800" value={viewMode} onChange={(e) => setViewMode(e.target.value as ViewMode)}>
+          <select
+            className="w-full rounded p-1 bg-zinc-100 dark:bg-zinc-800"
+            value={viewMode}
+            onChange={(e) => setViewMode(e.target.value as ViewMode)}
+          >
             <option value="original">Original View</option>
-            <option value="chapters">Chapter View</option>
-            <option value="progressive">Right Brain View</option>
-            <option value="hybrid">Hybrid</option>
+            <option value="chapters" disabled={fileType === "pdf"}>Chapter View</option>
+            <option value="progressive" disabled={fileType === "pdf"}>Right Brain View</option>
+            <option value="hybrid" disabled={fileType === "pdf"}>Hybrid</option>
           </select>
         </div>
         <div className="mt-6">
