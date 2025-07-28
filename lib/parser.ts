@@ -1,89 +1,75 @@
-export type BookStructure = {
+export async function parseBookWithChapters(text: string): Promise<{
   chapters: string[];
   parsedUnits: string[];
-};
+}> {
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
 
-/**
- * 🧠 Parses a raw book text into chapters and thought-units.
- * - Detects chapters based on "Chapter" keywords.
- * - Breaks other lines into sentence-like units for Right Brain rendering.
- */
-export function parseBookWithChapters(text: string): BookStructure {
-  const lines = text.split("\n");
   const chapters: string[] = [];
   const parsedUnits: string[] = [];
 
-  for (const line of lines) {
-    const clean = line.trim();
-    if (!clean) continue;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
 
-    // 📌 Chapter Detection (e.g., "Chapter 1", "Chapter IX", "CHAPTER ONE")
-    if (/^(chapter\s+\d+|chapter\s+[ivxlc]+|chapter\s+\w+)/i.test(clean)) {
-      chapters.push(clean);
+    // Detect chapters
+    if (/^(chapter|section)\s+\d+/i.test(line)) {
+      chapters.push(line);
+      continue;
     }
 
-    // ✂️ Sentence-like splitting (handles . ! ?)
-    const sentences = clean.match(/[^.!?]+[.!?]+/g);
-    if (sentences) {
-      parsedUnits.push(...sentences.map((s) => s.trim()));
-    } else {
-      parsedUnits.push(clean);
-    }
+    // Parse thought-units
+    const units = splitIntoThoughtUnits(line);
+    parsedUnits.push(...units);
   }
 
   return { chapters, parsedUnits };
 }
 
-/**
- * 🧠 Renders parsed units in alternating color blocks
- * - Includes buttons for 💡 Explain and 📌 Sticky per unit
- */
+// ✨ Split a line into smaller "thought-units"
+function splitIntoThoughtUnits(line: string): string[] {
+  return line
+    .split(/(?<=[.?!])\s+/) // split on punctuation end of sentence
+    .map(unit => unit.trim())
+    .filter(unit => unit.length > 0);
+}
+
+// 🧠 Right Brain View — alternating thought-unit colors with sticky/explain hooks
 export function generateProgressiveReadingHTML(units: string[]): string {
   return units
-    .map((unit, i) => {
+    .map((unit, index) => {
+      const color = index % 2 === 0 ? "black" : "gray";
       return `
-        <div class="my-4 p-3 rounded-lg bg-white dark:bg-zinc-800 shadow-sm" data-unit-index="${i}">
-          <p class="text-black dark:text-white">
-            <span class="${i % 2 === 0 ? 'text-black dark:text-white' : 'text-gray-600 dark:text-gray-300'}">${unit}</span>
-            <span class="ml-2 inline-flex gap-2">
-              <button class="text-sm text-blue-500 hover:underline" onclick="window.handleExplain?.(${i})">💡</button>
-              <button class="text-sm text-yellow-500 hover:underline" onclick="window.handleSticky?.(${i})">📌</button>
-            </span>
-          </p>
+        <div style="margin-bottom: 1em;">
+          <span style="color: ${color}; font-weight: 500;">${unit}</span>
+          <button onclick="window.handleExplain?.(${index})" style="margin-left: 10px;">🧠</button>
+          <button onclick="window.handleSticky?.(${index})" style="margin-left: 5px;">📌</button>
         </div>
       `;
     })
-    .join("\n");
+    .join("");
 }
 
-/**
- * 🌀 Renders Hybrid Mode
- * - Collapsible chapter sections
- * - Contains Right Brain view inside each section
- */
+// 🧪 Hybrid View — Chapters with thought-units grouped underneath
 export function generateHybridHTML(chapters: string[], units: string[]): string {
-  if (!chapters.length) {
-    // fallback: show all units in one section
-    return `<div>${generateProgressiveReadingHTML(units)}</div>`;
+  const grouped: Record<string, string[]> = {};
+  let currentChapter = "Intro";
+
+  for (const unit of units) {
+    if (/^(chapter|section)\s+\d+/i.test(unit)) {
+      currentChapter = unit;
+      if (!grouped[currentChapter]) grouped[currentChapter] = [];
+    } else {
+      if (!grouped[currentChapter]) grouped[currentChapter] = [];
+      grouped[currentChapter].push(unit);
+    }
   }
 
-  const chunkSize = Math.ceil(units.length / chapters.length);
-  let html = "";
-
-  chapters.forEach((chapter, i) => {
-    const start = i * chunkSize;
-    const end = start + chunkSize;
-    const chapterUnits = units.slice(start, end);
-
-    html += `
-      <details class="mb-4 border rounded dark:border-zinc-700">
-        <summary class="font-bold text-lg p-2 bg-zinc-100 dark:bg-zinc-800">${chapter}</summary>
-        <div class="p-4 space-y-3">
-          ${generateProgressiveReadingHTML(chapterUnits)}
-        </div>
-      </details>
-    `;
-  });
-
-  return html;
+  return Object.entries(grouped)
+    .map(([chapter, chapterUnits]) => {
+      const body = chapterUnits.map((u, i) => {
+        const color = i % 2 === 0 ? "black" : "gray";
+        return `<div style="margin-bottom: 1em;"><span style="color: ${color}; font-weight: 500;">${u}</span></div>`;
+      }).join("");
+      return `<h2 style="margin-top: 2em; font-size: 1.25em;">${chapter}</h2>${body}`;
+    })
+    .join("");
 }

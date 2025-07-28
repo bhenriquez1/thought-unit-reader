@@ -1,165 +1,91 @@
 import { useState, useCallback, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
+import { useDropzone } from "react-dropzone";
 import { parseBookWithChapters, generateProgressiveReadingHTML, generateHybridHTML } from "../lib/parser";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
-import { useDropzone } from "react-dropzone";
-import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
-GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js`;
+
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
 type FileType = "text" | "pdf" | "none";
 type ViewMode = "original" | "chapters" | "progressive" | "hybrid";
 
-type StickyNote = { unitIndex: number; content: string };
-
-declare global {
-  interface Window {
-    handleExplain?: (unitIndex: number) => void;
-    handleSticky?: (unitIndex: number) => void;
-  }
-}
-
 export default function Home() {
-  const [enabled, setEnabled] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [inputText, setInputText] = useState("");
-  const [output, setOutput] = useState<string | null>(null);
-  const [selectedPage, setSelectedPage] = useState(1);
-  const [zoom, setZoom] = useState(1);
-  const [viewMode, setViewMode] = useState<ViewMode>("progressive");
-  const [chapters, setChapters] = useState<string[]>([]);
-  const [parsedUnits, setParsedUnits] = useState<string[]>([]);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileData, setFileData] = useState<any>(null);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
   const [fileType, setFileType] = useState<FileType>("none");
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [fileData, setFileData] = useState<File | null>(null);
-  const [stickyNotes, setStickyNotes] = useState<StickyNote[]>([]);
+  const [zoom, setZoom] = useState(1);
+  const [viewMode, setViewMode] = useState<ViewMode>("original");
+  const [chapters, setChapters] = useState<string[]>([]);
+  const [parsedUnits, setParsedUnits] = useState<string[]>([]);
+  const [selectedPage, setSelectedPage] = useState(1);
+  const [stickyNotes, setStickyNotes] = useState<{ unitIndex: number; content: string }[]>([]);
 
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", darkMode);
-  }, [darkMode]);
+  const handleExplain = (index: number) => alert(`Explain triggered for unit #${index + 1}`);
+  const handleSticky = (index: number) => {
+    const note = prompt("Enter your sticky note:");
+    if (note) setStickyNotes((prev) => [...prev, { unitIndex: index, content: note }]);
+  };
 
+  // Make accessible globally
   useEffect(() => {
-    const savedFile = localStorage.getItem("lastFileName");
-    const savedPage = localStorage.getItem("lastPageNumber");
-    const savedMode = localStorage.getItem("lastViewMode");
-    if (savedFile) setFileName(savedFile);
-    if (savedPage) setSelectedPage(parseInt(savedPage));
-    if (savedMode) setViewMode(savedMode as ViewMode);
+    (window as any).handleExplain = handleExplain;
+    (window as any).handleSticky = handleSticky;
   }, []);
-
-  useEffect(() => {
-    if (fileName) localStorage.setItem("lastFileName", fileName);
-    localStorage.setItem("lastPageNumber", String(selectedPage));
-    localStorage.setItem("lastViewMode", viewMode);
-  }, [fileName, selectedPage, viewMode]);
-
-  useEffect(() => {
-    window.handleExplain = (unitIndex: number) => {
-      alert(`🧠 Explain triggered for unit #${unitIndex + 1}\n\n(This will eventually show an AI explanation)`);
-    };
-
-    window.handleSticky = (unitIndex: number) => {
-      const content = prompt(`Enter your sticky note for unit #${unitIndex + 1}`);
-      if (content) {
-        setStickyNotes((prev) => [...prev, { unitIndex, content }]);
-      }
-    };
-  }, []);
-
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (!file) return;
-    setFileData(file);
-    setFileName(file.name);
-
-    if (file.type.includes("pdf")) {
-      setFileType("pdf");
-      setUploadStatus("uploading");
-      setOutput(null);
-      setChapters([]);
-      setParsedUnits([]);
-      setInputText("");
-
-      // PDF Text Extraction
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const typedarray = new Uint8Array(reader.result as ArrayBuffer);
-          const pdf = await getDocument({ data: typedarray }).promise;
-          let fullText = "";
-          for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const content = await page.getTextContent();
-            const pageText = content.items.map((item: any) => item.str).join(" ");
-            fullText += pageText + "\n";
-          }
-          setInputText(fullText);
-          setUploadStatus("processing");
-          const { chapters, parsedUnits } = await parseBookWithChapters(fullText);
-          setParsedUnits(parsedUnits);
-          setOutput(generateProgressiveReadingHTML(parsedUnits));
-          setChapters(chapters);
-          setUploadStatus("done");
-          setFileType("text"); // treat as text for all view modes!
-        } catch (err) {
-          setUploadStatus("error");
-          alert("Failed to extract text from PDF.");
-        }
-      };
-      reader.readAsArrayBuffer(file);
-      return;
-    }
-
-    setUploadStatus("uploading");
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const text = reader.result?.toString() || "";
-      setInputText(text);
-      setUploadStatus("processing");
-      const { chapters, parsedUnits } = await parseBookWithChapters(text);
-      setParsedUnits(parsedUnits);
-      setOutput(generateProgressiveReadingHTML(parsedUnits));
-      setChapters(chapters);
-      setUploadStatus("done");
-      setFileType("text");
-    };
-    reader.readAsText(file);
-  }, []);
-
-  const { getRootProps, getInputProps } = useDropzone({ onDrop });
 
   const handleZoomIn = () => setZoom((z) => z + 0.1);
-  const handleZoomOut = () => setZoom((z) => Math.max(0.5, z - 0.1));
+  const handleZoomOut = () => setZoom((z) => Math.max(z - 0.1, 0.5));
 
-  function renderTextView() {
-    if (viewMode === "original") {
-      return (
-        <pre className="whitespace-pre-wrap">{inputText}</pre>
-      );
+  const { getRootProps, getInputProps } = useDropzone({
+    onDrop: useCallback((acceptedFiles: File[]) => {
+      const file = acceptedFiles[0];
+      if (!file) return;
+
+      setUploadStatus("uploading");
+      setFileName(file.name);
+      const reader = new FileReader();
+
+      reader.onload = () => {
+        const result = reader.result;
+        if (file.type === "application/pdf") {
+          setFileData(result);
+          setFileType("pdf");
+          setUploadStatus("done");
+        } else {
+          const text = result as string;
+          const { chapters, parsedUnits } = parseBookWithChapters(text);
+          setChapters(chapters);
+          setParsedUnits(parsedUnits);
+          setFileType("text");
+          setUploadStatus("done");
+        }
+      };
+
+      if (file.type === "application/pdf") {
+        reader.readAsDataURL(file);
+      } else {
+        reader.readAsText(file);
+      }
+    }, []),
+  });
+
+  const renderTextView = () => {
+    switch (viewMode) {
+      case "chapters":
+        return chapters.map((ch, i) => <h3 key={i} className="text-xl font-bold mt-4">{ch}</h3>);
+      case "progressive":
+        return <div dangerouslySetInnerHTML={{ __html: generateProgressiveReadingHTML(parsedUnits) }} />;
+      case "hybrid":
+        return <div dangerouslySetInnerHTML={{ __html: generateHybridHTML(chapters, parsedUnits) }} />;
+      case "original":
+      default:
+        return parsedUnits.map((unit, i) => <p key={i} className="mb-2">{unit}</p>);
     }
-    if (viewMode === "chapters") {
-      return (
-        <div>
-          {chapters.length === 0 && <div className="text-zinc-500">No chapters detected.</div>}
-          {chapters.map((ch, i) => (
-            <h2 key={i} className="font-bold text-lg my-4">{ch}</h2>
-          ))}
-        </div>
-      );
-    }
-    if (viewMode === "hybrid") {
-      return (
-        <div dangerouslySetInnerHTML={{ __html: generateHybridHTML(chapters, parsedUnits) }} />
-      );
-    }
-    return (
-      <div dangerouslySetInnerHTML={{ __html: generateProgressiveReadingHTML(parsedUnits) }} />
-    );
-  }
+  };
 
   return (
     <div className="flex min-h-screen dark:bg-black">
@@ -208,7 +134,7 @@ export default function Home() {
           </div>
         </div>
 
-        {uploadStatus === "done" && fileData && (
+        {uploadStatus === "done" && fileType === "text" && (
           <div className="prose dark:prose-invert" style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
             {renderTextView()}
             {stickyNotes.map((note, i) => (
@@ -216,6 +142,14 @@ export default function Home() {
                 🗒️ Sticky Note {note.unitIndex + 1}: {note.content}
               </div>
             ))}
+          </div>
+        )}
+
+        {uploadStatus === "done" && fileType === "pdf" && fileData && (
+          <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}>
+            <Document file={fileData}>
+              <Page pageNumber={selectedPage} />
+            </Document>
           </div>
         )}
 
