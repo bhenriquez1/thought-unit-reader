@@ -1,78 +1,43 @@
 // lib/parser.ts
 
-export interface Chapter {
-  title: string;
-  page: number;
-}
+export function parseBookWithChapters(text: string): {
+  chapters: { title: string; page: number }[];
+  parsedUnits: string[];
+} {
+  // Simple placeholder logic — splits on headers like "Chapter 1"
+  const lines = text.split("\n");
+  const chapters = lines
+    .map((line, index) => ({
+      title: line.match(/^Chapter\s+\d+/i)?.[0] || "",
+      page: index + 1,
+    }))
+    .filter((ch) => ch.title);
 
-export interface ParsedUnit {
-  text: string;
-  page: number;
-}
-
-// Simple example: Split content by lines and mock chapter detection
-export async function parseBookWithChapters(content: string): Promise<{
-  chapters: Chapter[];
-  parsedUnits: ParsedUnit[];
-}> {
-  const lines = content.split("\n");
-
-  const chapters: Chapter[] = [];
-  const parsedUnits: ParsedUnit[] = [];
-
-  let page = 1;
-
-  lines.forEach((line, index) => {
-    const trimmed = line.trim();
-
-    // Example chapter detection
-    if (/^chapter\s+\d+/i.test(trimmed)) {
-      chapters.push({ title: trimmed, page });
-    }
-
-    // Simulated page change every 40 lines
-    if (index > 0 && index % 40 === 0) {
-      page++;
-    }
-
-    if (trimmed.length > 0) {
-      parsedUnits.push({ text: trimmed, page });
-    }
-  });
+  const parsedUnits = text
+    .split(/\n{2,}/) // split by paragraphs
+    .map((unit) => unit.trim())
+    .filter((unit) => unit.length > 0);
 
   return { chapters, parsedUnits };
 }
 
-// 🧠 Right Brain View — alternating black/gray text blocks
-export function generateProgressiveReadingHTML(units: ParsedUnit[]): string {
+export function generateProgressiveReadingHTML(units: string[]): string {
   return units
-    .map((unit, index) => {
-      const colorClass = index % 2 === 0 ? "text-black" : "text-gray-500";
-      return `<p class="${colorClass}">${unit.text}</p>`;
+    .map((unit, i) => {
+      const color = i % 2 === 0 ? "black" : "gray";
+      return `<p style="color:${color}">${unit}</p>`;
     })
-    .join("");
+    .join("\n");
 }
 
-// 🤝 Hybrid View — include chapters as headings, rest as blocks
 export function generateHybridHTML(
-  chapters: Chapter[],
-  units: ParsedUnit[],
+  chapters: { title: string; page: number }[],
+  units: string[],
   currentPage: number
 ): string {
-  const unitBlocks = units
-    .filter((unit) => unit.page === currentPage)
-    .map((unit, i) => {
-      const colorClass = i % 2 === 0 ? "text-black" : "text-gray-500";
-      return `<p class="${colorClass}">${unit.text}</p>`;
-    })
+  const toc = chapters
+    .map((ch) => `<li><strong>${ch.title}</strong> — Page ${ch.page}</li>`)
     .join("");
-
-  const chapterHeading = chapters.find((c) => c.page === currentPage)?.title || "";
-
-  return `
-    <div>
-      ${chapterHeading ? `<h2 class="text-xl font-bold mb-4">${chapterHeading}</h2>` : ""}
-      ${unitBlocks}
-    </div>
-  `;
+  const body = generateProgressiveReadingHTML(units);
+  return `<h2>Table of Contents</h2><ul>${toc}</ul><hr/>${body}`;
 }
