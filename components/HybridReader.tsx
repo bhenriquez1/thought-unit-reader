@@ -13,7 +13,6 @@ interface HybridReaderProps {
 export default function HybridReader({ content = "", html = "" }: HybridReaderProps) {
   const ref = useRef<HTMLDivElement>(null);
 
-  // Link smooth scrolling for TOC
   useEffect(() => {
     const current = ref.current;
     if (!current) return;
@@ -63,7 +62,6 @@ export default function HybridReader({ content = "", html = "" }: HybridReaderPr
     };
   }, [isPlaying, wordIndex, currentIndex]);
 
-  // Auto-scroll to current thought-unit
   useEffect(() => {
     const currentEl = document.getElementById(`unit-${currentIndex}`);
     if (currentEl) {
@@ -86,6 +84,24 @@ export default function HybridReader({ content = "", html = "" }: HybridReaderPr
     }
   };
 
+  const handlePrev = () => {
+    if (wordIndex > 0) {
+      setWordIndex((prev) => prev - 1);
+    } else if (currentIndex > 0) {
+      setCurrentIndex((prev) => prev - 1);
+      setWordIndex(units[currentIndex - 1]?.trim().split(" ").length - 1 || 0);
+    }
+  };
+
+  const handleNext = () => {
+    if (wordIndex < totalWords - 1) {
+      setWordIndex((prev) => prev + 1);
+    } else if (currentIndex < totalUnits - 1) {
+      setCurrentIndex((prev) => prev + 1);
+      setWordIndex(0);
+    }
+  };
+
   const progress = Math.floor(((currentIndex + wordIndex / totalWords) / totalUnits) * 100);
 
   return (
@@ -94,6 +110,8 @@ export default function HybridReader({ content = "", html = "" }: HybridReaderPr
         <div className="flex flex-wrap items-center gap-4">
           <Button onClick={handleStart} className="bg-green-500 hover:bg-green-600 text-white">▶ Start</Button>
           <Button onClick={handleReset} className="bg-gray-300 text-black">🔁 Reset</Button>
+          <Button onClick={handlePrev} className="bg-blue-300">⬅</Button>
+          <Button onClick={handleNext} className="bg-blue-300">➡</Button>
           <div className="flex flex-col">
             <Label htmlFor="wpm" className="text-xs">WPM</Label>
             <Input

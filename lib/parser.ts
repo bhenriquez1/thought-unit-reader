@@ -29,22 +29,22 @@ export async function parseBookWithChapters(file: File | string): Promise<{
   });
 
   const parsedUnits = text
-    .split(/\n{2,}/) // Split by paragraph
+    .split(/\n{2,}/) // Split by paragraph blocks
     .map((unit) => unit.trim())
     .filter((unit) => unit.length > 0);
 
-  // Inject chapter titles directly into parsedUnits as header blocks
   const chapters: { title: string; page: number }[] = [];
 
+  // Insert chapter markers into units and record chapter locations
   chapterMarkers.forEach((marker) => {
-    const approxUnitIndex = Math.floor(marker.index / 2);
-    chapters.push({ title: marker.title, page: approxUnitIndex + 1 });
-
-    parsedUnits.splice(
-      approxUnitIndex,
-      0,
-      `###CHAPTER:${marker.title}` // Mark for easier parsing in Hybrid mode
+    const approxUnitIndex = parsedUnits.findIndex((unit) =>
+      unit.includes(marker.title.split(" ")[1])
     );
+    const fallbackIndex = Math.floor(marker.index / 2);
+    const finalIndex = approxUnitIndex !== -1 ? approxUnitIndex : fallbackIndex;
+
+    parsedUnits.splice(finalIndex, 0, `###CHAPTER:${marker.title}`);
+    chapters.push({ title: marker.title, page: finalIndex + 1 });
   });
 
   return { chapters, parsedUnits };
@@ -104,7 +104,7 @@ export function generateHybridHTML(
       }
 
       const colorClass = i % 2 === 0 ? "text-black" : "text-gray-500";
-      return `<p class="${colorClass} mt-2 text-base leading-relaxed">${unit}</p>`;
+      return `<p id="unit-${i}" class="${colorClass} mt-2 text-base leading-relaxed">${unit}</p>`;
     })
     .join("\n");
 

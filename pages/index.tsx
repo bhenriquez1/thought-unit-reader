@@ -24,12 +24,10 @@ export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [zoom, setZoom] = useState(1.5);
   const [mode, setMode] = useState("original");
-
   const [parsedData, setParsedData] = useState({
     chapters: [] as { title: string; page: number }[],
     thoughtUnits: [] as string[],
   });
-
   const inputRef = useRef<HTMLInputElement>(null);
   const { theme, setTheme } = useTheme();
   const [showRightBrainModal, setShowRightBrainModal] = useState(false);
@@ -75,7 +73,6 @@ export default function Home() {
 
   return (
     <div className="flex h-screen text-sm">
-      {/* Sidebar */}
       <div className="w-64 bg-background p-4 border-r border-border space-y-4 overflow-y-auto">
         <div className="text-xl font-bold flex items-center gap-2">
           <span>🧠</span> Thought-Unit Reader
@@ -139,7 +136,6 @@ export default function Home() {
         </Button>
       </div>
 
-      {/* Main Viewer */}
       <div className="flex-1 p-4 overflow-auto">
         {file ? (
           mode === "original" ? (
@@ -200,7 +196,6 @@ export default function Home() {
         )}
       </div>
 
-      {/* Right Brain Modal */}
       <Dialog open={showRightBrainModal} onOpenChange={setShowRightBrainModal}>
         <DialogContent>
           <DialogHeader>
