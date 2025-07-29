@@ -1,14 +1,32 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 interface HybridReaderProps {
-  content: string;
+  content?: string;
+  html?: string;
 }
 
-export default function HybridReader({ content }: HybridReaderProps) {
+export default function HybridReader({ content = "", html = "" }: HybridReaderProps) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (ref.current) {
+      const links = ref.current.querySelectorAll("a[href^='#chapter-']");
+      links.forEach((link) => {
+        link.addEventListener("click", (e) => {
+          e.preventDefault();
+          const id = (link as HTMLAnchorElement).getAttribute("href")?.slice(1);
+          const target = document.getElementById(id!);
+          if (target) target.scrollIntoView({ behavior: "smooth" });
+        });
+      });
+    }
+  }, [html]);
+
   const units = content.split(".").filter(Boolean);
   const totalUnits = units.length;
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -112,6 +130,16 @@ export default function HybridReader({ content }: HybridReaderProps) {
           <p className="text-xs mt-1">Word {wordIndex + 1} of {totalWords}</p>
         </div>
       </div>
+
+      {html && (
+        <ScrollArea className="h-full w-full p-4">
+          <div
+            ref={ref}
+            className="prose dark:prose-invert max-w-none"
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        </ScrollArea>
+      )}
     </div>
   );
 }

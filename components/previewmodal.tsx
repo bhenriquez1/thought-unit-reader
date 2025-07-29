@@ -1,37 +1,49 @@
-// components/ui/PreviewModal.tsx
-import React from "react";
-import { Dialog } from "@headlessui/react";
-import { Card } from "@/components/ui/card";
+import { useEffect, useRef } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
 
 interface PreviewModalProps {
-  isOpen: boolean;
+  open: boolean;
   onClose: () => void;
-  content: string;
+  title?: string;
+  content: string; // HTML string (parsed)
 }
 
-export default function PreviewModal({
-  isOpen,
-  onClose,
-  content,
-}: PreviewModalProps) {
+export default function PreviewModal({ open, onClose, title = "Preview", content }: PreviewModalProps) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (ref.current) {
+      const links = ref.current.querySelectorAll("a[href^='#chapter-']");
+      links.forEach((link) => {
+        link.addEventListener("click", (e) => {
+          e.preventDefault();
+          const id = (link as HTMLAnchorElement).getAttribute("href")?.slice(1);
+          const target = document.getElementById(id!);
+          if (target) target.scrollIntoView({ behavior: "smooth" });
+        });
+      });
+    }
+  }, [content]);
+
   return (
-    <Dialog open={isOpen} onClose={onClose} className="fixed z-50 inset-0 overflow-y-auto">
-      <div className="flex items-center justify-center min-h-screen p-4 bg-black/30">
-        <Dialog.Panel className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-2xl p-6">
-          <Dialog.Title className="text-xl font-bold mb-4">🧠 Right Brain Preview</Dialog.Title>
-          <Card className="max-h-[60vh] overflow-y-auto">
-            <div dangerouslySetInnerHTML={{ __html: content }} />
-          </Card>
-          <div className="mt-4 flex justify-end">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
-            >
-              Close
-            </button>
-          </div>
-        </Dialog.Panel>
-      </div>
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-4xl h-[90vh] p-6">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <ScrollArea className="h-full w-full mt-4 border rounded">
+          <div
+            ref={ref}
+            className="prose dark:prose-invert max-w-none px-4 py-2"
+            dangerouslySetInnerHTML={{ __html: content }}
+          />
+        </ScrollArea>
+        <div className="mt-4 flex justify-end">
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </div>
+      </DialogContent>
     </Dialog>
   );
 }
