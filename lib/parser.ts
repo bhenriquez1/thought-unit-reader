@@ -161,3 +161,27 @@ export async function extractText(file: File): Promise<string> {
 
   return allText.join("\n\n");
 }
+
+export async function getPdfViewerHTML(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const pdf = await getDocument({ data: buffer }).promise;
+
+  const pageContainers = [];
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 1.5 });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const context = canvas.getContext("2d");
+
+    if (context) {
+      await page.render({ canvasContext: context, viewport }).promise;
+      const imgDataUrl = canvas.toDataURL();
+      pageContainers.push(`<img src="${imgDataUrl}" alt="Page ${i}" class="mb-4" />`);
+    }
+  }
+
+  return `<div class="pdf-viewer">${pageContainers.join("\n")}</div>`;
+}

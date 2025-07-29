@@ -5,7 +5,7 @@ import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
-import { ChevronLeft, ChevronRight, Settings } from "lucide-react";
+import { ChevronLeft, ChevronRight, Settings, ZoomIn, ZoomOut } from "lucide-react";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
@@ -22,6 +22,7 @@ export default function Home() {
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [thoughtUnits, setThoughtUnits] = useState<string[][]>([]);
+  const [scale, setScale] = useState(1.2);
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -80,21 +81,27 @@ export default function Home() {
           <option value="chapters">Chapters</option>
           <option value="progressive">Progressive</option>
         </select>
-        <div>
-          <Button onClick={() => setEnabled((prev) => !prev)}>
-            Toggle Light Mode
-          </Button>
+        <div className="space-y-2">
+          <Button onClick={() => setEnabled((prev) => !prev)}>Toggle Light Mode</Button>
+          <div className="flex gap-2">
+            <Button onClick={() => setScale((s) => Math.max(0.5, s - 0.1))}><ZoomOut className="w-4 h-4" /></Button>
+            <Button onClick={() => setScale((s) => Math.min(3, s + 0.1))}><ZoomIn className="w-4 h-4" /></Button>
+          </div>
+          <input
+            type="number"
+            min={1}
+            max={numPages || 1}
+            value={pageNumber}
+            onChange={(e) => setPageNumber(Number(e.target.value))}
+            className="w-full p-1 bg-gray-800 text-white text-center rounded"
+          />
         </div>
       </aside>
       <main className="flex-1 p-8">
         <div className="flex items-center space-x-4 mb-4">
-          <Button onClick={handleStart} disabled={isPlaying}>
-            ▶ Start
-          </Button>
+          <Button onClick={handleStart} disabled={isPlaying}>▶ Start</Button>
           <Button onClick={handleReset}>⟳ Reset</Button>
-          <Button variant="outline">
-            <Settings className="w-4 h-4" />
-          </Button>
+          <Button variant="outline"><Settings className="w-4 h-4" /></Button>
           <span className="text-sm text-yellow-400">
             {thoughtUnits.length ? `${Math.floor((currentWordIndex / thoughtUnits.length) * 100)}% Complete` : '0% Complete'}
           </span>
@@ -126,13 +133,22 @@ export default function Home() {
             Word {thoughtUnits[currentWordIndex]?.length ? `1 of ${thoughtUnits[currentWordIndex].length}` : '1 of 0'}
           </p>
         </div>
+
         <div className="flex justify-center mt-6 space-x-4">
-          <Button onClick={() => setCurrentWordIndex((i) => Math.max(i - 1, 0))}>
-            <ChevronLeft />
-          </Button>
-          <Button onClick={() => setCurrentWordIndex((i) => Math.min(i + 1, thoughtUnits.length - 1))}>
-            <ChevronRight />
-          </Button>
+          <Button onClick={() => setCurrentWordIndex((i) => Math.max(i - 1, 0))}><ChevronLeft /></Button>
+          <Button onClick={() => setCurrentWordIndex((i) => Math.min(i + 1, thoughtUnits.length - 1))}><ChevronRight /></Button>
+        </div>
+
+        <div className="mt-8 bg-white p-4 rounded">
+          {file && (
+            <Document
+              file={file}
+              onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+              className="mx-auto"
+            >
+              <Page pageNumber={pageNumber} scale={scale} />
+            </Document>
+          )}
         </div>
       </main>
     </div>

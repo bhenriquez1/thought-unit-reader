@@ -4,13 +4,17 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { getPdfViewerHTML } from "@/lib/parser";
 
 interface HybridReaderProps {
   content?: string;
   html?: string;
+  filename?: string;
+  startPage?: number;
+  endPage?: number;
 }
 
-export default function HybridReader({ content = "", html = "" }: HybridReaderProps) {
+export default function HybridReader({ content = "", html = "", filename = "", startPage = 1, endPage = 10 }: HybridReaderProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -188,6 +192,13 @@ export default function HybridReader({ content = "", html = "" }: HybridReaderPr
             dangerouslySetInnerHTML={{ __html: html }}
           />
         </ScrollArea>
+      )}
+
+      {filename && (
+        <div
+          className="mt-10"
+          dangerouslySetInnerHTML={{ __html: getPdfViewerHTML(filename, startPage, endPage) }}
+        />
       )}
     </div>
   );
