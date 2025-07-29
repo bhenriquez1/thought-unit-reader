@@ -1,13 +1,21 @@
-// tailwind.config.js
-/** @type {import('tailwindcss').Config} */
-module.exports = {
-  darkMode: 'class',
+import { type Config } from "tailwindcss"
+import { fontFamily } from "tailwindcss/defaultTheme"
+
+const config: Config = {
+  darkMode: "class",
   content: [
-    './pages/**/*.{js,ts,jsx,tsx}',
-    './components/**/*.{js,ts,jsx,tsx}',
+    "./pages/**/*.{ts,tsx}",
+    "./components/**/*.{ts,tsx}",
+    "./app/**/*.{ts,tsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        sans: ["Inter", ...fontFamily.sans],
+      },
+    },
   },
-  plugins: [],
-};
+  plugins: [require("tailwindcss-animate")],
+}
+
+export default config
