@@ -71,7 +71,7 @@ export default function Home() {
           <span>🧠</span> Thought Unit Reader
         </div>
         <p className="text-muted-foreground text-xs">
-          Transform any book into thought-units for enhanced comprehension
+          Read the way your brain thinks
         </p>
 
         <div>
