@@ -16,8 +16,8 @@ export default function Home() {
   const [output, setOutput] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
-  const [numPages, setNumPages] = useState(null);
-  const [viewMode, setViewMode] = useState("hybrid");
+  const [numPages, setNumPages] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<"hybrid" | "chapters" | "progressive">("hybrid");
   const [wpm, setWpm] = useState(110);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -34,7 +34,7 @@ export default function Home() {
         const text = reader.result as string;
         setInputText(text);
         const result = await parseBookWithChapters(text);
-        setThoughtUnits(result.parsedUnits || []); // ✅ Corrected line
+        setThoughtUnits(result.parsedUnits || []);
       };
       reader.readAsText(uploadedFile);
     }
@@ -74,7 +74,7 @@ export default function Home() {
           id="mode"
           className="w-full mb-4 p-2 rounded bg-gray-900 text-white"
           value={viewMode}
-          onChange={(e) => setViewMode(e.target.value)}
+          onChange={(e) => setViewMode(e.target.value as "hybrid" | "chapters" | "progressive")}
         >
           <option value="hybrid">Hybrid</option>
           <option value="chapters">Chapters</option>
@@ -110,10 +110,13 @@ export default function Home() {
             {thoughtUnits[currentWordIndex]?.map((word, idx) => (
               <span
                 key={idx}
-                className={cn("mx-1", {
+                className={cn("mx-1 cursor-pointer", {
                   'text-yellow-400': idx === 0,
                   'text-white': idx !== 0
                 })}
+                onClick={() => {
+                  if (!isPlaying) setCurrentWordIndex(idx);
+                }}
               >
                 {word}
               </span>
