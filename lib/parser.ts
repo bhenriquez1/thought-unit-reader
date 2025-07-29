@@ -10,7 +10,6 @@ export async function parseBookWithChapters(file: File | string): Promise<{
 }> {
   let text = "";
 
-  // If PDF (File), use pdfjs to extract text
   if (typeof file !== "string" && file.type === "application/pdf") {
     const buffer = await file.arrayBuffer();
     const pdf = await getDocument({ data: buffer }).promise;
@@ -28,12 +27,13 @@ export async function parseBookWithChapters(file: File | string): Promise<{
     text = allText.join("\n\n");
   } else if (typeof file === "string") {
     text = file;
+  } else if (file instanceof File && file.type.startsWith("text/")) {
+    text = await file.text();
   } else {
     text = await file.text();
   }
 
   const lines = text.split("\n");
-
   const chapterMarkers: { index: number; title: string }[] = [];
 
   lines.forEach((line, index) => {
@@ -48,21 +48,24 @@ export async function parseBookWithChapters(file: File | string): Promise<{
     }
   });
 
+  chapterMarkers.sort((a, b) => a.index - b.index);
+
   const parsedUnits = text
-    .split(/\n{2,}/) // Split by paragraph blocks
+    .split(/\n{2,}/)
     .map((unit) => unit.trim())
     .filter((unit) => unit.length > 0);
 
   const chapters: Chapter[] = [];
 
   chapterMarkers.forEach((marker) => {
-    const approxUnitIndex = parsedUnits.findIndex((unit) =>
-      unit.includes(marker.title.split(" ")[1])
-    );
+    const cleanTitle = marker.title.replace(/^CHAPTER\s+\d+[:.\s]?/i, "").trim();
+    const approxUnitIndex = parsedUnits.findIndex((unit) => unit.includes(cleanTitle));
     const fallbackIndex = Math.floor(marker.index / 2);
     const finalIndex = approxUnitIndex !== -1 ? approxUnitIndex : fallbackIndex;
 
-    parsedUnits.splice(finalIndex, 0, `###CHAPTER:${marker.title}`);
+    if (!parsedUnits.includes(`###CHAPTER:${marker.title}`)) {
+      parsedUnits.splice(finalIndex, 0, `###CHAPTER:${marker.title}`);
+    }
     chapters.push({ title: marker.title, page: finalIndex + 1 });
   });
 
@@ -141,4 +144,20 @@ export function generateHybridHTML(
       ${body}
     </div>
   `;
+}
+
+export async function extractText(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const pdf = await getDocument({ data: buffer }).promise;
+  const allText: string[] = [];
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    allText.push(
+      content.items.map((item) => ("str" in item ? item.str : "")).join(" ")
+    );
+  }
+
+  return allText.join("\n\n");
 }

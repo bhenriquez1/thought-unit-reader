@@ -115,6 +115,11 @@ export default function HybridReader({ content = "", html = "" }: HybridReaderPr
 
   return (
     <div className="w-full p-4 space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-xl font-bold text-blue-700">Thought-Unit Reader</h1>
+        <span className="text-sm italic text-gray-500">Read deeper, faster, and smarter</span>
+      </div>
+
       <Card className="p-4 shadow-lg">
         <div className="flex flex-wrap items-center gap-4">
           <Button onClick={handleStart} className="bg-green-500 hover:bg-green-600 text-white">▶ Start</Button>

@@ -1,233 +1,192 @@
-import { useState, useRef, useEffect } from "react";
-import { Document, Page, pdfjs } from "react-pdf";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Button } from "@/components/ui/button";
-import { Moon, Sun } from "lucide-react";
-import { parseBookWithChapters } from "@/lib/parser";
-import { useTheme } from "next-themes";
+import { useEffect, useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+interface HybridReaderProps {
+  content?: string;
+  html?: string;
+}
 
-export default function Home() {
-  const [numPages, setNumPages] = useState<number | null>(null);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [file, setFile] = useState<File | null>(null);
-  const [zoom, setZoom] = useState(1.5);
-  const [mode, setMode] = useState("original");
-  const [parsedData, setParsedData] = useState({
-    chapters: [] as { title: string; page: number }[],
-    thoughtUnits: [] as string[],
-  });
-  const inputRef = useRef<HTMLInputElement>(null);
-  const { theme, setTheme } = useTheme();
-  const [showRightBrainModal, setShowRightBrainModal] = useState(false);
-  const [hybridIndex, setHybridIndex] = useState(0);
+export default function HybridReader({ content = "", html = "" }: HybridReaderProps) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const current = ref.current;
+    if (!current) return;
+
+    const links = current.querySelectorAll("a[href^='#chapter-']");
+    const handleClick = (e: Event) => {
+      e.preventDefault();
+      const id = (e.target as HTMLAnchorElement).getAttribute("href")?.slice(1);
+      const target = document.getElementById(id!);
+      if (target) target.scrollIntoView({ behavior: "smooth" });
+    };
+
+    links.forEach((link) => link.addEventListener("click", handleClick));
+    return () => links.forEach((link) => link.removeEventListener("click", handleClick));
+  }, [html]);
+
+  const units = content.split(".").filter(Boolean);
+  const totalUnits = units.length;
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [wpm, setWpm] = useState(200);
   const [isPlaying, setIsPlaying] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const goToPage = () => {
-    const input = document.getElementById("pageNumber") as HTMLInputElement;
-    const targetPage = parseInt(input.value);
-    if (!isNaN(targetPage) && targetPage >= 1 && targetPage <= (numPages ?? 1)) {
-      setPageNumber(targetPage);
-    }
-  };
+  const words = units[currentIndex]?.trim().split(" ") || [];
+  const totalWords = words.length;
+  const [wordIndex, setWordIndex] = useState(0);
 
-  const toggleDarkMode = () => {
-    setTheme(theme === "dark" ? "light" : "dark");
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0] || null;
-    setFile(selectedFile);
-    setPageNumber(1);
-
-    if (selectedFile) {
-      const parsed = await parseBookWithChapters(selectedFile);
-      setParsedData({
-        chapters: parsed.chapters || [],
-        thoughtUnits: parsed.parsedUnits || [],
-      });
-    }
-  };
-
-  function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
-    setNumPages(numPages);
-  }
-
-  const handleStart = () => {
-    setIsPlaying(true);
-    const interval = setInterval(() => {
-      setHybridIndex((i) => {
-        if (i + 1 >= parsedData.thoughtUnits.length) {
-          clearInterval(interval);
-          return i;
-        }
-        return i + 1;
-      });
-    }, 60000 / 200);
-  };
-
-  const handleReset = () => {
-    setIsPlaying(false);
-    setHybridIndex(0);
-  };
+  const timePerWord = 60000 / wpm;
+  const timeLeft = Math.ceil(((totalUnits - currentIndex) * totalWords - wordIndex) * timePerWord / 1000);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight") setPageNumber((p) => Math.min((numPages ?? p), p + 1));
-      if (e.key === "ArrowLeft") setPageNumber((p) => Math.max(1, p - 1));
+      if (e.key === "ArrowLeft") handlePrev();
+      else if (e.key === "ArrowRight") handleNext();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [numPages, mode]);
+  }, [wordIndex, currentIndex]);
+
+  useEffect(() => {
+    if (isPlaying && wordIndex < totalWords) {
+      timerRef.current = setTimeout(() => {
+        setWordIndex((prev) => prev + 1);
+      }, timePerWord);
+    } else if (isPlaying && wordIndex >= totalWords) {
+      if (currentIndex < totalUnits - 1) {
+        setCurrentIndex((prev) => prev + 1);
+        setWordIndex(0);
+      } else {
+        setIsPlaying(false);
+      }
+    }
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [isPlaying, wordIndex, currentIndex]);
+
+  useEffect(() => {
+    const currentEl = document.getElementById(`unit-${currentIndex}`);
+    if (currentEl) {
+      currentEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [currentIndex]);
+
+  const handleStart = () => setIsPlaying(true);
+  const handleReset = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setIsPlaying(false);
+    setCurrentIndex(0);
+    setWordIndex(0);
+  };
+
+  const handleWpmChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseInt(e.target.value);
+    if (!isNaN(val) && val > 0) {
+      setWpm(val);
+    }
+  };
+
+  const handlePrev = () => {
+    if (wordIndex > 0) {
+      setWordIndex((prev) => prev - 1);
+    } else if (currentIndex > 0) {
+      setCurrentIndex((prev) => prev - 1);
+      setWordIndex(units[currentIndex - 1]?.trim().split(" ").length - 1 || 0);
+    }
+  };
+
+  const handleNext = () => {
+    if (wordIndex < totalWords - 1) {
+      setWordIndex((prev) => prev + 1);
+    } else if (currentIndex < totalUnits - 1) {
+      setCurrentIndex((prev) => prev + 1);
+      setWordIndex(0);
+    }
+  };
+
+  const progress = Math.floor(((currentIndex + wordIndex / totalWords) / totalUnits) * 100);
 
   return (
-    <div className="flex h-screen text-sm">
-      <div className="w-64 bg-background p-4 border-r border-border space-y-4 overflow-y-auto">
-        <div className="text-xl font-bold flex items-center gap-2">
-          <span>🧠</span> Thought-Unit Reader
-        </div>
-        <p className="text-xs text-muted-foreground ml-6 -mt-2">Read deeper, faster, and smarter.</p>
+    <div className="w-full p-4 space-y-6">
+      <h1 className="text-pink-500 font-bold text-xl">Thought-Unit Reader</h1>
+      <p className="text-sm text-gray-400 mb-2">Read deeper, faster, and smarter.</p>
 
-        <div>
-          <Label htmlFor="upload">Upload a File</Label>
-          <input
-            id="upload"
-            type="file"
-            accept="application/pdf"
-            onChange={handleFileChange}
-            className="mt-2"
+      <Card className="p-4 shadow-lg">
+        <div className="flex flex-wrap items-center gap-4">
+          <Button onClick={handleStart} className="bg-green-500 hover:bg-green-600 text-white">▶ Start</Button>
+          <Button onClick={handleReset} className="bg-gray-300 text-black">🔁 Reset</Button>
+          <Button onClick={handlePrev} className="bg-blue-300">⬅</Button>
+          <Button onClick={handleNext} className="bg-blue-300">➡</Button>
+          <div className="flex flex-col">
+            <Label htmlFor="wpm" className="text-xs">WPM</Label>
+            <Input
+              id="wpm"
+              type="number"
+              value={wpm}
+              onChange={handleWpmChange}
+              className="w-20 text-black"
+            />
+          </div>
+          <div className="text-center">
+            <p className="text-xs">Complete</p>
+            <p className="text-blue-500 font-bold">{progress}%</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs">Current</p>
+            <p className="text-green-500 font-bold">{currentIndex + 1}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs">WPM</p>
+            <p className="text-purple-500 font-bold">{wpm}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs">Left</p>
+            <p className="text-orange-500 font-bold">{timeLeft}s</p>
+          </div>
+        </div>
+      </Card>
+
+      <div className="text-center mt-6" id={`unit-${currentIndex}`}>
+        <h2 className="text-sm text-gray-500">Thought Unit {currentIndex + 1} of {totalUnits}</h2>
+        <div className="flex justify-center flex-wrap gap-2 text-2xl mt-4">
+          {words.map((word, idx) => (
+            <span
+              key={idx}
+              className={`transition-all px-2 py-1 rounded ${
+                idx === wordIndex ? "bg-yellow-400 font-bold" : "text-gray-800"
+              }`}
+            >
+              {word}
+            </span>
+          ))}
+        </div>
+        <div className="mt-4">
+          <div className="w-full h-2 bg-gray-200 rounded">
+            <div
+              className="h-2 bg-yellow-400 rounded"
+              style={{ width: `${(wordIndex / totalWords) * 100}%` }}
+            ></div>
+          </div>
+          <p className="text-xs mt-1">Word {wordIndex + 1} of {totalWords}</p>
+        </div>
+      </div>
+
+      {html && (
+        <ScrollArea className="h-full w-full p-4">
+          <div
+            ref={ref}
+            className="prose dark:prose-invert max-w-none"
+            dangerouslySetInnerHTML={{ __html: html }}
           />
-        </div>
-
-        <div>
-          <Label>Reading Mode</Label>
-          <select
-            className="mt-2 w-full border px-2 py-1 rounded"
-            value={mode}
-            onChange={(e) => {
-              const selected = e.target.value;
-              if (selected === "right-brain") setShowRightBrainModal(true);
-              setMode(selected);
-            }}
-          >
-            <option value="original">Original</option>
-            <option value="hybrid">Hybrid</option>
-            <option value="right-brain">Right Brain (Coming Soon)</option>
-          </select>
-        </div>
-
-        {parsedData.chapters.length > 0 && (
-          <div>
-            <Label>Table of Contents</Label>
-            <ScrollArea className="mt-2 h-48 pr-2 text-xs">
-              <ul className="space-y-1">
-                {parsedData.chapters.map((chapter, idx) => (
-                  <li key={idx}>
-                    <button
-                      className="text-blue-600 hover:underline w-full text-left"
-                      onClick={() => setPageNumber(chapter.page)}
-                    >
-                      {chapter.title}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </ScrollArea>
-          </div>
-        )}
-
-        <Button
-          onClick={toggleDarkMode}
-          variant="outline"
-          className="w-full flex gap-2 items-center mt-2"
-        >
-          {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />} Toggle {theme === "dark" ? "Light" : "Dark"} Mode
-        </Button>
-      </div>
-
-      <div className="flex-1 p-4 overflow-auto">
-        {file ? (
-          mode === "original" ? (
-            <>
-              <div className="flex justify-between items-center mb-4 flex-wrap gap-4">
-                <div className="text-muted-foreground text-xs">
-                  Page {pageNumber} / {numPages}
-                </div>
-                <div className="flex gap-2 items-center">
-                  <span className="text-xs">Zoom {Math.round(zoom * 100)}%</span>
-                  <Button size="sm" onClick={() => setZoom((z) => Math.min(z + 0.1, 2))}>+</Button>
-                  <Button size="sm" onClick={() => setZoom((z) => Math.max(z - 0.1, 0.5))}>-</Button>
-                </div>
-                <div className="flex gap-2 items-center">
-                  <input
-                    id="pageNumber"
-                    type="number"
-                    className="border px-2 py-1 w-20 text-xs"
-                    placeholder="Page #"
-                    defaultValue={pageNumber}
-                  />
-                  <Button size="sm" onClick={goToPage}>Go</Button>
-                </div>
-              </div>
-              <Document file={file} onLoadSuccess={onDocumentLoadSuccess} loading={<div className="text-center mt-40">Loading PDF...</div>}>
-                <Page pageNumber={pageNumber} scale={zoom} onClick={() => setMode("hybrid")} />
-              </Document>
-            </>
-          ) : mode === "hybrid" ? (
-            <div className="max-w-xl mx-auto space-y-4">
-              <div className="border rounded p-4 shadow">
-                <div className="font-semibold text-sm text-blue-500">⚡ Hybrid Reading Controls</div>
-                <div className="grid grid-cols-6 gap-2 text-xs text-center mt-2">
-                  <Button size="sm" onClick={handleStart}>▶ Start</Button>
-                  <Button size="sm" variant="secondary" onClick={handleReset}>⟳ Reset</Button>
-                  <Button size="sm" variant="default">⚙ Settings</Button>
-                  <div className="text-blue-500"><strong>{Math.round((hybridIndex / parsedData.thoughtUnits.length) * 100)}%</strong><br />Complete</div>
-                  <div className="text-green-600"><strong>{hybridIndex + 1}</strong><br />Current</div>
-                  <div className="text-purple-500"><strong>200</strong><br />WPM</div>
-                  <div className="text-orange-400"><strong>{Math.max(parsedData.thoughtUnits.length - hybridIndex - 1, 0)}s</strong><br />Left</div>
-                </div>
-              </div>
-              <div className="text-center mt-6 text-gray-700 text-sm">Thought Unit {hybridIndex + 1} of {parsedData.thoughtUnits.length}</div>
-              <div className="text-3xl font-semibold">
-                {parsedData.thoughtUnits[hybridIndex] || ""}
-              </div>
-              <div className="text-xs text-center text-muted-foreground mt-2">Word {hybridIndex + 1} of {parsedData.thoughtUnits.length}</div>
-              <div className="relative h-2 bg-gray-200 rounded mt-4">
-                <div className="absolute top-0 left-0 h-full bg-yellow-400 rounded" style={{ width: `${(hybridIndex / parsedData.thoughtUnits.length) * 100}%` }}></div>
-              </div>
-            </div>
-          ) : null
-        ) : (
-          <div className="text-center text-muted-foreground mt-20">
-            Upload a PDF file to begin reading.
-          </div>
-        )}
-      </div>
-
-      <Dialog open={showRightBrainModal} onOpenChange={setShowRightBrainModal}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Right Brain View</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            This feature is currently in development and will be available in a future update.
-          </p>
-          <DialogFooter>
-            <Button onClick={() => setShowRightBrainModal(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </ScrollArea>
+      )}
     </div>
   );
 }
