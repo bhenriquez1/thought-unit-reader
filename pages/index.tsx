@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -7,16 +7,28 @@ import { Moon, Sun } from "lucide-react";
 import { parseBookWithChapters } from "@/lib/parser";
 import { useTheme } from "next-themes";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter
+} from "@/components/ui/dialog";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
-export default function ChapterView() {
+export default function Home() {
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [file, setFile] = useState<File | null>(null);
   const [zoom, setZoom] = useState(1.5);
-  const [toc, setToc] = useState<{ title: string; page: number }[]>([]);
+
+  const [parsedData, setParsedData] = useState<{
+    chapters: { title: string; page: number }[];
+    thoughtUnits: string[];
+  }>({ chapters: [], thoughtUnits: [] });
+
   const inputRef = useRef<HTMLInputElement>(null);
   const { theme, setTheme } = useTheme();
   const [showRightBrainModal, setShowRightBrainModal] = useState(false);
@@ -39,8 +51,11 @@ export default function ChapterView() {
     setPageNumber(1);
 
     if (selectedFile) {
-      const chapters = await parseBookWithChapters(selectedFile);
-      setToc(chapters);
+      const parsed = await parseBookWithChapters(selectedFile);
+      setParsedData({
+        chapters: parsed.chapters || [],
+        thoughtUnits: parsed.parsedUnits || [],
+      });
     }
   };
 
@@ -87,12 +102,12 @@ export default function ChapterView() {
           </select>
         </div>
 
-        {toc.length > 0 && (
+        {parsedData.chapters.length > 0 && (
           <div>
             <Label>Table of Contents</Label>
             <ScrollArea className="mt-2 h-48 pr-2 text-xs">
               <ul className="space-y-1">
-                {toc.map((chapter, idx) => (
+                {parsedData.chapters.map((chapter, idx) => (
                   <li key={idx}>
                     <button
                       className="text-blue-600 hover:underline w-full text-left"
@@ -163,9 +178,9 @@ export default function ChapterView() {
           <p className="text-sm text-muted-foreground">
             This feature is currently in development and will be available in a future update.
           </p>
-          <div className="flex justify-end">
+          <DialogFooter>
             <Button onClick={() => setShowRightBrainModal(false)}>Close</Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
