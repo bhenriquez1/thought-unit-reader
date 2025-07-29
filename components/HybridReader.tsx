@@ -44,6 +44,15 @@ export default function HybridReader({ content = "", html = "" }: HybridReaderPr
   const timeLeft = Math.ceil(((totalUnits - currentIndex) * totalWords - wordIndex) * timePerWord / 1000);
 
   useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") handlePrev();
+      else if (e.key === "ArrowRight") handleNext();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [wordIndex, currentIndex]);
+
+  useEffect(() => {
     if (isPlaying && wordIndex < totalWords) {
       timerRef.current = setTimeout(() => {
         setWordIndex((prev) => prev + 1);

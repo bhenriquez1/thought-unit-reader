@@ -31,6 +31,8 @@ export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
   const { theme, setTheme } = useTheme();
   const [showRightBrainModal, setShowRightBrainModal] = useState(false);
+  const [hybridIndex, setHybridIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const goToPage = () => {
     const input = document.getElementById("pageNumber") as HTMLInputElement;
@@ -62,6 +64,24 @@ export default function Home() {
     setNumPages(numPages);
   }
 
+  const handleStart = () => {
+    setIsPlaying(true);
+    const interval = setInterval(() => {
+      setHybridIndex((i) => {
+        if (i + 1 >= parsedData.thoughtUnits.length) {
+          clearInterval(interval);
+          return i;
+        }
+        return i + 1;
+      });
+    }, 60000 / 200);
+  };
+
+  const handleReset = () => {
+    setIsPlaying(false);
+    setHybridIndex(0);
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") setPageNumber((p) => Math.min((numPages ?? p), p + 1));
@@ -69,14 +89,15 @@ export default function Home() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [numPages]);
+  }, [numPages, mode]);
 
   return (
     <div className="flex h-screen text-sm">
       <div className="w-64 bg-background p-4 border-r border-border space-y-4 overflow-y-auto">
         <div className="text-xl font-bold flex items-center gap-2">
-          <span>📘</span> Reader
+          <span>🧠</span> Thought-Unit Reader
         </div>
+        <p className="text-xs text-muted-foreground ml-6 -mt-2">Read deeper, faster, and smarter.</p>
 
         <div>
           <Label htmlFor="upload">Upload a File</Label>
@@ -160,7 +181,7 @@ export default function Home() {
                 </div>
               </div>
               <Document file={file} onLoadSuccess={onDocumentLoadSuccess} loading={<div className="text-center mt-40">Loading PDF...</div>}>
-                <Page pageNumber={pageNumber} scale={zoom} />
+                <Page pageNumber={pageNumber} scale={zoom} onClick={() => setMode("hybrid")} />
               </Document>
             </>
           ) : mode === "hybrid" ? (
@@ -168,23 +189,22 @@ export default function Home() {
               <div className="border rounded p-4 shadow">
                 <div className="font-semibold text-sm text-blue-500">⚡ Hybrid Reading Controls</div>
                 <div className="grid grid-cols-6 gap-2 text-xs text-center mt-2">
-                  <Button size="sm">▶ Start</Button>
-                  <Button size="sm" variant="secondary">⟳ Reset</Button>
+                  <Button size="sm" onClick={handleStart}>▶ Start</Button>
+                  <Button size="sm" variant="secondary" onClick={handleReset}>⟳ Reset</Button>
                   <Button size="sm" variant="default">⚙ Settings</Button>
-                  <div className="text-blue-500"><strong>0%</strong><br />Complete</div>
-                  <div className="text-green-600"><strong>1</strong><br />Current</div>
+                  <div className="text-blue-500"><strong>{Math.round((hybridIndex / parsedData.thoughtUnits.length) * 100)}%</strong><br />Complete</div>
+                  <div className="text-green-600"><strong>{hybridIndex + 1}</strong><br />Current</div>
                   <div className="text-purple-500"><strong>200</strong><br />WPM</div>
-                  <div className="text-orange-400"><strong>11357s</strong><br />Left</div>
+                  <div className="text-orange-400"><strong>{Math.max(parsedData.thoughtUnits.length - hybridIndex - 1, 0)}s</strong><br />Left</div>
                 </div>
               </div>
-              <div className="text-center mt-6 text-gray-700 text-sm">Thought Unit 1 of {parsedData.thoughtUnits.length}</div>
+              <div className="text-center mt-6 text-gray-700 text-sm">Thought Unit {hybridIndex + 1} of {parsedData.thoughtUnits.length}</div>
               <div className="text-3xl font-semibold">
-                <span className="bg-yellow-300 px-2 py-1 rounded shadow">About</span>
-                <span> the pagination of this</span>
+                {parsedData.thoughtUnits[hybridIndex] || ""}
               </div>
-              <div className="text-xs text-center text-muted-foreground mt-2">Word 1 of 5</div>
+              <div className="text-xs text-center text-muted-foreground mt-2">Word {hybridIndex + 1} of {parsedData.thoughtUnits.length}</div>
               <div className="relative h-2 bg-gray-200 rounded mt-4">
-                <div className="absolute top-0 left-0 h-full bg-yellow-400 rounded" style={{ width: '10%' }}></div>
+                <div className="absolute top-0 left-0 h-full bg-yellow-400 rounded" style={{ width: `${(hybridIndex / parsedData.thoughtUnits.length) * 100}%` }}></div>
               </div>
             </div>
           ) : null
