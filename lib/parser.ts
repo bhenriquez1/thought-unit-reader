@@ -1,12 +1,32 @@
-// lib/parser.ts
+import { getDocument, GlobalWorkerOptions, version as pdfjsVersion } from "pdfjs-dist";
+
+GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsVersion}/pdf.worker.min.js`;
+
+type Chapter = { title: string; page: number };
 
 export async function parseBookWithChapters(file: File | string): Promise<{
-  chapters: { title: string; page: number }[];
+  chapters: Chapter[];
   parsedUnits: string[];
 }> {
   let text = "";
 
-  if (typeof file === "string") {
+  // If PDF (File), use pdfjs to extract text
+  if (typeof file !== "string" && file.type === "application/pdf") {
+    const buffer = await file.arrayBuffer();
+    const pdf = await getDocument({ data: buffer }).promise;
+    const allText: string[] = [];
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items
+        .map((item) => ("str" in item ? item.str : ""))
+        .join(" ");
+      allText.push(pageText.trim());
+    }
+
+    text = allText.join("\n\n");
+  } else if (typeof file === "string") {
     text = file;
   } else {
     text = await file.text();
@@ -33,9 +53,8 @@ export async function parseBookWithChapters(file: File | string): Promise<{
     .map((unit) => unit.trim())
     .filter((unit) => unit.length > 0);
 
-  const chapters: { title: string; page: number }[] = [];
+  const chapters: Chapter[] = [];
 
-  // Insert chapter markers into units and record chapter locations
   chapterMarkers.forEach((marker) => {
     const approxUnitIndex = parsedUnits.findIndex((unit) =>
       unit.includes(marker.title.split(" ")[1])
@@ -47,11 +66,15 @@ export async function parseBookWithChapters(file: File | string): Promise<{
     chapters.push({ title: marker.title, page: finalIndex + 1 });
   });
 
+  if (chapters.length === 0) {
+    chapters.push({ title: "Start", page: 1 });
+  }
+
   return { chapters, parsedUnits };
 }
 
 export function getChapterByPage(
-  chapters: { title: string; page: number }[],
+  chapters: Chapter[],
   currentPage: number
 ): string {
   let closest = chapters[0]?.title ?? "";
@@ -78,7 +101,7 @@ export function generateProgressiveReadingHTML(units: string[]): string {
 }
 
 export function generateHybridHTML(
-  chapters: { title: string; page: number }[],
+  chapters: Chapter[],
   units: string[]
 ): string {
   const toc = chapters

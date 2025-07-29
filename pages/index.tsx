@@ -75,9 +75,8 @@ export default function Home() {
     <div className="flex h-screen text-sm">
       <div className="w-64 bg-background p-4 border-r border-border space-y-4 overflow-y-auto">
         <div className="text-xl font-bold flex items-center gap-2">
-          <span>🧠</span> Thought-Unit Reader
+          <span>📘</span> Reader
         </div>
-        <div className="text-xs italic text-muted-foreground -mt-2">Read deeper, faster, smarter</div>
 
         <div>
           <Label htmlFor="upload">Upload a File</Label>
