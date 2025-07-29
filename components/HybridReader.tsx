@@ -13,18 +13,21 @@ interface HybridReaderProps {
 export default function HybridReader({ content = "", html = "" }: HybridReaderProps) {
   const ref = useRef<HTMLDivElement>(null);
 
+  // Link smooth scrolling for TOC
   useEffect(() => {
-    if (ref.current) {
-      const links = ref.current.querySelectorAll("a[href^='#chapter-']");
-      links.forEach((link) => {
-        link.addEventListener("click", (e) => {
-          e.preventDefault();
-          const id = (link as HTMLAnchorElement).getAttribute("href")?.slice(1);
-          const target = document.getElementById(id!);
-          if (target) target.scrollIntoView({ behavior: "smooth" });
-        });
-      });
-    }
+    const current = ref.current;
+    if (!current) return;
+
+    const links = current.querySelectorAll("a[href^='#chapter-']");
+    const handleClick = (e: Event) => {
+      e.preventDefault();
+      const id = (e.target as HTMLAnchorElement).getAttribute("href")?.slice(1);
+      const target = document.getElementById(id!);
+      if (target) target.scrollIntoView({ behavior: "smooth" });
+    };
+
+    links.forEach((link) => link.addEventListener("click", handleClick));
+    return () => links.forEach((link) => link.removeEventListener("click", handleClick));
   }, [html]);
 
   const units = content.split(".").filter(Boolean);
@@ -54,11 +57,23 @@ export default function HybridReader({ content = "", html = "" }: HybridReaderPr
         setIsPlaying(false);
       }
     }
-    return () => clearTimeout(timerRef.current as NodeJS.Timeout);
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
   }, [isPlaying, wordIndex, currentIndex]);
+
+  // Auto-scroll to current thought-unit
+  useEffect(() => {
+    const currentEl = document.getElementById(`unit-${currentIndex}`);
+    if (currentEl) {
+      currentEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [currentIndex]);
 
   const handleStart = () => setIsPlaying(true);
   const handleReset = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
     setIsPlaying(false);
     setCurrentIndex(0);
     setWordIndex(0);
@@ -108,13 +123,15 @@ export default function HybridReader({ content = "", html = "" }: HybridReaderPr
         </div>
       </Card>
 
-      <div className="text-center mt-6">
+      <div className="text-center mt-6" id={`unit-${currentIndex}`}>
         <h2 className="text-sm text-gray-500">Thought Unit {currentIndex + 1} of {totalUnits}</h2>
         <div className="flex justify-center flex-wrap gap-2 text-2xl mt-4">
           {words.map((word, idx) => (
             <span
               key={idx}
-              className={`transition-all px-2 py-1 rounded ${idx === wordIndex ? "bg-yellow-400 font-bold" : "text-gray-800"}`}
+              className={`transition-all px-2 py-1 rounded ${
+                idx === wordIndex ? "bg-yellow-400 font-bold" : "text-gray-800"
+              }`}
             >
               {word}
             </span>

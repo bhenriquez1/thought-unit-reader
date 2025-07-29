@@ -14,27 +14,38 @@ export async function parseBookWithChapters(file: File | string): Promise<{
 
   const lines = text.split("\n");
 
-  const chapters = lines
-    .map((line, index) => {
-      const match =
-        line.match(/^Chapter\s+\d+[:.\s]/i) ||
-        line.match(/^CHAPTER\s+\d+[:.\s]/i) ||
-        line.match(/^\d+\.\s+[A-Z]/) || // e.g. 1. Introduction
-        line.match(/^\d+\s+[A-Z]/);     // e.g. 1 Introduction
+  const chapterMarkers: { index: number; title: string }[] = [];
 
-      return match
-        ? {
-            title: match[0].trim(),
-            page: index + 1,
-          }
-        : null;
-    })
-    .filter(Boolean) as { title: string; page: number }[];
+  lines.forEach((line, index) => {
+    const match =
+      line.match(/^Chapter\s+\d+[:.\s]/i) ||
+      line.match(/^CHAPTER\s+\d+[:.\s]/i) ||
+      line.match(/^\d+\.\s+[A-Z]/) ||
+      line.match(/^\d+\s+[A-Z]/);
+
+    if (match) {
+      chapterMarkers.push({ index, title: match[0].trim() });
+    }
+  });
 
   const parsedUnits = text
-    .split(/\n{2,}/) // split on two or more newlines
+    .split(/\n{2,}/) // Split by paragraph
     .map((unit) => unit.trim())
     .filter((unit) => unit.length > 0);
+
+  // Inject chapter titles directly into parsedUnits as header blocks
+  const chapters: { title: string; page: number }[] = [];
+
+  chapterMarkers.forEach((marker) => {
+    const approxUnitIndex = Math.floor(marker.index / 2);
+    chapters.push({ title: marker.title, page: approxUnitIndex + 1 });
+
+    parsedUnits.splice(
+      approxUnitIndex,
+      0,
+      `###CHAPTER:${marker.title}` // Mark for easier parsing in Hybrid mode
+    );
+  });
 
   return { chapters, parsedUnits };
 }
@@ -55,6 +66,11 @@ export function getChapterByPage(
 export function generateProgressiveReadingHTML(units: string[]): string {
   return units
     .map((unit, i) => {
+      if (unit.startsWith("###CHAPTER:")) {
+        const title = unit.replace("###CHAPTER:", "").trim();
+        return `<h3 class="text-lg font-semibold mt-6 mb-2">${title}</h3>`;
+      }
+
       const colorClass = i % 2 === 0 ? "text-black" : "text-gray-500";
       return `<p class="${colorClass} mb-4">${unit}</p>`;
     })
@@ -76,12 +92,19 @@ export function generateHybridHTML(
     )
     .join("");
 
+  let chapterCounter = 0;
+
   const body = units
     .map((unit, i) => {
+      if (unit.startsWith("###CHAPTER:")) {
+        const title = unit.replace("###CHAPTER:", "").trim();
+        const header = `<h3 id="chapter-${chapterCounter}" class="text-lg font-semibold mt-8 mb-4">${title}</h3>`;
+        chapterCounter++;
+        return header;
+      }
+
       const colorClass = i % 2 === 0 ? "text-black" : "text-gray-500";
-      return `<p id="chapter-${i}" class="${colorClass} mt-6 text-base leading-relaxed">
-        ${unit}
-      </p>`;
+      return `<p class="${colorClass} mt-2 text-base leading-relaxed">${unit}</p>`;
     })
     .join("\n");
 
