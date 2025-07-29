@@ -1,7 +1,7 @@
 // components/ui/PreviewModal.tsx
 import React from "react";
 import { Dialog } from "@headlessui/react";
-import { Card } from "@/components/card";
+import { Card } from "@/components/ui/card";
 
 interface PreviewModalProps {
   isOpen: boolean;
