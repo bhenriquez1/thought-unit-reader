@@ -34,7 +34,7 @@ export default function Home() {
         const text = reader.result as string;
         setInputText(text);
         const result = await parseBookWithChapters(text);
-        setThoughtUnits(result.thoughtUnits || []);
+        setThoughtUnits(result.parsedUnits || []); // ✅ Corrected line
       };
       reader.readAsText(uploadedFile);
     }
@@ -95,7 +95,9 @@ export default function Home() {
           <Button variant="outline">
             <Settings className="w-4 h-4" />
           </Button>
-          <span className="text-sm text-yellow-400">{thoughtUnits.length ? `${Math.floor((currentWordIndex / thoughtUnits.length) * 100)}% Complete` : '0% Complete'}</span>
+          <span className="text-sm text-yellow-400">
+            {thoughtUnits.length ? `${Math.floor((currentWordIndex / thoughtUnits.length) * 100)}% Complete` : '0% Complete'}
+          </span>
           <span className="text-sm">{currentWordIndex + 1} Current</span>
           <span className="text-purple-400">{wpm} WPM</span>
         </div>
