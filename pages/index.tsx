@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Moon, Sun } from "lucide-react";
 import { parseBookWithChapters } from "@/lib/parser";
 import { useTheme } from "next-themes";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
@@ -88,18 +90,20 @@ export default function ChapterView() {
         {toc.length > 0 && (
           <div>
             <Label>Table of Contents</Label>
-            <ul className="mt-2 space-y-1 max-h-48 overflow-y-auto text-xs">
-              {toc.map((chapter, idx) => (
-                <li key={idx}>
-                  <button
-                    className="text-blue-600 hover:underline w-full text-left"
-                    onClick={() => setPageNumber(chapter.page)}
-                  >
-                    {chapter.title}
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <ScrollArea className="mt-2 h-48 pr-2 text-xs">
+              <ul className="space-y-1">
+                {toc.map((chapter, idx) => (
+                  <li key={idx}>
+                    <button
+                      className="text-blue-600 hover:underline w-full text-left"
+                      onClick={() => setPageNumber(chapter.page)}
+                    >
+                      {chapter.title}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </ScrollArea>
           </div>
         )}
 
@@ -151,19 +155,19 @@ export default function ChapterView() {
       </div>
 
       {/* Right Brain Modal */}
-      {showRightBrainModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-zinc-900 p-6 rounded-xl shadow-lg w-96 space-y-4">
-            <h2 className="text-lg font-bold">Right Brain View</h2>
-            <p className="text-sm text-muted-foreground">
-              This feature is currently in development and will be available in a future update.
-            </p>
-            <div className="flex justify-end">
-              <Button onClick={() => setShowRightBrainModal(false)}>Close</Button>
-            </div>
+      <Dialog open={showRightBrainModal} onOpenChange={setShowRightBrainModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Right Brain View</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This feature is currently in development and will be available in a future update.
+          </p>
+          <div className="flex justify-end">
+            <Button onClick={() => setShowRightBrainModal(false)}>Close</Button>
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
