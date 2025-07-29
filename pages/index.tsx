@@ -16,9 +16,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
-// ✅ Configure PDF.js
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-pdfjs.verbosity = pdfjs.VerbosityLevel.INFOS;
 
 export default function Home() {
   const [numPages, setNumPages] = useState<number | null>(null);
@@ -61,7 +59,6 @@ export default function Home() {
   };
 
   function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
-    console.timeEnd("PDF Load ✅");
     setNumPages(numPages);
   }
 
@@ -163,8 +160,7 @@ export default function Home() {
                   <Button size="sm" onClick={goToPage}>Go</Button>
                 </div>
               </div>
-              {console.time("PDF Load ✅")}
-              <Document file={file} onLoadSuccess={onDocumentLoadSuccess}>
+              <Document file={file} onLoadSuccess={onDocumentLoadSuccess} loading={<div className="text-center mt-40">Loading PDF...</div>}>
                 <Page pageNumber={pageNumber} scale={zoom} />
               </Document>
             </>
