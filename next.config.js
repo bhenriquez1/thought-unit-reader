@@ -1,20 +1,11 @@
-/** @type {import('next').NextConfig} */
 const path = require("path");
 
+/** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',
-  trailingSlash: true,
-  images: {
-    unoptimized: true,
-  },
+  reactStrictMode: true,
   webpack: (config) => {
-    config.resolve = config.resolve || {};
-    config.resolve.alias = {
-      ...(config.resolve.alias || {}),
-      canvas: false,
-      a: path.resolve(__dirname, "components"),
-      "@": path.resolve(__dirname),
-    };
+    config.resolve.alias["@"] = path.resolve(__dirname);
+    config.resolve.alias["@components"] = path.resolve(__dirname, "components");
     return config;
   },
 };
