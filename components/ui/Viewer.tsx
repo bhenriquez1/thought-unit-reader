@@ -1,13 +1,9 @@
-// components/ui/Viewer.tsx
-
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { Button } from "@/components/ui/button";
-import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 
-// PDF worker setup
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 type ViewerProps = {
@@ -15,56 +11,43 @@ type ViewerProps = {
 };
 
 export default function Viewer({ fileUrl }: ViewerProps) {
-  const [numPages, setNumPages] = useState<number | null>(null);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [scale, setScale] = useState(1.0);
+  const [numPages, setNumPages] = useState<number>(0);
+  const [pageNumber, setPageNumber] = useState<number>(1);
+  const [scale, setScale] = useState<number>(1.3);
 
-  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+  const handleDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
-    setPageNumber(1);
   };
 
-  const goToPage = (direction: "next" | "prev") => {
-    setPageNumber((prev) => {
-      if (direction === "next" && numPages && prev < numPages) return prev + 1;
-      if (direction === "prev" && prev > 1) return prev - 1;
-      return prev;
-    });
-  };
-
-  const zoom = (type: "in" | "out" | "reset") => {
-    if (type === "in") setScale((prev) => Math.min(prev + 0.25, 3));
-    else if (type === "out") setScale((prev) => Math.max(prev - 0.25, 0.5));
-    else setScale(1.0);
-  };
-
-  useEffect(() => {
-    setPageNumber(1); // Reset to first page when file changes
-  }, [fileUrl]);
+  const nextPage = () => setPageNumber((prev) => Math.min(prev + 1, numPages));
+  const prevPage = () => setPageNumber((prev) => Math.max(prev - 1, 1));
+  const zoomIn = () => setScale((prev) => prev + 0.2);
+  const zoomOut = () => setScale((prev) => Math.max(prev - 0.2, 0.5));
 
   return (
-    <div className="w-full space-y-4">
-      <div className="flex justify-between items-center gap-2">
-        <div className="space-x-2">
-          <Button variant="outline" onClick={() => goToPage("prev")} disabled={pageNumber === 1}>
-            Prev
-          </Button>
-          <Button variant="outline" onClick={() => goToPage("next")} disabled={pageNumber === numPages}>
-            Next
-          </Button>
-        </div>
-        <span className="text-sm text-zinc-600 dark:text-zinc-300">
+    <div className="flex flex-col items-center justify-center p-4 bg-white dark:bg-zinc-900 rounded shadow-md">
+      <div className="mb-4 flex items-center gap-3">
+        <Button onClick={prevPage} disabled={pageNumber <= 1}>
+          ← Prev
+        </Button>
+        <p className="text-sm text-gray-700 dark:text-gray-200">
           Page {pageNumber} of {numPages}
-        </span>
-        <div className="space-x-2">
-          <Button variant="ghost" onClick={() => zoom("out")}>−</Button>
-          <Button variant="ghost" onClick={() => zoom("reset")}>100%</Button>
-          <Button variant="ghost" onClick={() => zoom("in")}>+</Button>
-        </div>
+        </p>
+        <Button onClick={nextPage} disabled={pageNumber >= numPages}>
+          Next →
+        </Button>
       </div>
 
-      <div className="flex justify-center border rounded shadow">
-        <Document file={fileUrl} onLoadSuccess={onDocumentLoadSuccess}>
+      <div className="mb-4 flex items-center gap-3">
+        <Button onClick={zoomOut}>– Zoom</Button>
+        <span className="text-sm text-gray-600 dark:text-gray-300">
+          {Math.round(scale * 100)}%
+        </span>
+        <Button onClick={zoomIn}>+ Zoom</Button>
+      </div>
+
+      <div className="border rounded">
+        <Document file={fileUrl} onLoadSuccess={handleDocumentLoadSuccess}>
           <Page pageNumber={pageNumber} scale={scale} />
         </Document>
       </div>
