@@ -3,21 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Loader from "@/components/ui/loader";
-
-import {
-  parseBookWithChapters,
-  getPdfViewerHTML,
-} from "@/lib/parser";
-
-const DynamicViewer = dynamic(() => import("./Viewer"), {
-  ssr: false,
-  loading: () => <Loader label="Loading PDF..." />,
-});
+import { parseBookWithChapters, generateHybridHTML } from "@/lib/parser";
 
 type ViewMode = "hybrid" | "pdf" | "text";
 
@@ -26,53 +14,37 @@ interface HybridReaderProps {
   scale?: number;
 }
 
+const DynamicViewer = dynamic(() => import("./Viewer"), {
+  ssr: false,
+  loading: () => <Loader label="Loading PDF..." />, 
+});
+
 export default function HybridReader({ file, scale = 1.5 }: HybridReaderProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("hybrid");
-  const [parsedUnits, setParsedUnits] = useState<string | null>(null);
+  const [content, setContent] = useState<string>("");
   const [pdfURL, setPdfURL] = useState<string>("");
-  const [filename, setFilename] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const processFile = async () => {
+      if (!file) return;
       setLoading(true);
       try {
-        const text = await file.text();
-        const name = file.name;
-        setFilename(name);
-
-        const { parsedUnits } = await parseBookWithChapters(file);
-
-        const html = parsedUnits
-          .map(
-            (chapter, idx) =>
-              `<div class="mb-8">${chapter
-                .map(
-                  (unit) =>
-                    `<p class="text-lg leading-relaxed">${unit
-                      .map((word, i) =>
-                        `<span class="${i % 2 === 0 ? "text-black" : "text-gray-500"}">${word}</span>`
-                      )
-                      .join(" ")}</p>`
-                )
-                .join("")}</div>`
-          )
-          .join("");
-
-        setParsedUnits(html);
+        const { chapters, parsedUnits } = await parseBookWithChapters(file);
+        const html = generateHybridHTML(chapters, parsedUnits);
+        setContent(html);
 
         const blobURL = URL.createObjectURL(file);
         setPdfURL(blobURL);
       } catch (error) {
-        console.error("Failed to parse:", error);
-        setParsedUnits(`<p class="text-red-500">Error parsing file.</p>`);
+        console.error("Error parsing hybrid file:", error);
+        setContent("<p class='text-red-500'>Failed to load content.</p>");
       } finally {
         setLoading(false);
       }
     };
-
-    if (file) processFile();
+    processFile();
   }, [file, scale]);
 
   if (!file) return <p className="text-center text-gray-500">No file provided.</p>;
@@ -95,23 +67,23 @@ export default function HybridReader({ file, scale = 1.5 }: HybridReaderProps) {
         </select>
       </div>
 
-      {/* PDF Viewer Only */}
+      {/* PDF Only */}
       {viewMode === "pdf" && pdfURL && (
         <DynamicViewer fileUrl={pdfURL} />
       )}
 
       {/* Text Only */}
-      {viewMode === "text" && parsedUnits && (
+      {viewMode === "text" && content && (
         <ScrollArea className="h-[80vh] border p-4 rounded bg-white dark:bg-zinc-900">
           <div
             ref={ref}
             className="prose dark:prose-invert max-w-none"
-            dangerouslySetInnerHTML={{ __html: parsedUnits }}
+            dangerouslySetInnerHTML={{ __html: content }}
           />
         </ScrollArea>
       )}
 
-      {/* Hybrid */}
+      {/* Hybrid View */}
       {viewMode === "hybrid" && (
         <div className="grid md:grid-cols-2 gap-6">
           <div className="border rounded overflow-hidden">
@@ -121,7 +93,7 @@ export default function HybridReader({ file, scale = 1.5 }: HybridReaderProps) {
             <div
               ref={ref}
               className="prose dark:prose-invert max-w-none"
-              dangerouslySetInnerHTML={{ __html: parsedUnits }}
+              dangerouslySetInnerHTML={{ __html: content }}
             />
           </ScrollArea>
         </div>

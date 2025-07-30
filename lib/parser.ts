@@ -1,7 +1,8 @@
+"use client";
+
 import { getDocument, GlobalWorkerOptions, version as pdfjsVersion } from "pdfjs-dist";
 import mammoth from "mammoth";
-import { parseTextIntoThoughtUnits } from "@/lib/thoughtParser";
-import { getChaptersFromText } from "./chapterSplitter";
+import { cn } from "../lib/utils";
 
 GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsVersion}/pdf.worker.min.js`;
 
@@ -9,7 +10,7 @@ type Chapter = { title: string; page: number };
 
 export async function parseBookWithChapters(file: File | string): Promise<{
   chapters: Chapter[];
-  parsedUnits: string[];
+  parsedUnits: string[][];
 }> {
   let text = "";
 
@@ -57,21 +58,18 @@ export async function parseBookWithChapters(file: File | string): Promise<{
 
   chapterMarkers.sort((a, b) => a.index - b.index);
 
-  const parsedUnits = text
-    .split(/\n{2,}/)
-    .map((unit) => unit.trim())
-    .filter((unit) => unit.length > 0);
+  const paragraphs = text.split(/\n{2,}/).map((unit) => unit.trim()).filter((unit) => unit.length > 0);
+  const parsedUnits: string[][] = paragraphs.map(p => (p.match(/[^.!?\n]+[.!?\n]*/g) || []).map(s => s.trim()));
 
   const chapters: Chapter[] = [];
-
   chapterMarkers.forEach((marker) => {
     const cleanTitle = marker.title.replace(/^CHAPTER\s+\d+[:.\s]?/i, "").trim();
-    const approxUnitIndex = parsedUnits.findIndex((unit) => unit.includes(cleanTitle));
+    const approxUnitIndex = parsedUnits.findIndex((unit) => unit.join(" ").includes(cleanTitle));
     const fallbackIndex = Math.floor(marker.index / 2);
     const finalIndex = approxUnitIndex !== -1 ? approxUnitIndex : fallbackIndex;
 
-    if (!parsedUnits.includes(`###CHAPTER:${marker.title}`)) {
-      parsedUnits.splice(finalIndex, 0, `###CHAPTER:${marker.title}`);
+    if (!paragraphs.includes(`###CHAPTER:${marker.title}`)) {
+      paragraphs.splice(finalIndex, 0, `###CHAPTER:${marker.title}`);
     }
     chapters.push({ title: marker.title, page: finalIndex + 1 });
   });
@@ -83,37 +81,18 @@ export async function parseBookWithChapters(file: File | string): Promise<{
   return { chapters, parsedUnits };
 }
 
-export function getChapterByPage(
-  chapters: Chapter[],
-  currentPage: number
-): string {
-  let closest = chapters[0]?.title ?? "";
-  for (const ch of chapters) {
-    if (ch.page <= currentPage) {
-      closest = ch.title;
-    }
-  }
-  return closest;
+export function generateProgressiveReadingHTML(inputText: string): JSX.Element {
+  const sentences = inputText.match(/[^.!?\n]+[.!?\n]*/g) || [];
+  return (
+    <div className="space-y-2">
+      {sentences.map((sentence, i) => (
+        <p key={i} className={cn("text-gray-300", i % 2 === 0 ? "text-white" : "text-gray-400")}>{sentence.trim()}</p>
+      ))}
+    </div>
+  );
 }
 
-export function generateProgressiveReadingHTML(units: string[]): string {
-  return units
-    .map((unit, i) => {
-      if (unit.startsWith("###CHAPTER:")) {
-        const title = unit.replace("###CHAPTER:", "").trim();
-        return `<h3 class="text-lg font-semibold mt-6 mb-2">${title}</h3>`;
-      }
-
-      const colorClass = i % 2 === 0 ? "text-black" : "text-gray-500";
-      return `<p class="${colorClass} mb-4">${unit}</p>`;
-    })
-    .join("\n");
-}
-
-export function generateHybridHTML(
-  chapters: Chapter[],
-  units: string[]
-): string {
+export function generateHybridHTML(chapters: Chapter[], units: string[][]): string {
   const toc = chapters
     .map(
       (ch, i) => `
@@ -126,18 +105,17 @@ export function generateHybridHTML(
     .join("");
 
   let chapterCounter = 0;
-
   const body = units
-    .map((unit, i) => {
-      if (unit.startsWith("###CHAPTER:")) {
-        const title = unit.replace("###CHAPTER:", "").trim();
+    .flatMap((unit, i) => {
+      const joined = unit.join(" ");
+      if (joined.startsWith("###CHAPTER:")) {
+        const title = joined.replace("###CHAPTER:", "").trim();
         const header = `<h3 id="chapter-${chapterCounter}" class="text-lg font-semibold mt-8 mb-4">${title}</h3>`;
         chapterCounter++;
-        return header;
+        return [header];
       }
-
       const colorClass = i % 2 === 0 ? "text-black" : "text-gray-500";
-      return `<p id="unit-${i}" class="${colorClass} mt-2 text-base leading-relaxed">${unit}</p>`;
+      return [`<p id="unit-${i}" class="${colorClass} mt-2 text-base leading-relaxed">${joined}</p>`];
     })
     .join("\n");
 
@@ -151,22 +129,6 @@ export function generateHybridHTML(
       ${body}
     </div>
   `;
-}
-
-export async function extractText(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const pdf = await getDocument({ data: buffer }).promise;
-  const allText: string[] = [];
-
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    allText.push(
-      content.items.map((item) => ("str" in item ? item.str : "")).join(" ")
-    );
-  }
-
-  return allText.join("\n\n");
 }
 
 export function getPdfViewerHTML(file: File, scale: number): JSX.Element {
