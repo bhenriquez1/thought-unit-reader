@@ -8,12 +8,16 @@ GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs
 
 type Chapter = { title: string; page: number };
 
+// ----------------------------
+// 🧠 BOOK PARSING
+// ----------------------------
 export async function parseBookWithChapters(file: File | string): Promise<{
   chapters: Chapter[];
   parsedUnits: string[][];
 }> {
   let text = "";
 
+  // 📘 Handle different file types
   if (typeof file !== "string" && file.type === "application/pdf") {
     const buffer = await file.arrayBuffer();
     const pdf = await getDocument({ data: buffer }).promise;
@@ -35,8 +39,6 @@ export async function parseBookWithChapters(file: File | string): Promise<{
     const arrayBuffer = await file.arrayBuffer();
     const { value } = await mammoth.extractRawText({ arrayBuffer });
     text = value;
-  } else if (file instanceof File && file.type.startsWith("text/")) {
-    text = await file.text();
   } else {
     text = await file.text();
   }
@@ -44,6 +46,7 @@ export async function parseBookWithChapters(file: File | string): Promise<{
   const lines = text.split("\n");
   const chapterMarkers: { index: number; title: string }[] = [];
 
+  // 📚 Detect chapter titles using regex
   lines.forEach((line, index) => {
     const match =
       line.match(/^Chapter\s+\d+[:.\s]/i) ||
@@ -58,8 +61,10 @@ export async function parseBookWithChapters(file: File | string): Promise<{
 
   chapterMarkers.sort((a, b) => a.index - b.index);
 
-  const paragraphs = text.split(/\n{2,}/).map((unit) => unit.trim()).filter((unit) => unit.length > 0);
-  const parsedUnits: string[][] = paragraphs.map(p => (p.match(/[^.!?\n]+[.!?\n]*/g) || []).map(s => s.trim()));
+  const paragraphs = text.split(/\n{2,}/).map((unit) => unit.trim()).filter(Boolean);
+  const parsedUnits: string[][] = paragraphs.map(p =>
+    (p.match(/[^.!?\n]+[.!?\n]*/g) || []).map(s => s.trim())
+  );
 
   const chapters: Chapter[] = [];
   chapterMarkers.forEach((marker) => {
@@ -81,43 +86,82 @@ export async function parseBookWithChapters(file: File | string): Promise<{
   return { chapters, parsedUnits };
 }
 
+// ----------------------------
+// 📖 PROGRESSIVE READING JSX
+// ----------------------------
 export function generateProgressiveReadingHTML(inputText: string): JSX.Element {
-  const sentences = inputText.match(/[^.!?\n]+[.!?\n]*/g) || [];
+  const sentences = inputText.match(/[^.!?\n]+[.!?\n]+/g) || [];
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 text-base leading-relaxed">
       {sentences.map((sentence, i) => (
-        <p key={i} className={cn("text-gray-300", i % 2 === 0 ? "text-white" : "text-gray-400")}>{sentence.trim()}</p>
+        <p key={i} className={i % 2 === 0 ? "text-white" : "text-gray-400"}>
+          {sentence.trim()}
+        </p>
       ))}
     </div>
   );
 }
 
+// ----------------------------
+// 🧠 THOUGHT-UNIT PARSER
+// ----------------------------
+export function parseTextToThoughtUnits(text: string): string[][] {
+  const sentences = text
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/)
+    .filter((s) => s.length > 0)
+    .map((s) => s.trim());
+
+  return sentences.map((sentence) =>
+    sentence.split(/([,;:\-–\(\)\[\]\{\}]|\s+)/).filter(Boolean)
+  );
+}
+
+// ----------------------------
+// 🧠 THOUGHT-UNIT JSX
+// ----------------------------
+export function generateProgressiveReadingJSX(text: string): JSX.Element {
+  const thoughtUnits = parseTextToThoughtUnits(text);
+  return (
+    <div className="space-y-4">
+      {thoughtUnits.map((unit, idx) => (
+        <p key={idx} className="text-lg font-medium text-white bg-gray-800 p-2 rounded shadow">
+          {unit.map((word, i) => (
+            <span key={i} className={i % 2 === 0 ? "text-white" : "text-gray-400"}>
+              {word}
+            </span>
+          ))}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+// ----------------------------
+// 📚 HYBRID VIEW HTML
+// ----------------------------
 export function generateHybridHTML(chapters: Chapter[], units: string[][]): string {
   const toc = chapters
-    .map(
-      (ch, i) => `
+    .map((ch, i) => `
       <li class="mb-2">
         <a href="#chapter-${i}" class="text-blue-600 underline font-medium">
           ${ch.title}
         </a> — Page ${ch.page}
-      </li>`
-    )
+      </li>`)
     .join("");
 
   let chapterCounter = 0;
-  const body = units
-    .flatMap((unit, i) => {
-      const joined = unit.join(" ");
-      if (joined.startsWith("###CHAPTER:")) {
-        const title = joined.replace("###CHAPTER:", "").trim();
-        const header = `<h3 id="chapter-${chapterCounter}" class="text-lg font-semibold mt-8 mb-4">${title}</h3>`;
-        chapterCounter++;
-        return [header];
-      }
-      const colorClass = i % 2 === 0 ? "text-black" : "text-gray-500";
-      return [`<p id="unit-${i}" class="${colorClass} mt-2 text-base leading-relaxed">${joined}</p>`];
-    })
-    .join("\n");
+  const body = units.flatMap((unit, i) => {
+    const joined = unit.join(" ");
+    if (joined.startsWith("###CHAPTER:")) {
+      const title = joined.replace("###CHAPTER:", "").trim();
+      const header = `<h3 id="chapter-${chapterCounter}" class="text-lg font-semibold mt-8 mb-4">${title}</h3>`;
+      chapterCounter++;
+      return [header];
+    }
+    const colorClass = i % 2 === 0 ? "text-black" : "text-gray-500";
+    return [`<p id="unit-${i}" class="${colorClass} mt-2 text-base leading-relaxed">${joined}</p>`];
+  }).join("\n");
 
   return `
     <div class="flex flex-col gap-6">
@@ -131,63 +175,27 @@ export function generateHybridHTML(chapters: Chapter[], units: string[][]): stri
   `;
 }
 
+// ----------------------------
+// 📄 EMBED PDF VIEWER
+// ----------------------------
 export function getPdfViewerHTML(file: File, scale: number): JSX.Element {
+  const url = URL.createObjectURL(file);
   return (
-    <div className="mt-8 bg-white p-4 rounded">
+    <div className="mt-8 bg-white p-4 rounded shadow">
       <p className="text-sm text-gray-500 mb-2">
-        PDF viewer is embedded below (scale: {scale}x):
+        PDF viewer embedded below (scale: {scale}x):
       </p>
       <object
-        data={URL.createObjectURL(file)}
+        data={url}
         type="application/pdf"
         width="100%"
         height="600px"
       >
         <p>
-          Your browser does not support PDFs. Please download the file to view:
-          <a href={URL.createObjectURL(file)} className="text-blue-500 underline">
-            Download PDF
-          </a>
+          Your browser does not support PDFs.
+          <a href={url} className="text-blue-500 underline ml-1">Download PDF</a>
         </p>
       </object>
-    </div>
-  );
-}
-
-export function parseTextToThoughtUnits(text: string): string[][] {
-  const sentences = text
-    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/) // Sentence splitter
-    .filter((s) => s.length > 0)
-    .map((s) => s.trim());
-  const thoughtUnits: string[][] = [];
-  for (const sentence of sentences) {
-    const units = sentence.split(/([,;:\-–\(\)\[\]\{\}]|\s+)/).filter(Boolean);
-    if (units.length) {
-      thoughtUnits.push(units);
-    }
-  }
-  return thoughtUnits;
-}
-
-export function generateProgressiveReadingJSX(text: string): JSX.Element {
-  const thoughtUnits = parseTextToThoughtUnits(text);
-  return (
-    <div className="space-y-4">
-      {thoughtUnits.map((unit, idx) => (
-        <p
-          key={idx}
-          className="text-lg font-medium text-white bg-gray-800 p-2 rounded shadow"
-        >
-          {unit.map((word, i) => (
-            <span
-              key={i}
-              className={i % 2 === 0 ? "text-white" : "text-gray-400"}
-            >
-              {word}
-            </span>
-          ))}
-        </p>
-      ))}
     </div>
   );
 }
