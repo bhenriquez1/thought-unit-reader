@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
+// Fix for pdfjs worker error
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 type ViewerProps = {
@@ -13,43 +15,42 @@ type ViewerProps = {
 export default function Viewer({ fileUrl }: ViewerProps) {
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
-  const [scale, setScale] = useState<number>(1.3);
 
-  const handleDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
   };
 
-  const nextPage = () => setPageNumber((prev) => Math.min(prev + 1, numPages));
-  const prevPage = () => setPageNumber((prev) => Math.max(prev - 1, 1));
-  const zoomIn = () => setScale((prev) => prev + 0.2);
-  const zoomOut = () => setScale((prev) => Math.max(prev - 0.2, 0.5));
+  const goToPrevPage = () => {
+    setPageNumber((prev) => Math.max(prev - 1, 1));
+  };
+
+  const goToNextPage = () => {
+    setPageNumber((prev) => Math.min(prev + 1, numPages));
+  };
 
   return (
-    <div className="flex flex-col items-center justify-center p-4 bg-white dark:bg-zinc-900 rounded shadow-md">
-      <div className="mb-4 flex items-center gap-3">
-        <Button onClick={prevPage} disabled={pageNumber <= 1}>
-          ← Prev
-        </Button>
-        <p className="text-sm text-gray-700 dark:text-gray-200">
-          Page {pageNumber} of {numPages}
-        </p>
-        <Button onClick={nextPage} disabled={pageNumber >= numPages}>
-          Next →
-        </Button>
-      </div>
-
-      <div className="mb-4 flex items-center gap-3">
-        <Button onClick={zoomOut}>– Zoom</Button>
-        <span className="text-sm text-gray-600 dark:text-gray-300">
-          {Math.round(scale * 100)}%
-        </span>
-        <Button onClick={zoomIn}>+ Zoom</Button>
-      </div>
-
-      <div className="border rounded">
-        <Document file={fileUrl} onLoadSuccess={handleDocumentLoadSuccess}>
-          <Page pageNumber={pageNumber} scale={scale} />
+    <div className="flex flex-col items-center w-full space-y-4">
+      <ScrollArea className="h-[80vh] border rounded p-4 bg-white dark:bg-zinc-900 w-full max-w-4xl">
+        <Document file={fileUrl} onLoadSuccess={onDocumentLoadSuccess}>
+          <Page
+            pageNumber={pageNumber}
+            renderTextLayer={true}
+            renderAnnotationLayer={false}
+            width={600}
+          />
         </Document>
+      </ScrollArea>
+
+      <div className="flex items-center gap-4">
+        <Button onClick={goToPrevPage} disabled={pageNumber <= 1} variant="outline">
+          Previous
+        </Button>
+        <span className="text-sm text-zinc-700 dark:text-zinc-300">
+          Page {pageNumber} of {numPages}
+        </span>
+        <Button onClick={goToNextPage} disabled={pageNumber >= numPages} variant="outline">
+          Next
+        </Button>
       </div>
     </div>
   );

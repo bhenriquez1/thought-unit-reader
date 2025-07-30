@@ -12,6 +12,7 @@ import HybridReader from "@/components/HybridReader";
 import { cn } from "../lib/utils";
 import { Chapter } from "@/types/chapter";
 
+// Configure PDF worker
 GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsVersion}/pdf.worker.min.js`;
 
 export async function extractText(file: File): Promise<string> {
@@ -47,17 +48,10 @@ export async function extractText(file: File): Promise<string> {
 }
 
 export function parseIntoUnits(text: string): string[] {
-  const units: string[] = [];
-  const rawUnits = text.split(/(?<=[.?!])\s+(?=[A-Z0-9])/);
-
-  for (let raw of rawUnits) {
-    const trimmed = raw.trim();
-    if (trimmed.length > 0) {
-      units.push(trimmed);
-    }
-  }
-
-  return units;
+  return text
+    .split(/(?<=[.?!])\s+(?=[A-Z0-9])/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 }
 
 export function splitIntoChapters(text: string): Chapter[] {
@@ -117,7 +111,7 @@ export function generateProgressiveReadingHTML(inputText: string): JSX.Element {
 
 export function parseTextToThoughtUnits(text: string): string[][] {
   const sentences = text
-    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/)  
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/)
     .filter((s) => s.length > 0)
     .map((s) => s.trim());
 
@@ -149,7 +143,7 @@ export function generateHybridHTML(chapters: Chapter[], units: string[][]): stri
       <li class="mb-2">
         <a href="#chapter-${i}" class="text-blue-600 underline font-medium">
           ${ch.title}
-        </a> — Page ${ch.page}
+        </a> — Page ${ch.page ?? i + 1}
       </li>`)
     .join("");
 

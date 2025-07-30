@@ -52,7 +52,6 @@ export default function HybridReader() {
     const loadContent = async () => {
       if (!file) return;
       setLoading(true);
-
       try {
         const { parsedUnits, chapters, original } = await parseBookWithChapters(file);
         setParsedUnits(parsedUnits);
@@ -136,9 +135,7 @@ export default function HybridReader() {
       case "progressive":
         return (
           <ScrollArea className="h-[80vh] p-4 border rounded">
-            <ParsedText
-              text={parsedUnits.map((unit) => unit.join(" ")).join("\n")}
-            />
+            <ParsedText text={parsedUnits.map(unit => unit.join(" ")).join("\n")} />
           </ScrollArea>
         );
       case "hybrid":
