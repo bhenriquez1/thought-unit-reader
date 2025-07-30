@@ -10,82 +10,95 @@ import { Button } from "@/components/ui/button";
 import Loader from "@/components/ui/loader";
 import HybridReader from "@/components/HybridReader";
 import { cn } from "../lib/utils";
+import { Chapter } from "@/types/chapter";
 
 GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsVersion}/pdf.worker.min.js`;
 
-export type Chapter = { title: string; page: number };
+export async function extractText(file: File): Promise<string> {
+  const extension = file.name.split(".").pop()?.toLowerCase();
 
-export async function parseBookWithChapters(file: File | string): Promise<{
-  chapters: Chapter[];
-  parsedUnits: string[][];
-}> {
-  let text = "";
+  if (extension === "pdf") {
+    const pdfjsLib = await import("pdfjs-dist/build/pdf");
+    const pdfjsWorker = await import("pdfjs-dist/build/pdf.worker.entry");
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker.default;
 
-  if (typeof file !== "string" && file.type === "application/pdf") {
-    const buffer = await file.arrayBuffer();
-    const pdf = await getDocument({ data: buffer }).promise;
-    const allText: string[] = [];
-
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      const pageText = content.items
-        .map((item) => ("str" in item ? item.str : ""))
-        .join(" ");
-      allText.push(pageText.trim());
-    }
-
-    text = allText.join("\n\n");
-  } else if (typeof file === "string") {
-    text = file;
-  } else if (file instanceof File && file.name.endsWith(".docx")) {
     const arrayBuffer = await file.arrayBuffer();
-    const { value } = await mammoth.extractRawText({ arrayBuffer });
-    text = value;
-  } else {
-    text = await file.text();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const numPages = pdf.numPages;
+
+    const textContent = await Promise.all(
+      Array.from({ length: numPages }, async (_, i) => {
+        const page = await pdf.getPage(i + 1);
+        const text = await page.getTextContent();
+        return text.items.map((item: any) => item.str).join(" ");
+      })
+    );
+
+    return textContent.join("\n\n");
+  } else if (extension === "docx") {
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    return result.value;
+  } else if (extension === "txt") {
+    return await file.text();
   }
 
+  throw new Error("Unsupported file type.");
+}
+
+export function parseIntoUnits(text: string): string[] {
+  const units: string[] = [];
+  const rawUnits = text.split(/(?<=[.?!])\s+(?=[A-Z0-9])/);
+
+  for (let raw of rawUnits) {
+    const trimmed = raw.trim();
+    if (trimmed.length > 0) {
+      units.push(trimmed);
+    }
+  }
+
+  return units;
+}
+
+export function splitIntoChapters(text: string): Chapter[] {
   const lines = text.split("\n");
-  const chapterMarkers: { index: number; title: string }[] = [];
-
-  lines.forEach((line, index) => {
-    const match =
-      line.match(/^Chapter\s+\d+[:.\s]/i) ||
-      line.match(/^CHAPTER\s+\d+[:.\s]/i) ||
-      line.match(/^\d+\.\s+[A-Z]/) ||
-      line.match(/^\d+\s+[A-Z]/);
-
-    if (match) {
-      chapterMarkers.push({ index, title: match[0].trim() });
-    }
-  });
-
-  chapterMarkers.sort((a, b) => a.index - b.index);
-
-  const paragraphs = text.split(/\n{2,}/).map((unit) => unit.trim()).filter(Boolean);
-  const parsedUnits: string[][] = paragraphs.map(p =>
-    (p.match(/[^.!?\n]+[.!?\n]*/g) || []).map(s => s.trim())
-  );
-
   const chapters: Chapter[] = [];
-  chapterMarkers.forEach((marker) => {
-    const cleanTitle = marker.title.replace(/^CHAPTER\s+\d+[:.\s]?/i, "").trim();
-    const approxUnitIndex = parsedUnits.findIndex((unit) => unit.join(" ").includes(cleanTitle));
-    const fallbackIndex = Math.floor(marker.index / 2);
-    const finalIndex = approxUnitIndex !== -1 ? approxUnitIndex : fallbackIndex;
+  let currentChapter: Chapter = { title: "", content: "" };
 
-    if (!paragraphs.includes(`###CHAPTER:${marker.title}`)) {
-      paragraphs.splice(finalIndex, 0, `###CHAPTER:${marker.title}`);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^(chapter|section|unit|lesson|part)\s+\d+/i.test(trimmed)) {
+      if (currentChapter.title || currentChapter.content) {
+        chapters.push(currentChapter);
+        currentChapter = { title: "", content: "" };
+      }
+      currentChapter.title = trimmed;
+    } else {
+      currentChapter.content += line + "\n";
     }
-    chapters.push({ title: marker.title, page: finalIndex + 1 });
-  });
-
-  if (chapters.length === 0) {
-    chapters.push({ title: "Start", page: 1 });
   }
 
-  return { chapters, parsedUnits };
+  if (currentChapter.title || currentChapter.content) {
+    chapters.push(currentChapter);
+  }
+
+  return chapters;
+}
+
+export async function parseBookWithChapters(file: File): Promise<{
+  parsedUnits: string[][];
+  chapters: Chapter[];
+  original: string;
+}> {
+  const text = await extractText(file);
+  const chapters = splitIntoChapters(text);
+  const parsedUnits = chapters.map((c) => parseIntoUnits(c.content));
+
+  return {
+    parsedUnits,
+    chapters,
+    original: text,
+  };
 }
 
 export function generateProgressiveReadingHTML(inputText: string): JSX.Element {

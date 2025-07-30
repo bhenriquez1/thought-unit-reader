@@ -11,11 +11,14 @@ import {
   parseBookWithChapters,
   generateHybridHTML,
   generateProgressiveReadingHTML,
+  generateProgressiveReadingJSX,
 } from "@/lib/parser";
+import { Chapter } from "@/types/chapter";
+import { cn } from "@/lib/utils";
 
 const DynamicViewer = dynamic(() => import("./ui/Viewer"), {
   ssr: false,
-  loading: () => <Loader label="Loading PDF..." />,
+  loading: () => <Loader label="Loading PDF..." />, 
 });
 
 export default function HybridReader() {
@@ -29,6 +32,9 @@ export default function HybridReader() {
   const [hybridHTML, setHybridHTML] = useState<string | null>(null);
   const [chapterText, setChapterText] = useState<string | null>(null);
   const [originalText, setOriginalText] = useState<string | null>(null);
+  const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [units, setUnits] = useState<string[][]>([]);
+  const [activeChapter, setActiveChapter] = useState(0);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const uploaded = e.target.files?.[0];
@@ -36,6 +42,12 @@ export default function HybridReader() {
       setFile(uploaded);
       setPdfURL(URL.createObjectURL(uploaded));
     }
+  };
+
+  const getChapterText = (chapterIndex: number) => {
+    const start = chapters[chapterIndex]?.page - 1 || 0;
+    const end = chapters[chapterIndex + 1]?.page - 1 || units.length;
+    return units.slice(start, end).flat().join(" ");
   };
 
   useEffect(() => {
@@ -52,6 +64,8 @@ export default function HybridReader() {
         setChapterText(chapterView);
         setOriginalText(original);
         setHybridHTML(generateHybridHTML(chapters, parsedUnits));
+        setChapters(chapters);
+        setUnits(parsedUnits);
       } catch (err) {
         console.error("Error loading views:", err);
         setHybridHTML("<p class='text-red-500'>Failed to process file.</p>");
@@ -62,6 +76,20 @@ export default function HybridReader() {
 
     loadContent();
   }, [file]);
+
+  useEffect(() => {
+    const onScroll = () => {
+      for (let i = 0; i < chapters.length; i++) {
+        const el = document.getElementById(`chapter-${i}`);
+        if (el && el.getBoundingClientRect().top >= 0) {
+          setActiveChapter(i);
+          break;
+        }
+      }
+    };
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [chapters]);
 
   const renderView = () => {
     if (loading) return <Loader label="Processing your file..." />;
@@ -76,11 +104,38 @@ export default function HybridReader() {
         );
       case "chapters":
         return (
-          <ScrollArea className="h-[70vh] w-full rounded-md border p-4">
-            <pre className="whitespace-pre-wrap text-base leading-relaxed">
-              {chapterText}
-            </pre>
-          </ScrollArea>
+          <div className="flex flex-col md:flex-row gap-6 w-full">
+            <aside className="sticky top-4 md:w-1/4 w-full space-y-3 p-4 border border-zinc-300 dark:border-zinc-700 rounded-md shadow bg-white dark:bg-zinc-900">
+              <h2 className="font-bold text-lg text-zinc-800 dark:text-white mb-2">Chapters</h2>
+              <ul className="space-y-2">
+                {chapters.map((ch, i) => (
+                  <li key={i}>
+                    <a
+                      href={`#chapter-${i}`}
+                      className={cn(
+                        "block text-sm font-medium hover:text-pink-600",
+                        activeChapter === i
+                          ? "text-pink-600"
+                          : "text-zinc-700 dark:text-zinc-300"
+                      )}
+                    >
+                      {ch.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </aside>
+            <section className="md:w-3/4 w-full px-4 space-y-8">
+              {chapters.map((ch, i) => (
+                <div key={i} id={`chapter-${i}`}>
+                  <h3 className="text-xl font-semibold text-zinc-900 dark:text-white mb-3">
+                    {ch.title}
+                  </h3>
+                  {generateProgressiveReadingJSX(getChapterText(i))}
+                </div>
+              ))}
+            </section>
+          </div>
         );
       case "progressive":
         return progressiveText ? <ParsedText text={progressiveText} /> : null;
