@@ -162,13 +162,19 @@ export async function extractText(file: File): Promise<string> {
   return allText.join("\n\n");
 }
 
-export async function getPdfViewerHTML(file: File): Promise<string> {
+// Option 2: getPdfViewerHTML with page range support
+export async function getPdfViewerHTML(
+  file: File,
+  startPage: number = 1,
+  endPage?: number
+): Promise<string> {
   const buffer = await file.arrayBuffer();
   const pdf = await getDocument({ data: buffer }).promise;
 
   const pageContainers = [];
+  const lastPage = endPage ?? pdf.numPages;
 
-  for (let i = 1; i <= pdf.numPages; i++) {
+  for (let i = startPage; i <= lastPage; i++) {
     const page = await pdf.getPage(i);
     const viewport = page.getViewport({ scale: 1.5 });
     const canvas = document.createElement("canvas");
@@ -183,4 +189,5 @@ export async function getPdfViewerHTML(file: File): Promise<string> {
     }
   }
 
-  return `<div class="pdf-viewer">${pageContainers.join("\n")}</div>
+  return `<div class="pdf-viewer">${pageContainers.join("\n")}</div>`;
+ }
