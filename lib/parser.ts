@@ -1,4 +1,6 @@
 import { getDocument, GlobalWorkerOptions, version as pdfjsVersion } from "pdfjs-dist";
+import mammoth from "mammoth";
+import { parseTextIntoThoughtUnits } from "@/lib/thoughtParser";
 import { getChaptersFromText } from "./chapterSplitter";
 
 GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsVersion}/pdf.worker.min.js`;
@@ -28,6 +30,10 @@ export async function parseBookWithChapters(file: File | string): Promise<{
     text = allText.join("\n\n");
   } else if (typeof file === "string") {
     text = file;
+  } else if (file instanceof File && file.name.endsWith(".docx")) {
+    const arrayBuffer = await file.arrayBuffer();
+    const { value } = await mammoth.extractRawText({ arrayBuffer });
+    text = value;
   } else if (file instanceof File && file.type.startsWith("text/")) {
     text = await file.text();
   } else {

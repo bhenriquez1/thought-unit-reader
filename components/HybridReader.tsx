@@ -1,15 +1,25 @@
+"use client";
+
 import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader } from "@/components/ui/loader";
+import Loader from "@/components/ui/loader";
+
 import {
   parseBookWithChapters,
   getPdfViewerHTML,
-  generateProgressiveReadingHTML,
 } from "@/lib/parser";
+
+const DynamicViewer = dynamic(() => import("./Viewer"), {
+  ssr: false,
+  loading: () => <Loader label="Loading PDF..." />,
+});
+
+type ViewMode = "hybrid" | "pdf" | "text";
 
 interface HybridReaderProps {
   file: File;
@@ -17,11 +27,11 @@ interface HybridReaderProps {
 }
 
 export default function HybridReader({ file, scale = 1.5 }: HybridReaderProps) {
-  const [htmlContent, setHtmlContent] = useState<JSX.Element | null>(null);
-  const [pdfViewer, setPdfViewer] = useState<JSX.Element | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("hybrid");
+  const [parsedUnits, setParsedUnits] = useState<string | null>(null);
+  const [pdfURL, setPdfURL] = useState<string>("");
+  const [filename, setFilename] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const [filename, setFilename] = useState("");
-
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,61 +44,88 @@ export default function HybridReader({ file, scale = 1.5 }: HybridReaderProps) {
 
         const { parsedUnits } = await parseBookWithChapters(file);
 
-        const content = parsedUnits.map((chapter, idx) => (
-          <div key={`chapter-${idx}`} className="mb-8">
-            {chapter.map((unit, uIdx) => (
-              <p key={`unit-${uIdx}`} className="text-lg leading-relaxed">
-                {unit.map((word, i) => (
-                  <span
-                    key={i}
-                    className={i % 2 === 0 ? "text-black" : "text-gray-500"}
-                  >
-                    {word}
-                  </span>
-                ))}
-              </p>
-            ))}
-          </div>
-        ));
+        const html = parsedUnits
+          .map(
+            (chapter, idx) =>
+              `<div class="mb-8">${chapter
+                .map(
+                  (unit) =>
+                    `<p class="text-lg leading-relaxed">${unit
+                      .map((word, i) =>
+                        `<span class="${i % 2 === 0 ? "text-black" : "text-gray-500"}">${word}</span>`
+                      )
+                      .join(" ")}</p>`
+                )
+                .join("")}</div>`
+          )
+          .join("");
 
-        setHtmlContent(
-          <ScrollArea className="h-full w-full p-4">
-            <div
-              ref={ref}
-              className="prose dark:prose-invert max-w-none"
-            >
-              {content}
-            </div>
-          </ScrollArea>
-        );
+        setParsedUnits(html);
 
-        const viewer = (
-          <div
-            className="mt-10"
-            dangerouslySetInnerHTML={{
-              __html: getPdfViewerHTML(name, 1, 10),
-            }}
-          />
-        );
-        setPdfViewer(viewer);
+        const blobURL = URL.createObjectURL(file);
+        setPdfURL(blobURL);
       } catch (error) {
-        console.error("Failed to load and parse file:", error);
-        setHtmlContent(<p className="text-red-500">Error parsing file.</p>);
+        console.error("Failed to parse:", error);
+        setParsedUnits(`<p class="text-red-500">Error parsing file.</p>`);
       } finally {
         setLoading(false);
       }
     };
 
-    processFile();
+    if (file) processFile();
   }, [file, scale]);
 
-  if (loading) return <Loader label="Processing Hybrid View..." />;
+  if (!file) return <p className="text-center text-gray-500">No file provided.</p>;
+  if (loading) return <Loader label="Processing Hybrid Reader..." />;
 
   return (
-    <div className="mt-6 flex flex-col gap-8">
-      {pdfViewer}
-      <hr className="my-4 border-gray-300 dark:border-gray-600" />
-      {htmlContent}
+    <div className="w-full space-y-6 px-4 py-6">
+      {/* View Selector */}
+      <div className="flex items-center gap-4">
+        <Label htmlFor="viewMode">View Mode:</Label>
+        <select
+          id="viewMode"
+          className="border px-3 py-1 rounded"
+          value={viewMode}
+          onChange={(e) => setViewMode(e.target.value as ViewMode)}
+        >
+          <option value="hybrid">Hybrid View</option>
+          <option value="pdf">PDF Only</option>
+          <option value="text">Text Only</option>
+        </select>
+      </div>
+
+      {/* PDF Viewer Only */}
+      {viewMode === "pdf" && pdfURL && (
+        <DynamicViewer fileUrl={pdfURL} />
+      )}
+
+      {/* Text Only */}
+      {viewMode === "text" && parsedUnits && (
+        <ScrollArea className="h-[80vh] border p-4 rounded bg-white dark:bg-zinc-900">
+          <div
+            ref={ref}
+            className="prose dark:prose-invert max-w-none"
+            dangerouslySetInnerHTML={{ __html: parsedUnits }}
+          />
+        </ScrollArea>
+      )}
+
+      {/* Hybrid */}
+      {viewMode === "hybrid" && (
+        <div className="grid md:grid-cols-2 gap-6">
+          <div className="border rounded overflow-hidden">
+            <DynamicViewer fileUrl={pdfURL} />
+          </div>
+          <ScrollArea className="h-[80vh] border rounded p-4 bg-white dark:bg-zinc-900">
+            <div
+              ref={ref}
+              className="prose dark:prose-invert max-w-none"
+              dangerouslySetInnerHTML={{ __html: parsedUnits }}
+            />
+          </ScrollArea>
+        </div>
+      )}
     </div>
   );
 }

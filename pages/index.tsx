@@ -9,6 +9,7 @@ import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import { ChevronLeft, ChevronRight, Settings, ZoomIn, ZoomOut } from "lucide-react";
 import HybridReader from "../components/HybridReader";
+import Loader from "../components/ui/loader";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
@@ -26,30 +27,40 @@ export default function Home() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [thoughtUnits, setThoughtUnits] = useState<string[][]>([]);
   const [scale, setScale] = useState(1.2);
+  const [error, setError] = useState<string | null>(null);
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const uploadedFile = e.target.files?.[0];
-    if (!uploadedFile) return;
-    setFile(uploadedFile);
-    const reader = new FileReader();
+  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const uploaded = e.target.files?.[0];
+    if (!uploaded) return;
 
-    reader.onload = async (event) => {
-      const content = event.target?.result as string;
-      try {
-        const result = await parseBookWithChapters(content);
-        setInputText(content);
-        setOutput(result.output || null);
-        setThoughtUnits(result.parsedUnits || []);
-      } catch (err) {
-        console.error("Error parsing:", err);
-      }
-    };
+    setError(null);
+    setLoading(true);
 
-    reader.readAsText(uploadedFile);
-  };
+    try {
+      setFile(uploaded);
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const content = event.target?.result as string;
+        try {
+          const result = await parseBookWithChapters(content);
+          setInputText(content);
+          setOutput(result.output || null);
+          setThoughtUnits(result.parsedUnits || []);
+        } catch (err) {
+          console.error("Error parsing:", err);
+        }
+      };
+      reader.readAsText(uploaded);
+    } catch (err) {
+      console.error("Upload error:", err);
+      setError("Failed to load file.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   const handleStart = () => {
     if (!thoughtUnits.length) return;
@@ -120,8 +131,8 @@ export default function Home() {
         <p className="text-sm text-gray-300 mb-4">Read deeper, faster, and smarter.</p>
         <input
           type="file"
-          accept=".txt,.pdf"
-          onChange={handleFileChange}
+          accept=".txt,.pdf,.docx"
+          onChange={handleFileUpload}
           ref={fileInputRef}
           className="mb-4"
         />
@@ -154,6 +165,9 @@ export default function Home() {
         </div>
       </aside>
       <main className="flex-1 p-8">
+        {error && <p className="text-red-500">{error}</p>}
+        {loading && <Loader label="Processing document..." />}
+
         <div className="flex items-center space-x-4 mb-4">
           <Button onClick={handleStart} disabled={isPlaying}>▶ Start</Button>
           <Button onClick={handleReset}>⟳ Reset</Button>
