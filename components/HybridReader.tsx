@@ -2,15 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import Loader from "@/components/ui/loader";
+import ParsedText from "@/components/ParsedText";
 import {
   parseBookWithChapters,
   generateHybridHTML,
   generateProgressiveReadingHTML,
-  getPdfViewerHTML,
 } from "@/lib/parser";
 
 const DynamicViewer = dynamic(() => import("./ui/Viewer"), {
@@ -22,40 +22,39 @@ export default function HybridReader() {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [pdfURL, setPdfURL] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [viewMode, setViewMode] = useState<"original" | "progressive" | "hybrid">("original");
-  const [progressiveView, setProgressiveView] = useState<JSX.Element | null>(null);
-  const [hybridView, setHybridView] = useState<string | null>(null);
-  const [pdfURL, setPdfURL] = useState<string>("");
+  const [progressiveText, setProgressiveText] = useState<string | null>(null);
+  const [hybridHTML, setHybridHTML] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const uploadedFile = e.target.files?.[0];
-    if (uploadedFile) {
-      setFile(uploadedFile);
-      const blobURL = URL.createObjectURL(uploadedFile);
-      setPdfURL(blobURL);
+    const uploaded = e.target.files?.[0];
+    if (uploaded) {
+      setFile(uploaded);
+      setPdfURL(URL.createObjectURL(uploaded));
     }
   };
 
   useEffect(() => {
-    const loadViews = async () => {
+    const loadContent = async () => {
       if (!file) return;
-
       setLoading(true);
+
       try {
         const { parsedUnits, chapters } = await parseBookWithChapters(file);
         const rawText = parsedUnits.map((unit) => unit.join(" ")).join("\n");
-        setProgressiveView(generateProgressiveReadingHTML(rawText));
-        setHybridView(generateHybridHTML(chapters, parsedUnits));
-      } catch (error) {
-        console.error("Failed to parse file:", error);
-        setHybridView("<p class='text-red-500'>Failed to process file.</p>");
+        setProgressiveText(rawText);
+        setHybridHTML(generateHybridHTML(chapters, parsedUnits));
+      } catch (err) {
+        console.error("Error loading views:", err);
+        setHybridHTML("<p class='text-red-500'>Failed to process file.</p>");
       } finally {
         setLoading(false);
       }
     };
 
-    loadViews();
+    loadContent();
   }, [file]);
 
   const renderContent = () => {
@@ -70,7 +69,7 @@ export default function HybridReader() {
           </div>
         );
       case "progressive":
-        return progressiveView;
+        return progressiveText ? <ParsedText text={progressiveText} /> : null;
       case "hybrid":
         return (
           <div className="grid md:grid-cols-2 gap-6">
@@ -81,7 +80,7 @@ export default function HybridReader() {
               <div
                 ref={contentRef}
                 className="prose prose-sm sm:prose-base max-w-none dark:prose-invert"
-                dangerouslySetInnerHTML={{ __html: hybridView || "" }}
+                dangerouslySetInnerHTML={{ __html: hybridHTML || "" }}
               />
             </ScrollArea>
           </div>
