@@ -1,4 +1,5 @@
 import { getDocument, GlobalWorkerOptions, version as pdfjsVersion } from "pdfjs-dist";
+import { getChaptersFromText } from "./chapterSplitter";
 
 GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsVersion}/pdf.worker.min.js`;
 
@@ -162,32 +163,63 @@ export async function extractText(file: File): Promise<string> {
   return allText.join("\n\n");
 }
 
-// Option 2: getPdfViewerHTML with page range support
-export async function getPdfViewerHTML(
-  file: File,
-  startPage: number = 1,
-  endPage?: number
-): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const pdf = await getDocument({ data: buffer }).promise;
+export function getPdfViewerHTML(file: File, scale: number): JSX.Element {
+  return (
+    <div className="mt-8 bg-white p-4 rounded">
+      <p className="text-sm text-gray-500 mb-2">
+        PDF viewer is embedded below (scale: {scale}x):
+      </p>
+      <object
+        data={URL.createObjectURL(file)}
+        type="application/pdf"
+        width="100%"
+        height="600px"
+      >
+        <p>
+          Your browser does not support PDFs. Please download the file to view:
+          <a href={URL.createObjectURL(file)} className="text-blue-500 underline">
+            Download PDF
+          </a>
+        </p>
+      </object>
+    </div>
+  );
+}
 
-  const pageContainers = [];
-  const lastPage = endPage ?? pdf.numPages;
-
-  for (let i = startPage; i <= lastPage; i++) {
-    const page = await pdf.getPage(i);
-    const viewport = page.getViewport({ scale: 1.5 });
-    const canvas = document.createElement("canvas");
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    const context = canvas.getContext("2d");
-
-    if (context) {
-      await page.render({ canvasContext: context, viewport }).promise;
-      const imgDataUrl = canvas.toDataURL();
-      pageContainers.push(`<img src="${imgDataUrl}" alt="Page ${i}" class="mb-4" />`);
+export function parseTextToThoughtUnits(text: string): string[][] {
+  const sentences = text
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/) // Sentence splitter
+    .filter((s) => s.length > 0)
+    .map((s) => s.trim());
+  const thoughtUnits: string[][] = [];
+  for (const sentence of sentences) {
+    const units = sentence.split(/([,;:\-–\(\)\[\]\{\}]|\s+)/).filter(Boolean);
+    if (units.length) {
+      thoughtUnits.push(units);
     }
   }
+  return thoughtUnits;
+}
 
-  return `<div class="pdf-viewer">${pageContainers.join("\n")}</div>`;
- }
+export function generateProgressiveReadingJSX(text: string): JSX.Element {
+  const thoughtUnits = parseTextToThoughtUnits(text);
+  return (
+    <div className="space-y-4">
+      {thoughtUnits.map((unit, idx) => (
+        <p
+          key={idx}
+          className="text-lg font-medium text-white bg-gray-800 p-2 rounded shadow"
+        >
+          {unit.map((word, i) => (
+            <span
+              key={i}
+              className={i % 2 === 0 ? "text-white" : "text-gray-400"}
+            >
+              {word}
+            </span>
+          ))}
+        </p>
+      ))}
+    </div>
+  );
+}

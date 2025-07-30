@@ -4,202 +4,91 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { getPdfViewerHTML } from "@/lib/parser";
+import { Loader } from "@/components/ui/loader";
+import {
+  parseBookWithChapters,
+  getPdfViewerHTML,
+  generateProgressiveReadingHTML,
+} from "@/lib/parser";
 
 interface HybridReaderProps {
-  content?: string;
-  html?: string;
-  filename?: string;
-  startPage?: number;
-  endPage?: number;
+  file: File;
+  scale?: number;
 }
 
-export default function HybridReader({ content = "", html = "", filename = "", startPage = 1, endPage = 10 }: HybridReaderProps) {
+export default function HybridReader({ file, scale = 1.5 }: HybridReaderProps) {
+  const [htmlContent, setHtmlContent] = useState<JSX.Element | null>(null);
+  const [pdfViewer, setPdfViewer] = useState<JSX.Element | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [filename, setFilename] = useState("");
+
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const current = ref.current;
-    if (!current) return;
+    const processFile = async () => {
+      setLoading(true);
+      try {
+        const text = await file.text();
+        const name = file.name;
+        setFilename(name);
 
-    const links = current.querySelectorAll("a[href^='#chapter-']");
-    const handleClick = (e: Event) => {
-      e.preventDefault();
-      const id = (e.target as HTMLAnchorElement).getAttribute("href")?.slice(1);
-      const target = document.getElementById(id!);
-      if (target) target.scrollIntoView({ behavior: "smooth" });
-    };
+        const { parsedUnits } = await parseBookWithChapters(file);
 
-    links.forEach((link) => link.addEventListener("click", handleClick));
-    return () => links.forEach((link) => link.removeEventListener("click", handleClick));
-  }, [html]);
+        const content = parsedUnits.map((chapter, idx) => (
+          <div key={`chapter-${idx}`} className="mb-8">
+            {chapter.map((unit, uIdx) => (
+              <p key={`unit-${uIdx}`} className="text-lg leading-relaxed">
+                {unit.map((word, i) => (
+                  <span
+                    key={i}
+                    className={i % 2 === 0 ? "text-black" : "text-gray-500"}
+                  >
+                    {word}
+                  </span>
+                ))}
+              </p>
+            ))}
+          </div>
+        ));
 
-  const units = content.split(".").filter(Boolean);
-  const totalUnits = units.length;
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [wpm, setWpm] = useState(200);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+        setHtmlContent(
+          <ScrollArea className="h-full w-full p-4">
+            <div
+              ref={ref}
+              className="prose dark:prose-invert max-w-none"
+            >
+              {content}
+            </div>
+          </ScrollArea>
+        );
 
-  const words = units[currentIndex]?.trim().split(" ") || [];
-  const totalWords = words.length;
-  const [wordIndex, setWordIndex] = useState(0);
-
-  const timePerWord = 60000 / wpm;
-  const timeLeft = Math.ceil(((totalUnits - currentIndex) * totalWords - wordIndex) * timePerWord / 1000);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft") handlePrev();
-      else if (e.key === "ArrowRight") handleNext();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [wordIndex, currentIndex]);
-
-  useEffect(() => {
-    if (isPlaying && wordIndex < totalWords) {
-      timerRef.current = setTimeout(() => {
-        setWordIndex((prev) => prev + 1);
-      }, timePerWord);
-    } else if (isPlaying && wordIndex >= totalWords) {
-      if (currentIndex < totalUnits - 1) {
-        setCurrentIndex((prev) => prev + 1);
-        setWordIndex(0);
-      } else {
-        setIsPlaying(false);
+        const viewer = (
+          <div
+            className="mt-10"
+            dangerouslySetInnerHTML={{
+              __html: getPdfViewerHTML(name, 1, 10),
+            }}
+          />
+        );
+        setPdfViewer(viewer);
+      } catch (error) {
+        console.error("Failed to load and parse file:", error);
+        setHtmlContent(<p className="text-red-500">Error parsing file.</p>);
+      } finally {
+        setLoading(false);
       }
-    }
-
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [isPlaying, wordIndex, currentIndex]);
 
-  useEffect(() => {
-    const currentEl = document.getElementById(`unit-${currentIndex}`);
-    if (currentEl) {
-      currentEl.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, [currentIndex]);
+    processFile();
+  }, [file, scale]);
 
-  const handleStart = () => setIsPlaying(true);
-  const handleReset = () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    setIsPlaying(false);
-    setCurrentIndex(0);
-    setWordIndex(0);
-  };
-
-  const handleWpmChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseInt(e.target.value);
-    if (!isNaN(val) && val > 0) {
-      setWpm(val);
-    }
-  };
-
-  const handlePrev = () => {
-    if (wordIndex > 0) {
-      setWordIndex((prev) => prev - 1);
-    } else if (currentIndex > 0) {
-      setCurrentIndex((prev) => prev - 1);
-      setWordIndex(units[currentIndex - 1]?.trim().split(" ").length - 1 || 0);
-    }
-  };
-
-  const handleNext = () => {
-    if (wordIndex < totalWords - 1) {
-      setWordIndex((prev) => prev + 1);
-    } else if (currentIndex < totalUnits - 1) {
-      setCurrentIndex((prev) => prev + 1);
-      setWordIndex(0);
-    }
-  };
-
-  const progress = Math.floor(((currentIndex + wordIndex / totalWords) / totalUnits) * 100);
+  if (loading) return <Loader label="Processing Hybrid View..." />;
 
   return (
-    <div className="w-full p-4 space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-xl font-bold text-blue-700">Thought-Unit Reader</h1>
-        <span className="text-sm italic text-gray-500">Read deeper, faster, and smarter</span>
-      </div>
-
-      <Card className="p-4 shadow-lg">
-        <div className="flex flex-wrap items-center gap-4">
-          <Button onClick={handleStart} className="bg-green-500 hover:bg-green-600 text-white">▶ Start</Button>
-          <Button onClick={handleReset} className="bg-gray-300 text-black">🔁 Reset</Button>
-          <Button onClick={handlePrev} className="bg-blue-300">⬅</Button>
-          <Button onClick={handleNext} className="bg-blue-300">➡</Button>
-          <div className="flex flex-col">
-            <Label htmlFor="wpm" className="text-xs">WPM</Label>
-            <Input
-              id="wpm"
-              type="number"
-              value={wpm}
-              onChange={handleWpmChange}
-              className="w-20 text-black"
-            />
-          </div>
-          <div className="text-center">
-            <p className="text-xs">Complete</p>
-            <p className="text-blue-500 font-bold">{progress}%</p>
-          </div>
-          <div className="text-center">
-            <p className="text-xs">Current</p>
-            <p className="text-green-500 font-bold">{currentIndex + 1}</p>
-          </div>
-          <div className="text-center">
-            <p className="text-xs">WPM</p>
-            <p className="text-purple-500 font-bold">{wpm}</p>
-          </div>
-          <div className="text-center">
-            <p className="text-xs">Left</p>
-            <p className="text-orange-500 font-bold">{timeLeft}s</p>
-          </div>
-        </div>
-      </Card>
-
-      <div className="text-center mt-6" id={`unit-${currentIndex}`}>
-        <h2 className="text-sm text-gray-500">Thought Unit {currentIndex + 1} of {totalUnits}</h2>
-        <div className="flex justify-center flex-wrap gap-2 text-2xl mt-4">
-          {words.map((word, idx) => (
-            <span
-              key={idx}
-              className={`transition-all px-2 py-1 rounded ${
-                idx === wordIndex ? "bg-yellow-400 font-bold" : "text-gray-800"
-              }`}
-            >
-              {word}
-            </span>
-          ))}
-        </div>
-        <div className="mt-4">
-          <div className="w-full h-2 bg-gray-200 rounded">
-            <div
-              className="h-2 bg-yellow-400 rounded"
-              style={{ width: `${(wordIndex / totalWords) * 100}%` }}
-            ></div>
-          </div>
-          <p className="text-xs mt-1">Word {wordIndex + 1} of {totalWords}</p>
-        </div>
-      </div>
-
-      {html && (
-        <ScrollArea className="h-full w-full p-4">
-          <div
-            ref={ref}
-            className="prose dark:prose-invert max-w-none"
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
-        </ScrollArea>
-      )}
-
-      {filename && (
-        <div
-          className="mt-10"
-          dangerouslySetInnerHTML={{ __html: getPdfViewerHTML(filename, startPage, endPage) }}
-        />
-      )}
+    <div className="mt-6 flex flex-col gap-8">
+      {pdfViewer}
+      <hr className="my-4 border-gray-300 dark:border-gray-600" />
+      {htmlContent}
     </div>
   );
 }
