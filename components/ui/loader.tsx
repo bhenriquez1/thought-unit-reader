@@ -1,13 +1,14 @@
-// components/ui/Loader.tsx
-
 import React from "react";
 
-const Loader: React.FC = () => {
+interface LoaderProps {
+  label?: string;
+}
+
+export default function Loader({ label = "Loading..." }: LoaderProps) {
   return (
-    <div className="flex justify-center items-center py-6">
-      <div className="h-10 w-10 animate-spin rounded-full border-4 border-t-transparent border-blue-600" />
+    <div className="flex flex-col items-center justify-center py-4">
+      <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-gray-800 mb-2" />
+      <p className="text-sm text-gray-600">{label}</p>
     </div>
   );
-};
-
-export default Loader;
+}
