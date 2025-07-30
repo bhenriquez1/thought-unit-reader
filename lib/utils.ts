@@ -1,11 +1,13 @@
-import { ClassValue, clsx } from "clsx";
+// lib/utils.ts
+
 import { twMerge } from "tailwind-merge";
+import { clsx, type ClassValue } from "clsx";
 
 /**
- * Merge Tailwind classes and other conditional classes
- * @param inputs - Class values from clsx
- * @returns A string with merged class names
+ * Combines Tailwind class names with intelligent merging
+ * @param inputs - List of class names or conditional class expressions
+ * @returns A single string of merged classes
  */
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+  return twMerge(clsx(...inputs));
 }

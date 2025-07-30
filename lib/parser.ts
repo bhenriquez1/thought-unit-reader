@@ -1,23 +1,26 @@
 "use client";
 
-import { getDocument, GlobalWorkerOptions, version as pdfjsVersion } from "pdfjs-dist";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { Document, Page, pdfjs } from "react-pdf";
 import mammoth from "mammoth";
+import { getDocument, GlobalWorkerOptions, version as pdfjsVersion } from "pdfjs-dist";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
+import Loader from "@/components/ui/loader";
+import HybridReader from "@/components/HybridReader";
 import { cn } from "../lib/utils";
 
 GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsVersion}/pdf.worker.min.js`;
 
-type Chapter = { title: string; page: number };
+export type Chapter = { title: string; page: number };
 
-// ----------------------------
-// 🧠 BOOK PARSING
-// ----------------------------
 export async function parseBookWithChapters(file: File | string): Promise<{
   chapters: Chapter[];
   parsedUnits: string[][];
 }> {
   let text = "";
 
-  // 📘 Handle different file types
   if (typeof file !== "string" && file.type === "application/pdf") {
     const buffer = await file.arrayBuffer();
     const pdf = await getDocument({ data: buffer }).promise;
@@ -46,7 +49,6 @@ export async function parseBookWithChapters(file: File | string): Promise<{
   const lines = text.split("\n");
   const chapterMarkers: { index: number; title: string }[] = [];
 
-  // 📚 Detect chapter titles using regex
   lines.forEach((line, index) => {
     const match =
       line.match(/^Chapter\s+\d+[:.\s]/i) ||
@@ -86,9 +88,6 @@ export async function parseBookWithChapters(file: File | string): Promise<{
   return { chapters, parsedUnits };
 }
 
-// ----------------------------
-// 📖 PROGRESSIVE READING JSX
-// ----------------------------
 export function generateProgressiveReadingHTML(inputText: string): JSX.Element {
   const sentences = inputText.match(/[^.!?\n]+[.!?\n]+/g) || [];
 
@@ -103,12 +102,9 @@ export function generateProgressiveReadingHTML(inputText: string): JSX.Element {
   );
 }
 
-// ----------------------------
-// 🧠 THOUGHT-UNIT PARSER
-// ----------------------------
 export function parseTextToThoughtUnits(text: string): string[][] {
   const sentences = text
-    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/)
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/)  
     .filter((s) => s.length > 0)
     .map((s) => s.trim());
 
@@ -117,9 +113,6 @@ export function parseTextToThoughtUnits(text: string): string[][] {
   );
 }
 
-// ----------------------------
-// 🧠 THOUGHT-UNIT JSX
-// ----------------------------
 export function generateProgressiveReadingJSX(text: string): JSX.Element {
   const thoughtUnits = parseTextToThoughtUnits(text);
   return (
@@ -137,9 +130,6 @@ export function generateProgressiveReadingJSX(text: string): JSX.Element {
   );
 }
 
-// ----------------------------
-// 📚 HYBRID VIEW HTML
-// ----------------------------
 export function generateHybridHTML(chapters: Chapter[], units: string[][]): string {
   const toc = chapters
     .map((ch, i) => `
@@ -175,9 +165,6 @@ export function generateHybridHTML(chapters: Chapter[], units: string[][]): stri
   `;
 }
 
-// ----------------------------
-// 📄 EMBED PDF VIEWER
-// ----------------------------
 export function getPdfViewerHTML(file: File, scale: number): JSX.Element {
   const url = URL.createObjectURL(file);
   return (

@@ -24,9 +24,11 @@ export default function HybridReader() {
   const [file, setFile] = useState<File | null>(null);
   const [pdfURL, setPdfURL] = useState<string>("");
   const [loading, setLoading] = useState(false);
-  const [viewMode, setViewMode] = useState<"original" | "progressive" | "hybrid">("original");
+  const [viewMode, setViewMode] = useState<"original" | "chapters" | "progressive" | "hybrid">("original");
   const [progressiveText, setProgressiveText] = useState<string | null>(null);
   const [hybridHTML, setHybridHTML] = useState<string | null>(null);
+  const [chapterText, setChapterText] = useState<string | null>(null);
+  const [originalText, setOriginalText] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const uploaded = e.target.files?.[0];
@@ -42,9 +44,13 @@ export default function HybridReader() {
       setLoading(true);
 
       try {
-        const { parsedUnits, chapters } = await parseBookWithChapters(file);
+        const { parsedUnits, chapters, original } = await parseBookWithChapters(file);
         const rawText = parsedUnits.map((unit) => unit.join(" ")).join("\n");
+        const chapterView = chapters.join("\n\n");
+
         setProgressiveText(rawText);
+        setChapterText(chapterView);
+        setOriginalText(original);
         setHybridHTML(generateHybridHTML(chapters, parsedUnits));
       } catch (err) {
         console.error("Error loading views:", err);
@@ -57,7 +63,7 @@ export default function HybridReader() {
     loadContent();
   }, [file]);
 
-  const renderContent = () => {
+  const renderView = () => {
     if (loading) return <Loader label="Processing your file..." />;
     if (!file) return <p className="text-gray-400">Upload a textbook to get started.</p>;
 
@@ -67,6 +73,14 @@ export default function HybridReader() {
           <div className="border rounded overflow-hidden">
             <DynamicViewer fileUrl={pdfURL} />
           </div>
+        );
+      case "chapters":
+        return (
+          <ScrollArea className="h-[70vh] w-full rounded-md border p-4">
+            <pre className="whitespace-pre-wrap text-base leading-relaxed">
+              {chapterText}
+            </pre>
+          </ScrollArea>
         );
       case "progressive":
         return progressiveText ? <ParsedText text={progressiveText} /> : null;
@@ -110,6 +124,9 @@ export default function HybridReader() {
         <Button onClick={() => setViewMode("original")} variant="secondary">
           Original View
         </Button>
+        <Button onClick={() => setViewMode("chapters")} variant="outline">
+          Chapters
+        </Button>
         <Button onClick={() => setViewMode("progressive")} variant="outline">
           Progressive
         </Button>
@@ -118,7 +135,7 @@ export default function HybridReader() {
         </Button>
       </div>
 
-      <section className="mt-4">{renderContent()}</section>
+      <section className="mt-4">{renderView()}</section>
     </main>
   );
 }

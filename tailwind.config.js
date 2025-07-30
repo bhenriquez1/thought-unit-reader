@@ -1,22 +1,37 @@
 // tailwind.config.ts
+
 import { type Config } from "tailwindcss";
 import { fontFamily } from "tailwindcss/defaultTheme";
 
 const config: Config = {
   darkMode: "class",
   content: [
-    "./pages/**/*.{ts,tsx}",       // ✅ Standard Next.js folders
-    "./components/**/*.{ts,tsx}",  // ✅ Good
-    "./app/**/*.{ts,tsx}",         // ✅ For App Router support
+    "./pages/**/*.{js,ts,jsx,tsx}",
+    "./components/**/*.{js,ts,jsx,tsx}",
+    "./app/**/*.{js,ts,jsx,tsx}",
+    "./lib/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Inter", ...fontFamily.sans], // ✅ Adds Inter as first sans font
+        sans: ["Inter", "var(--font-sans)", ...fontFamily.sans],
+        mono: ["var(--font-mono)", ...fontFamily.mono],
+      },
+      colors: {
+        primary: {
+          DEFAULT: "#ec4899", // pink-500
+        },
+        zinc: {
+          900: "#18181b", // dark background
+        },
       },
     },
   },
-  plugins: [require("tailwindcss-animate")], // ✅ Only if installed
+  plugins: [
+    require("@tailwindcss/typography"),
+    require("tailwind-scrollbar")({ nocompatible: true }),
+    require("tailwindcss-animate"),
+  ],
 };
 
 export default config;

@@ -7,8 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import Loader from "@/components/ui/loader";
+import HybridReader from "@/components/HybridReader";
 
-// Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
@@ -25,6 +25,8 @@ export default function Home() {
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [numPages, setNumPages] = useState<number>(0);
   const [zoom, setZoom] = useState<number>(1.25);
+  const [inputText, setInputText] = useState("");
+  const [enabled, setEnabled] = useState(true);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const uploadedFile = e.target.files?.[0];
@@ -45,6 +47,7 @@ export default function Home() {
         const rawText = parsedUnits.map((unit) => unit.join(" ")).join("\n");
         const generated = generateProgressiveReadingHTML(rawText);
         setParsedHTML(generated);
+        setInputText(rawText);
         setUploadStatus("done");
       } catch (err) {
         console.error("Error parsing file:", err);
@@ -75,14 +78,18 @@ export default function Home() {
         <p className="text-sm text-gray-300">Read deeper, faster, and smarter.</p>
       </header>
 
-      <Label className="block mb-2">Upload a file (PDF, DOCX, or TXT):</Label>
-      <input
-        type="file"
-        accept=".pdf,.docx,.txt"
-        ref={fileInputRef}
-        className="mb-4"
-        onChange={handleFileChange}
-      />
+      <div className="mb-6 flex items-center gap-4">
+        <Label>Enable AI Mode</Label>
+        <Switch checked={enabled} onCheckedChange={setEnabled} />
+        <Button onClick={() => fileInputRef.current?.click()}>Upload Book</Button>
+        <input
+          type="file"
+          accept=".txt,.pdf,.docx"
+          className="hidden"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+        />
+      </div>
 
       {uploadStatus === "processing" && <Loader label="Processing your file..." />}
       {uploadStatus === "error" && (
@@ -97,6 +104,9 @@ export default function Home() {
             </Button>
             <Button onClick={() => setViewMode("progressive")} variant="outline">
               Progressive View
+            </Button>
+            <Button onClick={() => setViewMode("hybrid")} variant="default">
+              Hybrid View
             </Button>
           </div>
 
@@ -139,6 +149,12 @@ export default function Home() {
               className="prose prose-sm sm:prose-base max-w-none dark:prose-invert"
               dangerouslySetInnerHTML={{ __html: parsedHTML }}
             />
+          )}
+
+          {viewMode === "hybrid" && inputText && (
+            <div className="border rounded-xl p-6 shadow">
+              <HybridReader inputText={inputText} />
+            </div>
           )}
         </>
       )}
