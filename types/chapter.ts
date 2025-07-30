@@ -1,6 +1,8 @@
 export interface Chapter {
+  id: string;
   title: string;
   content: string;
-  startPage?: number;
-  endPage?: number;
+  page: number; // ✅ added this line
+  pageStart?: number;
+  pageEnd?: number;
 }
