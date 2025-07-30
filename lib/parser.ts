@@ -183,5 +183,4 @@ export async function getPdfViewerHTML(file: File): Promise<string> {
     }
   }
 
-  return `<div class="pdf-viewer">${pageContainers.join("\n")}</div>`;
-}
+  return `<div class="pdf-viewer">${pageContainers.join("\n")}</div>
