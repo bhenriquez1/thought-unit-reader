@@ -1,27 +1,22 @@
-// components/ui/ParsedText.tsx
-"use client";
-
-import { useEffect, useState } from "react";
+// components/ParsedText.tsx
+import React from "react";
 
 interface ParsedTextProps {
-  inputText: string;
+  text: string;
 }
 
-export default function ParsedText({ inputText }: ParsedTextProps) {
-  const [sentences, setSentences] = useState<string[]>([]);
-
-  useEffect(() => {
-    const matches = inputText.match(/[^.!?\n]+[.!?\n]/g) || [];
-    setSentences(matches.map((s) => s.trim()));
-  }, [inputText]);
+const ParsedText: React.FC<ParsedTextProps> = ({ text }) => {
+  const lines = text.split("\n");
 
   return (
-    <div className="space-y-2 text-base leading-relaxed">
-      {sentences.map((sentence, i) => (
-        <p key={i} className={i % 2 === 0 ? "text-white" : "text-gray-400"}>
-          {sentence}
+    <div className="space-y-2 p-4">
+      {lines.map((line, idx) => (
+        <p key={idx} className={idx % 2 === 0 ? "text-black" : "text-gray-500"}>
+          {line}
         </p>
       ))}
     </div>
   );
-}
+};
+
+export default ParsedText;
