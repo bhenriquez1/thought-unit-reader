@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import Loader from "@/components/ui/loader";
-import ParsedText from "@/components/ParsedText";
+import ParsedText from "@/components/ui/ParsedText";
 import {
   parseBookWithChapters,
   generateHybridHTML,
