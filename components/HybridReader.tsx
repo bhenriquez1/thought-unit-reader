@@ -9,7 +9,6 @@ import Loader from "@/components/ui/loader";
 import ParsedText from "@/components/ui/ParsedText";
 import { Chapter } from "@/types/chapter";
 import { cn } from "@/lib/utils";
-
 import {
   parseBookWithChapters,
   generateHybridHTML,
@@ -135,7 +134,7 @@ export default function HybridReader() {
       case "progressive":
         return (
           <ScrollArea className="h-[80vh] p-4 border rounded">
-            <ParsedText text={parsedUnits.map(unit => unit.join(" ")).join("\n")} />
+            <ParsedText parsedUnits={parsedUnits} />
           </ScrollArea>
         );
       case "hybrid":

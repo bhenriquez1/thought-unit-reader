@@ -2,24 +2,24 @@
 
 import React from "react";
 
-export interface ParsedTextProps {
+interface ParsedTextProps {
   parsedUnits: string[][];
 }
 
 const ParsedText: React.FC<ParsedTextProps> = ({ parsedUnits }) => {
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 p-4">
       {parsedUnits.map((unit, idx) => (
         <p
           key={idx}
-          className="text-lg font-medium text-white bg-zinc-800 p-2 rounded shadow"
+          className="text-base leading-relaxed rounded px-2 py-1 shadow-sm"
         >
-          {unit.map((phrase, i) => (
+          {unit.map((word, i) => (
             <span
               key={i}
-              className={i % 2 === 0 ? "text-white" : "text-gray-400"}
+              className={i % 2 === 0 ? "text-black dark:text-white" : "text-gray-500 dark:text-gray-400"}
             >
-              {phrase}
+              {word}
             </span>
           ))}
         </p>
