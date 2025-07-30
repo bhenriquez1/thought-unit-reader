@@ -1,25 +1,15 @@
-// components/ParsedText.tsx
+// components/ui/ParsedText.tsx
 
 import React from "react";
 
-interface ParsedTextProps {
-  inputText: string;
+export interface ParsedTextProps {
+  text: string;
 }
 
-const ParsedText: React.FC<ParsedTextProps> = ({ inputText }) => {
-  const sentences =
-    inputText.match(/[^.?!\n]+[.?!\n]+|[^.?!\n]+$/g) || [];
-
+const ParsedText: React.FC<ParsedTextProps> = ({ text }) => {
   return (
-    <div className="space-y-2 text-base leading-relaxed">
-      {sentences.map((sentence, i) => (
-        <p
-          key={i}
-          className={i % 2 === 0 ? "text-white" : "text-gray-400"}
-        >
-          {sentence.trim()}
-        </p>
-      ))}
+    <div className="whitespace-pre-wrap text-sm font-medium leading-relaxed">
+      {text}
     </div>
   );
 };
