@@ -14,7 +14,7 @@ interface HybridReaderProps {
   scale?: number;
 }
 
-const DynamicViewer = dynamic(() => import("./Viewer"), {
+const DynamicViewer = dynamic(() => import("./ui/Viewer"), {
   ssr: false,
   loading: () => <Loader label="Loading PDF..." />, 
 });
