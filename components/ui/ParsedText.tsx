@@ -1,18 +1,23 @@
 // components/ParsedText.tsx
+
 import React from "react";
 
 interface ParsedTextProps {
-  text: string;
+  inputText: string;
 }
 
-const ParsedText: React.FC<ParsedTextProps> = ({ text }) => {
-  const lines = text.split("\n");
+const ParsedText: React.FC<ParsedTextProps> = ({ inputText }) => {
+  const sentences =
+    inputText.match(/[^.?!\n]+[.?!\n]+|[^.?!\n]+$/g) || [];
 
   return (
-    <div className="space-y-2 p-4">
-      {lines.map((line, idx) => (
-        <p key={idx} className={idx % 2 === 0 ? "text-black" : "text-gray-500"}>
-          {line}
+    <div className="space-y-2 text-base leading-relaxed">
+      {sentences.map((sentence, i) => (
+        <p
+          key={i}
+          className={i % 2 === 0 ? "text-white" : "text-gray-400"}
+        >
+          {sentence.trim()}
         </p>
       ))}
     </div>
