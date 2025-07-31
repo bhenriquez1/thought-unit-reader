@@ -2,7 +2,13 @@
 // Separate client-side and server-side functions
 
 import mammoth from "mammoth";
-import { Chapter } from "@/types/chapter";
+
+// Define the Chapter interface inline to avoid import issues
+interface Chapter {
+  title: string;
+  content: string;
+  page?: number;
+}
 
 // Import pdfjs inside client-side conditional
 let pdfjsLib: any;

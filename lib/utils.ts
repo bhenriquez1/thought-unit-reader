@@ -1,13 +1,35 @@
-// lib/utils.ts
+// lib/dynamic-import-utils.ts
 
-import { twMerge } from "tailwind-merge";
-import { clsx, type ClassValue } from "clsx";
+import dynamic from 'next/dynamic';
+import type { ComponentType } from 'react';
+import Loader from '@/components/ui/loader';
 
 /**
- * Combines Tailwind class names with intelligent merging
- * @param inputs - List of class names or conditional class expressions
- * @returns A single string of merged classes
+ * Type-safe wrapper for Next.js dynamic imports
+ * 
+ * @param importFn Function that returns a dynamic import
+ * @param options Options for the dynamic import
+ * @returns Dynamically imported component
  */
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(...inputs));
+export function safeDynamic<P>(
+  importFn: () => Promise<{ default: ComponentType<P> }>,
+  options: {
+    loading?: ComponentType;
+    ssr?: boolean;
+    loadingText?: string;
+  } = {}
+) {
+  const {
+    loading,
+    ssr = false,
+    loadingText = 'Loading...'
+  } = options;
+
+  return dynamic<P>(
+    importFn,
+    {
+      loading: loading || (() => <Loader label={loadingText} />),
+      ssr
+    }
+  );
 }

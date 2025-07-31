@@ -1,11 +1,24 @@
-const getChapterText = (index: number) => {
-  // Handle possible undefined values explicitly
-  const startPage = chapters[index]?.page;
-  const start = startPage !== undefined ? startPage - 1 : 0;
+// types/chapter.ts
+
+/**
+ * Represents a chapter in a document
+ */
+export interface Chapter {
+  /**
+   * The title of the chapter
+   */
+  title: string;
   
-  const nextChapter = chapters[index + 1];
-  const endPage = nextChapter?.page;
-  const end = endPage !== undefined ? endPage - 1 : parsedUnits.length;
+  /**
+   * The content of the chapter as text
+   */
+  content: string;
   
-  return parsedUnits.slice(start, end).flat().join(" ");
-};
+  /**
+   * The page number where the chapter starts (optional)
+   */
+  page?: number;
+}
+
+// Export default as well for flexibility
+export default Chapter;

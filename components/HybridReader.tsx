@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import Loader from "@/components/ui/loader";
 import ParsedText from "@/components/ParsedText";
-import { Chapter } from "@/types/chapter";
 import { cn } from "@/lib/utils";
 import {
   parseBookWithChapters,
@@ -16,11 +15,20 @@ import {
 } from "@/lib/parser";
 import { generateProgressiveReadingJSX } from "@/lib/client-parser";
 
+// Define the Chapter interface inline to avoid import issues
+interface Chapter {
+  title: string;
+  content: string;
+  page?: number;
+}
+
 // Fix the dynamic import to be compatible with Next.js typing
-const PDFViewer = dynamic(
-  () => import("../components/PDFViewer").then(mod => mod.default),
+import { safeDynamic } from '@/lib/dynamic-import-utils';
+
+const PDFViewer = safeDynamic(
+  () => import('../components/PDFViewer'),
   { 
-    loading: () => <Loader label="Loading PDF..." />,
+    loadingText: "Loading PDF...",
     ssr: false 
   }
 );
