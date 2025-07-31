@@ -90,21 +90,30 @@ export default function HybridReader({ inputText }: { inputText?: string }) {
     if (inputText && !file && !loading) {
       setLoading(true);
       try {
+        // Convert inputText to string[][] format as expected by the component
         const units = parseTextToUnits(inputText);
-        setParsedUnits([units]);
-        setOriginalText(inputText);
+        setParsedUnits(units);
+        
+        // Make sure originalText is a string, not string[][]
+        if (typeof inputText === 'string') {
+          setOriginalText(inputText);
+        } else {
+          setOriginalText(String(inputText));
+        }
         
         // Create a default chapter if none exists - FIXED with content property
         if (chapters.length === 0) {
           setChapters([{ 
             title: "Content", 
-            content: inputText || "", // Add the required content property
+            content: typeof inputText === 'string' ? inputText : String(inputText),
             page: 1 
           }]);
         }
         
-        const html = generateHybridHTML(chapters, [units]);
-        setHybridHTML(html);
+        // Generate HTML and convert to string if needed
+        const html = generateHybridHTML(chapters, units);
+        setHybridHTML(typeof html === 'string' ? html : String(html));
+        
         setLoading(false);
       } catch (err) {
         console.error("Error parsing input text:", err);
@@ -122,10 +131,17 @@ export default function HybridReader({ inputText }: { inputText?: string }) {
         const { parsedUnits, chapters, original } = await parseBookWithChapters(file);
         setParsedUnits(parsedUnits);
         setChapters(chapters);
-        setOriginalText(original);
         
+        // Make sure original is a string, not string[][]
+        if (typeof original === 'string') {
+          setOriginalText(original);
+        } else {
+          setOriginalText(String(original));
+        }
+        
+        // Generate HTML and convert to string if needed
         const html = generateHybridHTML(chapters, parsedUnits);
-        setHybridHTML(html);
+        setHybridHTML(typeof html === 'string' ? html : String(html));
       } catch (err) {
         console.error("Error parsing file:", err);
         setHybridHTML("<p class='text-red-500'>Failed to process file.</p>");
