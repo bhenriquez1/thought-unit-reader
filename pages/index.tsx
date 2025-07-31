@@ -10,25 +10,23 @@ import { Button } from "@/components/ui/button";
 import Loader from "@/components/ui/loader";
 import { configurePdfWorker } from "@/lib/pdf-worker-config";
 
-import { safeDynamic } from '@/lib/dynamic-import-utils';
-
 // Fix dynamic imports
-const HybridReader = safeDynamic(
-  () => import('../components/HybridReader'),
+const HybridReader = dynamic(
+  () => import("../components/HybridReader"),
   { 
     ssr: false,
-    loadingText: "Loading reader..."
+    loading: () => <Loader label="Loading reader..." />
   }
 );
 
 // Fixed dynamic import for Document and Page components
-const PDFDocument = safeDynamic(
-  () => import('react-pdf').then(mod => ({ default: mod.Document })),
+const PDFDocument = dynamic(
+  () => import("react-pdf").then(mod => mod.Document),
   { ssr: false }
 );
 
-const PDFPage = safeDynamic(
-  () => import('react-pdf').then(mod => ({ default: mod.Page })),
+const PDFPage = dynamic(
+  () => import("react-pdf").then(mod => mod.Page),
   { ssr: false }
 );
 

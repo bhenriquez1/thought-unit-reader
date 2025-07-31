@@ -18,20 +18,12 @@ import {
 } from "@/lib/parser";
 import { generateProgressiveReadingJSX } from "@/lib/client-parser";
 
-// Fix the dynamic import to be compatible with Next.js typing
-import { safeDynamic } from '@/lib/dynamic-import-utils';
-
-const PDFViewer = safeDynamic(
-  () => import('../components/PDFViewer'),
-  { 
-    loadingText: "Loading PDF...",
-    ssr: false 
-  }
-);
-
-interface HybridReaderProps {
-  inputText?: string;
-}
+// IMPORTANT: Fix the dynamic import - use standard Next.js dynamic import
+// without custom utility to ensure proper JSX element type
+const PDFViewer = dynamic(() => import("../components/PDFViewer"), {
+  loading: () => <Loader label="Loading PDF..." />,
+  ssr: false
+});
 
 // Define the Chapter interface inline to avoid import issues
 interface Chapter {
@@ -40,7 +32,7 @@ interface Chapter {
   page?: number;   // Optional field
 }
 
-export default function HybridReader({ inputText }: HybridReaderProps) {
+export default function HybridReader({ inputText }: { inputText?: string }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -211,7 +203,10 @@ export default function HybridReader({ inputText }: HybridReaderProps) {
       case "original":
         return (
           <ScrollArea className="h-[80vh] border rounded p-4" ref={scrollRef}>
-            {extension === "pdf" && pdfURL && <PDFViewer fileUrl={pdfURL} initialScale={1.2} />}
+            {extension === "pdf" && pdfURL && (
+              // Use a more direct approach with basic props to avoid JSX type errors
+              <PDFViewer fileUrl={pdfURL} initialScale={1.2} />
+            )}
             {(extension === "txt" || inputText) && (
               <pre className="whitespace-pre-wrap text-sm">{originalText || ""}</pre>
             )}
@@ -233,7 +228,8 @@ export default function HybridReader({ inputText }: HybridReaderProps) {
           <div className="grid md:grid-cols-2 gap-6">
             {pdfURL ? (
               <div className="border rounded overflow-hidden">
-                <PDFViewer fileUrl={pdfURL} showControls={false} />
+                {/* Use a more direct approach without extra props */}
+                <PDFViewer fileUrl={pdfURL} />
               </div>
             ) : (
               <div className="border rounded p-4 bg-white dark:bg-zinc-900">

@@ -1,36 +1,24 @@
+"use client";
+
+// components/PDFViewer.tsx
 import React, { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import Loader from "@/components/ui/loader";
 import { Button } from "@/components/ui/button";
-import { configurePdfWorker } from "@/lib/pdf-worker-config";
 
-// Import clsx and tailwind-merge directly to define cn function inline
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
-
-// Define the cn function inline to avoid import issues
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(...inputs));
-}
-
-// Dynamically import react-pdf components with proper type handling
-const Document = dynamic<any>(
-  () => import("react-pdf").then(mod => mod.Document),
-  { ssr: false }
-);
-
-const Page = dynamic<any>(
-  () => import("react-pdf").then(mod => mod.Page),
-  { ssr: false }
-);
-
+// Define explicit prop types
 export interface PDFViewerProps {
   fileUrl: string;
   initialScale?: number;
   showControls?: boolean;
 }
 
-const PDFViewer: React.FC<PDFViewerProps> = ({ 
+// Use simpler dynamic imports without our custom utility
+const Document = dynamic(() => import("react-pdf").then(mod => mod.Document), { ssr: false });
+const Page = dynamic(() => import("react-pdf").then(mod => mod.Page), { ssr: false });
+
+// Export the component as a named export AND default export
+export const PDFViewer: React.FC<PDFViewerProps> = ({ 
   fileUrl, 
   initialScale = 1.0, 
   showControls = true 
@@ -43,7 +31,12 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
 
   // Configure PDF.js worker on component mount
   useEffect(() => {
-    configurePdfWorker().catch(err => {
+    // Dynamic import to avoid SSR issues
+    import("react-pdf").then(({ pdfjs }) => {
+      if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+        pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+      }
+    }).catch(err => {
       console.error("Failed to configure PDF worker:", err);
       setError("Failed to initialize PDF viewer");
     });
@@ -78,19 +71,6 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
       const newScale = prevScale + delta;
       return Math.min(Math.max(0.5, newScale), 3.0);
     });
-  };
-
-  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = e.target as HTMLFormElement;
-    const input = form.elements.namedItem('page') as HTMLInputElement;
-    if (!input || !input.value) return;
-    
-    const pageNum = parseInt(input.value, 10);
-    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= numPages) {
-      setPageNumber(pageNum);
-    }
-    input.value = '';
   };
 
   return (
@@ -164,8 +144,6 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
               <Page 
                 pageNumber={pageNumber} 
                 scale={scale}
-                renderTextLayer={true}
-                renderAnnotationLayer={true}
                 error={<div className="p-4 text-red-500">Failed to render page</div>}
               />
             )}
@@ -174,27 +152,9 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
           <div className="p-4 text-gray-500">No PDF file provided</div>
         )}
       </div>
-      
-      {showControls && numPages > 0 && (
-        <div className="mt-4">
-          <form 
-            onSubmit={handleFormSubmit}
-            className="flex items-center gap-2"
-          >
-            <input
-              type="number"
-              name="page"
-              min={1}
-              max={numPages}
-              placeholder="Go to page"
-              className="w-24 px-2 py-1 border rounded text-sm"
-            />
-            <Button type="submit" size="sm" variant="secondary">Go</Button>
-          </form>
-        </div>
-      )}
     </div>
   );
 };
 
+// Export as default as well
 export default PDFViewer;
