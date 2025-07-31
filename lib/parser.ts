@@ -6,8 +6,8 @@ import mammoth from "mammoth";
 // Define the Chapter interface inline to avoid import issues
 interface Chapter {
   title: string;
-  content: string;
-  page?: number;
+  content: string; // Required field
+  page?: number;   // Optional field
 }
 
 // Import pdfjs inside client-side conditional

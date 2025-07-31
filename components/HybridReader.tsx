@@ -18,13 +18,6 @@ import {
 } from "@/lib/parser";
 import { generateProgressiveReadingJSX } from "@/lib/client-parser";
 
-// Define the Chapter interface inline to avoid import issues
-interface Chapter {
-  title: string;
-  content: string;
-  page?: number;
-}
-
 // Fix the dynamic import to be compatible with Next.js typing
 import { safeDynamic } from '@/lib/dynamic-import-utils';
 
@@ -38,6 +31,13 @@ const PDFViewer = safeDynamic(
 
 interface HybridReaderProps {
   inputText?: string;
+}
+
+// Define the Chapter interface inline to avoid import issues
+interface Chapter {
+  title: string;
+  content: string; // Required field
+  page?: number;   // Optional field
 }
 
 export default function HybridReader({ inputText }: HybridReaderProps) {
@@ -102,9 +102,13 @@ export default function HybridReader({ inputText }: HybridReaderProps) {
         setParsedUnits([units]);
         setOriginalText(inputText);
         
-        // Create a default chapter if none exists
+        // Create a default chapter if none exists - FIXED with content property
         if (chapters.length === 0) {
-          setChapters([{ title: "Content", page: 1 }]);
+          setChapters([{ 
+            title: "Content", 
+            content: inputText || "", // Add the required content property
+            page: 1 
+          }]);
         }
         
         const html = generateHybridHTML(chapters, [units]);
