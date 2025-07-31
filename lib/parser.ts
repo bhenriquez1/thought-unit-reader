@@ -10,6 +10,63 @@ interface Chapter {
   page?: number;   // Optional field
 }
 
+export async function extractText(file: File): Promise<string> {
+  const extension = file.name.split(".").pop()?.toLowerCase();
+
+  if (extension === "pdf") {
+    // Use dynamic import for pdf.js to avoid SSR issues
+    try {
+      const pdfjsLib = await import("pdfjs-dist/build/pdf");
+      const pdfjsWorker = await import("pdfjs-dist/build/pdf.worker.entry");
+      pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker.default;
+
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const numPages = pdf.numPages;
+
+      const textContent = await Promise.all(
+        Array.from({ length: numPages }, async (_, i) => {
+          const page = await pdf.getPage(i + 1);
+          const text = await page.getTextContent();
+          return text.items.map((item: any) => item.str).join(" ");
+        })
+      );
+
+      return textContent.join("\n\n");
+    } catch (error) {
+      console.error("Error extracting PDF text:", error);
+      return "Error extracting PDF text";
+    }
+  } else if (extension === "docx") {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      return result.value;
+    } catch (error) {
+      console.error("Error extracting DOCX text:", error);
+      return "Error extracting DOCX text";
+    }
+  } else if (extension === "txt") {
+    try {
+      return await file.text();
+    } catch (error) {
+      console.error("Error extracting TXT text:", error);
+      return "Error extracting TXT text";
+    }
+  }
+
+  return "Unsupported file type.";
+}
+
+export function parseIntoUnits(text: string): string[] {
+  if (!text) return [];
+  
+  return text
+    .split(/(?<=[.?!])\s+(?=[A-Z0-9])/) // match sentence endings followed by capital letter/number
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
 // Make sure parseTextToUnits returns string[][] not string[]
 export function parseTextToUnits(text: string): string[][] {
   if (!text) return [[]];
@@ -42,69 +99,9 @@ export function parseTextToUnits(text: string): string[][] {
   return paragraphs.length > 0 ? paragraphs : [[]];
 }
 
-// Import pdfjs inside client-side conditional
-let pdfjsLib: any;
-if (typeof window !== 'undefined') {
-  // Only import on client side
-  import("pdfjs-dist/build/pdf").then(module => {
-    pdfjsLib = module;
-    import("pdfjs-dist/build/pdf.worker.entry").then(worker => {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = worker.default;
-    });
-  });
-}
-
-export async function extractText(file: File): Promise<string> {
-  const extension = file.name.split(".").pop()?.toLowerCase();
-
-  if (extension === "pdf") {
-    // Ensure pdfjsLib is loaded
-    if (!pdfjsLib) {
-      pdfjsLib = await import("pdfjs-dist/build/pdf");
-      const pdfjsWorker = await import("pdfjs-dist/build/pdf.worker.entry");
-      pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker.default;
-    }
-
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    const numPages = pdf.numPages;
-
-    const textContent = await Promise.all(
-      Array.from({ length: numPages }, async (_, i) => {
-        const page = await pdf.getPage(i + 1);
-        const text = await page.getTextContent();
-        return text.items.map((item: any) => item.str).join(" ");
-      })
-    );
-
-    return textContent.join("\n\n");
-  } else if (extension === "docx") {
-    const arrayBuffer = await file.arrayBuffer();
-    const result = await mammoth.extractRawText({ arrayBuffer });
-    return result.value;
-  } else if (extension === "txt") {
-    return await file.text();
-  }
-
-  throw new Error("Unsupported file type.");
-}
-
-export function parseIntoUnits(text: string): string[] {
-  return text
-    .split(/(?<=[.?!])\s+(?=[A-Z0-9])/) // match sentence endings followed by capital letter/number
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-}
-
-// Add the missing parseTextToUnits function
-export function parseTextToUnits(text: string): string[] {
-  return text
-    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/) // Split at sentence boundaries
-    .map(sentence => sentence.trim())
-    .filter(sentence => sentence.length > 0);
-}
-
 export function splitIntoChapters(text: string): Chapter[] {
+  if (!text) return [];
+  
   const lines = text.split("\n");
   const chapters: Chapter[] = [];
   let currentChapter: Chapter = { title: "", content: "" };
@@ -134,45 +131,67 @@ export async function parseBookWithChapters(file: File): Promise<{
   chapters: Chapter[];
   original: string;
 }> {
-  const text = await extractText(file);
-  const chapters = splitIntoChapters(text);
-  
-  // Convert each chapter's content into parsed units
-  const parsedUnits: string[][] = [];
-  chapters.forEach((chapter, index) => {
-    const sentences = parseIntoUnits(chapter.content);
-    // Add page number to each chapter for reference
-    chapter.page = index + 1;
+  try {
+    const text = await extractText(file);
+    const chapters = splitIntoChapters(text);
     
-    // Group sentences into paragraphs (this is a simple implementation)
-    const paragraphs: string[][] = [];
-    let currentParagraph: string[] = [];
-    
-    sentences.forEach(sentence => {
-      currentParagraph.push(sentence);
-      // If sentence ends with paragraph break, start a new paragraph
-      if (sentence.endsWith("\n\n")) {
-        paragraphs.push([...currentParagraph]);
-        currentParagraph = [];
+    // Convert each chapter's content into parsed units
+    const parsedUnits: string[][] = [];
+    chapters.forEach((chapter, index) => {
+      if (!chapter.content) {
+        chapter.content = "";
+      }
+      
+      const sentences = parseIntoUnits(chapter.content);
+      // Add page number to each chapter for reference
+      chapter.page = index + 1;
+      
+      // Group sentences into paragraphs (this is a simple implementation)
+      const paragraphs: string[][] = [];
+      let currentParagraph: string[] = [];
+      
+      sentences.forEach(sentence => {
+        currentParagraph.push(sentence);
+        // If sentence ends with paragraph break, start a new paragraph
+        if (sentence.endsWith("\n\n")) {
+          paragraphs.push([...currentParagraph]);
+          currentParagraph = [];
+        }
+      });
+      
+      // Add any remaining sentences
+      if (currentParagraph.length > 0) {
+        paragraphs.push(currentParagraph);
+      }
+      
+      // Add paragraphs to parsedUnits
+      if (paragraphs.length > 0) {
+        parsedUnits.push(...paragraphs);
+      } else {
+        // Ensure we have at least one paragraph per chapter
+        parsedUnits.push([]);
       }
     });
-    
-    // Add any remaining sentences
-    if (currentParagraph.length > 0) {
-      paragraphs.push(currentParagraph);
-    }
-    
-    parsedUnits.push(...paragraphs);
-  });
 
-  return {
-    parsedUnits,
-    chapters,
-    original: text,
-  };
+    return {
+      parsedUnits: parsedUnits.length > 0 ? parsedUnits : [[]],
+      chapters: chapters.length > 0 ? chapters : [{ title: "Content", content: text, page: 1 }],
+      original: text,
+    };
+  } catch (error) {
+    console.error("Error parsing book with chapters:", error);
+    // Return safe defaults
+    return {
+      parsedUnits: [[]],
+      chapters: [{ title: "Content", content: "Error parsing content", page: 1 }],
+      original: "Error parsing book",
+    };
+  }
 }
 
 export function parseTextToThoughtUnits(text: string): string[][] {
+  if (!text) return [[]];
+  
   const sentences = text
     .split(/(?<=[.!?])\s+(?=[A-Z0-9])/) // sentence boundaries
     .filter((s) => s.length > 0)
@@ -183,8 +202,9 @@ export function parseTextToThoughtUnits(text: string): string[][] {
   );
 }
 
-// Create a non-JSX version that returns HTML string
 export function generateProgressiveReadingHTML(text: string): string {
+  if (!text) return "";
+  
   const sentences = text.match(/[^.!?\n]+[.!?\n]+/g) || [];
 
   return `
@@ -198,37 +218,47 @@ export function generateProgressiveReadingHTML(text: string): string {
   `;
 }
 
-// This JSX-generating function should be used only in client components
-export function generateProgressiveReadingJSX(text: string): any {
-  // This will be implemented in client components
-  return {
-    type: 'div',
-    props: {
-      className: 'space-y-4',
-      children: `[JSX content would go here - implement in client component]`
-    }
-  };
-}
-
 export function generateHybridHTML(chapters: Chapter[], units: string[][]): string {
+  // Ensure chapters is an array
+  if (!Array.isArray(chapters)) {
+    chapters = [];
+  }
+  
+  // Ensure units is a string[][]
+  if (!Array.isArray(units)) {
+    units = [[]];
+  }
+  
+  // Generate TOC safely
   const toc = chapters
-    .map((ch, i) => `
-      <li class="mb-2">
-        <a href="#chapter-${i}" class="text-blue-600 underline font-medium">
-          ${ch.title}
-        </a> — Page ${ch.page ?? i + 1}
-      </li>`)
+    .map((ch, i) => {
+      // Ensure chapter properties are strings/numbers
+      const title = typeof ch.title === 'string' ? ch.title : String(ch.title || '');
+      const page = typeof ch.page === 'number' ? ch.page : (i + 1);
+      
+      return `
+        <li class="mb-2">
+          <a href="#chapter-${i}" class="text-blue-600 underline font-medium">
+            ${title}
+          </a> — Page ${page}
+        </li>`;
+    })
     .join("");
 
   let chapterCounter = 0;
   const body = units.flatMap((unit, i) => {
-    const joined = unit.join(" ");
+    if (!unit || !Array.isArray(unit) || unit.length === 0) return [];
+    
+    // Safely join the unit into a string
+    const joined = unit.map(item => typeof item === 'string' ? item : String(item)).join(" ");
+    
     if (joined.startsWith("###CHAPTER:")) {
       const title = joined.replace("###CHAPTER:", "").trim();
       const header = `<h3 id="chapter-${chapterCounter}" class="text-lg font-semibold mt-8 mb-4">${title}</h3>`;
       chapterCounter++;
       return [header];
     }
+    
     const colorClass = i % 2 === 0 ? "text-black dark:text-white" : "text-gray-500 dark:text-gray-400";
     return [`<p id="unit-${i}" class="${colorClass} mt-2 text-base leading-relaxed">${joined}</p>`];
   }).join("\n");
@@ -241,28 +271,6 @@ export function generateHybridHTML(chapters: Chapter[], units: string[][]): stri
       </div>
       <hr class="my-4 border-gray-300 dark:border-zinc-600"/>
       ${body}
-    </div>
-  `;
-}
-
-// Create a proper interface for the client-side component
-export function getPdfViewerHTML(url: string, scale: number = 1): string {
-  return `
-    <div class="mt-8 bg-white p-4 rounded shadow">
-      <p class="text-sm text-gray-500 mb-2">
-        PDF viewer embedded below (scale: ${scale}x):
-      </p>
-      <object
-        data="${url}"
-        type="application/pdf"
-        width="100%"
-        height="600px"
-      >
-        <p>
-          Your browser does not support PDFs.
-          <a href="${url}" class="text-blue-500 underline ml-1">Download PDF</a>
-        </p>
-      </object>
     </div>
   `;
 }

@@ -8,10 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import Loader from "@/components/ui/loader";
-import { configurePdfWorker } from "@/lib/pdf-worker-config";
 
-// Fix dynamic imports
-const HybridReader = dynamic(
+// Fix dynamic imports with explicit any type
+const HybridReader = dynamic<any>(
   () => import("../components/HybridReader"),
   { 
     ssr: false,
@@ -20,12 +19,12 @@ const HybridReader = dynamic(
 );
 
 // Fixed dynamic import for Document and Page components
-const PDFDocument = dynamic(
+const PDFDocument = dynamic<any>(
   () => import("react-pdf").then(mod => mod.Document),
   { ssr: false }
 );
 
-const PDFPage = dynamic(
+const PDFPage = dynamic<any>(
   () => import("react-pdf").then(mod => mod.Page),
   { ssr: false }
 );
@@ -44,12 +43,20 @@ export default function Home() {
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [numPages, setNumPages] = useState<number>(0);
   const [zoom, setZoom] = useState<number>(1.25);
-  const [inputText, setInputText] = useState("");
-  const [enabled, setEnabled] = useState(true);
+  const [inputText, setInputText] = useState<string>("");
+  const [enabled, setEnabled] = useState<boolean>(true);
 
   // Configure PDF.js worker on component mount
   useEffect(() => {
-    configurePdfWorker();
+    try {
+      import("react-pdf").then(({ pdfjs }) => {
+        if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+          pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+        }
+      });
+    } catch (error) {
+      console.error("Failed to configure PDF worker:", error);
+    }
   }, []);
 
   useEffect(() => {
@@ -57,14 +64,18 @@ export default function Home() {
   }, []);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const uploadedFile = e.target.files?.[0];
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    const uploadedFile = files[0];
     if (!uploadedFile) return;
 
     const url = URL.createObjectURL(uploadedFile);
     setFileURL(url);
 
-    const isPDF = uploadedFile.name.endsWith(".pdf");
-    const isText = uploadedFile.name.endsWith(".txt") || uploadedFile.name.endsWith(".docx");
+    const fileExt = uploadedFile.name.split(".").pop()?.toLowerCase() || "";
+    const isPDF = fileExt === "pdf";
+    const isText = fileExt === "txt" || fileExt === "docx";
 
     if (isPDF) {
       setFileType("pdf");
@@ -73,12 +84,21 @@ export default function Home() {
       setFileType("text");
       setUploadStatus("processing");
       try {
-        const { parsedUnits } = await parseBookWithChapters(uploadedFile);
-        const rawText = parsedUnits.map((unit) => unit.join(" ")).join("\n");
-        const generated = generateProgressiveReadingHTML(rawText);
-        setParsedHTML(generated);
-        setInputText(rawText);
-        setUploadStatus("done");
+        const { parsedUnits, original } = await parseBookWithChapters(uploadedFile);
+        
+        // Safely handle parsedUnits and generate HTML
+        if (Array.isArray(parsedUnits) && parsedUnits.length > 0) {
+          const rawText = parsedUnits
+            .map(unit => Array.isArray(unit) ? unit.join(" ") : String(unit))
+            .join("\n");
+            
+          const generated = generateProgressiveReadingHTML(rawText);
+          setParsedHTML(generated);
+          setInputText(typeof original === 'string' ? original : String(original));
+          setUploadStatus("done");
+        } else {
+          throw new Error("Failed to parse document units");
+        }
       } catch (err) {
         console.error("Parsing error:", err);
         setUploadStatus("error");
@@ -94,10 +114,14 @@ export default function Home() {
 
   const goToPage = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const value = (e.currentTarget.elements.namedItem("page") as HTMLInputElement)?.value;
-    const page = parseInt(value);
-    if (!isNaN(page) && page >= 1 && page <= numPages) {
-      setPageNumber(page);
+    const form = e.currentTarget;
+    const pageInput = form.elements.namedItem("page") as HTMLInputElement;
+    
+    if (pageInput && pageInput.value) {
+      const page = parseInt(pageInput.value);
+      if (!isNaN(page) && page >= 1 && page <= numPages) {
+        setPageNumber(page);
+      }
     }
   };
 
@@ -154,13 +178,20 @@ export default function Home() {
                 </div>
 
                 <div className="border rounded overflow-hidden w-full flex justify-center bg-white dark:bg-zinc-900">
-                  <PDFDocument
-                    file={fileURL}
-                    onLoadSuccess={({ numPages }) => setNumPages(numPages)}
-                    loading={<Loader label="Loading PDF..." />}
-                  >
-                    <PDFPage pageNumber={pageNumber} scale={zoom} />
-                  </PDFDocument>
+                  {fileURL && (
+                    <PDFDocument
+                      file={fileURL}
+                      onLoadSuccess={({ numPages }) => numPages && setNumPages(numPages)}
+                      loading={<Loader label="Loading PDF..." />}
+                      error={<div className="p-4 text-red-500">Failed to load PDF</div>}
+                    >
+                      <PDFPage 
+                        pageNumber={pageNumber} 
+                        scale={zoom} 
+                        error={<div className="p-4 text-red-500">Failed to render page</div>}
+                      />
+                    </PDFDocument>
+                  )}
                 </div>
 
                 <form onSubmit={goToPage} className="mt-2 flex justify-center gap-2">

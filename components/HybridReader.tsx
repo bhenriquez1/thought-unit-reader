@@ -236,7 +236,8 @@ export default function HybridReader({ inputText }: { inputText?: string }) {
       case "progressive":
         return (
           <ScrollArea className="h-[80vh] p-4 border rounded">
-            <ParsedText parsedUnits={parsedUnits} />
+            {/* Pass parsedUnits explicitly as string[][] */}
+            <ParsedText parsedUnits={Array.isArray(parsedUnits) ? parsedUnits : [[]]} />
           </ScrollArea>
         );
       case "hybrid":

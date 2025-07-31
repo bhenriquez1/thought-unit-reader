@@ -14,8 +14,8 @@ export interface PDFViewerProps {
 }
 
 // Use simpler dynamic imports without our custom utility
-const Document = dynamic(() => import("react-pdf").then(mod => mod.Document), { ssr: false });
-const Page = dynamic(() => import("react-pdf").then(mod => mod.Page), { ssr: false });
+const Document = dynamic<any>(() => import("react-pdf").then(mod => mod.Document), { ssr: false });
+const Page = dynamic<any>(() => import("react-pdf").then(mod => mod.Page), { ssr: false });
 
 // Export the component as a named export AND default export
 export const PDFViewer: React.FC<PDFViewerProps> = ({ 
@@ -23,9 +23,14 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   initialScale = 1.0, 
   showControls = true 
 }) => {
+  // Validate props
+  const url = typeof fileUrl === 'string' ? fileUrl : '';
+  const scale = typeof initialScale === 'number' ? initialScale : 1.0;
+  const controls = typeof showControls === 'boolean' ? showControls : true;
+
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
-  const [scale, setScale] = useState<number>(initialScale);
+  const [zoom, setZoom] = useState<number>(scale);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,7 +72,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   };
 
   const changeScale = (delta: number) => {
-    setScale(prevScale => {
+    setZoom(prevScale => {
       const newScale = prevScale + delta;
       return Math.min(Math.max(0.5, newScale), 3.0);
     });
@@ -81,7 +86,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         </div>
       )}
       
-      {showControls && (
+      {controls && (
         <div className="flex flex-wrap gap-2 mb-4 w-full justify-center">
           <Button 
             onClick={() => changePage(-1)} 
@@ -114,7 +119,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
           </Button>
           
           <span className="px-3 py-2 text-sm">
-            {Math.round(scale * 100)}%
+            {Math.round(zoom * 100)}%
           </span>
           
           <Button 
@@ -128,9 +133,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       )}
       
       <div className="border rounded overflow-hidden bg-white">
-        {fileUrl ? (
+        {url ? (
           <Document
-            file={fileUrl}
+            file={url}
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={onDocumentLoadError}
             loading={<div className="flex justify-center items-center h-[400px]"><Loader label="Loading PDF..." /></div>}
@@ -143,7 +148,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
             ) : (
               <Page 
                 pageNumber={pageNumber} 
-                scale={scale}
+                scale={zoom}
                 error={<div className="p-4 text-red-500">Failed to render page</div>}
               />
             )}
