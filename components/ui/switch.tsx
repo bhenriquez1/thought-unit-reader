@@ -1,6 +1,6 @@
-// components/ui/switch.tsx - Simple switch without HeadlessUI
+// components/ui/switch.tsx
 import * as React from "react";
-import { cn } from "../../lib/utils";
+import { cn } from "@/lib/classnames"; // Updated import path
 
 export interface SwitchProps {
   checked: boolean;

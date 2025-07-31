@@ -8,8 +8,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import Loader from "@/components/ui/loader";
 import ParsedText from "@/components/ParsedText";
 
-// Import cn from our dedicated classnames utility
-import { cn } from "../lib/classnames";
+// Updated import to use alias path
+import { cn } from "@/lib/classnames";
 
 import {
   parseBookWithChapters,
@@ -19,7 +19,6 @@ import {
 import { generateProgressiveReadingJSX } from "@/lib/client-parser";
 
 // Fix the dynamic import - use standard Next.js dynamic import
-// without custom utility to ensure proper JSX element type
 const PDFViewer = dynamic(() => import("../components/PDFViewer"), {
   loading: () => <Loader label="Loading PDF..." />,
   ssr: false
