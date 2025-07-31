@@ -2,34 +2,34 @@
 
 import dynamic from 'next/dynamic';
 import type { ComponentType } from 'react';
-// Import the actual Loader component as a value, not a type
-import Loader from '@/components/ui/loader';
 
-/**
- * Type-safe wrapper for Next.js dynamic imports
- */
+// The simplest possible version without any custom loading component
 export function safeDynamic<P>(
   importFn: () => Promise<{ default: ComponentType<P> }>,
   options: {
-    // Don't use Loader as a type, use React's built-in types
-    loading?: ComponentType<any> | null;
     ssr?: boolean;
-    loadingText?: string;
   } = {}
 ) {
-  const {
-    loading,
-    ssr = false,
-    loadingText = 'Loading...'
-  } = options;
+  const { ssr = false } = options;
+  
+  // Just use dynamic directly without any custom loading component
+  return dynamic<P>(importFn, { ssr });
+}
 
-  // Use a JSX element directly here, not a type reference
+// For named exports
+export function safeDynamicNamed<P>(
+  importFn: () => Promise<any>,
+  exportName: string,
+  options: {
+    ssr?: boolean;
+  } = {}
+) {
+  const { ssr = false } = options;
+  
   return dynamic<P>(
-    importFn,
-    {
-      // Create an anonymous function that returns the JSX
-      loading: loading || (() => React.createElement(Loader, { label: loadingText })),
-      ssr
-    }
+    () => importFn().then(mod => ({ default: mod[exportName] })),
+    { ssr }
   );
 }
+
+export default safeDynamic;
