@@ -49,7 +49,7 @@ export async function extractText(file: File): Promise<string> {
 
 export function parseIntoUnits(text: string): string[] {
   return text
-    .split(/(?<=[.?!])\s+(?=[A-Z0-9])/)
+    .split(/(?<=[.?!])\s+(?=[A-Z0-9])/) // match sentence endings followed by capital letter/number
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 }
@@ -111,7 +111,7 @@ export function generateProgressiveReadingHTML(inputText: string): JSX.Element {
 
 export function parseTextToThoughtUnits(text: string): string[][] {
   const sentences = text
-    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/)
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/) // sentence boundaries
     .filter((s) => s.length > 0)
     .map((s) => s.trim());
 

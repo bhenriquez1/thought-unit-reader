@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import Loader from "@/components/ui/loader";
-import ParsedText from "@/components/ui/ParsedText";
+import ParsedText from "@/components/ParsedText";
 import { Chapter } from "@/types/chapter";
 import { cn } from "@/lib/utils";
 import {
@@ -15,7 +15,7 @@ import {
   generateProgressiveReadingJSX,
 } from "@/lib/parser";
 
-const DynamicViewer = dynamic(() => import("./ui/Viewer"), {
+const PDFViewer = dynamic(() => import("@/components/Viewer"), {
   ssr: false,
   loading: () => <Loader label="Loading PDF..." />,
 });
@@ -23,10 +23,14 @@ const DynamicViewer = dynamic(() => import("./ui/Viewer"), {
 export default function HybridReader() {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
   const [file, setFile] = useState<File | null>(null);
+  const [extension, setExtension] = useState<string>("");
   const [pdfURL, setPdfURL] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [viewMode, setViewMode] = useState<"original" | "chapters" | "progressive" | "hybrid">("original");
+
   const [parsedUnits, setParsedUnits] = useState<string[][]>([]);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [originalText, setOriginalText] = useState<string | null>(null);
@@ -36,8 +40,10 @@ export default function HybridReader() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const uploaded = e.target.files?.[0];
     if (uploaded) {
+      const ext = uploaded.name.split(".").pop()?.toLowerCase() || "";
       setFile(uploaded);
       setPdfURL(URL.createObjectURL(uploaded));
+      setExtension(ext);
     }
   };
 
@@ -58,13 +64,12 @@ export default function HybridReader() {
         setOriginalText(original);
         setHybridHTML(generateHybridHTML(chapters, parsedUnits));
       } catch (err) {
-        console.error("Error loading views:", err);
+        console.error("Error parsing file:", err);
         setHybridHTML("<p class='text-red-500'>Failed to process file.</p>");
       } finally {
         setLoading(false);
       }
     };
-
     loadContent();
   }, [file]);
 
@@ -84,7 +89,7 @@ export default function HybridReader() {
 
   const renderProgressiveChapters = () => (
     <div className="flex flex-col md:flex-row gap-6 w-full">
-      <aside className="sticky top-4 md:w-1/4 w-full space-y-3 p-4 border border-zinc-300 dark:border-zinc-700 rounded-md shadow bg-white dark:bg-zinc-900">
+      <aside className="sticky top-4 md:w-1/4 w-full space-y-3 p-4 border rounded-md shadow bg-white dark:bg-zinc-900">
         <h2 className="font-bold text-lg text-zinc-800 dark:text-white mb-2">Chapters</h2>
         <ul className="space-y-2">
           {chapters.map((ch, i) => (
@@ -108,7 +113,7 @@ export default function HybridReader() {
       <section className="md:w-3/4 w-full px-4 space-y-8">
         {chapters.map((ch, i) => (
           <div key={i} id={`chapter-${i}`}>
-            <h3 className="text-xl font-semibold text-zinc-900 dark:text-white mb-3">
+            <h3 className="text-xl font-semibold mb-3 text-zinc-900 dark:text-white">
               {ch.title}
             </h3>
             {generateProgressiveReadingJSX(getChapterText(i))}
@@ -125,9 +130,15 @@ export default function HybridReader() {
     switch (viewMode) {
       case "original":
         return (
-          <div className="border rounded overflow-hidden">
-            <DynamicViewer fileUrl={pdfURL} />
-          </div>
+          <ScrollArea className="h-[80vh] border rounded p-4" ref={scrollRef}>
+            {extension === "pdf" && <PDFViewer fileUrl={pdfURL} />}
+            {extension === "txt" && (
+              <pre className="whitespace-pre-wrap text-sm">{originalText}</pre>
+            )}
+            {extension === "docx" && (
+              <div dangerouslySetInnerHTML={{ __html: originalText || "" }} />
+            )}
+          </ScrollArea>
         );
       case "chapters":
         return renderProgressiveChapters();
@@ -141,7 +152,7 @@ export default function HybridReader() {
         return (
           <div className="grid md:grid-cols-2 gap-6">
             <div className="border rounded overflow-hidden">
-              <DynamicViewer fileUrl={pdfURL} />
+              <PDFViewer fileUrl={pdfURL} />
             </div>
             <ScrollArea className="h-[80vh] border rounded p-4 bg-white dark:bg-zinc-900">
               <div
@@ -173,18 +184,18 @@ export default function HybridReader() {
         onChange={handleFileChange}
       />
 
-      <div className="flex gap-4 mt-2 mb-6">
+      <div className="flex flex-wrap gap-4 mt-2 mb-6">
         <Button onClick={() => setViewMode("original")} variant="secondary">
-          Original View
+          📄 Original View
         </Button>
         <Button onClick={() => setViewMode("chapters")} variant="outline">
-          Chapters
+          📚 Chapters
         </Button>
         <Button onClick={() => setViewMode("progressive")} variant="outline">
-          Progressive
+          🧠 Progressive
         </Button>
         <Button onClick={() => setViewMode("hybrid")} variant="default">
-          Hybrid View
+          🔁 Hybrid View
         </Button>
       </div>
 

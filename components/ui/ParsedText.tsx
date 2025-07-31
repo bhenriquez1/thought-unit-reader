@@ -1,31 +1,40 @@
-"use client";
-
-import React from "react";
+import { useEffect, useState } from "react";
+import { parseTextToUnits } from "@/lib/parser";
 
 interface ParsedTextProps {
-  parsedUnits: string[][];
+  inputText?: string;
+  parsedUnits?: string[][];
+  extension: string;
 }
 
-const ParsedText: React.FC<ParsedTextProps> = ({ parsedUnits }) => {
+export default function ParsedText({ inputText, parsedUnits, extension }: ParsedTextProps) {
+  const [units, setUnits] = useState<string[][]>([]);
+
+  useEffect(() => {
+    if (parsedUnits && parsedUnits.length > 0) {
+      setUnits(parsedUnits);
+    } else if (inputText) {
+      const result = parseTextToUnits(inputText);
+      setUnits(result);
+    }
+  }, [inputText, parsedUnits]);
+
   return (
-    <div className="space-y-4 p-4">
-      {parsedUnits.map((unit, idx) => (
-        <p
-          key={idx}
-          className="text-base leading-relaxed rounded px-2 py-1 shadow-sm"
-        >
-          {unit.map((word, i) => (
+    <div className="prose prose-sm sm:prose-base max-w-none dark:prose-invert">
+      {units.map((sentenceGroup, i) => (
+        <p key={i} className="mb-4">
+          {sentenceGroup.map((phrase, j) => (
             <span
-              key={i}
-              className={i % 2 === 0 ? "text-black dark:text-white" : "text-gray-500 dark:text-gray-400"}
+              key={j}
+              className={`mr-1 ${
+                j % 2 === 0 ? "text-black dark:text-white" : "text-gray-500 dark:text-gray-400"
+              }`}
             >
-              {word}
+              {phrase}
             </span>
           ))}
         </p>
       ))}
     </div>
   );
-};
-
-export default ParsedText;
+}

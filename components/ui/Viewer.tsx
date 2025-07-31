@@ -1,57 +1,40 @@
 "use client";
 
-import { useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { useEffect, useState } from "react";
 
-// Fix for pdfjs worker error
+// Required for PDF.js to function correctly
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
-type ViewerProps = {
-  fileUrl: string;
-};
+interface ViewerProps {
+  file: File | string;
+}
 
-export default function Viewer({ fileUrl }: ViewerProps) {
-  const [numPages, setNumPages] = useState<number>(0);
+export default function Viewer({ file }: ViewerProps) {
+  const [numPages, setNumPages] = useState<number | null>(null);
   const [pageNumber, setPageNumber] = useState<number>(1);
 
-  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+  useEffect(() => {
+    setPageNumber(1);
+  }, [file]);
+
+  const handleLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
   };
 
-  const goToPrevPage = () => {
-    setPageNumber((prev) => Math.max(prev - 1, 1));
-  };
-
-  const goToNextPage = () => {
-    setPageNumber((prev) => Math.min(prev + 1, numPages));
-  };
-
   return (
-    <div className="flex flex-col items-center w-full space-y-4">
-      <ScrollArea className="h-[80vh] border rounded p-4 bg-white dark:bg-zinc-900 w-full max-w-4xl">
-        <Document file={fileUrl} onLoadSuccess={onDocumentLoadSuccess}>
+    <div className="w-full max-h-[80vh] overflow-y-auto border rounded">
+      <Document file={file} onLoadSuccess={handleLoadSuccess}>
+        {Array.from(new Array(numPages || 0), (el, index) => (
           <Page
-            pageNumber={pageNumber}
-            renderTextLayer={true}
+            key={`page_${index + 1}`}
+            pageNumber={index + 1}
+            width={800}
             renderAnnotationLayer={false}
-            width={600}
+            renderTextLayer={true}
           />
-        </Document>
-      </ScrollArea>
-
-      <div className="flex items-center gap-4">
-        <Button onClick={goToPrevPage} disabled={pageNumber <= 1} variant="outline">
-          Previous
-        </Button>
-        <span className="text-sm text-zinc-700 dark:text-zinc-300">
-          Page {pageNumber} of {numPages}
-        </span>
-        <Button onClick={goToNextPage} disabled={pageNumber >= numPages} variant="outline">
-          Next
-        </Button>
-      </div>
+        ))}
+      </Document>
     </div>
   );
 }
