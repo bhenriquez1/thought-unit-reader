@@ -2,14 +2,10 @@
 
 import dynamic from 'next/dynamic';
 import type { ComponentType } from 'react';
-import * as React from 'react'; // Import React explicitly
-
-// Create a simple LoadingComponent separately to avoid JSX in the dynamic options
-const LoadingComponent = ({ loadingText = 'Loading...' }: { loadingText?: string }) => {
-  // Import Loader dynamically to avoid the circular reference
-  const LoaderComponent = require('@/components/ui/loader').default;
-  return React.createElement(LoaderComponent, { label: loadingText });
-};
+// Import React to use createElement
+import * as React from 'react';
+// Import the loader component
+import Loader from '@/components/ui/loader';
 
 /**
  * Type-safe wrapper for Next.js dynamic imports
@@ -28,16 +24,12 @@ export function safeDynamic<P>(
     loadingText = 'Loading...'
   } = options;
 
-  // Create a separate loading component factory function
-  const defaultLoading = () => React.createElement(LoadingComponent, { loadingText });
-
+  // Use React.createElement instead of JSX
   return dynamic<P>(
     importFn,
     {
-      loading: loading || defaultLoading,
+      loading: loading || (() => React.createElement(Loader, { label: loadingText })),
       ssr
     }
   );
 }
-
-export default safeDynamic;
