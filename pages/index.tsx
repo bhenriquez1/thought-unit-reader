@@ -48,14 +48,15 @@ export default function Home() {
 
   // Configure PDF.js worker on component mount
   useEffect(() => {
-    try {
+    // Import the pdfjs module only on client side
+    if (typeof window !== 'undefined') {
       import("react-pdf").then(({ pdfjs }) => {
         if (!pdfjs.GlobalWorkerOptions.workerSrc) {
           pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
         }
+      }).catch(error => {
+        console.error("Failed to configure PDF worker:", error);
       });
-    } catch (error) {
-      console.error("Failed to configure PDF worker:", error);
     }
   }, []);
 

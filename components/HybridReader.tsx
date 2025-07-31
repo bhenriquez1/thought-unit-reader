@@ -18,7 +18,7 @@ import {
 } from "@/lib/parser";
 import { generateProgressiveReadingJSX } from "@/lib/client-parser";
 
-// IMPORTANT: Fix the dynamic import - use standard Next.js dynamic import
+// Fix the dynamic import - use standard Next.js dynamic import
 // without custom utility to ensure proper JSX element type
 const PDFViewer = dynamic(() => import("../components/PDFViewer"), {
   loading: () => <Loader label="Loading PDF..." />,
