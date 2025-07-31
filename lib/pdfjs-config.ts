@@ -5,14 +5,20 @@
  * This function should be called in a useEffect hook in client components
  */
 export const configurePdfWorker = async (): Promise<void> => {
+  if (typeof window === 'undefined') {
+    console.warn('PDF worker configuration attempted in server context');
+    return;
+  }
+  
   try {
     // Dynamically import pdfjs in a client-side context
-    const { pdfjs } = await import('react-pdf');
+    const pdfjs = await import('react-pdf').then(mod => mod.pdfjs);
     
     // Check if worker source is already configured
     if (!pdfjs.GlobalWorkerOptions.workerSrc) {
       // Use CDN version of the worker that matches the package version
-      pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+      const workerUrl = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+      pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
       console.log('PDF.js worker configured successfully');
     }
   } catch (error) {
@@ -25,8 +31,13 @@ export const configurePdfWorker = async (): Promise<void> => {
  * This can be used in places where the worker URL is needed directly
  */
 export const getPdfWorkerUrl = async (): Promise<string> => {
+  if (typeof window === 'undefined') {
+    // Return a fallback URL for server-side rendering
+    return '//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+  }
+  
   try {
-    const { pdfjs } = await import('react-pdf');
+    const pdfjs = await import('react-pdf').then(mod => mod.pdfjs);
     return `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
   } catch (error) {
     console.error('Failed to get PDF.js worker URL:', error);

@@ -1,16 +1,22 @@
 "use client";
 
 // components/PDFViewer.tsx
-import React, { useState } from "react";
-import { Document, Page, pdfjs } from "react-pdf";
-import "react-pdf/dist/esm/Page/AnnotationLayer.css";
-import "react-pdf/dist/esm/Page/TextLayer.css";
-import configurePdfjs from "@/lib/pdfjs-config";
-import { Button } from "@/components/ui/button";
+import React, { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import Loader from "@/components/ui/loader";
+import { Button } from "@/components/ui/button";
+import { configurePdfWorker } from "@/lib/pdf-worker-config";
 
-// Configure PDF.js worker
-configurePdfjs();
+// Dynamically import react-pdf components with proper type handling
+const Document = dynamic<any>(
+  () => import("react-pdf").then(mod => mod.Document),
+  { ssr: false }
+);
+
+const Page = dynamic<any>(
+  () => import("react-pdf").then(mod => mod.Page),
+  { ssr: false }
+);
 
 export interface PDFViewerProps {
   fileUrl: string;
@@ -29,9 +35,23 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
-    setNumPages(numPages);
-    setLoading(false);
+  // Configure PDF.js worker on component mount
+  useEffect(() => {
+    configurePdfWorker().catch(err => {
+      console.error("Failed to configure PDF worker:", err);
+      setError("Failed to initialize PDF viewer");
+    });
+  }, []);
+
+  const onDocumentLoadSuccess = (pdf: { numPages: number }) => {
+    if (pdf && typeof pdf.numPages === 'number') {
+      setNumPages(pdf.numPages);
+      setLoading(false);
+    } else {
+      console.error("Invalid PDF document structure:", pdf);
+      setError("Invalid PDF document");
+      setLoading(false);
+    }
   };
 
   const onDocumentLoadError = (err: Error) => {
@@ -43,7 +63,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
   const changePage = (offset: number) => {
     setPageNumber(prevPageNumber => {
       const newPageNumber = prevPageNumber + offset;
-      return Math.min(Math.max(1, newPageNumber), numPages);
+      return Math.min(Math.max(1, newPageNumber), numPages || 1);
     });
   };
 
@@ -54,10 +74,23 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
     });
   };
 
+  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = e.target as HTMLFormElement;
+    const input = form.elements.namedItem('page') as HTMLInputElement;
+    if (!input || !input.value) return;
+    
+    const pageNum = parseInt(input.value, 10);
+    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= numPages) {
+      setPageNumber(pageNum);
+    }
+    input.value = '';
+  };
+
   return (
     <div className="flex flex-col items-center">
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 w-full">
           {error}
         </div>
       )}
@@ -109,40 +142,37 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
       )}
       
       <div className="border rounded overflow-hidden bg-white">
-        <Document
-          file={fileUrl}
-          onLoadSuccess={onDocumentLoadSuccess}
-          onLoadError={onDocumentLoadError}
-          loading={<Loader label="Loading PDF..." />}
-        >
-          {loading ? (
-            <div className="flex justify-center items-center h-[400px]">
-              <Loader label="Loading PDF..." />
-            </div>
-          ) : (
-            <Page 
-              pageNumber={pageNumber} 
-              scale={scale}
-              renderTextLayer={true}
-              renderAnnotationLayer={true}
-            />
-          )}
-        </Document>
+        {fileUrl ? (
+          <Document
+            file={fileUrl}
+            onLoadSuccess={onDocumentLoadSuccess}
+            onLoadError={onDocumentLoadError}
+            loading={<div className="flex justify-center items-center h-[400px]"><Loader label="Loading PDF..." /></div>}
+            error={<div className="p-4 text-red-500">Failed to load PDF document</div>}
+          >
+            {loading ? (
+              <div className="flex justify-center items-center h-[400px]">
+                <Loader label="Loading PDF..." />
+              </div>
+            ) : (
+              <Page 
+                pageNumber={pageNumber} 
+                scale={scale}
+                renderTextLayer={true}
+                renderAnnotationLayer={true}
+                error={<div className="p-4 text-red-500">Failed to render page</div>}
+              />
+            )}
+          </Document>
+        ) : (
+          <div className="p-4 text-gray-500">No PDF file provided</div>
+        )}
       </div>
       
-      {showControls && (
+      {showControls && numPages > 0 && (
         <div className="mt-4">
           <form 
-            onSubmit={(e) => {
-              e.preventDefault();
-              const form = e.target as HTMLFormElement;
-              const input = form.elements.namedItem('page') as HTMLInputElement;
-              const pageNum = parseInt(input.value);
-              if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= numPages) {
-                setPageNumber(pageNum);
-              }
-              input.value = '';
-            }}
+            onSubmit={handleFormSubmit}
             className="flex items-center gap-2"
           >
             <input

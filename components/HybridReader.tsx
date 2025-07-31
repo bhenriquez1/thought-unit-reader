@@ -31,7 +31,7 @@ interface HybridReaderProps {
 
 export default function HybridReader({ inputText }: HybridReaderProps) {
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
@@ -47,7 +47,10 @@ export default function HybridReader({ inputText }: HybridReaderProps) {
   const [activeChapter, setActiveChapter] = useState(0);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const uploaded = e.target.files?.[0];
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    const uploaded = files[0];
     if (uploaded) {
       const ext = uploaded.name.split(".").pop()?.toLowerCase() || "";
       setFile(uploaded);
@@ -56,10 +59,27 @@ export default function HybridReader({ inputText }: HybridReaderProps) {
     }
   };
 
-  const getChapterText = (index: number) => {
-    const start = chapters[index]?.page - 1 || 0;
-    const end = chapters[index + 1]?.page - 1 || parsedUnits.length;
-    return parsedUnits.slice(start, end).flat().join(" ");
+  // Fix the getChapterText function to handle possible undefined values safely
+  const getChapterText = (index: number): string => {
+    if (index < 0 || index >= chapters.length || parsedUnits.length === 0) {
+      return "";
+    }
+    
+    // Handle possible undefined values explicitly
+    const startPage = chapters[index]?.page;
+    const start = typeof startPage === 'number' ? startPage - 1 : 0;
+    
+    const nextChapter = chapters[index + 1];
+    const endPage = nextChapter?.page;
+    const end = typeof endPage === 'number' ? endPage - 1 : parsedUnits.length;
+    
+    // Ensure we don't go out of bounds
+    const safeStart = Math.max(0, Math.min(start, parsedUnits.length));
+    const safeEnd = Math.max(safeStart, Math.min(end, parsedUnits.length));
+    
+    const slicedUnits = parsedUnits.slice(safeStart, safeEnd);
+    const flattenedUnits = slicedUnits.flat();
+    return flattenedUnits.join(" ");
   };
 
   useEffect(() => {
@@ -76,10 +96,12 @@ export default function HybridReader({ inputText }: HybridReaderProps) {
           setChapters([{ title: "Content", page: 1 }]);
         }
         
-        setHybridHTML(generateHybridHTML(chapters, [units]));
+        const html = generateHybridHTML(chapters, [units]);
+        setHybridHTML(html);
         setLoading(false);
       } catch (err) {
         console.error("Error parsing input text:", err);
+        setHybridHTML("<p class='text-red-500'>Failed to process text.</p>");
         setLoading(false);
       }
     }
@@ -94,7 +116,9 @@ export default function HybridReader({ inputText }: HybridReaderProps) {
         setParsedUnits(parsedUnits);
         setChapters(chapters);
         setOriginalText(original);
-        setHybridHTML(generateHybridHTML(chapters, parsedUnits));
+        
+        const html = generateHybridHTML(chapters, parsedUnits);
+        setHybridHTML(html);
       } catch (err) {
         console.error("Error parsing file:", err);
         setHybridHTML("<p class='text-red-500'>Failed to process file.</p>");
@@ -107,6 +131,8 @@ export default function HybridReader({ inputText }: HybridReaderProps) {
 
   useEffect(() => {
     const onScroll = () => {
+      if (!chapters.length) return;
+      
       for (let i = 0; i < chapters.length; i++) {
         const el = document.getElementById(`chapter-${i}`);
         if (el && el.getBoundingClientRect().top >= 0) {
@@ -115,45 +141,52 @@ export default function HybridReader({ inputText }: HybridReaderProps) {
         }
       }
     };
+    
     window.addEventListener("scroll", onScroll);
     return () => window.removeEventListener("scroll", onScroll);
   }, [chapters]);
 
-  const renderProgressiveChapters = () => (
-    <div className="flex flex-col md:flex-row gap-6 w-full">
-      <aside className="sticky top-4 md:w-1/4 w-full space-y-3 p-4 border rounded-md shadow bg-white dark:bg-zinc-900">
-        <h2 className="font-bold text-lg text-zinc-800 dark:text-white mb-2">Chapters</h2>
-        <ul className="space-y-2">
-          {chapters.map((ch, i) => (
-            <li key={i}>
-              <a
-                href={`#chapter-${i}`}
-                className={cn(
-                  "block text-sm font-medium hover:text-pink-600",
-                  activeChapter === i
-                    ? "text-pink-600"
-                    : "text-zinc-700 dark:text-zinc-300"
-                )}
-              >
-                {ch.title}
-              </a>
-            </li>
-          ))}
-        </ul>
-      </aside>
+  const renderProgressiveChapters = () => {
+    if (chapters.length === 0) {
+      return <p>No chapters found</p>;
+    }
+    
+    return (
+      <div className="flex flex-col md:flex-row gap-6 w-full">
+        <aside className="sticky top-4 md:w-1/4 w-full space-y-3 p-4 border rounded-md shadow bg-white dark:bg-zinc-900">
+          <h2 className="font-bold text-lg text-zinc-800 dark:text-white mb-2">Chapters</h2>
+          <ul className="space-y-2">
+            {chapters.map((ch, i) => (
+              <li key={i}>
+                <a
+                  href={`#chapter-${i}`}
+                  className={cn(
+                    "block text-sm font-medium hover:text-pink-600",
+                    activeChapter === i
+                      ? "text-pink-600"
+                      : "text-zinc-700 dark:text-zinc-300"
+                  )}
+                >
+                  {ch.title || `Chapter ${i + 1}`}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </aside>
 
-      <section className="md:w-3/4 w-full px-4 space-y-8">
-        {chapters.map((ch, i) => (
-          <div key={i} id={`chapter-${i}`}>
-            <h3 className="text-xl font-semibold mb-3 text-zinc-900 dark:text-white">
-              {ch.title}
-            </h3>
-            {generateProgressiveReadingJSX(getChapterText(i))}
-          </div>
-        ))}
-      </section>
-    </div>
-  );
+        <section className="md:w-3/4 w-full px-4 space-y-8">
+          {chapters.map((ch, i) => (
+            <div key={i} id={`chapter-${i}`}>
+              <h3 className="text-xl font-semibold mb-3 text-zinc-900 dark:text-white">
+                {ch.title || `Chapter ${i + 1}`}
+              </h3>
+              {generateProgressiveReadingJSX(getChapterText(i))}
+            </div>
+          ))}
+        </section>
+      </div>
+    );
+  };
 
   const renderView = () => {
     if (loading) return <Loader label="Processing your file..." />;
@@ -163,12 +196,12 @@ export default function HybridReader({ inputText }: HybridReaderProps) {
       case "original":
         return (
           <ScrollArea className="h-[80vh] border rounded p-4" ref={scrollRef}>
-            {extension === "pdf" && <PDFViewer fileUrl={pdfURL} initialScale={1.2} />}
+            {extension === "pdf" && pdfURL && <PDFViewer fileUrl={pdfURL} initialScale={1.2} />}
             {(extension === "txt" || inputText) && (
-              <pre className="whitespace-pre-wrap text-sm">{originalText}</pre>
+              <pre className="whitespace-pre-wrap text-sm">{originalText || ""}</pre>
             )}
-            {extension === "docx" && (
-              <div dangerouslySetInnerHTML={{ __html: originalText || "" }} />
+            {extension === "docx" && originalText && (
+              <div dangerouslySetInnerHTML={{ __html: originalText }} />
             )}
           </ScrollArea>
         );
@@ -189,7 +222,7 @@ export default function HybridReader({ inputText }: HybridReaderProps) {
               </div>
             ) : (
               <div className="border rounded p-4 bg-white dark:bg-zinc-900">
-                <pre className="whitespace-pre-wrap text-sm">{originalText}</pre>
+                <pre className="whitespace-pre-wrap text-sm">{originalText || ""}</pre>
               </div>
             )}
             <ScrollArea className="h-[80vh] border rounded p-4 bg-white dark:bg-zinc-900">
