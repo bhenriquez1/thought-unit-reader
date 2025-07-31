@@ -1,0 +1,11 @@
+# Ensure exact versions are saved to avoid dependency conflicts
+save-exact=true
+
+# Use a reliable npm registry
+registry=https://registry.npmjs.org/
+
+# Increase network timeout for slower connections
+network-timeout=60000
+
+# Disable update notifications
+update-notifier=false
