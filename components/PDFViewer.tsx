@@ -1,11 +1,17 @@
-"use client";
-
-// components/PDFViewer.tsx
 import React, { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import Loader from "@/components/ui/loader";
 import { Button } from "@/components/ui/button";
 import { configurePdfWorker } from "@/lib/pdf-worker-config";
+
+// Import clsx and tailwind-merge directly to define cn function inline
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+// Define the cn function inline to avoid import issues
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(...inputs));
+}
 
 // Dynamically import react-pdf components with proper type handling
 const Document = dynamic<any>(

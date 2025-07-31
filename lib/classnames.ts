@@ -1,4 +1,4 @@
-// lib/utils.ts
+// lib/classnames.ts
 
 import { twMerge } from "tailwind-merge";
 import { clsx, type ClassValue } from "clsx";
@@ -8,12 +8,9 @@ import { clsx, type ClassValue } from "clsx";
  * @param inputs - List of class names or conditional class expressions
  * @returns A single string of merged classes
  */
-export function cn(...inputs: ClassValue[]) {
+export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(...inputs));
 }
 
-// Make sure we're explicitly exporting the cn function
-export { cn };
-
-// For backward compatibility, also provide a default export
-export default { cn };
+// Export as default as well
+export default cn;

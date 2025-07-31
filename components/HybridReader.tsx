@@ -7,7 +7,10 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import Loader from "@/components/ui/loader";
 import ParsedText from "@/components/ParsedText";
-import { cn } from "@/lib/utils";
+
+// Import cn from our dedicated classnames utility
+import { cn } from "../lib/classnames";
+
 import {
   parseBookWithChapters,
   generateHybridHTML,
