@@ -2,9 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import type { ComponentType } from 'react';
-// Import React to use createElement
-import * as React from 'react';
-// Import the loader component
+// Import the actual Loader component as a value, not a type
 import Loader from '@/components/ui/loader';
 
 /**
@@ -13,6 +11,7 @@ import Loader from '@/components/ui/loader';
 export function safeDynamic<P>(
   importFn: () => Promise<{ default: ComponentType<P> }>,
   options: {
+    // Don't use Loader as a type, use React's built-in types
     loading?: ComponentType<any> | null;
     ssr?: boolean;
     loadingText?: string;
@@ -24,10 +23,11 @@ export function safeDynamic<P>(
     loadingText = 'Loading...'
   } = options;
 
-  // Use React.createElement instead of JSX
+  // Use a JSX element directly here, not a type reference
   return dynamic<P>(
     importFn,
     {
+      // Create an anonymous function that returns the JSX
       loading: loading || (() => React.createElement(Loader, { label: loadingText })),
       ssr
     }
