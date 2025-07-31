@@ -2,7 +2,21 @@
 
 // lib/client-parser.tsx
 import React from 'react';
-import { parseTextToThoughtUnits } from './parser';
+
+// Parse text to thought units ensuring the result is string[][]
+export function parseTextToThoughtUnits(text: string): string[][] {
+  if (!text) return [[]];
+  
+  const sentences = text
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/) // sentence boundaries
+    .filter((s) => s.length > 0)
+    .map((s) => s.trim());
+
+  // Map each sentence to its thought units, creating a string[][]
+  return sentences.map((sentence) =>
+    sentence.split(/([,;:\-–\(\)\[\]\{\}]|\s+)/).filter(Boolean)
+  );
+}
 
 // Client-side implementation of generateProgressiveReadingJSX
 export function generateProgressiveReadingJSX(text: string): JSX.Element {
@@ -42,4 +56,23 @@ export function generateProgressiveReadingJSX(text: string): JSX.Element {
       </div>
     );
   }
+}'use client';
+
+// lib/client-parser.tsx
+import React from 'react';
+import { parseTextToThoughtUnits } from './parser';
+
+// Parse text to thought units ensuring the result is string[][]
+export function parseTextToThoughtUnits(text: string): string[][] {
+  if (!text) return [[]];
+  
+  const sentences = text
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/) // sentence boundaries
+    .filter((s) => s.length > 0)
+    .map((s) => s.trim());
+
+  // Map each sentence to its thought units, creating a string[][]
+  return sentences.map((sentence) =>
+    sentence.split(/([,;:\-–\(\)\[\]\{\}]|\s+)/).filter(Boolean)
+  );
 }

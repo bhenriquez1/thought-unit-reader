@@ -10,6 +10,38 @@ interface Chapter {
   page?: number;   // Optional field
 }
 
+// Make sure parseTextToUnits returns string[][] not string[]
+export function parseTextToUnits(text: string): string[][] {
+  if (!text) return [[]];
+  
+  const sentences = text
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/) // Split at sentence boundaries
+    .map(sentence => sentence.trim())
+    .filter(sentence => sentence.length > 0);
+  
+  // Group sentences into paragraphs
+  const paragraphs: string[][] = [];
+  let currentParagraph: string[] = [];
+  
+  sentences.forEach(sentence => {
+    currentParagraph.push(sentence);
+    
+    // If the sentence ends with a paragraph break, start a new paragraph
+    if (sentence.includes("\n\n") || currentParagraph.length > 5) {
+      paragraphs.push([...currentParagraph]);
+      currentParagraph = [];
+    }
+  });
+  
+  // Add any remaining sentences as a paragraph
+  if (currentParagraph.length > 0) {
+    paragraphs.push(currentParagraph);
+  }
+  
+  // Ensure we return string[][] even if there's only one paragraph
+  return paragraphs.length > 0 ? paragraphs : [[]];
+}
+
 // Import pdfjs inside client-side conditional
 let pdfjsLib: any;
 if (typeof window !== 'undefined') {
