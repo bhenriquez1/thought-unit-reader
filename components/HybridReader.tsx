@@ -12,15 +12,21 @@ import { cn } from "@/lib/utils";
 import {
   parseBookWithChapters,
   generateHybridHTML,
-  generateProgressiveReadingJSX,
+  parseTextToUnits,
 } from "@/lib/parser";
+import { generateProgressiveReadingJSX } from "@/lib/client-parser";
 
-const PDFViewer = dynamic(() => import("@/components/Viewer"), {
+// Use dynamic import for PDFViewer with consistent naming
+const PDFViewer = dynamic(() => import("@/components/PDFViewer"), {
   ssr: false,
   loading: () => <Loader label="Loading PDF..." />,
 });
 
-export default function HybridReader() {
+interface HybridReaderProps {
+  inputText?: string; // Added to accept the prop from pages/index.tsx
+}
+
+export default function HybridReader({ inputText }: HybridReaderProps) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -52,6 +58,29 @@ export default function HybridReader() {
     const end = chapters[index + 1]?.page - 1 || parsedUnits.length;
     return parsedUnits.slice(start, end).flat().join(" ");
   };
+
+  useEffect(() => {
+    // Process the inputText prop if provided and no file is loaded
+    if (inputText && !file && !loading) {
+      setLoading(true);
+      try {
+        const units = parseTextToUnits(inputText);
+        setParsedUnits([units]);
+        setOriginalText(inputText);
+        
+        // Create a default chapter if none exists
+        if (chapters.length === 0) {
+          setChapters([{ title: "Content", page: 1 }]);
+        }
+        
+        setHybridHTML(generateHybridHTML(chapters, [units]));
+        setLoading(false);
+      } catch (err) {
+        console.error("Error parsing input text:", err);
+        setLoading(false);
+      }
+    }
+  }, [inputText, file, loading, chapters]);
 
   useEffect(() => {
     const loadContent = async () => {
@@ -125,14 +154,14 @@ export default function HybridReader() {
 
   const renderView = () => {
     if (loading) return <Loader label="Processing your file..." />;
-    if (!file) return <p className="text-gray-400">Upload a textbook to get started.</p>;
+    if (!file && !inputText) return <p className="text-gray-400">Upload a textbook to get started.</p>;
 
     switch (viewMode) {
       case "original":
         return (
           <ScrollArea className="h-[80vh] border rounded p-4" ref={scrollRef}>
-            {extension === "pdf" && <PDFViewer fileUrl={pdfURL} />}
-            {extension === "txt" && (
+            {extension === "pdf" && <PDFViewer fileUrl={pdfURL} initialScale={1.2} />}
+            {(extension === "txt" || inputText) && (
               <pre className="whitespace-pre-wrap text-sm">{originalText}</pre>
             )}
             {extension === "docx" && (
@@ -151,9 +180,15 @@ export default function HybridReader() {
       case "hybrid":
         return (
           <div className="grid md:grid-cols-2 gap-6">
-            <div className="border rounded overflow-hidden">
-              <PDFViewer fileUrl={pdfURL} />
-            </div>
+            {pdfURL ? (
+              <div className="border rounded overflow-hidden">
+                <PDFViewer fileUrl={pdfURL} showControls={false} />
+              </div>
+            ) : (
+              <div className="border rounded p-4 bg-white dark:bg-zinc-900">
+                <pre className="whitespace-pre-wrap text-sm">{originalText}</pre>
+              </div>
+            )}
             <ScrollArea className="h-[80vh] border rounded p-4 bg-white dark:bg-zinc-900">
               <div
                 ref={contentRef}

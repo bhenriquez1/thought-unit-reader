@@ -1,6 +1,6 @@
 // components/ui/label.tsx
 import * as React from "react";
-import { cn } from '../../lib/utils'; // ✅ Fixed import path
+import { cn } from '@/lib/utils'; // Fixed import path using alias
 
 export interface LabelProps
   extends React.LabelHTMLAttributes<HTMLLabelElement> {}

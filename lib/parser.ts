@@ -1,27 +1,31 @@
-"use client";
+// lib/parser.ts
+// Separate client-side and server-side functions
 
-import { useState, useCallback, useEffect, useRef } from "react";
-import { Document, Page, pdfjs } from "react-pdf";
 import mammoth from "mammoth";
-import { getDocument, GlobalWorkerOptions, version as pdfjsVersion } from "pdfjs-dist";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Button } from "@/components/ui/button";
-import Loader from "@/components/ui/loader";
-import HybridReader from "@/components/HybridReader";
-import { cn } from "../lib/utils";
 import { Chapter } from "@/types/chapter";
 
-// Configure PDF worker
-GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsVersion}/pdf.worker.min.js`;
+// Import pdfjs inside client-side conditional
+let pdfjsLib: any;
+if (typeof window !== 'undefined') {
+  // Only import on client side
+  import("pdfjs-dist/build/pdf").then(module => {
+    pdfjsLib = module;
+    import("pdfjs-dist/build/pdf.worker.entry").then(worker => {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = worker.default;
+    });
+  });
+}
 
 export async function extractText(file: File): Promise<string> {
   const extension = file.name.split(".").pop()?.toLowerCase();
 
   if (extension === "pdf") {
-    const pdfjsLib = await import("pdfjs-dist/build/pdf");
-    const pdfjsWorker = await import("pdfjs-dist/build/pdf.worker.entry");
-    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker.default;
+    // Ensure pdfjsLib is loaded
+    if (!pdfjsLib) {
+      pdfjsLib = await import("pdfjs-dist/build/pdf");
+      const pdfjsWorker = await import("pdfjs-dist/build/pdf.worker.entry");
+      pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker.default;
+    }
 
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -52,6 +56,14 @@ export function parseIntoUnits(text: string): string[] {
     .split(/(?<=[.?!])\s+(?=[A-Z0-9])/) // match sentence endings followed by capital letter/number
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
+}
+
+// Add the missing parseTextToUnits function
+export function parseTextToUnits(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/) // Split at sentence boundaries
+    .map(sentence => sentence.trim())
+    .filter(sentence => sentence.length > 0);
 }
 
 export function splitIntoChapters(text: string): Chapter[] {
@@ -86,27 +98,40 @@ export async function parseBookWithChapters(file: File): Promise<{
 }> {
   const text = await extractText(file);
   const chapters = splitIntoChapters(text);
-  const parsedUnits = chapters.map((c) => parseIntoUnits(c.content));
+  
+  // Convert each chapter's content into parsed units
+  const parsedUnits: string[][] = [];
+  chapters.forEach((chapter, index) => {
+    const sentences = parseIntoUnits(chapter.content);
+    // Add page number to each chapter for reference
+    chapter.page = index + 1;
+    
+    // Group sentences into paragraphs (this is a simple implementation)
+    const paragraphs: string[][] = [];
+    let currentParagraph: string[] = [];
+    
+    sentences.forEach(sentence => {
+      currentParagraph.push(sentence);
+      // If sentence ends with paragraph break, start a new paragraph
+      if (sentence.endsWith("\n\n")) {
+        paragraphs.push([...currentParagraph]);
+        currentParagraph = [];
+      }
+    });
+    
+    // Add any remaining sentences
+    if (currentParagraph.length > 0) {
+      paragraphs.push(currentParagraph);
+    }
+    
+    parsedUnits.push(...paragraphs);
+  });
 
   return {
     parsedUnits,
     chapters,
     original: text,
   };
-}
-
-export function generateProgressiveReadingHTML(inputText: string): JSX.Element {
-  const sentences = inputText.match(/[^.!?\n]+[.!?\n]+/g) || [];
-
-  return (
-    <div className="space-y-2 text-base leading-relaxed">
-      {sentences.map((sentence, i) => (
-        <p key={i} className={i % 2 === 0 ? "text-white" : "text-gray-400"}>
-          {sentence.trim()}
-        </p>
-      ))}
-    </div>
-  );
 }
 
 export function parseTextToThoughtUnits(text: string): string[][] {
@@ -120,21 +145,31 @@ export function parseTextToThoughtUnits(text: string): string[][] {
   );
 }
 
-export function generateProgressiveReadingJSX(text: string): JSX.Element {
-  const thoughtUnits = parseTextToThoughtUnits(text);
-  return (
-    <div className="space-y-4">
-      {thoughtUnits.map((unit, idx) => (
-        <p key={idx} className="text-lg font-medium text-white bg-gray-800 p-2 rounded shadow">
-          {unit.map((word, i) => (
-            <span key={i} className={i % 2 === 0 ? "text-white" : "text-gray-400"}>
-              {word}
-            </span>
-          ))}
+// Create a non-JSX version that returns HTML string
+export function generateProgressiveReadingHTML(text: string): string {
+  const sentences = text.match(/[^.!?\n]+[.!?\n]+/g) || [];
+
+  return `
+    <div class="space-y-2 text-base leading-relaxed">
+      ${sentences.map((sentence, i) => `
+        <p class="${i % 2 === 0 ? "text-black dark:text-white" : "text-gray-400 dark:text-gray-400"}">
+          ${sentence.trim()}
         </p>
-      ))}
+      `).join('')}
     </div>
-  );
+  `;
+}
+
+// This JSX-generating function should be used only in client components
+export function generateProgressiveReadingJSX(text: string): any {
+  // This will be implemented in client components
+  return {
+    type: 'div',
+    props: {
+      className: 'space-y-4',
+      children: `[JSX content would go here - implement in client component]`
+    }
+  };
 }
 
 export function generateHybridHTML(chapters: Chapter[], units: string[][]): string {
@@ -156,7 +191,7 @@ export function generateHybridHTML(chapters: Chapter[], units: string[][]): stri
       chapterCounter++;
       return [header];
     }
-    const colorClass = i % 2 === 0 ? "text-black" : "text-gray-500";
+    const colorClass = i % 2 === 0 ? "text-black dark:text-white" : "text-gray-500 dark:text-gray-400";
     return [`<p id="unit-${i}" class="${colorClass} mt-2 text-base leading-relaxed">${joined}</p>`];
   }).join("\n");
 
@@ -172,24 +207,24 @@ export function generateHybridHTML(chapters: Chapter[], units: string[][]): stri
   `;
 }
 
-export function getPdfViewerHTML(file: File, scale: number): JSX.Element {
-  const url = URL.createObjectURL(file);
-  return (
-    <div className="mt-8 bg-white p-4 rounded shadow">
-      <p className="text-sm text-gray-500 mb-2">
-        PDF viewer embedded below (scale: {scale}x):
+// Create a proper interface for the client-side component
+export function getPdfViewerHTML(url: string, scale: number = 1): string {
+  return `
+    <div class="mt-8 bg-white p-4 rounded shadow">
+      <p class="text-sm text-gray-500 mb-2">
+        PDF viewer embedded below (scale: ${scale}x):
       </p>
       <object
-        data={url}
+        data="${url}"
         type="application/pdf"
         width="100%"
         height="600px"
       >
         <p>
           Your browser does not support PDFs.
-          <a href={url} className="text-blue-500 underline ml-1">Download PDF</a>
+          <a href="${url}" class="text-blue-500 underline ml-1">Download PDF</a>
         </p>
       </object>
     </div>
-  );
+  `;
 }

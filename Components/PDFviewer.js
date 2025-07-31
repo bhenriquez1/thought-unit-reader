@@ -1,8 +1,10 @@
 // components/PDFViewer.js
 import { useRef, useEffect, useState } from 'react';
 import { pdfjs } from 'react-pdf';
+import configurePdfjs from '@/lib/pdfjs-config';
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+// Configure PDF.js worker
+configurePdfjs();
 
 export default function PDFViewer({ file }) {
   const canvasRef = useRef();

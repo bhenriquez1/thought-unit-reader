@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn } from '../../lib/utils'; // ✅ Corrected import path
+import { cn } from '@/lib/utils'; // Fixed import path using alias
 
 export interface InputProps
   extends React.InputHTMLAttributes<HTMLInputElement> {}

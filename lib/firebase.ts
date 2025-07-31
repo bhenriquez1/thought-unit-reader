@@ -5,24 +5,46 @@ import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
-// Use environment variables if available, otherwise fallback to hardcoded config
+// Use environment variables for secure configuration
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyAnMPtQh8-e0L3NBNMma-izbfIcnijYK5w",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "thought-unit-reader.firebaseapp.com",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "thought-unit-reader",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "thought-unit-reader.appspot.com",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "808239475880",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:808239475880:web:c66b9bf6c553477f78269d",
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || "G-5DF8KCFLFG",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-// Initialize Firebase
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+// Check if all required environment variables are present
+const requiredEnvVars = [
+  'NEXT_PUBLIC_FIREBASE_API_KEY',
+  'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN',
+  'NEXT_PUBLIC_FIREBASE_PROJECT_ID'
+];
 
-// Services
-const auth = getAuth(app);
+// Only initialize Firebase if configuration is available
+if (!getApps().length) {
+  const missingVars = requiredEnvVars.filter(
+    varName => !process.env[varName]
+  );
+  
+  if (missingVars.length === 0) {
+    initializeApp(firebaseConfig);
+    console.log('Firebase initialized successfully');
+  } else {
+    console.error(`Missing required environment variables: ${missingVars.join(', ')}`);
+    console.error('Firebase initialization skipped. Please set the required environment variables.');
+  }
+}
+
+// Get the app instance whether it was just initialized or already exists
+const app = getApps().length ? getApp() : null;
+
+// Initialize services conditionally based on app availability
+const auth = app ? getAuth(app) : null;
 const provider = new GoogleAuthProvider();
-const db = getFirestore(app);
-const storage = getStorage(app);
+const db = app ? getFirestore(app) : null;
+const storage = app ? getStorage(app) : null;
 
 export { app, auth, provider, db, storage };

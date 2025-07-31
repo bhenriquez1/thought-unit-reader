@@ -4,7 +4,7 @@ import { parseTextToUnits } from "@/lib/parser";
 interface ParsedTextProps {
   inputText?: string;
   parsedUnits?: string[][];
-  extension: string;
+  extension?: string; // Made optional
 }
 
 export default function ParsedText({ inputText, parsedUnits, extension }: ParsedTextProps) {
