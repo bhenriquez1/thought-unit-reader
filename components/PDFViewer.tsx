@@ -108,4 +108,57 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
         </div>
       )}
       
-      <div className="border rounded overflow-hidden
+      <div className="border rounded overflow-hidden bg-white">
+        <Document
+          file={fileUrl}
+          onLoadSuccess={onDocumentLoadSuccess}
+          onLoadError={onDocumentLoadError}
+          loading={<Loader label="Loading PDF..." />}
+        >
+          {loading ? (
+            <div className="flex justify-center items-center h-[400px]">
+              <Loader label="Loading PDF..." />
+            </div>
+          ) : (
+            <Page 
+              pageNumber={pageNumber} 
+              scale={scale}
+              renderTextLayer={true}
+              renderAnnotationLayer={true}
+            />
+          )}
+        </Document>
+      </div>
+      
+      {showControls && (
+        <div className="mt-4">
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              const form = e.target as HTMLFormElement;
+              const input = form.elements.namedItem('page') as HTMLInputElement;
+              const pageNum = parseInt(input.value);
+              if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= numPages) {
+                setPageNumber(pageNum);
+              }
+              input.value = '';
+            }}
+            className="flex items-center gap-2"
+          >
+            <input
+              type="number"
+              name="page"
+              min={1}
+              max={numPages}
+              placeholder="Go to page"
+              className="w-24 px-2 py-1 border rounded text-sm"
+            />
+            <Button type="submit" size="sm" variant="secondary">Go</Button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default PDFViewer;

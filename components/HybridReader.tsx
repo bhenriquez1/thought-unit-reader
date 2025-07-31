@@ -16,14 +16,17 @@ import {
 } from "@/lib/parser";
 import { generateProgressiveReadingJSX } from "@/lib/client-parser";
 
-// Use dynamic import for PDFViewer with consistent naming
-const PDFViewer = dynamic(() => import("@/components/PDFViewer"), {
-  ssr: false,
-  loading: () => <Loader label="Loading PDF..." />,
-});
+// Fix the dynamic import to be compatible with Next.js typing
+const PDFViewer = dynamic(
+  () => import("../components/PDFViewer").then(mod => mod.default),
+  { 
+    loading: () => <Loader label="Loading PDF..." />,
+    ssr: false 
+  }
+);
 
 interface HybridReaderProps {
-  inputText?: string; // Added to accept the prop from pages/index.tsx
+  inputText?: string;
 }
 
 export default function HybridReader({ inputText }: HybridReaderProps) {

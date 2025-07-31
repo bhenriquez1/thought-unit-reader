@@ -2,17 +2,33 @@
 
 import Head from "next/head";
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Document, Page, pdfjs } from "react-pdf";
-
+import dynamic from "next/dynamic";
 import { parseBookWithChapters, generateProgressiveReadingHTML } from "@/lib/parser";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import Loader from "@/components/ui/loader";
-import HybridReader from "@/components/HybridReader";
+import { configurePdfWorker } from "@/lib/pdf-worker-config";
 
-// Configure PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+// Fix dynamic imports
+const HybridReader = dynamic(
+  () => import("../components/HybridReader").then(mod => mod.default),
+  { 
+    ssr: false,
+    loading: () => <Loader label="Loading reader..." />
+  }
+);
+
+// Fixed dynamic import for Document and Page components
+const PDFDocument = dynamic(
+  () => import("react-pdf").then(mod => mod.Document),
+  { ssr: false }
+);
+
+const PDFPage = dynamic(
+  () => import("react-pdf").then(mod => mod.Page),
+  { ssr: false }
+);
 
 type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
 type FileType = "text" | "pdf" | "none";
@@ -30,6 +46,11 @@ export default function Home() {
   const [zoom, setZoom] = useState<number>(1.25);
   const [inputText, setInputText] = useState("");
   const [enabled, setEnabled] = useState(true);
+
+  // Configure PDF.js worker on component mount
+  useEffect(() => {
+    configurePdfWorker();
+  }, []);
 
   useEffect(() => {
     document.title = "Thought-Unit Reader";
@@ -133,13 +154,13 @@ export default function Home() {
                 </div>
 
                 <div className="border rounded overflow-hidden w-full flex justify-center bg-white dark:bg-zinc-900">
-                  <Document
+                  <PDFDocument
                     file={fileURL}
                     onLoadSuccess={({ numPages }) => setNumPages(numPages)}
                     loading={<Loader label="Loading PDF..." />}
                   >
-                    <Page pageNumber={pageNumber} scale={zoom} />
-                  </Document>
+                    <PDFPage pageNumber={pageNumber} scale={zoom} />
+                  </PDFDocument>
                 </div>
 
                 <form onSubmit={goToPage} className="mt-2 flex justify-center gap-2">
