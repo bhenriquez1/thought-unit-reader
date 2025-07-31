@@ -14,7 +14,7 @@ import Loader from '@/components/ui/loader';
 export function safeDynamic<P>(
   importFn: () => Promise<{ default: ComponentType<P> }>,
   options: {
-    loading?: ComponentType;
+    loading?: ComponentType | null;
     ssr?: boolean;
     loadingText?: string;
   } = {}
@@ -25,6 +25,7 @@ export function safeDynamic<P>(
     loadingText = 'Loading...'
   } = options;
 
+  // Use proper typing for the loading component
   return dynamic<P>(
     importFn,
     {
@@ -46,7 +47,7 @@ export function safeDynamicNamed<P>(
   importFn: () => Promise<any>,
   exportName: string,
   options: {
-    loading?: ComponentType;
+    loading?: ComponentType | null;
     ssr?: boolean;
     loadingText?: string;
   } = {}
