@@ -12,8 +12,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(...inputs));
 }
 
-// Make sure we're explicitly exporting the cn function
-export { cn };
-
-// Remove the default export to avoid redeclaration errors
-// export default { cn }; - This was causing the error
+// IMPORTANT: Remove both of the following exports to avoid redeclaration
+// export { cn };
+// export default { cn };
