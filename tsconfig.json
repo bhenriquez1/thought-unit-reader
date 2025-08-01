@@ -20,16 +20,17 @@
       "@/*": ["./*"]
     },
     
-    // Added options to handle PDF.js TypeScript issues
-    "noImplicitAny": false,       // Prevents errors with implicit any types
-    "suppressImplicitAnyIndexErrors": true,  // Helps with index access
-    "ignoreDeprecations": "5.0"   // Ignores certain deprecation warnings
+    // REMOVED: "suppressImplicitAnyIndexErrors": true,
+    
+    // Keep these options
+    "noImplicitAny": false,
+    "ignoreDeprecations": "5.0"
   },
   "include": [
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    "pdfjs.d.ts"          // Make sure to include our custom type definitions
+    "pdfjs.d.ts"
   ],
   "exclude": [
     "node_modules"
