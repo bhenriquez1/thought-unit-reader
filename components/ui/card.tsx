@@ -1,6 +1,6 @@
 // components/ui/card.tsx
 import * as React from "react";
-import { cn } from "@/lib/classnames"; // Updated import path
+import { cn } from "@/lib/classnames"; // Updated import to use named export
 
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {}
 

@@ -11,7 +11,7 @@ import Loader from "@/components/ui/loader";
 import ParsedText from "./ParsedText";
 
 // Import utilities with correct paths
-import { cn } from "@/lib/classnames";
+import { cn } from "@/lib/classnames"; // Updated to use named export
 import {
   parseBookWithChapters,
   generateHybridHTML,
@@ -27,7 +27,6 @@ interface Chapter {
 }
 
 // Use standard Next.js dynamic import without custom utility
-// Make sure this component can accept the props we're sending
 const PDFViewer = dynamic(() => import("./PDFViewer"), {
   ssr: false,
   loading: () => <Loader label="Loading PDF viewer..." />
@@ -212,7 +211,6 @@ export default function HybridReader({ inputText }: { inputText?: string }) {
         return (
           <ScrollArea className="h-[80vh] border rounded p-4" ref={scrollRef}>
             {extension === "pdf" && pdfURL && (
-              // Fixed: fileUrl prop instead of fileURL prop to match component interface
               <PDFViewer fileUrl={pdfURL} initialScale={1.2} />
             )}
             {(extension === "txt" || inputText) && (
@@ -236,7 +234,6 @@ export default function HybridReader({ inputText }: { inputText?: string }) {
           <div className="grid md:grid-cols-2 gap-6">
             {pdfURL ? (
               <div className="border rounded overflow-hidden">
-                {/* Fixed: fileUrl prop instead of fileURL prop */}
                 <PDFViewer fileUrl={pdfURL} />
               </div>
             ) : (

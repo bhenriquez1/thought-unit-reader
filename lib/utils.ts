@@ -15,5 +15,5 @@ export function cn(...inputs: ClassValue[]) {
 // Make sure we're explicitly exporting the cn function
 export { cn };
 
-// For backward compatibility, also provide a default export
-export default { cn };
+// Remove the default export to avoid redeclaration errors
+// export default { cn }; - This was causing the error

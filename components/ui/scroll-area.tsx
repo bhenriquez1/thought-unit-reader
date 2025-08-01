@@ -1,7 +1,7 @@
 // components/ui/scroll-area.tsx
 import * as React from "react";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
-import { cn } from "@/lib/classnames"; // Updated import path
+import { cn } from "@/lib/classnames"; // Updated import to use named export
 
 const ScrollArea = React.forwardRef<
   React.ElementRef<typeof ScrollAreaPrimitive.Root>,

@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/classnames"; // Updated import to use named export
 
 interface PreviewModalProps {
   open: boolean;
@@ -50,7 +51,7 @@ export default function PreviewModal({
         <ScrollArea className="h-full w-full mt-4 border rounded">
           <div
             ref={ref}
-            className="prose dark:prose-invert max-w-none px-4 py-2"
+            className={cn("prose dark:prose-invert max-w-none px-4 py-2")}
             dangerouslySetInnerHTML={{ __html: content }}
           />
         </ScrollArea>
