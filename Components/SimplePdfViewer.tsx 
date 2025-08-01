@@ -6,6 +6,7 @@ interface SimplePdfViewerProps {
   fileUrl: string;
   width?: string;
   height?: string;
+  initialScale?: number; // Added initialScale prop
 }
 
 /**
@@ -15,14 +16,22 @@ interface SimplePdfViewerProps {
 export function SimplePdfViewer({ 
   fileUrl, 
   width = "100%", 
-  height = "700px" 
+  height = "700px",
+  initialScale = 1.0 // Default value
 }: SimplePdfViewerProps) {
+  // Note: initialScale isn't directly used with iframe,
+  // but we include it in props for compatibility with PDFViewer usage
+  
   return (
     <iframe 
       src={fileUrl} 
       width={width}
       height={height}
-      style={{ border: '1px solid #ccc', borderRadius: '4px' }}
+      style={{ 
+        border: '1px solid #ccc', 
+        borderRadius: '4px',
+        // We could use transform scale here based on initialScale if needed
+      }}
       title="PDF Document"
     />
   );
