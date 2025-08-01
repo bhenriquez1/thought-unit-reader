@@ -1,5 +1,4 @@
-// lib/parser.ts
-// Safely extract text from files without causing TypeScript errors
+// lib/parser.ts - Fixed for PDF.js compatibility
 
 // Define the Chapter interface
 export interface Chapter {
@@ -8,31 +7,32 @@ export interface Chapter {
   page?: number;
 }
 
-// Extract text from files - safely handling PDF.js
+// Extract text from files with fixed PDF.js imports
 export async function extractText(file: File): Promise<string> {
   const extension = file.name.split(".").pop()?.toLowerCase();
 
   if (extension === "pdf") {
     try {
-      // Use a safer approach with dynamic imports
       const arrayBuffer = await file.arrayBuffer();
       
-      // Use a try/catch for each dynamic import to handle errors gracefully
+      // Fix: Use dynamic import with proper error handling
       try {
-        // Import PDF.js dynamically to avoid TypeScript errors
-        const pdfjs = await import('react-pdf/dist/esm/pdfjs');
+        // Import the pdfjs module properly
+        const pdfjs = await import('pdfjs-dist/build/pdf');
         
-        // Configure worker if needed
-        if (typeof window !== 'undefined' && !pdfjs.GlobalWorkerOptions.workerSrc) {
-          pdfjs.GlobalWorkerOptions.workerSrc = 
-            `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+        // Configure worker on client side only
+        if (typeof window !== 'undefined') {
+          if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+            const workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+            pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+          }
         }
         
-        // Use the react-pdf version of getDocument which is safer
-        const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+        // Use the proper method to get the document
+        const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+        const pdf = await loadingTask.promise;
         const numPages = pdf.numPages;
-
-        // Extract text from each page
+        
         const textContent = await Promise.all(
           Array.from({ length: numPages }, async (_, i) => {
             const page = await pdf.getPage(i + 1);
@@ -47,15 +47,12 @@ export async function extractText(file: File): Promise<string> {
       } catch (pdfError) {
         console.error("Error with PDF.js import:", pdfError);
         
-        // Fallback to a different approach if the first one fails
+        // Fallback method using react-pdf's version
         try {
-          // Alternative: try using a simpler require approach
-          const pdfjs = require('pdfjs-dist/build/pdf');
-          pdfjs.GlobalWorkerOptions.workerSrc = 
-            `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-            
-          const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
-          const pdf = await loadingTask.promise;
+          const { pdfjs } = await import('react-pdf');
+          
+          // Direct use of pdfjs
+          const pdf = await pdfjs.getDocument(arrayBuffer).promise;
           const numPages = pdf.numPages;
           
           const textContent = await Promise.all(
@@ -71,12 +68,12 @@ export async function extractText(file: File): Promise<string> {
           return textContent.join("\n\n");
         } catch (fallbackError) {
           console.error("Fallback PDF extraction also failed:", fallbackError);
-          return "Error extracting PDF text. Try using the direct PDF viewer instead.";
+          return "Error extracting PDF text. The PDF viewer will still work for viewing.";
         }
       }
     } catch (error) {
       console.error("Error extracting PDF text:", error);
-      return "Error extracting PDF text. Try using the direct PDF viewer instead.";
+      return "Error processing PDF file. The PDF viewer will still work for viewing.";
     }
   } else if (extension === "docx") {
     try {
@@ -87,21 +84,21 @@ export async function extractText(file: File): Promise<string> {
       return result.value;
     } catch (error) {
       console.error("Error extracting DOCX text:", error);
-      return "Error extracting DOCX text. Check mammoth.js installation.";
+      return "Error extracting DOCX text. Please try a different file format.";
     }
   } else if (extension === "txt") {
     try {
       return await file.text();
     } catch (error) {
       console.error("Error extracting TXT text:", error);
-      return "Error extracting TXT text";
+      return "Error extracting TXT text. Please check if the file is corrupted.";
     }
   }
 
-  return "Unsupported file type.";
+  return "Unsupported file type. Please upload a PDF, DOCX, or TXT file.";
 }
 
-// The rest of your parser functions remain the same
+// The rest of the parser functions remain the same
 export function parseIntoUnits(text: string): string[] {
   if (!text) return [];
   
@@ -240,6 +237,7 @@ export async function parseBookWithChapters(file: File): Promise<{
   }
 }
 
+// Rest of your functions...
 export function generateHybridHTML(chapters: Chapter[], units: string[][]): string {
   // Ensure chapters is an array
   if (!Array.isArray(chapters)) {
