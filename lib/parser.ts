@@ -1,4 +1,7 @@
-// lib/parser.ts - Fixed for PDF.js compatibility
+// lib/parser.ts
+// Updated with the simplified PDF handling approach
+
+import { extractTextFromPdf } from './pdfjs-handler';
 
 // Define the Chapter interface
 export interface Chapter {
@@ -13,64 +16,8 @@ export async function extractText(file: File): Promise<string> {
 
   if (extension === "pdf") {
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      
-      // Fix: Use dynamic import with proper error handling
-      try {
-        // Import the pdfjs module properly
-        const pdfjs = await import('pdfjs-dist/build/pdf');
-        
-        // Configure worker on client side only
-        if (typeof window !== 'undefined') {
-          if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-            const workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-            pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
-          }
-        }
-        
-        // Use the proper method to get the document
-        const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
-        const pdf = await loadingTask.promise;
-        const numPages = pdf.numPages;
-        
-        const textContent = await Promise.all(
-          Array.from({ length: numPages }, async (_, i) => {
-            const page = await pdf.getPage(i + 1);
-            const content = await page.getTextContent();
-            return content.items
-              .map((item: any) => item.str || '')
-              .join(" ");
-          })
-        );
-
-        return textContent.join("\n\n");
-      } catch (pdfError) {
-        console.error("Error with PDF.js import:", pdfError);
-        
-        // Fallback method using react-pdf's version
-        try {
-          const { pdfjs } = await import('react-pdf');
-          
-          // Direct use of pdfjs
-          const pdf = await pdfjs.getDocument(arrayBuffer).promise;
-          const numPages = pdf.numPages;
-          
-          const textContent = await Promise.all(
-            Array.from({ length: numPages }, async (_, i) => {
-              const page = await pdf.getPage(i + 1);
-              const content = await page.getTextContent();
-              return content.items
-                .map((item: any) => item.str || '')
-                .join(" ");
-            })
-          );
-          
-          return textContent.join("\n\n");
-        } catch (fallbackError) {
-          console.error("Fallback PDF extraction also failed:", fallbackError);
-          return "Error extracting PDF text. The PDF viewer will still work for viewing.";
-        }
-      }
+      // Use our simplified PDF handler instead of the problematic code
+      return await extractTextFromPdf(file);
     } catch (error) {
       console.error("Error extracting PDF text:", error);
       return "Error processing PDF file. The PDF viewer will still work for viewing.";
@@ -237,7 +184,7 @@ export async function parseBookWithChapters(file: File): Promise<{
   }
 }
 
-// Rest of your functions...
+// Keep rest of your functions...
 export function generateHybridHTML(chapters: Chapter[], units: string[][]): string {
   // Ensure chapters is an array
   if (!Array.isArray(chapters)) {
