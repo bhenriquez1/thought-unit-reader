@@ -1,13 +1,11 @@
-const path = require("path");
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
-  webpack: (config) => {
-    config.resolve.alias["@"] = path.resolve(__dirname);
-    config.resolve.alias["@components"] = path.resolve(__dirname, "components");
-    return config;
+  output: 'export', // Required for static export
+  trailingSlash: true, // Ensures static hosting works on Render
+  images: {
+    unoptimized: true // Prevents image optimization issues in static export
   },
+  reactStrictMode: true
 };
 
 module.exports = nextConfig;
