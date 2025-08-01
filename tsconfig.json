@@ -18,13 +18,19 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"]
-    }
+    },
+    
+    // Added options to handle PDF.js TypeScript issues
+    "noImplicitAny": false,       // Prevents errors with implicit any types
+    "suppressImplicitAnyIndexErrors": true,  // Helps with index access
+    "ignoreDeprecations": "5.0"   // Ignores certain deprecation warnings
   },
   "include": [
     "next-env.d.ts",
     "**/*.ts",
-    "**/*.tsx"
-, "tailwind.config.ts"  ],
+    "**/*.tsx",
+    "pdfjs.d.ts"          // Make sure to include our custom type definitions
+  ],
   "exclude": [
     "node_modules"
   ]

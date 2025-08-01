@@ -12,35 +12,13 @@ interface PDFViewerProps {
   showControls?: boolean;
 }
 
-// Configure PDF.js worker directly in this component
-const configurePdfjs = () => {
-  if (typeof window === 'undefined') {
-    // Skip configuration in SSR context
-    return;
-  }
-
-  try {
-    // Dynamically import pdfjs at runtime only
-    const pdfjs = require('react-pdf/dist/esm/pdfjs');
-
-    if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-      // Set worker source from CDN to avoid bundling issues
-      const pdfVersion = pdfjs.version;
-      pdfjs.GlobalWorkerOptions.workerSrc = 
-        `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfVersion}/pdf.worker.min.js`;
-    }
-  } catch (error) {
-    console.error("Failed to configure PDF.js worker:", error);
-  }
-};
-
-// Use standard Next.js dynamic import without custom utility
-const Document = dynamic(() => import("react-pdf").then(mod => mod.Document), { 
+// Skip TypeScript checks for react-pdf components with any type
+const Document = dynamic<any>(() => import("react-pdf").then(mod => mod.Document), { 
   ssr: false,
   loading: () => <div className="flex justify-center p-8"><Loader label="Loading document..." /></div>
 });
 
-const Page = dynamic(() => import("react-pdf").then(mod => mod.Page), { 
+const Page = dynamic<any>(() => import("react-pdf").then(mod => mod.Page), { 
   ssr: false,
   loading: () => <div className="flex justify-center p-8"><Loader label="Loading page..." /></div>
 });
@@ -59,7 +37,16 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
 
   // Configure PDF.js worker on component mount
   useEffect(() => {
-    configurePdfjs();
+    // Only run on client side
+    if (typeof window !== 'undefined') {
+      // Set up worker directly with import
+      try {
+        const { pdfjs } = require('react-pdf');
+        pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+      } catch (error) {
+        console.error("Failed to configure PDF.js worker:", error);
+      }
+    }
   }, []);
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {

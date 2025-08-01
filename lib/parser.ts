@@ -1,50 +1,93 @@
 // lib/parser.ts
-// Separate client-side and server-side functions
+// Safely extract text from files without causing TypeScript errors
 
-import mammoth from "mammoth";
-
-// Define the Chapter interface inline to avoid import issues
-interface Chapter {
+// Define the Chapter interface
+export interface Chapter {
   title: string;
-  content: string; // Required field
-  page?: number;   // Optional field
+  content: string;
+  page?: number;
 }
 
+// Extract text from files - safely handling PDF.js
 export async function extractText(file: File): Promise<string> {
   const extension = file.name.split(".").pop()?.toLowerCase();
 
   if (extension === "pdf") {
-    // Use dynamic import for pdf.js to avoid SSR issues
     try {
-      const pdfjsLib = await import("pdfjs-dist/build/pdf");
-      const pdfjsWorker = await import("pdfjs-dist/build/pdf.worker.entry");
-      pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker.default;
-
+      // Use a safer approach with dynamic imports
       const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      const numPages = pdf.numPages;
+      
+      // Use a try/catch for each dynamic import to handle errors gracefully
+      try {
+        // Import PDF.js dynamically to avoid TypeScript errors
+        const pdfjs = await import('react-pdf/dist/esm/pdfjs');
+        
+        // Configure worker if needed
+        if (typeof window !== 'undefined' && !pdfjs.GlobalWorkerOptions.workerSrc) {
+          pdfjs.GlobalWorkerOptions.workerSrc = 
+            `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+        }
+        
+        // Use the react-pdf version of getDocument which is safer
+        const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+        const numPages = pdf.numPages;
 
-      const textContent = await Promise.all(
-        Array.from({ length: numPages }, async (_, i) => {
-          const page = await pdf.getPage(i + 1);
-          const text = await page.getTextContent();
-          return text.items.map((item: any) => item.str).join(" ");
-        })
-      );
+        // Extract text from each page
+        const textContent = await Promise.all(
+          Array.from({ length: numPages }, async (_, i) => {
+            const page = await pdf.getPage(i + 1);
+            const content = await page.getTextContent();
+            return content.items
+              .map((item: any) => item.str || '')
+              .join(" ");
+          })
+        );
 
-      return textContent.join("\n\n");
+        return textContent.join("\n\n");
+      } catch (pdfError) {
+        console.error("Error with PDF.js import:", pdfError);
+        
+        // Fallback to a different approach if the first one fails
+        try {
+          // Alternative: try using a simpler require approach
+          const pdfjs = require('pdfjs-dist/build/pdf');
+          pdfjs.GlobalWorkerOptions.workerSrc = 
+            `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+            
+          const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+          const pdf = await loadingTask.promise;
+          const numPages = pdf.numPages;
+          
+          const textContent = await Promise.all(
+            Array.from({ length: numPages }, async (_, i) => {
+              const page = await pdf.getPage(i + 1);
+              const content = await page.getTextContent();
+              return content.items
+                .map((item: any) => item.str || '')
+                .join(" ");
+            })
+          );
+          
+          return textContent.join("\n\n");
+        } catch (fallbackError) {
+          console.error("Fallback PDF extraction also failed:", fallbackError);
+          return "Error extracting PDF text. Try using the direct PDF viewer instead.";
+        }
+      }
     } catch (error) {
       console.error("Error extracting PDF text:", error);
-      return "Error extracting PDF text";
+      return "Error extracting PDF text. Try using the direct PDF viewer instead.";
     }
   } else if (extension === "docx") {
     try {
+      // For DOCX, we can use mammoth.js but wrap it in a try/catch
+      const mammoth = await import('mammoth');
       const arrayBuffer = await file.arrayBuffer();
       const result = await mammoth.extractRawText({ arrayBuffer });
       return result.value;
     } catch (error) {
       console.error("Error extracting DOCX text:", error);
-      return "Error extracting DOCX text";
+      return "Error extracting DOCX text. Check mammoth.js installation.";
     }
   } else if (extension === "txt") {
     try {
@@ -58,6 +101,7 @@ export async function extractText(file: File): Promise<string> {
   return "Unsupported file type.";
 }
 
+// The rest of your parser functions remain the same
 export function parseIntoUnits(text: string): string[] {
   if (!text) return [];
   
@@ -67,7 +111,6 @@ export function parseIntoUnits(text: string): string[] {
     .filter((s) => s.length > 0);
 }
 
-// Make sure parseTextToUnits returns string[][] not string[]
 export function parseTextToUnits(text: string): string[][] {
   if (!text) return [[]];
   
@@ -95,7 +138,6 @@ export function parseTextToUnits(text: string): string[][] {
     paragraphs.push(currentParagraph);
   }
   
-  // Ensure we return string[][] even if there's only one paragraph
   return paragraphs.length > 0 ? paragraphs : [[]];
 }
 
@@ -173,9 +215,18 @@ export async function parseBookWithChapters(file: File): Promise<{
       }
     });
 
+    // Default chapter if none found
+    if (chapters.length === 0) {
+      chapters.push({
+        title: "Content",
+        content: text,
+        page: 1
+      });
+    }
+
     return {
       parsedUnits: parsedUnits.length > 0 ? parsedUnits : [[]],
-      chapters: chapters.length > 0 ? chapters : [{ title: "Content", content: text, page: 1 }],
+      chapters: chapters,
       original: text,
     };
   } catch (error) {
@@ -187,6 +238,62 @@ export async function parseBookWithChapters(file: File): Promise<{
       original: "Error parsing book",
     };
   }
+}
+
+export function generateHybridHTML(chapters: Chapter[], units: string[][]): string {
+  // Ensure chapters is an array
+  if (!Array.isArray(chapters)) {
+    chapters = [];
+  }
+  
+  // Ensure units is a string[][]
+  if (!Array.isArray(units)) {
+    units = [[]];
+  }
+  
+  // Generate TOC
+  const toc = chapters
+    .map((ch, i) => {
+      const title = typeof ch.title === 'string' ? ch.title : String(ch.title || '');
+      const page = typeof ch.page === 'number' ? ch.page : (i + 1);
+      
+      return `
+        <li class="mb-2">
+          <a href="#chapter-${i}" class="text-blue-600 underline font-medium">
+            ${title}
+          </a> — Page ${page}
+        </li>`;
+    })
+    .join("");
+
+  // Generate body content
+  let chapterCounter = 0;
+  const body = units.flatMap((unit, i) => {
+    if (!unit || !Array.isArray(unit) || unit.length === 0) return [];
+    
+    const joined = unit.map(item => typeof item === 'string' ? item : String(item)).join(" ");
+    
+    if (joined.startsWith("###CHAPTER:")) {
+      const title = joined.replace("###CHAPTER:", "").trim();
+      const header = `<h3 id="chapter-${chapterCounter}" class="text-lg font-semibold mt-8 mb-4">${title}</h3>`;
+      chapterCounter++;
+      return [header];
+    }
+    
+    const colorClass = i % 2 === 0 ? "text-black dark:text-white" : "text-gray-500 dark:text-gray-400";
+    return [`<p id="unit-${i}" class="${colorClass} mt-2 text-base leading-relaxed">${joined}</p>`];
+  }).join("\n");
+
+  return `
+    <div class="flex flex-col gap-6">
+      <div class="sticky top-0 bg-white dark:bg-zinc-900 z-10 p-4 border-b border-gray-300 dark:border-zinc-700">
+        <h2 class="text-xl font-semibold mb-2">Table of Contents</h2>
+        <ul class="list-none pl-0">${toc}</ul>
+      </div>
+      <hr class="my-4 border-gray-300 dark:border-zinc-600"/>
+      ${body}
+    </div>
+  `;
 }
 
 export function parseTextToThoughtUnits(text: string): string[][] {
@@ -214,63 +321,6 @@ export function generateProgressiveReadingHTML(text: string): string {
           ${sentence.trim()}
         </p>
       `).join('')}
-    </div>
-  `;
-}
-
-export function generateHybridHTML(chapters: Chapter[], units: string[][]): string {
-  // Ensure chapters is an array
-  if (!Array.isArray(chapters)) {
-    chapters = [];
-  }
-  
-  // Ensure units is a string[][]
-  if (!Array.isArray(units)) {
-    units = [[]];
-  }
-  
-  // Generate TOC safely
-  const toc = chapters
-    .map((ch, i) => {
-      // Ensure chapter properties are strings/numbers
-      const title = typeof ch.title === 'string' ? ch.title : String(ch.title || '');
-      const page = typeof ch.page === 'number' ? ch.page : (i + 1);
-      
-      return `
-        <li class="mb-2">
-          <a href="#chapter-${i}" class="text-blue-600 underline font-medium">
-            ${title}
-          </a> — Page ${page}
-        </li>`;
-    })
-    .join("");
-
-  let chapterCounter = 0;
-  const body = units.flatMap((unit, i) => {
-    if (!unit || !Array.isArray(unit) || unit.length === 0) return [];
-    
-    // Safely join the unit into a string
-    const joined = unit.map(item => typeof item === 'string' ? item : String(item)).join(" ");
-    
-    if (joined.startsWith("###CHAPTER:")) {
-      const title = joined.replace("###CHAPTER:", "").trim();
-      const header = `<h3 id="chapter-${chapterCounter}" class="text-lg font-semibold mt-8 mb-4">${title}</h3>`;
-      chapterCounter++;
-      return [header];
-    }
-    
-    const colorClass = i % 2 === 0 ? "text-black dark:text-white" : "text-gray-500 dark:text-gray-400";
-    return [`<p id="unit-${i}" class="${colorClass} mt-2 text-base leading-relaxed">${joined}</p>`];
-  }).join("\n");
-
-  return `
-    <div class="flex flex-col gap-6">
-      <div class="sticky top-0 bg-white dark:bg-zinc-900 z-10 p-4 border-b border-gray-300 dark:border-zinc-700">
-        <h2 class="text-xl font-semibold mb-2">Table of Contents</h2>
-        <ul class="list-none pl-0">${toc}</ul>
-      </div>
-      <hr class="my-4 border-gray-300 dark:border-zinc-600"/>
-      ${body}
     </div>
   `;
 }
