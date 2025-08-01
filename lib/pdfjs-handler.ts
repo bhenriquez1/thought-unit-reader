@@ -72,25 +72,12 @@ export async function extractTextFromPdf(file: File): Promise<string> {
   }
 }
 
-/**
- * A simple PDF viewer component that uses iframe
- */
-export function SimplePdfViewer({ fileUrl }: { fileUrl: string }) {
-  // This will only be used in a React component context
-  return (
-    <iframe 
-      src={fileUrl} 
-      width="100%" 
-      height="700px" 
-      style={{ border: '1px solid #ccc', borderRadius: '4px' }}
-      title="PDF Document"
-    />
-  );
-}
+// Note: We're removing the SimplePdfViewer component from this file
+// as it uses JSX which requires a .tsx extension
+// It will be moved to a separate SimplePdfViewer.tsx file
 
 // Export default
 export default {
   configurePdfjs,
-  extractTextFromPdf,
-  SimplePdfViewer
+  extractTextFromPdf
 };
