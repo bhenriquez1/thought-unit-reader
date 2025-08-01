@@ -3,11 +3,12 @@
 import Head from "next/head";
 import { useState, useCallback, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
-import { parseBookWithChapters, generateProgressiveReadingHTML } from "@/lib/parser";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Button } from "@/components/ui/button";
-import Loader from "@/components/ui/loader";
+// Changed from @/ imports to relative imports
+import { parseBookWithChapters, generateProgressiveReadingHTML } from "../lib/parser";
+import { Label } from "../components/ui/label";
+import { Switch } from "../components/ui/switch";
+import { Button } from "../components/ui/button";
+import Loader from "../components/ui/loader";
 
 // Fix dynamic imports with explicit any type
 const HybridReader = dynamic<any>(

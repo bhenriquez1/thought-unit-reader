@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import Loader from "@/components/ui/loader";
+import { Button } from "../components/ui/button";
+import Loader from "../components/ui/loader";
 
 // Import our simplified PDF handler to configure PDF.js
-import { configurePdfjs } from "@/lib/pdfjs-handler";
+import { configurePdfjs } from "../lib/pdfjs-handler";
 
 // IMPORTANT: We need to create a simplified inline version
 // instead of importing from a file that doesn't exist yet
