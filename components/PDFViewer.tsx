@@ -4,10 +4,6 @@ import React, { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import Loader from "@/components/ui/loader";
 import { Button } from "@/components/ui/button";
-import configurePdfjs from "@/lib/pdfjs-config";
-
-// Configure PDF.js worker on component mount
-configurePdfjs();
 
 // Define explicit prop types
 interface PDFViewerProps {
@@ -15,6 +11,28 @@ interface PDFViewerProps {
   initialScale?: number;
   showControls?: boolean;
 }
+
+// Configure PDF.js worker directly in this component
+const configurePdfjs = () => {
+  if (typeof window === 'undefined') {
+    // Skip configuration in SSR context
+    return;
+  }
+
+  try {
+    // Dynamically import pdfjs at runtime only
+    const pdfjs = require('react-pdf/dist/esm/pdfjs');
+
+    if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+      // Set worker source from CDN to avoid bundling issues
+      const pdfVersion = pdfjs.version;
+      pdfjs.GlobalWorkerOptions.workerSrc = 
+        `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfVersion}/pdf.worker.min.js`;
+    }
+  } catch (error) {
+    console.error("Failed to configure PDF.js worker:", error);
+  }
+};
 
 // Use standard Next.js dynamic import without custom utility
 const Document = dynamic(() => import("react-pdf").then(mod => mod.Document), { 
@@ -38,6 +56,11 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
   const [zoom, setZoom] = useState<number>(initialScale);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Configure PDF.js worker on component mount
+  useEffect(() => {
+    configurePdfjs();
+  }, []);
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);

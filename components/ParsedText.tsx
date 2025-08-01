@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-// Import the parser directly - ensure it returns the expected type
+// Simple local parser function to avoid dependency issues
 function parseTextToUnits(text: string): string[][] {
   if (!text) return [[]];
   

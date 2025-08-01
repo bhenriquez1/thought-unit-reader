@@ -6,7 +6,11 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import Loader from "@/components/ui/loader";
-import ParsedText from "@/components/ParsedText";
+
+// Import the ParsedText component directly with the correct path
+import ParsedText from "./ParsedText";
+
+// Import utilities with correct paths
 import { cn } from "@/lib/classnames";
 import {
   parseBookWithChapters,
@@ -14,10 +18,16 @@ import {
   parseTextToUnits,
 } from "@/lib/parser";
 import { generateProgressiveReadingJSX } from "@/lib/client-parser";
-import { Chapter } from "@/lib/types";
+
+// Define the Chapter interface directly to avoid import issues
+interface Chapter {
+  title: string;
+  content: string;
+  page?: number;
+}
 
 // Use standard Next.js dynamic import without custom utility
-const PDFViewer = dynamic(() => import("@/components/PDFViewer"), {
+const PDFViewer = dynamic(() => import("./PDFViewer"), {
   ssr: false,
   loading: () => <Loader label="Loading PDF viewer..." />
 });
