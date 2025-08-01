@@ -1,61 +1,47 @@
 "use client";
 
-// components/PDFViewer.tsx
 import React, { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import Loader from "@/components/ui/loader";
 import { Button } from "@/components/ui/button";
+import configurePdfjs from "@/lib/pdfjs-config";
+
+// Configure PDF.js worker on component mount
+configurePdfjs();
 
 // Define explicit prop types
-export interface PDFViewerProps {
+interface PDFViewerProps {
   fileUrl: string;
   initialScale?: number;
   showControls?: boolean;
 }
 
-// Use simpler dynamic imports without our custom utility
-const Document = dynamic<any>(() => import("react-pdf").then(mod => mod.Document), { ssr: false });
-const Page = dynamic<any>(() => import("react-pdf").then(mod => mod.Page), { ssr: false });
+// Use standard Next.js dynamic import without custom utility
+const Document = dynamic(() => import("react-pdf").then(mod => mod.Document), { 
+  ssr: false,
+  loading: () => <div className="flex justify-center p-8"><Loader label="Loading document..." /></div>
+});
 
-// Export the component as a named export AND default export
-export const PDFViewer: React.FC<PDFViewerProps> = ({ 
+const Page = dynamic(() => import("react-pdf").then(mod => mod.Page), { 
+  ssr: false,
+  loading: () => <div className="flex justify-center p-8"><Loader label="Loading page..." /></div>
+});
+
+// Main component
+const PDFViewer: React.FC<PDFViewerProps> = ({ 
   fileUrl, 
   initialScale = 1.0, 
   showControls = true 
 }) => {
-  // Validate props
-  const url = typeof fileUrl === 'string' ? fileUrl : '';
-  const scale = typeof initialScale === 'number' ? initialScale : 1.0;
-  const controls = typeof showControls === 'boolean' ? showControls : true;
-
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
-  const [zoom, setZoom] = useState<number>(scale);
+  const [zoom, setZoom] = useState<number>(initialScale);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Configure PDF.js worker on component mount
-  useEffect(() => {
-    // Dynamic import to avoid SSR issues
-    import("react-pdf").then(({ pdfjs }) => {
-      if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-        pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-      }
-    }).catch(err => {
-      console.error("Failed to configure PDF worker:", err);
-      setError("Failed to initialize PDF viewer");
-    });
-  }, []);
-
-  const onDocumentLoadSuccess = (pdf: { numPages: number }) => {
-    if (pdf && typeof pdf.numPages === 'number') {
-      setNumPages(pdf.numPages);
-      setLoading(false);
-    } else {
-      console.error("Invalid PDF document structure:", pdf);
-      setError("Invalid PDF document");
-      setLoading(false);
-    }
+  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+    setNumPages(numPages);
+    setLoading(false);
   };
 
   const onDocumentLoadError = (err: Error) => {
@@ -86,7 +72,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         </div>
       )}
       
-      {controls && (
+      {showControls && (
         <div className="flex flex-wrap gap-2 mb-4 w-full justify-center">
           <Button 
             onClick={() => changePage(-1)} 
@@ -94,7 +80,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
             variant="outline"
             size="sm"
           >
-            ◀ Previous
+            Previous Page
           </Button>
           
           <span className="px-3 py-2 text-sm">
@@ -107,7 +93,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
             variant="outline"
             size="sm"
           >
-            Next ▶
+            Next Page
           </Button>
           
           <Button 
@@ -115,7 +101,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
             variant="outline"
             size="sm"
           >
-            🔍-
+            Zoom Out
           </Button>
           
           <span className="px-3 py-2 text-sm">
@@ -127,18 +113,18 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
             variant="outline"
             size="sm"
           >
-            🔍+
+            Zoom In
           </Button>
         </div>
       )}
       
       <div className="border rounded overflow-hidden bg-white">
-        {url ? (
+        {fileUrl ? (
           <Document
-            file={url}
+            file={fileUrl}
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={onDocumentLoadError}
-            loading={<div className="flex justify-center items-center h-[400px]"><Loader label="Loading PDF..." /></div>}
+            loading={<Loader label="Loading PDF..." />}
             error={<div className="p-4 text-red-500">Failed to load PDF document</div>}
           >
             {loading ? (
@@ -161,5 +147,4 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   );
 };
 
-// Export as default as well
 export default PDFViewer;

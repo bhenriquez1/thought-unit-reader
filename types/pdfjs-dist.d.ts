@@ -1,16 +1,27 @@
 // lib/pdfjs-config.ts
-import { pdfjs } from 'react-pdf';
+// This file safely configures the PDF.js worker
 
 /**
- * Configure PDF.js worker only once
+ * Configure PDF.js worker to avoid SSR issues
+ * This is a safe way to configure pdfjs without relying on direct imports
  */
-const configurePdfjs = (): void => {
-  // Check if we've already configured the worker
-  if (typeof window !== 'undefined' && !pdfjs.GlobalWorkerOptions.workerSrc) {
-    pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+export default function configurePdfjs(): void {
+  if (typeof window === 'undefined') {
+    // Skip configuration in SSR context
+    return;
   }
-};
 
-// Export as both named and default export for maximum compatibility
-export { configurePdfjs };
-export default configurePdfjs;
+  try {
+    // Dynamically import pdfjs at runtime only
+    const pdfjs = require('react-pdf/dist/esm/pdfjs');
+
+    if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+      // Set worker source from CDN to avoid bundling issues
+      const pdfVersion = pdfjs.version;
+      pdfjs.GlobalWorkerOptions.workerSrc = 
+        `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfVersion}/pdf.worker.min.js`;
+    }
+  } catch (error) {
+    console.error("Failed to configure PDF.js worker:", error);
+  }
+}

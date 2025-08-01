@@ -7,29 +7,20 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import Loader from "@/components/ui/loader";
 import ParsedText from "@/components/ParsedText";
-
-// Updated import to use alias path
 import { cn } from "@/lib/classnames";
-
 import {
   parseBookWithChapters,
   generateHybridHTML,
   parseTextToUnits,
 } from "@/lib/parser";
 import { generateProgressiveReadingJSX } from "@/lib/client-parser";
+import { Chapter } from "@/lib/types";
 
-// Fix the dynamic import - use standard Next.js dynamic import
-const PDFViewer = dynamic(() => import("../components/PDFViewer"), {
-  loading: () => <Loader label="Loading PDF..." />,
-  ssr: false
+// Use standard Next.js dynamic import without custom utility
+const PDFViewer = dynamic(() => import("@/components/PDFViewer"), {
+  ssr: false,
+  loading: () => <Loader label="Loading PDF viewer..." />
 });
-
-// Define the Chapter interface inline to avoid import issues
-interface Chapter {
-  title: string;
-  content: string; // Required field
-  page?: number;   // Optional field
-}
 
 export default function HybridReader({ inputText }: { inputText?: string }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -61,13 +52,11 @@ export default function HybridReader({ inputText }: { inputText?: string }) {
     }
   };
 
-  // Fix the getChapterText function to handle possible undefined values safely
   const getChapterText = (index: number): string => {
     if (index < 0 || index >= chapters.length || parsedUnits.length === 0) {
       return "";
     }
     
-    // Handle possible undefined values explicitly
     const startPage = chapters[index]?.page;
     const start = typeof startPage === 'number' ? startPage - 1 : 0;
     
@@ -75,7 +64,6 @@ export default function HybridReader({ inputText }: { inputText?: string }) {
     const endPage = nextChapter?.page;
     const end = typeof endPage === 'number' ? endPage - 1 : parsedUnits.length;
     
-    // Ensure we don't go out of bounds
     const safeStart = Math.max(0, Math.min(start, parsedUnits.length));
     const safeEnd = Math.max(safeStart, Math.min(end, parsedUnits.length));
     
@@ -89,18 +77,15 @@ export default function HybridReader({ inputText }: { inputText?: string }) {
     if (inputText && !file && !loading) {
       setLoading(true);
       try {
-        // Convert inputText to string[][] format as expected by the component
         const units = parseTextToUnits(inputText);
         setParsedUnits(units);
         
-        // Make sure originalText is a string, not string[][]
         if (typeof inputText === 'string') {
           setOriginalText(inputText);
         } else {
           setOriginalText(String(inputText));
         }
         
-        // Create a default chapter if none exists - FIXED with content property
         if (chapters.length === 0) {
           setChapters([{ 
             title: "Content", 
@@ -109,7 +94,6 @@ export default function HybridReader({ inputText }: { inputText?: string }) {
           }]);
         }
         
-        // Generate HTML and convert to string if needed
         const html = generateHybridHTML(chapters, units);
         setHybridHTML(typeof html === 'string' ? html : String(html));
         
@@ -131,14 +115,12 @@ export default function HybridReader({ inputText }: { inputText?: string }) {
         setParsedUnits(parsedUnits);
         setChapters(chapters);
         
-        // Make sure original is a string, not string[][]
         if (typeof original === 'string') {
           setOriginalText(original);
         } else {
           setOriginalText(String(original));
         }
         
-        // Generate HTML and convert to string if needed
         const html = generateHybridHTML(chapters, parsedUnits);
         setHybridHTML(typeof html === 'string' ? html : String(html));
       } catch (err) {
@@ -219,7 +201,6 @@ export default function HybridReader({ inputText }: { inputText?: string }) {
         return (
           <ScrollArea className="h-[80vh] border rounded p-4" ref={scrollRef}>
             {extension === "pdf" && pdfURL && (
-              // Use a more direct approach with basic props to avoid JSX type errors
               <PDFViewer fileUrl={pdfURL} initialScale={1.2} />
             )}
             {(extension === "txt" || inputText) && (
@@ -235,7 +216,6 @@ export default function HybridReader({ inputText }: { inputText?: string }) {
       case "progressive":
         return (
           <ScrollArea className="h-[80vh] p-4 border rounded">
-            {/* Pass parsedUnits explicitly as string[][] */}
             <ParsedText parsedUnits={Array.isArray(parsedUnits) ? parsedUnits : [[]]} />
           </ScrollArea>
         );
@@ -244,7 +224,6 @@ export default function HybridReader({ inputText }: { inputText?: string }) {
           <div className="grid md:grid-cols-2 gap-6">
             {pdfURL ? (
               <div className="border rounded overflow-hidden">
-                {/* Use a more direct approach without extra props */}
                 <PDFViewer fileUrl={pdfURL} />
               </div>
             ) : (
