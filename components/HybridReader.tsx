@@ -2,22 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import Loader from "@/components/ui/loader";
+// Changed from @/ imports to relative imports
+import { Label } from "../components/ui/label";
+import { Button } from "../components/ui/button";
+import { ScrollArea } from "../components/ui/scroll-area";
+import Loader from "../components/ui/loader";
 
 // Import the ParsedText component directly with the correct path
 import ParsedText from "./ParsedText";
 
 // Import utilities with correct paths
-import { cn } from "@/lib/classnames"; // Updated to use named export
+import { cn } from "../lib/classnames"; // Updated to use relative path
 import {
   parseBookWithChapters,
   generateHybridHTML,
   parseTextToUnits,
-} from "@/lib/parser";
-import { generateProgressiveReadingJSX } from "@/lib/client-parser";
+} from "../lib/parser";
+import { generateProgressiveReadingJSX } from "../lib/client-parser";
 
 // Define the Chapter interface directly to avoid import issues
 interface Chapter {
