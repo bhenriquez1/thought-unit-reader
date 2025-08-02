@@ -1,18 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Enable static export
-  output: 'export',
-
-  // Optional: Enable strict mode for React
-  reactStrictMode: true,
-
-  // Optional: Configure images if you use <Image />
+  output: 'export', // Replaces deprecated `next export`
+  distDir: 'out',   // Render will use "out" as publish directory
   images: {
-    unoptimized: true // Needed for static export
-  },
-
-  // Optional: Future-proof settings
-  swcMinify: true
+    unoptimized: true // Required for static export with images
+  }
 };
 
 module.exports = nextConfig;

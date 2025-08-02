@@ -5,10 +5,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter
-} from "../components/ui/dialog"; // Updated to relative import
-import { ScrollArea } from "../components/ui/scroll-area"; // Updated to relative import
-import { Button } from "../components/ui/button"; // Updated to relative import
-import { cn } from "../lib/classnames"; // Updated to relative import
+} from "../components/ui/dialog";
+import { ScrollArea } from "../components/ui/scroll-area";
+import { Button } from "../components/ui/button";
+import { cn } from "../lib/classnames"; // Changed from @/lib/classnames to relative path
 
 interface PreviewModalProps {
   open: boolean;

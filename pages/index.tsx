@@ -3,7 +3,6 @@
 import Head from "next/head";
 import { useState, useCallback, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
-// Changed from @/ imports to relative imports
 import { parseBookWithChapters, generateProgressiveReadingHTML } from "../lib/parser";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";

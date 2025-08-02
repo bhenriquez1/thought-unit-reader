@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && next export",
-    "start": "npx serve out",
+    "build": "next build",
+    "start": "next start",
+    "export": "next build && next export",
     "clean": "rimraf .next",
     "clean:full": "rimraf .next node_modules/.cache",
     "dev:clean": "npm run clean && next dev",
