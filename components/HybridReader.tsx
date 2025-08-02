@@ -1,246 +1,937 @@
-// ===== COPY THESE FIXES TO YOUR HybridReader.tsx COMPONENT =====
+"use client";
 
-// 1. Make sure handleFileChange is properly defined and logs when called:
-const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  console.log("File input changed in HybridReader");
-  const files = e.target.files;
-  if (!files || files.length === 0) {
-    console.log("No files selected");
-    return;
-  }
-  
-  const uploadedFile = files[0];
-  if (!uploadedFile) {
-    console.log("Uploaded file is null");
-    return;
-  }
-  
-  console.log("Processing file:", uploadedFile.name);
-  
-  // Create a more reliable blob URL for file preview
-  try {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (reader.result) {
-        const blob = new Blob([reader.result as ArrayBuffer], { type: uploadedFile.type });
-        const url = URL.createObjectURL(blob);
-        console.log("Blob URL created");
-        setPdfURL(url);
+import { useEffect, useRef, useState } from "react";
+import { cn } from "../lib/classnames"; // Using relative import to fix path issues
+import { Button } from "../components/ui/button"; // Using relative import to fix path issues
+import { ScrollArea } from "../components/ui/scroll-area"; // Using relative import to fix path issues
+import Loader from "../components/ui/loader"; // Using relative import to fix path issues
+
+// Import utilities with correct paths
+import {
+  parseBookWithChapters,
+  generateHybridHTML,
+  parseTextToUnits,
+} from "../lib/parser"; // Using relative import to fix path issues
+
+// Define the Chapter interface directly to avoid import issues
+interface Chapter {
+  title: string;
+  content: string;
+  page?: number;
+}
+
+// Use dynamic import for PDFViewer with proper loading state
+import dynamic from "next/dynamic";
+
+const PDFViewer = dynamic(() => import("./PDFViewer"), {
+  ssr: false,
+  loading: () => <Loader label="Loading PDF viewer..." />
+});
+
+/**
+ * Enhanced HybridReader component with dyslexia-friendly features
+ */
+export default function HybridReader({ inputText, aiEnabled = false }: { inputText?: string, aiEnabled?: boolean }) {
+  // Refs for content and scroll handling
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // File and content state
+  const [file, setFile] = useState<File | null>(null);
+  const [extension, setExtension] = useState<string>("");
+  const [pdfURL, setPdfURL] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [viewMode, setViewMode] = useState<"original" | "chapters" | "progressive" | "hybrid">("original");
+
+  // Parsed content state
+  const [parsedUnits, setParsedUnits] = useState<string[][]>([]);
+  const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [originalText, setOriginalText] = useState<string | null>(null);
+  const [hybridHTML, setHybridHTML] = useState<string | null>(null);
+  const [activeChapter, setActiveChapter] = useState(0);
+
+  // Dyslexia-friendly settings
+  const [fontSize, setFontSize] = useState(18);
+  const [fontFamily, setFontFamily] = useState("Arial, sans-serif");
+  const [lineSpacing, setLineSpacing] = useState(1.8);
+  const [wordSpacing, setWordSpacing] = useState(0.16);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  // Progressive reading state
+  const [currentUnit, setCurrentUnit] = useState(0);
+  const [isReading, setIsReading] = useState(false);
+  const [readingSpeed, setReadingSpeed] = useState(200); // WPM
+  const [progress, setProgress] = useState(0);
+
+  const fontOptions = [
+    { label: "Arial", value: "Arial, sans-serif" },
+    { label: "Verdana", value: "Verdana, sans-serif" },
+    { label: "Comic Sans", value: '"Comic Sans MS", cursive' },
+    { label: "OpenDyslexic", value: "OpenDyslexic, sans-serif" },
+    { label: "Helvetica", value: "Helvetica, Arial, sans-serif" },
+  ];
+
+  // Helper function to get chapter text
+  const getChapterText = (index: number): string => {
+    if (index < 0 || index >= chapters.length || parsedUnits.length === 0) {
+      return "";
+    }
+    
+    const startPage = chapters[index]?.page;
+    const start = typeof startPage === 'number' ? startPage - 1 : 0;
+    
+    const nextChapter = chapters[index + 1];
+    const endPage = nextChapter?.page;
+    const end = typeof endPage === 'number' ? endPage - 1 : parsedUnits.length;
+    
+    const safeStart = Math.max(0, Math.min(start, parsedUnits.length));
+    const safeEnd = Math.max(safeStart, Math.min(end, parsedUnits.length));
+    
+    const slicedUnits = parsedUnits.slice(safeStart, safeEnd);
+    const flattenedUnits = slicedUnits.flat();
+    return flattenedUnits.join(" ");
+  };
+
+  // Process input text if provided
+  useEffect(() => {
+    if (inputText && !file && !loading) {
+      setLoading(true);
+      try {
+        const units = parseTextToUnits(inputText);
+        setParsedUnits(units);
+        
+        if (typeof inputText === 'string') {
+          setOriginalText(inputText);
+        } else {
+          setOriginalText(String(inputText));
+        }
+        
+        if (chapters.length === 0) {
+          setChapters([{ 
+            title: "Content", 
+            content: typeof inputText === 'string' ? inputText : String(inputText),
+            page: 1 
+          }]);
+        }
+        
+        const html = generateHybridHTML(chapters, units);
+        setHybridHTML(typeof html === 'string' ? html : String(html));
+        
+        setLoading(false);
+      } catch (err) {
+        console.error("Error parsing input text:", err);
+        setHybridHTML("<p class='text-red-500'>Failed to process text.</p>");
+        setLoading(false);
+      }
+    }
+  }, [inputText, file, loading, chapters]);
+
+  // Process file when uploaded
+  useEffect(() => {
+    const loadContent = async () => {
+      if (!file) return;
+      setLoading(true);
+      try {
+        const { parsedUnits, chapters, original } = await parseBookWithChapters(file);
+        setParsedUnits(parsedUnits);
+        setChapters(chapters);
+        
+        if (typeof original === 'string') {
+          setOriginalText(original);
+        } else {
+          setOriginalText(String(original));
+        }
+        
+        const html = generateHybridHTML(chapters, parsedUnits);
+        setHybridHTML(typeof html === 'string' ? html : String(html));
+      } catch (err) {
+        console.error("Error parsing file:", err);
+        setHybridHTML("<p class='text-red-500'>Failed to process file.</p>");
+      } finally {
+        setLoading(false);
       }
     };
-    reader.readAsArrayBuffer(uploadedFile);
-  } catch (error) {
-    console.error("Error creating blob URL:", error);
-  }
+    loadContent();
+  }, [file]);
 
-  const fileExt = uploadedFile.name.split(".").pop()?.toLowerCase() || "";
-  console.log("File extension:", fileExt);
-  setFile(uploadedFile);
-  setExtension(fileExt);
-};
+  // Progressive reading logic
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | undefined;
+    
+    if (isReading && parsedUnits.length > 0) {
+      const allWords = parsedUnits.flat();
+      
+      intervalId = setInterval(() => {
+        setCurrentUnit(prev => {
+          if (prev >= allWords.length - 1) {
+            setIsReading(false);
+            return prev;
+          }
+          
+          const newUnit = prev + 1;
+          setProgress((newUnit / (allWords.length - 1)) * 100);
+          return newUnit;
+        });
+      }, (60 * 1000) / readingSpeed); // Convert WPM to milliseconds
+    }
+    
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [isReading, parsedUnits, readingSpeed]);
 
-// 2. Fix the file upload input:
-<div>
-  <label className="block mb-2">Upload a file (PDF, DOCX, or TXT):</label>
-  <input
-    type="file"
-    accept=".pdf,.docx,.txt"
-    ref={fileRef}
-    className="mb-4"
-    onClick={() => console.log("File input clicked")}
-    onChange={(e) => {
-      console.log("File input changed - calling handler");
-      handleFileChange(e);
-    }}
-  />
-</div>
+  // Track active chapter on scroll
+  useEffect(() => {
+    const onScroll = () => {
+      if (!chapters.length) return;
+      
+      for (let i = 0; i < chapters.length; i++) {
+        const el = document.getElementById(`chapter-${i}`);
+        if (el && el.getBoundingClientRect().top >= 0) {
+          setActiveChapter(i);
+          break;
+        }
+      }
+    };
+    
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [chapters]);
 
-// 3. Fix the dark mode toggle button:
-<button 
-  onClick={() => {
-    console.log("Dark mode toggled from", isDarkMode, "to", !isDarkMode);
-    toggleDarkMode();
-  }}
-  className={`w-12 h-6 rounded-full relative ${
-    isDarkMode ? 'bg-blue-600' : 'bg-gray-300'
-  }`}
->
-  <span 
-    className={`absolute w-5 h-5 rounded-full bg-white top-0.5 transition-all ${
-      isDarkMode ? 'left-6' : 'left-1'
-    }`}
-  />
-</button>
+  // File upload handler - FIXED
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    console.log("File input changed in HybridReader");
+    const files = e.target.files;
+    if (!files || files.length === 0) {
+      console.log("No files selected");
+      return;
+    }
+    
+    const uploadedFile = files[0];
+    if (!uploadedFile) {
+      console.log("Uploaded file is null");
+      return;
+    }
+    
+    console.log("Processing file:", uploadedFile.name);
+    
+    // Create a more reliable blob URL for file preview
+    try {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (reader.result) {
+          const blob = new Blob([reader.result as ArrayBuffer], { type: uploadedFile.type });
+          const url = URL.createObjectURL(blob);
+          console.log("Blob URL created");
+          setPdfURL(url); // Now correctly using setPdfURL from useState
+        }
+      };
+      reader.onerror = () => {
+        console.error("Error reading file");
+      };
+      reader.readAsArrayBuffer(uploadedFile);
+    } catch (error) {
+      console.error("Error creating blob URL:", error);
+    }
 
-// 4. Fix the toggleDarkMode function:
-const toggleDarkMode = () => {
-  console.log("toggleDarkMode called");
-  setIsDarkMode(!isDarkMode);
-};
+    const fileExt = uploadedFile.name.split(".").pop()?.toLowerCase() || "";
+    console.log("File extension:", fileExt);
+    setFile(uploadedFile);
+    setExtension(fileExt);
+  };
 
-// 5. Fix the view mode buttons:
-<div className="flex flex-wrap gap-4 mt-2 mb-6">
-  <Button 
-    onClick={() => {
-      console.log("Setting view mode to original");
-      setViewMode("original");
-    }} 
-    variant={viewMode === "original" ? "default" : "secondary"}
-  >
-    📄 Original View
-  </Button>
-  <Button 
-    onClick={() => {
-      console.log("Setting view mode to chapters");
-      setViewMode("chapters");
-    }} 
-    variant={viewMode === "chapters" ? "default" : "outline"}
-  >
-    📚 Chapters
-  </Button>
-  <Button 
-    onClick={() => {
-      console.log("Setting view mode to progressive");
-      setViewMode("progressive");
-    }} 
-    variant={viewMode === "progressive" ? "default" : "outline"}
-  >
-    🧠 Progressive
-  </Button>
-  <Button 
-    onClick={() => {
-      console.log("Setting view mode to hybrid");
-      setViewMode("hybrid");
-    }} 
-    variant={viewMode === "hybrid" ? "default" : "outline"}
-  >
-    🔁 Hybrid View
-  </Button>
-</div>
-
-// 6. Fix the font selector:
-<select 
-  value={fontFamily}
-  onChange={(e) => {
-    console.log("Font changed to:", e.target.value);
-    setFontFamily(e.target.value);
-  }}
-  className={cn(
-    "px-2 py-1 rounded border text-sm",
-    isDarkMode ? "bg-gray-800 border-gray-600" : "bg-white border-gray-300"
-  )}
->
-  {fontOptions.map(option => (
-    <option key={option.value} value={option.value}>
-      {option.label}
-    </option>
-  ))}
-</select>
-
-// 7. Fix the font size buttons:
-<Button 
-  onClick={() => {
-    console.log("Decreasing font size");
-    setFontSize(Math.max(fontSize - 1, 14));
-  }}
-  variant="outline"
-  size="sm"
-  className="h-8 px-2"
->
-  -
-</Button>
-<span className="text-sm w-8 text-center">{fontSize}</span>
-<Button 
-  onClick={() => {
-    console.log("Increasing font size");
-    setFontSize(Math.min(fontSize + 1, 24));
-  }}
-  variant="outline"
-  size="sm"
-  className="h-8 px-2"
->
-  +
-</Button>
-
-// 8. Fix the line spacing buttons:
-<Button 
-  onClick={() => {
-    console.log("Decreasing line spacing");
-    setLineSpacing(Math.max(lineSpacing - 0.1, 1.0));
-  }}
-  variant="outline"
-  size="sm"
-  className="h-8 px-2"
->
-  -
-</Button>
-<span className="text-sm w-8 text-center">{lineSpacing.toFixed(1)}</span>
-<Button 
-  onClick={() => {
-    console.log("Increasing line spacing");
-    setLineSpacing(Math.min(lineSpacing + 0.1, 3.0));
-  }}
-  variant="outline"
-  size="sm"
-  className="h-8 px-2"
->
-  +
-</Button>
-
-// 9. Fix the reading controls:
-<Button 
-  onClick={() => {
+  // Toggle reading controls
+  const toggleReading = () => {
     console.log("Reading toggled from", isReading, "to", !isReading);
-    toggleReading();
-  }}
-  className={isReading ? "bg-red-500 hover:bg-red-600" : "bg-green-500 hover:bg-green-600"}
->
-  {isReading ? '⏸ Pause' : '▶ Start'}
-</Button>
+    setIsReading(!isReading);
+  };
 
-<Button 
-  onClick={() => {
+  // Reset reading position
+  const resetReading = () => {
     console.log("Reading reset");
-    resetReading();
-  }}
-  variant="outline"
->
-  🔄 Reset
-</Button>
+    setCurrentUnit(0);
+    setProgress(0);
+    setIsReading(false);
+  };
 
-// 10. Add a debug function for the HybridReader component:
-const debugHybridReader = () => {
-  console.log("HybridReader Debug Info:");
-  console.log({
-    file: file ? file.name : null,
-    extension,
-    pdfURL: pdfURL ? "Set" : "Not set",
-    loading,
-    viewMode,
-    parsedUnits: parsedUnits.length,
-    chapters: chapters.length,
-    originalTextLength: originalText ? originalText.length : 0,
-    hybridHTMLLength: hybridHTML ? hybridHTML.length : 0,
-    activeChapter,
-    fontSize,
-    fontFamily,
-    lineSpacing,
-    wordSpacing,
-    isDarkMode,
-    currentUnit,
-    isReading,
-    readingSpeed,
-    progress
-  });
-  
-  alert("HybridReader debug info logged to console");
-};
+  // Toggle dark mode
+  const toggleDarkMode = () => {
+    console.log("Dark mode toggled from", isDarkMode, "to", !isDarkMode);
+    setIsDarkMode(!isDarkMode);
+  };
 
-// 11. Add a debug button:
-<Button
-  onClick={debugHybridReader}
-  variant="outline"
-  className="mt-4 self-end"
->
-  🔍 Debug HybridReader
-</Button>
+  // Calculate remaining reading time
+  const getTimeRemaining = () => {
+    if (parsedUnits.length === 0) return "0s";
+    
+    const allWords = parsedUnits.flat();
+    const wordsRemaining = allWords.length - currentUnit - 1;
+    const secondsRemaining = Math.ceil((wordsRemaining * 60) / readingSpeed);
+    
+    if (secondsRemaining < 60) {
+      return `${secondsRemaining}s`;
+    }
+    
+    const minutes = Math.floor(secondsRemaining / 60);
+    const seconds = secondsRemaining % 60;
+    return `${minutes}m ${seconds}s`;
+  };
+
+  // Debug function for the component
+  const debugHybridReader = () => {
+    console.log("HybridReader Debug Info:");
+    console.log({
+      file: file ? file.name : null,
+      extension,
+      pdfURL: pdfURL ? "Set" : "Not set",
+      loading,
+      viewMode,
+      parsedUnits: parsedUnits.length,
+      chapters: chapters.length,
+      originalTextLength: originalText ? originalText.length : 0,
+      hybridHTMLLength: hybridHTML ? hybridHTML.length : 0,
+      activeChapter,
+      fontSize,
+      fontFamily,
+      lineSpacing,
+      wordSpacing,
+      isDarkMode,
+      currentUnit,
+      isReading,
+      readingSpeed,
+      progress,
+      aiEnabled
+    });
+    
+    alert("HybridReader debug info logged to console");
+  };
+
+  // Progressive reading view with highlighting
+  const renderProgressiveReading = () => {
+    if (parsedUnits.length === 0) {
+      return <p>No content available</p>;
+    }
+    
+    const allWords = parsedUnits.flat();
+    
+    // Add AI processing to the renderProgressiveReading function
+    const processWordWithAI = (word: string, index: number) => {
+      // Identify key terms with simple approach for demo
+      // In a real implementation, this would use more sophisticated NLP
+      const keyTerms = ["important", "key", "critical", "essential", "significant"];
+      const isKeyTerm = keyTerms.some(term => word.toLowerCase().includes(term));
+      
+      if (aiEnabled && isKeyTerm) {
+        return (
+          <span 
+            key={index}
+            className="bg-yellow-100 dark:bg-yellow-900/30 text-black dark:text-yellow-100 px-1 py-0.5 rounded border-b border-yellow-500 mr-1"
+            title="AI identified as important term"
+          >
+            {word}
+          </span>
+        );
+      }
+      
+      // Regular styling
+      return (
+        <span 
+          key={index}
+          className={cn(
+            "mr-1",
+            index === currentUnit 
+              ? "bg-yellow-200 text-black px-1 py-0.5 rounded" 
+              : index < currentUnit 
+                ? isDarkMode ? "text-gray-500" : "text-gray-400"
+                : isDarkMode ? "text-white" : "text-black"
+          )}
+        >
+          {word}
+        </span>
+      );
+    };
+    
+    return (
+      <div className="space-y-6">
+        {/* Reading controls */}
+        <div className={cn(
+          "p-4 rounded-lg",
+          isDarkMode ? "bg-gray-800" : "bg-pink-50"
+        )}>
+          <h3 className="text-lg font-semibold mb-3 flex items-center">
+            <span className="mr-2">⚡</span> 
+            <span className={isDarkMode ? "text-pink-300" : "text-pink-600"}>
+              {aiEnabled ? "AI-Enhanced" : "Progressive"} Reading Controls
+            </span>
+          </h3>
+          
+          <div className="flex flex-wrap gap-3 mb-4">
+            <Button 
+              onClick={toggleReading}
+              className={isReading ? "bg-red-500 hover:bg-red-600" : "bg-green-500 hover:bg-green-600"}
+            >
+              {isReading ? '⏸ Pause' : '▶ Start'}
+            </Button>
+            
+            <Button 
+              onClick={resetReading}
+              variant="outline"
+            >
+              🔄 Reset
+            </Button>
+            
+            <div className="flex items-center ml-auto gap-2">
+              <span className="text-sm">Font:</span>
+              <select 
+                value={fontFamily}
+                onChange={(e) => {
+                  console.log("Font changed to:", e.target.value);
+                  setFontFamily(e.target.value);
+                }}
+                className={cn(
+                  "px-2 py-1 rounded border text-sm",
+                  isDarkMode ? "bg-gray-800 border-gray-600" : "bg-white border-gray-300"
+            )}
+          >
+            {fontOptions.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <label className="text-sm">Size:</label>
+          <Button 
+            onClick={() => {
+              console.log("Decreasing font size");
+              setFontSize(Math.max(fontSize - 1, 14));
+            }}
+            variant="outline"
+            size="sm"
+            className="h-8 px-2"
+          >
+            -
+          </Button>
+          <span className="text-sm w-8 text-center">{fontSize}</span>
+          <Button 
+            onClick={() => {
+              console.log("Increasing font size");
+              setFontSize(Math.min(fontSize + 1, 24));
+            }}
+            variant="outline"
+            size="sm"
+            className="h-8 px-2"
+          >
+            +
+          </Button>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <label className="text-sm">Spacing:</label>
+          <Button 
+            onClick={() => {
+              console.log("Decreasing line spacing");
+              setLineSpacing(Math.max(lineSpacing - 0.1, 1.0));
+            }}
+            variant="outline"
+            size="sm"
+            className="h-8 px-2"
+          >
+            -
+          </Button>
+          <span className="text-sm w-8 text-center">{lineSpacing.toFixed(1)}</span>
+          <Button 
+            onClick={() => {
+              console.log("Increasing line spacing");
+              setLineSpacing(Math.min(lineSpacing + 0.1, 3.0));
+            }}
+            variant="outline"
+            size="sm"
+            className="h-8 px-2"
+          >
+            +
+          </Button>
+        </div>
+      </div>
+
+      {/* Add debug button */}
+      <Button
+        onClick={debugHybridReader}
+        variant="outline"
+        className="mb-4"
+      >
+        🔍 Debug HybridReader
+      </Button>
+
+      {aiEnabled && (
+        <div className="mb-4 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
+          <div className="flex items-center text-blue-700 dark:text-blue-300 text-sm">
+            <span className="mr-2">✨</span>
+            AI Mode is enabled - text processing is enhanced with AI features
+          </div>
+        </div>
+      )}
+
+      <section className={cn(
+        "mt-4",
+        isDarkMode ? "bg-gray-900" : ""
+      )}>
+        {renderView()}
+      </section>
+    </main>
+  );
+}
+                )}
+              >
+                {fontOptions.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          
+          {/* Stats Grid */}
+          <div className="grid grid-cols-4 gap-3 mb-4">
+            <div className={cn(
+              "p-3 rounded text-center",
+              isDarkMode ? "bg-blue-900/30" : "bg-blue-100"
+            )}>
+              <div className={cn(
+                "text-xl font-bold",
+                isDarkMode ? "text-blue-300" : "text-blue-600"
+              )}>
+                {Math.round(progress)}%
+              </div>
+              <div className={cn(
+                "text-xs",
+                isDarkMode ? "text-blue-300" : "text-blue-600"
+              )}>
+                Complete
+              </div>
+            </div>
+            
+            <div className={cn(
+              "p-3 rounded text-center",
+              isDarkMode ? "bg-green-900/30" : "bg-green-100"
+            )}>
+              <div className={cn(
+                "text-xl font-bold",
+                isDarkMode ? "text-green-300" : "text-green-600"
+              )}>
+                {currentUnit + 1}
+              </div>
+              <div className={cn(
+                "text-xs",
+                isDarkMode ? "text-green-300" : "text-green-600"
+              )}>
+                Current
+              </div>
+            </div>
+            
+            <div className={cn(
+              "p-3 rounded text-center relative",
+              isDarkMode ? "bg-purple-900/30" : "bg-purple-100"
+            )}>
+              <div className={cn(
+                "text-xl font-bold",
+                isDarkMode ? "text-purple-300" : "text-purple-600"
+              )}>
+                {readingSpeed}
+              </div>
+              <div className={cn(
+                "text-xs",
+                isDarkMode ? "text-purple-300" : "text-purple-600"
+              )}>
+                WPM
+              </div>
+              <div className="absolute right-0 top-0 h-full flex flex-col justify-center pr-1">
+                <button 
+                  onClick={() => {
+                    console.log("Increasing reading speed");
+                    setReadingSpeed(prev => Math.min(prev + 10, 800));
+                  }}
+                  className={cn(
+                    "text-xs rounded px-1 mb-1",
+                    isDarkMode ? "bg-purple-800" : "bg-purple-200"
+                  )}
+                >
+                  ▲
+                </button>
+                <button 
+                  onClick={() => {
+                    console.log("Decreasing reading speed");
+                    setReadingSpeed(prev => Math.max(prev - 10, 50));
+                  }}
+                  className={cn(
+                    "text-xs rounded px-1",
+                    isDarkMode ? "bg-purple-800" : "bg-purple-200"
+                  )}
+                >
+                  ▼
+                </button>
+              </div>
+            </div>
+            
+            <div className={cn(
+              "p-3 rounded text-center",
+              isDarkMode ? "bg-orange-900/30" : "bg-orange-100"
+            )}>
+              <div className={cn(
+                "text-xl font-bold",
+                isDarkMode ? "text-orange-300" : "text-orange-600"
+              )}>
+                {getTimeRemaining()}
+              </div>
+              <div className={cn(
+                "text-xs",
+                isDarkMode ? "text-orange-300" : "text-orange-600"
+              )}>
+                Left
+              </div>
+            </div>
+          </div>
+          
+          <div className="text-center text-sm text-gray-600 dark:text-gray-300 mb-2">
+            Word {currentUnit + 1} of {allWords.length}
+          </div>
+          
+          {/* Reading area */}
+          <div 
+            className={cn(
+              "p-4 rounded-lg shadow-inner mb-3",
+              isDarkMode ? "bg-gray-900" : "bg-white"
+            )}
+            style={{ 
+              fontFamily: fontFamily,
+              fontSize: `${fontSize}px`, 
+              lineHeight: lineSpacing,
+              wordSpacing: `${wordSpacing}em`
+            }}
+          >
+            {allWords.map((word, index) => 
+              aiEnabled 
+                ? processWordWithAI(word, index)
+                : (
+                  <span 
+                    key={index}
+                    className={cn(
+                      "mr-1",
+                      index === currentUnit 
+                        ? "bg-yellow-200 text-black px-1 py-0.5 rounded" 
+                        : index < currentUnit 
+                          ? isDarkMode ? "text-gray-500" : "text-gray-400"
+                          : isDarkMode ? "text-white" : "text-black"
+                    )}
+                  >
+                    {word}
+                  </span>
+                )
+            )}
+          </div>
+          
+          {/* Progress bar */}
+          <div className={cn(
+            "w-full h-2 rounded-full overflow-hidden",
+            isDarkMode ? "bg-gray-700" : "bg-gray-200"
+          )}>
+            <div 
+              className={cn(
+                "h-full transition-all duration-300",
+                isDarkMode ? "bg-yellow-500" : "bg-yellow-400"
+              )}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Render chapters view
+  const renderProgressiveChapters = () => {
+    if (chapters.length === 0) {
+      return <p>No chapters found</p>;
+    }
+    
+    return (
+      <div className="flex flex-col md:flex-row gap-6 w-full">
+        <aside className={cn(
+          "sticky top-4 md:w-1/4 w-full space-y-3 p-4 border rounded-md shadow",
+          isDarkMode ? "bg-zinc-900" : "bg-white"
+        )}>
+          <h2 className={cn(
+            "font-bold text-lg mb-2",
+            isDarkMode ? "text-white" : "text-zinc-800"
+          )}>
+            Chapters
+          </h2>
+          <ul className="space-y-2">
+            {chapters.map((ch, i) => (
+              <li key={i}>
+                <a
+                  href={`#chapter-${i}`}
+                  className={cn(
+                    "block text-sm font-medium hover:text-pink-600",
+                    activeChapter === i
+                      ? "text-pink-600"
+                      : isDarkMode ? "text-zinc-300" : "text-zinc-700"
+                  )}
+                >
+                  {ch.title || `Chapter ${i + 1}`}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </aside>
+
+        <section className="md:w-3/4 w-full px-4 space-y-8">
+          {chapters.map((ch, i) => (
+            <div key={i} id={`chapter-${i}`}>
+              <h3 className={cn(
+                "text-xl font-semibold mb-3",
+                isDarkMode ? "text-white" : "text-zinc-900"
+              )}>
+                {ch.title || `Chapter ${i + 1}`}
+              </h3>
+              <div
+                className={cn(
+                  "prose max-w-none",
+                  isDarkMode ? "prose-invert" : ""
+                )}
+                dangerouslySetInnerHTML={{ 
+                  __html: generateProgressiveReadingHTML(getChapterText(i)) 
+                }}
+              />
+            </div>
+          ))}
+        </section>
+      </div>
+    );
+  };
+
+  // Generate progressive reading HTML
+  const generateProgressiveReadingHTML = (text: string): string => {
+    if (!text) return "";
+    
+    const sentences = text.match(/[^.!?\n]+[.!?\n]+/g) || [];
+    
+    return `
+      <div class="space-y-2 text-base leading-relaxed">
+        ${sentences.map((sentence, i) => {
+          // Check for AI enhancement markers
+          const isImportant = aiEnabled && sentence.includes("[IMPORTANT]");
+          const cleanSentence = sentence.replace("[IMPORTANT] ", "");
+          
+          return `
+            <p class="${
+              isImportant 
+                ? isDarkMode 
+                  ? "bg-yellow-900/30 border-l-4 border-yellow-500" 
+                  : "bg-yellow-50 border-l-4 border-yellow-500"
+                : i % 2 === 0 
+                  ? isDarkMode ? "bg-gray-800/50" : "bg-yellow-50"
+                  : isDarkMode ? "bg-gray-900/50" : "bg-blue-50"
+            } p-3 rounded-lg">
+              ${isImportant 
+                ? `<span class="inline-block bg-yellow-200 text-black text-xs px-1 py-0.5 rounded mr-2">KEY</span> ` 
+                : ''}
+              ${cleanSentence.trim()}
+            </p>
+          `;
+        }).join('')}
+      </div>
+    `;
+  };
+
+  // Main view renderer
+  const renderView = () => {
+    if (loading) return <Loader label="Processing your file..." />;
+    if (!file && !inputText) return <p className="text-gray-400">Upload a textbook to get started.</p>;
+
+    switch (viewMode) {
+      case "original":
+        return (
+          <ScrollArea className="h-[80vh] border rounded p-4" ref={scrollRef}>
+            {extension === "pdf" && pdfURL && (
+              <PDFViewer fileUrl={pdfURL} initialScale={1.2} />
+            )}
+            {(extension === "txt" || inputText) && (
+              <pre 
+                className="whitespace-pre-wrap text-sm"
+                style={{ 
+                  fontFamily: fontFamily,
+                  fontSize: `${fontSize}px`,
+                  lineHeight: lineSpacing
+                }}
+              >
+                {originalText || ""}
+              </pre>
+            )}
+            {extension === "docx" && originalText && (
+              <div 
+                dangerouslySetInnerHTML={{ __html: originalText }}
+                style={{ 
+                  fontFamily: fontFamily,
+                  fontSize: `${fontSize}px`,
+                  lineHeight: lineSpacing
+                }}
+              />
+            )}
+          </ScrollArea>
+        );
+      case "chapters":
+        return renderProgressiveChapters();
+      case "progressive":
+        return renderProgressiveReading();
+      case "hybrid":
+        return (
+          <div className="grid md:grid-cols-2 gap-6">
+            {pdfURL ? (
+              <div className="border rounded overflow-hidden">
+                <PDFViewer fileUrl={pdfURL} />
+              </div>
+            ) : (
+              <div className={cn(
+                "border rounded p-4",
+                isDarkMode ? "bg-zinc-900" : "bg-white"
+              )}>
+                <pre 
+                  className="whitespace-pre-wrap text-sm"
+                  style={{ 
+                    fontFamily: fontFamily,
+                    fontSize: `${fontSize}px`,
+                    lineHeight: lineSpacing
+                  }}
+                >
+                  {originalText || ""}
+                </pre>
+              </div>
+            )}
+            <ScrollArea className={cn(
+              "h-[80vh] border rounded p-4",
+              isDarkMode ? "bg-zinc-900" : "bg-white"
+            )}>
+              <div
+                ref={contentRef}
+                className={cn(
+                  "prose max-w-none",
+                  isDarkMode ? "prose-invert" : ""
+                )}
+                style={{ 
+                  fontFamily: fontFamily,
+                  fontSize: `${fontSize}px`,
+                  lineHeight: lineSpacing
+                }}
+                dangerouslySetInnerHTML={{ __html: hybridHTML || "" }}
+              />
+            </ScrollArea>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <main className={cn(
+      "p-6 max-w-6xl mx-auto",
+      isDarkMode ? "text-white" : "text-zinc-900"
+    )}>
+      <header className="mb-6 text-center">
+        <h1 className="text-4xl font-bold text-pink-500">Thought-Unit Reader</h1>
+        <p className="text-sm text-gray-300">Read deeper, faster, and smarter.</p>
+      </header>
+
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          {/* Using a standard HTML label instead of Label component */}
+          <label className="block mb-2">Upload a file (PDF, DOCX, or TXT):</label>
+          <input
+            type="file"
+            accept=".pdf,.docx,.txt"
+            ref={fileRef}
+            className="mb-4"
+            onClick={() => console.log("File input clicked")}
+            onChange={(e) => {
+              console.log("File input changed - calling handler");
+              handleFileChange(e);
+            }}
+          />
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <span className="text-sm">Dark Mode:</span>
+          <button 
+            onClick={() => {
+              console.log("Dark mode toggled from", isDarkMode, "to", !isDarkMode);
+              toggleDarkMode();
+            }}
+            className={`w-12 h-6 rounded-full relative ${
+              isDarkMode ? 'bg-blue-600' : 'bg-gray-300'
+            }`}
+          >
+            <span 
+              className={`absolute w-5 h-5 rounded-full bg-white top-0.5 transition-all ${
+                isDarkMode ? 'left-6' : 'left-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-4 mt-2 mb-6">
+        <Button 
+          onClick={() => {
+            console.log("Setting view mode to original");
+            setViewMode("original");
+          }} 
+          variant={viewMode === "original" ? "default" : "secondary"}
+        >
+          📄 Original View
+        </Button>
+        <Button 
+          onClick={() => {
+            console.log("Setting view mode to chapters");
+            setViewMode("chapters");
+          }} 
+          variant={viewMode === "chapters" ? "default" : "outline"}
+        >
+          📚 Chapters
+        </Button>
+        <Button 
+          onClick={() => {
+            console.log("Setting view mode to progressive");
+            setViewMode("progressive");
+          }} 
+          variant={viewMode === "progressive" ? "default" : "outline"}
+        >
+          🧠 Progressive
+        </Button>
+        <Button 
+          onClick={() => {
+            console.log("Setting view mode to hybrid");
+            setViewMode("hybrid");
+          }} 
+          variant={viewMode === "hybrid" ? "default" : "outline"}
+        >
+          🔁 Hybrid View
+        </Button>
+      </div>
+
+      <div className="flex gap-4 mb-6">
+        <div className="flex items-center gap-2">
+          <label className="text-sm">Font:</label>
+          <select 
+            value={fontFamily}
+            onChange={(e) => {
+              console.log("Font changed to:", e.target.value);
+              setFontFamily(e.target.value);
+            }}
+            className={cn(
+              "px-2 py-1 rounded border text-sm",
+              isDarkMode ? "bg-gray-800 border-gray-600" : "bg
