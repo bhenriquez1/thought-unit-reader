@@ -1,6 +1,7 @@
 // components/ProgressiveView.tsx
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Button } from '../components/ui/button';
+import { Button } from './ui/button';
+import { cn } from '../lib/classnames';
 
 interface ProgressiveViewProps {
   content: string;
@@ -91,8 +92,14 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
   return (
     <div className="flex flex-col w-full max-w-4xl mx-auto p-4">
       {/* Controls Panel */}
-      <div className="bg-pink-50 dark:bg-pink-900/20 rounded-lg p-4 mb-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-pink-600 dark:text-pink-300 mb-3 flex items-center">
+      <div className={cn(
+        "bg-pink-50 rounded-lg p-4 mb-6 shadow-sm",
+        darkMode && "bg-pink-900/20"
+      )}>
+        <h3 className={cn(
+          "text-lg font-semibold mb-3 flex items-center",
+          darkMode ? "text-pink-300" : "text-pink-600"
+        )}>
           <span className="mr-2">📑</span> Progressive Reading Controls
         </h3>
         
@@ -138,8 +145,11 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
             <span className="text-sm">Font:</span>
             <select 
               value={fontFamily}
-              onChange={(e) => {/* Set font family */}}
-              className="px-2 py-1 rounded border text-sm"
+              onChange={(e) => {/* This would be connected to state in the parent */}}
+              className={cn(
+                "px-2 py-1 rounded border text-sm",
+                darkMode ? "bg-gray-800 border-gray-600" : "bg-white border-gray-300"
+              )}
             >
               <option value="Arial, sans-serif">Arial</option>
               <option value="Verdana, sans-serif">Verdana</option>
@@ -150,15 +160,21 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
             
             <span className="text-sm ml-3">Size:</span>
             <button 
-              onClick={() => {/* Decrease font size */}}
-              className="px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-700"
+              onClick={() => {/* This would be connected to state in the parent */}}
+              className={cn(
+                "px-2 py-0.5 rounded", 
+                darkMode ? "bg-gray-700" : "bg-gray-200"
+              )}
             >
               -
             </button>
             <span className="text-sm">{fontSize}px</span>
             <button 
-              onClick={() => {/* Increase font size */}}
-              className="px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-700"
+              onClick={() => {/* This would be connected to state in the parent */}}
+              className={cn(
+                "px-2 py-0.5 rounded", 
+                darkMode ? "bg-gray-700" : "bg-gray-200"
+              )}
             >
               +
             </button>
@@ -182,14 +198,23 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
         </div>
         
         {/* Progress bar */}
-        <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mb-2">
+        <div className={cn(
+          "w-full h-2 rounded-full overflow-hidden mb-2",
+          darkMode ? "bg-gray-700" : "bg-gray-200"
+        )}>
           <div 
-            className="h-full bg-pink-400 dark:bg-pink-500 transition-all duration-300"
+            className={cn(
+              "h-full transition-all duration-300",
+              darkMode ? "bg-pink-500" : "bg-pink-400"
+            )}
             style={{ width: `${progress}%` }}
           />
         </div>
         
-        <div className="text-center text-sm text-gray-600 dark:text-gray-300">
+        <div className={cn(
+          "text-center text-sm mb-2",
+          darkMode ? "text-gray-300" : "text-gray-600"
+        )}>
           Unit {currentSentence + 1} of {sentences.length} ({progress}% complete)
         </div>
       </div>
@@ -197,16 +222,21 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
       {/* Reading area */}
       <div 
         ref={containerRef}
-        className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-sm max-h-[60vh] overflow-y-auto"
+        className={cn(
+          "rounded-lg p-4 shadow-sm max-h-[60vh] overflow-y-auto",
+          darkMode ? "bg-gray-900" : "bg-white"
+        )}
       >
         {sentences.length > 0 ? (
           sentences.map((sentence, index) => (
             <div 
               key={index}
               ref={index === currentSentence ? currentRef : null}
-              className={`p-4 rounded-lg mb-4 transition-all duration-300 ${getBackgroundClass(index)} ${
-                index === currentSentence ? 'ring-2 ring-pink-400 dark:ring-pink-500' : ''
-              }`}
+              className={cn(
+                "p-4 rounded-lg mb-4 transition-all duration-300",
+                getBackgroundClass(index),
+                index === currentSentence && (darkMode ? "ring-2 ring-pink-500" : "ring-2 ring-pink-400")
+              )}
               style={{ 
                 fontFamily,
                 fontSize: `${fontSize}px`,
@@ -218,7 +248,10 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
             </div>
           ))
         ) : (
-          <div className="text-center text-gray-500 dark:text-gray-400 py-10">
+          <div className={cn(
+            "text-center py-10",
+            darkMode ? "text-gray-400" : "text-gray-500"
+          )}>
             No content to display. Upload a document or paste text to begin.
           </div>
         )}
@@ -239,7 +272,10 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
           ◀ Previous
         </Button>
         
-        <span className="text-sm self-center">
+        <span className={cn(
+          "text-sm self-center",
+          darkMode ? "text-gray-300" : "text-gray-600"
+        )}>
           {sentences.length > 0 ? `${currentSentence + 1} / ${sentences.length}` : '0 / 0'}
         </span>
         

@@ -40,20 +40,15 @@ type ViewMode = "original" | "chapters" | "progressive" | "hybrid";
 const createReliableBlobUrl = async (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     try {
-      // For PDFs, we need to ensure the file is fully loaded
       const reader = new FileReader();
-      
       reader.onload = () => {
-        // Create a new Blob from the ArrayBuffer
         const blob = new Blob([reader.result as ArrayBuffer], { type: file.type });
         const url = URL.createObjectURL(blob);
         resolve(url);
       };
-      
       reader.onerror = () => {
         reject(new Error("Failed to read file"));
       };
-      
       reader.readAsArrayBuffer(file);
     } catch (err) {
       reject(err);
@@ -73,16 +68,11 @@ export default function Home() {
   const [zoom, setZoom] = useState<number>(1.25);
   const [inputText, setInputText] = useState<string>("");
   const [aiEnabled, setAiEnabled] = useState<boolean>(true);
-  
-  // Dark mode state
   const [darkMode, setDarkMode] = useState<boolean>(false);
-
-  // Font settings for dyslexia-friendly display
   const [fontSize, setFontSize] = useState<number>(18);
   const [fontFamily, setFontFamily] = useState<string>("Arial, sans-serif");
   const [lineSpacing, setLineSpacing] = useState<number>(1.8);
-  
-  // Font options for selection
+
   const fontOptions = [
     { label: "Arial", value: "Arial, sans-serif" },
     { label: "Verdana", value: "Verdana, sans-serif" },
@@ -90,21 +80,18 @@ export default function Home() {
     { label: "OpenDyslexic", value: "OpenDyslexic, sans-serif" },
     { label: "Helvetica", value: "Helvetica, Arial, sans-serif" },
   ];
-  
-  // Toggle dark mode
+
   const toggleDarkMode = () => {
     setDarkMode(!darkMode);
   };
 
-  // Effect to configure the document when dark mode changes
   useEffect(() => {
-    // Update document body class for global styling
     if (darkMode) {
-      document.documentElement.classList.add('dark');
-      document.body.classList.add('dark');
+      document.documentElement.classList.add("dark");
+      document.body.classList.add("dark");
     } else {
-      document.documentElement.classList.remove('dark');
-      document.body.classList.remove('dark');
+      document.documentElement.classList.remove("dark");
+      document.body.classList.remove("dark");
     }
   }, [darkMode]);
 
@@ -112,18 +99,16 @@ export default function Home() {
     document.title = "Thought-Unit Reader";
   }, []);
 
-  // Updated handleFileChange function with improved blob URL handling
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    
+
     const uploadedFile = files[0];
     if (!uploadedFile) return;
 
     setUploadStatus("uploading");
-    
+
     try {
-      // Create a more reliable blob URL
       const url = await createReliableBlobUrl(uploadedFile);
       setFileURL(url);
 
@@ -139,16 +124,15 @@ export default function Home() {
         setUploadStatus("processing");
         try {
           const { parsedUnits, original } = await parseBookWithChapters(uploadedFile);
-          
-          // Safely handle parsedUnits and generate HTML
+
           if (Array.isArray(parsedUnits) && parsedUnits.length > 0) {
             const rawText = parsedUnits
-              .map(unit => Array.isArray(unit) ? unit.join(" ") : String(unit))
+              .map((unit) => (Array.isArray(unit) ? unit.join(" ") : String(unit)))
               .join("\n");
-              
+
             const generated = generateProgressiveReadingHTML(rawText);
             setParsedHTML(generated);
-            setInputText(typeof original === 'string' ? original : String(original));
+            setInputText(typeof original === "string" ? original : String(original));
             setUploadStatus("done");
           } else {
             throw new Error("Failed to parse document units");
@@ -174,7 +158,7 @@ export default function Home() {
     e.preventDefault();
     const form = e.currentTarget;
     const pageInput = form.elements.namedItem("page") as HTMLInputElement;
-    
+
     if (pageInput && pageInput.value) {
       const page = parseInt(pageInput.value);
       if (!isNaN(page) && page >= 1 && page <= numPages) {
@@ -195,22 +179,21 @@ export default function Home() {
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <main className={cn(
-        "p-6 max-w-6xl mx-auto min-h-screen transition-colors duration-200",
-        darkMode 
-          ? "bg-zinc-950 text-white" 
-          : "bg-white text-zinc-900"
-      )}>
+      <main
+        className={cn(
+          "p-6 max-w-6xl mx-auto min-h-screen transition-colors duration-200",
+          darkMode ? "bg-zinc-950 text-white" : "bg-white text-zinc-900"
+        )}
+      >
+        {/* Header */}
         <header className="mb-6 text-center">
           <h1 className="text-4xl font-bold text-pink-500">Thought-Unit Reader</h1>
-          <p className={cn(
-            "text-sm",
-            darkMode ? "text-gray-300" : "text-gray-500"
-          )}>
+          <p className={cn("text-sm", darkMode ? "text-gray-300" : "text-gray-500")}>
             Read deeper, faster, and smarter.
           </p>
         </header>
 
+        {/* File Upload */}
         <div className="mb-6 flex items-center gap-4 flex-wrap justify-between">
           <div className="flex items-center gap-4">
             <Label className={darkMode ? "text-white" : "text-black"}>Enable AI Mode</Label>
@@ -224,7 +207,7 @@ export default function Home() {
               onChange={handleFileChange}
             />
           </div>
-          
+
           <div className="flex items-center gap-4">
             <Label className={darkMode ? "text-white" : "text-black"}>
               {darkMode ? "Dark Mode" : "Light Mode"}
@@ -232,12 +215,13 @@ export default function Home() {
             <Switch checked={darkMode} onCheckedChange={toggleDarkMode} />
           </div>
         </div>
-        
-        {/* Font controls */}
+
+        {/* Font Controls */}
         <div className="mb-6 flex items-center gap-4 flex-wrap">
+          {/* Font Family */}
           <div className="flex items-center gap-2">
             <Label className="text-sm">Font:</Label>
-            <select 
+            <select
               value={fontFamily}
               onChange={(e) => setFontFamily(e.target.value)}
               className={cn(
@@ -245,17 +229,18 @@ export default function Home() {
                 darkMode ? "bg-gray-800 border-gray-600" : "bg-white border-gray-300"
               )}
             >
-              {fontOptions.map(option => (
+              {fontOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
             </select>
           </div>
-          
+
+          {/* Font Size */}
           <div className="flex items-center gap-2">
             <Label className="text-sm">Size:</Label>
-            <Button 
+            <Button
               onClick={() => setFontSize(Math.max(fontSize - 1, 14))}
               variant="outline"
               size="sm"
@@ -264,7 +249,7 @@ export default function Home() {
               -
             </Button>
             <span className="text-sm w-8 text-center">{fontSize}px</span>
-            <Button 
+            <Button
               onClick={() => setFontSize(Math.min(fontSize + 1, 24))}
               variant="outline"
               size="sm"
@@ -273,10 +258,11 @@ export default function Home() {
               +
             </Button>
           </div>
-          
+
+          {/* Line Spacing */}
           <div className="flex items-center gap-2">
             <Label className="text-sm">Line Spacing:</Label>
-            <Button 
+            <Button
               onClick={() => setLineSpacing(Math.max(lineSpacing - 0.1, 1.0))}
               variant="outline"
               size="sm"
@@ -285,7 +271,7 @@ export default function Home() {
               -
             </Button>
             <span className="text-sm w-12 text-center">{lineSpacing.toFixed(1)}x</span>
-            <Button 
+            <Button
               onClick={() => setLineSpacing(Math.min(lineSpacing + 0.1, 3.0))}
               variant="outline"
               size="sm"
@@ -296,29 +282,32 @@ export default function Home() {
           </div>
         </div>
 
+        {/* File Upload Status */}
         {uploadStatus === "uploading" && <Loader label="Uploading file..." />}
         {uploadStatus === "processing" && <Loader label="Processing your file..." />}
         {uploadStatus === "error" && (
           <p className="text-red-500">Unsupported file or parsing failed. Please try again.</p>
         )}
 
+        {/* File Views */}
         {uploadStatus === "done" && (
           <>
+            {/* View Mode Buttons */}
             <div className="flex gap-4 my-4 flex-wrap">
-              <Button 
-                onClick={() => setViewMode("original")} 
+              <Button
+                onClick={() => setViewMode("original")}
                 variant={viewMode === "original" ? "default" : "secondary"}
               >
                 Original View
               </Button>
-              <Button 
-                onClick={() => setViewMode("progressive")} 
+              <Button
+                onClick={() => setViewMode("progressive")}
                 variant={viewMode === "progressive" ? "default" : "outline"}
               >
                 Progressive View
               </Button>
-              <Button 
-                onClick={() => setViewMode("hybrid")} 
+              <Button
+                onClick={() => setViewMode("hybrid")}
                 variant={viewMode === "hybrid" ? "default" : "outline"}
               >
                 Hybrid View
@@ -329,16 +318,14 @@ export default function Home() {
             {viewMode === "original" && fileType === "pdf" && (
               <div className="text-center space-y-4">
                 {fileURL ? (
-                  <PDFViewer 
-                    fileUrl={fileURL} 
-                    initialScale={zoom} 
-                    showControls={true} 
-                  />
+                  <PDFViewer fileUrl={fileURL} initialScale={zoom} showControls={true} />
                 ) : (
-                  <div className={cn(
-                    "p-8 border rounded",
-                    darkMode ? "border-gray-700 text-red-400" : "border-gray-300 text-red-500"
-                  )}>
+                  <div
+                    className={cn(
+                      "p-8 border rounded",
+                      darkMode ? "border-gray-700 text-red-400" : "border-gray-300 text-red-500"
+                    )}
+                  >
                     No PDF file loaded
                   </div>
                 )}
@@ -347,16 +334,18 @@ export default function Home() {
 
             {/* Original Text View */}
             {viewMode === "original" && fileType === "text" && (
-              <div className={cn(
-                "p-4 border rounded",
-                darkMode ? "bg-zinc-900 border-gray-700" : "bg-white border-gray-300"
-              )}>
-                <pre 
+              <div
+                className={cn(
+                  "p-4 border rounded",
+                  darkMode ? "bg-zinc-900 border-gray-700" : "bg-white border-gray-300"
+                )}
+              >
+                <pre
                   className="whitespace-pre-wrap"
-                  style={{ 
+                  style={{
                     fontFamily: fontFamily,
                     fontSize: `${fontSize}px`,
-                    lineHeight: lineSpacing
+                    lineHeight: lineSpacing,
                   }}
                 >
                   {inputText}
@@ -366,11 +355,13 @@ export default function Home() {
 
             {/* Progressive Text View */}
             {viewMode === "progressive" && inputText && (
-              <div className={cn(
-                "border rounded-xl p-6 shadow",
-                darkMode ? "bg-zinc-900 border-gray-700" : "bg-zinc-50 border-gray-300"
-              )}>
-                <ProgressiveView 
+              <div
+                className={cn(
+                  "border rounded-xl p-6 shadow",
+                  darkMode ? "bg-zinc-900 border-gray-700" : "bg-zinc-50 border-gray-300"
+                )}
+              >
+                <ProgressiveView
                   content={inputText}
                   fontFamily={fontFamily}
                   fontSize={fontSize}
@@ -382,10 +373,12 @@ export default function Home() {
 
             {/* Hybrid Thought-Unit View */}
             {viewMode === "hybrid" && inputText && (
-              <div className={cn(
-                "border rounded-xl p-6 shadow",
-                darkMode ? "bg-zinc-900 border-gray-700" : "bg-zinc-50 border-gray-300"
-              )}>
+              <div
+                className={cn(
+                  "border rounded-xl p-6 shadow",
+                  darkMode ? "bg-zinc-900 border-gray-700" : "bg-zinc-50 border-gray-300"
+                )}
+              >
                 <HybridReader inputText={inputText} />
               </div>
             )}
