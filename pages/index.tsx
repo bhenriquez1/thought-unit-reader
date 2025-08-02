@@ -23,7 +23,7 @@ const HybridReader = dynamic(() => import("@/components/HybridReader"), {
 });
 
 // Dynamic import for ProgressiveView
-const ProgressiveView = dynamic(() => import("@/components/ProgressiveView"), {
+const ProgressiveView = dynamic(() => import("@/components/progressiveview"), {
   ssr: false,
   loading: () => <Loader label="Loading progressive view..." />,
 });
