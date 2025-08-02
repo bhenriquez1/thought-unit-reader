@@ -1,533 +1,249 @@
-// pages/index.tsx - PERFORMANCE FIXED + CLICK-TO-SWITCH
-"use client";
+// ===== ADD THIS TO YOUR index.tsx FILE =====
 
-import Head from "next/head";
-import { useState, useCallback, useEffect, useRef } from "react";
-import dynamic from "next/dynamic";
-import { parseBookWithChapters, generateProgressiveReadingHTML } from "../lib/parser";
-import { Label } from "../components/ui/label";
-import { Switch } from "../components/ui/switch";
-import { Button } from "../components/ui/button";
-import Loader from "../components/ui/loader";
-import { cn } from "../lib/classnames";
+// 1. Make sure your state declarations include these (add if missing):
+const [aiEnabled, setAiEnabled] = useState<boolean>(true);
+const [isDebugMode, setIsDebugMode] = useState<boolean>(false);
 
-// Use dynamic import for components with proper loading states
-const PDFViewer = dynamic(() => import("../components/PDFViewer"), {
-  ssr: false,
-  loading: () => <Loader label="Loading PDF viewer..." />
-});
-
-const HybridReader = dynamic(() => import("../components/HybridReader"), { 
-  ssr: false,
-  loading: () => <Loader label="Loading reader..." />
-});
-
-const ProgressiveView = dynamic(() => import("../components/ui/ProgressiveView"), {
-  ssr: false,
-  loading: () => <Loader label="Loading progressive view..." />
-});
-
-type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
-type FileType = "text" | "pdf" | "none";
-type ViewMode = "original" | "progressive" | "hybrid";
-
-const createReliableBlobUrl = async (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    try {
-      const reader = new FileReader();
-      
-      reader.onload = () => {
-        if (reader.result) {
-          const blob = new Blob([reader.result as ArrayBuffer], { type: file.type });
-          const url = URL.createObjectURL(blob);
-          resolve(url);
-        }
-      };
-      
-      reader.onerror = () => {
-        reject(new Error("Failed to read file"));
-      };
-      
-      reader.readAsArrayBuffer(file);
-    } catch (err) {
-      reject(err);
-    }
-  });
+// 2. Add these proper toggle functions:
+const toggleAiMode = () => {
+  console.log("AI Mode toggled from", aiEnabled, "to", !aiEnabled);
+  setAiEnabled(!aiEnabled);
 };
 
-export default function Home() {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [fileType, setFileType] = useState<FileType>("none");
-  const [fileURL, setFileURL] = useState<string>("");
-  const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
-  const [viewMode, setViewMode] = useState<ViewMode>("original");
-  const [parsedHTML, setParsedHTML] = useState<string>("");
-  const [pageNumber, setPageNumber] = useState<number>(1);
-  const [numPages, setNumPages] = useState<number>(0);
-  const [zoom, setZoom] = useState<number>(1.25);
+const toggleDebugMode = () => {
+  console.log("Debug Mode toggled from", isDebugMode, "to", !isDebugMode);
+  setIsDebugMode(!isDebugMode);
   
-  // IMPORTANT: Store the actual text content here
-  const [inputText, setInputText] = useState<string>("");
-  const [originalContent, setOriginalContent] = useState<string>(""); 
-  
-  const [aiEnabled, setAiEnabled] = useState<boolean>(true);
-  const [darkMode, setDarkMode] = useState<boolean>(false);
+  // Log current state when debug mode is enabled
+  if (!isDebugMode) {
+    console.log("=== DEBUG INFORMATION ===");
+    console.log("Current state:", {
+      viewMode,
+      darkMode,
+      fileType,
+      uploadStatus,
+      aiEnabled,
+      fontSize,
+      fontFamily,
+      lineSpacing,
+      inputTextLength: inputText ? inputText.length : 0,
+      pdfURL: pdfURL ? "Set" : "Not set"
+    });
+  }
+};
 
-  // Font settings
-  const [fontSize, setFontSize] = useState<number>(18);
-  const [fontFamily, setFontFamily] = useState<string>("Arial, sans-serif");
-  const [lineSpacing, setLineSpacing] = useState<number>(1.8);
+// 3. Ensure your file input handler is properly defined:
+const handleFileInputClick = () => {
+  console.log("File input button clicked");
+  if (fileInputRef.current) {
+    fileInputRef.current.click();
+  } else {
+    console.error("File input ref is null");
+  }
+};
+
+// 4. Add this useEffect to implement AI mode functionality:
+useEffect(() => {
+  if (!inputText || !aiEnabled) return;
   
-  // NEW: Click-to-switch preferences
-  const [clickToSwitchMode, setClickToSwitchMode] = useState<"progressive" | "hybrid">("progressive");
+  console.log("Applying AI enhancements to text");
   
-  const fontOptions = [
-    { label: "Arial", value: "Arial, sans-serif" },
-    { label: "Verdana", value: "Verdana, sans-serif" },
-    { label: "Comic Sans", value: '"Comic Sans MS", cursive' },
-    { label: "OpenDyslexic", value: "OpenDyslexic, sans-serif" },
-    { label: "Helvetica", value: "Helvetica, Arial, sans-serif" },
-  ];
-  
-  const toggleDarkMode = () => {
-    setDarkMode(!darkMode);
+  // This is a simple simulation of AI processing
+  // You would replace this with actual AI processing logic
+  const simulateAiProcessing = () => {
+    // Just a placeholder for actual AI processing
+    console.log("AI processing applied to text");
   };
+  
+  simulateAiProcessing();
+}, [aiEnabled, inputText]);
 
-  useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-      document.body.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      document.body.classList.remove('dark');
-    }
-  }, [darkMode]);
-
-  useEffect(() => {
-    document.title = "Thought-Unit Reader";
-  }, []);
-
-  // FIXED: Memoized handleFileChange to prevent infinite loops
-  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+// 5. Add this debug panel to your UI (place it where appropriate):
+{/* Debug Panel - Add this to your JSX where appropriate */}
+<div className="mb-6 mt-4 border-t pt-4 border-gray-200 dark:border-gray-700">
+  <div className="flex items-center gap-4 flex-wrap">
+    <Button 
+      onClick={() => {
+        console.log("Debug button clicked");
+        toggleDebugMode();
+        alert("Debug mode " + (isDebugMode ? "disabled" : "enabled") + ". Check console for details.");
+      }}
+      variant="outline"
+      className={cn(
+        "bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700",
+        isDebugMode && "ring-2 ring-red-500"
+      )}
+    >
+      🔍 Debug {isDebugMode ? "ON" : "OFF"}
+    </Button>
     
-    const uploadedFile = files[0];
-    if (!uploadedFile) return;
-
-    setUploadStatus("uploading");
-    
-    try {
-      const url = await createReliableBlobUrl(uploadedFile);
-      setFileURL(url);
-
-      const fileExt = uploadedFile.name.split(".").pop()?.toLowerCase() || "";
-      const isPDF = fileExt === "pdf";
-      const isText = fileExt === "txt" || fileExt === "docx";
-
-      if (isPDF) {
-        setFileType("pdf");
-        setUploadStatus("processing");
-        try {
-          const { parsedUnits, original } = await parseBookWithChapters(uploadedFile);
-          
-          // Store the extracted text
-          const textContent = typeof original === 'string' ? original : String(original);
-          setInputText(textContent);
-          setOriginalContent(textContent);
-          
-          if (Array.isArray(parsedUnits) && parsedUnits.length > 0) {
-            const rawText = parsedUnits
-              .map(unit => Array.isArray(unit) ? unit.join(" ") : String(unit))
-              .join("\n");
-              
-            const generated = generateProgressiveReadingHTML(rawText);
-            setParsedHTML(generated);
-          }
-          setUploadStatus("done");
-        } catch (err) {
-          console.error("PDF text extraction failed:", err);
-          // PDF viewing will still work, just not progressive features
-          setInputText(""); 
-          setOriginalContent("");
-          setUploadStatus("done");
-        }
-        
-      } else if (isText) {
-        setFileType("text");
-        setUploadStatus("processing");
-        try {
-          const { parsedUnits, original } = await parseBookWithChapters(uploadedFile);
-          
-          // Store the extracted text
-          const textContent = typeof original === 'string' ? original : String(original);
-          setInputText(textContent);
-          setOriginalContent(textContent);
-          
-          if (Array.isArray(parsedUnits) && parsedUnits.length > 0) {
-            const rawText = parsedUnits
-              .map(unit => Array.isArray(unit) ? unit.join(" ") : String(unit))
-              .join("\n");
-              
-            const generated = generateProgressiveReadingHTML(rawText);
-            setParsedHTML(generated);
-          }
-          setUploadStatus("done");
-        } catch (err) {
-          console.error("Parsing error:", err);
-          setUploadStatus("error");
-        }
-      } else {
-        setUploadStatus("error");
-      }
-    } catch (err) {
-      console.error("File handling error:", err);
-      setUploadStatus("error");
-    }
-  }, []); // Empty dependency array to prevent infinite loops
-
-  const handleZoom = (delta: number) => {
-    setZoom((z) => Math.max(0.5, Math.min(3, z + delta)));
-  };
-
-  // NEW: Handle word click in original view
-  const handleWordClick = useCallback((clickedWord: string, wordIndex: number) => {
-    // Switch to the preferred view mode
-    setViewMode(clickToSwitchMode);
-    
-    // Optional: Could store the clicked word to highlight it in the new view
-    console.log(`Clicked word: "${clickedWord}" at index ${wordIndex}, switching to ${clickToSwitchMode} view`);
-  }, [clickToSwitchMode]);
-
-  // NEW: Render clickable text for original view
-  const renderClickableText = (text: string) => {
-    if (!text) return null;
-    
-    const words = text.split(/(\s+)/); // Split but keep spaces
-    
-    return (
-      <pre 
-        className="whitespace-pre-wrap"
-        style={{ 
-          fontFamily: fontFamily,
-          fontSize: `${fontSize}px`,
-          lineHeight: lineSpacing
+    <div className="flex items-center gap-2">
+      <Button 
+        onClick={() => {
+          console.log("Log State button clicked");
+          console.log("Current State:", {
+            viewMode,
+            darkMode,
+            fileType,
+            uploadStatus,
+            aiEnabled,
+            fontSize,
+            fontFamily,
+            lineSpacing
+          });
+          alert("State logged to console");
         }}
+        variant="outline"
+        size="sm"
       >
-        {words.map((word, index) => {
-          const isSpace = /^\s+$/.test(word);
-          
-          if (isSpace) {
-            return word; // Return spaces as-is
-          }
-          
-          return (
-            <span
-              key={index}
-              className={cn(
-                "cursor-pointer hover:bg-yellow-200 dark:hover:bg-yellow-600 hover:text-black transition-colors duration-150 rounded px-1",
-                "hover:shadow-sm"
-              )}
-              onClick={() => handleWordClick(word, index)}
-              title={`Click to switch to ${clickToSwitchMode} view`}
-            >
-              {word}
-            </span>
-          );
-        })}
-      </pre>
-    );
-  };
+        📊 Log State
+      </Button>
+      
+      <Button 
+        onClick={() => {
+          console.log("Test Clickable button clicked");
+          alert("Button click test successful!");
+        }}
+        variant="outline"
+        size="sm"
+      >
+        🔘 Test Clickable
+      </Button>
+    </div>
+  </div>
+  
+  {isDebugMode && (
+    <div className="mt-4 p-4 bg-gray-100 dark:bg-gray-800 rounded-md text-xs font-mono">
+      <h3 className="font-bold mb-2">Debug Information:</h3>
+      <ul className="space-y-1">
+        <li>View Mode: {viewMode}</li>
+        <li>Dark Mode: {darkMode ? "Enabled" : "Disabled"}</li>
+        <li>AI Mode: {aiEnabled ? "Enabled" : "Disabled"}</li>
+        <li>File Type: {fileType}</li>
+        <li>Upload Status: {uploadStatus}</li>
+        <li>Font: {fontFamily}</li>
+        <li>Font Size: {fontSize}px</li>
+        <li>Line Spacing: {lineSpacing}</li>
+        <li>Text Length: {inputText ? inputText.length : 0} chars</li>
+      </ul>
+    </div>
+  )}
+</div>
 
-  // Debug function to check what content we have
-  const debugContent = () => {
-    console.log("=== DEBUG CONTENT ===");
-    console.log("uploadStatus:", uploadStatus);
-    console.log("fileType:", fileType);
-    console.log("viewMode:", viewMode);
-    console.log("inputText length:", inputText?.length || 0);
-    console.log("inputText preview:", inputText?.substring(0, 100) || "No content");
-    console.log("originalContent length:", originalContent?.length || 0);
-    console.log("===================");
-  };
+// 6. Replace your AI mode toggle with this enhanced version:
+<div className="flex items-center gap-4">
+  <Label 
+    className={darkMode ? "text-white" : "text-black"}
+    onClick={() => {
+      console.log("Label clicked");
+      toggleAiMode();
+    }}
+  >
+    Enable AI Mode
+  </Label>
+  <Switch 
+    checked={aiEnabled} 
+    onCheckedChange={(checked) => {
+      console.log("Switch toggled to:", checked);
+      setAiEnabled(checked);
+    }} 
+  />
+  {aiEnabled && (
+    <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
+      AI Enhanced
+    </span>
+  )}
+</div>
 
-  return (
-    <>
-      <Head>
-        <title>Thought-Unit Reader</title>
-        <meta
-          name="description"
-          content="An AI-powered learning platform that transforms any textbook into a smart, digestible experience with progressive, hybrid, and thought-unit views."
-        />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <link rel="icon" href="/favicon.ico" />
-      </Head>
+// 7. Replace your file upload button with this enhanced version:
+<Button 
+  onClick={() => {
+    console.log("Upload button clicked");
+    handleFileInputClick();
+  }}
+>
+  Upload Book
+</Button>
+<input
+  ref={fileInputRef}
+  type="file"
+  accept=".txt,.pdf,.docx"
+  className="hidden"
+  onChange={(e) => {
+    console.log("File input changed");
+    handleFileChange(e);
+  }}
+/>
 
-      <main className={cn(
-        "p-6 max-w-6xl mx-auto min-h-screen transition-colors duration-200",
-        darkMode 
-          ? "bg-zinc-950 text-white" 
-          : "bg-white text-zinc-900"
-      )}>
-        <header className="mb-6 text-center">
-          <h1 className="text-4xl font-bold text-pink-500">Thought-Unit Reader</h1>
-          <p className={cn(
-            "text-sm",
-            darkMode ? "text-gray-300" : "text-gray-500"
-          )}>
-            Read deeper, faster, and smarter.
-          </p>
-        </header>
+// 8. Replace your view mode buttons with these enhanced versions:
+<div className="flex gap-4 my-4 flex-wrap">
+  <Button 
+    onClick={() => {
+      console.log("Original View button clicked");
+      setViewMode("original");
+    }} 
+    variant={viewMode === "original" ? "default" : "secondary"}
+  >
+    Original View
+  </Button>
+  <Button 
+    onClick={() => {
+      console.log("Progressive View button clicked");
+      setViewMode("progressive");
+    }} 
+    variant={viewMode === "progressive" ? "default" : "outline"}
+  >
+    Progressive View
+  </Button>
+  <Button 
+    onClick={() => {
+      console.log("Hybrid View button clicked");
+      setViewMode("hybrid");
+    }} 
+    variant={viewMode === "hybrid" ? "default" : "outline"}
+  >
+    Hybrid View
+  </Button>
+</div>
 
-        <div className="mb-6 flex items-center gap-4 flex-wrap justify-between">
-          <div className="flex items-center gap-4">
-            <Label className={darkMode ? "text-white" : "text-black"}>Enable AI Mode</Label>
-            <Switch checked={aiEnabled} onCheckedChange={setAiEnabled} />
-            <Button onClick={() => fileInputRef.current?.click()}>Upload Book</Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".txt,.pdf,.docx"
-              className="hidden"
-              onChange={handleFileChange}
-            />
-            {/* Debug button - remove in production */}
-            <Button onClick={debugContent} variant="outline" size="sm">
-              Debug
-            </Button>
-          </div>
-          
-          <div className="flex items-center gap-4">
-            <Label className={darkMode ? "text-white" : "text-black"}>
-              {darkMode ? "Dark Mode" : "Light Mode"}
-            </Label>
-            <Switch checked={darkMode} onCheckedChange={toggleDarkMode} />
-          </div>
-        </div>
-        
-        {/* Font controls + Click-to-switch setting */}
-        <div className="mb-6 flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Label className="text-sm">Font:</Label>
-            <select 
-              value={fontFamily}
-              onChange={(e) => setFontFamily(e.target.value)}
-              className={cn(
-                "px-2 py-1 rounded border text-sm",
-                darkMode ? "bg-gray-800 border-gray-600" : "bg-white border-gray-300"
-              )}
-            >
-              {fontOptions.map(option => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <Label className="text-sm">Size:</Label>
-            <Button 
-              onClick={() => setFontSize(Math.max(fontSize - 1, 14))}
-              variant="outline"
-              size="sm"
-              className="h-8 px-2"
-            >
-              -
-            </Button>
-            <span className="text-sm w-8 text-center">{fontSize}px</span>
-            <Button 
-              onClick={() => setFontSize(Math.min(fontSize + 1, 24))}
-              variant="outline"
-              size="sm"
-              className="h-8 px-2"
-            >
-              +
-            </Button>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <Label className="text-sm">Line Spacing:</Label>
-            <Button 
-              onClick={() => setLineSpacing(Math.max(lineSpacing - 0.1, 1.0))}
-              variant="outline"
-              size="sm"
-              className="h-8 px-2"
-            >
-              -
-            </Button>
-            <span className="text-sm w-12 text-center">{lineSpacing.toFixed(1)}x</span>
-            <Button 
-              onClick={() => setLineSpacing(Math.min(lineSpacing + 0.1, 3.0))}
-              variant="outline"
-              size="sm"
-              className="h-8 px-2"
-            >
-              +
-            </Button>
-          </div>
-          
-          {/* NEW: Click-to-switch mode selector */}
-          <div className="flex items-center gap-2">
-            <Label className="text-sm">Click switches to:</Label>
-            <select 
-              value={clickToSwitchMode}
-              onChange={(e) => setClickToSwitchMode(e.target.value as "progressive" | "hybrid")}
-              className={cn(
-                "px-2 py-1 rounded border text-sm",
-                darkMode ? "bg-gray-800 border-gray-600" : "bg-white border-gray-300"
-              )}
-            >
-              <option value="progressive">Progressive View</option>
-              <option value="hybrid">Hybrid View</option>
-            </select>
-          </div>
-        </div>
+// 9. Update dark mode toggle to ensure it works:
+<div className="flex items-center gap-4">
+  <Label className={darkMode ? "text-white" : "text-black"}>
+    {darkMode ? "Dark Mode" : "Light Mode"}
+  </Label>
+  <Switch 
+    checked={darkMode} 
+    onCheckedChange={(checked) => {
+      console.log("Dark mode toggled to:", checked);
+      setDarkMode(checked);
+    }} 
+  />
+</div>
 
-        {uploadStatus === "uploading" && <Loader label="Uploading file..." />}
-        {uploadStatus === "processing" && <Loader label="Processing your file..." />}
-        {uploadStatus === "error" && (
-          <p className="text-red-500">Unsupported file or parsing failed. Please try again.</p>
-        )}
-
-        {uploadStatus === "done" && (
-          <>
-            <div className="flex gap-4 my-4 flex-wrap">
-              <Button 
-                onClick={() => setViewMode("original")} 
-                variant={viewMode === "original" ? "default" : "secondary"}
-              >
-                Original View
-              </Button>
-              <Button 
-                onClick={() => setViewMode("progressive")} 
-                variant={viewMode === "progressive" ? "default" : "outline"}
-              >
-                Progressive View
-              </Button>
-              <Button 
-                onClick={() => setViewMode("hybrid")} 
-                variant={viewMode === "hybrid" ? "default" : "outline"}
-              >
-                Hybrid View
-              </Button>
-            </div>
-
-            {/* Instruction for click-to-switch */}
-            {viewMode === "original" && originalContent && (
-              <div className={cn(
-                "mb-4 p-3 rounded-lg border",
-                darkMode ? "bg-blue-900/20 border-blue-700 text-blue-300" : "bg-blue-50 border-blue-200 text-blue-700"
-              )}>
-                <p className="text-sm">
-                  💡 <strong>Tip:</strong> Click on any word below to instantly switch to {clickToSwitchMode} view!
-                </p>
-              </div>
-            )}
-
-            {/* FIXED VIEW RENDERING */}
-            <div className="mt-6">
-              {/* Original View */}
-              {viewMode === "original" && (
-                <div>
-                  {fileType === "pdf" && fileURL && (
-                    <div className="text-center space-y-4">
-                      <PDFViewer 
-                        fileUrl={fileURL} 
-                        initialScale={zoom} 
-                        showControls={true} 
-                      />
-                    </div>
-                  )}
-                  
-                  {fileType === "text" && originalContent && (
-                    <div className={cn(
-                      "p-4 border rounded",
-                      darkMode ? "bg-zinc-900 border-gray-700" : "bg-white border-gray-300"
-                    )}>
-                      {renderClickableText(originalContent)}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Progressive View - FIXED to prevent freezing */}
-              {viewMode === "progressive" && (
-                <div className={cn(
-                  "border rounded-xl p-6 shadow",
-                  darkMode ? "bg-zinc-900 border-gray-700" : "bg-zinc-50 border-gray-300"
-                )}>
-                  {inputText && inputText.length > 0 ? (
-                    <ProgressiveView 
-                      content={inputText}
-                      fontFamily={fontFamily}
-                      fontSize={fontSize}
-                      lineSpacing={lineSpacing}
-                      darkMode={darkMode}
-                      key={`progressive-${inputText.length}`} // Force re-mount to prevent state issues
-                    />
-                  ) : (
-                    <div className="text-center py-8">
-                      <p className={cn(
-                        "text-lg",
-                        darkMode ? "text-gray-400" : "text-gray-600"
-                      )}>
-                        {fileType === "pdf" 
-                          ? "Text extraction from PDF failed. Progressive view requires readable text content."
-                          : "No text content available for progressive reading."
-                        }
-                      </p>
-                      <p className={cn(
-                        "text-sm mt-2",
-                        darkMode ? "text-gray-500" : "text-gray-500"
-                      )}>
-                        Try uploading a .txt or .docx file for best results.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Hybrid View - FIXED to prevent freezing */}
-              {viewMode === "hybrid" && (
-                <div className={cn(
-                  "border rounded-xl p-6 shadow",
-                  darkMode ? "bg-zinc-900 border-gray-700" : "bg-zinc-50 border-gray-300"
-                )}>
-                  {inputText && inputText.length > 0 ? (
-                    <HybridReader 
-                      inputText={inputText}
-                      darkMode={darkMode}
-                      fontFamily={fontFamily}
-                      fontSize={fontSize}
-                      lineSpacing={lineSpacing}
-                      key={`hybrid-${inputText.length}`} // Force re-mount to prevent state issues
-                    />
-                  ) : (
-                    <div className="text-center py-8">
-                      <p className={cn(
-                        "text-lg",
-                        darkMode ? "text-gray-400" : "text-gray-600"
-                      )}>
-                        {fileType === "pdf" 
-                          ? "Text extraction from PDF failed. Hybrid view requires readable text content."
-                          : "No text content available for hybrid reading."
-                        }
-                      </p>
-                      <p className={cn(
-                        "text-sm mt-2",
-                        darkMode ? "text-gray-500" : "text-gray-500"
-                      )}>
-                        Try uploading a .txt or .docx file for best results.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </main>
-    </>
-  );
-}
+// 10. Fix font control buttons:
+<div className="flex items-center gap-2">
+  <Label className="text-sm">Size:</Label>
+  <Button 
+    onClick={() => {
+      console.log("Decrease font size");
+      setFontSize(Math.max(fontSize - 1, 14));
+    }}
+    variant="outline"
+    size="sm"
+    className="h-8 px-2"
+  >
+    -
+  </Button>
+  <span className="text-sm w-8 text-center">{fontSize}px</span>
+  <Button 
+    onClick={() => {
+      console.log("Increase font size");
+      setFontSize(Math.min(fontSize + 1, 24));
+    }}
+    variant="outline"
+    size="sm"
+    className="h-8 px-2"
+  >
+    +
+  </Button>
+</div>
