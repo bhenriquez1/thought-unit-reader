@@ -1,7 +1,6 @@
 // components/HybridReader.tsx
 import React, { useState, useEffect, useMemo } from "react";
-import { FileText, Image, Play, Volume2, Eye, Grid, List, Download, Search, Filter, Calendar, User, Hash, X } from "lucide-react";
-import SimplePDFViewer from "./SimplePDFViewer";
+import { FileText, Image, Play, Volume2, Eye, Grid, List, Download, Search, Filter, Calendar, User, Hash, X, ZoomIn, ZoomOut, RotateCw, Download as DownloadIcon, Maximize2 } from "lucide-react";
 
 // Simple inline loader component
 const Loader: React.FC<{ label?: string }> = ({ label = "Loading..." }) => (
@@ -10,6 +9,91 @@ const Loader: React.FC<{ label?: string }> = ({ label = "Loading..." }) => (
     <p className="mt-3 text-sm text-gray-600 font-medium">{label}</p>
   </div>
 );
+
+// Simple inline PDF viewer component
+const SimplePDFViewer: React.FC<{ fileUrl: string; initialScale?: number; className?: string }> = ({ 
+  fileUrl, 
+  initialScale = 1.0,
+  className = ""
+}) => {
+  const [scale, setScale] = useState(initialScale);
+  const [rotation, setRotation] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const handleZoomIn = () => setScale(prev => Math.min(prev + 0.25, 3.0));
+  const handleZoomOut = () => setScale(prev => Math.max(prev - 0.25, 0.5));
+  const handleRotate = () => setRotation(prev => (prev + 90) % 360);
+  const toggleFullscreen = () => setIsFullscreen(!isFullscreen);
+
+  const handleDownload = () => {
+    const link = document.createElement('a');
+    link.href = fileUrl;
+    link.download = 'document.pdf';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const pdfViewerUrl = `${fileUrl}#zoom=${Math.round(scale * 100)}&view=FitH`;
+
+  return (
+    <div className={`relative w-full h-full bg-gray-50 ${className}`}>
+      {/* Toolbar */}
+      <div className="absolute top-0 left-0 right-0 z-10 bg-white border-b shadow-sm">
+        <div className="flex items-center justify-between p-2">
+          <div className="flex items-center space-x-2">
+            <button onClick={handleZoomOut} className="p-1 hover:bg-gray-100 rounded" title="Zoom Out">
+              <ZoomOut size={16} />
+            </button>
+            <span className="text-sm font-mono min-w-[60px] text-center">
+              {Math.round(scale * 100)}%
+            </span>
+            <button onClick={handleZoomIn} className="p-1 hover:bg-gray-100 rounded" title="Zoom In">
+              <ZoomIn size={16} />
+            </button>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button onClick={handleRotate} className="p-1 hover:bg-gray-100 rounded" title="Rotate">
+              <RotateCw size={16} />
+            </button>
+            <button onClick={handleDownload} className="p-1 hover:bg-gray-100 rounded" title="Download">
+              <DownloadIcon size={16} />
+            </button>
+            <button onClick={toggleFullscreen} className="p-1 hover:bg-gray-100 rounded" title="Fullscreen">
+              <Maximize2 size={16} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* PDF Viewer */}
+      <div className={`w-full transition-all duration-300 ${isFullscreen ? 'fixed inset-0 z-50 bg-white' : 'h-full pt-12'}`}>
+        <iframe
+          src={pdfViewerUrl}
+          className="w-full h-full border-0"
+          style={{
+            minHeight: isFullscreen ? '100vh' : '70vh',
+            transform: `rotate(${rotation}deg)`,
+            transformOrigin: 'center center'
+          }}
+          title="PDF Document"
+          loading="lazy"
+        />
+      </div>
+
+      {/* Fullscreen close button */}
+      {isFullscreen && (
+        <button
+          onClick={toggleFullscreen}
+          className="fixed top-4 right-4 z-60 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-70"
+          title="Exit Fullscreen"
+        >
+          ✕
+        </button>
+      )}
+    </div>
+  );
+};
 
 export interface FileData {
   name: string;
