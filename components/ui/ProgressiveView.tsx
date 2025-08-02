@@ -1,7 +1,7 @@
-// components/ui/ProgressiveView.tsx
+// components/ui/ProgressiveView.tsx - PERFORMANCE OPTIMIZED
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Button } from "./button";
 import { cn } from "../../lib/classnames";
 
@@ -14,8 +14,8 @@ interface ProgressiveViewProps {
 }
 
 /**
- * Enhanced ProgressiveView component matching the design shown in the image
- * Features thought-unit highlighting, auto-progression, and reading analytics
+ * Performance-optimized ProgressiveView component
+ * Fixed infinite re-render issues and improved responsiveness
  */
 const ProgressiveView: React.FC<ProgressiveViewProps> = ({
   content = "",
@@ -24,8 +24,9 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
   lineSpacing = 1.8,
   darkMode = false,
 }) => {
-  // Parse content into individual words for thought-unit reading
+  // Memoize word parsing to prevent recalculation on every render
   const words = useMemo(() => {
+    if (!content) return [];
     return content
       .split(/\s+/)
       .map(word => word.trim())
@@ -35,47 +36,16 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
   // State for progressive reading
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [isReading, setIsReading] = useState(false);
-  const [wpm, setWpm] = useState(200); // Words per minute
+  const [wpm, setWpm] = useState(200);
   const [showSettings, setShowSettings] = useState(false);
   
   // Refs for auto-scroll
   const currentWordRef = useRef<HTMLSpanElement>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Auto-progression effect
-  useEffect(() => {
-    if (!isReading || words.length === 0) return;
-    
-    const intervalTime = (60 * 1000) / wpm; // Convert WPM to milliseconds
-    
-    const timer = setTimeout(() => {
-      if (currentWordIndex < words.length - 1) {
-        setCurrentWordIndex(prev => prev + 1);
-      } else {
-        setIsReading(false); // Stop when we reach the end
-      }
-    }, intervalTime);
-    
-    return () => clearTimeout(timer);
-  }, [currentWordIndex, isReading, words.length, wpm]);
-  
-  // Auto-scroll to current word
-  useEffect(() => {
-    if (isReading && currentWordRef.current) {
-      currentWordRef.current.scrollIntoView({ 
-        behavior: 'smooth',
-        block: 'center'
-      });
-    }
-  }, [currentWordIndex, isReading]);
-  
-  // Calculate progress percentage
-  const progress = words.length > 0 
-    ? Math.round((currentWordIndex / (words.length - 1)) * 100) 
-    : 0;
-  
-  // Calculate time remaining
+  // Memoize time calculations to prevent constant recalculation
   const timeRemaining = useMemo(() => {
-    const wordsLeft = words.length - currentWordIndex - 1;
+    const wordsLeft = Math.max(0, words.length - currentWordIndex - 1);
     const secondsLeft = Math.ceil((wordsLeft * 60) / wpm);
     
     if (secondsLeft < 60) return `${secondsLeft}s`;
@@ -85,16 +55,97 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
     return `${minutes}m ${seconds}s`;
   }, [currentWordIndex, words.length, wpm]);
   
-  // Control functions
-  const toggleReading = () => setIsReading(!isReading);
-  const resetReading = () => {
+  // Memoize progress calculation
+  const progress = useMemo(() => {
+    if (words.length === 0) return 0;
+    return Math.round((currentWordIndex / Math.max(1, words.length - 1)) * 100);
+  }, [currentWordIndex, words.length]);
+  
+  // FIXED: Auto-progression with proper cleanup
+  useEffect(() => {
+    // Clear any existing timer
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    
+    if (!isReading || words.length === 0) return;
+    
+    const intervalTime = (60 * 1000) / wpm;
+    
+    timerRef.current = setTimeout(() => {
+      if (currentWordIndex < words.length - 1) {
+        setCurrentWordIndex(prev => prev + 1);
+      } else {
+        setIsReading(false);
+      }
+    }, intervalTime);
+    
+    // Cleanup function
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [currentWordIndex, isReading, words.length, wpm]);
+  
+  // Auto-scroll to current word with throttling
+  useEffect(() => {
+    if (isReading && currentWordRef.current) {
+      // Throttle scroll updates to prevent performance issues
+      const scrollTimer = setTimeout(() => {
+        currentWordRef.current?.scrollIntoView({ 
+          behavior: 'smooth',
+          block: 'center'
+        });
+      }, 100);
+      
+      return () => clearTimeout(scrollTimer);
+    }
+  }, [currentWordIndex, isReading]);
+  
+  // Memoized control functions to prevent recreating on every render
+  const toggleReading = useCallback(() => {
+    setIsReading(prev => !prev);
+  }, []);
+  
+  const resetReading = useCallback(() => {
     setCurrentWordIndex(0);
     setIsReading(false);
-  };
+  }, []);
   
-  const adjustWpm = (delta: number) => {
+  const adjustWpm = useCallback((delta: number) => {
     setWpm(prev => Math.max(50, Math.min(800, prev + delta)));
-  };
+  }, []);
+  
+  const toggleSettings = useCallback(() => {
+    setShowSettings(prev => !prev);
+  }, []);
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
+  
+  // Early return if no content
+  if (!content || words.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12">
+        <div className={cn(
+          "text-center",
+          darkMode ? "text-gray-400" : "text-gray-500"
+        )}>
+          <p className="text-lg mb-2">No content to display</p>
+          <p className="text-sm">Upload a document or paste text to begin progressive reading.</p>
+        </div>
+      </div>
+    );
+  }
   
   return (
     <div className="flex flex-col w-full max-w-4xl mx-auto p-6">
@@ -104,7 +155,7 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
         darkMode ? "text-yellow-300" : "text-yellow-600"
       )}>
         <span className="text-2xl mr-3">⚡</span>
-        <h2 className="text-2xl font-bold">Hybrid Reading Controls</h2>
+        <h2 className="text-2xl font-bold">Progressive Reading</h2>
       </div>
       
       {/* Control Buttons */}
@@ -129,7 +180,7 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
         </Button>
         
         <Button 
-          onClick={() => setShowSettings(!showSettings)}
+          onClick={toggleSettings}
           className="flex items-center gap-2 px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium"
         >
           ⚙️ Settings
@@ -163,9 +214,8 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
         </div>
       )}
       
-      {/* Stats Grid - Matching the image layout */}
+      {/* Stats Grid */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        {/* Progress */}
         <div className="bg-blue-100 dark:bg-blue-900/30 p-4 rounded-lg text-center">
           <div className="text-3xl font-bold text-blue-600 dark:text-blue-300">
             {progress}%
@@ -175,7 +225,6 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
           </div>
         </div>
         
-        {/* Current Word */}
         <div className="bg-green-100 dark:bg-green-900/30 p-4 rounded-lg text-center">
           <div className="text-3xl font-bold text-green-600 dark:text-green-300">
             {currentWordIndex + 1}
@@ -185,7 +234,6 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
           </div>
         </div>
         
-        {/* WPM */}
         <div className="bg-purple-100 dark:bg-purple-900/30 p-4 rounded-lg text-center">
           <div className="text-3xl font-bold text-purple-600 dark:text-purple-300">
             {wpm}
@@ -195,7 +243,6 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
           </div>
         </div>
         
-        {/* Time Left */}
         <div className="bg-orange-100 dark:bg-orange-900/30 p-4 rounded-lg text-center">
           <div className="text-3xl font-bold text-orange-600 dark:text-orange-300">
             {timeRemaining}
@@ -216,20 +263,27 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
         </span>
       </div>
       
-      {/* Main Reading Area */}
+      {/* Main Reading Area - OPTIMIZED */}
       <div 
         className={cn(
-          "p-8 rounded-lg shadow-inner mb-6 min-h-[200px] flex flex-wrap items-center justify-center",
+          "p-8 rounded-lg shadow-inner mb-6 min-h-[300px] flex flex-wrap items-center justify-center",
           darkMode ? "bg-gray-900" : "bg-white"
         )}
         style={{ 
           fontFamily,
-          fontSize: `${fontSize + 4}px`, // Slightly larger for main reading
+          fontSize: `${fontSize + 4}px`,
           lineHeight: lineSpacing
         }}
       >
-        {words.length > 0 ? (
-          words.map((word, index) => (
+        {words.map((word, index) => {
+          // Performance optimization: only render words near current position
+          const isVisible = Math.abs(index - currentWordIndex) <= 50; // Show 50 words before/after current
+          
+          if (!isVisible && index !== currentWordIndex) {
+            return null; // Don't render distant words
+          }
+          
+          return (
             <span 
               key={index}
               ref={index === currentWordIndex ? currentWordRef : null}
@@ -244,15 +298,8 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
             >
               {word}
             </span>
-          ))
-        ) : (
-          <div className={cn(
-            "text-center",
-            darkMode ? "text-gray-400" : "text-gray-500"
-          )}>
-            No content to display. Upload a document or paste text to begin.
-          </div>
-        )}
+          );
+        })}
       </div>
       
       {/* Progress Bar */}

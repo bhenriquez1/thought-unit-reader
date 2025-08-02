@@ -1,4 +1,4 @@
-// pages/index.tsx - FIXED VERSION
+// pages/index.tsx - PERFORMANCE FIXED + CLICK-TO-SWITCH
 "use client";
 
 import Head from "next/head";
@@ -68,7 +68,7 @@ export default function Home() {
   
   // IMPORTANT: Store the actual text content here
   const [inputText, setInputText] = useState<string>("");
-  const [originalContent, setOriginalContent] = useState<string>(""); // New state for original content
+  const [originalContent, setOriginalContent] = useState<string>(""); 
   
   const [aiEnabled, setAiEnabled] = useState<boolean>(true);
   const [darkMode, setDarkMode] = useState<boolean>(false);
@@ -77,6 +77,9 @@ export default function Home() {
   const [fontSize, setFontSize] = useState<number>(18);
   const [fontFamily, setFontFamily] = useState<string>("Arial, sans-serif");
   const [lineSpacing, setLineSpacing] = useState<number>(1.8);
+  
+  // NEW: Click-to-switch preferences
+  const [clickToSwitchMode, setClickToSwitchMode] = useState<"progressive" | "hybrid">("progressive");
   
   const fontOptions = [
     { label: "Arial", value: "Arial, sans-serif" },
@@ -104,7 +107,7 @@ export default function Home() {
     document.title = "Thought-Unit Reader";
   }, []);
 
-  // Updated handleFileChange with better text extraction
+  // FIXED: Memoized handleFileChange to prevent infinite loops
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -124,9 +127,6 @@ export default function Home() {
 
       if (isPDF) {
         setFileType("pdf");
-        setUploadStatus("done");
-        
-        // For PDFs, we should try to extract text for Progressive/Hybrid views
         setUploadStatus("processing");
         try {
           const { parsedUnits, original } = await parseBookWithChapters(uploadedFile);
@@ -171,10 +171,8 @@ export default function Home() {
               
             const generated = generateProgressiveReadingHTML(rawText);
             setParsedHTML(generated);
-            setUploadStatus("done");
-          } else {
-            throw new Error("Failed to parse document units");
           }
+          setUploadStatus("done");
         } catch (err) {
           console.error("Parsing error:", err);
           setUploadStatus("error");
@@ -186,10 +184,59 @@ export default function Home() {
       console.error("File handling error:", err);
       setUploadStatus("error");
     }
-  }, []);
+  }, []); // Empty dependency array to prevent infinite loops
 
   const handleZoom = (delta: number) => {
     setZoom((z) => Math.max(0.5, Math.min(3, z + delta)));
+  };
+
+  // NEW: Handle word click in original view
+  const handleWordClick = useCallback((clickedWord: string, wordIndex: number) => {
+    // Switch to the preferred view mode
+    setViewMode(clickToSwitchMode);
+    
+    // Optional: Could store the clicked word to highlight it in the new view
+    console.log(`Clicked word: "${clickedWord}" at index ${wordIndex}, switching to ${clickToSwitchMode} view`);
+  }, [clickToSwitchMode]);
+
+  // NEW: Render clickable text for original view
+  const renderClickableText = (text: string) => {
+    if (!text) return null;
+    
+    const words = text.split(/(\s+)/); // Split but keep spaces
+    
+    return (
+      <pre 
+        className="whitespace-pre-wrap"
+        style={{ 
+          fontFamily: fontFamily,
+          fontSize: `${fontSize}px`,
+          lineHeight: lineSpacing
+        }}
+      >
+        {words.map((word, index) => {
+          const isSpace = /^\s+$/.test(word);
+          
+          if (isSpace) {
+            return word; // Return spaces as-is
+          }
+          
+          return (
+            <span
+              key={index}
+              className={cn(
+                "cursor-pointer hover:bg-yellow-200 dark:hover:bg-yellow-600 hover:text-black transition-colors duration-150 rounded px-1",
+                "hover:shadow-sm"
+              )}
+              onClick={() => handleWordClick(word, index)}
+              title={`Click to switch to ${clickToSwitchMode} view`}
+            >
+              {word}
+            </span>
+          );
+        })}
+      </pre>
+    );
   };
 
   // Debug function to check what content we have
@@ -258,7 +305,7 @@ export default function Home() {
           </div>
         </div>
         
-        {/* Font controls */}
+        {/* Font controls + Click-to-switch setting */}
         <div className="mb-6 flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <Label className="text-sm">Font:</Label>
@@ -319,6 +366,22 @@ export default function Home() {
               +
             </Button>
           </div>
+          
+          {/* NEW: Click-to-switch mode selector */}
+          <div className="flex items-center gap-2">
+            <Label className="text-sm">Click switches to:</Label>
+            <select 
+              value={clickToSwitchMode}
+              onChange={(e) => setClickToSwitchMode(e.target.value as "progressive" | "hybrid")}
+              className={cn(
+                "px-2 py-1 rounded border text-sm",
+                darkMode ? "bg-gray-800 border-gray-600" : "bg-white border-gray-300"
+              )}
+            >
+              <option value="progressive">Progressive View</option>
+              <option value="hybrid">Hybrid View</option>
+            </select>
+          </div>
         </div>
 
         {uploadStatus === "uploading" && <Loader label="Uploading file..." />}
@@ -350,6 +413,18 @@ export default function Home() {
               </Button>
             </div>
 
+            {/* Instruction for click-to-switch */}
+            {viewMode === "original" && originalContent && (
+              <div className={cn(
+                "mb-4 p-3 rounded-lg border",
+                darkMode ? "bg-blue-900/20 border-blue-700 text-blue-300" : "bg-blue-50 border-blue-200 text-blue-700"
+              )}>
+                <p className="text-sm">
+                  💡 <strong>Tip:</strong> Click on any word below to instantly switch to {clickToSwitchMode} view!
+                </p>
+              </div>
+            )}
+
             {/* FIXED VIEW RENDERING */}
             <div className="mt-6">
               {/* Original View */}
@@ -370,22 +445,13 @@ export default function Home() {
                       "p-4 border rounded",
                       darkMode ? "bg-zinc-900 border-gray-700" : "bg-white border-gray-300"
                     )}>
-                      <pre 
-                        className="whitespace-pre-wrap"
-                        style={{ 
-                          fontFamily: fontFamily,
-                          fontSize: `${fontSize}px`,
-                          lineHeight: lineSpacing
-                        }}
-                      >
-                        {originalContent}
-                      </pre>
+                      {renderClickableText(originalContent)}
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Progressive View */}
+              {/* Progressive View - FIXED to prevent freezing */}
               {viewMode === "progressive" && (
                 <div className={cn(
                   "border rounded-xl p-6 shadow",
@@ -398,6 +464,7 @@ export default function Home() {
                       fontSize={fontSize}
                       lineSpacing={lineSpacing}
                       darkMode={darkMode}
+                      key={`progressive-${inputText.length}`} // Force re-mount to prevent state issues
                     />
                   ) : (
                     <div className="text-center py-8">
@@ -421,7 +488,7 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Hybrid View */}
+              {/* Hybrid View - FIXED to prevent freezing */}
               {viewMode === "hybrid" && (
                 <div className={cn(
                   "border rounded-xl p-6 shadow",
@@ -434,6 +501,7 @@ export default function Home() {
                       fontFamily={fontFamily}
                       fontSize={fontSize}
                       lineSpacing={lineSpacing}
+                      key={`hybrid-${inputText.length}`} // Force re-mount to prevent state issues
                     />
                   ) : (
                     <div className="text-center py-8">
