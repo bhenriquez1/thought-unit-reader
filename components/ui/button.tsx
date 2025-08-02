@@ -1,50 +1,109 @@
-// components/ui/button.tsx
-import * as React from "react";
-import { cva, type VariantProps } from "class-variance-authority";
-import { cn } from "../../lib/classnames"; // Changed from @/lib/classnames to relative path
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { Button } from "./ui/button"; // Correct relative import for Button
+import { cn } from "../lib/classnames"; // Correct relative import for classnames utility
 
-const buttonVariants = cva(
-  "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 ring-offset-background",
-  {
-    variants: {
-      variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
-        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-        outline: "border border-input hover:bg-accent hover:text-accent-foreground",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        link: "underline-offset-4 hover:underline text-primary",
-      },
-      size: {
-        default: "h-10 py-2 px-4",
-        sm: "h-9 px-3 rounded-md",
-        lg: "h-11 px-8 rounded-md",
-        icon: "h-10 w-10",
-      },
-    },
-    defaultVariants: {
-      variant: "default",
-      size: "default",
-    },
-  }
-);
+interface ProgressiveViewProps {
+  content: string;
+  fontFamily?: string;
+  fontSize?: number;
+  lineSpacing?: number;
+  darkMode?: boolean;
+}
 
-export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {}
+/**
+ * ProgressiveView component for displaying text in thought units
+ * with alternating styling for improved readability for dyslexic users
+ */
+const ProgressiveView: React.FC<ProgressiveViewProps> = ({
+  content = "",
+  fontFamily = "Arial, sans-serif",
+  fontSize = 18,
+  lineSpacing = 1.8,
+  darkMode = false,
+}) => {
+  // Parse content into sentences/thought units
+  const sentences = useMemo(() => {
+    return content
+      .split(/(?<=[.!?])\s+(?=[A-Z0-9])/)
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence.length > 0);
+  }, [content]);
 
-const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, ...props }, ref) => {
-    return (
-      <button
-        className={cn(buttonVariants({ variant, size }), className)}
-        ref={ref}
-        {...props}
-      />
-    );
-  }
-);
+  // State for current position and auto-scroll
+  const [currentSentence, setCurrentSentence] = useState(0);
+  const [autoScroll, setAutoScroll] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-Button.displayName = "Button";
+  useEffect(() => {
+    if (autoScroll && containerRef.current) {
+      const sentenceElement = containerRef.current.querySelector(
+        `[data-index="${currentSentence}"]`
+      );
+      sentenceElement?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [currentSentence, autoScroll]);
 
-export { Button, buttonVariants };
+  const handleNextSentence = () => {
+    setCurrentSentence((prev) => Math.min(prev + 1, sentences.length - 1));
+  };
+
+  const handlePreviousSentence = () => {
+    setCurrentSentence((prev) => Math.max(prev - 1, 0));
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className={cn(
+        "p-4 border rounded-md overflow-y-auto max-h-[80vh]",
+        darkMode ? "bg-zinc-900 border-gray-700 text-white" : "bg-white border-gray-300 text-black"
+      )}
+      style={{
+        fontFamily,
+        fontSize: `${fontSize}px`,
+        lineHeight: lineSpacing,
+      }}
+    >
+      {sentences.map((sentence, index) => (
+        <p
+          key={index}
+          data-index={index}
+          className={cn(
+            "mb-4 transition-opacity",
+            index === currentSentence ? "opacity-100 font-bold" : "opacity-50"
+          )}
+        >
+          {sentence}
+        </p>
+      ))}
+
+      <div className="flex justify-between mt-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handlePreviousSentence}
+          disabled={currentSentence === 0}
+        >
+          Previous
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleNextSentence}
+          disabled={currentSentence === sentences.length - 1}
+        >
+          Next
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setAutoScroll((prev) => !prev)}
+        >
+          {autoScroll ? "Stop Auto-Scroll" : "Enable Auto-Scroll"}
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+export default ProgressiveView;
