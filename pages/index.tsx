@@ -8,8 +8,9 @@ import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 import Loader from "../components/ui/loader";
+import { cn } from "../lib/classnames";
 
-// Use dynamic import with proper loading state for the PDF Viewer
+// Use dynamic import for PDFViewer with proper loading state
 const PDFViewer = dynamic(() => import("../components/PDFViewer"), {
   ssr: false,
   loading: () => <Loader label="Loading PDF viewer..." />
@@ -19,6 +20,12 @@ const PDFViewer = dynamic(() => import("../components/PDFViewer"), {
 const HybridReader = dynamic(() => import("../components/HybridReader"), { 
   ssr: false,
   loading: () => <Loader label="Loading reader..." />
+});
+
+// Use dynamic import for ProgressiveView
+const ProgressiveView = dynamic(() => import("../components/ProgressiveView"), {
+  ssr: false,
+  loading: () => <Loader label="Loading progressive view..." />
 });
 
 type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
@@ -65,7 +72,41 @@ export default function Home() {
   const [numPages, setNumPages] = useState<number>(0);
   const [zoom, setZoom] = useState<number>(1.25);
   const [inputText, setInputText] = useState<string>("");
-  const [enabled, setEnabled] = useState<boolean>(true);
+  const [aiEnabled, setAiEnabled] = useState<boolean>(true);
+  
+  // Dark mode state
+  const [darkMode, setDarkMode] = useState<boolean>(false);
+
+  // Font settings for dyslexia-friendly display
+  const [fontSize, setFontSize] = useState<number>(18);
+  const [fontFamily, setFontFamily] = useState<string>("Arial, sans-serif");
+  const [lineSpacing, setLineSpacing] = useState<number>(1.8);
+  
+  // Font options for selection
+  const fontOptions = [
+    { label: "Arial", value: "Arial, sans-serif" },
+    { label: "Verdana", value: "Verdana, sans-serif" },
+    { label: "Comic Sans", value: '"Comic Sans MS", cursive' },
+    { label: "OpenDyslexic", value: "OpenDyslexic, sans-serif" },
+    { label: "Helvetica", value: "Helvetica, Arial, sans-serif" },
+  ];
+  
+  // Toggle dark mode
+  const toggleDarkMode = () => {
+    setDarkMode(!darkMode);
+  };
+
+  // Effect to configure the document when dark mode changes
+  useEffect(() => {
+    // Update document body class for global styling
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
+    }
+  }, [darkMode]);
 
   useEffect(() => {
     document.title = "Thought-Unit Reader";
@@ -129,6 +170,19 @@ export default function Home() {
     setZoom((z) => Math.max(0.5, Math.min(3, z + delta)));
   };
 
+  const goToPage = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const pageInput = form.elements.namedItem("page") as HTMLInputElement;
+    
+    if (pageInput && pageInput.value) {
+      const page = parseInt(pageInput.value);
+      if (!isNaN(page) && page >= 1 && page <= numPages) {
+        setPageNumber(page);
+      }
+    }
+  };
+
   return (
     <>
       <Head>
@@ -141,23 +195,105 @@ export default function Home() {
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <main className="p-6 max-w-6xl mx-auto min-h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white">
+      <main className={cn(
+        "p-6 max-w-6xl mx-auto min-h-screen transition-colors duration-200",
+        darkMode 
+          ? "bg-zinc-950 text-white" 
+          : "bg-white text-zinc-900"
+      )}>
         <header className="mb-6 text-center">
           <h1 className="text-4xl font-bold text-pink-500">Thought-Unit Reader</h1>
-          <p className="text-sm text-gray-400">Read deeper, faster, and smarter.</p>
+          <p className={cn(
+            "text-sm",
+            darkMode ? "text-gray-300" : "text-gray-500"
+          )}>
+            Read deeper, faster, and smarter.
+          </p>
         </header>
 
+        <div className="mb-6 flex items-center gap-4 flex-wrap justify-between">
+          <div className="flex items-center gap-4">
+            <Label className={darkMode ? "text-white" : "text-black"}>Enable AI Mode</Label>
+            <Switch checked={aiEnabled} onCheckedChange={setAiEnabled} />
+            <Button onClick={() => fileInputRef.current?.click()}>Upload Book</Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".txt,.pdf,.docx"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <Label className={darkMode ? "text-white" : "text-black"}>
+              {darkMode ? "Dark Mode" : "Light Mode"}
+            </Label>
+            <Switch checked={darkMode} onCheckedChange={toggleDarkMode} />
+          </div>
+        </div>
+        
+        {/* Font controls */}
         <div className="mb-6 flex items-center gap-4 flex-wrap">
-          <Label>Enable AI Mode</Label>
-          <Switch checked={enabled} onCheckedChange={setEnabled} />
-          <Button onClick={() => fileInputRef.current?.click()}>Upload Book</Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".txt,.pdf,.docx"
-            className="hidden"
-            onChange={handleFileChange}
-          />
+          <div className="flex items-center gap-2">
+            <Label className="text-sm">Font:</Label>
+            <select 
+              value={fontFamily}
+              onChange={(e) => setFontFamily(e.target.value)}
+              className={cn(
+                "px-2 py-1 rounded border text-sm",
+                darkMode ? "bg-gray-800 border-gray-600" : "bg-white border-gray-300"
+              )}
+            >
+              {fontOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Label className="text-sm">Size:</Label>
+            <Button 
+              onClick={() => setFontSize(Math.max(fontSize - 1, 14))}
+              variant="outline"
+              size="sm"
+              className="h-8 px-2"
+            >
+              -
+            </Button>
+            <span className="text-sm w-8 text-center">{fontSize}px</span>
+            <Button 
+              onClick={() => setFontSize(Math.min(fontSize + 1, 24))}
+              variant="outline"
+              size="sm"
+              className="h-8 px-2"
+            >
+              +
+            </Button>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Label className="text-sm">Line Spacing:</Label>
+            <Button 
+              onClick={() => setLineSpacing(Math.max(lineSpacing - 0.1, 1.0))}
+              variant="outline"
+              size="sm"
+              className="h-8 px-2"
+            >
+              -
+            </Button>
+            <span className="text-sm w-12 text-center">{lineSpacing.toFixed(1)}x</span>
+            <Button 
+              onClick={() => setLineSpacing(Math.min(lineSpacing + 0.1, 3.0))}
+              variant="outline"
+              size="sm"
+              className="h-8 px-2"
+            >
+              +
+            </Button>
+          </div>
         </div>
 
         {uploadStatus === "uploading" && <Loader label="Uploading file..." />}
@@ -169,12 +305,27 @@ export default function Home() {
         {uploadStatus === "done" && (
           <>
             <div className="flex gap-4 my-4 flex-wrap">
-              <Button onClick={() => setViewMode("original")} variant={viewMode === "original" ? "default" : "secondary"}>Original View</Button>
-              <Button onClick={() => setViewMode("progressive")} variant={viewMode === "progressive" ? "default" : "outline"}>Progressive View</Button>
-              <Button onClick={() => setViewMode("hybrid")} variant={viewMode === "hybrid" ? "default" : "outline"}>Hybrid View</Button>
+              <Button 
+                onClick={() => setViewMode("original")} 
+                variant={viewMode === "original" ? "default" : "secondary"}
+              >
+                Original View
+              </Button>
+              <Button 
+                onClick={() => setViewMode("progressive")} 
+                variant={viewMode === "progressive" ? "default" : "outline"}
+              >
+                Progressive View
+              </Button>
+              <Button 
+                onClick={() => setViewMode("hybrid")} 
+                variant={viewMode === "hybrid" ? "default" : "outline"}
+              >
+                Hybrid View
+              </Button>
             </div>
 
-            {/* Updated PDF Viewer */}
+            {/* Original PDF Viewer */}
             {viewMode === "original" && fileType === "pdf" && (
               <div className="text-center space-y-4">
                 {fileURL ? (
@@ -184,24 +335,57 @@ export default function Home() {
                     showControls={true} 
                   />
                 ) : (
-                  <div className="p-8 border rounded text-red-500">
+                  <div className={cn(
+                    "p-8 border rounded",
+                    darkMode ? "border-gray-700 text-red-400" : "border-gray-300 text-red-500"
+                  )}>
                     No PDF file loaded
                   </div>
                 )}
               </div>
             )}
 
+            {/* Original Text View */}
+            {viewMode === "original" && fileType === "text" && (
+              <div className={cn(
+                "p-4 border rounded",
+                darkMode ? "bg-zinc-900 border-gray-700" : "bg-white border-gray-300"
+              )}>
+                <pre 
+                  className="whitespace-pre-wrap"
+                  style={{ 
+                    fontFamily: fontFamily,
+                    fontSize: `${fontSize}px`,
+                    lineHeight: lineSpacing
+                  }}
+                >
+                  {inputText}
+                </pre>
+              </div>
+            )}
+
             {/* Progressive Text View */}
-            {viewMode === "progressive" && fileType === "text" && (
-              <div
-                className="prose prose-sm sm:prose-base max-w-none dark:prose-invert"
-                dangerouslySetInnerHTML={{ __html: parsedHTML }}
-              />
+            {viewMode === "progressive" && inputText && (
+              <div className={cn(
+                "border rounded-xl p-6 shadow",
+                darkMode ? "bg-zinc-900 border-gray-700" : "bg-zinc-50 border-gray-300"
+              )}>
+                <ProgressiveView 
+                  content={inputText}
+                  fontFamily={fontFamily}
+                  fontSize={fontSize}
+                  lineSpacing={lineSpacing}
+                  darkMode={darkMode}
+                />
+              </div>
             )}
 
             {/* Hybrid Thought-Unit View */}
             {viewMode === "hybrid" && inputText && (
-              <div className="border rounded-xl p-6 shadow bg-zinc-50 dark:bg-zinc-900">
+              <div className={cn(
+                "border rounded-xl p-6 shadow",
+                darkMode ? "bg-zinc-900 border-gray-700" : "bg-zinc-50 border-gray-300"
+              )}>
                 <HybridReader inputText={inputText} />
               </div>
             )}
