@@ -4,32 +4,72 @@ import React, { useState, useEffect } from "react";
 import { Button } from "../components/ui/button";
 import Loader from "../components/ui/loader";
 
-// Import our simplified PDF handler to configure PDF.js
-import { configurePdfjs } from "../lib/pdfjs-handler";
-
-// IMPORTANT: We need to create a simplified inline version
-// instead of importing from a file that doesn't exist yet
+// A more reliable PDF viewer component that uses iframe for PDF viewing
 const SimplePdfViewer: React.FC<{
   fileUrl: string;
   width?: string;
   height?: string;
-  initialScale?: number;
 }> = ({ 
   fileUrl, 
   width = "100%", 
-  height = "100%",
-  initialScale = 1.0 // Not directly used with iframe
+  height = "100%"
 }) => {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Simple check if the PDF URL is valid
+    if (fileUrl) {
+      const checkUrl = async () => {
+        try {
+          // For blob URLs, we can't really check them with fetch
+          if (fileUrl.startsWith('blob:')) {
+            setLoading(false);
+            return;
+          }
+          
+          const response = await fetch(fileUrl, { method: 'HEAD' });
+          if (!response.ok) {
+            setError(`Failed to load PDF (Status: ${response.status})`);
+          }
+          setLoading(false);
+        } catch (err) {
+          console.error("Error checking PDF URL:", err);
+          // Don't set error for blob URLs as they can't be fetched directly
+          if (!fileUrl.startsWith('blob:')) {
+            setError("Failed to access PDF");
+          }
+          setLoading(false);
+        }
+      };
+      
+      checkUrl();
+    }
+  }, [fileUrl]);
+
+  if (loading) {
+    return <Loader label="Loading PDF..." />;
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center w-full h-full border rounded bg-red-50 dark:bg-red-900/20 p-4">
+        <p className="text-red-600 dark:text-red-400">{error}</p>
+      </div>
+    );
+  }
+
   return (
     <iframe 
-      src={fileUrl} 
+      src={fileUrl}
       width={width}
       height={height}
+      className="w-full h-full border-0 rounded"
       style={{ 
-        border: '1px solid #ccc', 
-        borderRadius: '4px'
+        backgroundColor: "#f8f9fa",
       }}
       title="PDF Document"
+      sandbox="allow-same-origin allow-scripts"
     />
   );
 };
@@ -41,35 +81,13 @@ interface PDFViewerProps {
   showControls?: boolean;
 }
 
-// Main component using inline SimplePdfViewer
+// Main component using SimplePdfViewer
 const PDFViewer: React.FC<PDFViewerProps> = ({ 
   fileUrl, 
   initialScale = 1.0, 
   showControls = true 
 }) => {
   const [zoom, setZoom] = useState<number>(initialScale);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  
-  // Set up PDF.js on mount
-  useEffect(() => {
-    configurePdfjs();
-    
-    // Set loading state
-    if (fileUrl) {
-      const img = new Image();
-      img.onload = () => setLoading(false);
-      img.onerror = () => {
-        setError("Failed to load PDF preview");
-        setLoading(false);
-      };
-      // Just to trigger load event - not actually used
-      img.src = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
-      
-      // Simulate loading delay
-      setTimeout(() => setLoading(false), 1000);
-    }
-  }, [fileUrl]);
   
   const changeScale = (delta: number) => {
     setZoom(prevScale => {
@@ -78,22 +96,8 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
     });
   };
   
-  // Handle error state
-  if (error) {
-    return (
-      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-        {error}
-      </div>
-    );
-  }
-  
-  // Handle loading state
-  if (loading) {
-    return <Loader label="Loading PDF..." />;
-  }
-  
   return (
-    <div className="flex flex-col items-center">
+    <div className="flex flex-col items-center w-full">
       {showControls && (
         <div className="flex flex-wrap gap-2 mb-4 w-full justify-center">
           <Button 
@@ -101,7 +105,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
             variant="outline"
             size="sm"
           >
-            Zoom Out
+            ➖ Zoom Out
           </Button>
           
           <span className="px-3 py-2 text-sm">
@@ -113,7 +117,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
             variant="outline"
             size="sm"
           >
-            Zoom In
+            ➕ Zoom In
           </Button>
         </div>
       )}
@@ -122,14 +126,15 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
         height: '70vh', 
         overflow: 'hidden',
         border: '1px solid #ccc',
-        borderRadius: '4px'
+        borderRadius: '4px',
+        transform: `scale(${zoom})`,
+        transformOrigin: 'center top',
+        transition: 'transform 0.2s ease-in-out'
       }}>
-        {/* Use the inline SimplePdfViewer */}
         <SimplePdfViewer 
           fileUrl={fileUrl}
           width="100%"
           height="100%"
-          initialScale={zoom}
         />
       </div>
     </div>
