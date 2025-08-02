@@ -6,6 +6,10 @@ import { Button } from "../components/ui/button"; // Using relative import to fi
 import { ScrollArea } from "../components/ui/scroll-area"; // Using relative import to fix path issues
 import Loader from "../components/ui/loader"; // Using relative import to fix path issues
 
+// Use standard HTML label instead of Label component to avoid import issues
+// If you have the Label component, you can import it instead:
+// import { Label } from "../components/ui/label"; 
+
 // Import utilities with correct paths
 import {
   parseBookWithChapters,
@@ -647,7 +651,8 @@ export default function HybridReader({ inputText }: { inputText?: string }) {
 
       <div className="flex justify-between items-center mb-6">
         <div>
-          <Label className="block mb-2">Upload a file (PDF, DOCX, or TXT):</Label>
+          {/* Using a standard HTML label instead of Label component */}
+          <label className="block mb-2">Upload a file (PDF, DOCX, or TXT):</label>
           <input
             type="file"
             accept=".pdf,.docx,.txt"
@@ -703,7 +708,7 @@ export default function HybridReader({ inputText }: { inputText?: string }) {
 
       <div className="flex gap-4 mb-6">
         <div className="flex items-center gap-2">
-          <Label className="text-sm">Font:</Label>
+          <label className="text-sm">Font:</label>
           <select 
             value={fontFamily}
             onChange={(e) => setFontFamily(e.target.value)}
@@ -721,7 +726,7 @@ export default function HybridReader({ inputText }: { inputText?: string }) {
         </div>
         
         <div className="flex items-center gap-2">
-          <Label className="text-sm">Size:</Label>
+          <label className="text-sm">Size:</label>
           <Button 
             onClick={() => setFontSize(Math.max(fontSize - 1, 14))}
             variant="outline"
@@ -742,7 +747,7 @@ export default function HybridReader({ inputText }: { inputText?: string }) {
         </div>
         
         <div className="flex items-center gap-2">
-          <Label className="text-sm">Spacing:</Label>
+          <label className="text-sm">Spacing:</label>
           <Button 
             onClick={() => setLineSpacing(Math.max(lineSpacing - 0.1, 1.0))}
             variant="outline"
