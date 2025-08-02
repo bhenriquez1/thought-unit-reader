@@ -22,8 +22,8 @@ const HybridReader = dynamic(() => import("@/components/HybridReader"), {
   loading: () => <Loader label="Loading reader..." />,
 });
 
-// Dynamic import for ProgressiveView
-const ProgressiveView = dynamic(() => import("@/components/progressiveview"), {
+// Dynamic import for ProgressiveView — FIXED CASE
+const ProgressiveView = dynamic(() => import("@/components/ProgressiveView"), {
   ssr: false,
   loading: () => <Loader label="Loading progressive view..." />,
 });
@@ -164,7 +164,15 @@ export default function Home() {
 
         {/* Render Modes */}
         {viewMode === "original" && fileType === "pdf" && <PDFViewer fileUrl={fileURL} />}
-        {viewMode === "progressive" && <ProgressiveView content={inputText} fontFamily={fontFamily} fontSize={fontSize} lineSpacing={lineSpacing} darkMode={darkMode} />}
+        {viewMode === "progressive" && (
+          <ProgressiveView
+            content={inputText}
+            fontFamily={fontFamily}
+            fontSize={fontSize}
+            lineSpacing={lineSpacing}
+            darkMode={darkMode}
+          />
+        )}
         {viewMode === "hybrid" && <HybridReader inputText={inputText} />}
       </main>
     </>
