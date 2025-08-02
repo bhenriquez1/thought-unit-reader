@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { Button } from "@/components/ui/button"; // ✅ fixed import path
-import { cn } from "@/lib/utils"; // ✅ standard utils location
+import { Button } from "@/components/ui/button"; // ✅ uses alias from tsconfig.json
+import { cn } from "@/lib/utils"; // ✅ standard utils alias
 
 interface ProgressiveViewProps {
   content: string;
@@ -19,6 +19,7 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
   lineSpacing = 1.8,
   darkMode = false,
 }) => {
+  // Parse content into sentences/thought units
   const sentences = useMemo(() => {
     return content
       .split(/(?<=[.!?])\s+(?=[A-Z0-9])/)
@@ -34,6 +35,7 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const currentRef = useRef<HTMLDivElement>(null);
 
+  // Auto-scroll effect
   useEffect(() => {
     if (!autoScroll || sentences.length === 0) return;
     const timer = setTimeout(() => {
@@ -46,6 +48,7 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
     return () => clearTimeout(timer);
   }, [currentSentence, autoScroll, sentences.length, scrollInterval]);
 
+  // Scroll into view
   useEffect(() => {
     if (autoScroll && currentRef.current) {
       currentRef.current.scrollIntoView({
@@ -55,6 +58,7 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
     }
   }, [currentSentence, autoScroll]);
 
+  // Background color
   const getBackgroundClass = (index: number) => {
     if (!alternateColors) return "bg-gray-50 dark:bg-gray-800";
     return index % 2 === 0
@@ -62,24 +66,24 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
       : "bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-400";
   };
 
+  // Progress percentage
   const progress =
     sentences.length > 0
       ? Math.round((currentSentence / (sentences.length - 1)) * 100)
       : 0;
 
+  // Change scroll speed
   const changeScrollSpeed = (delta: number) => {
     setScrollInterval((prev) =>
       Math.max(1000, Math.min(10000, prev + delta))
     );
   };
 
-  const renderSpeed = () => {
-    return (scrollInterval / 1000).toFixed(1) + "s";
-  };
+  const renderSpeed = () => (scrollInterval / 1000).toFixed(1) + "s";
 
   return (
     <div className="flex flex-col w-full max-w-4xl mx-auto p-4">
-      {/* Controls Panel */}
+      {/* Controls */}
       <div
         className={cn(
           "bg-pink-50 rounded-lg p-4 mb-6 shadow-sm",
@@ -135,6 +139,24 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
           </div>
         </div>
 
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-sm">Alternate Colors:</span>
+            <button
+              onClick={() => setAlternateColors(!alternateColors)}
+              className={`w-10 h-5 rounded-full relative ${
+                alternateColors ? "bg-green-500" : "bg-gray-300"
+              }`}
+            >
+              <span
+                className={`absolute w-4 h-4 rounded-full bg-white top-0.5 transition-all ${
+                  alternateColors ? "left-5" : "left-1"
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
         {/* Progress bar */}
         <div
           className={cn(
@@ -187,7 +209,8 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
                 fontFamily,
                 fontSize: `${fontSize}px`,
                 lineHeight: lineSpacing,
-                opacity: autoScroll && index !== currentSentence ? 0.7 : 1,
+                opacity:
+                  autoScroll && index !== currentSentence ? 0.7 : 1,
               }}
             >
               {sentence}
@@ -200,12 +223,12 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
               darkMode ? "text-gray-400" : "text-gray-500"
             )}
           >
-            No content to display.
+            No content to display. Upload a document or paste text to begin.
           </div>
         )}
       </div>
 
-      {/* Navigation buttons */}
+      {/* Navigation */}
       <div className="flex justify-between mt-4">
         <Button
           onClick={() => {
