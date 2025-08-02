@@ -1,5 +1,3 @@
-// In your pages/index.tsx file:
-
 "use client";
 
 import Head from "next/head";
@@ -131,8 +129,6 @@ export default function Home() {
     setZoom((z) => Math.max(0.5, Math.min(3, z + delta)));
   };
 
-  // Rest of your component remains the same...
-
   return (
     <>
       <Head>
@@ -146,26 +142,71 @@ export default function Home() {
       </Head>
 
       <main className="p-6 max-w-6xl mx-auto min-h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white">
-        {/* Header and UI remain the same */}
-        
-        {/* Updated PDF Viewer section */}
-        {viewMode === "original" && fileType === "pdf" && (
-          <div className="text-center space-y-4">
-            {fileURL ? (
-              <PDFViewer 
-                fileUrl={fileURL} 
-                initialScale={zoom} 
-                showControls={true} 
-              />
-            ) : (
-              <div className="p-8 border rounded text-red-500">
-                No PDF file loaded
-              </div>
-            )}
-          </div>
+        <header className="mb-6 text-center">
+          <h1 className="text-4xl font-bold text-pink-500">Thought-Unit Reader</h1>
+          <p className="text-sm text-gray-400">Read deeper, faster, and smarter.</p>
+        </header>
+
+        <div className="mb-6 flex items-center gap-4 flex-wrap">
+          <Label>Enable AI Mode</Label>
+          <Switch checked={enabled} onCheckedChange={setEnabled} />
+          <Button onClick={() => fileInputRef.current?.click()}>Upload Book</Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt,.pdf,.docx"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+        </div>
+
+        {uploadStatus === "uploading" && <Loader label="Uploading file..." />}
+        {uploadStatus === "processing" && <Loader label="Processing your file..." />}
+        {uploadStatus === "error" && (
+          <p className="text-red-500">Unsupported file or parsing failed. Please try again.</p>
         )}
 
-        {/* Rest of your component remains the same */}
+        {uploadStatus === "done" && (
+          <>
+            <div className="flex gap-4 my-4 flex-wrap">
+              <Button onClick={() => setViewMode("original")} variant={viewMode === "original" ? "default" : "secondary"}>Original View</Button>
+              <Button onClick={() => setViewMode("progressive")} variant={viewMode === "progressive" ? "default" : "outline"}>Progressive View</Button>
+              <Button onClick={() => setViewMode("hybrid")} variant={viewMode === "hybrid" ? "default" : "outline"}>Hybrid View</Button>
+            </div>
+
+            {/* Updated PDF Viewer */}
+            {viewMode === "original" && fileType === "pdf" && (
+              <div className="text-center space-y-4">
+                {fileURL ? (
+                  <PDFViewer 
+                    fileUrl={fileURL} 
+                    initialScale={zoom} 
+                    showControls={true} 
+                  />
+                ) : (
+                  <div className="p-8 border rounded text-red-500">
+                    No PDF file loaded
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Progressive Text View */}
+            {viewMode === "progressive" && fileType === "text" && (
+              <div
+                className="prose prose-sm sm:prose-base max-w-none dark:prose-invert"
+                dangerouslySetInnerHTML={{ __html: parsedHTML }}
+              />
+            )}
+
+            {/* Hybrid Thought-Unit View */}
+            {viewMode === "hybrid" && inputText && (
+              <div className="border rounded-xl p-6 shadow bg-zinc-50 dark:bg-zinc-900">
+                <HybridReader inputText={inputText} />
+              </div>
+            )}
+          </>
+        )}
       </main>
     </>
   );
