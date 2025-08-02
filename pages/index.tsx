@@ -3,45 +3,57 @@
 import Head from "next/head";
 import { useState, useCallback, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
-import { parseBookWithChapters, generateProgressiveReadingHTML } from "@/lib/parser";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Button } from "@/components/ui/button";
-import Loader from "@/components/ui/loader";
-import { cn } from "@/lib/classnames";
+import { parseBookWithChapters, generateProgressiveReadingHTML } from "../lib/parser";
+import { Label } from "../components/ui/label";
+import { Switch } from "../components/ui/switch";
+import { Button } from "../components/ui/button";
+import Loader from "../components/ui/loader";
+import { cn } from "../lib/classnames";
 
-// Dynamic import for PDFViewer
-const PDFViewer = dynamic(() => import("@/components/PDFViewer"), {
+// Use dynamic import for PDFViewer with proper loading state
+const PDFViewer = dynamic(() => import("../components/PDFViewer"), {
   ssr: false,
-  loading: () => <Loader label="Loading PDF viewer..." />,
+  loading: () => <Loader label="Loading PDF viewer..." />
 });
 
-// Dynamic import for HybridReader
-const HybridReader = dynamic(() => import("@/components/HybridReader"), {
+// Use dynamic import for HybridReader
+const HybridReader = dynamic(() => import("../components/HybridReader"), { 
   ssr: false,
-  loading: () => <Loader label="Loading reader..." />,
+  loading: () => <Loader label="Loading reader..." />
 });
 
-// Dynamic import for ProgressiveView — FIXED CASE
-const ProgressiveView = dynamic(() => import("@/components/ProgressiveView"), {
+// Use dynamic import for ProgressiveView - FIXED: Using relative path
+const ProgressiveView = dynamic(() => import("../components/ProgressiveView"), {
   ssr: false,
-  loading: () => <Loader label="Loading progressive view..." />,
+  loading: () => <Loader label="Loading progressive view..." />
 });
 
 type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
 type FileType = "text" | "pdf" | "none";
 type ViewMode = "original" | "chapters" | "progressive" | "hybrid";
 
+/**
+ * Creates a more reliable blob URL for file viewing
+ * @param file The file to create a URL for
+ * @returns A promise that resolves to a blob URL
+ */
 const createReliableBlobUrl = async (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     try {
+      // For PDFs, we need to ensure the file is fully loaded
       const reader = new FileReader();
+      
       reader.onload = () => {
+        // Create a new Blob from the ArrayBuffer
         const blob = new Blob([reader.result as ArrayBuffer], { type: file.type });
         const url = URL.createObjectURL(blob);
         resolve(url);
       };
-      reader.onerror = () => reject(new Error("Failed to read file"));
+      
+      reader.onerror = () => {
+        reject(new Error("Failed to read file"));
+      };
+      
       reader.readAsArrayBuffer(file);
     } catch (err) {
       reject(err);
@@ -52,20 +64,25 @@ const createReliableBlobUrl = async (file: File): Promise<string> => {
 export default function Home() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [fileType, setFileType] = useState<FileType>("none");
-  const [fileURL, setFileURL] = useState("");
+  const [fileURL, setFileURL] = useState<string>("");
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
   const [viewMode, setViewMode] = useState<ViewMode>("original");
-  const [parsedHTML, setParsedHTML] = useState("");
-  const [pageNumber, setPageNumber] = useState(1);
-  const [numPages, setNumPages] = useState(0);
-  const [zoom, setZoom] = useState(1.25);
-  const [inputText, setInputText] = useState("");
-  const [aiEnabled, setAiEnabled] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
-  const [fontSize, setFontSize] = useState(18);
-  const [fontFamily, setFontFamily] = useState("Arial, sans-serif");
-  const [lineSpacing, setLineSpacing] = useState(1.8);
+  const [parsedHTML, setParsedHTML] = useState<string>("");
+  const [pageNumber, setPageNumber] = useState<number>(1);
+  const [numPages, setNumPages] = useState<number>(0);
+  const [zoom, setZoom] = useState<number>(1.25);
+  const [inputText, setInputText] = useState<string>("");
+  const [aiEnabled, setAiEnabled] = useState<boolean>(true);
+  
+  // Dark mode state
+  const [darkMode, setDarkMode] = useState<boolean>(false);
 
+  // Font settings for dyslexia-friendly display
+  const [fontSize, setFontSize] = useState<number>(18);
+  const [fontFamily, setFontFamily] = useState<string>("Arial, sans-serif");
+  const [lineSpacing, setLineSpacing] = useState<number>(1.8);
+  
+  // Font options for selection
   const fontOptions = [
     { label: "Arial", value: "Arial, sans-serif" },
     { label: "Verdana", value: "Verdana, sans-serif" },
@@ -73,107 +90,307 @@ export default function Home() {
     { label: "OpenDyslexic", value: "OpenDyslexic, sans-serif" },
     { label: "Helvetica", value: "Helvetica, Arial, sans-serif" },
   ];
+  
+  // Toggle dark mode
+  const toggleDarkMode = () => {
+    setDarkMode(!darkMode);
+  };
 
-  const toggleDarkMode = () => setDarkMode(!darkMode);
-
+  // Effect to configure the document when dark mode changes
   useEffect(() => {
-    darkMode
-      ? document.documentElement.classList.add("dark")
-      : document.documentElement.classList.remove("dark");
+    // Update document body class for global styling
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
+    }
   }, [darkMode]);
 
   useEffect(() => {
     document.title = "Thought-Unit Reader";
   }, []);
 
+  // Updated handleFileChange function with improved blob URL handling
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const uploadedFile = e.target.files?.[0];
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    const uploadedFile = files[0];
     if (!uploadedFile) return;
 
     setUploadStatus("uploading");
-
+    
     try {
+      // Create a more reliable blob URL
       const url = await createReliableBlobUrl(uploadedFile);
       setFileURL(url);
 
-      const ext = uploadedFile.name.split(".").pop()?.toLowerCase();
-      if (ext === "pdf") {
+      const fileExt = uploadedFile.name.split(".").pop()?.toLowerCase() || "";
+      const isPDF = fileExt === "pdf";
+      const isText = fileExt === "txt" || fileExt === "docx";
+
+      if (isPDF) {
         setFileType("pdf");
         setUploadStatus("done");
-      } else if (ext === "txt" || ext === "docx") {
+      } else if (isText) {
         setFileType("text");
         setUploadStatus("processing");
-
-        const { parsedUnits, original } = await parseBookWithChapters(uploadedFile);
-        const rawText = parsedUnits.map(unit => unit.join(" ")).join("\n");
-        const generated = generateProgressiveReadingHTML(rawText);
-
-        setParsedHTML(generated);
-        setInputText(original);
-        setUploadStatus("done");
+        try {
+          const { parsedUnits, original } = await parseBookWithChapters(uploadedFile);
+          
+          // Safely handle parsedUnits and generate HTML
+          if (Array.isArray(parsedUnits) && parsedUnits.length > 0) {
+            const rawText = parsedUnits
+              .map(unit => Array.isArray(unit) ? unit.join(" ") : String(unit))
+              .join("\n");
+              
+            const generated = generateProgressiveReadingHTML(rawText);
+            setParsedHTML(generated);
+            setInputText(typeof original === 'string' ? original : String(original));
+            setUploadStatus("done");
+          } else {
+            throw new Error("Failed to parse document units");
+          }
+        } catch (err) {
+          console.error("Parsing error:", err);
+          setUploadStatus("error");
+        }
       } else {
         setUploadStatus("error");
       }
     } catch (err) {
-      console.error(err);
+      console.error("File handling error:", err);
       setUploadStatus("error");
     }
   }, []);
 
-  const handleZoom = (delta: number) =>
-    setZoom(z => Math.max(0.5, Math.min(3, z + delta)));
+  const handleZoom = (delta: number) => {
+    setZoom((z) => Math.max(0.5, Math.min(3, z + delta)));
+  };
 
   const goToPage = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const page = parseInt(
-      (e.currentTarget.elements.namedItem("page") as HTMLInputElement)?.value
-    );
-    if (!isNaN(page) && page >= 1 && page <= numPages) setPageNumber(page);
+    const form = e.currentTarget;
+    const pageInput = form.elements.namedItem("page") as HTMLInputElement;
+    
+    if (pageInput && pageInput.value) {
+      const page = parseInt(pageInput.value);
+      if (!isNaN(page) && page >= 1 && page <= numPages) {
+        setPageNumber(page);
+      }
+    }
   };
 
   return (
     <>
       <Head>
         <title>Thought-Unit Reader</title>
-        <meta name="description" content="AI-powered reading tool" />
+        <meta
+          name="description"
+          content="An AI-powered learning platform that transforms any textbook into a smart, digestible experience with progressive, hybrid, and thought-unit views."
+        />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <main className={cn("p-6 max-w-6xl mx-auto", darkMode ? "bg-zinc-950 text-white" : "bg-white text-black")}>
-        {/* Header */}
+      <main className={cn(
+        "p-6 max-w-6xl mx-auto min-h-screen transition-colors duration-200",
+        darkMode 
+          ? "bg-zinc-950 text-white" 
+          : "bg-white text-zinc-900"
+      )}>
         <header className="mb-6 text-center">
           <h1 className="text-4xl font-bold text-pink-500">Thought-Unit Reader</h1>
-          <p className="text-sm text-gray-500">Read deeper, faster, and smarter.</p>
+          <p className={cn(
+            "text-sm",
+            darkMode ? "text-gray-300" : "text-gray-500"
+          )}>
+            Read deeper, faster, and smarter.
+          </p>
         </header>
 
-        {/* File Upload */}
-        <div className="mb-6 flex items-center gap-4">
-          <Label>Enable AI Mode</Label>
-          <Switch checked={aiEnabled} onCheckedChange={setAiEnabled} />
-          <Button onClick={() => fileInputRef.current?.click()}>Upload Book</Button>
-          <input type="file" accept=".txt,.pdf,.docx" className="hidden" ref={fileInputRef} onChange={handleFileChange} />
+        <div className="mb-6 flex items-center gap-4 flex-wrap justify-between">
+          <div className="flex items-center gap-4">
+            <Label className={darkMode ? "text-white" : "text-black"}>Enable AI Mode</Label>
+            <Switch checked={aiEnabled} onCheckedChange={setAiEnabled} />
+            <Button onClick={() => fileInputRef.current?.click()}>Upload Book</Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".txt,.pdf,.docx"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <Label className={darkMode ? "text-white" : "text-black"}>
+              {darkMode ? "Dark Mode" : "Light Mode"}
+            </Label>
+            <Switch checked={darkMode} onCheckedChange={toggleDarkMode} />
+          </div>
+        </div>
+        
+        {/* Font controls */}
+        <div className="mb-6 flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Label className="text-sm">Font:</Label>
+            <select 
+              value={fontFamily}
+              onChange={(e) => setFontFamily(e.target.value)}
+              className={cn(
+                "px-2 py-1 rounded border text-sm",
+                darkMode ? "bg-gray-800 border-gray-600" : "bg-white border-gray-300"
+              )}
+            >
+              {fontOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Label className="text-sm">Size:</Label>
+            <Button 
+              onClick={() => setFontSize(Math.max(fontSize - 1, 14))}
+              variant="outline"
+              size="sm"
+              className="h-8 px-2"
+            >
+              -
+            </Button>
+            <span className="text-sm w-8 text-center">{fontSize}px</span>
+            <Button 
+              onClick={() => setFontSize(Math.min(fontSize + 1, 24))}
+              variant="outline"
+              size="sm"
+              className="h-8 px-2"
+            >
+              +
+            </Button>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Label className="text-sm">Line Spacing:</Label>
+            <Button 
+              onClick={() => setLineSpacing(Math.max(lineSpacing - 0.1, 1.0))}
+              variant="outline"
+              size="sm"
+              className="h-8 px-2"
+            >
+              -
+            </Button>
+            <span className="text-sm w-12 text-center">{lineSpacing.toFixed(1)}x</span>
+            <Button 
+              onClick={() => setLineSpacing(Math.min(lineSpacing + 0.1, 3.0))}
+              variant="outline"
+              size="sm"
+              className="h-8 px-2"
+            >
+              +
+            </Button>
+          </div>
         </div>
 
-        {/* View Selector */}
-        {uploadStatus === "done" && (
-          <div className="flex gap-4 my-4">
-            <Button onClick={() => setViewMode("original")}>Original View</Button>
-            <Button onClick={() => setViewMode("progressive")}>Progressive View</Button>
-            <Button onClick={() => setViewMode("hybrid")}>Hybrid View</Button>
-          </div>
+        {uploadStatus === "uploading" && <Loader label="Uploading file..." />}
+        {uploadStatus === "processing" && <Loader label="Processing your file..." />}
+        {uploadStatus === "error" && (
+          <p className="text-red-500">Unsupported file or parsing failed. Please try again.</p>
         )}
 
-        {/* Render Modes */}
-        {viewMode === "original" && fileType === "pdf" && <PDFViewer fileUrl={fileURL} />}
-        {viewMode === "progressive" && (
-          <ProgressiveView
-            content={inputText}
-            fontFamily={fontFamily}
-            fontSize={fontSize}
-            lineSpacing={lineSpacing}
-            darkMode={darkMode}
-          />
+        {uploadStatus === "done" && (
+          <>
+            <div className="flex gap-4 my-4 flex-wrap">
+              <Button 
+                onClick={() => setViewMode("original")} 
+                variant={viewMode === "original" ? "default" : "secondary"}
+              >
+                Original View
+              </Button>
+              <Button 
+                onClick={() => setViewMode("progressive")} 
+                variant={viewMode === "progressive" ? "default" : "outline"}
+              >
+                Progressive View
+              </Button>
+              <Button 
+                onClick={() => setViewMode("hybrid")} 
+                variant={viewMode === "hybrid" ? "default" : "outline"}
+              >
+                Hybrid View
+              </Button>
+            </div>
+
+            {/* Original PDF Viewer */}
+            {viewMode === "original" && fileType === "pdf" && (
+              <div className="text-center space-y-4">
+                {fileURL ? (
+                  <PDFViewer 
+                    fileUrl={fileURL} 
+                    initialScale={zoom} 
+                    showControls={true} 
+                  />
+                ) : (
+                  <div className={cn(
+                    "p-8 border rounded",
+                    darkMode ? "border-gray-700 text-red-400" : "border-gray-300 text-red-500"
+                  )}>
+                    No PDF file loaded
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Original Text View */}
+            {viewMode === "original" && fileType === "text" && (
+              <div className={cn(
+                "p-4 border rounded",
+                darkMode ? "bg-zinc-900 border-gray-700" : "bg-white border-gray-300"
+              )}>
+                <pre 
+                  className="whitespace-pre-wrap"
+                  style={{ 
+                    fontFamily: fontFamily,
+                    fontSize: `${fontSize}px`,
+                    lineHeight: lineSpacing
+                  }}
+                >
+                  {inputText}
+                </pre>
+              </div>
+            )}
+
+            {/* Progressive Text View */}
+            {viewMode === "progressive" && inputText && (
+              <div className={cn(
+                "border rounded-xl p-6 shadow",
+                darkMode ? "bg-zinc-900 border-gray-700" : "bg-zinc-50 border-gray-300"
+              )}>
+                <ProgressiveView 
+                  content={inputText}
+                  fontFamily={fontFamily}
+                  fontSize={fontSize}
+                  lineSpacing={lineSpacing}
+                  darkMode={darkMode}
+                />
+              </div>
+            )}
+
+            {/* Hybrid Thought-Unit View */}
+            {viewMode === "hybrid" && inputText && (
+              <div className={cn(
+                "border rounded-xl p-6 shadow",
+                darkMode ? "bg-zinc-900 border-gray-700" : "bg-zinc-50 border-gray-300"
+              )}>
+                <HybridReader inputText={inputText} />
+              </div>
+            )}
+          </>
         )}
-        {viewMode === "hybrid" && <HybridReader inputText={inputText} />}
       </main>
     </>
   );
