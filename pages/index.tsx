@@ -1,3 +1,4 @@
+// pages/index.tsx - FIXED VERSION
 "use client";
 
 import Head from "next/head";
@@ -8,21 +9,19 @@ import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 import Loader from "../components/ui/loader";
-import { cn } from "../lib/classnames"; // Updated to use classnames consistently
+import { cn } from "../lib/classnames";
 
-// Use dynamic import for PDFViewer with proper loading state
+// Use dynamic import for components with proper loading states
 const PDFViewer = dynamic(() => import("../components/PDFViewer"), {
   ssr: false,
   loading: () => <Loader label="Loading PDF viewer..." />
 });
 
-// Use dynamic import for HybridReader
 const HybridReader = dynamic(() => import("../components/HybridReader"), { 
   ssr: false,
   loading: () => <Loader label="Loading reader..." />
 });
 
-// Use dynamic import for ProgressiveView
 const ProgressiveView = dynamic(() => import("../components/ui/ProgressiveView"), {
   ssr: false,
   loading: () => <Loader label="Loading progressive view..." />
@@ -30,24 +29,19 @@ const ProgressiveView = dynamic(() => import("../components/ui/ProgressiveView")
 
 type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
 type FileType = "text" | "pdf" | "none";
-type ViewMode = "original" | "chapters" | "progressive" | "hybrid";
+type ViewMode = "original" | "progressive" | "hybrid";
 
-/**
- * Creates a more reliable blob URL for file viewing
- * @param file The file to create a URL for
- * @returns A promise that resolves to a blob URL
- */
 const createReliableBlobUrl = async (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     try {
-      // For PDFs, we need to ensure the file is fully loaded
       const reader = new FileReader();
       
       reader.onload = () => {
-        // Create a new Blob from the ArrayBuffer
-        const blob = new Blob([reader.result as ArrayBuffer], { type: file.type });
-        const url = URL.createObjectURL(blob);
-        resolve(url);
+        if (reader.result) {
+          const blob = new Blob([reader.result as ArrayBuffer], { type: file.type });
+          const url = URL.createObjectURL(blob);
+          resolve(url);
+        }
       };
       
       reader.onerror = () => {
@@ -71,18 +65,19 @@ export default function Home() {
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [numPages, setNumPages] = useState<number>(0);
   const [zoom, setZoom] = useState<number>(1.25);
-  const [inputText, setInputText] = useState<string>("");
-  const [aiEnabled, setAiEnabled] = useState<boolean>(true);
   
-  // Dark mode state
+  // IMPORTANT: Store the actual text content here
+  const [inputText, setInputText] = useState<string>("");
+  const [originalContent, setOriginalContent] = useState<string>(""); // New state for original content
+  
+  const [aiEnabled, setAiEnabled] = useState<boolean>(true);
   const [darkMode, setDarkMode] = useState<boolean>(false);
 
-  // Font settings for dyslexia-friendly display
+  // Font settings
   const [fontSize, setFontSize] = useState<number>(18);
   const [fontFamily, setFontFamily] = useState<string>("Arial, sans-serif");
   const [lineSpacing, setLineSpacing] = useState<number>(1.8);
   
-  // Font options for selection
   const fontOptions = [
     { label: "Arial", value: "Arial, sans-serif" },
     { label: "Verdana", value: "Verdana, sans-serif" },
@@ -91,14 +86,11 @@ export default function Home() {
     { label: "Helvetica", value: "Helvetica, Arial, sans-serif" },
   ];
   
-  // Toggle dark mode
   const toggleDarkMode = () => {
     setDarkMode(!darkMode);
   };
 
-  // Effect to configure the document when dark mode changes
   useEffect(() => {
-    // Update document body class for global styling
     if (darkMode) {
       document.documentElement.classList.add('dark');
       document.body.classList.add('dark');
@@ -112,7 +104,7 @@ export default function Home() {
     document.title = "Thought-Unit Reader";
   }, []);
 
-  // Updated handleFileChange function with improved blob URL handling
+  // Updated handleFileChange with better text extraction
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -123,7 +115,6 @@ export default function Home() {
     setUploadStatus("uploading");
     
     try {
-      // Create a more reliable blob URL
       const url = await createReliableBlobUrl(uploadedFile);
       setFileURL(url);
 
@@ -134,13 +125,17 @@ export default function Home() {
       if (isPDF) {
         setFileType("pdf");
         setUploadStatus("done");
-      } else if (isText) {
-        setFileType("text");
+        
+        // For PDFs, we should try to extract text for Progressive/Hybrid views
         setUploadStatus("processing");
         try {
           const { parsedUnits, original } = await parseBookWithChapters(uploadedFile);
           
-          // Safely handle parsedUnits and generate HTML
+          // Store the extracted text
+          const textContent = typeof original === 'string' ? original : String(original);
+          setInputText(textContent);
+          setOriginalContent(textContent);
+          
           if (Array.isArray(parsedUnits) && parsedUnits.length > 0) {
             const rawText = parsedUnits
               .map(unit => Array.isArray(unit) ? unit.join(" ") : String(unit))
@@ -148,7 +143,34 @@ export default function Home() {
               
             const generated = generateProgressiveReadingHTML(rawText);
             setParsedHTML(generated);
-            setInputText(typeof original === 'string' ? original : String(original));
+          }
+          setUploadStatus("done");
+        } catch (err) {
+          console.error("PDF text extraction failed:", err);
+          // PDF viewing will still work, just not progressive features
+          setInputText(""); 
+          setOriginalContent("");
+          setUploadStatus("done");
+        }
+        
+      } else if (isText) {
+        setFileType("text");
+        setUploadStatus("processing");
+        try {
+          const { parsedUnits, original } = await parseBookWithChapters(uploadedFile);
+          
+          // Store the extracted text
+          const textContent = typeof original === 'string' ? original : String(original);
+          setInputText(textContent);
+          setOriginalContent(textContent);
+          
+          if (Array.isArray(parsedUnits) && parsedUnits.length > 0) {
+            const rawText = parsedUnits
+              .map(unit => Array.isArray(unit) ? unit.join(" ") : String(unit))
+              .join("\n");
+              
+            const generated = generateProgressiveReadingHTML(rawText);
+            setParsedHTML(generated);
             setUploadStatus("done");
           } else {
             throw new Error("Failed to parse document units");
@@ -170,17 +192,16 @@ export default function Home() {
     setZoom((z) => Math.max(0.5, Math.min(3, z + delta)));
   };
 
-  const goToPage = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const pageInput = form.elements.namedItem("page") as HTMLInputElement;
-    
-    if (pageInput && pageInput.value) {
-      const page = parseInt(pageInput.value);
-      if (!isNaN(page) && page >= 1 && page <= numPages) {
-        setPageNumber(page);
-      }
-    }
+  // Debug function to check what content we have
+  const debugContent = () => {
+    console.log("=== DEBUG CONTENT ===");
+    console.log("uploadStatus:", uploadStatus);
+    console.log("fileType:", fileType);
+    console.log("viewMode:", viewMode);
+    console.log("inputText length:", inputText?.length || 0);
+    console.log("inputText preview:", inputText?.substring(0, 100) || "No content");
+    console.log("originalContent length:", originalContent?.length || 0);
+    console.log("===================");
   };
 
   return (
@@ -223,6 +244,10 @@ export default function Home() {
               className="hidden"
               onChange={handleFileChange}
             />
+            {/* Debug button - remove in production */}
+            <Button onClick={debugContent} variant="outline" size="sm">
+              Debug
+            </Button>
           </div>
           
           <div className="flex items-center gap-4">
@@ -325,70 +350,113 @@ export default function Home() {
               </Button>
             </div>
 
-            {/* Original PDF Viewer */}
-            {viewMode === "original" && fileType === "pdf" && (
-              <div className="text-center space-y-4">
-                {fileURL ? (
-                  <PDFViewer 
-                    fileUrl={fileURL} 
-                    initialScale={zoom} 
-                    showControls={true} 
-                  />
-                ) : (
-                  <div className={cn(
-                    "p-8 border rounded",
-                    darkMode ? "border-gray-700 text-red-400" : "border-gray-300 text-red-500"
-                  )}>
-                    No PDF file loaded
-                  </div>
-                )}
-              </div>
-            )}
+            {/* FIXED VIEW RENDERING */}
+            <div className="mt-6">
+              {/* Original View */}
+              {viewMode === "original" && (
+                <div>
+                  {fileType === "pdf" && fileURL && (
+                    <div className="text-center space-y-4">
+                      <PDFViewer 
+                        fileUrl={fileURL} 
+                        initialScale={zoom} 
+                        showControls={true} 
+                      />
+                    </div>
+                  )}
+                  
+                  {fileType === "text" && originalContent && (
+                    <div className={cn(
+                      "p-4 border rounded",
+                      darkMode ? "bg-zinc-900 border-gray-700" : "bg-white border-gray-300"
+                    )}>
+                      <pre 
+                        className="whitespace-pre-wrap"
+                        style={{ 
+                          fontFamily: fontFamily,
+                          fontSize: `${fontSize}px`,
+                          lineHeight: lineSpacing
+                        }}
+                      >
+                        {originalContent}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              )}
 
-            {/* Original Text View */}
-            {viewMode === "original" && fileType === "text" && (
-              <div className={cn(
-                "p-4 border rounded",
-                darkMode ? "bg-zinc-900 border-gray-700" : "bg-white border-gray-300"
-              )}>
-                <pre 
-                  className="whitespace-pre-wrap"
-                  style={{ 
-                    fontFamily: fontFamily,
-                    fontSize: `${fontSize}px`,
-                    lineHeight: lineSpacing
-                  }}
-                >
-                  {inputText}
-                </pre>
-              </div>
-            )}
+              {/* Progressive View */}
+              {viewMode === "progressive" && (
+                <div className={cn(
+                  "border rounded-xl p-6 shadow",
+                  darkMode ? "bg-zinc-900 border-gray-700" : "bg-zinc-50 border-gray-300"
+                )}>
+                  {inputText && inputText.length > 0 ? (
+                    <ProgressiveView 
+                      content={inputText}
+                      fontFamily={fontFamily}
+                      fontSize={fontSize}
+                      lineSpacing={lineSpacing}
+                      darkMode={darkMode}
+                    />
+                  ) : (
+                    <div className="text-center py-8">
+                      <p className={cn(
+                        "text-lg",
+                        darkMode ? "text-gray-400" : "text-gray-600"
+                      )}>
+                        {fileType === "pdf" 
+                          ? "Text extraction from PDF failed. Progressive view requires readable text content."
+                          : "No text content available for progressive reading."
+                        }
+                      </p>
+                      <p className={cn(
+                        "text-sm mt-2",
+                        darkMode ? "text-gray-500" : "text-gray-500"
+                      )}>
+                        Try uploading a .txt or .docx file for best results.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
-            {/* Progressive Text View */}
-            {viewMode === "progressive" && inputText && (
-              <div className={cn(
-                "border rounded-xl p-6 shadow",
-                darkMode ? "bg-zinc-900 border-gray-700" : "bg-zinc-50 border-gray-300"
-              )}>
-                <ProgressiveView 
-                  content={inputText}
-                  fontFamily={fontFamily}
-                  fontSize={fontSize}
-                  lineSpacing={lineSpacing}
-                  darkMode={darkMode}
-                />
-              </div>
-            )}
-
-            {/* Hybrid Thought-Unit View */}
-            {viewMode === "hybrid" && inputText && (
-              <div className={cn(
-                "border rounded-xl p-6 shadow",
-                darkMode ? "bg-zinc-900 border-gray-700" : "bg-zinc-50 border-gray-300"
-              )}>
-                <HybridReader inputText={inputText} />
-              </div>
-            )}
+              {/* Hybrid View */}
+              {viewMode === "hybrid" && (
+                <div className={cn(
+                  "border rounded-xl p-6 shadow",
+                  darkMode ? "bg-zinc-900 border-gray-700" : "bg-zinc-50 border-gray-300"
+                )}>
+                  {inputText && inputText.length > 0 ? (
+                    <HybridReader 
+                      inputText={inputText}
+                      darkMode={darkMode}
+                      fontFamily={fontFamily}
+                      fontSize={fontSize}
+                      lineSpacing={lineSpacing}
+                    />
+                  ) : (
+                    <div className="text-center py-8">
+                      <p className={cn(
+                        "text-lg",
+                        darkMode ? "text-gray-400" : "text-gray-600"
+                      )}>
+                        {fileType === "pdf" 
+                          ? "Text extraction from PDF failed. Hybrid view requires readable text content."
+                          : "No text content available for hybrid reading."
+                        }
+                      </p>
+                      <p className={cn(
+                        "text-sm mt-2",
+                        darkMode ? "text-gray-500" : "text-gray-500"
+                      )}>
+                        Try uploading a .txt or .docx file for best results.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </>
         )}
       </main>
