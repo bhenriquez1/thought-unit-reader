@@ -1,7 +1,9 @@
 // components/ui/ProgressiveView.tsx
+"use client";
+
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { Button } from "./button"; // Relative import since they're in the same directory
-import { cn } from "../../lib/classnames"; // Updated to use classnames consistently
+import { Button } from "./button";
+import { cn } from "../../lib/classnames";
 
 interface ProgressiveViewProps {
   content: string;
@@ -12,8 +14,8 @@ interface ProgressiveViewProps {
 }
 
 /**
- * ProgressiveView component for displaying text in thought units
- * with alternating styling for improved readability for dyslexic users
+ * Enhanced ProgressiveView component matching the design shown in the image
+ * Features thought-unit highlighting, auto-progression, and reading analytics
  */
 const ProgressiveView: React.FC<ProgressiveViewProps> = ({
   content = "",
@@ -22,234 +24,230 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
   lineSpacing = 1.8,
   darkMode = false,
 }) => {
-  // Parse content into sentences/thought units
-  const sentences = useMemo(() => {
+  // Parse content into individual words for thought-unit reading
+  const words = useMemo(() => {
     return content
-      .split(/(?<=[.!?])\s+(?=[A-Z0-9])/)
-      .map(sentence => sentence.trim())
+      .split(/\s+/)
+      .map(word => word.trim())
       .filter(Boolean);
   }, [content]);
   
-  // State for current position and auto-scroll
-  const [currentSentence, setCurrentSentence] = useState(0);
-  const [autoScroll, setAutoScroll] = useState(false);
-  const [scrollInterval, setScrollInterval] = useState(3000); // 3 seconds per thought unit
-  const [alternateColors, setAlternateColors] = useState(true);
+  // State for progressive reading
+  const [currentWordIndex, setCurrentWordIndex] = useState(0);
+  const [isReading, setIsReading] = useState(false);
+  const [wpm, setWpm] = useState(200); // Words per minute
+  const [showSettings, setShowSettings] = useState(false);
   
-  // Refs for scrolling
-  const containerRef = useRef<HTMLDivElement>(null);
-  const currentRef = useRef<HTMLDivElement>(null);
+  // Refs for auto-scroll
+  const currentWordRef = useRef<HTMLSpanElement>(null);
   
-  // Auto-scroll effect
+  // Auto-progression effect
   useEffect(() => {
-    if (!autoScroll || sentences.length === 0) return;
+    if (!isReading || words.length === 0) return;
+    
+    const intervalTime = (60 * 1000) / wpm; // Convert WPM to milliseconds
     
     const timer = setTimeout(() => {
-      if (currentSentence < sentences.length - 1) {
-        setCurrentSentence(prev => prev + 1);
+      if (currentWordIndex < words.length - 1) {
+        setCurrentWordIndex(prev => prev + 1);
       } else {
-        setAutoScroll(false);
+        setIsReading(false); // Stop when we reach the end
       }
-    }, scrollInterval);
+    }, intervalTime);
     
     return () => clearTimeout(timer);
-  }, [currentSentence, autoScroll, sentences.length, scrollInterval]);
+  }, [currentWordIndex, isReading, words.length, wpm]);
   
-  // Scroll into view when current sentence changes
+  // Auto-scroll to current word
   useEffect(() => {
-    if (autoScroll && currentRef.current) {
-      currentRef.current.scrollIntoView({ 
+    if (isReading && currentWordRef.current) {
+      currentWordRef.current.scrollIntoView({ 
         behavior: 'smooth',
         block: 'center'
       });
     }
-  }, [currentSentence, autoScroll]);
-  
-  // Get background class based on index
-  const getBackgroundClass = (index: number) => {
-    if (!alternateColors) return "bg-gray-50 dark:bg-gray-800";
-    
-    return index % 2 === 0 
-      ? "bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400" 
-      : "bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-400";
-  };
+  }, [currentWordIndex, isReading]);
   
   // Calculate progress percentage
-  const progress = sentences.length > 0 
-    ? Math.round((currentSentence / (sentences.length - 1)) * 100) 
+  const progress = words.length > 0 
+    ? Math.round((currentWordIndex / (words.length - 1)) * 100) 
     : 0;
   
-  // Change scroll speed
-  const changeScrollSpeed = (delta: number) => {
-    setScrollInterval(prev => Math.max(1000, Math.min(10000, prev + delta)));
+  // Calculate time remaining
+  const timeRemaining = useMemo(() => {
+    const wordsLeft = words.length - currentWordIndex - 1;
+    const secondsLeft = Math.ceil((wordsLeft * 60) / wpm);
+    
+    if (secondsLeft < 60) return `${secondsLeft}s`;
+    
+    const minutes = Math.floor(secondsLeft / 60);
+    const seconds = secondsLeft % 60;
+    return `${minutes}m ${seconds}s`;
+  }, [currentWordIndex, words.length, wpm]);
+  
+  // Control functions
+  const toggleReading = () => setIsReading(!isReading);
+  const resetReading = () => {
+    setCurrentWordIndex(0);
+    setIsReading(false);
   };
   
-  // Render speed in seconds
-  const renderSpeed = () => {
-    return (scrollInterval / 1000).toFixed(1) + 's';
+  const adjustWpm = (delta: number) => {
+    setWpm(prev => Math.max(50, Math.min(800, prev + delta)));
   };
   
   return (
-    <div className="flex flex-col w-full max-w-4xl mx-auto p-4">
-      {/* Controls Panel */}
+    <div className="flex flex-col w-full max-w-4xl mx-auto p-6">
+      {/* Header with Lightning Icon */}
       <div className={cn(
-        "bg-pink-50 rounded-lg p-4 mb-6 shadow-sm",
-        darkMode && "bg-pink-900/20"
+        "flex items-center mb-6",
+        darkMode ? "text-yellow-300" : "text-yellow-600"
       )}>
-        <h3 className={cn(
-          "text-lg font-semibold mb-3 flex items-center",
-          darkMode ? "text-pink-300" : "text-pink-600"
-        )}>
-          <span className="mr-2">📑</span> Progressive Reading Controls
-        </h3>
+        <span className="text-2xl mr-3">⚡</span>
+        <h2 className="text-2xl font-bold">Hybrid Reading Controls</h2>
+      </div>
+      
+      {/* Control Buttons */}
+      <div className="flex gap-3 mb-6">
+        <Button 
+          onClick={toggleReading}
+          className={cn(
+            "flex items-center gap-2 px-6 py-3 rounded-lg font-medium",
+            isReading 
+              ? "bg-red-500 hover:bg-red-600 text-white" 
+              : "bg-green-500 hover:bg-green-600 text-white"
+          )}
+        >
+          {isReading ? '⏸ Pause' : '▶ Start'}
+        </Button>
         
-        <div className="flex flex-wrap gap-3 mb-4">
-          <Button 
-            onClick={() => setAutoScroll(!autoScroll)}
-            className={autoScroll ? "bg-red-500 hover:bg-red-600" : "bg-green-500 hover:bg-green-600"}
-          >
-            {autoScroll ? '⏸ Stop Auto-Scroll' : '▶ Start Auto-Scroll'}
-          </Button>
-          
-          <Button 
-            onClick={() => setCurrentSentence(0)}
-            variant="outline"
-          >
-            ↩ Back to Start
-          </Button>
-          
-          <div className="flex items-center ml-auto gap-2">
-            <span className="text-sm">Scroll Speed:</span>
+        <Button 
+          onClick={resetReading}
+          className="flex items-center gap-2 px-6 py-3 bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-medium"
+        >
+          🔄 Reset
+        </Button>
+        
+        <Button 
+          onClick={() => setShowSettings(!showSettings)}
+          className="flex items-center gap-2 px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium"
+        >
+          ⚙️ Settings
+        </Button>
+      </div>
+      
+      {/* Settings Panel */}
+      {showSettings && (
+        <div className={cn(
+          "p-4 rounded-lg mb-6 border",
+          darkMode ? "bg-gray-800 border-gray-600" : "bg-gray-50 border-gray-300"
+        )}>
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-medium">Reading Speed:</span>
             <Button 
-              onClick={() => changeScrollSpeed(500)}
+              onClick={() => adjustWpm(-25)}
               variant="outline"
               size="sm"
-              className="px-2 py-1 h-8"
             >
               Slower
             </Button>
-            <span className="text-sm font-medium w-10 text-center">{renderSpeed()}</span>
+            <span className="font-medium w-16 text-center">{wpm} WPM</span>
             <Button 
-              onClick={() => changeScrollSpeed(-500)}
+              onClick={() => adjustWpm(25)}
               variant="outline"
               size="sm"
-              className="px-2 py-1 h-8"
             >
               Faster
             </Button>
           </div>
         </div>
-        
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm">Font:</span>
-            <select 
-              value={fontFamily}
-              onChange={(e) => {/* This would be connected to state in the parent */}}
-              className={cn(
-                "px-2 py-1 rounded border text-sm",
-                darkMode ? "bg-gray-800 border-gray-600" : "bg-white border-gray-300"
-              )}
-            >
-              <option value="Arial, sans-serif">Arial</option>
-              <option value="Verdana, sans-serif">Verdana</option>
-              <option value='"Comic Sans MS", cursive'>Comic Sans</option>
-              <option value="OpenDyslexic, sans-serif">OpenDyslexic</option>
-              <option value="Helvetica, Arial, sans-serif">Helvetica</option>
-            </select>
-            
-            <span className="text-sm ml-3">Size:</span>
-            <button 
-              onClick={() => {/* This would be connected to state in the parent */}}
-              className={cn(
-                "px-2 py-0.5 rounded", 
-                darkMode ? "bg-gray-700" : "bg-gray-200"
-              )}
-            >
-              -
-            </button>
-            <span className="text-sm">{fontSize}px</span>
-            <button 
-              onClick={() => {/* This would be connected to state in the parent */}}
-              className={cn(
-                "px-2 py-0.5 rounded", 
-                darkMode ? "bg-gray-700" : "bg-gray-200"
-              )}
-            >
-              +
-            </button>
+      )}
+      
+      {/* Stats Grid - Matching the image layout */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        {/* Progress */}
+        <div className="bg-blue-100 dark:bg-blue-900/30 p-4 rounded-lg text-center">
+          <div className="text-3xl font-bold text-blue-600 dark:text-blue-300">
+            {progress}%
           </div>
-          
-          <div className="flex items-center gap-2">
-            <span className="text-sm">Alternate Colors:</span>
-            <button 
-              onClick={() => setAlternateColors(!alternateColors)}
-              className={`w-10 h-5 rounded-full relative ${
-                alternateColors ? 'bg-green-500' : 'bg-gray-300'
-              }`}
-            >
-              <span 
-                className={`absolute w-4 h-4 rounded-full bg-white top-0.5 transition-all ${
-                  alternateColors ? 'left-5' : 'left-1'
-                }`}
-              />
-            </button>
+          <div className="text-sm text-blue-600 dark:text-blue-300 font-medium">
+            Complete
           </div>
         </div>
         
-        {/* Progress bar */}
-        <div className={cn(
-          "w-full h-2 rounded-full overflow-hidden mb-2",
-          darkMode ? "bg-gray-700" : "bg-gray-200"
-        )}>
-          <div 
-            className={cn(
-              "h-full transition-all duration-300",
-              darkMode ? "bg-pink-500" : "bg-pink-400"
-            )}
-            style={{ width: `${progress}%` }}
-          />
+        {/* Current Word */}
+        <div className="bg-green-100 dark:bg-green-900/30 p-4 rounded-lg text-center">
+          <div className="text-3xl font-bold text-green-600 dark:text-green-300">
+            {currentWordIndex + 1}
+          </div>
+          <div className="text-sm text-green-600 dark:text-green-300 font-medium">
+            Current
+          </div>
         </div>
         
-        <div className={cn(
-          "text-center text-sm mb-2",
-          darkMode ? "text-gray-300" : "text-gray-600"
-        )}>
-          Unit {currentSentence + 1} of {sentences.length} ({progress}% complete)
+        {/* WPM */}
+        <div className="bg-purple-100 dark:bg-purple-900/30 p-4 rounded-lg text-center">
+          <div className="text-3xl font-bold text-purple-600 dark:text-purple-300">
+            {wpm}
+          </div>
+          <div className="text-sm text-purple-600 dark:text-purple-300 font-medium">
+            WPM
+          </div>
+        </div>
+        
+        {/* Time Left */}
+        <div className="bg-orange-100 dark:bg-orange-900/30 p-4 rounded-lg text-center">
+          <div className="text-3xl font-bold text-orange-600 dark:text-orange-300">
+            {timeRemaining}
+          </div>
+          <div className="text-sm text-orange-600 dark:text-orange-300 font-medium">
+            Left
+          </div>
         </div>
       </div>
       
-      {/* Reading area */}
+      {/* Word Counter */}
+      <div className="text-center mb-4">
+        <span className={cn(
+          "text-lg",
+          darkMode ? "text-gray-300" : "text-gray-600"
+        )}>
+          Thought Unit {currentWordIndex + 1} of {words.length}
+        </span>
+      </div>
+      
+      {/* Main Reading Area */}
       <div 
-        ref={containerRef}
         className={cn(
-          "rounded-lg p-4 shadow-sm max-h-[60vh] overflow-y-auto",
+          "p-8 rounded-lg shadow-inner mb-6 min-h-[200px] flex flex-wrap items-center justify-center",
           darkMode ? "bg-gray-900" : "bg-white"
         )}
+        style={{ 
+          fontFamily,
+          fontSize: `${fontSize + 4}px`, // Slightly larger for main reading
+          lineHeight: lineSpacing
+        }}
       >
-        {sentences.length > 0 ? (
-          sentences.map((sentence, index) => (
-            <div 
+        {words.length > 0 ? (
+          words.map((word, index) => (
+            <span 
               key={index}
-              ref={index === currentSentence ? currentRef : null}
+              ref={index === currentWordIndex ? currentWordRef : null}
               className={cn(
-                "p-4 rounded-lg mb-4 transition-all duration-300",
-                getBackgroundClass(index),
-                index === currentSentence && (darkMode ? "ring-2 ring-pink-500" : "ring-2 ring-pink-400")
+                "mx-2 my-1 px-3 py-2 rounded-lg transition-all duration-300",
+                index === currentWordIndex 
+                  ? "bg-yellow-300 text-black font-bold text-xl scale-110 shadow-lg" 
+                  : index < currentWordIndex 
+                    ? darkMode ? "text-gray-600" : "text-gray-400"
+                    : darkMode ? "text-white" : "text-black"
               )}
-              style={{ 
-                fontFamily,
-                fontSize: `${fontSize}px`,
-                lineHeight: lineSpacing,
-                opacity: autoScroll && index !== currentSentence ? 0.7 : 1
-              }}
             >
-              {sentence}
-            </div>
+              {word}
+            </span>
           ))
         ) : (
           <div className={cn(
-            "text-center py-10",
+            "text-center",
             darkMode ? "text-gray-400" : "text-gray-500"
           )}>
             No content to display. Upload a document or paste text to begin.
@@ -257,40 +255,25 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
         )}
       </div>
       
-      {/* Navigation buttons */}
-      <div className="flex justify-between mt-4">
-        <Button
-          onClick={() => {
-            if (currentSentence > 0) {
-              setCurrentSentence(prev => prev - 1);
-              setAutoScroll(false);
-            }
-          }}
-          variant="outline"
-          disabled={currentSentence === 0}
-        >
-          ◀ Previous
-        </Button>
-        
+      {/* Progress Bar */}
+      <div className={cn(
+        "w-full h-3 rounded-full overflow-hidden mb-4",
+        darkMode ? "bg-gray-700" : "bg-gray-200"
+      )}>
+        <div 
+          className="h-full bg-yellow-400 transition-all duration-300"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      
+      {/* Word Position Counter */}
+      <div className="text-center">
         <span className={cn(
-          "text-sm self-center",
-          darkMode ? "text-gray-300" : "text-gray-600"
+          "text-sm",
+          darkMode ? "text-gray-400" : "text-gray-500"
         )}>
-          {sentences.length > 0 ? `${currentSentence + 1} / ${sentences.length}` : '0 / 0'}
+          Word {currentWordIndex + 1} of {words.length}
         </span>
-        
-        <Button
-          onClick={() => {
-            if (currentSentence < sentences.length - 1) {
-              setCurrentSentence(prev => prev + 1);
-              setAutoScroll(false);
-            }
-          }}
-          variant="outline"
-          disabled={currentSentence >= sentences.length - 1}
-        >
-          Next ▶
-        </Button>
       </div>
     </div>
   );
