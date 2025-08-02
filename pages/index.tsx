@@ -8,7 +8,7 @@ import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
 import Loader from "../components/ui/loader";
-import { cn } from "../lib/classnames";
+import { cn } from "../lib/classnames"; // Updated to use classnames consistently
 
 // Use dynamic import for PDFViewer with proper loading state
 const PDFViewer = dynamic(() => import("../components/PDFViewer"), {
@@ -22,8 +22,8 @@ const HybridReader = dynamic(() => import("../components/HybridReader"), {
   loading: () => <Loader label="Loading reader..." />
 });
 
-// Use dynamic import for ProgressiveView - FIXED: Using relative path
-const ProgressiveView = dynamic(() => import("../components/ProgressiveView"), {
+// Use dynamic import for ProgressiveView
+const ProgressiveView = dynamic(() => import("../components/ui/ProgressiveView"), {
   ssr: false,
   loading: () => <Loader label="Loading progressive view..." />
 });

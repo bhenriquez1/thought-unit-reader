@@ -1,7 +1,7 @@
 // components/ui/ProgressiveView.tsx
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { Button } from "./button"; // Changed from @/components/ui/button
-import { cn } from "../../lib/utils"; // Changed from @/lib/utils
+import { Button } from "./button"; // Relative import since they're in the same directory
+import { cn } from "../../lib/classnames"; // Updated to use classnames consistently
 
 interface ProgressiveViewProps {
   content: string;

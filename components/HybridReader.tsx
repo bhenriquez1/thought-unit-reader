@@ -1,21 +1,18 @@
+// components/HybridReader.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { cn } from "../lib/classnames"; // Using relative import to fix path issues
-import { Button } from "../components/ui/button"; // Using relative import to fix path issues
-import { ScrollArea } from "../components/ui/scroll-area"; // Using relative import to fix path issues
-import Loader from "../components/ui/loader"; // Using relative import to fix path issues
-
-// Use standard HTML label instead of Label component to avoid import issues
-// If you have the Label component, you can import it instead:
-// import { Label } from "../components/ui/label"; 
+import { cn } from "../lib/classnames"; // Updated to use classnames consistently
+import { Button } from "./ui/button"; // Relative import
+import { ScrollArea } from "./ui/scroll-area"; // Relative import
+import Loader from "./ui/loader"; // Relative import
 
 // Import utilities with correct paths
 import {
   parseBookWithChapters,
   generateHybridHTML,
   parseTextToUnits,
-} from "../lib/parser"; // Using relative import to fix path issues
+} from "../lib/parser"; // Relative import
 
 // Define the Chapter interface directly to avoid import issues
 interface Chapter {
