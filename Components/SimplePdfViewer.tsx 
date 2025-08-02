@@ -1,40 +1,134 @@
-"use client";
+// components/SimplePDFViewer.tsx
+import React, { useState } from 'react';
+import { ZoomIn, ZoomOut, RotateCw, Download, Maximize2 } from 'lucide-react';
 
-import React from "react";
-
-interface SimplePdfViewerProps {
+interface SimplePDFViewerProps {
   fileUrl: string;
-  width?: string;
-  height?: string;
-  initialScale?: number; // Added initialScale prop
+  initialScale?: number;
+  className?: string;
 }
 
-/**
- * A simple PDF viewer component that uses iframe
- * This component is separated from pdfjs-handler.ts because it uses JSX
- */
-export function SimplePdfViewer({ 
+const SimplePDFViewer: React.FC<SimplePDFViewerProps> = ({ 
   fileUrl, 
-  width = "100%", 
-  height = "700px",
-  initialScale = 1.0 // Default value
-}: SimplePdfViewerProps) {
-  // Note: initialScale isn't directly used with iframe,
-  // but we include it in props for compatibility with PDFViewer usage
-  
-  return (
-    <iframe 
-      src={fileUrl} 
-      width={width}
-      height={height}
-      style={{ 
-        border: '1px solid #ccc', 
-        borderRadius: '4px',
-        // We could use transform scale here based on initialScale if needed
-      }}
-      title="PDF Document"
-    />
-  );
-}
+  initialScale = 1.0,
+  className = ""
+}) => {
+  const [scale, setScale] = useState(initialScale);
+  const [rotation, setRotation] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
-export default SimplePdfViewer;
+  const handleZoomIn = () => {
+    setScale(prev => Math.min(prev + 0.25, 3.0));
+  };
+
+  const handleZoomOut = () => {
+    setScale(prev => Math.max(prev - 0.25, 0.5));
+  };
+
+  const handleRotate = () => {
+    setRotation(prev => (prev + 90) % 360);
+  };
+
+  const handleDownload = () => {
+    const link = document.createElement('a');
+    link.href = fileUrl;
+    link.download = 'document.pdf';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen);
+  };
+
+  // Create the PDF URL with zoom and rotation parameters
+  const pdfViewerUrl = `${fileUrl}#zoom=${Math.round(scale * 100)}&view=FitH`;
+
+  return (
+    <div className={`relative w-full h-full bg-gray-50 ${className}`}>
+      {/* Toolbar */}
+      <div className="absolute top-0 left-0 right-0 z-10 bg-white border-b shadow-sm">
+        <div className="flex items-center justify-between p-2">
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={handleZoomOut}
+              className="p-1 hover:bg-gray-100 rounded"
+              title="Zoom Out"
+            >
+              <ZoomOut size={16} />
+            </button>
+            <span className="text-sm font-mono min-w-[60px] text-center">
+              {Math.round(scale * 100)}%
+            </span>
+            <button
+              onClick={handleZoomIn}
+              className="p-1 hover:bg-gray-100 rounded"
+              title="Zoom In"
+            >
+              <ZoomIn size={16} />
+            </button>
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={handleRotate}
+              className="p-1 hover:bg-gray-100 rounded"
+              title="Rotate"
+            >
+              <RotateCw size={16} />
+            </button>
+            <button
+              onClick={handleDownload}
+              className="p-1 hover:bg-gray-100 rounded"
+              title="Download"
+            >
+              <Download size={16} />
+            </button>
+            <button
+              onClick={toggleFullscreen}
+              className="p-1 hover:bg-gray-100 rounded"
+              title="Fullscreen"
+            >
+              <Maximize2 size={16} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* PDF Viewer */}
+      <div 
+        className={`w-full transition-all duration-300 ${
+          isFullscreen 
+            ? 'fixed inset-0 z-50 bg-white' 
+            : 'h-full pt-12'
+        }`}
+      >
+        <iframe
+          src={pdfViewerUrl}
+          className="w-full h-full border-0"
+          style={{
+            minHeight: isFullscreen ? '100vh' : '70vh',
+            transform: `rotate(${rotation}deg)`,
+            transformOrigin: 'center center'
+          }}
+          title="PDF Document"
+          loading="lazy"
+        />
+      </div>
+
+      {/* Fullscreen overlay close button */}
+      {isFullscreen && (
+        <button
+          onClick={toggleFullscreen}
+          className="fixed top-4 right-4 z-60 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-70"
+          title="Exit Fullscreen"
+        >
+          ✕
+        </button>
+      )}
+    </div>
+  );
+};
+
+export default SimplePDFViewer;
