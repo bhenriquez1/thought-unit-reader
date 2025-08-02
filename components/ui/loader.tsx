@@ -1,14 +1,31 @@
-import React from "react";
+// components/Loader.tsx
+import React from 'react';
 
 interface LoaderProps {
   label?: string;
+  size?: 'sm' | 'md' | 'lg';
+  className?: string;
 }
 
-export default function Loader({ label = "Loading..." }: LoaderProps) {
+const Loader: React.FC<LoaderProps> = ({ 
+  label = "Loading...", 
+  size = 'md',
+  className = "" 
+}) => {
+  const sizeClasses = {
+    sm: 'w-4 h-4',
+    md: 'w-8 h-8',
+    lg: 'w-12 h-12'
+  };
+
   return (
-    <div className="flex flex-col items-center justify-center py-4">
-      <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-gray-800 mb-2" />
-      <p className="text-sm text-gray-600">{label}</p>
+    <div className={`flex flex-col items-center justify-center p-8 ${className}`}>
+      <div className={`${sizeClasses[size]} border-4 border-gray-300 border-t-blue-500 rounded-full animate-spin`}></div>
+      {label && (
+        <p className="mt-3 text-sm text-gray-600 font-medium">{label}</p>
+      )}
     </div>
   );
-}
+};
+
+export default Loader;

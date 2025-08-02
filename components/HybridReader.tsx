@@ -1,8 +1,15 @@
 // components/HybridReader.tsx
 import React, { useState, useEffect, useMemo } from "react";
 import { FileText, Image, Play, Volume2, Eye, Grid, List, Download, Search, Filter, Calendar, User, Hash, X } from "lucide-react";
-import Loader from "./Loader";
 import SimplePDFViewer from "./SimplePDFViewer";
+
+// Simple inline loader component
+const Loader: React.FC<{ label?: string }> = ({ label = "Loading..." }) => (
+  <div className="flex flex-col items-center justify-center p-8">
+    <div className="w-8 h-8 border-4 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>
+    <p className="mt-3 text-sm text-gray-600 font-medium">{label}</p>
+  </div>
+);
 
 export interface FileData {
   name: string;
