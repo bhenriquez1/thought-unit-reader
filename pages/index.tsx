@@ -359,7 +359,7 @@ export default function ThoughtUnitReader() {
       switch (viewMode) {
         case 'progressive':
           return (
-            <div className="space-y-6">
+            <div className="space-y-6 p-6">
               {/* Progressive Reading Header */}
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-yellow-400 flex items-center">
@@ -446,7 +446,7 @@ export default function ThoughtUnitReader() {
 
         case 'hybrid':
           return (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
               {/* PDF View */}
               <div className="bg-gray-800 rounded-lg overflow-hidden">
                 <h4 className="text-sm font-semibold text-gray-300 p-3 border-b border-gray-700">PDF View</h4>
@@ -509,7 +509,7 @@ export default function ThoughtUnitReader() {
 
         default: // original view for PDF
           return (
-            <div className="bg-gray-800 rounded-lg overflow-hidden" style={{ height: '70vh' }}>
+            <div className="bg-gray-800 rounded-lg overflow-hidden p-6" style={{ height: '70vh' }}>
               <SmartPDFViewer 
                 fileUrl={fileUrl} 
                 scale={1.25}
@@ -525,7 +525,7 @@ export default function ThoughtUnitReader() {
     switch (viewMode) {
       case 'progressive':
         return (
-          <div className="space-y-6">
+          <div className="space-y-6 p-6">
             {/* Progressive Reading Header */}
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-yellow-400 flex items-center">
@@ -658,7 +658,7 @@ export default function ThoughtUnitReader() {
 
       case 'hybrid':
         return (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
             {/* Original Text */}
             <div className="bg-gray-800 p-4 rounded-lg">
               <h4 className="text-sm font-semibold text-gray-300 mb-3">Original View</h4>
@@ -876,32 +876,9 @@ export default function ThoughtUnitReader() {
           </div>
         </div>
 
-        {/* PDF Viewer Controls (if PDF uploaded) */}
-        {fileUrl && uploadedFile?.type === 'application/pdf' && (
-          <div className="flex items-center justify-center space-x-4 bg-gray-800 p-3 rounded-lg">
-            <button
-              onClick={() => {/* Implement zoom out */}}
-              className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
-            >
-              - Zoom Out
-            </button>
-            <span className="text-sm">125%</span>
-            <button
-              onClick={() => {/* Implement zoom in */}}
-              className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
-            >
-              + Zoom In
-            </button>
-          </div>
-        )}
-
         {/* Main Content Area */}
-        <div className="bg-gray-800 rounded-lg p-6 min-h-[60vh]">
-          {fileUrl && uploadedFile?.type === 'application/pdf' ? (
-            <SimplePDFViewer fileUrl={fileUrl} scale={1.25} />
-          ) : (
-            renderContent()
-          )}
+        <div className="bg-gray-800 rounded-lg overflow-hidden min-h-[60vh]">
+          {renderContent()}
         </div>
 
         {/* Debug Info */}
