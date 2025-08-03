@@ -1,11 +1,11 @@
 // components/HybridReader.tsx
 import React from 'react';
-import SmartPDFViewer from './SmartPDFViewer';
-import ProgressiveView, { ThoughtUnit, ReadingStats } from './ProgressiveView';
+import SmartPDFViewer from '@/components/SmartPDFViewer';
+import ProgressiveView, { ThoughtUnit, ReadingStats } from '@/components/ProgressiveView';
 import { Play, Pause } from 'lucide-react';
 
-export interface HybridReaderProps {
-  fileUrl: string | null;
+interface HybridReaderProps {
+  fileUrl: string;
   sampleText: string;
   currentPage: number;
   pdfPageCount: number;
@@ -19,16 +19,16 @@ export interface HybridReaderProps {
   fontSize: number;
   fontFamily: string;
   lineSpacing: number;
-  clickSwitchesTo: string;
+  clickSwitchesTo: boolean;
   onWordClick: (word: string) => void;
   onStartReading: () => void;
   onPauseReading: () => void;
   onResetReading: () => void;
-  setReadingSpeed: (wpm: number) => void;
+  setReadingSpeed: (speed: number) => void;
   setCurrentPage: (page: number) => void;
 }
 
-const HybridReader: React.FC<HybridReaderProps> = ({
+export default function HybridReader({
   fileUrl,
   sampleText,
   currentPage,
@@ -43,56 +43,31 @@ const HybridReader: React.FC<HybridReaderProps> = ({
   fontSize,
   fontFamily,
   lineSpacing,
+  clickSwitchesTo,
   onWordClick,
   onStartReading,
   onPauseReading,
   onResetReading,
   setReadingSpeed,
   setCurrentPage,
-}) => {
+}: HybridReaderProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
-      {/* PDF View */}
-      <div className="bg-gray-800 rounded-lg overflow-hidden">
-        <div className="p-3 border-b border-gray-700 flex justify-between">
-          <div className="text-sm font-semibold text-gray-300">PDF View - Page {currentPage}</div>
-          <div className="text-xs text-gray-400">{currentPage} / {pdfPageCount}</div>
-        </div>
-        <div style={{ height: '60vh' }}>
-          {fileUrl && (
-            <SmartPDFViewer
-              fileUrl={fileUrl}
-              scale={1.0}
-              onWordClick={onWordClick}
-              showTextOverlay={true}
-              textContent={sampleText}
-              currentPage={currentPage}
-              onPageChange={setCurrentPage}
-            />
-          )}
-        </div>
+      {/* Left Side: Original PDF View */}
+      <div className="bg-gray-800 p-4 rounded-lg overflow-hidden">
+        <SmartPDFViewer
+          fileUrl={fileUrl}
+          scale={1.25}
+          onWordClick={onWordClick}
+          showTextOverlay={true}
+          textContent={sampleText}
+          currentPage={currentPage}
+          onPageChange={setCurrentPage}
+        />
       </div>
 
-      {/* Progressive Reading Panel */}
-      <div className="bg-gray-800 p-4 rounded-lg">
-        <div className="flex items-center justify-between mb-3">
-          <h4 className="text-sm font-semibold text-gray-300">Progressive Reading</h4>
-          <div className="text-xs text-gray-400">{readingSpeed} WPM</div>
-        </div>
-
-        <div className="flex items-center space-x-2 mb-4">
-          <button
-            onClick={isReading && !isPaused ? onPauseReading : onStartReading}
-            className={`px-3 py-1 rounded text-sm flex items-center space-x-1 ${
-              isReading && !isPaused ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'
-            } text-white transition-colors`}
-          >
-            {isReading && !isPaused ? <Pause size={12} /> : <Play size={12} />}
-            <span>{isReading && !isPaused ? 'Pause' : 'Start'}</span>
-          </button>
-          <span className="text-xs text-gray-400">{readingSpeed} WPM</span>
-        </div>
-
+      {/* Right Side: Progressive View */}
+      <div className="bg-gray-800 p-4 rounded-lg flex flex-col space-y-4">
         <ProgressiveView
           thoughtUnits={thoughtUnits}
           currentThoughtUnit={currentThoughtUnit}
@@ -112,9 +87,42 @@ const HybridReader: React.FC<HybridReaderProps> = ({
           onReset={onResetReading}
           setReadingSpeed={setReadingSpeed}
         />
+
+        {/* Reading Controls */}
+        <div className="flex items-center space-x-4">
+          <button
+            onClick={isReading && !isPaused ? onPauseReading : onStartReading}
+            className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${
+              isReading && !isPaused
+                ? 'bg-yellow-600 hover:bg-yellow-700'
+                : 'bg-green-600 hover:bg-green-700'
+            } text-white transition-colors`}
+          >
+            {isReading && !isPaused ? <Pause size={16} /> : <Play size={16} />}
+            <span>{isReading && !isPaused ? 'Pause' : 'Start'}</span>
+          </button>
+
+          <button
+            onClick={onResetReading}
+            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg"
+          >
+            Reset
+          </button>
+
+          <div className="flex items-center space-x-2">
+            <label className="text-sm text-gray-300">Speed:</label>
+            <input
+              type="number"
+              value={readingSpeed}
+              onChange={(e) => setReadingSpeed(parseInt(e.target.value) || 200)}
+              className="w-16 px-2 py-1 bg-gray-700 text-white rounded text-center"
+              min="50"
+              max="1000"
+            />
+            <span className="text-sm text-gray-300">WPM</span>
+          </div>
+        </div>
       </div>
     </div>
   );
-};
-
-export default HybridReader;
+}
