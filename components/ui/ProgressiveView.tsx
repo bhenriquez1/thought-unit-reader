@@ -12,63 +12,61 @@ export interface ThoughtUnit {
 
 export interface ReadingStats {
   wordsRead: number;
-  timeElapsed: number;
+  timeElapsed: number; // seconds
   currentWPM: number;
   averageWPM: number;
   comprehensionScore?: number;
 }
 
-interface ProgressiveViewProps {
-  sampleText: string;
-  currentThoughtUnit: number;
-  totalThoughtUnits: number;
+export interface ProgressiveViewProps {
   thoughtUnits: ThoughtUnit[];
+  currentThoughtUnit: number;
   readingSpeed: number;
   isReading: boolean;
   isPaused: boolean;
   stats: ReadingStats;
   highlightedWord: string;
+  currentPage: number;
+  pdfPageCount: number;
   fontSize: number;
   fontFamily: string;
   lineSpacing: number;
-  handleStartReading: () => void;
-  handlePauseReading: () => void;
-  handleResetReading: () => void;
-  handleWordClick: (word: string) => void;
+  onWordClick: (word: string) => void;
+  onStart: () => void;
+  onPause: () => void;
+  onReset: () => void;
   setReadingSpeed: (wpm: number) => void;
 }
 
-const formatTime = (seconds: number): string => {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${secs}s`;
-  }
-  return `${minutes}m ${secs}s`;
-};
-
 const ProgressiveView: React.FC<ProgressiveViewProps> = ({
-  sampleText,
-  currentThoughtUnit,
-  totalThoughtUnits,
   thoughtUnits,
+  currentThoughtUnit,
   readingSpeed,
   isReading,
   isPaused,
   stats,
   highlightedWord,
+  currentPage,
+  pdfPageCount,
   fontSize,
   fontFamily,
   lineSpacing,
-  handleStartReading,
-  handlePauseReading,
-  handleResetReading,
-  handleWordClick,
-  setReadingSpeed
+  onWordClick,
+  onStart,
+  onPause,
+  onReset,
+  setReadingSpeed,
 }) => {
-  const completionPercentage = Math.round((currentThoughtUnit / totalThoughtUnits) * 100);
   const currentUnit = thoughtUnits[currentThoughtUnit - 1];
+  const completionPercentage = Math.round((currentThoughtUnit / Math.max(1, thoughtUnits.length)) * 100);
+
+  const formatTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    if (hours > 0) return `${hours}h ${minutes}m ${secs}s`;
+    return `${minutes}m ${secs}s`;
+  };
 
   return (
     <div className="space-y-6 p-6">
@@ -79,16 +77,16 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
           Progressive Reading
         </h3>
         <div className="text-sm text-gray-400">
-          Thought Unit {currentThoughtUnit} of {totalThoughtUnits.toLocaleString()}
+          Thought Unit {currentThoughtUnit} of {thoughtUnits.length.toLocaleString()}
         </div>
       </div>
 
       {/* Controls */}
       <div className="flex items-center space-x-4">
         <button
-          onClick={isReading ? handlePauseReading : handleStartReading}
+          onClick={isReading && !isPaused ? onPause : onStart}
           className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${
-            isReading ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'
+            isReading && !isPaused ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'
           } text-white transition-colors`}
         >
           {isReading && !isPaused ? <Pause size={16} /> : <Play size={16} />}
@@ -96,7 +94,7 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
         </button>
 
         <button
-          onClick={handleResetReading}
+          onClick={onReset}
           className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg flex items-center space-x-2 transition-colors"
         >
           <RotateCcw size={16} />
@@ -133,11 +131,11 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
         </div>
         <div className="bg-red-900 p-4 rounded-lg text-center">
           <div className="text-2xl font-bold">{formatTime(stats.timeElapsed)}</div>
-          <div className="text-sm opacity-75">Elapsed</div>
+          <div className="text-sm opacity-75">Left</div>
         </div>
       </div>
 
-      {/* Thought Unit */}
+      {/* Current Unit */}
       {currentUnit && (
         <div className="bg-gray-800 p-6 rounded-lg">
           <div
@@ -145,7 +143,7 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
             style={{
               fontSize: `${fontSize}px`,
               fontFamily: fontFamily,
-              lineHeight: lineSpacing
+              lineHeight: lineSpacing,
             }}
           >
             {currentUnit.text.split(' ').map((word, index) => (
@@ -156,7 +154,7 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
                     ? 'bg-yellow-400 text-black px-1 rounded'
                     : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
                 } transition-colors`}
-                onClick={() => handleWordClick(word)}
+                onClick={() => onWordClick(word)}
               >
                 {word}{' '}
               </span>
@@ -164,9 +162,13 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Page info if needed */}
+      <div className="text-sm text-gray-400">
+        <p>Page {currentPage} of {pdfPageCount}</p>
+      </div>
     </div>
   );
 };
 
 export default ProgressiveView;
-export type { ThoughtUnit, ReadingStats };

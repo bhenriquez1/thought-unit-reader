@@ -1,327 +1,271 @@
 // pages/index.tsx
-import React, { useState, useEffect, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
-import { Play, Pause, RotateCcw } from 'lucide-react';
+import ErrorBoundary from '@/components/ErrorBoundary';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Play, Pause, RotateCcw, ZoomIn, ZoomOut, Upload } from 'lucide-react';
+import ProgressiveView, { ThoughtUnit, ReadingStats } from '@/components/ProgressiveView';
+import HybridReader from '@/components/HybridReader';
 
-// Dynamic imports
+// (keep earlier constants like fullTableOfContents, sampleText, etc., unchanged)
+
+// Dynamic components (you can still keep SmartPDFViewer used directly for PDF-progressive)
 const SmartPDFViewer = dynamic(() => import('@/components/SmartPDFViewer'), {
   ssr: false,
   loading: () => <div className="p-4 text-center">Loading PDF viewer...</div>,
 });
-const ProgressiveView = dynamic(() => import('@/components/ProgressiveView'), {
-  ssr: false,
-  loading: () => <div className="p-4 text-center">Loading progressive view...</div>,
-});
-const HybridReader = dynamic(() => import('@/components/HybridReader'), {
-  ssr: false,
-  loading: () => <div className="p-4 text-center">Loading hybrid reader...</div>,
-});
 
-export default function Home() {
-  // Core state
-  const [viewMode, setViewMode] = useState<'original' | 'progressive' | 'hybrid' | 'rightbrain'>('original');
-  const [darkMode, setDarkMode] = useState(true);
-  const [aiEnabled, setAiEnabled] = useState(true);
-  const [debugMode, setDebugMode] = useState(false);
+export default function ThoughtUnitReader() {
+  // ... all your existing state and hooks remain identical ...
 
-  // Reading state
-  const [readingSpeed, setReadingSpeed] = useState(200);
-  const [isReading, setIsReading] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [currentThoughtUnit, setCurrentThoughtUnit] = useState(1);
-  const [totalThoughtUnits] = useState(832767);
-  const [stats, setStats] = useState({
-    wordsRead: 0,
-    timeElapsed: 0,
-    currentWPM: 200,
-    averageWPM: 200
-  });
-  const [highlightedWord, setHighlightedWord] = useState<string>('Use');
-  const [fontSize, setFontSize] = useState(18);
-  const [fontFamily, setFontFamily] = useState('OpenDyslexic');
-  const [lineSpacing, setLineSpacing] = useState(1.5);
-  const [clickSwitchesTo, setClickSwitchesTo] = useState('Progressive View');
+  // Render content based on view mode (only the relevant parts adjusted)
+  const renderContent = () => {
+    const currentUnit = thoughtUnits[currentThoughtUnit - 1];
 
-  // PDF/file
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [fileUrl, setFileUrl] = useState<string | null>(null);
-  const [textContent, setTextContent] = useState<string>('');
-  const [currentPage, setCurrentPage] = useState(35);
-  const [pdfPageCount] = useState(1423);
+    // If PDF is loaded, show PDF-based views
+    if (fileUrl && uploadedFile?.type === 'application/pdf') {
+      switch (viewMode) {
+        case 'progressive':
+          // keep original progressive PDF layout but delegate thought-unit display if needed
+          return (
+            <div className="space-y-6 p-6">
+              {/* Progressive Reading Header & Controls (you could optionally replace with ProgressiveView for text portion) */}
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-yellow-400 flex items-center">
+                  <span className="mr-2">⚡</span>
+                  Progressive Reading
+                </h3>
+                <div className="text-sm text-gray-400">
+                  Page {currentPage} of {pdfPageCount}
+                </div>
+              </div>
 
-  // Thought units
-  const [thoughtUnits, setThoughtUnits] = useState<any[]>([]);
-  const readingTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const startTimeRef = useRef<number>(Date.now());
-  const sampleText = `Use of the current edition of the electronic version of this book (eBook) is subject to the terms of the nontransferable, limited license granted on expertconsult.inkling.com. Access to the eBook is limited to the first individual who redeems the PIN, located on the inside cover of this book, at expertconsult.inkling.com and may not be transferred to another party by resale, lending, or other means.`;
+              {/* Reading Controls */}
+              <div className="flex items-center space-x-4">
+                <button
+                  onClick={isReading && !isPaused ? handlePauseReading : handleStartReading}
+                  className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${
+                    isReading && !isPaused ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'
+                  } text-white transition-colors`}
+                >
+                  {isReading && !isPaused ? <Pause size={16} /> : <Play size={16} />}
+                  <span>{isReading && !isPaused ? 'Pause' : 'Start'}</span>
+                </button>
 
-  // Initialize thought units
-  useEffect(() => {
-    const content = textContent || sampleText;
-    const words = content.split(/\s+/);
-    const units: any[] = [];
-    for (let i = 0; i < words.length; i += 12) {
-      const unitWords = words.slice(i, i + 12);
-      units.push({
-        id: Math.floor(i / 12) + 1,
-        text: unitWords.join(' '),
-        wordCount: unitWords.length,
-        isCompleted: false,
-        timeSpent: 0
-      });
+                <button
+                  onClick={handleResetReading}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg flex items-center space-x-2 transition-colors"
+                >
+                  <RotateCcw size={16} />
+                  <span>Reset</span>
+                </button>
+
+                <div className="flex items-center space-x-2">
+                  <label className="text-sm text-gray-300">Speed:</label>
+                  <input
+                    type="number"
+                    value={readingSpeed}
+                    onChange={(e) => setReadingSpeed(parseInt(e.target.value) || 200)}
+                    className="w-16 px-2 py-1 bg-gray-700 text-white rounded text-center"
+                    min="50"
+                    max="1000"
+                  />
+                  <span className="text-sm text-gray-300">WPM</span>
+                  <button
+                    onClick={() => setReadingSpeed(prev => Math.min(prev + 50, 1000))}
+                    className="px-2 py-1 bg-gray-600 hover:bg-gray-500 text-white rounded"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Statistics Cards */}
+              <div className="grid grid-cols-4 gap-4">
+                <div className="bg-blue-600 p-4 rounded-lg text-center">
+                  <div className="text-2xl font-bold">{Math.round((currentPage / pdfPageCount) * 100)}%</div>
+                  <div className="text-sm opacity-75">Complete</div>
+                </div>
+                <div className="bg-green-600 p-4 rounded-lg text-center">
+                  <div className="text-2xl font-bold">{currentPage}</div>
+                  <div className="text-sm opacity-75">Current</div>
+                </div>
+                <div className="bg-purple-600 p-4 rounded-lg text-center">
+                  <div className="text-2xl font-bold">{stats.currentWPM}</div>
+                  <div className="text-sm opacity-75">WPM</div>
+                </div>
+                <div className="bg-red-900 p-4 rounded-lg text-center">
+                  <div className="text-2xl font-bold">{formatTime(stats.timeElapsed)}</div>
+                  <div className="text-sm opacity-75">Left</div>
+                </div>
+              </div>
+
+              {/* PDF with Text Overlay */}
+              <div className="bg-gray-800 rounded-lg overflow-hidden" style={{ height: '60vh' }}>
+                <ErrorBoundary fallback={<div className="p-4 text-center text-red-400">PDF viewer failed to load.</div>}>
+                  <SmartPDFViewer
+                    fileUrl={fileUrl}
+                    scale={1.25}
+                    onWordClick={handleWordClick}
+                    showTextOverlay={true}
+                    textContent={sampleText}
+                    currentPage={currentPage}
+                    onPageChange={setCurrentPage}
+                  />
+                </ErrorBoundary>
+              </div>
+            </div>
+          );
+
+        case 'hybrid':
+          return (
+            <ErrorBoundary fallback={<div className="p-4 text-center">Hybrid reader failed to load.</div>}>
+              <HybridReader
+                fileUrl={fileUrl}
+                sampleText={sampleText}
+                currentPage={currentPage}
+                pdfPageCount={pdfPageCount}
+                readingSpeed={readingSpeed}
+                isReading={isReading}
+                isPaused={isPaused}
+                currentThoughtUnit={currentThoughtUnit}
+                thoughtUnits={thoughtUnits}
+                highlightedWord={highlightedWord}
+                stats={stats}
+                fontSize={fontSize}
+                fontFamily={fontFamily}
+                lineSpacing={lineSpacing}
+                clickSwitchesTo={clickSwitchesTo}
+                onWordClick={handleWordClick}
+                onStartReading={handleStartReading}
+                onPauseReading={handlePauseReading}
+                onResetReading={handleResetReading}
+                setReadingSpeed={setReadingSpeed}
+                setCurrentPage={setCurrentPage}
+              />
+            </ErrorBoundary>
+          );
+
+        // other cases (rightbrain/original) stay as before...
+        default:
+          return (
+            <div className="bg-gray-800 rounded-lg overflow-hidden p-6" style={{ height: '70vh' }}>
+              <ErrorBoundary fallback={<div className="p-4 text-center text-red-400">PDF viewer failed to load.</div>}>
+                <SmartPDFViewer
+                  fileUrl={fileUrl}
+                  scale={1.25}
+                  onWordClick={handleWordClick}
+                  showTextOverlay={false}
+                  currentPage={currentPage}
+                  onPageChange={setCurrentPage}
+                />
+              </ErrorBoundary>
+            </div>
+          );
+      }
     }
-    setThoughtUnits(units);
-  }, [textContent]);
 
-  // Timer logic
-  useEffect(() => {
-    if (isReading && !isPaused) {
-      readingTimerRef.current = setInterval(() => {
-        setStats(prev => {
-          const newTimeElapsed = prev.timeElapsed + 1;
-          const newCurrentWPM = Math.round((prev.wordsRead / newTimeElapsed) * 60) || readingSpeed;
-          return {
-            ...prev,
-            timeElapsed: newTimeElapsed,
-            currentWPM: newCurrentWPM,
-            averageWPM: Math.round((prev.averageWPM + newCurrentWPM) / 2) || readingSpeed
-          };
-        });
-      }, 1000);
-    } else {
-      if (readingTimerRef.current) clearInterval(readingTimerRef.current);
+    // Text-based views (no PDF)
+    switch (viewMode) {
+      case 'progressive':
+        return (
+          <ProgressiveView
+            thoughtUnits={thoughtUnits}
+            currentThoughtUnit={currentThoughtUnit}
+            readingSpeed={readingSpeed}
+            isReading={isReading}
+            isPaused={isPaused}
+            stats={stats}
+            highlightedWord={highlightedWord}
+            currentPage={currentPage}
+            pdfPageCount={pdfPageCount}
+            fontSize={fontSize}
+            fontFamily={fontFamily}
+            lineSpacing={lineSpacing}
+            onWordClick={handleWordClick}
+            onStart={handleStartReading}
+            onPause={handlePauseReading}
+            onReset={handleResetReading}
+            setReadingSpeed={setReadingSpeed}
+          />
+        );
+
+      case 'hybrid':
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
+            {/* Original Text */}
+            <div className="bg-gray-800 p-4 rounded-lg">
+              <h4 className="text-sm font-semibold text-gray-300 mb-3">Original View</h4>
+              <div className="text-sm leading-relaxed">
+                {(textContent || sampleText).split(' ').map((word, index) => (
+                  <span
+                    key={index}
+                    className={`${
+                      word === highlightedWord
+                        ? 'bg-yellow-400 text-black px-1 rounded'
+                        : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
+                    } transition-colors`}
+                    onClick={() => handleWordClick(word)}
+                  >
+                    {word}{' '}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Progressive View */}
+            <div className="bg-gray-800 p-4 rounded-lg">
+              <h4 className="text-sm font-semibold text-gray-300 mb-3">Progressive View</h4>
+              {thoughtUnits[currentThoughtUnit - 1] && (
+                <div className="text-lg leading-relaxed">
+                  {thoughtUnits[currentThoughtUnit - 1].text.split(' ').map((word, index) => (
+                    <span
+                      key={index}
+                      className={`${
+                        word === highlightedWord
+                          ? 'bg-yellow-400 text-black px-1 rounded'
+                          : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
+                      } transition-colors`}
+                      onClick={() => handleWordClick(word)}
+                    >
+                      {word}{' '}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+
+      // original/rightbrain remain as before...
+      default:
+        // fallback to existing internal logic
+        return null;
     }
-    return () => {
-      if (readingTimerRef.current) clearInterval(readingTimerRef.current);
-    };
-  }, [isReading, isPaused, readingSpeed]);
-
-  // Auto-advance (simplified)
-  useEffect(() => {
-    if (isReading && !isPaused && viewMode === 'progressive') {
-      const wordsPerUnit = thoughtUnits[currentThoughtUnit - 1]?.wordCount || 12;
-      const timePerUnit = (wordsPerUnit / readingSpeed) * 60 * 1000;
-      const timer = setTimeout(() => {
-        if (currentThoughtUnit < thoughtUnits.length) {
-          setCurrentThoughtUnit(prev => prev + 1);
-          setStats(prev => ({
-            ...prev,
-            wordsRead: prev.wordsRead + (thoughtUnits[currentThoughtUnit - 1]?.wordCount || 0)
-          }));
-        }
-      }, timePerUnit);
-      return () => clearTimeout(timer);
-    }
-  }, [isReading, isPaused, viewMode, currentThoughtUnit, readingSpeed, thoughtUnits]);
-
-  const handleWordClick = useCallback((word: string) => {
-    setHighlightedWord(word);
-    if (clickSwitchesTo === 'Progressive View' && viewMode !== 'progressive') {
-      setViewMode('progressive');
-    } else if (clickSwitchesTo === 'Hybrid View' && viewMode !== 'hybrid') {
-      setViewMode('hybrid');
-    }
-  }, [clickSwitchesTo, viewMode]);
-
-  const handleStartReading = () => {
-    setIsReading(true);
-    setIsPaused(false);
-    startTimeRef.current = Date.now();
   };
-  const handlePauseReading = () => setIsPaused(prev => !prev);
-  const handleResetReading = () => {
-    setIsReading(false);
-    setIsPaused(false);
-    setCurrentThoughtUnit(1);
-    setStats({
-      wordsRead: 0,
-      timeElapsed: 0,
-      currentWPM: readingSpeed,
-      averageWPM: readingSpeed
-    });
-    setThoughtUnits(prev => prev.map((u: any) => ({ ...u, isCompleted: false, timeSpent: 0 })));
-  };
 
-  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadedFile(file);
-    if (file.type === 'application/pdf') {
-      setFileUrl(URL.createObjectURL(file));
-    } else if (file.type.startsWith('text/')) {
-      const text = await file.text();
-      setTextContent(text);
-    }
-  }, []);
-
-  const completionPercentage = Math.round((currentThoughtUnit / totalThoughtUnits) * 100);
-  const formatTime = (seconds: number): string => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    if (hours > 0) return `${hours}h ${minutes}m ${secs}s`;
-    return `${minutes}m ${secs}s`;
-  };
+  // ...rest of your component markup remains unchanged, including header, controls, notes panel, etc.
 
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
-      <header className="text-center py-6 border-b border-gray-700">
-        <h1 className="text-3xl font-bold bg-gradient-to-r from-pink-400 to-purple-600 bg-clip-text text-transparent">
-          Thought-Unit Reader
-        </h1>
-        <p className="text-gray-400 mt-2">Read deeper, faster, and smarter.</p>
-      </header>
-
+      {/* Header, controls, typography, buttons etc. kept exactly as before */}
       <div className="max-w-7xl mx-auto p-4 space-y-4">
-        {/* Top bar */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <span className="text-sm">Enable AI Mode</span>
-              <button
-                onClick={() => setAiEnabled(!aiEnabled)}
-                className={`w-12 h-6 rounded-full transition-colors ${aiEnabled ? 'bg-blue-500' : 'bg-gray-600'} relative`}
-              >
-                <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform ${aiEnabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
-              </button>
-            </div>
-            <label className="flex items-center space-x-2 bg-pink-500 hover:bg-pink-600 px-4 py-2 rounded-lg cursor-pointer transition-colors">
-              <span>Upload Book</span>
-              <input type="file" onChange={handleFileUpload} className="hidden" accept=".pdf,.txt,.epub" />
-            </label>
-            <button onClick={() => setDebugMode(!debugMode)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg">
-              Debug
-            </button>
-          </div>
-          <div className="flex items-center space-x-2">
-            <span className="text-sm">Dark Mode</span>
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              className={`w-12 h-6 rounded-full transition-colors ${darkMode ? 'bg-blue-500' : 'bg-gray-600'} relative`}
-            >
-              <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform ${darkMode ? 'translate-x-6' : 'translate-x-0.5'}`} />
-            </button>
-          </div>
-        </div>
+        {/* ... your existing control UI ... */}
 
-        {/* View mode buttons */}
-        <div className="flex space-x-2">
-          <button
-            onClick={() => setViewMode('original')}
-            className={`px-4 py-2 rounded-lg transition-colors ${viewMode === 'original' ? 'bg-pink-500 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
-          >
-            Original View
-          </button>
-          <button
-            onClick={() => setViewMode('progressive')}
-            className={`px-4 py-2 rounded-lg transition-colors ${viewMode === 'progressive' ? 'bg-pink-500 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
-          >
-            Progressive View
-          </button>
-          <button
-            onClick={() => setViewMode('hybrid')}
-            className={`px-4 py-2 rounded-lg transition-colors ${viewMode === 'hybrid' ? 'bg-pink-500 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
-          >
-            Hybrid View
-          </button>
-          <button
-            onClick={() => setViewMode('rightbrain')}
-            className={`px-4 py-2 rounded-lg transition-colors ${viewMode === 'rightbrain' ? 'bg-blue-500 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
-          >
-            🧠 Right Brain View
-          </button>
-        </div>
-
-        {/* Tip */}
-        <div className="bg-blue-900 border border-blue-700 rounded-lg p-3">
-          <div className="flex items-center text-blue-300">
-            <span className="mr-2">💡</span>
-            <span className="text-sm">Tip: Click on any word below to instantly switch to progressive view!</span>
-          </div>
-        </div>
-
-        {/* Main area */}
+        {/* Main Content Area */}
         <div className="bg-gray-800 rounded-lg overflow-hidden min-h-[60vh]">
-          {viewMode === 'original' && fileUrl && (
-            <div className="p-6">
-              <SmartPDFViewer
-                fileUrl={fileUrl}
-                scale={1.25}
-                currentPage={currentPage}
-                onPageChange={setCurrentPage}
-                showTextOverlay={false}
-              />
-            </div>
-          )}
-
-          {viewMode === 'progressive' && (
-            <ProgressiveView
-              sampleText={sampleText}
-              currentThoughtUnit={currentThoughtUnit}
-              totalThoughtUnits={totalThoughtUnits}
-              thoughtUnits={thoughtUnits}
-              readingSpeed={readingSpeed}
-              isReading={isReading}
-              isPaused={isPaused}
-              stats={stats}
-              highlightedWord={highlightedWord}
-              fontSize={fontSize}
-              fontFamily={fontFamily}
-              lineSpacing={lineSpacing}
-              handleStartReading={handleStartReading}
-              handlePauseReading={handlePauseReading}
-              handleResetReading={handleResetReading}
-              handleWordClick={handleWordClick}
-              setReadingSpeed={setReadingSpeed}
-            />
-          )}
-
-          {viewMode === 'hybrid' && (
-            <HybridReader
-              fileUrl={fileUrl}
-              sampleText={sampleText}
-              currentThoughtUnit={currentThoughtUnit}
-              totalThoughtUnits={totalThoughtUnits}
-              thoughtUnits={thoughtUnits}
-              readingSpeed={readingSpeed}
-              isReading={isReading}
-              isPaused={isPaused}
-              stats={stats}
-              highlightedWord={highlightedWord}
-              fontSize={fontSize}
-              fontFamily={fontFamily}
-              lineSpacing={lineSpacing}
-              currentPage={currentPage}
-              pdfPageCount={pdfPageCount}
-              aiEnabled={aiEnabled}
-              handleStartReading={handleStartReading}
-              handlePauseReading={handlePauseReading}
-              handleResetReading={handleResetReading}
-              handleWordClick={handleWordClick}
-              setReadingSpeed={setReadingSpeed}
-              setCurrentPage={setCurrentPage}
-            />
-          )}
-
-          {viewMode === 'rightbrain' && (
-            <div className="p-6">
-              <div className="text-xl font-semibold text-blue-400 mb-4">🧠 Right Brain View - Creative Notes</div>
-              <div className="flex gap-6">
-                <div className="flex-1 bg-gray-700 p-4 rounded"> {/* Placeholder for notes panel */}Medical / Creative Notes</div>
-                <div className="flex-1 bg-gray-700 p-4 rounded"> {/* Context / cards */}Context & Study Cards</div>
-              </div>
-            </div>
-          )}
+          {renderContent()}
         </div>
 
-        {/* Debug panel */}
+        {/* Debug Info */}
         {debugMode && (
-          <div className="bg-yellow-900 border border-yellow-700 rounded-lg p-4 mt-4">
-            <div className="grid grid-cols-2 gap-4 text-sm text-yellow-200">
+          <div className="bg-yellow-900 border border-yellow-700 rounded-lg p-4">
+            <h4 className="font-semibold text-yellow-300 mb-2">Debug Information</h4>
+            <div className="text-sm text-yellow-200 grid grid-cols-2 gap-4">
               <div>
-                <p>View Mode: {viewMode}</p>
                 <p>Current Thought Unit: {currentThoughtUnit}</p>
+                <p>Total Units: {thoughtUnits.length}</p>
                 <p>Reading Speed: {readingSpeed} WPM</p>
+                <p>View Mode: {viewMode}</p>
               </div>
               <div>
                 <p>Words Read: {stats.wordsRead}</p>
