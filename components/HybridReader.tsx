@@ -1,7 +1,7 @@
 // components/HybridReader.tsx
 import React from 'react';
 import SmartPDFViewer from '@/components/SmartPDFViewer';
-import ProgressiveView, { ThoughtUnit, ReadingStats } from '@/components/ProgressiveView';
+import ProgressiveView from '@/components/ProgressiveView';
 import { Play, Pause } from 'lucide-react';
 
 interface HybridReaderProps {

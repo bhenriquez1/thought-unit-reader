@@ -127,9 +127,7 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
         <div className="flex items-center space-x-2">
           <button
             onClick={() => { setIsReading(prev => !prev); setIsPaused(false); }}
-            className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${
-              isReading && !isPaused ? 'bg-yellow-600' : 'bg-green-600'
-            }`}
+            className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${isReading && !isPaused ? 'bg-yellow-600' : 'bg-green-600'}`}
           >
             {isReading && !isPaused ? <Pause size={16} /> : <Play size={16} />}
             <span>{isReading && !isPaused ? 'Pause' : 'Start'}</span>
@@ -164,11 +162,7 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
             {currentUnit.text.split(' ').map((word, i) => (
               <span
                 key={i}
-                className={`${
-                  word === highlightedWord
-                    ? 'bg-yellow-400 text-black px-1 rounded'
-                    : 'hover:bg-gray-600 cursor-pointer px-1 rounded'
-                } transition-colors`}
+                className={`${word === highlightedWord ? 'bg-yellow-400 text-black px-1 rounded' : 'hover:bg-gray-600 cursor-pointer px-1 rounded'} transition-colors`}
                 onClick={() => handleWordClick(word)}
               >
                 {word}{' '}
