@@ -818,7 +818,10 @@ export default function ThoughtUnitReader() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
               {/* PDF View */}
               <div className="bg-gray-800 rounded-lg overflow-hidden">
-                <h4 className="text-sm font-semibold text-gray-300 p-3 border-b border-gray-700">PDF View - Page {currentPage}</h4>
+                <div className="flex items-center justify-between p-3 border-b border-gray-700">
+                  <h4 className="text-sm font-semibold text-gray-300">PDF View - Page {currentPage}</h4>
+                  <div className="text-xs text-gray-400">{currentPage} / {pdfPageCount}</div>
+                </div>
                 <div style={{ height: '60vh' }}>
                   <SmartPDFViewer 
                     fileUrl={fileUrl} 
@@ -835,7 +838,10 @@ export default function ThoughtUnitReader() {
 
               {/* Progressive Reading View */}
               <div className="bg-gray-800 p-4 rounded-lg">
-                <h4 className="text-sm font-semibold text-gray-300 mb-3">Progressive Reading</h4>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-semibold text-gray-300">Progressive Reading</h4>
+                  <div className="text-xs text-gray-400">{readingSpeed} WPM</div>
+                </div>
                 
                 {/* Mini Reading Controls */}
                 <div className="flex items-center space-x-2 mb-4">
@@ -848,19 +854,20 @@ export default function ThoughtUnitReader() {
                     {isReading && !isPaused ? <Pause size={12} /> : <Play size={12} />}
                     <span>{isReading && !isPaused ? 'Pause' : 'Start'}</span>
                   </button>
-                  <span className="text-xs text-gray-400">{readingSpeed} WPM</span>
+                  <span className="text-xs text-gray-400">200 WPM</span>
                 </div>
 
-                {/* Current Thought Unit */}
-                {currentUnit && (
+                {/* Thought Unit Display */}
+                <div className="bg-gray-700 p-4 rounded mb-4">
+                  <div className="text-sm text-gray-400 mb-2">Thought Unit 1 of 6</div>
                   <div className="text-lg leading-relaxed">
-                    {currentUnit.text.split(' ').map((word, index) => (
+                    {sampleText.split(' ').slice(0, 12).map((word, index) => (
                       <span
                         key={index}
                         className={`${
                           word === highlightedWord 
                             ? 'bg-yellow-400 text-black px-1 rounded' 
-                            : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
+                            : 'hover:bg-gray-600 cursor-pointer px-1 rounded'
                         } transition-colors`}
                         onClick={() => handleWordClick(word)}
                       >
@@ -868,12 +875,14 @@ export default function ThoughtUnitReader() {
                       </span>
                     ))}
                   </div>
-                )}
+                </div>
 
                 {/* Progress Info */}
-                <div className="mt-4 text-sm text-gray-400">
-                  <p>Thought Unit {currentThoughtUnit} of {thoughtUnits.length}</p>
+                <div className="text-sm text-gray-400">
                   <p>Page {currentPage} of {pdfPageCount}</p>
+                  <div className="w-full bg-gray-600 rounded-full h-2 mt-2">
+                    <div className="bg-yellow-400 h-2 rounded-full" style={{ width: `${Math.round((currentPage / pdfPageCount) * 100)}%` }}></div>
+                  </div>
                 </div>
               </div>
             </div>
