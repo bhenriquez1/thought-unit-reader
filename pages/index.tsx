@@ -79,6 +79,7 @@ const SmartPDFViewer: React.FC<{
   textContent?: string;
   currentPage?: number;
   onPageChange?: (page: number) => void;
+  tableOfContents?: any[];
 }> = ({ 
   fileUrl, 
   scale = 1.25,
@@ -87,7 +88,8 @@ const SmartPDFViewer: React.FC<{
   showTextOverlay = false,
   textContent = "",
   currentPage = 68,
-  onPageChange
+  onPageChange,
+  tableOfContents = []
 }) => {
   const [zoom, setZoom] = useState(scale);
   const [showTOC, setShowTOC] = useState(false);
@@ -138,7 +140,7 @@ const SmartPDFViewer: React.FC<{
               </button>
             </div>
             <div className="space-y-2">
-              {fullTableOfContents.map((item, index) => (
+              {tableOfContents.map((item, index) => (
                 <div
                   key={index}
                   className={`cursor-pointer hover:bg-gray-700 p-2 rounded text-sm transition-colors ${
@@ -805,6 +807,7 @@ export default function ThoughtUnitReader() {
                   textContent={sampleText}
                   currentPage={currentPage}
                   onPageChange={setCurrentPage}
+                  tableOfContents={fullTableOfContents}
                 />
               </div>
             </div>
@@ -825,6 +828,7 @@ export default function ThoughtUnitReader() {
                     textContent={sampleText}
                     currentPage={currentPage}
                     onPageChange={setCurrentPage}
+                    tableOfContents={fullTableOfContents}
                   />
                 </div>
               </div>
@@ -1043,6 +1047,7 @@ export default function ThoughtUnitReader() {
                 showTextOverlay={false}
                 currentPage={currentPage}
                 onPageChange={setCurrentPage}
+                tableOfContents={fullTableOfContents}
               />
             </div>
           );
