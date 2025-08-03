@@ -11,42 +11,58 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  state: ErrorBoundaryState = {
-    hasError: false,
-    error: undefined
-  };
+export default class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    // You can hook this into your logging/telemetry here
-    console.error("ErrorBoundary caught an error:", error, info);
+    // You can log to a service here
+    console.warn("ErrorBoundary caught:", error, info);
   }
+
+  reset = () => {
+    this.setState({ hasError: false, error: undefined });
+  };
 
   render() {
     if (this.state.hasError) {
       if (this.props.fallback) {
-        return this.props.fallback;
+        return (
+          <div className="p-4 bg-red-900 text-white rounded">
+            {this.props.fallback}
+            <div className="mt-2">
+              <button
+                onClick={this.reset}
+                className="px-3 py-1 bg-gray-800 rounded hover:bg-gray-700"
+              >
+                Retry
+              </button>
+            </div>
+            <div className="mt-2 text-xs">
+              {this.state.error?.message && <div><strong>Error:</strong> {this.state.error.message}</div>}
+            </div>
+          </div>
+        );
       }
       return (
-        <div
-          role="alert"
-          className="p-4 bg-red-700 text-white rounded shadow"
-        >
-          <div className="font-semibold">Something went wrong.</div>
-          {this.state.error && (
-            <pre className="mt-2 text-xs break-words">
-              {this.state.error.message}
-            </pre>
-          )}
+        <div className="p-4 bg-red-900 text-white rounded">
+          <div>Something went wrong.</div>
+          <button
+            onClick={this.reset}
+            className="mt-2 px-3 py-1 bg-gray-800 rounded hover:bg-gray-700"
+          >
+            Retry
+          </button>
         </div>
       );
     }
+
     return this.props.children;
   }
 }
-
-export default ErrorBoundary;
