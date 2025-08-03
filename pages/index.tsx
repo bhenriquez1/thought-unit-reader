@@ -2,41 +2,72 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, RotateCcw, ZoomIn, ZoomOut, Book, Settings, Upload, Download, Eye } from 'lucide-react';
 
-// Enhanced Table of Contents with full book structure
-const fullTableOfContents = [
-  { page: 1, title: "Cover & Title Page", level: 0 },
-  { page: 3, title: "Table of Contents", level: 0 },
-  { page: 15, title: "Chapter 1: Introduction to Molecular Geometry", level: 1 },
-  { page: 16, title: "1.1 Basic Concepts", level: 2 },
-  { page: 25, title: "1.2 VSEPR Theory", level: 2 },
-  { page: 35, title: "1.3 Hybridization", level: 2 },
-  { page: 45, title: "1.4 Molecular Shapes", level: 2 },
-  { page: 55, title: "1.5 Polarity and Intermolecular Forces", level: 2 },
-  { page: 68, title: "1.9 Molecular Geometries", level: 2 },
-  { page: 78, title: "Chapter 2: Chemical Bonding", level: 1 },
-  { page: 89, title: "2.1 Ionic Bonding", level: 2 },
-  { page: 105, title: "2.2 Covalent Bonding", level: 2 },
-  { page: 125, title: "2.3 Metallic Bonding", level: 2 },
-  { page: 145, title: "2.4 Bond Properties", level: 2 },
-  { page: 165, title: "Chapter 3: Thermodynamics", level: 1 },
-  { page: 178, title: "3.1 First Law of Thermodynamics", level: 2 },
-  { page: 195, title: "3.2 Enthalpy", level: 2 },
-  { page: 215, title: "3.3 Entropy", level: 2 },
-  { page: 235, title: "3.4 Gibbs Free Energy", level: 2 },
-  { page: 255, title: "Chapter 4: Kinetics", level: 1 },
-  { page: 275, title: "4.1 Reaction Rates", level: 2 },
-  { page: 295, title: "4.2 Rate Laws", level: 2 },
-  { page: 315, title: "4.3 Reaction Mechanisms", level: 2 },
-  { page: 335, title: "4.4 Catalysis", level: 2 },
-  { page: 355, title: "Chapter 5: Equilibrium", level: 1 },
-  { page: 375, title: "5.1 Chemical Equilibrium", level: 2 },
-  { page: 395, title: "5.2 Le Chatelier's Principle", level: 2 },
-  { page: 415, title: "5.3 Acid-Base Equilibria", level: 2 },
-  { page: 435, title: "5.4 Solubility Equilibria", level: 2 },
-  { page: 455, title: "Appendix A: Mathematical Review", level: 1 },
-  { page: 475, title: "Appendix B: Reference Tables", level: 1 },
-  { page: 495, title: "Index", level: 1 }
-];
+// Enhanced Table of Contents - Dynamic for any book type
+const generateTableOfContents = (bookType: string = 'general', pageCount: number = 1423) => {
+  const tocTemplates = {
+    medical: [
+      { page: 1, title: "Preface", level: 0 },
+      { page: 5, title: "Table of Contents", level: 0 },
+      { page: 15, title: "Chapter 1: Basic Sciences", level: 1 },
+      { page: 16, title: "1.1 Anatomy & Physiology", level: 2 },
+      { page: 35, title: "1.2 Pathology", level: 2 },
+      { page: 55, title: "1.3 Pharmacology", level: 2 },
+      { page: 75, title: "1.4 Microbiology", level: 2 },
+      { page: 95, title: "Chapter 2: Clinical Medicine", level: 1 },
+      { page: 96, title: "2.1 Diagnostic Methods", level: 2 },
+      { page: 120, title: "2.2 Treatment Protocols", level: 2 },
+      { page: 145, title: "2.3 Emergency Medicine", level: 2 },
+      { page: 170, title: "Chapter 3: Specialties", level: 1 },
+      { page: 171, title: "3.1 Internal Medicine", level: 2 },
+      { page: 200, title: "3.2 Surgery", level: 2 },
+      { page: 230, title: "3.3 Pediatrics", level: 2 },
+      { page: 260, title: "3.4 Obstetrics & Gynecology", level: 2 }
+    ],
+    dental: [
+      { page: 1, title: "Introduction to Dentistry", level: 0 },
+      { page: 10, title: "Chapter 1: Oral Anatomy", level: 1 },
+      { page: 11, title: "1.1 Tooth Morphology", level: 2 },
+      { page: 30, title: "1.2 Periodontal Structures", level: 2 },
+      { page: 50, title: "1.3 TMJ & Muscles", level: 2 },
+      { page: 70, title: "Chapter 2: Oral Pathology", level: 1 },
+      { page: 71, title: "2.1 Caries & Pulp Disease", level: 2 },
+      { page: 90, title: "2.2 Periodontal Disease", level: 2 },
+      { page: 110, title: "2.3 Oral Lesions", level: 2 },
+      { page: 130, title: "Chapter 3: Restorative Dentistry", level: 1 },
+      { page: 131, title: "3.1 Direct Restorations", level: 2 },
+      { page: 160, title: "3.2 Indirect Restorations", level: 2 },
+      { page: 190, title: "3.3 Endodontics", level: 2 },
+      { page: 220, title: "Chapter 4: Oral Surgery", level: 1 },
+      { page: 250, title: "Chapter 5: Orthodontics", level: 1 },
+      { page: 280, title: "Chapter 6: Prosthodontics", level: 1 }
+    ],
+    chemistry: [
+      { page: 1, title: "Cover & Title Page", level: 0 },
+      { page: 3, title: "Table of Contents", level: 0 },
+      { page: 15, title: "Chapter 1: Atomic Structure", level: 1 },
+      { page: 16, title: "1.1 Electron Configuration", level: 2 },
+      { page: 35, title: "1.2 Periodic Trends", level: 2 },
+      { page: 55, title: "Chapter 2: Chemical Bonding", level: 1 },
+      { page: 56, title: "2.1 Ionic Bonding", level: 2 },
+      { page: 75, title: "2.2 Covalent Bonding", level: 2 },
+      { page: 95, title: "2.3 Molecular Geometry", level: 2 },
+      { page: 120, title: "Chapter 3: Thermodynamics", level: 1 },
+      { page: 145, title: "Chapter 4: Kinetics", level: 1 },
+      { page: 170, title: "Chapter 5: Equilibrium", level: 1 }
+    ],
+    general: [
+      { page: 1, title: "Introduction", level: 0 },
+      { page: 10, title: "Chapter 1: Fundamentals", level: 1 },
+      { page: 35, title: "Chapter 2: Basic Concepts", level: 1 },
+      { page: 65, title: "Chapter 3: Advanced Topics", level: 1 },
+      { page: 95, title: "Chapter 4: Applications", level: 1 },
+      { page: 125, title: "Chapter 5: Case Studies", level: 1 },
+      { page: 155, title: "Conclusion", level: 0 }
+    ]
+  };
+
+  return tocTemplates[bookType as keyof typeof tocTemplates] || tocTemplates.general;
+};
 
 // Smart PDF viewer that supports clickable text overlay
 const SmartPDFViewer: React.FC<{ 
@@ -226,6 +257,8 @@ export default function ThoughtUnitReader() {
   const [showTableOfContents, setShowTableOfContents] = useState(false);
   const [pdfPageCount, setPdfPageCount] = useState(1423); // From your screenshot
   const [currentPage, setCurrentPage] = useState(68); // From your screenshot
+  const [bookType, setBookType] = useState('dental'); // Auto-detect or user select
+  const [fullTableOfContents, setFullTableOfContents] = useState(generateTableOfContents('dental', 1423));
   
   // File handling
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -242,6 +275,30 @@ export default function ThoughtUnitReader() {
 
   // Sample text content (replace with your actual content)
   const sampleText = `Use of the current edition of the electronic version of this book (eBook) is subject to the terms of the nontransferable, limited license granted on expertconsult.inkling.com. Access to the eBook is limited to the first individual who redeems the PIN, located on the inside cover of this book, at expertconsult.inkling.com and may not be transferred to another party by resale, lending, or other means.`;
+
+  // Enhanced Medical Notes Templates for Top Student Quality
+  const enhancedNoteTemplates = {
+    dental: {
+      anatomy: "📍 Location & Boundaries\n🔸 Structures & Components\n🔸 Blood Supply & Innervation\n🔸 Embryological Development",
+      physiology: "⚡ Normal Function\n🔸 Physiological Processes\n🔸 Regulatory Mechanisms\n🔸 Clinical Correlations",
+      pathology: "🚨 Disease Process\n🔸 Etiology & Risk Factors\n🔸 Pathogenesis\n🔸 Clinical Manifestations\n🔸 Complications",
+      clinical: "🏥 Diagnosis\n🔸 Clinical Tests & Procedures\n🔸 Treatment Options\n🔸 Prognosis\n🔸 Patient Management",
+      keyPoints: "⭐ High-Yield Facts\n🔸 Board Exam Favorites\n🔸 Clinical Pearls\n🔸 Memory Aids & Mnemonics",
+      questions: "❓ Self-Assessment\n🔸 Board-Style Questions\n🔸 Clinical Scenarios\n🔸 Differential Diagnosis Exercises"
+    },
+    medical: {
+      anatomy: "📍 Anatomical Location\n🔸 Gross & Microscopic Structure\n🔸 Vascular Supply\n🔸 Nerve Supply\n🔸 Lymphatic Drainage",
+      physiology: "⚡ Normal Physiology\n🔸 Biochemical Pathways\n🔸 Homeostatic Mechanisms\n🔸 Integration with Other Systems",
+      pathology: "🚨 Pathophysiology\n🔸 Molecular Mechanisms\n🔸 Histopathological Changes\n🔸 Disease Progression\n🔸 Complications",
+      clinical: "🏥 Clinical Presentation\n🔸 Diagnostic Workup\n🔸 Treatment Protocols\n🔸 Follow-up & Monitoring\n🔸 Preventive Measures",
+      keyPoints: "⭐ Essential Knowledge\n🔸 USMLE High-Yield\n🔸 Clinical Decision Points\n🔸 Red Flags & Warnings",
+      questions: "❓ Board Review\n🔸 Case-Based Questions\n🔸 Image Recognition\n🔸 Laboratory Interpretation"
+    }
+  };
+
+  const getCurrentTemplate = () => {
+    return enhancedNoteTemplates[bookType as keyof typeof enhancedNoteTemplates] || enhancedNoteTemplates.medical;
+  };
 
   // Initialize thought units from text
   useEffect(() => {
@@ -302,6 +359,22 @@ export default function ThoughtUnitReader() {
 
     setUploadedFile(file);
 
+    // Auto-detect book type from filename
+    const name = file.name.toLowerCase();
+    if (name.includes('dental') || name.includes('oral') || name.includes('tooth')) {
+      setBookType('dental');
+      setFullTableOfContents(generateTableOfContents('dental', pdfPageCount));
+    } else if (name.includes('medical') || name.includes('anatomy') || name.includes('physiology')) {
+      setBookType('medical');
+      setFullTableOfContents(generateTableOfContents('medical', pdfPageCount));
+    } else if (name.includes('chemistry') || name.includes('organic') || name.includes('chemical')) {
+      setBookType('chemistry');
+      setFullTableOfContents(generateTableOfContents('chemistry', pdfPageCount));
+    } else {
+      setBookType('general');
+      setFullTableOfContents(generateTableOfContents('general', pdfPageCount));
+    }
+
     if (file.type === 'application/pdf') {
       const url = URL.createObjectURL(file);
       setFileUrl(url);
@@ -309,7 +382,7 @@ export default function ThoughtUnitReader() {
       const text = await file.text();
       setTextContent(text);
     }
-  }, []);
+  }, [pdfPageCount]);
 
   // Reading control functions
   const handleStartReading = useCallback(() => {
@@ -405,86 +478,167 @@ export default function ThoughtUnitReader() {
     });
   };
 
-  // Medical Notes Renderer Component
-  const MedicalNotesPanel = () => (
-    <div className="bg-gray-800 p-4 rounded-lg h-full overflow-y-auto">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-blue-400">📝 Medical Notes</h3>
-        <button
-          onClick={() => setShowNotesPanel(!showNotesPanel)}
-          className="text-gray-400 hover:text-white"
-        >
-          {showNotesPanel ? '◐' : '◑'}
-        </button>
-      </div>
-
-      {showNotesPanel && (
-        <div className="space-y-4">
-          {/* Template Selection */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Template</label>
+  // Medical Notes Renderer Component - Top Student Quality
+  const MedicalNotesPanel = () => {
+    const currentTemplate = getCurrentTemplate();
+    
+    return (
+      <div className="bg-gray-800 p-4 rounded-lg h-full overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-blue-400">📝 {bookType.charAt(0).toUpperCase() + bookType.slice(1)} Notes</h3>
+          <div className="flex items-center space-x-2">
             <select
-              value={noteTemplate}
-              onChange={(e) => setNoteTemplate(e.target.value)}
-              className="w-full bg-gray-700 text-white rounded px-3 py-2"
+              value={bookType}
+              onChange={(e) => {
+                setBookType(e.target.value);
+                setFullTableOfContents(generateTableOfContents(e.target.value, pdfPageCount));
+              }}
+              className="text-xs bg-gray-700 text-white rounded px-2 py-1"
             >
-              <option value="anatomy">Anatomy</option>
-              <option value="pathology">Pathology</option>
-              <option value="systems">Systems Review</option>
-              <option value="clinical">Clinical Case</option>
+              <option value="dental">Dental</option>
+              <option value="medical">Medical</option>
+              <option value="chemistry">Chemistry</option>
+              <option value="general">General</option>
             </select>
+            <button
+              onClick={() => setShowNotesPanel(!showNotesPanel)}
+              className="text-gray-400 hover:text-white"
+            >
+              {showNotesPanel ? '◐' : '◑'}
+            </button>
           </div>
+        </div>
 
-          {/* Note Title */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Title</label>
-            <input
-              type="text"
-              value={noteTitle}
-              onChange={(e) => setNoteTitle(e.target.value)}
-              placeholder="e.g., Molecular Geometries - Chapter 1.9"
-              className="w-full bg-gray-700 text-white rounded px-3 py-2"
-            />
+        {showNotesPanel && (
+          <div className="space-y-4">
+            {/* Template Selection */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Study Template</label>
+              <select
+                value={noteTemplate}
+                onChange={(e) => setNoteTemplate(e.target.value)}
+                className="w-full bg-gray-700 text-white rounded px-3 py-2"
+              >
+                <option value="anatomy">📍 Anatomy & Structure</option>
+                <option value="pathology">🚨 Pathology & Disease</option>
+                <option value="systems">🔬 Systems Review</option>
+                <option value="clinical">🏥 Clinical Case</option>
+              </select>
+            </div>
+
+            {/* Note Title */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Topic Title</label>
+              <input
+                type="text"
+                value={noteTitle}
+                onChange={(e) => setNoteTitle(e.target.value)}
+                placeholder={bookType === 'dental' ? "e.g., Tooth Morphology - Premolars" : "e.g., Cardiovascular System - Heart Anatomy"}
+                className="w-full bg-gray-700 text-white rounded px-3 py-2"
+              />
+            </div>
+
+            {/* Enhanced Content Sections */}
+            <div className="space-y-3">
+              {/* Anatomy/Structure Section */}
+              <div className="bg-green-900 bg-opacity-30 border border-green-600 rounded p-3">
+                <label className="block text-sm font-medium text-green-400 mb-2">🔬 Structure/Anatomy</label>
+                <textarea
+                  value={noteContent.anatomy}
+                  onChange={(e) => setNoteContent(prev => ({ ...prev, anatomy: e.target.value }))}
+                  placeholder={currentTemplate.anatomy}
+                  className="w-full bg-gray-700 text-white rounded px-3 py-2 h-24 text-sm"
+                />
+              </div>
+
+              {/* Physiology/Function Section */}
+              <div className="bg-blue-900 bg-opacity-30 border border-blue-600 rounded p-3">
+                <label className="block text-sm font-medium text-blue-400 mb-2">⚡ Function/Physiology</label>
+                <textarea
+                  value={noteContent.physiology}
+                  onChange={(e) => setNoteContent(prev => ({ ...prev, physiology: e.target.value }))}
+                  placeholder={currentTemplate.physiology}
+                  className="w-full bg-gray-700 text-white rounded px-3 py-2 h-24 text-sm"
+                />
+              </div>
+
+              {/* Pathology Section */}
+              <div className="bg-red-900 bg-opacity-30 border border-red-600 rounded p-3">
+                <label className="block text-sm font-medium text-red-400 mb-2">⚠️ Pathology/Problems</label>
+                <textarea
+                  value={noteContent.pathology}
+                  onChange={(e) => setNoteContent(prev => ({ ...prev, pathology: e.target.value }))}
+                  placeholder={currentTemplate.pathology}
+                  className="w-full bg-gray-700 text-white rounded px-3 py-2 h-24 text-sm"
+                />
+              </div>
+
+              {/* Clinical Section */}
+              <div className="bg-purple-900 bg-opacity-30 border border-purple-600 rounded p-3">
+                <label className="block text-sm font-medium text-purple-400 mb-2">🏥 Clinical Applications</label>
+                <textarea
+                  value={noteContent.clinical}
+                  onChange={(e) => setNoteContent(prev => ({ ...prev, clinical: e.target.value }))}
+                  placeholder={currentTemplate.clinical}
+                  className="w-full bg-gray-700 text-white rounded px-3 py-2 h-24 text-sm"
+                />
+              </div>
+
+              {/* Key Points */}
+              <div className="bg-yellow-900 bg-opacity-30 border border-yellow-600 rounded p-3">
+                <label className="block text-sm font-medium text-yellow-400 mb-2">⭐ High-Yield Points</label>
+                <textarea
+                  value={noteContent.keyPoints}
+                  onChange={(e) => setNoteContent(prev => ({ ...prev, keyPoints: e.target.value }))}
+                  placeholder={currentTemplate.keyPoints}
+                  className="w-full bg-gray-700 text-white rounded px-3 py-2 h-24 text-sm"
+                />
+              </div>
+
+              {/* Study Questions */}
+              <div className="bg-gray-700 border border-gray-500 rounded p-3">
+                <label className="block text-sm font-medium text-gray-300 mb-2">❓ Board Review Questions</label>
+                <textarea
+                  value={noteContent.questions}
+                  onChange={(e) => setNoteContent(prev => ({ ...prev, questions: e.target.value }))}
+                  placeholder={currentTemplate.questions}
+                  className="w-full bg-gray-600 text-white rounded px-3 py-2 h-24 text-sm"
+                />
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <button
+              onClick={saveNote}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded transition-colors"
+            >
+              💾 Save {bookType.charAt(0).toUpperCase() + bookType.slice(1)} Note (Page {currentPage})
+            </button>
+
+            {/* Saved Notes List */}
+            {savedNotes.length > 0 && (
+              <div className="mt-6">
+                <h4 className="text-sm font-medium text-gray-300 mb-2">📚 Study Notes ({savedNotes.length})</h4>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {savedNotes.map((note) => (
+                    <div key={note.id} className="bg-gray-700 p-2 rounded text-sm cursor-pointer hover:bg-gray-600 transition-colors">
+                      <div className="font-medium text-white">{note.title}</div>
+                      <div className="text-xs text-gray-400">
+                        Page {note.pageReference} • {new Date(note.createdAt).toLocaleDateString()}
+                      </div>
+                      <div className="text-xs text-blue-300 mt-1">
+                        📍 {note.template} template • Click to review
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-
-          {/* Content Sections */}
-          <div className="space-y-3">
-            {/* Anatomy Section */}
-            <div className="bg-green-900 bg-opacity-30 border border-green-600 rounded p-3">
-              <label className="block text-sm font-medium text-green-400 mb-2">🔬 Structure/Anatomy</label>
-              <textarea
-                value={noteContent.anatomy}
-                onChange={(e) => setNoteContent(prev => ({ ...prev, anatomy: e.target.value }))}
-                placeholder="Describe the structure, components, molecular geometry..."
-                className="w-full bg-gray-700 text-white rounded px-3 py-2 h-20 text-sm"
-              />
-            </div>
-
-            {/* Physiology Section */}
-            <div className="bg-blue-900 bg-opacity-30 border border-blue-600 rounded p-3">
-              <label className="block text-sm font-medium text-blue-400 mb-2">⚡ Function/Mechanism</label>
-              <textarea
-                value={noteContent.physiology}
-                onChange={(e) => setNoteContent(prev => ({ ...prev, physiology: e.target.value }))}
-                placeholder="How it works, mechanisms, processes..."
-                className="w-full bg-gray-700 text-white rounded px-3 py-2 h-20 text-sm"
-              />
-            </div>
-
-            {/* Pathology Section */}
-            <div className="bg-red-900 bg-opacity-30 border border-red-600 rounded p-3">
-              <label className="block text-sm font-medium text-red-400 mb-2">⚠️ Problems/Pathology</label>
-              <textarea
-                value={noteContent.pathology}
-                onChange={(e) => setNoteContent(prev => ({ ...prev, pathology: e.target.value }))}
-                placeholder="What goes wrong, exceptions, limitations..."
-                className="w-full bg-gray-700 text-white rounded px-3 py-2 h-20 text-sm"
-              />
-            </div>
-
-            {/* Clinical Section */}
-            <div className="bg-purple-900 bg-opacity-30 border border-purple-600 rounded p-3">
-              <label className="block text-sm font-medium text-purple-400 mb-2">🏥 Clinical Applications</label>
+        )}
+      </div>
+    );
+  }; font-medium text-purple-400 mb-2">🏥 Clinical Applications</label>
               <textarea
                 value={noteContent.clinical}
                 onChange={(e) => setNoteContent(prev => ({ ...prev, clinical: e.target.value }))}
@@ -748,7 +902,8 @@ export default function ThoughtUnitReader() {
                   <div className="bg-gray-800 p-4 rounded-lg">
                     <h4 className="text-lg font-semibold text-yellow-400 mb-3">📖 Current Context</h4>
                     <div className="text-sm text-gray-300 leading-relaxed">
-                      <p className="mb-2"><strong>Section:</strong> 1.9 Molecular Geometries</p>
+                      <p className="mb-2"><strong>Book Type:</strong> {bookType.charAt(0).toUpperCase() + bookType.slice(1)}</p>
+                      <p className="mb-2"><strong>Current Section:</strong> {fullTableOfContents.find(item => item.page <= currentPage)?.title || 'Loading...'}</p>
                       <p className="mb-3"><strong>Page:</strong> {currentPage} of {pdfPageCount}</p>
                       <div className="bg-gray-700 p-3 rounded italic">
                         {(textContent || sampleText).substring(0, 200)}...
@@ -756,55 +911,101 @@ export default function ThoughtUnitReader() {
                     </div>
                   </div>
 
-                  {/* Quick Study Cards */}
+                  {/* Enhanced Study Cards */}
                   <div className="bg-gray-800 p-4 rounded-lg">
                     <h4 className="text-lg font-semibold text-purple-400 mb-3">🎯 Study Cards</h4>
                     <div className="space-y-2">
                       {savedNotes.slice(-3).map((note) => (
-                        <div key={note.id} className="bg-gradient-to-r from-purple-900 to-blue-900 p-3 rounded border-l-4 border-purple-400">
+                        <div key={note.id} className="bg-gradient-to-r from-purple-900 to-blue-900 p-3 rounded border-l-4 border-purple-400 cursor-pointer hover:scale-105 transition-transform">
                           <div className="font-medium text-white">{note.title}</div>
                           <div className="text-xs text-purple-200 mt-1">
                             {note.content.keyPoints.substring(0, 100)}...
                           </div>
+                          <div className="text-xs text-blue-300 mt-1">
+                            📍 Page {note.pageReference} • {note.template}
+                          </div>
                         </div>
                       ))}
                       {savedNotes.length === 0 && (
-                        <div className="text-gray-400 text-center py-4">
-                          Create your first note to see study cards here
+                        <div className="text-gray-400 text-center py-6 border-2 border-dashed border-gray-600 rounded">
+                          <div className="text-4xl mb-2">📝</div>
+                          <p>Create your first high-yield note</p>
+                          <p className="text-xs mt-1">Quality notes = Better retention</p>
                         </div>
                       )}
                     </div>
                   </div>
 
-                  {/* Mind Map Preview */}
+                  {/* Enhanced Concept Map */}
                   <div className="bg-gray-800 p-4 rounded-lg">
                     <h4 className="text-lg font-semibold text-green-400 mb-3">🗺️ Concept Map</h4>
-                    <div className="bg-gray-700 rounded p-4 text-center">
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div className="bg-green-600 p-2 rounded text-white">Structure</div>
-                        <div className="bg-blue-600 p-2 rounded text-white">Function</div>
-                        <div className="bg-red-600 p-2 rounded text-white">Problems</div>
-                        <div className="bg-purple-600 p-2 rounded text-white">Clinical</div>
+                    <div className="bg-gray-700 rounded p-4">
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div className="bg-green-600 p-3 rounded text-white text-center font-medium">
+                          📍 Structure
+                          <div className="text-xs mt-1 opacity-75">Anatomy & Form</div>
+                        </div>
+                        <div className="bg-blue-600 p-3 rounded text-white text-center font-medium">
+                          ⚡ Function
+                          <div className="text-xs mt-1 opacity-75">Physiology & Process</div>
+                        </div>
+                        <div className="bg-red-600 p-3 rounded text-white text-center font-medium">
+                          🚨 Pathology
+                          <div className="text-xs mt-1 opacity-75">Disease & Dysfunction</div>
+                        </div>
+                        <div className="bg-purple-600 p-3 rounded text-white text-center font-medium">
+                          🏥 Clinical
+                          <div className="text-xs mt-1 opacity-75">Diagnosis & Treatment</div>
+                        </div>
                       </div>
-                      <div className="text-gray-400 mt-3 text-xs">
-                        Visual connections between your notes
+                      <div className="text-gray-400 mt-3 text-xs text-center">
+                        <div className="flex items-center justify-center space-x-2">
+                          <span>📊 Study Progress:</span>
+                          <div className="bg-gray-600 rounded-full h-2 w-20">
+                            <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${Math.min((savedNotes.length / 10) * 100, 100)}%` }}></div>
+                          </div>
+                          <span>{savedNotes.length}/10</span>
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* AI Insights Panel */}
+                  {/* Enhanced AI Insights Panel */}
                   {aiEnabled && (
                     <div className="bg-gradient-to-r from-pink-900 to-purple-900 p-4 rounded-lg border border-pink-500">
-                      <h4 className="text-lg font-semibold text-pink-400 mb-3">🤖 AI Insights</h4>
-                      <div className="space-y-2 text-sm">
-                        <div className="bg-pink-800 bg-opacity-50 p-2 rounded">
-                          <strong>💡 Key Concept:</strong> Molecular geometry affects chemical properties
+                      <h4 className="text-lg font-semibold text-pink-400 mb-3">🤖 AI Study Assistant</h4>
+                      <div className="space-y-3 text-sm">
+                        <div className="bg-pink-800 bg-opacity-50 p-3 rounded">
+                          <div className="font-medium text-pink-200 mb-1">💡 High-Yield Concept</div>
+                          <div className="text-pink-100">
+                            {bookType === 'dental' ? 'Root canal anatomy varies significantly between tooth types - critical for endodontic success' :
+                             bookType === 'medical' ? 'Understanding pathophysiology is key to clinical reasoning and patient management' :
+                             'Molecular geometry directly influences chemical reactivity and biological activity'}
+                          </div>
                         </div>
-                        <div className="bg-purple-800 bg-opacity-50 p-2 rounded">
-                          <strong>🔗 Connection:</strong> Links to bonding theory in Chapter 2
+                        <div className="bg-purple-800 bg-opacity-50 p-3 rounded">
+                          <div className="font-medium text-purple-200 mb-1">🔗 Cross-Reference</div>
+                          <div className="text-purple-100">
+                            {bookType === 'dental' ? 'Links to periodontal anatomy and surgical considerations' :
+                             bookType === 'medical' ? 'Connects to pharmacology and treatment protocols' :
+                             'Relates to thermodynamics and kinetics principles'}
+                          </div>
                         </div>
-                        <div className="bg-blue-800 bg-opacity-50 p-2 rounded">
-                          <strong>❓ Study Question:</strong> How does VSEPR predict 3D shapes?
+                        <div className="bg-blue-800 bg-opacity-50 p-3 rounded">
+                          <div className="font-medium text-blue-200 mb-1">❓ Board-Style Question</div>
+                          <div className="text-blue-100">
+                            {bookType === 'dental' ? 'A 45-year-old patient presents with spontaneous throbbing pain. What is the most likely diagnosis?' :
+                             bookType === 'medical' ? 'What is the first-line treatment for the condition described in this case?' :
+                             'Which molecular geometry would you predict for this compound?'}
+                          </div>
+                        </div>
+                        <div className="bg-green-800 bg-opacity-50 p-3 rounded">
+                          <div className="font-medium text-green-200 mb-1">🎯 Study Tip</div>
+                          <div className="text-green-100">
+                            {bookType === 'dental' ? 'Use the "SLOB rule" for radiographic interpretation' :
+                             bookType === 'medical' ? 'Create flowcharts for diagnostic algorithms' :
+                             'Draw 3D structures to visualize molecular geometry'}
+                          </div>
                         </div>
                       </div>
                     </div>
