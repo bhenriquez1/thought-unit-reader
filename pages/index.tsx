@@ -2,33 +2,124 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, RotateCcw, ZoomIn, ZoomOut, Book, Settings, Upload, Download, Eye } from 'lucide-react';
 
-// Simple inline PDF viewer component
-const SimplePDFViewer: React.FC<{ fileUrl: string; scale?: number; className?: string }> = ({ 
+// Smart PDF viewer that supports clickable text overlay
+const SmartPDFViewer: React.FC<{ 
+  fileUrl: string; 
+  scale?: number; 
+  className?: string;
+  onWordClick?: (word: string) => void;
+  showTextOverlay?: boolean;
+  textContent?: string;
+}> = ({ 
   fileUrl, 
   scale = 1.25,
-  className = ""
+  className = "",
+  onWordClick,
+  showTextOverlay = false,
+  textContent = ""
 }) => {
   const [zoom, setZoom] = useState(scale);
+  const [showTOC, setShowTOC] = useState(false);
   
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.25, 3.0));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.25, 0.5));
   
   const pdfViewerUrl = `${fileUrl}#zoom=${Math.round(zoom * 100)}&view=FitH`;
 
+  // Table of Contents items (example structure)
+  const tocItems = [
+    { page: 1, title: "Introduction", level: 1 },
+    { page: 15, title: "Chapter 1: Basic Concepts", level: 1 },
+    { page: 45, title: "1.1 Fundamental Principles", level: 2 },
+    { page: 68, title: "1.9 Molecular Geometries", level: 2 },
+    { page: 89, title: "Chapter 2: Advanced Topics", level: 1 },
+    { page: 156, title: "2.1 Chemical Bonding", level: 2 },
+    { page: 234, title: "Chapter 3: Applications", level: 1 }
+  ];
+
   return (
     <div className={`relative w-full h-full ${className}`}>
-      {/* Zoom Controls */}
-      <div className="absolute top-4 right-4 z-10 flex items-center space-x-2 bg-black bg-opacity-50 rounded-lg p-2">
-        <button onClick={handleZoomOut} className="text-white hover:text-gray-300 p-1">
-          <ZoomOut size={16} />
+      {/* PDF Controls */}
+      <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between">
+        {/* Table of Contents Button */}
+        <button
+          onClick={() => setShowTOC(!showTOC)}
+          className="bg-gray-800 bg-opacity-80 text-white px-3 py-2 rounded-lg hover:bg-opacity-90 transition-all flex items-center space-x-2"
+        >
+          <span>☰</span>
+          <span className="hidden sm:inline">Contents</span>
         </button>
-        <span className="text-white text-sm min-w-[50px] text-center">
-          {Math.round(zoom * 100)}%
-        </span>
-        <button onClick={handleZoomIn} className="text-white hover:text-gray-300 p-1">
-          <ZoomIn size={16} />
-        </button>
+
+        {/* Zoom Controls */}
+        <div className="flex items-center space-x-2 bg-gray-800 bg-opacity-80 rounded-lg p-2">
+          <button onClick={handleZoomOut} className="text-white hover:text-gray-300 p-1">
+            <ZoomOut size={16} />
+          </button>
+          <span className="text-white text-sm min-w-[50px] text-center">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button onClick={handleZoomIn} className="text-white hover:text-gray-300 p-1">
+            <ZoomIn size={16} />
+          </button>
+        </div>
       </div>
+
+      {/* Table of Contents Sidebar */}
+      {showTOC && (
+        <div className="absolute top-0 left-0 w-80 h-full bg-gray-900 bg-opacity-95 z-30 overflow-y-auto">
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-semibold">Table of Contents</h3>
+              <button
+                onClick={() => setShowTOC(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-2">
+              {tocItems.map((item, index) => (
+                <div
+                  key={index}
+                  className={`cursor-pointer hover:bg-gray-700 p-2 rounded text-sm ${
+                    item.level === 1 ? 'text-white font-medium' : 'text-gray-300 ml-4'
+                  }`}
+                  onClick={() => {
+                    // Navigate to page functionality
+                    console.log(`Navigate to page ${item.page}`);
+                  }}
+                >
+                  <div className="flex justify-between">
+                    <span>{item.title}</span>
+                    <span className="text-gray-500">{item.page}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Text Overlay for Clickable Words (when in hybrid/progressive mode) */}
+      {showTextOverlay && textContent && (
+        <div className="absolute inset-0 z-10 bg-transparent pointer-events-none">
+          <div 
+            className="absolute inset-0 p-8 text-transparent pointer-events-auto"
+            style={{ fontSize: '14px', lineHeight: '1.6' }}
+          >
+            {textContent.split(' ').map((word, index) => (
+              <span
+                key={index}
+                className="hover:bg-yellow-400 hover:bg-opacity-30 cursor-pointer pointer-events-auto"
+                onClick={() => onWordClick?.(word)}
+                style={{ userSelect: 'none' }}
+              >
+                {word}{' '}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* PDF Viewer */}
       <iframe
@@ -84,6 +175,11 @@ export default function ThoughtUnitReader() {
   const [fontFamily, setFontFamily] = useState('OpenDyslexic');
   const [lineSpacing, setLineSpacing] = useState(1.5);
   const [clickSwitchesTo, setClickSwitchesTo] = useState('Progressive View');
+  
+  // PDF specific state
+  const [showTableOfContents, setShowTableOfContents] = useState(false);
+  const [pdfPageCount, setPdfPageCount] = useState(1423); // From your screenshot
+  const [currentPage, setCurrentPage] = useState(68); // From your screenshot
   
   // File handling
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -230,8 +326,12 @@ export default function ThoughtUnitReader() {
   // Handle word clicks for progressive view switching
   const handleWordClick = useCallback((word: string) => {
     setHighlightedWord(word);
+    
+    // Only switch to Progressive or Hybrid View based on setting
     if (clickSwitchesTo === 'Progressive View' && viewMode !== 'progressive') {
       setViewMode('progressive');
+    } else if (clickSwitchesTo === 'Hybrid View' && viewMode !== 'hybrid') {
+      setViewMode('hybrid');
     }
   }, [clickSwitchesTo, viewMode]);
 
@@ -254,6 +354,174 @@ export default function ThoughtUnitReader() {
   const renderContent = () => {
     const currentUnit = thoughtUnits[currentThoughtUnit - 1];
     
+    // If PDF is loaded, show PDF-based views
+    if (fileUrl && uploadedFile?.type === 'application/pdf') {
+      switch (viewMode) {
+        case 'progressive':
+          return (
+            <div className="space-y-6">
+              {/* Progressive Reading Header */}
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-yellow-400 flex items-center">
+                  <span className="mr-2">⚡</span>
+                  Progressive Reading
+                </h3>
+                <div className="text-sm text-gray-400">
+                  Page {currentPage} of {pdfPageCount}
+                </div>
+              </div>
+
+              {/* Reading Controls */}
+              <div className="flex items-center space-x-4">
+                <button
+                  onClick={isReading ? handlePauseReading : handleStartReading}
+                  className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${
+                    isReading ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'
+                  } text-white transition-colors`}
+                >
+                  {isReading && !isPaused ? <Pause size={16} /> : <Play size={16} />}
+                  <span>{isReading && !isPaused ? 'Pause' : 'Start'}</span>
+                </button>
+
+                <button
+                  onClick={handleResetReading}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg flex items-center space-x-2 transition-colors"
+                >
+                  <RotateCcw size={16} />
+                  <span>Reset</span>
+                </button>
+
+                <div className="flex items-center space-x-2">
+                  <label className="text-sm text-gray-300">Speed:</label>
+                  <input
+                    type="number"
+                    value={readingSpeed}
+                    onChange={(e) => setReadingSpeed(parseInt(e.target.value) || 200)}
+                    className="w-16 px-2 py-1 bg-gray-700 text-white rounded text-center"
+                    min="50"
+                    max="1000"
+                  />
+                  <span className="text-sm text-gray-300">WPM</span>
+                  <button
+                    onClick={() => setReadingSpeed(prev => Math.min(prev + 50, 1000))}
+                    className="px-2 py-1 bg-gray-600 hover:bg-gray-500 text-white rounded"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Statistics Cards */}
+              <div className="grid grid-cols-4 gap-4">
+                <div className="bg-blue-600 p-4 rounded-lg text-center">
+                  <div className="text-2xl font-bold">{Math.round((currentPage / pdfPageCount) * 100)}%</div>
+                  <div className="text-sm opacity-75">Complete</div>
+                </div>
+                <div className="bg-green-600 p-4 rounded-lg text-center">
+                  <div className="text-2xl font-bold">{currentPage}</div>
+                  <div className="text-sm opacity-75">Current</div>
+                </div>
+                <div className="bg-purple-600 p-4 rounded-lg text-center">
+                  <div className="text-2xl font-bold">{stats.currentWPM}</div>
+                  <div className="text-sm opacity-75">WPM</div>
+                </div>
+                <div className="bg-red-900 p-4 rounded-lg text-center">
+                  <div className="text-2xl font-bold">{formatTime(stats.timeElapsed)}</div>
+                  <div className="text-sm opacity-75">Left</div>
+                </div>
+              </div>
+
+              {/* PDF with Text Overlay for Clicking */}
+              <div className="bg-gray-800 rounded-lg overflow-hidden" style={{ height: '60vh' }}>
+                <SmartPDFViewer 
+                  fileUrl={fileUrl} 
+                  scale={1.25}
+                  onWordClick={handleWordClick}
+                  showTextOverlay={true}
+                  textContent={sampleText}
+                />
+              </div>
+            </div>
+          );
+
+        case 'hybrid':
+          return (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* PDF View */}
+              <div className="bg-gray-800 rounded-lg overflow-hidden">
+                <h4 className="text-sm font-semibold text-gray-300 p-3 border-b border-gray-700">PDF View</h4>
+                <div style={{ height: '50vh' }}>
+                  <SmartPDFViewer 
+                    fileUrl={fileUrl} 
+                    scale={1.0}
+                    onWordClick={handleWordClick}
+                    showTextOverlay={true}
+                    textContent={sampleText}
+                  />
+                </div>
+              </div>
+
+              {/* Progressive Reading View */}
+              <div className="bg-gray-800 p-4 rounded-lg">
+                <h4 className="text-sm font-semibold text-gray-300 mb-3">Progressive Reading</h4>
+                
+                {/* Mini Reading Controls */}
+                <div className="flex items-center space-x-2 mb-4">
+                  <button
+                    onClick={isReading ? handlePauseReading : handleStartReading}
+                    className={`px-3 py-1 rounded text-sm flex items-center space-x-1 ${
+                      isReading ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'
+                    } text-white transition-colors`}
+                  >
+                    {isReading && !isPaused ? <Pause size={12} /> : <Play size={12} />}
+                    <span>{isReading && !isPaused ? 'Pause' : 'Start'}</span>
+                  </button>
+                  <span className="text-xs text-gray-400">{readingSpeed} WPM</span>
+                </div>
+
+                {/* Current Thought Unit */}
+                {currentUnit && (
+                  <div className="text-lg leading-relaxed">
+                    {currentUnit.text.split(' ').map((word, index) => (
+                      <span
+                        key={index}
+                        className={`${
+                          word === highlightedWord 
+                            ? 'bg-yellow-400 text-black px-1 rounded' 
+                            : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
+                        } transition-colors`}
+                        onClick={() => handleWordClick(word)}
+                      >
+                        {word}{' '}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Progress Info */}
+                <div className="mt-4 text-sm text-gray-400">
+                  <p>Thought Unit {currentThoughtUnit} of {thoughtUnits.length}</p>
+                  <p>Page {currentPage} of {pdfPageCount}</p>
+                </div>
+              </div>
+            </div>
+          );
+
+        default: // original view for PDF
+          return (
+            <div className="bg-gray-800 rounded-lg overflow-hidden" style={{ height: '70vh' }}>
+              <SmartPDFViewer 
+                fileUrl={fileUrl} 
+                scale={1.25}
+                onWordClick={handleWordClick}
+                showTextOverlay={false}
+              />
+            </div>
+          );
+      }
+    }
+
+    // Text-based views (when no PDF is loaded)
     switch (viewMode) {
       case 'progressive':
         return (
@@ -345,6 +613,100 @@ export default function ThoughtUnitReader() {
                   lineHeight: lineSpacing 
                 }}>
                   {currentUnit.text.split(' ').map((word, index) => (
+                    <span
+                      key={index}
+                      className={`${
+                        word === highlightedWord 
+                          ? 'bg-yellow-400 text-black px-1 rounded' 
+                          : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
+                      } transition-colors`}
+                      onClick={() => handleWordClick(word)}
+                    >
+                      {word}{' '}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
+      case 'original':
+        return (
+          <div className="bg-gray-800 p-6 rounded-lg">
+            <div className="prose prose-invert max-w-none" style={{ 
+              fontSize: `${fontSize}px`, 
+              fontFamily: fontFamily,
+              lineHeight: lineSpacing 
+            }}>
+              {(textContent || sampleText).split(' ').map((word, index) => (
+                <span
+                  key={index}
+                  className={`${
+                    word === highlightedWord 
+                      ? 'bg-yellow-400 text-black px-1 rounded' 
+                      : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
+                  } transition-colors`}
+                  onClick={() => handleWordClick(word)}
+                >
+                  {word}{' '}
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+
+      case 'hybrid':
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Original Text */}
+            <div className="bg-gray-800 p-4 rounded-lg">
+              <h4 className="text-sm font-semibold text-gray-300 mb-3">Original View</h4>
+              <div className="text-sm leading-relaxed">
+                {(textContent || sampleText).split(' ').map((word, index) => (
+                  <span
+                    key={index}
+                    className={`${
+                      word === highlightedWord 
+                        ? 'bg-yellow-400 text-black px-1 rounded' 
+                        : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
+                    } transition-colors`}
+                    onClick={() => handleWordClick(word)}
+                  >
+                    {word}{' '}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Progressive View */}
+            <div className="bg-gray-800 p-4 rounded-lg">
+              <h4 className="text-sm font-semibold text-gray-300 mb-3">Progressive View</h4>
+              {currentUnit && (
+                <div className="text-lg leading-relaxed">
+                  {currentUnit.text.split(' ').map((word, index) => (
+                    <span
+                      key={index}
+                      className={`${
+                        word === highlightedWord 
+                          ? 'bg-yellow-400 text-black px-1 rounded' 
+                          : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
+                      } transition-colors`}
+                      onClick={() => handleWordClick(word)}
+                    >
+                      {word}{' '}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };currentUnit.text.split(' ').map((word, index) => (
                     <span
                       key={index}
                       className={`${
@@ -561,7 +923,6 @@ export default function ThoughtUnitReader() {
               className="bg-blue-600 text-white px-3 py-1 rounded"
             >
               <option value="Progressive View">Progressive View</option>
-              <option value="Original View">Original View</option>
               <option value="Hybrid View">Hybrid View</option>
             </select>
           </div>
