@@ -682,6 +682,8 @@ export default function ThoughtUnitReader() {
                   onWordClick={handleWordClick}
                   showTextOverlay={true}
                   textContent={sampleText}
+                  currentPage={currentPage}
+                  onPageChange={setCurrentPage}
                 />
               </div>
             </div>
@@ -719,6 +721,8 @@ export default function ThoughtUnitReader() {
                 scale={1.25}
                 onWordClick={handleWordClick}
                 showTextOverlay={false}
+                currentPage={currentPage}
+                onPageChange={setCurrentPage}
               />
             </div>
           );
