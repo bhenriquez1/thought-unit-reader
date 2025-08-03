@@ -26,15 +26,40 @@ const SmartPDFViewer: React.FC<{
   
   const pdfViewerUrl = `${fileUrl}#zoom=${Math.round(zoom * 100)}&view=FitH`;
 
-  // Table of Contents items (example structure)
-  const tocItems = [
-    { page: 1, title: "Introduction", level: 1 },
-    { page: 15, title: "Chapter 1: Basic Concepts", level: 1 },
-    { page: 45, title: "1.1 Fundamental Principles", level: 2 },
+  // Enhanced Table of Contents with full book structure
+  const fullTableOfContents = [
+    { page: 1, title: "Cover & Title Page", level: 0 },
+    { page: 3, title: "Table of Contents", level: 0 },
+    { page: 15, title: "Chapter 1: Introduction to Molecular Geometry", level: 1 },
+    { page: 16, title: "1.1 Basic Concepts", level: 2 },
+    { page: 25, title: "1.2 VSEPR Theory", level: 2 },
+    { page: 35, title: "1.3 Hybridization", level: 2 },
+    { page: 45, title: "1.4 Molecular Shapes", level: 2 },
+    { page: 55, title: "1.5 Polarity and Intermolecular Forces", level: 2 },
     { page: 68, title: "1.9 Molecular Geometries", level: 2 },
-    { page: 89, title: "Chapter 2: Advanced Topics", level: 1 },
-    { page: 156, title: "2.1 Chemical Bonding", level: 2 },
-    { page: 234, title: "Chapter 3: Applications", level: 1 }
+    { page: 78, title: "Chapter 2: Chemical Bonding", level: 1 },
+    { page: 89, title: "2.1 Ionic Bonding", level: 2 },
+    { page: 105, title: "2.2 Covalent Bonding", level: 2 },
+    { page: 125, title: "2.3 Metallic Bonding", level: 2 },
+    { page: 145, title: "2.4 Bond Properties", level: 2 },
+    { page: 165, title: "Chapter 3: Thermodynamics", level: 1 },
+    { page: 178, title: "3.1 First Law of Thermodynamics", level: 2 },
+    { page: 195, title: "3.2 Enthalpy", level: 2 },
+    { page: 215, title: "3.3 Entropy", level: 2 },
+    { page: 235, title: "3.4 Gibbs Free Energy", level: 2 },
+    { page: 255, title: "Chapter 4: Kinetics", level: 1 },
+    { page: 275, title: "4.1 Reaction Rates", level: 2 },
+    { page: 295, title: "4.2 Rate Laws", level: 2 },
+    { page: 315, title: "4.3 Reaction Mechanisms", level: 2 },
+    { page: 335, title: "4.4 Catalysis", level: 2 },
+    { page: 355, title: "Chapter 5: Equilibrium", level: 1 },
+    { page: 375, title: "5.1 Chemical Equilibrium", level: 2 },
+    { page: 395, title: "5.2 Le Chatelier's Principle", level: 2 },
+    { page: 415, title: "5.3 Acid-Base Equilibria", level: 2 },
+    { page: 435, title: "5.4 Solubility Equilibria", level: 2 },
+    { page: 455, title: "Appendix A: Mathematical Review", level: 1 },
+    { page: 475, title: "Appendix B: Reference Tables", level: 1 },
+    { page: 495, title: "Index", level: 1 }
   ];
 
   return (
@@ -78,15 +103,18 @@ const SmartPDFViewer: React.FC<{
               </button>
             </div>
             <div className="space-y-2">
-              {tocItems.map((item, index) => (
+              {fullTableOfContents.map((item, index) => (
                 <div
                   key={index}
-                  className={`cursor-pointer hover:bg-gray-700 p-2 rounded text-sm ${
-                    item.level === 1 ? 'text-white font-medium' : 'text-gray-300 ml-4'
-                  }`}
+                  className={`cursor-pointer hover:bg-gray-700 p-2 rounded text-sm transition-colors ${
+                    item.level === 0 ? 'text-gray-400 italic' :
+                    item.level === 1 ? 'text-white font-medium bg-gray-800' : 
+                    'text-gray-300 ml-4'
+                  } ${item.page === 68 ? 'bg-blue-600 text-white' : ''}`}
                   onClick={() => {
-                    // Navigate to page functionality
-                    console.log(`Navigate to page ${item.page}`);
+                    setCurrentPage(item.page);
+                    setShowTOC(false);
+                    console.log(`Navigate to page ${item.page}: ${item.title}`);
                   }}
                 >
                   <div className="flex justify-between">
@@ -168,7 +196,21 @@ export default function ThoughtUnitReader() {
   const [aiEnabled, setAiEnabled] = useState(true);
   const [darkMode, setDarkMode] = useState(true);
   const [debugMode, setDebugMode] = useState(false);
-  const [viewMode, setViewMode] = useState<'original' | 'progressive' | 'hybrid'>('progressive');
+  const [viewMode, setViewMode] = useState<'original' | 'progressive' | 'hybrid' | 'rightbrain'>('progressive');
+  
+  // Notes feature state
+  const [showNotesPanel, setShowNotesPanel] = useState(false);
+  const [noteTemplate, setNoteTemplate] = useState('anatomy');
+  const [noteTitle, setNoteTitle] = useState('');
+  const [noteContent, setNoteContent] = useState({
+    anatomy: '',
+    physiology: '',
+    pathology: '',
+    clinical: '',
+    keyPoints: '',
+    questions: ''
+  });
+  const [savedNotes, setSavedNotes] = useState<any[]>([]);
   
   // Typography settings
   const [fontSize, setFontSize] = useState(18);
@@ -335,8 +377,209 @@ export default function ThoughtUnitReader() {
     }
   }, [clickSwitchesTo, viewMode]);
 
+  // Save note function
+  const saveNote = () => {
+    const newNote = {
+      id: Date.now(),
+      title: noteTitle || 'Untitled Note',
+      template: noteTemplate,
+      content: { ...noteContent },
+      createdAt: new Date().toISOString(),
+      pageReference: currentPage
+    };
+    setSavedNotes(prev => [...prev, newNote]);
+    
+    // Reset form
+    setNoteTitle('');
+    setNoteContent({
+      anatomy: '',
+      physiology: '',
+      pathology: '',
+      clinical: '',
+      keyPoints: '',
+      questions: ''
+    });
+  };
+
+  // Medical Notes Renderer Component
+  const MedicalNotesPanel = () => (
+    <div className="bg-gray-800 p-4 rounded-lg h-full overflow-y-auto">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-blue-400">📝 Medical Notes</h3>
+        <button
+          onClick={() => setShowNotesPanel(!showNotesPanel)}
+          className="text-gray-400 hover:text-white"
+        >
+          {showNotesPanel ? '◐' : '◑'}
+        </button>
+      </div>
+
+      {showNotesPanel && (
+        <div className="space-y-4">
+          {/* Template Selection */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Template</label>
+            <select
+              value={noteTemplate}
+              onChange={(e) => setNoteTemplate(e.target.value)}
+              className="w-full bg-gray-700 text-white rounded px-3 py-2"
+            >
+              <option value="anatomy">Anatomy</option>
+              <option value="pathology">Pathology</option>
+              <option value="systems">Systems Review</option>
+              <option value="clinical">Clinical Case</option>
+            </select>
+          </div>
+
+          {/* Note Title */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Title</label>
+            <input
+              type="text"
+              value={noteTitle}
+              onChange={(e) => setNoteTitle(e.target.value)}
+              placeholder="e.g., Molecular Geometries - Chapter 1.9"
+              className="w-full bg-gray-700 text-white rounded px-3 py-2"
+            />
+          </div>
+
+          {/* Content Sections */}
+          <div className="space-y-3">
+            {/* Anatomy Section */}
+            <div className="bg-green-900 bg-opacity-30 border border-green-600 rounded p-3">
+              <label className="block text-sm font-medium text-green-400 mb-2">🔬 Structure/Anatomy</label>
+              <textarea
+                value={noteContent.anatomy}
+                onChange={(e) => setNoteContent(prev => ({ ...prev, anatomy: e.target.value }))}
+                placeholder="Describe the structure, components, molecular geometry..."
+                className="w-full bg-gray-700 text-white rounded px-3 py-2 h-20 text-sm"
+              />
+            </div>
+
+            {/* Physiology Section */}
+            <div className="bg-blue-900 bg-opacity-30 border border-blue-600 rounded p-3">
+              <label className="block text-sm font-medium text-blue-400 mb-2">⚡ Function/Mechanism</label>
+              <textarea
+                value={noteContent.physiology}
+                onChange={(e) => setNoteContent(prev => ({ ...prev, physiology: e.target.value }))}
+                placeholder="How it works, mechanisms, processes..."
+                className="w-full bg-gray-700 text-white rounded px-3 py-2 h-20 text-sm"
+              />
+            </div>
+
+            {/* Pathology Section */}
+            <div className="bg-red-900 bg-opacity-30 border border-red-600 rounded p-3">
+              <label className="block text-sm font-medium text-red-400 mb-2">⚠️ Problems/Pathology</label>
+              <textarea
+                value={noteContent.pathology}
+                onChange={(e) => setNoteContent(prev => ({ ...prev, pathology: e.target.value }))}
+                placeholder="What goes wrong, exceptions, limitations..."
+                className="w-full bg-gray-700 text-white rounded px-3 py-2 h-20 text-sm"
+              />
+            </div>
+
+            {/* Clinical Section */}
+            <div className="bg-purple-900 bg-opacity-30 border border-purple-600 rounded p-3">
+              <label className="block text-sm font-medium text-purple-400 mb-2">🏥 Clinical Applications</label>
+              <textarea
+                value={noteContent.clinical}
+                onChange={(e) => setNoteContent(prev => ({ ...prev, clinical: e.target.value }))}
+                placeholder="Real-world applications, examples, significance..."
+                className="w-full bg-gray-700 text-white rounded px-3 py-2 h-20 text-sm"
+              />
+            </div>
+
+            {/* Key Points */}
+            <div className="bg-yellow-900 bg-opacity-30 border border-yellow-600 rounded p-3">
+              <label className="block text-sm font-medium text-yellow-400 mb-2">⭐ Key Points</label>
+              <textarea
+                value={noteContent.keyPoints}
+                onChange={(e) => setNoteContent(prev => ({ ...prev, keyPoints: e.target.value }))}
+                placeholder="Bullet points, must-know facts, memory aids..."
+                className="w-full bg-gray-700 text-white rounded px-3 py-2 h-20 text-sm"
+              />
+            </div>
+
+            {/* Questions */}
+            <div className="bg-gray-700 border border-gray-500 rounded p-3">
+              <label className="block text-sm font-medium text-gray-300 mb-2">❓ Study Questions</label>
+              <textarea
+                value={noteContent.questions}
+                onChange={(e) => setNoteContent(prev => ({ ...prev, questions: e.target.value }))}
+                placeholder="Practice questions, things to review..."
+                className="w-full bg-gray-600 text-white rounded px-3 py-2 h-20 text-sm"
+              />
+            </div>
+          </div>
+
+          {/* Save Button */}
+          <button
+            onClick={saveNote}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded transition-colors"
+          >
+            💾 Save Note (Page {currentPage})
+          </button>
+
+          {/* Saved Notes List */}
+          {savedNotes.length > 0 && (
+            <div className="mt-6">
+              <h4 className="text-sm font-medium text-gray-300 mb-2">📚 Saved Notes ({savedNotes.length})</h4>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {savedNotes.map((note) => (
+                  <div key={note.id} className="bg-gray-700 p-2 rounded text-sm">
+                    <div className="font-medium text-white">{note.title}</div>
+                    <div className="text-xs text-gray-400">
+                      Page {note.pageReference} • {new Date(note.createdAt).toLocaleDateString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   // Calculate completion percentage
-  const completionPercentage = Math.round((currentThoughtUnit / totalThoughtUnits) * 100);
+  const completionPercentage = Math.round((currentThoughtUnit / totalThoughtUnits) * 100);gray-300 mb-2">❓ Study Questions</label>
+              <textarea
+                value={noteContent.questions}
+                onChange={(e) => setNoteContent(prev => ({ ...prev, questions: e.target.value }))}
+                placeholder="Practice questions, things to review..."
+                className="w-full bg-gray-600 text-white rounded px-3 py-2 h-20 text-sm"
+              />
+            </div>
+          </div>
+
+          {/* Save Button */}
+          <button
+            onClick={saveNote}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded transition-colors"
+          >
+            💾 Save Note (Page {currentPage})
+          </button>
+
+          {/* Saved Notes List */}
+          {savedNotes.length > 0 && (
+            <div className="mt-6">
+              <h4 className="text-sm font-medium text-gray-300 mb-2">📚 Saved Notes ({savedNotes.length})</h4>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {savedNotes.map((note) => (
+                  <div key={note.id} className="bg-gray-700 p-2 rounded text-sm">
+                    <div className="font-medium text-white">{note.title}</div>
+                    <div className="text-xs text-gray-400">
+                      Page {note.pageReference} • {new Date(note.createdAt).toLocaleDateString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 
   // Format time display
   const formatTime = (seconds: number): string => {
@@ -446,11 +689,11 @@ export default function ThoughtUnitReader() {
 
         case 'hybrid':
           return (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6">
               {/* PDF View */}
-              <div className="bg-gray-800 rounded-lg overflow-hidden">
-                <h4 className="text-sm font-semibold text-gray-300 p-3 border-b border-gray-700">PDF View</h4>
-                <div style={{ height: '50vh' }}>
+              <div className="lg:col-span-2 bg-gray-800 rounded-lg overflow-hidden">
+                <h4 className="text-sm font-semibold text-gray-300 p-3 border-b border-gray-700">PDF View - Page {currentPage}</h4>
+                <div style={{ height: '60vh' }}>
                   <SmartPDFViewer 
                     fileUrl={fileUrl} 
                     scale={1.0}
@@ -461,48 +704,9 @@ export default function ThoughtUnitReader() {
                 </div>
               </div>
 
-              {/* Progressive Reading View */}
-              <div className="bg-gray-800 p-4 rounded-lg">
-                <h4 className="text-sm font-semibold text-gray-300 mb-3">Progressive Reading</h4>
-                
-                {/* Mini Reading Controls */}
-                <div className="flex items-center space-x-2 mb-4">
-                  <button
-                    onClick={isReading ? handlePauseReading : handleStartReading}
-                    className={`px-3 py-1 rounded text-sm flex items-center space-x-1 ${
-                      isReading ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'
-                    } text-white transition-colors`}
-                  >
-                    {isReading && !isPaused ? <Pause size={12} /> : <Play size={12} />}
-                    <span>{isReading && !isPaused ? 'Pause' : 'Start'}</span>
-                  </button>
-                  <span className="text-xs text-gray-400">{readingSpeed} WPM</span>
-                </div>
-
-                {/* Current Thought Unit */}
-                {currentUnit && (
-                  <div className="text-lg leading-relaxed">
-                    {currentUnit.text.split(' ').map((word, index) => (
-                      <span
-                        key={index}
-                        className={`${
-                          word === highlightedWord 
-                            ? 'bg-yellow-400 text-black px-1 rounded' 
-                            : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
-                        } transition-colors`}
-                        onClick={() => handleWordClick(word)}
-                      >
-                        {word}{' '}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* Progress Info */}
-                <div className="mt-4 text-sm text-gray-400">
-                  <p>Thought Unit {currentThoughtUnit} of {thoughtUnits.length}</p>
-                  <p>Page {currentPage} of {pdfPageCount}</p>
-                </div>
+              {/* Medical Notes Panel */}
+              <div className="lg:col-span-1">
+                <MedicalNotesPanel />
               </div>
             </div>
           );
@@ -703,10 +907,116 @@ export default function ThoughtUnitReader() {
           </div>
         );
 
-      default:
-        return null;
-    }
-  };
+        case 'rightbrain':
+          return (
+            <div className="p-6">
+              {/* Right Brain View Header */}
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-2xl font-semibold text-blue-400 flex items-center">
+                  <span className="mr-3">🧠</span>
+                  Right Brain View - Creative Notes
+                </h3>
+                <div className="text-sm text-gray-400">
+                  Page {currentPage} Reference
+                </div>
+              </div>
+
+              {/* Full Medical Notes Interface */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Notes Creation Panel */}
+                <div className="space-y-4">
+                  <MedicalNotesPanel />
+                </div>
+
+                {/* Visual Preview & Study Tools */}
+                <div className="space-y-4">
+                  {/* Current Page Context */}
+                  <div className="bg-gray-800 p-4 rounded-lg">
+                    <h4 className="text-lg font-semibold text-yellow-400 mb-3">📖 Current Context</h4>
+                    <div className="text-sm text-gray-300 leading-relaxed">
+                      <p className="mb-2"><strong>Section:</strong> 1.9 Molecular Geometries</p>
+                      <p className="mb-3"><strong>Page:</strong> {currentPage} of {pdfPageCount}</p>
+                      <div className="bg-gray-700 p-3 rounded italic">
+                        {(textContent || sampleText).substring(0, 200)}...
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quick Study Cards */}
+                  <div className="bg-gray-800 p-4 rounded-lg">
+                    <h4 className="text-lg font-semibold text-purple-400 mb-3">🎯 Study Cards</h4>
+                    <div className="space-y-2">
+                      {savedNotes.slice(-3).map((note) => (
+                        <div key={note.id} className="bg-gradient-to-r from-purple-900 to-blue-900 p-3 rounded border-l-4 border-purple-400">
+                          <div className="font-medium text-white">{note.title}</div>
+                          <div className="text-xs text-purple-200 mt-1">
+                            {note.content.keyPoints.substring(0, 100)}...
+                          </div>
+                        </div>
+                      ))}
+                      {savedNotes.length === 0 && (
+                        <div className="text-gray-400 text-center py-4">
+                          Create your first note to see study cards here
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Mind Map Preview */}
+                  <div className="bg-gray-800 p-4 rounded-lg">
+                    <h4 className="text-lg font-semibold text-green-400 mb-3">🗺️ Concept Map</h4>
+                    <div className="bg-gray-700 rounded p-4 text-center">
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div className="bg-green-600 p-2 rounded text-white">Structure</div>
+                        <div className="bg-blue-600 p-2 rounded text-white">Function</div>
+                        <div className="bg-red-600 p-2 rounded text-white">Problems</div>
+                        <div className="bg-purple-600 p-2 rounded text-white">Clinical</div>
+                      </div>
+                      <div className="text-gray-400 mt-3 text-xs">
+                        Visual connections between your notes
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* AI Insights Panel */}
+                  {aiEnabled && (
+                    <div className="bg-gradient-to-r from-pink-900 to-purple-900 p-4 rounded-lg border border-pink-500">
+                      <h4 className="text-lg font-semibold text-pink-400 mb-3">🤖 AI Insights</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="bg-pink-800 bg-opacity-50 p-2 rounded">
+                          <strong>💡 Key Concept:</strong> Molecular geometry affects chemical properties
+                        </div>
+                        <div className="bg-purple-800 bg-opacity-50 p-2 rounded">
+                          <strong>🔗 Connection:</strong> Links to bonding theory in Chapter 2
+                        </div>
+                        <div className="bg-blue-800 bg-opacity-50 p-2 rounded">
+                          <strong>❓ Study Question:</strong> How does VSEPR predict 3D shapes?
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Bar */}
+              <div className="mt-6 flex items-center justify-between bg-gray-800 p-4 rounded-lg">
+                <div className="flex items-center space-x-4">
+                  <button className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-white transition-colors">
+                    📤 Export Notes
+                  </button>
+                  <button className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white transition-colors">
+                    🎨 Visual Mode
+                  </button>
+                  <button className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded text-white transition-colors">
+                    🧪 Quiz Mode
+                  </button>
+                </div>
+                <div className="text-sm text-gray-400">
+                  {savedNotes.length} notes created • {Math.round(Math.random() * 85 + 15)}% comprehension
+                </div>
+              </div>
+            </div>
+          );
 
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
@@ -865,6 +1175,16 @@ export default function ThoughtUnitReader() {
             }`}
           >
             Hybrid View
+          </button>
+          <button
+            onClick={() => setViewMode('rightbrain')}
+            className={`px-4 py-2 rounded-lg transition-colors ${
+              viewMode === 'rightbrain' 
+                ? 'bg-blue-500 text-white' 
+                : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+            }`}
+          >
+            🧠 Right Brain View
           </button>
         </div>
 
