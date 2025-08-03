@@ -2,6 +2,42 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, RotateCcw, ZoomIn, ZoomOut, Book, Settings, Upload, Download, Eye } from 'lucide-react';
 
+// Enhanced Table of Contents with full book structure
+const fullTableOfContents = [
+  { page: 1, title: "Cover & Title Page", level: 0 },
+  { page: 3, title: "Table of Contents", level: 0 },
+  { page: 15, title: "Chapter 1: Introduction to Molecular Geometry", level: 1 },
+  { page: 16, title: "1.1 Basic Concepts", level: 2 },
+  { page: 25, title: "1.2 VSEPR Theory", level: 2 },
+  { page: 35, title: "1.3 Hybridization", level: 2 },
+  { page: 45, title: "1.4 Molecular Shapes", level: 2 },
+  { page: 55, title: "1.5 Polarity and Intermolecular Forces", level: 2 },
+  { page: 68, title: "1.9 Molecular Geometries", level: 2 },
+  { page: 78, title: "Chapter 2: Chemical Bonding", level: 1 },
+  { page: 89, title: "2.1 Ionic Bonding", level: 2 },
+  { page: 105, title: "2.2 Covalent Bonding", level: 2 },
+  { page: 125, title: "2.3 Metallic Bonding", level: 2 },
+  { page: 145, title: "2.4 Bond Properties", level: 2 },
+  { page: 165, title: "Chapter 3: Thermodynamics", level: 1 },
+  { page: 178, title: "3.1 First Law of Thermodynamics", level: 2 },
+  { page: 195, title: "3.2 Enthalpy", level: 2 },
+  { page: 215, title: "3.3 Entropy", level: 2 },
+  { page: 235, title: "3.4 Gibbs Free Energy", level: 2 },
+  { page: 255, title: "Chapter 4: Kinetics", level: 1 },
+  { page: 275, title: "4.1 Reaction Rates", level: 2 },
+  { page: 295, title: "4.2 Rate Laws", level: 2 },
+  { page: 315, title: "4.3 Reaction Mechanisms", level: 2 },
+  { page: 335, title: "4.4 Catalysis", level: 2 },
+  { page: 355, title: "Chapter 5: Equilibrium", level: 1 },
+  { page: 375, title: "5.1 Chemical Equilibrium", level: 2 },
+  { page: 395, title: "5.2 Le Chatelier's Principle", level: 2 },
+  { page: 415, title: "5.3 Acid-Base Equilibria", level: 2 },
+  { page: 435, title: "5.4 Solubility Equilibria", level: 2 },
+  { page: 455, title: "Appendix A: Mathematical Review", level: 1 },
+  { page: 475, title: "Appendix B: Reference Tables", level: 1 },
+  { page: 495, title: "Index", level: 1 }
+];
+
 // Smart PDF viewer that supports clickable text overlay
 const SmartPDFViewer: React.FC<{ 
   fileUrl: string; 
@@ -10,13 +46,17 @@ const SmartPDFViewer: React.FC<{
   onWordClick?: (word: string) => void;
   showTextOverlay?: boolean;
   textContent?: string;
+  currentPage?: number;
+  onPageChange?: (page: number) => void;
 }> = ({ 
   fileUrl, 
   scale = 1.25,
   className = "",
   onWordClick,
   showTextOverlay = false,
-  textContent = ""
+  textContent = "",
+  currentPage = 68,
+  onPageChange
 }) => {
   const [zoom, setZoom] = useState(scale);
   const [showTOC, setShowTOC] = useState(false);
@@ -25,42 +65,6 @@ const SmartPDFViewer: React.FC<{
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.25, 0.5));
   
   const pdfViewerUrl = `${fileUrl}#zoom=${Math.round(zoom * 100)}&view=FitH`;
-
-  // Enhanced Table of Contents with full book structure
-  const fullTableOfContents = [
-    { page: 1, title: "Cover & Title Page", level: 0 },
-    { page: 3, title: "Table of Contents", level: 0 },
-    { page: 15, title: "Chapter 1: Introduction to Molecular Geometry", level: 1 },
-    { page: 16, title: "1.1 Basic Concepts", level: 2 },
-    { page: 25, title: "1.2 VSEPR Theory", level: 2 },
-    { page: 35, title: "1.3 Hybridization", level: 2 },
-    { page: 45, title: "1.4 Molecular Shapes", level: 2 },
-    { page: 55, title: "1.5 Polarity and Intermolecular Forces", level: 2 },
-    { page: 68, title: "1.9 Molecular Geometries", level: 2 },
-    { page: 78, title: "Chapter 2: Chemical Bonding", level: 1 },
-    { page: 89, title: "2.1 Ionic Bonding", level: 2 },
-    { page: 105, title: "2.2 Covalent Bonding", level: 2 },
-    { page: 125, title: "2.3 Metallic Bonding", level: 2 },
-    { page: 145, title: "2.4 Bond Properties", level: 2 },
-    { page: 165, title: "Chapter 3: Thermodynamics", level: 1 },
-    { page: 178, title: "3.1 First Law of Thermodynamics", level: 2 },
-    { page: 195, title: "3.2 Enthalpy", level: 2 },
-    { page: 215, title: "3.3 Entropy", level: 2 },
-    { page: 235, title: "3.4 Gibbs Free Energy", level: 2 },
-    { page: 255, title: "Chapter 4: Kinetics", level: 1 },
-    { page: 275, title: "4.1 Reaction Rates", level: 2 },
-    { page: 295, title: "4.2 Rate Laws", level: 2 },
-    { page: 315, title: "4.3 Reaction Mechanisms", level: 2 },
-    { page: 335, title: "4.4 Catalysis", level: 2 },
-    { page: 355, title: "Chapter 5: Equilibrium", level: 1 },
-    { page: 375, title: "5.1 Chemical Equilibrium", level: 2 },
-    { page: 395, title: "5.2 Le Chatelier's Principle", level: 2 },
-    { page: 415, title: "5.3 Acid-Base Equilibria", level: 2 },
-    { page: 435, title: "5.4 Solubility Equilibria", level: 2 },
-    { page: 455, title: "Appendix A: Mathematical Review", level: 1 },
-    { page: 475, title: "Appendix B: Reference Tables", level: 1 },
-    { page: 495, title: "Index", level: 1 }
-  ];
 
   return (
     <div className={`relative w-full h-full ${className}`}>
@@ -110,9 +114,9 @@ const SmartPDFViewer: React.FC<{
                     item.level === 0 ? 'text-gray-400 italic' :
                     item.level === 1 ? 'text-white font-medium bg-gray-800' : 
                     'text-gray-300 ml-4'
-                  } ${item.page === 68 ? 'bg-blue-600 text-white' : ''}`}
+                  } ${item.page === currentPage ? 'bg-blue-600 text-white' : ''}`}
                   onClick={() => {
-                    setCurrentPage(item.page);
+                    onPageChange?.(item.page);
                     setShowTOC(false);
                     console.log(`Navigate to page ${item.page}: ${item.title}`);
                   }}
@@ -542,44 +546,7 @@ export default function ThoughtUnitReader() {
   );
 
   // Calculate completion percentage
-  const completionPercentage = Math.round((currentThoughtUnit / totalThoughtUnits) * 100);gray-300 mb-2">❓ Study Questions</label>
-              <textarea
-                value={noteContent.questions}
-                onChange={(e) => setNoteContent(prev => ({ ...prev, questions: e.target.value }))}
-                placeholder="Practice questions, things to review..."
-                className="w-full bg-gray-600 text-white rounded px-3 py-2 h-20 text-sm"
-              />
-            </div>
-          </div>
-
-          {/* Save Button */}
-          <button
-            onClick={saveNote}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded transition-colors"
-          >
-            💾 Save Note (Page {currentPage})
-          </button>
-
-          {/* Saved Notes List */}
-          {savedNotes.length > 0 && (
-            <div className="mt-6">
-              <h4 className="text-sm font-medium text-gray-300 mb-2">📚 Saved Notes ({savedNotes.length})</h4>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
-                {savedNotes.map((note) => (
-                  <div key={note.id} className="bg-gray-700 p-2 rounded text-sm">
-                    <div className="font-medium text-white">{note.title}</div>
-                    <div className="text-xs text-gray-400">
-                      Page {note.pageReference} • {new Date(note.createdAt).toLocaleDateString()}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
+  const completionPercentage = Math.round((currentThoughtUnit / totalThoughtUnits) * 100);
 
   // Format time display
   const formatTime = (seconds: number): string => {
@@ -691,9 +658,9 @@ export default function ThoughtUnitReader() {
 
         case 'hybrid':
           return (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
               {/* PDF View */}
-              <div className="lg:col-span-2 bg-gray-800 rounded-lg overflow-hidden">
+              <div className="bg-gray-800 rounded-lg overflow-hidden">
                 <h4 className="text-sm font-semibold text-gray-300 p-3 border-b border-gray-700">PDF View - Page {currentPage}</h4>
                 <div style={{ height: '60vh' }}>
                   <SmartPDFViewer 
@@ -702,13 +669,165 @@ export default function ThoughtUnitReader() {
                     onWordClick={handleWordClick}
                     showTextOverlay={true}
                     textContent={sampleText}
+                    currentPage={currentPage}
+                    onPageChange={setCurrentPage}
                   />
                 </div>
               </div>
 
-              {/* Medical Notes Panel */}
-              <div className="lg:col-span-1">
-                <MedicalNotesPanel />
+              {/* Progressive Reading View */}
+              <div className="bg-gray-800 p-4 rounded-lg">
+                <h4 className="text-sm font-semibold text-gray-300 mb-3">Progressive Reading</h4>
+                
+                {/* Mini Reading Controls */}
+                <div className="flex items-center space-x-2 mb-4">
+                  <button
+                    onClick={isReading ? handlePauseReading : handleStartReading}
+                    className={`px-3 py-1 rounded text-sm flex items-center space-x-1 ${
+                      isReading ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'
+                    } text-white transition-colors`}
+                  >
+                    {isReading && !isPaused ? <Pause size={12} /> : <Play size={12} />}
+                    <span>{isReading && !isPaused ? 'Pause' : 'Start'}</span>
+                  </button>
+                  <span className="text-xs text-gray-400">{readingSpeed} WPM</span>
+                </div>
+
+                {/* Current Thought Unit */}
+                {currentUnit && (
+                  <div className="text-lg leading-relaxed">
+                    {currentUnit.text.split(' ').map((word, index) => (
+                      <span
+                        key={index}
+                        className={`${
+                          word === highlightedWord 
+                            ? 'bg-yellow-400 text-black px-1 rounded' 
+                            : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
+                        } transition-colors`}
+                        onClick={() => handleWordClick(word)}
+                      >
+                        {word}{' '}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Progress Info */}
+                <div className="mt-4 text-sm text-gray-400">
+                  <p>Thought Unit {currentThoughtUnit} of {thoughtUnits.length}</p>
+                  <p>Page {currentPage} of {pdfPageCount}</p>
+                </div>
+              </div>
+            </div>
+          );
+
+        case 'rightbrain':
+          return (
+            <div className="p-6">
+              {/* Right Brain View Header */}
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-2xl font-semibold text-blue-400 flex items-center">
+                  <span className="mr-3">🧠</span>
+                  Right Brain View - Creative Notes
+                </h3>
+                <div className="text-sm text-gray-400">
+                  Page {currentPage} Reference
+                </div>
+              </div>
+
+              {/* Full Medical Notes Interface */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Notes Creation Panel */}
+                <div className="space-y-4">
+                  <MedicalNotesPanel />
+                </div>
+
+                {/* Visual Preview & Study Tools */}
+                <div className="space-y-4">
+                  {/* Current Page Context */}
+                  <div className="bg-gray-800 p-4 rounded-lg">
+                    <h4 className="text-lg font-semibold text-yellow-400 mb-3">📖 Current Context</h4>
+                    <div className="text-sm text-gray-300 leading-relaxed">
+                      <p className="mb-2"><strong>Section:</strong> 1.9 Molecular Geometries</p>
+                      <p className="mb-3"><strong>Page:</strong> {currentPage} of {pdfPageCount}</p>
+                      <div className="bg-gray-700 p-3 rounded italic">
+                        {(textContent || sampleText).substring(0, 200)}...
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quick Study Cards */}
+                  <div className="bg-gray-800 p-4 rounded-lg">
+                    <h4 className="text-lg font-semibold text-purple-400 mb-3">🎯 Study Cards</h4>
+                    <div className="space-y-2">
+                      {savedNotes.slice(-3).map((note) => (
+                        <div key={note.id} className="bg-gradient-to-r from-purple-900 to-blue-900 p-3 rounded border-l-4 border-purple-400">
+                          <div className="font-medium text-white">{note.title}</div>
+                          <div className="text-xs text-purple-200 mt-1">
+                            {note.content.keyPoints.substring(0, 100)}...
+                          </div>
+                        </div>
+                      ))}
+                      {savedNotes.length === 0 && (
+                        <div className="text-gray-400 text-center py-4">
+                          Create your first note to see study cards here
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Mind Map Preview */}
+                  <div className="bg-gray-800 p-4 rounded-lg">
+                    <h4 className="text-lg font-semibold text-green-400 mb-3">🗺️ Concept Map</h4>
+                    <div className="bg-gray-700 rounded p-4 text-center">
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div className="bg-green-600 p-2 rounded text-white">Structure</div>
+                        <div className="bg-blue-600 p-2 rounded text-white">Function</div>
+                        <div className="bg-red-600 p-2 rounded text-white">Problems</div>
+                        <div className="bg-purple-600 p-2 rounded text-white">Clinical</div>
+                      </div>
+                      <div className="text-gray-400 mt-3 text-xs">
+                        Visual connections between your notes
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* AI Insights Panel */}
+                  {aiEnabled && (
+                    <div className="bg-gradient-to-r from-pink-900 to-purple-900 p-4 rounded-lg border border-pink-500">
+                      <h4 className="text-lg font-semibold text-pink-400 mb-3">🤖 AI Insights</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="bg-pink-800 bg-opacity-50 p-2 rounded">
+                          <strong>💡 Key Concept:</strong> Molecular geometry affects chemical properties
+                        </div>
+                        <div className="bg-purple-800 bg-opacity-50 p-2 rounded">
+                          <strong>🔗 Connection:</strong> Links to bonding theory in Chapter 2
+                        </div>
+                        <div className="bg-blue-800 bg-opacity-50 p-2 rounded">
+                          <strong>❓ Study Question:</strong> How does VSEPR predict 3D shapes?
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Bar */}
+              <div className="mt-6 flex items-center justify-between bg-gray-800 p-4 rounded-lg">
+                <div className="flex items-center space-x-4">
+                  <button className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-white transition-colors">
+                    📤 Export Notes
+                  </button>
+                  <button className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white transition-colors">
+                    🎨 Visual Mode
+                  </button>
+                  <button className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded text-white transition-colors">
+                    🧪 Quiz Mode
+                  </button>
+                </div>
+                <div className="text-sm text-gray-400">
+                  {savedNotes.length} notes created • {Math.round(Math.random() * 85 + 15)}% comprehension
+                </div>
               </div>
             </div>
           );
@@ -911,116 +1030,69 @@ export default function ThoughtUnitReader() {
           </div>
         );
 
-        case 'rightbrain':
-          return (
-            <div className="p-6">
-              {/* Right Brain View Header */}
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-2xl font-semibold text-blue-400 flex items-center">
-                  <span className="mr-3">🧠</span>
-                  Right Brain View - Creative Notes
-                </h3>
-                <div className="text-sm text-gray-400">
-                  Page {currentPage} Reference
-                </div>
+      case 'rightbrain':
+        return (
+          <div className="p-6">
+            {/* Right Brain View Header */}
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-semibold text-blue-400 flex items-center">
+                <span className="mr-3">🧠</span>
+                Right Brain View - Creative Notes
+              </h3>
+              <div className="text-sm text-gray-400">
+                Text-based Mode
+              </div>
+            </div>
+
+            {/* Text-based Right Brain Interface */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Notes Creation Panel */}
+              <div className="space-y-4">
+                <MedicalNotesPanel />
               </div>
 
-              {/* Full Medical Notes Interface */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Notes Creation Panel */}
-                <div className="space-y-4">
-                  <MedicalNotesPanel />
-                </div>
-
-                {/* Visual Preview & Study Tools */}
-                <div className="space-y-4">
-                  {/* Current Page Context */}
-                  <div className="bg-gray-800 p-4 rounded-lg">
-                    <h4 className="text-lg font-semibold text-yellow-400 mb-3">📖 Current Context</h4>
-                    <div className="text-sm text-gray-300 leading-relaxed">
-                      <p className="mb-2"><strong>Section:</strong> 1.9 Molecular Geometries</p>
-                      <p className="mb-3"><strong>Page:</strong> {currentPage} of {pdfPageCount}</p>
-                      <div className="bg-gray-700 p-3 rounded italic">
-                        {(textContent || sampleText).substring(0, 200)}...
-                      </div>
+              {/* Text Analysis & Study Tools */}
+              <div className="space-y-4">
+                {/* Current Context */}
+                <div className="bg-gray-800 p-4 rounded-lg">
+                  <h4 className="text-lg font-semibold text-yellow-400 mb-3">📖 Current Context</h4>
+                  <div className="text-sm text-gray-300 leading-relaxed">
+                    <p className="mb-2"><strong>Mode:</strong> Text Analysis</p>
+                    <p className="mb-3"><strong>Content:</strong> Sample Text</p>
+                    <div className="bg-gray-700 p-3 rounded italic">
+                      {(textContent || sampleText).substring(0, 200)}...
                     </div>
                   </div>
-
-                  {/* Quick Study Cards */}
-                  <div className="bg-gray-800 p-4 rounded-lg">
-                    <h4 className="text-lg font-semibold text-purple-400 mb-3">🎯 Study Cards</h4>
-                    <div className="space-y-2">
-                      {savedNotes.slice(-3).map((note) => (
-                        <div key={note.id} className="bg-gradient-to-r from-purple-900 to-blue-900 p-3 rounded border-l-4 border-purple-400">
-                          <div className="font-medium text-white">{note.title}</div>
-                          <div className="text-xs text-purple-200 mt-1">
-                            {note.content.keyPoints.substring(0, 100)}...
-                          </div>
-                        </div>
-                      ))}
-                      {savedNotes.length === 0 && (
-                        <div className="text-gray-400 text-center py-4">
-                          Create your first note to see study cards here
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Mind Map Preview */}
-                  <div className="bg-gray-800 p-4 rounded-lg">
-                    <h4 className="text-lg font-semibold text-green-400 mb-3">🗺️ Concept Map</h4>
-                    <div className="bg-gray-700 rounded p-4 text-center">
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div className="bg-green-600 p-2 rounded text-white">Structure</div>
-                        <div className="bg-blue-600 p-2 rounded text-white">Function</div>
-                        <div className="bg-red-600 p-2 rounded text-white">Problems</div>
-                        <div className="bg-purple-600 p-2 rounded text-white">Clinical</div>
-                      </div>
-                      <div className="text-gray-400 mt-3 text-xs">
-                        Visual connections between your notes
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* AI Insights Panel */}
-                  {aiEnabled && (
-                    <div className="bg-gradient-to-r from-pink-900 to-purple-900 p-4 rounded-lg border border-pink-500">
-                      <h4 className="text-lg font-semibold text-pink-400 mb-3">🤖 AI Insights</h4>
-                      <div className="space-y-2 text-sm">
-                        <div className="bg-pink-800 bg-opacity-50 p-2 rounded">
-                          <strong>💡 Key Concept:</strong> Molecular geometry affects chemical properties
-                        </div>
-                        <div className="bg-purple-800 bg-opacity-50 p-2 rounded">
-                          <strong>🔗 Connection:</strong> Links to bonding theory in Chapter 2
-                        </div>
-                        <div className="bg-blue-800 bg-opacity-50 p-2 rounded">
-                          <strong>❓ Study Question:</strong> How does VSEPR predict 3D shapes?
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
-              </div>
 
-              {/* Action Bar */}
-              <div className="mt-6 flex items-center justify-between bg-gray-800 p-4 rounded-lg">
-                <div className="flex items-center space-x-4">
-                  <button className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-white transition-colors">
-                    📤 Export Notes
-                  </button>
-                  <button className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white transition-colors">
-                    🎨 Visual Mode
-                  </button>
-                  <button className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded text-white transition-colors">
-                    🧪 Quiz Mode
-                  </button>
-                </div>
-                <div className="text-sm text-gray-400">
-                  {savedNotes.length} notes created • {Math.round(Math.random() * 85 + 15)}% comprehension
+                {/* Study Cards and Mind Map same as PDF version */}
+                <div className="bg-gray-800 p-4 rounded-lg">
+                  <h4 className="text-lg font-semibold text-purple-400 mb-3">🎯 Study Cards</h4>
+                  <div className="space-y-2">
+                    {savedNotes.slice(-3).map((note) => (
+                      <div key={note.id} className="bg-gradient-to-r from-purple-900 to-blue-900 p-3 rounded border-l-4 border-purple-400">
+                        <div className="font-medium text-white">{note.title}</div>
+                        <div className="text-xs text-purple-200 mt-1">
+                          {note.content.keyPoints.substring(0, 100)}...
+                        </div>
+                      </div>
+                    ))}
+                    {savedNotes.length === 0 && (
+                      <div className="text-gray-400 text-center py-4">
+                        Create your first note to see study cards here
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
-          );
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
