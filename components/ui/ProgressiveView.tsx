@@ -1,15 +1,6 @@
 // components/ProgressiveView.tsx
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import SmartPDFViewer from '@/components/SmartPDFViewer';
+import React from 'react';
 import { Play, Pause, RotateCcw } from 'lucide-react';
-
-export interface ReadingStats {
-  wordsRead: number;
-  timeElapsed: number; // seconds
-  currentWPM: number;
-  averageWPM: number;
-  comprehensionScore?: number;
-}
 
 export interface ThoughtUnit {
   id: number;
@@ -19,150 +10,152 @@ export interface ThoughtUnit {
   timeSpent: number;
 }
 
-interface ProgressiveViewProps {
-  fileUrl?: string | null;
-  textContent?: string;
-  initialReadingSpeed?: number;
+export interface ReadingStats {
+  wordsRead: number;
+  timeElapsed: number;
+  currentWPM: number;
+  averageWPM: number;
+  comprehensionScore?: number;
 }
 
+interface ProgressiveViewProps {
+  sampleText: string;
+  currentThoughtUnit: number;
+  totalThoughtUnits: number;
+  thoughtUnits: ThoughtUnit[];
+  readingSpeed: number;
+  isReading: boolean;
+  isPaused: boolean;
+  stats: ReadingStats;
+  highlightedWord: string;
+  fontSize: number;
+  fontFamily: string;
+  lineSpacing: number;
+  handleStartReading: () => void;
+  handlePauseReading: () => void;
+  handleResetReading: () => void;
+  handleWordClick: (word: string) => void;
+  setReadingSpeed: (wpm: number) => void;
+}
+
+const formatTime = (seconds: number): string => {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${secs}s`;
+  }
+  return `${minutes}m ${secs}s`;
+};
+
 const ProgressiveView: React.FC<ProgressiveViewProps> = ({
-  fileUrl = null,
-  textContent = '',
-  initialReadingSpeed = 200
+  sampleText,
+  currentThoughtUnit,
+  totalThoughtUnits,
+  thoughtUnits,
+  readingSpeed,
+  isReading,
+  isPaused,
+  stats,
+  highlightedWord,
+  fontSize,
+  fontFamily,
+  lineSpacing,
+  handleStartReading,
+  handlePauseReading,
+  handleResetReading,
+  handleWordClick,
+  setReadingSpeed
 }) => {
-  const sampleText = textContent || `Use of the current edition of the electronic version of this book (eBook) is subject to the terms of the nontransferable, limited license granted on expertconsult.inkling.com. Access to the eBook is limited to the first individual who redeems the PIN, located on the inside cover of this book, at expertconsult.inkling.com and may not be transferred to another party by resale, lending, or other means.`;
-
-  const [isReading, setIsReading] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [readingSpeed, setReadingSpeed] = useState(initialReadingSpeed);
-  const [currentThoughtUnit, setCurrentThoughtUnit] = useState(1);
-  const [thoughtUnits, setThoughtUnits] = useState<ThoughtUnit[]>([]);
-  const [highlightedWord, setHighlightedWord] = useState<string>('Use');
-  const [stats, setStats] = useState<ReadingStats>({
-    wordsRead: 0,
-    timeElapsed: 0,
-    currentWPM: initialReadingSpeed,
-    averageWPM: initialReadingSpeed
-  });
-
-  const readingTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
-    const words = sampleText.split(/\s+/);
-    const units: ThoughtUnit[] = [];
-    for (let i = 0; i < words.length; i += 12) {
-      const unitWords = words.slice(i, i + 12);
-      units.push({
-        id: Math.floor(i / 12) + 1,
-        text: unitWords.join(' '),
-        wordCount: unitWords.length,
-        isCompleted: false,
-        timeSpent: 0
-      });
-    }
-    setThoughtUnits(units);
-  }, [sampleText]);
-
-  useEffect(() => {
-    if (isReading && !isPaused) {
-      readingTimerRef.current = setInterval(() => {
-        setStats(prev => {
-          const newTimeElapsed = prev.timeElapsed + 1;
-          const newCurrentWPM = Math.round((prev.wordsRead / newTimeElapsed) * 60) || readingSpeed;
-          return {
-            ...prev,
-            timeElapsed: newTimeElapsed,
-            currentWPM: newCurrentWPM,
-            averageWPM: Math.round((prev.averageWPM + newCurrentWPM) / 2) || readingSpeed
-          };
-        });
-      }, 1000);
-    } else {
-      if (readingTimerRef.current) clearInterval(readingTimerRef.current);
-    }
-    return () => {
-      if (readingTimerRef.current) clearInterval(readingTimerRef.current);
-    };
-  }, [isReading, isPaused, readingSpeed]);
-
-  const advanceThoughtUnit = useCallback(() => {
-    if (currentThoughtUnit < thoughtUnits.length) {
-      setCurrentThoughtUnit(prev => prev + 1);
-      setStats(prev => ({
-        ...prev,
-        wordsRead: prev.wordsRead + (thoughtUnits[currentThoughtUnit - 1]?.wordCount || 0)
-      }));
-      setThoughtUnits(prev => prev.map(unit =>
-        unit.id === currentThoughtUnit ? { ...unit, isCompleted: true } : unit
-      ));
-    }
-  }, [currentThoughtUnit, thoughtUnits]);
-
-  useEffect(() => {
-    if (isReading && !isPaused) {
-      const wordsPerUnit = thoughtUnits[currentThoughtUnit - 1]?.wordCount || 12;
-      const timePerUnit = (wordsPerUnit / readingSpeed) * 60 * 1000;
-      const timer = setTimeout(advanceThoughtUnit, timePerUnit);
-      return () => clearTimeout(timer);
-    }
-  }, [isReading, isPaused, currentThoughtUnit, readingSpeed, advanceThoughtUnit, thoughtUnits]);
-
-  const handleWordClick = useCallback((word: string) => {
-    setHighlightedWord(word);
-  }, []);
-
-  const formatTime = (seconds: number) => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    return h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`;
-  };
-
+  const completionPercentage = Math.round((currentThoughtUnit / totalThoughtUnits) * 100);
   const currentUnit = thoughtUnits[currentThoughtUnit - 1];
-  const completion = Math.round((currentThoughtUnit / (thoughtUnits.length || 1)) * 100);
 
   return (
-    <div className="space-y-6 p-6 bg-gray-800 rounded-lg text-white">
+    <div className="space-y-6 p-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => { setIsReading(prev => !prev); setIsPaused(false); }}
-            className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${isReading && !isPaused ? 'bg-yellow-600' : 'bg-green-600'}`}
-          >
-            {isReading && !isPaused ? <Pause size={16} /> : <Play size={16} />}
-            <span>{isReading && !isPaused ? 'Pause' : 'Start'}</span>
-          </button>
-          <button
-            onClick={() => {
-              setIsReading(false);
-              setIsPaused(false);
-              setCurrentThoughtUnit(1);
-              setStats({
-                wordsRead: 0,
-                timeElapsed: 0,
-                currentWPM: readingSpeed,
-                averageWPM: readingSpeed
-              });
-              setThoughtUnits(prev => prev.map(u => ({ ...u, isCompleted: false, timeSpent: 0 })));
-            }}
-            className="px-4 py-2 bg-gray-600 rounded-lg flex items-center space-x-2"
-          >
-            <RotateCcw size={16} />
-            <span>Reset</span>
-          </button>
-        </div>
-        <div className="text-sm">
-          Completion: {completion}% • WPM: {stats.currentWPM} • Elapsed: {formatTime(stats.timeElapsed)}
+        <h3 className="text-lg font-semibold text-yellow-400 flex items-center">
+          <span className="mr-2">⚡</span>
+          Progressive Reading
+        </h3>
+        <div className="text-sm text-gray-400">
+          Thought Unit {currentThoughtUnit} of {totalThoughtUnits.toLocaleString()}
         </div>
       </div>
 
+      {/* Controls */}
+      <div className="flex items-center space-x-4">
+        <button
+          onClick={isReading ? handlePauseReading : handleStartReading}
+          className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${
+            isReading ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'
+          } text-white transition-colors`}
+        >
+          {isReading && !isPaused ? <Pause size={16} /> : <Play size={16} />}
+          <span>{isReading && !isPaused ? 'Pause' : 'Start'}</span>
+        </button>
+
+        <button
+          onClick={handleResetReading}
+          className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg flex items-center space-x-2 transition-colors"
+        >
+          <RotateCcw size={16} />
+          <span>Reset</span>
+        </button>
+
+        <div className="flex items-center space-x-2">
+          <label className="text-sm text-gray-300">Speed:</label>
+          <input
+            type="number"
+            value={readingSpeed}
+            onChange={(e) => setReadingSpeed(parseInt(e.target.value) || 200)}
+            className="w-16 px-2 py-1 bg-gray-700 text-white rounded text-center"
+            min={50}
+            max={1000}
+          />
+          <span className="text-sm text-gray-300">WPM</span>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-4">
+        <div className="bg-blue-600 p-4 rounded-lg text-center">
+          <div className="text-2xl font-bold">{completionPercentage}%</div>
+          <div className="text-sm opacity-75">Complete</div>
+        </div>
+        <div className="bg-green-600 p-4 rounded-lg text-center">
+          <div className="text-2xl font-bold">{currentThoughtUnit}</div>
+          <div className="text-sm opacity-75">Current</div>
+        </div>
+        <div className="bg-purple-600 p-4 rounded-lg text-center">
+          <div className="text-2xl font-bold">{stats.currentWPM}</div>
+          <div className="text-sm opacity-75">WPM</div>
+        </div>
+        <div className="bg-red-900 p-4 rounded-lg text-center">
+          <div className="text-2xl font-bold">{formatTime(stats.timeElapsed)}</div>
+          <div className="text-sm opacity-75">Elapsed</div>
+        </div>
+      </div>
+
+      {/* Thought Unit */}
       {currentUnit && (
-        <div className="bg-gray-700 p-4 rounded">
-          <div className="text-lg leading-relaxed">
-            {currentUnit.text.split(' ').map((word, i) => (
+        <div className="bg-gray-800 p-6 rounded-lg">
+          <div
+            className="text-lg leading-relaxed"
+            style={{
+              fontSize: `${fontSize}px`,
+              fontFamily: fontFamily,
+              lineHeight: lineSpacing
+            }}
+          >
+            {currentUnit.text.split(' ').map((word, index) => (
               <span
-                key={i}
-                className={`${word === highlightedWord ? 'bg-yellow-400 text-black px-1 rounded' : 'hover:bg-gray-600 cursor-pointer px-1 rounded'} transition-colors`}
+                key={index}
+                className={`${
+                  word === highlightedWord
+                    ? 'bg-yellow-400 text-black px-1 rounded'
+                    : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
+                } transition-colors`}
                 onClick={() => handleWordClick(word)}
               >
                 {word}{' '}
@@ -171,22 +164,9 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
           </div>
         </div>
       )}
-
-      {fileUrl && (
-        <div className="bg-gray-800 rounded-lg overflow-hidden" style={{ height: '50vh' }}>
-          <SmartPDFViewer
-            fileUrl={fileUrl}
-            scale={1.25}
-            onWordClick={handleWordClick}
-            showTextOverlay={true}
-            textContent={sampleText}
-            currentPage={1}
-            onPageChange={() => {}}
-          />
-        </div>
-      )}
     </div>
   );
 };
 
 export default ProgressiveView;
+export type { ThoughtUnit, ReadingStats };

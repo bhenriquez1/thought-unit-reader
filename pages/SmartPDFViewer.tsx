@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { ZoomIn, ZoomOut } from 'lucide-react';
 
-interface SmartPDFViewerProps {
+export interface SmartPDFViewerProps {
   fileUrl: string;
   scale?: number;
   className?: string;
@@ -63,11 +63,11 @@ const SmartPDFViewer: React.FC<SmartPDFViewerProps> = ({
 
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.25, 3.0));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.25, 0.5));
-
   const pdfViewerUrl = `${fileUrl}#zoom=${Math.round(zoom * 100)}&view=FitH`;
 
   return (
     <div className={`relative w-full h-full ${className}`}>
+      {/* PDF Controls */}
       <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between">
         <button
           onClick={() => setShowTOC(!showTOC)}
@@ -90,17 +90,13 @@ const SmartPDFViewer: React.FC<SmartPDFViewerProps> = ({
         </div>
       </div>
 
+      {/* TOC */}
       {showTOC && (
         <div className="absolute top-0 left-0 w-80 h-full bg-gray-900 bg-opacity-95 z-30 overflow-y-auto">
           <div className="p-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-white font-semibold">Table of Contents</h3>
-              <button
-                onClick={() => setShowTOC(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                ✕
-              </button>
+              <button onClick={() => setShowTOC(false)} className="text-gray-400 hover:text-white">✕</button>
             </div>
             <div className="space-y-2">
               {fullTableOfContents.map((item, index) => (
@@ -128,15 +124,16 @@ const SmartPDFViewer: React.FC<SmartPDFViewerProps> = ({
         </div>
       )}
 
+      {/* Text Overlay */}
       {showTextOverlay && textContent && (
         <div className="absolute inset-0 z-10 bg-transparent pointer-events-none">
           <div
             className="absolute inset-0 p-8 text-transparent pointer-events-auto"
             style={{ fontSize: '14px', lineHeight: '1.6' }}
           >
-            {textContent.split(' ').map((word, index) => (
+            {textContent.split(' ').map((word, i) => (
               <span
-                key={index}
+                key={i}
                 className="hover:bg-yellow-400 hover:bg-opacity-30 cursor-pointer pointer-events-auto"
                 onClick={() => onWordClick?.(word)}
                 style={{ userSelect: 'none' }}
@@ -148,6 +145,7 @@ const SmartPDFViewer: React.FC<SmartPDFViewerProps> = ({
         </div>
       )}
 
+      {/* Iframe PDF */}
       <iframe
         src={pdfViewerUrl}
         className="w-full h-full border-0"
