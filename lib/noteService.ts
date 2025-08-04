@@ -1,6 +1,6 @@
 // /lib/noteService.ts
 import { db } from './firebase';
-import { collection, addDoc, getDocs, query, where, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, Timestamp, doc, updateDoc } from 'firebase/firestore';
 
 /**
  * Shape of a note used in RightBrainNoteEditor
@@ -29,6 +29,22 @@ export async function saveNote(note: Omit<RightBrainNote, 'createdAt' | 'updated
     console.log('✅ Note saved to Firestore');
   } catch (error) {
     console.error('❌ Error saving note:', error);
+  }
+}
+
+/**
+ * Update an existing note
+ */
+export async function updateNote(id: string, updates: Partial<RightBrainNote>) {
+  try {
+    const noteRef = doc(db, 'notes', id);
+    await updateDoc(noteRef, {
+      ...updates,
+      updatedAt: Timestamp.now(),
+    });
+    console.log(`✅ Note ${id} updated`);
+  } catch (error) {
+    console.error(`❌ Error updating note ${id}:`, error);
   }
 }
 
