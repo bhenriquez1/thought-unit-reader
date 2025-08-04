@@ -1,46 +1,44 @@
-import React, { useEffect, useState } from 'react';
+// components/RightBrainNoteEditor.tsx
+import React, { useEffect, useState } from "react";
 import {
   saveNote,
   updateNote,
   getNotesForBook,
   RightBrainNote,
-} from '@/lib/noteService';
+} from "@/lib/noteService";
+import { firebaseConnected } from "@/lib/firebase"; // ✅ Track Firebase connection
 
 interface RightBrainNoteEditorProps {
-  bookId: string; // Unique identifier for the current book
+  bookId: string; // unique per uploaded PDF
   initialText?: string;
   attachments?: string[];
-  onDone?: () => void; // callback to return to reader
+  onDone?: () => void;
 }
 
 export default function RightBrainNoteEditor({
   bookId,
-  initialText = '',
+  initialText = "",
   attachments = [],
   onDone,
 }: RightBrainNoteEditorProps) {
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState("");
   const [content, setContent] = useState(initialText);
-  const [tags, setTags] = useState('');
+  const [tags, setTags] = useState("");
   const [localAttachments, setLocalAttachments] = useState<string[]>(attachments);
   const [notes, setNotes] = useState<RightBrainNote[]>([]);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
 
-  const debugMode = true; // ✅ Always true for now
-
   /** ===============================
-   * 📌 Load notes for this book
+   * 📌 Load notes for this PDF
    * =============================== */
   useEffect(() => {
+    if (!firebaseConnected) {
+      console.warn("⚠️ Firebase not connected — notes may not load yet.");
+      return;
+    }
     async function fetchNotes() {
-      try {
-        const loadedNotes = await getNotesForBook(bookId);
-        if (debugMode) console.log('🛠 DEBUG → Loaded Notes:', loadedNotes);
-        setNotes(loadedNotes || []);
-      } catch (error) {
-        console.error('❌ Error fetching notes:', error);
-        setNotes([]);
-      }
+      const loadedNotes = await getNotesForBook(bookId);
+      setNotes(loadedNotes);
     }
     fetchNotes();
   }, [bookId]);
@@ -49,61 +47,61 @@ export default function RightBrainNoteEditor({
    * 📌 Select note for editing
    * =============================== */
   const handleSelectNote = (note: RightBrainNote) => {
-    if (!note) return;
     setSelectedNoteId(note.id || null);
-    setTitle(note.title || '');
-    setContent(note.content || '');
-    setTags(note.tags?.join(', ') || '');
+    setTitle(note.title);
+    setContent(note.content);
+    setTags(note.tags.join(", "));
     setLocalAttachments(note.attachments || []);
-    if (debugMode) console.log('🛠 DEBUG → Editing Note:', note);
   };
 
   /** ===============================
-   * 📌 Save or update note
+   * 📌 Save or update note in Firestore
    * =============================== */
   const handleSave = async () => {
+    if (!firebaseConnected) {
+      alert("⚠️ Firebase is not connected — notes will not save.");
+      return;
+    }
     if (!title.trim() && !content.trim()) {
-      alert('Please enter a title or content.');
+      alert("Please enter a title or content.");
       return;
     }
 
-    const notePayload = {
-      title: title.trim(),
-      content: content.trim(),
-      tags: tags
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean),
-      attachments: localAttachments,
-      bookId,
-    };
-
-    try {
-      if (selectedNoteId) {
-        await updateNote(selectedNoteId, notePayload);
-        if (debugMode) console.log(`🛠 DEBUG → Updated Note ID: ${selectedNoteId}`, notePayload);
-      } else {
-        await saveNote(notePayload);
-        if (debugMode) console.log('🛠 DEBUG → Saved New Note:', notePayload);
-      }
-
-      // Reload notes
-      const refreshedNotes = await getNotesForBook(bookId);
-      if (debugMode) console.log('🛠 DEBUG → Reloaded Notes:', refreshedNotes);
-      setNotes(refreshedNotes || []);
-
-      // Reset editor
-      setSelectedNoteId(null);
-      setTitle('');
-      setContent('');
-      setTags('');
-      setLocalAttachments([]);
-
-      // Return to reader
-      if (onDone) onDone();
-    } catch (error) {
-      console.error('❌ Error saving/updating note:', error);
+    if (selectedNoteId) {
+      await updateNote(selectedNoteId, {
+        title: title.trim(),
+        content: content.trim(),
+        tags: tags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean),
+        attachments: localAttachments,
+      });
+    } else {
+      await saveNote({
+        title: title.trim(),
+        content: content.trim(),
+        tags: tags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean),
+        attachments: localAttachments,
+        bookId,
+      });
     }
+
+    // Reset
+    setSelectedNoteId(null);
+    setTitle("");
+    setContent("");
+    setTags("");
+    setLocalAttachments([]);
+
+    // Reload
+    const refreshedNotes = await getNotesForBook(bookId);
+    setNotes(refreshedNotes);
+
+    if (onDone) onDone();
   };
 
   return (
@@ -113,7 +111,7 @@ export default function RightBrainNoteEditor({
         🧠 Right Brain Notes
       </h2>
 
-      {/* Saved notes list */}
+      {/* Saved Notes */}
       {notes.length > 0 && (
         <div className="mb-4 bg-gray-800 p-3 rounded max-h-40 overflow-y-auto">
           <h3 className="font-semibold mb-2">📜 Saved Notes</h3>
@@ -124,11 +122,11 @@ export default function RightBrainNoteEditor({
                 onClick={() => handleSelectNote(note)}
                 className={`p-2 rounded cursor-pointer ${
                   selectedNoteId === note.id
-                    ? 'bg-yellow-500 text-black'
-                    : 'bg-gray-700 hover:bg-gray-600'
+                    ? "bg-yellow-500 text-black"
+                    : "bg-gray-700 hover:bg-gray-600"
                 }`}
               >
-                <strong>{note.title || 'Untitled'}</strong>
+                <strong>{note.title || "Untitled"}</strong>
                 <p className="text-sm truncate">{note.content}</p>
               </li>
             ))}
@@ -169,18 +167,11 @@ export default function RightBrainNoteEditor({
           <h3 className="text-md font-semibold">📎 Attachments:</h3>
           {localAttachments.map((link, idx) => (
             <div key={idx} className="bg-gray-800 p-2 rounded">
-              {link.includes('youtube.com') || link.includes('youtu.be') ? (
+              {link.includes("youtube.com") || link.includes("youtu.be") ? (
                 <iframe
                   width="100%"
                   height="200"
-                  src={link.replace('watch?v=', 'embed/')}
-                  allowFullScreen
-                ></iframe>
-              ) : link.includes('vimeo.com') ? (
-                <iframe
-                  src={link.replace('vimeo.com', 'player.vimeo.com/video')}
-                  width="100%"
-                  height="200"
+                  src={link.replace("watch?v=", "embed/")}
                   allowFullScreen
                 ></iframe>
               ) : (
@@ -203,7 +194,7 @@ export default function RightBrainNoteEditor({
         onClick={handleSave}
         className="bg-yellow-500 hover:bg-yellow-600 text-black py-2 px-4 rounded mt-4"
       >
-        {selectedNoteId ? 'Update Note' : 'Save Note'}
+        {selectedNoteId ? "Update Note" : "Save Note"}
       </button>
     </div>
   );
