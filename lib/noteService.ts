@@ -1,105 +1,70 @@
-// /lib/noteService.ts
-import { db } from './firebase';
+// lib/noteService.ts
+import { db } from "@/lib/firebase";
 import {
   collection,
   addDoc,
+  updateDoc,
   getDocs,
+  doc,
   query,
   where,
-  Timestamp,
-  doc,
-  updateDoc,
-} from 'firebase/firestore';
+  Timestamp
+} from "firebase/firestore";
 
-/**
- * Shape of a note used in RightBrainNoteEditor
- */
 export interface RightBrainNote {
-  id?: string; // Firestore doc ID
+  id?: string;
   title: string;
   content: string;
   tags: string[];
   attachments: string[];
-  bookId: string; // unique book identifier
-  createdAt: Timestamp | null;
-  updatedAt?: Timestamp | null;
+  bookId: string;
+  createdAt?: any;
+  updatedAt?: any;
 }
 
 /**
- * Save note to Firestore
+ * Save a new note for a specific user and book
  */
 export async function saveNote(
-  note: Omit<RightBrainNote, 'createdAt' | 'updatedAt' | 'id'>
+  userId: string,
+  note: Omit<RightBrainNote, "id" | "createdAt" | "updatedAt">
 ) {
-  if (!db) {
-    console.error('❌ Firestore DB not initialized. Cannot save note.');
-    return;
-  }
-  try {
-    await addDoc(collection(db, 'notes'), {
-      ...note,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    });
-    console.log('✅ Note saved to Firestore', note);
-  } catch (error) {
-    console.error('❌ Error saving note:', error);
-  }
+  const notesRef = collection(db, "users", userId, "notes");
+  const docRef = await addDoc(notesRef, {
+    ...note,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now()
+  });
+  return docRef.id;
 }
 
 /**
  * Update an existing note
  */
 export async function updateNote(
-  id: string,
-  updates: Partial<RightBrainNote>
+  userId: string,
+  noteId: string,
+  note: Partial<RightBrainNote>
 ) {
-  if (!db) {
-    console.error('❌ Firestore DB not initialized. Cannot update note.');
-    return;
-  }
-  try {
-    const noteRef = doc(db, 'notes', id);
-    await updateDoc(noteRef, {
-      ...updates,
-      updatedAt: Timestamp.now(),
-    });
-    console.log(`✅ Note ${id} updated`, updates);
-  } catch (error) {
-    console.error(`❌ Error updating note ${id}:`, error);
-  }
+  const noteRef = doc(db, "users", userId, "notes", noteId);
+  await updateDoc(noteRef, {
+    ...note,
+    updatedAt: Timestamp.now()
+  });
 }
 
 /**
- * Get all notes for a specific book with safe type mapping
+ * Get all notes for a specific book
  */
 export async function getNotesForBook(
+  userId: string,
   bookId: string
 ): Promise<RightBrainNote[]> {
-  if (!db) {
-    console.error('❌ Firestore DB not initialized. Cannot fetch notes.');
-    return [];
-  }
-  try {
-    const q = query(collection(db, 'notes'), where('bookId', '==', bookId));
-    const querySnapshot = await getDocs(q);
-
-    return querySnapshot.docs.map((docSnap) => {
-      const data = docSnap.data();
-
-      return {
-        id: docSnap.id,
-        title: (data.title as string) || '',
-        content: (data.content as string) || '',
-        tags: (data.tags as string[]) || [],
-        attachments: (data.attachments as string[]) || [],
-        bookId: (data.bookId as string) || '',
-        createdAt: (data.createdAt as Timestamp) || null,
-        updatedAt: (data.updatedAt as Timestamp) || null,
-      } as RightBrainNote;
-    });
-  } catch (error) {
-    console.error('❌ Error fetching notes:', error);
-    return [];
-  }
+  const notesRef = collection(db, "users", userId, "notes");
+  const q = query(notesRef, where("bookId", "==", bookId));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...docSnap.data()
+  })) as RightBrainNote[];
 }

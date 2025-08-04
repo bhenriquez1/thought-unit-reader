@@ -5,6 +5,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signOut,
+  onAuthStateChanged,
   User
 } from "firebase/auth";
 import {
@@ -14,8 +15,7 @@ import {
   getDoc,
   collection,
   getDocs,
-  deleteDoc,
-  serverTimestamp
+  deleteDoc
 } from "firebase/firestore";
 import {
   getStorage,
@@ -25,18 +25,18 @@ import {
   deleteObject
 } from "firebase/storage";
 
-/** ===== Firebase Config ===== **/
+// 🔹 Firebase Config (from .env)
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyXXXXXX",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "thought-unit-reader.firebaseapp.com",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "thought-unit-reader",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "thought-unit-reader.appspot.com",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "808239475880",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:808239475880:web:xxxxxx",
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || "G-XXXXXXX"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "",
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || ""
 };
 
-/** ===== Init Firebase ===== **/
+// 🔹 Initialize Firebase (only once)
 let app: FirebaseApp;
 if (!getApps().length) {
   app = initializeApp(firebaseConfig);
@@ -45,78 +45,67 @@ if (!getApps().length) {
   app = getApp();
 }
 
-/** ===== Services ===== **/
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 const db = getFirestore(app);
 const storage = getStorage(app);
 
-/** ===== Connection Flag ===== **/
 let firebaseConnected = true;
 try {
   if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
     firebaseConnected = false;
-    console.error("❌ Firebase env vars missing");
+    console.error("❌ Firebase environment variables missing.");
   }
 } catch {
   firebaseConnected = false;
 }
 
-/** =========================================================
- * 🔑 Google Sign-In / Sign-Out
- * ======================================================= */
+/* =========================================================================
+   🔹 AUTH FUNCTIONS
+   ========================================================================= */
 export async function signInWithGoogle(): Promise<User | null> {
   try {
     const result = await signInWithPopup(auth, provider);
-    const user = result.user;
-    console.log("✅ Signed in as:", user.email);
-
-    // Create user doc if not exists
-    const userDocRef = doc(db, "users", user.uid);
-    const docSnap = await getDoc(userDocRef);
-    if (!docSnap.exists()) {
-      await setDoc(userDocRef, {
-        email: user.email,
-        createdAt: serverTimestamp()
-      });
-    }
-    return user;
+    return result.user;
   } catch (err) {
-    console.error("❌ Google sign-in failed:", err);
+    console.error("❌ Google Sign-In Error:", err);
     return null;
   }
 }
 
 export async function signOutUser() {
-  await signOut(auth);
-  console.log("✅ Signed out");
+  try {
+    await signOut(auth);
+  } catch (err) {
+    console.error("❌ Sign-Out Error:", err);
+  }
 }
 
-/** =========================================================
- * 📂 Upload PDF → Saves in user library
- * ======================================================= */
+export function listenForAuthChanges(callback: (user: User | null) => void) {
+  return onAuthStateChanged(auth, callback);
+}
+
+/* =========================================================================
+   🔹 PDF LIBRARY FUNCTIONS
+   ========================================================================= */
 export async function uploadPDF(file: File, userId: string) {
   const fileRef = ref(storage, `pdfs/${userId}/${file.name}`);
   await uploadBytes(fileRef, file);
   const downloadURL = await getDownloadURL(fileRef);
 
-  // Create Firestore record
-  const libraryItemRef = doc(collection(db, "users", userId, "pdfLibrary"));
-  await setDoc(libraryItemRef, {
+  const libraryRef = doc(collection(db, "users", userId, "pdfLibrary"));
+  await setDoc(libraryRef, {
     name: file.name,
     url: downloadURL,
-    uploadedAt: serverTimestamp()
+    uploadedAt: new Date().toISOString()
   });
 
   return downloadURL;
 }
 
-/** =========================================================
- * 📥 Get all PDFs in library
- * ======================================================= */
 export async function getPDFLibrary(userId: string) {
   const querySnapshot = await getDocs(collection(db, "users", userId, "pdfLibrary"));
-  const library: { id: string; name: string; url: string; uploadedAt: any }[] = [];
+  const library: { id: string; name: string; url: string; uploadedAt: string }[] = [];
 
   querySnapshot.forEach((docSnap) => {
     const data = docSnap.data();
@@ -124,32 +113,48 @@ export async function getPDFLibrary(userId: string) {
       id: docSnap.id,
       name: data.name,
       url: data.url,
-      uploadedAt: data.uploadedAt || null
+      uploadedAt: data.uploadedAt || ""
     });
   });
 
   // Sort newest first
-  library.sort((a, b) => {
-    const aTime = a.uploadedAt?.toMillis?.() || 0;
-    const bTime = b.uploadedAt?.toMillis?.() || 0;
-    return bTime - aTime;
-  });
-
-  return library;
+  return library.sort(
+    (a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
+  );
 }
 
-/** =========================================================
- * 🗑 Delete PDF from library & storage
- * ======================================================= */
 export async function deletePDF(userId: string, pdfId: string, pdfName: string) {
-  // Delete Firestore record
   await deleteDoc(doc(db, "users", userId, "pdfLibrary", pdfId));
-
-  // Delete from Storage
   const fileRef = ref(storage, `pdfs/${userId}/${pdfName}`);
   await deleteObject(fileRef);
-
   console.log(`🗑 Deleted PDF: ${pdfName}`);
+}
+
+/* =========================================================================
+   🔹 READING PROGRESS FUNCTIONS
+   ========================================================================= */
+export async function saveReadingProgress(
+  userId: string,
+  pdfId: string,
+  progress: {
+    currentPage: number;
+    currentThoughtUnit: number;
+    highlightedWord: string;
+  }
+) {
+  const docRef = doc(db, "users", userId, "readingProgress", pdfId);
+  await setDoc(
+    docRef,
+    { ...progress, updatedAt: new Date().toISOString() },
+    { merge: true }
+  );
+}
+
+export async function loadReadingProgress(userId: string, pdfId: string) {
+  const docRef = doc(db, "users", userId, "readingProgress", pdfId);
+  const snap = await getDoc(docRef);
+  if (snap.exists()) return snap.data();
+  return null;
 }
 
 export { app, auth, provider, db, storage, firebaseConnected };

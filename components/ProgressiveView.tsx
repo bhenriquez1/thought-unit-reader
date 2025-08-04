@@ -1,4 +1,7 @@
-import React from 'react';
+// components/ProgressiveView.tsx
+import React, { useEffect, useState } from "react";
+import { db } from "@/lib/firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 export interface ThoughtUnit {
   text: string;
@@ -11,6 +14,8 @@ export interface ReadingStats {
 }
 
 interface ProgressiveViewProps {
+  bookId: string; // 🔹 Unique per uploaded PDF
+  userId: string; // 🔹 From Firebase Auth
   thoughtUnits: ThoughtUnit[];
   currentThoughtUnit: number;
   readingSpeed: number;
@@ -28,20 +33,98 @@ interface ProgressiveViewProps {
   onPause: () => void;
   onReset: () => void;
   setReadingSpeed: (speed: number) => void;
-  onTextSelect?: (text: string) => void; // ✅ New prop
+  onTextSelect?: (text: string) => void;
 }
 
 export default function ProgressiveView({
+  bookId,
+  userId,
   thoughtUnits,
   currentThoughtUnit,
+  readingSpeed,
+  isReading,
+  isPaused,
+  stats,
+  highlightedWord,
+  currentPage,
+  pdfPageCount,
   fontSize,
   fontFamily,
   lineSpacing,
-  highlightedWord,
   onWordClick,
+  onStart,
+  onPause,
+  onReset,
+  setReadingSpeed,
   onTextSelect
 }: ProgressiveViewProps) {
+  const [loaded, setLoaded] = useState(false);
 
+  /** ===== Load saved reading state per book ===== **/
+  useEffect(() => {
+    async function loadProgress() {
+      if (!userId || !bookId) return;
+      try {
+        const ref = doc(
+          db,
+          "users",
+          userId,
+          "pdfLibrary",
+          bookId,
+          "progress",
+          "readingState"
+        );
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.currentThoughtUnit) {
+            // restore reading position
+            setReadingSpeed(data.readingSpeed || readingSpeed);
+          }
+        }
+        setLoaded(true);
+      } catch (err) {
+        console.error("❌ Error loading reading progress:", err);
+      }
+    }
+    loadProgress();
+  }, [userId, bookId]);
+
+  /** ===== Save reading state per book ===== **/
+  useEffect(() => {
+    if (!loaded || !userId || !bookId) return;
+    async function saveProgress() {
+      try {
+        const ref = doc(
+          db,
+          "users",
+          userId,
+          "pdfLibrary",
+          bookId,
+          "progress",
+          "readingState"
+        );
+        await setDoc(ref, {
+          currentThoughtUnit,
+          readingSpeed,
+          highlightedWord,
+          currentPage,
+          updatedAt: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error("❌ Error saving reading progress:", err);
+      }
+    }
+    saveProgress();
+  }, [
+    currentThoughtUnit,
+    readingSpeed,
+    highlightedWord,
+    currentPage,
+    loaded
+  ]);
+
+  /** ===== Handle text selection ===== **/
   const handleMouseUp = () => {
     const selection = window.getSelection()?.toString().trim();
     if (selection && onTextSelect) {
@@ -49,7 +132,7 @@ export default function ProgressiveView({
     }
   };
 
-  // ✅ No thought units loaded
+  /** ===== No thought units loaded ===== **/
   if (!thoughtUnits || thoughtUnits.length === 0) {
     return (
       <div
@@ -65,7 +148,7 @@ export default function ProgressiveView({
     );
   }
 
-  // ✅ Current unit out of range (e.g., file just uploaded but parsing delayed)
+  /** ===== Current unit out of range ===== **/
   const unit = thoughtUnits[currentThoughtUnit - 1];
   if (!unit) {
     return (
@@ -82,6 +165,7 @@ export default function ProgressiveView({
     );
   }
 
+  /** ===== Render ===== **/
   return (
     <div
       className="progressive-view p-4 overflow-y-auto"
@@ -92,17 +176,17 @@ export default function ProgressiveView({
       }}
       onMouseUp={handleMouseUp}
     >
-      {unit.text.split(' ').map((word, idx) => (
+      {unit.text.split(" ").map((word, idx) => (
         <span
           key={idx}
           className={`${
             word === highlightedWord
-              ? 'bg-yellow-400 text-black px-1 rounded'
-              : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
+              ? "bg-yellow-400 text-black px-1 rounded"
+              : "hover:bg-gray-700 cursor-pointer px-1 rounded"
           }`}
           onClick={() => onWordClick(word)}
         >
-          {word}{' '}
+          {word}{" "}
         </span>
       ))}
     </div>

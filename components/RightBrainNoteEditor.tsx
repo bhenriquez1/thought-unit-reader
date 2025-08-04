@@ -6,7 +6,8 @@ import {
   getNotesForBook,
   RightBrainNote,
 } from "@/lib/noteService";
-import { firebaseConnected } from "@/lib/firebase"; // ✅ Track Firebase connection
+import { firebaseConnected, auth } from "@/lib/firebase";
+import { User } from "firebase/auth";
 
 interface RightBrainNoteEditorProps {
   bookId: string; // unique per uploaded PDF
@@ -27,21 +28,29 @@ export default function RightBrainNoteEditor({
   const [localAttachments, setLocalAttachments] = useState<string[]>(attachments);
   const [notes, setNotes] = useState<RightBrainNote[]>([]);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+
+  /** ===============================
+   * 📌 Track signed‑in user
+   * =============================== */
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((u) => setUser(u));
+    return () => unsubscribe();
+  }, []);
 
   /** ===============================
    * 📌 Load notes for this PDF
    * =============================== */
   useEffect(() => {
-    if (!firebaseConnected) {
-      console.warn("⚠️ Firebase not connected — notes may not load yet.");
+    if (!firebaseConnected || !user) {
       return;
     }
     async function fetchNotes() {
-      const loadedNotes = await getNotesForBook(bookId);
+      const loadedNotes = await getNotesForBook(user.uid, bookId);
       setNotes(loadedNotes);
     }
     fetchNotes();
-  }, [bookId]);
+  }, [bookId, user]);
 
   /** ===============================
    * 📌 Select note for editing
@@ -58,8 +67,8 @@ export default function RightBrainNoteEditor({
    * 📌 Save or update note in Firestore
    * =============================== */
   const handleSave = async () => {
-    if (!firebaseConnected) {
-      alert("⚠️ Firebase is not connected — notes will not save.");
+    if (!firebaseConnected || !user) {
+      alert("⚠️ Please sign in with Google to save notes.");
       return;
     }
     if (!title.trim() && !content.trim()) {
@@ -68,7 +77,7 @@ export default function RightBrainNoteEditor({
     }
 
     if (selectedNoteId) {
-      await updateNote(selectedNoteId, {
+      await updateNote(user.uid, selectedNoteId, {
         title: title.trim(),
         content: content.trim(),
         tags: tags
@@ -78,7 +87,7 @@ export default function RightBrainNoteEditor({
         attachments: localAttachments,
       });
     } else {
-      await saveNote({
+      await saveNote(user.uid, {
         title: title.trim(),
         content: content.trim(),
         tags: tags
@@ -98,7 +107,7 @@ export default function RightBrainNoteEditor({
     setLocalAttachments([]);
 
     // Reload
-    const refreshedNotes = await getNotesForBook(bookId);
+    const refreshedNotes = await getNotesForBook(user.uid, bookId);
     setNotes(refreshedNotes);
 
     if (onDone) onDone();
@@ -107,9 +116,7 @@ export default function RightBrainNoteEditor({
   return (
     <div className="flex flex-col h-full bg-gray-900 text-white p-4 rounded-lg">
       {/* Header */}
-      <h2 className="text-lg font-bold mb-2 text-yellow-400">
-        🧠 Right Brain Notes
-      </h2>
+      <h2 className="text-lg font-bold mb-2 text-yellow-400">🧠 Right Brain Notes</h2>
 
       {/* Saved Notes */}
       {notes.length > 0 && (

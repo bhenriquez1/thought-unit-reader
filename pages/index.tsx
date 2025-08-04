@@ -12,24 +12,36 @@ import {
   firebaseConnected,
   uploadPDF,
   getPDFLibrary,
-  deletePDF
+  deletePDF,
+  signInWithGoogle,
+  signOutUser,
+  listenForAuthChanges
 } from "@/lib/firebase";
 
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
 
 export default function ThoughtUnitReader() {
+  /** ===== Auth State ===== **/
+  const [user, setUser] = useState<any>(null);
+  const USER_ID = user?.uid || "guest-user";
+
   /** ===== Reader State ===== **/
   const [thoughtUnits, setThoughtUnits] = useState<ThoughtUnit[]>([]);
   const [currentThoughtUnit, setCurrentThoughtUnit] = useState(1);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [viewMode, setViewMode] = useState<"original" | "progressive" | "hybrid" | "rightbrain">("original");
+  const [viewMode, setViewMode] =
+    useState<"original" | "progressive" | "hybrid" | "rightbrain">("original");
   const [currentPage, setCurrentPage] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(1);
   const [isReading, setIsReading] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [readingSpeed, setReadingSpeed] = useState(200);
-  const [stats, setStats] = useState<ReadingStats>({ wordsRead: 0, timeElapsed: 0, currentWPM: 0 });
+  const [stats, setStats] = useState<ReadingStats>({
+    wordsRead: 0,
+    timeElapsed: 0,
+    currentWPM: 0
+  });
   const [highlightedWord, setHighlightedWord] = useState("");
   const [fontSize, setFontSize] = useState(16);
   const [fontFamily, setFontFamily] = useState("sans-serif");
@@ -55,55 +67,31 @@ export default function ThoughtUnitReader() {
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [bookId, setBookId] = useState<string>("default-book");
 
-  /** ===== Selection Tracking ===== **/
-  const [lastSelection, setLastSelection] = useState<{ text: string; range: Range | null } | null>(null);
+  /** ===== Debug ===== **/
   const selectionRangeRef = useRef<Range | null>(null);
-
-  /** ===== Debug Panel State ===== **/
-  const [debugMode, setDebugMode] = useState(true);
-  const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const [firebaseStatus, setFirebaseStatus] = useState(firebaseConnected);
 
-  const USER_ID = "demo-user"; // 🔹 Replace with Firebase Auth later
-
-  const logDebug = (message: string, data?: any) => {
-    const log = `${new Date().toLocaleTimeString()} — ${message}`;
-    console.log("🛠 DEBUG:", message, data || "");
-    setDebugLogs((prev) => [log, ...prev]);
-  };
-
-  /** ===== Firebase Connection Check ===== **/
+  /* =========================================================================
+     🔹 AUTH LISTENER
+  ========================================================================= */
   useEffect(() => {
-    setFirebaseStatus(firebaseConnected);
-    logDebug(firebaseConnected ? "✅ Firebase Connected" : "❌ Firebase Not Connected");
+    listenForAuthChanges((u) => {
+      setUser(u);
+    });
   }, []);
 
-  /** ===== Fetch PDF Library ===== **/
+  /* =========================================================================
+     🔹 Load PDF Library
+  ========================================================================= */
   useEffect(() => {
-    if (firebaseConnected) {
+    if (firebaseConnected && user) {
       getPDFLibrary(USER_ID).then(setPdfLibrary);
     }
-  }, [showLibrary]);
+  }, [user, showLibrary]);
 
-  /** ===== Cleanup Object URLs ===== **/
-  useEffect(() => {
-    return () => {
-      if (fileUrl?.startsWith("blob:")) {
-        URL.revokeObjectURL(fileUrl);
-      }
-    };
-  }, [fileUrl]);
-
-  /** ===== Load TOC on PDF Upload ===== **/
-  useEffect(() => {
-    if (uploadedFile && fileUrl) {
-      const uniqueId = `${uploadedFile.name}-${uploadedFile.size}`;
-      setBookId(uniqueId);
-      generateTOC(fileUrl).then(setTableOfContents);
-    }
-  }, [uploadedFile, fileUrl]);
-
-  /** ===== File Upload ===== **/
+  /* =========================================================================
+     🔹 Handle File Upload
+  ========================================================================= */
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || file.type !== "application/pdf") {
@@ -113,54 +101,170 @@ export default function ThoughtUnitReader() {
     setUploadedFile(file);
     setViewMode("original");
 
-    if (firebaseConnected) {
-      logDebug("📤 Uploading PDF...");
+    if (firebaseConnected && user) {
       const url = await uploadPDF(file, USER_ID);
       setFileUrl(url);
-      getPDFLibrary(USER_ID).then(setPdfLibrary); // refresh library
+      getPDFLibrary(USER_ID).then(setPdfLibrary);
     } else {
       const localUrl = URL.createObjectURL(file);
       setFileUrl(localUrl);
     }
   };
 
-  /** ===== Load PDF from Library ===== **/
+  /* =========================================================================
+     🔹 Load PDF from Library
+  ========================================================================= */
   const handleLoadPDF = (url: string) => {
     setFileUrl(url);
     setShowLibrary(false);
   };
 
-  /** ===== Delete PDF ===== **/
+  /* =========================================================================
+     🔹 Delete PDF
+  ========================================================================= */
   const handleDeletePDF = async (id: string, name: string) => {
     if (!confirm(`Delete ${name}?`)) return;
     await deletePDF(USER_ID, id, name);
     getPDFLibrary(USER_ID).then(setPdfLibrary);
   };
 
-  /** ===== Render Content ===== **/
+  /* =========================================================================
+     🔹 Handle Text Selection
+  ========================================================================= */
+  const handleTextSelect = (text: string) => {
+    if (!text) return;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    selectionRangeRef.current = range;
+    setSelectedText(text);
+    updatePopupPositionFromRange(range);
+  };
+
+  const updatePopupPositionFromRange = (range: Range) => {
+    const rect = range.getBoundingClientRect();
+    setPopupPosition({
+      x: rect.left + rect.width / 2 + window.scrollX,
+      y: rect.top + window.scrollY - 40
+    });
+  };
+
+  /* =========================================================================
+     🔹 Render Main Content
+  ========================================================================= */
   const renderContent = () => {
     if (viewMode === "rightbrain") {
-      return <RightBrainNoteEditor bookId={bookId} initialText={selectedText} attachments={attachments} onDone={() => setViewMode("progressive")} />;
+      return (
+        <RightBrainNoteEditor
+          bookId={bookId}
+          initialText={selectedText}
+          attachments={attachments}
+          onDone={() => setViewMode("progressive")}
+        />
+      );
     }
     if (viewMode === "progressive") {
-      return <ProgressiveView thoughtUnits={thoughtUnits} currentThoughtUnit={currentThoughtUnit} readingSpeed={readingSpeed} isReading={isReading} isPaused={isPaused} stats={stats} highlightedWord={highlightedWord} currentPage={currentPage} pdfPageCount={pdfPageCount} fontSize={fontSize} fontFamily={fontFamily} lineSpacing={lineSpacing} onTextSelect={setSelectedText} />;
+      return (
+        <ProgressiveView
+          thoughtUnits={thoughtUnits}
+          currentThoughtUnit={currentThoughtUnit}
+          readingSpeed={readingSpeed}
+          isReading={isReading}
+          isPaused={isPaused}
+          stats={stats}
+          highlightedWord={highlightedWord}
+          currentPage={currentPage}
+          pdfPageCount={pdfPageCount}
+          fontSize={fontSize}
+          fontFamily={fontFamily}
+          lineSpacing={lineSpacing}
+          onWordClick={(w) => setHighlightedWord(w)}
+          setReadingSpeed={setReadingSpeed}
+          onStart={() => setIsReading(true)}
+          onPause={() => setIsPaused(true)}
+          onReset={() => {
+            setIsReading(false);
+            setIsPaused(false);
+            setCurrentThoughtUnit(1);
+          }}
+          onTextSelect={handleTextSelect}
+        />
+      );
     }
     if (viewMode === "hybrid") {
-      return <HybridReader fileUrl={fileUrl || ""} currentPage={currentPage} pdfPageCount={pdfPageCount} />;
+      return (
+        <HybridReader
+          fileUrl={fileUrl || ""}
+          sampleText={sampleText}
+          currentPage={currentPage}
+          pdfPageCount={pdfPageCount}
+          readingSpeed={readingSpeed}
+          isReading={isReading}
+          isPaused={isPaused}
+          currentThoughtUnit={currentThoughtUnit}
+          thoughtUnits={thoughtUnits}
+          highlightedWord={highlightedWord}
+          stats={stats}
+          fontSize={fontSize}
+          fontFamily={fontFamily}
+          lineSpacing={lineSpacing}
+          clickSwitchesTo={clickSwitchesTo}
+          onWordClick={(w) => setHighlightedWord(w)}
+          onStartReading={() => setIsReading(true)}
+          onPauseReading={() => setIsPaused(true)}
+          onResetReading={() => {
+            setIsReading(false);
+            setIsPaused(false);
+            setCurrentThoughtUnit(1);
+          }}
+          setReadingSpeed={setReadingSpeed}
+          setCurrentPage={setCurrentPage}
+          onTextSelect={handleTextSelect}
+        />
+      );
     }
-    return fileUrl ? <SmartPDFViewer fileUrl={fileUrl} currentPage={currentPage} onPageChange={setCurrentPage} /> : <div className="flex flex-col items-center justify-center h-full gap-4"><p>📂 Upload a PDF</p></div>;
+    return fileUrl ? (
+      <SmartPDFViewer
+        fileUrl={fileUrl}
+        currentPage={currentPage}
+        onPageChange={setCurrentPage}
+        scale={1.25}
+        onTextSelect={handleTextSelect}
+      />
+    ) : (
+      <div className="flex flex-col items-center justify-center h-full gap-4">
+        <p>📂 Upload a PDF to begin</p>
+        <label className="bg-yellow-500 text-black px-4 py-2 rounded cursor-pointer">
+          Upload PDF
+          <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
+        </label>
+      </div>
+    );
   };
 
   return (
     <div className={`min-h-screen flex flex-col ${darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"}`}>
+      {/* Auth Bar */}
+      <div className="p-2 flex justify-between items-center bg-gray-800 text-white">
+        {user ? (
+          <>
+            <span>👋 {user.displayName}</span>
+            <button onClick={signOutUser} className="bg-red-500 px-3 py-1 rounded">Sign Out</button>
+          </>
+        ) : (
+          <button onClick={signInWithGoogle} className="bg-green-500 px-3 py-1 rounded">Sign In with Google</button>
+        )}
+      </div>
 
       {/* Floating Library Button */}
-      <button
-        onClick={() => setShowLibrary(true)}
-        className="fixed top-4 right-4 bg-yellow-500 text-black px-3 py-1 rounded shadow z-50"
-      >
-        📚 Library
-      </button>
+      {user && (
+        <button
+          onClick={() => setShowLibrary(true)}
+          className="fixed top-4 right-4 bg-yellow-500 text-black px-3 py-1 rounded shadow z-50"
+        >
+          📚 Library
+        </button>
+      )}
 
       {/* Slide-in Library Drawer */}
       {showLibrary && (
@@ -193,6 +297,28 @@ export default function ThoughtUnitReader() {
         {showTOC && fileUrl && <TOCSidebar toc={tableOfContents} currentPage={currentPage} onJumpToPage={setCurrentPage} />}
         <div className="flex-1 bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
       </div>
+
+      {/* Highlight Popup */}
+      {popupPosition && (
+        <HighlightPopup
+          position={popupPosition}
+          onCreateNote={() => setViewMode("rightbrain")}
+          onAddFlashcard={() => console.log("Flashcard created")}
+          onAttachLink={() => setShowLinkModal(true)}
+          onClose={() => setPopupPosition(null)}
+        />
+      )}
+
+      {showLinkModal && (
+        <LinkVideoModal
+          onClose={() => setShowLinkModal(false)}
+          onSave={(url) => {
+            setAttachments((prev) => [...prev, url]);
+            setViewMode("rightbrain");
+            setShowLinkModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }
