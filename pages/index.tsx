@@ -1,3 +1,4 @@
+// pages/index.tsx
 import dynamic from "next/dynamic";
 import React, { useState, useEffect, useRef, ChangeEvent } from "react";
 import { generateTOC, TOCEntry } from "@/lib/tocParser";
@@ -7,7 +8,12 @@ import HybridReader from "@/components/HybridReader";
 import HighlightPopup from "@/components/HighlightPopup";
 import RightBrainNoteEditor from "@/components/RightBrainNoteEditor";
 import LinkVideoModal from "@/components/LinkVideoModal";
-import { firebaseConnected, uploadPDF, fetchLastPDF } from "@/lib/firebase";
+import {
+  firebaseConnected,
+  uploadPDF,
+  getPDFLibrary,
+  deletePDF
+} from "@/lib/firebase";
 
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
 
@@ -36,6 +42,12 @@ export default function ThoughtUnitReader() {
   const [tableOfContents, setTableOfContents] = useState<TOCEntry[]>([]);
   const [showTOC, setShowTOC] = useState(true);
 
+  /** ===== Library State ===== **/
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [pdfLibrary, setPdfLibrary] = useState<
+    { id: string; name: string; url: string; uploadedAt: any }[]
+  >([]);
+
   /** ===== Popup & Note State ===== **/
   const [selectedText, setSelectedText] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
@@ -63,20 +75,15 @@ export default function ThoughtUnitReader() {
   /** ===== Firebase Connection Check ===== **/
   useEffect(() => {
     setFirebaseStatus(firebaseConnected);
-    logDebug(firebaseConnected ? "✅ Firebase Connected" : "❌ Firebase Not Connected - Check environment variables");
+    logDebug(firebaseConnected ? "✅ Firebase Connected" : "❌ Firebase Not Connected");
   }, []);
 
-  /** ===== Load Last Uploaded PDF from Firebase ===== **/
+  /** ===== Fetch PDF Library ===== **/
   useEffect(() => {
-    if (!fileUrl && firebaseConnected) {
-      fetchLastPDF(USER_ID).then((url) => {
-        if (url) {
-          setFileUrl(url);
-          logDebug("📄 Loaded last uploaded PDF from Firebase", url);
-        }
-      });
+    if (firebaseConnected) {
+      getPDFLibrary(USER_ID).then(setPdfLibrary);
     }
-  }, [fileUrl]);
+  }, [showLibrary]);
 
   /** ===== Cleanup Object URLs ===== **/
   useEffect(() => {
@@ -92,267 +99,100 @@ export default function ThoughtUnitReader() {
     if (uploadedFile && fileUrl) {
       const uniqueId = `${uploadedFile.name}-${uploadedFile.size}`;
       setBookId(uniqueId);
-      generateTOC(fileUrl).then((toc) => {
-        setTableOfContents(toc);
-        logDebug("TOC Generated", toc);
-      });
+      generateTOC(fileUrl).then(setTableOfContents);
     }
   }, [uploadedFile, fileUrl]);
 
-  /** ===== Handle Text Selection ===== **/
-  const handleTextSelect = (text: string) => {
-    if (!text) return;
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
-    const range = selection.getRangeAt(0);
-    selectionRangeRef.current = range;
-    setLastSelection({ text, range });
-    updatePopupPositionFromRange(range);
-    setSelectedText(text);
-    logDebug("Text Selected", text);
-  };
-
-  /** ===== Popup Position ===== **/
-  const updatePopupPositionFromRange = (range: Range) => {
-    const rect = range.getBoundingClientRect();
-    setPopupPosition({
-      x: rect.left + rect.width / 2 + window.scrollX,
-      y: rect.top + window.scrollY - 40,
-    });
-  };
-
-  /** ===== Keep Popup Positioned ===== **/
-  useEffect(() => {
-    const repositionPopup = () => {
-      if (selectionRangeRef.current) {
-        updatePopupPositionFromRange(selectionRangeRef.current);
-      }
-    };
-    window.addEventListener("scroll", repositionPopup, { passive: true });
-    window.addEventListener("resize", repositionPopup);
-    return () => {
-      window.removeEventListener("scroll", repositionPopup);
-      window.removeEventListener("resize", repositionPopup);
-    };
-  }, []);
-
-  /** ===== Safe view switcher (guards) ===== **/
-  const safeSetViewMode = (mode: typeof viewMode) => {
-    if (!fileUrl && mode !== "original") {
-      alert("📂 Please upload a PDF first.");
-      logDebug(`❌ Blocked switching to ${mode} — no PDF uploaded`);
-      return;
-    }
-    if (!firebaseStatus && mode === "rightbrain") {
-      alert("⚠️ Firebase is not connected. Notes may not persist.");
-      logDebug(`⚠ Warning: switching to ${mode} — Firebase not connected`);
-    }
-    setViewMode(mode);
-    logDebug(`Switched to ${mode} mode`);
-  };
-
-  /** ===== File upload handler with Firebase ===== **/
+  /** ===== File Upload ===== **/
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || file.type !== "application/pdf") {
       alert("Please upload a PDF file.");
       return;
     }
-
     setUploadedFile(file);
     setViewMode("original");
 
     if (firebaseConnected) {
-      logDebug("📤 Uploading PDF to Firebase...");
+      logDebug("📤 Uploading PDF...");
       const url = await uploadPDF(file, USER_ID);
       setFileUrl(url);
-      logDebug("✅ Uploaded & loaded from Firebase:", url);
+      getPDFLibrary(USER_ID).then(setPdfLibrary); // refresh library
     } else {
       const localUrl = URL.createObjectURL(file);
       setFileUrl(localUrl);
-      logDebug("⚠ Firebase not connected, using local file URL");
     }
   };
 
-  /** ===== Popup Actions ===== **/
-  const handleCreateNote = () => {
-    safeSetViewMode("rightbrain");
-    setPopupPosition(null);
-  };
-  const handleAttachLink = () => {
-    setShowLinkModal(true);
-    setPopupPosition(null);
-    logDebug("Attach Link Modal Opened");
+  /** ===== Load PDF from Library ===== **/
+  const handleLoadPDF = (url: string) => {
+    setFileUrl(url);
+    setShowLibrary(false);
   };
 
-  /** ===== Render Right Content ===== **/
+  /** ===== Delete PDF ===== **/
+  const handleDeletePDF = async (id: string, name: string) => {
+    if (!confirm(`Delete ${name}?`)) return;
+    await deletePDF(USER_ID, id, name);
+    getPDFLibrary(USER_ID).then(setPdfLibrary);
+  };
+
+  /** ===== Render Content ===== **/
   const renderContent = () => {
     if (viewMode === "rightbrain") {
-      return (
-        <RightBrainNoteEditor
-          bookId={bookId}
-          initialText={selectedText}
-          attachments={attachments}
-          onDone={() => {
-            safeSetViewMode("progressive");
-            if (lastSelection?.range) {
-              selectionRangeRef.current = lastSelection.range;
-              setSelectedText(lastSelection.text);
-              updatePopupPositionFromRange(lastSelection.range);
-            }
-            logDebug("Returned to Progressive View from Notes");
-          }}
-        />
-      );
+      return <RightBrainNoteEditor bookId={bookId} initialText={selectedText} attachments={attachments} onDone={() => setViewMode("progressive")} />;
     }
     if (viewMode === "progressive") {
-      return (
-        <ProgressiveView
-          thoughtUnits={thoughtUnits}
-          currentThoughtUnit={currentThoughtUnit}
-          readingSpeed={readingSpeed}
-          isReading={isReading}
-          isPaused={isPaused}
-          stats={stats}
-          highlightedWord={highlightedWord}
-          currentPage={currentPage}
-          pdfPageCount={pdfPageCount}
-          fontSize={fontSize}
-          fontFamily={fontFamily}
-          lineSpacing={lineSpacing}
-          onWordClick={(w) => setHighlightedWord(w)}
-          onStart={() => setIsReading(true)}
-          onPause={() => setIsPaused(true)}
-          onReset={() => {
-            setIsReading(false);
-            setIsPaused(false);
-            setCurrentThoughtUnit(1);
-          }}
-          setReadingSpeed={setReadingSpeed}
-          onTextSelect={handleTextSelect}
-        />
-      );
+      return <ProgressiveView thoughtUnits={thoughtUnits} currentThoughtUnit={currentThoughtUnit} readingSpeed={readingSpeed} isReading={isReading} isPaused={isPaused} stats={stats} highlightedWord={highlightedWord} currentPage={currentPage} pdfPageCount={pdfPageCount} fontSize={fontSize} fontFamily={fontFamily} lineSpacing={lineSpacing} onTextSelect={setSelectedText} />;
     }
     if (viewMode === "hybrid") {
-      return (
-        <HybridReader
-          fileUrl={fileUrl || ""}
-          sampleText={sampleText}
-          currentPage={currentPage}
-          pdfPageCount={pdfPageCount}
-          readingSpeed={readingSpeed}
-          isReading={isReading}
-          isPaused={isPaused}
-          currentThoughtUnit={currentThoughtUnit}
-          thoughtUnits={thoughtUnits}
-          highlightedWord={highlightedWord}
-          stats={stats}
-          fontSize={fontSize}
-          fontFamily={fontFamily}
-          lineSpacing={lineSpacing}
-          clickSwitchesTo={clickSwitchesTo}
-          onWordClick={(w) => setHighlightedWord(w)}
-          onStartReading={() => setIsReading(true)}
-          onPauseReading={() => setIsPaused(true)}
-          onResetReading={() => {
-            setIsReading(false);
-            setIsPaused(false);
-            setCurrentThoughtUnit(1);
-          }}
-          setReadingSpeed={setReadingSpeed}
-          setCurrentPage={setCurrentPage}
-          onTextSelect={handleTextSelect}
-        />
-      );
+      return <HybridReader fileUrl={fileUrl || ""} currentPage={currentPage} pdfPageCount={pdfPageCount} />;
     }
-    return fileUrl ? (
-      <SmartPDFViewer
-        fileUrl={fileUrl}
-        currentPage={currentPage}
-        onPageChange={setCurrentPage}
-        scale={1.25}
-        onTextSelect={handleTextSelect}
-      />
-    ) : (
-      <div className="flex flex-col items-center justify-center h-full gap-4">
-        <p className="text-lg">📂 Upload a PDF to begin reading.</p>
-        <label className="bg-yellow-500 hover:bg-yellow-600 text-black px-6 py-3 rounded-lg cursor-pointer font-bold">
-          📁 Upload PDF
-          <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-        </label>
-      </div>
-    );
+    return fileUrl ? <SmartPDFViewer fileUrl={fileUrl} currentPage={currentPage} onPageChange={setCurrentPage} /> : <div className="flex flex-col items-center justify-center h-full gap-4"><p>📂 Upload a PDF</p></div>;
   };
 
   return (
     <div className={`min-h-screen flex flex-col ${darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"}`}>
-      {!firebaseStatus && (
-        <div className="bg-red-600 text-white text-center py-2 font-bold">
-          ⚠️ Firebase is not connected — check your environment variables!
-        </div>
-      )}
 
-      <div className="text-center mt-4 px-4">
-        <h1 className="text-3xl font-bold">Thought Unit Reader</h1>
-        <p className="text-yellow-400 italic mt-1">Read Deeper. Think Harder. Learn Smarter.</p>
-      </div>
+      {/* Floating Library Button */}
+      <button
+        onClick={() => setShowLibrary(true)}
+        className="fixed top-4 right-4 bg-yellow-500 text-black px-3 py-1 rounded shadow z-50"
+      >
+        📚 Library
+      </button>
 
-      {!fileUrl && (
-        <div className="flex justify-center my-6 px-4">
-          <label className="w-full max-w-md flex justify-center bg-yellow-500 hover:bg-yellow-600 text-black px-6 py-4 rounded-lg cursor-pointer font-bold text-center">
-            📂 Upload PDF
+      {/* Slide-in Library Drawer */}
+      {showLibrary && (
+        <div className="fixed top-0 right-0 w-80 h-full bg-gray-800 text-white shadow-lg z-50 p-4 flex flex-col">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-bold">My Library</h2>
+            <button onClick={() => setShowLibrary(false)}>✖</button>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {pdfLibrary.length === 0 ? (
+              <p className="text-sm text-gray-400">No PDFs uploaded yet.</p>
+            ) : (
+              pdfLibrary.map((pdf) => (
+                <div key={pdf.id} className="flex justify-between items-center mb-2 p-2 hover:bg-gray-700 rounded">
+                  <span onClick={() => handleLoadPDF(pdf.url)} className="cursor-pointer">{pdf.name}</span>
+                  <button onClick={() => handleDeletePDF(pdf.id, pdf.name)} className="text-red-400 hover:text-red-200">🗑</button>
+                </div>
+              ))
+            )}
+          </div>
+          <label className="mt-4 block bg-yellow-500 text-black text-center py-2 rounded cursor-pointer">
+            ➕ Upload PDF
             <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
           </label>
         </div>
       )}
 
-      <div className="flex gap-2 mb-4 justify-center flex-wrap px-4">
-        <button onClick={() => setShowTOC((s) => !s)} className="px-3 py-1 bg-gray-700 rounded text-sm">📑 TOC</button>
-        <button onClick={() => safeSetViewMode("original")} className="px-3 py-1 bg-gray-700 rounded text-sm" disabled={!fileUrl}>Original</button>
-        <button onClick={() => safeSetViewMode("progressive")} className="px-3 py-1 bg-gray-700 rounded text-sm" disabled={!fileUrl}>Progressive</button>
-        <button onClick={() => safeSetViewMode("hybrid")} className="px-3 py-1 bg-gray-700 rounded text-sm" disabled={!fileUrl}>Hybrid</button>
-        <button onClick={() => safeSetViewMode("rightbrain")} className="px-3 py-1 bg-gray-700 rounded text-sm" disabled={!fileUrl}>Right Brain</button>
-      </div>
-
+      {/* Main Reader */}
       <div className="flex flex-1 overflow-hidden px-4">
-        {showTOC && fileUrl && (
-          <div className="flex-shrink-0">
-            <TOCSidebar toc={tableOfContents} currentPage={currentPage} onJumpToPage={(p) => setCurrentPage(p)} />
-          </div>
-        )}
-        <div className="flex-1 grid grid-cols-2 gap-4 overflow-hidden">
-          <div className="bg-gray-800 rounded-lg overflow-hidden">
-            {fileUrl ? (
-              <SmartPDFViewer fileUrl={fileUrl} currentPage={currentPage} onPageChange={setCurrentPage} scale={1.25} onTextSelect={handleTextSelect} />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full gap-4 p-6">
-                <p className="text-lg">📂 No PDF loaded.</p>
-                <label className="bg-yellow-500 hover:bg-yellow-600 text-black px-5 py-3 rounded-lg cursor-pointer font-bold">
-                  Upload PDF
-                  <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-                </label>
-              </div>
-            )}
-          </div>
-          <div className="bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
-        </div>
+        {showTOC && fileUrl && <TOCSidebar toc={tableOfContents} currentPage={currentPage} onJumpToPage={setCurrentPage} />}
+        <div className="flex-1 bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
       </div>
-
-      {popupPosition && (
-        <HighlightPopup position={popupPosition} onCreateNote={handleCreateNote} onAddFlashcard={() => logDebug("Flashcard Created", selectedText)} onAttachLink={handleAttachLink} onClose={() => setPopupPosition(null)} />
-      )}
-      {showLinkModal && (
-        <LinkVideoModal onClose={() => setShowLinkModal(false)} onSave={(url) => { setAttachments((prev) => [...prev, url]); safeSetViewMode("rightbrain"); setShowLinkModal(false); logDebug("Link Attached", url); }} />
-      )}
-      {debugMode && (
-        <div className="fixed bottom-4 right-4 bg-black bg-opacity-80 text-yellow-300 p-3 rounded-lg w-80 h-60 overflow-y-auto text-xs shadow-lg border border-yellow-500">
-          <div className="flex justify-between items-center mb-2">
-            <span className="font-bold">Debug Panel</span>
-            <button onClick={() => setDebugMode(false)} className="text-red-400 hover:text-red-300">✕</button>
-          </div>
-          {debugLogs.length === 0 ? <p>No debug logs yet...</p> : debugLogs.map((log, i) => <p key={i}>{log}</p>)}
-        </div>
-      )}
     </div>
   );
 }
