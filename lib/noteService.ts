@@ -1,14 +1,14 @@
 // /lib/noteService.ts
 import { db } from './firebase';
-import { 
-  collection, 
-  addDoc, 
-  getDocs, 
-  query, 
-  where, 
-  Timestamp, 
-  doc, 
-  updateDoc 
+import {
+  collection,
+  addDoc,
+  getDocs,
+  query,
+  where,
+  Timestamp,
+  doc,
+  updateDoc,
 } from 'firebase/firestore';
 
 /**
@@ -28,7 +28,13 @@ export interface RightBrainNote {
 /**
  * Save note to Firestore
  */
-export async function saveNote(note: Omit<RightBrainNote, 'createdAt' | 'updatedAt' | 'id'>) {
+export async function saveNote(
+  note: Omit<RightBrainNote, 'createdAt' | 'updatedAt' | 'id'>
+) {
+  if (!db) {
+    console.error('❌ Firestore DB not initialized. Cannot save note.');
+    return;
+  }
   try {
     await addDoc(collection(db, 'notes'), {
       ...note,
@@ -44,7 +50,14 @@ export async function saveNote(note: Omit<RightBrainNote, 'createdAt' | 'updated
 /**
  * Update an existing note
  */
-export async function updateNote(id: string, updates: Partial<RightBrainNote>) {
+export async function updateNote(
+  id: string,
+  updates: Partial<RightBrainNote>
+) {
+  if (!db) {
+    console.error('❌ Firestore DB not initialized. Cannot update note.');
+    return;
+  }
   try {
     const noteRef = doc(db, 'notes', id);
     await updateDoc(noteRef, {
@@ -60,7 +73,13 @@ export async function updateNote(id: string, updates: Partial<RightBrainNote>) {
 /**
  * Get all notes for a specific book with safe type mapping
  */
-export async function getNotesForBook(bookId: string): Promise<RightBrainNote[]> {
+export async function getNotesForBook(
+  bookId: string
+): Promise<RightBrainNote[]> {
+  if (!db) {
+    console.error('❌ Firestore DB not initialized. Cannot fetch notes.');
+    return [];
+  }
   try {
     const q = query(collection(db, 'notes'), where('bookId', '==', bookId));
     const querySnapshot = await getDocs(q);

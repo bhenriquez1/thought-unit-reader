@@ -26,13 +26,21 @@ export default function RightBrainNoteEditor({
   const [notes, setNotes] = useState<RightBrainNote[]>([]);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
 
+  const debugMode = true; // ✅ Always true for now
+
   /** ===============================
    * 📌 Load notes for this book
    * =============================== */
   useEffect(() => {
     async function fetchNotes() {
-      const loadedNotes = await getNotesForBook(bookId);
-      setNotes(loadedNotes);
+      try {
+        const loadedNotes = await getNotesForBook(bookId);
+        if (debugMode) console.log('🛠 DEBUG → Loaded Notes:', loadedNotes);
+        setNotes(loadedNotes || []);
+      } catch (error) {
+        console.error('❌ Error fetching notes:', error);
+        setNotes([]);
+      }
     }
     fetchNotes();
   }, [bookId]);
@@ -41,11 +49,13 @@ export default function RightBrainNoteEditor({
    * 📌 Select note for editing
    * =============================== */
   const handleSelectNote = (note: RightBrainNote) => {
+    if (!note) return;
     setSelectedNoteId(note.id || null);
-    setTitle(note.title);
-    setContent(note.content);
-    setTags(note.tags.join(', '));
+    setTitle(note.title || '');
+    setContent(note.content || '');
+    setTags(note.tags?.join(', ') || '');
     setLocalAttachments(note.attachments || []);
+    if (debugMode) console.log('🛠 DEBUG → Editing Note:', note);
   };
 
   /** ===============================
@@ -57,44 +67,43 @@ export default function RightBrainNoteEditor({
       return;
     }
 
-    if (selectedNoteId) {
-      await updateNote(selectedNoteId, {
-        title: title.trim(),
-        content: content.trim(),
-        tags: tags
-          .split(',')
-          .map((t) => t.trim())
-          .filter(Boolean),
-        attachments: localAttachments,
-      });
-      console.log('✅ Note updated in Firestore');
-    } else {
-      await saveNote({
-        title: title.trim(),
-        content: content.trim(),
-        tags: tags
-          .split(',')
-          .map((t) => t.trim())
-          .filter(Boolean),
-        attachments: localAttachments,
-        bookId,
-      });
-      console.log('✅ Note saved to Firestore');
+    const notePayload = {
+      title: title.trim(),
+      content: content.trim(),
+      tags: tags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean),
+      attachments: localAttachments,
+      bookId,
+    };
+
+    try {
+      if (selectedNoteId) {
+        await updateNote(selectedNoteId, notePayload);
+        if (debugMode) console.log(`🛠 DEBUG → Updated Note ID: ${selectedNoteId}`, notePayload);
+      } else {
+        await saveNote(notePayload);
+        if (debugMode) console.log('🛠 DEBUG → Saved New Note:', notePayload);
+      }
+
+      // Reload notes
+      const refreshedNotes = await getNotesForBook(bookId);
+      if (debugMode) console.log('🛠 DEBUG → Reloaded Notes:', refreshedNotes);
+      setNotes(refreshedNotes || []);
+
+      // Reset editor
+      setSelectedNoteId(null);
+      setTitle('');
+      setContent('');
+      setTags('');
+      setLocalAttachments([]);
+
+      // Return to reader
+      if (onDone) onDone();
+    } catch (error) {
+      console.error('❌ Error saving/updating note:', error);
     }
-
-    // Reset editor
-    setSelectedNoteId(null);
-    setTitle('');
-    setContent('');
-    setTags('');
-    setLocalAttachments([]);
-
-    // Reload notes
-    const refreshedNotes = await getNotesForBook(bookId);
-    setNotes(refreshedNotes);
-
-    // Return to reader
-    if (onDone) onDone();
   };
 
   return (
