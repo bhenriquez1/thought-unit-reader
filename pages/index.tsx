@@ -7,13 +7,10 @@ import HybridReader from '@/components/HybridReader';
 import HighlightPopup from '@/components/HighlightPopup';
 import RightBrainNoteEditor from '@/components/RightBrainNoteEditor';
 import LinkVideoModal from '@/components/LinkVideoModal';
-import { db } from '@/lib/firebase';
-import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 
 const SmartPDFViewer = dynamic(() => import('@/components/SmartPDFViewer'), { ssr: false });
 
 export default function ThoughtUnitReader() {
-  // Reader state
   const [thoughtUnits, setThoughtUnits] = useState<ThoughtUnit[]>([]);
   const [currentThoughtUnit, setCurrentThoughtUnit] = useState(1);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
@@ -33,26 +30,19 @@ export default function ThoughtUnitReader() {
   const [sampleText, setSampleText] = useState('');
   const [darkMode, setDarkMode] = useState(true);
 
-  // TOC state
   const [tableOfContents, setTableOfContents] = useState<TOCEntry[]>([]);
   const [showTOC, setShowTOC] = useState(true);
 
-  // Popup state
   const [selectedText, setSelectedText] = useState('');
   const [attachments, setAttachments] = useState<string[]>([]);
   const [popupPosition, setPopupPosition] = useState<{ x: number; y: number } | null>(null);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [bookId, setBookId] = useState<string>('default-book');
 
-  // Remember last selection
   const [lastSelection, setLastSelection] = useState<{ text: string; range: Range | null } | null>(null);
 
-  // Track selection range
   const selectionRangeRef = useRef<Range | null>(null);
 
-  /** ===============================
-   * 📌 Generate TOC for PDFs
-   * =============================== */
   useEffect(() => {
     if (uploadedFile?.type === 'application/pdf' && fileUrl) {
       const uniqueId = `${uploadedFile.name}-${uploadedFile.size}`;
@@ -61,26 +51,17 @@ export default function ThoughtUnitReader() {
     }
   }, [uploadedFile, fileUrl]);
 
-  /** ===============================
-   * 📌 Handle highlight selection
-   * =============================== */
   const handleTextSelect = (text: string) => {
     if (!text) return;
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) return;
     const range = selection.getRangeAt(0);
     selectionRangeRef.current = range;
-
-    // Save last selection for restore later
     setLastSelection({ text, range });
-
     updatePopupPositionFromRange(range);
     setSelectedText(text);
   };
 
-  /** ===============================
-   * 📌 Calculate popup position
-   * =============================== */
   const updatePopupPositionFromRange = (range: Range) => {
     const rect = range.getBoundingClientRect();
     setPopupPosition({
@@ -89,9 +70,6 @@ export default function ThoughtUnitReader() {
     });
   };
 
-  /** ===============================
-   * 📌 Keep popup positioned on scroll & resize
-   * =============================== */
   useEffect(() => {
     const repositionPopup = () => {
       if (selectionRangeRef.current) {
@@ -106,12 +84,9 @@ export default function ThoughtUnitReader() {
     };
   }, []);
 
-  /** ===============================
-   * 📌 Popup actions
-   * =============================== */
   const handleCreateNote = () => {
     setViewMode('rightbrain');
-    setPopupPosition(null); // hide popup when in note editor
+    setPopupPosition(null);
   };
 
   const handleAttachLink = () => {
@@ -119,9 +94,6 @@ export default function ThoughtUnitReader() {
     setPopupPosition(null);
   };
 
-  /** ===============================
-   * 📌 Render based on mode
-   * =============================== */
   const renderContent = () => {
     if (viewMode === 'rightbrain') {
       return (
@@ -131,7 +103,6 @@ export default function ThoughtUnitReader() {
           attachments={attachments}
           onDone={() => {
             setViewMode('progressive');
-            // Restore last selection and popup
             if (lastSelection?.range) {
               selectionRangeRef.current = lastSelection.range;
               setSelectedText(lastSelection.text);
@@ -214,8 +185,16 @@ export default function ThoughtUnitReader() {
 
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
-      {/* Controls & TOC */}
-      <div className="flex gap-2 mb-4">
+      
+      {/* Slogan */}
+      <div className="text-center mt-2 mb-4">
+        <h1 className="text-2xl font-bold text-yellow-400 tracking-wide">
+          Read Deeper. Think Harder. Learn Smarter.
+        </h1>
+      </div>
+
+      {/* Controls */}
+      <div className="flex gap-2 mb-4 justify-center">
         <button onClick={() => setShowTOC(!showTOC)} className="px-3 py-1 bg-gray-700 rounded">📑 TOC</button>
         <button onClick={() => setViewMode('original')}>Original</button>
         <button onClick={() => setViewMode('progressive')}>Progressive</button>
@@ -223,7 +202,7 @@ export default function ThoughtUnitReader() {
         <button onClick={() => setViewMode('rightbrain')}>Right Brain</button>
       </div>
 
-      {/* Main layout */}
+      {/* Layout */}
       <div className="grid grid-cols-[auto,1fr] h-[80vh]">
         {showTOC && (
           <TOCSidebar
@@ -244,7 +223,7 @@ export default function ThoughtUnitReader() {
         </div>
       </div>
 
-      {/* Highlight popup */}
+      {/* Popup */}
       {popupPosition && (
         <HighlightPopup
           position={popupPosition}
@@ -255,7 +234,7 @@ export default function ThoughtUnitReader() {
         />
       )}
 
-      {/* Link/video modal */}
+      {/* Link modal */}
       {showLinkModal && (
         <LinkVideoModal
           onClose={() => setShowLinkModal(false)}

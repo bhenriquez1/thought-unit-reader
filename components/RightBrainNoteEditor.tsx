@@ -10,7 +10,7 @@ interface RightBrainNoteEditorProps {
   bookId: string; // Unique identifier for the current book
   initialText?: string;
   attachments?: string[];
-  onDone?: () => void; // ✅ new callback
+  onDone?: () => void; // callback to return to reader
 }
 
 export default function RightBrainNoteEditor({
@@ -93,13 +93,16 @@ export default function RightBrainNoteEditor({
     const refreshedNotes = await getNotesForBook(bookId);
     setNotes(refreshedNotes);
 
-    // ✅ Tell index.tsx we’re done so it can restore popup
+    // Return to reader
     if (onDone) onDone();
   };
 
   return (
     <div className="flex flex-col h-full bg-gray-900 text-white p-4 rounded-lg">
-      <h2 className="text-lg font-bold mb-2">🧠 Right Brain Notes</h2>
+      {/* Header */}
+      <h2 className="text-lg font-bold mb-2 text-yellow-400">
+        🧠 Right Brain Notes
+      </h2>
 
       {/* Saved notes list */}
       {notes.length > 0 && (

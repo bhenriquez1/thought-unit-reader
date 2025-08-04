@@ -1,6 +1,15 @@
 // /lib/noteService.ts
 import { db } from './firebase';
-import { collection, addDoc, getDocs, query, where, Timestamp, doc, updateDoc } from 'firebase/firestore';
+import { 
+  collection, 
+  addDoc, 
+  getDocs, 
+  query, 
+  where, 
+  Timestamp, 
+  doc, 
+  updateDoc 
+} from 'firebase/firestore';
 
 /**
  * Shape of a note used in RightBrainNoteEditor
@@ -26,7 +35,7 @@ export async function saveNote(note: Omit<RightBrainNote, 'createdAt' | 'updated
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     });
-    console.log('✅ Note saved to Firestore');
+    console.log('✅ Note saved to Firestore', note);
   } catch (error) {
     console.error('❌ Error saving note:', error);
   }
@@ -42,7 +51,7 @@ export async function updateNote(id: string, updates: Partial<RightBrainNote>) {
       ...updates,
       updatedAt: Timestamp.now(),
     });
-    console.log(`✅ Note ${id} updated`);
+    console.log(`✅ Note ${id} updated`, updates);
   } catch (error) {
     console.error(`❌ Error updating note ${id}:`, error);
   }
@@ -56,11 +65,11 @@ export async function getNotesForBook(bookId: string): Promise<RightBrainNote[]>
     const q = query(collection(db, 'notes'), where('bookId', '==', bookId));
     const querySnapshot = await getDocs(q);
 
-    return querySnapshot.docs.map((doc) => {
-      const data = doc.data();
+    return querySnapshot.docs.map((docSnap) => {
+      const data = docSnap.data();
 
       return {
-        id: doc.id,
+        id: docSnap.id,
         title: (data.title as string) || '',
         content: (data.content as string) || '',
         tags: (data.tags as string[]) || [],
