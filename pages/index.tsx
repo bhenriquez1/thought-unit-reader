@@ -1,26 +1,25 @@
-// pages/index.tsx
 import dynamic from 'next/dynamic';
-import ErrorBoundary from '@/components/ErrorBoundary';
-import React, { useState } from 'react';
-import { Play, Pause, RotateCcw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { generateTOC, TOCEntry } from '@/lib/tocParser';
+import TOCSidebar from '@/components/TOCSidebar';
 import ProgressiveView, { ThoughtUnit, ReadingStats } from '@/components/ProgressiveView';
 import HybridReader from '@/components/HybridReader';
+import HighlightPopup from '@/components/HighlightPopup';
+import RightBrainNoteEditor from '@/components/RightBrainNoteEditor';
+import LinkVideoModal from '@/components/LinkVideoModal';
+import { db } from '@/lib/firebase';
+import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 
-// Dynamic import for SmartPDFViewer
-const SmartPDFViewer = dynamic(() => import('@/components/SmartPDFViewer'), {
-  ssr: false,
-  loading: () => <div className="p-4 text-center">Loading PDF viewer...</div>,
-});
+// Dynamic PDF viewer
+const SmartPDFViewer = dynamic(() => import('@/components/SmartPDFViewer'), { ssr: false });
 
 export default function ThoughtUnitReader() {
-  /** ===============================
-   *  📌 State Variables
-   *  =============================== */
+  // Reader state
   const [thoughtUnits, setThoughtUnits] = useState<ThoughtUnit[]>([]);
   const [currentThoughtUnit, setCurrentThoughtUnit] = useState(1);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [viewMode, setViewMode] = useState<'progressive' | 'hybrid' | 'original' | 'rightbrain'>('progressive');
+  const [viewMode, setViewMode] = useState<'original' | 'progressive' | 'hybrid' | 'rightbrain'>('progressive');
   const [currentPage, setCurrentPage] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(1);
   const [isReading, setIsReading] = useState(false);
@@ -35,222 +34,216 @@ export default function ThoughtUnitReader() {
   const [sampleText, setSampleText] = useState('');
   const [textContent, setTextContent] = useState('');
   const [darkMode, setDarkMode] = useState(true);
-  const [debugMode, setDebugMode] = useState(false);
+
+  // TOC state
+  const [tableOfContents, setTableOfContents] = useState<TOCEntry[]>([]);
+  const [showTOC, setShowTOC] = useState(true);
+
+  // Highlight popup
+  const [selectedText, setSelectedText] = useState('');
+  const [popupPosition, setPopupPosition] = useState<{ x: number; y: number } | null>(null);
+
+  // Attachments
+  const [attachments, setAttachments] = useState<string[]>([]);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+
+  // Book and note tracking
+  const [bookId, setBookId] = useState<string>('default-book');
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
 
   /** ===============================
-   *  📌 Handlers
-   *  =============================== */
-  const handleWordClick = (word: string) => setHighlightedWord(word);
-  const handleStartReading = () => setIsReading(true);
-  const handlePauseReading = () => setIsPaused(true);
-  const handleResetReading = () => {
-    setIsReading(false);
-    setIsPaused(false);
-    setCurrentThoughtUnit(1);
-  };
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
+   * 📌 TOC Generation
+   * =============================== */
+  useEffect(() => {
+    if (uploadedFile?.type === 'application/pdf' && fileUrl) {
+      const uniqueId = `${uploadedFile.name}-${uploadedFile.size}`;
+      setBookId(uniqueId);
+      generateTOC(fileUrl).then((toc) => setTableOfContents(toc));
+    }
+  }, [uploadedFile, fileUrl]);
+
+  /** ===============================
+   * 📌 Handle text selection
+   * =============================== */
+  const handleTextSelect = (text: string) => {
+    if (!text) return;
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+
+    // Position the popup centered above the selection
+    const popupX = rect.left + rect.width / 2 + window.scrollX;
+    const popupY = rect.top + window.scrollY - 40; // 40px above selection
+
+    setSelectedText(text);
+    setPopupPosition({ x: popupX, y: popupY });
   };
 
   /** ===============================
-   *  📌 Content Renderer
-   *  =============================== */
+   * 📌 Popup Actions
+   * =============================== */
+  const handleCreateNote = () => {
+    if (selectedText) setViewMode('rightbrain');
+    setPopupPosition(null);
+  };
+
+  const handleAttachLink = () => {
+    setShowLinkModal(true);
+    setPopupPosition(null);
+  };
+
+  /** ===============================
+   * 📌 View Renderer
+   * =============================== */
   const renderContent = () => {
-    const currentUnit = thoughtUnits[currentThoughtUnit - 1];
-
-    // PDF Mode
-    if (fileUrl && uploadedFile?.type === 'application/pdf') {
-      switch (viewMode) {
-        case 'progressive':
-          return (
-            <div className="space-y-6 p-6">
-              {/* Header */}
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-yellow-400 flex items-center">
-                  ⚡ Progressive Reading
-                </h3>
-                <div className="text-sm text-gray-400">
-                  Page {currentPage} of {pdfPageCount}
-                </div>
-              </div>
-
-              {/* Controls */}
-              <div className="flex items-center space-x-4">
-                <button
-                  onClick={isReading && !isPaused ? handlePauseReading : handleStartReading}
-                  className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${
-                    isReading && !isPaused
-                      ? 'bg-yellow-600 hover:bg-yellow-700'
-                      : 'bg-green-600 hover:bg-green-700'
-                  } text-white`}
-                >
-                  {isReading && !isPaused ? <Pause size={16} /> : <Play size={16} />}
-                  <span>{isReading && !isPaused ? 'Pause' : 'Start'}</span>
-                </button>
-
-                <button
-                  onClick={handleResetReading}
-                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg flex items-center space-x-2"
-                >
-                  <RotateCcw size={16} />
-                  <span>Reset</span>
-                </button>
-              </div>
-
-              {/* PDF Viewer */}
-              <div className="bg-gray-800 rounded-lg overflow-hidden" style={{ height: '60vh' }}>
-                <ErrorBoundary fallback={<div className="p-4 text-center text-red-400">PDF failed to load.</div>}>
-                  <SmartPDFViewer
-                    fileUrl={fileUrl}
-                    scale={1.25}
-                    onWordClick={handleWordClick}
-                    showTextOverlay={true}
-                    textContent={sampleText}
-                    currentPage={currentPage}
-                    onPageChange={setCurrentPage}
-                  />
-                </ErrorBoundary>
-              </div>
-            </div>
-          );
-
-        case 'hybrid':
-          return (
-            <ErrorBoundary fallback={<div className="p-4 text-center">Hybrid reader failed to load.</div>}>
-              <HybridReader
-                fileUrl={fileUrl}
-                sampleText={sampleText}
-                currentPage={currentPage}
-                pdfPageCount={pdfPageCount}
-                readingSpeed={readingSpeed}
-                isReading={isReading}
-                isPaused={isPaused}
-                currentThoughtUnit={currentThoughtUnit}
-                thoughtUnits={thoughtUnits}
-                highlightedWord={highlightedWord}
-                stats={stats}
-                fontSize={fontSize}
-                fontFamily={fontFamily}
-                lineSpacing={lineSpacing}
-                clickSwitchesTo={clickSwitchesTo}
-                onWordClick={handleWordClick}
-                onStartReading={handleStartReading}
-                onPauseReading={handlePauseReading}
-                onResetReading={handleResetReading}
-                setReadingSpeed={setReadingSpeed}
-                setCurrentPage={setCurrentPage}
-              />
-            </ErrorBoundary>
-          );
-
-        default:
-          return (
-            <div className="bg-gray-800 rounded-lg overflow-hidden p-6" style={{ height: '70vh' }}>
-              <ErrorBoundary fallback={<div className="p-4 text-center text-red-400">PDF failed to load.</div>}>
-                <SmartPDFViewer
-                  fileUrl={fileUrl}
-                  scale={1.25}
-                  onWordClick={handleWordClick}
-                  showTextOverlay={false}
-                  currentPage={currentPage}
-                  onPageChange={setCurrentPage}
-                />
-              </ErrorBoundary>
-            </div>
-          );
-      }
+    if (viewMode === 'progressive') {
+      return (
+        <ProgressiveView
+          thoughtUnits={thoughtUnits}
+          currentThoughtUnit={currentThoughtUnit}
+          readingSpeed={readingSpeed}
+          isReading={isReading}
+          isPaused={isPaused}
+          stats={stats}
+          highlightedWord={highlightedWord}
+          currentPage={currentPage}
+          pdfPageCount={pdfPageCount}
+          fontSize={fontSize}
+          fontFamily={fontFamily}
+          lineSpacing={lineSpacing}
+          onWordClick={(w) => setHighlightedWord(w)}
+          onStart={() => setIsReading(true)}
+          onPause={() => setIsPaused(true)}
+          onReset={() => {
+            setIsReading(false);
+            setIsPaused(false);
+            setCurrentThoughtUnit(1);
+          }}
+          setReadingSpeed={setReadingSpeed}
+          onTextSelect={handleTextSelect} // ✅ highlight detection
+        />
+      );
     }
-
-    // Text Mode
-    switch (viewMode) {
-      case 'progressive':
-        return (
-          <ProgressiveView
-            thoughtUnits={thoughtUnits}
-            currentThoughtUnit={currentThoughtUnit}
-            readingSpeed={readingSpeed}
-            isReading={isReading}
-            isPaused={isPaused}
-            stats={stats}
-            highlightedWord={highlightedWord}
-            currentPage={currentPage}
-            pdfPageCount={pdfPageCount}
-            fontSize={fontSize}
-            fontFamily={fontFamily}
-            lineSpacing={lineSpacing}
-            onWordClick={handleWordClick}
-            onStart={handleStartReading}
-            onPause={handlePauseReading}
-            onReset={handleResetReading}
-            setReadingSpeed={setReadingSpeed}
-          />
-        );
-
-      case 'hybrid':
-        return (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
-            {/* Original Text */}
-            <div className="bg-gray-800 p-4 rounded-lg">
-              {(textContent || sampleText).split(' ').map((word, idx) => (
-                <span
-                  key={idx}
-                  className={`${
-                    word === highlightedWord
-                      ? 'bg-yellow-400 text-black px-1 rounded'
-                      : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
-                  }`}
-                  onClick={() => handleWordClick(word)}
-                >
-                  {word}{' '}
-                </span>
-              ))}
-            </div>
-
-            {/* Progressive Text */}
-            <div className="bg-gray-800 p-4 rounded-lg">
-              {currentUnit?.text.split(' ').map((word, idx) => (
-                <span
-                  key={idx}
-                  className={`${
-                    word === highlightedWord
-                      ? 'bg-yellow-400 text-black px-1 rounded'
-                      : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
-                  }`}
-                  onClick={() => handleWordClick(word)}
-                >
-                  {word}{' '}
-                </span>
-              ))}
-            </div>
-          </div>
-        );
-
-      default:
-        return null;
+    if (viewMode === 'hybrid') {
+      return (
+        <HybridReader
+          fileUrl={fileUrl!}
+          sampleText={sampleText}
+          currentPage={currentPage}
+          pdfPageCount={pdfPageCount}
+          readingSpeed={readingSpeed}
+          isReading={isReading}
+          isPaused={isPaused}
+          currentThoughtUnit={currentThoughtUnit}
+          thoughtUnits={thoughtUnits}
+          highlightedWord={highlightedWord}
+          stats={stats}
+          fontSize={fontSize}
+          fontFamily={fontFamily}
+          lineSpacing={lineSpacing}
+          clickSwitchesTo={clickSwitchesTo}
+          onWordClick={(w) => setHighlightedWord(w)}
+          onStartReading={() => setIsReading(true)}
+          onPauseReading={() => setIsPaused(true)}
+          onResetReading={() => {
+            setIsReading(false);
+            setIsPaused(false);
+            setCurrentThoughtUnit(1);
+          }}
+          setReadingSpeed={setReadingSpeed}
+          setCurrentPage={setCurrentPage}
+          onTextSelect={handleTextSelect} // ✅ highlight detection
+        />
+      );
     }
+    if (viewMode === 'rightbrain') {
+      return (
+        <RightBrainNoteEditor
+          bookId={bookId}
+          initialText={selectedText}
+          attachments={attachments}
+        />
+      );
+    }
+    return (
+      <SmartPDFViewer
+        fileUrl={fileUrl!}
+        currentPage={currentPage}
+        onPageChange={setCurrentPage}
+        scale={1.25}
+        onTextSelect={handleTextSelect} // ✅ highlight detection
+      />
+    );
   };
 
   /** ===============================
-   *  📌 JSX Layout
-   *  =============================== */
+   * 📌 JSX Layout
+   * =============================== */
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
-      <div className="max-w-7xl mx-auto p-4 space-y-4">
-        {/* Main Content */}
-        <div className="bg-gray-800 rounded-lg overflow-hidden min-h-[60vh]">
-          {renderContent()}
+      <div className="max-w-full mx-auto p-4 space-y-4">
+        {/* Controls */}
+        <div className="flex gap-2 mb-4">
+          <button onClick={() => setShowTOC(!showTOC)} className="px-3 py-1 bg-gray-700 rounded">📑 TOC</button>
+          <button onClick={() => setViewMode('original')}>Original</button>
+          <button onClick={() => setViewMode('progressive')}>Progressive</button>
+          <button onClick={() => setViewMode('hybrid')}>Hybrid</button>
+          <button onClick={() => setViewMode('rightbrain')}>Right Brain</button>
         </div>
 
-        {/* Debug Panel */}
-        {debugMode && (
-          <div className="bg-yellow-900 border border-yellow-700 rounded-lg p-4">
-            <h4 className="font-semibold text-yellow-300 mb-2">Debug Info</h4>
-            <pre className="text-sm text-yellow-200">
-              {JSON.stringify({ thoughtUnits, currentThoughtUnit, readingSpeed, viewMode, stats }, null, 2)}
-            </pre>
+        {/* Split view */}
+        <div className="grid grid-cols-[auto,1fr] h-[80vh]">
+          {showTOC && (
+            <TOCSidebar
+              toc={tableOfContents}
+              currentPage={currentPage}
+              onJumpToPage={(p) => setCurrentPage(p)}
+            />
+          )}
+          <div className="grid grid-cols-2 gap-4">
+            <SmartPDFViewer
+              fileUrl={fileUrl!}
+              currentPage={currentPage}
+              onPageChange={setCurrentPage}
+              scale={1.25}
+              onTextSelect={handleTextSelect}
+            />
+            {renderContent()}
           </div>
+        </div>
+
+        {/* Highlight Popup */}
+        {popupPosition && (
+          <HighlightPopup
+            position={popupPosition}
+            onCreateNote={handleCreateNote}
+            onAddFlashcard={() => console.log('Flashcard:', selectedText)}
+            onAttachLink={handleAttachLink}
+            onClose={() => setPopupPosition(null)}
+          />
+        )}
+
+        {/* Link/Video Modal */}
+        {showLinkModal && (
+          <LinkVideoModal
+            onClose={() => setShowLinkModal(false)}
+            onSave={async (url) => {
+              if (selectedNoteId) {
+                const noteRef = doc(db, 'notes', selectedNoteId);
+                await updateDoc(noteRef, {
+                  attachments: arrayUnion(url),
+                });
+                console.log('✅ Link added to existing note');
+              } else {
+                setAttachments((prev) => [...prev, url]);
+              }
+              setViewMode('rightbrain');
+              setShowLinkModal(false);
+            }}
+          />
         )}
       </div>
     </div>

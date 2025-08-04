@@ -1,8 +1,5 @@
-// components/HybridReader.tsx
 import React from 'react';
-import SmartPDFViewer from '@/components/SmartPDFViewer';
-import ProgressiveView, { ThoughtUnit, ReadingStats } from '@/components/ProgressiveView';
-import { Play, Pause } from 'lucide-react';
+import { ThoughtUnit, ReadingStats } from './ProgressiveView';
 
 interface HybridReaderProps {
   fileUrl: string;
@@ -26,102 +23,57 @@ interface HybridReaderProps {
   onResetReading: () => void;
   setReadingSpeed: (speed: number) => void;
   setCurrentPage: (page: number) => void;
+  onTextSelect?: (text: string) => void; // ✅ New prop
 }
 
 export default function HybridReader({
-  fileUrl,
-  sampleText,
-  currentPage,
-  pdfPageCount,
-  readingSpeed,
-  isReading,
-  isPaused,
-  currentThoughtUnit,
   thoughtUnits,
-  highlightedWord,
-  stats,
+  currentThoughtUnit,
   fontSize,
   fontFamily,
   lineSpacing,
-  clickSwitchesTo,
+  highlightedWord,
   onWordClick,
-  onStartReading,
-  onPauseReading,
-  onResetReading,
-  setReadingSpeed,
-  setCurrentPage,
+  onTextSelect
 }: HybridReaderProps) {
+
+  const handleMouseUp = () => {
+    const selection = window.getSelection()?.toString().trim();
+    if (selection && onTextSelect) {
+      onTextSelect(selection);
+    }
+  };
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
-      {/* Left Side: PDF Viewer */}
-      <div className="bg-gray-800 p-4 rounded-lg overflow-hidden">
-        <SmartPDFViewer
-          fileUrl={fileUrl}
-          scale={1.25}
-          onWordClick={onWordClick}
-          showTextOverlay={true}
-          textContent={sampleText}
-          currentPage={currentPage}
-          onPageChange={setCurrentPage}
-        />
+    <div className="grid grid-cols-2 gap-6 p-4" onMouseUp={handleMouseUp}>
+      {/* Original View */}
+      <div className="bg-gray-800 p-4 rounded-lg">
+        <h4 className="text-sm font-semibold text-gray-300 mb-3">Original View</h4>
+        <p className="text-sm leading-relaxed">
+          {/* Sample text placeholder */}
+        </p>
       </div>
 
-      {/* Right Side: Progressive Reading View */}
-      <div className="bg-gray-800 p-4 rounded-lg flex flex-col space-y-4">
-        <ProgressiveView
-          thoughtUnits={thoughtUnits}
-          currentThoughtUnit={currentThoughtUnit}
-          readingSpeed={readingSpeed}
-          isReading={isReading}
-          isPaused={isPaused}
-          stats={stats}
-          highlightedWord={highlightedWord}
-          currentPage={currentPage}
-          pdfPageCount={pdfPageCount}
-          fontSize={fontSize}
-          fontFamily={fontFamily}
-          lineSpacing={lineSpacing}
-          onWordClick={onWordClick}
-          onStart={onStartReading}
-          onPause={onPauseReading}
-          onReset={onResetReading}
-          setReadingSpeed={setReadingSpeed}
-        />
-
-        {/* Reading Controls */}
-        <div className="flex items-center space-x-4">
-          <button
-            onClick={isReading && !isPaused ? onPauseReading : onStartReading}
-            className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${
-              isReading && !isPaused
-                ? 'bg-yellow-600 hover:bg-yellow-700'
-                : 'bg-green-600 hover:bg-green-700'
-            } text-white transition-colors`}
-          >
-            {isReading && !isPaused ? <Pause size={16} /> : <Play size={16} />}
-            <span>{isReading && !isPaused ? 'Pause' : 'Start'}</span>
-          </button>
-
-          <button
-            onClick={onResetReading}
-            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg"
-          >
-            Reset
-          </button>
-
-          <div className="flex items-center space-x-2">
-            <label className="text-sm text-gray-300">Speed:</label>
-            <input
-              type="number"
-              value={readingSpeed}
-              onChange={(e) => setReadingSpeed(parseInt(e.target.value) || 200)}
-              className="w-16 px-2 py-1 bg-gray-700 text-white rounded text-center"
-              min="50"
-              max="1000"
-            />
-            <span className="text-sm text-gray-300">WPM</span>
+      {/* Progressive View */}
+      <div className="bg-gray-800 p-4 rounded-lg">
+        <h4 className="text-sm font-semibold text-gray-300 mb-3">Progressive View</h4>
+        {thoughtUnits[currentThoughtUnit - 1] && (
+          <div style={{ fontSize, fontFamily, lineHeight: lineSpacing }}>
+            {thoughtUnits[currentThoughtUnit - 1].text.split(' ').map((word, idx) => (
+              <span
+                key={idx}
+                className={`${
+                  word === highlightedWord
+                    ? 'bg-yellow-400 text-black px-1 rounded'
+                    : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
+                }`}
+                onClick={() => onWordClick(word)}
+              >
+                {word}{' '}
+              </span>
+            ))}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

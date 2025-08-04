@@ -1,65 +1,41 @@
-// components/SmartPDFViewer.tsx
-import React from 'react';
-import { Document, Page, pdfjs } from 'react-pdf';
-
-// Configure PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+import React, { useRef, useEffect } from 'react';
 
 interface SmartPDFViewerProps {
   fileUrl: string;
-  scale?: number;
-  onWordClick?: (word: string) => void;
-  showTextOverlay?: boolean;
-  textContent?: string;
   currentPage: number;
   onPageChange: (page: number) => void;
+  scale?: number;
+  onTextSelect?: (text: string) => void; // ✅ New prop
 }
 
 export default function SmartPDFViewer({
   fileUrl,
-  scale = 1.25,
-  onWordClick,
-  showTextOverlay = false,
-  textContent = '',
   currentPage,
   onPageChange,
+  scale = 1.25,
+  onTextSelect
 }: SmartPDFViewerProps) {
-  return (
-    <div className="w-full h-full overflow-auto bg-gray-900 flex justify-center items-start p-4">
-      {fileUrl ? (
-        <Document
-          file={fileUrl}
-          onLoadSuccess={({ numPages }) => {
-            if (currentPage > numPages) {
-              onPageChange(1);
-            }
-          }}
-        >
-          <Page
-            pageNumber={currentPage}
-            scale={scale}
-            renderTextLayer={showTextOverlay}
-            renderAnnotationLayer={false}
-          />
-        </Document>
-      ) : (
-        <div className="text-gray-400 italic">No PDF loaded</div>
-      )}
+  const containerRef = useRef<HTMLDivElement>(null);
 
-      {/* Optional Text Overlay */}
-      {showTextOverlay && textContent && (
-        <div className="absolute bottom-0 w-full bg-black bg-opacity-40 p-2 text-white text-sm overflow-y-auto max-h-32">
-          {textContent.split(' ').map((word, index) => (
-            <span
-              key={index}
-              className="cursor-pointer hover:bg-yellow-300 hover:text-black px-1 rounded"
-              onClick={() => onWordClick && onWordClick(word)}
-            >
-              {word}{' '}
-            </span>
-          ))}
-        </div>
-      )}
+  const handleMouseUp = (e: MouseEvent) => {
+    if (!containerRef.current?.contains(e.target as Node)) return; // only inside PDF viewer
+    const selection = window.getSelection()?.toString().trim();
+    if (selection && onTextSelect) {
+      onTextSelect(selection);
+    }
+  };
+
+  useEffect(() => {
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => document.removeEventListener('mouseup', handleMouseUp);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="pdf-viewer-container bg-gray-900 rounded-lg overflow-hidden">
+      {/* PDF.js or @react-pdf-viewer/core rendering here */}
+      <p className="text-gray-500 text-center p-4">
+        PDF Viewer Placeholder (Page {currentPage})
+      </p>
     </div>
   );
 }
