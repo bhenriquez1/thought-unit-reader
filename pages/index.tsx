@@ -1,16 +1,15 @@
 import dynamic from 'next/dynamic';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { generateTOC, TOCEntry } from '@/lib/tocParser';
 import TOCSidebar from '@/components/TOCSidebar';
 import ProgressiveView, { ThoughtUnit, ReadingStats } from '@/components/ProgressiveView';
 import HybridReader from '@/components/HybridReader';
-import HighlightPopup from '@/components/HighlightPopup';
+import HighlightPopup from '@/components/HighlightPopup'; // motion version
 import RightBrainNoteEditor from '@/components/RightBrainNoteEditor';
 import LinkVideoModal from '@/components/LinkVideoModal';
 import { db } from '@/lib/firebase';
 import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 
-// Dynamic PDF viewer
 const SmartPDFViewer = dynamic(() => import('@/components/SmartPDFViewer'), { ssr: false });
 
 export default function ThoughtUnitReader() {
@@ -39,20 +38,21 @@ export default function ThoughtUnitReader() {
   const [tableOfContents, setTableOfContents] = useState<TOCEntry[]>([]);
   const [showTOC, setShowTOC] = useState(true);
 
-  // Highlight popup
+  // Popup state
   const [selectedText, setSelectedText] = useState('');
   const [popupPosition, setPopupPosition] = useState<{ x: number; y: number } | null>(null);
 
-  // Attachments
+  // Attachments & notes
   const [attachments, setAttachments] = useState<string[]>([]);
   const [showLinkModal, setShowLinkModal] = useState(false);
-
-  // Book and note tracking
   const [bookId, setBookId] = useState<string>('default-book');
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
 
+  // Track selection range
+  const selectionRangeRef = useRef<Range | null>(null);
+
   /** ===============================
-   * 📌 TOC Generation
+   * 📌 Generate TOC for PDFs
    * =============================== */
   useEffect(() => {
     if (uploadedFile?.type === 'application/pdf' && fileUrl) {
@@ -63,7 +63,7 @@ export default function ThoughtUnitReader() {
   }, [uploadedFile, fileUrl]);
 
   /** ===============================
-   * 📌 Handle text selection
+   * 📌 Handle highlight selection
    * =============================== */
   const handleTextSelect = (text: string) => {
     if (!text) return;
@@ -72,18 +72,41 @@ export default function ThoughtUnitReader() {
     if (!selection || selection.rangeCount === 0) return;
 
     const range = selection.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
+    selectionRangeRef.current = range;
 
-    // Position the popup centered above the selection
-    const popupX = rect.left + rect.width / 2 + window.scrollX;
-    const popupY = rect.top + window.scrollY - 40; // 40px above selection
-
+    updatePopupPositionFromRange(range);
     setSelectedText(text);
+  };
+
+  /** ===============================
+   * 📌 Calculate popup position
+   * =============================== */
+  const updatePopupPositionFromRange = (range: Range) => {
+    const rect = range.getBoundingClientRect();
+    const popupX = rect.left + rect.width / 2 + window.scrollX;
+    const popupY = rect.top + window.scrollY - 40;
     setPopupPosition({ x: popupX, y: popupY });
   };
 
   /** ===============================
-   * 📌 Popup Actions
+   * 📌 Smoothly reposition popup on scroll & resize
+   * =============================== */
+  useEffect(() => {
+    const repositionPopup = () => {
+      if (selectionRangeRef.current) {
+        updatePopupPositionFromRange(selectionRangeRef.current);
+      }
+    };
+    window.addEventListener('scroll', repositionPopup, { passive: true });
+    window.addEventListener('resize', repositionPopup);
+    return () => {
+      window.removeEventListener('scroll', repositionPopup);
+      window.removeEventListener('resize', repositionPopup);
+    };
+  }, []);
+
+  /** ===============================
+   * 📌 Popup actions
    * =============================== */
   const handleCreateNote = () => {
     if (selectedText) setViewMode('rightbrain');
@@ -96,7 +119,7 @@ export default function ThoughtUnitReader() {
   };
 
   /** ===============================
-   * 📌 View Renderer
+   * 📌 Render based on mode
    * =============================== */
   const renderContent = () => {
     if (viewMode === 'progressive') {
@@ -123,7 +146,7 @@ export default function ThoughtUnitReader() {
             setCurrentThoughtUnit(1);
           }}
           setReadingSpeed={setReadingSpeed}
-          onTextSelect={handleTextSelect} // ✅ highlight detection
+          onTextSelect={handleTextSelect}
         />
       );
     }
@@ -155,7 +178,7 @@ export default function ThoughtUnitReader() {
           }}
           setReadingSpeed={setReadingSpeed}
           setCurrentPage={setCurrentPage}
-          onTextSelect={handleTextSelect} // ✅ highlight detection
+          onTextSelect={handleTextSelect}
         />
       );
     }
@@ -174,14 +197,11 @@ export default function ThoughtUnitReader() {
         currentPage={currentPage}
         onPageChange={setCurrentPage}
         scale={1.25}
-        onTextSelect={handleTextSelect} // ✅ highlight detection
+        onTextSelect={handleTextSelect}
       />
     );
   };
 
-  /** ===============================
-   * 📌 JSX Layout
-   * =============================== */
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
       <div className="max-w-full mx-auto p-4 space-y-4">
@@ -194,7 +214,7 @@ export default function ThoughtUnitReader() {
           <button onClick={() => setViewMode('rightbrain')}>Right Brain</button>
         </div>
 
-        {/* Split view */}
+        {/* Layout */}
         <div className="grid grid-cols-[auto,1fr] h-[80vh]">
           {showTOC && (
             <TOCSidebar
@@ -215,7 +235,7 @@ export default function ThoughtUnitReader() {
           </div>
         </div>
 
-        {/* Highlight Popup */}
+        {/* Popup */}
         {popupPosition && (
           <HighlightPopup
             position={popupPosition}
@@ -226,17 +246,14 @@ export default function ThoughtUnitReader() {
           />
         )}
 
-        {/* Link/Video Modal */}
+        {/* Link modal */}
         {showLinkModal && (
           <LinkVideoModal
             onClose={() => setShowLinkModal(false)}
             onSave={async (url) => {
               if (selectedNoteId) {
                 const noteRef = doc(db, 'notes', selectedNoteId);
-                await updateDoc(noteRef, {
-                  attachments: arrayUnion(url),
-                });
-                console.log('✅ Link added to existing note');
+                await updateDoc(noteRef, { attachments: arrayUnion(url) });
               } else {
                 setAttachments((prev) => [...prev, url]);
               }
