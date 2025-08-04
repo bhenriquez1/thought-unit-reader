@@ -86,6 +86,27 @@ export function listenForAuthChanges(callback: (user: User | null) => void) {
 }
 
 /* =========================================================================
+   🔹 WALLET CONNECTION (MetaMask) - Manual Trigger Only
+   ========================================================================= */
+export async function connectWallet(): Promise<string | null> {
+  if (typeof window !== "undefined" && (window as any).ethereum) {
+    try {
+      const accounts = await (window as any).ethereum.request({
+        method: "eth_requestAccounts"
+      });
+      console.log("✅ Wallet connected:", accounts[0]);
+      return accounts[0];
+    } catch (err) {
+      console.error("❌ Wallet connection failed:", err);
+      return null;
+    }
+  } else {
+    alert("MetaMask not detected. Please install it to connect.");
+    return null;
+  }
+}
+
+/* =========================================================================
    🔹 PDF LIBRARY FUNCTIONS
    ========================================================================= */
 export async function uploadPDF(file: File, userId: string) {

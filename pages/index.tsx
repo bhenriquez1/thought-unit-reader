@@ -15,7 +15,8 @@ import {
   deletePDF,
   signInWithGoogle,
   signOutUser,
-  listenForAuthChanges
+  listenForAuthChanges,
+  connectWallet // ✅ added wallet connect
 } from "@/lib/firebase";
 
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
@@ -24,6 +25,7 @@ export default function ThoughtUnitReader() {
   /** ===== Auth State ===== **/
   const [user, setUser] = useState<any>(null);
   const USER_ID = user?.uid || "guest-user";
+  const [walletAddress, setWalletAddress] = useState<string | null>(null); // ✅ track wallet address
 
   /** ===== Reader State ===== **/
   const [thoughtUnits, setThoughtUnits] = useState<ThoughtUnit[]>([]);
@@ -69,7 +71,7 @@ export default function ThoughtUnitReader() {
 
   /** ===== Debug ===== **/
   const selectionRangeRef = useRef<Range | null>(null);
-  const [firebaseStatus, setFirebaseStatus] = useState(firebaseConnected);
+  const [firebaseStatus] = useState(firebaseConnected);
 
   /* =========================================================================
      🔹 AUTH LISTENER
@@ -250,14 +252,31 @@ export default function ThoughtUnitReader() {
     <div className={`min-h-screen flex flex-col ${darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"}`}>
       {/* Auth Bar */}
       <div className="p-2 flex justify-between items-center bg-gray-800 text-white">
-        {user ? (
-          <>
-            <span>👋 {user.displayName}</span>
-            <button onClick={signOutUser} className="bg-red-500 px-3 py-1 rounded">Sign Out</button>
-          </>
-        ) : (
-          <button onClick={signInWithGoogle} className="bg-green-500 px-3 py-1 rounded">Sign In with Google</button>
-        )}
+        <div className="flex gap-3 items-center">
+          {user ? (
+            <>
+              <span>👋 {user.displayName}</span>
+              <button onClick={signOutUser} className="bg-red-500 px-3 py-1 rounded">
+                Sign Out
+              </button>
+            </>
+          ) : (
+            <button onClick={signInWithGoogle} className="bg-green-500 px-3 py-1 rounded">
+              Sign In with Google
+            </button>
+          )}
+
+          {/* Wallet Connect */}
+          <button
+            onClick={async () => {
+              const address = await connectWallet();
+              if (address) setWalletAddress(address);
+            }}
+            className="bg-purple-500 px-3 py-1 rounded"
+          >
+            {walletAddress ? `Wallet: ${walletAddress}` : "Connect Wallet"}
+          </button>
+        </div>
       </div>
 
       {/* Floating Library Button */}
