@@ -49,6 +49,39 @@ export default function ProgressiveView({
     }
   };
 
+  // ✅ No thought units loaded
+  if (!thoughtUnits || thoughtUnits.length === 0) {
+    return (
+      <div
+        className="progressive-view p-4 flex items-center justify-center text-gray-400 italic"
+        style={{
+          fontSize: `${fontSize}px`,
+          fontFamily,
+          lineHeight: lineSpacing
+        }}
+      >
+        📂 Please upload a PDF to start Progressive Reading.
+      </div>
+    );
+  }
+
+  // ✅ Current unit out of range (e.g., file just uploaded but parsing delayed)
+  const unit = thoughtUnits[currentThoughtUnit - 1];
+  if (!unit) {
+    return (
+      <div
+        className="progressive-view p-4 flex items-center justify-center text-gray-400 italic"
+        style={{
+          fontSize: `${fontSize}px`,
+          fontFamily,
+          lineHeight: lineSpacing
+        }}
+      >
+        ⏳ Preparing your reading view...
+      </div>
+    );
+  }
+
   return (
     <div
       className="progressive-view p-4 overflow-y-auto"
@@ -59,23 +92,19 @@ export default function ProgressiveView({
       }}
       onMouseUp={handleMouseUp}
     >
-      {thoughtUnits[currentThoughtUnit - 1] && (
-        <div>
-          {thoughtUnits[currentThoughtUnit - 1].text.split(' ').map((word, idx) => (
-            <span
-              key={idx}
-              className={`${
-                word === highlightedWord
-                  ? 'bg-yellow-400 text-black px-1 rounded'
-                  : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
-              }`}
-              onClick={() => onWordClick(word)}
-            >
-              {word}{' '}
-            </span>
-          ))}
-        </div>
-      )}
+      {unit.text.split(' ').map((word, idx) => (
+        <span
+          key={idx}
+          className={`${
+            word === highlightedWord
+              ? 'bg-yellow-400 text-black px-1 rounded'
+              : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
+          }`}
+          onClick={() => onWordClick(word)}
+        >
+          {word}{' '}
+        </span>
+      ))}
     </div>
   );
 }
