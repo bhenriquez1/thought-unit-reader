@@ -4,7 +4,7 @@ import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
-// Use environment variables for secure configuration
+// Firebase config from environment variables
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -15,7 +15,7 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-// Required environment variables
+// Required variables for Firebase connection
 const requiredEnvVars = [
   "NEXT_PUBLIC_FIREBASE_API_KEY",
   "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN",
@@ -26,29 +26,42 @@ const missingVars = requiredEnvVars.filter(
   (varName) => !process.env[varName]
 );
 
-let app: FirebaseApp;
+// Firebase service instances
+let app: FirebaseApp | null = null;
+let auth = null;
+let provider = null;
+let db = null;
+let storage = null;
+
+// Connection status flag
+let firebaseConnected = false;
 
 if (missingVars.length > 0) {
-  console.error(
-    `❌ Missing required Firebase environment variables: ${missingVars.join(", ")}`
+  console.warn(
+    `⚠️ Firebase config is missing: ${missingVars.join(", ")}`
   );
-  throw new Error(
-    `Missing Firebase config: ${missingVars.join(", ")}`
-  );
+  console.warn("➡️ Firebase features will be disabled until environment variables are set.");
 } else {
-  // Initialize Firebase only if not already initialized
-  if (!getApps().length) {
-    app = initializeApp(firebaseConfig);
-    console.log("✅ Firebase initialized successfully");
-  } else {
-    app = getApp();
+  try {
+    // Initialize Firebase app if not already initialized
+    if (!getApps().length) {
+      app = initializeApp(firebaseConfig);
+      console.log("✅ Firebase initialized successfully");
+    } else {
+      app = getApp();
+    }
+
+    // Initialize services
+    auth = getAuth(app);
+    provider = new GoogleAuthProvider();
+    db = getFirestore(app);
+    storage = getStorage(app);
+
+    firebaseConnected = true;
+  } catch (error) {
+    console.error("❌ Firebase initialization error:", error);
   }
 }
 
-// Initialize services
-const auth = getAuth(app);
-const provider = new GoogleAuthProvider();
-const db = getFirestore(app);
-const storage = getStorage(app);
-
-export { app, auth, provider, db, storage };
+// Export all
+export { app, auth, provider, db, storage, firebaseConnected };

@@ -8,6 +8,7 @@ import HybridReader from '@/components/HybridReader';
 import HighlightPopup from '@/components/HighlightPopup';
 import RightBrainNoteEditor from '@/components/RightBrainNoteEditor';
 import LinkVideoModal from '@/components/LinkVideoModal';
+import { firebaseConnected } from '@/lib/firebase'; // ✅ Check connection status
 
 const SmartPDFViewer = dynamic(() => import('@/components/SmartPDFViewer'), { ssr: false });
 
@@ -50,12 +51,23 @@ export default function ThoughtUnitReader() {
   /** ===== Debug Panel State ===== **/
   const [debugMode, setDebugMode] = useState(true);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const [firebaseStatus, setFirebaseStatus] = useState(firebaseConnected); // ✅ Track Firebase status
 
   const logDebug = (message: string, data?: any) => {
     const log = `${new Date().toLocaleTimeString()} — ${message}`;
     console.log('🛠 DEBUG:', message, data || '');
     setDebugLogs((prev) => [log, ...prev]);
   };
+
+  /** ===== Firebase Connection Check ===== **/
+  useEffect(() => {
+    if (firebaseConnected) {
+      logDebug('✅ Firebase Connected');
+    } else {
+      logDebug('❌ Firebase Not Connected - Check environment variables');
+    }
+    setFirebaseStatus(firebaseConnected);
+  }, []);
 
   /** ===== Load TOC on PDF Upload ===== **/
   useEffect(() => {
@@ -221,6 +233,13 @@ export default function ThoughtUnitReader() {
 
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
+      {/* Firebase Connection Banner */}
+      {!firebaseStatus && (
+        <div className="bg-red-600 text-white text-center py-2 font-bold">
+          ⚠️ Firebase is not connected — check your environment variables!
+        </div>
+      )}
+
       {/* Slogan */}
       <div className="text-center mt-2 mb-4">
         <h1 className="text-2xl font-bold text-yellow-400 tracking-wide">
