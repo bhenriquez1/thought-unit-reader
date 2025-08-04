@@ -53,7 +53,7 @@ export default function HybridReader({
 }: HybridReaderProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
-      {/* Left Side: Original PDF View */}
+      {/* Left Side: PDF Viewer */}
       <div className="bg-gray-800 p-4 rounded-lg overflow-hidden">
         <SmartPDFViewer
           fileUrl={fileUrl}
@@ -66,7 +66,7 @@ export default function HybridReader({
         />
       </div>
 
-      {/* Right Side: Progressive View */}
+      {/* Right Side: Progressive Reading View */}
       <div className="bg-gray-800 p-4 rounded-lg flex flex-col space-y-4">
         <ProgressiveView
           thoughtUnits={thoughtUnits}
