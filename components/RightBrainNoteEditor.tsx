@@ -1,69 +1,46 @@
 import React, { useEffect, useState } from 'react';
-import { db } from '@/lib/firebase';
 import {
-  collection,
-  addDoc,
-  updateDoc,
-  doc,
-  getDocs,
-  query,
-  where,
-  Timestamp,
-} from 'firebase/firestore';
+  saveNote,
+  updateNote,
+  getNotesForBook,
+  RightBrainNote,
+} from '@/lib/noteService';
 
 interface RightBrainNoteEditorProps {
   bookId: string; // Unique identifier for the current book
   initialText?: string;
   attachments?: string[];
-}
-
-interface Note {
-  id?: string;
-  title: string;
-  content: string;
-  tags: string[];
-  attachments: string[];
-  createdAt: Timestamp;
+  onDone?: () => void; // ✅ new callback
 }
 
 export default function RightBrainNoteEditor({
   bookId,
   initialText = '',
   attachments = [],
+  onDone,
 }: RightBrainNoteEditorProps) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState(initialText);
   const [tags, setTags] = useState('');
   const [localAttachments, setLocalAttachments] = useState<string[]>(attachments);
-  const [notes, setNotes] = useState<Note[]>([]);
+  const [notes, setNotes] = useState<RightBrainNote[]>([]);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
 
   /** ===============================
-   * 📌 Load saved notes for this book
+   * 📌 Load notes for this book
    * =============================== */
   useEffect(() => {
-    const fetchNotes = async () => {
-      if (!db) return;
-      try {
-        const q = query(collection(db, 'notes'), where('bookId', '==', bookId));
-        const snapshot = await getDocs(q);
-        const loadedNotes = snapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...docSnap.data(),
-        })) as Note[];
-        setNotes(loadedNotes);
-      } catch (error) {
-        console.error('❌ Error fetching notes:', error);
-      }
-    };
-
+    async function fetchNotes() {
+      const loadedNotes = await getNotesForBook(bookId);
+      setNotes(loadedNotes);
+    }
     fetchNotes();
   }, [bookId]);
 
   /** ===============================
-   * 📌 Load note into editor for editing
+   * 📌 Select note for editing
    * =============================== */
-  const handleSelectNote = (note: Note) => {
+  const handleSelectNote = (note: RightBrainNote) => {
     setSelectedNoteId(note.id || null);
     setTitle(note.title);
     setContent(note.content);
@@ -72,48 +49,52 @@ export default function RightBrainNoteEditor({
   };
 
   /** ===============================
-   * 📌 Save new or updated note
+   * 📌 Save or update note
    * =============================== */
   const handleSave = async () => {
-    if (!db) {
-      console.error('Firestore is not initialized.');
+    if (!title.trim() && !content.trim()) {
+      alert('Please enter a title or content.');
       return;
     }
 
-    const noteData = {
-      title: title.trim(),
-      content: content.trim(),
-      tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
-      attachments: localAttachments,
-      bookId,
-      createdAt: Timestamp.now(),
-    };
-
-    try {
-      if (selectedNoteId) {
-        // Update existing note
-        const noteRef = doc(db, 'notes', selectedNoteId);
-        await updateDoc(noteRef, noteData);
-        console.log('✅ Note updated in Firestore');
-        setNotes((prev) =>
-          prev.map((n) => (n.id === selectedNoteId ? { ...noteData, id: selectedNoteId } : n))
-        );
-      } else {
-        // Create new note
-        const docRef = await addDoc(collection(db, 'notes'), noteData);
-        console.log('✅ New note saved to Firestore');
-        setNotes((prev) => [...prev, { ...noteData, id: docRef.id }]);
-      }
-
-      // Reset editor
-      setSelectedNoteId(null);
-      setTitle('');
-      setContent('');
-      setTags('');
-      setLocalAttachments([]);
-    } catch (error) {
-      console.error('❌ Error saving note:', error);
+    if (selectedNoteId) {
+      await updateNote(selectedNoteId, {
+        title: title.trim(),
+        content: content.trim(),
+        tags: tags
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
+        attachments: localAttachments,
+      });
+      console.log('✅ Note updated in Firestore');
+    } else {
+      await saveNote({
+        title: title.trim(),
+        content: content.trim(),
+        tags: tags
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
+        attachments: localAttachments,
+        bookId,
+      });
+      console.log('✅ Note saved to Firestore');
     }
+
+    // Reset editor
+    setSelectedNoteId(null);
+    setTitle('');
+    setContent('');
+    setTags('');
+    setLocalAttachments([]);
+
+    // Reload notes
+    const refreshedNotes = await getNotesForBook(bookId);
+    setNotes(refreshedNotes);
+
+    // ✅ Tell index.tsx we’re done so it can restore popup
+    if (onDone) onDone();
   };
 
   return (
@@ -143,7 +124,7 @@ export default function RightBrainNoteEditor({
         </div>
       )}
 
-      {/* Note editor */}
+      {/* Title */}
       <input
         type="text"
         placeholder="Note Title"
@@ -152,6 +133,7 @@ export default function RightBrainNoteEditor({
         className="mb-2 p-2 rounded bg-gray-800 border border-gray-700"
       />
 
+      {/* Content */}
       <textarea
         rows={8}
         placeholder="Write your note..."
@@ -160,6 +142,7 @@ export default function RightBrainNoteEditor({
         className="mb-2 p-2 rounded bg-gray-800 border border-gray-700 resize-none"
       />
 
+      {/* Tags */}
       <input
         type="text"
         placeholder="Tags (comma separated)"
@@ -168,7 +151,7 @@ export default function RightBrainNoteEditor({
         className="mb-2 p-2 rounded bg-gray-800 border border-gray-700"
       />
 
-      {/* Attachments display */}
+      {/* Attachments */}
       {localAttachments.length > 0 && (
         <div className="mt-4 space-y-3">
           <h3 className="text-md font-semibold">📎 Attachments:</h3>
@@ -203,6 +186,7 @@ export default function RightBrainNoteEditor({
         </div>
       )}
 
+      {/* Save button */}
       <button
         onClick={handleSave}
         className="bg-yellow-500 hover:bg-yellow-600 text-black py-2 px-4 rounded mt-4"

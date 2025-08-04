@@ -4,7 +4,7 @@ import { generateTOC, TOCEntry } from '@/lib/tocParser';
 import TOCSidebar from '@/components/TOCSidebar';
 import ProgressiveView, { ThoughtUnit, ReadingStats } from '@/components/ProgressiveView';
 import HybridReader from '@/components/HybridReader';
-import HighlightPopup from '@/components/HighlightPopup'; // motion version
+import HighlightPopup from '@/components/HighlightPopup';
 import RightBrainNoteEditor from '@/components/RightBrainNoteEditor';
 import LinkVideoModal from '@/components/LinkVideoModal';
 import { db } from '@/lib/firebase';
@@ -31,7 +31,6 @@ export default function ThoughtUnitReader() {
   const [lineSpacing, setLineSpacing] = useState(1.5);
   const [clickSwitchesTo, setClickSwitchesTo] = useState(false);
   const [sampleText, setSampleText] = useState('');
-  const [textContent, setTextContent] = useState('');
   const [darkMode, setDarkMode] = useState(true);
 
   // TOC state
@@ -40,13 +39,13 @@ export default function ThoughtUnitReader() {
 
   // Popup state
   const [selectedText, setSelectedText] = useState('');
-  const [popupPosition, setPopupPosition] = useState<{ x: number; y: number } | null>(null);
-
-  // Attachments & notes
   const [attachments, setAttachments] = useState<string[]>([]);
+  const [popupPosition, setPopupPosition] = useState<{ x: number; y: number } | null>(null);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [bookId, setBookId] = useState<string>('default-book');
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+
+  // Remember last selection
+  const [lastSelection, setLastSelection] = useState<{ text: string; range: Range | null } | null>(null);
 
   // Track selection range
   const selectionRangeRef = useRef<Range | null>(null);
@@ -67,12 +66,13 @@ export default function ThoughtUnitReader() {
    * =============================== */
   const handleTextSelect = (text: string) => {
     if (!text) return;
-
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) return;
-
     const range = selection.getRangeAt(0);
     selectionRangeRef.current = range;
+
+    // Save last selection for restore later
+    setLastSelection({ text, range });
 
     updatePopupPositionFromRange(range);
     setSelectedText(text);
@@ -83,13 +83,14 @@ export default function ThoughtUnitReader() {
    * =============================== */
   const updatePopupPositionFromRange = (range: Range) => {
     const rect = range.getBoundingClientRect();
-    const popupX = rect.left + rect.width / 2 + window.scrollX;
-    const popupY = rect.top + window.scrollY - 40;
-    setPopupPosition({ x: popupX, y: popupY });
+    setPopupPosition({
+      x: rect.left + rect.width / 2 + window.scrollX,
+      y: rect.top + window.scrollY - 40,
+    });
   };
 
   /** ===============================
-   * 📌 Smoothly reposition popup on scroll & resize
+   * 📌 Keep popup positioned on scroll & resize
    * =============================== */
   useEffect(() => {
     const repositionPopup = () => {
@@ -109,8 +110,8 @@ export default function ThoughtUnitReader() {
    * 📌 Popup actions
    * =============================== */
   const handleCreateNote = () => {
-    if (selectedText) setViewMode('rightbrain');
-    setPopupPosition(null);
+    setViewMode('rightbrain');
+    setPopupPosition(null); // hide popup when in note editor
   };
 
   const handleAttachLink = () => {
@@ -122,6 +123,24 @@ export default function ThoughtUnitReader() {
    * 📌 Render based on mode
    * =============================== */
   const renderContent = () => {
+    if (viewMode === 'rightbrain') {
+      return (
+        <RightBrainNoteEditor
+          bookId={bookId}
+          initialText={selectedText}
+          attachments={attachments}
+          onDone={() => {
+            setViewMode('progressive');
+            // Restore last selection and popup
+            if (lastSelection?.range) {
+              selectionRangeRef.current = lastSelection.range;
+              setSelectedText(lastSelection.text);
+              updatePopupPositionFromRange(lastSelection.range);
+            }
+          }}
+        />
+      );
+    }
     if (viewMode === 'progressive') {
       return (
         <ProgressiveView
@@ -182,15 +201,6 @@ export default function ThoughtUnitReader() {
         />
       );
     }
-    if (viewMode === 'rightbrain') {
-      return (
-        <RightBrainNoteEditor
-          bookId={bookId}
-          initialText={selectedText}
-          attachments={attachments}
-        />
-      );
-    }
     return (
       <SmartPDFViewer
         fileUrl={fileUrl!}
@@ -204,65 +214,58 @@ export default function ThoughtUnitReader() {
 
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
-      <div className="max-w-full mx-auto p-4 space-y-4">
-        {/* Controls */}
-        <div className="flex gap-2 mb-4">
-          <button onClick={() => setShowTOC(!showTOC)} className="px-3 py-1 bg-gray-700 rounded">📑 TOC</button>
-          <button onClick={() => setViewMode('original')}>Original</button>
-          <button onClick={() => setViewMode('progressive')}>Progressive</button>
-          <button onClick={() => setViewMode('hybrid')}>Hybrid</button>
-          <button onClick={() => setViewMode('rightbrain')}>Right Brain</button>
-        </div>
-
-        {/* Layout */}
-        <div className="grid grid-cols-[auto,1fr] h-[80vh]">
-          {showTOC && (
-            <TOCSidebar
-              toc={tableOfContents}
-              currentPage={currentPage}
-              onJumpToPage={(p) => setCurrentPage(p)}
-            />
-          )}
-          <div className="grid grid-cols-2 gap-4">
-            <SmartPDFViewer
-              fileUrl={fileUrl!}
-              currentPage={currentPage}
-              onPageChange={setCurrentPage}
-              scale={1.25}
-              onTextSelect={handleTextSelect}
-            />
-            {renderContent()}
-          </div>
-        </div>
-
-        {/* Popup */}
-        {popupPosition && (
-          <HighlightPopup
-            position={popupPosition}
-            onCreateNote={handleCreateNote}
-            onAddFlashcard={() => console.log('Flashcard:', selectedText)}
-            onAttachLink={handleAttachLink}
-            onClose={() => setPopupPosition(null)}
-          />
-        )}
-
-        {/* Link modal */}
-        {showLinkModal && (
-          <LinkVideoModal
-            onClose={() => setShowLinkModal(false)}
-            onSave={async (url) => {
-              if (selectedNoteId) {
-                const noteRef = doc(db, 'notes', selectedNoteId);
-                await updateDoc(noteRef, { attachments: arrayUnion(url) });
-              } else {
-                setAttachments((prev) => [...prev, url]);
-              }
-              setViewMode('rightbrain');
-              setShowLinkModal(false);
-            }}
-          />
-        )}
+      {/* Controls & TOC */}
+      <div className="flex gap-2 mb-4">
+        <button onClick={() => setShowTOC(!showTOC)} className="px-3 py-1 bg-gray-700 rounded">📑 TOC</button>
+        <button onClick={() => setViewMode('original')}>Original</button>
+        <button onClick={() => setViewMode('progressive')}>Progressive</button>
+        <button onClick={() => setViewMode('hybrid')}>Hybrid</button>
+        <button onClick={() => setViewMode('rightbrain')}>Right Brain</button>
       </div>
+
+      {/* Main layout */}
+      <div className="grid grid-cols-[auto,1fr] h-[80vh]">
+        {showTOC && (
+          <TOCSidebar
+            toc={tableOfContents}
+            currentPage={currentPage}
+            onJumpToPage={(p) => setCurrentPage(p)}
+          />
+        )}
+        <div className="grid grid-cols-2 gap-4">
+          <SmartPDFViewer
+            fileUrl={fileUrl!}
+            currentPage={currentPage}
+            onPageChange={setCurrentPage}
+            scale={1.25}
+            onTextSelect={handleTextSelect}
+          />
+          {renderContent()}
+        </div>
+      </div>
+
+      {/* Highlight popup */}
+      {popupPosition && (
+        <HighlightPopup
+          position={popupPosition}
+          onCreateNote={handleCreateNote}
+          onAddFlashcard={() => console.log('Flashcard:', selectedText)}
+          onAttachLink={handleAttachLink}
+          onClose={() => setPopupPosition(null)}
+        />
+      )}
+
+      {/* Link/video modal */}
+      {showLinkModal && (
+        <LinkVideoModal
+          onClose={() => setShowLinkModal(false)}
+          onSave={(url) => {
+            setAttachments((prev) => [...prev, url]);
+            setViewMode('rightbrain');
+            setShowLinkModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }
