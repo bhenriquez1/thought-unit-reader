@@ -101,14 +101,15 @@ export default function ThoughtUnitReader() {
     setUploadedFile(file);
     setViewMode("original");
 
+    let url: string;
     if (firebaseConnected && user) {
-      const url = await uploadPDF(file, USER_ID);
-      setFileUrl(url);
+      url = await uploadPDF(file, USER_ID);
       getPDFLibrary(USER_ID).then(setPdfLibrary);
     } else {
-      const localUrl = URL.createObjectURL(file);
-      setFileUrl(localUrl);
+      url = URL.createObjectURL(file);
     }
+    setFileUrl(url);
+    generateTOC(url).then(setTableOfContents);
   };
 
   /* =========================================================================
@@ -117,6 +118,7 @@ export default function ThoughtUnitReader() {
   const handleLoadPDF = (url: string) => {
     setFileUrl(url);
     setShowLibrary(false);
+    generateTOC(url).then(setTableOfContents);
   };
 
   /* =========================================================================
@@ -166,6 +168,8 @@ export default function ThoughtUnitReader() {
     if (viewMode === "progressive") {
       return (
         <ProgressiveView
+          bookId={bookId}
+          userId={USER_ID}
           thoughtUnits={thoughtUnits}
           currentThoughtUnit={currentThoughtUnit}
           readingSpeed={readingSpeed}
@@ -179,7 +183,6 @@ export default function ThoughtUnitReader() {
           fontFamily={fontFamily}
           lineSpacing={lineSpacing}
           onWordClick={(w) => setHighlightedWord(w)}
-          setReadingSpeed={setReadingSpeed}
           onStart={() => setIsReading(true)}
           onPause={() => setIsPaused(true)}
           onReset={() => {
@@ -187,6 +190,7 @@ export default function ThoughtUnitReader() {
             setIsPaused(false);
             setCurrentThoughtUnit(1);
           }}
+          setReadingSpeed={setReadingSpeed}
           onTextSelect={handleTextSelect}
         />
       );

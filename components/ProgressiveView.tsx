@@ -28,12 +28,12 @@ interface ProgressiveViewProps {
   fontSize: number;
   fontFamily: string;
   lineSpacing: number;
-  onWordClick: (word: string) => void;
-  onStart: () => void;
-  onPause: () => void;
-  onReset: () => void;
-  setReadingSpeed: (speed: number) => void;
-  onTextSelect?: (text: string) => void;
+  onWordClick?: (word: string) => void; // now optional
+  onStart?: () => void;                  // now optional
+  onPause?: () => void;                  // now optional
+  onReset?: () => void;                  // now optional
+  setReadingSpeed?: (speed: number) => void; // now optional
+  onTextSelect?: (text: string) => void;     // stays optional
 }
 
 export default function ProgressiveView({
@@ -79,7 +79,7 @@ export default function ProgressiveView({
           const data = snap.data();
           if (data.currentThoughtUnit) {
             // restore reading position
-            setReadingSpeed(data.readingSpeed || readingSpeed);
+            setReadingSpeed?.(data.readingSpeed || readingSpeed);
           }
         }
         setLoaded(true);
@@ -184,7 +184,7 @@ export default function ProgressiveView({
               ? "bg-yellow-400 text-black px-1 rounded"
               : "hover:bg-gray-700 cursor-pointer px-1 rounded"
           }`}
-          onClick={() => onWordClick(word)}
+          onClick={() => onWordClick?.(word)}
         >
           {word}{" "}
         </span>
