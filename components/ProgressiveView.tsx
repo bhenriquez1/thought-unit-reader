@@ -2,23 +2,21 @@
 import React from 'react';
 import { Play, Pause, RotateCcw } from 'lucide-react';
 
+/** ===============================
+ *  📌 Type Definitions
+ *  =============================== */
 export interface ThoughtUnit {
   id: number;
   text: string;
-  wordCount: number;
-  isCompleted: boolean;
-  timeSpent: number;
 }
 
 export interface ReadingStats {
   wordsRead: number;
-  timeElapsed: number; // seconds
+  timeElapsed: number; // in seconds
   currentWPM: number;
-  averageWPM: number;
-  comprehensionScore?: number;
 }
 
-export interface ProgressiveViewProps {
+interface ProgressiveViewProps {
   thoughtUnits: ThoughtUnit[];
   currentThoughtUnit: number;
   readingSpeed: number;
@@ -35,10 +33,13 @@ export interface ProgressiveViewProps {
   onStart: () => void;
   onPause: () => void;
   onReset: () => void;
-  setReadingSpeed: (wpm: number) => void;
+  setReadingSpeed: (speed: number) => void;
 }
 
-const ProgressiveView: React.FC<ProgressiveViewProps> = ({
+/** ===============================
+ *  📌 Progressive Reading Component
+ *  =============================== */
+export default function ProgressiveView({
   thoughtUnits,
   currentThoughtUnit,
   readingSpeed,
@@ -56,28 +57,24 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
   onPause,
   onReset,
   setReadingSpeed,
-}) => {
-  const currentUnit = thoughtUnits[currentThoughtUnit - 1];
-  const completionPercentage = Math.round((currentThoughtUnit / Math.max(1, thoughtUnits.length)) * 100);
-
+}: ProgressiveViewProps) {
   const formatTime = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    if (hours > 0) return `${hours}h ${minutes}m ${secs}s`;
-    return `${minutes}m ${secs}s`;
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
   };
+
+  const currentUnit = thoughtUnits[currentThoughtUnit - 1];
 
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-yellow-400 flex items-center">
-          <span className="mr-2">⚡</span>
-          Progressive Reading
+          ⚡ Progressive Reading
         </h3>
         <div className="text-sm text-gray-400">
-          Thought Unit {currentThoughtUnit} of {thoughtUnits.length.toLocaleString()}
+          Page {currentPage} of {pdfPageCount}
         </div>
       </div>
 
@@ -86,8 +83,10 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
         <button
           onClick={isReading && !isPaused ? onPause : onStart}
           className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${
-            isReading && !isPaused ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'
-          } text-white transition-colors`}
+            isReading && !isPaused
+              ? 'bg-yellow-600 hover:bg-yellow-700'
+              : 'bg-green-600 hover:bg-green-700'
+          } text-white`}
         >
           {isReading && !isPaused ? <Pause size={16} /> : <Play size={16} />}
           <span>{isReading && !isPaused ? 'Pause' : 'Start'}</span>
@@ -95,7 +94,7 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
 
         <button
           onClick={onReset}
-          className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg flex items-center space-x-2 transition-colors"
+          className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg flex items-center space-x-2"
         >
           <RotateCcw size={16} />
           <span>Reset</span>
@@ -108,8 +107,8 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
             value={readingSpeed}
             onChange={(e) => setReadingSpeed(parseInt(e.target.value) || 200)}
             className="w-16 px-2 py-1 bg-gray-700 text-white rounded text-center"
-            min={50}
-            max={1000}
+            min="50"
+            max="1000"
           />
           <span className="text-sm text-gray-300">WPM</span>
         </div>
@@ -118,12 +117,14 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
         <div className="bg-blue-600 p-4 rounded-lg text-center">
-          <div className="text-2xl font-bold">{completionPercentage}%</div>
+          <div className="text-2xl font-bold">
+            {Math.round((currentPage / pdfPageCount) * 100)}%
+          </div>
           <div className="text-sm opacity-75">Complete</div>
         </div>
         <div className="bg-green-600 p-4 rounded-lg text-center">
-          <div className="text-2xl font-bold">{currentThoughtUnit}</div>
-          <div className="text-sm opacity-75">Current</div>
+          <div className="text-2xl font-bold">{currentPage}</div>
+          <div className="text-sm opacity-75">Current Page</div>
         </div>
         <div className="bg-purple-600 p-4 rounded-lg text-center">
           <div className="text-2xl font-bold">{stats.currentWPM}</div>
@@ -131,44 +132,33 @@ const ProgressiveView: React.FC<ProgressiveViewProps> = ({
         </div>
         <div className="bg-red-900 p-4 rounded-lg text-center">
           <div className="text-2xl font-bold">{formatTime(stats.timeElapsed)}</div>
-          <div className="text-sm opacity-75">Left</div>
+          <div className="text-sm opacity-75">Time Elapsed</div>
         </div>
       </div>
 
-      {/* Current Unit */}
-      {currentUnit && (
-        <div className="bg-gray-800 p-6 rounded-lg">
-          <div
-            className="text-lg leading-relaxed"
-            style={{
-              fontSize: `${fontSize}px`,
-              fontFamily: fontFamily,
-              lineHeight: lineSpacing,
-            }}
+      {/* Current Thought Unit */}
+      <div
+        className="bg-gray-800 p-4 rounded-lg"
+        style={{
+          fontSize: `${fontSize}px`,
+          fontFamily: fontFamily,
+          lineHeight: `${lineSpacing}em`,
+        }}
+      >
+        {currentUnit?.text.split(' ').map((word, idx) => (
+          <span
+            key={idx}
+            className={`${
+              word === highlightedWord
+                ? 'bg-yellow-400 text-black px-1 rounded'
+                : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
+            }`}
+            onClick={() => onWordClick(word)}
           >
-            {currentUnit.text.split(' ').map((word, index) => (
-              <span
-                key={index}
-                className={`${
-                  word === highlightedWord
-                    ? 'bg-yellow-400 text-black px-1 rounded'
-                    : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
-                } transition-colors`}
-                onClick={() => onWordClick(word)}
-              >
-                {word}{' '}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Page info if needed */}
-      <div className="text-sm text-gray-400">
-        <p>Page {currentPage} of {pdfPageCount}</p>
+            {word}{' '}
+          </span>
+        ))}
       </div>
     </div>
   );
-};
-
-export default ProgressiveView;
+}

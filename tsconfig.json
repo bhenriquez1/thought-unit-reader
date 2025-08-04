@@ -64,11 +64,14 @@
     "ts-jest": "^29.1.2",
     "typescript": "^5.4.5"
   },
+  {
   "compilerOptions": {
+    /* Core TS/Next.js settings */
+    "target": "esnext",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
-    "strict": false,
+    "strict": false, // you can set to true if you want stricter typing
     "noEmit": true,
     "incremental": true,
     "module": "esnext",
@@ -78,7 +81,7 @@
     "isolatedModules": true,
     "jsx": "preserve",
 
-    // ✅ Added alias support
+    /* ✅ Path alias support */
     "baseUrl": ".",
     "paths": {
       "@/*": ["*"],
@@ -86,6 +89,16 @@
       "@/lib/*": ["lib/*"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules"]
+
+  /* ✅ Files to include in compilation */
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+
+  /* ✅ Ignore node_modules */
+  "exclude": [
+    "node_modules"
+  ]
 }

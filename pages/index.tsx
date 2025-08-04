@@ -1,51 +1,90 @@
 // pages/index.tsx
 import dynamic from 'next/dynamic';
 import ErrorBoundary from '@/components/ErrorBoundary';
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, RotateCcw, ZoomIn, ZoomOut, Upload } from 'lucide-react';
+import React, { useState } from 'react';
+import { Play, Pause, RotateCcw } from 'lucide-react';
 import ProgressiveView, { ThoughtUnit, ReadingStats } from '@/components/ProgressiveView';
 import HybridReader from '@/components/HybridReader';
 
-// (keep earlier constants like fullTableOfContents, sampleText, etc., unchanged)
-
-// Dynamic components (you can still keep SmartPDFViewer used directly for PDF-progressive)
+// Dynamic import for SmartPDFViewer
 const SmartPDFViewer = dynamic(() => import('@/components/SmartPDFViewer'), {
   ssr: false,
   loading: () => <div className="p-4 text-center">Loading PDF viewer...</div>,
 });
 
 export default function ThoughtUnitReader() {
-  // ... all your existing state and hooks remain identical ...
+  /** ===============================
+   *  📌 State Variables
+   *  =============================== */
+  const [thoughtUnits, setThoughtUnits] = useState<ThoughtUnit[]>([]);
+  const [currentThoughtUnit, setCurrentThoughtUnit] = useState(1);
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [viewMode, setViewMode] = useState<'progressive' | 'hybrid' | 'original' | 'rightbrain'>('progressive');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pdfPageCount, setPdfPageCount] = useState(1);
+  const [isReading, setIsReading] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [readingSpeed, setReadingSpeed] = useState(200);
+  const [stats, setStats] = useState<ReadingStats>({ wordsRead: 0, timeElapsed: 0, currentWPM: 0 });
+  const [highlightedWord, setHighlightedWord] = useState('');
+  const [fontSize, setFontSize] = useState(16);
+  const [fontFamily, setFontFamily] = useState('sans-serif');
+  const [lineSpacing, setLineSpacing] = useState(1.5);
+  const [clickSwitchesTo, setClickSwitchesTo] = useState(false);
+  const [sampleText, setSampleText] = useState('');
+  const [textContent, setTextContent] = useState('');
+  const [darkMode, setDarkMode] = useState(true);
+  const [debugMode, setDebugMode] = useState(false);
 
-  // Render content based on view mode (only the relevant parts adjusted)
+  /** ===============================
+   *  📌 Handlers
+   *  =============================== */
+  const handleWordClick = (word: string) => setHighlightedWord(word);
+  const handleStartReading = () => setIsReading(true);
+  const handlePauseReading = () => setIsPaused(true);
+  const handleResetReading = () => {
+    setIsReading(false);
+    setIsPaused(false);
+    setCurrentThoughtUnit(1);
+  };
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  /** ===============================
+   *  📌 Content Renderer
+   *  =============================== */
   const renderContent = () => {
     const currentUnit = thoughtUnits[currentThoughtUnit - 1];
 
-    // If PDF is loaded, show PDF-based views
+    // PDF Mode
     if (fileUrl && uploadedFile?.type === 'application/pdf') {
       switch (viewMode) {
         case 'progressive':
-          // keep original progressive PDF layout but delegate thought-unit display if needed
           return (
             <div className="space-y-6 p-6">
-              {/* Progressive Reading Header & Controls (you could optionally replace with ProgressiveView for text portion) */}
+              {/* Header */}
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-yellow-400 flex items-center">
-                  <span className="mr-2">⚡</span>
-                  Progressive Reading
+                  ⚡ Progressive Reading
                 </h3>
                 <div className="text-sm text-gray-400">
                   Page {currentPage} of {pdfPageCount}
                 </div>
               </div>
 
-              {/* Reading Controls */}
+              {/* Controls */}
               <div className="flex items-center space-x-4">
                 <button
                   onClick={isReading && !isPaused ? handlePauseReading : handleStartReading}
                   className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${
-                    isReading && !isPaused ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'
-                  } text-white transition-colors`}
+                    isReading && !isPaused
+                      ? 'bg-yellow-600 hover:bg-yellow-700'
+                      : 'bg-green-600 hover:bg-green-700'
+                  } text-white`}
                 >
                   {isReading && !isPaused ? <Pause size={16} /> : <Play size={16} />}
                   <span>{isReading && !isPaused ? 'Pause' : 'Start'}</span>
@@ -53,55 +92,16 @@ export default function ThoughtUnitReader() {
 
                 <button
                   onClick={handleResetReading}
-                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg flex items-center space-x-2 transition-colors"
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg flex items-center space-x-2"
                 >
                   <RotateCcw size={16} />
                   <span>Reset</span>
                 </button>
-
-                <div className="flex items-center space-x-2">
-                  <label className="text-sm text-gray-300">Speed:</label>
-                  <input
-                    type="number"
-                    value={readingSpeed}
-                    onChange={(e) => setReadingSpeed(parseInt(e.target.value) || 200)}
-                    className="w-16 px-2 py-1 bg-gray-700 text-white rounded text-center"
-                    min="50"
-                    max="1000"
-                  />
-                  <span className="text-sm text-gray-300">WPM</span>
-                  <button
-                    onClick={() => setReadingSpeed(prev => Math.min(prev + 50, 1000))}
-                    className="px-2 py-1 bg-gray-600 hover:bg-gray-500 text-white rounded"
-                  >
-                    +
-                  </button>
-                </div>
               </div>
 
-              {/* Statistics Cards */}
-              <div className="grid grid-cols-4 gap-4">
-                <div className="bg-blue-600 p-4 rounded-lg text-center">
-                  <div className="text-2xl font-bold">{Math.round((currentPage / pdfPageCount) * 100)}%</div>
-                  <div className="text-sm opacity-75">Complete</div>
-                </div>
-                <div className="bg-green-600 p-4 rounded-lg text-center">
-                  <div className="text-2xl font-bold">{currentPage}</div>
-                  <div className="text-sm opacity-75">Current</div>
-                </div>
-                <div className="bg-purple-600 p-4 rounded-lg text-center">
-                  <div className="text-2xl font-bold">{stats.currentWPM}</div>
-                  <div className="text-sm opacity-75">WPM</div>
-                </div>
-                <div className="bg-red-900 p-4 rounded-lg text-center">
-                  <div className="text-2xl font-bold">{formatTime(stats.timeElapsed)}</div>
-                  <div className="text-sm opacity-75">Left</div>
-                </div>
-              </div>
-
-              {/* PDF with Text Overlay */}
+              {/* PDF Viewer */}
               <div className="bg-gray-800 rounded-lg overflow-hidden" style={{ height: '60vh' }}>
-                <ErrorBoundary fallback={<div className="p-4 text-center text-red-400">PDF viewer failed to load.</div>}>
+                <ErrorBoundary fallback={<div className="p-4 text-center text-red-400">PDF failed to load.</div>}>
                   <SmartPDFViewer
                     fileUrl={fileUrl}
                     scale={1.25}
@@ -145,11 +145,10 @@ export default function ThoughtUnitReader() {
             </ErrorBoundary>
           );
 
-        // other cases (rightbrain/original) stay as before...
         default:
           return (
             <div className="bg-gray-800 rounded-lg overflow-hidden p-6" style={{ height: '70vh' }}>
-              <ErrorBoundary fallback={<div className="p-4 text-center text-red-400">PDF viewer failed to load.</div>}>
+              <ErrorBoundary fallback={<div className="p-4 text-center text-red-400">PDF failed to load.</div>}>
                 <SmartPDFViewer
                   fileUrl={fileUrl}
                   scale={1.25}
@@ -164,7 +163,7 @@ export default function ThoughtUnitReader() {
       }
     }
 
-    // Text-based views (no PDF)
+    // Text Mode
     switch (viewMode) {
       case 'progressive':
         return (
@@ -194,86 +193,63 @@ export default function ThoughtUnitReader() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
             {/* Original Text */}
             <div className="bg-gray-800 p-4 rounded-lg">
-              <h4 className="text-sm font-semibold text-gray-300 mb-3">Original View</h4>
-              <div className="text-sm leading-relaxed">
-                {(textContent || sampleText).split(' ').map((word, index) => (
-                  <span
-                    key={index}
-                    className={`${
-                      word === highlightedWord
-                        ? 'bg-yellow-400 text-black px-1 rounded'
-                        : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
-                    } transition-colors`}
-                    onClick={() => handleWordClick(word)}
-                  >
-                    {word}{' '}
-                  </span>
-                ))}
-              </div>
+              {(textContent || sampleText).split(' ').map((word, idx) => (
+                <span
+                  key={idx}
+                  className={`${
+                    word === highlightedWord
+                      ? 'bg-yellow-400 text-black px-1 rounded'
+                      : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
+                  }`}
+                  onClick={() => handleWordClick(word)}
+                >
+                  {word}{' '}
+                </span>
+              ))}
             </div>
 
-            {/* Progressive View */}
+            {/* Progressive Text */}
             <div className="bg-gray-800 p-4 rounded-lg">
-              <h4 className="text-sm font-semibold text-gray-300 mb-3">Progressive View</h4>
-              {thoughtUnits[currentThoughtUnit - 1] && (
-                <div className="text-lg leading-relaxed">
-                  {thoughtUnits[currentThoughtUnit - 1].text.split(' ').map((word, index) => (
-                    <span
-                      key={index}
-                      className={`${
-                        word === highlightedWord
-                          ? 'bg-yellow-400 text-black px-1 rounded'
-                          : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
-                      } transition-colors`}
-                      onClick={() => handleWordClick(word)}
-                    >
-                      {word}{' '}
-                    </span>
-                  ))}
-                </div>
-              )}
+              {currentUnit?.text.split(' ').map((word, idx) => (
+                <span
+                  key={idx}
+                  className={`${
+                    word === highlightedWord
+                      ? 'bg-yellow-400 text-black px-1 rounded'
+                      : 'hover:bg-gray-700 cursor-pointer px-1 rounded'
+                  }`}
+                  onClick={() => handleWordClick(word)}
+                >
+                  {word}{' '}
+                </span>
+              ))}
             </div>
           </div>
         );
 
-      // original/rightbrain remain as before...
       default:
-        // fallback to existing internal logic
         return null;
     }
   };
 
-  // ...rest of your component markup remains unchanged, including header, controls, notes panel, etc.
-
+  /** ===============================
+   *  📌 JSX Layout
+   *  =============================== */
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
-      {/* Header, controls, typography, buttons etc. kept exactly as before */}
       <div className="max-w-7xl mx-auto p-4 space-y-4">
-        {/* ... your existing control UI ... */}
-
-        {/* Main Content Area */}
+        {/* Main Content */}
         <div className="bg-gray-800 rounded-lg overflow-hidden min-h-[60vh]">
           {renderContent()}
         </div>
 
-        {/* Debug Info */}
+        {/* Debug Panel */}
         {debugMode && (
           <div className="bg-yellow-900 border border-yellow-700 rounded-lg p-4">
-            <h4 className="font-semibold text-yellow-300 mb-2">Debug Information</h4>
-            <div className="text-sm text-yellow-200 grid grid-cols-2 gap-4">
-              <div>
-                <p>Current Thought Unit: {currentThoughtUnit}</p>
-                <p>Total Units: {thoughtUnits.length}</p>
-                <p>Reading Speed: {readingSpeed} WPM</p>
-                <p>View Mode: {viewMode}</p>
-              </div>
-              <div>
-                <p>Words Read: {stats.wordsRead}</p>
-                <p>Time Elapsed: {formatTime(stats.timeElapsed)}</p>
-                <p>Current WPM: {stats.currentWPM}</p>
-                <p>Highlighted Word: {highlightedWord}</p>
-              </div>
-            </div>
+            <h4 className="font-semibold text-yellow-300 mb-2">Debug Info</h4>
+            <pre className="text-sm text-yellow-200">
+              {JSON.stringify({ thoughtUnits, currentThoughtUnit, readingSpeed, viewMode, stats }, null, 2)}
+            </pre>
           </div>
         )}
       </div>
