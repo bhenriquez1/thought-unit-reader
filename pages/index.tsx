@@ -14,14 +14,16 @@ import {
   getPDFLibrary,
   deletePDF,
   listenForAuthChanges
-} from "@/lib/firebase";
+} from "@/lib/firebase"; // Google Sign-In & Wallet connect removed for now
 
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
 
 export default function ThoughtUnitReader() {
+  /** ===== Auth State ===== **/
   const [user, setUser] = useState<any>(null);
   const USER_ID = user?.uid || "guest-user";
 
+  /** ===== Reader State ===== **/
   const [thoughtUnits, setThoughtUnits] = useState<ThoughtUnit[]>([]);
   const [currentThoughtUnit, setCurrentThoughtUnit] = useState(1);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
@@ -33,7 +35,11 @@ export default function ThoughtUnitReader() {
   const [isReading, setIsReading] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [readingSpeed, setReadingSpeed] = useState(200);
-  const [stats, setStats] = useState<ReadingStats>({ wordsRead: 0, timeElapsed: 0, currentWPM: 0 });
+  const [stats, setStats] = useState<ReadingStats>({
+    wordsRead: 0,
+    timeElapsed: 0,
+    currentWPM: 0
+  });
   const [highlightedWord, setHighlightedWord] = useState("");
   const [fontSize, setFontSize] = useState(16);
   const [fontFamily, setFontFamily] = useState("sans-serif");
@@ -42,34 +48,48 @@ export default function ThoughtUnitReader() {
   const [sampleText, setSampleText] = useState("");
   const [darkMode, setDarkMode] = useState(true);
 
+  /** ===== TOC State ===== **/
   const [tableOfContents, setTableOfContents] = useState<TOCEntry[]>([]);
   const [showTOC, setShowTOC] = useState(true);
+
+  /** ===== Library State ===== **/
   const [showLibrary, setShowLibrary] = useState(false);
   const [pdfLibrary, setPdfLibrary] = useState<
     { id: string; name: string; url: string; uploadedAt: any }[]
   >([]);
 
+  /** ===== Popup & Note State ===== **/
   const [selectedText, setSelectedText] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [popupPosition, setPopupPosition] = useState<{ x: number; y: number } | null>(null);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [bookId, setBookId] = useState<string>("default-book");
 
+  /** ===== Debug ===== **/
   const selectionRangeRef = useRef<Range | null>(null);
   const [firebaseStatus] = useState(firebaseConnected);
 
+  /* =========================================================================
+     🔹 AUTH LISTENER
+  ========================================================================= */
   useEffect(() => {
     listenForAuthChanges((u) => {
       setUser(u);
     });
   }, []);
 
+  /* =========================================================================
+     🔹 Load PDF Library
+  ========================================================================= */
   useEffect(() => {
     if (firebaseConnected && user) {
       getPDFLibrary(USER_ID).then(setPdfLibrary);
     }
   }, [user, showLibrary]);
 
+  /* =========================================================================
+     🔹 Handle File Upload
+  ========================================================================= */
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || file.type !== "application/pdf") {
@@ -90,18 +110,27 @@ export default function ThoughtUnitReader() {
     generateTOC(url).then(setTableOfContents);
   };
 
+  /* =========================================================================
+     🔹 Load PDF from Library
+  ========================================================================= */
   const handleLoadPDF = (url: string) => {
     setFileUrl(url);
     setShowLibrary(false);
     generateTOC(url).then(setTableOfContents);
   };
 
+  /* =========================================================================
+     🔹 Delete PDF
+  ========================================================================= */
   const handleDeletePDF = async (id: string, name: string) => {
     if (!confirm(`Delete ${name}?`)) return;
     await deletePDF(USER_ID, id, name);
     getPDFLibrary(USER_ID).then(setPdfLibrary);
   };
 
+  /* =========================================================================
+     🔹 Handle Text Selection
+  ========================================================================= */
   const handleTextSelect = (text: string) => {
     if (!text) return;
     const selection = window.getSelection();
@@ -120,6 +149,9 @@ export default function ThoughtUnitReader() {
     });
   };
 
+  /* =========================================================================
+     🔹 Render Main Content
+  ========================================================================= */
   const renderContent = () => {
     if (viewMode === "rightbrain") {
       return (
@@ -165,6 +197,8 @@ export default function ThoughtUnitReader() {
       return (
         <HybridReader
           fileUrl={fileUrl || ""}
+          pdfId={bookId}
+          userId={USER_ID}
           sampleText={sampleText}
           currentPage={currentPage}
           pdfPageCount={pdfPageCount}
@@ -172,8 +206,10 @@ export default function ThoughtUnitReader() {
           isReading={isReading}
           isPaused={isPaused}
           currentThoughtUnit={currentThoughtUnit}
+          setCurrentThoughtUnit={setCurrentThoughtUnit}
           thoughtUnits={thoughtUnits}
           highlightedWord={highlightedWord}
+          setHighlightedWord={setHighlightedWord}
           stats={stats}
           fontSize={fontSize}
           fontFamily={fontFamily}
@@ -214,11 +250,12 @@ export default function ThoughtUnitReader() {
 
   return (
     <div className={`min-h-screen flex flex-col ${darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"}`}>
-      {/* Auth Bar Placeholder - Auth Disabled Mode */}
-      <div className="p-2 flex justify-center items-center bg-gray-700 text-white text-sm">
-        🔒 Auth Disabled Mode — Sign‑In and Wallet connection are temporarily turned off.
+      {/* Auth Bar — Disabled for now */}
+      <div className="p-2 flex justify-between items-center bg-gray-800 text-white">
+        <span>🔒 Sign-In Disabled for Now</span>
       </div>
 
+      {/* Floating Library Button */}
       {user && (
         <button
           onClick={() => setShowLibrary(true)}
@@ -228,6 +265,7 @@ export default function ThoughtUnitReader() {
         </button>
       )}
 
+      {/* Slide-in Library Drawer */}
       {showLibrary && (
         <div className="fixed top-0 right-0 w-80 h-full bg-gray-800 text-white shadow-lg z-50 p-4 flex flex-col">
           <div className="flex justify-between items-center mb-4">
@@ -253,11 +291,13 @@ export default function ThoughtUnitReader() {
         </div>
       )}
 
+      {/* Main Reader */}
       <div className="flex flex-1 overflow-hidden px-4">
         {showTOC && fileUrl && <TOCSidebar toc={tableOfContents} currentPage={currentPage} onJumpToPage={setCurrentPage} />}
         <div className="flex-1 bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
       </div>
 
+      {/* Highlight Popup */}
       {popupPosition && (
         <HighlightPopup
           position={popupPosition}

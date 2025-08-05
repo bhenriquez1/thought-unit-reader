@@ -1,10 +1,9 @@
+// lib/firebase.ts
 import { initializeApp, getApp, getApps, FirebaseApp } from "firebase/app";
 import {
   getAuth,
-  GoogleAuthProvider,
-  // signInWithPopup,
-  // signOut,
   onAuthStateChanged,
+  signOut,
   User
 } from "firebase/auth";
 import {
@@ -24,7 +23,9 @@ import {
   deleteObject
 } from "firebase/storage";
 
+// ============================================================
 // 🔹 Firebase Config (from .env)
+// ============================================================
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "",
@@ -35,7 +36,9 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || ""
 };
 
+// ============================================================
 // 🔹 Initialize Firebase (only once)
+// ============================================================
 let app: FirebaseApp;
 if (!getApps().length) {
   app = initializeApp(firebaseConfig);
@@ -45,7 +48,6 @@ if (!getApps().length) {
 }
 
 const auth = getAuth(app);
-const provider = new GoogleAuthProvider();
 const db = getFirestore(app);
 const storage = getStorage(app);
 
@@ -59,20 +61,12 @@ try {
   firebaseConnected = false;
 }
 
-/* =========================================================================
-   🔹 AUTH FUNCTIONS (Temporarily Disabled)
-   ========================================================================= */
-
-// ❌ Disabled for now — uncomment when ready
-/*
-export async function signInWithGoogle(): Promise<User | null> {
-  try {
-    const result = await signInWithPopup(auth, provider);
-    return result.user;
-  } catch (err) {
-    console.error("❌ Google Sign-In Error:", err);
-    return null;
-  }
+// ============================================================
+// 🔹 Auth Functions — Disabled for now
+// ============================================================
+export async function signInWithGoogle() {
+  alert("Google Sign-In is temporarily disabled.");
+  return null;
 }
 
 export async function signOutUser() {
@@ -82,40 +76,22 @@ export async function signOutUser() {
     console.error("❌ Sign-Out Error:", err);
   }
 }
-*/
 
-// ✅ Keep listener so system still works for logged-in users
 export function listenForAuthChanges(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, callback);
 }
 
-/* =========================================================================
-   🔹 WALLET CONNECTION (Temporarily Disabled)
-   ========================================================================= */
-
-// ❌ Disabled for now — uncomment when ready
-/*
+// ============================================================
+// 🔹 Wallet Connect — Disabled for now
+// ============================================================
 export async function connectWallet(): Promise<string | null> {
-  if (typeof window !== "undefined" && (window as any).ethereum) {
-    try {
-      const accounts = await (window as any).ethereum.request({
-        method: "eth_requestAccounts"
-      });
-      return accounts[0];
-    } catch (err) {
-      console.error("❌ Wallet connection error:", err);
-      return null;
-    }
-  } else {
-    alert("MetaMask is not installed.");
-    return null;
-  }
+  alert("MetaMask connection is temporarily disabled.");
+  return null;
 }
-*/
 
-/* =========================================================================
-   🔹 PDF LIBRARY FUNCTIONS
-   ========================================================================= */
+// ============================================================
+// 🔹 PDF Library Functions
+// ============================================================
 export async function uploadPDF(file: File, userId: string) {
   const fileRef = ref(storage, `pdfs/${userId}/${file.name}`);
   await uploadBytes(fileRef, file);
@@ -158,9 +134,9 @@ export async function deletePDF(userId: string, pdfId: string, pdfName: string) 
   console.log(`🗑 Deleted PDF: ${pdfName}`);
 }
 
-/* =========================================================================
-   🔹 READING PROGRESS FUNCTIONS
-   ========================================================================= */
+// ============================================================
+// 🔹 Reading Progress Functions
+// ============================================================
 export async function saveReadingProgress(
   userId: string,
   pdfId: string,
@@ -185,4 +161,4 @@ export async function loadReadingProgress(userId: string, pdfId: string) {
   return null;
 }
 
-export { app, auth, provider, db, storage, firebaseConnected };
+export { app, auth, db, storage, firebaseConnected };

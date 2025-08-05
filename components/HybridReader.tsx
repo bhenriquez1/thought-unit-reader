@@ -1,3 +1,4 @@
+// components/HybridReader.tsx
 import React, { useEffect } from "react";
 import { ThoughtUnit, ReadingStats } from "./ProgressiveView";
 import { saveReadingProgress, loadReadingProgress } from "@/lib/firebase";
@@ -48,6 +49,7 @@ export default function HybridReader({
   currentPage,
   setCurrentPage
 }: HybridReaderProps) {
+
   /** ===== Restore reading progress on mount ===== **/
   useEffect(() => {
     if (userId && pdfId) {
@@ -59,7 +61,7 @@ export default function HybridReader({
         }
       });
     }
-  }, [userId, pdfId, setCurrentPage, setCurrentThoughtUnit, setHighlightedWord]);
+  }, [userId, pdfId]);
 
   /** ===== Auto-save progress whenever relevant state changes ===== **/
   useEffect(() => {
