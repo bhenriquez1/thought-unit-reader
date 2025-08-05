@@ -14,8 +14,7 @@ import {
   getDoc,
   collection,
   getDocs,
-  deleteDoc,
-  updateDoc
+  deleteDoc
 } from "firebase/firestore";
 import {
   getStorage,
@@ -25,7 +24,17 @@ import {
   deleteObject
 } from "firebase/storage";
 
-// 🔹 Firebase Config (from .env)
+// 🔹 Add MetaMask type support to fix build error
+declare global {
+  interface Window {
+    ethereum?: {
+      isMetaMask?: boolean;
+      request?: (args: { method: string; params?: unknown[] }) => Promise<any>;
+    };
+  }
+}
+
+// 🔹 Firebase Config
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "",
@@ -36,7 +45,7 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || ""
 };
 
-// 🔹 Initialize Firebase (only once)
+// 🔹 Initialize Firebase
 let app: FirebaseApp;
 if (!getApps().length) {
   app = initializeApp(firebaseConfig);
@@ -88,7 +97,7 @@ export function listenForAuthChanges(callback: (user: User | null) => void) {
 /* =========================================================================
    🔹 PDF LIBRARY FUNCTIONS
    ========================================================================= */
-export async function uploadPDF(file: File, userId: string, privateMode: boolean = false) {
+export async function uploadPDF(file: File, userId: string) {
   const fileRef = ref(storage, `pdfs/${userId}/${file.name}`);
   await uploadBytes(fileRef, file);
   const downloadURL = await getDownloadURL(fileRef);
@@ -97,8 +106,7 @@ export async function uploadPDF(file: File, userId: string, privateMode: boolean
   await setDoc(libraryRef, {
     name: file.name,
     url: downloadURL,
-    uploadedAt: new Date().toISOString(),
-    private: privateMode // ✅ NEW: Private flag
+    uploadedAt: new Date().toISOString()
   });
 
   return downloadURL;
@@ -106,7 +114,7 @@ export async function uploadPDF(file: File, userId: string, privateMode: boolean
 
 export async function getPDFLibrary(userId: string) {
   const querySnapshot = await getDocs(collection(db, "users", userId, "pdfLibrary"));
-  const library: { id: string; name: string; url: string; uploadedAt: string; private?: boolean }[] = [];
+  const library: { id: string; name: string; url: string; uploadedAt: string }[] = [];
 
   querySnapshot.forEach((docSnap) => {
     const data = docSnap.data();
@@ -114,12 +122,10 @@ export async function getPDFLibrary(userId: string) {
       id: docSnap.id,
       name: data.name,
       url: data.url,
-      uploadedAt: data.uploadedAt || "",
-      private: data.private || false
+      uploadedAt: data.uploadedAt || ""
     });
   });
 
-  // Sort newest first
   return library.sort(
     (a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
   );
@@ -132,13 +138,43 @@ export async function deletePDF(userId: string, pdfId: string, pdfName: string) 
   console.log(`🗑 Deleted PDF: ${pdfName}`);
 }
 
-export async function publishPDF(userId: string, pdfId: string) {
-  const docRef = doc(db, "users", userId, "pdfLibrary", pdfId);
-  await updateDoc(docRef, { private: false });
+/* =========================================================================
+   🔹 READING PROGRESS FUNCTIONS
+   ========================================================================= */
+export async function saveReadingProgress(
+  userId: string,
+  pdfId: string,
+  progress: {
+    currentPage: number;
+    currentThoughtUnit: number;
+    highlightedWord: string;
+  }
+) {
+  try {
+    const docRef = doc(db, "users", userId, "readingProgress", pdfId);
+    await setDoc(docRef, {
+      ...progress,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+  } catch (error) {
+    console.error("❌ Error saving reading progress:", error);
+  }
+}
+
+export async function loadReadingProgress(userId: string, pdfId: string) {
+  try {
+    const docRef = doc(db, "users", userId, "readingProgress", pdfId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) return snap.data();
+    return null;
+  } catch (error) {
+    console.error("❌ Error loading reading progress:", error);
+    return null;
+  }
 }
 
 /* =========================================================================
-   🔹 WALLET CONNECTION (MetaMask Fix)
+   🔹 WALLET CONNECT FUNCTION
    ========================================================================= */
 export async function connectWallet(): Promise<string | null> {
   if (typeof window === "undefined" || !window.ethereum) {

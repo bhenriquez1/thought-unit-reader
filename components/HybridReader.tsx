@@ -48,7 +48,6 @@ export default function HybridReader({
   currentPage,
   setCurrentPage
 }: HybridReaderProps) {
-
   /** ===== Restore reading progress on mount ===== **/
   useEffect(() => {
     if (userId && pdfId) {
@@ -60,7 +59,7 @@ export default function HybridReader({
         }
       });
     }
-  }, [userId, pdfId]);
+  }, [userId, pdfId, setCurrentPage, setCurrentThoughtUnit, setHighlightedWord]);
 
   /** ===== Auto-save progress whenever relevant state changes ===== **/
   useEffect(() => {
