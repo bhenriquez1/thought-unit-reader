@@ -27,6 +27,22 @@ export default function ThoughtUnitReader() {
   const USER_ID = user?.uid || "guest-user";
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
 
+  /** ===== Button Loading States ===== **/
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [walletLoading, setWalletLoading] = useState(false);
+
+  /** ===== Debug Panel State ===== **/
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const [debugOpen, setDebugOpen] = useState(false);
+
+  /** ===== Debug Logger ===== **/
+  const addLog = (msg: string, type: "info" | "success" | "error" = "info") => {
+    const emoji = type === "success" ? "✅" : type === "error" ? "❌" : "🔹";
+    const log = `${emoji} ${new Date().toLocaleTimeString()} — ${msg}`;
+    console.log(log);
+    setDebugLogs((prev) => [log, ...prev]);
+  };
+
   /** ===== Reader State ===== **/
   const [thoughtUnits, setThoughtUnits] = useState<ThoughtUnit[]>([]);
   const [currentThoughtUnit, setCurrentThoughtUnit] = useState(1);
@@ -69,17 +85,22 @@ export default function ThoughtUnitReader() {
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [bookId, setBookId] = useState<string>("default-book");
 
-  /** ===== Debug ===== **/
   const selectionRangeRef = useRef<Range | null>(null);
-  const [firebaseStatus] = useState(firebaseConnected);
 
   /* =========================================================================
      🔹 AUTH LISTENER
   ========================================================================= */
   useEffect(() => {
-    listenForAuthChanges((u) => {
+    addLog("Setting up Firebase Auth listener...");
+    const unsubscribe = listenForAuthChanges((u) => {
+      if (u) {
+        addLog(`Firebase Auth state: Logged in as ${u.email}`, "success");
+      } else {
+        addLog("Firebase Auth state: Logged out", "error");
+      }
       setUser(u);
     });
+    return () => unsubscribe();
   }, []);
 
   /* =========================================================================
@@ -87,12 +108,13 @@ export default function ThoughtUnitReader() {
   ========================================================================= */
   useEffect(() => {
     if (firebaseConnected && user) {
+      addLog(`Fetching PDF library for ${USER_ID}...`);
       getPDFLibrary(USER_ID).then(setPdfLibrary);
     }
   }, [user, showLibrary]);
 
   /* =========================================================================
-     🔹 Handle File Upload
+     🔹 File Upload
   ========================================================================= */
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -112,6 +134,7 @@ export default function ThoughtUnitReader() {
     }
     setFileUrl(url);
     generateTOC(url).then(setTableOfContents);
+    addLog(`PDF uploaded: ${file.name}`, "success");
   };
 
   /* =========================================================================
@@ -121,6 +144,7 @@ export default function ThoughtUnitReader() {
     setFileUrl(url);
     setShowLibrary(false);
     generateTOC(url).then(setTableOfContents);
+    addLog(`Loaded PDF from library`, "success");
   };
 
   /* =========================================================================
@@ -130,10 +154,11 @@ export default function ThoughtUnitReader() {
     if (!confirm(`Delete ${name}?`)) return;
     await deletePDF(USER_ID, id, name);
     getPDFLibrary(USER_ID).then(setPdfLibrary);
+    addLog(`Deleted PDF: ${name}`, "error");
   };
 
   /* =========================================================================
-     🔹 Handle Text Selection
+     🔹 Text Selection
   ========================================================================= */
   const handleTextSelect = (text: string) => {
     if (!text) return;
@@ -143,6 +168,7 @@ export default function ThoughtUnitReader() {
     selectionRangeRef.current = range;
     setSelectedText(text);
     updatePopupPositionFromRange(range);
+    addLog(`Selected text: "${text}"`);
   };
 
   const updatePopupPositionFromRange = (range: Range) => {
@@ -151,6 +177,91 @@ export default function ThoughtUnitReader() {
       x: rect.left + rect.width / 2 + window.scrollX,
       y: rect.top + window.scrollY - 40
     });
+  };
+
+  /* =========================================================================
+     🔹 Google & Wallet Connection
+  ========================================================================= */
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    addLog("Google Sign-In button clicked");
+    const signedInUser = await signInWithGoogle();
+    if (signedInUser) {
+      addLog(`Google Sign-In successful: ${signedInUser.email}`, "success");
+      setUser(signedInUser);
+    } else {
+      addLog("Google Sign-In failed or cancelled", "error");
+      setDebugOpen(true); // Auto-open Debug Panel
+    }
+    setGoogleLoading(false);
+  };
+
+  const handleWalletConnect = async () => {
+    setWalletLoading(true);
+    addLog("Wallet Connect button clicked");
+    const address = await connectWallet();
+    if (address) {
+      addLog(`Wallet connected: ${address}`, "success");
+      setWalletAddress(address);
+    } else {
+      addLog("Wallet connection failed or cancelled", "error");
+      setDebugOpen(true); // Auto-open Debug Panel
+    }
+    setWalletLoading(false);
+  };
+
+  /* =========================================================================
+     🔹 Debug Panel Component
+  ========================================================================= */
+  const DebugPanel = () => {
+    const downloadLogs = () => {
+      const blob = new Blob([debugLogs.join("\n")], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ThoughtUnitReader_Logs_${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    return (
+      <div
+        className={`fixed bottom-4 right-4 bg-black bg-opacity-90 text-yellow-300 p-3 rounded-lg shadow-lg border border-yellow-500 transition-all duration-300 ${
+          debugOpen ? "w-96 h-64" : "w-32 h-10"
+        }`}
+      >
+        {debugOpen ? (
+          <>
+            <div className="flex justify-between mb-2">
+              <span className="font-bold">Debug Logs</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={downloadLogs}
+                  className="bg-yellow-500 text-black px-2 py-1 rounded text-xs hover:bg-yellow-400"
+                >
+                  ⬇ Download
+                </button>
+                <button onClick={() => setDebugOpen(false)}>✕</button>
+              </div>
+            </div>
+            <div className="overflow-y-auto text-xs h-[75%]">
+              {debugLogs.length > 0 ? (
+                debugLogs.map((log, idx) => <div key={idx}>{log}</div>)
+              ) : (
+                <p>No logs yet...</p>
+              )}
+            </div>
+          </>
+        ) : (
+          <button
+            onClick={() => setDebugOpen(true)}
+            className="w-full h-full flex items-center justify-center"
+          >
+            🐞 Logs
+          </button>
+        )}
+      </div>
+    );
   };
 
   /* =========================================================================
@@ -201,8 +312,6 @@ export default function ThoughtUnitReader() {
       return (
         <HybridReader
           fileUrl={fileUrl || ""}
-          pdfId={bookId} // ✅ Added
-          userId={USER_ID} // ✅ Added
           sampleText={sampleText}
           currentPage={currentPage}
           pdfPageCount={pdfPageCount}
@@ -227,8 +336,6 @@ export default function ThoughtUnitReader() {
           }}
           setReadingSpeed={setReadingSpeed}
           setCurrentPage={setCurrentPage}
-          setCurrentThoughtUnit={setCurrentThoughtUnit} // ✅ Added
-          setHighlightedWord={setHighlightedWord} // ✅ Added
           onTextSelect={handleTextSelect}
         />
       );
@@ -252,6 +359,9 @@ export default function ThoughtUnitReader() {
     );
   };
 
+  /* =========================================================================
+     🔹 Return JSX
+  ========================================================================= */
   return (
     <div className={`min-h-screen flex flex-col ${darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"}`}>
       {/* Auth Bar */}
@@ -265,19 +375,24 @@ export default function ThoughtUnitReader() {
               </button>
             </>
           ) : (
-            <button onClick={signInWithGoogle} className="bg-green-500 px-3 py-1 rounded">
-              Sign In with Google
+            <button
+              onClick={handleGoogleSignIn}
+              disabled={googleLoading}
+              className={`px-3 py-1 rounded ${googleLoading ? "bg-gray-500" : "bg-green-500"}`}
+            >
+              {googleLoading ? "Connecting..." : "Sign In with Google"}
             </button>
           )}
-          {/* Wallet Connect */}
           <button
-            onClick={async () => {
-              const address = await connectWallet();
-              if (address) setWalletAddress(address);
-            }}
-            className="bg-purple-500 px-3 py-1 rounded"
+            onClick={handleWalletConnect}
+            disabled={walletLoading}
+            className={`px-3 py-1 rounded ${walletLoading ? "bg-gray-500" : "bg-purple-500"}`}
           >
-            {walletAddress ? `Wallet: ${walletAddress}` : "Connect Wallet"}
+            {walletLoading
+              ? "Connecting..."
+              : walletAddress
+              ? `Wallet: ${walletAddress}`
+              : "Connect Wallet"}
           </button>
         </div>
       </div>
@@ -329,7 +444,7 @@ export default function ThoughtUnitReader() {
         <HighlightPopup
           position={popupPosition}
           onCreateNote={() => setViewMode("rightbrain")}
-          onAddFlashcard={() => console.log("Flashcard created")}
+          onAddFlashcard={() => addLog("Flashcard created")}
           onAttachLink={() => setShowLinkModal(true)}
           onClose={() => setPopupPosition(null)}
         />
@@ -345,6 +460,9 @@ export default function ThoughtUnitReader() {
           }}
         />
       )}
+
+      {/* Debug Panel */}
+      <DebugPanel />
     </div>
   );
 }

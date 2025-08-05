@@ -65,10 +65,13 @@ try {
    ========================================================================= */
 export async function signInWithGoogle(): Promise<User | null> {
   try {
+    console.log("🔹 Attempting Google sign-in...");
     const result = await signInWithPopup(auth, provider);
+    console.log("✅ Google sign-in success:", result.user);
     return result.user;
-  } catch (err) {
-    console.error("❌ Google Sign-In Error:", err);
+  } catch (err: any) {
+    console.error("❌ Google Sign-In Error:", err?.message || err);
+    alert(`Google Sign-In failed: ${err?.message || err}`);
     return null;
   }
 }
@@ -76,34 +79,15 @@ export async function signInWithGoogle(): Promise<User | null> {
 export async function signOutUser() {
   try {
     await signOut(auth);
+    console.log("✅ Signed out successfully");
   } catch (err) {
     console.error("❌ Sign-Out Error:", err);
+    alert(`Sign-Out failed: ${err}`);
   }
 }
 
 export function listenForAuthChanges(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, callback);
-}
-
-/* =========================================================================
-   🔹 WALLET CONNECTION (MetaMask) - Manual Trigger Only
-   ========================================================================= */
-export async function connectWallet(): Promise<string | null> {
-  if (typeof window !== "undefined" && (window as any).ethereum) {
-    try {
-      const accounts = await (window as any).ethereum.request({
-        method: "eth_requestAccounts"
-      });
-      console.log("✅ Wallet connected:", accounts[0]);
-      return accounts[0];
-    } catch (err) {
-      console.error("❌ Wallet connection failed:", err);
-      return null;
-    }
-  } else {
-    alert("MetaMask not detected. Please install it to connect.");
-    return null;
-  }
 }
 
 /* =========================================================================
@@ -176,6 +160,29 @@ export async function loadReadingProgress(userId: string, pdfId: string) {
   const snap = await getDoc(docRef);
   if (snap.exists()) return snap.data();
   return null;
+}
+
+/* =========================================================================
+   🔹 METAMASK WALLET CONNECTION
+   ========================================================================= */
+export async function connectWallet(): Promise<string | null> {
+  if (typeof window === "undefined" || !window.ethereum) {
+    alert("MetaMask not found. Please install it to connect your wallet.");
+    return null;
+  }
+
+  try {
+    console.log("🔹 Requesting MetaMask connection...");
+    const accounts = await window.ethereum.request({
+      method: "eth_requestAccounts"
+    });
+    console.log("✅ Connected to MetaMask:", accounts[0]);
+    return accounts[0];
+  } catch (err: any) {
+    console.error("❌ MetaMask connection failed:", err?.message || err);
+    alert(`MetaMask connection failed: ${err?.message || err}`);
+    return null;
+  }
 }
 
 export { app, auth, provider, db, storage, firebaseConnected };
