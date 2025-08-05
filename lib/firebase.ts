@@ -2,8 +2,8 @@ import { initializeApp, getApp, getApps, FirebaseApp } from "firebase/app";
 import {
   getAuth,
   GoogleAuthProvider,
-  signInWithPopup,
-  signOut,
+  // signInWithPopup,
+  // signOut,
   onAuthStateChanged,
   User
 } from "firebase/auth";
@@ -24,17 +24,7 @@ import {
   deleteObject
 } from "firebase/storage";
 
-// 🔹 Add MetaMask type support to fix build error
-declare global {
-  interface Window {
-    ethereum?: {
-      isMetaMask?: boolean;
-      request?: (args: { method: string; params?: unknown[] }) => Promise<any>;
-    };
-  }
-}
-
-// 🔹 Firebase Config
+// 🔹 Firebase Config (from .env)
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "",
@@ -45,7 +35,7 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || ""
 };
 
-// 🔹 Initialize Firebase
+// 🔹 Initialize Firebase (only once)
 let app: FirebaseApp;
 if (!getApps().length) {
   app = initializeApp(firebaseConfig);
@@ -70,8 +60,11 @@ try {
 }
 
 /* =========================================================================
-   🔹 AUTH FUNCTIONS
+   🔹 AUTH FUNCTIONS (Temporarily Disabled)
    ========================================================================= */
+
+// ❌ Disabled for now — uncomment when ready
+/*
 export async function signInWithGoogle(): Promise<User | null> {
   try {
     const result = await signInWithPopup(auth, provider);
@@ -89,10 +82,36 @@ export async function signOutUser() {
     console.error("❌ Sign-Out Error:", err);
   }
 }
+*/
 
+// ✅ Keep listener so system still works for logged-in users
 export function listenForAuthChanges(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, callback);
 }
+
+/* =========================================================================
+   🔹 WALLET CONNECTION (Temporarily Disabled)
+   ========================================================================= */
+
+// ❌ Disabled for now — uncomment when ready
+/*
+export async function connectWallet(): Promise<string | null> {
+  if (typeof window !== "undefined" && (window as any).ethereum) {
+    try {
+      const accounts = await (window as any).ethereum.request({
+        method: "eth_requestAccounts"
+      });
+      return accounts[0];
+    } catch (err) {
+      console.error("❌ Wallet connection error:", err);
+      return null;
+    }
+  } else {
+    alert("MetaMask is not installed.");
+    return null;
+  }
+}
+*/
 
 /* =========================================================================
    🔹 PDF LIBRARY FUNCTIONS
@@ -126,6 +145,7 @@ export async function getPDFLibrary(userId: string) {
     });
   });
 
+  // Sort newest first
   return library.sort(
     (a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
   );
@@ -150,45 +170,19 @@ export async function saveReadingProgress(
     highlightedWord: string;
   }
 ) {
-  try {
-    const docRef = doc(db, "users", userId, "readingProgress", pdfId);
-    await setDoc(docRef, {
-      ...progress,
-      updatedAt: new Date().toISOString(),
-    }, { merge: true });
-  } catch (error) {
-    console.error("❌ Error saving reading progress:", error);
-  }
+  const docRef = doc(db, "users", userId, "readingProgress", pdfId);
+  await setDoc(
+    docRef,
+    { ...progress, updatedAt: new Date().toISOString() },
+    { merge: true }
+  );
 }
 
 export async function loadReadingProgress(userId: string, pdfId: string) {
-  try {
-    const docRef = doc(db, "users", userId, "readingProgress", pdfId);
-    const snap = await getDoc(docRef);
-    if (snap.exists()) return snap.data();
-    return null;
-  } catch (error) {
-    console.error("❌ Error loading reading progress:", error);
-    return null;
-  }
-}
-
-/* =========================================================================
-   🔹 WALLET CONNECT FUNCTION
-   ========================================================================= */
-export async function connectWallet(): Promise<string | null> {
-  if (typeof window === "undefined" || !window.ethereum) {
-    alert("MetaMask not found. Please install it to connect your wallet.");
-    return null;
-  }
-
-  try {
-    const accounts = await window.ethereum.request?.({ method: "eth_requestAccounts" });
-    return accounts?.[0] || null;
-  } catch (error) {
-    console.error("❌ Wallet connection failed:", error);
-    return null;
-  }
+  const docRef = doc(db, "users", userId, "readingProgress", pdfId);
+  const snap = await getDoc(docRef);
+  if (snap.exists()) return snap.data();
+  return null;
 }
 
 export { app, auth, provider, db, storage, firebaseConnected };

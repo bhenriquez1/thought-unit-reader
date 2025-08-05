@@ -1,3 +1,4 @@
+// pages/index.tsx
 import dynamic from "next/dynamic";
 import React, { useState, useEffect, useRef, ChangeEvent } from "react";
 import { generateTOC, TOCEntry } from "@/lib/tocParser";
@@ -12,18 +13,14 @@ import {
   uploadPDF,
   getPDFLibrary,
   deletePDF,
-  signInWithGoogle,
-  signOutUser,
-  listenForAuthChanges,
-  connectWallet
-} from "@/lib/firebase";
+  listenForAuthChanges
+} from "@/lib/firebase"; // Removed signInWithGoogle, signOutUser, connectWallet
 
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
 
 export default function ThoughtUnitReader() {
   const [user, setUser] = useState<any>(null);
   const USER_ID = user?.uid || "guest-user";
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
 
   const [thoughtUnits, setThoughtUnits] = useState<ThoughtUnit[]>([]);
   const [currentThoughtUnit, setCurrentThoughtUnit] = useState(1);
@@ -36,11 +33,7 @@ export default function ThoughtUnitReader() {
   const [isReading, setIsReading] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [readingSpeed, setReadingSpeed] = useState(200);
-  const [stats, setStats] = useState<ReadingStats>({
-    wordsRead: 0,
-    timeElapsed: 0,
-    currentWPM: 0
-  });
+  const [stats, setStats] = useState<ReadingStats>({ wordsRead: 0, timeElapsed: 0, currentWPM: 0 });
   const [highlightedWord, setHighlightedWord] = useState("");
   const [fontSize, setFontSize] = useState(16);
   const [fontFamily, setFontFamily] = useState("sans-serif");
@@ -63,28 +56,20 @@ export default function ThoughtUnitReader() {
   const [bookId, setBookId] = useState<string>("default-book");
 
   const selectionRangeRef = useRef<Range | null>(null);
+  const [firebaseStatus] = useState(firebaseConnected);
 
-  /* =========================================================================
-     🔹 AUTH LISTENER
-  ========================================================================= */
   useEffect(() => {
     listenForAuthChanges((u) => {
       setUser(u);
     });
   }, []);
 
-  /* =========================================================================
-     🔹 Load PDF Library
-  ========================================================================= */
   useEffect(() => {
     if (firebaseConnected && user) {
       getPDFLibrary(USER_ID).then(setPdfLibrary);
     }
   }, [user, showLibrary]);
 
-  /* =========================================================================
-     🔹 Handle File Upload
-  ========================================================================= */
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || file.type !== "application/pdf") {
@@ -103,32 +88,20 @@ export default function ThoughtUnitReader() {
     }
     setFileUrl(url);
     generateTOC(url).then(setTableOfContents);
-
-    const uniqueId = `${file.name}-${file.size}`;
-    setBookId(uniqueId);
   };
 
-  /* =========================================================================
-     🔹 Load PDF from Library
-  ========================================================================= */
   const handleLoadPDF = (url: string) => {
     setFileUrl(url);
     setShowLibrary(false);
     generateTOC(url).then(setTableOfContents);
   };
 
-  /* =========================================================================
-     🔹 Delete PDF
-  ========================================================================= */
   const handleDeletePDF = async (id: string, name: string) => {
     if (!confirm(`Delete ${name}?`)) return;
     await deletePDF(USER_ID, id, name);
     getPDFLibrary(USER_ID).then(setPdfLibrary);
   };
 
-  /* =========================================================================
-     🔹 Handle Text Selection
-  ========================================================================= */
   const handleTextSelect = (text: string) => {
     if (!text) return;
     const selection = window.getSelection();
@@ -147,9 +120,6 @@ export default function ThoughtUnitReader() {
     });
   };
 
-  /* =========================================================================
-     🔹 Render Main Content
-  ========================================================================= */
   const renderContent = () => {
     if (viewMode === "rightbrain") {
       return (
@@ -195,8 +165,6 @@ export default function ThoughtUnitReader() {
       return (
         <HybridReader
           fileUrl={fileUrl || ""}
-          pdfId={bookId} // ✅ now passing pdfId
-          userId={USER_ID} // ✅ now passing userId
           sampleText={sampleText}
           currentPage={currentPage}
           pdfPageCount={pdfPageCount}
@@ -204,10 +172,8 @@ export default function ThoughtUnitReader() {
           isReading={isReading}
           isPaused={isPaused}
           currentThoughtUnit={currentThoughtUnit}
-          setCurrentThoughtUnit={setCurrentThoughtUnit} // ✅ required
           thoughtUnits={thoughtUnits}
           highlightedWord={highlightedWord}
-          setHighlightedWord={setHighlightedWord} // ✅ required
           stats={stats}
           fontSize={fontSize}
           fontFamily={fontFamily}
@@ -248,34 +214,9 @@ export default function ThoughtUnitReader() {
 
   return (
     <div className={`min-h-screen flex flex-col ${darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"}`}>
-      {/* Auth Bar */}
-      <div className="p-2 flex justify-between items-center bg-gray-800 text-white">
-        <div className="flex gap-3 items-center">
-          {user ? (
-            <>
-              <span>👋 {user.displayName}</span>
-              <button onClick={signOutUser} className="bg-red-500 px-3 py-1 rounded">
-                Sign Out
-              </button>
-            </>
-          ) : (
-            <button onClick={signInWithGoogle} className="bg-green-500 px-3 py-1 rounded">
-              Sign In with Google
-            </button>
-          )}
-          <button
-            onClick={async () => {
-              const address = await connectWallet();
-              if (address) setWalletAddress(address);
-            }}
-            className="bg-purple-500 px-3 py-1 rounded"
-          >
-            {walletAddress ? `Wallet: ${walletAddress}` : "Connect Wallet"}
-          </button>
-        </div>
-      </div>
+      {/* Auth Bar Disabled for Now */}
+      {/* (Sign-in & Wallet removed temporarily) */}
 
-      {/* Floating Library Button */}
       {user && (
         <button
           onClick={() => setShowLibrary(true)}
@@ -285,7 +226,6 @@ export default function ThoughtUnitReader() {
         </button>
       )}
 
-      {/* Slide-in Library Drawer */}
       {showLibrary && (
         <div className="fixed top-0 right-0 w-80 h-full bg-gray-800 text-white shadow-lg z-50 p-4 flex flex-col">
           <div className="flex justify-between items-center mb-4">
@@ -311,13 +251,11 @@ export default function ThoughtUnitReader() {
         </div>
       )}
 
-      {/* Main Reader */}
       <div className="flex flex-1 overflow-hidden px-4">
         {showTOC && fileUrl && <TOCSidebar toc={tableOfContents} currentPage={currentPage} onJumpToPage={setCurrentPage} />}
         <div className="flex-1 bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
       </div>
 
-      {/* Highlight Popup */}
       {popupPosition && (
         <HighlightPopup
           position={popupPosition}
