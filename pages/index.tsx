@@ -16,7 +16,7 @@ import {
   signInWithGoogle,
   signOutUser,
   listenForAuthChanges,
-  connectWallet // ✅ added wallet connect
+  connectWallet
 } from "@/lib/firebase";
 
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
@@ -25,7 +25,7 @@ export default function ThoughtUnitReader() {
   /** ===== Auth State ===== **/
   const [user, setUser] = useState<any>(null);
   const USER_ID = user?.uid || "guest-user";
-  const [walletAddress, setWalletAddress] = useState<string | null>(null); // ✅ track wallet address
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
 
   /** ===== Reader State ===== **/
   const [thoughtUnits, setThoughtUnits] = useState<ThoughtUnit[]>([]);
@@ -201,6 +201,8 @@ export default function ThoughtUnitReader() {
       return (
         <HybridReader
           fileUrl={fileUrl || ""}
+          pdfId={bookId} // ✅ Added
+          userId={USER_ID} // ✅ Added
           sampleText={sampleText}
           currentPage={currentPage}
           pdfPageCount={pdfPageCount}
@@ -225,6 +227,8 @@ export default function ThoughtUnitReader() {
           }}
           setReadingSpeed={setReadingSpeed}
           setCurrentPage={setCurrentPage}
+          setCurrentThoughtUnit={setCurrentThoughtUnit} // ✅ Added
+          setHighlightedWord={setHighlightedWord} // ✅ Added
           onTextSelect={handleTextSelect}
         />
       );
@@ -265,7 +269,6 @@ export default function ThoughtUnitReader() {
               Sign In with Google
             </button>
           )}
-
           {/* Wallet Connect */}
           <button
             onClick={async () => {
