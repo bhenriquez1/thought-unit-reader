@@ -1,4 +1,3 @@
-// pages/index.tsx
 import dynamic from "next/dynamic";
 import React, { useState, useEffect, useRef, ChangeEvent } from "react";
 import { generateTOC, TOCEntry } from "@/lib/tocParser";
@@ -22,26 +21,10 @@ import {
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
 
 export default function ThoughtUnitReader() {
-  /** ===== Auth State ===== **/
+  /** ===== Auth & Wallet State ===== **/
   const [user, setUser] = useState<any>(null);
   const USER_ID = user?.uid || "guest-user";
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
-
-  /** ===== Button Loading States ===== **/
-  const [googleLoading, setGoogleLoading] = useState(false);
-  const [walletLoading, setWalletLoading] = useState(false);
-
-  /** ===== Debug Panel State ===== **/
-  const [debugLogs, setDebugLogs] = useState<string[]>([]);
-  const [debugOpen, setDebugOpen] = useState(false);
-
-  /** ===== Debug Logger ===== **/
-  const addLog = (msg: string, type: "info" | "success" | "error" = "info") => {
-    const emoji = type === "success" ? "✅" : type === "error" ? "❌" : "🔹";
-    const log = `${emoji} ${new Date().toLocaleTimeString()} — ${msg}`;
-    console.log(log);
-    setDebugLogs((prev) => [log, ...prev]);
-  };
 
   /** ===== Reader State ===== **/
   const [thoughtUnits, setThoughtUnits] = useState<ThoughtUnit[]>([]);
@@ -55,11 +38,7 @@ export default function ThoughtUnitReader() {
   const [isReading, setIsReading] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [readingSpeed, setReadingSpeed] = useState(200);
-  const [stats, setStats] = useState<ReadingStats>({
-    wordsRead: 0,
-    timeElapsed: 0,
-    currentWPM: 0
-  });
+  const [stats, setStats] = useState<ReadingStats>({ wordsRead: 0, timeElapsed: 0, currentWPM: 0 });
   const [highlightedWord, setHighlightedWord] = useState("");
   const [fontSize, setFontSize] = useState(16);
   const [fontFamily, setFontFamily] = useState("sans-serif");
@@ -75,47 +54,42 @@ export default function ThoughtUnitReader() {
   /** ===== Library State ===== **/
   const [showLibrary, setShowLibrary] = useState(false);
   const [pdfLibrary, setPdfLibrary] = useState<
-    { id: string; name: string; url: string; uploadedAt: any }[]
+    { id: string; name: string; url: string; uploadedAt: any; private?: boolean }[]
   >([]);
+  const [privateMode, setPrivateMode] = useState(true); // ✅ New state for uploads
 
-  /** ===== Popup & Note State ===== **/
+  /** ===== Popup & Notes State ===== **/
   const [selectedText, setSelectedText] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [popupPosition, setPopupPosition] = useState<{ x: number; y: number } | null>(null);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [bookId, setBookId] = useState<string>("default-book");
 
+  /** ===== Debug ===== **/
   const selectionRangeRef = useRef<Range | null>(null);
+  const [firebaseStatus] = useState(firebaseConnected);
 
-  /* =========================================================================
-     🔹 AUTH LISTENER
-  ========================================================================= */
+  /** =========================================================================
+   * 🔹 Auth Listener
+   ========================================================================= */
   useEffect(() => {
-    addLog("Setting up Firebase Auth listener...");
-    const unsubscribe = listenForAuthChanges((u) => {
-      if (u) {
-        addLog(`Firebase Auth state: Logged in as ${u.email}`, "success");
-      } else {
-        addLog("Firebase Auth state: Logged out", "error");
-      }
+    listenForAuthChanges((u) => {
       setUser(u);
     });
-    return () => unsubscribe();
   }, []);
 
-  /* =========================================================================
-     🔹 Load PDF Library
-  ========================================================================= */
+  /** =========================================================================
+   * 🔹 Load PDF Library
+   ========================================================================= */
   useEffect(() => {
     if (firebaseConnected && user) {
-      addLog(`Fetching PDF library for ${USER_ID}...`);
       getPDFLibrary(USER_ID).then(setPdfLibrary);
     }
   }, [user, showLibrary]);
 
-  /* =========================================================================
-     🔹 File Upload
-  ========================================================================= */
+  /** =========================================================================
+   * 🔹 File Upload
+   ========================================================================= */
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || file.type !== "application/pdf") {
@@ -127,39 +101,36 @@ export default function ThoughtUnitReader() {
 
     let url: string;
     if (firebaseConnected && user) {
-      url = await uploadPDF(file, USER_ID);
+      url = await uploadPDF(file, USER_ID, privateMode); // ✅ Pass private mode
       getPDFLibrary(USER_ID).then(setPdfLibrary);
     } else {
       url = URL.createObjectURL(file);
     }
     setFileUrl(url);
     generateTOC(url).then(setTableOfContents);
-    addLog(`PDF uploaded: ${file.name}`, "success");
   };
 
-  /* =========================================================================
-     🔹 Load PDF from Library
-  ========================================================================= */
+  /** =========================================================================
+   * 🔹 Load PDF from Library
+   ========================================================================= */
   const handleLoadPDF = (url: string) => {
     setFileUrl(url);
     setShowLibrary(false);
     generateTOC(url).then(setTableOfContents);
-    addLog(`Loaded PDF from library`, "success");
   };
 
-  /* =========================================================================
-     🔹 Delete PDF
-  ========================================================================= */
+  /** =========================================================================
+   * 🔹 Delete PDF
+   ========================================================================= */
   const handleDeletePDF = async (id: string, name: string) => {
     if (!confirm(`Delete ${name}?`)) return;
     await deletePDF(USER_ID, id, name);
     getPDFLibrary(USER_ID).then(setPdfLibrary);
-    addLog(`Deleted PDF: ${name}`, "error");
   };
 
-  /* =========================================================================
-     🔹 Text Selection
-  ========================================================================= */
+  /** =========================================================================
+   * 🔹 Handle Text Selection
+   ========================================================================= */
   const handleTextSelect = (text: string) => {
     if (!text) return;
     const selection = window.getSelection();
@@ -168,7 +139,6 @@ export default function ThoughtUnitReader() {
     selectionRangeRef.current = range;
     setSelectedText(text);
     updatePopupPositionFromRange(range);
-    addLog(`Selected text: "${text}"`);
   };
 
   const updatePopupPositionFromRange = (range: Range) => {
@@ -179,94 +149,9 @@ export default function ThoughtUnitReader() {
     });
   };
 
-  /* =========================================================================
-     🔹 Google & Wallet Connection
-  ========================================================================= */
-  const handleGoogleSignIn = async () => {
-    setGoogleLoading(true);
-    addLog("Google Sign-In button clicked");
-    const signedInUser = await signInWithGoogle();
-    if (signedInUser) {
-      addLog(`Google Sign-In successful: ${signedInUser.email}`, "success");
-      setUser(signedInUser);
-    } else {
-      addLog("Google Sign-In failed or cancelled", "error");
-      setDebugOpen(true); // Auto-open Debug Panel
-    }
-    setGoogleLoading(false);
-  };
-
-  const handleWalletConnect = async () => {
-    setWalletLoading(true);
-    addLog("Wallet Connect button clicked");
-    const address = await connectWallet();
-    if (address) {
-      addLog(`Wallet connected: ${address}`, "success");
-      setWalletAddress(address);
-    } else {
-      addLog("Wallet connection failed or cancelled", "error");
-      setDebugOpen(true); // Auto-open Debug Panel
-    }
-    setWalletLoading(false);
-  };
-
-  /* =========================================================================
-     🔹 Debug Panel Component
-  ========================================================================= */
-  const DebugPanel = () => {
-    const downloadLogs = () => {
-      const blob = new Blob([debugLogs.join("\n")], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `ThoughtUnitReader_Logs_${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
-      a.click();
-      URL.revokeObjectURL(url);
-    };
-
-    return (
-      <div
-        className={`fixed bottom-4 right-4 bg-black bg-opacity-90 text-yellow-300 p-3 rounded-lg shadow-lg border border-yellow-500 transition-all duration-300 ${
-          debugOpen ? "w-96 h-64" : "w-32 h-10"
-        }`}
-      >
-        {debugOpen ? (
-          <>
-            <div className="flex justify-between mb-2">
-              <span className="font-bold">Debug Logs</span>
-              <div className="flex gap-2">
-                <button
-                  onClick={downloadLogs}
-                  className="bg-yellow-500 text-black px-2 py-1 rounded text-xs hover:bg-yellow-400"
-                >
-                  ⬇ Download
-                </button>
-                <button onClick={() => setDebugOpen(false)}>✕</button>
-              </div>
-            </div>
-            <div className="overflow-y-auto text-xs h-[75%]">
-              {debugLogs.length > 0 ? (
-                debugLogs.map((log, idx) => <div key={idx}>{log}</div>)
-              ) : (
-                <p>No logs yet...</p>
-              )}
-            </div>
-          </>
-        ) : (
-          <button
-            onClick={() => setDebugOpen(true)}
-            className="w-full h-full flex items-center justify-center"
-          >
-            🐞 Logs
-          </button>
-        )}
-      </div>
-    );
-  };
-
-  /* =========================================================================
-     🔹 Render Main Content
-  ========================================================================= */
+  /** =========================================================================
+   * 🔹 View Rendering
+   ========================================================================= */
   const renderContent = () => {
     if (viewMode === "rightbrain") {
       return (
@@ -359,9 +244,9 @@ export default function ThoughtUnitReader() {
     );
   };
 
-  /* =========================================================================
-     🔹 Return JSX
-  ========================================================================= */
+  /** =========================================================================
+   * 🔹 Main Render
+   ========================================================================= */
   return (
     <div className={`min-h-screen flex flex-col ${darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"}`}>
       {/* Auth Bar */}
@@ -370,66 +255,66 @@ export default function ThoughtUnitReader() {
           {user ? (
             <>
               <span>👋 {user.displayName}</span>
-              <button onClick={signOutUser} className="bg-red-500 px-3 py-1 rounded">
-                Sign Out
-              </button>
+              <button onClick={signOutUser} className="bg-red-500 px-3 py-1 rounded">Sign Out</button>
             </>
           ) : (
-            <button
-              onClick={handleGoogleSignIn}
-              disabled={googleLoading}
-              className={`px-3 py-1 rounded ${googleLoading ? "bg-gray-500" : "bg-green-500"}`}
-            >
-              {googleLoading ? "Connecting..." : "Sign In with Google"}
-            </button>
+            <button onClick={signInWithGoogle} className="bg-green-500 px-3 py-1 rounded">Sign In with Google</button>
           )}
+
+          {/* Wallet Connect */}
           <button
-            onClick={handleWalletConnect}
-            disabled={walletLoading}
-            className={`px-3 py-1 rounded ${walletLoading ? "bg-gray-500" : "bg-purple-500"}`}
+            onClick={async () => {
+              const address = await connectWallet();
+              if (address) setWalletAddress(address);
+            }}
+            className="bg-purple-500 px-3 py-1 rounded"
           >
-            {walletLoading
-              ? "Connecting..."
-              : walletAddress
-              ? `Wallet: ${walletAddress}`
-              : "Connect Wallet"}
+            {walletAddress ? `Wallet: ${walletAddress}` : "Connect Wallet"}
           </button>
         </div>
       </div>
 
-      {/* Floating Library Button */}
-      {user && (
-        <button
-          onClick={() => setShowLibrary(true)}
-          className="fixed top-4 right-4 bg-yellow-500 text-black px-3 py-1 rounded shadow z-50"
-        >
-          📚 Library
-        </button>
-      )}
-
-      {/* Slide-in Library Drawer */}
+      {/* Library Drawer */}
       {showLibrary && (
         <div className="fixed top-0 right-0 w-80 h-full bg-gray-800 text-white shadow-lg z-50 p-4 flex flex-col">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-bold">My Library</h2>
             <button onClick={() => setShowLibrary(false)}>✖</button>
           </div>
-          <div className="flex-1 overflow-y-auto">
+
+          {/* Private Mode Toggle */}
+          <div className="mb-3 flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={privateMode}
+              onChange={(e) => setPrivateMode(e.target.checked)}
+            />
+            <label className="text-sm">Private Mode (Only I can see this upload)</label>
+          </div>
+
+          {/* Upload Button */}
+          <label className="mt-2 block bg-yellow-500 text-black text-center py-2 rounded cursor-pointer">
+            ➕ Upload PDF
+            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
+          </label>
+
+          {/* PDF List */}
+          <div className="flex-1 overflow-y-auto mt-4">
             {pdfLibrary.length === 0 ? (
               <p className="text-sm text-gray-400">No PDFs uploaded yet.</p>
             ) : (
               pdfLibrary.map((pdf) => (
                 <div key={pdf.id} className="flex justify-between items-center mb-2 p-2 hover:bg-gray-700 rounded">
-                  <span onClick={() => handleLoadPDF(pdf.url)} className="cursor-pointer">{pdf.name}</span>
-                  <button onClick={() => handleDeletePDF(pdf.id, pdf.name)} className="text-red-400 hover:text-red-200">🗑</button>
+                  <span className={`${pdf.private ? "text-gray-400 italic" : ""}`}>
+                    {pdf.name} {pdf.private && "(Private)"}
+                  </span>
+                  {!pdf.private && (
+                    <button onClick={() => handleLoadPDF(pdf.url)} className="text-blue-400 hover:text-blue-200">Open</button>
+                  )}
                 </div>
               ))
             )}
           </div>
-          <label className="mt-4 block bg-yellow-500 text-black text-center py-2 rounded cursor-pointer">
-            ➕ Upload PDF
-            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-          </label>
         </div>
       )}
 
@@ -444,12 +329,13 @@ export default function ThoughtUnitReader() {
         <HighlightPopup
           position={popupPosition}
           onCreateNote={() => setViewMode("rightbrain")}
-          onAddFlashcard={() => addLog("Flashcard created")}
+          onAddFlashcard={() => console.log("Flashcard created")}
           onAttachLink={() => setShowLinkModal(true)}
           onClose={() => setPopupPosition(null)}
         />
       )}
 
+      {/* Link Modal */}
       {showLinkModal && (
         <LinkVideoModal
           onClose={() => setShowLinkModal(false)}
@@ -460,9 +346,6 @@ export default function ThoughtUnitReader() {
           }}
         />
       )}
-
-      {/* Debug Panel */}
-      <DebugPanel />
     </div>
   );
 }

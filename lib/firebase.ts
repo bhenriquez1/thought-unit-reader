@@ -1,4 +1,3 @@
-// lib/firebase.ts
 import { initializeApp, getApp, getApps, FirebaseApp } from "firebase/app";
 import {
   getAuth,
@@ -15,7 +14,8 @@ import {
   getDoc,
   collection,
   getDocs,
-  deleteDoc
+  deleteDoc,
+  updateDoc
 } from "firebase/firestore";
 import {
   getStorage,
@@ -65,13 +65,10 @@ try {
    ========================================================================= */
 export async function signInWithGoogle(): Promise<User | null> {
   try {
-    console.log("🔹 Attempting Google sign-in...");
     const result = await signInWithPopup(auth, provider);
-    console.log("✅ Google sign-in success:", result.user);
     return result.user;
-  } catch (err: any) {
-    console.error("❌ Google Sign-In Error:", err?.message || err);
-    alert(`Google Sign-In failed: ${err?.message || err}`);
+  } catch (err) {
+    console.error("❌ Google Sign-In Error:", err);
     return null;
   }
 }
@@ -79,10 +76,8 @@ export async function signInWithGoogle(): Promise<User | null> {
 export async function signOutUser() {
   try {
     await signOut(auth);
-    console.log("✅ Signed out successfully");
   } catch (err) {
     console.error("❌ Sign-Out Error:", err);
-    alert(`Sign-Out failed: ${err}`);
   }
 }
 
@@ -93,7 +88,7 @@ export function listenForAuthChanges(callback: (user: User | null) => void) {
 /* =========================================================================
    🔹 PDF LIBRARY FUNCTIONS
    ========================================================================= */
-export async function uploadPDF(file: File, userId: string) {
+export async function uploadPDF(file: File, userId: string, privateMode: boolean = false) {
   const fileRef = ref(storage, `pdfs/${userId}/${file.name}`);
   await uploadBytes(fileRef, file);
   const downloadURL = await getDownloadURL(fileRef);
@@ -102,7 +97,8 @@ export async function uploadPDF(file: File, userId: string) {
   await setDoc(libraryRef, {
     name: file.name,
     url: downloadURL,
-    uploadedAt: new Date().toISOString()
+    uploadedAt: new Date().toISOString(),
+    private: privateMode // ✅ NEW: Private flag
   });
 
   return downloadURL;
@@ -110,7 +106,7 @@ export async function uploadPDF(file: File, userId: string) {
 
 export async function getPDFLibrary(userId: string) {
   const querySnapshot = await getDocs(collection(db, "users", userId, "pdfLibrary"));
-  const library: { id: string; name: string; url: string; uploadedAt: string }[] = [];
+  const library: { id: string; name: string; url: string; uploadedAt: string; private?: boolean }[] = [];
 
   querySnapshot.forEach((docSnap) => {
     const data = docSnap.data();
@@ -118,7 +114,8 @@ export async function getPDFLibrary(userId: string) {
       id: docSnap.id,
       name: data.name,
       url: data.url,
-      uploadedAt: data.uploadedAt || ""
+      uploadedAt: data.uploadedAt || "",
+      private: data.private || false
     });
   });
 
@@ -135,35 +132,13 @@ export async function deletePDF(userId: string, pdfId: string, pdfName: string) 
   console.log(`🗑 Deleted PDF: ${pdfName}`);
 }
 
-/* =========================================================================
-   🔹 READING PROGRESS FUNCTIONS
-   ========================================================================= */
-export async function saveReadingProgress(
-  userId: string,
-  pdfId: string,
-  progress: {
-    currentPage: number;
-    currentThoughtUnit: number;
-    highlightedWord: string;
-  }
-) {
-  const docRef = doc(db, "users", userId, "readingProgress", pdfId);
-  await setDoc(
-    docRef,
-    { ...progress, updatedAt: new Date().toISOString() },
-    { merge: true }
-  );
-}
-
-export async function loadReadingProgress(userId: string, pdfId: string) {
-  const docRef = doc(db, "users", userId, "readingProgress", pdfId);
-  const snap = await getDoc(docRef);
-  if (snap.exists()) return snap.data();
-  return null;
+export async function publishPDF(userId: string, pdfId: string) {
+  const docRef = doc(db, "users", userId, "pdfLibrary", pdfId);
+  await updateDoc(docRef, { private: false });
 }
 
 /* =========================================================================
-   🔹 METAMASK WALLET CONNECTION
+   🔹 WALLET CONNECTION (MetaMask Fix)
    ========================================================================= */
 export async function connectWallet(): Promise<string | null> {
   if (typeof window === "undefined" || !window.ethereum) {
@@ -172,15 +147,10 @@ export async function connectWallet(): Promise<string | null> {
   }
 
   try {
-    console.log("🔹 Requesting MetaMask connection...");
-    const accounts = await window.ethereum.request({
-      method: "eth_requestAccounts"
-    });
-    console.log("✅ Connected to MetaMask:", accounts[0]);
-    return accounts[0];
-  } catch (err: any) {
-    console.error("❌ MetaMask connection failed:", err?.message || err);
-    alert(`MetaMask connection failed: ${err?.message || err}`);
+    const accounts = await window.ethereum.request?.({ method: "eth_requestAccounts" });
+    return accounts?.[0] || null;
+  } catch (error) {
+    console.error("❌ Wallet connection failed:", error);
     return null;
   }
 }
