@@ -14,7 +14,7 @@ import {
   getPDFLibrary,
   deletePDF,
   listenForAuthChanges
-} from "@/lib/firebase"; // Removed signInWithGoogle, signOutUser, connectWallet
+} from "@/lib/firebase";
 
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
 
@@ -214,8 +214,10 @@ export default function ThoughtUnitReader() {
 
   return (
     <div className={`min-h-screen flex flex-col ${darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"}`}>
-      {/* Auth Bar Disabled for Now */}
-      {/* (Sign-in & Wallet removed temporarily) */}
+      {/* Auth Bar Placeholder - Auth Disabled Mode */}
+      <div className="p-2 flex justify-center items-center bg-gray-700 text-white text-sm">
+        🔒 Auth Disabled Mode — Sign‑In and Wallet connection are temporarily turned off.
+      </div>
 
       {user && (
         <button
