@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { ThoughtUnit, ReadingStats } from "./ProgressiveView.types";
-import { useAIReview } from "@/hooks/useAIReview";
+import { useStartReview } from "@/hooks/useStartReview"; // ✅ NEW HOOK
 import RightBrainToolbar from "@/components/RightBrainToolbar";
 import RightBrainNoteEditor from "@/components/RightBrainNoteEditor";
 
@@ -50,9 +50,10 @@ export default function ProgressiveView({
   const [showNoteEditor, setShowNoteEditor] = useState(false);
   const recognitionRef = useRef<any>(null);
 
-  const { isReviewMode, currentCard, startReview, gradeCard } = useAIReview(userId);
+  // ✅ Use unified hook for consistent startReview naming
+  const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
-  // Dictation Setup
+  /** ===== Always-on Dictation Setup ===== **/
   useEffect(() => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -93,20 +94,12 @@ export default function ProgressiveView({
     }
   };
 
-  // Load saved progress
+  /** ===== Load saved reading state ===== **/
   useEffect(() => {
     async function loadProgress() {
       if (!userId || !bookId) return;
       try {
-        const ref = doc(
-          db,
-          "users",
-          userId,
-          "pdfLibrary",
-          bookId,
-          "progress",
-          "readingState"
-        );
+        const ref = doc(db, "users", userId, "pdfLibrary", bookId, "progress", "readingState");
         const snap = await getDoc(ref);
         if (snap.exists()) {
           const data = snap.data();
@@ -122,20 +115,12 @@ export default function ProgressiveView({
     loadProgress();
   }, [userId, bookId]);
 
-  // Save progress
+  /** ===== Save reading state ===== **/
   useEffect(() => {
     if (!loaded || !userId || !bookId) return;
     async function saveProgress() {
       try {
-        const ref = doc(
-          db,
-          "users",
-          userId,
-          "pdfLibrary",
-          bookId,
-          "progress",
-          "readingState"
-        );
+        const ref = doc(db, "users", userId, "pdfLibrary", bookId, "progress", "readingState");
         await setDoc(ref, {
           currentThoughtUnit,
           readingSpeed,
@@ -150,7 +135,7 @@ export default function ProgressiveView({
     saveProgress();
   }, [currentThoughtUnit, readingSpeed, highlightedWord, currentPage, loaded]);
 
-  // Handle text selection
+  /** ===== Handle selection ===== **/
   const getSelectionText = () => window.getSelection()?.toString().trim() || "";
   const handleMouseUp = () => {
     const selection = getSelectionText();
@@ -160,6 +145,7 @@ export default function ProgressiveView({
     }
   };
 
+  /** ===== No thought units ===== **/
   if (!thoughtUnits || thoughtUnits.length === 0) {
     return (
       <div className="p-4 flex items-center justify-center text-gray-400 italic"
@@ -169,6 +155,7 @@ export default function ProgressiveView({
     );
   }
 
+  /** ===== Out of range ===== **/
   const unit = thoughtUnits[currentThoughtUnit - 1];
   if (!unit) {
     return (
@@ -179,6 +166,7 @@ export default function ProgressiveView({
     );
   }
 
+  /** ===== Review Mode ===== **/
   if (isReviewMode) {
     return (
       <div className="p-4 bg-gray-900 text-white rounded-lg">
@@ -198,6 +186,7 @@ export default function ProgressiveView({
     );
   }
 
+  /** ===== Main UI ===== **/
   return (
     <>
       <div
@@ -205,6 +194,7 @@ export default function ProgressiveView({
         style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
         onMouseUp={handleMouseUp}
       >
+        {/* Render words */}
         {unit.text.split(" ").map((word, idx) => (
           <span
             key={idx}
@@ -219,6 +209,7 @@ export default function ProgressiveView({
           </span>
         ))}
 
+        {/* Dictation control */}
         <div className="mt-4">
           <button
             onClick={toggleRecording}
@@ -235,16 +226,18 @@ export default function ProgressiveView({
           )}
         </div>
 
+        {/* Shared Toolbar */}
         <RightBrainToolbar
           userId={userId}
           bookId={bookId}
           currentPage={currentPage}
           selectionText={selectionText || dictationText}
           onGenerateNote={() => setShowNoteEditor(true)}
-          startReview={startReview}
+          startReview={startReview} // ✅ from new hook
         />
       </div>
 
+      {/* Note Editor modal */}
       {showNoteEditor && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-6">
           <div className="bg-gray-900 p-4 rounded-lg w-full max-w-2xl">

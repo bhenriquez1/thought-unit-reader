@@ -19,6 +19,9 @@ import {
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
 
 export default function ThoughtUnitReader() {
+  /* =========================================================================
+     🔹 State
+  ========================================================================= */
   const [user, setUser] = useState<any>(null);
   const USER_ID = user?.uid || "guest-user";
 
@@ -62,18 +65,25 @@ export default function ThoughtUnitReader() {
 
   const selectionRangeRef = useRef<Range | null>(null);
 
+  /* =========================================================================
+     🔹 Auth Listener
+  ========================================================================= */
   useEffect(() => {
-    listenForAuthChanges((u) => {
-      setUser(u);
-    });
+    listenForAuthChanges((u) => setUser(u));
   }, []);
 
+  /* =========================================================================
+     🔹 Load PDF Library
+  ========================================================================= */
   useEffect(() => {
     if (firebaseConnected && user) {
       getPDFLibrary(USER_ID).then(setPdfLibrary);
     }
   }, [user, showLibrary]);
 
+  /* =========================================================================
+     🔹 Upload PDF
+  ========================================================================= */
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || file.type !== "application/pdf") {
@@ -94,18 +104,27 @@ export default function ThoughtUnitReader() {
     generateTOC(url).then(setTableOfContents);
   };
 
+  /* =========================================================================
+     🔹 Load PDF from Library
+  ========================================================================= */
   const handleLoadPDF = (url: string) => {
     setFileUrl(url);
     setShowLibrary(false);
     generateTOC(url).then(setTableOfContents);
   };
 
+  /* =========================================================================
+     🔹 Delete PDF
+  ========================================================================= */
   const handleDeletePDF = async (id: string, name: string) => {
     if (!confirm(`Delete ${name}?`)) return;
     await deletePDF(USER_ID, id, name);
     getPDFLibrary(USER_ID).then(setPdfLibrary);
   };
 
+  /* =========================================================================
+     🔹 Handle Text Selection
+  ========================================================================= */
   const handleTextSelect = (text: string) => {
     if (!text) return;
     const selection = window.getSelection();
@@ -124,6 +143,9 @@ export default function ThoughtUnitReader() {
     });
   };
 
+  /* =========================================================================
+     🔹 Render Reader Content
+  ========================================================================= */
   const renderContent = () => {
     if (viewMode === "rightbrain") {
       return (
@@ -181,13 +203,6 @@ export default function ThoughtUnitReader() {
           lineSpacing={lineSpacing}
           clickSwitchesTo={clickSwitchesTo}
           onWordClick={(w) => setHighlightedWord(w)}
-          onStartReading={() => setIsReading(true)}
-          onPauseReading={() => setIsPaused(true)}
-          onResetReading={() => {
-            setIsReading(false);
-            setIsPaused(false);
-            setCurrentThoughtUnit(1);
-          }}
           setReadingSpeed={setReadingSpeed}
           setCurrentPage={setCurrentPage}
           onTextSelect={handleTextSelect}
@@ -213,6 +228,9 @@ export default function ThoughtUnitReader() {
     );
   };
 
+  /* =========================================================================
+     🔹 Main Layout
+  ========================================================================= */
   return (
     <div className={`min-h-screen flex flex-col ${darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"}`}>
       {/* Gradient Header */}

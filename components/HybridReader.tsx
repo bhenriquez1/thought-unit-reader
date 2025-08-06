@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ThoughtUnit, ReadingStats } from "./ProgressiveView.types";
 import { saveReadingProgress, loadReadingProgress } from "@/lib/firebase";
 import RightBrainToolbar from "@/components/RightBrainToolbar";
-import { useAIReview } from "@/hooks/useAIReview";
+import { useStartReview } from "@/hooks/useStartReview"; // ✅ Updated hook import
 
 interface HybridReaderProps {
   fileUrl: string;
@@ -51,8 +51,10 @@ export default function HybridReader({
 }: HybridReaderProps) {
   const [selectionText, setSelectionText] = useState("");
 
-  const { isReviewMode, currentCard, startReview, gradeCard } = useAIReview(userId);
+  // ✅ Updated to unified review hook
+  const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
+  /** ===== Load saved reading progress ===== **/
   useEffect(() => {
     if (userId && pdfId) {
       loadReadingProgress(userId, pdfId).then((progress) => {
@@ -65,6 +67,7 @@ export default function HybridReader({
     }
   }, [userId, pdfId]);
 
+  /** ===== Save reading progress ===== **/
   useEffect(() => {
     if (userId && pdfId) {
       saveReadingProgress(userId, pdfId, {
@@ -75,6 +78,7 @@ export default function HybridReader({
     }
   }, [userId, pdfId, currentPage, currentThoughtUnit, highlightedWord]);
 
+  /** ===== Selection handling ===== **/
   const getSelectionText = () => window.getSelection()?.toString().trim() || "";
   const handleMouseUp = () => {
     const selection = getSelectionText();
@@ -82,25 +86,32 @@ export default function HybridReader({
     if (selection && onTextSelect) onTextSelect(selection);
   };
 
+  /** ===== No thought units ===== **/
   if (!thoughtUnits || thoughtUnits.length === 0) {
     return (
-      <div className="p-4 flex items-center justify-center text-gray-400 italic"
-        style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}>
+      <div
+        className="p-4 flex items-center justify-center text-gray-400 italic"
+        style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
+      >
         📂 Please upload a PDF to start Hybrid Reading.
       </div>
     );
   }
 
+  /** ===== Out of range ===== **/
   const unit = thoughtUnits[currentThoughtUnit - 1];
   if (!unit) {
     return (
-      <div className="p-4 flex items-center justify-center text-gray-400 italic"
-        style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}>
+      <div
+        className="p-4 flex items-center justify-center text-gray-400 italic"
+        style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
+      >
         ⏳ Preparing your reading view...
       </div>
     );
   }
 
+  /** ===== Review Mode ===== **/
   if (isReviewMode) {
     return (
       <div className="p-4 bg-gray-900 text-white rounded-lg">
@@ -109,7 +120,10 @@ export default function HybridReader({
           <>
             <p className="mb-3"><strong>Question:</strong> {currentCard.front}</p>
             <p className="mb-3"><strong>Answer:</strong> {currentCard.back}</p>
-            <button onClick={gradeCard} className="bg-blue-500 hover:bg-blue-600 px-3 py-1 rounded">
+            <button
+              onClick={gradeCard}
+              className="bg-blue-500 hover:bg-blue-600 px-3 py-1 rounded"
+            >
               Next Card
             </button>
           </>
@@ -120,6 +134,7 @@ export default function HybridReader({
     );
   }
 
+  /** ===== Main Dual-Panel UI ===== **/
   return (
     <div className="grid grid-cols-2 gap-4 p-4 h-full" onMouseUp={handleMouseUp}>
       {/* Original View */}
@@ -134,7 +149,7 @@ export default function HybridReader({
           currentPage={currentPage}
           selectionText={selectionText}
           onGenerateNote={onGenerateNote}
-          startReview={startReview}
+          startReview={startReview} // ✅ Consistent with ProgressiveView
         />
       </div>
 
@@ -143,10 +158,18 @@ export default function HybridReader({
         <h4 className="text-sm font-semibold text-yellow-400 mb-3">Progressive View</h4>
         <div style={{ fontSize, fontFamily, lineHeight: lineSpacing }}>
           {unit.text.split(" ").map((word, idx) => (
-            <span key={idx}
-              className={`${word === highlightedWord ? "bg-yellow-400 text-black px-1 rounded" :
-                "hover:bg-gray-700 cursor-pointer px-1 rounded"}`}
-              onClick={() => { onWordClick(word); setHighlightedWord(word); }}>
+            <span
+              key={idx}
+              className={`${
+                word === highlightedWord
+                  ? "bg-yellow-400 text-black px-1 rounded"
+                  : "hover:bg-gray-700 cursor-pointer px-1 rounded"
+              }`}
+              onClick={() => {
+                onWordClick(word);
+                setHighlightedWord(word);
+              }}
+            >
               {word}{" "}
             </span>
           ))}
@@ -157,7 +180,7 @@ export default function HybridReader({
           currentPage={currentPage}
           selectionText={selectionText}
           onGenerateNote={onGenerateNote}
-          startReview={startReview}
+          startReview={startReview} // ✅ Consistent with ProgressiveView
         />
       </div>
     </div>

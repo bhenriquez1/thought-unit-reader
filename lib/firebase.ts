@@ -88,7 +88,7 @@ export function listenForAuthChanges(callback: (user: User | null) => void) {
 }
 
 /* =========================================================================
-   🔹 Wallet Connect (Disabled placeholder)
+   🔹 Wallet Connect (Placeholder)
    ========================================================================= */
 export async function connectWallet(): Promise<string | null> {
   alert("MetaMask connection is temporarily disabled.");
