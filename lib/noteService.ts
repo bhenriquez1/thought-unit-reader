@@ -1,4 +1,3 @@
-// lib/noteService.ts
 import { db } from "@/lib/firebase";
 import {
   collection,
@@ -67,4 +66,27 @@ export async function getNotesForBook(
     id: docSnap.id,
     ...docSnap.data()
   })) as RightBrainNote[];
+}
+
+/**
+ * Save a flashcard for a specific user
+ */
+export async function saveFlashcard(
+  userId: string,
+  flashcard: {
+    front: string;
+    back: string;
+    bookId: string;
+    tags?: string[];
+    dueDate?: string;
+  }
+) {
+  const flashcardsRef = collection(db, "users", userId, "flashcards");
+  await addDoc(flashcardsRef, {
+    ...flashcard,
+    tags: flashcard.tags || [],
+    dueDate: flashcard.dueDate || null,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now()
+  });
 }
