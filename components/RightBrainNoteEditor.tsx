@@ -7,6 +7,7 @@ import {
 } from "@/lib/noteService";
 import { createFlashcardFromSelection } from "@/lib/flashcardService";
 import { addMindMapNode } from "@/lib/mindMapService";
+import { summarizeText } from "@/lib/aiSummary"; // ✅ NEW
 import { firebaseConnected, auth } from "@/lib/firebase";
 import { generateMnemonic } from "@/lib/mnemonicAI";
 import { useAIReview } from "@/hooks/useAIReview";
@@ -40,6 +41,7 @@ export default function RightBrainNoteEditor({
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isGeneratingMnemonic, setIsGeneratingMnemonic] = useState(false);
+  const [isSummarizing, setIsSummarizing] = useState(false); // ✅ NEW
 
   const { isReviewMode, currentCard, startReviewMode, gradeCard } = useAIReview(user?.uid);
 
@@ -142,6 +144,20 @@ export default function RightBrainNoteEditor({
     alert("🧠 Mind Map node saved!");
   };
 
+  // ✅ NEW - Summarize function
+  const handleSummarize = async () => {
+    if (!content.trim()) return alert("No text to summarize.");
+    setIsSummarizing(true);
+    try {
+      const summary = await summarizeText(content);
+      setContent(summary);
+    } catch (err) {
+      console.error("❌ Summarization failed:", err);
+      alert("Failed to summarize text.");
+    }
+    setIsSummarizing(false);
+  };
+
   return (
     <div className="flex flex-col h-full bg-gray-900 text-white p-4 rounded-lg">
       <h2 className="text-lg font-bold mb-2 text-yellow-400">🧠 Right Brain Notes</h2>
@@ -218,6 +234,9 @@ export default function RightBrainNoteEditor({
             </button>
             <button onClick={handleExportMindMap} className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded">
               🧠 Export Mind Map
+            </button>
+            <button onClick={handleSummarize} disabled={isSummarizing} className="bg-orange-500 hover:bg-orange-600 text-white py-2 px-4 rounded">
+              {isSummarizing ? "Summarizing..." : "✨ Summarize"}
             </button>
             <button onClick={startReviewMode} className="bg-purple-500 hover:bg-purple-600 text-white py-2 px-4 rounded">
               📅 Start Review

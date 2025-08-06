@@ -1,9 +1,8 @@
-// components/RightBrainToolbar.tsx
 import React, { useState, useRef, useEffect } from "react";
 import { generateMnemonic } from "@/lib/mnemonicAI";
 import { createFlashcardFromSelection } from "@/lib/flashcardService";
 import { addMindMapNode } from "@/lib/mindMapService";
-import { summarizeText } from "@/lib/aiSummary";
+import { summarizeText } from "@/lib/aiSummary"; // ✅ Updated import
 import { useSpeechSynthesis } from "react-speech-kit";
 
 interface RightBrainToolbarProps {
@@ -92,9 +91,9 @@ export default function RightBrainToolbar({
     setIsGenerating(true);
     try {
       const summary = await summarizeText(selectionText);
-      alert(`📝 AI Summary:\n${summary}`);
+      alert(`📝 AI Summary:\n\n${summary}`);
     } catch (err) {
-      console.error("AI Summary failed:", err);
+      console.error("❌ AI Summary failed:", err);
       alert("AI Summary failed. Try again.");
     }
     setIsGenerating(false);
@@ -108,7 +107,7 @@ export default function RightBrainToolbar({
       const mnemonic = await generateMnemonic(selectionText);
       onGenerateNote?.(selectionText, mnemonic);
     } catch (err) {
-      console.error("Mnemonic generation failed:", err);
+      console.error("❌ Mnemonic generation failed:", err);
       onGenerateNote?.(selectionText);
     }
     setIsGenerating(false);
@@ -138,12 +137,15 @@ export default function RightBrainToolbar({
         🎤 {isDictationOn ? "Stop Dictation" : "Start Dictation"}
       </button>
 
+      {/* 🔊 Read aloud */}
       <button
         onClick={handleReadAloud}
         className="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded"
       >
         🔊 Read Aloud
       </button>
+
+      {/* 📝 AI Summary */}
       <button
         onClick={handleAISummary}
         disabled={isGenerating}
@@ -153,6 +155,8 @@ export default function RightBrainToolbar({
       >
         {isGenerating ? "Summarizing..." : "📝 AI Summary"}
       </button>
+
+      {/* 🔗 Link page */}
       <button
         onClick={() =>
           selectionText
@@ -164,6 +168,7 @@ export default function RightBrainToolbar({
         🔗 Link Page
       </button>
 
+      {/* 🧠 Add Mnemonic */}
       <button
         onClick={handleAddMnemonic}
         disabled={isGenerating}
@@ -173,18 +178,24 @@ export default function RightBrainToolbar({
       >
         🧠 Add Mnemonic
       </button>
+
+      {/* 📇 Create flashcard */}
       <button
         onClick={handleCreateFlashcard}
         className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded"
       >
         📇 Create Flashcard
       </button>
+
+      {/* 🗺️ Add to mind map */}
       <button
         onClick={handleAddMindMap}
         className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded"
       >
         🗺️ Add to Mind Map
       </button>
+
+      {/* 📅 Review cards */}
       {startReview && (
         <button
           onClick={startReview}
