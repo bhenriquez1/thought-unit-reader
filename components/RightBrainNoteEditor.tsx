@@ -3,10 +3,10 @@ import {
   saveNote,
   updateNote,
   getNotesForBook,
-  RightBrainNote,
-  saveFlashcard,
-  saveMindMapNode
+  RightBrainNote
 } from "@/lib/noteService";
+import { createFlashcardFromSelection } from "@/lib/flashcardService";
+import { addMindMapNode } from "@/lib/mindMapService";
 import { firebaseConnected, auth } from "@/lib/firebase";
 import { generateMnemonic } from "@/lib/mnemonicAI";
 import { useAIReview } from "@/hooks/useAIReview";
@@ -19,7 +19,7 @@ interface RightBrainNoteEditorProps {
   initialText?: string;
   attachments?: string[];
   currentPage?: number;
-  dictationText?: string; // 🎙️ Live dictation from HybridReader
+  dictationText?: string;
   onDone?: () => void;
 }
 
@@ -41,22 +41,18 @@ export default function RightBrainNoteEditor({
   const [user, setUser] = useState<User | null>(null);
   const [isGeneratingMnemonic, setIsGeneratingMnemonic] = useState(false);
 
-  // ✅ AI Review hook
   const { isReviewMode, currentCard, startReviewMode, gradeCard } = useAIReview(user?.uid);
 
-  /** Track signed-in user */
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((u) => setUser(u));
     return () => unsubscribe();
   }, []);
 
-  /** Load notes for this PDF */
   useEffect(() => {
     if (!firebaseConnected || !user) return;
     getNotesForBook(user.uid, bookId).then(setNotes);
   }, [bookId, user]);
 
-  /** Auto-generate mnemonic if starting from highlight */
   useEffect(() => {
     if (!initialText.trim()) return;
     (async () => {
@@ -71,18 +67,15 @@ export default function RightBrainNoteEditor({
     })();
   }, [initialText]);
 
-  /** Append dictation text live */
   useEffect(() => {
     if (dictationText && dictationText.trim()) {
       setContent((prev) => {
-        // Avoid duplicate re-appending same chunk
         if (prev.endsWith(dictationText)) return prev;
         return prev + " " + dictationText;
       });
     }
   }, [dictationText]);
 
-  /** Select note for editing */
   const handleSelectNote = (note: RightBrainNote) => {
     setSelectedNoteId(note.id || null);
     setTitle(note.title);
@@ -92,7 +85,6 @@ export default function RightBrainNoteEditor({
     setLocalAttachments(note.attachments || []);
   };
 
-  /** Save or update note */
   const handleSave = async () => {
     if (!firebaseConnected || !user) {
       alert("⚠️ Please sign in to save notes.");
@@ -132,37 +124,21 @@ export default function RightBrainNoteEditor({
     if (onDone) onDone();
   };
 
-  /** Export as Flashcard */
   const handleExportFlashcard = async () => {
     if (!user) return alert("Sign in to create flashcards.");
     const selection = getSelectionText() || content.trim() || title.trim();
     if (!selection) return alert("Highlight or enter text first.");
 
-    await saveFlashcard(user.uid, {
-      front: selection,
-      back: mnemonic.trim() || "Remember using your notes",
-      bookId,
-      tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
-      dueDate: new Date().toISOString(),
-    });
+    await createFlashcardFromSelection(selection);
     alert("📇 Flashcard saved for review!");
   };
 
-  /** Export as Mind Map Node */
   const handleExportMindMap = async () => {
     if (!user) return alert("Sign in to create mind map nodes.");
     const selection = getSelectionText() || content.trim() || title.trim();
     if (!selection) return alert("Highlight or enter text first.");
 
-    await saveMindMapNode(user.uid, {
-      title: title.trim() || "Untitled",
-      content: selection,
-      mnemonic: mnemonic.trim(),
-      tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
-      attachments: localAttachments,
-      bookId,
-      page: currentPage || null,
-    });
+    await addMindMapNode(selection);
     alert("🧠 Mind Map node saved!");
   };
 
@@ -170,7 +146,6 @@ export default function RightBrainNoteEditor({
     <div className="flex flex-col h-full bg-gray-900 text-white p-4 rounded-lg">
       <h2 className="text-lg font-bold mb-2 text-yellow-400">🧠 Right Brain Notes</h2>
 
-      {/* Review Mode */}
       {isReviewMode ? (
         <div className="bg-gray-800 p-4 rounded-lg">
           {currentCard ? (
@@ -185,7 +160,6 @@ export default function RightBrainNoteEditor({
         </div>
       ) : (
         <>
-          {/* Saved Notes */}
           {notes.length > 0 && (
             <div className="mb-4 bg-gray-800 p-3 rounded max-h-40 overflow-y-auto">
               <h3 className="font-semibold mb-2">📜 Saved Notes</h3>
@@ -206,7 +180,6 @@ export default function RightBrainNoteEditor({
             </div>
           )}
 
-          {/* Inputs */}
           <input type="text" placeholder="Note Title" value={title} onChange={(e) => setTitle(e.target.value)}
             className="mb-2 p-2 rounded bg-gray-800 border border-gray-700" />
           <textarea rows={6} placeholder="Write your note..."
@@ -221,7 +194,6 @@ export default function RightBrainNoteEditor({
             onChange={(e) => setTags(e.target.value)}
             className="mb-2 p-2 rounded bg-gray-800 border border-gray-700" />
 
-          {/* Attachments */}
           {localAttachments.length > 0 && (
             <div className="mt-4 space-y-3">
               <h3 className="text-md font-semibold">📎 Attachments:</h3>
@@ -237,7 +209,6 @@ export default function RightBrainNoteEditor({
             </div>
           )}
 
-          {/* Action Buttons */}
           <div className="flex flex-wrap gap-2 mt-4">
             <button onClick={handleSave} className="bg-yellow-500 hover:bg-yellow-600 text-black py-2 px-4 rounded">
               {selectedNoteId ? "Update Note" : "Save Note"}
