@@ -14,16 +14,36 @@ export interface RightBrainNote {
   id?: string;
   title: string;
   content: string;
+  mnemonic?: string;
   tags: string[];
   attachments: string[];
   bookId: string;
+  page?: number | null;
   createdAt?: any;
   updatedAt?: any;
 }
 
-/**
- * Save a new note for a specific user and book
- */
+export interface Flashcard {
+  front: string;
+  back: string;
+  bookId: string;
+  tags: string[];
+  dueDate: string;
+}
+
+export interface MindMapNode {
+  title: string;
+  content: string;
+  mnemonic?: string;
+  tags: string[];
+  attachments: string[];
+  bookId: string;
+  page?: number | null;
+}
+
+/* =========================================================================
+   🔹 Notes
+   ========================================================================= */
 export async function saveNote(
   userId: string,
   note: Omit<RightBrainNote, "id" | "createdAt" | "updatedAt">
@@ -37,9 +57,6 @@ export async function saveNote(
   return docRef.id;
 }
 
-/**
- * Update an existing note
- */
 export async function updateNote(
   userId: string,
   noteId: string,
@@ -52,9 +69,6 @@ export async function updateNote(
   });
 }
 
-/**
- * Get all notes for a specific book
- */
 export async function getNotesForBook(
   userId: string,
   bookId: string
@@ -68,24 +82,25 @@ export async function getNotesForBook(
   })) as RightBrainNote[];
 }
 
-/**
- * Save a flashcard for a specific user
- */
-export async function saveFlashcard(
-  userId: string,
-  flashcard: {
-    front: string;
-    back: string;
-    bookId: string;
-    tags?: string[];
-    dueDate?: string;
-  }
-) {
-  const flashcardsRef = collection(db, "users", userId, "flashcards");
-  await addDoc(flashcardsRef, {
+/* =========================================================================
+   🔹 Flashcards
+   ========================================================================= */
+export async function saveFlashcard(userId: string, flashcard: Flashcard) {
+  const flashcardRef = collection(db, "users", userId, "flashcards");
+  await addDoc(flashcardRef, {
     ...flashcard,
-    tags: flashcard.tags || [],
-    dueDate: flashcard.dueDate || null,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now()
+  });
+}
+
+/* =========================================================================
+   🔹 Mind Map Nodes
+   ========================================================================= */
+export async function saveMindMapNode(userId: string, node: MindMapNode) {
+  const mindMapRef = collection(db, "users", userId, "mindMap");
+  await addDoc(mindMapRef, {
+    ...node,
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now()
   });
