@@ -19,11 +19,9 @@ import {
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
 
 export default function ThoughtUnitReader() {
-  /** ===== Auth State ===== **/
   const [user, setUser] = useState<any>(null);
   const USER_ID = user?.uid || "guest-user";
 
-  /** ===== Reader State ===== **/
   const [thoughtUnits, setThoughtUnits] = useState<ThoughtUnit[]>([]);
   const [currentThoughtUnit, setCurrentThoughtUnit] = useState(1);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
@@ -48,48 +46,34 @@ export default function ThoughtUnitReader() {
   const [sampleText, setSampleText] = useState("");
   const [darkMode, setDarkMode] = useState(true);
 
-  /** ===== TOC State ===== **/
   const [tableOfContents, setTableOfContents] = useState<TOCEntry[]>([]);
   const [showTOC, setShowTOC] = useState(true);
 
-  /** ===== Library State ===== **/
   const [showLibrary, setShowLibrary] = useState(false);
   const [pdfLibrary, setPdfLibrary] = useState<
     { id: string; name: string; url: string; uploadedAt: any }[]
   >([]);
 
-  /** ===== Popup & Note State ===== **/
   const [selectedText, setSelectedText] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [popupPosition, setPopupPosition] = useState<{ x: number; y: number } | null>(null);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [bookId, setBookId] = useState<string>("default-book");
 
-  /** ===== Debug ===== **/
   const selectionRangeRef = useRef<Range | null>(null);
-  const [firebaseStatus] = useState(firebaseConnected);
 
-  /* =========================================================================
-     🔹 AUTH LISTENER
-  ========================================================================= */
   useEffect(() => {
     listenForAuthChanges((u) => {
       setUser(u);
     });
   }, []);
 
-  /* =========================================================================
-     🔹 Load PDF Library
-  ========================================================================= */
   useEffect(() => {
     if (firebaseConnected && user) {
       getPDFLibrary(USER_ID).then(setPdfLibrary);
     }
   }, [user, showLibrary]);
 
-  /* =========================================================================
-     🔹 Handle File Upload
-  ========================================================================= */
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || file.type !== "application/pdf") {
@@ -110,27 +94,18 @@ export default function ThoughtUnitReader() {
     generateTOC(url).then(setTableOfContents);
   };
 
-  /* =========================================================================
-     🔹 Load PDF from Library
-  ========================================================================= */
   const handleLoadPDF = (url: string) => {
     setFileUrl(url);
     setShowLibrary(false);
     generateTOC(url).then(setTableOfContents);
   };
 
-  /* =========================================================================
-     🔹 Delete PDF
-  ========================================================================= */
   const handleDeletePDF = async (id: string, name: string) => {
     if (!confirm(`Delete ${name}?`)) return;
     await deletePDF(USER_ID, id, name);
     getPDFLibrary(USER_ID).then(setPdfLibrary);
   };
 
-  /* =========================================================================
-     🔹 Handle Text Selection
-  ========================================================================= */
   const handleTextSelect = (text: string) => {
     if (!text) return;
     const selection = window.getSelection();
@@ -149,9 +124,6 @@ export default function ThoughtUnitReader() {
     });
   };
 
-  /* =========================================================================
-     🔹 Render Main Content
-  ========================================================================= */
   const renderContent = () => {
     if (viewMode === "rightbrain") {
       return (
@@ -209,6 +181,13 @@ export default function ThoughtUnitReader() {
           lineSpacing={lineSpacing}
           clickSwitchesTo={clickSwitchesTo}
           onWordClick={(w) => setHighlightedWord(w)}
+          onStartReading={() => setIsReading(true)}
+          onPauseReading={() => setIsPaused(true)}
+          onResetReading={() => {
+            setIsReading(false);
+            setIsPaused(false);
+            setCurrentThoughtUnit(1);
+          }}
           setReadingSpeed={setReadingSpeed}
           setCurrentPage={setCurrentPage}
           onTextSelect={handleTextSelect}
@@ -236,19 +215,21 @@ export default function ThoughtUnitReader() {
 
   return (
     <div className={`min-h-screen flex flex-col ${darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"}`}>
-      {/* Header with Gradient and Slogan */}
-      <div className="w-full py-6 bg-gradient-to-r from-purple-500 via-pink-500 to-yellow-500 text-center shadow-md">
-        <h1 className="text-3xl font-extrabold tracking-wide text-white drop-shadow-lg">
-          Thought‑Unit Reader
-        </h1>
-        <p className="text-lg italic text-yellow-100 drop-shadow-md">
-          "Read Smarter, Remember Longer"
-        </p>
-      </div>
+      {/* Gradient Header */}
+      <header className="bg-gradient-to-r from-purple-600 via-pink-500 to-yellow-400 text-white shadow-md">
+        <div className="py-4 flex flex-col items-center justify-center text-center">
+          <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide drop-shadow-lg">
+            Thought Unit Reader
+          </h1>
+          <p className="text-sm md:text-lg italic opacity-90">
+            Read Smarter, Remember Longer
+          </p>
+        </div>
+      </header>
 
-      {/* Auth Bar — Disabled for now */}
-      <div className="p-2 flex justify-between items-center bg-gray-800 text-white">
-        <span>🔒 Sign-In Disabled for Now</span>
+      {/* Auth note */}
+      <div className="p-2 text-center bg-gray-800 text-white text-sm">
+        🔒 Sign-In Disabled for Now
       </div>
 
       {/* Floating Library Button */}
@@ -261,7 +242,7 @@ export default function ThoughtUnitReader() {
         </button>
       )}
 
-      {/* Slide-in Library Drawer */}
+      {/* Library Drawer */}
       {showLibrary && (
         <div className="fixed top-0 right-0 w-80 h-full bg-gray-800 text-white shadow-lg z-50 p-4 flex flex-col">
           <div className="flex justify-between items-center mb-4">
@@ -287,7 +268,7 @@ export default function ThoughtUnitReader() {
         </div>
       )}
 
-      {/* Main Reader */}
+      {/* Reader */}
       <div className="flex flex-1 overflow-hidden px-4">
         {showTOC && fileUrl && <TOCSidebar toc={tableOfContents} currentPage={currentPage} onJumpToPage={setCurrentPage} />}
         <div className="flex-1 bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>

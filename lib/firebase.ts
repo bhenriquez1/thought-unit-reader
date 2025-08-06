@@ -4,7 +4,9 @@ import {
   getAuth,
   onAuthStateChanged,
   signOut,
-  User
+  User,
+  GoogleAuthProvider,
+  signInWithPopup
 } from "firebase/auth";
 import {
   getFirestore,
@@ -23,9 +25,9 @@ import {
   deleteObject
 } from "firebase/storage";
 
-// ============================================================
-// 🔹 Firebase Config (from .env)
-// ============================================================
+/* =========================================================================
+   🔹 Firebase Config
+   ========================================================================= */
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "",
@@ -36,9 +38,9 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || ""
 };
 
-// ============================================================
-// 🔹 Initialize Firebase (only once)
-// ============================================================
+/* =========================================================================
+   🔹 Initialize Firebase (singleton pattern)
+   ========================================================================= */
 let app: FirebaseApp;
 if (!getApps().length) {
   app = initializeApp(firebaseConfig);
@@ -52,26 +54,30 @@ const db = getFirestore(app);
 const storage = getStorage(app);
 
 let firebaseConnected = true;
-try {
-  if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-    firebaseConnected = false;
-    console.error("❌ Firebase environment variables missing.");
-  }
-} catch {
+if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
   firebaseConnected = false;
+  console.error("❌ Firebase environment variables missing.");
 }
 
-// ============================================================
-// 🔹 Auth Helpers
-// ============================================================
+/* =========================================================================
+   🔹 Auth Functions
+   ========================================================================= */
 export async function signInWithGoogle() {
-  alert("Google Sign-In is temporarily disabled.");
-  return null;
+  try {
+    const provider = new GoogleAuthProvider();
+    const result = await signInWithPopup(auth, provider);
+    return result.user;
+  } catch (err) {
+    console.error("❌ Google Sign-In Error:", err);
+    alert("Google Sign-In failed.");
+    return null;
+  }
 }
 
 export async function signOutUser() {
   try {
     await signOut(auth);
+    console.log("👋 Signed out");
   } catch (err) {
     console.error("❌ Sign-Out Error:", err);
   }
@@ -81,9 +87,17 @@ export function listenForAuthChanges(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, callback);
 }
 
-// ============================================================
-// 🔹 PDF Library Functions
-// ============================================================
+/* =========================================================================
+   🔹 Wallet Connect (Disabled placeholder)
+   ========================================================================= */
+export async function connectWallet(): Promise<string | null> {
+  alert("MetaMask connection is temporarily disabled.");
+  return null;
+}
+
+/* =========================================================================
+   🔹 PDF Library Functions
+   ========================================================================= */
 export async function uploadPDF(file: File, userId: string) {
   const fileRef = ref(storage, `pdfs/${userId}/${file.name}`);
   await uploadBytes(fileRef, file);
@@ -113,7 +127,6 @@ export async function getPDFLibrary(userId: string) {
     });
   });
 
-  // Sort newest first
   return library.sort(
     (a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
   );
@@ -126,9 +139,9 @@ export async function deletePDF(userId: string, pdfId: string, pdfName: string) 
   console.log(`🗑 Deleted PDF: ${pdfName}`);
 }
 
-// ============================================================
-// 🔹 Reading Progress Functions (supports page linking)
-// ============================================================
+/* =========================================================================
+   🔹 Reading Progress Functions
+   ========================================================================= */
 export async function saveReadingProgress(
   userId: string,
   pdfId: string,
@@ -136,7 +149,6 @@ export async function saveReadingProgress(
     currentPage: number;
     currentThoughtUnit: number;
     highlightedWord: string;
-    pageLink?: number; // ⬅️ supports "Link Page" in toolbar
   }
 ) {
   const docRef = doc(db, "users", userId, "readingProgress", pdfId);
@@ -150,8 +162,10 @@ export async function saveReadingProgress(
 export async function loadReadingProgress(userId: string, pdfId: string) {
   const docRef = doc(db, "users", userId, "readingProgress", pdfId);
   const snap = await getDoc(docRef);
-  if (snap.exists()) return snap.data();
-  return null;
+  return snap.exists() ? snap.data() : null;
 }
 
+/* =========================================================================
+   🔹 Exports
+   ========================================================================= */
 export { app, auth, db, storage, firebaseConnected };

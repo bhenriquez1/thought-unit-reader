@@ -1,4 +1,3 @@
-// components/ProgressiveView.tsx
 import React, { useEffect, useState, useRef } from "react";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
@@ -53,7 +52,7 @@ export default function ProgressiveView({
 
   const { isReviewMode, currentCard, startReview, gradeCard } = useAIReview(userId);
 
-  /** ===== Dictation Setup (manual start) ===== **/
+  // Dictation Setup
   useEffect(() => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -94,7 +93,7 @@ export default function ProgressiveView({
     }
   };
 
-  /** ===== Load saved reading state ===== **/
+  // Load saved progress
   useEffect(() => {
     async function loadProgress() {
       if (!userId || !bookId) return;
@@ -123,7 +122,7 @@ export default function ProgressiveView({
     loadProgress();
   }, [userId, bookId]);
 
-  /** ===== Save reading state ===== **/
+  // Save progress
   useEffect(() => {
     if (!loaded || !userId || !bookId) return;
     async function saveProgress() {
@@ -151,7 +150,7 @@ export default function ProgressiveView({
     saveProgress();
   }, [currentThoughtUnit, readingSpeed, highlightedWord, currentPage, loaded]);
 
-  /** ===== Handle selection ===== **/
+  // Handle text selection
   const getSelectionText = () => window.getSelection()?.toString().trim() || "";
   const handleMouseUp = () => {
     const selection = getSelectionText();
@@ -161,48 +160,34 @@ export default function ProgressiveView({
     }
   };
 
-  /** ===== No thought units ===== **/
   if (!thoughtUnits || thoughtUnits.length === 0) {
     return (
-      <div
-        className="progressive-view p-4 flex items-center justify-center text-gray-400 italic"
-        style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
-      >
+      <div className="p-4 flex items-center justify-center text-gray-400 italic"
+        style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}>
         📂 Please upload a PDF to start Progressive Reading.
       </div>
     );
   }
 
-  /** ===== Out of range ===== **/
   const unit = thoughtUnits[currentThoughtUnit - 1];
   if (!unit) {
     return (
-      <div
-        className="progressive-view p-4 flex items-center justify-center text-gray-400 italic"
-        style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
-      >
+      <div className="p-4 flex items-center justify-center text-gray-400 italic"
+        style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}>
         ⏳ Preparing your reading view...
       </div>
     );
   }
 
-  /** ===== Review Mode ===== **/
   if (isReviewMode) {
     return (
       <div className="p-4 bg-gray-900 text-white rounded-lg">
         <h3 className="text-lg font-bold mb-4">📅 Review Mode</h3>
         {currentCard ? (
           <>
-            <p className="mb-3">
-              <strong>Question:</strong> {currentCard.front}
-            </p>
-            <p className="mb-3">
-              <strong>Answer:</strong> {currentCard.back}
-            </p>
-            <button
-              onClick={gradeCard}
-              className="bg-blue-500 hover:bg-blue-600 px-3 py-1 rounded"
-            >
+            <p className="mb-3"><strong>Question:</strong> {currentCard.front}</p>
+            <p className="mb-3"><strong>Answer:</strong> {currentCard.back}</p>
+            <button onClick={gradeCard} className="bg-blue-500 hover:bg-blue-600 px-3 py-1 rounded">
               Next Card
             </button>
           </>
@@ -213,15 +198,13 @@ export default function ProgressiveView({
     );
   }
 
-  /** ===== Main UI ===== **/
   return (
     <>
       <div
-        className="progressive-view p-4 overflow-y-auto"
+        className="p-4 overflow-y-auto"
         style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
         onMouseUp={handleMouseUp}
       >
-        {/* Render words */}
         {unit.text.split(" ").map((word, idx) => (
           <span
             key={idx}
@@ -236,7 +219,6 @@ export default function ProgressiveView({
           </span>
         ))}
 
-        {/* Dictation control */}
         <div className="mt-4">
           <button
             onClick={toggleRecording}
@@ -253,18 +235,16 @@ export default function ProgressiveView({
           )}
         </div>
 
-        {/* Shared Toolbar */}
         <RightBrainToolbar
           userId={userId}
           bookId={bookId}
           currentPage={currentPage}
-          selectionText={selectionText || dictationText} // pass dictation text if no selection
+          selectionText={selectionText || dictationText}
           onGenerateNote={() => setShowNoteEditor(true)}
           startReview={startReview}
         />
       </div>
 
-      {/* Note Editor modal */}
       {showNoteEditor && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-6">
           <div className="bg-gray-900 p-4 rounded-lg w-full max-w-2xl">
