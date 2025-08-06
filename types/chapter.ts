@@ -1,24 +1,35 @@
 // types/chapter.ts
 
 /**
- * Represents a chapter in a document
+ * Represents a chapter or section in a document.
  */
 export interface Chapter {
   /**
-   * The title of the chapter
+   * The visible title of the chapter or section.
    */
   title: string;
-  
+
   /**
-   * The content of the chapter as text
+   * Optional: The raw text content for this chapter.
+   * Useful for search, summaries, or previews.
    */
-  content: string;
-  
+  content?: string;
+
   /**
-   * The page number where the chapter starts (optional)
+   * The page number in the PDF (0-indexed for pdf.js).
    */
-  page?: number;
+  pageNumber?: number;
+
+  /**
+   * Optional: nested subchapters for hierarchical TOC.
+   */
+  subChapters?: Chapter[];
+
+  /**
+   * Optional: unique identifier for internal navigation.
+   */
+  id?: string;
 }
 
-// Export default as well for flexibility
+// Keep default export for compatibility with existing imports
 export default Chapter;

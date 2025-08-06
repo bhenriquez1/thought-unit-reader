@@ -1,37 +1,55 @@
 // lib/tocParser.ts
-import * as pdfjsLib from 'pdfjs-dist';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+import type { Chapter } from "@/types/chapter";
 
 export interface TOCEntry {
   title: string;
-  page: number;
+  pageNumber: number;
+  subChapters?: TOCEntry[];
 }
 
 /**
- * Generates a table of contents from a PDF file URL.
- * @param fileUrl - The URL of the PDF file to parse.
+ * Generate a Table of Contents from extracted PDF text.
+ * Works even if the PDF has no embedded outline.
+ *
+ * @param text The extracted text from the PDF (with paragraphs preserved)
+ * @param numPages The number of pages in the PDF
  */
-export async function generateTOC(fileUrl: string): Promise<TOCEntry[]> {
-  const loadingTask = pdfjsLib.getDocument(fileUrl);
-  const pdf = await loadingTask.promise;
+export async function generateTOC(
+  text: string,
+  numPages: number
+): Promise<Chapter[]> {
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
 
-  const toc: TOCEntry[] = [];
-  const headingRegex = /^(Chapter\s+\d+|CHAPTER\s+\d+|\d+\.\d+\s+.+)$/;
+  const chapterRegex = /^(Chapter\s+\d+|CHAPTER\s+\d+|\d+\.\d+\s+.+|[A-Z][A-Z\s]+)$/;
+  const subChapterRegex = /^(\d+\.\d+(\.\d+)*)\s+.+$/;
 
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    const textContent = await page.getTextContent();
-    const text = textContent.items.map((item: any) => item.str).join(' ');
+  let toc: Chapter[] = [];
+  let currentChapter: Chapter | null = null;
 
-    // Look for headings that match typical chapter/section patterns
-    if (headingRegex.test(text)) {
-      toc.push({
-        title: text.trim(),
-        page: pageNum
+  let approxLinesPerPage = Math.floor(lines.length / numPages);
+
+  lines.forEach((line, index) => {
+    if (chapterRegex.test(line)) {
+      // Estimate page number
+      const pageNumber = Math.floor(index / approxLinesPerPage) + 1;
+
+      currentChapter = {
+        title: line,
+        pageNumber,
+        content: "",
+        subChapters: []
+      };
+      toc.push(currentChapter);
+    } else if (subChapterRegex.test(line) && currentChapter) {
+      const pageNumber = Math.floor(index / approxLinesPerPage) + 1;
+
+      currentChapter.subChapters!.push({
+        title: line,
+        pageNumber,
+        content: ""
       });
     }
-  }
+  });
 
   return toc;
 }

@@ -14,7 +14,7 @@ import {
   getPDFLibrary,
   deletePDF,
   listenForAuthChanges
-} from "@/lib/firebase"; // Google Sign-In & Wallet connect removed for now
+} from "@/lib/firebase";
 
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
 
@@ -181,13 +181,6 @@ export default function ThoughtUnitReader() {
           fontFamily={fontFamily}
           lineSpacing={lineSpacing}
           onWordClick={(w) => setHighlightedWord(w)}
-          onStart={() => setIsReading(true)}
-          onPause={() => setIsPaused(true)}
-          onReset={() => {
-            setIsReading(false);
-            setIsPaused(false);
-            setCurrentThoughtUnit(1);
-          }}
           setReadingSpeed={setReadingSpeed}
           onTextSelect={handleTextSelect}
         />
@@ -216,13 +209,6 @@ export default function ThoughtUnitReader() {
           lineSpacing={lineSpacing}
           clickSwitchesTo={clickSwitchesTo}
           onWordClick={(w) => setHighlightedWord(w)}
-          onStartReading={() => setIsReading(true)}
-          onPauseReading={() => setIsPaused(true)}
-          onResetReading={() => {
-            setIsReading(false);
-            setIsPaused(false);
-            setCurrentThoughtUnit(1);
-          }}
           setReadingSpeed={setReadingSpeed}
           setCurrentPage={setCurrentPage}
           onTextSelect={handleTextSelect}
@@ -250,6 +236,16 @@ export default function ThoughtUnitReader() {
 
   return (
     <div className={`min-h-screen flex flex-col ${darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"}`}>
+      {/* Header with Gradient and Slogan */}
+      <div className="w-full py-6 bg-gradient-to-r from-purple-500 via-pink-500 to-yellow-500 text-center shadow-md">
+        <h1 className="text-3xl font-extrabold tracking-wide text-white drop-shadow-lg">
+          Thought‑Unit Reader
+        </h1>
+        <p className="text-lg italic text-yellow-100 drop-shadow-md">
+          "Read Smarter, Remember Longer"
+        </p>
+      </div>
+
       {/* Auth Bar — Disabled for now */}
       <div className="p-2 flex justify-between items-center bg-gray-800 text-white">
         <span>🔒 Sign-In Disabled for Now</span>

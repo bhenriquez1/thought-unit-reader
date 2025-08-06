@@ -62,7 +62,7 @@ try {
 }
 
 // ============================================================
-// 🔹 Auth Functions — Disabled for now
+// 🔹 Auth Helpers
 // ============================================================
 export async function signInWithGoogle() {
   alert("Google Sign-In is temporarily disabled.");
@@ -79,14 +79,6 @@ export async function signOutUser() {
 
 export function listenForAuthChanges(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, callback);
-}
-
-// ============================================================
-// 🔹 Wallet Connect — Disabled for now
-// ============================================================
-export async function connectWallet(): Promise<string | null> {
-  alert("MetaMask connection is temporarily disabled.");
-  return null;
 }
 
 // ============================================================
@@ -135,7 +127,7 @@ export async function deletePDF(userId: string, pdfId: string, pdfName: string) 
 }
 
 // ============================================================
-// 🔹 Reading Progress Functions
+// 🔹 Reading Progress Functions (supports page linking)
 // ============================================================
 export async function saveReadingProgress(
   userId: string,
@@ -144,6 +136,7 @@ export async function saveReadingProgress(
     currentPage: number;
     currentThoughtUnit: number;
     highlightedWord: string;
+    pageLink?: number; // ⬅️ supports "Link Page" in toolbar
   }
 ) {
   const docRef = doc(db, "users", userId, "readingProgress", pdfId);
