@@ -19,9 +19,6 @@ import {
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
 
 export default function ThoughtUnitReader() {
-  /* =========================================================================
-     🔹 State
-  ========================================================================= */
   const [user, setUser] = useState<any>(null);
   const USER_ID = user?.uid || "guest-user";
 
@@ -29,8 +26,7 @@ export default function ThoughtUnitReader() {
   const [currentThoughtUnit, setCurrentThoughtUnit] = useState(1);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [viewMode, setViewMode] =
-    useState<"original" | "progressive" | "hybrid" | "rightbrain">("original");
+  const [viewMode, setViewMode] = useState<"original" | "progressive" | "hybrid" | "rightbrain">("original");
   const [currentPage, setCurrentPage] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(1);
   const [isReading, setIsReading] = useState(false);
@@ -51,39 +47,27 @@ export default function ThoughtUnitReader() {
 
   const [tableOfContents, setTableOfContents] = useState<TOCEntry[]>([]);
   const [showTOC, setShowTOC] = useState(true);
-
   const [showLibrary, setShowLibrary] = useState(false);
   const [pdfLibrary, setPdfLibrary] = useState<
     { id: string; name: string; url: string; uploadedAt: any }[]
   >([]);
-
   const [selectedText, setSelectedText] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [popupPosition, setPopupPosition] = useState<{ x: number; y: number } | null>(null);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [bookId, setBookId] = useState<string>("default-book");
-
   const selectionRangeRef = useRef<Range | null>(null);
 
-  /* =========================================================================
-     🔹 Auth Listener
-  ========================================================================= */
   useEffect(() => {
     listenForAuthChanges((u) => setUser(u));
   }, []);
 
-  /* =========================================================================
-     🔹 Load PDF Library
-  ========================================================================= */
   useEffect(() => {
     if (firebaseConnected && user) {
       getPDFLibrary(USER_ID).then(setPdfLibrary);
     }
   }, [user, showLibrary]);
 
-  /* =========================================================================
-     🔹 Upload PDF
-  ========================================================================= */
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || file.type !== "application/pdf") {
@@ -104,27 +88,18 @@ export default function ThoughtUnitReader() {
     generateTOC(url).then(setTableOfContents);
   };
 
-  /* =========================================================================
-     🔹 Load PDF from Library
-  ========================================================================= */
   const handleLoadPDF = (url: string) => {
     setFileUrl(url);
     setShowLibrary(false);
     generateTOC(url).then(setTableOfContents);
   };
 
-  /* =========================================================================
-     🔹 Delete PDF
-  ========================================================================= */
   const handleDeletePDF = async (id: string, name: string) => {
     if (!confirm(`Delete ${name}?`)) return;
     await deletePDF(USER_ID, id, name);
     getPDFLibrary(USER_ID).then(setPdfLibrary);
   };
 
-  /* =========================================================================
-     🔹 Handle Text Selection
-  ========================================================================= */
   const handleTextSelect = (text: string) => {
     if (!text) return;
     const selection = window.getSelection();
@@ -143,124 +118,29 @@ export default function ThoughtUnitReader() {
     });
   };
 
-  /* =========================================================================
-     🔹 Render Reader Content
-  ========================================================================= */
   const renderContent = () => {
-    if (viewMode === "rightbrain") {
-      return (
-        <RightBrainNoteEditor
-          bookId={bookId}
-          initialText={selectedText}
-          attachments={attachments}
-          onDone={() => setViewMode("progressive")}
-        />
-      );
+    switch (viewMode) {
+      case "rightbrain":
+        return <RightBrainNoteEditor bookId={bookId} initialText={selectedText} attachments={attachments} onDone={() => setViewMode("progressive")} />;
+      case "progressive":
+        return <ProgressiveView bookId={bookId} userId={USER_ID} thoughtUnits={thoughtUnits} currentThoughtUnit={currentThoughtUnit} readingSpeed={readingSpeed} isReading={isReading} isPaused={isPaused} stats={stats} highlightedWord={highlightedWord} currentPage={currentPage} pdfPageCount={pdfPageCount} fontSize={fontSize} fontFamily={fontFamily} lineSpacing={lineSpacing} onWordClick={setHighlightedWord} setReadingSpeed={setReadingSpeed} onTextSelect={handleTextSelect} />;
+      case "hybrid":
+        return <HybridReader fileUrl={fileUrl || ""} pdfId={bookId} userId={USER_ID} sampleText={sampleText} currentPage={currentPage} pdfPageCount={pdfPageCount} readingSpeed={readingSpeed} isReading={isReading} isPaused={isPaused} currentThoughtUnit={currentThoughtUnit} setCurrentThoughtUnit={setCurrentThoughtUnit} thoughtUnits={thoughtUnits} highlightedWord={highlightedWord} setHighlightedWord={setHighlightedWord} stats={stats} fontSize={fontSize} fontFamily={fontFamily} lineSpacing={lineSpacing} clickSwitchesTo={clickSwitchesTo} onWordClick={setHighlightedWord} setReadingSpeed={setReadingSpeed} setCurrentPage={setCurrentPage} onTextSelect={handleTextSelect} />;
+      default:
+        return fileUrl ? <SmartPDFViewer fileUrl={fileUrl} currentPage={currentPage} onPageChange={setCurrentPage} scale={1.25} onTextSelect={handleTextSelect} /> : <div className="flex flex-col items-center justify-center h-full gap-4"><p>📂 Upload a PDF to begin</p><label className="bg-yellow-500 text-black px-4 py-2 rounded cursor-pointer">Upload PDF<input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" /></label></div>;
     }
-    if (viewMode === "progressive") {
-      return (
-        <ProgressiveView
-          bookId={bookId}
-          userId={USER_ID}
-          thoughtUnits={thoughtUnits}
-          currentThoughtUnit={currentThoughtUnit}
-          readingSpeed={readingSpeed}
-          isReading={isReading}
-          isPaused={isPaused}
-          stats={stats}
-          highlightedWord={highlightedWord}
-          currentPage={currentPage}
-          pdfPageCount={pdfPageCount}
-          fontSize={fontSize}
-          fontFamily={fontFamily}
-          lineSpacing={lineSpacing}
-          onWordClick={(w) => setHighlightedWord(w)}
-          setReadingSpeed={setReadingSpeed}
-          onTextSelect={handleTextSelect}
-        />
-      );
-    }
-    if (viewMode === "hybrid") {
-      return (
-        <HybridReader
-          fileUrl={fileUrl || ""}
-          pdfId={bookId}
-          userId={USER_ID}
-          sampleText={sampleText}
-          currentPage={currentPage}
-          pdfPageCount={pdfPageCount}
-          readingSpeed={readingSpeed}
-          isReading={isReading}
-          isPaused={isPaused}
-          currentThoughtUnit={currentThoughtUnit}
-          setCurrentThoughtUnit={setCurrentThoughtUnit}
-          thoughtUnits={thoughtUnits}
-          highlightedWord={highlightedWord}
-          setHighlightedWord={setHighlightedWord}
-          stats={stats}
-          fontSize={fontSize}
-          fontFamily={fontFamily}
-          lineSpacing={lineSpacing}
-          clickSwitchesTo={clickSwitchesTo}
-          onWordClick={(w) => setHighlightedWord(w)}
-          setReadingSpeed={setReadingSpeed}
-          setCurrentPage={setCurrentPage}
-          onTextSelect={handleTextSelect}
-        />
-      );
-    }
-    return fileUrl ? (
-      <SmartPDFViewer
-        fileUrl={fileUrl}
-        currentPage={currentPage}
-        onPageChange={setCurrentPage}
-        scale={1.25}
-        onTextSelect={handleTextSelect}
-      />
-    ) : (
-      <div className="flex flex-col items-center justify-center h-full gap-4">
-        <p>📂 Upload a PDF to begin</p>
-        <label className="bg-yellow-500 text-black px-4 py-2 rounded cursor-pointer">
-          Upload PDF
-          <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-        </label>
-      </div>
-    );
   };
 
-  /* =========================================================================
-     🔹 Main Layout
-  ========================================================================= */
   return (
     <div className={`min-h-screen flex flex-col ${darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"}`}>
-      {/* Gradient Header */}
       <header className="bg-gradient-to-r from-purple-600 via-pink-500 to-yellow-400 text-white shadow-md">
         <div className="py-4 flex flex-col items-center justify-center text-center">
-          <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide drop-shadow-lg">
-            Thought Unit Reader
-          </h1>
-          <p className="text-sm md:text-lg italic opacity-90">
-            Read Smarter, Remember Longer
-          </p>
+          <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide drop-shadow-lg">Thought Unit Reader</h1>
+          <p className="text-sm md:text-lg italic opacity-90">Read Smarter, Remember Longer</p>
         </div>
       </header>
-
-      {/* Auth note */}
-      <div className="p-2 text-center bg-gray-800 text-white text-sm">
-        🔒 Sign-In Disabled for Now
-      </div>
-
-      {/* Floating Library Button */}
-      {user && (
-        <button
-          onClick={() => setShowLibrary(true)}
-          className="fixed top-4 right-4 bg-yellow-500 text-black px-3 py-1 rounded shadow z-50"
-        >
-          📚 Library
-        </button>
-      )}
-
-      {/* Library Drawer */}
+      <div className="p-2 text-center bg-gray-800 text-white text-sm">🔒 Sign-In Disabled for Now</div>
+      {user && <button onClick={() => setShowLibrary(true)} className="fixed top-4 right-4 bg-yellow-500 text-black px-3 py-1 rounded shadow z-50">📚 Library</button>}
       {showLibrary && (
         <div className="fixed top-0 right-0 w-80 h-full bg-gray-800 text-white shadow-lg z-50 p-4 flex flex-col">
           <div className="flex justify-between items-center mb-4">
@@ -268,51 +148,17 @@ export default function ThoughtUnitReader() {
             <button onClick={() => setShowLibrary(false)}>✖</button>
           </div>
           <div className="flex-1 overflow-y-auto">
-            {pdfLibrary.length === 0 ? (
-              <p className="text-sm text-gray-400">No PDFs uploaded yet.</p>
-            ) : (
-              pdfLibrary.map((pdf) => (
-                <div key={pdf.id} className="flex justify-between items-center mb-2 p-2 hover:bg-gray-700 rounded">
-                  <span onClick={() => handleLoadPDF(pdf.url)} className="cursor-pointer">{pdf.name}</span>
-                  <button onClick={() => handleDeletePDF(pdf.id, pdf.name)} className="text-red-400 hover:text-red-200">🗑</button>
-                </div>
-              ))
-            )}
+            {pdfLibrary.length === 0 ? <p className="text-sm text-gray-400">No PDFs uploaded yet.</p> : pdfLibrary.map((pdf) => (<div key={pdf.id} className="flex justify-between items-center mb-2 p-2 hover:bg-gray-700 rounded"><span onClick={() => handleLoadPDF(pdf.url)} className="cursor-pointer">{pdf.name}</span><button onClick={() => handleDeletePDF(pdf.id, pdf.name)} className="text-red-400 hover:text-red-200">🗑</button></div>))}
           </div>
-          <label className="mt-4 block bg-yellow-500 text-black text-center py-2 rounded cursor-pointer">
-            ➕ Upload PDF
-            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-          </label>
+          <label className="mt-4 block bg-yellow-500 text-black text-center py-2 rounded cursor-pointer">➕ Upload PDF<input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" /></label>
         </div>
       )}
-
-      {/* Reader */}
       <div className="flex flex-1 overflow-hidden px-4">
         {showTOC && fileUrl && <TOCSidebar toc={tableOfContents} currentPage={currentPage} onJumpToPage={setCurrentPage} />}
         <div className="flex-1 bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
       </div>
-
-      {/* Highlight Popup */}
-      {popupPosition && (
-        <HighlightPopup
-          position={popupPosition}
-          onCreateNote={() => setViewMode("rightbrain")}
-          onAddFlashcard={() => console.log("Flashcard created")}
-          onAttachLink={() => setShowLinkModal(true)}
-          onClose={() => setPopupPosition(null)}
-        />
-      )}
-
-      {showLinkModal && (
-        <LinkVideoModal
-          onClose={() => setShowLinkModal(false)}
-          onSave={(url) => {
-            setAttachments((prev) => [...prev, url]);
-            setViewMode("rightbrain");
-            setShowLinkModal(false);
-          }}
-        />
-      )}
+      {popupPosition && <HighlightPopup position={popupPosition} onCreateNote={() => setViewMode("rightbrain")} onAddFlashcard={() => console.log("Flashcard created")} onAttachLink={() => setShowLinkModal(true)} onClose={() => setPopupPosition(null)} />}
+      {showLinkModal && <LinkVideoModal onClose={() => setShowLinkModal(false)} onSave={(url) => { setAttachments((prev) => [...prev, url]); setViewMode("rightbrain"); setShowLinkModal(false); }} />}
     </div>
   );
 }

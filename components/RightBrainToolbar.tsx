@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { generateMnemonic } from "@/lib/mnemonicAI";
 import { createFlashcardFromSelection } from "@/lib/flashcardService";
 import { addMindMapNode } from "@/lib/mindMapService";
-import { summarizeText } from "@/lib/aiSummary"; // ✅ Updated import
+import { summarizeText } from "@/lib/aiSummary";
 import { useSpeechSynthesis } from "react-speech-kit";
 
 interface RightBrainToolbarProps {
@@ -10,7 +10,7 @@ interface RightBrainToolbarProps {
   bookId: string;
   currentPage: number;
   selectionText: string;
-  onGenerateNote?: (text: string, mnemonic?: string) => void;
+  onGenerateNote?: (text: string, mnemonic?: string, mode?: "sketch" | "highYield") => void;
   startReview?: () => void;
 }
 
@@ -23,15 +23,10 @@ export default function RightBrainToolbar({
   startReview
 }: RightBrainToolbarProps) {
   const [isGenerating, setIsGenerating] = useState(false);
-
-  // 🎤 Dictation
   const [isDictationOn, setIsDictationOn] = useState(false);
   const recognitionRef = useRef<any>(null);
-
-  // 🔊 Read Aloud
   const { speak } = useSpeechSynthesis();
 
-  /** ===== Dictation Setup ===== **/
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -61,7 +56,6 @@ export default function RightBrainToolbar({
     recognitionRef.current = recognition;
   }, [onGenerateNote]);
 
-  /** ===== Handle Dictation Toggle ===== **/
   useEffect(() => {
     if (recognitionRef.current) {
       if (isDictationOn) {
@@ -76,7 +70,6 @@ export default function RightBrainToolbar({
     setIsDictationOn((prev) => !prev);
   };
 
-  /** ===== Read Aloud ===== **/
   const handleReadAloud = () => {
     if (!selectionText) {
       alert("Select text first to read aloud.");
@@ -85,7 +78,6 @@ export default function RightBrainToolbar({
     speak({ text: selectionText });
   };
 
-  /** ===== AI Summary ===== **/
   const handleAISummary = async () => {
     if (!selectionText) return alert("Select text to summarize.");
     setIsGenerating(true);
@@ -99,7 +91,6 @@ export default function RightBrainToolbar({
     setIsGenerating(false);
   };
 
-  /** ===== Add Mnemonic & Note ===== **/
   const handleAddMnemonic = async () => {
     if (!selectionText) return alert("Select text first.");
     setIsGenerating(true);
@@ -113,94 +104,68 @@ export default function RightBrainToolbar({
     setIsGenerating(false);
   };
 
-  /** ===== Create Flashcard ===== **/
   const handleCreateFlashcard = async () => {
     if (!selectionText) return alert("Select text first.");
     await createFlashcardFromSelection(selectionText, currentPage);
     alert("📇 Flashcard created");
   };
 
-  /** ===== Add Mind Map Node ===== **/
   const handleAddMindMap = async () => {
     if (!selectionText) return alert("Select text first.");
     await addMindMapNode(selectionText, currentPage);
     alert("🧠 Added to Mind Map");
   };
 
+  const handleSketchNote = () => {
+    if (!selectionText) return alert("Select text first.");
+    onGenerateNote?.(selectionText, undefined, "sketch");
+  };
+
+  const handleHighYieldNote = () => {
+    if (!selectionText) return alert("Select text first.");
+    onGenerateNote?.(selectionText, undefined, "highYield");
+  };
+
   return (
     <div className="mt-4 flex flex-wrap gap-2">
-      {/* 🎤 Dictation toggle */}
-      <button
-        onClick={toggleDictation}
-        className={`${isDictationOn ? "bg-red-500" : "bg-gray-600"} text-white px-3 py-1 rounded`}
-      >
+      <button onClick={toggleDictation} className={`${isDictationOn ? "bg-red-500" : "bg-gray-600"} text-white px-3 py-1 rounded`}>
         🎤 {isDictationOn ? "Stop Dictation" : "Start Dictation"}
       </button>
 
-      {/* 🔊 Read aloud */}
-      <button
-        onClick={handleReadAloud}
-        className="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded"
-      >
+      <button onClick={handleReadAloud} className="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded">
         🔊 Read Aloud
       </button>
 
-      {/* 📝 AI Summary */}
-      <button
-        onClick={handleAISummary}
-        disabled={isGenerating}
-        className={`px-3 py-1 rounded text-white ${
-          isGenerating ? "bg-gray-500" : "bg-orange-500 hover:bg-orange-600"
-        }`}
-      >
+      <button onClick={handleAISummary} disabled={isGenerating} className={`px-3 py-1 rounded text-white ${isGenerating ? "bg-gray-500" : "bg-orange-500 hover:bg-orange-600"}`}>
         {isGenerating ? "Summarizing..." : "📝 AI Summary"}
       </button>
 
-      {/* 🔗 Link page */}
-      <button
-        onClick={() =>
-          selectionText
-            ? alert(`🔗 Note linked to page ${currentPage}`)
-            : alert("Select text first to link page.")
-        }
-        className="bg-teal-500 hover:bg-teal-600 text-white px-3 py-1 rounded"
-      >
+      <button onClick={() => selectionText ? alert(`🔗 Note linked to page ${currentPage}`) : alert("Select text first to link page.")} className="bg-teal-500 hover:bg-teal-600 text-white px-3 py-1 rounded">
         🔗 Link Page
       </button>
 
-      {/* 🧠 Add Mnemonic */}
-      <button
-        onClick={handleAddMnemonic}
-        disabled={isGenerating}
-        className={`px-3 py-1 rounded text-white ${
-          isGenerating ? "bg-gray-500" : "bg-purple-500 hover:bg-purple-600"
-        }`}
-      >
+      <button onClick={handleAddMnemonic} disabled={isGenerating} className={`px-3 py-1 rounded text-white ${isGenerating ? "bg-gray-500" : "bg-purple-500 hover:bg-purple-600"}`}>
         🧠 Add Mnemonic
       </button>
 
-      {/* 📇 Create flashcard */}
-      <button
-        onClick={handleCreateFlashcard}
-        className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded"
-      >
+      <button onClick={handleCreateFlashcard} className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded">
         📇 Create Flashcard
       </button>
 
-      {/* 🗺️ Add to mind map */}
-      <button
-        onClick={handleAddMindMap}
-        className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded"
-      >
+      <button onClick={handleAddMindMap} className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded">
         🗺️ Add to Mind Map
       </button>
 
-      {/* 📅 Review cards */}
+      <button onClick={handleSketchNote} className="bg-pink-600 hover:bg-pink-700 text-white px-3 py-1 rounded">
+        ✍️ Sketch-Style Note
+      </button>
+
+      <button onClick={handleHighYieldNote} className="bg-yellow-700 hover:bg-yellow-800 text-white px-3 py-1 rounded">
+        📘 High-Yield Note
+      </button>
+
       {startReview && (
-        <button
-          onClick={startReview}
-          className="bg-yellow-500 hover:bg-yellow-600 text-black px-3 py-1 rounded"
-        >
+        <button onClick={startReview} className="bg-yellow-500 hover:bg-yellow-600 text-black px-3 py-1 rounded">
           📅 Review Cards
         </button>
       )}

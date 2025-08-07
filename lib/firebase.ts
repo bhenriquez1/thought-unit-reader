@@ -1,4 +1,3 @@
-// lib/firebase.ts
 import { initializeApp, getApp, getApps, FirebaseApp } from "firebase/app";
 import {
   getAuth,
@@ -6,7 +5,7 @@ import {
   signOut,
   User,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
 } from "firebase/auth";
 import {
   getFirestore,
@@ -15,14 +14,14 @@ import {
   getDoc,
   collection,
   getDocs,
-  deleteDoc
+  deleteDoc,
 } from "firebase/firestore";
 import {
   getStorage,
   ref,
   uploadBytes,
   getDownloadURL,
-  deleteObject
+  deleteObject,
 } from "firebase/storage";
 
 /* =========================================================================
@@ -35,11 +34,11 @@ const firebaseConfig = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "",
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "",
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "",
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || ""
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || "",
 };
 
 /* =========================================================================
-   🔹 Initialize Firebase (singleton pattern)
+   🔹 Initialize Firebase (singleton)
    ========================================================================= */
 let app: FirebaseApp;
 if (!getApps().length) {
@@ -53,16 +52,15 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
-let firebaseConnected = true;
-if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-  firebaseConnected = false;
-  console.error("❌ Firebase environment variables missing.");
+const firebaseConnected = !!(firebaseConfig.apiKey && firebaseConfig.projectId);
+if (!firebaseConnected) {
+  console.error("❌ Firebase env variables are missing.");
 }
 
 /* =========================================================================
    🔹 Auth Functions
    ========================================================================= */
-export async function signInWithGoogle() {
+export async function signInWithGoogle(): Promise<User | null> {
   try {
     const provider = new GoogleAuthProvider();
     const result = await signInWithPopup(auth, provider);
@@ -74,7 +72,7 @@ export async function signInWithGoogle() {
   }
 }
 
-export async function signOutUser() {
+export async function signOutUser(): Promise<void> {
   try {
     await signOut(auth);
     console.log("👋 Signed out");
@@ -98,7 +96,7 @@ export async function connectWallet(): Promise<string | null> {
 /* =========================================================================
    🔹 PDF Library Functions
    ========================================================================= */
-export async function uploadPDF(file: File, userId: string) {
+export async function uploadPDF(file: File, userId: string): Promise<string> {
   const fileRef = ref(storage, `pdfs/${userId}/${file.name}`);
   await uploadBytes(fileRef, file);
   const downloadURL = await getDownloadURL(fileRef);
@@ -107,13 +105,15 @@ export async function uploadPDF(file: File, userId: string) {
   await setDoc(libraryRef, {
     name: file.name,
     url: downloadURL,
-    uploadedAt: new Date().toISOString()
+    uploadedAt: new Date().toISOString(),
   });
 
   return downloadURL;
 }
 
-export async function getPDFLibrary(userId: string) {
+export async function getPDFLibrary(userId: string): Promise<
+  { id: string; name: string; url: string; uploadedAt: string }[]
+> {
   const querySnapshot = await getDocs(collection(db, "users", userId, "pdfLibrary"));
   const library: { id: string; name: string; url: string; uploadedAt: string }[] = [];
 
@@ -123,7 +123,7 @@ export async function getPDFLibrary(userId: string) {
       id: docSnap.id,
       name: data.name,
       url: data.url,
-      uploadedAt: data.uploadedAt || ""
+      uploadedAt: data.uploadedAt || "",
     });
   });
 
@@ -140,7 +140,7 @@ export async function deletePDF(userId: string, pdfId: string, pdfName: string) 
 }
 
 /* =========================================================================
-   🔹 Reading Progress Functions
+   🔹 Reading Progress
    ========================================================================= */
 export async function saveReadingProgress(
   userId: string,
@@ -150,7 +150,7 @@ export async function saveReadingProgress(
     currentThoughtUnit: number;
     highlightedWord: string;
   }
-) {
+): Promise<void> {
   const docRef = doc(db, "users", userId, "readingProgress", pdfId);
   await setDoc(
     docRef,
@@ -159,7 +159,10 @@ export async function saveReadingProgress(
   );
 }
 
-export async function loadReadingProgress(userId: string, pdfId: string) {
+export async function loadReadingProgress(
+  userId: string,
+  pdfId: string
+): Promise<any | null> {
   const docRef = doc(db, "users", userId, "readingProgress", pdfId);
   const snap = await getDoc(docRef);
   return snap.exists() ? snap.data() : null;
