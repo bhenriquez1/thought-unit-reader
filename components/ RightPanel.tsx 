@@ -1,0 +1,45 @@
+// components/RightPanel.tsx
+import React, { useEffect, useState } from "react";
+import { generateWhiteboardExplanation } from "../lib/WhiteboardExplanationService";
+import { synthesizeVoiceFromText } from "../lib/voiceTools";
+import Whiteboard from "./Whiteboard";
+import { Button } from "@/components/ui/button";
+
+export default function RightPanel({ concept, context }: { concept: string; context: string }) {
+  const [loading, setLoading] = useState(false);
+  const [whiteboardSteps, setWhiteboardSteps] = useState<any[]>([]);
+  const [narrationScript, setNarrationScript] = useState("");
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+
+  const handleExplainConcept = async () => {
+    setLoading(true);
+    try {
+      const result = await generateWhiteboardExplanation(concept, context);
+      setWhiteboardSteps(result.steps);
+      setNarrationScript(result.narrationScript);
+      const audio = await synthesizeVoiceFromText(result.narrationScript);
+      setAudioBlob(audio);
+    } catch (err) {
+      console.error("Error generating explanation:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <Button onClick={handleExplainConcept} disabled={loading}>
+        🎓 Explain with Whiteboard
+      </Button>
+
+      {whiteboardSteps.length > 0 && audioBlob && (
+        <Whiteboard
+          steps={whiteboardSteps}
+          audioBlob={audioBlob}
+          narrationScript={narrationScript}
+          useAIVoice={true}
+        />
+      )}
+    </div>
+  );
+}

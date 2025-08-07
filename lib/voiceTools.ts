@@ -1,8 +1,28 @@
 // lib/voiceTools.ts
+import OpenAI from "openai";
 
 /**
- * 🔊 SpeechRecognitionAPI
- * Converts spoken voice to text using the Web Speech API.
+ * 🔈 SpeechSynthesisAPI — Web-based TTS
+ * Reads aloud text using the built-in browser Speech Synthesis API.
+ */
+export const SpeechSynthesisAPI = {
+  speak(text: string) {
+    if (!window.speechSynthesis) {
+      alert("Your browser does not support text-to-speech.");
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "en-US";
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    window.speechSynthesis.speak(utterance);
+  }
+};
+
+/**
+ * 🔊 SpeechRecognitionAPI — Voice to Text (Web)
+ * Converts spoken voice to text using the Web Speech Recognition API.
  */
 export const SpeechRecognitionAPI = {
   recognition: null as SpeechRecognition | null,
@@ -14,8 +34,9 @@ export const SpeechRecognitionAPI = {
     onResult: (result: string) => void;
     onError?: () => void;
   }) {
-    const SpeechRecognition = 
+    const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
     if (!SpeechRecognition) {
       alert("Your browser does not support speech recognition.");
       return;
@@ -32,11 +53,11 @@ export const SpeechRecognitionAPI = {
     };
 
     recognition.onerror = () => {
-      if (onError) onError();
+      if (onError) onError?.();
     };
 
     recognition.onend = () => {
-      if (onError) onError(); // fallback in case of failure
+      if (onError) onError?.();
     };
 
     recognition.start();
@@ -50,20 +71,21 @@ export const SpeechRecognitionAPI = {
 };
 
 /**
- * 🔈 SpeechSynthesisAPI
- * Reads aloud text using the Web Speech Synthesis API.
+ * 🧠 synthesizeVoiceFromText — AI TTS (Ninja Nerd–style voice output)
+ * Generates natural-sounding audio from text using OpenAI's TTS model.
  */
-export const SpeechSynthesisAPI = {
-  speak(text: string) {
-    if (!window.speechSynthesis) {
-      alert("Your browser does not support text-to-speech.");
-      return;
-    }
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "" });
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "en-US";
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    window.speechSynthesis.speak(utterance);
-  }
-};
+export async function synthesizeVoiceFromText(
+  script: string,
+  voice: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer" = "alloy"
+): Promise<Blob> {
+  const response = await openai.audio.speech.create({
+    model: "tts-1",
+    voice,
+    input: script
+  });
+
+  const arrayBuffer = await response.arrayBuffer();
+  return new Blob([arrayBuffer], { type: "audio/mpeg" });
+}
