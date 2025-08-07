@@ -5,13 +5,15 @@ import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 /**
  * Adds a highlighted text as a new node in the user's mind map.
  * @param text - Highlighted text from the reader
+ * @param page - Optional page number for reference
  */
-export async function addMindMapNode(text: string) {
-  if (!text.trim()) throw new Error("Cannot add empty mind map node");
+export async function addMindMapNode(text: string, page?: number) {
+  if (!text.trim()) throw new Error("❌ Cannot add empty mind map node");
 
   const node = {
     label: text,
-    connections: [], // later you can connect nodes by ID
+    page: page || null,
+    connections: [], // optional future links
     createdAt: serverTimestamp()
   };
 

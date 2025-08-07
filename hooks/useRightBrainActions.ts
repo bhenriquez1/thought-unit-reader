@@ -1,10 +1,11 @@
+// hooks/useRightBrainActions.ts
 import { useState } from "react";
 import { generateMnemonic } from "@/lib/mnemonicAI";
-import { generateAISummary } from "@/lib/summaryAI"; // ← You will create this
+import { summarizeText } from "@/lib/aiSummary";
 import { saveFlashcard } from "@/lib/noteService";
-import { saveMindMapNode } from "@/lib/mindMapService";
-import { startReviewSession, autoGradeFlashcard } from "@/lib/aiReview";
-import { SpeechRecognitionAPI, SpeechSynthesisAPI } from "@/lib/voiceTools"; // ← You will create this
+import { addMindMapNode } from "@/lib/mindMapService";
+import { startReviewSession, autoGradeFlashcard } from "@/lib/reviewTools";
+import { SpeechRecognitionAPI, SpeechSynthesisAPI } from "@/lib/voiceTools";
 
 export function useRightBrainActions(userId: string, bookId: string, currentPage?: number) {
   const [isGenerating, setIsGenerating] = useState(false);
@@ -17,18 +18,24 @@ export function useRightBrainActions(userId: string, bookId: string, currentPage
   const addMnemonic = async (text: string) => {
     if (!text.trim()) return alert("Highlight or enter text first.");
     setIsGenerating(true);
-    const mnemonic = await generateMnemonic(text);
-    setIsGenerating(false);
-    return mnemonic;
+    try {
+      const mnemonic = await generateMnemonic(text);
+      return mnemonic;
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   /** ===== AI Summary ===== **/
   const addAISummary = async (text: string) => {
     if (!text.trim()) return alert("Highlight or enter text first.");
     setIsGenerating(true);
-    const summary = await generateAISummary(text);
-    setIsGenerating(false);
-    return summary;
+    try {
+      const summary = await summarizeText(text);
+      return summary;
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   /** ===== Create Flashcard ===== **/
@@ -45,16 +52,9 @@ export function useRightBrainActions(userId: string, bookId: string, currentPage
   };
 
   /** ===== Add Mind Map Node ===== **/
-  const addMindMap = async (title: string, content: string, mnemonic?: string) => {
+  const addMindMap = async (content: string) => {
     if (!userId) return alert("Sign in to save to mind map.");
-    await saveMindMapNode(userId, {
-      title: title || "Untitled",
-      content,
-      mnemonic: mnemonic || "",
-      tags: [],
-      attachments: [],
-      bookId
-    });
+    await addMindMapNode(content, currentPage || 1);
     alert("🗺️ Mind Map node saved!");
   };
 
@@ -69,18 +69,24 @@ export function useRightBrainActions(userId: string, bookId: string, currentPage
   /** ===== Voice-to-Text ===== **/
   const startVoiceNote = async (onResult: (text: string) => void) => {
     setIsListening(true);
-    SpeechRecognitionAPI.start({
-      onResult: (result: string) => {
-        setIsListening(false);
-        onResult(result);
-      },
-      onError: () => setIsListening(false)
-    });
+    try {
+      SpeechRecognitionAPI.start({
+        onResult: (result: string) => {
+          setIsListening(false);
+          onResult(result);
+        },
+        onError: () => setIsListening(false)
+      });
+    } catch {
+      setIsListening(false);
+    }
   };
 
   /** ===== Read Aloud ===== **/
   const readAloud = (text: string) => {
-    SpeechSynthesisAPI.speak(text);
+    if (!SpeechSynthesisAPI) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    SpeechSynthesisAPI.speak(utterance);
   };
 
   /** ===== Review Mode ===== **/

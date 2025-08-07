@@ -1,3 +1,4 @@
+// lib/noteService.ts
 import { db } from "@/lib/firebase";
 import {
   collection,
@@ -10,6 +11,9 @@ import {
   Timestamp
 } from "firebase/firestore";
 
+/* =========================================================================
+   🔹 Interfaces
+   ========================================================================= */
 export interface RightBrainNote {
   id?: string;
   title: string;
@@ -42,7 +46,7 @@ export interface MindMapNode {
 }
 
 /* =========================================================================
-   🔹 Notes
+   🔹 Notes (Right Brain)
    ========================================================================= */
 export async function saveNote(
   userId: string,
