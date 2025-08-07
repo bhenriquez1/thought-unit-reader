@@ -1,9 +1,15 @@
 /** @type {import('next').NextConfig} */
+const path = require('path');
+
 const nextConfig = {
-  output: 'export', // Replaces deprecated `next export`
-  distDir: 'out',   // Render will use "out" as publish directory
+  output: 'export',         // For static export builds (e.g. Render)
+  distDir: 'out',           // Custom output directory
   images: {
-    unoptimized: true // Required for static export with images
+    unoptimized: true       // Required when using static export with images
+  },
+  webpack: (config) => {
+    config.resolve.alias['@'] = path.resolve(__dirname); // Enables "@/lib" or "@/components" imports
+    return config;
   }
 };
 
