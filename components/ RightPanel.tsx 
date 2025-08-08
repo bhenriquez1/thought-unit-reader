@@ -1,24 +1,53 @@
 // components/RightPanel.tsx
 import React, { useEffect, useState } from "react";
-import { generateWhiteboardExplanation } from "../lib/WhiteboardExplanationService";
-import { synthesizeVoiceFromText } from "../lib/voiceTools";
-import Whiteboard from "./Whiteboard";
+import { generateWhiteboardExplanation, type WhiteboardStep } from "@/lib/WhiteboardExplanationService";
+import { synthesizeVoiceFromText } from "@/lib/voiceTools";
+import Whiteboard from "@/components/Whiteboard";
 import { Button } from "@/components/ui/button";
 
-export default function RightPanel({ concept, context }: { concept: string; context: string }) {
+interface StickyNote {
+  pageNumber: number;
+  content: string;
+}
+
+type Props = {
+  concept: string;
+  context: string;
+  stickyNotes?: StickyNote[];
+  autoTrigger?: boolean;
+  lessonTitle?: string;
+};
+
+export default function RightPanel({
+  concept,
+  context,
+  stickyNotes = [],
+  autoTrigger = false,
+  lessonTitle = "Whiteboard Lesson",
+}: Props) {
   const [loading, setLoading] = useState(false);
-  const [whiteboardSteps, setWhiteboardSteps] = useState<any[]>([]);
+  const [steps, setSteps] = useState<WhiteboardStep[]>([]);
   const [narrationScript, setNarrationScript] = useState("");
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
 
+  // NEW: parent-controlled playback speed passed to <Whiteboard />
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
+
   const handleExplainConcept = async () => {
+    if (!concept?.trim()) return;
     setLoading(true);
     try {
       const result = await generateWhiteboardExplanation(concept, context);
-      setWhiteboardSteps(result.steps);
+      setSteps(result.steps);
       setNarrationScript(result.narrationScript);
-      const audio = await synthesizeVoiceFromText(result.narrationScript);
-      setAudioBlob(audio);
+
+      // Try AI TTS — if it fails (e.g., SSR / blocked), Whiteboard will fall back to browser TTS
+      try {
+        const audio = await synthesizeVoiceFromText(result.narrationScript);
+        setAudioBlob(audio);
+      } catch {
+        setAudioBlob(null);
+      }
     } catch (err) {
       console.error("Error generating explanation:", err);
     } finally {
@@ -26,19 +55,64 @@ export default function RightPanel({ concept, context }: { concept: string; cont
     }
   };
 
+  // Auto-trigger (e.g., from Elena/diagram detection)
+  useEffect(() => {
+    if (autoTrigger && concept && context) {
+      handleExplainConcept();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoTrigger, concept, context]);
+
   return (
     <div className="space-y-4">
-      <Button onClick={handleExplainConcept} disabled={loading}>
-        🎓 Explain with Whiteboard
-      </Button>
+      <div className="flex gap-2 items-center flex-wrap">
+        <Button onClick={handleExplainConcept} disabled={loading}>
+          {loading ? "Generating..." : "🎓 Explain with Whiteboard"}
+        </Button>
 
-      {whiteboardSteps.length > 0 && audioBlob && (
+        {steps.length > 0 && (
+          <>
+            <label className="ml-2 text-sm opacity-80">Speed</label>
+            <select
+              value={playbackSpeed}
+              onChange={(e) => setPlaybackSpeed(parseFloat(e.target.value))}
+              className="border rounded px-2 py-1"
+            >
+              <option value={0.75}>0.75×</option>
+              <option value={1.0}>1.0×</option>
+              <option value={1.25}>1.25×</option>
+              <option value={1.5}>1.5×</option>
+              <option value={2.0}>2.0×</option>
+            </select>
+          </>
+        )}
+      </div>
+
+      {steps.length > 0 && (
         <Whiteboard
-          steps={whiteboardSteps}
-          audioBlob={audioBlob}
+          steps={steps}
+          audioBlob={audioBlob ?? undefined}   // if null, component uses browser TTS with narrationScript
           narrationScript={narrationScript}
-          useAIVoice={true}
+          useAIVoice={!!audioBlob}
+          stickyNotes={stickyNotes}
+          lessonTitle={lessonTitle}
+          baseStepDurationMs={4000}
+          playbackSpeed={playbackSpeed}       // ← pass speed down
         />
+      )}
+
+      {/* Optional: also render sticky notes below the board */}
+      {stickyNotes.length > 0 && (
+        <div className="border p-3 rounded bg-yellow-50 text-sm">
+          <h3 className="font-semibold mb-1">Sticky Notes</h3>
+          <ul className="list-disc ml-5 space-y-1">
+            {stickyNotes.map((note, idx) => (
+              <li key={idx}>
+                <strong>p.{note.pageNumber}:</strong> {note.content}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 // lib/parser.ts
 // Updated with Whiteboard detection + simplified PDF handler
 
-import { extractTextFromPdf } from './pdfjs-handler';
+import { extractTextFromPdf } from "./pdfjs-handler";
 
 // Define the Chapter interface
 export interface Chapter {
@@ -22,7 +22,7 @@ export async function extractText(file: File): Promise<string> {
     }
   } else if (extension === "docx") {
     try {
-      const mammoth = await import('mammoth');
+      const mammoth = await import("mammoth");
       const arrayBuffer = await file.arrayBuffer();
       const result = await mammoth.extractRawText({ arrayBuffer });
       return result.value;
@@ -44,9 +44,8 @@ export async function extractText(file: File): Promise<string> {
 
 export function parseIntoUnits(text: string): string[] {
   if (!text) return [];
-
   return text
-    .split(/(?<=[.?!])\s+(?=[A-Z0-9])/) // match sentence endings followed by capital letter/number
+    .split(/(?<=[.?!])\s+(?=[A-Z0-9])/) // sentence endings followed by capital/number
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 }
@@ -55,14 +54,14 @@ export function parseTextToUnits(text: string): string[][] {
   if (!text) return [[]];
 
   const sentences = text
-    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/) // Split at sentence boundaries
-    .map(sentence => sentence.trim())
-    .filter(sentence => sentence.length > 0);
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/) // sentence boundaries
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 
   const paragraphs: string[][] = [];
   let currentParagraph: string[] = [];
 
-  sentences.forEach(sentence => {
+  sentences.forEach((sentence) => {
     currentParagraph.push(sentence);
     if (sentence.includes("\n\n") || currentParagraph.length > 5) {
       paragraphs.push([...currentParagraph]);
@@ -70,10 +69,7 @@ export function parseTextToUnits(text: string): string[][] {
     }
   });
 
-  if (currentParagraph.length > 0) {
-    paragraphs.push(currentParagraph);
-  }
-
+  if (currentParagraph.length > 0) paragraphs.push(currentParagraph);
   return paragraphs.length > 0 ? paragraphs : [[]];
 }
 
@@ -97,10 +93,7 @@ export function splitIntoChapters(text: string): Chapter[] {
     }
   }
 
-  if (currentChapter.title || currentChapter.content) {
-    chapters.push(currentChapter);
-  }
-
+  if (currentChapter.title || currentChapter.content) chapters.push(currentChapter);
   return chapters;
 }
 
@@ -115,9 +108,7 @@ export async function parseBookWithChapters(file: File): Promise<{
 
     const parsedUnits: string[][] = [];
     chapters.forEach((chapter, index) => {
-      if (!chapter.content) {
-        chapter.content = "";
-      }
+      if (!chapter.content) chapter.content = "";
 
       const sentences = parseIntoUnits(chapter.content);
       chapter.page = index + 1;
@@ -125,7 +116,7 @@ export async function parseBookWithChapters(file: File): Promise<{
       const paragraphs: string[][] = [];
       let currentParagraph: string[] = [];
 
-      sentences.forEach(sentence => {
+      sentences.forEach((sentence) => {
         currentParagraph.push(sentence);
         if (sentence.endsWith("\n\n")) {
           paragraphs.push([...currentParagraph]);
@@ -133,15 +124,8 @@ export async function parseBookWithChapters(file: File): Promise<{
         }
       });
 
-      if (currentParagraph.length > 0) {
-        paragraphs.push(currentParagraph);
-      }
-
-      if (paragraphs.length > 0) {
-        parsedUnits.push(...paragraphs);
-      } else {
-        parsedUnits.push([]);
-      }
+      if (currentParagraph.length > 0) paragraphs.push(currentParagraph);
+      parsedUnits.push(...(paragraphs.length > 0 ? paragraphs : [[]]));
     });
 
     if (chapters.length === 0) {
@@ -169,8 +153,8 @@ export function generateHybridHTML(chapters: Chapter[], units: string[][]): stri
 
   const toc = chapters
     .map((ch, i) => {
-      const title = typeof ch.title === 'string' ? ch.title : String(ch.title || '');
-      const page = typeof ch.page === 'number' ? ch.page : (i + 1);
+      const title = typeof ch.title === "string" ? ch.title : String(ch.title || "");
+      const page = typeof ch.page === "number" ? ch.page : i + 1;
 
       return `
         <li class="mb-2">
@@ -182,21 +166,23 @@ export function generateHybridHTML(chapters: Chapter[], units: string[][]): stri
     .join("");
 
   let chapterCounter = 0;
-  const body = units.flatMap((unit, i) => {
-    if (!unit || !Array.isArray(unit) || unit.length === 0) return [];
+  const body = units
+    .flatMap((unit, i) => {
+      if (!unit || !Array.isArray(unit) || unit.length === 0) return [];
 
-    const joined = unit.map(item => typeof item === 'string' ? item : String(item)).join(" ");
+      const joined = unit.map((item) => (typeof item === "string" ? item : String(item))).join(" ");
 
-    if (joined.startsWith("###CHAPTER:")) {
-      const title = joined.replace("###CHAPTER:", "").trim();
-      const header = `<h3 id="chapter-${chapterCounter}" class="text-lg font-semibold mt-8 mb-4">${title}</h3>`;
-      chapterCounter++;
-      return [header];
-    }
+      if (joined.startsWith("###CHAPTER:")) {
+        const title = joined.replace("###CHAPTER:", "").trim();
+        const header = `<h3 id="chapter-${chapterCounter}" class="text-lg font-semibold mt-8 mb-4">${title}</h3>`;
+        chapterCounter++;
+        return [header];
+      }
 
-    const colorClass = i % 2 === 0 ? "text-black dark:text-white" : "text-gray-500 dark:text-gray-400";
-    return [`<p id="unit-${i}" class="${colorClass} mt-2 text-base leading-relaxed">${joined}</p>`];
-  }).join("\n");
+      const colorClass = i % 2 === 0 ? "text-black dark:text-white" : "text-gray-500 dark:text-gray-400";
+      return [`<p id="unit-${i}" class="${colorClass} mt-2 text-base leading-relaxed">${joined}</p>`];
+    })
+    .join("\n");
 
   return `
     <div class="flex flex-col gap-6">
@@ -218,9 +204,7 @@ export function parseTextToThoughtUnits(text: string): string[][] {
     .filter((s) => s.length > 0)
     .map((s) => s.trim());
 
-  return sentences.map((sentence) =>
-    sentence.split(/([,;:\-–\(\)\[\]\{\}]|\s+)/).filter(Boolean)
-  );
+  return sentences.map((sentence) => sentence.split(/([,;:\-–()\[\]{}]|\s+)/).filter(Boolean));
 }
 
 export function generateProgressiveReadingHTML(text: string): string {
@@ -230,11 +214,14 @@ export function generateProgressiveReadingHTML(text: string): string {
 
   return `
     <div class="space-y-2 text-base leading-relaxed">
-      ${sentences.map((sentence, i) => `
+      ${sentences
+        .map(
+          (sentence, i) => `
         <p class="${i % 2 === 0 ? "text-black dark:text-white" : "text-gray-400 dark:text-gray-400"}">
           ${sentence.trim()}
-        </p>
-      `).join('')}
+        </p>`
+        )
+        .join("")}
     </div>
   `;
 }
@@ -242,18 +229,16 @@ export function generateProgressiveReadingHTML(text: string): string {
 // 🔹 NEW: Detect formulas/diagrams for whiteboard mode
 export function containsDiagramOrFormula(text: string): boolean {
   const lower = text.toLowerCase();
-  const diagramKeywords = ["diagram", "figure", "chart", "image", "graph"];
-  const formulaRegex = /[\^=><×÷±√∑πθ]|[a-zA-Z]{1,10}\s*[=+\-*/^]?[\d\.]+/;
-  return diagramKeywords.some(keyword => lower.includes(keyword)) || formulaRegex.test(text);
+  const diagramKeywords = ["diagram", "figure", "fig.", "chart", "image", "graph", "table"];
+  const formulaRegex = /[\^=><×÷±√∑πθ∞≈≠≤≥]|[a-zA-Z]{1,10}\s*[=+\-*/^]?\s*[\d\.]+/;
+  return diagramKeywords.some((k) => lower.includes(k)) || formulaRegex.test(text);
 }
 
 export function detectWhiteboardSections(units: string[][]): number[] {
   const matches: number[] = [];
   units.forEach((unit, i) => {
     const text = unit.join(" ");
-    if (containsDiagramOrFormula(text)) {
-      matches.push(i);
-    }
+    if (containsDiagramOrFormula(text)) matches.push(i);
   });
   return matches;
 }
