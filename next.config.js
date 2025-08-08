@@ -2,15 +2,15 @@
 const path = require('path');
 
 const nextConfig = {
-  output: 'export',         // For static export builds (e.g. Render)
-  distDir: 'out',           // Custom output directory
+  reactStrictMode: true,
   images: {
-    unoptimized: true       // Required when using static export with images
+    // keep this if you rely on unoptimized images; otherwise you can remove it
+    unoptimized: true,
   },
   webpack: (config) => {
-    config.resolve.alias['@'] = path.resolve(__dirname); // Enables "@/lib" or "@/components" imports
+    config.resolve.alias['@'] = path.resolve(__dirname);
     return config;
-  }
+  },
 };
 
 module.exports = nextConfig;

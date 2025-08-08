@@ -41,9 +41,17 @@ export default function Whiteboard({
   const [audioURL, setAudioURL] = useState<string | null>(null);
   const [audioDurationSec, setAudioDurationSec] = useState<number | null>(null);
 
+  // 🔔 NEW: cues + totalMs for syncing steps to narration
+  const [cues, setCues] = useState<number[]>([]); // ms start times per step
+  const [totalMs, setTotalMs] = useState<number>(0);
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const timerRef = useRef<number | null>(null);
+
+  // For TTS (no real audio clock): track elapsed time across play/pause
+  const ttsStartRef = useRef<number | null>(null);
+  const ttsElapsedRef = useRef<number>(0);
+  const ttsTimerRef = useRef<number | null>(null);
 
   /** Build object URL for AI audio */
   useEffect(() => {
@@ -75,15 +83,42 @@ export default function Whiteboard({
     };
   }, [useAIVoice, audioURL]);
 
-  /** Choose interval per step: use audio duration if available, else baseStepDurationMs */
-  const stepIntervalMs = useMemo(() => {
-    if (useAIVoice && audioDurationSec && steps.length > 0) {
-      const totalMs = audioDurationSec * 1000;
-      return Math.max(600, (totalMs / steps.length) / Math.max(0.5, Math.min(2, effectiveSpeed)));
+  /** Compute cues (ms per step) using either AI audio duration or estimated TTS duration */
+  useEffect(() => {
+    if (steps.length === 0) {
+      setCues([]);
+      setTotalMs(0);
+      return;
     }
-    // Fallback: baseStepDurationMs scaled by speed
-    return Math.max(800, baseStepDurationMs / Math.max(0.5, Math.min(2, effectiveSpeed)));
-  }, [useAIVoice, audioDurationSec, steps.length, baseStepDurationMs, effectiveSpeed]);
+
+    const wordsPerStep = steps.map(
+      (s) => (s.description || "").trim().split(/\s+/).filter(Boolean).length || 1
+    );
+    const sumWords = wordsPerStep.reduce((a, b) => a + b, 0);
+
+    // total duration:
+    // - AI audio: from metadata
+    // - TTS: estimate from narrationScript @ ~160 wpm
+    let total: number;
+    if (useAIVoice && audioDurationSec) {
+      total = audioDurationSec * 1000;
+    } else {
+      const words = (narrationScript || "").split(/\s+/).filter(Boolean).length || 1;
+      total = (words / 160) * 60_000; // 160 wpm estimate
+      // As a fallback if narrationScript is empty, use baseStepDurationMs * steps
+      if (!words && baseStepDurationMs) total = steps.length * baseStepDurationMs;
+    }
+
+    let acc = 0;
+    const starts = wordsPerStep.map((w) => {
+      const start = acc;
+      acc += (w / Math.max(1, sumWords)) * total;
+      return start;
+    });
+
+    setCues(starts);
+    setTotalMs(total);
+  }, [steps, useAIVoice, audioDurationSec, narrationScript, baseStepDurationMs]);
 
   /** Draw current step */
   useEffect(() => {
@@ -120,30 +155,61 @@ export default function Whiteboard({
     }
   }, [currentStepIndex, steps]);
 
-  /** Cleanup timer on unmount */
+  /** Cleanup timers on unmount */
   useEffect(() => {
-    return () => clearTimer();
+    return () => {
+      clearTtsTimer();
+      // Also stop speech if leaving component
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    };
   }, []);
 
-  const clearTimer = () => {
-    if (timerRef.current) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
+  const clearTtsTimer = () => {
+    if (ttsTimerRef.current) {
+      window.clearInterval(ttsTimerRef.current);
+      ttsTimerRef.current = null;
     }
   };
 
-  const startTimer = () => {
-    clearTimer();
-    timerRef.current = window.setInterval(() => {
-      setCurrentStepIndex((prev) => {
-        const next = prev + 1;
-        if (next >= steps.length) {
-          stop();
-          return prev;
-        }
-        return next;
-      });
-    }, stepIntervalMs) as unknown as number;
+  /** AI audio: sync steps via audio timeupdate against cues */
+  useEffect(() => {
+    if (!useAIVoice || !audioRef.current || cues.length === 0) return;
+    const el = audioRef.current;
+
+    const onTimeUpdate = () => {
+      const t = el.currentTime * 1000; // ms
+      let idx = currentStepIndex;
+      // advance while next cue is reached
+      while (idx + 1 < cues.length && t >= cues[idx + 1]) idx++;
+      // rewind if needed (user scrub)
+      while (idx > 0 && t < cues[idx]) idx--;
+      if (idx !== currentStepIndex) setCurrentStepIndex(idx);
+    };
+
+    el.addEventListener("timeupdate", onTimeUpdate);
+    return () => el.removeEventListener("timeupdate", onTimeUpdate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useAIVoice, cues, currentStepIndex]);
+
+  /** TTS mode: drive steps by elapsed time vs cues */
+  const startTtsLoop = () => {
+    clearTtsTimer();
+    ttsStartRef.current = performance.now();
+    ttsTimerRef.current = window.setInterval(() => {
+      if (ttsStartRef.current == null) return;
+      const elapsedNow = (performance.now() - ttsStartRef.current) * clampRate(effectiveSpeed);
+      const elapsed = ttsElapsedRef.current + elapsedNow;
+
+      // compute step index from cues
+      let idx = 0;
+      while (idx + 1 < cues.length && elapsed >= cues[idx + 1]) idx++;
+      if (idx !== currentStepIndex) setCurrentStepIndex(idx);
+
+      // stop when we pass the total
+      if (elapsed >= totalMs && totalMs > 0) {
+        stop();
+      }
+    }, 100) as unknown as number;
   };
 
   const play = () => {
@@ -158,6 +224,10 @@ export default function Whiteboard({
     } else {
       // Browser TTS fallback
       if ("speechSynthesis" in window && narrationScript.trim()) {
+        // reset tracking for elapsed time if starting fresh
+        if (ttsElapsedRef.current === 0) {
+          ttsStartRef.current = performance.now();
+        }
         const u = new SpeechSynthesisUtterance(narrationScript);
         u.lang = "en-US";
         u.rate = clampRate(effectiveSpeed);
@@ -165,18 +235,26 @@ export default function Whiteboard({
         u.onend = () => stop(); // stop animation when speech ends
         window.speechSynthesis.cancel();
         window.speechSynthesis.speak(u);
+        startTtsLoop();
       }
     }
 
     setIsPlaying(true);
-    startTimer();
   };
 
   const pause = () => {
     if (useAIVoice && audioRef.current) audioRef.current.pause();
-    if (!useAIVoice && "speechSynthesis" in window) window.speechSynthesis.pause?.();
+    if (!useAIVoice && "speechSynthesis" in window) {
+      // accumulate elapsed for TTS
+      if (ttsStartRef.current != null) {
+        const elapsedNow = (performance.now() - ttsStartRef.current) * clampRate(effectiveSpeed);
+        ttsElapsedRef.current += elapsedNow;
+        ttsStartRef.current = null;
+      }
+      window.speechSynthesis.pause?.();
+      clearTtsTimer();
+    }
     setIsPlaying(false);
-    clearTimer();
   };
 
   const resume = () => {
@@ -184,35 +262,46 @@ export default function Whiteboard({
       audioRef.current.playbackRate = clampRate(effectiveSpeed);
       audioRef.current.play().catch(() => {});
     }
-    if (!useAIVoice && "speechSynthesis" in window) window.speechSynthesis.resume?.();
+    if (!useAIVoice && "speechSynthesis" in window) {
+      // resume counting from now
+      ttsStartRef.current = performance.now();
+      window.speechSynthesis.resume?.();
+      startTtsLoop();
+    }
     setIsPlaying(true);
-    startTimer();
   };
 
   const stop = () => {
     pause();
     setCurrentStepIndex(0);
+    // Reset timers/positions
     if (useAIVoice && audioRef.current) audioRef.current.currentTime = 0;
-    if (!useAIVoice && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    if (!useAIVoice && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      ttsElapsedRef.current = 0;
+      ttsStartRef.current = null;
+      clearTtsTimer();
+    }
   };
 
   /** Respond to parent speed changes live */
   useEffect(() => {
     if (!isPlaying) return;
-    // Re-apply playback rate and restart timer to re-sync interval
+
     if (useAIVoice && audioRef.current) {
       audioRef.current.playbackRate = clampRate(effectiveSpeed);
+    } else {
+      // TTS timer will read effectiveSpeed on next tick; no extra work needed
     }
-    startTimer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveSpeed, stepIntervalMs]);
+  }, [effectiveSpeed]);
 
   const onLocalSpeedChange = (val: number) => {
     setLocalSpeed(val);
     // If the parent is controlling speed, ignore local UI
     if (typeof playbackSpeed !== "number") {
       if (useAIVoice && audioRef.current) audioRef.current.playbackRate = clampRate(val);
-      if (isPlaying) startTimer(); // re-sync step interval
+      // TTS loop reads speed dynamically, no restart needed
     }
   };
 
