@@ -1,10 +1,17 @@
-// components/ui/button.tsx
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { cn } from "../../lib/classnames"; // Updated to use classnames consistently
+import { clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+// local cn helper so we don't depend on ../../lib/classnames
+function cn(...inputs: any[]) {
+  return twMerge(clsx(inputs));
+}
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 ring-offset-background",
+  "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors " +
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 " +
+    "disabled:pointer-events-none disabled:opacity-50 ring-offset-background",
   {
     variants: {
       variant: {
@@ -35,16 +42,11 @@ export interface ButtonProps
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, ...props }, ref) => {
-    return (
-      <button
-        className={cn(buttonVariants({ variant, size }), className)}
-        ref={ref}
-        {...props}
-      />
-    );
+    return <button ref={ref} className={cn(buttonVariants({ variant, size }), className)} {...props} />;
   }
 );
 
 Button.displayName = "Button";
 
 export { Button, buttonVariants };
+export default Button; // <-- add default export so `import Button from ...` works
