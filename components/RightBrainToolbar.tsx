@@ -4,7 +4,6 @@ import { generateMnemonic } from "@/lib/mnemonicAI";
 import { createFlashcardFromSelection } from "@/lib/flashcardService";
 import { addMindMapNode } from "@/lib/mindMapService";
 import summarizeText from "@/lib/aiSummary";
-import { useSpeechSynthesis } from "react-speech-kit";
 
 interface RightBrainToolbarProps {
   userId: string;
@@ -13,6 +12,25 @@ interface RightBrainToolbarProps {
   selectionText: string;
   onGenerateNote?: (text: string, mnemonic?: string, mode?: "sketch" | "highYield") => void;
   startReview?: () => void;
+}
+
+/** Minimal local speech-synthesis hook (no peer deps) */
+function useLocalSpeechSynthesis() {
+  const speak = ({ text }: { text: string }) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (!text?.trim()) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "en-US";
+      u.rate = 1;
+      u.pitch = 1;
+      window.speechSynthesis.speak(u);
+    } catch {
+      /* ignore */
+    }
+  };
+  return { speak };
 }
 
 export default function RightBrainToolbar({
@@ -25,12 +43,14 @@ export default function RightBrainToolbar({
 }: RightBrainToolbarProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isDictationOn, setIsDictationOn] = useState(false);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const { speak } = useSpeechSynthesis();
+  const recognitionRef = useRef<any>(null); // keep 'any' to avoid DOM typings issues
+  const { speak } = useLocalSpeechSynthesis();
 
+  // 🎙️ Dictation (Web Speech API)
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const SR: typeof window.SpeechRecognition | typeof window.webkitSpeechRecognition =
+
+    const SR =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return;
 
@@ -39,23 +59,28 @@ export default function RightBrainToolbar({
     recognition.continuous = true;
     recognition.interimResults = true;
 
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
+    recognition.onresult = (event: any) => {
       let transcript = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         transcript += event.results[i][0].transcript;
       }
       onGenerateNote?.(transcript.trim());
     };
-    recognition.onerror = (err: any) => console.error("🎤 Dictation error:", err);
-    recognitionRef.current = recognition as unknown as SpeechRecognition;
+
+    recognition.onerror = (err: any) => {
+      console.error("🎤 Dictation error:", err);
+    };
+
+    recognitionRef.current = recognition;
   }, [onGenerateNote]);
 
   useEffect(() => {
-    if (!recognitionRef.current) return;
+    const rec = recognitionRef.current;
+    if (!rec) return;
     if (isDictationOn) {
-      try { recognitionRef.current.start(); } catch {}
+      try { rec.start(); } catch { /* already started */ }
     } else {
-      try { recognitionRef.current.stop(); } catch {}
+      try { rec.stop(); } catch { /* ignore */ }
     }
   }, [isDictationOn]);
 
@@ -118,35 +143,80 @@ export default function RightBrainToolbar({
 
   return (
     <div className="mt-4 flex flex-wrap gap-2">
-      <button onClick={toggleDictation} className={`${isDictationOn ? "bg-red-500" : "bg-gray-600"} text-white px-3 py-1 rounded`}>
+      <button
+        onClick={toggleDictation}
+        className={`${isDictationOn ? "bg-red-500" : "bg-gray-600"} text-white px-3 py-1 rounded`}
+      >
         🎤 {isDictationOn ? "Stop Dictation" : "Start Dictation"}
       </button>
-      <button onClick={handleReadAloud} className="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded">
+
+      <button
+        onClick={handleReadAloud}
+        className="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded"
+      >
         🔊 Read Aloud
       </button>
-      <button onClick={handleAISummary} disabled={isGenerating} className={`px-3 py-1 rounded text-white ${isGenerating ? "bg-gray-500" : "bg-orange-500 hover:bg-orange-600"}`}>
+
+      <button
+        onClick={handleAISummary}
+        disabled={isGenerating}
+        className={`px-3 py-1 rounded text-white ${isGenerating ? "bg-gray-500" : "bg-orange-500 hover:bg-orange-600"}`}
+      >
         {isGenerating ? "Summarizing..." : "📝 AI Summary"}
       </button>
-      <button onClick={() => selectionText ? alert(`🔗 Note linked to page ${currentPage}`) : alert("Select text first to link page.")} className="bg-teal-500 hover:bg-teal-600 text-white px-3 py-1 rounded">
+
+      <button
+        onClick={() =>
+          selectionText
+            ? alert(`🔗 Note linked to page ${currentPage}`)
+            : alert("Select text first to link page.")
+        }
+        className="bg-teal-500 hover:bg-teal-600 text-white px-3 py-1 rounded"
+      >
         🔗 Link Page
       </button>
-      <button onClick={handleAddMnemonic} disabled={isGenerating} className={`px-3 py-1 rounded text-white ${isGenerating ? "bg-gray-500" : "bg-purple-500 hover:bg-purple-600"}`}>
+
+      <button
+        onClick={handleAddMnemonic}
+        disabled={isGenerating}
+        className={`px-3 py-1 rounded text-white ${isGenerating ? "bg-gray-500" : "bg-purple-500 hover:bg-purple-600"}`}
+      >
         🧠 Add Mnemonic
       </button>
-      <button onClick={handleCreateFlashcard} className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded">
+
+      <button
+        onClick={handleCreateFlashcard}
+        className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded"
+      >
         📇 Create Flashcard
       </button>
-      <button onClick={handleAddMindMap} className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded">
+
+      <button
+        onClick={handleAddMindMap}
+        className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded"
+      >
         🗺️ Add to Mind Map
       </button>
-      <button onClick={handleSketchNote} className="bg-pink-600 hover:bg-pink-700 text-white px-3 py-1 rounded">
+
+      <button
+        onClick={handleSketchNote}
+        className="bg-pink-600 hover:bg-pink-700 text-white px-3 py-1 rounded"
+      >
         ✍️ Sketch-Style Note
       </button>
-      <button onClick={handleHighYieldNote} className="bg-yellow-700 hover:bg-yellow-800 text-white px-3 py-1 rounded">
+
+      <button
+        onClick={handleHighYieldNote}
+        className="bg-yellow-700 hover:bg-yellow-800 text-white px-3 py-1 rounded"
+      >
         📘 High-Yield Note
       </button>
+
       {startReview && (
-        <button onClick={startReview} className="bg-yellow-500 hover:bg-yellow-600 text-black px-3 py-1 rounded">
+        <button
+          onClick={startReview}
+          className="bg-yellow-500 hover:bg-yellow-600 text-black px-3 py-1 rounded"
+        >
           📅 Review Cards
         </button>
       )}

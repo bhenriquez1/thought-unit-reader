@@ -1,6 +1,7 @@
 // pages/index.tsx
 import dynamic from "next/dynamic";
 import React, { useState, useEffect, useRef, ChangeEvent } from "react";
+
 import { generateTOC, TOCEntry } from "@/lib/tocParser";
 import TOCSidebar from "@/components/TOCSidebar";
 import ProgressiveView, { ThoughtUnit, ReadingStats } from "@/components/ProgressiveView";
@@ -24,8 +25,6 @@ import {
   detectWhiteboardSections,
   containsDiagramOrFormula
 } from "@/lib/parser";
-
-import { truncate } from "@/lib/utils"; // ← NEW: use shared truncate
 
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
 
@@ -141,7 +140,7 @@ export default function ThoughtUnitReader() {
 
         setWbConcept(truncate(conceptText, 600));
         setWbContext(contextTitle);
-        setWbStickyNotes([]); // (optional) later: load from Firestore
+        setWbStickyNotes([]);
         setShowWhiteboardPanel(true);
       } else {
         setShowWhiteboardPanel(false);
@@ -209,6 +208,7 @@ export default function ThoughtUnitReader() {
           bookId={bookId}
           initialText={selectedText}
           attachments={attachments}
+          currentPage={currentPage}
           onDone={() => setViewMode("progressive")}
         />
       );
@@ -272,6 +272,7 @@ export default function ThoughtUnitReader() {
         onPageChange={setCurrentPage}
         scale={1.25}
         onTextSelect={handleTextSelect}
+        onPageCount={(n) => setPdfPageCount(n)}
       />
     ) : (
       <div className="flex flex-col items-center justify-center h-full gap-4">
@@ -408,4 +409,9 @@ export default function ThoughtUnitReader() {
       )}
     </div>
   );
+}
+
+/* utils */
+function truncate(s: string, n: number) {
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
