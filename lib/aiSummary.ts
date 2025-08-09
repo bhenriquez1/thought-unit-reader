@@ -1,69 +1,87 @@
 // lib/aiSummary.ts
-// Safer client API that prefers a server route. Falls back to client OpenAI only if explicitly allowed.
+// Server-route–first summarizer with dev-only client fallback.
+// Exports BOTH a named and default `summarizeText` to satisfy all imports.
 
 import OpenAI from "openai";
+import { getApiBase } from "./tts";
 
-/** Optional local-dev fallback (set in .env.local)
- *  NEXT_PUBLIC_ALLOW_CLIENT_OPENAI=true
- *  OPENAI_API_KEY=sk-...
- */
+type Env = typeof process.env;
+
 const ALLOW_CLIENT_OPENAI =
   typeof window !== "undefined" &&
-  process.env.NEXT_PUBLIC_ALLOW_CLIENT_OPENAI === "true";
+  (process.env as Env).NEXT_PUBLIC_ALLOW_CLIENT_OPENAI === "true";
 
 let openai: OpenAI | null = null;
-if (ALLOW_CLIENT_OPENAI && process.env.OPENAI_API_KEY) {
-  // ⚠️ Only for local dev. Do NOT enable in production.
-  openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+if (ALLOW_CLIENT_OPENAI && (process.env as Env).OPENAI_API_KEY) {
+  // ⚠️ Dev only. Do NOT enable in production.
+  openai = new OpenAI({
+    apiKey: (process.env as Env).OPENAI_API_KEY!,
+    dangerouslyAllowBrowser: true,
+  });
+}
+
+export interface SummarizeOpts {
+  instructions?: string;
+  sentences?: number;   // requested sentence count for server route
+  model?: string;       // server route hint
+  timeoutMs?: number;   // server route timeout
 }
 
 /**
- * Summarizes a given input text into short study notes (3–4 sentences).
- * Tries /api/summarize first. If unavailable (e.g., local dev), falls back to client OpenAI
- * when NEXT_PUBLIC_ALLOW_CLIENT_OPENAI=true and OPENAI_API_KEY is present.
+ * summarizeText
+ * 1) POSTs to /api/summarize (preferred; keeps keys server-side).
+ * 2) If unavailable and dev fallback is enabled, uses client OpenAI.
+ * 3) If neither is available, throws with a helpful message.
  */
-export async function summarizeText(text: string): Promise<string> {
-  if (!text || typeof text !== "string") {
-    throw new Error("❌ Invalid input: text must be a non-empty string.");
-  }
+export async function summarizeText(text: string, opts: SummarizeOpts = {}): Promise<string> {
+  const trimmed = (text || "").trim();
+  if (!trimmed) throw new Error("❌ Invalid input: text must be a non-empty string.");
 
-  // 1) Prefer calling your server/edge function
+  const {
+    instructions,
+    sentences = 4,
+    model = "gpt-4o-mini",
+    timeoutMs = 10000,
+  } = opts;
+
+  // --- Prefer server route ---
+  const apiBase = getApiBase?.() ?? "";
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
-    const res = await fetch("/api/summarize", {
+    const res = await fetch(`${apiBase}/api/summarize`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text,
-        // You can tweak these on the server as needed
-        model: "gpt-4o-mini",
-        sentences: 4,
-      }),
+      signal: controller.signal,
+      body: JSON.stringify({ text: trimmed, instructions, sentences, model }),
     });
+
+    clearTimeout(t);
 
     if (res.ok) {
       const data = (await res.json()) as { summary?: string; error?: string };
-      if (data.summary && data.summary.trim()) {
-        return data.summary.trim();
-      }
-      if (data.error) {
-        throw new Error(data.error);
-      }
+      if (data.summary && data.summary.trim()) return data.summary.trim();
+      if (data.error) throw new Error(data.error);
     }
-    // If the route exists but returned a non-OK status, fall through to the fallback
-  } catch (_) {
-    // Network or route not found — try fallback if allowed
+    // fall through to fallback if non-OK
+  } catch {
+    clearTimeout(t);
+    // swallow and try fallback
   }
 
-  // 2) Fallback: direct client OpenAI (dev only)
+  // --- Dev-only client fallback ---
   if (!openai) {
     throw new Error(
-      "Summarization service unavailable. Add an /api/summarize route OR enable local fallback by setting NEXT_PUBLIC_ALLOW_CLIENT_OPENAI=true and OPENAI_API_KEY in .env.local."
+      "Summarization service unavailable. Add /api/summarize on the server OR enable dev fallback by setting NEXT_PUBLIC_ALLOW_CLIENT_OPENAI=true and OPENAI_API_KEY in .env.local."
     );
   }
 
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model,
+      temperature: 0.4,
+      max_tokens: 220,
       messages: [
         {
           role: "system",
@@ -72,18 +90,22 @@ export async function summarizeText(text: string): Promise<string> {
         },
         {
           role: "user",
-          content: `Summarize the following in 3–4 sentences:\n\n${text}`,
+          content:
+            (instructions
+              ? `Instructions: ${instructions}\n\n`
+              : "") + `Summarize the following in ${sentences} sentences:\n\n${trimmed}`,
         },
       ],
-      temperature: 0.5,
-      max_tokens: 220,
     });
 
-    const summary = completion.choices?.[0]?.message?.content?.trim() || "";
-    if (!summary) throw new Error("❌ Empty summary returned by OpenAI.");
+    const summary = completion.choices?.[0]?.message?.content?.trim() ?? "";
+    if (!summary) throw new Error("Empty summary returned by OpenAI.");
     return summary;
-  } catch (error: any) {
-    console.error("❌ AI summarization error:", error?.message || error);
+  } catch (err: any) {
+    console.error("AI summarization error:", err?.message || err);
     throw new Error("Failed to summarize text.");
   }
 }
+
+// Also provide default export so either import style works.
+export default summarizeText;

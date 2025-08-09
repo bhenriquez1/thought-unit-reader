@@ -1,0 +1,199 @@
+openapi: 3.0.3
+info:
+  title: Thought Unit Reader API
+  version: "1.0.0"
+  description: >
+    API for generating whiteboard explanations and server-side TTS audio.
+    These routes are designed for **server-route–first** usage inside a Next.js app.
+servers:
+  - url: https://{host}
+    variables:
+      host:
+        default: localhost:3000
+        description: Your deployment host (e.g., vercel domain or localhost:3000)
+
+paths:
+  /api/whiteboard-explanation:
+    head:
+      summary: Health check / availability probe
+      responses:
+        "200":
+          description: Route is up.
+    post:
+      summary: Generate a whiteboard explanation for a concept
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WhiteboardExplanationRequest"
+            examples:
+              default:
+                value:
+                  concept: "Ohm's Law"
+                  context: "Intro to circuits, Grade 10"
+      responses:
+        "200":
+          description: Explanation generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WhiteboardExplanationResponse"
+              examples:
+                success:
+                  value:
+                    summary: "Ohm's Law relates voltage, current, and resistance..."
+                    narrationScript: "Alright class, imagine a water pipe..."
+                    steps:
+                      - title: "Step 1"
+                        description: "Draw V, I, R triangle."
+                        visualPrompt: "Illustrate: Draw the triangle with V at top"
+        "400":
+          description: Bad request (missing/invalid 'concept')
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: Method not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server error (e.g., missing OpenAI key, LLM failure)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/tts:
+    head:
+      summary: Health check / availability probe
+      responses:
+        "200":
+          description: Route is up.
+    post:
+      summary: Synthesize speech audio from a narration script
+      description: |
+        Returns either raw audio (e.g., `audio/mpeg`) or JSON with `{ audioBase64, mimeType }`.
+        The client can request JSON by sending `Accept: application/json` or `?return=json`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TTSRequest"
+            examples:
+              default:
+                value:
+                  script: "Hello class, today we will learn about photosynthesis."
+                  voice: "alloy"
+                  format: "mp3"
+      responses:
+        "200":
+          description: Audio successfully synthesized
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TTSJsonResponse"
+              examples:
+                base64:
+                  value:
+                    audioBase64: "SUQzBAAAAAAA..."   # truncated
+                    mimeType: "audio/mpeg"
+        "400":
+          description: Bad request (e.g., missing 'script' or unsupported format)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: Method not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server error (e.g., missing OpenAI key, TTS failure)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  schemas:
+    WhiteboardExplanationRequest:
+      type: object
+      properties:
+        concept:
+          type: string
+          description: The concept to explain (required).
+        context:
+          type: string
+          description: Optional teaching context or grade level.
+          default: "General STEM explanation"
+      required: [concept]
+
+    WhiteboardStep:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        visualPrompt:
+          type: string
+          description: Short hint for what to draw at this step (e.g., "Illustrate: ...")
+
+    WhiteboardExplanationResponse:
+      type: object
+      properties:
+        summary:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/WhiteboardStep"
+        narrationScript:
+          type: string
+      required: [summary, steps, narrationScript]
+
+    TTSRequest:
+      type: object
+      properties:
+        script:
+          type: string
+          description: Text to narrate (required).
+        voice:
+          type: string
+          enum: ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
+          default: "alloy"
+        format:
+          type: string
+          enum: ["mp3", "wav", "ogg"]
+          description: Currently the server returns mp3 only to keep it simple.
+          default: "mp3"
+      required: [script]
+
+    TTSJsonResponse:
+      type: object
+      properties:
+        audioBase64:
+          type: string
+          description: Base64-encoded audio (without data: prefix).
+        mimeType:
+          type: string
+          description: MIME type for the audio, e.g. audio/mpeg.
+      required: [audioBase64, mimeType]
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
