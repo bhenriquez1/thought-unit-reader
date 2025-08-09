@@ -1,9 +1,9 @@
-// lib/WhiteboardExplanationService.ts
-// ✅ Merged: server-route-first + original local OpenAI fallback
-// ✅ Exposes both: generateWhiteboardExplanation (no audio) and generateWhiteboardExplanationWithAudio (with audio)
+// ✅ Server-route–first + local OpenAI fallback
+// ✅ Exposes: generateWhiteboardExplanation (no audio)
+//            generateWhiteboardExplanationWithAudio (with audio via /api/tts)
 
 import { OpenAI } from "openai";
-import { synthesizeVoiceFromText } from "./voiceTools";
+import { synthesizeVoiceFromText } from "./tts"; // ← server TTS helper
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "" });
 
@@ -21,10 +21,10 @@ export interface WhiteboardExplanationOutput {
 
 export interface WhiteboardExplanationOutputWithAudio
   extends WhiteboardExplanationOutput {
-  audioBlob: Blob | null; // AI TTS if available; null => UI can use browser TTS fallback
+  audioBlob: Blob | null; // if null, UI can fall back to browser TTS
 }
 
-/* -------------------- core helpers -------------------- */
+/* -------------------- helpers -------------------- */
 
 function parseLLMContentToOutput(content: string): WhiteboardExplanationOutput {
   const summaryMatch = content.match(/Summary:\s*"([\s\S]*?)"\s*VoiceScript:/i);
@@ -36,7 +36,7 @@ function parseLLMContentToOutput(content: string): WhiteboardExplanationOutput {
   const rawSteps = (stepsBlock?.[1] || "")
     .trim()
     .split(/\n+/)
-    .map(s => s.replace(/^[-*]\s*/, "").trim())
+    .map((s) => s.replace(/^[-*]\s*/, "").trim())
     .filter(Boolean);
 
   const steps: WhiteboardStep[] = rawSteps.map((line, idx) => ({
@@ -48,7 +48,10 @@ function parseLLMContentToOutput(content: string): WhiteboardExplanationOutput {
   return { summary, steps, narrationScript };
 }
 
-async function localLLMGenerate(concept: string, context: string): Promise<WhiteboardExplanationOutput> {
+async function localLLMGenerate(
+  concept: string,
+  context: string
+): Promise<WhiteboardExplanationOutput> {
   const prompt = `You are Ninja Nerd giving a whiteboard explanation.
 
 Concept: ${concept}
@@ -83,16 +86,16 @@ WhiteboardSteps:
 /* -------------------- public API -------------------- */
 
 /**
- * Server-first whiteboard explanation (falls back to local OpenAI parsing if server route fails).
- * Returns summary, steps, and narrationScript (no audio).
+ * Server-first whiteboard explanation (no audio).
+ * Falls back to local OpenAI if the server route fails.
  */
 export async function generateWhiteboardExplanation(
   concept: string,
   context: string = "General STEM explanation"
 ): Promise<WhiteboardExplanationOutput> {
-  // 1) Try server route (no API key on client)
+  // 1) Try server route (keeps keys server-side)
   try {
-    const res = await fetch("/api/whiteboard-explain", {
+    const res = await fetch("/api/whiteboard-explanation", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ concept, context }),
@@ -100,23 +103,20 @@ export async function generateWhiteboardExplanation(
 
     if (res.ok) {
       const data = (await res.json()) as WhiteboardExplanationOutput;
-      // sanity check shape
       if (data?.narrationScript && Array.isArray(data?.steps)) return data;
-    } else {
-      // fall through to local
-      // optional: console.warn("Server whiteboard-explain failed, falling back to local:", await res.text());
     }
+    // else fall through to local
   } catch {
     // swallow and fall back to local
   }
 
-  // 2) Fallback to local OpenAI (uses OPENAI_API_KEY in client env)
+  // 2) Fallback to local OpenAI (only works if key is exposed client-side — not recommended in prod)
   return await localLLMGenerate(concept, context);
 }
 
 /**
- * Convenience wrapper that also tries to synthesize AI audio from the narration script.
- * If TTS fails (SSR or blocked), returns audioBlob = null so the UI can use browser TTS.
+ * Same as above, but also tries to get an AI audio blob from /api/tts.
+ * If TTS fails (or route is missing), returns audioBlob = null so the UI can use browser TTS.
  */
 export async function generateWhiteboardExplanationWithAudio(
   concept: string,

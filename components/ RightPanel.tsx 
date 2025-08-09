@@ -1,10 +1,9 @@
 // components/RightPanel.tsx
 import React, { useEffect, useState } from "react";
 import {
-  generateWhiteboardExplanation,
+  generateWhiteboardExplanationWithAudio,
   type WhiteboardStep,
 } from "@/lib/WhiteboardExplanationService";
-import { synthesizeVoiceFromText } from "@/lib/tts"; // ← server-route–first TTS
 import Whiteboard from "@/components/Whiteboard";
 import { Button } from "@/components/ui/button";
 
@@ -40,17 +39,10 @@ export default function RightPanel({
     if (!concept?.trim()) return;
     setLoading(true);
     try {
-      const result = await generateWhiteboardExplanation(concept, context);
+      const result = await generateWhiteboardExplanationWithAudio(concept, context);
       setSteps(result.steps);
       setNarrationScript(result.narrationScript);
-
-      // Prefer server TTS; if it fails (e.g., route missing), <Whiteboard> will use browser TTS
-      const audio = await synthesizeVoiceFromText(result.narrationScript, {
-        voice: "alloy",
-        format: "mp3",
-        timeoutMs: 12000,
-      });
-      setAudioBlob(audio); // may be null
+      setAudioBlob(result.audioBlob); // may be null → Whiteboard falls back to browser TTS
     } catch (err) {
       console.error("Error generating explanation:", err);
       setAudioBlob(null);
