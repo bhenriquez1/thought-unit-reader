@@ -18,6 +18,10 @@ type Props = {
   stickyNotes?: StickyNote[];
   autoTrigger?: boolean;
   lessonTitle?: string;
+
+  /** 🔐 Optional: for step-note persistence in Firestore */
+  lessonId?: string; // e.g., your bookId or a slug of lessonTitle
+  userId?: string;   // current user id
 };
 
 export default function RightPanel({
@@ -26,13 +30,13 @@ export default function RightPanel({
   stickyNotes = [],
   autoTrigger = false,
   lessonTitle = "Whiteboard Lesson",
+  lessonId,
+  userId,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [steps, setSteps] = useState<WhiteboardStep[]>([]);
   const [narrationScript, setNarrationScript] = useState("");
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-
-  // Parent-controlled playback speed passed to <Whiteboard />
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
 
   const handleExplainConcept = async () => {
@@ -51,7 +55,7 @@ export default function RightPanel({
     }
   };
 
-  // Auto-trigger (e.g., from diagram detection)
+  // Auto-trigger (e.g., from detection)
   useEffect(() => {
     if (autoTrigger && concept && context) {
       handleExplainConcept();
@@ -62,7 +66,7 @@ export default function RightPanel({
   return (
     <div className="space-y-4">
       <div className="flex gap-2 items-center flex-wrap">
-        <Button onClick={handleExplainConcept} disabled={loading}>
+        <Button onClick={handleExplainConcept} disabled={loading || !concept?.trim()}>
           {loading ? "Generating..." : "🎓 Explain with Whiteboard"}
         </Button>
 
@@ -87,13 +91,16 @@ export default function RightPanel({
       {steps.length > 0 && (
         <Whiteboard
           steps={steps}
-          audioBlob={audioBlob ?? undefined}   // if null, uses browser TTS with narrationScript
+          audioBlob={audioBlob ?? undefined}
           narrationScript={narrationScript}
           useAIVoice={!!audioBlob}
           stickyNotes={stickyNotes}
           lessonTitle={lessonTitle}
           baseStepDurationMs={4000}
-          playbackSpeed={playbackSpeed}       // parent controls speed
+          playbackSpeed={playbackSpeed}
+          /** 🔐 pass-through for persistence */
+          lessonId={lessonId}
+          userId={userId}
         />
       )}
 

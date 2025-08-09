@@ -1,6 +1,7 @@
 // lib/tts.ts
 // Server-route–first TTS utility for generating narrated audio blobs.
-// Your Next API route should live at /api/tts and return either raw audio
+// Works with static exports by reading NEXT_PUBLIC_API_BASE.
+// Expects a server endpoint at `${API_BASE}/api/tts` that returns either raw audio
 // (ArrayBuffer) OR JSON { audioBase64, mimeType }.
 
 export type TTSVoice = "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
@@ -13,22 +14,33 @@ export interface TTSOptions {
   signal?: AbortSignal;
   /** Optional request timeout (ms). If exceeded, returns null. */
   timeoutMs?: number;
-  /** Optional base path (useful if the app isn’t hosted at root). Defaults to "" */
+  /** Optional base path (overrides env). Useful if the app isn’t hosted at root. */
   basePath?: string;
+}
+
+// Default API base for static export (baked in at build time).
+// If unset, we’ll call relative /api/tts (works in dev with Next API routes).
+const API_BASE: string = process.env.NEXT_PUBLIC_API_BASE || "";
+
+/** Get the active API base (caller can still pass basePath to override) */
+export function getApiBase(override?: string) {
+  return typeof override === "string" ? override : API_BASE;
 }
 
 /**
  * synthesizeVoiceFromText
- * Calls /api/tts to get an audio Blob. If the route isn't available or fails,
+ * Calls `${API_BASE}/api/tts` to get an audio Blob. If the route isn't available or fails,
  * this returns null so callers can fall back to browser TTS.
  */
 export async function synthesizeVoiceFromText(
   script: string,
-  { voice = "alloy", format = "mp3", signal, timeoutMs, basePath = "" }: TTSOptions = {}
+  { voice = "alloy", format = "mp3", signal, timeoutMs, basePath }: TTSOptions = {}
 ): Promise<Blob | null> {
   if (!script || typeof script !== "string") {
     throw new Error("TTS: 'script' must be a non-empty string.");
   }
+
+  const apiBase = getApiBase(basePath);
 
   const controller = timeoutMs ? new AbortController() : undefined;
   const timer =
@@ -38,7 +50,7 @@ export async function synthesizeVoiceFromText(
     }, timeoutMs);
 
   try {
-    const res = await fetch(`${basePath}/api/tts`, {
+    const res = await fetch(`${apiBase}/api/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       // prefer caller-provided signal, else use timeout controller
@@ -83,9 +95,10 @@ export async function synthesizeVoiceFromText(
 }
 
 /** Quick check if the server route is reachable (optional) */
-export async function hasServerTTS(basePath = ""): Promise<boolean> {
+export async function hasServerTTS(basePath?: string): Promise<boolean> {
+  const apiBase = getApiBase(basePath);
   try {
-    const res = await fetch(`${basePath}/api/tts`, { method: "HEAD" });
+    const res = await fetch(`${apiBase}/api/tts`, { method: "HEAD" });
     return res.ok;
   } catch {
     return false;

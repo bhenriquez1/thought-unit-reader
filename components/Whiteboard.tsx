@@ -1,8 +1,18 @@
 // components/Whiteboard.tsx
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { WhiteboardStep } from "@/lib/WhiteboardExplanationService";
+import {
+  subscribeStepNotes,
+  addStepNote,
+  updateStepNote,
+  deleteStepNote,
+  type StepNote as PersistedStepNote,
+} from "@/lib/StickyNoteService";
 
+// Lightweight sticky note shape used only for exports right now
 type StickyNoteLite = { pageNumber: number; content: string };
+// In-session/UI note shape (we’ll store the persisted rows in this shape)
+type StepNote = { id: string; step: number; content: string; userId?: string };
 
 interface WhiteboardProps {
   steps: WhiteboardStep[];
@@ -19,6 +29,10 @@ interface WhiteboardProps {
   lessonTitle?: string;
   /** Optional parent-controlled playback speed (overrides internal control if provided) */
   playbackSpeed?: number;
+
+  /** 🔐 Persistence (optional). If omitted, overlay still works in-memory. */
+  lessonId?: string;   // e.g. document id or slug
+  userId?: string;     // current user id (if available)
 }
 
 export default function Whiteboard({
@@ -30,6 +44,8 @@ export default function Whiteboard({
   stickyNotes = [],
   lessonTitle = "Whiteboard Lesson",
   playbackSpeed, // ← parent can control speed
+  lessonId,
+  userId,
 }: WhiteboardProps) {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -41,17 +57,61 @@ export default function Whiteboard({
   const [audioURL, setAudioURL] = useState<string | null>(null);
   const [audioDurationSec, setAudioDurationSec] = useState<number | null>(null);
 
-  // 🔔 NEW: cues + totalMs for syncing steps to narration
+  // 🔔 Cues + totalMs for syncing steps to narration
   const [cues, setCues] = useState<number[]>([]); // ms start times per step
   const [totalMs, setTotalMs] = useState<number>(0);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // For TTS (no real audio clock): track elapsed time across play/pause
+  // For browser TTS (no real audio clock): track elapsed time across play/pause
   const ttsStartRef = useRef<number | null>(null);
   const ttsElapsedRef = useRef<number>(0);
   const ttsTimerRef = useRef<number | null>(null);
+
+  // 🔶 Sticky-notes overlay (per step) — persisted via StickyNoteService
+  const [stepNotes, setStepNotes] = useState<StepNote[]>([]);
+  const [showNoteEditor, setShowNoteEditor] = useState(false);
+  const [editingNote, setEditingNote] = useState<StepNote | null>(null);
+  const [noteText, setNoteText] = useState("");
+
+  // 🔌 Online/local-only indicator
+  const [isOnline, setIsOnline] = useState(true);
+  useEffect(() => {
+    setIsOnline(typeof navigator !== "undefined" ? navigator.onLine : true);
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
+
+  /** Subscribe to persisted step notes when lessonId is provided */
+  useEffect(() => {
+    if (!lessonId) return; // in-memory-only mode
+    let unsub: undefined | (() => void);
+    (async () => {
+      unsub = await subscribeStepNotes(
+        lessonId,
+        { userId },
+        (rows: PersistedStepNote[]) => {
+          const mapped: StepNote[] = rows.map((r) => ({
+            id: r.id,
+            step: r.step ?? 0,
+            content: r.content ?? "",
+            userId: r.userId,
+          }));
+          setStepNotes(mapped);
+        }
+      );
+    })();
+    return () => {
+      if (unsub) unsub();
+    };
+  }, [lessonId, userId]);
 
   /** Build object URL for AI audio */
   useEffect(() => {
@@ -96,17 +156,14 @@ export default function Whiteboard({
     );
     const sumWords = wordsPerStep.reduce((a, b) => a + b, 0);
 
-    // total duration:
-    // - AI audio: from metadata
-    // - TTS: estimate from narrationScript @ ~160 wpm
     let total: number;
     if (useAIVoice && audioDurationSec) {
       total = audioDurationSec * 1000;
     } else {
-      const words = (narrationScript || "").split(/\s+/).filter(Boolean).length || 1;
-      total = (words / 160) * 60_000; // 160 wpm estimate
-      // As a fallback if narrationScript is empty, use baseStepDurationMs * steps
-      if (!words && baseStepDurationMs) total = steps.length * baseStepDurationMs;
+      const trimmed = (narrationScript || "").trim();
+      const wordCount = trimmed ? trimmed.split(/\s+/).filter(Boolean).length : 0;
+      total =
+        wordCount > 0 ? (wordCount / 160) * 60_000 : steps.length * baseStepDurationMs;
     }
 
     let acc = 0;
@@ -148,10 +205,10 @@ export default function Whiteboard({
     lines.forEach((line, i) => ctx.fillText(line, 24, 80 + i * lineHeight));
 
     // Visual prompt hint
-    if (current.visualPrompt) {
+    if ((current as any).visualPrompt) {
       ctx.font = "italic 16px Arial";
       ctx.fillStyle = "#6b7280";
-      ctx.fillText(`(Draw: ${current.visualPrompt})`, 24, canvas.height - 24);
+      ctx.fillText(`(Draw: ${(current as any).visualPrompt})`, 24, canvas.height - 24);
     }
   }, [currentStepIndex, steps]);
 
@@ -159,7 +216,6 @@ export default function Whiteboard({
   useEffect(() => {
     return () => {
       clearTtsTimer();
-      // Also stop speech if leaving component
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     };
   }, []);
@@ -179,9 +235,7 @@ export default function Whiteboard({
     const onTimeUpdate = () => {
       const t = el.currentTime * 1000; // ms
       let idx = currentStepIndex;
-      // advance while next cue is reached
       while (idx + 1 < cues.length && t >= cues[idx + 1]) idx++;
-      // rewind if needed (user scrub)
       while (idx > 0 && t < cues[idx]) idx--;
       if (idx !== currentStepIndex) setCurrentStepIndex(idx);
     };
@@ -200,12 +254,10 @@ export default function Whiteboard({
       const elapsedNow = (performance.now() - ttsStartRef.current) * clampRate(effectiveSpeed);
       const elapsed = ttsElapsedRef.current + elapsedNow;
 
-      // compute step index from cues
       let idx = 0;
       while (idx + 1 < cues.length && elapsed >= cues[idx + 1]) idx++;
       if (idx !== currentStepIndex) setCurrentStepIndex(idx);
 
-      // stop when we pass the total
       if (elapsed >= totalMs && totalMs > 0) {
         stop();
       }
@@ -213,7 +265,6 @@ export default function Whiteboard({
   };
 
   const play = () => {
-    // reset if at end
     if (currentStepIndex >= steps.length - 1) setCurrentStepIndex(0);
 
     if (useAIVoice) {
@@ -222,9 +273,7 @@ export default function Whiteboard({
         audioRef.current.play().catch(() => {});
       }
     } else {
-      // Browser TTS fallback
       if ("speechSynthesis" in window && narrationScript.trim()) {
-        // reset tracking for elapsed time if starting fresh
         if (ttsElapsedRef.current === 0) {
           ttsStartRef.current = performance.now();
         }
@@ -232,7 +281,7 @@ export default function Whiteboard({
         u.lang = "en-US";
         u.rate = clampRate(effectiveSpeed);
         u.pitch = 1.0;
-        u.onend = () => stop(); // stop animation when speech ends
+        u.onend = () => stop();
         window.speechSynthesis.cancel();
         window.speechSynthesis.speak(u);
         startTtsLoop();
@@ -245,13 +294,12 @@ export default function Whiteboard({
   const pause = () => {
     if (useAIVoice && audioRef.current) audioRef.current.pause();
     if (!useAIVoice && "speechSynthesis" in window) {
-      // accumulate elapsed for TTS
       if (ttsStartRef.current != null) {
         const elapsedNow = (performance.now() - ttsStartRef.current) * clampRate(effectiveSpeed);
         ttsElapsedRef.current += elapsedNow;
         ttsStartRef.current = null;
       }
-      window.speechSynthesis.pause?.();
+      (window.speechSynthesis as any).pause?.();
       clearTtsTimer();
     }
     setIsPlaying(false);
@@ -263,9 +311,8 @@ export default function Whiteboard({
       audioRef.current.play().catch(() => {});
     }
     if (!useAIVoice && "speechSynthesis" in window) {
-      // resume counting from now
       ttsStartRef.current = performance.now();
-      window.speechSynthesis.resume?.();
+      (window.speechSynthesis as any).resume?.();
       startTtsLoop();
     }
     setIsPlaying(true);
@@ -274,7 +321,6 @@ export default function Whiteboard({
   const stop = () => {
     pause();
     setCurrentStepIndex(0);
-    // Reset timers/positions
     if (useAIVoice && audioRef.current) audioRef.current.currentTime = 0;
     if (!useAIVoice && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
@@ -287,31 +333,86 @@ export default function Whiteboard({
   /** Respond to parent speed changes live */
   useEffect(() => {
     if (!isPlaying) return;
-
     if (useAIVoice && audioRef.current) {
       audioRef.current.playbackRate = clampRate(effectiveSpeed);
-    } else {
-      // TTS timer will read effectiveSpeed on next tick; no extra work needed
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveSpeed]);
+  }, [effectiveSpeed, isPlaying, useAIVoice]);
 
   const onLocalSpeedChange = (val: number) => {
     setLocalSpeed(val);
-    // If the parent is controlling speed, ignore local UI
     if (typeof playbackSpeed !== "number") {
       if (useAIVoice && audioRef.current) audioRef.current.playbackRate = clampRate(val);
-      // TTS loop reads speed dynamically, no restart needed
     }
   };
 
+  /* ----------------------- Notes overlay (persisted) ----------------------- */
+
+  const notesForCurrentStep = stepNotes.filter((n) => n.step === currentStepIndex);
+
+  function startAddNote() {
+    setEditingNote(null);
+    setNoteText("");
+    setShowNoteEditor(true);
+  }
+  function startEditNote(note: StepNote) {
+    setEditingNote(note);
+    setNoteText(note.content);
+    setShowNoteEditor(true);
+  }
+  function cancelNoteEdit() {
+    setShowNoteEditor(false);
+    setEditingNote(null);
+    setNoteText("");
+  }
+
+  async function saveNote() {
+    const text = noteText.trim();
+    if (!text) return cancelNoteEdit();
+
+    try {
+      if (lessonId) {
+        if (editingNote) {
+          await updateStepNote(lessonId, editingNote.id, { content: text });
+        } else {
+          await addStepNote(lessonId, { step: currentStepIndex, content: text, userId });
+        }
+        // subscription will refresh state
+      } else {
+        // in-memory only
+        if (editingNote) {
+          setStepNotes((prev) => prev.map((n) => (n.id === editingNote.id ? { ...n, content: text } : n)));
+        } else {
+          const id = `n_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          setStepNotes((prev) => [...prev, { id, step: currentStepIndex, content: text, userId }]);
+        }
+      }
+    } finally {
+      cancelNoteEdit();
+    }
+  }
+
+  async function deleteNote(id: string) {
+    if (lessonId) {
+      await deleteStepNote(lessonId, id);
+      // subscription will refresh state
+    } else {
+      setStepNotes((prev) => prev.filter((n) => n.id !== id));
+    }
+  }
+
   /** Export: Markdown */
   const exportMarkdown = () => {
+    const overlayNotes: StickyNoteLite[] = stepNotes.map((n) => ({
+      pageNumber: n.step + 1,
+      content: n.content,
+    }));
+    const allNotes = [...stickyNotes, ...overlayNotes];
+
     const md = buildLessonMarkdown({
       title: lessonTitle,
       narrationScript,
       steps,
-      stickyNotes,
+      stickyNotes: allNotes,
     });
 
     const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
@@ -352,14 +453,20 @@ export default function Whiteboard({
 
         doc.setFont("helvetica", "normal");
         y = addWrappedText(doc, s.description, 40, y, 520, 14);
-        if (s.visualPrompt) {
-          y = addWrappedText(doc, `(Draw: ${s.visualPrompt})`, 40, y + 6, 520, 14, "#555");
+        if ((s as any).visualPrompt) {
+          y = addWrappedText(doc, `(Draw: ${(s as any).visualPrompt})`, 40, y + 6, 520, 14, "#555");
         }
         y += 12;
       });
 
-      // Sticky notes
-      if (stickyNotes.length) {
+      // Sticky notes (props + overlay notes)
+      const overlayNotes: StickyNoteLite[] = stepNotes.map((n) => ({
+        pageNumber: n.step + 1,
+        content: n.content,
+      }));
+      const allNotes = [...stickyNotes, ...overlayNotes];
+
+      if (allNotes.length) {
         if (y > 700) {
           doc.addPage();
           y = 40;
@@ -368,7 +475,7 @@ export default function Whiteboard({
         doc.text("Sticky Notes:", 40, y);
         y += 18;
         doc.setFont("helvetica", "normal");
-        stickyNotes.forEach((n) => {
+        allNotes.forEach((n) => {
           if (y > 740) {
             doc.addPage();
             y = 40;
@@ -386,12 +493,90 @@ export default function Whiteboard({
 
   return (
     <div className="flex flex-col items-center gap-4">
-      <canvas
-        ref={canvasRef}
-        width={900}
-        height={460}
-        className="border rounded bg-white shadow-sm"
-      />
+      <div className="relative">
+        <canvas
+          ref={canvasRef}
+          width={900}
+          height={460}
+          className="border rounded bg-white shadow-sm"
+        />
+
+        {/* Sticky notes overlay UI (per-step) */}
+        <div className="absolute right-3 top-3 w-80 max-w-[90vw] bg-white/95 text-gray-900 rounded shadow border border-gray-200 p-3 space-y-2">
+          {/* Status row */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs ${
+                  isOnline ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-700"
+                }`}
+                title={isOnline ? "Network available" : "You're offline; changes queue locally"}
+              >
+                <span
+                  className={`inline-block w-2 h-2 rounded-full ${
+                    isOnline ? "bg-emerald-500" : "bg-gray-400"
+                  }`}
+                />
+                {isOnline ? "Online" : "Offline"}
+              </span>
+              {!lessonId && (
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-100 text-amber-700 text-xs"
+                  title="Notes will not be saved to Firestore"
+                >
+                  🔒 Local-only
+                </span>
+              )}
+            </div>
+
+            {!showNoteEditor && (
+              <button
+                onClick={startAddNote}
+                className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded"
+              >
+                ➕ Add
+              </button>
+            )}
+          </div>
+
+          <h4 className="font-semibold text-sm mt-1">Notes for Step {currentStepIndex + 1}</h4>
+
+          {/* List */}
+          {notesForCurrentStep.length === 0 && !showNoteEditor && (
+            <p className="text-xs text-gray-600">No notes yet for this step.</p>
+          )}
+
+          {notesForCurrentStep.length > 0 && (
+            <ul className="space-y-1">
+              {notesForCurrentStep.map((n) => (
+                <li key={n.id} className="group border border-gray-200 rounded p-2 text-sm bg-white">
+                  <div className="whitespace-pre-wrap break-words">{n.content}</div>
+                  <div className="mt-1 hidden group-hover:flex gap-2">
+                    <button onClick={() => startEditNote(n)} className="text-xs text-blue-600 hover:underline">Edit</button>
+                    <button onClick={() => deleteNote(n.id)} className="text-xs text-red-600 hover:underline">Delete</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Editor */}
+          {showNoteEditor && (
+            <div className="space-y-2">
+              <textarea
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                className="w-full h-20 text-sm border rounded p-2"
+                placeholder="Type a note tied to this step…"
+              />
+              <div className="flex gap-2 justify-end">
+                <button onClick={cancelNoteEdit} className="text-xs px-2 py-1 rounded border">Cancel</button>
+                <button onClick={saveNote} className="text-xs px-2 py-1 rounded bg-blue-600 text-white">Save</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Optional native audio (hidden UI; we drive via buttons) */}
       {useAIVoice && (
@@ -519,9 +704,9 @@ ${steps
     (s, i) =>
       `### Step ${i + 1}: ${s.title}
 ${s.description}
-${s.visualPrompt ? `> Draw: ${s.visualPrompt}` : ""}`
+${(s as any).visualPrompt ? `> Draw: ${(s as any).visualPrompt}` : ""}`
   )
-  .join("\n\n")}
+  .join("\n\n")} 
 
 ${
   stickyNotes.length
@@ -555,4 +740,14 @@ function addWrappedText(
 
 function clampRate(v: number) {
   return Math.min(2, Math.max(0.5, v || 1));
+}
+
+function triggerDownload(url: string, filename: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

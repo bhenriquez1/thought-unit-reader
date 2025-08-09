@@ -8,6 +8,7 @@ import HybridReader from "@/components/HybridReader";
 import HighlightPopup from "@/components/HighlightPopup";
 import RightBrainNoteEditor from "@/components/RightBrainNoteEditor";
 import LinkVideoModal from "@/components/LinkVideoModal";
+
 import {
   firebaseConnected,
   uploadPDF,
@@ -16,13 +17,18 @@ import {
   listenForAuthChanges
 } from "@/lib/firebase";
 
-// ✅ NEW: auto-whiteboard detection + panel
+// ✅ Auto-whiteboard detection + panel
 import RightPanel from "@/components/RightPanel";
-import { parseBookWithChapters, detectWhiteboardSections } from "@/lib/parser";
+import {
+  parseBookWithChapters,
+  detectWhiteboardSections,
+  containsDiagramOrFormula
+} from "@/lib/parser";
+
+import { truncate } from "@/lib/utils"; // ← NEW: use shared truncate
 
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
 
-/** Optional local type for sticky notes passed to RightPanel */
 type StickyNote = { pageNumber: number; content: string };
 
 export default function ThoughtUnitReader() {
@@ -72,14 +78,12 @@ export default function ThoughtUnitReader() {
 
   const selectionRangeRef = useRef<Range | null>(null);
 
-  // ✅ NEW: auto-whiteboard control + data
+  // ✅ Auto-whiteboard control + data
   const [autoWhiteboard, setAutoWhiteboard] = useState<boolean>(true);
   const [showWhiteboardPanel, setShowWhiteboardPanel] = useState<boolean>(false);
   const [wbConcept, setWbConcept] = useState<string>("");
   const [wbContext, setWbContext] = useState<string>("");
   const [wbStickyNotes, setWbStickyNotes] = useState<StickyNote[]>([]);
-
-  // (optional) keep the last detected unit text around
   const lastDetectedUnitRef = useRef<string | null>(null);
 
   /* =========================================================================
@@ -99,7 +103,7 @@ export default function ThoughtUnitReader() {
   }, [user, showLibrary]);
 
   /* =========================================================================
-     🔹 Upload PDF  — now includes detectWhiteboardSections() auto-trigger
+     🔹 Upload PDF — includes detectWhiteboardSections() auto-trigger
   ========================================================================= */
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -120,7 +124,7 @@ export default function ThoughtUnitReader() {
     setFileUrl(url);
     generateTOC(url).then(setTableOfContents);
 
-    // ✅ NEW: parse + detect diagram/formula sections for auto whiteboard
+    // ✅ Parse + detect diagram/formula sections for auto whiteboard
     try {
       const { parsedUnits, chapters } = await parseBookWithChapters(file);
       const matches = detectWhiteboardSections(parsedUnits);
@@ -130,12 +134,14 @@ export default function ThoughtUnitReader() {
         const conceptText = (parsedUnits[firstIdx] || []).join(" ").trim();
         lastDetectedUnitRef.current = conceptText;
 
-        // use nearest available chapter title as context; fallback to generic
-        const contextTitle = chapters?.[0]?.title || "Detected diagram/formula";
+        const contextTitle =
+          chapters?.[Math.min(firstIdx, Math.max(0, chapters.length - 1))]?.title ||
+          chapters?.[0]?.title ||
+          "Detected diagram/formula";
+
         setWbConcept(truncate(conceptText, 600));
         setWbContext(contextTitle);
-        setWbStickyNotes([]); // optionally load from Firestore later
-
+        setWbStickyNotes([]); // (optional) later: load from Firestore
         setShowWhiteboardPanel(true);
       } else {
         setShowWhiteboardPanel(false);
@@ -146,7 +152,7 @@ export default function ThoughtUnitReader() {
   };
 
   /* =========================================================================
-     🔹 Load PDF from Library (note: no auto-detect here since we lack the File)
+     🔹 Load PDF from Library (no auto-detect here since we lack the File)
   ========================================================================= */
   const handleLoadPDF = (url: string) => {
     setFileUrl(url);
@@ -164,7 +170,7 @@ export default function ThoughtUnitReader() {
   };
 
   /* =========================================================================
-     🔹 Handle Text Selection
+     🔹 Handle Text Selection — optional selection-time detection
   ========================================================================= */
   const handleTextSelect = (text: string) => {
     if (!text) return;
@@ -175,8 +181,14 @@ export default function ThoughtUnitReader() {
     setSelectedText(text);
     updatePopupPositionFromRange(range);
 
-    // If user selects something while panel is open, let them “Refine concept”
-    // (non-blocking — they can still use the auto-detected concept)
+    // If the selection looks like a diagram/formula, pop the panel
+    if (autoWhiteboard && containsDiagramOrFormula(text)) {
+      setWbConcept(truncate(text, 600));
+      setWbContext(
+        uploadedFile?.name ? `From ${uploadedFile.name}, p.${currentPage}` : `From page ${currentPage}`
+      );
+      setShowWhiteboardPanel(true);
+    }
   };
 
   const updatePopupPositionFromRange = (range: Range) => {
@@ -277,24 +289,18 @@ export default function ThoughtUnitReader() {
   ========================================================================= */
   return (
     <div className={`min-h-screen flex flex-col ${darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"}`}>
-      {/* Gradient Header */}
       <header className="bg-gradient-to-r from-purple-600 via-pink-500 to-yellow-400 text-white shadow-md">
         <div className="py-4 flex flex-col items-center justify-center text-center">
           <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide drop-shadow-lg">
             Thought Unit Reader
           </h1>
-          <p className="text-sm md:text-lg italic opacity-90">
-            Read Smarter, Remember Longer
-          </p>
+          <p className="text-sm md:text-lg italic opacity-90">Read Smarter, Remember Longer</p>
         </div>
       </header>
 
-      {/* Auth note */}
-      <div className="p-2 text-center bg-gray-800 text-white text-sm">
-        🔒 Sign-In Disabled for Now
-      </div>
+      <div className="p-2 text-center bg-gray-800 text-white text-sm">🔒 Sign-In Disabled for Now</div>
 
-      {/* ✅ NEW: auto-whiteboard toggle */}
+      {/* Auto-whiteboard toggle */}
       <div className="p-2 text-center text-sm bg-gray-900">
         <label className="inline-flex items-center gap-2">
           <input
@@ -345,20 +351,35 @@ export default function ThoughtUnitReader() {
         </div>
       )}
 
-      {/* Reader */}
-      <div className="flex flex-1 overflow-hidden px-4">
-        {showTOC && fileUrl && <TOCSidebar toc={tableOfContents} currentPage={currentPage} onJumpToPage={setCurrentPage} />}
+      {/* Reader + RightPanel */}
+      <div className="flex flex-1 overflow-hidden px-4 gap-4">
+        {showTOC && fileUrl && (
+          <TOCSidebar toc={tableOfContents} currentPage={currentPage} onJumpToPage={setCurrentPage} />
+        )}
+
         <div className="flex-1 bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
 
-        {/* ✅ NEW: auto-mounted RightPanel when detection fires */}
+        {/* Auto-mounted RightPanel when detection/selection fires */}
         {showWhiteboardPanel && wbConcept && (
-          <div className="w-[420px] shrink-0 ml-4 p-3 bg-gray-800 rounded-lg border border-gray-700 overflow-auto">
+          <div className="w-full md:w-[420px] lg:w-[480px] shrink-0 bg-gray-900 text-white rounded-lg p-3 overflow-auto">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="font-semibold">Whiteboard Explanation</h3>
+              <button
+                onClick={() => setShowWhiteboardPanel(false)}
+                className="text-sm bg-gray-700 hover:bg-gray-600 rounded px-2 py-1"
+              >
+                ✖ Close
+              </button>
+            </div>
             <RightPanel
               concept={wbConcept}
               context={wbContext}
               stickyNotes={wbStickyNotes}
               autoTrigger={true}
-              lessonTitle={"Whiteboard Lesson"}
+              lessonTitle={uploadedFile?.name ? `Whiteboard — ${uploadedFile.name}` : "Whiteboard Lesson"}
+              /** 🔐 pass-through for persistence-capable Whiteboard */
+              lessonId={bookId}
+              userId={USER_ID}
             />
           </div>
         )}
@@ -387,9 +408,4 @@ export default function ThoughtUnitReader() {
       )}
     </div>
   );
-}
-
-/* utils */
-function truncate(s: string, n: number) {
-  return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }

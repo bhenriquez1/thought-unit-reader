@@ -1,0 +1,13 @@
+{
+  "name": "avrrio-whiteboard-api",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "openai": "^4.54.0"
+  },
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}

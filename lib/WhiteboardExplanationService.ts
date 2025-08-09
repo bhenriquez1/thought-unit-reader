@@ -1,9 +1,10 @@
+// lib/WhiteboardExplanationService.ts
 // ✅ Server-route–first + local OpenAI fallback
 // ✅ Exposes: generateWhiteboardExplanation (no audio)
 //            generateWhiteboardExplanationWithAudio (with audio via /api/tts)
 
 import { OpenAI } from "openai";
-import { synthesizeVoiceFromText } from "./tts"; // ← server TTS helper
+import { synthesizeVoiceFromText, getApiBase } from "./tts"; // server TTS + API base helper
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "" });
 
@@ -93,9 +94,10 @@ export async function generateWhiteboardExplanation(
   concept: string,
   context: string = "General STEM explanation"
 ): Promise<WhiteboardExplanationOutput> {
-  // 1) Try server route (keeps keys server-side)
+  // 1) Try server route (keeps keys server-side, supports static via NEXT_PUBLIC_API_BASE)
+  const apiBase = getApiBase(); // from lib/tts.ts
   try {
-    const res = await fetch("/api/whiteboard-explanation", {
+    const res = await fetch(`${apiBase}/api/whiteboard-explanation`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ concept, context }),
