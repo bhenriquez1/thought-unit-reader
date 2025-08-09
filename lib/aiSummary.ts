@@ -5,26 +5,25 @@
 import OpenAI from "openai";
 import { getApiBase } from "./tts";
 
-type Env = typeof process.env;
-
-const ALLOW_CLIENT_OPENAI =
-  typeof window !== "undefined" &&
-  (process.env as Env).NEXT_PUBLIC_ALLOW_CLIENT_OPENAI === "true";
-
-let openai: OpenAI | null = null;
-if (ALLOW_CLIENT_OPENAI && (process.env as Env).OPENAI_API_KEY) {
-  // ⚠️ Dev only. Do NOT enable in production.
-  openai = new OpenAI({
-    apiKey: (process.env as Env).OPENAI_API_KEY!,
-    dangerouslyAllowBrowser: true,
-  });
-}
-
 export interface SummarizeOpts {
   instructions?: string;
   sentences?: number;   // requested sentence count for server route
   model?: string;       // server route hint
   timeoutMs?: number;   // server route timeout
+}
+
+// Allow client OpenAI only in dev (behind explicit flag)
+const ALLOW_CLIENT_OPENAI =
+  typeof window !== "undefined" &&
+  process.env.NEXT_PUBLIC_ALLOW_CLIENT_OPENAI === "true";
+
+let openai: OpenAI | null = null;
+if (ALLOW_CLIENT_OPENAI && process.env.OPENAI_API_KEY) {
+  // ⚠️ Dev only. Do NOT enable in production.
+  openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY!,
+    dangerouslyAllowBrowser: true,
+  });
 }
 
 /**
@@ -33,7 +32,7 @@ export interface SummarizeOpts {
  * 2) If unavailable and dev fallback is enabled, uses client OpenAI.
  * 3) If neither is available, throws with a helpful message.
  */
-export async function summarizeText(text: string, opts: SummarizeOpts = {}): Promise<string> {
+async function summarizeText(text: string, opts: SummarizeOpts = {}): Promise<string> {
   const trimmed = (text || "").trim();
   if (!trimmed) throw new Error("❌ Invalid input: text must be a non-empty string.");
 
@@ -45,9 +44,9 @@ export async function summarizeText(text: string, opts: SummarizeOpts = {}): Pro
   } = opts;
 
   // --- Prefer server route ---
-  const apiBase = getApiBase?.() ?? "";
+  const apiBase = (typeof getApiBase === "function" ? getApiBase() : "") || "";
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const res = await fetch(`${apiBase}/api/summarize`, {
@@ -57,7 +56,7 @@ export async function summarizeText(text: string, opts: SummarizeOpts = {}): Pro
       body: JSON.stringify({ text: trimmed, instructions, sentences, model }),
     });
 
-    clearTimeout(t);
+    clearTimeout(timer);
 
     if (res.ok) {
       const data = (await res.json()) as { summary?: string; error?: string };
@@ -66,7 +65,7 @@ export async function summarizeText(text: string, opts: SummarizeOpts = {}): Pro
     }
     // fall through to fallback if non-OK
   } catch {
-    clearTimeout(t);
+    clearTimeout(timer);
     // swallow and try fallback
   }
 
@@ -91,9 +90,8 @@ export async function summarizeText(text: string, opts: SummarizeOpts = {}): Pro
         {
           role: "user",
           content:
-            (instructions
-              ? `Instructions: ${instructions}\n\n`
-              : "") + `Summarize the following in ${sentences} sentences:\n\n${trimmed}`,
+            (instructions ? `Instructions: ${instructions}\n\n` : "") +
+            `Summarize the following in ${sentences} sentences:\n\n${trimmed}`,
         },
       ],
     });
@@ -107,5 +105,6 @@ export async function summarizeText(text: string, opts: SummarizeOpts = {}): Pro
   }
 }
 
-// Also provide default export so either import style works.
+// Export both named and default so either import style works
+export { summarizeText };
 export default summarizeText;

@@ -3,7 +3,8 @@ import React, { useState, useRef, useEffect } from "react";
 import { generateMnemonic } from "@/lib/mnemonicAI";
 import { createFlashcardFromSelection } from "@/lib/flashcardService";
 import { addMindMapNode } from "@/lib/mindMapService";
-import { summarizeText } from "@/lib/aiSummary"; // ✅ named export present now
+// ✅ Use DEFAULT import to avoid “no exported member” build errors
+import summarizeText from "@/lib/aiSummary";
 import { useSpeechSynthesis } from "react-speech-kit";
 
 interface RightBrainToolbarProps {
@@ -63,7 +64,7 @@ export default function RightBrainToolbar({
       try {
         recognitionRef.current.start();
       } catch {
-        /* start() can throw if already started; ignore */
+        /* already started */
       }
     } else {
       try {
@@ -85,7 +86,7 @@ export default function RightBrainToolbar({
     if (!selectionText) return alert("Select text to summarize.");
     setIsGenerating(true);
     try {
-      // Uses server-first /api/summarize; falls back per aiSummary.ts
+      // Server-first /api/summarize; falls back per aiSummary.ts
       const summary = await summarizeText(selectionText);
       alert(`📝 AI Summary:\n\n${summary}`);
     } catch (err) {
