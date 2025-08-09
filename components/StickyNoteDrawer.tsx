@@ -1,4 +1,3 @@
-// components/StickyNoteDrawer.tsx
 import React, { useEffect, useState } from "react";
 import {
   createStickyNote,
@@ -6,170 +5,151 @@ import {
   deleteStickyNote,
   getStickyNotes,
 } from "@/lib/StickyNoteService";
+import Button from "@/components/ui/button";
+import Textarea from "@/components/ui/textarea";
 
-/** Minimal note shape (avoid external type import) */
-type StickyNote = {
-  id?: string;
+type DrawerNote = {
+  id: string;
   text: string;
   page?: number | null;
+  userId?: string | null;
   createdAt?: any;
   updatedAt?: any;
-  userId?: string | null;
 };
 
-interface StickyNoteDrawerProps {
-  /** Where to persist notes (e.g., book/lesson/document id) */
-  lessonId: string;
-  /** Optional: associate notes to a user */
-  userId?: string | null;
-  /** Optional: current page (if you tie notes to pages) */
-  page?: number | null;
-  /** Optional: close handler for a drawer/sheet */
-  onClose?: () => void;
-  /** Optional: title to display in header */
-  title?: string;
+interface Props {
+  userId: string;
+  lessonId?: string;
+  currentPage?: number | null;
 }
 
 export default function StickyNoteDrawer({
-  lessonId,
-  userId = null,
-  page = null,
-  onClose,
-  title = "Sticky Notes",
-}: StickyNoteDrawerProps) {
-  const [notes, setNotes] = useState<StickyNote[]>([]);
+  userId,
+  lessonId = "global",
+  currentPage = null,
+}: Props) {
+  const [notes, setNotes] = useState<DrawerNote[]>([]);
   const [text, setText] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function refresh() {
     try {
-      setLoading(true);
-      // If your service supports filters, pass them here; otherwise just lessonId
-      const list = await getStickyNotes(lessonId);
-      setNotes(Array.isArray(list) ? list : []);
-    } finally {
-      setLoading(false);
+      const rows = await getStickyNotes(lessonId);
+      setNotes(rows);
+    } catch (e) {
+      console.error("Failed to load sticky notes:", e);
     }
   }
 
   useEffect(() => {
-    if (!lessonId) return;
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lessonId]);
 
   async function saveNote() {
-    const value = text.trim();
-    if (!value) return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
 
-    if (editingId) {
-      await updateStickyNote(lessonId, editingId, { text: value });
-      setEditingId(null);
-    } else {
-      await createStickyNote(lessonId, { text: value, page, userId: userId ?? undefined });
-    }
-    setText("");
-    await refresh();
-  }
-
-  async function startEdit(n: StickyNote) {
-    setEditingId(n.id || null);
-    setText(n.text || "");
-  }
-
-  async function removeNote(id?: string) {
-    if (!id) return;
-    await deleteStickyNote(lessonId, id);
-    if (editingId === id) {
-      setEditingId(null);
+    setLoading(true);
+    try {
+      if (editingId) {
+        await updateStickyNote(lessonId, editingId, {
+          text: trimmed,
+          page: currentPage ?? null,
+        });
+      } else {
+        await createStickyNote(lessonId, {
+          text: trimmed,
+          page: currentPage ?? null,
+          userId,
+        });
+      }
       setText("");
+      setEditingId(null);
+      await refresh();
+    } catch (e) {
+      console.error("Save note failed:", e);
+      alert("Failed to save sticky note.");
+    } finally {
+      setLoading(false);
     }
-    await refresh();
+  }
+
+  function startEdit(n: DrawerNote) {
+    setEditingId(n.id);
+    setText(n.text);
+  }
+
+  async function removeNote(id: string) {
+    if (!confirm("Delete this note?")) return;
+    setLoading(true);
+    try {
+      await deleteStickyNote(lessonId, id);
+      await refresh();
+    } catch (e) {
+      console.error("Delete note failed:", e);
+      alert("Failed to delete sticky note.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <div className="flex h-full flex-col bg-gray-900 text-white">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
-        <h3 className="font-semibold">{title}</h3>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="rounded bg-gray-700 px-2 py-1 text-sm hover:bg-gray-600"
+    <div className="p-3 bg-gray-900 text-white rounded-lg border border-gray-700">
+      <h3 className="text-sm font-semibold mb-2">📝 Sticky Notes</h3>
+
+      <Textarea
+        placeholder="Write a quick note…"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+
+      <div className="mt-2 flex gap-2">
+        <Button onClick={saveNote} disabled={loading}>
+          {editingId ? "Update" : "Save"}
+        </Button>
+        {editingId && (
+          <Button
+            type="button"
+            className="bg-gray-600 hover:bg-gray-700"
+            onClick={() => {
+              setEditingId(null);
+              setText("");
+            }}
           >
-            ✖ Close
-          </button>
+            Cancel
+          </Button>
         )}
       </div>
 
-      {/* Editor */}
-      <div className="p-4 space-y-2">
-        <label className="text-sm opacity-80">New note</label>
-        <textarea
-          className="w-full min-h-[120px] p-2 rounded border border-gray-700 bg-gray-800 text-white placeholder-gray-400"
-          placeholder="Type a sticky note…"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-        <div className="flex gap-2">
-          <button
-            onClick={saveNote}
-            className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white"
+      <ul className="mt-4 space-y-2 max-h-64 overflow-y-auto pr-1">
+        {notes.length === 0 && (
+          <li className="text-gray-400 text-sm">No notes yet.</li>
+        )}
+        {notes.map((n) => (
+          <li
+            key={n.id}
+            className="p-2 rounded bg-gray-800 border border-gray-700 flex items-start justify-between gap-3"
           >
-            {editingId ? "Update" : "Save"}
-          </button>
-          {editingId && (
-            <button
-              onClick={() => {
-                setEditingId(null);
-                setText("");
-              }}
-              className="px-3 py-1 rounded border border-gray-600 hover:bg-gray-800"
-            >
-              Cancel
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* List */}
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
-        <div className="mb-2 text-sm opacity-70">
-          {loading ? "Loading…" : `${notes.length} note${notes.length === 1 ? "" : "s"}`}
-        </div>
-
-        {notes.length === 0 ? (
-          <div className="rounded border border-dashed border-gray-700 p-4 text-sm text-gray-400">
-            No notes yet. Add one above.
-          </div>
-        ) : (
-          <ul className="space-y-2">
-            {notes.map((n) => (
-              <li
-                key={n.id ?? Math.random().toString(36)}
-                className="rounded border border-gray-800 bg-gray-850 p-3"
+            <div className="text-sm whitespace-pre-wrap">{n.text}</div>
+            <div className="flex-shrink-0 flex gap-2">
+              <Button
+                className="bg-yellow-600 hover:bg-yellow-700"
+                onClick={() => startEdit(n)}
               >
-                <div className="whitespace-pre-wrap break-words">{n.text}</div>
-                <div className="mt-2 flex gap-2">
-                  <button
-                    onClick={() => startEdit(n)}
-                    className="rounded bg-gray-700 px-2 py-1 text-sm hover:bg-gray-600"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => removeNote(n.id)}
-                    className="rounded bg-red-600 px-2 py-1 text-sm hover:bg-red-700 text-white"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+                Edit
+              </Button>
+              <Button
+                className="bg-red-600 hover:bg-red-700"
+                onClick={() => removeNote(n.id)}
+              >
+                Delete
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
