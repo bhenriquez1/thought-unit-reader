@@ -121,7 +121,8 @@ export default function RightBrainToolbar({
 
   const handleCreateFlashcard = async () => {
     if (!selectionText) return alert("Select text first.");
-    await createFlashcardFromSelection(selectionText, currentPage);
+    // ✅ current service accepts ONE argument; we’ll add page support in Step 2
+    await createFlashcardFromSelection(selectionText);
     alert("📇 Flashcard created");
   };
 

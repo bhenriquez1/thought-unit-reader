@@ -20,7 +20,7 @@ export interface RightBrainNoteEditorProps {
   bookId: string;
   initialText?: string;
   attachments?: string[];
-  currentPage?: number;
+  currentPage?: number;   // still accepted, used for notes/mindmap
   dictationText?: string;
   onDone?: () => void;
 }
@@ -44,7 +44,7 @@ export default function RightBrainNoteEditor({
   const [isGeneratingMnemonic, setIsGeneratingMnemonic] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
 
-  // ✅ spaced-repetition review (cards)
+  // ✅ spaced-repetition review
   const { isReviewMode, currentCard, startReviewMode, gradeCard } = useAIReview(user?.uid);
 
   // Auth
@@ -137,7 +137,8 @@ export default function RightBrainNoteEditor({
     if (!user) return alert("Sign in to create flashcards.");
     const selection = getSelectionText() || content.trim() || title.trim();
     if (!selection) return alert("Highlight or enter text first.");
-    await createFlashcardFromSelection(selection, currentPage);
+    // ✅ service expects ONE argument
+    await createFlashcardFromSelection(selection);
     alert("📇 Flashcard saved for review!");
   };
 
