@@ -1,11 +1,34 @@
 // lib/StickyNoteService.ts
 // ✅ Backwards compatible page-based notes API (your old one)
-// ✅ New step-based notes API for whiteboard overlay
-// ✅ Firestore (lazy) when available; localStorage fallback when not (static-export friendly)
+// ✅ New lesson-scoped sticky notes API for general “drawer” UI
+// ✅ Step-based notes API for whiteboard overlay (unchanged)
+// ✅ Firestore (lazy) when available; localStorage fallback when not
 
 export type Timestampish = any;
 
-/* ------------------------------- Page Notes ------------------------------- */
+/* =============================================================================
+   Helpers
+============================================================================= */
+
+async function getDB() {
+  try {
+    // Prefer your firebase.ts export if present
+    const mod = await import("./firebase").catch(() => null);
+    if (mod?.db) return mod.db;
+
+    // Fallback: use default app if already initialized
+    const { getApps, getApp } = await import("firebase/app");
+    if (getApps().length === 0) return null;
+    const { getFirestore } = await import("firebase/firestore");
+    return getFirestore(getApp());
+  } catch {
+    return null;
+  }
+}
+
+/* =============================================================================
+   A) Page-based sticky notes (legacy, kept for compatibility)
+============================================================================= */
 
 export interface StickyNote {
   id?: string;
@@ -18,7 +41,6 @@ export interface StickyNote {
   updatedAt?: Timestampish;
 }
 
-// LocalStorage bucket for page notes (flat array of all notes)
 const LS_PAGE_NOTES_KEY = "wb:pageNotes:all";
 
 function readAllPageNotes(): StickyNote[] {
@@ -36,24 +58,52 @@ function writeAllPageNotes(notes: StickyNote[]) {
   } catch {}
 }
 
-async function getDB() {
-  try {
-    // prefer your firebase.ts export if present
-    const mod = await import("./firebase").catch(() => null);
-    if (mod?.db) return mod.db;
+// 🔹 Create (legacy form)
+export async function createStickyNote(note: StickyNote): Promise<string>;
+// 🔹 Create (lesson-scoped form overload)
+export async function createStickyNote(
+  lessonId: string,
+  data: { text: string; page?: number | null; userId?: string | null }
+): Promise<{ id: string; text: string; page?: number | null; userId?: string | null }>;
+export async function createStickyNote(
+  arg1: StickyNote | string,
+  arg2?: { text: string; page?: number | null; userId?: string | null }
+): Promise<any> {
+  // --- New lesson-scoped API ---
+  if (typeof arg1 === "string") {
+    const lessonId = arg1;
+    const payload = arg2!;
+    const db = await getDB();
 
-    // fallback: try to get default app
-    const { getApps, getApp } = await import("firebase/app");
-    if (getApps().length === 0) return null;
-    const { getFirestore } = await import("firebase/firestore");
-    return getFirestore(getApp());
-  } catch {
-    return null;
+    if (!db) {
+      // local fallback: per-lesson bucket
+      const all = readLocalLessonNotes(lessonId);
+      const created = {
+        id: crypto.randomUUID(),
+        text: payload.text,
+        page: payload.page ?? null,
+        userId: payload.userId ?? null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      writeLocalLessonNotes(lessonId, [...all, created]);
+      return created;
+    }
+
+    const { collection, addDoc, serverTimestamp } = await import("firebase/firestore");
+    const ref = collection(db, "lessons", lessonId, "stickyNotes");
+    const docRef = await addDoc(ref, {
+      text: payload.text,
+      page: payload.page ?? null,
+      userId: payload.userId ?? null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return { id: docRef.id, ...payload };
   }
-}
 
-// 🔹 Create new sticky note (page-based)
-export async function createStickyNote(note: StickyNote): Promise<string> {
+  // --- Legacy page-based API ---
+  const note = arg1 as StickyNote;
   const db = await getDB();
   if (!db) {
     const all = readAllPageNotes();
@@ -73,7 +123,7 @@ export async function createStickyNote(note: StickyNote): Promise<string> {
   return ref.id;
 }
 
-// 🔹 Fetch notes for a file (optionally filtered by child)
+// 🔹 Read legacy (kept as-is)
 export async function fetchStickyNotes(
   userId: string,
   fileId: string,
@@ -90,15 +140,7 @@ export async function fetchStickyNotes(
     );
   }
 
-  // Use a proper query (your old version fetched all then filtered)
-  const {
-    collection,
-    getDocs,
-    query,
-    where,
-    orderBy,
-  } = await import("firebase/firestore");
-
+  const { collection, getDocs, query, where, orderBy } = await import("firebase/firestore");
   const base = collection(db, "stickyNotes");
   const clauses: any[] = [where("userId", "==", userId), where("fileId", "==", fileId)];
   if (childName) clauses.push(where("childName", "==", childName));
@@ -108,8 +150,44 @@ export async function fetchStickyNotes(
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as StickyNote) }));
 }
 
-// 🔹 Update sticky note content
-export async function updateStickyNote(noteId: string, updatedContent: string) {
+// 🔹 Update (legacy form)
+export async function updateStickyNote(noteId: string, updatedContent: string): Promise<void>;
+// 🔹 Update (lesson-scoped form overload)
+export async function updateStickyNote(
+  lessonId: string,
+  id: string,
+  patch: { text?: string; page?: number | null }
+): Promise<void>;
+export async function updateStickyNote(
+  a: string,
+  b: string,
+  c?: { text?: string; page?: number | null }
+): Promise<void> {
+  // Lesson-scoped overload
+  if (typeof c === "object") {
+    const lessonId = a;
+    const id = b;
+    const patch = c || {};
+    const db = await getDB();
+
+    if (!db) {
+      const all = readLocalLessonNotes(lessonId);
+      const next = all.map((n) =>
+        n.id === id ? { ...n, ...patch, updatedAt: Date.now() } : n
+      );
+      writeLocalLessonNotes(lessonId, next);
+      return;
+    }
+
+    const { doc, updateDoc, serverTimestamp } = await import("firebase/firestore");
+    const ref = doc(db, "lessons", lessonId, "stickyNotes", id);
+    await updateDoc(ref, { ...patch, updatedAt: serverTimestamp() });
+    return;
+  }
+
+  // Legacy form
+  const noteId = a;
+  const updatedContent = b;
   const db = await getDB();
   if (!db) {
     const all = readAllPageNotes();
@@ -125,8 +203,30 @@ export async function updateStickyNote(noteId: string, updatedContent: string) {
   await updateDoc(ref, { content: updatedContent, updatedAt: serverTimestamp() });
 }
 
-// 🔹 Delete sticky note
-export async function deleteStickyNote(noteId: string) {
+// 🔹 Delete (legacy form)
+export async function deleteStickyNote(noteId: string): Promise<void>;
+// 🔹 Delete (lesson-scoped form overload)
+export async function deleteStickyNote(lessonId: string, id: string): Promise<void>;
+export async function deleteStickyNote(a: string, b?: string): Promise<void> {
+  // Lesson-scoped overload
+  if (typeof b === "string") {
+    const lessonId = a;
+    const id = b;
+    const db = await getDB();
+
+    if (!db) {
+      const all = readLocalLessonNotes(lessonId);
+      writeLocalLessonNotes(lessonId, all.filter((n) => n.id !== id));
+      return;
+    }
+
+    const { doc, deleteDoc } = await import("firebase/firestore");
+    await deleteDoc(doc(db, "lessons", lessonId, "stickyNotes", id));
+    return;
+  }
+
+  // Legacy form
+  const noteId = a;
   const db = await getDB();
   if (!db) {
     const all = readAllPageNotes();
@@ -138,11 +238,67 @@ export async function deleteStickyNote(noteId: string) {
   await deleteDoc(doc(db, "stickyNotes", noteId));
 }
 
-/* ------------------------------- Step Notes --------------------------------
-   Used by the Whiteboard overlay. Stored under:
-   Firestore: lessons/{lessonId}/stepNotes
-   LocalStorage: wb:notes:<lessonId>
----------------------------------------------------------------------------- */
+/* =============================================================================
+   B) Lesson-scoped sticky notes (new, for your drawer)
+============================================================================= */
+
+type LessonStickyNote = {
+  id: string;
+  text: string;
+  page?: number | null;
+  userId?: string | null;
+  createdAt?: Timestampish;
+  updatedAt?: Timestampish;
+};
+
+const LS_LESSON_PREFIX = "wb:sticky:";
+
+function lsLessonKey(lessonId: string) {
+  return `${LS_LESSON_PREFIX}${lessonId || "local"}`;
+}
+
+function readLocalLessonNotes(lessonId: string): LessonStickyNote[] {
+  try {
+    const raw = localStorage.getItem(lsLessonKey(lessonId));
+    return raw ? (JSON.parse(raw) as LessonStickyNote[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalLessonNotes(lessonId: string, notes: LessonStickyNote[]) {
+  try {
+    localStorage.setItem(lsLessonKey(lessonId), JSON.stringify(notes));
+  } catch {}
+}
+
+/** List all lesson-scoped notes for a drawer */
+export async function getStickyNotes(lessonId: string): Promise<LessonStickyNote[]> {
+  const db = await getDB();
+  if (!db) return readLocalLessonNotes(lessonId);
+
+  const { collection, getDocs, orderBy, query } = await import("firebase/firestore");
+  const base = collection(db, "lessons", lessonId, "stickyNotes");
+  const q = query(base, orderBy("createdAt", "asc"));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => {
+    const data: any = d.data();
+    return {
+      id: d.id,
+      text: data.text ?? "",
+      page: data.page ?? null,
+      userId: data.userId ?? null,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+    };
+  });
+}
+
+/* =============================================================================
+   C) Whiteboard step-notes (unchanged)
+   Stored under: Firestore lessons/{lessonId}/stepNotes
+   Local: wb:notes:<lessonId>
+============================================================================= */
 
 export type StepNote = {
   id: string;            // doc id or local id
@@ -200,13 +356,7 @@ export async function subscribeStepNotes(
     return subscribeLocalNotes(lessonId, (rows) => onChange?.(rows));
   }
 
-  const {
-    collection,
-    onSnapshot,
-    orderBy,
-    query,
-    where,
-  } = await import("firebase/firestore");
+  const { collection, onSnapshot, orderBy, query, where } = await import("firebase/firestore");
   const base = collection(db, "lessons", lessonId, "stepNotes");
   const q = opts.userId
     ? query(base, where("userId", "==", opts.userId), orderBy("createdAt", "asc"))
