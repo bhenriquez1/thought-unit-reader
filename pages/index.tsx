@@ -20,7 +20,8 @@ import {
 } from "@/lib/firebase";
 
 // ✅ Auto-whiteboard detection + panel
-import RightPanel from "@/components/RightPanel";
+// NOTE: use relative path to avoid alias resolution issues in CI
+import RightPanel from "../components/RightPanel";
 import {
   parseBookWithChapters,
   detectWhiteboardSections,
