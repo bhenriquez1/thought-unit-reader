@@ -1,122 +1,177 @@
 // hooks/useRightBrainActions.ts
 import { useState } from "react";
 import { generateMnemonic } from "@/lib/mnemonicAI";
-import { summarizeText } from "@/lib/aiSummary";
-import { saveFlashcard } from "@/lib/noteService";
+import summarizeText from "@/lib/aiSummary";
+import { createFlashcardFromSelection } from "@/lib/flashcardService";
 import { addMindMapNode } from "@/lib/mindMapService";
-import { startReviewSession, autoGradeFlashcard } from "@/lib/reviewTools";
-import { SpeechRecognitionAPI, SpeechSynthesisAPI } from "@/lib/voiceTools";
+import { startReviewSession, autoGradeFlashcard } from "@/lib/aiReview";
 
-export function useRightBrainActions(userId: string, bookId: string, currentPage?: number) {
+export function useRightBrainActions(
+  userId?: string | null,
+  bookId?: string | null,
+  currentPage?: number
+) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [isReviewMode, setIsReviewMode] = useState(false);
   const [reviewQueue, setReviewQueue] = useState<any[]>([]);
   const [currentCard, setCurrentCard] = useState<any | null>(null);
-  const [isReviewMode, setIsReviewMode] = useState(false);
 
-  /** ===== Mnemonic ===== **/
+  /** ── Mnemonic ─────────────────────────────────────────────────────────── */
   const addMnemonic = async (text: string) => {
-    if (!text.trim()) return alert("Highlight or enter text first.");
+    const t = text?.trim();
+    if (!t) {
+      alert("Highlight or enter text first.");
+      return "";
+    }
     setIsGenerating(true);
     try {
-      const mnemonic = await generateMnemonic(text);
-      return mnemonic;
+      return await generateMnemonic(t);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  /** ===== AI Summary ===== **/
+  /** ── AI Summary ──────────────────────────────────────────────────────── */
   const addAISummary = async (text: string) => {
-    if (!text.trim()) return alert("Highlight or enter text first.");
+    const t = text?.trim();
+    if (!t) {
+      alert("Highlight or enter text first.");
+      return "";
+    }
     setIsGenerating(true);
     try {
-      const summary = await summarizeText(text);
-      return summary;
+      return await summarizeText(t);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  /** ===== Create Flashcard ===== **/
-  const createFlashcard = async (front: string, back: string) => {
-    if (!userId) return alert("Sign in to save flashcards.");
-    await saveFlashcard(userId, {
-      front,
-      back,
-      bookId,
-      tags: [],
-      dueDate: new Date().toISOString()
-    });
+  /** ── Create Flashcard ────────────────────────────────────────────────── */
+  const createFlashcard = async (front: string, back = "") => {
+    if (!userId) {
+      alert("Sign in to save flashcards.");
+      return;
+    }
+    const payload = back ? `${front}\n—\n${back}` : front;
+    await createFlashcardFromSelection(payload, currentPage);
     alert("📇 Flashcard saved!");
   };
 
-  /** ===== Add Mind Map Node ===== **/
+  /** ── Mind Map ────────────────────────────────────────────────────────── */
   const addMindMap = async (content: string) => {
-    if (!userId) return alert("Sign in to save to mind map.");
-    await addMindMapNode(content, currentPage || 1);
+    if (!userId) {
+      alert("Sign in to save to mind map.");
+      return;
+    }
+    await addMindMapNode(content, currentPage);
     alert("🗺️ Mind Map node saved!");
   };
 
-  /** ===== Auto Link to Page ===== **/
-  const autoLinkPage = (text: string) => {
-    return {
-      text,
-      pageLink: `book://${bookId}#page=${currentPage || 1}`
-    };
-  };
+  /** ── Auto Link to Page (helper) ──────────────────────────────────────── */
+  const autoLinkPage = (text: string) => ({
+    text,
+    pageLink: `book://${bookId ?? ""}#page=${currentPage ?? 1}`,
+  });
 
-  /** ===== Voice-to-Text ===== **/
-  const startVoiceNote = async (onResult: (text: string) => void) => {
+  /** ── Voice-to-Text (Web Speech API) ──────────────────────────────────── */
+  const startVoiceNote = (onResult: (text: string) => void) => {
+    if (typeof window === "undefined") return;
+    const SR: any =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      alert("Speech recognition is not supported in this browser.");
+      return;
+    }
+
+    const recognition = new SR();
+    recognition.lang = "en-US";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
     setIsListening(true);
+
+    recognition.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      onResult(transcript.trim());
+    };
+
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+
     try {
-      SpeechRecognitionAPI.start({
-        onResult: (result: string) => {
-          setIsListening(false);
-          onResult(result);
-        },
-        onError: () => setIsListening(false)
-      });
+      recognition.start();
     } catch {
       setIsListening(false);
     }
   };
 
-  /** ===== Read Aloud ===== **/
+  /** ── Read Aloud (Web Speech API) ─────────────────────────────────────── */
   const readAloud = (text: string) => {
-    if (!SpeechSynthesisAPI) return;
-    const utterance = new SpeechSynthesisUtterance(text);
-    SpeechSynthesisAPI.speak(utterance);
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const synth: SpeechSynthesis = window.speechSynthesis;
+    try {
+      synth.cancel();
+    } catch {}
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "en-US";
+    utter.rate = 1;
+    utter.pitch = 1;
+    synth.speak(utter);
   };
 
-  /** ===== Review Mode ===== **/
+  /** ── Review Mode (uses lib/aiReview) ─────────────────────────────────── */
   const startReview = async () => {
-    if (!userId) return;
-    const due = await startReviewSession(userId);
-    if (due.length === 0) return alert("No cards due for review 🎉");
-    setReviewQueue(due);
-    setCurrentCard(due[0]);
-    setIsReviewMode(true);
+    if (!userId) {
+      alert("⚠️ Please sign in to review cards.");
+      return;
+    }
+    try {
+      const { cards } = await startReviewSession(userId);
+      if (!cards || cards.length === 0) {
+        alert("🎉 No cards due for review.");
+        return;
+      }
+      setReviewQueue(cards);
+      setCurrentCard(cards[0]);
+      setIsReviewMode(true);
+    } catch (err) {
+      console.error("❌ Error starting review mode:", err);
+      alert("Failed to start review mode.");
+    }
   };
 
   const gradeCard = async () => {
     if (!currentCard) return;
-    await autoGradeFlashcard(userId, currentCard.id, currentCard.front, currentCard.back);
-    const remaining = reviewQueue.slice(1);
-    setReviewQueue(remaining);
-    setCurrentCard(remaining[0] || null);
-    if (remaining.length === 0) {
-      alert("✅ Review complete!");
-      setIsReviewMode(false);
+    try {
+      // Our current autoGrade just returns a suggestion; we still advance the queue.
+      await autoGradeFlashcard(
+        `${currentCard.front ?? ""} ${currentCard.back ?? ""}`.trim()
+      );
+    } catch (err) {
+      console.error("❌ Error auto-grading card:", err);
+    } finally {
+      const remaining = reviewQueue.slice(1);
+      setReviewQueue(remaining);
+      setCurrentCard(remaining[0] || null);
+      if (remaining.length === 0) {
+        alert("✅ Review complete!");
+        setIsReviewMode(false);
+      }
     }
   };
 
   return {
+    // state
     isGenerating,
     isListening,
     isReviewMode,
-    currentCard,
     reviewQueue,
+    currentCard,
+    // actions
     addMnemonic,
     addAISummary,
     createFlashcard,
@@ -125,6 +180,6 @@ export function useRightBrainActions(userId: string, bookId: string, currentPage
     startVoiceNote,
     readAloud,
     startReview,
-    gradeCard
+    gradeCard,
   };
 }
