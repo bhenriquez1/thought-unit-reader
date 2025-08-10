@@ -1,10 +1,10 @@
-// pages/index.tsx
 import dynamic from "next/dynamic";
 import React, { useState, useEffect, useRef, ChangeEvent } from "react";
 
 import { generateTOC, TOCEntry } from "@/lib/tocParser";
 import TOCSidebar from "@/components/TOCSidebar";
-import ProgressiveView, { ThoughtUnit, ReadingStats } from "@/components/ProgressiveView";
+import ProgressiveView from "@/components/ProgressiveView";
+import type { ThoughtUnit, ReadingStats } from "@/types/reading";
 import HybridReader from "@/components/HybridReader";
 import HighlightPopup from "@/components/HighlightPopup";
 import RightBrainNoteEditor from "@/components/RightBrainNoteEditor";
@@ -15,7 +15,7 @@ import {
   uploadPDF,
   getPDFLibrary,
   deletePDF,
-  listenForAuthChanges
+  listenForAuthChanges,
 } from "@/lib/firebase";
 
 // ✅ Auto-whiteboard detection + panel
@@ -23,10 +23,12 @@ import RightPanel from "@/components/RightPanel";
 import {
   parseBookWithChapters,
   detectWhiteboardSections,
-  containsDiagramOrFormula
+  containsDiagramOrFormula,
 } from "@/lib/parser";
 
-const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
+const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), {
+  ssr: false,
+});
 
 type StickyNote = { pageNumber: number; content: string };
 
@@ -51,7 +53,7 @@ export default function ThoughtUnitReader() {
   const [stats, setStats] = useState<ReadingStats>({
     wordsRead: 0,
     timeElapsed: 0,
-    currentWPM: 0
+    currentWPM: 0,
   });
   const [highlightedWord, setHighlightedWord] = useState("");
   const [fontSize, setFontSize] = useState(16);
@@ -194,7 +196,7 @@ export default function ThoughtUnitReader() {
     const rect = range.getBoundingClientRect();
     setPopupPosition({
       x: rect.left + rect.width / 2 + window.scrollX,
-      y: rect.top + window.scrollY - 40
+      y: rect.top + window.scrollY - 40,
     });
   };
 
@@ -289,7 +291,11 @@ export default function ThoughtUnitReader() {
      🔹 Main Layout
   ========================================================================= */
   return (
-    <div className={`min-h-screen flex flex-col ${darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"}`}>
+    <div
+      className={`min-h-screen flex flex-col ${
+        darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"
+      }`}
+    >
       <header className="bg-gradient-to-r from-purple-600 via-pink-500 to-yellow-400 text-white shadow-md">
         <div className="py-4 flex flex-col items-center justify-center text-center">
           <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide drop-shadow-lg">
@@ -338,9 +344,19 @@ export default function ThoughtUnitReader() {
               <p className="text-sm text-gray-400">No PDFs uploaded yet.</p>
             ) : (
               pdfLibrary.map((pdf) => (
-                <div key={pdf.id} className="flex justify-between items-center mb-2 p-2 hover:bg-gray-700 rounded">
-                  <span onClick={() => handleLoadPDF(pdf.url)} className="cursor-pointer">{pdf.name}</span>
-                  <button onClick={() => handleDeletePDF(pdf.id, pdf.name)} className="text-red-400 hover:text-red-200">🗑</button>
+                <div
+                  key={pdf.id}
+                  className="flex justify-between items-center mb-2 p-2 hover:bg-gray-700 rounded"
+                >
+                  <span onClick={() => handleLoadPDF(pdf.url)} className="cursor-pointer">
+                    {pdf.name}
+                  </span>
+                  <button
+                    onClick={() => handleDeletePDF(pdf.id, pdf.name)}
+                    className="text-red-400 hover:text-red-200"
+                  >
+                    🗑
+                  </button>
                 </div>
               ))
             )}
