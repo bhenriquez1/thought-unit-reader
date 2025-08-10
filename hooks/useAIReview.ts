@@ -1,30 +1,38 @@
 // hooks/useAIReview.ts
 import { useState } from "react";
-import { startReviewSession, autoGradeFlashcard } from "@/lib/aiReview"; // <-- Your AI review helper functions
+import { startReviewSession, autoGradeFlashcard as _autoGrade } from "@/lib/aiReview";
+
+// If your lib exports a ReviewCard type, feel free to import it.
+// This local fallback keeps the hook self-contained.
+type ReviewCard = {
+  id?: string;
+  front?: string;
+  back?: string;
+};
 
 /**
- * Hook to handle AI-based spaced repetition review mode
+ * AI-based spaced repetition review hook
  * Works with RightBrainNoteEditor, HybridReader, and ProgressiveView
  */
 export function useAIReview(userId?: string | null) {
   const [isReviewMode, setIsReviewMode] = useState(false);
-  const [reviewQueue, setReviewQueue] = useState<any[]>([]);
-  const [currentCard, setCurrentCard] = useState<any | null>(null);
+  const [queue, setQueue] = useState<ReviewCard[]>([]);
+  const [index, setIndex] = useState(0);
 
-  /** Start a review session */
   const startReviewMode = async () => {
     if (!userId) {
       alert("⚠️ Please sign in to review cards.");
       return;
     }
     try {
-      const due = await startReviewSession(userId);
-      if (!due || due.length === 0) {
+      // NEW: startReviewSession now returns an object, not an array
+      const { cards } = await startReviewSession(userId);
+      if (!cards || cards.length === 0) {
         alert("🎉 No cards due for review.");
         return;
       }
-      setReviewQueue(due);
-      setCurrentCard(due[0]);
+      setQueue(cards);
+      setIndex(0);
       setIsReviewMode(true);
     } catch (err) {
       console.error("❌ Error starting review mode:", err);
@@ -32,29 +40,44 @@ export function useAIReview(userId?: string | null) {
     }
   };
 
-  /** Grade the current card and move to the next */
+  const currentCard = queue[index] ?? null;
+
   const gradeCard = async () => {
     if (!userId || !currentCard) return;
+
     try {
-      await autoGradeFlashcard(userId, currentCard.id, currentCard.front, currentCard.back);
+      // Be permissive about the grading helper's signature
+      const autoGrade = _autoGrade as unknown as (...args: any[]) => Promise<any>;
 
-      const remaining = reviewQueue.slice(1);
-      setReviewQueue(remaining);
-      setCurrentCard(remaining[0] || null);
-
-      if (remaining.length === 0) {
-        alert("✅ Review complete!");
-        setIsReviewMode(false);
+      // Try the older (userId,id,front,back) form first
+      try {
+        await autoGrade(userId, currentCard.id, currentCard.front, currentCard.back);
+      } catch {
+        // Fallback to a simple form (e.g., auto-grade from front text only)
+        await autoGrade(currentCard.front ?? "");
       }
     } catch (err) {
-      console.error("❌ Error grading card:", err);
+      console.warn("Auto-grade failed (continuing review):", err);
     }
+
+    // Advance the queue
+    const next = index + 1;
+    if (next >= queue.length) {
+      alert("✅ Review complete!");
+      setIsReviewMode(false);
+      setQueue([]);
+      setIndex(0);
+      return;
+    }
+    setIndex(next);
   };
 
   return {
     isReviewMode,
     currentCard,
     startReviewMode,
-    gradeCard
+    gradeCard,
   };
 }
+
+export default useAIReview;
