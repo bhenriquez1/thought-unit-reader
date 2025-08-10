@@ -1,36 +1,25 @@
 // lib/summarizeText.ts
-import { OpenAIStream, StreamingTextResponse } from "ai";
-import { OpenAI } from "openai";
+// Compat shim that preserves the old API:
+//   summarizeText(input: string, readingLevel?: string)
+//
+// Under the hood it delegates to the new server-first helper in ./aiSummary
+// (POST /api/summarize), so we don't depend on the "ai" package at build time.
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+import { summarizeText as summarizeViaServer } from "./aiSummary";
+export type { SummarizeOpts } from "./aiSummary";
 
 /**
- * Summarizes a long text input into a short explanation.
- * Optionally include the reading level or child age for Elena Mode.
+ * Summarizes text. If `readingLevel` is provided, we pass it as guidance
+ * to the server route via `instructions`.
  */
-export async function summarizeText(input: string, readingLevel?: string) {
-  if (!input || input.trim() === "") throw new Error("Text is empty");
+export async function summarizeText(input: string, readingLevel?: string): Promise<string> {
+  const instructions = readingLevel
+    ? `Use a style appropriate for a child aged ${readingLevel}.`
+    : undefined;
 
-  const prompt = `Summarize the following content in a short and clear way that preserves all essential ideas. 
-  ${readingLevel ? `Use a style appropriate for a child aged ${readingLevel}.` : ""}
-
-  Content:
-  ${input.trim()}`;
-
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      {
-        role: "system",
-        content: "You are a teacher AI that simplifies dense topics without losing meaning."
-      },
-      {
-        role: "user",
-        content: prompt
-      }
-    ],
-    temperature: 0.6
-  });
-
-  return response.choices[0]?.message.content || "Summary not available.";
+  // You can further tune here (sentences/model) if you like
+  return summarizeViaServer(input, { instructions });
 }
+
+// Keep default export for legacy imports
+export default summarizeText;
