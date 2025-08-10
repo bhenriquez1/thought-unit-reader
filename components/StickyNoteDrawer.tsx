@@ -1,3 +1,4 @@
+// components/StickyNoteDrawer.tsx
 import React, { useEffect, useState } from "react";
 import {
   createStickyNote,
@@ -5,8 +6,10 @@ import {
   deleteStickyNote,
   getStickyNotes,
 } from "@/lib/StickyNoteService";
-import Button from "@/components/ui/button";
-import Textarea from "@/components/ui/textarea";
+
+// ⬇️ use relative paths so we bypass any alias issues
+import Button from "./ui/button";
+import Textarea from "./ui/textarea";
 
 type DrawerNote = {
   id: string;
