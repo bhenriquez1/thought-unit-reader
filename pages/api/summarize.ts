@@ -39,7 +39,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: "Missing or invalid 'text'." });
   }
 
-  // Build style from either explicit 'mode' (legacy) or instructions/sentences (new)
   const sysBase =
     "You summarize content into short, clear, high-signal study notes. Avoid fluff. Be correct and concise.";
 

@@ -3,13 +3,19 @@
 // Exports BOTH a named and default `summarizeText` to satisfy all imports.
 
 import OpenAI from "openai";
-import { getApiBase } from "./tts";
 
 export interface SummarizeOpts {
   instructions?: string;
   sentences?: number;   // requested sentence count for server route
   model?: string;       // server route hint
   timeoutMs?: number;   // server route timeout
+}
+
+// Compute API base safely (works on client & server)
+function getApiBase(): string {
+  // If you deploy behind a base path, expose it as NEXT_PUBLIC_BASE_PATH (optional)
+  const base = process.env.NEXT_PUBLIC_BASE_PATH?.trim();
+  return base ? base.replace(/\/+$/, "") : "";
 }
 
 // Allow client OpenAI only in dev (behind explicit flag)
@@ -44,7 +50,7 @@ async function summarizeText(text: string, opts: SummarizeOpts = {}): Promise<st
   } = opts;
 
   // --- Prefer server route ---
-  const apiBase = (typeof getApiBase === "function" ? getApiBase() : "") || "";
+  const apiBase = getApiBase();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
