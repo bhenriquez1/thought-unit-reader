@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
-import type { ThoughtUnit, ReadingStats } from "@/types/reading"; // ← updated
+import type { ThoughtUnit, ReadingStats } from "@/types/reading";
 import { useStartReview } from "@/hooks/useStartReview";
 import RightBrainToolbar from "@/components/RightBrainToolbar";
 import RightBrainNoteEditor from "@/components/RightBrainNoteEditor";
@@ -10,7 +10,7 @@ import RightBrainNoteEditor from "@/components/RightBrainNoteEditor";
 interface ProgressiveViewProps {
   bookId: string;
   userId: string;
-  thoughtUnits: ThoughtUnit[];
+  thoughtUnits: ThoughtUnit[];         // expected { text: string }, but we’ll adapt if not
   currentThoughtUnit: number;
   readingSpeed: number;
   isReading: boolean;
@@ -53,7 +53,7 @@ export default function ProgressiveView({
 
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
-  // Dictation setup
+  // --- Dictation setup ---
   useEffect(() => {
     if (typeof window === "undefined") return;
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -95,7 +95,7 @@ export default function ProgressiveView({
     }
   };
 
-  // Load saved reading state
+  // --- Load saved reading state ---
   useEffect(() => {
     async function loadProgress() {
       if (!userId || !bookId) return;
@@ -116,7 +116,7 @@ export default function ProgressiveView({
     loadProgress();
   }, [userId, bookId, setReadingSpeed]);
 
-  // Save reading state
+  // --- Save reading state ---
   useEffect(() => {
     if (!loaded || !userId || !bookId) return;
     (async () => {
@@ -135,17 +135,25 @@ export default function ProgressiveView({
     })();
   }, [loaded, userId, bookId, currentThoughtUnit, readingSpeed, highlightedWord, currentPage]);
 
-  // Selection
-  const getSelectionText = () => (typeof window !== "undefined"
-    ? window.getSelection()?.toString().trim() || ""
-    : "");
+  // --- Selection ---
+  const getSelectionText = () =>
+    (typeof window !== "undefined" ? window.getSelection()?.toString().trim() : "") || "";
   const handleMouseUp = () => {
     const selection = getSelectionText();
     setSelectionText(selection);
     onTextSelect?.(selection);
   };
 
-  // No units
+  // --- Helpers: be lenient about unit shape ---
+  const unitToText = (u: any): string => {
+    if (!u) return "";
+    if (typeof u === "string") return u;
+    if (Array.isArray(u)) return u.join(" ");
+    if (typeof u.text === "string") return u.text;
+    return String(u ?? "");
+  };
+
+  // --- No units ---
   if (!thoughtUnits || thoughtUnits.length === 0) {
     return (
       <div
@@ -157,9 +165,9 @@ export default function ProgressiveView({
     );
   }
 
-  // Current unit
-  const unit = thoughtUnits[currentThoughtUnit - 1];
-  if (!unit) {
+  // --- Current unit ---
+  const rawUnit = thoughtUnits[currentThoughtUnit - 1] as any;
+  if (!rawUnit) {
     return (
       <div
         className="p-4 flex items-center justify-center text-gray-400 italic"
@@ -169,8 +177,9 @@ export default function ProgressiveView({
       </div>
     );
   }
+  const unitText = unitToText(rawUnit);
 
-  // Review mode
+  // --- Review mode ---
   if (isReviewMode) {
     return (
       <div className="p-4 bg-gray-900 text-white rounded-lg">
@@ -194,7 +203,7 @@ export default function ProgressiveView({
     );
   }
 
-  // Main UI
+  // --- Main UI ---
   return (
     <>
       <div
@@ -202,8 +211,8 @@ export default function ProgressiveView({
         style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
         onMouseUp={handleMouseUp}
       >
-        {/* Render words from unit.text */}
-        {unit.text.split(" ").map((word, idx) => (
+        {/* Render words */}
+        {unitText.split(" ").map((word, idx) => (
           <span
             key={idx}
             className={`${
