@@ -272,8 +272,8 @@ function writeLocalLessonNotes(lessonId: string, notes: LessonStickyNote[]) {
   } catch {}
 }
 
-/** List all lesson-scoped notes for a drawer */
-export async function getStickyNotes(lessonId: string): Promise<LessonStickyNote[]> {
+/** Internal implementation for the 1-arg (lessonId) version */
+async function getLessonStickyNotesInternal(lessonId: string): Promise<LessonStickyNote[]> {
   const db = await getDB();
   if (!db) return readLocalLessonNotes(lessonId);
 
@@ -293,6 +293,42 @@ export async function getStickyNotes(lessonId: string): Promise<LessonStickyNote
     };
   });
 }
+
+/**
+ * getStickyNotes — overloaded for backward compatibility
+ * - getStickyNotes(lessonId) → lesson-scoped drawer notes
+ * - getStickyNotes(userId, fileId, pageNumber?, childName?) → legacy page-based notes
+ */
+export async function getStickyNotes(lessonId: string): Promise<LessonStickyNote[]>;
+export async function getStickyNotes(
+  userId: string,
+  fileId: string,
+  pageNumber?: number | null,
+  childName?: string
+): Promise<StickyNote[]>;
+export async function getStickyNotes(
+  a: string,
+  b?: string,
+  c?: number | null,
+  d?: string
+): Promise<any[]> {
+  // 1-arg form => lesson drawer notes
+  if (b === undefined) {
+    return getLessonStickyNotesInternal(a);
+  }
+
+  // 4-arg (or 2–4 arg) form => legacy page notes
+  const userId = a;
+  const fileId = b!;
+  const pageNumber = c ?? null;
+  const childName = d;
+
+  const rows = await fetchStickyNotes(userId, fileId, childName);
+  return pageNumber === null ? rows : rows.filter((n) => n.pageNumber === pageNumber);
+}
+
+// Optional explicit alias if you ever want to force the lesson form
+export { getLessonStickyNotesInternal as getLessonStickyNotes };
 
 /* =============================================================================
    C) Whiteboard step-notes (unchanged)
