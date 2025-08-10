@@ -1,3 +1,4 @@
+// pages/index.tsx
 import dynamic from "next/dynamic";
 import React, { useState, useEffect, useRef, ChangeEvent } from "react";
 
