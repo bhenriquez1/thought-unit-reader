@@ -1,15 +1,18 @@
+// components/RightPanel.tsx
+"use client";
+
 import React, { useEffect, useState } from "react";
 import {
   generateWhiteboardExplanationWithAudio,
   type WhiteboardStep,
-} from "@/lib/WhiteboardExplanationService";
-import Whiteboard from "@/components/Whiteboard";
-import { Button } from "@/components/ui/button";
+} from "../lib/WhiteboardExplanationService";
+import Whiteboard from "./Whiteboard";
+import { Button } from "./ui/button";
 
-interface StickyNote {
+type StickyNote = {
   pageNumber: number;
   content: string;
-}
+};
 
 type Props = {
   concept: string;
@@ -39,13 +42,15 @@ export default function RightPanel({
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
 
   const handleExplainConcept = async () => {
+    if (loading) return;
     if (!concept?.trim()) return;
+
     setLoading(true);
     try {
       const result = await generateWhiteboardExplanationWithAudio(concept, context);
       setSteps(result.steps);
       setNarrationScript(result.narrationScript);
-      setAudioBlob(result.audioBlob); // may be null → Whiteboard falls back to browser TTS
+      setAudioBlob(result.audioBlob ?? null); // Whiteboard will fall back to browser TTS if null
     } catch (err) {
       console.error("Error generating explanation:", err);
       setAudioBlob(null);
