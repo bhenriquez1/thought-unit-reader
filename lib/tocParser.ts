@@ -1,5 +1,5 @@
 // lib/tocParser.ts
-import type { Chapter } from "@/types/chapter";
+// Parses a PDF (by URL/blob) or raw text into a simple TOC.
 
 export interface TOCEntry {
   title: string;
@@ -7,46 +7,78 @@ export interface TOCEntry {
   subChapters?: TOCEntry[];
 }
 
-/**
- * Generate a Table of Contents from extracted PDF text.
- * Works even if the PDF has no embedded outline.
- *
- * @param text The extracted text from the PDF (with paragraphs preserved)
- * @param numPages The number of pages in the PDF
- */
-export async function generateTOC(
-  text: string,
-  numPages: number
-): Promise<Chapter[]> {
-  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+/** ------------ Public API (overloads) ------------ **/
+export function generateTOC(url: string): Promise<TOCEntry[]>;
+export function generateTOC(text: string, numPages: number): Promise<TOCEntry[]>;
+export async function generateTOC(arg1: string, arg2?: number): Promise<TOCEntry[]> {
+  // Back-compat: old signature (text, numPages)
+  if (typeof arg2 === "number") {
+    return buildTOCFromText(arg1, arg2);
+  }
 
-  const chapterRegex = /^(Chapter\s+\d+|CHAPTER\s+\d+|\d+\.\d+\s+.+|[A-Z][A-Z\s]+)$/;
+  // New signature: (url/blob)
+  const url = arg1;
+
+  // Only run in the browser (we call this from client code)
+  if (typeof window === "undefined") return [];
+
+  // Lazy-load pdf.js to avoid SSR issues
+  let pdfjsLib: any;
+  try {
+    pdfjsLib = await import("pdfjs-dist/build/pdf");
+    // Use CDN worker — avoids bundling worker file with Next
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+  } catch (err) {
+    console.warn("pdfjs-dist not available; returning empty TOC.", err);
+    return [];
+  }
+
+  const loadingTask = pdfjsLib.getDocument(url);
+  const pdf = await loadingTask.promise;
+  const numPages: number = pdf.numPages;
+
+  // Extract text from all pages (lightweight concat heuristic is fine for TOC)
+  let allText = "";
+  for (let i = 1; i <= numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const strings = (content.items || []).map((it: any) => (it.str ?? "").trim());
+    allText += strings.join(" ") + "\n";
+  }
+
+  return buildTOCFromText(allText, numPages);
+}
+
+/** ------------ Core TOC builder (text + page count) ------------ **/
+function buildTOCFromText(text: string, numPages: number): TOCEntry[] {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  // Heuristics:
+  //  - "Chapter 1", "CHAPTER 2"
+  //  - "1. Intro", "2.3 Vectors", "10.2.1 Subsection"
+  //  - ALL CAPS headline lines
+  const chapterRegex = /^(Chapter\s+\d+|CHAPTER\s+\d+|\d+\.\d+\s+.+|[A-Z][A-Z0-9\s\-:,'()]+)$/;
   const subChapterRegex = /^(\d+\.\d+(\.\d+)*)\s+.+$/;
 
-  let toc: Chapter[] = [];
-  let currentChapter: Chapter | null = null;
+  const approxLinesPerPage = Math.max(1, Math.floor(lines.length / Math.max(1, numPages)));
 
-  let approxLinesPerPage = Math.floor(lines.length / numPages);
+  const toc: TOCEntry[] = [];
+  let currentChapter: TOCEntry | null = null;
 
   lines.forEach((line, index) => {
     if (chapterRegex.test(line)) {
-      // Estimate page number
       const pageNumber = Math.floor(index / approxLinesPerPage) + 1;
-
       currentChapter = {
         title: line,
         pageNumber,
-        content: "",
-        subChapters: []
+        subChapters: [],
       };
       toc.push(currentChapter);
-    } else if (subChapterRegex.test(line) && currentChapter) {
+    } else if (currentChapter && subChapterRegex.test(line)) {
       const pageNumber = Math.floor(index / approxLinesPerPage) + 1;
-
       currentChapter.subChapters!.push({
         title: line,
         pageNumber,
-        content: ""
       });
     }
   });
