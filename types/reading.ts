@@ -1,14 +1,16 @@
 // types/reading.ts
 
-// keep your existing ThoughtUnit (and other) exports as-is above/below
-
 export type ReadingStats = {
-  /** total words consumed so far */
   wordsRead: number;
-
-  /** elapsed reading time (seconds is fine) */
   timeElapsed: number;
-
-  /** current words-per-minute */
   currentWPM: number;
+};
+
+// TEMP shim – make it permissive so existing code compiles
+export type ThoughtUnit = {
+  id?: string | number;
+  text?: string;
+  pageStart?: number;
+  pageEnd?: number;
+  [key: string]: any;
 };
