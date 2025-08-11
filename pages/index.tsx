@@ -21,7 +21,7 @@ import {
 
 // ✅ Auto-whiteboard detection + panel
 // Use a relative path to avoid alias resolution issues in CI
-import RightPanel from "../components/RightPanel";
+import RightPanel from "@/components/RightPanel";
 import {
   parseBookWithChapters,
   detectWhiteboardSections,
