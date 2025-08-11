@@ -12,6 +12,8 @@ interface SmartPDFViewerProps {
   onPageChange: (page: number) => void;
   scale?: number;
   onTextSelect?: (text: string) => void;
+  /** notify parent how many pages the doc has */
+  onPageCount?: (n: number) => void;
 }
 
 export default function SmartPDFViewer({
@@ -20,6 +22,7 @@ export default function SmartPDFViewer({
   onPageChange,
   scale = 1.25,
   onTextSelect,
+  onPageCount,
 }: SmartPDFViewerProps) {
   const [numPages, setNumPages] = useState<number>(0);
   const [zoom, setZoom] = useState(scale);
@@ -27,30 +30,28 @@ export default function SmartPDFViewer({
   const [showToolbar, setShowToolbar] = useState(true);
   const viewerRef = useRef<HTMLDivElement>(null);
 
+  // keep input in sync if parent changes currentPage (e.g., TOC jump)
+  useEffect(() => {
+    setPageInput(String(currentPage));
+  }, [currentPage]);
+
   const logDebug = (message: string, data?: any) => {
     console.log(`🛠 [SmartPDFViewer] ${message}`, data || "");
   };
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
+    onPageCount?.(numPages); // 👈 report up
     logDebug("PDF Loaded", { numPages });
   };
 
-  const handleZoomIn = () => {
-    setZoom((z) => Math.min(z + 0.25, 3));
-    logDebug("Zoom In");
-  };
-
-  const handleZoomOut = () => {
-    setZoom((z) => Math.max(z - 0.25, 0.5));
-    logDebug("Zoom Out");
-  };
+  const handleZoomIn = () => setZoom((z) => Math.min(z + 0.25, 3));
+  const handleZoomOut = () => setZoom((z) => Math.max(z - 0.25, 0.5));
 
   const handlePrevPage = () => {
     if (currentPage > 1) {
       onPageChange(currentPage - 1);
       setPageInput(String(currentPage - 1));
-      logDebug("Previous Page");
     }
   };
 
@@ -58,7 +59,6 @@ export default function SmartPDFViewer({
     if (currentPage < numPages) {
       onPageChange(currentPage + 1);
       setPageInput(String(currentPage + 1));
-      logDebug("Next Page");
     }
   };
 
@@ -88,16 +88,10 @@ export default function SmartPDFViewer({
       onMouseUp={handleMouseUp}
     >
       {showToolbar && (
-        <div className="absolute top-4 right-4 bg-black bg-opacity-60 text-white rounded-lg px-3 py-2 flex gap-2 items-center shadow-lg z-50">
-          <button onClick={handleZoomOut} className="hover:text-yellow-400">
-            ➖
-          </button>
-          <button onClick={handleZoomIn} className="hover:text-yellow-400">
-            ➕
-          </button>
-          <button onClick={handlePrevPage} disabled={currentPage <= 1}>
-            ◀
-          </button>
+        <div className="absolute top-4 right-4 bg-black/60 text-white rounded-lg px-3 py-2 flex gap-2 items-center shadow-lg z-50">
+          <button onClick={handleZoomOut} className="hover:text-yellow-400">➖</button>
+          <button onClick={handleZoomIn} className="hover:text-yellow-400">➕</button>
+          <button onClick={handlePrevPage} disabled={currentPage <= 1}>◀</button>
           <form onSubmit={handlePageInputSubmit} className="flex items-center">
             <input
               type="text"
@@ -107,9 +101,7 @@ export default function SmartPDFViewer({
             />
             <span className="ml-1 text-sm">/ {numPages}</span>
           </form>
-          <button onClick={handleNextPage} disabled={currentPage >= numPages}>
-            ▶
-          </button>
+          <button onClick={handleNextPage} disabled={currentPage >= numPages}>▶</button>
           <button
             onClick={() => setShowToolbar(false)}
             className="ml-2 text-red-400 hover:text-red-300"
