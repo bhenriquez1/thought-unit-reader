@@ -1,8 +1,12 @@
+"use client";
+
 import React, { useEffect, useState } from "react";
-import { ThoughtUnit, ReadingStats } from "./ProgressiveView.types";
+import type { ThoughtUnit as BaseThoughtUnit, ReadingStats } from "@/types/reading";
 import { saveReadingProgress, loadReadingProgress } from "@/lib/firebase";
 import RightBrainToolbar from "@/components/RightBrainToolbar";
-import { useStartReview } from "@/hooks/useStartReview"; // ✅ Updated hook import
+import { useStartReview } from "@/hooks/useStartReview";
+
+type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
 interface HybridReaderProps {
   fileUrl: string;
@@ -10,22 +14,22 @@ interface HybridReaderProps {
   userId: string;
   sampleText: string;
   currentPage: number;
-  pdfPageCount: number;
-  readingSpeed: number;
-  isReading: boolean;
-  isPaused: boolean;
+  pdfPageCount?: number;
+  readingSpeed?: number;
+  isReading?: boolean;
+  isPaused?: boolean;
   currentThoughtUnit: number;
   setCurrentThoughtUnit: (unit: number) => void;
-  thoughtUnits: ThoughtUnit[];
+  thoughtUnits: HRUnit[];
   highlightedWord: string;
   setHighlightedWord: (word: string) => void;
-  stats: ReadingStats;
+  stats?: ReadingStats;
   fontSize: number;
   fontFamily: string;
   lineSpacing: number;
-  clickSwitchesTo: boolean;
+  clickSwitchesTo?: boolean;
   onWordClick: (word: string) => void;
-  setReadingSpeed: (speed: number) => void;
+  setReadingSpeed?: (speed: number) => void;
   setCurrentPage: (page: number) => void;
   onTextSelect?: (text: string) => void;
   onGenerateNote?: (text: string, mnemonic?: string) => void;
@@ -47,46 +51,55 @@ export default function HybridReader({
   onGenerateNote,
   sampleText,
   currentPage,
-  setCurrentPage
+  setCurrentPage,
 }: HybridReaderProps) {
   const [selectionText, setSelectionText] = useState("");
 
-  // ✅ Updated to unified review hook
+  // Unified review hook
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
-  /** ===== Load saved reading progress ===== **/
+  // ---- Load saved reading progress
   useEffect(() => {
-    if (userId && pdfId) {
-      loadReadingProgress(userId, pdfId).then((progress) => {
-        if (progress) {
-          if (progress.currentPage) setCurrentPage(progress.currentPage);
-          if (progress.currentThoughtUnit) setCurrentThoughtUnit(progress.currentThoughtUnit);
-          if (progress.highlightedWord) setHighlightedWord(progress.highlightedWord);
-        }
-      });
-    }
-  }, [userId, pdfId]);
+    if (!userId || !pdfId) return;
+    loadReadingProgress(userId, pdfId).then((progress: any) => {
+      if (!progress) return;
+      if (typeof progress.currentPage === "number") setCurrentPage(progress.currentPage);
+      if (typeof progress.currentThoughtUnit === "number")
+        setCurrentThoughtUnit(progress.currentThoughtUnit);
+      if (typeof progress.highlightedWord === "string")
+        setHighlightedWord(progress.highlightedWord);
+    });
+  }, [userId, pdfId, setCurrentPage, setCurrentThoughtUnit, setHighlightedWord]);
 
-  /** ===== Save reading progress ===== **/
+  // ---- Save reading progress
   useEffect(() => {
-    if (userId && pdfId) {
-      saveReadingProgress(userId, pdfId, {
-        currentPage,
-        currentThoughtUnit,
-        highlightedWord
-      });
-    }
+    if (!userId || !pdfId) return;
+    saveReadingProgress(userId, pdfId, {
+      currentPage,
+      currentThoughtUnit,
+      highlightedWord,
+    });
   }, [userId, pdfId, currentPage, currentThoughtUnit, highlightedWord]);
 
-  /** ===== Selection handling ===== **/
-  const getSelectionText = () => window.getSelection()?.toString().trim() || "";
+  // ---- Selection handling
+  const getSelectionText = () =>
+    (typeof window !== "undefined" ? window.getSelection()?.toString().trim() : "") || "";
   const handleMouseUp = () => {
-    const selection = getSelectionText();
-    setSelectionText(selection);
-    if (selection && onTextSelect) onTextSelect(selection);
+    const sel = getSelectionText();
+    setSelectionText(sel);
+    if (sel) onTextSelect?.(sel);
   };
 
-  /** ===== No thought units ===== **/
+  // ---- Normalize any unit → text
+  const unitToText = (u: HRUnit): string => {
+    if (u == null) return "";
+    if (typeof u === "string") return u;
+    if (Array.isArray(u)) return u.join(" ");
+    const t = (u as any).text;
+    return typeof t === "string" ? t : JSON.stringify(u);
+  };
+
+  // ---- No thought units
   if (!thoughtUnits || thoughtUnits.length === 0) {
     return (
       <div
@@ -98,9 +111,9 @@ export default function HybridReader({
     );
   }
 
-  /** ===== Out of range ===== **/
-  const unit = thoughtUnits[currentThoughtUnit - 1];
-  if (!unit) {
+  // ---- Current unit
+  const rawUnit = thoughtUnits[currentThoughtUnit - 1];
+  if (!rawUnit) {
     return (
       <div
         className="p-4 flex items-center justify-center text-gray-400 italic"
@@ -110,16 +123,21 @@ export default function HybridReader({
       </div>
     );
   }
+  const unitText = unitToText(rawUnit);
 
-  /** ===== Review Mode ===== **/
+  // ---- Review Mode
   if (isReviewMode) {
     return (
       <div className="p-4 bg-gray-900 text-white rounded-lg">
         <h3 className="text-lg font-bold mb-4">📅 Review Mode</h3>
         {currentCard ? (
           <>
-            <p className="mb-3"><strong>Question:</strong> {currentCard.front}</p>
-            <p className="mb-3"><strong>Answer:</strong> {currentCard.back}</p>
+            <p className="mb-3">
+              <strong>Question:</strong> {currentCard.front}
+            </p>
+            <p className="mb-3">
+              <strong>Answer:</strong> {currentCard.back}
+            </p>
             <button
               onClick={gradeCard}
               className="bg-blue-500 hover:bg-blue-600 px-3 py-1 rounded"
@@ -134,7 +152,7 @@ export default function HybridReader({
     );
   }
 
-  /** ===== Main Dual-Panel UI ===== **/
+  // ---- Main Dual-Panel UI
   return (
     <div className="grid grid-cols-2 gap-4 p-4 h-full" onMouseUp={handleMouseUp}>
       {/* Original View */}
@@ -149,7 +167,7 @@ export default function HybridReader({
           currentPage={currentPage}
           selectionText={selectionText}
           onGenerateNote={onGenerateNote}
-          startReview={startReview} // ✅ Consistent with ProgressiveView
+          startReview={startReview}
         />
       </div>
 
@@ -157,14 +175,14 @@ export default function HybridReader({
       <div className="bg-gray-800 p-4 rounded-lg overflow-y-auto shadow-inner">
         <h4 className="text-sm font-semibold text-yellow-400 mb-3">Progressive View</h4>
         <div style={{ fontSize, fontFamily, lineHeight: lineSpacing }}>
-          {unit.text.split(" ").map((word, idx) => (
+          {unitText.split(" ").map((word, idx) => (
             <span
               key={idx}
-              className={`${
+              className={
                 word === highlightedWord
                   ? "bg-yellow-400 text-black px-1 rounded"
                   : "hover:bg-gray-700 cursor-pointer px-1 rounded"
-              }`}
+              }
               onClick={() => {
                 onWordClick(word);
                 setHighlightedWord(word);
@@ -180,7 +198,7 @@ export default function HybridReader({
           currentPage={currentPage}
           selectionText={selectionText}
           onGenerateNote={onGenerateNote}
-          startReview={startReview} // ✅ Consistent with ProgressiveView
+          startReview={startReview}
         />
       </div>
     </div>

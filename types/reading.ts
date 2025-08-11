@@ -1,16 +1,10 @@
-// types/reading.ts
+// /types/reading.ts
+export interface ThoughtUnit {
+  text: string; // canonical shape
+}
 
-export type ReadingStats = {
+export interface ReadingStats {
   wordsRead: number;
-  timeElapsed: number;
+  timeElapsed: number;   // seconds
   currentWPM: number;
-};
-
-// TEMP shim – make it permissive so existing code compiles
-export type ThoughtUnit = {
-  id?: string | number;
-  text?: string;
-  pageStart?: number;
-  pageEnd?: number;
-  [key: string]: any;
-};
+}

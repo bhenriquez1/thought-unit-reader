@@ -1,24 +1,28 @@
-// components/ProgressiveView.tsx
+"use client";
+
 import React, { useEffect, useState, useRef } from "react";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
-import type { ThoughtUnit, ReadingStats } from "@/types/reading";
+import type { ThoughtUnit as BaseThoughtUnit, ReadingStats } from "@/types/reading";
 import { useStartReview } from "@/hooks/useStartReview";
 import RightBrainToolbar from "@/components/RightBrainToolbar";
 import RightBrainNoteEditor from "@/components/RightBrainNoteEditor";
 
+/** Accept any “thought unit” shape we’ve used so far */
+type PVUnit = BaseThoughtUnit | string | string[] | { text?: string };
+
 interface ProgressiveViewProps {
   bookId: string;
   userId: string;
-  thoughtUnits: ThoughtUnit[];         // expected { text: string }, but we’ll adapt if not
+  thoughtUnits: PVUnit[];
   currentThoughtUnit: number;
   readingSpeed: number;
-  isReading: boolean;
-  isPaused: boolean;
-  stats: ReadingStats;
+  isReading?: boolean;
+  isPaused?: boolean;
+  stats?: ReadingStats;
   highlightedWord: string;
   currentPage: number;
-  pdfPageCount: number;
+  pdfPageCount?: number;
   fontSize: number;
   fontFamily: string;
   lineSpacing: number;
@@ -42,7 +46,6 @@ export default function ProgressiveView({
   onWordClick,
   setReadingSpeed,
   onTextSelect,
-  onGenerateNote
 }: ProgressiveViewProps) {
   const [loaded, setLoaded] = useState(false);
   const [selectionText, setSelectionText] = useState("");
@@ -53,18 +56,18 @@ export default function ProgressiveView({
 
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
-  // --- Dictation setup ---
+  // ---- Dictation (browser SR) ----
   useEffect(() => {
     if (typeof window === "undefined") return;
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return;
 
-    const recognition = new SR();
-    recognition.lang = "en-US";
-    recognition.continuous = true;
-    recognition.interimResults = true;
+    const rec = new SR();
+    rec.lang = "en-US";
+    rec.continuous = true;
+    rec.interimResults = true;
 
-    recognition.onresult = (event: any) => {
+    rec.onresult = (event: any) => {
       let transcript = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         transcript += event.results[i][0].transcript;
@@ -72,11 +75,8 @@ export default function ProgressiveView({
       setDictationText(transcript.trim());
     };
 
-    recognition.onerror = (err: any) => {
-      console.error("Speech recognition error", err);
-    };
-
-    recognitionRef.current = recognition;
+    rec.onerror = (err: any) => console.error("Speech recognition error", err);
+    recognitionRef.current = rec;
   }, []);
 
   const toggleRecording = () => {
@@ -91,11 +91,11 @@ export default function ProgressiveView({
         setIsRecording(true);
       }
     } catch {
-      /* ignore */
+      /* no-op */
     }
   };
 
-  // --- Load saved reading state ---
+  // ---- Load saved reading state ----
   useEffect(() => {
     async function loadProgress() {
       if (!userId || !bookId) return;
@@ -116,7 +116,7 @@ export default function ProgressiveView({
     loadProgress();
   }, [userId, bookId, setReadingSpeed]);
 
-  // --- Save reading state ---
+  // ---- Save reading state ----
   useEffect(() => {
     if (!loaded || !userId || !bookId) return;
     (async () => {
@@ -127,7 +127,7 @@ export default function ProgressiveView({
           readingSpeed,
           highlightedWord,
           currentPage,
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
         });
       } catch (err) {
         console.error("❌ Error saving reading progress:", err);
@@ -135,7 +135,7 @@ export default function ProgressiveView({
     })();
   }, [loaded, userId, bookId, currentThoughtUnit, readingSpeed, highlightedWord, currentPage]);
 
-  // --- Selection ---
+  // ---- Selection ----
   const getSelectionText = () =>
     (typeof window !== "undefined" ? window.getSelection()?.toString().trim() : "") || "";
   const handleMouseUp = () => {
@@ -144,16 +144,17 @@ export default function ProgressiveView({
     onTextSelect?.(selection);
   };
 
-  // --- Helpers: be lenient about unit shape ---
-  const unitToText = (u: any): string => {
-    if (!u) return "";
+  // ---- Normalize any unit → text ----
+  const unitToText = (u: PVUnit): string => {
+    if (u == null) return "";
     if (typeof u === "string") return u;
     if (Array.isArray(u)) return u.join(" ");
-    if (typeof u.text === "string") return u.text;
-    return String(u ?? "");
+    // BaseThoughtUnit or loose object with text
+    const maybeText = (u as any).text;
+    return typeof maybeText === "string" ? maybeText : JSON.stringify(u);
   };
 
-  // --- No units ---
+  // ---- Empty states ----
   if (!thoughtUnits || thoughtUnits.length === 0) {
     return (
       <div
@@ -165,8 +166,7 @@ export default function ProgressiveView({
     );
   }
 
-  // --- Current unit ---
-  const rawUnit = thoughtUnits[currentThoughtUnit - 1] as any;
+  const rawUnit = thoughtUnits[currentThoughtUnit - 1];
   if (!rawUnit) {
     return (
       <div
@@ -177,9 +177,10 @@ export default function ProgressiveView({
       </div>
     );
   }
+
   const unitText = unitToText(rawUnit);
 
-  // --- Review mode ---
+  // ---- Review mode ----
   if (isReviewMode) {
     return (
       <div className="p-4 bg-gray-900 text-white rounded-lg">
@@ -203,7 +204,7 @@ export default function ProgressiveView({
     );
   }
 
-  // --- Main UI ---
+  // ---- Main UI ----
   return (
     <>
       <div
@@ -211,22 +212,20 @@ export default function ProgressiveView({
         style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
         onMouseUp={handleMouseUp}
       >
-        {/* Render words */}
         {unitText.split(" ").map((word, idx) => (
           <span
             key={idx}
-            className={`${
+            className={
               word === highlightedWord
                 ? "bg-yellow-400 text-black px-1 rounded"
                 : "hover:bg-gray-700 cursor-pointer px-1 rounded"
-            }`}
+            }
             onClick={() => onWordClick?.(word)}
           >
             {word}{" "}
           </span>
         ))}
 
-        {/* Dictation control */}
         <div className="mt-4">
           <button
             onClick={toggleRecording}
@@ -241,7 +240,6 @@ export default function ProgressiveView({
           )}
         </div>
 
-        {/* Toolbar */}
         <RightBrainToolbar
           userId={userId}
           bookId={bookId}
@@ -252,7 +250,6 @@ export default function ProgressiveView({
         />
       </div>
 
-      {/* Note Editor modal */}
       {showNoteEditor && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-6">
           <div className="bg-gray-900 p-4 rounded-lg w-full max-w-2xl">
