@@ -20,8 +20,9 @@ import {
 } from "@/lib/firebase";
 
 // ✅ Auto-whiteboard detection + panel
-// Use a relative path to avoid alias resolution issues in CI
-import RightPanel from "@/components/RightPanel";
+// Use a relative import to avoid CI/alias and filename issues
+import WhiteboardPanel from "../components/WhiteboardPanel";
+
 import {
   parseBookWithChapters,
   detectWhiteboardSections,
@@ -370,7 +371,7 @@ export default function ThoughtUnitReader() {
         </div>
       )}
 
-      {/* Reader + RightPanel */}
+      {/* Reader + WhiteboardPanel */}
       <div className="flex flex-1 overflow-hidden px-4 gap-4">
         {showTOC && fileUrl && (
           <TOCSidebar toc={tableOfContents} currentPage={currentPage} onJumpToPage={setCurrentPage} />
@@ -378,7 +379,6 @@ export default function ThoughtUnitReader() {
 
         <div className="flex-1 bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
 
-        {/* Auto-mounted RightPanel when detection/selection fires */}
         {showWhiteboardPanel && wbConcept && (
           <div className="w-full md:w-[420px] lg:w-[480px] shrink-0 bg-gray-900 text-white rounded-lg p-3 overflow-auto">
             <div className="flex justify-between items-center mb-2">
@@ -390,13 +390,12 @@ export default function ThoughtUnitReader() {
                 ✖ Close
               </button>
             </div>
-            <RightPanel
+            <WhiteboardPanel
               concept={wbConcept}
               context={wbContext}
               stickyNotes={wbStickyNotes}
               autoTrigger={true}
               lessonTitle={uploadedFile?.name ? `Whiteboard — ${uploadedFile.name}` : "Whiteboard Lesson"}
-              /** 🔐 pass-through for persistence-capable Whiteboard */
               lessonId={bookId}
               userId={USER_ID}
             />

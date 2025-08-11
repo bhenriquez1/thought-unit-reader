@@ -4,14 +4,11 @@ import React, { useEffect, useState } from "react";
 import {
   generateWhiteboardExplanationWithAudio,
   type WhiteboardStep,
-} from "@/lib/WhiteboardExplanationService";
-import Whiteboard from "@/components/Whiteboard";
-import { Button } from "@/components/ui/button";
+} from "../lib/WhiteboardExplanationService";
+import Whiteboard from "./Whiteboard";
+import { Button } from "./ui/button";
 
-type StickyNote = {
-  pageNumber: number;
-  content: string;
-};
+type StickyNote = { pageNumber: number; content: string };
 
 type Props = {
   concept: string;
@@ -19,13 +16,12 @@ type Props = {
   stickyNotes?: StickyNote[];
   autoTrigger?: boolean;
   lessonTitle?: string;
-
   /** 🔐 Optional: for step-note persistence in Firestore */
   lessonId?: string; // e.g., your bookId or a slug of lessonTitle
   userId?: string;   // current user id
 };
 
-export default function RightPanel({
+export default function WhiteboardPanel({
   concept,
   context,
   stickyNotes = [],
