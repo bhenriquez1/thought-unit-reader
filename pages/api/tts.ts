@@ -1,14 +1,14 @@
+// pages/api/tts.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY, // server-side only
+  apiKey: process.env.OPENAI_API_KEY!, // server-only
 });
 
 type Body = {
   script?: string;
   voice?: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
-  /** We’ll accept mp3|wav|ogg but default to mp3 */
   format?: "mp3" | "wav" | "ogg";
 };
 
@@ -19,10 +19,8 @@ const FORMAT_TO_MIME: Record<NonNullable<Body["format"]>, string> = {
 };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Health check so clients can ping availability quickly
-  if (req.method === "HEAD") {
-    return res.status(200).end();
-  }
+  // Quick health check
+  if (req.method === "HEAD") return res.status(200).end();
 
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST, HEAD");
@@ -36,33 +34,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const { script, voice = "alloy", format = "mp3" } = (req.body || {}) as Body;
 
-    if (!script || typeof script !== "string") {
+    if (!script || typeof script !== "string" || !script.trim()) {
       return res.status(400).json({ error: "Bad request: 'script' must be a non-empty string." });
     }
 
     const fmt = (format || "mp3").toLowerCase() as Body["format"];
     const mime = FORMAT_TO_MIME[fmt] || "audio/mpeg";
 
-    // Generate audio with OpenAI (server-side)
+    // Generate audio with OpenAI (Node SDK v5)
     const speech = await openai.audio.speech.create({
-      model: "tts-1",
+      model: "tts-1", // or "gpt-4o-mini-tts" if enabled for your org
       voice,
       input: script,
-      // @ts-expect-error: openai sdk accepts 'format' param for tts-1
+      // @ts-expect-error: the SDK accepts `format`; typings may lag
       format: fmt,
     });
 
-    const arrayBuffer = await speech.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    const buffer = Buffer.from(await speech.arrayBuffer());
 
-    // If the client asked for JSON, return base64; otherwise return raw audio
+    // If client asked JSON, return base64 + mime (handy for fetch(...).json())
     const wantsJSON =
       req.headers.accept?.includes("application/json") ||
       (typeof req.query.return === "string" && req.query.return.toLowerCase() === "json");
 
     if (wantsJSON) {
-      const audioBase64 = buffer.toString("base64");
-      return res.status(200).json({ audioBase64, mimeType: mime });
+      return res.status(200).json({ audioBase64: buffer.toString("base64"), mimeType: mime });
     }
 
     res.setHeader("Content-Type", mime);
