@@ -4,8 +4,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 
-// If you *haven't* moved these to pages/_app.tsx yet, keep them.
-// If you *have* moved them, delete these two lines to avoid double-loading CSS.
+// If you haven’t moved these to pages/_app.tsx yet, keep them.
+// If you did move them there, remove these two lines here.
 // import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 // import "react-pdf/dist/esm/Page/TextLayer.css";
 
@@ -36,7 +36,8 @@ function toSameOrigin(url: string): string {
       const u = new URL(url);
       if (u.origin === window.location.origin) return url;
     }
-    return `/api/proxy-pdf?src=${encodeURIComponent(url)}`;
+    // 🔧 match the API route which expects ?url=
+    return `/api/proxy-pdf?url=${encodeURIComponent(url)}`;
   } catch {
     return url;
   }
@@ -108,6 +109,8 @@ export default function SmartPDFViewer({
     if (selection && onTextSelect) onTextSelect(selection);
   };
 
+  const resolvedUrl = toSameOrigin(fileUrl);
+
   return (
     <div
       className="relative h-full w-full bg-gray-900"
@@ -158,13 +161,18 @@ export default function SmartPDFViewer({
       <div className="flex justify-center items-start h-full overflow-auto p-4 transition-all duration-300">
         {fileUrl ? (
           <Document
-            key={fileUrl}
-            file={toSameOrigin(fileUrl)}
+            key={resolvedUrl}              // reset on URL change
+            file={resolvedUrl}
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={onDocumentLoadError}
             onSourceError={onSourceError}
           >
-            <Page pageNumber={currentPage} scale={zoom} renderTextLayer renderAnnotationLayer />
+            <Page
+              pageNumber={currentPage}
+              scale={zoom}
+              renderTextLayer
+              renderAnnotationLayer
+            />
           </Document>
         ) : (
           <p className="text-gray-400">📂 No PDF loaded.</p>

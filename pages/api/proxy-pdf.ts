@@ -1,11 +1,10 @@
 // pages/api/proxy-pdf.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 import { Readable } from "node:stream";
-import type { ReadableStream as WebReadableStream } from "node:stream/web";
 
 export const config = {
   api: {
-    // allow large responses (so big PDFs don't get truncated)
+    // allow large responses so big PDFs aren’t truncated
     responseLimit: false,
   },
 };
@@ -20,14 +19,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: "Missing ?url=<pdf url>" });
     }
 
-    // (Optional) basic allowlist check to avoid open proxy abuse
-    // if (!url.startsWith("https://your-allowed-domain.com/")) {
+    // (Optional) basic allowlist to avoid open proxy abuse
+    // if (!url.startsWith("https://your-allowed-host.com/")) {
     //   return res.status(403).json({ error: "Forbidden URL" });
     // }
 
-    const upstream = await fetch(url, {
-      // headers: { "User-Agent": "Thought-Unit-Reader/1.0" },
-    });
+    const upstream = await fetch(url, { redirect: "follow" });
 
     if (!upstream.ok || !upstream.body) {
       const text = await upstream.text().catch(() => upstream.statusText);
@@ -37,18 +34,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const contentType = upstream.headers.get("content-type") || "application/pdf";
     res.status(upstream.status);
     res.setHeader("Content-Type", contentType);
-    res.setHeader("Cache-Control", "no-store");
+    // cache a bit so repeat views are fast (tweak as you like)
+    res.setHeader("Cache-Control", "public, max-age=600");
 
-    // Prefer streaming -> convert Web stream to Node stream
-    if (typeof (Readable as any).fromWeb === "function") {
-      const webStream = upstream.body as unknown as WebReadableStream;
-      const nodeStream = Readable.fromWeb(webStream);
+    // Prefer streaming if Node exposes Readable.fromWeb
+    const fromWeb = (Readable as any).fromWeb as
+      | ((webStream: any) => NodeJS.ReadableStream)
+      | undefined;
+
+    if (fromWeb && upstream.body) {
+      const nodeStream = fromWeb(upstream.body as any);
       nodeStream.on("error", () => res.status(502).end());
       nodeStream.pipe(res);
       return;
     }
 
-    // Fallback: buffer the whole thing (older Node)
+    // Fallback: buffer the whole file (older Node / environments)
     const buf = Buffer.from(await upstream.arrayBuffer());
     res.send(buf);
   } catch (err: any) {
