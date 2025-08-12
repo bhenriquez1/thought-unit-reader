@@ -1,18 +1,34 @@
-import React, { useState, useEffect, useRef } from "react";
+// components/SmartPDFViewer.tsx
+"use client";
+
+import React, { useEffect, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 import "react-pdf/dist/esm/Page/TextLayer.css";
 
-// ✅ PDF.js worker setup
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+/**
+ * PDF.js worker (v3.x) — use a local worker from pdfjs-dist.
+ * NOTE: This file is client-only (see "use client" above) and your page
+ * dynamically imports it with ssr:false, so it's safe to touch window.
+ */
+try {
+  // In some bundlers import.meta.url isn't available at build-time SSR;
+  // this file only runs in the browser, so this is fine.
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+    "pdfjs-dist/build/pdf.worker.min.js",
+    import.meta.url
+  ).toString();
+} catch {
+  // If anything goes wrong, react-pdf will still attempt to fall back.
+}
 
-interface SmartPDFViewerProps {
+export interface SmartPDFViewerProps {
   fileUrl: string;
   currentPage: number;
   onPageChange: (page: number) => void;
   scale?: number;
   onTextSelect?: (text: string) => void;
-  /** notify parent how many pages the doc has */
+  /** Notify parent how many pages the doc has */
   onPageCount?: (n: number) => void;
 }
 
@@ -25,24 +41,31 @@ export default function SmartPDFViewer({
   onPageCount,
 }: SmartPDFViewerProps) {
   const [numPages, setNumPages] = useState<number>(0);
-  const [zoom, setZoom] = useState(scale);
+  const [zoom, setZoom] = useState<number>(scale);
   const [pageInput, setPageInput] = useState<string>(String(currentPage));
-  const [showToolbar, setShowToolbar] = useState(true);
+  const [showToolbar, setShowToolbar] = useState<boolean>(true);
   const viewerRef = useRef<HTMLDivElement>(null);
 
-  // keep input in sync if parent changes currentPage (e.g., TOC jump)
+  // Keep input in sync with external page jumps (e.g., TOC).
   useEffect(() => {
     setPageInput(String(currentPage));
   }, [currentPage]);
 
-  const logDebug = (message: string, data?: any) => {
-    console.log(`🛠 [SmartPDFViewer] ${message}`, data || "");
-  };
+  const log = (msg: string, data?: unknown) =>
+    console.log(`🛠 [SmartPDFViewer] ${msg}`, data ?? "");
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
-    onPageCount?.(numPages); // 👈 report up
-    logDebug("PDF Loaded", { numPages });
+    onPageCount?.(numPages);
+    log("PDF Loaded", { numPages });
+  };
+
+  const onDocumentLoadError = (err: unknown) => {
+    console.error("❌ PDF load error", err);
+  };
+
+  const onSourceError = (err: unknown) => {
+    console.error("❌ PDF source error", err);
   };
 
   const handleZoomIn = () => setZoom((z) => Math.min(z + 0.25, 3));
@@ -50,24 +73,26 @@ export default function SmartPDFViewer({
 
   const handlePrevPage = () => {
     if (currentPage > 1) {
-      onPageChange(currentPage - 1);
-      setPageInput(String(currentPage - 1));
+      const next = currentPage - 1;
+      onPageChange(next);
+      setPageInput(String(next));
     }
   };
 
   const handleNextPage = () => {
     if (currentPage < numPages) {
-      onPageChange(currentPage + 1);
-      setPageInput(String(currentPage + 1));
+      const next = currentPage + 1;
+      onPageChange(next);
+      setPageInput(String(next));
     }
   };
 
   const handlePageInputSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const pageNum = parseInt(pageInput, 10);
-    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= numPages) {
+    if (!Number.isNaN(pageNum) && pageNum >= 1 && pageNum <= numPages) {
       onPageChange(pageNum);
-      logDebug("Jump to Page", pageNum);
+      log("Jump to page", pageNum);
     } else {
       setPageInput(String(currentPage));
     }
@@ -77,7 +102,7 @@ export default function SmartPDFViewer({
     const selection = window.getSelection()?.toString().trim();
     if (selection && onTextSelect) {
       onTextSelect(selection);
-      logDebug("Text Selected", selection);
+      log("Text selected", selection);
     }
   };
 
@@ -87,34 +112,48 @@ export default function SmartPDFViewer({
       ref={viewerRef}
       onMouseUp={handleMouseUp}
     >
-      {showToolbar && (
+      {showToolbar ? (
         <div className="absolute top-4 right-4 bg-black/60 text-white rounded-lg px-3 py-2 flex gap-2 items-center shadow-lg z-50">
-          <button onClick={handleZoomOut} className="hover:text-yellow-400">➖</button>
-          <button onClick={handleZoomIn} className="hover:text-yellow-400">➕</button>
-          <button onClick={handlePrevPage} disabled={currentPage <= 1}>◀</button>
+          <button onClick={handleZoomOut} className="hover:text-yellow-400" aria-label="Zoom out">
+            ➖
+          </button>
+          <button onClick={handleZoomIn} className="hover:text-yellow-400" aria-label="Zoom in">
+            ➕
+          </button>
+          <button onClick={handlePrevPage} disabled={currentPage <= 1} aria-label="Previous page">
+            ◀
+          </button>
           <form onSubmit={handlePageInputSubmit} className="flex items-center">
             <input
-              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={pageInput}
               onChange={(e) => setPageInput(e.target.value)}
-              className="w-10 text-center text-black rounded"
+              className="w-12 text-center text-black rounded"
+              aria-label="Page number"
             />
-            <span className="ml-1 text-sm">/ {numPages}</span>
+            <span className="ml-1 text-sm">/ {numPages || "—"}</span>
           </form>
-          <button onClick={handleNextPage} disabled={currentPage >= numPages}>▶</button>
+          <button
+            onClick={handleNextPage}
+            disabled={numPages === 0 || currentPage >= numPages}
+            aria-label="Next page"
+          >
+            ▶
+          </button>
           <button
             onClick={() => setShowToolbar(false)}
             className="ml-2 text-red-400 hover:text-red-300"
+            aria-label="Hide toolbar"
           >
             ✕
           </button>
         </div>
-      )}
-
-      {!showToolbar && (
+      ) : (
         <button
           onClick={() => setShowToolbar(true)}
           className="absolute top-4 right-4 bg-yellow-500 text-black px-2 py-1 rounded-lg shadow-lg z-50"
+          aria-label="Show toolbar"
         >
           ⚙
         </button>
@@ -122,7 +161,13 @@ export default function SmartPDFViewer({
 
       <div className="flex justify-center items-start h-full overflow-auto p-4 transition-all duration-300">
         {fileUrl ? (
-          <Document file={fileUrl} onLoadSuccess={onDocumentLoadSuccess}>
+          <Document
+            key={fileUrl} // reset when new file arrives
+            file={fileUrl}
+            onLoadSuccess={onDocumentLoadSuccess}
+            onLoadError={onDocumentLoadError}
+            onSourceError={onSourceError}
+          >
             <Page
               pageNumber={currentPage}
               scale={zoom}
