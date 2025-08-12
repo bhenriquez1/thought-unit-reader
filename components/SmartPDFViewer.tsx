@@ -13,10 +13,8 @@ import { Document, Page, pdfjs } from "react-pdf";
 try {
   pdfjs.GlobalWorkerOptions.workerSrc =
     `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
-  // Small breadcrumb for debugging:
-  // console.log("[SmartPDFViewer] workerSrc =", pdfjs.GlobalWorkerOptions.workerSrc);
 } catch {
-  // ignore – react-pdf will surface a clearer error if this fails
+  /* ignore */
 }
 
 export interface SmartPDFViewerProps {
@@ -27,6 +25,21 @@ export interface SmartPDFViewerProps {
   onTextSelect?: (text: string) => void;
   /** Notify parent how many pages the doc has */
   onPageCount?: (n: number) => void;
+}
+
+/** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
+function toSameOrigin(url: string): string {
+  try {
+    // Leave blobs, data:, and relative paths alone
+    if (!/^https?:/i.test(url)) return url;
+    if (typeof window !== "undefined") {
+      const u = new URL(url);
+      if (u.origin === window.location.origin) return url;
+    }
+    return `/api/proxy-pdf?src=${encodeURIComponent(url)}`;
+  } catch {
+    return url;
+  }
 }
 
 export default function SmartPDFViewer({
@@ -48,13 +61,9 @@ export default function SmartPDFViewer({
     setPageInput(String(currentPage));
   }, [currentPage]);
 
-  const log = (msg: string, data?: unknown) =>
-    console.log(`🛠 [SmartPDFViewer] ${msg}`, data ?? "");
-
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
     onPageCount?.(numPages);
-    log("PDF Loaded", { numPages });
   };
 
   const onDocumentLoadError = (err: unknown) => {
@@ -89,7 +98,6 @@ export default function SmartPDFViewer({
     const pageNum = parseInt(pageInput, 10);
     if (!Number.isNaN(pageNum) && pageNum >= 1 && pageNum <= numPages) {
       onPageChange(pageNum);
-      log("Jump to page", pageNum);
     } else {
       setPageInput(String(currentPage));
     }
@@ -97,10 +105,7 @@ export default function SmartPDFViewer({
 
   const handleMouseUp = () => {
     const selection = window.getSelection()?.toString().trim();
-    if (selection && onTextSelect) {
-      onTextSelect(selection);
-      log("Text selected", selection);
-    }
+    if (selection && onTextSelect) onTextSelect(selection);
   };
 
   return (
@@ -111,15 +116,9 @@ export default function SmartPDFViewer({
     >
       {showToolbar ? (
         <div className="absolute top-4 right-4 bg-black/60 text-white rounded-lg px-3 py-2 flex gap-2 items-center shadow-lg z-50">
-          <button onClick={handleZoomOut} className="hover:text-yellow-400" aria-label="Zoom out">
-            ➖
-          </button>
-          <button onClick={handleZoomIn} className="hover:text-yellow-400" aria-label="Zoom in">
-            ➕
-          </button>
-          <button onClick={handlePrevPage} disabled={currentPage <= 1} aria-label="Previous page">
-            ◀
-          </button>
+          <button onClick={handleZoomOut} className="hover:text-yellow-400" aria-label="Zoom out">➖</button>
+          <button onClick={handleZoomIn} className="hover:text-yellow-400" aria-label="Zoom in">➕</button>
+          <button onClick={handlePrevPage} disabled={currentPage <= 1} aria-label="Previous page">◀</button>
           <form onSubmit={handlePageInputSubmit} className="flex items-center">
             <input
               inputMode="numeric"
@@ -160,17 +159,12 @@ export default function SmartPDFViewer({
         {fileUrl ? (
           <Document
             key={fileUrl}
-            file={fileUrl}
+            file={toSameOrigin(fileUrl)}
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={onDocumentLoadError}
             onSourceError={onSourceError}
           >
-            <Page
-              pageNumber={currentPage}
-              scale={zoom}
-              renderTextLayer
-              renderAnnotationLayer
-            />
+            <Page pageNumber={currentPage} scale={zoom} renderTextLayer renderAnnotationLayer />
           </Document>
         ) : (
           <p className="text-gray-400">📂 No PDF loaded.</p>
