@@ -1,11 +1,11 @@
 // components/SmartPDFViewer.tsx
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 
-// If you haven’t moved these to pages/_app.tsx yet, keep them.
-// If you did move them there, remove these two lines here.
+// If you moved these CSS imports to pages/_app.tsx, keep them *there* and
+// do not import here to avoid double-loading.
 // import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 // import "react-pdf/dist/esm/Page/TextLayer.css";
 
@@ -36,7 +36,7 @@ function toSameOrigin(url: string): string {
       const u = new URL(url);
       if (u.origin === window.location.origin) return url;
     }
-    // ✅ match the API route which expects ?url=
+    // ✅ match API route which expects ?url=
     return `/api/proxy-pdf?url=${encodeURIComponent(url)}`;
   } catch {
     return url;
@@ -55,6 +55,7 @@ export default function SmartPDFViewer({
   const [zoom, setZoom] = useState<number>(scale);
   const [pageInput, setPageInput] = useState<string>(String(currentPage));
   const [showToolbar, setShowToolbar] = useState<boolean>(true);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
 
   // Keep input in sync with external page jumps (e.g., TOC).
@@ -62,16 +63,31 @@ export default function SmartPDFViewer({
     setPageInput(String(currentPage));
   }, [currentPage]);
 
+  // Resolve and memoize the URL we’ll actually request
+  const fileSpec = useMemo(() => {
+    if (!fileUrl) return null;
+    const resolved = toSameOrigin(fileUrl);
+    // Debug breadcrumb so we can see what’s being fetched
+    // eslint-disable-next-line no-console
+    console.log("[SmartPDFViewer] resolved PDF URL:", resolved);
+    return { url: resolved };
+  }, [fileUrl]);
+
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+    setErrMsg(null);
     setNumPages(numPages);
     onPageCount?.(numPages);
   };
 
   const onDocumentLoadError = (err: unknown) => {
+    const m = (err as any)?.message || String(err);
+    setErrMsg(m);
     console.error("❌ PDF load error", err);
   };
 
   const onSourceError = (err: unknown) => {
+    const m = (err as any)?.message || String(err);
+    setErrMsg(m);
     console.error("❌ PDF source error", err);
   };
 
@@ -108,8 +124,6 @@ export default function SmartPDFViewer({
     const selection = window.getSelection()?.toString().trim();
     if (selection && onTextSelect) onTextSelect(selection);
   };
-
-  const resolvedUrl = toSameOrigin(fileUrl);
 
   return (
     <div
@@ -159,25 +173,26 @@ export default function SmartPDFViewer({
       )}
 
       <div className="flex justify-center items-start h-full overflow-auto p-4 transition-all duration-300">
-        {fileUrl ? (
+        {fileSpec ? (
           <Document
-            key={resolvedUrl}
-            file={resolvedUrl}
+            key={(fileSpec as any).url}
+            file={fileSpec}
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={onDocumentLoadError}
             onSourceError={onSourceError}
           >
-            <Page
-              pageNumber={currentPage}
-              scale={zoom}
-              renderTextLayer
-              renderAnnotationLayer
-            />
+            <Page pageNumber={currentPage} scale={zoom} renderTextLayer renderAnnotationLayer />
           </Document>
         ) : (
           <p className="text-gray-400">📂 No PDF loaded.</p>
         )}
       </div>
+
+      {errMsg && (
+        <div className="absolute left-4 bottom-4 bg-red-600 text-white text-xs rounded px-2 py-1 shadow">
+          Failed to load PDF: {errMsg}
+        </div>
+      )}
     </div>
   );
 }
