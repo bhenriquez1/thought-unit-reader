@@ -1,10 +1,8 @@
+// components/WhiteboardPanel.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
-import {
-  generateWhiteboardExplanationWithAudio,
-  type WhiteboardStep,
-} from "../lib/WhiteboardExplanationService";
+import type { WhiteboardStep } from "@/lib/WhiteboardExplanationService";
 import Whiteboard from "./Whiteboard";
 import { Button } from "./ui/button";
 
@@ -42,10 +40,14 @@ export default function WhiteboardPanel({
 
     setLoading(true);
     try {
+      // 👇 dynamic import keeps bundle lean and avoids any accidental SSR/client issues
+      const { generateWhiteboardExplanationWithAudio } = await import(
+        "@/lib/WhiteboardExplanationService"
+      );
       const result = await generateWhiteboardExplanationWithAudio(concept, context);
       setSteps(result.steps);
       setNarrationScript(result.narrationScript);
-      setAudioBlob(result.audioBlob ?? null); // falls back to browser TTS if null
+      setAudioBlob(result.audioBlob ?? null); // Whiteboard will fall back to browser TTS if null
     } catch (err) {
       console.error("Error generating explanation:", err);
       setAudioBlob(null);

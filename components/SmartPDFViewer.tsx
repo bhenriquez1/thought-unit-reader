@@ -3,30 +3,21 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
-import "react-pdf/dist/esm/Page/AnnotationLayer.css";
-import "react-pdf/dist/esm/Page/TextLayer.css";
 
-/**
- * PDF.js worker (v4.x): use same-origin worker we copy to /public.
- * Falls back to CDN if needed.
- */
-(() => {
-  try {
-    const local = "/pdf.worker.min.mjs";
-    const cdn = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
-    // Prefer local; swap to CDN if your host doesn't serve from /public
-    (pdfjs as any).GlobalWorkerOptions.workerSrc = local;
-    // To hard-force CDN instead, uncomment:
-    // (pdfjs as any).GlobalWorkerOptions.workerSrc = cdn;
-  } catch {
-    try {
-      (pdfjs as any).GlobalWorkerOptions.workerSrc =
-        `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
-    } catch {
-      /* ignore */
-    }
-  }
-})();
+// If you *haven't* moved these to pages/_app.tsx yet, keep them.
+// If you *have* moved them, delete these two lines to avoid double-loading CSS.
+// import "react-pdf/dist/esm/Page/AnnotationLayer.css";
+// import "react-pdf/dist/esm/Page/TextLayer.css";
+
+/** Force PDF.js worker from CDN (v4.x) */
+try {
+  pdfjs.GlobalWorkerOptions.workerSrc =
+    `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
+  // Small breadcrumb for debugging:
+  // console.log("[SmartPDFViewer] workerSrc =", pdfjs.GlobalWorkerOptions.workerSrc);
+} catch {
+  // ignore – react-pdf will surface a clearer error if this fails
+}
 
 export interface SmartPDFViewerProps {
   fileUrl: string;

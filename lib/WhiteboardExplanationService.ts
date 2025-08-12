@@ -1,137 +1,81 @@
 // lib/WhiteboardExplanationService.ts
-// ✅ Server-route–first + local OpenAI fallback
-// ✅ Exposes: generateWhiteboardExplanation (no audio)
-//            generateWhiteboardExplanationWithAudio (with audio via /api/tts)
+// CLIENT-SAFE: do NOT import the OpenAI SDK here. Call your API routes instead.
 
-import { OpenAI } from "openai";
-import { synthesizeVoiceFromText, getApiBase } from "./tts"; // server TTS + API base helper
+export type WhiteboardStep = {
+  type: "draw" | "erase" | "text" | "image";
+  payload: any;
+  delayMs?: number;
+};
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "" });
-
-export interface WhiteboardStep {
-  title: string;
-  description: string;
-  visualPrompt: string; // what to draw
-}
-
-export interface WhiteboardExplanationOutput {
-  summary: string;
+export type WhiteboardResponse = {
   steps: WhiteboardStep[];
   narrationScript: string;
+  audioUrl?: string;      // server may return a URL
+  audioBase64?: string;   // or base64 audio
+  audioMime?: string;     // e.g. "audio/mpeg"
+};
+
+function b64ToBlob(b64: string, mime = "audio/mpeg"): Blob {
+  const byteString = atob(b64);
+  const ab = new ArrayBuffer(byteString.length);
+  const ia = new Uint8Array(ab);
+  for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+  return new Blob([ab], { type: mime });
 }
 
-export interface WhiteboardExplanationOutputWithAudio
-  extends WhiteboardExplanationOutput {
-  audioBlob: Blob | null; // if null, UI can fall back to browser TTS
-}
-
-/* -------------------- helpers -------------------- */
-
-function parseLLMContentToOutput(content: string): WhiteboardExplanationOutput {
-  const summaryMatch = content.match(/Summary:\s*"([\s\S]*?)"\s*VoiceScript:/i);
-  const voiceScriptMatch = content.match(/VoiceScript:\s*"([\s\S]*?)"\s*WhiteboardSteps:/i);
-  const stepsBlock = content.match(/WhiteboardSteps:\s*([\s\S]*)/i);
-
-  const summary = summaryMatch?.[1]?.trim() || "";
-  const narrationScript = voiceScriptMatch?.[1]?.trim() || "";
-  const rawSteps = (stepsBlock?.[1] || "")
-    .trim()
-    .split(/\n+/)
-    .map((s) => s.replace(/^[-*]\s*/, "").trim())
-    .filter(Boolean);
-
-  const steps: WhiteboardStep[] = rawSteps.map((line, idx) => ({
-    title: `Step ${idx + 1}`,
-    description: line,
-    visualPrompt: `Illustrate: ${line}`,
-  }));
-
-  return { summary, steps, narrationScript };
-}
-
-async function localLLMGenerate(
-  concept: string,
-  context: string
-): Promise<WhiteboardExplanationOutput> {
-  const prompt = `You are Ninja Nerd giving a whiteboard explanation.
-
-Concept: ${concept}
-Context: ${context}
-
-1. Provide a 1-paragraph summary of the concept.
-2. Break it down in a clear voice script for explaining aloud to students.
-3. Then give 3–6 concise whiteboard animation steps that a teacher would draw while speaking.
-
-Return format:
-Summary:
-"Short summary here..."
-
-VoiceScript:
-"Your spoken explanation here..."
-
-WhiteboardSteps:
-- Step 1 drawing instructions...
-- Step 2 drawing instructions...
-...`;
-
-  const resp = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [{ role: "user", content: prompt }],
-    temperature: 0.5,
-  });
-
-  const content = resp.choices?.[0]?.message?.content || "";
-  return parseLLMContentToOutput(content);
-}
-
-/* -------------------- public API -------------------- */
-
-/**
- * Server-first whiteboard explanation (no audio).
- * Falls back to local OpenAI if the server route fails.
- */
-export async function generateWhiteboardExplanation(
-  concept: string,
-  context: string = "General STEM explanation"
-): Promise<WhiteboardExplanationOutput> {
-  // 1) Try server route (keeps keys server-side, supports static via NEXT_PUBLIC_API_BASE)
-  const apiBase = getApiBase(); // from lib/tts.ts
-  try {
-    const res = await fetch(`${apiBase}/api/whiteboard-explanation`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ concept, context }),
-    });
-
-    if (res.ok) {
-      const data = (await res.json()) as WhiteboardExplanationOutput;
-      if (data?.narrationScript && Array.isArray(data?.steps)) return data;
-    }
-    // else fall through to local
-  } catch {
-    // swallow and fall back to local
-  }
-
-  // 2) Fallback to local OpenAI (only works if key is exposed client-side — not recommended in prod)
-  return await localLLMGenerate(concept, context);
-}
-
-/**
- * Same as above, but also tries to get an AI audio blob from /api/tts.
- * If TTS fails (or route is missing), returns audioBlob = null so the UI can use browser TTS.
- */
+/** Hit our server route that talks to OpenAI securely; resolve audio to a Blob if available. */
 export async function generateWhiteboardExplanationWithAudio(
   concept: string,
-  context: string = "General STEM explanation"
-): Promise<WhiteboardExplanationOutputWithAudio> {
-  const base = await generateWhiteboardExplanation(concept, context);
+  context: string
+): Promise<{ steps: WhiteboardStep[]; narrationScript: string; audioBlob: Blob | null }> {
+  const res = await fetch("/api/whiteboard-explanation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ concept, context }),
+  });
 
-  let audioBlob: Blob | null = null;
-  try {
-    audioBlob = await synthesizeVoiceFromText(base.narrationScript);
-  } catch {
-    audioBlob = null;
+  if (!res.ok) {
+    const msg = await res.text().catch(() => res.statusText);
+    throw new Error(`whiteboard-explanation failed: ${msg}`);
   }
 
-  return { ...base, audioBlob };
+  const data: WhiteboardResponse = await res.json();
+
+  let audioBlob: Blob | null = null;
+
+  if (data.audioUrl) {
+    try {
+      const a = await fetch(data.audioUrl);
+      audioBlob = await a.blob();
+    } catch {
+      audioBlob = null;
+    }
+  } else if (data.audioBase64) {
+    try {
+      audioBlob = b64ToBlob(data.audioBase64, data.audioMime || "audio/mpeg");
+    } catch {
+      audioBlob = null;
+    }
+  } else {
+    // Optional fallback: ask /api/tts to synthesize if server didn’t attach audio
+    try {
+      const tts = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: data.narrationScript }),
+      });
+      if (tts.ok) {
+        const buf = await tts.arrayBuffer();
+        audioBlob = new Blob([buf], { type: "audio/mpeg" });
+      }
+    } catch {
+      audioBlob = null;
+    }
+  }
+
+  return {
+    steps: data.steps || [],
+    narrationScript: data.narrationScript || "",
+    audioBlob,
+  };
 }
