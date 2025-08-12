@@ -1,50 +1,32 @@
+// components/TOCSidebar.tsx
 import React, { useMemo, useState } from "react";
-
-/**
- * Flexible TOC entry shape so we don't rely on a specific export from tocParser.
- * Supports common keys we've used across versions.
- */
-export type TOCEntry = {
-  title?: string;     // preferred
-  text?: string;      // alt key seen in some parsers
-  level?: number;     // nesting level
-  depth?: number;     // alt key for level
-  page?: number;      // 1-based
-  pageNumber?: number;
-  pageIndex?: number; // sometimes 0- or 1-based depending on parser
-  pageNum?: number;   // alt key
-  [key: string]: unknown;
-};
+import type { TOCEntry as BaseTOCEntry } from "@/lib/tocParser";
 
 interface Props {
-  toc: TOCEntry[];
+  toc: BaseTOCEntry[];
   currentPage: number;
   onJumpToPage: (page: number) => void;
 }
 
-function getTitle(e: TOCEntry): string {
-  return (e.title ?? e.text ?? "").toString() || "Untitled";
+function getTitle(e: BaseTOCEntry): string {
+  const any = e as any;
+  return (e.title ?? any.text ?? "").toString() || "Untitled";
 }
 
-function getLevel(e: TOCEntry): number {
-  const lvl = e.level ?? e.depth ?? 0;
+function getLevel(e: BaseTOCEntry): number {
+  const any = e as any;
+  const lvl = any.level ?? any.depth ?? 0;
   const n = Number(lvl);
   return Number.isFinite(n) ? n : 0;
 }
 
-function getPage(e: TOCEntry): number {
-  // Try a bunch of possible fields
-  const raw =
-    e.page ??
-    e.pageNumber ??
-    e.pageIndex ??
-    e.pageNum ??
-    1;
+function getPage(e: BaseTOCEntry): number {
+  const any = e as any;
+  const raw = any.page ?? e.pageNumber ?? any.pageIndex ?? any.pageNum ?? 1;
 
   let p = Number(raw);
   if (!Number.isFinite(p)) p = 1;
-
-  // Some parsers give 0-based pageIndex; clamp to at least 1.
+  // some parsers provide 0-based pageIndex
   if (p < 1) p = p + 1;
 
   return Math.max(1, Math.floor(p));
