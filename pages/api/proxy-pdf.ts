@@ -1,64 +1,58 @@
 // pages/api/proxy-pdf.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 import { Readable } from "node:stream";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
 
-// Allow large files
-export const config = { api: { responseLimit: false } };
-
-const PASS_HEADERS = [
-  "content-type",
-  "content-length",
-  "accept-ranges",
-  "content-range",
-  "last-modified",
-  "etag",
-  "cache-control",
-];
+export const config = {
+  api: {
+    // allow large responses (so big PDFs don't get truncated)
+    responseLimit: false,
+  },
+};
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const src = typeof req.query.src === "string" ? req.query.src : "";
-  if (!src) {
-    res.status(400).json({ error: "Missing ?src=<PDF URL>" });
-    return;
-  }
-
   try {
-    // Forward the original Range header for streaming/seek support.
-    const headers: Record<string, string> = {};
-    if (req.headers.range) headers["range"] = String(req.headers.range);
+    const url =
+      (typeof req.query.url === "string" && req.query.url) ||
+      (typeof req.body?.url === "string" && req.body.url);
 
-    // HEAD/GET passthrough only
-    const method = req.method === "HEAD" ? "HEAD" : "GET";
-    const upstream = await fetch(src, { method, headers });
-
-    if (!upstream.ok && upstream.status !== 206) {
-      res.status(upstream.status).end(await upstream.text());
-      return;
+    if (!url) {
+      return res.status(400).json({ error: "Missing ?url=<pdf url>" });
     }
 
-    // Copy useful headers from the upstream response
-    PASS_HEADERS.forEach((h) => {
-      const v = upstream.headers.get(h);
-      if (v) res.setHeader(h, v);
+    // (Optional) basic allowlist check to avoid open proxy abuse
+    // if (!url.startsWith("https://your-allowed-domain.com/")) {
+    //   return res.status(403).json({ error: "Forbidden URL" });
+    // }
+
+    const upstream = await fetch(url, {
+      // headers: { "User-Agent": "Thought-Unit-Reader/1.0" },
     });
 
-    // Encourage CDN/proxy caching (tweak to taste)
-    if (!res.getHeader("cache-control")) {
-      res.setHeader("Cache-Control", "public, max-age=0, s-maxage=3600, stale-while-revalidate=600");
+    if (!upstream.ok || !upstream.body) {
+      const text = await upstream.text().catch(() => upstream.statusText);
+      return res.status(upstream.status).send(text || "Upstream error");
     }
 
-    // Stream body to the client (works for both 200 and 206)
-    if (method === "HEAD" || !upstream.body) {
-      res.status(upstream.status).end();
+    const contentType = upstream.headers.get("content-type") || "application/pdf";
+    res.status(upstream.status);
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "no-store");
+
+    // Prefer streaming -> convert Web stream to Node stream
+    if (typeof (Readable as any).fromWeb === "function") {
+      const webStream = upstream.body as unknown as WebReadableStream;
+      const nodeStream = Readable.fromWeb(webStream);
+      nodeStream.on("error", () => res.status(502).end());
+      nodeStream.pipe(res);
       return;
     }
 
-    // Convert Web ReadableStream → Node stream
-    const nodeStream = Readable.fromWeb(upstream.body as unknown as ReadableStream);
-    res.status(upstream.status);
-    nodeStream.pipe(res);
+    // Fallback: buffer the whole thing (older Node)
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    res.send(buf);
   } catch (err: any) {
     console.error("proxy-pdf error:", err?.message || err);
-    res.status(502).json({ error: "Failed to fetch PDF" });
+    res.status(500).json({ error: "Proxy failed" });
   }
 }
