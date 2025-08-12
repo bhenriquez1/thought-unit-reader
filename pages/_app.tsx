@@ -5,7 +5,8 @@ import { ThemeProvider } from "next-themes";
 // Global styles
 import "@/styles/globals.css";
 import "react-tooltip/dist/react-tooltip.css";
-// Keep react-pdf CSS global (do NOT re-import inside components)
+
+// Load react-pdf layer styles once (globally)
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 import "react-pdf/dist/esm/Page/TextLayer.css";
 

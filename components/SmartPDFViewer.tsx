@@ -4,15 +4,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 
-// If you moved these CSS imports to pages/_app.tsx, keep them there.
-// import "react-pdf/dist/esm/Page/AnnotationLayer.css";
-// import "react-pdf/dist/esm/Page/TextLayer.css";
+// NOTE: Keep the react-pdf CSS in pages/_app.tsx (do not import here).
 
-/** Use the same-origin worker we copy to /public to avoid CDN/CORS issues */
+/** Use the same-origin worker we ship in /public to avoid CDN/CORS issues */
 try {
   pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 } catch {
-  /* ignore — react-pdf will surface a clearer error if this fails */
+  // react-pdf will surface a clearer error if this fails
 }
 
 export interface SmartPDFViewerProps {
@@ -21,20 +19,17 @@ export interface SmartPDFViewerProps {
   onPageChange: (page: number) => void;
   scale?: number;
   onTextSelect?: (text: string) => void;
-  /** Notify parent how many pages the doc has */
   onPageCount?: (n: number) => void;
 }
 
 /** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
 function toSameOrigin(url: string): string {
   try {
-    // Leave blobs, data:, and relative paths alone
-    if (!/^https?:/i.test(url)) return url;
+    if (!/^https?:/i.test(url)) return url; // blob:, data:, relative paths
     if (typeof window !== "undefined") {
       const u = new URL(url);
       if (u.origin === window.location.origin) return url;
     }
-    // API route expects ?url=
     return `/api/proxy-pdf?url=${encodeURIComponent(url)}`;
   } catch {
     return url;
@@ -56,16 +51,14 @@ export default function SmartPDFViewer({
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
 
-  // Keep input in sync with external page jumps (e.g., TOC).
   useEffect(() => {
     setPageInput(String(currentPage));
   }, [currentPage]);
 
-  // Resolve and memoize the URL we’ll actually request
+  // Resolve & memoize what the <Document /> will fetch
   const fileSpec = useMemo(() => {
     if (!fileUrl) return null;
     const resolved = toSameOrigin(fileUrl);
-    // console.log("[SmartPDFViewer] resolved PDF URL:", resolved);
     return { url: resolved };
   }, [fileUrl]);
 
