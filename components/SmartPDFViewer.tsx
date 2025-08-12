@@ -7,20 +7,26 @@ import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 import "react-pdf/dist/esm/Page/TextLayer.css";
 
 /**
- * PDF.js worker (v3.x) — use a local worker from pdfjs-dist.
- * NOTE: This file is client-only (see "use client" above) and your page
- * dynamically imports it with ssr:false, so it's safe to touch window.
+ * PDF.js worker (v4.x): use same-origin worker we copy to /public.
+ * Falls back to CDN if needed.
  */
-try {
-  // In some bundlers import.meta.url isn't available at build-time SSR;
-  // this file only runs in the browser, so this is fine.
-  pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/build/pdf.worker.min.js",
-    import.meta.url
-  ).toString();
-} catch {
-  // If anything goes wrong, react-pdf will still attempt to fall back.
-}
+(() => {
+  try {
+    const local = "/pdf.worker.min.mjs";
+    const cdn = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
+    // Prefer local; if hosting path differs, swap to cdn.
+    pdfjs.GlobalWorkerOptions.workerSrc = local;
+    // Optional: uncomment to hard-force CDN
+    // pdfjs.GlobalWorkerOptions.workerSrc = cdn;
+  } catch (_e) {
+    // Last resort: try CDN
+    try {
+      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
+    } catch {
+      /* ignore */
+    }
+  }
+})();
 
 export interface SmartPDFViewerProps {
   fileUrl: string;
