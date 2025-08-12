@@ -14,14 +14,14 @@ import "react-pdf/dist/esm/Page/TextLayer.css";
   try {
     const local = "/pdf.worker.min.mjs";
     const cdn = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
-    // Prefer local; if hosting path differs, swap to cdn.
-    pdfjs.GlobalWorkerOptions.workerSrc = local;
-    // Optional: uncomment to hard-force CDN
-    // pdfjs.GlobalWorkerOptions.workerSrc = cdn;
-  } catch (_e) {
-    // Last resort: try CDN
+    // Prefer local; swap to CDN if your host doesn't serve from /public
+    (pdfjs as any).GlobalWorkerOptions.workerSrc = local;
+    // To hard-force CDN instead, uncomment:
+    // (pdfjs as any).GlobalWorkerOptions.workerSrc = cdn;
+  } catch {
     try {
-      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
+      (pdfjs as any).GlobalWorkerOptions.workerSrc =
+        `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
     } catch {
       /* ignore */
     }
@@ -168,7 +168,7 @@ export default function SmartPDFViewer({
       <div className="flex justify-center items-start h-full overflow-auto p-4 transition-all duration-300">
         {fileUrl ? (
           <Document
-            key={fileUrl} // reset when new file arrives
+            key={fileUrl}
             file={fileUrl}
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={onDocumentLoadError}

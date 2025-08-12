@@ -1,40 +1,56 @@
 // lib/pdfjs-handler.ts
-// Unified, SSR-safe PDF.js handler (legacy build + worker auto-config)
+// Unified, SSR-safe PDF.js handler (v4) with worker auto-config and text extraction.
 
 /**
- * Configure PDF.js worker (client-only)
+ * Public API
+ * - configurePdfjs(): ensure worker is set (no-op on server)
+ * - extractTextFromPdf(file): get plain text from all pages (client-only)
  */
+
 export async function configurePdfjs(): Promise<void> {
   if (typeof window === "undefined") return;
-  await getPdfjs(); // ensures workerSrc is set
+  await getPdfjs(); // ensures workerSrc is configured
 }
 
-/**
- * Extract text from a PDF file (client-only)
- */
 export async function extractTextFromPdf(file: File): Promise<string> {
   if (typeof window === "undefined") {
-    return "PDF text extraction is only available in browser";
+    return "PDF text extraction is only available in the browser.";
   }
 
   try {
     const pdfjs = await getPdfjs();
     if (!pdfjs) throw new Error("pdfjs failed to load");
 
-    const arrayBuffer = await file.arrayBuffer();
-    const data = new Uint8Array(arrayBuffer);
+    const data = new Uint8Array(await file.arrayBuffer());
 
-    const loadingTask = pdfjs.getDocument({ data });
-    const pdf = await loadingTask.promise;
+    // v4 API
+    const loadingTask: any = (pdfjs as any).getDocument({ data });
+    const doc = await loadingTask.promise;
 
     const pages: string[] = [];
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i);
       const content = await page.getTextContent();
-      const pageText = content.items
-        .map((item: any) => item?.str ?? item?.unicode ?? "")
+
+      const pageText = (content.items as any[])
+        .map((item: any) => {
+          // v4 items have `str`; keep fallbacks for safety
+          if (typeof item?.str === "string") return item.str;
+          if (typeof item?.unicode === "string") return item.unicode;
+          if (typeof item?.text === "string") return item.text;
+          return "";
+        })
         .join(" ");
+
       pages.push(pageText);
+    }
+
+    // Best-effort cleanup (optional)
+    try {
+      await doc.cleanup?.();
+      await doc.destroy?.();
+    } catch {
+      /* ignore */
     }
 
     return pages.join("\n\n").trim();
@@ -45,7 +61,7 @@ export async function extractTextFromPdf(file: File): Promise<string> {
 }
 
 /* ------------------------------------------------------------------ */
-/* Internals: lazy-load + cache pdfjs (legacy build) & set workerSrc  */
+/* Internals: lazy-load + cache pdfjs (v4) & set workerSrc (client)   */
 /* ------------------------------------------------------------------ */
 
 let _pdfjs: any | null = null;
@@ -55,27 +71,21 @@ async function getPdfjs(): Promise<any | null> {
   if (typeof window === "undefined") return null;
 
   try {
-    // Prefer dynamic import; falls back to require if bundler complains
-    // @ts-ignore
-    const mod = await import("pdfjs-dist/legacy/build/pdf.js");
-    _pdfjs = (mod && (mod as any).default) ? (mod as any).default : mod;
-  } catch {
-    try {
-      // @ts-ignore
-      _pdfjs = require("pdfjs-dist/legacy/build/pdf.js");
-    } catch (e2) {
-      console.error("Failed to load pdfjs-dist legacy build:", e2);
-      return null;
-    }
+    // v4-style namespace import (dynamic to avoid SSR issues)
+    const mod = await import("pdfjs-dist");
+    _pdfjs = mod as any;
+  } catch (e) {
+    console.error("Failed to load pdfjs-dist:", e);
+    return null;
   }
 
+  // Point to worker we ship in /public (see package.json postinstall)
   try {
-    if (_pdfjs && _pdfjs.GlobalWorkerOptions && !_pdfjs.GlobalWorkerOptions.workerSrc) {
-      const version = _pdfjs.version || "4.6.82"; // fallback version if pdfjs doesn’t expose it
-      _pdfjs.GlobalWorkerOptions.workerSrc =
-        `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${version}/pdf.worker.min.js`;
+    const g = (_pdfjs as any).GlobalWorkerOptions;
+    if (g && !g.workerSrc) {
+      g.workerSrc = "/pdf.worker.min.mjs";
     }
-  } catch (e) {
+  } catch {
     // non-fatal
   }
 
