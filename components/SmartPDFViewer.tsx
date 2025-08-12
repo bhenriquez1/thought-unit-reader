@@ -36,7 +36,7 @@ function toSameOrigin(url: string): string {
       const u = new URL(url);
       if (u.origin === window.location.origin) return url;
     }
-    // 🔧 match the API route which expects ?url=
+    // ✅ match the API route which expects ?url=
     return `/api/proxy-pdf?url=${encodeURIComponent(url)}`;
   } catch {
     return url;
@@ -161,7 +161,7 @@ export default function SmartPDFViewer({
       <div className="flex justify-center items-start h-full overflow-auto p-4 transition-all duration-300">
         {fileUrl ? (
           <Document
-            key={resolvedUrl}              // reset on URL change
+            key={resolvedUrl}
             file={resolvedUrl}
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={onDocumentLoadError}
