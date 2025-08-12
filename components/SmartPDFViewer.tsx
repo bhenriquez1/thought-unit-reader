@@ -4,17 +4,15 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 
-// If you moved these CSS imports to pages/_app.tsx, keep them *there* and
-// do not import here to avoid double-loading.
+// If you moved these CSS imports to pages/_app.tsx, keep them there.
 // import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 // import "react-pdf/dist/esm/Page/TextLayer.css";
 
-/** Force PDF.js worker from CDN (v4.x) */
+/** Use the same-origin worker we copy to /public to avoid CDN/CORS issues */
 try {
-  pdfjs.GlobalWorkerOptions.workerSrc =
-    `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
+  pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 } catch {
-  /* ignore */
+  /* ignore — react-pdf will surface a clearer error if this fails */
 }
 
 export interface SmartPDFViewerProps {
@@ -36,7 +34,7 @@ function toSameOrigin(url: string): string {
       const u = new URL(url);
       if (u.origin === window.location.origin) return url;
     }
-    // ✅ match API route which expects ?url=
+    // API route expects ?url=
     return `/api/proxy-pdf?url=${encodeURIComponent(url)}`;
   } catch {
     return url;
@@ -67,9 +65,7 @@ export default function SmartPDFViewer({
   const fileSpec = useMemo(() => {
     if (!fileUrl) return null;
     const resolved = toSameOrigin(fileUrl);
-    // Debug breadcrumb so we can see what’s being fetched
-    // eslint-disable-next-line no-console
-    console.log("[SmartPDFViewer] resolved PDF URL:", resolved);
+    // console.log("[SmartPDFViewer] resolved PDF URL:", resolved);
     return { url: resolved };
   }, [fileUrl]);
 
