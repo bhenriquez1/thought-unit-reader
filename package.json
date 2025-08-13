@@ -8,13 +8,14 @@
     "build": "next build",
     "prebuild": "npm run setup:pdf-worker",
     "start": "next start -p $PORT",
+    "start:local": "next start -p 3000",
     "export": "next build && next export",
     "clean": "rimraf .next",
     "clean:full": "rimraf .next node_modules/.cache",
     "dev:clean": "npm run clean && next dev",
     "type-check": "tsc --noEmit",
     "render-build": "if [ -f package-lock.json ]; then npm ci; else npm install; fi && npm run build",
-    "setup:pdf-worker": "node -e \"const fs=require('fs');const p=require('path');fs.mkdirSync('public',{recursive:true});fs.copyFileSync(p.join('node_modules','pdfjs-dist','build','pdf.worker.min.mjs'),p.join('public','pdf.worker.min.mjs'));console.log('✅ pdf.worker copied to public/');\"",
+    "setup:pdf-worker": "node -e \"const fs=require('fs');const p=require('path');fs.mkdirSync('public',{recursive:true});const cand=['node_modules/pdfjs-dist/build/pdf.worker.min.mjs','node_modules/pdfjs-dist/build/pdf.worker.min.js','node_modules/pdfjs-dist/build/pdf.worker.js'];const src=cand.find(f=>fs.existsSync(f));if(!src){console.error('❌ pdf.worker not found in pdfjs-dist');process.exit(1);}const dest=p.join('public','pdf.worker.min.mjs');fs.copyFileSync(src,dest);console.log('✅ pdf.worker copied from',src,'→',dest);\"",
     "postinstall": "npm run setup:pdf-worker"
   },
   "dependencies": {
@@ -50,9 +51,7 @@
     "tailwind-merge": "^2.6.0",
     "tesseract.js": "^5.1.1"
   },
-  "engines": {
-    "node": "20.x"
-  },
+  "engines": { "node": "20.x" },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.7",
     "@tailwindcss/typography": "^0.5.10",
