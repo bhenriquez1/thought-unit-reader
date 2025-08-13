@@ -2,7 +2,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Document, Page, pdfjs, type PDFDocumentProxy } from "react-pdf";
+import { Document, Page, pdfjs } from "react-pdf";
+import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api"; // ✅ correct type source
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
 
