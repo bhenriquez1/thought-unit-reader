@@ -63,6 +63,9 @@ export interface UsePdfSelection {
 
   /** Timestamp (ms) when last selection happened */
   lastSelectedAt: number | null;
+
+  /** True while we’re generating a detailed note */
+  isCreatingNote: boolean;
 }
 
 function defaultDiagramHeuristic(text: string): boolean {
@@ -114,6 +117,8 @@ export function usePdfSelection(opts: UsePdfSelectionOptions = {}): UsePdfSelect
   const [selectionText, _setSelectionText] = useState<string>("");
   const [popupPosition, setPopupPosition] = useState<PopupPosition>(null);
   const [lastSelectedAt, setLastSelectedAt] = useState<number | null>(null);
+  const [isCreatingNote, setIsCreatingNote] = useState(false);
+
   const selectionRangeRef = useRef<Range | null>(null);
   const timerRef = useRef<number | null>(null);
 
@@ -238,6 +243,8 @@ export function usePdfSelection(opts: UsePdfSelectionOptions = {}): UsePdfSelect
     }) => {
       const text = selectionText.trim();
       if (!text) return null;
+
+      setIsCreatingNote(true);
       try {
         const res = await fetch("/api/annotate", {
           method: "POST",
@@ -253,7 +260,10 @@ export function usePdfSelection(opts: UsePdfSelectionOptions = {}): UsePdfSelect
         const data = await res.json();
         return (data?.detailedNote as string) || text;
       } catch {
-        return text; // graceful fallback
+        // graceful fallback to the selected text
+        return text;
+      } finally {
+        setIsCreatingNote(false);
       }
     },
     [selectionText]
@@ -275,5 +285,6 @@ export function usePdfSelection(opts: UsePdfSelectionOptions = {}): UsePdfSelect
     createDetailedNote,
     isActive,
     lastSelectedAt,
+    isCreatingNote,
   };
 }
