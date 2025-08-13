@@ -1,103 +1,83 @@
 // lib/tocParser.ts
-// Build a simple Table of Contents either from:
-// 1) raw text (heuristics) — legacy fallback, or
-// 2) a PDF outline emitted by SmartPDFViewer (preferred)
+// Minimal TOC utilities with NO pdf.js usage (no worker/CDN needed).
+// Prefer using SmartPDFViewer.onOutline() and pass that through outlineToTOC().
 
-/** Sidebar-friendly TOC shape */
 export interface TOCEntry {
   title: string;
-  pageNumber: number;       // 1-based
-  subChapters?: TOCEntry[]; // children
+  pageNumber: number;        // 1-based
+  subChapters?: TOCEntry[];  // children
 }
 
-/** ---------- Outline → TOC (preferred) ----------
- * Use this when SmartPDFViewer gives you an outline
- * whose nodes already include 1-based page numbers.
- */
+/** Mixed outline node shape (handles both items and subChapters). */
 export type PdfOutlineNode = {
-  title: string;
-  pageNumber?: number;      // 1-based if available
-  items?: PdfOutlineNode[];
+  title?: string;
+  pageNumber?: number;       // 1-based if available
+  items?: PdfOutlineNode[];  // pdf.js-style
+  subChapters?: PdfOutlineNode[]; // alt key some tools use
 };
 
-export function outlineToTOC(nodes?: PdfOutlineNode[] | null, level = 0): TOCEntry[] {
+/** ---------- Outline → TOC (preferred) ---------- */
+export function outlineToTOC(nodes?: PdfOutlineNode[] | null): TOCEntry[] {
   if (!nodes?.length) return [];
-  return nodes.map((n) => ({
-    title: (n?.title ?? "Untitled").toString(),
-    pageNumber:
-      Number.isFinite(n?.pageNumber) && (n!.pageNumber as number) > 0
-        ? (n!.pageNumber as number)
-        : 1,
-    subChapters: outlineToTOC(n?.items ?? [], level + 1),
-  }));
+  return nodes.map((n) => {
+    const kids = (n?.items && n.items.length ? n.items : n?.subChapters) || [];
+    return {
+      title: (n?.title ?? "Untitled").toString(),
+      pageNumber:
+        typeof n?.pageNumber === "number" && n.pageNumber > 0 ? n.pageNumber : 1,
+      subChapters: outlineToTOC(kids),
+    };
+  });
 }
 
 /** ---------- Public API (back-compat) ----------
- * Overloads: (url)  OR  (text, numPages)
- * These use the original text-heuristic approach.
+ * Overloads:
+ *   - (url: string) -> []  (we now rely on SmartPDFViewer.onOutline for real TOC)
+ *   - (text: string, numPages: number) -> heuristic TOC
  */
 export function generateTOC(url: string): Promise<TOCEntry[]>;
 export function generateTOC(text: string, numPages: number): Promise<TOCEntry[]>;
 export async function generateTOC(arg1: string, arg2?: number): Promise<TOCEntry[]> {
-  // Old signature (text, numPages)
   if (typeof arg2 === "number") {
+    // Legacy signature: (text, numPages)
     return buildTOCFromText(arg1, arg2);
   }
-
-  // New signature: (url/blob) – client-only
-  if (typeof window === "undefined") return [];
-
-  // Lazily load pdfjs to avoid SSR issues
-  let pdfjsLib: any;
-  try {
-    pdfjsLib = await import("pdfjs-dist/build/pdf");
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
-  } catch (err) {
-    console.warn("pdfjs-dist not available; returning empty TOC.", err);
-    return [];
-  }
-
-  const loadingTask = pdfjsLib.getDocument(arg1);
-  const pdf = await loadingTask.promise;
-  const numPages: number = pdf.numPages;
-
-  // Fallback heuristic: extract page text and guess headings
-  let allText = "";
-  for (let i = 1; i <= numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    const strings = (content.items || []).map((it: any) => (it.str ?? "").trim());
-    allText += strings.join(" ") + "\n";
-  }
-
-  return buildTOCFromText(allText, numPages);
+  // Newer signature: (url) — do nothing here to avoid pdf.js in the browser.
+  // SmartPDFViewer should emit outline via onOutline; convert with outlineToTOC().
+  return [];
 }
 
 /** ---------- Text → TOC (heuristics) ---------- */
 function buildTOCFromText(text: string, numPages: number): TOCEntry[] {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
 
-  // Heuristics:
-  //  - "Chapter 1", "CHAPTER 2"
-  //  - "1. Intro", "2.3 Vectors", "10.2.1 Subsection"
-  //  - ALL CAPS headline-ish lines
-  const chapterRegex = /^(Chapter\s+\d+|CHAPTER\s+\d+|\d+\.\d+\s+.+|[A-Z][A-Z0-9\s\-:,'()]+)$/;
+  // Heuristics for headings:
+  // - "Chapter 1", "CHAPTER 2"
+  // - "1. Intro", "2.3 Vectors", "10.2.1 Subsection"
+  // - ALL CAPS headline-ish lines
+  const chapterRegex =
+    /^(Chapter\s+\d+|CHAPTER\s+\d+|\d+\.\d+\s+.+|[A-Z][A-Z0-9\s\-:,'()]+)$/;
   const subChapterRegex = /^(\d+\.\d+(\.\d+)*)\s+.+$/;
 
-  const approxLinesPerPage = Math.max(1, Math.floor(lines.length / Math.max(1, numPages)));
+  const approxLinesPerPage = Math.max(
+    1,
+    Math.floor(lines.length / Math.max(1, numPages))
+  );
 
   const toc: TOCEntry[] = [];
-  let currentChapter: TOCEntry | null = null;
+  let current: TOCEntry | null = null;
 
   lines.forEach((line, index) => {
+    const pageNumber = Math.floor(index / approxLinesPerPage) + 1;
+
     if (chapterRegex.test(line)) {
-      const pageNumber = Math.floor(index / approxLinesPerPage) + 1;
-      currentChapter = { title: line, pageNumber, subChapters: [] };
-      toc.push(currentChapter);
-    } else if (currentChapter && subChapterRegex.test(line)) {
-      const pageNumber = Math.floor(index / approxLinesPerPage) + 1;
-      currentChapter.subChapters!.push({ title: line, pageNumber });
+      current = { title: line, pageNumber, subChapters: [] };
+      toc.push(current);
+      return;
+    }
+
+    if (current && subChapterRegex.test(line)) {
+      current.subChapters!.push({ title: line, pageNumber });
     }
   });
 
