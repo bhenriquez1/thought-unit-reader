@@ -2,7 +2,7 @@
 import dynamic from "next/dynamic";
 import React, { useState, useEffect, useRef, ChangeEvent } from "react";
 
-import { generateTOC, TOCEntry } from "@/lib/tocParser";
+import { generateTOC, type TOCEntry } from "@/lib/tocParser";
 import TOCSidebar from "@/components/TOCSidebar";
 import ProgressiveView from "@/components/ProgressiveView";
 import type { ThoughtUnit, ReadingStats } from "@/types/reading";
@@ -20,8 +20,7 @@ import {
 } from "@/lib/firebase";
 
 // ✅ Auto-whiteboard detection + panel
-// Use a relative import to avoid CI/alias and filename issues
-import WhiteboardPanel from "../components/WhiteboardPanel";
+import WhiteboardPanel from "@/components/WhiteboardPanel";
 
 import {
   parseBookWithChapters,
@@ -29,11 +28,34 @@ import {
   containsDiagramOrFormula,
 } from "@/lib/parser";
 
+// Lazy-load to keep SSR clean
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), {
   ssr: false,
 });
 
+// Types from SmartPDFViewer outline (optional import)
+type ViewerTocItem = {
+  title: string;
+  pageNumber?: number;
+  items?: ViewerTocItem[];
+};
+
 type StickyNote = { pageNumber: number; content: string };
+
+/* ----------------------- helpers ----------------------- */
+function truncate(s: string, n: number) {
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+/** Convert SmartPDFViewer outline → TOCEntry[] (recursive) */
+function normalizeOutlineToTOC(items: ViewerTocItem[] | undefined): TOCEntry[] {
+  if (!Array.isArray(items)) return [];
+  return items.map((it) => ({
+    title: it?.title || "Untitled",
+    pageNumber: typeof it?.pageNumber === "number" ? it.pageNumber : 1,
+    subChapters: normalizeOutlineToTOC(it?.items),
+  }));
+}
 
 export default function ThoughtUnitReader() {
   /* =========================================================================
@@ -46,10 +68,13 @@ export default function ThoughtUnitReader() {
   const [currentThoughtUnit, setCurrentThoughtUnit] = useState(1);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+
   const [viewMode, setViewMode] =
     useState<"original" | "progressive" | "hybrid" | "rightbrain">("original");
+
   const [currentPage, setCurrentPage] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(1);
+
   const [isReading, setIsReading] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [readingSpeed, setReadingSpeed] = useState(200);
@@ -58,6 +83,7 @@ export default function ThoughtUnitReader() {
     timeElapsed: 0,
     currentWPM: 0,
   });
+
   const [highlightedWord, setHighlightedWord] = useState("");
   const [fontSize, setFontSize] = useState(16);
   const [fontFamily, setFontFamily] = useState("sans-serif");
@@ -74,12 +100,12 @@ export default function ThoughtUnitReader() {
     { id: string; name: string; url: string; uploadedAt: any }[]
   >([]);
 
+  // Selection + popup
   const [selectedText, setSelectedText] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [popupPosition, setPopupPosition] = useState<{ x: number; y: number } | null>(null);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [bookId, setBookId] = useState<string>("default-book");
-
   const selectionRangeRef = useRef<Range | null>(null);
 
   // ✅ Auto-whiteboard control + data
@@ -126,7 +152,9 @@ export default function ThoughtUnitReader() {
       url = URL.createObjectURL(file);
     }
     setFileUrl(url);
-    generateTOC(url).then(setTableOfContents);
+
+    // Fallback TOC (text-heuristic) — viewer outline will override if available
+    generateTOC(url).then(setTableOfContents).catch(() => {});
 
     // ✅ Parse + detect diagram/formula sections for auto whiteboard
     try {
@@ -161,7 +189,7 @@ export default function ThoughtUnitReader() {
   const handleLoadPDF = (url: string) => {
     setFileUrl(url);
     setShowLibrary(false);
-    generateTOC(url).then(setTableOfContents);
+    generateTOC(url).then(setTableOfContents).catch(() => {});
   };
 
   /* =========================================================================
@@ -174,7 +202,7 @@ export default function ThoughtUnitReader() {
   };
 
   /* =========================================================================
-     🔹 Handle Text Selection — optional selection-time detection
+     🔹 Handle Text Selection — shared for all panes (for now)
   ========================================================================= */
   const handleTextSelect = (text: string) => {
     if (!text) return;
@@ -183,9 +211,14 @@ export default function ThoughtUnitReader() {
     const range = selection.getRangeAt(0);
     selectionRangeRef.current = range;
     setSelectedText(text);
-    updatePopupPositionFromRange(range);
 
-    // If the selection looks like a diagram/formula, pop the panel
+    const rect = range.getBoundingClientRect();
+    setPopupPosition({
+      x: rect.left + rect.width / 2 + window.scrollX,
+      y: rect.top + window.scrollY - 40,
+    });
+
+    // Optional: selection-time whiteboard trigger
     if (autoWhiteboard && containsDiagramOrFormula(text)) {
       setWbConcept(truncate(text, 600));
       setWbContext(
@@ -193,14 +226,6 @@ export default function ThoughtUnitReader() {
       );
       setShowWhiteboardPanel(true);
     }
-  };
-
-  const updatePopupPositionFromRange = (range: Range) => {
-    const rect = range.getBoundingClientRect();
-    setPopupPosition({
-      x: rect.left + rect.width / 2 + window.scrollX,
-      y: rect.top + window.scrollY - 40,
-    });
   };
 
   /* =========================================================================
@@ -218,6 +243,7 @@ export default function ThoughtUnitReader() {
         />
       );
     }
+
     if (viewMode === "progressive") {
       return (
         <ProgressiveView
@@ -241,6 +267,7 @@ export default function ThoughtUnitReader() {
         />
       );
     }
+
     if (viewMode === "hybrid") {
       return (
         <HybridReader
@@ -270,6 +297,8 @@ export default function ThoughtUnitReader() {
         />
       );
     }
+
+    // Original view (PDF)
     return fileUrl ? (
       <SmartPDFViewer
         fileUrl={fileUrl}
@@ -278,6 +307,11 @@ export default function ThoughtUnitReader() {
         scale={1.25}
         onTextSelect={handleTextSelect}
         onPageCount={(n) => setPdfPageCount(n)}
+        // 🔥 Use the viewer's outline/bookmarks when available
+        onOutline={(items) => {
+          const normalized = normalizeOutlineToTOC(items as ViewerTocItem[]);
+          if (normalized?.length) setTableOfContents(normalized);
+        }}
       />
     ) : (
       <div className="flex flex-col items-center justify-center h-full gap-4">
@@ -407,10 +441,12 @@ export default function ThoughtUnitReader() {
       {popupPosition && (
         <HighlightPopup
           position={popupPosition}
+          selectionText={selectedText}
           onCreateNote={() => setViewMode("rightbrain")}
           onAddFlashcard={() => console.log("Flashcard created")}
           onAttachLink={() => setShowLinkModal(true)}
           onClose={() => setPopupPosition(null)}
+          // onCreateDetailedNote={() => {/* we'll wire to usePdfSelection later */}}
         />
       )}
 
@@ -426,9 +462,4 @@ export default function ThoughtUnitReader() {
       )}
     </div>
   );
-}
-
-/* utils */
-function truncate(s: string, n: number) {
-  return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }

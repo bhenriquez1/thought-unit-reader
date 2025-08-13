@@ -1,3 +1,4 @@
+// components/ProgressiveView.tsx
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
@@ -30,6 +31,11 @@ interface ProgressiveViewProps {
   setReadingSpeed?: (speed: number) => void;
   onTextSelect?: (text: string) => void;
   onGenerateNote?: (text: string, mnemonic?: string) => void;
+
+  /** NEW: unify with PDF selection hook */
+  selBind?: { onMouseUp?: (e: React.MouseEvent) => void };
+  /** Optional: pass the hook’s live selection text down */
+  externalSelectionText?: string;
 }
 
 export default function ProgressiveView({
@@ -46,6 +52,11 @@ export default function ProgressiveView({
   onWordClick,
   setReadingSpeed,
   onTextSelect,
+  onGenerateNote,
+
+  // NEW (optional)
+  selBind,
+  externalSelectionText,
 }: ProgressiveViewProps) {
   const [loaded, setLoaded] = useState(false);
   const [selectionText, setSelectionText] = useState("");
@@ -56,7 +67,7 @@ export default function ProgressiveView({
 
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
-  // ---- Dictation (browser SR) ----
+  /* -------------------- Dictation (browser SR) -------------------- */
   useEffect(() => {
     if (typeof window === "undefined") return;
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -95,7 +106,7 @@ export default function ProgressiveView({
     }
   };
 
-  // ---- Load saved reading state ----
+  /* -------------------- Load saved reading state -------------------- */
   useEffect(() => {
     async function loadProgress() {
       if (!userId || !bookId) return;
@@ -116,7 +127,7 @@ export default function ProgressiveView({
     loadProgress();
   }, [userId, bookId, setReadingSpeed]);
 
-  // ---- Save reading state ----
+  /* -------------------- Save reading state -------------------- */
   useEffect(() => {
     if (!loaded || !userId || !bookId) return;
     (async () => {
@@ -135,26 +146,26 @@ export default function ProgressiveView({
     })();
   }, [loaded, userId, bookId, currentThoughtUnit, readingSpeed, highlightedWord, currentPage]);
 
-  // ---- Selection ----
+  /* -------------------- Selection (fallback) -------------------- */
   const getSelectionText = () =>
     (typeof window !== "undefined" ? window.getSelection()?.toString().trim() : "") || "";
+
   const handleMouseUp = () => {
     const selection = getSelectionText();
     setSelectionText(selection);
     onTextSelect?.(selection);
   };
 
-  // ---- Normalize any unit → text ----
+  /* -------------------- Normalize any unit → text -------------------- */
   const unitToText = (u: PVUnit): string => {
     if (u == null) return "";
     if (typeof u === "string") return u;
     if (Array.isArray(u)) return u.join(" ");
-    // BaseThoughtUnit or loose object with text
     const maybeText = (u as any).text;
     return typeof maybeText === "string" ? maybeText : JSON.stringify(u);
   };
 
-  // ---- Empty states ----
+  /* -------------------- Empty states -------------------- */
   if (!thoughtUnits || thoughtUnits.length === 0) {
     return (
       <div
@@ -180,7 +191,7 @@ export default function ProgressiveView({
 
   const unitText = unitToText(rawUnit);
 
-  // ---- Review mode ----
+  /* -------------------- Review mode -------------------- */
   if (isReviewMode) {
     return (
       <div className="p-4 bg-gray-900 text-white rounded-lg">
@@ -204,13 +215,16 @@ export default function ProgressiveView({
     );
   }
 
-  // ---- Main UI ----
+  /* -------------------- Effective selection text -------------------- */
+  const effectiveSelection = (externalSelectionText?.trim() || selectionText || dictationText).trim();
+
+  /* -------------------- Main UI -------------------- */
   return (
     <>
       <div
         className="p-4 overflow-y-auto"
         style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
-        onMouseUp={handleMouseUp}
+        onMouseUp={selBind?.onMouseUp ?? handleMouseUp}
       >
         {unitText.split(" ").map((word, idx) => (
           <span
@@ -220,7 +234,12 @@ export default function ProgressiveView({
                 ? "bg-yellow-400 text-black px-1 rounded"
                 : "hover:bg-gray-700 cursor-pointer px-1 rounded"
             }
-            onClick={() => onWordClick?.(word)}
+            onClick={() => {
+              onWordClick?.(word);
+              // also push into unified selection pipeline
+              setSelectionText(word);
+              onTextSelect?.(word);
+            }}
           >
             {word}{" "}
           </span>
@@ -244,7 +263,7 @@ export default function ProgressiveView({
           userId={userId}
           bookId={bookId}
           currentPage={currentPage}
-          selectionText={selectionText || dictationText}
+          selectionText={effectiveSelection}
           onGenerateNote={() => setShowNoteEditor(true)}
           startReview={startReview}
         />
@@ -255,7 +274,7 @@ export default function ProgressiveView({
           <div className="bg-gray-900 p-4 rounded-lg w-full max-w-2xl">
             <RightBrainNoteEditor
               bookId={bookId}
-              initialText={selectionText || dictationText}
+              initialText={effectiveSelection}
               currentPage={currentPage}
               onDone={() => setShowNoteEditor(false)}
             />

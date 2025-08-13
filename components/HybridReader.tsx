@@ -1,3 +1,4 @@
+// components/HybridReader.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -33,6 +34,11 @@ interface HybridReaderProps {
   setCurrentPage: (page: number) => void;
   onTextSelect?: (text: string) => void;
   onGenerateNote?: (text: string, mnemonic?: string) => void;
+
+  /** Unified selection binding from usePdfSelection() */
+  selBind?: { onMouseUp?: (e: React.MouseEvent) => void };
+  /** Optional: pass the hook’s live selection text (keeps popup/notes in sync) */
+  externalSelectionText?: string;
 }
 
 export default function HybridReader({
@@ -52,13 +58,15 @@ export default function HybridReader({
   sampleText,
   currentPage,
   setCurrentPage,
+  selBind,                 // ← unified selection handler (optional)
+  externalSelectionText,   // ← text from usePdfSelection (optional)
 }: HybridReaderProps) {
   const [selectionText, setSelectionText] = useState("");
 
-  // Unified review hook
+  // Review flow
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
-  // ---- Load saved reading progress
+  // Load saved reading progress
   useEffect(() => {
     if (!userId || !pdfId) return;
     loadReadingProgress(userId, pdfId).then((progress: any) => {
@@ -71,7 +79,7 @@ export default function HybridReader({
     });
   }, [userId, pdfId, setCurrentPage, setCurrentThoughtUnit, setHighlightedWord]);
 
-  // ---- Save reading progress
+  // Save reading progress
   useEffect(() => {
     if (!userId || !pdfId) return;
     saveReadingProgress(userId, pdfId, {
@@ -81,7 +89,7 @@ export default function HybridReader({
     });
   }, [userId, pdfId, currentPage, currentThoughtUnit, highlightedWord]);
 
-  // ---- Selection handling
+  // Fallback selection (when selBind isn’t provided)
   const getSelectionText = () =>
     (typeof window !== "undefined" ? window.getSelection()?.toString().trim() : "") || "";
   const handleMouseUp = () => {
@@ -90,7 +98,7 @@ export default function HybridReader({
     if (sel) onTextSelect?.(sel);
   };
 
-  // ---- Normalize any unit → text
+  // Normalize unit → text
   const unitToText = (u: HRUnit): string => {
     if (u == null) return "";
     if (typeof u === "string") return u;
@@ -99,7 +107,7 @@ export default function HybridReader({
     return typeof t === "string" ? t : JSON.stringify(u);
   };
 
-  // ---- No thought units
+  // Empty states
   if (!thoughtUnits || thoughtUnits.length === 0) {
     return (
       <div
@@ -111,7 +119,6 @@ export default function HybridReader({
     );
   }
 
-  // ---- Current unit
   const rawUnit = thoughtUnits[currentThoughtUnit - 1];
   if (!rawUnit) {
     return (
@@ -123,9 +130,11 @@ export default function HybridReader({
       </div>
     );
   }
-  const unitText = unitToText(rawUnit);
 
-  // ---- Review Mode
+  const unitText = unitToText(rawUnit);
+  const effectiveSelection = (externalSelectionText?.trim() || selectionText).trim();
+
+  // Review mode
   if (isReviewMode) {
     return (
       <div className="p-4 bg-gray-900 text-white rounded-lg">
@@ -152,11 +161,14 @@ export default function HybridReader({
     );
   }
 
-  // ---- Main Dual-Panel UI
+  // Main dual-panel UI
   return (
-    <div className="grid grid-cols-2 gap-4 p-4 h-full" onMouseUp={handleMouseUp}>
+    <div className="grid grid-cols-2 gap-4 p-4 h-full">
       {/* Original View */}
-      <div className="bg-gray-800 p-4 rounded-lg overflow-y-auto shadow-inner">
+      <div
+        className="bg-gray-800 p-4 rounded-lg overflow-y-auto shadow-inner"
+        onMouseUp={selBind?.onMouseUp ?? handleMouseUp}
+      >
         <h4 className="text-sm font-semibold text-yellow-400 mb-3">Original View</h4>
         <p style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}>
           {sampleText || "📄 Original text will appear here when a PDF is uploaded."}
@@ -165,14 +177,17 @@ export default function HybridReader({
           userId={userId}
           bookId={pdfId}
           currentPage={currentPage}
-          selectionText={selectionText}
+          selectionText={effectiveSelection}
           onGenerateNote={onGenerateNote}
           startReview={startReview}
         />
       </div>
 
       {/* Progressive View */}
-      <div className="bg-gray-800 p-4 rounded-lg overflow-y-auto shadow-inner">
+      <div
+        className="bg-gray-800 p-4 rounded-lg overflow-y-auto shadow-inner"
+        onMouseUp={selBind?.onMouseUp ?? handleMouseUp}
+      >
         <h4 className="text-sm font-semibold text-yellow-400 mb-3">Progressive View</h4>
         <div style={{ fontSize, fontFamily, lineHeight: lineSpacing }}>
           {unitText.split(" ").map((word, idx) => (
@@ -186,6 +201,9 @@ export default function HybridReader({
               onClick={() => {
                 onWordClick(word);
                 setHighlightedWord(word);
+                // push into unified selection pipeline
+                setSelectionText(word);
+                onTextSelect?.(word);
               }}
             >
               {word}{" "}
@@ -196,7 +214,7 @@ export default function HybridReader({
           userId={userId}
           bookId={pdfId}
           currentPage={currentPage}
-          selectionText={selectionText}
+          selectionText={effectiveSelection}
           onGenerateNote={onGenerateNote}
           startReview={startReview}
         />

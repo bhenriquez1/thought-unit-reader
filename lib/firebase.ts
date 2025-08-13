@@ -1,3 +1,4 @@
+// lib/firebase.ts
 import { initializeApp, getApp, getApps, FirebaseApp } from "firebase/app";
 import {
   getAuth,
@@ -6,6 +7,7 @@ import {
   User,
   GoogleAuthProvider,
   signInWithPopup,
+  connectAuthEmulator,
 } from "firebase/auth";
 import {
   getFirestore,
@@ -15,6 +17,7 @@ import {
   collection,
   getDocs,
   deleteDoc,
+  connectFirestoreEmulator,
 } from "firebase/firestore";
 import {
   getStorage,
@@ -22,6 +25,7 @@ import {
   uploadBytes,
   getDownloadURL,
   deleteObject,
+  connectStorageEmulator,
 } from "firebase/storage";
 
 /* =========================================================================
@@ -36,6 +40,11 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "",
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || "",
 };
+
+const useEmulators =
+  (process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS || "").toString() === "1" ||
+  (process.env.NODE_ENV !== "production" &&
+    (process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS || "").toString().toLowerCase() === "true");
 
 /* =========================================================================
    🔹 Initialize Firebase (singleton)
@@ -52,14 +61,33 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
-const firebaseConnected = !!(firebaseConfig.apiKey && firebaseConfig.projectId);
-if (!firebaseConnected) {
-  console.error("❌ Firebase env variables are missing.");
+// Optional: connect to local emulators in dev
+if (useEmulators) {
+  try {
+    connectAuthEmulator(auth, "http://127.0.0.1:9099");
+    connectFirestoreEmulator(db, "127.0.0.1", 8080);
+    connectStorageEmulator(storage, "127.0.0.1", 9199);
+    console.log("🟡 Firebase emulators connected");
+  } catch (e) {
+    console.warn("⚠️ Could not connect Firebase emulators:", e);
+  }
 }
+
+/** True when the config looks usable — used by the app to gate features. */
+const firebaseConnected =
+  !!firebaseConfig.apiKey &&
+  !!firebaseConfig.projectId &&
+  !!firebaseConfig.appId &&
+  !!firebaseConfig.storageBucket;
 
 /* =========================================================================
    🔹 Auth Functions
    ========================================================================= */
+export function listenForAuthChanges(callback: (user: User | null) => void) {
+  // Always register the listener; in dev with emulators it still works.
+  return onAuthStateChanged(auth, callback);
+}
+
 export async function signInWithGoogle(): Promise<User | null> {
   try {
     const provider = new GoogleAuthProvider();
@@ -79,10 +107,6 @@ export async function signOutUser(): Promise<void> {
   } catch (err) {
     console.error("❌ Sign-Out Error:", err);
   }
-}
-
-export function listenForAuthChanges(callback: (user: User | null) => void) {
-  return onAuthStateChanged(auth, callback);
 }
 
 /* =========================================================================
@@ -118,7 +142,7 @@ export async function getPDFLibrary(userId: string): Promise<
   const library: { id: string; name: string; url: string; uploadedAt: string }[] = [];
 
   querySnapshot.forEach((docSnap) => {
-    const data = docSnap.data();
+    const data = docSnap.data() as any;
     library.push({
       id: docSnap.id,
       name: data.name,

@@ -2,9 +2,9 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Document, Page, pdfjs } from "react-pdf";
+import { Document, Page, pdfjs, type PDFDocumentProxy } from "react-pdf";
 
-// NOTE: Keep the react-pdf CSS in pages/_app.tsx (do not import here).
+// Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
 
 /** Use the same-origin worker we ship in /public to avoid CDN/CORS issues */
 try {
@@ -13,6 +13,13 @@ try {
   // react-pdf will surface a clearer error if this fails
 }
 
+/** Outline (TOC) shape bubbled up to the page */
+export type TocItem = {
+  title: string;
+  pageNumber?: number; // 1-based; may be undefined when unresolved
+  items?: TocItem[];
+};
+
 export interface SmartPDFViewerProps {
   fileUrl: string;
   currentPage: number;
@@ -20,6 +27,8 @@ export interface SmartPDFViewerProps {
   scale?: number;
   onTextSelect?: (text: string) => void;
   onPageCount?: (n: number) => void;
+  /** Emit PDF outline/bookmarks with resolved page numbers */
+  onOutline?: (items: TocItem[]) => void;
 }
 
 /** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
@@ -36,6 +45,41 @@ function toSameOrigin(url: string): string {
   }
 }
 
+/** Resolve a PDF.js outline tree to {title, pageNumber, items[]} */
+async function resolveOutline(
+  pdf: PDFDocumentProxy,
+  nodes: any[] | null | undefined
+): Promise<TocItem[]> {
+  if (!nodes || !nodes.length) return [];
+  const out: TocItem[] = [];
+
+  for (const node of nodes) {
+    let pageNumber: number | undefined = undefined;
+
+    // dest can be a named destination (string) or an array
+    let dest: any = node?.dest;
+    try {
+      if (typeof dest === "string") dest = await (pdf as any).getDestination(dest);
+      if (Array.isArray(dest) && dest.length) {
+        const pageRef = dest[0]; // Ref to page
+        const index = await (pdf as any).getPageIndex(pageRef);
+        if (Number.isFinite(index)) pageNumber = (index as number) + 1;
+      }
+    } catch {
+      // ignore if we can't resolve a page number
+    }
+
+    const children = await resolveOutline(pdf, node.items || node.children);
+    out.push({
+      title: node?.title || "Untitled",
+      pageNumber,
+      items: children,
+    });
+  }
+
+  return out;
+}
+
 export default function SmartPDFViewer({
   fileUrl,
   currentPage,
@@ -43,6 +87,7 @@ export default function SmartPDFViewer({
   scale = 1.25,
   onTextSelect,
   onPageCount,
+  onOutline,
 }: SmartPDFViewerProps) {
   const [numPages, setNumPages] = useState<number>(0);
   const [zoom, setZoom] = useState<number>(scale);
@@ -62,10 +107,25 @@ export default function SmartPDFViewer({
     return { url: resolved };
   }, [fileUrl]);
 
-  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+  /** react-pdf v7 passes the PDFDocumentProxy directly */
+  const onDocumentLoadSuccess = async (pdf: PDFDocumentProxy) => {
     setErrMsg(null);
-    setNumPages(numPages);
-    onPageCount?.(numPages);
+    setNumPages(pdf.numPages);
+    onPageCount?.(pdf.numPages);
+
+    if (onOutline) {
+      try {
+        const raw = await (pdf as any).getOutline?.();
+        if (raw?.length) {
+          const items = await resolveOutline(pdf, raw);
+          onOutline(items);
+        } else {
+          onOutline([]);
+        }
+      } catch {
+        onOutline?.([]);
+      }
+    }
   };
 
   const onDocumentLoadError = (err: unknown) => {
