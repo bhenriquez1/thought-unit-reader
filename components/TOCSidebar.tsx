@@ -3,42 +3,47 @@ import React, { useMemo, useState } from "react";
 
 /** Flexible item shape: works with tocParser + SmartPDFViewer onOutline */
 type TocLike = {
-  // Common titles
+  // Titles
   title?: string;
   text?: string;
 
-  // Common page fields
+  // Page fields (various sources)
   pageNumber?: number; // preferred, 1-based
   page?: number;
   pageIndex?: number;  // sometimes 0-based
   pageNum?: number;
 
-  // Nesting (from PDF outline)
+  // Nesting (PDF outline / legacy tocParser)
   items?: TocLike[];
+  subChapters?: TocLike[];
 
-  // Legacy level/depth hints
+  // Optional level hints (for flat lists)
   level?: number;
   depth?: number;
 
+  // Keep index signature as requested
   [key: string]: unknown;
 };
 
 interface Props {
-  toc: TocLike[];
+  /** Accept anything (TOCEntry[], outline[], mixed) without type errors */
+  toc: unknown[];
   currentPage: number;
   onJumpToPage: (page: number) => void;
 }
 
 /* -------------------- helpers -------------------- */
 
-/** Best-effort title */
+function asTocLikeArray(arr: unknown[]): TocLike[] {
+  return (Array.isArray(arr) ? arr : []).map((x) => x as TocLike);
+}
+
 function getTitleAny(e: TocLike): string {
   return (e.title ?? e.text ?? "").toString() || "Untitled";
 }
 
-/** Best-effort page (may be undefined if unresolved) */
 function getPageAny(e: TocLike): number | undefined {
-  // Prefer explicit 1-based fields
+  // Prefer explicit 1-based numbers
   const preferred =
     e.pageNumber ??
     (typeof e.page === "number" ? e.page : undefined) ??
@@ -49,7 +54,7 @@ function getPageAny(e: TocLike): number | undefined {
     return p >= 1 ? p : 1;
   }
 
-  // Fallback: pageIndex can be 0-based
+  // Fallback: 0-based pageIndex
   if (typeof e.pageIndex === "number" && Number.isFinite(e.pageIndex)) {
     return Math.max(1, Math.floor(e.pageIndex) + 1);
   }
@@ -58,10 +63,15 @@ function getPageAny(e: TocLike): number | undefined {
 }
 
 /** Flatten either a tree (outline) or a flat list with level hints */
-function normalizeTOC(input: TocLike[]): { title: string; page?: number; level: number }[] {
+function normalizeTOC(inputUnknown: unknown[]): { title: string; page?: number; level: number }[] {
+  const input = asTocLikeArray(inputUnknown);
   const out: { title: string; page?: number; level: number }[] = [];
 
-  const hasTree = input.some((n) => Array.isArray(n.items) && n.items.length > 0);
+  const hasTree = input.some(
+    (n) =>
+      (Array.isArray(n.items) && n.items.length > 0) ||
+      (Array.isArray(n.subChapters) && n.subChapters.length > 0)
+  );
 
   if (hasTree) {
     const walk = (nodes: TocLike[], level: number) => {
@@ -71,14 +81,13 @@ function normalizeTOC(input: TocLike[]): { title: string; page?: number; level: 
           page: getPageAny(node),
           level,
         });
-        if (Array.isArray(node.items) && node.items.length > 0) {
-          walk(node.items, level + 1);
-        }
+        const children = (node.items ?? node.subChapters) ?? [];
+        if (children.length > 0) walk(children as TocLike[], level + 1);
       }
     };
     walk(input, 0);
   } else {
-    // Treat as flat list; use level/depth hints if present
+    // Flat list with optional level/depth hints
     for (const node of input) {
       const hinted = Number(node.level ?? node.depth ?? 0);
       out.push({
