@@ -1,16 +1,16 @@
 // lib/tocParser.ts
 // Build a simple Table of Contents either from:
-// 1) raw text (heuristics) — your original fallback, or
+// 1) raw text (heuristics) — legacy fallback, or
 // 2) a PDF outline emitted by SmartPDFViewer (preferred)
 
 /** Sidebar-friendly TOC shape */
 export interface TOCEntry {
   title: string;
-  pageNumber: number;      // 1-based
+  pageNumber: number;       // 1-based
   subChapters?: TOCEntry[]; // children
 }
 
-/** ---------------- Outline → TOC (preferred) ----------------
+/** ---------- Outline → TOC (preferred) ----------
  * Use this when SmartPDFViewer gives you an outline
  * whose nodes already include 1-based page numbers.
  */
@@ -24,14 +24,15 @@ export function outlineToTOC(nodes?: PdfOutlineNode[] | null, level = 0): TOCEnt
   if (!nodes?.length) return [];
   return nodes.map((n) => ({
     title: (n?.title ?? "Untitled").toString(),
-    pageNumber: Number.isFinite(n?.pageNumber) && (n!.pageNumber as number) > 0
-      ? (n!.pageNumber as number)
-      : 1,
+    pageNumber:
+      Number.isFinite(n?.pageNumber) && (n!.pageNumber as number) > 0
+        ? (n!.pageNumber as number)
+        : 1,
     subChapters: outlineToTOC(n?.items ?? [], level + 1),
   }));
 }
 
-/** ---------------- Public API (back-compat) ----------------
+/** ---------- Public API (back-compat) ----------
  * Overloads: (url)  OR  (text, numPages)
  * These use the original text-heuristic approach.
  */
@@ -43,17 +44,13 @@ export async function generateTOC(arg1: string, arg2?: number): Promise<TOCEntry
     return buildTOCFromText(arg1, arg2);
   }
 
-  // New signature: (url/blob)
-  const url = arg1;
-
-  // Client-only
+  // New signature: (url/blob) – client-only
   if (typeof window === "undefined") return [];
 
-  // Lazy-load pdf.js (keeps SSR safe)
+  // Lazily load pdfjs to avoid SSR issues
   let pdfjsLib: any;
   try {
     pdfjsLib = await import("pdfjs-dist/build/pdf");
-    // Use CDN worker to avoid bundling the worker
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
   } catch (err) {
@@ -61,12 +58,11 @@ export async function generateTOC(arg1: string, arg2?: number): Promise<TOCEntry
     return [];
   }
 
-  const loadingTask = pdfjsLib.getDocument(url);
+  const loadingTask = pdfjsLib.getDocument(arg1);
   const pdf = await loadingTask.promise;
   const numPages: number = pdf.numPages;
 
-  // NOTE: We stick to the original text-heuristic approach here for reliability.
-  // (Resolving outline dests to page numbers inside pdf.js directly is non-trivial.)
+  // Fallback heuristic: extract page text and guess headings
   let allText = "";
   for (let i = 1; i <= numPages; i++) {
     const page = await pdf.getPage(i);
@@ -78,7 +74,7 @@ export async function generateTOC(arg1: string, arg2?: number): Promise<TOCEntry
   return buildTOCFromText(allText, numPages);
 }
 
-/** ---------------- Text → TOC (heuristics) ---------------- */
+/** ---------- Text → TOC (heuristics) ---------- */
 function buildTOCFromText(text: string, numPages: number): TOCEntry[] {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
 

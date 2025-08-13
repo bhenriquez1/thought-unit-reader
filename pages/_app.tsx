@@ -12,7 +12,11 @@ import "react-pdf/dist/esm/Page/TextLayer.css";
 
 export default function App({ Component, pageProps }: AppProps) {
   return (
-    <ThemeProvider attribute="class" defaultTheme="light">
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="light"   // change to "system" if you want OS-based theme by default
+      enableSystem
+    >
       <Component {...pageProps} />
     </ThemeProvider>
   );

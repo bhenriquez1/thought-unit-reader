@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "predev": "npm run setup:pdf-worker",
     "build": "next build",
+    "prebuild": "npm run setup:pdf-worker",
     "start": "next start -p $PORT",
     "export": "next build && next export",
     "clean": "rimraf .next",
@@ -12,7 +14,8 @@
     "dev:clean": "npm run clean && next dev",
     "type-check": "tsc --noEmit",
     "render-build": "if [ -f package-lock.json ]; then npm ci; else npm install; fi && npm run build",
-    "postinstall": "mkdir -p public && cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdf.worker.min.mjs || true"
+    "setup:pdf-worker": "node -e \"const fs=require('fs');const p=require('path');fs.mkdirSync('public',{recursive:true});fs.copyFileSync(p.join('node_modules','pdfjs-dist','build','pdf.worker.min.mjs'),p.join('public','pdf.worker.min.mjs'));console.log('✅ pdf.worker copied to public/');\"",
+    "postinstall": "npm run setup:pdf-worker"
   },
   "dependencies": {
     "@headlessui/react": "^1.7.19",

@@ -2,7 +2,7 @@
 import dynamic from "next/dynamic";
 import React, { useState, useEffect, useRef, ChangeEvent } from "react";
 
-import { generateTOC, type TOCEntry } from "@/lib/tocParser";
+import { generateTOC, type TOCEntry, outlineToTOC } from "@/lib/tocParser";
 import TOCSidebar from "@/components/TOCSidebar";
 import ProgressiveView from "@/components/ProgressiveView";
 import type { ThoughtUnit, ReadingStats } from "@/types/reading";
@@ -33,28 +33,11 @@ const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), {
   ssr: false,
 });
 
-// Types from SmartPDFViewer outline (optional import)
-type ViewerTocItem = {
-  title: string;
-  pageNumber?: number;
-  items?: ViewerTocItem[];
-};
-
 type StickyNote = { pageNumber: number; content: string };
 
 /* ----------------------- helpers ----------------------- */
 function truncate(s: string, n: number) {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
-}
-
-/** Convert SmartPDFViewer outline → TOCEntry[] (recursive) */
-function normalizeOutlineToTOC(items: ViewerTocItem[] | undefined): TOCEntry[] {
-  if (!Array.isArray(items)) return [];
-  return items.map((it) => ({
-    title: it?.title || "Untitled",
-    pageNumber: typeof it?.pageNumber === "number" ? it.pageNumber : 1,
-    subChapters: normalizeOutlineToTOC(it?.items),
-  }));
 }
 
 export default function ThoughtUnitReader() {
@@ -309,8 +292,10 @@ export default function ThoughtUnitReader() {
         onPageCount={(n) => setPdfPageCount(n)}
         // 🔥 Use the viewer's outline/bookmarks when available
         onOutline={(items) => {
-          const normalized = normalizeOutlineToTOC(items as ViewerTocItem[]);
-          if (normalized?.length) setTableOfContents(normalized);
+          const normalized = outlineToTOC(items as any);
+          if (normalized && normalized.length) {
+            setTableOfContents(normalized);
+          }
         }}
       />
     ) : (
@@ -446,7 +431,6 @@ export default function ThoughtUnitReader() {
           onAddFlashcard={() => console.log("Flashcard created")}
           onAttachLink={() => setShowLinkModal(true)}
           onClose={() => setPopupPosition(null)}
-          // onCreateDetailedNote={() => {/* we'll wire to usePdfSelection later */}}
         />
       )}
 
