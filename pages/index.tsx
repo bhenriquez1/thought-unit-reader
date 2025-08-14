@@ -17,9 +17,11 @@ import {
   getPDFLibrary,
   deletePDF,
   listenForAuthChanges,
+  // 🔽 add these for Google Sign-In verification
+  signInWithGoogle,
+  signOutUser,
 } from "@/lib/firebase";
 
-// ✅ Auto-whiteboard detection + panel
 import WhiteboardPanel from "@/components/WhiteboardPanel";
 
 import {
@@ -122,7 +124,7 @@ export default function ThoughtUnitReader() {
      🔹 Auth Listener
   ========================================================================= */
   useEffect(() => {
-    listenForAuthChanges((u) => setUser(u));
+    return listenForAuthChanges((u) => setUser(u));
   }, []);
 
   /* =========================================================================
@@ -418,7 +420,31 @@ export default function ThoughtUnitReader() {
           {darkMode ? "🌙 Dark" : "☀️ Light"}
         </button>
 
-        {/* Library is always available; guest = session only */}
+        {/* 🔐 Auth tester (Google Sign-In) */}
+        <div className="flex items-center gap-2">
+          {user ? (
+            <>
+              <span className="text-xs opacity-80">
+                {user.displayName || user.email || "Signed in"}
+              </span>
+              <button
+                onClick={() => signOutUser()}
+                className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
+              >
+                Sign out
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => signInWithGoogle()}
+              className="text-xs px-2 py-1 rounded bg-blue-500 hover:bg-blue-600"
+            >
+              Sign in with Google
+            </button>
+          )}
+        </div>
+
+        {/* Library (guest = session only) */}
         <button
           onClick={() => setShowLibrary(true)}
           className="text-xs px-3 py-1 rounded bg-yellow-500 text-black shadow"
