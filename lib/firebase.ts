@@ -1,10 +1,10 @@
 // lib/firebase.ts
-import { initializeApp, getApp, getApps, FirebaseApp } from "firebase/app";
+import { initializeApp, getApp, getApps, type FirebaseApp } from "firebase/app";
 import {
   getAuth,
   onAuthStateChanged,
   signOut,
-  User,
+  type User,
   GoogleAuthProvider,
   signInWithPopup,
   connectAuthEmulator,
