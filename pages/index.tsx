@@ -42,6 +42,26 @@ function truncate(s: string, n: number) {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
+/** Convert whatever the parser returns → { text: string }[] */
+function normalizeParsedUnits(raw: unknown): ThoughtUnit[] {
+  if (!Array.isArray(raw)) return [];
+  return (raw as any[]).map((u) => {
+    if (typeof u === "string") return { text: u } as ThoughtUnit;
+    if (Array.isArray(u)) return { text: (u as any[]).filter(Boolean).join(" ") } as ThoughtUnit;
+    if (u && typeof (u as any).text === "string") return u as ThoughtUnit;
+    return { text: String(u ?? "") } as ThoughtUnit;
+  });
+}
+
+/** Safely pluck a human string from mixed unit shapes */
+function unitToString(u: any): string {
+  if (!u) return "";
+  if (typeof u === "string") return u;
+  if (Array.isArray(u)) return u.filter(Boolean).join(" ");
+  if (typeof u.text === "string") return u.text;
+  return String(u);
+}
+
 export default function ThoughtUnitReader() {
   /* =========================================================================
      🔹 State
@@ -85,7 +105,7 @@ export default function ThoughtUnitReader() {
     { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean }[]
   >([]);
 
-  // Selection + popup (now unified via hook)
+  // Attachments + modal
   const [attachments, setAttachments] = useState<string[]>([]);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [bookId, setBookId] = useState<string>("default-book");
@@ -119,9 +139,7 @@ export default function ThoughtUnitReader() {
   ========================================================================= */
   const sel = usePdfSelection({
     minChars: 2,
-    onSelect: () => {
-      // no-op here (we display via sel.selectionText + sel.popupPosition)
-    },
+    onSelect: () => {},
     autoWhiteboard,
     containsDiagramOrFormula,
     onDiagramDetected: (concept, ctx) => {
@@ -152,7 +170,6 @@ export default function ThoughtUnitReader() {
 
     if (firebaseConnected && user) {
       url = await uploadPDF(file, USER_ID);
-      // refresh remote library
       getPDFLibrary(USER_ID).then(setPdfLibrary);
       libEntry = {
         id: String(Date.now()),
@@ -175,28 +192,27 @@ export default function ThoughtUnitReader() {
 
     setFileUrl(url);
 
-    // Fallback TOC (heuristic) — viewer’s outline will override if/when available
-    generateTOC(url)
-      .then(setTableOfContents)
-      .catch(() => {});
+    // Heuristic TOC (viewer outline will override later)
+    generateTOC(url).then(setTableOfContents).catch(() => {});
 
-    // Parse + detect whiteboard + build thoughtUnits for Progressive/Hybrid
+    // Parse → normalize → store
     try {
       const { parsedUnits, chapters } = await parseBookWithChapters(file);
-      // Use parsed units in readers
-      if (Array.isArray(parsedUnits) && parsedUnits.length > 0) {
-        setThoughtUnits(parsedUnits as ThoughtUnit[]);
-        setSampleText(
-          Array.isArray(parsedUnits[0])
-            ? (parsedUnits[0] as any[]).join(" ")
-            : (parsedUnits[0] as any as string)
-        );
-      }
 
+      const normalized = normalizeParsedUnits(parsedUnits);
+      setThoughtUnits(normalized);
+      setSampleText(normalized[0]?.text ?? "");
+
+      // Whiteboard auto-detect
       const matches = detectWhiteboardSections(parsedUnits);
       if (autoWhiteboard && matches.length > 0) {
         const firstIdx = matches[0];
-        const conceptText = (parsedUnits[firstIdx] || []).join(" ").trim();
+
+        const conceptText =
+          unitToString((parsedUnits as any[])[firstIdx]) ||
+          normalized[firstIdx]?.text ||
+          "";
+
         lastDetectedUnitRef.current = conceptText;
 
         const contextTitle =
@@ -249,7 +265,7 @@ export default function ThoughtUnitReader() {
       return (
         <RightBrainNoteEditor
           bookId={bookId}
-          initialText={sel.selectionText} // either raw selection or generated note we stuffed into sel
+          initialText={sel.selectionText}
           attachments={attachments}
           currentPage={currentPage}
           onDone={() => setViewMode("progressive")}
@@ -315,7 +331,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // Original view (PDF) — wrap in a div that receives the hook’s mouseup
+    // Original view (PDF)
     return fileUrl ? (
       <div className="h-full" onMouseUp={sel.bind.onMouseUp}>
         <SmartPDFViewer
@@ -323,9 +339,8 @@ export default function ThoughtUnitReader() {
           currentPage={currentPage}
           onPageChange={setCurrentPage}
           scale={1.25}
-          onTextSelect={(t) => sel.setSelectionText(t)} // share the same selection text
+          onTextSelect={(t) => sel.setSelectionText(t)}
           onPageCount={(n) => setPdfPageCount(n)}
-          // Use the viewer's outline/bookmarks when available
           onOutline={(items) => {
             const normalized = outlineToTOC(items as any);
             if (normalized && normalized.length) {
@@ -415,11 +430,7 @@ export default function ThoughtUnitReader() {
       {/* Reader + WhiteboardPanel */}
       <div className="flex flex-1 overflow-hidden px-4 gap-4">
         {showTOC && fileUrl && (
-          <TOCSidebar
-            toc={tableOfContents}
-            currentPage={currentPage}
-            onJumpToPage={setCurrentPage}
-          />
+          <TOCSidebar toc={tableOfContents} currentPage={currentPage} onJumpToPage={setCurrentPage} />
         )}
 
         <div className="flex-1 bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
@@ -440,9 +451,7 @@ export default function ThoughtUnitReader() {
               context={wbContext}
               stickyNotes={wbStickyNotes}
               autoTrigger={true}
-              lessonTitle={
-                uploadedFile?.name ? `Whiteboard — ${uploadedFile.name}` : "Whiteboard Lesson"
-              }
+              lessonTitle={uploadedFile?.name ? `Whiteboard — ${uploadedFile.name}` : "Whiteboard Lesson"}
               lessonId={bookId}
               userId={USER_ID}
             />
@@ -450,7 +459,7 @@ export default function ThoughtUnitReader() {
         )}
       </div>
 
-      {/* Library Drawer (works for guest & auth) */}
+      {/* Library Drawer (guest + auth) */}
       {showLibrary && (
         <div className="fixed top-0 right-0 w-80 h-full bg-gray-800 text-white shadow-lg z-50 p-4 flex flex-col">
           <div className="flex justify-between items-center mb-4">
@@ -504,20 +513,17 @@ export default function ThoughtUnitReader() {
         </div>
       )}
 
-      {/* Highlight Popup (driven by unified hook) */}
+      {/* Highlight Popup (unified selection) */}
       {sel.popupPosition && sel.selectionText && (
         <HighlightPopup
           position={sel.popupPosition}
           selectionText={sel.selectionText}
-          onCreateNote={() => {
-            setViewMode("rightbrain");
-          }}
+          onCreateNote={() => setViewMode("rightbrain")}
           onCreateDetailedNote={async () => {
             const note = await sel.createDetailedNote({
               discipline: "dentistry",
               style: "detailed",
             });
-            // Seed the editor with the generated best-note
             if (note) sel.setSelectionText(note);
             setViewMode("rightbrain");
           }}
