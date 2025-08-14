@@ -17,7 +17,6 @@ import {
   getPDFLibrary,
   deletePDF,
   listenForAuthChanges,
-  // 🔽 add these for Google Sign-In verification
   signInWithGoogle,
   signOutUser,
 } from "@/lib/firebase";
@@ -333,7 +332,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // Original view (PDF)
+    // Original view (PDF) — hook selection for popup/actions
     return fileUrl ? (
       <div className="h-full" onMouseUp={sel.bind.onMouseUp}>
         <SmartPDFViewer
@@ -456,7 +455,11 @@ export default function ThoughtUnitReader() {
       {/* Reader + WhiteboardPanel */}
       <div className="flex flex-1 overflow-hidden px-4 gap-4">
         {showTOC && fileUrl && (
-          <TOCSidebar toc={tableOfContents} currentPage={currentPage} onJumpToPage={setCurrentPage} />
+          <TOCSidebar
+            toc={tableOfContents}
+            currentPage={currentPage}
+            onJumpToPage={setCurrentPage}
+          />
         )}
 
         <div className="flex-1 bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
@@ -477,9 +480,14 @@ export default function ThoughtUnitReader() {
               context={wbContext}
               stickyNotes={wbStickyNotes}
               autoTrigger={true}
-              lessonTitle={uploadedFile?.name ? `Whiteboard — ${uploadedFile.name}` : "Whiteboard Lesson"}
+              lessonTitle={
+                uploadedFile?.name ? `Whiteboard — ${uploadedFile.name}` : "Whiteboard Lesson"
+              }
               lessonId={bookId}
               userId={USER_ID}
+              /** NEW: keep whiteboard synced as you page around */
+              reExplainOnPageChange
+              currentPage={currentPage}
             />
           </div>
         )}
