@@ -7,6 +7,10 @@ import {
   type User,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  setPersistence,
+  browserLocalPersistence,
   connectAuthEmulator,
 } from "firebase/auth";
 import {
@@ -29,7 +33,7 @@ import {
 } from "firebase/storage";
 
 /* =========================================================================
-   🔹 Firebase Config
+   🔹 Firebase Config (from .env.local)
    ========================================================================= */
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
@@ -44,7 +48,9 @@ const firebaseConfig = {
 const useEmulators =
   (process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS || "").toString() === "1" ||
   (process.env.NODE_ENV !== "production" &&
-    (process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS || "").toString().toLowerCase() === "true");
+    (process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS || "")
+      .toString()
+      .toLowerCase() === "true");
 
 /* =========================================================================
    🔹 Initialize Firebase (singleton)
@@ -52,7 +58,7 @@ const useEmulators =
 let app: FirebaseApp;
 if (!getApps().length) {
   app = initializeApp(firebaseConfig);
-  console.log("✅ Firebase initialized");
+  // console.log("✅ Firebase initialized");
 } else {
   app = getApp();
 }
@@ -61,15 +67,22 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
+// Persist auth across reloads (browser only)
+if (typeof window !== "undefined") {
+  setPersistence(auth, browserLocalPersistence).catch(() => {
+    /* ignore */
+  });
+}
+
 // Optional: connect to local emulators in dev
 if (useEmulators) {
   try {
     connectAuthEmulator(auth, "http://127.0.0.1:9099");
     connectFirestoreEmulator(db, "127.0.0.1", 8080);
     connectStorageEmulator(storage, "127.0.0.1", 9199);
-    console.log("🟡 Firebase emulators connected");
-  } catch (e) {
-    console.warn("⚠️ Could not connect Firebase emulators:", e);
+    // console.log("🟡 Firebase emulators connected");
+  } catch {
+    /* ignore */
   }
 }
 
@@ -81,19 +94,68 @@ const firebaseConnected =
   !!firebaseConfig.storageBucket;
 
 /* =========================================================================
-   🔹 Auth Functions
+   🔹 Auth Helpers
    ========================================================================= */
 export function listenForAuthChanges(callback: (user: User | null) => void) {
-  // Always register the listener; in dev with emulators it still works.
   return onAuthStateChanged(auth, callback);
 }
 
-export async function signInWithGoogle(): Promise<User | null> {
+function popupLikelyBlocked(err: unknown) {
+  const code = (err as any)?.code || (err as any)?.name || "";
+  return (
+    String(code).includes("popup") ||
+    String((err as any)?.message || "").toLowerCase().includes("popup")
+  );
+}
+
+async function ensureUserProfile(u: User) {
   try {
-    const provider = new GoogleAuthProvider();
+    const uref = doc(db, "users", u.uid);
+    await setDoc(
+      uref,
+      {
+        uid: u.uid,
+        email: u.email || null,
+        displayName: u.displayName || null,
+        photoURL: u.photoURL || null,
+        providerIds: (u.providerData || []).map((p) => p?.providerId).filter(Boolean),
+        lastLoginAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function signInWithGoogle(): Promise<User | null> {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+
+  try {
+    // Try popup first
     const result = await signInWithPopup(auth, provider);
-    return result.user;
+    if (result?.user) {
+      await ensureUserProfile(result.user);
+      return result.user;
+    }
+    return null;
   } catch (err) {
+    if (popupLikelyBlocked(err)) {
+      // Fallback to redirect (mobile/Safari)
+      await signInWithRedirect(auth, provider);
+      // After redirect back:
+      try {
+        const res = await getRedirectResult(auth);
+        if (res?.user) {
+          await ensureUserProfile(res.user);
+          return res.user;
+        }
+      } catch {
+        /* ignore */
+      }
+      return null;
+    }
     console.error("❌ Google Sign-In Error:", err);
     alert("Google Sign-In failed.");
     return null;
@@ -103,7 +165,7 @@ export async function signInWithGoogle(): Promise<User | null> {
 export async function signOutUser(): Promise<void> {
   try {
     await signOut(auth);
-    console.log("👋 Signed out");
+    // console.log("👋 Signed out");
   } catch (err) {
     console.error("❌ Sign-Out Error:", err);
   }
@@ -160,7 +222,7 @@ export async function deletePDF(userId: string, pdfId: string, pdfName: string) 
   await deleteDoc(doc(db, "users", userId, "pdfLibrary", pdfId));
   const fileRef = ref(storage, `pdfs/${userId}/${pdfName}`);
   await deleteObject(fileRef);
-  console.log(`🗑 Deleted PDF: ${pdfName}`);
+  // console.log(`🗑 Deleted PDF: ${pdfName}`);
 }
 
 /* =========================================================================
@@ -196,3 +258,4 @@ export async function loadReadingProgress(
    🔹 Exports
    ========================================================================= */
 export { app, auth, db, storage, firebaseConnected };
+export type { User };
