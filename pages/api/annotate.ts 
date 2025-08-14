@@ -1,0 +1,78 @@
+// pages/api/annotate.ts
+import type { NextApiRequest, NextApiResponse } from "next";
+
+type ResBody =
+  | { detailedNote: string; aiDisabled?: boolean }
+  | { error: string; aiDisabled?: boolean };
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse<ResBody>) {
+  try {
+    const { text, discipline = "dentistry", style = "detailed", voice } = req.body || {};
+    if (typeof text !== "string" || !text.trim()) {
+      return res.status(400).json({ error: "Missing `text`" });
+    }
+
+    const key = process.env.OPENAI_API_KEY?.trim();
+    // Fallback if no key: return a structured “good-enough” note
+    if (!key) {
+      const fallback = buildFallbackNote(text, discipline, style);
+      return res.status(200).json({ detailedNote: fallback, aiDisabled: true });
+    }
+
+    // ---- Use OpenAI if key present
+    const prompt = makeAnnotatePrompt(text, discipline, style, voice);
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.2,
+      }),
+    });
+
+    if (!resp.ok) {
+      // graceful downgrade on quota/other server errors
+      const fallback = buildFallbackNote(text, discipline, style);
+      return res.status(200).json({ detailedNote: fallback, aiDisabled: true });
+    }
+
+    const data = await resp.json();
+    const note =
+      data?.choices?.[0]?.message?.content?.trim() ||
+      buildFallbackNote(text, discipline, style);
+
+    return res.status(200).json({ detailedNote: note });
+  } catch (err: any) {
+    const fallback = buildFallbackNote(String(req.body?.text || ""), "dentistry", "detailed");
+    return res.status(200).json({ detailedNote: fallback, aiDisabled: true });
+  }
+}
+
+function makeAnnotatePrompt(text: string, discipline: string, style: string, voice?: string) {
+  return `You are a top ${discipline} student. Turn the selection below into an A+ study note.
+Style: ${style}.
+${voice ? `Voice: ${voice}.` : ""}
+- Bullet key points with short headers
+- Include memory hooks (mnemonics) if helpful
+- Keep it factual and exam-oriented
+
+Selection:
+"""${text}"""`;
+}
+
+function buildFallbackNote(text: string, discipline: string, style: string) {
+  const t = text.trim();
+  return [
+    `## ${discipline.toUpperCase()} Note (${style})`,
+    "",
+    `**Core idea:** ${t.slice(0, 180)}${t.length > 180 ? "…" : ""}`,
+    "",
+    "- Key Points:",
+    "  - Definition: (fill in from text)",
+    "  - Mechanism: (fill in from text)",
+    "  - Clinical relevance / why it matters",
+    "",
+    "- Memory aid: Create a quick mnemonic using first letters.",
+  ].join("\n");
+}

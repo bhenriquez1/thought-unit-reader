@@ -7,20 +7,20 @@ export type WhiteboardStep = {
   payload: any;
   delayMs?: number;
 
-  /** Legacy/renderer-friendly fields (optional on the wire, required by UI) */
+  /** Renderer-friendly fields */
   title?: string;
   description?: string;
   visualPrompt?: string;
 };
 
 export type WhiteboardResponse = {
-  steps: WhiteboardStep[];
+  steps: WhiteboardStep[];     // server may send partial; we normalize below
   narrationScript: string;
 
   /** Optional audio returned by server */
-  audioUrl?: string;      // e.g. signed/public URL
-  audioBase64?: string;   // base64 payload
-  audioMime?: string;     // e.g. "audio/mpeg"
+  audioUrl?: string;           // e.g., signed/public URL
+  audioBase64?: string;        // base64 payload
+  audioMime?: string;          // e.g. "audio/mpeg"
 };
 
 export type WhiteboardResult = {
@@ -47,7 +47,7 @@ function describePayload(payload: any): string {
 
   // common fields we might see
   for (const k of ["text", "caption", "prompt", "label", "description"]) {
-    if (typeof payload[k] === "string" && payload[k].trim()) return payload[k];
+    if (typeof (payload as any)[k] === "string" && (payload as any)[k].trim()) return (payload as any)[k];
   }
   // fall back to a compact JSON
   try {
@@ -66,8 +66,8 @@ function normalizeSteps(raw: any[] | undefined): WhiteboardStep[] {
       (typeof s?.description === "string" && s.description) || describePayload(payload) || "";
     const visualPrompt =
       (typeof s?.visualPrompt === "string" && s.visualPrompt) ||
-      payload?.prompt ||
-      payload?.caption ||
+      (payload && (payload as any).prompt) ||
+      (payload && (payload as any).caption) ||
       "";
 
     return {
@@ -81,6 +81,41 @@ function normalizeSteps(raw: any[] | undefined): WhiteboardStep[] {
   });
 }
 
+/** Minimal local fallback if API is down or quota exceeded */
+function localFallback(concept: string, context: string): { steps: WhiteboardStep[]; narrationScript: string } {
+  const c = (concept || "").trim();
+  const x = (context || "").trim();
+  const steps: WhiteboardStep[] = normalizeSteps([
+    { title: "Big Picture", type: "text", payload: { text: `${x || "This section"} — why this matters.` } },
+    { title: "Core Idea", type: "text", payload: { text: c.slice(0, 200) } },
+    { title: "Visual Sketch", type: "draw", payload: { prompt: "Simple diagram with 2–4 labeled parts." } },
+    { title: "Common Pitfall", type: "text", payload: { text: "A frequent misconception and how to avoid it." } },
+    { title: "Apply It", type: "text", payload: { text: "Where this shows up in practice/exams." } },
+  ]);
+  const narrationScript = steps.map((s) => `${s.title}: ${s.description || ""}`).join("\n");
+  return { steps, narrationScript };
+}
+
+/** Try the new route first, then the legacy one (back-compat) */
+async function postExplain(concept: string, context: string): Promise<Response> {
+  const body = JSON.stringify({ concept, context });
+  // New
+  const r1 = await fetch("/api/whiteboard-explain", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+  });
+  if (r1.ok) return r1;
+
+  // Legacy
+  const r2 = await fetch("/api/whiteboard-explanation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+  });
+  return r2;
+}
+
 /* ----------------------------- public API ---------------------------- */
 
 /** Get steps + narration only (no audio resolution). */
@@ -88,82 +123,80 @@ export async function generateWhiteboardExplanation(
   concept: string,
   context: string
 ): Promise<{ steps: WhiteboardStep[]; narrationScript: string }> {
-  const res = await fetch("/api/whiteboard-explanation", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ concept, context }),
-  });
-
-  if (!res.ok) {
-    const msg = await res.text().catch(() => res.statusText);
-    throw new Error(`whiteboard-explanation failed: ${msg}`);
+  try {
+    const res = await postExplain(concept, context);
+    if (!res.ok) {
+      const fb = localFallback(concept, context);
+      return { steps: fb.steps, narrationScript: fb.narrationScript };
+    }
+    const data: WhiteboardResponse = await res.json();
+    return {
+      steps: normalizeSteps(data.steps),
+      narrationScript: data.narrationScript || "",
+    };
+  } catch {
+    const fb = localFallback(concept, context);
+    return { steps: fb.steps, narrationScript: fb.narrationScript };
   }
-
-  const data: WhiteboardResponse = await res.json();
-  return {
-    steps: normalizeSteps(data.steps),
-    narrationScript: data.narrationScript || "",
-  };
 }
 
 /**
  * Get steps + narration and resolve audio into a Blob if available.
- * If the server didn’t include audio, falls back to /api/tts using the narration script.
+ * Order:
+ *   1) Use server-provided audioUrl (fetch) or audioBase64.
+ *   2) If absent, try your /api/tts route with the narrationScript.
+ *   3) If that fails, return audioBlob: null (let the renderer use browser TTS).
  */
 export async function generateWhiteboardExplanationWithAudio(
   concept: string,
   context: string
 ): Promise<WhiteboardResult> {
-  const res = await fetch("/api/whiteboard-explanation", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ concept, context }),
-  });
-
-  if (!res.ok) {
-    const msg = await res.text().catch(() => res.statusText);
-    throw new Error(`whiteboard-explanation failed: ${msg}`);
-  }
-
-  const data: WhiteboardResponse = await res.json();
-
-  // Normalize for the renderer
-  const steps = normalizeSteps(data.steps);
-  const narrationScript = data.narrationScript || "";
-
-  // Resolve audio (server-provided first)
-  let audioBlob: Blob | null = null;
-
-  if (data.audioUrl) {
-    try {
-      const a = await fetch(data.audioUrl);
-      audioBlob = await a.blob();
-    } catch {
-      audioBlob = null;
+  try {
+    const res = await postExplain(concept, context);
+    if (!res.ok) {
+      const fb = localFallback(concept, context);
+      return { steps: fb.steps, narrationScript: fb.narrationScript, audioBlob: null };
     }
-  } else if (data.audioBase64) {
-    try {
-      audioBlob = b64ToBlob(data.audioBase64, data.audioMime || "audio/mpeg");
-    } catch {
-      audioBlob = null;
-    }
-  } else if (narrationScript) {
-    // Fallback to server TTS route
-    try {
-      const tts = await fetch("/api/tts?return=raw", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // our /api/tts expects { script, voice?, format? }
-        body: JSON.stringify({ script: narrationScript, voice: "alloy", format: "mp3" }),
-      });
-      if (tts.ok) {
-        const buf = await tts.arrayBuffer();
-        audioBlob = new Blob([buf], { type: "audio/mpeg" });
+
+    const data: WhiteboardResponse = await res.json();
+    const steps = normalizeSteps(data.steps);
+    const narrationScript = data.narrationScript || "";
+
+    let audioBlob: Blob | null = null;
+
+    if (data.audioUrl) {
+      try {
+        const a = await fetch(data.audioUrl);
+        audioBlob = await a.blob();
+      } catch {
+        audioBlob = null;
       }
-    } catch {
-      audioBlob = null;
+    } else if (data.audioBase64) {
+      try {
+        audioBlob = b64ToBlob(data.audioBase64, data.audioMime || "audio/mpeg");
+      } catch {
+        audioBlob = null;
+      }
+    } else if (narrationScript) {
+      // Optional server TTS (if you have /api/tts set up)
+      try {
+        const tts = await fetch("/api/tts?return=raw", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ script: narrationScript, voice: "alloy", format: "mp3" }),
+        });
+        if (tts.ok) {
+          const buf = await tts.arrayBuffer();
+          audioBlob = new Blob([buf], { type: "audio/mpeg" });
+        }
+      } catch {
+        audioBlob = null;
+      }
     }
-  }
 
-  return { steps, narrationScript, audioBlob };
+    return { steps, narrationScript, audioBlob };
+  } catch {
+    const fb = localFallback(concept, context);
+    return { steps: fb.steps, narrationScript: fb.narrationScript, audioBlob: null };
+  }
 }
