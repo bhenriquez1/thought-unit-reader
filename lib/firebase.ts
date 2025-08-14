@@ -58,7 +58,6 @@ const useEmulators =
 let app: FirebaseApp;
 if (!getApps().length) {
   app = initializeApp(firebaseConfig);
-  // console.log("✅ Firebase initialized");
 } else {
   app = getApp();
 }
@@ -80,7 +79,6 @@ if (useEmulators) {
     connectAuthEmulator(auth, "http://127.0.0.1:9099");
     connectFirestoreEmulator(db, "127.0.0.1", 8080);
     connectStorageEmulator(storage, "127.0.0.1", 9199);
-    // console.log("🟡 Firebase emulators connected");
   } catch {
     /* ignore */
   }
@@ -144,7 +142,6 @@ export async function signInWithGoogle(): Promise<User | null> {
     if (popupLikelyBlocked(err)) {
       // Fallback to redirect (mobile/Safari)
       await signInWithRedirect(auth, provider);
-      // After redirect back:
       try {
         const res = await getRedirectResult(auth);
         if (res?.user) {
@@ -165,7 +162,6 @@ export async function signInWithGoogle(): Promise<User | null> {
 export async function signOutUser(): Promise<void> {
   try {
     await signOut(auth);
-    // console.log("👋 Signed out");
   } catch (err) {
     console.error("❌ Sign-Out Error:", err);
   }
@@ -222,7 +218,6 @@ export async function deletePDF(userId: string, pdfId: string, pdfName: string) 
   await deleteDoc(doc(db, "users", userId, "pdfLibrary", pdfId));
   const fileRef = ref(storage, `pdfs/${userId}/${pdfName}`);
   await deleteObject(fileRef);
-  // console.log(`🗑 Deleted PDF: ${pdfName}`);
 }
 
 /* =========================================================================
