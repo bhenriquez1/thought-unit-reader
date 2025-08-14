@@ -28,6 +28,8 @@ import {
   containsDiagramOrFormula,
 } from "@/lib/parser";
 
+import { usePdfSelection } from "@/hooks/usePdfSelection";
+
 // Lazy-load to keep SSR clean
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), {
   ssr: false,
@@ -80,16 +82,13 @@ export default function ThoughtUnitReader() {
 
   const [showLibrary, setShowLibrary] = useState(false);
   const [pdfLibrary, setPdfLibrary] = useState<
-    { id: string; name: string; url: string; uploadedAt: any }[]
+    { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean }[]
   >([]);
 
-  // Selection + popup
-  const [selectedText, setSelectedText] = useState("");
+  // Selection + popup (now unified via hook)
   const [attachments, setAttachments] = useState<string[]>([]);
-  const [popupPosition, setPopupPosition] = useState<{ x: number; y: number } | null>(null);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [bookId, setBookId] = useState<string>("default-book");
-  const selectionRangeRef = useRef<Range | null>(null);
 
   // ✅ Auto-whiteboard control + data
   const [autoWhiteboard, setAutoWhiteboard] = useState<boolean>(true);
@@ -107,7 +106,7 @@ export default function ThoughtUnitReader() {
   }, []);
 
   /* =========================================================================
-     🔹 Load PDF Library
+     🔹 Load PDF Library (Firebase) or keep session list (guest)
   ========================================================================= */
   useEffect(() => {
     if (firebaseConnected && user) {
@@ -116,7 +115,27 @@ export default function ThoughtUnitReader() {
   }, [user, showLibrary]);
 
   /* =========================================================================
-     🔹 Upload PDF — includes detectWhiteboardSections() auto-trigger
+     🔹 Unified selection hook
+  ========================================================================= */
+  const sel = usePdfSelection({
+    minChars: 2,
+    onSelect: () => {
+      // no-op here (we display via sel.selectionText + sel.popupPosition)
+    },
+    autoWhiteboard,
+    containsDiagramOrFormula,
+    onDiagramDetected: (concept, ctx) => {
+      setWbConcept(truncate(concept, 600));
+      setWbContext(ctx);
+      setShowWhiteboardPanel(true);
+    },
+    pageProvider: () => currentPage,
+    contextLabel: uploadedFile?.name ? `From ${uploadedFile.name}` : undefined,
+    debounceMs: 0,
+  });
+
+  /* =========================================================================
+     🔹 Upload PDF — also parse into thoughtUnits + detect diagrams
   ========================================================================= */
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -126,24 +145,55 @@ export default function ThoughtUnitReader() {
     }
     setUploadedFile(file);
     setViewMode("original");
+    setBookId(file.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book");
 
     let url: string;
+    let libEntry: { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean };
+
     if (firebaseConnected && user) {
       url = await uploadPDF(file, USER_ID);
+      // refresh remote library
       getPDFLibrary(USER_ID).then(setPdfLibrary);
+      libEntry = {
+        id: String(Date.now()),
+        name: file.name,
+        url,
+        uploadedAt: new Date().toISOString(),
+      };
     } else {
+      // Guest mode: blob URL + session library
       url = URL.createObjectURL(file);
+      libEntry = {
+        id: String(Date.now()),
+        name: file.name,
+        url,
+        uploadedAt: new Date().toISOString(),
+        isLocal: true,
+      };
+      setPdfLibrary((prev) => [libEntry, ...prev]);
     }
+
     setFileUrl(url);
 
-    // Fallback TOC (text-heuristic) — viewer outline will override if available
-    generateTOC(url).then(setTableOfContents).catch(() => {});
+    // Fallback TOC (heuristic) — viewer’s outline will override if/when available
+    generateTOC(url)
+      .then(setTableOfContents)
+      .catch(() => {});
 
-    // ✅ Parse + detect diagram/formula sections for auto whiteboard
+    // Parse + detect whiteboard + build thoughtUnits for Progressive/Hybrid
     try {
       const { parsedUnits, chapters } = await parseBookWithChapters(file);
-      const matches = detectWhiteboardSections(parsedUnits);
+      // Use parsed units in readers
+      if (Array.isArray(parsedUnits) && parsedUnits.length > 0) {
+        setThoughtUnits(parsedUnits as ThoughtUnit[]);
+        setSampleText(
+          Array.isArray(parsedUnits[0])
+            ? (parsedUnits[0] as any[]).join(" ")
+            : (parsedUnits[0] as any as string)
+        );
+      }
 
+      const matches = detectWhiteboardSections(parsedUnits);
       if (autoWhiteboard && matches.length > 0) {
         const firstIdx = matches[0];
         const conceptText = (parsedUnits[firstIdx] || []).join(" ").trim();
@@ -172,42 +222,22 @@ export default function ThoughtUnitReader() {
   const handleLoadPDF = (url: string) => {
     setFileUrl(url);
     setShowLibrary(false);
+    setViewMode("original");
     generateTOC(url).then(setTableOfContents).catch(() => {});
   };
 
   /* =========================================================================
-     🔹 Delete PDF
+     🔹 Delete PDF (disabled for guest session items)
   ========================================================================= */
-  const handleDeletePDF = async (id: string, name: string) => {
+  const handleDeletePDF = async (id: string, name: string, isLocal?: boolean) => {
     if (!confirm(`Delete ${name}?`)) return;
-    await deletePDF(USER_ID, id, name);
-    getPDFLibrary(USER_ID).then(setPdfLibrary);
-  };
 
-  /* =========================================================================
-     🔹 Handle Text Selection — shared for all panes (for now)
-  ========================================================================= */
-  const handleTextSelect = (text: string) => {
-    if (!text) return;
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
-    const range = selection.getRangeAt(0);
-    selectionRangeRef.current = range;
-    setSelectedText(text);
-
-    const rect = range.getBoundingClientRect();
-    setPopupPosition({
-      x: rect.left + rect.width / 2 + window.scrollX,
-      y: rect.top + window.scrollY - 40,
-    });
-
-    // Optional: selection-time whiteboard trigger
-    if (autoWhiteboard && containsDiagramOrFormula(text)) {
-      setWbConcept(truncate(text, 600));
-      setWbContext(
-        uploadedFile?.name ? `From ${uploadedFile.name}, p.${currentPage}` : `From page ${currentPage}`
-      );
-      setShowWhiteboardPanel(true);
+    if (firebaseConnected && user && !isLocal) {
+      await deletePDF(USER_ID, id, name);
+      getPDFLibrary(USER_ID).then(setPdfLibrary);
+    } else {
+      // guest: remove from session list
+      setPdfLibrary((prev) => prev.filter((p) => p.id !== id));
     }
   };
 
@@ -219,7 +249,7 @@ export default function ThoughtUnitReader() {
       return (
         <RightBrainNoteEditor
           bookId={bookId}
-          initialText={selectedText}
+          initialText={sel.selectionText} // either raw selection or generated note we stuffed into sel
           attachments={attachments}
           currentPage={currentPage}
           onDone={() => setViewMode("progressive")}
@@ -246,7 +276,9 @@ export default function ThoughtUnitReader() {
           lineSpacing={lineSpacing}
           onWordClick={(w) => setHighlightedWord(w)}
           setReadingSpeed={setReadingSpeed}
-          onTextSelect={handleTextSelect}
+          onTextSelect={(t) => sel.setSelectionText(t)}
+          selBind={sel.bind}
+          externalSelectionText={sel.selectionText}
         />
       );
     }
@@ -276,28 +308,32 @@ export default function ThoughtUnitReader() {
           onWordClick={(w) => setHighlightedWord(w)}
           setReadingSpeed={setReadingSpeed}
           setCurrentPage={setCurrentPage}
-          onTextSelect={handleTextSelect}
+          onTextSelect={(t) => sel.setSelectionText(t)}
+          selBind={sel.bind}
+          externalSelectionText={sel.selectionText}
         />
       );
     }
 
-    // Original view (PDF)
+    // Original view (PDF) — wrap in a div that receives the hook’s mouseup
     return fileUrl ? (
-      <SmartPDFViewer
-        fileUrl={fileUrl}
-        currentPage={currentPage}
-        onPageChange={setCurrentPage}
-        scale={1.25}
-        onTextSelect={handleTextSelect}
-        onPageCount={(n) => setPdfPageCount(n)}
-        // 🔥 Use the viewer's outline/bookmarks when available
-        onOutline={(items) => {
-          const normalized = outlineToTOC(items as any);
-          if (normalized && normalized.length) {
-            setTableOfContents(normalized);
-          }
-        }}
-      />
+      <div className="h-full" onMouseUp={sel.bind.onMouseUp}>
+        <SmartPDFViewer
+          fileUrl={fileUrl}
+          currentPage={currentPage}
+          onPageChange={setCurrentPage}
+          scale={1.25}
+          onTextSelect={(t) => sel.setSelectionText(t)} // share the same selection text
+          onPageCount={(n) => setPdfPageCount(n)}
+          // Use the viewer's outline/bookmarks when available
+          onOutline={(items) => {
+            const normalized = outlineToTOC(items as any);
+            if (normalized && normalized.length) {
+              setTableOfContents(normalized);
+            }
+          }}
+        />
+      </div>
     ) : (
       <div className="flex flex-col items-center justify-center h-full gap-4">
         <p>📂 Upload a PDF to begin</p>
@@ -327,73 +363,63 @@ export default function ThoughtUnitReader() {
         </div>
       </header>
 
-      <div className="p-2 text-center bg-gray-800 text-white text-sm">🔒 Sign-In Disabled for Now</div>
+      {/* Quick controls */}
+      <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-gray-800">
+        <div className="flex items-center gap-2">
+          <span className="text-sm opacity-80 mr-1">View:</span>
+          {(["original", "progressive", "hybrid", "rightbrain"] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setViewMode(m)}
+              className={`text-xs px-2 py-1 rounded ${
+                viewMode === m ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+              }`}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
 
-      {/* Auto-whiteboard toggle */}
-      <div className="p-2 text-center text-sm bg-gray-900">
-        <label className="inline-flex items-center gap-2">
+        <div className="flex-1" />
+
+        {/* Auto-whiteboard toggle */}
+        <label className="inline-flex items-center gap-2 text-sm">
           <input
             type="checkbox"
             checked={autoWhiteboard}
             onChange={(e) => setAutoWhiteboard(e.target.checked)}
           />
           <span>Auto-explain diagrams on Whiteboard</span>
+          {showWhiteboardPanel && wbConcept && (
+            <span className="ml-2 text-yellow-300">✨ Detected — opening explanation…</span>
+          )}
         </label>
-        {showWhiteboardPanel && wbConcept && (
-          <span className="ml-3 text-yellow-300">✨ Diagram detected — opening explanation…</span>
-        )}
-      </div>
 
-      {/* Floating Library Button */}
-      {user && (
+        {/* Dark mode */}
+        <button
+          onClick={() => setDarkMode((d) => !d)}
+          className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
+        >
+          {darkMode ? "🌙 Dark" : "☀️ Light"}
+        </button>
+
+        {/* Library is always available; guest = session only */}
         <button
           onClick={() => setShowLibrary(true)}
-          className="fixed top-4 right-4 bg-yellow-500 text-black px-3 py-1 rounded shadow z-50"
+          className="text-xs px-3 py-1 rounded bg-yellow-500 text-black shadow"
         >
           📚 Library
         </button>
-      )}
-
-      {/* Library Drawer */}
-      {showLibrary && (
-        <div className="fixed top-0 right-0 w-80 h-full bg-gray-800 text-white shadow-lg z-50 p-4 flex flex-col">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-bold">My Library</h2>
-            <button onClick={() => setShowLibrary(false)}>✖</button>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {pdfLibrary.length === 0 ? (
-              <p className="text-sm text-gray-400">No PDFs uploaded yet.</p>
-            ) : (
-              pdfLibrary.map((pdf) => (
-                <div
-                  key={pdf.id}
-                  className="flex justify-between items-center mb-2 p-2 hover:bg-gray-700 rounded"
-                >
-                  <span onClick={() => handleLoadPDF(pdf.url)} className="cursor-pointer">
-                    {pdf.name}
-                  </span>
-                  <button
-                    onClick={() => handleDeletePDF(pdf.id, pdf.name)}
-                    className="text-red-400 hover:text-red-200"
-                  >
-                    🗑
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-          <label className="mt-4 block bg-yellow-500 text-black text-center py-2 rounded cursor-pointer">
-            ➕ Upload PDF
-            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-          </label>
-        </div>
-      )}
+      </div>
 
       {/* Reader + WhiteboardPanel */}
       <div className="flex flex-1 overflow-hidden px-4 gap-4">
         {showTOC && fileUrl && (
-          <TOCSidebar toc={tableOfContents} currentPage={currentPage} onJumpToPage={setCurrentPage} />
+          <TOCSidebar
+            toc={tableOfContents}
+            currentPage={currentPage}
+            onJumpToPage={setCurrentPage}
+          />
         )}
 
         <div className="flex-1 bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
@@ -414,7 +440,9 @@ export default function ThoughtUnitReader() {
               context={wbContext}
               stickyNotes={wbStickyNotes}
               autoTrigger={true}
-              lessonTitle={uploadedFile?.name ? `Whiteboard — ${uploadedFile.name}` : "Whiteboard Lesson"}
+              lessonTitle={
+                uploadedFile?.name ? `Whiteboard — ${uploadedFile.name}` : "Whiteboard Lesson"
+              }
               lessonId={bookId}
               userId={USER_ID}
             />
@@ -422,15 +450,80 @@ export default function ThoughtUnitReader() {
         )}
       </div>
 
-      {/* Highlight Popup */}
-      {popupPosition && (
+      {/* Library Drawer (works for guest & auth) */}
+      {showLibrary && (
+        <div className="fixed top-0 right-0 w-80 h-full bg-gray-800 text-white shadow-lg z-50 p-4 flex flex-col">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-bold">My Library</h2>
+            <button onClick={() => setShowLibrary(false)}>✖</button>
+          </div>
+
+          {!user && (
+            <div className="mb-3 text-xs text-yellow-300">
+              Guest mode: uploads are stored locally for this session only.
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto">
+            {pdfLibrary.length === 0 ? (
+              <p className="text-sm text-gray-400">No PDFs yet.</p>
+            ) : (
+              pdfLibrary.map((pdf) => (
+                <div
+                  key={pdf.id}
+                  className="flex justify-between items-center mb-2 p-2 hover:bg-gray-700 rounded"
+                >
+                  <span onClick={() => handleLoadPDF(pdf.url)} className="cursor-pointer">
+                    {pdf.name}
+                  </span>
+                  <button
+                    onClick={() => handleDeletePDF(pdf.id, pdf.name, pdf.isLocal)}
+                    className={`${
+                      pdf.isLocal || (firebaseConnected && user)
+                        ? "text-red-400 hover:text-red-200"
+                        : "opacity-40 cursor-not-allowed"
+                    }`}
+                    disabled={!pdf.isLocal && !(firebaseConnected && user)}
+                    title={
+                      !pdf.isLocal && !(firebaseConnected && user)
+                        ? "Delete requires sign-in"
+                        : "Delete"
+                    }
+                  >
+                    🗑
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+
+          <label className="mt-4 block bg-yellow-500 text-black text-center py-2 rounded cursor-pointer">
+            ➕ Upload PDF
+            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
+          </label>
+        </div>
+      )}
+
+      {/* Highlight Popup (driven by unified hook) */}
+      {sel.popupPosition && sel.selectionText && (
         <HighlightPopup
-          position={popupPosition}
-          selectionText={selectedText}
-          onCreateNote={() => setViewMode("rightbrain")}
+          position={sel.popupPosition}
+          selectionText={sel.selectionText}
+          onCreateNote={() => {
+            setViewMode("rightbrain");
+          }}
+          onCreateDetailedNote={async () => {
+            const note = await sel.createDetailedNote({
+              discipline: "dentistry",
+              style: "detailed",
+            });
+            // Seed the editor with the generated best-note
+            if (note) sel.setSelectionText(note);
+            setViewMode("rightbrain");
+          }}
           onAddFlashcard={() => console.log("Flashcard created")}
           onAttachLink={() => setShowLinkModal(true)}
-          onClose={() => setPopupPosition(null)}
+          onClose={() => sel.clearSelection()}
         />
       )}
 

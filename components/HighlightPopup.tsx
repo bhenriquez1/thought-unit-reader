@@ -9,13 +9,21 @@ interface HighlightPopupProps {
   selectionText?: string;
 
   onCreateNote: () => void;
-  /** Optional: trigger your “top student dental note” pipeline */
-  onCreateDetailedNote?: () => void;
+
+  /** Trigger your “top student dental note” flow.
+   *  You can call sel.createDetailedNote() inside the handler.
+   *  If it returns a Promise, we show a busy state until it settles.
+   */
+  onCreateDetailedNote?: () => void | Promise<void>;
+
+  /** If you already manage busy state externally, pass it to sync the UI. */
+  creatingDetailedNote?: boolean;
+
   onAddFlashcard: () => void;
   onAttachLink: () => void;
   onClose: () => void;
 
-  /** Optional: ms before auto-close (default 5000). Set 0 to disable */
+  /** ms before auto-close. Set 0 to disable. Default: 5000 */
   autoCloseMs?: number;
 }
 
@@ -24,6 +32,7 @@ export default function HighlightPopup({
   selectionText = "",
   onCreateNote,
   onCreateDetailedNote,
+  creatingDetailedNote,
   onAddFlashcard,
   onAttachLink,
   onClose,
@@ -31,6 +40,11 @@ export default function HighlightPopup({
 }: HighlightPopupProps) {
   const [visible, setVisible] = useState(false);
   const [fadeOut, setFadeOut] = useState(false);
+  const [internalBusy, setInternalBusy] = useState(false);
+
+  // If parent supplies creatingDetailedNote, prefer it; else use internal
+  const isBusy = Boolean(creatingDetailedNote ?? internalBusy);
+
   const popupRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -56,17 +70,17 @@ export default function HighlightPopup({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  /** Auto-close unless hovered */
+  /** Auto-close unless hovered or busy */
   useEffect(() => {
     if (!autoCloseMs) return;
     startAutoFadeTimer();
     return stopAutoFadeTimer;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoCloseMs]);
+  }, [autoCloseMs, isBusy]);
 
   const startAutoFadeTimer = () => {
     stopAutoFadeTimer();
-    if (!autoCloseMs) return;
+    if (!autoCloseMs || isBusy) return;
     timerRef.current = setTimeout(() => {
       setFadeOut(true);
       setTimeout(() => onClose(), 250);
@@ -91,6 +105,16 @@ export default function HighlightPopup({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [onClose]);
 
+  const handleCreateDetailed = async () => {
+    if (!onCreateDetailedNote) return;
+    try {
+      setInternalBusy(true);
+      await onCreateDetailedNote();
+    } finally {
+      setInternalBusy(false);
+    }
+  };
+
   return (
     <motion.div
       ref={popupRef}
@@ -113,7 +137,7 @@ export default function HighlightPopup({
       onMouseEnter={stopAutoFadeTimer}
       onMouseLeave={startAutoFadeTimer}
     >
-      <div className="bg-gray-900 text-white rounded-lg shadow-lg border border-gray-700 p-2 w-[min(420px,90vw)]">
+      <div className="bg-gray-900 text-white rounded-lg shadow-lg border border-gray-700 p-2 w-[min(460px,90vw)]">
         {/* Preview line */}
         {preview && (
           <div className="px-2 pt-1 pb-2 text-xs text-gray-300 border-b border-gray-700/60">
@@ -125,38 +149,42 @@ export default function HighlightPopup({
         <div className="flex items-center gap-2 px-2 pt-2">
           <button
             onClick={onCreateNote}
-            className="hover:text-yellow-400 transition-colors"
+            className="hover:text-yellow-400 transition-colors disabled:opacity-50"
             title="Create Note"
             aria-label="Create Note"
+            disabled={isBusy}
           >
             📝
           </button>
 
           {onCreateDetailedNote && (
             <button
-              onClick={onCreateDetailedNote}
-              className="hover:text-amber-400 transition-colors"
+              onClick={handleCreateDetailed}
+              className="hover:text-amber-400 transition-colors disabled:opacity-50"
               title="Detailed Note (Top Student)"
               aria-label="Detailed Note"
+              disabled={isBusy}
             >
-              🧠
+              {isBusy ? "⏳" : "🧠"}
             </button>
           )}
 
           <button
             onClick={onAddFlashcard}
-            className="hover:text-green-400 transition-colors"
+            className="hover:text-green-400 transition-colors disabled:opacity-50"
             title="Add Flashcard"
             aria-label="Add Flashcard"
+            disabled={isBusy}
           >
             🎯
           </button>
 
           <button
             onClick={onAttachLink}
-            className="hover:text-blue-400 transition-colors"
+            className="hover:text-blue-400 transition-colors disabled:opacity-50"
             title="Attach Link / Video"
             aria-label="Attach Link or Video"
+            disabled={isBusy}
           >
             🔗
           </button>
@@ -165,9 +193,10 @@ export default function HighlightPopup({
 
           <button
             onClick={onClose}
-            className="hover:text-red-400 transition-colors"
+            className="hover:text-red-400 transition-colors disabled:opacity-50"
             title="Close"
             aria-label="Close popup"
+            disabled={isBusy}
           >
             ✖
           </button>

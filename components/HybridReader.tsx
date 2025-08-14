@@ -58,15 +58,15 @@ export default function HybridReader({
   sampleText,
   currentPage,
   setCurrentPage,
-  selBind,                 // ← unified selection handler (optional)
-  externalSelectionText,   // ← text from usePdfSelection (optional)
+  selBind,               // unified selection handler (optional)
+  externalSelectionText, // live selection from usePdfSelection (optional)
 }: HybridReaderProps) {
   const [selectionText, setSelectionText] = useState("");
 
   // Review flow
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
-  // Load saved reading progress
+  /* -------------------- Load saved reading progress -------------------- */
   useEffect(() => {
     if (!userId || !pdfId) return;
     loadReadingProgress(userId, pdfId).then((progress: any) => {
@@ -79,7 +79,7 @@ export default function HybridReader({
     });
   }, [userId, pdfId, setCurrentPage, setCurrentThoughtUnit, setHighlightedWord]);
 
-  // Save reading progress
+  /* -------------------- Save reading progress -------------------- */
   useEffect(() => {
     if (!userId || !pdfId) return;
     saveReadingProgress(userId, pdfId, {
@@ -89,16 +89,17 @@ export default function HybridReader({
     });
   }, [userId, pdfId, currentPage, currentThoughtUnit, highlightedWord]);
 
-  // Fallback selection (when selBind isn’t provided)
+  /* -------------------- Fallback selection (when selBind isn’t provided) -------------------- */
   const getSelectionText = () =>
     (typeof window !== "undefined" ? window.getSelection()?.toString().trim() : "") || "";
+
   const handleMouseUp = () => {
     const sel = getSelectionText();
     setSelectionText(sel);
     if (sel) onTextSelect?.(sel);
   };
 
-  // Normalize unit → text
+  /* -------------------- Normalize unit → text -------------------- */
   const unitToText = (u: HRUnit): string => {
     if (u == null) return "";
     if (typeof u === "string") return u;
@@ -107,7 +108,7 @@ export default function HybridReader({
     return typeof t === "string" ? t : JSON.stringify(u);
   };
 
-  // Empty states
+  /* -------------------- Empty states -------------------- */
   if (!thoughtUnits || thoughtUnits.length === 0) {
     return (
       <div
@@ -134,7 +135,7 @@ export default function HybridReader({
   const unitText = unitToText(rawUnit);
   const effectiveSelection = (externalSelectionText?.trim() || selectionText).trim();
 
-  // Review mode
+  /* -------------------- Review mode -------------------- */
   if (isReviewMode) {
     return (
       <div className="p-4 bg-gray-900 text-white rounded-lg">
@@ -161,7 +162,7 @@ export default function HybridReader({
     );
   }
 
-  // Main dual-panel UI
+  /* -------------------- Main dual-panel UI -------------------- */
   return (
     <div className="grid grid-cols-2 gap-4 p-4 h-full">
       {/* Original View */}

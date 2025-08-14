@@ -32,9 +32,9 @@ interface ProgressiveViewProps {
   onTextSelect?: (text: string) => void;
   onGenerateNote?: (text: string, mnemonic?: string) => void;
 
-  /** NEW: unify with PDF selection hook */
+  /** Unify with usePdfSelection — spread this so selections go through the same pipeline */
   selBind?: { onMouseUp?: (e: React.MouseEvent) => void };
-  /** Optional: pass the hook’s live selection text down */
+  /** Optional: pass the hook’s live selection text down (e.g., from index.tsx) */
   externalSelectionText?: string;
 }
 
@@ -54,7 +54,6 @@ export default function ProgressiveView({
   onTextSelect,
   onGenerateNote,
 
-  // NEW (optional)
   selBind,
   externalSelectionText,
 }: ProgressiveViewProps) {
@@ -122,6 +121,7 @@ export default function ProgressiveView({
         setLoaded(true);
       } catch (err) {
         console.error("❌ Error loading reading progress:", err);
+        setLoaded(true);
       }
     }
     loadProgress();
@@ -146,7 +146,7 @@ export default function ProgressiveView({
     })();
   }, [loaded, userId, bookId, currentThoughtUnit, readingSpeed, highlightedWord, currentPage]);
 
-  /* -------------------- Selection (fallback) -------------------- */
+  /* -------------------- Selection (fallback for when selBind isn’t provided) -------------------- */
   const getSelectionText = () =>
     (typeof window !== "undefined" ? window.getSelection()?.toString().trim() : "") || "";
 
@@ -236,7 +236,7 @@ export default function ProgressiveView({
             }
             onClick={() => {
               onWordClick?.(word);
-              // also push into unified selection pipeline
+              // Push into the unified selection pipeline
               setSelectionText(word);
               onTextSelect?.(word);
             }}
