@@ -7,20 +7,20 @@ export type WhiteboardStep = {
   payload: any;
   delayMs?: number;
 
-  /** Renderer-friendly fields */
+  /** Renderer-friendly fields (normalized below) */
   title?: string;
   description?: string;
   visualPrompt?: string;
 };
 
 export type WhiteboardResponse = {
-  steps: WhiteboardStep[];     // server may send partial; we normalize below
+  steps: WhiteboardStep[];   // server may send partial; we normalize below
   narrationScript: string;
 
   /** Optional audio returned by server */
-  audioUrl?: string;           // e.g., signed/public URL
-  audioBase64?: string;        // base64 payload
-  audioMime?: string;          // e.g. "audio/mpeg"
+  audioUrl?: string;         // e.g., signed/public URL
+  audioBase64?: string;      // base64 payload
+  audioMime?: string;        // e.g. "audio/mpeg"
 };
 
 export type WhiteboardResult = {
@@ -82,15 +82,18 @@ function normalizeSteps(raw: any[] | undefined): WhiteboardStep[] {
 }
 
 /** Minimal local fallback if API is down or quota exceeded */
-function localFallback(concept: string, context: string): { steps: WhiteboardStep[]; narrationScript: string } {
+function localFallback(concept: string, context: string): {
+  steps: WhiteboardStep[];
+  narrationScript: string;
+} {
   const c = (concept || "").trim();
   const x = (context || "").trim();
   const steps: WhiteboardStep[] = normalizeSteps([
-    { title: "Big Picture", type: "text", payload: { text: `${x || "This section"} — why this matters.` } },
-    { title: "Core Idea", type: "text", payload: { text: c.slice(0, 200) } },
-    { title: "Visual Sketch", type: "draw", payload: { prompt: "Simple diagram with 2–4 labeled parts." } },
-    { title: "Common Pitfall", type: "text", payload: { text: "A frequent misconception and how to avoid it." } },
-    { title: "Apply It", type: "text", payload: { text: "Where this shows up in practice/exams." } },
+    { title: "Big Picture",  type: "text",  payload: { text: `${x || "This section"} — why this matters.` } },
+    { title: "Core Idea",    type: "text",  payload: { text: c.slice(0, 200) } },
+    { title: "Visual Sketch",type: "draw",  payload: { prompt: "Simple diagram with 2–4 labeled parts." } },
+    { title: "Common Pitfall",type:"text",  payload: { text: "A frequent misconception and how to avoid it." } },
+    { title: "Apply It",     type: "text",  payload: { text: "Where this shows up in practice/exams." } },
   ]);
   const narrationScript = steps.map((s) => `${s.title}: ${s.description || ""}`).join("\n");
   return { steps, narrationScript };
@@ -99,7 +102,8 @@ function localFallback(concept: string, context: string): { steps: WhiteboardSte
 /** Try the new route first, then the legacy one (back-compat) */
 async function postExplain(concept: string, context: string): Promise<Response> {
   const body = JSON.stringify({ concept, context });
-  // New
+
+  // New route
   const r1 = await fetch("/api/whiteboard-explain", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -107,7 +111,7 @@ async function postExplain(concept: string, context: string): Promise<Response> 
   });
   if (r1.ok) return r1;
 
-  // Legacy
+  // Legacy route
   const r2 = await fetch("/api/whiteboard-explanation", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
