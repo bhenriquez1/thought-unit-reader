@@ -373,7 +373,7 @@ export default function ThoughtUnitReader() {
           onTextSelect={(t) => sel.setSelectionText(t)}
           selBind={sel.bind}
           externalSelectionText={sel.selectionText}
-          // 👇 NEW: open Right-Brain with templates
+          // 👇 open Right-Brain with templates
           onGenerateNote={handleOpenRightBrainNote}
         />
       );
@@ -407,7 +407,7 @@ export default function ThoughtUnitReader() {
           onTextSelect={(t) => sel.setSelectionText(t)}
           selBind={sel.bind}
           externalSelectionText={sel.selectionText}
-          // 👇 NEW: open Right-Brain with templates
+          // 👇 open Right-Brain with templates
           onGenerateNote={handleOpenRightBrainNote}
         />
       );
@@ -633,14 +633,19 @@ export default function ThoughtUnitReader() {
         <HighlightPopup
           position={sel.popupPosition}
           selectionText={sel.selectionText}
-          onCreateNote={() => setViewMode("rightbrain")}
+          // ⚙️ open Right-Brain with the current selection
+          onCreateNote={() => handleOpenRightBrainNote(sel.selectionText)}
           onCreateDetailedNote={async () => {
             const note = await sel.createDetailedNote({
               discipline: "dentistry",
               style: "detailed",
             });
-            if (note) sel.setSelectionText(note);
-            setViewMode("rightbrain");
+            if (note) {
+              // prime Right-Brain with the generated detailed note
+              await handleOpenRightBrainNote(note, undefined, "highYield");
+            } else {
+              setViewMode("rightbrain");
+            }
           }}
           onAddFlashcard={() => console.log("Flashcard created")}
           onAttachLink={() => setShowLinkModal(true)}

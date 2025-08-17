@@ -1,12 +1,11 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { db } from "@/lib/firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
 import type { ThoughtUnit as BaseThoughtUnit, ReadingStats } from "@/types/reading";
 import { useStartReview } from "@/hooks/useStartReview";
 import RightBrainToolbar from "@/components/RightBrainToolbar";
 import RightBrainNoteEditor from "@/components/RightBrainNoteEditor";
+import { saveReadingProgress, loadReadingProgress } from "@/lib/firebase";
 
 /** Accept any “thought unit” shape we’ve used so far */
 type PVUnit = BaseThoughtUnit | string | string[] | { text?: string };
@@ -29,6 +28,7 @@ interface ProgressiveViewProps {
   onWordClick?: (word: string) => void;
   setReadingSpeed?: (speed: number) => void;
   onTextSelect?: (text: string) => void;
+
   /** parent handler → opens global Right-Brain (with templates) */
   onGenerateNote?: (text: string, mnemonic?: string, mode?: "sketch" | "highYield") => void;
 
@@ -115,6 +115,8 @@ export default function ProgressiveView({
   const [showNoteEditor, setShowNoteEditor] = useState(false); // fallback local editor
   const recognitionRef = useRef<any>(null);
 
+  const saveDebounceRef = useRef<number | null>(null);
+
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
   /* -------------------- Dictation (browser SR) -------------------- */
@@ -156,45 +158,50 @@ export default function ProgressiveView({
     }
   };
 
-  /* -------------------- Load saved reading state -------------------- */
+  /* -------------------- Load saved reading state (shared helper) -------------------- */
   useEffect(() => {
-    async function loadProgress() {
-      if (!userId || !bookId) return;
+    let cancelled = false;
+    (async () => {
+      if (!userId || !bookId) return setLoaded(true);
       try {
-        const ref = doc(db, "users", userId, "pdfLibrary", bookId, "progress", "readingState");
-        const snap = await getDoc(ref);
-        if (snap.exists()) {
-          const data = snap.data() as any;
-          if (typeof data.readingSpeed === "number") {
-            setReadingSpeed?.(data.readingSpeed);
-          }
+        const snap = await loadReadingProgress(userId, bookId);
+        if (!cancelled && snap && typeof snap.readingSpeed === "number") {
+          setReadingSpeed?.(snap.readingSpeed);
         }
-        setLoaded(true);
       } catch (err) {
         console.error("❌ Error loading reading progress:", err);
-        setLoaded(true);
-      }
-    }
-    loadProgress();
-  }, [userId, bookId, setReadingSpeed]);
-
-  /* -------------------- Save reading state -------------------- */
-  useEffect(() => {
-    if (!loaded || !userId || !bookId) return;
-    (async () => {
-      try {
-        const ref = doc(db, "users", userId, "pdfLibrary", bookId, "progress", "readingState");
-        await setDoc(ref, {
-          currentThoughtUnit,
-          readingSpeed,
-          highlightedWord,
-          currentPage,
-          updatedAt: new Date().toISOString(),
-        });
-      } catch (err) {
-        console.error("❌ Error saving reading progress:", err);
+      } finally {
+        if (!cancelled) setLoaded(true);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, bookId, setReadingSpeed]);
+
+  /* -------------------- Save reading state (shared helper, debounced) -------------------- */
+  useEffect(() => {
+    if (!loaded || !userId || !bookId) return;
+
+    if (saveDebounceRef.current) window.clearTimeout(saveDebounceRef.current);
+    saveDebounceRef.current = window.setTimeout(() => {
+      (async () => {
+        try {
+          await saveReadingProgress(userId, bookId, {
+            currentThoughtUnit,
+            readingSpeed,
+            highlightedWord,
+            currentPage,
+          });
+        } catch (err) {
+          console.error("❌ Error saving reading progress:", err);
+        }
+      })();
+    }, 500) as unknown as number;
+
+    return () => {
+      if (saveDebounceRef.current) window.clearTimeout(saveDebounceRef.current);
+    };
   }, [loaded, userId, bookId, currentThoughtUnit, readingSpeed, highlightedWord, currentPage]);
 
   /* -------------------- Selection (fallback) -------------------- */
@@ -245,10 +252,7 @@ export default function ProgressiveView({
     if (!chunks.length) return;
     // conservative: base on WPM, but ensure a comfy minimum
     const msPerChunk = Math.max(600, (60_000 / Math.max(120, readingSpeed)) * 1.2);
-    const t = window.setInterval(
-      () => setActiveIdx((i) => (i + 1) % chunks.length),
-      msPerChunk
-    );
+    const t = window.setInterval(() => setActiveIdx((i) => (i + 1) % chunks.length), msPerChunk);
     return () => window.clearInterval(t);
   }, [chunks.length, readingSpeed]);
 
@@ -313,6 +317,10 @@ export default function ProgressiveView({
                   } cursor-pointer`}
                   onClick={() => {
                     onWordClick?.(chunk);
+                    // if parent didn't track highlight, at least use local cue
+                    if (!onWordClick) {
+                      // no-op; parent handles highlight state
+                    }
                     setSelectionText(chunk);
                     onTextSelect?.(chunk);
                     setActiveIdx(idx);
