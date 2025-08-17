@@ -1,5 +1,6 @@
-// components/RightBrainNoteEditor.tsx
-import React, { useEffect, useState } from "react";
+"use client";
+
+import React, { useEffect, useMemo, useState } from "react";
 import {
   saveNote,
   updateNote,
@@ -8,21 +9,59 @@ import {
 } from "@/lib/noteService";
 import { createFlashcardFromSelection } from "@/lib/flashcardService";
 import { addMindMapNode } from "@/lib/mindMapService";
-import summarizeText from "@/lib/aiSummary"; // ✅ default import
+import summarizeText from "@/lib/aiSummary";
 import { firebaseConnected, auth } from "@/lib/firebase";
 import { generateMnemonic } from "@/lib/mnemonicAI";
 import { useAIReview } from "@/hooks/useAIReview";
 import type { User } from "firebase/auth";
 
-const getSelectionText = () => window.getSelection()?.toString().trim() || "";
+/** Basic, safe selection getter (used for Flashcard/Mindmap fallbacks) */
+const getSelectionText = () =>
+  (typeof window !== "undefined" ? window.getSelection()?.toString().trim() : "") || "";
 
 export interface RightBrainNoteEditorProps {
   bookId: string;
   initialText?: string;
   attachments?: string[];
-  currentPage?: number;   // still accepted, used for notes/mindmap
+  /** Page is stored with the note (when provided) */
+  currentPage?: number;
+  /** Live dictation can be appended as it comes in */
   dictationText?: string;
+  /** Called after successful save */
   onDone?: () => void;
+}
+
+/** Compose a “top-student” structured note (no external API needed) */
+async function buildStructuredNote(seed: string) {
+  const base = seed.trim();
+  const [summary, mnem] = await Promise.allSettled([
+    base ? summarizeText(base) : Promise.resolve(""),
+    base ? generateMnemonic(base) : Promise.resolve(""),
+  ]);
+  const bestSummary = summary.status === "fulfilled" ? summary.value : base;
+  const bestMnemonic = mnem.status === "fulfilled" ? mnem.value : "";
+
+  const template = [
+    `# Title: `,
+    ``,
+    `## Big Idea`,
+    bestSummary || base || "…",
+    ``,
+    `## Evidence / Details`,
+    `- Key facts / steps`,
+    `- Exceptions / edge-cases`,
+    ``,
+    `## Visual Sketch (describe or doodle)`,
+    `- Diagram plan: boxes/arrows/labels to show relationships`,
+    ``,
+    `## Mnemonic`,
+    bestMnemonic || "…",
+    ``,
+    `## Q → A (self-test)`,
+    `- Q: …`,
+    `  A: …`,
+  ].join("\n");
+  return { template, mnemonic: bestMnemonic };
 }
 
 export default function RightBrainNoteEditor({
@@ -41,32 +80,34 @@ export default function RightBrainNoteEditor({
   const [notes, setNotes] = useState<RightBrainNote[]>([]);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
+
   const [isGeneratingMnemonic, setIsGeneratingMnemonic] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
+  const [isAutoNoting, setIsAutoNoting] = useState(false);
 
   // ✅ spaced-repetition review
   const { isReviewMode, currentCard, startReviewMode, gradeCard } = useAIReview(user?.uid);
 
-  // Auth
+  /* -------------------- Auth -------------------- */
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((u) => setUser(u));
-    return () => unsubscribe();
+    const unsub = auth.onAuthStateChanged((u) => setUser(u));
+    return () => unsub();
   }, []);
 
-  // Load notes for this book
+  /* -------------------- Load notes for this book -------------------- */
   useEffect(() => {
     if (!firebaseConnected || !user) return;
-    getNotesForBook(user.uid, bookId).then(setNotes);
+    getNotesForBook(user.uid, bookId).then(setNotes).catch(() => {});
   }, [bookId, user]);
 
-  // Auto-generate mnemonic for initial text
+  /* -------------------- Auto-mnemonic for initial text -------------------- */
   useEffect(() => {
     if (!initialText.trim()) return;
     (async () => {
       setIsGeneratingMnemonic(true);
       try {
         const generated = await generateMnemonic(initialText);
-        setMnemonic(generated);
+        if (generated) setMnemonic(generated);
       } catch (err) {
         console.error("❌ Mnemonic generation failed:", err);
       } finally {
@@ -75,22 +116,24 @@ export default function RightBrainNoteEditor({
     })();
   }, [initialText]);
 
-  // Append live dictation to content
+  /* -------------------- Append live dictation -------------------- */
   useEffect(() => {
     if (dictationText && dictationText.trim()) {
       setContent((prev) => {
+        if (!prev) return dictationText;
         if (prev.endsWith(dictationText)) return prev;
-        return (prev ? prev + " " : "") + dictationText;
+        return `${prev}\n${dictationText}`;
       });
     }
   }, [dictationText]);
 
+  /* -------------------- Helpers -------------------- */
   const handleSelectNote = (note: RightBrainNote) => {
     setSelectedNoteId(note.id || null);
-    setTitle(note.title);
-    setContent(note.content);
+    setTitle(note.title || "");
+    setContent(note.content || "");
     setMnemonic(note.mnemonic || "");
-    setTags(note.tags.join(", "));
+    setTags((note.tags || []).join(", "));
     setLocalAttachments(note.attachments || []);
   };
 
@@ -105,49 +148,67 @@ export default function RightBrainNoteEditor({
     }
 
     const noteData = {
-      title: title.trim(),
+      title: title.trim() || "(untitled)",
       content: content.trim(),
       mnemonic: mnemonic.trim(),
-      tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
+      tags: tags
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean),
       attachments: localAttachments,
       bookId,
       page: currentPage || null,
     };
 
-    if (selectedNoteId) {
-      await updateNote(user.uid, selectedNoteId, noteData);
-    } else {
-      await saveNote(user.uid, noteData);
+    try {
+      if (selectedNoteId) {
+        await updateNote(user.uid, selectedNoteId, noteData);
+      } else {
+        await saveNote(user.uid, noteData);
+      }
+      // refresh list
+      const refreshed = await getNotesForBook(user.uid, bookId);
+      setNotes(refreshed);
+
+      // reset draft
+      setSelectedNoteId(null);
+      setTitle("");
+      setContent("");
+      setMnemonic("");
+      setTags("");
+      setLocalAttachments([]);
+
+      onDone?.();
+    } catch (err) {
+      console.error("❌ Save failed:", err);
+      alert("Failed to save note.");
     }
-
-    setSelectedNoteId(null);
-    setTitle("");
-    setContent("");
-    setMnemonic("");
-    setTags("");
-    setLocalAttachments([]);
-
-    const refreshed = await getNotesForBook(user.uid, bookId);
-    setNotes(refreshed);
-
-    onDone?.();
   };
 
   const handleExportFlashcard = async () => {
     if (!user) return alert("Sign in to create flashcards.");
     const selection = getSelectionText() || content.trim() || title.trim();
     if (!selection) return alert("Highlight or enter text first.");
-    // ✅ service expects ONE argument
-    await createFlashcardFromSelection(selection);
-    alert("📇 Flashcard saved for review!");
+    try {
+      await createFlashcardFromSelection(selection);
+      alert("📇 Flashcard saved for review!");
+    } catch (err) {
+      console.error("❌ Flashcard export failed:", err);
+      alert("Failed to create flashcard.");
+    }
   };
 
   const handleExportMindMap = async () => {
     if (!user) return alert("Sign in to create mind map nodes.");
     const selection = getSelectionText() || content.trim() || title.trim();
     if (!selection) return alert("Highlight or enter text first.");
-    await addMindMapNode(selection, currentPage);
-    alert("🧠 Mind Map node saved!");
+    try {
+      await addMindMapNode(selection, currentPage);
+      alert("🧠 Mind Map node saved!");
+    } catch (err) {
+      console.error("❌ Mind map export failed:", err);
+      alert("Failed to add to mind map.");
+    }
   };
 
   const handleSummarize = async () => {
@@ -164,16 +225,46 @@ export default function RightBrainNoteEditor({
     }
   };
 
+  const handleAutoNote = async () => {
+    const seed = (content || initialText || "").trim();
+    if (!seed) return alert("Select or write something first.");
+    setIsAutoNoting(true);
+    try {
+      const { template, mnemonic: mnem } = await buildStructuredNote(seed);
+      // keep any existing title; fill template below the title box
+      setContent(template);
+      if (mnem && !mnemonic) setMnemonic(mnem);
+    } catch (err) {
+      console.error("❌ Auto-note failed:", err);
+      alert("Could not generate a structured note.");
+    } finally {
+      setIsAutoNoting(false);
+    }
+  };
+
+  const pageLabel = useMemo(
+    () => (typeof currentPage === "number" ? `p.${currentPage}` : ""),
+    [currentPage]
+  );
+
+  /* -------------------- UI -------------------- */
   return (
     <div className="flex flex-col h-full bg-gray-900 text-white p-4 rounded-lg">
-      <h2 className="text-lg font-bold mb-2 text-yellow-400">🧠 Right Brain Notes</h2>
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-lg font-bold text-yellow-400">🧠 Right Brain Notes</h2>
+        {pageLabel && <span className="text-xs opacity-70">Linked to {pageLabel}</span>}
+      </div>
 
       {isReviewMode ? (
         <div className="bg-gray-800 p-4 rounded-lg">
           {currentCard ? (
             <>
-              <p className="mb-3"><strong>Question:</strong> {currentCard.front}</p>
-              <p className="mb-3"><strong>Answer:</strong> {currentCard.back}</p>
+              <p className="mb-3">
+                <strong>Question:</strong> {currentCard.front}
+              </p>
+              <p className="mb-3">
+                <strong>Answer:</strong> {currentCard.back}
+              </p>
               <button onClick={gradeCard} className="bg-blue-500 px-3 py-1 rounded">
                 Next Card
               </button>
@@ -193,7 +284,9 @@ export default function RightBrainNoteEditor({
                     key={note.id}
                     onClick={() => handleSelectNote(note)}
                     className={`p-2 rounded cursor-pointer ${
-                      selectedNoteId === note.id ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+                      selectedNoteId === note.id
+                        ? "bg-yellow-500 text-black"
+                        : "bg-gray-700 hover:bg-gray-600"
                     }`}
                   >
                     <strong>{note.title || "Untitled"}</strong>
@@ -206,18 +299,18 @@ export default function RightBrainNoteEditor({
 
           <input
             type="text"
-            placeholder="Note Title"
+            placeholder="Title (e.g., ‘Glycolysis regulation’)"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="mb-2 p-2 rounded bg-gray-800 border border-gray-700"
+            className="mb-2 p-2 rounded bg-gray-800 border border-gray-700 w-full"
           />
 
           <textarea
-            rows={6}
-            placeholder="Write your note..."
+            rows={10}
+            placeholder="Write your note or click ‘Auto-Note’ to get a structured draft…"
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            className="mb-2 p-2 rounded bg-gray-800 border border-gray-700 resize-none"
+            className="mb-2 p-2 rounded bg-gray-800 border border-gray-700 resize-y min-h-[180px] w-full"
           />
 
           <textarea
@@ -225,7 +318,7 @@ export default function RightBrainNoteEditor({
             placeholder="Mnemonic (auto-generated)"
             value={isGeneratingMnemonic ? "Generating mnemonic..." : mnemonic}
             onChange={(e) => setMnemonic(e.target.value)}
-            className="mb-2 p-2 rounded bg-purple-800 border border-purple-700 resize-none text-purple-200"
+            className="mb-2 p-2 rounded bg-purple-800 border border-purple-700 resize-none text-purple-200 w-full"
           />
 
           <input
@@ -233,7 +326,7 @@ export default function RightBrainNoteEditor({
             placeholder="Tags (comma separated)"
             value={tags}
             onChange={(e) => setTags(e.target.value)}
-            className="mb-2 p-2 rounded bg-gray-800 border border-gray-700"
+            className="mb-2 p-2 rounded bg-gray-800 border border-gray-700 w-full"
           />
 
           {localAttachments.length > 0 && (
@@ -253,7 +346,7 @@ export default function RightBrainNoteEditor({
                       href={link}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-yellow-400 underline"
+                      className="text-yellow-400 underline break-all"
                     >
                       {link}
                     </a>
@@ -272,6 +365,26 @@ export default function RightBrainNoteEditor({
             </button>
 
             <button
+              onClick={handleAutoNote}
+              disabled={isAutoNoting}
+              className={`py-2 px-4 rounded text-white ${
+                isAutoNoting ? "bg-gray-500" : "bg-pink-600 hover:bg-pink-700"
+              }`}
+            >
+              {isAutoNoting ? "Drafting…" : "✨ Auto-Note (Top Student)"}
+            </button>
+
+            <button
+              onClick={handleSummarize}
+              disabled={isSummarizing}
+              className={`py-2 px-4 rounded text-white ${
+                isSummarizing ? "bg-gray-500" : "bg-orange-500 hover:bg-orange-600"
+              }`}
+            >
+              {isSummarizing ? "Summarizing…" : "📝 AI Summary"}
+            </button>
+
+            <button
               onClick={handleExportFlashcard}
               className="bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded"
             >
@@ -282,15 +395,7 @@ export default function RightBrainNoteEditor({
               onClick={handleExportMindMap}
               className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded"
             >
-              🧠 Export Mind Map
-            </button>
-
-            <button
-              onClick={handleSummarize}
-              disabled={isSummarizing}
-              className="bg-orange-500 hover:bg-orange-600 text-white py-2 px-4 rounded"
-            >
-              {isSummarizing ? "Summarizing..." : "✨ Summarize"}
+              🗺️ Add to Mind Map
             </button>
 
             <button

@@ -1,4 +1,3 @@
-// hooks/useRightBrainActions.ts
 import { useState } from "react";
 import { generateMnemonic } from "@/lib/mnemonicAI";
 import summarizeText from "@/lib/aiSummary";
@@ -47,6 +46,49 @@ export function useRightBrainActions(
     }
   };
 
+  /** ── Auto Note (Top-student template) ─────────────────────────────────── */
+  const autoNote = async (seed: string) => {
+    const t = seed?.trim();
+    if (!t) {
+      alert("Select or write something first.");
+      return { template: "", mnemonic: "" };
+    }
+    setIsGenerating(true);
+    try {
+      const [summary, mnem] = await Promise.allSettled([
+        summarizeText(t),
+        generateMnemonic(t),
+      ]);
+      const bestSummary = summary.status === "fulfilled" ? summary.value : t;
+      const bestMnemonic = mnem.status === "fulfilled" ? mnem.value : "";
+
+      const template = [
+        `# Title: `,
+        ``,
+        `## Big Idea`,
+        bestSummary,
+        ``,
+        `## Evidence / Details`,
+        `- Key facts / steps`,
+        `- Exceptions / edge-cases`,
+        ``,
+        `## Visual Sketch (describe or doodle)`,
+        `- Diagram plan: boxes/arrows/labels to show relationships`,
+        ``,
+        `## Mnemonic`,
+        bestMnemonic || "…",
+        ``,
+        `## Q → A (self-test)`,
+        `- Q: …`,
+        `  A: …`,
+      ].join("\n");
+
+      return { template, mnemonic: bestMnemonic };
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   /** ── Create Flashcard ────────────────────────────────────────────────── */
   const createFlashcard = async (front: string, back = "") => {
     if (!userId) {
@@ -74,7 +116,7 @@ export function useRightBrainActions(
     pageLink: `book://${bookId ?? ""}#page=${currentPage ?? 1}`,
   });
 
-  /** ── Voice-to-Text (Web Speech API) ──────────────────────────────────── */
+  /** ── Voice-to-Text (Web Speech API) ─────────────────────────────────── */
   const startVoiceNote = (onResult: (text: string) => void) => {
     if (typeof window === "undefined") return;
     const SR: any =
@@ -147,10 +189,7 @@ export function useRightBrainActions(
   const gradeCard = async () => {
     if (!currentCard) return;
     try {
-      // Our current autoGrade just returns a suggestion; we still advance the queue.
-      await autoGradeFlashcard(
-        `${currentCard.front ?? ""} ${currentCard.back ?? ""}`.trim()
-      );
+      await autoGradeFlashcard(`${currentCard.front ?? ""} ${currentCard.back ?? ""}`.trim());
     } catch (err) {
       console.error("❌ Error auto-grading card:", err);
     } finally {
@@ -174,6 +213,7 @@ export function useRightBrainActions(
     // actions
     addMnemonic,
     addAISummary,
+    autoNote,
     createFlashcard,
     addMindMap,
     autoLinkPage,

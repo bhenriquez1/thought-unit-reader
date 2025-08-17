@@ -31,6 +31,10 @@ import {
 
 import { usePdfSelection } from "@/hooks/usePdfSelection";
 
+// 👇 used to prefill “High-Yield Note” drafts
+import summarizeText from "@/lib/aiSummary";
+import { generateMnemonic } from "@/lib/mnemonicAI";
+
 // Lazy-load to keep SSR clean
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), {
   ssr: false,
@@ -118,6 +122,9 @@ export default function ThoughtUnitReader() {
   const [wbContext, setWbContext] = useState<string>("");
   const [wbStickyNotes, setWbStickyNotes] = useState<StickyNote[]>([]);
   const lastDetectedUnitRef = useRef<string | null>(null);
+
+  // 🧠 Right-Brain prefill draft (for High-Yield / Sketch)
+  const [rbDraftText, setRbDraftText] = useState<string>("");
 
   /* =========================================================================
      🔹 Auth Listener
@@ -259,6 +266,73 @@ export default function ThoughtUnitReader() {
   };
 
   /* =========================================================================
+     🔹 High-Yield & Sketch note helpers
+  ========================================================================= */
+  async function buildHighYieldDraft(seed: string) {
+    const base = seed.trim();
+    if (!base) return "";
+    const [sum, mnem] = await Promise.allSettled([
+      summarizeText(base),
+      generateMnemonic(base),
+    ]);
+    const summary = sum.status === "fulfilled" && sum.value ? sum.value : base;
+    const mnemonic = mnem.status === "fulfilled" && mnem.value ? mnem.value : "";
+    return [
+      `# Title: `,
+      ``,
+      `## Big Idea`,
+      summary,
+      ``,
+      `## Evidence / Details`,
+      `- Key facts / steps`,
+      `- Exceptions / edge-cases`,
+      ``,
+      `## Visual Sketch (describe or doodle)`,
+      `- Diagram plan: boxes/arrows/labels to show relationships`,
+      ``,
+      `## Mnemonic`,
+      mnemonic || "…",
+      ``,
+      `## Q → A (self-test)`,
+      `- Q: …`,
+      `  A: …`,
+    ].join("\n");
+  }
+
+  const handleOpenRightBrainNote = async (
+    text?: string,
+    _mnemonic?: string,
+    mode?: "sketch" | "highYield"
+  ) => {
+    const seed = (text || sel.selectionText || "").trim();
+    if (!seed) {
+      alert("Select text first.");
+      return;
+    }
+
+    if (mode === "highYield") {
+      const draft = await buildHighYieldDraft(seed);
+      setRbDraftText(draft);
+    } else if (mode === "sketch") {
+      setRbDraftText(
+        [
+          `# Sketch Note`,
+          ``,
+          `What I see:`,
+          `- Shapes / arrows / labels…`,
+          ``,
+          `Idea in one line:`,
+          seed,
+        ].join("\n")
+      );
+    } else {
+      setRbDraftText(seed);
+    }
+
+    setViewMode("rightbrain");
+  };
+
+  /* =========================================================================
      🔹 Render Reader Content
   ========================================================================= */
   const renderContent = () => {
@@ -266,10 +340,13 @@ export default function ThoughtUnitReader() {
       return (
         <RightBrainNoteEditor
           bookId={bookId}
-          initialText={sel.selectionText}
+          initialText={rbDraftText || sel.selectionText}
           attachments={attachments}
           currentPage={currentPage}
-          onDone={() => setViewMode("progressive")}
+          onDone={() => {
+            setRbDraftText("");
+            setViewMode("progressive");
+          }}
         />
       );
     }
@@ -296,6 +373,8 @@ export default function ThoughtUnitReader() {
           onTextSelect={(t) => sel.setSelectionText(t)}
           selBind={sel.bind}
           externalSelectionText={sel.selectionText}
+          // 👇 NEW: open Right-Brain with templates
+          onGenerateNote={handleOpenRightBrainNote}
         />
       );
     }
@@ -328,6 +407,8 @@ export default function ThoughtUnitReader() {
           onTextSelect={(t) => sel.setSelectionText(t)}
           selBind={sel.bind}
           externalSelectionText={sel.selectionText}
+          // 👇 NEW: open Right-Brain with templates
+          onGenerateNote={handleOpenRightBrainNote}
         />
       );
     }
@@ -485,7 +566,7 @@ export default function ThoughtUnitReader() {
               }
               lessonId={bookId}
               userId={USER_ID}
-              /** NEW: keep whiteboard synced as you page around */
+              /** keep whiteboard synced as you page around */
               reExplainOnPageChange
               currentPage={currentPage}
             />

@@ -1,7 +1,6 @@
-// components/ProgressiveView.tsx
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import type { ThoughtUnit as BaseThoughtUnit, ReadingStats } from "@/types/reading";
@@ -30,12 +29,65 @@ interface ProgressiveViewProps {
   onWordClick?: (word: string) => void;
   setReadingSpeed?: (speed: number) => void;
   onTextSelect?: (text: string) => void;
-  onGenerateNote?: (text: string, mnemonic?: string) => void;
+  /** parent handler → opens global Right-Brain (with templates) */
+  onGenerateNote?: (text: string, mnemonic?: string, mode?: "sketch" | "highYield") => void;
 
   /** Unify with usePdfSelection — spread this so selections go through the same pipeline */
   selBind?: { onMouseUp?: (e: React.MouseEvent) => void };
   /** Optional: pass the hook’s live selection text down (e.g., from index.tsx) */
   externalSelectionText?: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Right-Brain “idea chunking” — simple, robust chunker for phrases   */
+/* ------------------------------------------------------------------ */
+function chunkIntoIdeas(text: string): string[] {
+  const T = (text || "").replace(/\s+/g, " ").trim();
+  if (!T) return [];
+
+  // Split into sentences conservatively
+  const sentences = T.split(/(?<=[.!?])\s+(?=[A-Z(])/).map((s) => s.trim()).filter(Boolean);
+
+  const chunks: string[] = [];
+  for (const s of sentences) {
+    // Micro-split long sentences on punctuation/conjunctions
+    const parts = s
+      .split(/\s*(?:;|:|—|–|--|, and |, but | and | but | however | whereas )\s*/i)
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    for (const p of parts) {
+      const tokens = p.split(/\s+/).filter(Boolean);
+
+      // Prefer windows around “information-dense” tokens (caps, numbers)
+      const info = tokens.map((w) => (/[A-Z]\w+/.test(w) || /\d/.test(w) ? 2 : 1));
+
+      for (let i = 0; i < tokens.length; ) {
+        // Window size: 2–6, expand a bit if the window is low-info
+        let win = 3;
+        let score = 0;
+        while (win < 6 && i + win <= tokens.length && score < win + 1) {
+          score = info.slice(i, i + win).reduce((a, b) => a + b, 0);
+          if (score < win + 1) win++;
+          else break;
+        }
+        if (i + win > tokens.length) win = tokens.length - i;
+        chunks.push(tokens.slice(i, i + win).join(" "));
+        i += win;
+      }
+    }
+  }
+
+  return chunks.length ? chunks : [T];
+}
+
+/** Normalize any unit → text */
+function unitToText(u: PVUnit): string {
+  if (u == null) return "";
+  if (typeof u === "string") return u;
+  if (Array.isArray(u)) return u.join(" ");
+  const maybeText = (u as any).text;
+  return typeof maybeText === "string" ? maybeText : JSON.stringify(u);
 }
 
 export default function ProgressiveView({
@@ -52,8 +104,7 @@ export default function ProgressiveView({
   onWordClick,
   setReadingSpeed,
   onTextSelect,
-  onGenerateNote,
-
+  onGenerateNote, // parent handler
   selBind,
   externalSelectionText,
 }: ProgressiveViewProps) {
@@ -61,7 +112,7 @@ export default function ProgressiveView({
   const [selectionText, setSelectionText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [dictationText, setDictationText] = useState("");
-  const [showNoteEditor, setShowNoteEditor] = useState(false);
+  const [showNoteEditor, setShowNoteEditor] = useState(false); // fallback local editor
   const recognitionRef = useRef<any>(null);
 
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
@@ -146,7 +197,7 @@ export default function ProgressiveView({
     })();
   }, [loaded, userId, bookId, currentThoughtUnit, readingSpeed, highlightedWord, currentPage]);
 
-  /* -------------------- Selection (fallback for when selBind isn’t provided) -------------------- */
+  /* -------------------- Selection (fallback) -------------------- */
   const getSelectionText = () =>
     (typeof window !== "undefined" ? window.getSelection()?.toString().trim() : "") || "";
 
@@ -154,15 +205,6 @@ export default function ProgressiveView({
     const selection = getSelectionText();
     setSelectionText(selection);
     onTextSelect?.(selection);
-  };
-
-  /* -------------------- Normalize any unit → text -------------------- */
-  const unitToText = (u: PVUnit): string => {
-    if (u == null) return "";
-    if (typeof u === "string") return u;
-    if (Array.isArray(u)) return u.join(" ");
-    const maybeText = (u as any).text;
-    return typeof maybeText === "string" ? maybeText : JSON.stringify(u);
   };
 
   /* -------------------- Empty states -------------------- */
@@ -191,6 +233,25 @@ export default function ProgressiveView({
 
   const unitText = unitToText(rawUnit);
 
+  /* -------------------- Right-Brain idea chunks -------------------- */
+  const chunks = useMemo(() => chunkIntoIdeas(unitText), [unitText]);
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  // Reset when unit text changes
+  useEffect(() => setActiveIdx(0), [unitText]);
+
+  // Advance based on readingSpeed (WPM → ms per chunk)
+  useEffect(() => {
+    if (!chunks.length) return;
+    // conservative: base on WPM, but ensure a comfy minimum
+    const msPerChunk = Math.max(600, (60_000 / Math.max(120, readingSpeed)) * 1.2);
+    const t = window.setInterval(
+      () => setActiveIdx((i) => (i + 1) % chunks.length),
+      msPerChunk
+    );
+    return () => window.clearInterval(t);
+  }, [chunks.length, readingSpeed]);
+
   /* -------------------- Review mode -------------------- */
   if (isReviewMode) {
     return (
@@ -218,6 +279,16 @@ export default function ProgressiveView({
   /* -------------------- Effective selection text -------------------- */
   const effectiveSelection = (externalSelectionText?.trim() || selectionText || dictationText).trim();
 
+  /* --------------- Forward note generation (global/fallback) --------------- */
+  const forwardGenerateNote = (text?: string, mnemonic?: string, mode?: "sketch" | "highYield") => {
+    if (onGenerateNote) {
+      onGenerateNote(text ?? effectiveSelection, mnemonic, mode);
+    } else {
+      // fallback to local modal if parent didn’t supply a handler
+      setShowNoteEditor(true);
+    }
+  };
+
   /* -------------------- Main UI -------------------- */
   return (
     <>
@@ -226,24 +297,51 @@ export default function ProgressiveView({
         style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
         onMouseUp={selBind?.onMouseUp ?? handleMouseUp}
       >
-        {unitText.split(" ").map((word, idx) => (
-          <span
-            key={idx}
-            className={
-              word === highlightedWord
-                ? "bg-yellow-400 text-black px-1 rounded"
-                : "hover:bg-gray-700 cursor-pointer px-1 rounded"
-            }
-            onClick={() => {
-              onWordClick?.(word);
-              // Push into the unified selection pipeline
-              setSelectionText(word);
-              onTextSelect?.(word);
-            }}
-          >
-            {word}{" "}
-          </span>
-        ))}
+        {/* Idea-chunk rendering; fallback to words if chunking yields 0 */}
+        {chunks.length > 0 ? (
+          <div>
+            {chunks.map((chunk, idx) => {
+              const isActive = idx === activeIdx;
+              const includesHighlight =
+                highlightedWord && new RegExp(`\\b${highlightedWord}\\b`).test(chunk);
+
+              return (
+                <span
+                  key={idx}
+                  className={`idea-chunk ${isActive ? "active" : ""} ${
+                    includesHighlight ? "hl" : ""
+                  } cursor-pointer`}
+                  onClick={() => {
+                    onWordClick?.(chunk);
+                    setSelectionText(chunk);
+                    onTextSelect?.(chunk);
+                    setActiveIdx(idx);
+                  }}
+                >
+                  {chunk}{" "}
+                </span>
+              );
+            })}
+          </div>
+        ) : (
+          unitText.split(" ").map((word, idx) => (
+            <span
+              key={idx}
+              className={
+                word === highlightedWord
+                  ? "bg-yellow-400 text-black px-1 rounded"
+                  : "hover:bg-gray-700 cursor-pointer px-1 rounded"
+              }
+              onClick={() => {
+                onWordClick?.(word);
+                setSelectionText(word);
+                onTextSelect?.(word);
+              }}
+            >
+              {word}{" "}
+            </span>
+          ))
+        )}
 
         <div className="mt-4">
           <button
@@ -264,11 +362,12 @@ export default function ProgressiveView({
           bookId={bookId}
           currentPage={currentPage}
           selectionText={effectiveSelection}
-          onGenerateNote={() => setShowNoteEditor(true)}
+          onGenerateNote={forwardGenerateNote}
           startReview={startReview}
         />
       </div>
 
+      {/* Fallback local editor (used only if parent didn’t handle onGenerateNote) */}
       {showNoteEditor && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-6">
           <div className="bg-gray-900 p-4 rounded-lg w-full max-w-2xl">
@@ -281,6 +380,38 @@ export default function ProgressiveView({
           </div>
         </div>
       )}
+
+      {/* Local styles for gentle idea-pulse */}
+      <style jsx>{`
+        @keyframes ideaPulse {
+          0% {
+            box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.35);
+            background: rgba(250, 204, 21, 0.12);
+          }
+          70% {
+            box-shadow: 0 0 0 10px rgba(250, 204, 21, 0);
+            background: rgba(250, 204, 21, 0.18);
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(250, 204, 21, 0);
+            background: rgba(250, 204, 21, 0.12);
+          }
+        }
+        .idea-chunk {
+          border-radius: 0.25rem;
+          padding: 0 0.15rem;
+          transition: background 120ms ease;
+        }
+        .idea-chunk.active {
+          animation: ideaPulse 1200ms ease-out;
+        }
+        .idea-chunk:hover {
+          background: rgba(250, 204, 21, 0.22);
+        }
+        .idea-chunk.hl {
+          outline: 1px solid rgba(250, 204, 21, 0.5);
+        }
+      `}</style>
     </>
   );
 }

@@ -1,4 +1,5 @@
-// components/RightBrainToolbar.tsx
+"use client";
+
 import React, { useState, useRef, useEffect } from "react";
 import { generateMnemonic } from "@/lib/mnemonicAI";
 import { createFlashcardFromSelection } from "@/lib/flashcardService";
@@ -9,12 +10,18 @@ interface RightBrainToolbarProps {
   userId: string;
   bookId: string;
   currentPage: number;
+  /** unified selection text passed down from Progressive/Hybrid/PDF */
   selectionText: string;
-  onGenerateNote?: (text: string, mnemonic?: string, mode?: "sketch" | "highYield") => void;
+  /** open editor and optionally seed text/mnemonic/template mode */
+  onGenerateNote?: (
+    text: string,
+    mnemonic?: string,
+    mode?: "sketch" | "highYield"
+  ) => void;
   startReview?: () => void;
 }
 
-/** Minimal local speech-synthesis hook (no peer deps) */
+/** Simple local speech synthesis (no deps) */
 function useLocalSpeechSynthesis() {
   const speak = ({ text }: { text: string }) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
@@ -39,18 +46,18 @@ export default function RightBrainToolbar({
   currentPage,
   selectionText,
   onGenerateNote,
-  startReview
+  startReview,
 }: RightBrainToolbarProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isDictationOn, setIsDictationOn] = useState(false);
-  const recognitionRef = useRef<any>(null); // keep 'any' to avoid DOM typings issues
+  const recognitionRef = useRef<any>(null);
   const { speak } = useLocalSpeechSynthesis();
 
-  // 🎙️ Dictation (Web Speech API)
+  // 🎙️ Dictation
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const SR =
+    const SR: any =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return;
 
@@ -78,9 +85,17 @@ export default function RightBrainToolbar({
     const rec = recognitionRef.current;
     if (!rec) return;
     if (isDictationOn) {
-      try { rec.start(); } catch { /* already started */ }
+      try {
+        rec.start();
+      } catch {
+        /* already started */
+      }
     } else {
-      try { rec.stop(); } catch { /* ignore */ }
+      try {
+        rec.stop();
+      } catch {
+        /* ignore */
+      }
     }
   }, [isDictationOn]);
 
@@ -121,15 +136,24 @@ export default function RightBrainToolbar({
 
   const handleCreateFlashcard = async () => {
     if (!selectionText) return alert("Select text first.");
-    // ✅ current service accepts ONE argument; we’ll add page support in Step 2
-    await createFlashcardFromSelection(selectionText);
-    alert("📇 Flashcard created");
+    try {
+      await createFlashcardFromSelection(selectionText);
+      alert("📇 Flashcard created");
+    } catch (err) {
+      console.error("❌ Flashcard create failed:", err);
+      alert("Failed to create flashcard.");
+    }
   };
 
   const handleAddMindMap = async () => {
     if (!selectionText) return alert("Select text first.");
-    await addMindMapNode(selectionText, currentPage);
-    alert("🧠 Added to Mind Map");
+    try {
+      await addMindMapNode(selectionText, currentPage);
+      alert("🧠 Added to Mind Map");
+    } catch (err) {
+      console.error("❌ Mind map add failed:", err);
+      alert("Failed to add to mind map.");
+    }
   };
 
   const handleSketchNote = () => {
@@ -161,7 +185,9 @@ export default function RightBrainToolbar({
       <button
         onClick={handleAISummary}
         disabled={isGenerating}
-        className={`px-3 py-1 rounded text-white ${isGenerating ? "bg-gray-500" : "bg-orange-500 hover:bg-orange-600"}`}
+        className={`px-3 py-1 rounded text-white ${
+          isGenerating ? "bg-gray-500" : "bg-orange-500 hover:bg-orange-600"
+        }`}
       >
         {isGenerating ? "Summarizing..." : "📝 AI Summary"}
       </button>
@@ -180,7 +206,9 @@ export default function RightBrainToolbar({
       <button
         onClick={handleAddMnemonic}
         disabled={isGenerating}
-        className={`px-3 py-1 rounded text-white ${isGenerating ? "bg-gray-500" : "bg-purple-500 hover:bg-purple-600"}`}
+        className={`px-3 py-1 rounded text-white ${
+          isGenerating ? "bg-gray-500" : "bg-purple-500 hover:bg-purple-600"
+        }`}
       >
         🧠 Add Mnemonic
       </button>
