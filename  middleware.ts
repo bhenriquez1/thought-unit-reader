@@ -2,9 +2,21 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const ENABLED = process.env.PREVIEW_LOCK_ENABLED === "1";
+/**
+ * Two independent gates you can toggle via env:
+ *
+ * 1) PREVIEW_LOCK_ENABLED=1
+ *    - simple preview/password gate (uses `preview_auth=1` cookie)
+ *
+ * 2) AUTH_LOCK_ENABLED=1
+ *    - requires a Firebase session cookie set by the client (`rb_token` or `rb_uid`)
+ *    - middleware can’t show UI, so it redirects to /signin when missing
+ */
 
-// Exact paths that must bypass the lock
+const PREVIEW_ENABLED = process.env.PREVIEW_LOCK_ENABLED === "1";
+const AUTH_ENABLED = process.env.AUTH_LOCK_ENABLED === "1";
+
+// Exact paths that should always bypass
 const BYPASS_EXACT = new Set<string>([
   "/preview-login",
   "/api/preview-login",
@@ -14,42 +26,66 @@ const BYPASS_EXACT = new Set<string>([
   "/robots.txt",
   "/favicon.ico",
   "/openapi.yaml",
+  "/signin", // allow sign-in page
 ]);
 
-// Prefixes that should always pass (static assets, Next internals, etc.)
+// Prefixes that should always pass (static assets, Next internals, API)
 const BYPASS_PREFIXES = [
-  "/_next/",        // Next.js internal assets
+  "/_next/",
   "/images/",
   "/assets/",
   "/fonts/",
+  "/api/",
 ];
 
 export function middleware(req: NextRequest) {
-  if (!ENABLED) return NextResponse.next();
-
   const { pathname } = req.nextUrl;
 
   // Allow specific exact paths
   if (BYPASS_EXACT.has(pathname)) return NextResponse.next();
 
-  // Allow known static prefixes
+  // Allow known static/api prefixes
   if (BYPASS_PREFIXES.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 
-  // Require preview cookie for everything else
-  const authed = req.cookies.get("preview_auth")?.value === "1";
-  if (authed) return NextResponse.next();
+  // --- Preview lock (optional) ---
+  if (PREVIEW_ENABLED) {
+    const authed = req.cookies.get("preview_auth")?.value === "1";
+    if (!authed) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/preview-login";
+      url.searchParams.set("next", pathname + (req.nextUrl.search ?? ""));
+      return NextResponse.redirect(url);
+    }
+  }
 
-  // Redirect to login page, preserving the original path
-  const url = req.nextUrl.clone();
-  url.pathname = "/preview-login";
-  url.searchParams.set("next", pathname);
-  return NextResponse.redirect(url);
+  // --- Auth lock (optional) ---
+  if (AUTH_ENABLED) {
+    const isPublic =
+      pathname === "/" ||
+      pathname.startsWith("/signin") ||
+      pathname.startsWith("/privacy") ||
+      pathname.startsWith("/terms");
+
+    if (!isPublic) {
+      const hasSession =
+        Boolean(req.cookies.get("rb_token")?.value) ||
+        Boolean(req.cookies.get("rb_uid")?.value);
+
+      if (!hasSession) {
+        const url = req.nextUrl.clone();
+        url.pathname = "/signin";
+        url.searchParams.set("from", pathname + (req.nextUrl.search ?? ""));
+        return NextResponse.redirect(url);
+      }
+    }
+  }
+
+  return NextResponse.next();
 }
 
-// Match "almost everything", but skip obvious static files by extension.
-// (pdf.worker is explicitly allowed above)
+// Match “almost everything”, but skip obvious static files by extension.
 export const config = {
   matcher: [
     "/((?!_next/static|_next/image|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|map)).*)",

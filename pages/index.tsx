@@ -31,14 +31,12 @@ import {
 
 import { usePdfSelection } from "@/hooks/usePdfSelection";
 
-// 👇 used to prefill “High-Yield Note” drafts
+// Prefill helpers for High-Yield notes
 import summarizeText from "@/lib/aiSummary";
 import { generateMnemonic } from "@/lib/mnemonicAI";
 
 // Lazy-load to keep SSR clean
-const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), {
-  ssr: false,
-});
+const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
 
 type StickyNote = { pageNumber: number; content: string };
 
@@ -217,9 +215,7 @@ export default function ThoughtUnitReader() {
         const firstIdx = matches[0];
 
         const conceptText =
-          unitToString((parsedUnits as any[])[firstIdx]) ||
-          normalized[firstIdx]?.text ||
-          "";
+          unitToString((parsedUnits as any[])[firstIdx]) || normalized[firstIdx]?.text || "";
 
         lastDetectedUnitRef.current = conceptText;
 
@@ -271,10 +267,7 @@ export default function ThoughtUnitReader() {
   async function buildHighYieldDraft(seed: string) {
     const base = seed.trim();
     if (!base) return "";
-    const [sum, mnem] = await Promise.allSettled([
-      summarizeText(base),
-      generateMnemonic(base),
-    ]);
+    const [sum, mnem] = await Promise.allSettled([summarizeText(base), generateMnemonic(base)]);
     const summary = sum.status === "fulfilled" && sum.value ? sum.value : base;
     const mnemonic = mnem.status === "fulfilled" && mnem.value ? mnem.value : "";
     return [
@@ -373,16 +366,16 @@ export default function ThoughtUnitReader() {
           onTextSelect={(t) => sel.setSelectionText(t)}
           selBind={sel.bind}
           externalSelectionText={sel.selectionText}
-          // 👇 open Right-Brain with templates
+          // open Right-Brain with templates
           onGenerateNote={handleOpenRightBrainNote}
         />
       );
     }
 
     if (viewMode === "hybrid") {
+      // Note: do NOT pass `fileUrl`—the current HybridReader props don’t include it.
       return (
         <HybridReader
-          fileUrl={fileUrl || ""}
           pdfId={bookId}
           userId={USER_ID}
           sampleText={sampleText}
@@ -407,7 +400,7 @@ export default function ThoughtUnitReader() {
           onTextSelect={(t) => sel.setSelectionText(t)}
           selBind={sel.bind}
           externalSelectionText={sel.selectionText}
-          // 👇 open Right-Brain with templates
+          // open Right-Brain with templates
           onGenerateNote={handleOpenRightBrainNote}
         />
       );
@@ -560,7 +553,7 @@ export default function ThoughtUnitReader() {
               concept={wbConcept}
               context={wbContext}
               stickyNotes={wbStickyNotes}
-              autoTrigger={true}
+              autoTrigger
               lessonTitle={
                 uploadedFile?.name ? `Whiteboard — ${uploadedFile.name}` : "Whiteboard Lesson"
               }
@@ -633,7 +626,7 @@ export default function ThoughtUnitReader() {
         <HighlightPopup
           position={sel.popupPosition}
           selectionText={sel.selectionText}
-          // ⚙️ open Right-Brain with the current selection
+          // Open Right-Brain with the current selection
           onCreateNote={() => handleOpenRightBrainNote(sel.selectionText)}
           onCreateDetailedNote={async () => {
             const note = await sel.createDetailedNote({
@@ -641,7 +634,6 @@ export default function ThoughtUnitReader() {
               style: "detailed",
             });
             if (note) {
-              // prime Right-Brain with the generated detailed note
               await handleOpenRightBrainNote(note, undefined, "highYield");
             } else {
               setViewMode("rightbrain");
