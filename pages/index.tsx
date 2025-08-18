@@ -106,8 +106,8 @@ function getTocPage(t: TOCEntry): number | undefined {
 }
 
 function titleForPage(toc: TOCEntry[], page: number): string {
-  // Exact match first
-  const exact = toc.find((t) => getTocPage(t) === page)?.title;
+  // Exact match first (cast to avoid TS complaining about unknown shape)
+  const exact = (toc.find((t) => getTocPage(t) === page) as any)?.title;
   if (exact) return String(exact);
 
   // Otherwise pick nearest previous heading
@@ -463,7 +463,7 @@ export default function ThoughtUnitReader() {
     [thoughtUnits, currentThoughtUnit]
   );
   const progressiveChunks = useMemo(() => chunkIntoIdeas(activeUnitText), [activeUnitText]);
-  the const [progActiveIdx, setProgActiveIdx] = useState(0);
+  const [progActiveIdx, setProgActiveIdx] = useState(0);
   useEffect(() => setProgActiveIdx(0), [currentThoughtUnit]);
 
   useEffect(() => {
@@ -489,7 +489,7 @@ export default function ThoughtUnitReader() {
       const seed = conceptForPage(page, thoughtUnits, pdfPageCount);
       if (seed) {
         setWbConcept(truncate(seed, 600));
-        const title = titleForPage(tableOfContents, page); // ← ✅ use tolerant helper
+        const title = titleForPage(tableOfContents, page); // tolerant helper
         setWbContext(title);
         setShowWhiteboardPanel(true);
       }
@@ -543,7 +543,7 @@ export default function ThoughtUnitReader() {
               setHighlightedWord(text.split(/\s+/)[0] || "");
               if (autoWhiteboard) {
                 setWbConcept(truncate(text, 600));
-                setWbContext(titleForPage(tableOfContents, currentPage)); // ← ✅
+                setWbContext(titleForPage(tableOfContents, currentPage));
                 setShowWhiteboardPanel(true);
               }
             }}
