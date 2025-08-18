@@ -8,7 +8,7 @@ import { useStartReview } from "@/hooks/useStartReview";
 
 import { chunkText, stableChunkId } from "@/lib/chunkers";
 import { loadUnderstood, markUnderstood } from "@/lib/understoodStore";
-import ProgressRing from "@/components/ui/ProgressRing"; // ⬅️ NEW
+import ProgressRing from "@/components/ProgressRing"; // ⬅️ NEW
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
