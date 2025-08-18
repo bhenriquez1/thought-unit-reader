@@ -8,7 +8,7 @@ import { useStartReview } from "@/hooks/useStartReview";
 
 import { chunkText, stableChunkId } from "@/lib/chunkers";
 import { loadUnderstood, markUnderstood } from "@/lib/understoodStore";
-import ProgressRing from "@/components/ProgressRing"; // ⬅️ NEW
+import ProgressRing from "@/components/ProgressRing";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -329,6 +329,7 @@ export default function HybridReader({
     [chunks, understoodMap]
   );
   const understoodPct = chunks.length ? Math.round((understoodCount / chunks.length) * 100) : 0;
+  const ringValue = understoodPct / 100;
 
   /* -------------------- Main dual-panel UI -------------------- */
   return (
@@ -405,7 +406,7 @@ export default function HybridReader({
 
             {/* progress ring + count */}
             <div className="flex items-center gap-1 ml-2">
-              <ProgressRing percent={understoodPct} size={28} />
+              <ProgressRing value={ringValue} size={28} label={`${understoodPct}%`} />
               <span className="text-[11px] opacity-75">{understoodCount}/{chunks.length}</span>
             </div>
 

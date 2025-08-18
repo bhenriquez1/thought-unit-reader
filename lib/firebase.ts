@@ -78,7 +78,6 @@ const firebaseConnected =
    🔹 Auth persistence (handles Private Browsing)
    ========================================================================= */
 if (typeof window !== "undefined") {
-  // Try durable storage; if blocked (Safari Private, iframe, etc.), fall back in-memory.
   setPersistence(auth, browserLocalPersistence).catch(() =>
     setPersistence(auth, inMemoryPersistence).catch(() => {
       /* ignore */
@@ -135,7 +134,6 @@ function shouldUseRedirect(): boolean {
       return true;
     }
   })();
-  // Popup auth is flaky in these environments — prefer redirect.
   return isIOS || isSafari || inIframe;
 }
 
@@ -181,10 +179,9 @@ export async function signInWithGoogle(): Promise<User | null> {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
 
-  // Some environments should default to redirect
   if (typeof window !== "undefined" && shouldUseRedirect()) {
     await signInWithRedirect(auth, provider);
-    return null; // Result delivered after redirect; see handleRedirectResult()
+    return null; // Result after redirect; see handleRedirectResult()
   }
 
   try {
@@ -216,9 +213,7 @@ export async function handleRedirectResult(): Promise<User | null> {
     return null;
   } catch (err) {
     console.error("❌ Redirect result error:", err);
-    if (typeof window !== "undefined") {
-      alert(readableAuthError(err));
-    }
+    if (typeof window !== "undefined") alert(readableAuthError(err));
     return null;
   }
 }
@@ -277,7 +272,7 @@ export async function deletePDF(userId: string, pdfId: string, pdfName: string) 
 }
 
 /* =========================================================================
-   🔹 Reading Progress (shared path + guest fallback)
+   🔹 Reading Progress (now matches rules: /users/{uid}/books/{bookId}/progress)
    ========================================================================= */
 type ProgressPatch = Partial<{
   currentPage: number;
@@ -286,20 +281,19 @@ type ProgressPatch = Partial<{
   readingSpeed: number;
 }>;
 
-const LS_KEY = (uid: string, pdfId: string) => `rp::${uid || "guest"}::${pdfId}`;
+const LS_KEY = (uid: string, bookId: string) => `rp::${uid || "guest"}::book::${bookId}`;
 
 export async function saveReadingProgress(
   userId: string,
-  pdfId: string,
+  bookId: string,
   progress: ProgressPatch
 ): Promise<void> {
   const uid = userId || "guest-user";
   const isGuest = !firebaseConnected || uid === "guest-user";
 
   if (isGuest) {
-    // LocalStorage fallback so Progressive/Hybrid still “remember” for guests
     try {
-      const key = LS_KEY(uid, pdfId);
+      const key = LS_KEY(uid, bookId);
       const prev = JSON.parse(localStorage.getItem(key) || "{}");
       localStorage.setItem(
         key,
@@ -311,31 +305,27 @@ export async function saveReadingProgress(
     return;
   }
 
-  const docRef = doc(db, "users", uid, "readingProgress", pdfId);
-  await setDoc(
-    docRef,
-    { ...progress, updatedAt: new Date().toISOString() },
-    { merge: true }
-  );
+  const docRef = doc(db, "users", uid, "books", bookId, "progress");
+  await setDoc(docRef, { ...progress, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
 export async function loadReadingProgress(
   userId: string,
-  pdfId: string
+  bookId: string
 ): Promise<ProgressPatch | null> {
   const uid = userId || "guest-user";
   const isGuest = !firebaseConnected || uid === "guest-user";
 
   if (isGuest) {
     try {
-      const raw = localStorage.getItem(LS_KEY(uid, pdfId));
+      const raw = localStorage.getItem(LS_KEY(uid, bookId));
       return raw ? (JSON.parse(raw) as ProgressPatch) : null;
     } catch {
       return null;
     }
   }
 
-  const docRef = doc(db, "users", uid, "readingProgress", pdfId);
+  const docRef = doc(db, "users", uid, "books", bookId, "progress");
   const snap = await getDoc(docRef);
   return snap.exists() ? (snap.data() as ProgressPatch) : null;
 }

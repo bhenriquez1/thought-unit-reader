@@ -30,7 +30,6 @@ import {
 } from "@/lib/parser";
 
 import { usePdfSelection } from "@/hooks/usePdfSelection";
-
 import summarizeText from "@/lib/aiSummary";
 import { generateMnemonic } from "@/lib/mnemonicAI";
 
@@ -130,7 +129,7 @@ function highlightChunkInPDF(pageNumber: number, text: string) {
   if (!layer || !text.trim()) return;
 
   // clear old
-  layer.querySelectorAll(".pdf-hit").forEach((el) => el.classList.remove("pdf-hit"));
+  layer.querySelectorAll(".pdf-hit").forEach((el) => el.classList.remove("pdf-hit", "active"));
 
   const spans = Array.from(layer.querySelectorAll("span"));
   const needle = text.replace(/\s+/g, " ").trim().toLowerCase();
@@ -144,7 +143,10 @@ function highlightChunkInPDF(pageNumber: number, text: string) {
     acc = (acc ? acc + " " : "") + piece;
     const hay = acc.toLowerCase();
     if (hay.includes(needle)) {
-      for (let j = start; j <= i; j++) spans[j].classList.add("pdf-hit");
+      for (let j = start; j <= i; j++) {
+        spans[j].classList.add("pdf-hit");
+        if (j === start) (spans[j] as HTMLElement).classList.add("active");
+      }
       (spans[start] as HTMLElement).scrollIntoView({ block: "center", behavior: "smooth" });
       break;
     }
@@ -320,6 +322,8 @@ export default function ThoughtUnitReader() {
   useEffect(() => {
     if (firebaseConnected && user) {
       getPDFLibrary(USER_ID).then(setPdfLibrary);
+    } else {
+      setPdfLibrary([]); // clear when signed out
     }
   }, [user, showLibrary]);
 
@@ -541,7 +545,7 @@ export default function ThoughtUnitReader() {
       const seed = conceptForPage(page, thoughtUnits, pdfPageCount);
       if (seed) {
         setWbConcept(truncate(seed, 600));
-        const title = titleForPage(tableOfContents, page); // tolerant helper
+        const title = titleForPage(tableOfContents, page);
         setWbContext(title);
         setShowWhiteboardPanel(true);
       }
@@ -674,7 +678,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // Original view (PDF) — hook selection for popup/actions
+    // Original view (PDF)
     return fileUrl ? (
       <div className="h-full" onMouseUp={sel.bind.onMouseUp}>
         <SmartPDFViewer
@@ -953,14 +957,6 @@ export default function ThoughtUnitReader() {
           }}
         />
       )}
-
-      {/* global styles for PDF highlights */}
-      <style jsx global>{`
-        .pdf-hit {
-          background: rgba(250, 204, 21, 0.5) !important; /* yellow */
-          border-radius: 3px;
-        }
-      `}</style>
     </div>
   );
 }
