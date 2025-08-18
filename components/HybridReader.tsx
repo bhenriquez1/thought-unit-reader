@@ -9,35 +9,41 @@ import { useStartReview } from "@/hooks/useStartReview";
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
 interface HybridReaderProps {
-  fileUrl: string;
-  pdfId: string;
+  /** ✅ canonical id (was pdfId) */
+  bookId: string;
   userId: string;
+
   sampleText: string;
   currentPage: number;
   pdfPageCount?: number;
+
   readingSpeed?: number;
   isReading?: boolean;
   isPaused?: boolean;
+
   currentThoughtUnit: number;
-  setCurrentThoughtUnit: (unit: number) => void;
+  setCurrentThoughtUnit: React.Dispatch<React.SetStateAction<number>>;
   thoughtUnits: HRUnit[];
+
   highlightedWord: string;
   setHighlightedWord: (word: string) => void;
+
   stats?: ReadingStats;
   fontSize: number;
   fontFamily: string;
   lineSpacing: number;
   clickSwitchesTo?: boolean;
+
   onWordClick: (word: string) => void;
   setReadingSpeed?: (speed: number) => void;
   setCurrentPage: (page: number) => void;
+
   onTextSelect?: (text: string) => void;
-  /** align with toolbar: allow optional mode */
   onGenerateNote?: (text: string, mnemonic?: string, mode?: "sketch" | "highYield") => void;
 
   /** Unified selection binding from usePdfSelection() */
   selBind?: { onMouseUp?: (e: React.MouseEvent) => void };
-  /** Optional: pass the hook’s live selection text (keeps popup/notes in sync) */
+  /** Pass the hook’s live selection (keeps popup/notes in sync) */
   externalSelectionText?: string;
 }
 
@@ -80,11 +86,9 @@ function chunkIntoIdeas(text: string): string[] {
       }
     }
   }
-
   return chunks.length ? chunks : [T];
 }
 
-/** pick a “key token” to lightly highlight in Original view */
 function keyTokenFromChunk(chunk: string): string | null {
   const words = (chunk || "").split(/\s+/).filter(Boolean);
   const scored = words
@@ -96,13 +100,15 @@ function keyTokenFromChunk(chunk: string): string | null {
   return scored[0]?.w || null;
 }
 
-/** render Original text with a subtle highlight for token */
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 function renderOriginalWithCue(
   text: string,
   token: string | null,
   styleClasses = "bg-yellow-500/20 rounded px-0.5"
 ) {
-  if (!token || !token.trim()) return <p>{text || "📄 Original text will appear here."}</p>;
+  if (!token?.trim()) return <p>{text || "📄 Original text will appear here."}</p>;
   try {
     const re = new RegExp(`(${escapeRegExp(token)})`, "gi");
     const parts = (text || "").split(re);
@@ -123,12 +129,9 @@ function renderOriginalWithCue(
     return <p>{text}</p>;
   }
 }
-function escapeRegExp(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 export default function HybridReader({
-  pdfId,
+  bookId,
   userId,
   thoughtUnits,
   currentThoughtUnit,
@@ -145,48 +148,49 @@ export default function HybridReader({
   currentPage,
   setCurrentPage,
   readingSpeed = 200,
+  setReadingSpeed,
   selBind,
   externalSelectionText,
 }: HybridReaderProps) {
   const [selectionText, setSelectionText] = useState("");
 
-  // Review flow (one hook call at top-level; pass result down)
+  // Review flow
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
   /* -------------------- Load saved reading progress -------------------- */
   useEffect(() => {
-    if (!userId || !pdfId) return;
-    loadReadingProgress(userId, pdfId).then((progress: any) => {
+    if (!userId || !bookId) return;
+    loadReadingProgress(userId, bookId).then((progress: any) => {
       if (!progress) return;
       if (typeof progress.currentPage === "number") setCurrentPage(progress.currentPage);
       if (typeof progress.currentThoughtUnit === "number")
         setCurrentThoughtUnit(progress.currentThoughtUnit);
       if (typeof progress.highlightedWord === "string") setHighlightedWord(progress.highlightedWord);
+      if (typeof progress.readingSpeed === "number") setReadingSpeed?.(progress.readingSpeed);
     });
-  }, [userId, pdfId, setCurrentPage, setCurrentThoughtUnit, setHighlightedWord]);
+  }, [userId, bookId, setCurrentPage, setCurrentThoughtUnit, setHighlightedWord, setReadingSpeed]);
 
   /* -------------------- Save reading progress -------------------- */
   useEffect(() => {
-    if (!userId || !pdfId) return;
-    saveReadingProgress(userId, pdfId, {
+    if (!userId || !bookId) return;
+    saveReadingProgress(userId, bookId, {
       currentPage,
       currentThoughtUnit,
       highlightedWord,
-    });
-  }, [userId, pdfId, currentPage, currentThoughtUnit, highlightedWord]);
+      readingSpeed,
+    }).catch(() => {});
+  }, [userId, bookId, currentPage, currentThoughtUnit, highlightedWord, readingSpeed]);
 
-  /* -------------------- Fallback selection (when selBind isn’t provided) -------------------- */
-  const getSelectionText = () =>
-    (typeof window !== "undefined" ? window.getSelection()?.toString().trim() : "") || "";
-
+  /* -------------------- Fallback selection -------------------- */
   const handleMouseUp = () => {
-    const sel = getSelectionText();
+    if (typeof window === "undefined") return;
+    const sel = window.getSelection()?.toString().trim() || "";
     setSelectionText(sel);
     if (sel) onTextSelect?.(sel);
   };
 
   /* -------------------- Empty states -------------------- */
-  if (!thoughtUnits || thoughtUnits.length === 0) {
+  if (!thoughtUnits?.length) {
     return (
       <div
         className="p-4 flex items-center justify-center text-gray-400 italic"
@@ -215,10 +219,8 @@ export default function HybridReader({
   const chunks = useMemo(() => chunkIntoIdeas(unitText), [unitText]);
   const [activeIdx, setActiveIdx] = useState(0);
 
-  // reset active on unit change
   useEffect(() => setActiveIdx(0), [unitText]);
 
-  // auto-advance based on readingSpeed
   useEffect(() => {
     if (!chunks.length) return;
     const msPerChunk = Math.max(600, (60_000 / Math.max(120, readingSpeed)) * 1.2);
@@ -271,7 +273,7 @@ export default function HybridReader({
 
         <RightBrainToolbar
           userId={userId}
-          bookId={pdfId}
+          bookId={bookId}
           currentPage={currentPage}
           selectionText={effectiveSelection}
           onGenerateNote={onGenerateNote}
@@ -336,7 +338,7 @@ export default function HybridReader({
 
         <RightBrainToolbar
           userId={userId}
-          bookId={pdfId}
+          bookId={bookId}
           currentPage={currentPage}
           selectionText={effectiveSelection}
           onGenerateNote={onGenerateNote}
@@ -347,33 +349,14 @@ export default function HybridReader({
       {/* Local styles for gentle idea-pulse */}
       <style jsx>{`
         @keyframes ideaPulse {
-          0% {
-            box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.35);
-            background: rgba(250, 204, 21, 0.12);
-          }
-          70% {
-            box-shadow: 0 0 0 10px rgba(250, 204, 21, 0);
-            background: rgba(250, 204, 21, 0.18);
-          }
-          100% {
-            box-shadow: 0 0 0 0 rgba(250, 204, 21, 0);
-            background: rgba(250, 204, 21, 0.12);
-          }
+          0% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.35); background: rgba(250, 204, 21, 0.12); }
+          70% { box-shadow: 0 0 0 10px rgba(250, 204, 21, 0); background: rgba(250, 204, 21, 0.18); }
+          100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0); background: rgba(250, 204, 21, 0.12); }
         }
-        .idea-chunk {
-          border-radius: 0.25rem;
-          padding: 0 0.15rem;
-          transition: background 120ms ease;
-        }
-        .idea-chunk.active {
-          animation: ideaPulse 1200ms ease-out;
-        }
-        .idea-chunk:hover {
-          background: rgba(250, 204, 21, 0.22);
-        }
-        .idea-chunk.hl {
-          outline: 1px solid rgba(250, 204, 21, 0.5);
-        }
+        .idea-chunk { border-radius: 0.25rem; padding: 0 0.15rem; transition: background 120ms ease; }
+        .idea-chunk.active { animation: ideaPulse 1200ms ease-out; }
+        .idea-chunk:hover { background: rgba(250, 204, 21, 0.22); }
+        .idea-chunk.hl { outline: 1px solid rgba(250, 204, 21, 0.5); }
       `}</style>
     </div>
   );
