@@ -19,6 +19,7 @@ import {
   listenForAuthChanges,
   signInWithGoogle,
   signOutUser,
+  handleRedirectResult, // ✅ complete redirect logins
 } from "@/lib/firebase";
 
 import WhiteboardPanel from "@/components/WhiteboardPanel";
@@ -125,9 +126,11 @@ export default function ThoughtUnitReader() {
   const [rbDraftText, setRbDraftText] = useState<string>("");
 
   /* =========================================================================
-     🔹 Auth Listener
+     🔹 Auth Listener + complete redirect
   ========================================================================= */
   useEffect(() => {
+    // complete sign-in if we came back from Google redirect flow
+    handleRedirectResult().catch(() => {});
     return listenForAuthChanges((u) => setUser(u));
   }, []);
 
@@ -373,10 +376,10 @@ export default function ThoughtUnitReader() {
     }
 
     if (viewMode === "hybrid") {
-      // Note: do NOT pass `fileUrl`—the current HybridReader props don’t include it.
+      // ✅ use bookId (NOT pdfId) — fixes build error
       return (
         <HybridReader
-          pdfId={bookId}
+          bookId={bookId}
           userId={USER_ID}
           sampleText={sampleText}
           currentPage={currentPage}
