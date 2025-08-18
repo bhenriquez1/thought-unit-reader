@@ -9,6 +9,10 @@ import {
   type StepNote as PersistedStepNote,
 } from "@/lib/StickyNoteService";
 
+/* ------------------------------------------------------------------ */
+/* Types                                                              */
+/* ------------------------------------------------------------------ */
+
 // Lightweight sticky note shape used only for exports right now
 type StickyNoteLite = { pageNumber: number; content: string };
 // In-session/UI note shape (we’ll store the persisted rows in this shape)
@@ -35,6 +39,25 @@ interface WhiteboardProps {
   userId?: string;     // current user id (if available)
 }
 
+/* ------------------------------------------------------------------ */
+/* Animation constants                                                */
+/* ------------------------------------------------------------------ */
+
+const CANVAS_W = 900;
+const CANVAS_H = 460;
+const PADDING_X = 24;
+const TITLE_Y = 40;
+const DESC_Y = 80;
+const DESC_LINE_H = 26;
+
+const TITLE_FADE_MS = 450; // fade in title at the start of each step
+const UNDERLINE_MS  = 600; // scribble underline draw time
+const MIN_STEP_MS   = 1200; // minimum step length for animation
+
+/* ------------------------------------------------------------------ */
+/* Component                                                          */
+/* ------------------------------------------------------------------ */
+
 export default function Whiteboard({
   steps,
   audioBlob = null,
@@ -43,7 +66,7 @@ export default function Whiteboard({
   baseStepDurationMs = 4000,
   stickyNotes = [],
   lessonTitle = "Whiteboard Lesson",
-  playbackSpeed, // ← parent can control speed
+  playbackSpeed, // parent may control speed
   lessonId,
   userId,
 }: WhiteboardProps) {
@@ -64,10 +87,13 @@ export default function Whiteboard({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // For browser TTS (no real audio clock): track elapsed time across play/pause
+  // For TTS/silent fallback: track elapsed time across play/pause
   const ttsStartRef = useRef<number | null>(null);
   const ttsElapsedRef = useRef<number>(0);
   const ttsTimerRef = useRef<number | null>(null);
+
+  // Canvas animation loop
+  const rafRef = useRef<number | null>(null);
 
   // 🔶 Sticky-notes overlay (per step) — persisted via StickyNoteService
   const [stepNotes, setStepNotes] = useState<StepNote[]>([]);
@@ -143,7 +169,7 @@ export default function Whiteboard({
     };
   }, [useAIVoice, audioURL]);
 
-  /** Compute cues (ms per step) using either AI audio duration or estimated TTS duration */
+  /** Compute cues (ms per step) using either AI audio duration or estimated TTS/silent duration */
   useEffect(() => {
     if (steps.length === 0) {
       setCues([]);
@@ -162,8 +188,11 @@ export default function Whiteboard({
     } else {
       const trimmed = (narrationScript || "").trim();
       const wordCount = trimmed ? trimmed.split(/\s+/).filter(Boolean).length : 0;
+      // Fallback even if there is no TTS narrationScript
       total =
-        wordCount > 0 ? (wordCount / 160) * 60_000 : steps.length * baseStepDurationMs;
+        wordCount > 0
+          ? (wordCount / 160) * 60_000
+          : Math.max(MIN_STEP_MS * steps.length, steps.length * baseStepDurationMs);
     }
 
     let acc = 0;
@@ -177,46 +206,142 @@ export default function Whiteboard({
     setTotalMs(total);
   }, [steps, useAIVoice, audioDurationSec, narrationScript, baseStepDurationMs]);
 
-  /** Draw current step */
+  /* ------------------------------------------------------------------ */
+  /* Drawing + animation (RAF)                                          */
+  /* ------------------------------------------------------------------ */
+
+  // Draw wrapped words – strictly limit to `visibleWords` across lines
+  function drawWrappedWords(
+    ctx: CanvasRenderingContext2D,
+    words: string[],
+    visibleWords: number,
+    x: number,
+    y: number,
+    maxWidth: number,
+    lineH: number
+  ) {
+    const display = words.slice(0, Math.max(0, visibleWords));
+    let line = "";
+
+    for (let i = 0; i < display.length; i++) {
+      const word = display[i];
+      const test = line ? `${line} ${word}` : word;
+      const w = ctx.measureText(test).width;
+      if (w > maxWidth && line) {
+        ctx.fillText(line, x, y);
+        y += lineH;
+        line = word;
+      } else {
+        line = test;
+      }
+    }
+    if (line) ctx.fillText(line, x, y);
+  }
+
+  /** Animated underline that looks a bit hand-drawn */
+  function drawScribbleUnderline(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    p: number // 0..1
+  ) {
+    const segments = Math.max(8, Math.floor(w / 24));
+    const drawn = Math.floor(segments * p);
+    const amp = 1.8;
+
+    ctx.save();
+    ctx.strokeStyle = "#f59e0b"; // amber-500
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for (let i = 0; i <= drawn; i++) {
+      const t = i / segments;
+      const xx = x + w * t;
+      const yy = y + Math.sin(t * Math.PI * 2) * amp;
+      if (i === 0) ctx.moveTo(xx, yy);
+      else ctx.lineTo(xx, yy);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Baseline draw (called every frame)
+  const drawStep = (ctx: CanvasRenderingContext2D, progressWithinStep: number) => {
+    const canvas = ctx.canvas;
+    const step = steps[currentStepIndex] || { title: "", description: "" };
+
+    // bg
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Title fade-in
+    const title = step.title || `Step ${currentStepIndex + 1}`;
+    ctx.font = "bold 22px Arial";
+    const titleWidth = Math.min(CANVAS_W - 2 * PADDING_X, ctx.measureText(title).width);
+
+    const stepMs = stepWindowMs();
+    const titleAlpha = easeOutCubic(Math.min(1, (progressWithinStep * stepMs) / TITLE_FADE_MS));
+    ctx.save();
+    ctx.globalAlpha = titleAlpha;
+    ctx.fillStyle = "#111827";
+    ctx.fillText(title, PADDING_X, TITLE_Y);
+    ctx.restore();
+
+    // Scribble underline
+    const underlineP = Math.min(1, (progressWithinStep * stepMs) / UNDERLINE_MS);
+    drawScribbleUnderline(ctx, PADDING_X, TITLE_Y + 6, titleWidth + 8, underlineP);
+
+    // Description — animated word reveal
+    const desc = step.description || "";
+    ctx.font = "18px Arial";
+    ctx.fillStyle = "#1f2937";
+    const words = desc.trim().length ? desc.trim().split(/\s+/) : [];
+
+    // reveal pacing: most of the step duration
+    const revealMs = Math.max(MIN_STEP_MS * 0.8, stepMs * 0.9);
+    const revealRatio = isPlaying ? clamp((progressWithinStep * stepMs) / revealMs, 0, 1) : 1;
+    const visibleWords = Math.max(0, Math.floor(words.length * revealRatio));
+
+    drawWrappedWords(ctx, words, visibleWords, PADDING_X, DESC_Y, CANVAS_W - 2 * PADDING_X, DESC_LINE_H);
+
+    // Visual prompt hint
+    if ((step as any).visualPrompt) {
+      ctx.font = "italic 16px Arial";
+      ctx.fillStyle = "#6b7280";
+      ctx.fillText(`(Draw: ${(step as any).visualPrompt})`, PADDING_X, canvas.height - 24);
+    }
+  };
+
+  // RAF loop (keeps animation smooth + synced)
   useEffect(() => {
     if (!canvasRef.current || steps.length === 0) return;
     const ctx = canvasRef.current.getContext("2d");
     if (!ctx) return;
 
-    const canvas = canvasRef.current;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const loop = () => {
+      const p = progressWithinCurrentStep(); // 0..1
+      drawStep(ctx, p);
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
 
-    // whiteboard background
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [steps, currentStepIndex, isPlaying, effectiveSpeed, cues, totalMs, useAIVoice]);
 
-    const current = steps[currentStepIndex];
+  /* ------------------------------------------------------------------ */
+  /* Cleanup                                                            */
+  /* ------------------------------------------------------------------ */
 
-    // Title
-    ctx.fillStyle = "#111827";
-    ctx.font = "bold 22px Arial";
-    ctx.fillText(current.title || `Step ${currentStepIndex + 1}`, 24, 40);
-
-    // Description
-    ctx.font = "18px Arial";
-    ctx.fillStyle = "#1f2937";
-    const lines = wrapText(ctx, current.description || "", canvas.width - 48);
-    const lineHeight = 26;
-    lines.forEach((line, i) => ctx.fillText(line, 24, 80 + i * lineHeight));
-
-    // Visual prompt hint
-    if ((current as any).visualPrompt) {
-      ctx.font = "italic 16px Arial";
-      ctx.fillStyle = "#6b7280";
-      ctx.fillText(`(Draw: ${(current as any).visualPrompt})`, 24, canvas.height - 24);
-    }
-  }, [currentStepIndex, steps]);
-
-  /** Cleanup timers on unmount */
   useEffect(() => {
     return () => {
       clearTtsTimer();
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, []);
 
@@ -225,6 +350,51 @@ export default function Whiteboard({
       window.clearInterval(ttsTimerRef.current);
       ttsTimerRef.current = null;
     }
+  };
+
+  /* ------------------------------------------------------------------ */
+  /* Time + stepping                                                    */
+  /* ------------------------------------------------------------------ */
+
+  /** Return current “clock” in ms since start, respecting speed & mode */
+  const currentClockMs = (): number => {
+    if (useAIVoice && audioRef.current) {
+      return (audioRef.current.currentTime || 0) * 1000;
+    }
+    if (ttsStartRef.current != null) {
+      const now = performance.now();
+      const delta = (now - ttsStartRef.current) * clampRate(effectiveSpeed);
+      return ttsElapsedRef.current + delta;
+    }
+    return ttsElapsedRef.current;
+  };
+
+  /** Total ms for this step's window */
+  const stepWindowMs = () => {
+    if (!cues.length || cues.length !== steps.length) {
+      return Math.max(MIN_STEP_MS, baseStepMs());
+    }
+    const start = cues[currentStepIndex] ?? 0;
+    const end = cues[currentStepIndex + 1] ?? totalMs;
+    return Math.max(MIN_STEP_MS, end - start);
+  };
+
+  /** Fallback “base step” length */
+  const baseStepMs = () =>
+    Math.max(MIN_STEP_MS, (baseStepDurationMs / clampRate(effectiveSpeed)) || MIN_STEP_MS);
+
+  /** 0..1 progress within current step time window */
+  const progressWithinCurrentStep = () => {
+    if (!cues.length || cues.length !== steps.length) {
+      // No precise cues -> estimate by base window
+      const ms = currentClockMs() % baseStepMs();
+      return clamp(ms / baseStepMs(), 0, 1);
+    }
+    const start = cues[currentStepIndex] ?? 0;
+    const end = cues[currentStepIndex + 1] ?? totalMs;
+    const windowMs = Math.max(MIN_STEP_MS, end - start);
+    const ms = clamp(currentClockMs() - start, 0, windowMs);
+    return clamp(ms / windowMs, 0, 1);
   };
 
   /** AI audio: sync steps via audio timeupdate against cues */
@@ -245,7 +415,7 @@ export default function Whiteboard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useAIVoice, cues, currentStepIndex]);
 
-  /** TTS mode: drive steps by elapsed time vs cues */
+  /** TTS/silent loop: drive steps by elapsed time vs cues */
   const startTtsLoop = () => {
     clearTtsTimer();
     ttsStartRef.current = performance.now();
@@ -273,17 +443,23 @@ export default function Whiteboard({
         audioRef.current.play().catch(() => {});
       }
     } else {
-      if ("speechSynthesis" in window && narrationScript.trim()) {
+      const trimmed = (narrationScript || "").trim();
+      if ("speechSynthesis" in window && trimmed) {
         if (ttsElapsedRef.current === 0) {
           ttsStartRef.current = performance.now();
         }
-        const u = new SpeechSynthesisUtterance(narrationScript);
+        const u = new SpeechSynthesisUtterance(trimmed);
         u.lang = "en-US";
         u.rate = clampRate(effectiveSpeed);
         u.pitch = 1.0;
         u.onend = () => stop();
         window.speechSynthesis.cancel();
         window.speechSynthesis.speak(u);
+        startTtsLoop();
+      } else {
+        // 🔁 Silent fallback: still auto-advance using our internal clock
+        ttsElapsedRef.current = 0;
+        ttsStartRef.current = performance.now();
         startTtsLoop();
       }
     }
@@ -301,6 +477,13 @@ export default function Whiteboard({
       }
       (window.speechSynthesis as any).pause?.();
       clearTtsTimer();
+    } else {
+      if (ttsStartRef.current != null) {
+        const elapsedNow = (performance.now() - ttsStartRef.current) * clampRate(effectiveSpeed);
+        ttsElapsedRef.current += elapsedNow;
+        ttsStartRef.current = null;
+      }
+      clearTtsTimer();
     }
     setIsPlaying(false);
   };
@@ -309,8 +492,7 @@ export default function Whiteboard({
     if (useAIVoice && audioRef.current) {
       audioRef.current.playbackRate = clampRate(effectiveSpeed);
       audioRef.current.play().catch(() => {});
-    }
-    if (!useAIVoice && "speechSynthesis" in window) {
+    } else {
       ttsStartRef.current = performance.now();
       (window.speechSynthesis as any).resume?.();
       startTtsLoop();
@@ -322,13 +504,19 @@ export default function Whiteboard({
     pause();
     setCurrentStepIndex(0);
     if (useAIVoice && audioRef.current) audioRef.current.currentTime = 0;
-    if (!useAIVoice && "speechSynthesis" in window) {
+    if ("speechSynthesis" in window) {
       window.speechSynthesis.cancel();
-      ttsElapsedRef.current = 0;
-      ttsStartRef.current = null;
-      clearTtsTimer();
     }
+    ttsElapsedRef.current = 0;
+    ttsStartRef.current = null;
+    clearTtsTimer();
   };
+
+  /** Manual step nav */
+  const prevStep = () =>
+    setCurrentStepIndex((i) => Math.max(0, i - 1));
+  const nextStep = () =>
+    setCurrentStepIndex((i) => Math.min(steps.length - 1, i + 1));
 
   /** Respond to parent speed changes live */
   useEffect(() => {
@@ -376,9 +564,9 @@ export default function Whiteboard({
         } else {
           await addStepNote(lessonId, { step: currentStepIndex, content: text, userId });
         }
-        // subscription will refresh state
+        // subscription refreshes state
       } else {
-        // in-memory only
+        // local-only
         if (editingNote) {
           setStepNotes((prev) => prev.map((n) => (n.id === editingNote.id ? { ...n, content: text } : n)));
         } else {
@@ -394,7 +582,6 @@ export default function Whiteboard({
   async function deleteNote(id: string) {
     if (lessonId) {
       await deleteStepNote(lessonId, id);
-      // subscription will refresh state
     } else {
       setStepNotes((prev) => prev.filter((n) => n.id !== id));
     }
@@ -491,13 +678,17 @@ export default function Whiteboard({
     }
   };
 
+  /* ------------------------------------------------------------------ */
+  /* Render                                                              */
+  /* ------------------------------------------------------------------ */
+
   return (
     <div className="flex flex-col items-center gap-4">
       <div className="relative">
         <canvas
           ref={canvasRef}
-          width={900}
-          height={460}
+          width={CANVAS_W}
+          height={CANVAS_H}
           className="border rounded bg-white shadow-sm"
         />
 
@@ -591,6 +782,14 @@ export default function Whiteboard({
 
       {/* Transport */}
       <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={prevStep}
+          className="bg-gray-700 hover:bg-gray-800 text-white px-3 py-2 rounded disabled:opacity-50"
+          disabled={currentStepIndex <= 0}
+        >
+          ◀ Prev
+        </button>
+
         {!isPlaying ? (
           <button
             onClick={currentStepIndex === 0 ? play : resume}
@@ -612,6 +811,14 @@ export default function Whiteboard({
           className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
         >
           ⏹️ Stop
+        </button>
+
+        <button
+          onClick={nextStep}
+          className="bg-gray-700 hover:bg-gray-800 text-white px-3 py-2 rounded disabled:opacity-50"
+          disabled={currentStepIndex >= steps.length - 1}
+        >
+          Next ▶
         </button>
 
         {/* Speed (hidden if parent controls it) */}
@@ -656,27 +863,9 @@ export default function Whiteboard({
   );
 }
 
-/* -------------------- helpers -------------------- */
-
-function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
-  const words = text.split(/\s+/);
-  const lines: string[] = [];
-  let line = "";
-
-  for (let i = 0; i < words.length; i++) {
-    const test = line ? `${line} ${words[i]}` : words[i];
-    const width = ctx.measureText(test).width;
-
-    if (width > maxWidth && line) {
-      lines.push(line);
-      line = words[i];
-    } else {
-      line = test;
-    }
-  }
-  if (line) lines.push(line);
-  return lines;
-}
+/* ------------------------------------------------------------------ */
+/* Misc helpers                                                        */
+/* ------------------------------------------------------------------ */
 
 function slugify(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -740,6 +929,12 @@ function addWrappedText(
 
 function clampRate(v: number) {
   return Math.min(2, Math.max(0.5, v || 1));
+}
+function clamp(v: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, v));
+}
+function easeOutCubic(t: number) {
+  return 1 - Math.pow(1 - clamp(t, 0, 1), 3);
 }
 
 function triggerDownload(url: string, filename: string) {

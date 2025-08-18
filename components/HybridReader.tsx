@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { ThoughtUnit as BaseThoughtUnit, ReadingStats } from "@/types/reading";
 import { saveReadingProgress, loadReadingProgress } from "@/lib/firebase";
 import RightBrainToolbar from "@/components/RightBrainToolbar";
@@ -9,11 +9,11 @@ import { useStartReview } from "@/hooks/useStartReview";
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
 interface HybridReaderProps {
-  /** ✅ canonical id (was pdfId) */
+  /** canonical id */
   bookId: string;
   userId: string;
 
-  sampleText: string;
+  sampleText: string;            // kept for compatibility; we’ll prefer unitText
   currentPage: number;
   pdfPageCount?: number;
 
@@ -47,7 +47,7 @@ interface HybridReaderProps {
   externalSelectionText?: string;
 }
 
-/* ---------------- Right-Brain idea chunking helpers ---------------- */
+/* ---------------- helpers ---------------- */
 function unitToText(u: HRUnit): string {
   if (u == null) return "";
   if (typeof u === "string") return u;
@@ -71,7 +71,6 @@ function chunkIntoIdeas(text: string): string[] {
     for (const p of parts) {
       const tokens = p.split(/\s+/).filter(Boolean);
       const info = tokens.map((w) => (/[A-Z]\w+/.test(w) || /\d/.test(w) ? 2 : 1));
-
       for (let i = 0; i < tokens.length; ) {
         let win = 3;
         let score = 0;
@@ -130,6 +129,13 @@ function renderOriginalWithCue(
   }
 }
 
+/* ---------------- comprehension prompts ---------------- */
+const COMPREHENSION_PROMPTS = [
+  { label: "Explain in your own words", build: (ctx: string) => `Explain in your own words:\n\n${ctx}` },
+  { label: "Why does X lead to Y?",     build: (ctx: string) => `Why does this happen? Use the context to justify each step:\n\n${ctx}` },
+  { label: "Compare A vs B",            build: (ctx: string) => `Compare two key ideas in the passage. Where are they similar/different?\n\nContext:\n${ctx}` },
+] as const;
+
 export default function HybridReader({
   bookId,
   userId,
@@ -149,15 +155,18 @@ export default function HybridReader({
   setCurrentPage,
   readingSpeed = 200,
   setReadingSpeed,
+  isReading = true,
+  isPaused = false,
   selBind,
   externalSelectionText,
 }: HybridReaderProps) {
   const [selectionText, setSelectionText] = useState("");
+  const [promptIdx, setPromptIdx] = useState(0);
 
   // Review flow
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
-  /* -------------------- Load saved reading progress -------------------- */
+  /* -------------------- Load saved progress -------------------- */
   useEffect(() => {
     if (!userId || !bookId) return;
     loadReadingProgress(userId, bookId).then((progress: any) => {
@@ -170,18 +179,26 @@ export default function HybridReader({
     });
   }, [userId, bookId, setCurrentPage, setCurrentThoughtUnit, setHighlightedWord, setReadingSpeed]);
 
-  /* -------------------- Save reading progress -------------------- */
+  /* -------------------- Throttled save progress -------------------- */
+  const saveTimer = useRef<number | null>(null);
   useEffect(() => {
     if (!userId || !bookId) return;
-    saveReadingProgress(userId, bookId, {
-      currentPage,
-      currentThoughtUnit,
-      highlightedWord,
-      readingSpeed,
-    }).catch(() => {});
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      saveReadingProgress(userId, bookId, {
+        currentPage,
+        currentThoughtUnit,
+        highlightedWord,
+        readingSpeed,
+      }).catch(() => {});
+    }, 500) as unknown as number;
+    return () => {
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    };
   }, [userId, bookId, currentPage, currentThoughtUnit, highlightedWord, readingSpeed]);
 
-  /* -------------------- Fallback selection -------------------- */
+  /* -------------------- Selection fallback -------------------- */
   const handleMouseUp = () => {
     if (typeof window === "undefined") return;
     const sel = window.getSelection()?.toString().trim() || "";
@@ -221,16 +238,31 @@ export default function HybridReader({
 
   useEffect(() => setActiveIdx(0), [unitText]);
 
+  // auto-advance only when actually reading
   useEffect(() => {
-    if (!chunks.length) return;
+    if (!chunks.length || !isReading || isPaused) return;
     const msPerChunk = Math.max(600, (60_000 / Math.max(120, readingSpeed)) * 1.2);
     const t = window.setInterval(() => setActiveIdx((i) => (i + 1) % chunks.length), msPerChunk);
     return () => window.clearInterval(t);
-  }, [chunks.length, readingSpeed]);
+  }, [chunks.length, readingSpeed, isReading, isPaused]);
 
   const activeChunk = chunks[activeIdx] || "";
   const cueToken = keyTokenFromChunk(activeChunk);
   const effectiveSelection = (externalSelectionText?.trim() || selectionText).trim();
+
+  // memoize highlight regex used in Progressive spans
+  const hlRegex = useMemo(() => {
+    if (!highlightedWord) return null;
+    try {
+      return new RegExp(`\\b${escapeRegExp(highlightedWord)}\\b`);
+    } catch {
+      return null;
+    }
+  }, [highlightedWord]);
+
+  // comprehension prompt
+  const activePrompt = COMPREHENSION_PROMPTS[promptIdx];
+  const promptContext = (effectiveSelection || activeChunk || unitText || sampleText).trim();
 
   /* -------------------- Review mode -------------------- */
   if (isReviewMode) {
@@ -267,7 +299,7 @@ export default function HybridReader({
       >
         <h4 className="text-sm font-semibold text-yellow-400 mb-3">Original View</h4>
         {renderOriginalWithCue(
-          sampleText || "📄 Original text will appear here when a PDF is uploaded.",
+          (unitText || sampleText || "📄 Original text will appear here when a PDF is uploaded."),
           cueToken
         )}
 
@@ -293,15 +325,12 @@ export default function HybridReader({
           <div>
             {chunks.map((chunk, idx) => {
               const isActive = idx === activeIdx;
-              const includesHighlight =
-                highlightedWord && new RegExp(`\\b${highlightedWord}\\b`).test(chunk);
+              const includes = hlRegex ? hlRegex.test(chunk) : false;
 
               return (
                 <span
                   key={idx}
-                  className={`idea-chunk ${isActive ? "active" : ""} ${
-                    includesHighlight ? "hl" : ""
-                  } cursor-pointer`}
+                  className={`idea-chunk ${isActive ? "active" : ""} ${includes ? "hl" : ""} cursor-pointer`}
                   onClick={() => {
                     onWordClick(chunk);
                     setHighlightedWord(chunk);
@@ -336,6 +365,28 @@ export default function HybridReader({
           ))
         )}
 
+        {/* Comprehension prompt card */}
+        <div className="mt-3 border border-gray-700 rounded-lg p-3 bg-gray-900/60">
+          <div className="text-xs uppercase tracking-wide text-gray-300 mb-1">Comprehension</div>
+          <div className="font-medium text-sm mb-2">{activePrompt.label}</div>
+          <div className="flex gap-2">
+            <button
+              className="text-xs px-2 py-1 rounded bg-yellow-500 text-black"
+              onClick={() =>
+                onGenerateNote?.(activePrompt.build(promptContext), undefined, "highYield")
+              }
+            >
+              Open in Right-Brain
+            </button>
+            <button
+              className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
+              onClick={() => setPromptIdx((i) => (i + 1) % COMPREHENSION_PROMPTS.length)}
+            >
+              Next prompt
+            </button>
+          </div>
+        </div>
+
         <RightBrainToolbar
           userId={userId}
           bookId={bookId}
@@ -349,9 +400,9 @@ export default function HybridReader({
       {/* Local styles for gentle idea-pulse */}
       <style jsx>{`
         @keyframes ideaPulse {
-          0% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.35); background: rgba(250, 204, 21, 0.12); }
-          70% { box-shadow: 0 0 0 10px rgba(250, 204, 21, 0); background: rgba(250, 204, 21, 0.18); }
-          100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0); background: rgba(250, 204, 21, 0.12); }
+          0%   { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.35); background: rgba(250, 204, 21, 0.12); }
+          70%  { box-shadow: 0 0 0 10px rgba(250, 204, 21, 0);   background: rgba(250, 204, 21, 0.18); }
+          100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0);      background: rgba(250, 204, 21, 0.12); }
         }
         .idea-chunk { border-radius: 0.25rem; padding: 0 0.15rem; transition: background 120ms ease; }
         .idea-chunk.active { animation: ideaPulse 1200ms ease-out; }

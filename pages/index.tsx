@@ -1,10 +1,9 @@
 // pages/index.tsx
 import dynamic from "next/dynamic";
-import React, { useState, useEffect, useRef, ChangeEvent } from "react";
+import React, { useState, useEffect, useRef, useMemo, ChangeEvent } from "react";
 
 import { generateTOC, type TOCEntry, outlineToTOC } from "@/lib/tocParser";
 import TOCSidebar from "@/components/TOCSidebar";
-import ProgressiveView from "@/components/ProgressiveView";
 import type { ThoughtUnit, ReadingStats } from "@/types/reading";
 import HybridReader from "@/components/HybridReader";
 import HighlightPopup from "@/components/HighlightPopup";
@@ -19,7 +18,7 @@ import {
   listenForAuthChanges,
   signInWithGoogle,
   signOutUser,
-  handleRedirectResult, // ✅ complete redirect logins
+  handleRedirectResult,
 } from "@/lib/firebase";
 
 import WhiteboardPanel from "@/components/WhiteboardPanel";
@@ -32,7 +31,6 @@ import {
 
 import { usePdfSelection } from "@/hooks/usePdfSelection";
 
-// Prefill helpers for High-Yield notes
 import summarizeText from "@/lib/aiSummary";
 import { generateMnemonic } from "@/lib/mnemonicAI";
 
@@ -64,6 +62,108 @@ function unitToString(u: any): string {
   if (Array.isArray(u)) return u.filter(Boolean).join(" ");
   if (typeof u.text === "string") return u.text;
   return String(u);
+}
+
+/** Map a PDF page → nearest thought-unit index */
+function pageToUnit(page: number, pageCount: number, unitCount: number) {
+  if (!pageCount || !unitCount) return 1;
+  const ratio = (Math.max(1, page) - 1) / Math.max(1, pageCount - 1);
+  return Math.min(unitCount, Math.max(1, Math.round(ratio * unitCount)));
+}
+
+/** Pull a concept seed near a given page (for Whiteboard) */
+function conceptForPage(page: number, units: ThoughtUnit[], pageCount: number): string {
+  if (!units.length) return "";
+  const idx = pageToUnit(page, pageCount, units.length) - 1;
+  return (units[idx]?.text || "").slice(0, 600);
+}
+
+/** Simple sentence/phrase chunker (for Progressive overlay) */
+function chunkIntoIdeas(text: string): string[] {
+  const T = (text || "").replace(/\s+/g, " ").trim();
+  if (!T) return [];
+  const sents = T.split(/(?<=[.!?])\s+(?=[A-Z(])/).map((s) => s.trim()).filter(Boolean);
+  const chunks: string[] = [];
+  for (const s of sents) {
+    const parts = s
+      .split(/\s*(?:;|:|—|–|--|, and |, but | and | but | however | whereas )\s*/i)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    for (const p of parts) chunks.push(p);
+  }
+  return chunks.length ? chunks : [T];
+}
+
+/* ---------------- mini comprehension prompts (overlay) ---------------- */
+const COMPREHENSION_PROMPTS = [
+  { label: "Explain in your own words", build: (ctx: string) => `Explain in your own words:\n\n${ctx}` },
+  { label: "Why does X lead to Y?",     build: (ctx: string) => `Why does this happen? Use the context to justify each step:\n\n${ctx}` },
+  { label: "Compare A vs B",            build: (ctx: string) => `Compare two key ideas. Where are they similar/different?\n\nContext:\n${ctx}` },
+] as const;
+
+/** Floating progressive navigator that sits over the PDF */
+function ProgressiveOverlay({
+  chunks,
+  activeIdx,
+  setActiveIdx,
+  onChunkPicked,
+  onOpenRightBrain,
+}: {
+  chunks: string[];
+  activeIdx: number;
+  setActiveIdx: (i: number) => void;
+  onChunkPicked?: (t: string) => void;
+  onOpenRightBrain?: (fullText: string) => void;
+}) {
+  const [promptIdx, setPromptIdx] = useState(0);
+  const activeText = chunks[activeIdx] || "";
+
+  return !chunks.length ? null : (
+    <div className="pointer-events-auto absolute top-3 right-3 bg-gray-900/85 border border-gray-700 rounded-lg shadow-lg w-[360px] max-h-[70vh] overflow-y-auto">
+      <div className="sticky top-0 z-10 p-2 text-xs font-semibold text-yellow-300 bg-gray-900/95 border-b border-gray-800">
+        Progressive Navigator
+      </div>
+
+      <div className="p-2 text-sm leading-6">
+        {chunks.map((c, i) => (
+          <button
+            key={i}
+            className={`block text-left w-full px-2 py-1 rounded mb-1 ${
+              i === activeIdx ? "bg-yellow-500 text-black" : "hover:bg-gray-700"
+            }`}
+            onClick={() => {
+              setActiveIdx(i);
+              onChunkPicked?.(c);
+            }}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+
+      {/* tiny comprehension card */}
+      <div className="m-2 mt-0 border border-gray-700 rounded-lg p-2 bg-gray-900/70">
+        <div className="text-[10px] uppercase tracking-wide text-gray-300 mb-1">Comprehension</div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs font-medium">{COMPREHENSION_PROMPTS[promptIdx].label}</span>
+          <button
+            className="text-[10px] px-2 py-0.5 rounded bg-gray-700 hover:bg-gray-600"
+            onClick={() => setPromptIdx((i) => (i + 1) % COMPREHENSION_PROMPTS.length)}
+          >
+            Next
+          </button>
+        </div>
+        <div className="flex gap-2">
+          <button
+            className="text-[11px] px-2 py-1 rounded bg-yellow-500 text-black"
+            onClick={() => onOpenRightBrain?.(COMPREHENSION_PROMPTS[promptIdx].build(activeText))}
+          >
+            Open in Right-Brain
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function ThoughtUnitReader() {
@@ -102,7 +202,7 @@ export default function ThoughtUnitReader() {
   const [darkMode, setDarkMode] = useState(true);
 
   const [tableOfContents, setTableOfContents] = useState<TOCEntry[]>([]);
-  const [showTOC, setShowTOC] = useState(true);
+  const [showTOC] = useState(true);
 
   const [showLibrary, setShowLibrary] = useState(false);
   const [pdfLibrary, setPdfLibrary] = useState<
@@ -129,7 +229,6 @@ export default function ThoughtUnitReader() {
      🔹 Auth Listener + complete redirect
   ========================================================================= */
   useEffect(() => {
-    // complete sign-in if we came back from Google redirect flow
     handleRedirectResult().catch(() => {});
     return listenForAuthChanges((u) => setUser(u));
   }, []);
@@ -162,7 +261,7 @@ export default function ThoughtUnitReader() {
   });
 
   /* =========================================================================
-     🔹 Upload PDF — also parse into thoughtUnits + detect diagrams
+     🔹 Upload PDF — parse + detect diagrams
   ========================================================================= */
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -240,7 +339,7 @@ export default function ThoughtUnitReader() {
   };
 
   /* =========================================================================
-     🔹 Load PDF from Library (no auto-detect here since we lack the File)
+     🔹 Load PDF from Library
   ========================================================================= */
   const handleLoadPDF = (url: string) => {
     setFileUrl(url);
@@ -250,7 +349,7 @@ export default function ThoughtUnitReader() {
   };
 
   /* =========================================================================
-     🔹 Delete PDF (disabled for guest session items)
+     🔹 Delete PDF
   ========================================================================= */
   const handleDeletePDF = async (id: string, name: string, isLocal?: boolean) => {
     if (!confirm(`Delete ${name}?`)) return;
@@ -259,7 +358,6 @@ export default function ThoughtUnitReader() {
       await deletePDF(USER_ID, id, name);
       getPDFLibrary(USER_ID).then(setPdfLibrary);
     } else {
-      // guest: remove from session list
       setPdfLibrary((prev) => prev.filter((p) => p.id !== id));
     }
   };
@@ -329,6 +427,47 @@ export default function ThoughtUnitReader() {
   };
 
   /* =========================================================================
+     🔹 Progressive overlay derivations + auto-advance
+  ========================================================================= */
+  const activeUnitText = useMemo(
+    () => (thoughtUnits[currentThoughtUnit - 1]?.text || ""),
+    [thoughtUnits, currentThoughtUnit]
+  );
+  const progressiveChunks = useMemo(() => chunkIntoIdeas(activeUnitText), [activeUnitText]);
+  const [progActiveIdx, setProgActiveIdx] = useState(0);
+  useEffect(() => setProgActiveIdx(0), [currentThoughtUnit]);
+
+  useEffect(() => {
+    if (viewMode !== "progressive" || !progressiveChunks.length) return;
+    if (!(isReading && !isPaused)) return; // advance only when reading
+    const msPerChunk = Math.max(600, (60_000 / Math.max(120, readingSpeed)) * 1.2);
+    const t = window.setInterval(
+      () => setProgActiveIdx((i) => (i + 1) % progressiveChunks.length),
+      msPerChunk
+    );
+    return () => window.clearInterval(t);
+  }, [viewMode, progressiveChunks.length, readingSpeed, isReading, isPaused]);
+
+  /* =========================================================================
+     🔹 Page/TOC sync (ALL modes) + optional whiteboard retrigger
+  ========================================================================= */
+  const syncToPage = (page: number) => {
+    setCurrentPage(page);
+    const unit = pageToUnit(page, pdfPageCount, thoughtUnits.length);
+    setCurrentThoughtUnit(unit);
+
+    if (autoWhiteboard) {
+      const seed = conceptForPage(page, thoughtUnits, pdfPageCount);
+      if (seed) {
+        setWbConcept(truncate(seed, 600));
+        const title = tableOfContents.find((t) => t.page === page)?.title || `p.${page}`;
+        setWbContext(title);
+        setShowWhiteboardPanel(true);
+      }
+    }
+  };
+
+  /* =========================================================================
      🔹 Render Reader Content
   ========================================================================= */
   const renderContent = () => {
@@ -348,35 +487,52 @@ export default function ThoughtUnitReader() {
     }
 
     if (viewMode === "progressive") {
-      return (
-        <ProgressiveView
-          bookId={bookId}
-          userId={USER_ID}
-          thoughtUnits={thoughtUnits}
-          currentThoughtUnit={currentThoughtUnit}
-          readingSpeed={readingSpeed}
-          isReading={isReading}
-          isPaused={isPaused}
-          stats={stats}
-          highlightedWord={highlightedWord}
-          currentPage={currentPage}
-          pdfPageCount={pdfPageCount}
-          fontSize={fontSize}
-          fontFamily={fontFamily}
-          lineSpacing={lineSpacing}
-          onWordClick={(w) => setHighlightedWord(w)}
-          setReadingSpeed={setReadingSpeed}
-          onTextSelect={(t) => sel.setSelectionText(t)}
-          selBind={sel.bind}
-          externalSelectionText={sel.selectionText}
-          // open Right-Brain with templates
-          onGenerateNote={handleOpenRightBrainNote}
-        />
+      // PDF with floating progressive overlay
+      return fileUrl ? (
+        <div className="relative h-full" onMouseUp={sel.bind.onMouseUp}>
+          <SmartPDFViewer
+            fileUrl={fileUrl}
+            currentPage={currentPage}
+            onPageChange={(p) => syncToPage(p)}
+            scale={1.25}
+            onTextSelect={(t) => sel.setSelectionText(t)}
+            onPageCount={(n) => setPdfPageCount(n)}
+            onOutline={(items) => {
+              const normalized = outlineToTOC(items as any);
+              if (normalized && normalized.length) {
+                setTableOfContents(normalized);
+              }
+            }}
+          />
+
+          <ProgressiveOverlay
+            chunks={progressiveChunks}
+            activeIdx={progActiveIdx}
+            setActiveIdx={(i) => setProgActiveIdx(i)}
+            onChunkPicked={(text) => {
+              sel.setSelectionText(text);
+              setHighlightedWord(text.split(/\s+/)[0] || "");
+              if (autoWhiteboard) {
+                setWbConcept(truncate(text, 600));
+                setWbContext(uploadedFile?.name ? `From ${uploadedFile.name}` : `p.${currentPage}`);
+                setShowWhiteboardPanel(true);
+              }
+            }}
+            onOpenRightBrain={(built) => handleOpenRightBrainNote(built, undefined, "highYield")}
+          />
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center h-full gap-4">
+          <p>📂 Upload a PDF to begin</p>
+          <label className="bg-yellow-500 text-black px-4 py-2 rounded cursor-pointer">
+            Upload PDF
+            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
+          </label>
+        </div>
       );
     }
 
     if (viewMode === "hybrid") {
-      // ✅ use bookId (NOT pdfId) — fixes build error
       return (
         <HybridReader
           bookId={bookId}
@@ -397,13 +553,19 @@ export default function ThoughtUnitReader() {
           fontFamily={fontFamily}
           lineSpacing={lineSpacing}
           clickSwitchesTo={clickSwitchesTo}
-          onWordClick={(w) => setHighlightedWord(w)}
+          onWordClick={(w) => {
+            setHighlightedWord(w);
+            if (autoWhiteboard && w.trim()) {
+              setWbConcept(truncate(w, 600));
+              setWbContext(`p.${currentPage}`);
+              setShowWhiteboardPanel(true);
+            }
+          }}
           setReadingSpeed={setReadingSpeed}
-          setCurrentPage={setCurrentPage}
+          setCurrentPage={(p) => syncToPage(p)}
           onTextSelect={(t) => sel.setSelectionText(t)}
           selBind={sel.bind}
           externalSelectionText={sel.selectionText}
-          // open Right-Brain with templates
           onGenerateNote={handleOpenRightBrainNote}
         />
       );
@@ -415,7 +577,7 @@ export default function ThoughtUnitReader() {
         <SmartPDFViewer
           fileUrl={fileUrl}
           currentPage={currentPage}
-          onPageChange={setCurrentPage}
+          onPageChange={(p) => syncToPage(p)}
           scale={1.25}
           onTextSelect={(t) => sel.setSelectionText(t)}
           onPageCount={(n) => setPdfPageCount(n)}
@@ -473,6 +635,37 @@ export default function ThoughtUnitReader() {
           ))}
         </div>
 
+        {/* Tiny reader controls for progressive auto-advance */}
+        <div className="flex items-center gap-2 ml-2">
+          <button
+            onClick={() => {
+              setIsReading(true);
+              setIsPaused(false);
+            }}
+            className="text-xs px-2 py-1 rounded bg-blue-600 hover:bg-blue-700"
+            title="Start auto-advance"
+          >
+            ▶ Read
+          </button>
+          <button
+            onClick={() => setIsPaused((p) => !p)}
+            className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
+            title="Pause/Resume"
+          >
+            {isPaused ? "Resume" : "Pause"}
+          </button>
+          <button
+            onClick={() => {
+              setIsReading(false);
+              setIsPaused(false);
+            }}
+            className="text-xs px-2 py-1 rounded bg-red-600 hover:bg-red-700"
+            title="Stop auto-advance"
+          >
+            ⏹ Stop
+          </button>
+        </div>
+
         <div className="flex-1" />
 
         {/* Auto-whiteboard toggle */}
@@ -482,9 +675,9 @@ export default function ThoughtUnitReader() {
             checked={autoWhiteboard}
             onChange={(e) => setAutoWhiteboard(e.target.checked)}
           />
-          <span>Auto-explain diagrams on Whiteboard</span>
+          <span>Auto-explain on Whiteboard</span>
           {showWhiteboardPanel && wbConcept && (
-            <span className="ml-2 text-yellow-300">✨ Detected — opening explanation…</span>
+            <span className="ml-2 text-yellow-300">✨ Explaining…</span>
           )}
         </label>
 
@@ -531,11 +724,11 @@ export default function ThoughtUnitReader() {
 
       {/* Reader + WhiteboardPanel */}
       <div className="flex flex-1 overflow-hidden px-4 gap-4">
-        {showTOC && fileUrl && (
+        {fileUrl && showTOC && (
           <TOCSidebar
             toc={tableOfContents}
             currentPage={currentPage}
-            onJumpToPage={setCurrentPage}
+            onJumpToPage={(p) => syncToPage(p)} // ✅ TOC works in ALL modes
           />
         )}
 
@@ -629,7 +822,6 @@ export default function ThoughtUnitReader() {
         <HighlightPopup
           position={sel.popupPosition}
           selectionText={sel.selectionText}
-          // Open Right-Brain with the current selection
           onCreateNote={() => handleOpenRightBrainNote(sel.selectionText)}
           onCreateDetailedNote={async () => {
             const note = await sel.createDetailedNote({
