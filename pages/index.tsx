@@ -94,6 +94,35 @@ function chunkIntoIdeas(text: string): string[] {
   return chunks.length ? chunks : [T];
 }
 
+/* ---------- TOC helpers: tolerate different TOCEntry shapes ---------- */
+function getTocPage(t: TOCEntry): number | undefined {
+  const any = t as any;
+  if (typeof any.page === "number") return any.page;                // 1-based
+  if (typeof any.pageNumber === "number") return any.pageNumber;    // 1-based (common)
+  if (typeof any.pageIndex === "number") return any.pageIndex + 1;  // 0-based → 1-based
+  if (typeof any.page_from === "number") return any.page_from;      // some parsers
+  if (typeof any.pageFrom === "number") return any.pageFrom;
+  return undefined;
+}
+
+function titleForPage(toc: TOCEntry[], page: number): string {
+  // Exact match first
+  const exact = toc.find((t) => getTocPage(t) === page)?.title;
+  if (exact) return String(exact);
+
+  // Otherwise pick nearest previous heading
+  let bestTitle = "";
+  let bestPage = -1;
+  for (const t of toc) {
+    const p = getTocPage(t);
+    if (typeof p === "number" && p <= page && p > bestPage) {
+      bestPage = p;
+      bestTitle = (t as any).title || "";
+    }
+  }
+  return bestTitle || `p.${page}`;
+}
+
 /* ---------------- mini comprehension prompts (overlay) ---------------- */
 const COMPREHENSION_PROMPTS = [
   { label: "Explain in your own words", build: (ctx: string) => `Explain in your own words:\n\n${ctx}` },
@@ -434,7 +463,7 @@ export default function ThoughtUnitReader() {
     [thoughtUnits, currentThoughtUnit]
   );
   const progressiveChunks = useMemo(() => chunkIntoIdeas(activeUnitText), [activeUnitText]);
-  const [progActiveIdx, setProgActiveIdx] = useState(0);
+  the const [progActiveIdx, setProgActiveIdx] = useState(0);
   useEffect(() => setProgActiveIdx(0), [currentThoughtUnit]);
 
   useEffect(() => {
@@ -460,7 +489,7 @@ export default function ThoughtUnitReader() {
       const seed = conceptForPage(page, thoughtUnits, pdfPageCount);
       if (seed) {
         setWbConcept(truncate(seed, 600));
-        const title = tableOfContents.find((t) => t.page === page)?.title || `p.${page}`;
+        const title = titleForPage(tableOfContents, page); // ← ✅ use tolerant helper
         setWbContext(title);
         setShowWhiteboardPanel(true);
       }
@@ -514,7 +543,7 @@ export default function ThoughtUnitReader() {
               setHighlightedWord(text.split(/\s+/)[0] || "");
               if (autoWhiteboard) {
                 setWbConcept(truncate(text, 600));
-                setWbContext(uploadedFile?.name ? `From ${uploadedFile.name}` : `p.${currentPage}`);
+                setWbContext(titleForPage(tableOfContents, currentPage)); // ← ✅
                 setShowWhiteboardPanel(true);
               }
             }}
