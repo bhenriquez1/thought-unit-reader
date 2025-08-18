@@ -6,6 +6,8 @@ import { useStartReview } from "@/hooks/useStartReview";
 import RightBrainToolbar from "@/components/RightBrainToolbar";
 import RightBrainNoteEditor from "@/components/RightBrainNoteEditor";
 import { saveReadingProgress, loadReadingProgress } from "@/lib/firebase";
+import { chunkText, stableChunkId } from "@/lib/chunkers";
+import { loadUnderstood, markUnderstood } from "@/lib/understoodStore";
 
 /** Accept any “thought unit” shape we’ve used so far */
 type PVUnit = BaseThoughtUnit | string | string[] | { text?: string };
@@ -15,16 +17,20 @@ interface ProgressiveViewProps {
   userId: string;
   thoughtUnits: PVUnit[];
   currentThoughtUnit: number;
+
   readingSpeed: number;
   isReading?: boolean;
   isPaused?: boolean;
+
   stats?: ReadingStats;
   highlightedWord: string;
   currentPage: number;
   pdfPageCount?: number;
+
   fontSize: number;
   fontFamily: string;
   lineSpacing: number;
+
   onWordClick?: (word: string) => void;
   setReadingSpeed?: (speed: number) => void;
   onTextSelect?: (text: string) => void;
@@ -38,50 +44,7 @@ interface ProgressiveViewProps {
   externalSelectionText?: string;
 }
 
-/* ------------------------------------------------------------------ */
-/* Right-Brain “idea chunking” — simple, robust chunker for phrases   */
-/* ------------------------------------------------------------------ */
-function chunkIntoIdeas(text: string): string[] {
-  const T = (text || "").replace(/\s+/g, " ").trim();
-  if (!T) return [];
-
-  // Split into sentences conservatively
-  const sentences = T.split(/(?<=[.!?])\s+(?=[A-Z(])/).map((s) => s.trim()).filter(Boolean);
-
-  const chunks: string[] = [];
-  for (const s of sentences) {
-    // Micro-split long sentences on punctuation/conjunctions
-    const parts = s
-      .split(/\s*(?:;|:|—|–|--|, and |, but | and | but | however | whereas )\s*/i)
-      .map((p) => p.trim())
-      .filter(Boolean);
-
-    for (const p of parts) {
-      const tokens = p.split(/\s+/).filter(Boolean);
-
-      // Prefer windows around “information-dense” tokens (caps, numbers)
-      const info = tokens.map((w) => (/[A-Z]\w+/.test(w) || /\d/.test(w) ? 2 : 1));
-
-      for (let i = 0; i < tokens.length; ) {
-        // Window size: 2–6, expand a bit if the window is low-info
-        let win = 3;
-        let score = 0;
-        while (win < 6 && i + win <= tokens.length && score < win + 1) {
-          score = info.slice(i, i + win).reduce((a, b) => a + b, 0);
-          if (score < win + 1) win++;
-          else break;
-        }
-        if (i + win > tokens.length) win = tokens.length - i;
-        chunks.push(tokens.slice(i, i + win).join(" "));
-        i += win;
-      }
-    }
-  }
-
-  return chunks.length ? chunks : [T];
-}
-
-/** Normalize any unit → text */
+/* ---------------- helpers ---------------- */
 function unitToText(u: PVUnit): string {
   if (u == null) return "";
   if (typeof u === "string") return u;
@@ -90,12 +53,34 @@ function unitToText(u: PVUnit): string {
   return typeof maybeText === "string" ? maybeText : JSON.stringify(u);
 }
 
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/* ---------------- tiny quiz helper ---------------- */
+function makeTwoChoiceQuiz(from: string) {
+  const words = (from || "").split(/\W+/).filter((w) => w.length >= 4);
+  const correct = words[0] || "concept";
+  let distractor = correct;
+  for (const w of words) {
+    if (!new RegExp(`\\b${escapeRegExp(correct)}\\b`, "i").test(w)) {
+      distractor = w;
+      break;
+    }
+  }
+  const options = [correct, distractor].sort(() => Math.random() - 0.5);
+  const answer = options.indexOf(correct);
+  return { prompt: "Which term appears in this idea?", options, answer };
+}
+
 export default function ProgressiveView({
   bookId,
   userId,
   thoughtUnits,
   currentThoughtUnit,
   readingSpeed,
+  isReading = true,
+  isPaused = false,
   highlightedWord,
   currentPage,
   fontSize,
@@ -116,8 +101,17 @@ export default function ProgressiveView({
   const recognitionRef = useRef<any>(null);
 
   const saveDebounceRef = useRef<number | null>(null);
-
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
+
+  // Local pause so you can Pause in this view without changing parent state
+  const [localPaused, setLocalPaused] = useState(false);
+
+  // Chunking controls
+  const [chunkChars, setChunkChars] = useState(240);
+  const [chunkMode, setChunkMode] = useState<"semantic" | "sentence" | "bullet-first">("semantic");
+
+  // Understood map (Got it ✓)
+  const [understoodMap, setUnderstoodMap] = useState<Record<string, true>>({});
 
   /* -------------------- Dictation (browser SR) -------------------- */
   useEffect(() => {
@@ -158,7 +152,7 @@ export default function ProgressiveView({
     }
   };
 
-  /* -------------------- Load saved reading state (shared helper) -------------------- */
+  /* -------------------- Load saved reading state -------------------- */
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -179,7 +173,15 @@ export default function ProgressiveView({
     };
   }, [userId, bookId, setReadingSpeed]);
 
-  /* -------------------- Save reading state (shared helper, debounced) -------------------- */
+  /* -------------------- Load understood map -------------------- */
+  useEffect(() => {
+    if (!bookId) return;
+    loadUnderstood(userId || "guest", bookId)
+      .then((m) => setUnderstoodMap(m || {}))
+      .catch(() => {});
+  }, [userId, bookId]);
+
+  /* -------------------- Save reading state (debounced) -------------------- */
   useEffect(() => {
     if (!loaded || !userId || !bookId) return;
 
@@ -240,47 +242,70 @@ export default function ProgressiveView({
 
   const unitText = unitToText(rawUnit);
 
-  /* -------------------- Right-Brain idea chunks -------------------- */
-  const chunks = useMemo(() => chunkIntoIdeas(unitText), [unitText]);
+  /* -------------------- Idea chunks with knob/strategy -------------------- */
+  const chunks = useMemo(
+    () => chunkText(unitText, { mode: chunkMode, targetChars: chunkChars }),
+    [unitText, chunkMode, chunkChars]
+  );
   const [activeIdx, setActiveIdx] = useState(0);
+  useEffect(() => setActiveIdx(0), [unitText, chunkMode, chunkChars]);
 
-  // Reset when unit text changes
-  useEffect(() => setActiveIdx(0), [unitText]);
-
-  // Advance based on readingSpeed (WPM → ms per chunk)
+  // Advance based on readingSpeed (WPM → ms per chunk), respecting isReading/isPaused/localPaused
   useEffect(() => {
-    if (!chunks.length) return;
-    // conservative: base on WPM, but ensure a comfy minimum
+    if (!chunks.length || !isReading || isPaused || localPaused) return;
     const msPerChunk = Math.max(600, (60_000 / Math.max(120, readingSpeed)) * 1.2);
-    const t = window.setInterval(() => setActiveIdx((i) => (i + 1) % chunks.length), msPerChunk);
-    return () => window.clearInterval(t);
-  }, [chunks.length, readingSpeed]);
-
-  /* -------------------- Review mode -------------------- */
-  if (isReviewMode) {
-    return (
-      <div className="p-4 bg-gray-900 text-white rounded-lg">
-        <h3 className="text-lg font-bold mb-4">📅 Review Mode</h3>
-        {currentCard ? (
-          <>
-            <p className="mb-3">
-              <strong>Question:</strong> {currentCard.front}
-            </p>
-            <p className="mb-3">
-              <strong>Answer:</strong> {currentCard.back}
-            </p>
-            <button onClick={gradeCard} className="bg-blue-500 hover:bg-blue-600 px-3 py-1 rounded">
-              Next Card
-            </button>
-          </>
-        ) : (
-          <p>🎉 All cards reviewed!</p>
-        )}
-      </div>
+    const t = window.setInterval(
+      () => setActiveIdx((i) => Math.min(i + 1, chunks.length - 1)),
+      msPerChunk
     );
+    return () => window.clearInterval(t);
+  }, [chunks.length, readingSpeed, isReading, isPaused, localPaused]);
+
+  const activeChunk = chunks[activeIdx] || "";
+  const activeChunkId = stableChunkId(activeChunk);
+  const isUnderstood = !!understoodMap[activeChunkId];
+
+  /* -------------------- Hotkeys -------------------- */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const editable = (e.target as HTMLElement)?.getAttribute?.("contenteditable") === "true";
+      if (tag === "INPUT" || tag === "TEXTAREA" || editable) return;
+
+      if (e.code === "Space") {
+        e.preventDefault();
+        setLocalPaused((p) => !p);
+      } else if (e.key === "ArrowRight" || e.key.toLowerCase() === "j") {
+        setActiveIdx((i) => Math.min(i + 1, chunks.length - 1));
+      } else if (e.key === "ArrowLeft" || e.key.toLowerCase() === "k") {
+        setActiveIdx((i) => Math.max(i - 1, 0));
+      } else if (e.key.toLowerCase() === "g") {
+        e.preventDefault();
+        toggleUnderstood();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [chunks.length, activeChunkId]);
+
+  /* -------------------- Understood toggle -------------------- */
+  function toggleUnderstood() {
+    setUnderstoodMap((m) => {
+      const next = { ...m };
+      if (next[activeChunkId]) delete next[activeChunkId];
+      else next[activeChunkId] = true;
+      return next;
+    });
+    markUnderstood(userId || "guest", bookId, activeChunkId).catch(() => {});
   }
 
-  /* -------------------- Effective selection text -------------------- */
+  /* -------------------- Quick quiz -------------------- */
+  const [showQuiz, setShowQuiz] = useState(false);
+  const [quizPick, setQuizPick] = useState<number | null>(null);
+  const quiz = useMemo(() => makeTwoChoiceQuiz(activeChunk), [activeChunk]);
+  useEffect(() => setQuizPick(null), [quiz.prompt, activeChunkId]);
+
+  /* -------------------- Effective selection -------------------- */
   const effectiveSelection = (externalSelectionText?.trim() || selectionText || dictationText).trim();
 
   /* --------------- Forward note generation (global/fallback) --------------- */
@@ -288,7 +313,6 @@ export default function ProgressiveView({
     if (onGenerateNote) {
       onGenerateNote(text ?? effectiveSelection, mnemonic, mode);
     } else {
-      // fallback to local modal if parent didn’t supply a handler
       setShowNoteEditor(true);
     }
   };
@@ -301,30 +325,70 @@ export default function ProgressiveView({
         style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
         onMouseUp={selBind?.onMouseUp ?? handleMouseUp}
       >
+        {/* HUD */}
+        <div className="flex items-center gap-3 mb-3">
+          <span className="text-[11px] opacity-75">Chunk</span>
+          <input
+            type="range"
+            min={120}
+            max={480}
+            step={20}
+            value={chunkChars}
+            onChange={(e) => setChunkChars(Number(e.target.value))}
+          />
+          <select
+            className="text-xs bg-gray-700 rounded px-1 py-0.5"
+            value={chunkMode}
+            onChange={(e) => setChunkMode(e.target.value as any)}
+            title="Chunking strategy"
+          >
+            <option value="semantic">Semantic</option>
+            <option value="sentence">Sentence</option>
+            <option value="bullet-first">Bullet-first</option>
+          </select>
+
+          <div className="mx-2 h-4 w-px bg-gray-600" />
+
+          <button
+            onClick={() => setLocalPaused((p) => !p)}
+            className="text-[11px] px-2 py-0.5 rounded bg-gray-700 hover:bg-gray-600"
+            title="Pause (Space)"
+          >
+            {localPaused || isPaused ? "Paused" : "Pause"}
+          </button>
+
+          <button
+            onClick={toggleUnderstood}
+            className={`text-[11px] px-2 py-0.5 rounded ${
+              isUnderstood ? "bg-green-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+            }`}
+            title="Mark this idea as understood (G)"
+          >
+            {isUnderstood ? "Got it ✓" : "Got it"}
+          </button>
+        </div>
+
         {/* Idea-chunk rendering; fallback to words if chunking yields 0 */}
         {chunks.length > 0 ? (
           <div>
             {chunks.map((chunk, idx) => {
               const isActive = idx === activeIdx;
               const includesHighlight =
-                highlightedWord && new RegExp(`\\b${highlightedWord}\\b`).test(chunk);
+                highlightedWord && new RegExp(`\\b${escapeRegExp(highlightedWord)}\\b`).test(chunk);
 
               return (
                 <span
-                  key={idx}
+                  key={`${idx}-${stableChunkId(chunk)}`}
                   className={`idea-chunk ${isActive ? "active" : ""} ${
                     includesHighlight ? "hl" : ""
                   } cursor-pointer`}
                   onClick={() => {
                     onWordClick?.(chunk);
-                    // if parent didn't track highlight, at least use local cue
-                    if (!onWordClick) {
-                      // no-op; parent handles highlight state
-                    }
                     setSelectionText(chunk);
                     onTextSelect?.(chunk);
                     setActiveIdx(idx);
                   }}
+                  title={isUnderstood && idx === activeIdx ? "Understood ✓" : undefined}
                 >
                   {chunk}{" "}
                 </span>
@@ -335,11 +399,7 @@ export default function ProgressiveView({
           unitText.split(" ").map((word, idx) => (
             <span
               key={idx}
-              className={
-                word === highlightedWord
-                  ? "bg-yellow-400 text-black px-1 rounded"
-                  : "hover:bg-gray-700 cursor-pointer px-1 rounded"
-              }
+              className="hover:bg-gray-700 cursor-pointer px-1 rounded"
               onClick={() => {
                 onWordClick?.(word);
                 setSelectionText(word);
@@ -351,7 +411,8 @@ export default function ProgressiveView({
           ))
         )}
 
-        <div className="mt-4">
+        {/* Dictation / actions */}
+        <div className="mt-4 flex items-center gap-2">
           <button
             onClick={toggleRecording}
             className={`px-3 py-1 rounded text-white ${
@@ -360,9 +421,20 @@ export default function ProgressiveView({
           >
             🎙️ {isRecording ? "Stop Dictation" : "Start Dictation"}
           </button>
+
           {dictationText && (
-            <p className="mt-2 text-sm text-green-400">Live dictation: {dictationText}</p>
+            <p className="text-sm text-green-400">Live dictation: {dictationText}</p>
           )}
+        </div>
+
+        <div className="mt-3">
+          <button
+            className="text-xs px-2 py-1 rounded bg-purple-600 hover:bg-purple-500"
+            onClick={() => setShowQuiz(true)}
+            title="Quick quiz"
+          >
+            Quiz me
+          </button>
         </div>
 
         <RightBrainToolbar
@@ -375,7 +447,47 @@ export default function ProgressiveView({
         />
       </div>
 
-      {/* Fallback local editor (used only if parent didn’t handle onGenerateNote) */}
+      {/* Quick quiz card */}
+      {showQuiz && (
+        <div className="fixed bottom-4 right-4 max-w-sm border border-gray-700 rounded-lg p-3 bg-gray-900/90 shadow-xl">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs uppercase tracking-wide text-gray-300">Quick quiz</div>
+            <button
+              className="text-xs px-2 py-0.5 rounded bg-gray-700 hover:bg-gray-600"
+              onClick={() => setShowQuiz(false)}
+            >
+              Close
+            </button>
+          </div>
+          <div className="text-sm mb-2">{quiz.prompt}</div>
+          <div className="flex gap-2">
+            {quiz.options.map((opt, idx) => {
+              const picked = quizPick === idx;
+              const correct = quiz.answer === idx;
+              const cls =
+                quizPick == null
+                  ? "bg-gray-700 hover:bg-gray-600"
+                  : picked && correct
+                  ? "bg-green-600"
+                  : picked && !correct
+                  ? "bg-red-600"
+                  : "bg-gray-700";
+              return (
+                <button
+                  key={idx}
+                  className={`text-xs px-2 py-1 rounded ${cls}`}
+                  onClick={() => setQuizPick(idx)}
+                  disabled={quizPick != null}
+                >
+                  {opt}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Fallback local editor (only used if parent didn’t handle onGenerateNote) */}
       {showNoteEditor && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-6">
           <div className="bg-gray-900 p-4 rounded-lg w-full max-w-2xl">
@@ -392,33 +504,14 @@ export default function ProgressiveView({
       {/* Local styles for gentle idea-pulse */}
       <style jsx>{`
         @keyframes ideaPulse {
-          0% {
-            box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.35);
-            background: rgba(250, 204, 21, 0.12);
-          }
-          70% {
-            box-shadow: 0 0 0 10px rgba(250, 204, 21, 0);
-            background: rgba(250, 204, 21, 0.18);
-          }
-          100% {
-            box-shadow: 0 0 0 0 rgba(250, 204, 21, 0);
-            background: rgba(250, 204, 21, 0.12);
-          }
+          0%   { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.35); background: rgba(250, 204, 21, 0.12); }
+          70%  { box-shadow: 0 0 0 10px rgba(250, 204, 21, 0);   background: rgba(250, 204, 21, 0.18); }
+          100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0);      background: rgba(250, 204, 21, 0.12); }
         }
-        .idea-chunk {
-          border-radius: 0.25rem;
-          padding: 0 0.15rem;
-          transition: background 120ms ease;
-        }
-        .idea-chunk.active {
-          animation: ideaPulse 1200ms ease-out;
-        }
-        .idea-chunk:hover {
-          background: rgba(250, 204, 21, 0.22);
-        }
-        .idea-chunk.hl {
-          outline: 1px solid rgba(250, 204, 21, 0.5);
-        }
+        .idea-chunk { border-radius: 0.25rem; padding: 0 0.15rem; transition: background 120ms ease; }
+        .idea-chunk.active { animation: ideaPulse 1200ms ease-out; }
+        .idea-chunk:hover { background: rgba(250, 204, 21, 0.22); }
+        .idea-chunk.hl { outline: 1px solid rgba(250, 204, 21, 0.5); }
       `}</style>
     </>
   );

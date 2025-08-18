@@ -6,14 +6,17 @@ import { saveReadingProgress, loadReadingProgress } from "@/lib/firebase";
 import RightBrainToolbar from "@/components/RightBrainToolbar";
 import { useStartReview } from "@/hooks/useStartReview";
 
+import { chunkText, stableChunkId } from "@/lib/chunkers";
+import { loadUnderstood, markUnderstood } from "@/lib/understoodStore";
+import ProgressRing from "@/components/ProgressRing"; // ⬅️ NEW
+
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
 interface HybridReaderProps {
-  /** canonical id */
   bookId: string;
   userId: string;
 
-  sampleText: string;            // kept for compatibility; we’ll prefer unitText
+  sampleText: string;
   currentPage: number;
   pdfPageCount?: number;
 
@@ -41,9 +44,7 @@ interface HybridReaderProps {
   onTextSelect?: (text: string) => void;
   onGenerateNote?: (text: string, mnemonic?: string, mode?: "sketch" | "highYield") => void;
 
-  /** Unified selection binding from usePdfSelection() */
   selBind?: { onMouseUp?: (e: React.MouseEvent) => void };
-  /** Pass the hook’s live selection (keeps popup/notes in sync) */
   externalSelectionText?: string;
 }
 
@@ -56,36 +57,8 @@ function unitToText(u: HRUnit): string {
   return typeof t === "string" ? t : JSON.stringify(u);
 }
 
-function chunkIntoIdeas(text: string): string[] {
-  const T = (text || "").replace(/\s+/g, " ").trim();
-  if (!T) return [];
-  const sentences = T.split(/(?<=[.!?])\s+(?=[A-Z(])/).map((s) => s.trim()).filter(Boolean);
-  const chunks: string[] = [];
-
-  for (const s of sentences) {
-    const parts = s
-      .split(/\s*(?:;|:|—|–|--|, and |, but | and | but | however | whereas )\s*/i)
-      .map((p) => p.trim())
-      .filter(Boolean);
-
-    for (const p of parts) {
-      const tokens = p.split(/\s+/).filter(Boolean);
-      const info = tokens.map((w) => (/[A-Z]\w+/.test(w) || /\d/.test(w) ? 2 : 1));
-      for (let i = 0; i < tokens.length; ) {
-        let win = 3;
-        let score = 0;
-        while (win < 6 && i + win <= tokens.length && score < win + 1) {
-          score = info.slice(i, i + win).reduce((a, b) => a + b, 0);
-          if (score < win + 1) win++;
-          else break;
-        }
-        if (i + win > tokens.length) win = tokens.length - i;
-        chunks.push(tokens.slice(i, i + win).join(" "));
-        i += win;
-      }
-    }
-  }
-  return chunks.length ? chunks : [T];
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function keyTokenFromChunk(chunk: string): string | null {
@@ -99,9 +72,6 @@ function keyTokenFromChunk(chunk: string): string | null {
   return scored[0]?.w || null;
 }
 
-function escapeRegExp(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 function renderOriginalWithCue(
   text: string,
   token: string | null,
@@ -131,10 +101,27 @@ function renderOriginalWithCue(
 
 /* ---------------- comprehension prompts ---------------- */
 const COMPREHENSION_PROMPTS = [
-  { label: "Explain in your own words", build: (ctx: string) => `Explain in your own words:\n\n${ctx}` },
-  { label: "Why does X lead to Y?",     build: (ctx: string) => `Why does this happen? Use the context to justify each step:\n\n${ctx}` },
-  { label: "Compare A vs B",            build: (ctx: string) => `Compare two key ideas in the passage. Where are they similar/different?\n\nContext:\n${ctx}` },
+  { label: "Explain", build: (ctx: string) => `Explain in your own words:\n\n${ctx}` },
+  { label: "Analogy", build: (ctx: string) => `Create a vivid analogy for this idea:\n\n${ctx}` },
+  { label: "Example", build: (ctx: string) => `Give a concrete example that demonstrates:\n\n${ctx}` },
+  { label: "Why →",   build: (ctx: string) => `Why does this happen? Justify the steps:\n\n${ctx}` },
 ] as const;
+
+/* ---------------- tiny quiz helper ---------------- */
+function makeTwoChoiceQuiz(from: string) {
+  const words = (from || "").split(/\W+/).filter((w) => w.length >= 4);
+  const correct = keyTokenFromChunk(from) || words[0] || "concept";
+  let distractor = correct;
+  for (const w of words) {
+    if (!new RegExp(`\\b${escapeRegExp(correct)}\\b`, "i").test(w)) {
+      distractor = w;
+      break;
+    }
+  }
+  const options = [correct, distractor].sort(() => Math.random() - 0.5);
+  const answer = options.indexOf(correct);
+  return { prompt: "Which term appears in this idea?", options, answer };
+}
 
 export default function HybridReader({
   bookId,
@@ -163,6 +150,19 @@ export default function HybridReader({
   const [selectionText, setSelectionText] = useState("");
   const [promptIdx, setPromptIdx] = useState(0);
 
+  // Right-Brain phases in Hybrid
+  const [phase, setPhase] = useState<"gist" | "pattern" | "detail">("gist");
+
+  // Local pause so we can Space-bar pause here without changing parent props
+  const [localPaused, setLocalPaused] = useState(false);
+
+  // Chunking knob
+  const [chunkChars, setChunkChars] = useState(260);
+  const [chunkMode, setChunkMode] = useState<"semantic" | "sentence" | "bullet-first">("semantic");
+
+  // Understood map (Got it)
+  const [understoodMap, setUnderstoodMap] = useState<Record<string, true>>({});
+
   // Review flow
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
@@ -178,6 +178,12 @@ export default function HybridReader({
       if (typeof progress.readingSpeed === "number") setReadingSpeed?.(progress.readingSpeed);
     });
   }, [userId, bookId, setCurrentPage, setCurrentThoughtUnit, setHighlightedWord, setReadingSpeed]);
+
+  /* -------------------- Load understood map -------------------- */
+  useEffect(() => {
+    if (!bookId) return;
+    loadUnderstood(userId || "guest", bookId).then((m) => setUnderstoodMap(m || {})).catch(() => {});
+  }, [userId, bookId]);
 
   /* -------------------- Throttled save progress -------------------- */
   const saveTimer = useRef<number | null>(null);
@@ -232,22 +238,27 @@ export default function HybridReader({
 
   const unitText = unitToText(rawUnit);
 
-  /* -------------------- Idea chunks (Right-Brain) -------------------- */
-  const chunks = useMemo(() => chunkIntoIdeas(unitText), [unitText]);
+  /* -------------------- Idea chunks with knob -------------------- */
+  const chunks = useMemo(
+    () => chunkText(unitText, { mode: chunkMode, targetChars: chunkChars }),
+    [unitText, chunkMode, chunkChars]
+  );
   const [activeIdx, setActiveIdx] = useState(0);
-
-  useEffect(() => setActiveIdx(0), [unitText]);
+  useEffect(() => setActiveIdx(0), [unitText, chunkChars, chunkMode]);
 
   // auto-advance only when actually reading
   useEffect(() => {
-    if (!chunks.length || !isReading || isPaused) return;
+    if (!chunks.length || !isReading || isPaused || localPaused) return;
     const msPerChunk = Math.max(600, (60_000 / Math.max(120, readingSpeed)) * 1.2);
-    const t = window.setInterval(() => setActiveIdx((i) => (i + 1) % chunks.length), msPerChunk);
+    const t = window.setInterval(() => setActiveIdx((i) => Math.min(i + 1, chunks.length - 1)), msPerChunk);
     return () => window.clearInterval(t);
-  }, [chunks.length, readingSpeed, isReading, isPaused]);
+  }, [chunks.length, readingSpeed, isReading, isPaused, localPaused]);
 
   const activeChunk = chunks[activeIdx] || "";
   const cueToken = keyTokenFromChunk(activeChunk);
+  const activeChunkId = stableChunkId(activeChunk);
+  const isUnderstood = !!understoodMap[activeChunkId];
+
   const effectiveSelection = (externalSelectionText?.trim() || selectionText).trim();
 
   // memoize highlight regex used in Progressive spans
@@ -264,29 +275,60 @@ export default function HybridReader({
   const activePrompt = COMPREHENSION_PROMPTS[promptIdx];
   const promptContext = (effectiveSelection || activeChunk || unitText || sampleText).trim();
 
-  /* -------------------- Review mode -------------------- */
-  if (isReviewMode) {
-    return (
-      <div className="p-4 bg-gray-900 text-white rounded-lg">
-        <h3 className="text-lg font-bold mb-4">📅 Review Mode</h3>
-        {currentCard ? (
-          <>
-            <p className="mb-3">
-              <strong>Question:</strong> {currentCard.front}
-            </p>
-            <p className="mb-3">
-              <strong>Answer:</strong> {currentCard.back}
-            </p>
-            <button onClick={gradeCard} className="bg-blue-500 hover:bg-blue-600 px-3 py-1 rounded">
-              Next Card
-            </button>
-          </>
-        ) : (
-          <p>🎉 All cards reviewed!</p>
-        )}
-      </div>
-    );
+  /* -------------------- Hotkeys -------------------- */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const editable = (e.target as HTMLElement)?.getAttribute?.("contenteditable") === "true";
+      if (tag === "INPUT" || tag === "TEXTAREA" || editable) return;
+
+      if (e.code === "Space") {
+        e.preventDefault();
+        setLocalPaused((p) => !p);
+      } else if (e.key === "ArrowRight" || e.key.toLowerCase() === "j") {
+        setActiveIdx((i) => Math.min(i + 1, chunks.length - 1));
+      } else if (e.key === "ArrowLeft" || e.key.toLowerCase() === "k") {
+        setActiveIdx((i) => Math.max(i - 1, 0));
+      } else if (e.key.toLowerCase() === "g") {
+        e.preventDefault();
+        toggleUnderstood();
+      } else if (e.key.toLowerCase() === "q") {
+        e.preventDefault();
+        setShowQuiz(true);
+      } else if (e.key === "Enter") {
+        onGenerateNote?.(activePrompt.build(promptContext), undefined, "highYield");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chunks.length, promptContext, promptIdx, activeChunk]);
+
+  /* -------------------- Understood toggle -------------------- */
+  function toggleUnderstood() {
+    setUnderstoodMap((m) => {
+      const next = { ...m };
+      if (next[activeChunkId]) delete next[activeChunkId];
+      else next[activeChunkId] = true;
+      return next;
+    });
+    markUnderstood(userId || "guest", bookId, activeChunkId).catch(() => {});
   }
+
+  /* -------------------- Quick quiz -------------------- */
+  const [showQuiz, setShowQuiz] = useState(false);
+  const quiz = useMemo(() => makeTwoChoiceQuiz(activeChunk), [activeChunk]);
+  const [quizPick, setQuizPick] = useState<number | null>(null);
+  useEffect(() => {
+    setQuizPick(null);
+  }, [quiz.prompt, activeChunkId]);
+
+  /* -------------------- Progress (percent understood) -------------------- */
+  const understoodCount = useMemo(
+    () => chunks.reduce((n, c) => n + (understoodMap[stableChunkId(c)] ? 1 : 0), 0),
+    [chunks, understoodMap]
+  );
+  const understoodPct = chunks.length ? Math.round((understoodCount / chunks.length) * 100) : 0;
 
   /* -------------------- Main dual-panel UI -------------------- */
   return (
@@ -319,8 +361,67 @@ export default function HybridReader({
         onMouseUp={selBind?.onMouseUp ?? handleMouseUp}
         style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
       >
-        <h4 className="text-sm font-semibold text-yellow-400 mb-3">Progressive View</h4>
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-sm font-semibold text-yellow-400">Progressive View</h4>
 
+          {/* HUD: chunking + phase + understood + progress ring */}
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] opacity-75">Chunk</span>
+            <input
+              type="range"
+              min={120}
+              max={480}
+              step={20}
+              value={chunkChars}
+              onChange={(e) => setChunkChars(Number(e.target.value))}
+            />
+            <select
+              className="text-xs bg-gray-700 rounded px-1 py-0.5"
+              value={chunkMode}
+              onChange={(e) => setChunkMode(e.target.value as any)}
+              title="Chunking strategy"
+            >
+              <option value="semantic">Semantic</option>
+              <option value="sentence">Sentence</option>
+              <option value="bullet-first">Bullet-first</option>
+            </select>
+
+            <div className="mx-2 h-4 w-px bg-gray-600" />
+
+            <div className="flex gap-1">
+              {(["gist", "pattern", "detail"] as const).map((p) => (
+                <button
+                  key={p}
+                  className={`text-[11px] px-2 py-0.5 rounded ${
+                    phase === p ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+                  }`}
+                  onClick={() => setPhase(p)}
+                  title="Right-Brain phases"
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+
+            {/* progress ring + count */}
+            <div className="flex items-center gap-1 ml-2">
+              <ProgressRing percent={understoodPct} size={28} />
+              <span className="text-[11px] opacity-75">{understoodCount}/{chunks.length}</span>
+            </div>
+
+            <button
+              onClick={toggleUnderstood}
+              className={`ml-2 text-[11px] px-2 py-0.5 rounded ${
+                isUnderstood ? "bg-green-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+              }`}
+              title="Mark this idea as understood (G)"
+            >
+              {isUnderstood ? "Got it ✓" : "Got it"}
+            </button>
+          </div>
+        </div>
+
+        {/* Idea chunks */}
         {chunks.length ? (
           <div>
             {chunks.map((chunk, idx) => {
@@ -329,7 +430,7 @@ export default function HybridReader({
 
               return (
                 <span
-                  key={idx}
+                  key={`${idx}-${stableChunkId(chunk)}`}
                   className={`idea-chunk ${isActive ? "active" : ""} ${includes ? "hl" : ""} cursor-pointer`}
                   onClick={() => {
                     onWordClick(chunk);
@@ -365,27 +466,107 @@ export default function HybridReader({
           ))
         )}
 
-        {/* Comprehension prompt card */}
+        {/* Right-Brain micro-routine & actions */}
         <div className="mt-3 border border-gray-700 rounded-lg p-3 bg-gray-900/60">
-          <div className="text-xs uppercase tracking-wide text-gray-300 mb-1">Comprehension</div>
-          <div className="font-medium text-sm mb-2">{activePrompt.label}</div>
-          <div className="flex gap-2">
+          <div className="text-xs uppercase tracking-wide text-gray-300 mb-2">
+            Right-Brain: {phase === "gist" ? "Gist" : phase === "pattern" ? "Pattern" : "Detail"}
+          </div>
+
+          {phase === "gist" && (
+            <div className="text-sm opacity-95">
+              <p className="text-lg leading-7 font-semibold mb-1">{cueToken || "Key idea"}</p>
+              <p>{(activeChunk || unitText).split(/(?<=[.!?])\s+/)[0]}</p>
+            </div>
+          )}
+
+          {phase === "pattern" && (
+            <div className="text-sm opacity-95">
+              <p className="mb-2">Look for relations:</p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>
+                  Cause → effect?{" "}
+                  <span className="opacity-70">(because, therefore, leads to, results in)</span>
+                </li>
+                <li>
+                  Compare / contrast?{" "}
+                  <span className="opacity-70">(whereas, however, in contrast, similarly)</span>
+                </li>
+                <li>Sequence? (first, next, then, finally)</li>
+              </ul>
+              <div className="mt-2 text-xs opacity-80">
+                Sketch plan: <code>[A]</code> → <code>[B]</code> (labels & arrows)
+              </div>
+            </div>
+          )}
+
+          {phase === "detail" && <div className="text-sm">{activeChunk || unitText}</div>}
+
+          {/* Action bar */}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {COMPREHENSION_PROMPTS.map((p, i) => (
+              <button
+                key={p.label}
+                className={`text-xs px-2 py-1 rounded ${
+                  i === promptIdx ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+                }`}
+                onClick={() => {
+                  setPromptIdx(i);
+                  onGenerateNote?.(p.build(promptContext), undefined, "highYield");
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+
             <button
-              className="text-xs px-2 py-1 rounded bg-yellow-500 text-black"
-              onClick={() =>
-                onGenerateNote?.(activePrompt.build(promptContext), undefined, "highYield")
-              }
+              className="text-xs px-2 py-1 rounded bg-purple-600 hover:bg-purple-500"
+              onClick={() => setShowQuiz(true)}
+              title="Quick quiz (Q)"
             >
-              Open in Right-Brain
-            </button>
-            <button
-              className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
-              onClick={() => setPromptIdx((i) => (i + 1) % COMPREHENSION_PROMPTS.length)}
-            >
-              Next prompt
+              Quiz me
             </button>
           </div>
         </div>
+
+        {/* Quick quiz modal-ish card */}
+        {showQuiz && (
+          <div className="mt-3 border border-gray-700 rounded-lg p-3 bg-gray-900/80">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs uppercase tracking-wide text-gray-300">Quick quiz</div>
+              <button
+                className="text-xs px-2 py-0.5 rounded bg-gray-700 hover:bg-gray-600"
+                onClick={() => setShowQuiz(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="text-sm mb-2">{quiz.prompt}</div>
+            <div className="flex gap-2">
+              {quiz.options.map((opt, idx) => {
+                const picked = quizPick === idx;
+                const correct = quiz.answer === idx;
+                const cls =
+                  quizPick == null
+                    ? "bg-gray-700 hover:bg-gray-600"
+                    : picked && correct
+                    ? "bg-green-600"
+                    : picked && !correct
+                    ? "bg-red-600"
+                    : "bg-gray-700";
+                return (
+                  <button
+                    key={idx}
+                    className={`text-xs px-2 py-1 rounded ${cls}`}
+                    onClick={() => setQuizPick(idx)}
+                    disabled={quizPick != null}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <RightBrainToolbar
           userId={userId}

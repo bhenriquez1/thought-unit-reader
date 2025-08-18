@@ -106,7 +106,6 @@ function getTocPage(t: TOCEntry): number | undefined {
 }
 
 function titleForPage(toc: TOCEntry[], page: number): string {
-  // Exact match first (cast to avoid TS complaining about unknown shape)
   const exact = (toc.find((t) => getTocPage(t) === page) as any)?.title;
   if (exact) return String(exact);
 
@@ -121,6 +120,39 @@ function titleForPage(toc: TOCEntry[], page: number): string {
     }
   }
   return bestTitle || `p.${page}`;
+}
+
+/* ---------- highlight chosen chunk inside the PDF ---------- */
+function highlightChunkInPDF(pageNumber: number, text: string) {
+  if (typeof window === "undefined") return;
+  const page = document.querySelector(`[data-page-number="${pageNumber}"]`);
+  const layer = page?.querySelector(".textLayer") as HTMLElement | null;
+  if (!layer || !text.trim()) return;
+
+  // clear old
+  layer.querySelectorAll(".pdf-hit").forEach((el) => el.classList.remove("pdf-hit"));
+
+  const spans = Array.from(layer.querySelectorAll("span"));
+  const needle = text.replace(/\s+/g, " ").trim().toLowerCase();
+  let acc = "";
+  let start = -1;
+
+  for (let i = 0; i < spans.length; i++) {
+    const piece = (spans[i].textContent || "").replace(/\s+/g, " ").trim();
+    if (!piece) continue;
+    if (start === -1) start = i;
+    acc = (acc ? acc + " " : "") + piece;
+    const hay = acc.toLowerCase();
+    if (hay.includes(needle)) {
+      for (let j = start; j <= i; j++) spans[j].classList.add("pdf-hit");
+      (spans[start] as HTMLElement).scrollIntoView({ block: "center", behavior: "smooth" });
+      break;
+    }
+    if (acc.length > needle.length * 3) {
+      acc = "";
+      start = -1;
+    }
+  }
 }
 
 /* ---------------- mini comprehension prompts (overlay) ---------------- */
@@ -147,7 +179,27 @@ function ProgressiveOverlay({
   const [promptIdx, setPromptIdx] = useState(0);
   const activeText = chunks[activeIdx] || "";
 
-  return !chunks.length ? null : (
+  // keyboard: J/K or ArrowDown/ArrowUp to move; Enter to open in Right-Brain
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.tagName?.match(/INPUT|TEXTAREA|SELECT/)) return;
+      if (["ArrowDown", "j", "J"].includes(e.key)) {
+        e.preventDefault();
+        setActiveIdx((i) => Math.min(chunks.length - 1, i + 1));
+      } else if (["ArrowUp", "k", "K"].includes(e.key)) {
+        e.preventDefault();
+        setActiveIdx((i) => Math.max(0, i - 1));
+      } else if (e.key === "Enter") {
+        onOpenRightBrain?.(COMPREHENSION_PROMPTS[promptIdx].build(activeText));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [chunks.length, setActiveIdx, activeText, promptIdx, onOpenRightBrain]);
+
+  if (!chunks.length) return null;
+
+  return (
     <div className="pointer-events-auto absolute top-3 right-3 bg-gray-900/85 border border-gray-700 rounded-lg shadow-lg w-[360px] max-h-[70vh] overflow-y-auto">
       <div className="sticky top-0 z-10 p-2 text-xs font-semibold text-yellow-300 bg-gray-900/95 border-b border-gray-800">
         Progressive Navigator
@@ -500,6 +552,26 @@ export default function ThoughtUnitReader() {
      🔹 Render Reader Content
   ========================================================================= */
   const renderContent = () => {
+    // 🔐 Gate the app: must be signed in before doing anything
+    if (!user) {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <div className="bg-gray-800 text-white rounded-xl p-6 shadow-xl text-center w-[380px]">
+            <h3 className="text-lg font-bold mb-2">Welcome to Thought Unit Reader</h3>
+            <p className="text-sm opacity-80 mb-4">
+              Please sign in to upload PDFs and use the reader.
+            </p>
+            <button
+              onClick={() => signInWithGoogle()}
+              className="px-4 py-2 rounded bg-blue-500 hover:bg-blue-600"
+            >
+              Sign in with Google
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     if (viewMode === "rightbrain") {
       return (
         <RightBrainNoteEditor
@@ -546,6 +618,8 @@ export default function ThoughtUnitReader() {
                 setWbContext(titleForPage(tableOfContents, currentPage));
                 setShowWhiteboardPanel(true);
               }
+              // visually mark inside the PDF
+              highlightChunkInPDF(currentPage, text);
             }}
             onOpenRightBrain={(built) => handleOpenRightBrainNote(built, undefined, "highYield")}
           />
@@ -718,7 +792,7 @@ export default function ThoughtUnitReader() {
           {darkMode ? "🌙 Dark" : "☀️ Light"}
         </button>
 
-        {/* 🔐 Auth tester (Google Sign-In) */}
+        {/* 🔐 Auth status / control */}
         <div className="flex items-center gap-2">
           {user ? (
             <>
@@ -742,7 +816,7 @@ export default function ThoughtUnitReader() {
           )}
         </div>
 
-        {/* Library (guest = session only) */}
+        {/* Library */}
         <button
           onClick={() => setShowLibrary(true)}
           className="text-xs px-3 py-1 rounded bg-yellow-500 text-black shadow"
@@ -879,6 +953,14 @@ export default function ThoughtUnitReader() {
           }}
         />
       )}
+
+      {/* global styles for PDF highlights */}
+      <style jsx global>{`
+        .pdf-hit {
+          background: rgba(250, 204, 21, 0.5) !important; /* yellow */
+          border-radius: 3px;
+        }
+      `}</style>
     </div>
   );
 }

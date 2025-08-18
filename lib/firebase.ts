@@ -92,13 +92,19 @@ if (typeof window !== "undefined") {
 }
 
 /* =========================================================================
-   🔹 Optional: connect to local emulators in dev
+   🔹 Optional: connect to local emulators in dev (guard against duplicates)
    ========================================================================= */
-if (useEmulators) {
+declare global {
+  interface Window {
+    __FIREBASE_EMU_CONNECTED__?: boolean;
+  }
+}
+if (useEmulators && typeof window !== "undefined" && !window.__FIREBASE_EMU_CONNECTED__) {
   try {
     connectAuthEmulator(auth, "http://127.0.0.1:9099");
     connectFirestoreEmulator(db, "127.0.0.1", 8080);
     connectStorageEmulator(storage, "127.0.0.1", 9199);
+    window.__FIREBASE_EMU_CONNECTED__ = true;
   } catch {
     /* ignore */
   }
@@ -143,6 +149,8 @@ function readableAuthError(err: any): string {
     case "auth/invalid-credential":
     case "auth/invalid-id-token":
       return "Invalid credential. Try again or clear cookies for this site.";
+    case "auth/popup-closed-by-user":
+      return "Popup was closed before completing the sign-in.";
     default:
       return `Google Sign-In failed (${code || "unknown"}). Check console for details.`;
   }
@@ -176,7 +184,7 @@ export async function signInWithGoogle(): Promise<User | null> {
   // Some environments should default to redirect
   if (typeof window !== "undefined" && shouldUseRedirect()) {
     await signInWithRedirect(auth, provider);
-    return null; // Result will be delivered after redirect; see handleRedirectResult()
+    return null; // Result delivered after redirect; see handleRedirectResult()
   }
 
   try {
@@ -208,6 +216,9 @@ export async function handleRedirectResult(): Promise<User | null> {
     return null;
   } catch (err) {
     console.error("❌ Redirect result error:", err);
+    if (typeof window !== "undefined") {
+      alert(readableAuthError(err));
+    }
     return null;
   }
 }
@@ -218,14 +229,6 @@ export async function signOutUser(): Promise<void> {
   } catch (err) {
     console.error("❌ Sign-Out Error:", err);
   }
-}
-
-/* =========================================================================
-   🔹 Wallet Connect (Placeholder)
-   ========================================================================= */
-export async function connectWallet(): Promise<string | null> {
-  alert("MetaMask connection is temporarily disabled.");
-  return null;
 }
 
 /* =========================================================================
@@ -340,5 +343,5 @@ export async function loadReadingProgress(
 /* =========================================================================
    🔹 Exports
    ========================================================================= */
-export { app, auth, db, storage, firebaseConnected };
+export { app, auth, db, storage, firebaseConnected, useEmulators };
 export type { User };

@@ -1,8 +1,56 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    /* Helpers */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    /* --- (legacy) sessions --- */
     match /sessions/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isSelf(userId);
+    }
+
+    /* --- user profile document used by ensureUserProfile() --- */
+    match /users/{uid} {
+      allow read, write: if isSelf(uid);
+    }
+
+    /* --- PDF library (upload list) ---
+       Path: /users/{uid}/pdfLibrary/{docId}
+    */
+    match /users/{uid}/pdfLibrary/{docId} {
+      allow read, write: if isSelf(uid);
+    }
+
+    /* --- Reading progress (current build) ---
+       Path: /users/{uid}/readingProgress/{pdfId}
+    */
+    match /users/{uid}/readingProgress/{pdfId} {
+      allow read, write: if isSelf(uid);
+    }
+
+    /* --- (back-compat) old progress path you previously used ---
+       Path: /users/{uid}/books/{bookId}/progress
+    */
+    match /users/{uid}/books/{bookId}/progress {
+      allow read, write: if isSelf(uid);
+    }
+
+    /* --- “Got it” flags for chunks (understoodStore) ---
+       Path: /users/{uid}/books/{bookId}/understood/{chunkId}
+    */
+    match /users/{uid}/books/{bookId}/understood/{chunkId} {
+      allow read, write: if isSelf(uid);
+    }
+
+    /* Optional catch-all: any other subcollections under /users/{uid} */
+    match /users/{uid}/{document=**} {
+      allow read, write: if isSelf(uid);
     }
   }
 }
