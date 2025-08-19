@@ -37,14 +37,35 @@ import {
    🔹 Firebase Config (from .env.local)
    ========================================================================= */
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "",
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || "",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim() || "",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN?.trim() || "",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() || "",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim() || "",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID?.trim() || "",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID?.trim() || "",
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID?.trim() || "",
 };
+
+// Validate Firebase configuration
+const validateFirebaseConfig = () => {
+  const requiredFields = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'appId'];
+  const missing = requiredFields.filter(field => !firebaseConfig[field as keyof typeof firebaseConfig]);
+  
+  if (missing.length > 0) {
+    console.warn('⚠️ Missing Firebase config fields:', missing);
+    return false;
+  }
+  
+  // Validate API key format (should start with AIza and be ~39 characters)
+  if (!firebaseConfig.apiKey.startsWith('AIza') || firebaseConfig.apiKey.length < 35) {
+    console.error('❌ Invalid Firebase API key format');
+    return false;
+  }
+  
+  return true;
+};
+
+const isValidConfig = validateFirebaseConfig();
 
 const useEmulators =
   (process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS || "").toString() === "1" ||
@@ -68,7 +89,7 @@ const db = getFirestore(app);
 const storage = getStorage(app);
 
 /** True when the config looks usable — used by the app to gate features. */
-const firebaseConnected =
+const firebaseConnected = isValidConfig &&
   !!firebaseConfig.apiKey &&
   !!firebaseConfig.projectId &&
   !!firebaseConfig.appId &&
@@ -176,12 +197,33 @@ async function ensureUserProfile(u: User) {
 
 /** Call on button click. Uses popup when possible; falls back to redirect automatically. */
 export async function signInWithGoogle(): Promise<User | null> {
+  // Check if Firebase is properly configured before attempting sign-in
+  if (!isValidConfig) {
+    const errorMsg = "Firebase configuration is invalid. Please check your environment variables.";
+    console.error("❌", errorMsg);
+    if (typeof window !== "undefined") alert(errorMsg);
+    return null;
+  }
+
+  if (!firebaseConnected) {
+    const errorMsg = "Firebase is not properly connected. Please check your configuration.";
+    console.error("❌", errorMsg);
+    if (typeof window !== "undefined") alert(errorMsg);
+    return null;
+  }
+
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
 
   if (typeof window !== "undefined" && shouldUseRedirect()) {
-    await signInWithRedirect(auth, provider);
-    return null; // Result after redirect; see handleRedirectResult()
+    try {
+      await signInWithRedirect(auth, provider);
+      return null; // Result after redirect; see handleRedirectResult()
+    } catch (err) {
+      console.error("❌ Google Sign-In Redirect Error:", err);
+      if (typeof window !== "undefined") alert(readableAuthError(err));
+      return null;
+    }
   }
 
   try {
@@ -193,8 +235,14 @@ export async function signInWithGoogle(): Promise<User | null> {
     return null;
   } catch (err) {
     if (popupLikelyBlocked(err)) {
-      await signInWithRedirect(auth, provider);
-      return null;
+      try {
+        await signInWithRedirect(auth, provider);
+        return null;
+      } catch (redirectErr) {
+        console.error("❌ Google Sign-In Redirect Fallback Error:", redirectErr);
+        if (typeof window !== "undefined") alert(readableAuthError(redirectErr));
+        return null;
+      }
     }
     console.error("❌ Google Sign-In Error:", err);
     if (typeof window !== "undefined") alert(readableAuthError(err));
