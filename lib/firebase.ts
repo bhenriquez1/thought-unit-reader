@@ -56,12 +56,15 @@ const validateFirebaseConfig = () => {
     return false;
   }
   
-  // Validate API key format (should start with AIza and be ~39 characters)
-  if (!firebaseConfig.apiKey.startsWith('AIza') || firebaseConfig.apiKey.length < 35) {
-    console.error('❌ Invalid Firebase API key format');
+  // Validate API key format (should start with AIza and be 39-40 characters)
+  if (!firebaseConfig.apiKey.startsWith('AIza') || firebaseConfig.apiKey.length < 39 || firebaseConfig.apiKey.length > 40) {
+    console.error('❌ Invalid Firebase API key format. Expected format: AIza... (39-40 characters)');
+    console.error('❌ Current API key:', firebaseConfig.apiKey);
+    console.error('❌ Current length:', firebaseConfig.apiKey.length);
     return false;
   }
   
+  console.log('✅ Firebase configuration validated successfully');
   return true;
 };
 
