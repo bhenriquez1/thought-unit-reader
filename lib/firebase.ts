@@ -37,7 +37,7 @@ import {
    🔹 Firebase Config (from .env.local)
    ========================================================================= */
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim() || "",
+  apiKey: (process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim() || "").replace(/^=+/, ""), // Remove leading = characters
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN?.trim() || "",
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() || "",
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim() || "",
