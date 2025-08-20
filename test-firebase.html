@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Firebase Auth Test</title>
+    <script type="module">
+        // Import Firebase modules
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth, GoogleAuthProvider, signInWithPopup } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+
+        // Firebase config from your .env.local
+        const firebaseConfig = {
+            apiKey: "AIzaSyAnMPtQh8-eOL3NBNMMa-izbfIcnijYK5w",
+            authDomain: "thought-unit-reader.firebaseapp.com",
+            projectId: "thought-unit-reader",
+            storageBucket: "thought-unit-reader.firebasestorage.app",
+            messagingSenderId: "808239475880",
+            appId: "1:808239475880:web:c66b9bf6c553477f78269d",
+            measurementId: "G-5DF8KCFLFG"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+
+        console.log('Firebase initialized successfully');
+        console.log('Auth domain:', firebaseConfig.authDomain);
+        console.log('Project ID:', firebaseConfig.projectId);
+
+        // Test Google Sign-In
+        window.testGoogleSignIn = async function() {
+            try {
+                const provider = new GoogleAuthProvider();
+                const result = await signInWithPopup(auth, provider);
+                console.log('Sign-in successful:', result.user);
+                document.getElementById('result').innerHTML = `
+                    <div style="color: green;">
+                        ✅ Sign-in successful!<br>
+                        User: ${result.user.displayName || result.user.email}
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Sign-in error:', error);
+                document.getElementById('result').innerHTML = `
+                    <div style="color: red;">
+                        ❌ Sign-in failed:<br>
+                        Code: ${error.code}<br>
+                        Message: ${error.message}
+                    </div>
+                `;
+            }
+        };
+    </script>
+</head>
+<body>
+    <h1>Firebase Authentication Test</h1>
+    <p>This page tests Firebase Google Sign-In with your current configuration.</p>
+    
+    <button onclick="testGoogleSignIn()" style="padding: 10px 20px; font-size: 16px; background: #4285f4; color: white; border: none; border-radius: 4px; cursor: pointer;">
+        Test Google Sign-In
+    </button>
+    
+    <div id="result" style="margin-top: 20px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; min-height: 50px;">
+        Click the button above to test authentication.
+    </div>
+
+    <div style="margin-top: 20px; font-size: 12px; color: #666;">
+        <p><strong>Current domain:</strong> <span id="domain"></span></p>
+        <p><strong>Firebase Project:</strong> thought-unit-reader</p>
+        <p><strong>API Key:</strong> AIzaSyAnMPtQh8-eOL3NBNMMa-izbfIcnijYK5w</p>
+    </div>
+
+    <script>
+        document.getElementById('domain').textContent = window.location.hostname + ':' + window.location.port;
+    </script>
+</body>
+</html>
