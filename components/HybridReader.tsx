@@ -406,8 +406,10 @@ export default function HybridReader({
 
             {/* progress ring + count */}
             <div className="flex items-center gap-1 ml-2">
-              <ProgressRing value={ringValue} size={28} label={`${understoodPct}%`} />
-              <span className="text-[11px] opacity-75">{understoodCount}/{chunks.length}</span>
+              <ProgressRing value={understoodPct / 100} size={28} label={`${understoodPct}%`} title="Understood" />
+              <span className="text-[11px] opacity-75">
+                {understoodCount}/{chunks.length}
+              </span>
             </div>
 
             <button

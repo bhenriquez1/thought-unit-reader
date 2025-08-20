@@ -187,17 +187,17 @@ function ProgressiveOverlay({
       if ((e.target as HTMLElement)?.tagName?.match(/INPUT|TEXTAREA|SELECT/)) return;
       if (["ArrowDown", "j", "J"].includes(e.key)) {
         e.preventDefault();
-        setActiveIdx((i) => Math.min(chunks.length - 1, i + 1));
+        setActiveIdx(Math.min(chunks.length - 1, activeIdx + 1));
       } else if (["ArrowUp", "k", "K"].includes(e.key)) {
         e.preventDefault();
-        setActiveIdx((i) => Math.max(0, i - 1));
+        setActiveIdx(Math.max(0, activeIdx - 1));
       } else if (e.key === "Enter") {
         onOpenRightBrain?.(COMPREHENSION_PROMPTS[promptIdx].build(activeText));
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [chunks.length, setActiveIdx, activeText, promptIdx, onOpenRightBrain]);
+  }, [chunks.length, activeIdx, setActiveIdx, activeText, promptIdx, onOpenRightBrain]);
 
   if (!chunks.length) return null;
 
@@ -565,12 +565,20 @@ export default function ThoughtUnitReader() {
             <p className="text-sm opacity-80 mb-4">
               Please sign in to upload PDFs and use the reader.
             </p>
-            <button
-              onClick={() => signInWithGoogle()}
-              className="px-4 py-2 rounded bg-blue-500 hover:bg-blue-600"
-            >
-              Sign in with Google
-            </button>
+            {firebaseConnected ? (
+              <button
+                onClick={() => signInWithGoogle()}
+                className="px-4 py-2 rounded bg-blue-500 hover:bg-blue-600"
+              >
+                Sign in with Google
+              </button>
+            ) : (
+              <div className="text-xs bg-gray-700/60 rounded p-2">
+                Firebase isn't configured yet for this deploy. Add your{" "}
+                <code className="mx-1 px-1 rounded bg-black/30">NEXT_PUBLIC_FIREBASE_*</code> env vars
+                and redeploy to enable Google Sign-In.
+              </div>
+            )}
           </div>
         </div>
       );
@@ -613,7 +621,14 @@ export default function ThoughtUnitReader() {
           <ProgressiveOverlay
             chunks={progressiveChunks}
             activeIdx={progActiveIdx}
-            setActiveIdx={(i) => setProgActiveIdx(i)}
+            setActiveIdx={(i) => {
+              setProgActiveIdx(i);
+              // Add visual pulse to the newly active chunk in PDF
+              const activeText = progressiveChunks[i];
+              if (activeText) {
+                highlightChunkInPDF(currentPage, activeText);
+              }
+            }}
             onChunkPicked={(text) => {
               sel.setSelectionText(text);
               setHighlightedWord(text.split(/\s+/)[0] || "");
@@ -622,7 +637,7 @@ export default function ThoughtUnitReader() {
                 setWbContext(titleForPage(tableOfContents, currentPage));
                 setShowWhiteboardPanel(true);
               }
-              // visually mark inside the PDF
+              // visually mark inside the PDF with pulse
               highlightChunkInPDF(currentPage, text);
             }}
             onOpenRightBrain={(built) => handleOpenRightBrainNote(built, undefined, "highYield")}
