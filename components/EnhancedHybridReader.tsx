@@ -16,6 +16,7 @@ import {
   searchTOCForNavigation
 } from "@/lib/navigationUtils";
 import PageContextPanel from "@/components/PageContextPanel";
+import ChunkTOCBar from "@/components/ChunkTOCBar";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -243,6 +244,9 @@ export default function EnhancedHybridReader({
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(false);
+
+  // ChunkTOCBar state
+  const [compactMode, setCompactMode] = useState(true);
 
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
@@ -751,71 +755,23 @@ export default function EnhancedHybridReader({
             ))}
           </div>
 
-          {/* Enhanced Progressive Chunks Display with Highlighting */}
-          <div className="space-y-2 max-h-80 overflow-y-auto">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs font-medium text-gray-300">📖 Reading Chunks</span>
-              <div className="flex-1 bg-gray-700 h-1 rounded">
-                <div 
-                  className="bg-yellow-400 h-1 rounded transition-all duration-300"
-                  style={{ width: `${((activeIdx + 1) / chunks.length) * 100}%` }}
-                />
-              </div>
-              <span className="text-xs opacity-75">{activeIdx + 1}/{chunks.length}</span>
-            </div>
-            
-            {chunks.map((chunk, idx) => {
-              const isActive = idx === activeIdx;
-              const includes = hlRegex ? hlRegex.test(chunk) : false;
-              const chunkId = stableChunkId(chunk);
-              const understood = !!understoodMap[chunkId];
+          {/* ChunkTOCBar - New horizontal chip navigation */}
+          <ChunkTOCBar
+            chunks={chunks}
+            activeIdx={activeIdx}
+            onPick={(idx) => {
+              setActiveIdx(idx);
+              const chunk = chunks[idx];
               const keyToken = keyTokenFromChunk(chunk);
-
-              return (
-                <div
-                  key={`${idx}-${chunkId}`}
-                  className={`
-                    text-sm p-3 rounded-lg cursor-pointer transition-all duration-300 border
-                    ${isActive 
-                      ? 'bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border-yellow-500/50 shadow-lg' 
-                      : 'bg-gray-700/30 border-gray-600/30 hover:bg-yellow-500/10'
-                    }
-                    ${includes ? 'ring-2 ring-yellow-400' : ''}
-                    ${understood ? 'border-l-4 border-green-500' : ''}
-                  `}
-                  onClick={() => {
-                    setActiveIdx(idx);
-                    onWordClick(chunk);
-                    setHighlightedWord(keyToken || chunk);
-                    setSelectionText(chunk);
-                    onTextSelect?.(chunk);
-                    if (autoSpeak) speakText(chunk);
-                  }}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      {keyToken && isActive && (
-                        <div className="text-xs font-medium text-yellow-300 mb-1">
-                          🎯 Key: {keyToken}
-                        </div>
-                      )}
-                      <div className="text-xs leading-relaxed">{chunk}</div>
-                    </div>
-                    <div className="flex items-center gap-1 ml-2">
-                      {understood && <span className="text-green-400 text-xs">✓</span>}
-                      {isActive && isSpeaking && (
-                        <span className="text-blue-400 text-xs animate-pulse">🔊</span>
-                      )}
-                      {isActive && (
-                        <span className="text-yellow-400 text-xs">●</span>
-                      )}
-                      <span className="text-xs opacity-40">{idx + 1}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+              onWordClick(chunk);
+              setHighlightedWord(keyToken || chunk);
+              setSelectionText(chunk);
+              onTextSelect?.(chunk);
+              if (autoSpeak) speakText(chunk);
+            }}
+            compact={compactMode}
+            onToggleCompact={() => setCompactMode(!compactMode)}
+          />
 
           {/* Right-Brain Analysis */}
           <div className="p-3 bg-gray-900/60 rounded-lg">

@@ -111,11 +111,10 @@ export default function TOCSidebar({
   toc, 
   currentPage, 
   onJumpToPage, 
-  isVisible = false, 
+  isVisible = true, // Always visible by default
   onToggleVisibility 
 }: Props) {
   const [q, setQ] = useState("");
-  const [internalVisible, setInternalVisible] = useState(false);
 
   const flat = useMemo(() => {
     const normalized = normalizeTOC(toc || []);
@@ -134,144 +133,90 @@ export default function TOCSidebar({
     return flat.filter((e) => e.title.toLowerCase().includes(term));
   }, [q, flat]);
 
-  const visible = isVisible !== undefined ? isVisible : internalVisible;
-  const toggleVisibility = onToggleVisibility || (() => setInternalVisible(!internalVisible));
-
+  // Always render the TOC - no collapsing
   return (
-    <>
-      {/* Floating Toggle Button */}
-      <motion.button
-        onClick={toggleVisibility}
-        className="fixed top-20 left-4 z-[60] bg-gray-900/95 hover:bg-gray-800 text-white p-3 rounded-full shadow-xl backdrop-blur-sm border border-gray-600 hover:border-yellow-400 transition-all"
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.95 }}
-        title="Toggle Table of Contents"
-        style={{ 
-          boxShadow: '0 4px 20px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.1)' 
-        }}
-      >
-        <motion.div
-          animate={{ rotate: visible ? 180 : 0 }}
-          transition={{ duration: 0.2 }}
-          className="text-lg"
-        >
-          📑
-        </motion.div>
-      </motion.button>
+    <div className="sticky top-0 left-0 w-80 h-screen bg-gray-900/95 backdrop-blur-md text-white p-4 flex flex-col shadow-2xl border-r border-gray-700 z-30">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-bold">📑 Table of Contents</h3>
+        <div className="text-xs bg-yellow-500/20 px-2 py-1 rounded text-yellow-300">
+          Always Visible
+        </div>
+      </div>
 
-      {/* Sliding TOC Panel */}
-      <AnimatePresence>
-        {visible && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={toggleVisibility}
-              className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
-            />
+      {/* Search */}
+      <input
+        type="text"
+        placeholder="Search headings..."
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        className="w-full p-3 mb-4 rounded-lg bg-gray-800/80 text-sm outline-none border border-gray-700 focus:border-yellow-500 transition-colors"
+      />
 
-            {/* TOC Panel */}
-            <motion.aside
-              initial={{ x: -320, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -320, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 300, damping: 30 }}
-              className="fixed top-0 left-0 w-80 h-full bg-gray-900/95 backdrop-blur-md text-white p-4 z-50 flex flex-col shadow-2xl border-r border-gray-700"
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold">📑 Table of Contents</h3>
-                <button
-                  onClick={toggleVisibility}
-                  className="text-gray-400 hover:text-white transition-colors p-1 rounded"
+      {/* Content */}
+      {filtered.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center">
+          <p className="text-sm text-gray-400 text-center">
+            {flat.length === 0 ? "No table of contents available" : "No matching headings found"}
+          </p>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto">
+          <motion.ul 
+            className="space-y-1"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.1 }}
+          >
+            {filtered.map((entry, idx) => {
+              const page = entry.page;
+              const active = typeof page === "number" && page === currentPage;
+
+              return (
+                <motion.li 
+                  key={`${entry.title}-${idx}`}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: idx * 0.02 }}
                 >
-                  ✕
-                </button>
-              </div>
-
-              {/* Search */}
-              <input
-                type="text"
-                placeholder="Search headings..."
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                className="w-full p-3 mb-4 rounded-lg bg-gray-800/80 text-sm outline-none border border-gray-700 focus:border-yellow-500 transition-colors"
-              />
-
-              {/* Content */}
-              {filtered.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center">
-                  <p className="text-sm text-gray-400 text-center">
-                    {flat.length === 0 ? "No table of contents available" : "No matching headings found"}
-                  </p>
-                </div>
-              ) : (
-                <div className="flex-1 overflow-y-auto">
-                  <motion.ul 
-                    className="space-y-1"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.1 }}
+                  <button
+                    onClick={() => {
+                      if (page) {
+                        console.log(`🧭 TOC Navigation: Jumping to page ${page} for "${entry.title}"`);
+                        onJumpToPage(page);
+                      }
+                    }}
+                    disabled={typeof page !== "number"}
+                    className={`
+                      w-full text-left cursor-pointer px-3 py-2 rounded-lg text-sm transition-all duration-200
+                      hover:bg-gray-700/80 disabled:opacity-50 disabled:cursor-not-allowed
+                      ${active ? "bg-yellow-500/20 border-l-4 border-yellow-500 text-yellow-300 font-medium" : "hover:translate-x-1"}
+                    `}
+                    style={{ paddingLeft: `${entry.level * 12 + 12}px` }}
+                    title={typeof page === "number" ? `Go to page ${page}` : "Location unavailable"}
                   >
-                    {filtered.map((entry, idx) => {
-                      const page = entry.page;
-                      const active = typeof page === "number" && page === currentPage;
+                    <div className="flex justify-between items-center">
+                      <span className="truncate flex-1 leading-relaxed">{entry.title}</span>
+                      {typeof page === "number" && (
+                        <span className="opacity-60 text-xs ml-3 shrink-0 bg-gray-800/50 px-2 py-0.5 rounded">
+                          p.{page}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                </motion.li>
+              );
+            })}
+          </motion.ul>
+        </div>
+      )}
 
-                      return (
-                        <motion.li 
-                          key={`${entry.title}-${idx}`}
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: idx * 0.02 }}
-                        >
-                          <button
-                            onClick={() => {
-                              if (page) {
-                                console.log(`🧭 TOC Navigation: Jumping to page ${page} for "${entry.title}"`);
-                                onJumpToPage(page);
-                                // Add a small delay before auto-closing to show the navigation happened
-                                setTimeout(() => {
-                                  toggleVisibility();
-                                }, 500);
-                              }
-                            }}
-                            disabled={typeof page !== "number"}
-                            className={`
-                              w-full text-left cursor-pointer px-3 py-2 rounded-lg text-sm transition-all duration-200
-                              hover:bg-gray-700/80 disabled:opacity-50 disabled:cursor-not-allowed
-                              ${active ? "bg-yellow-500/20 border-l-4 border-yellow-500 text-yellow-300 font-medium" : "hover:translate-x-1"}
-                            `}
-                            style={{ paddingLeft: `${entry.level * 12 + 12}px` }}
-                            title={typeof page === "number" ? `Go to page ${page}` : "Location unavailable"}
-                          >
-                            <div className="flex justify-between items-center">
-                              <span className="truncate flex-1 leading-relaxed">{entry.title}</span>
-                              {typeof page === "number" && (
-                                <span className="opacity-60 text-xs ml-3 shrink-0 bg-gray-800/50 px-2 py-0.5 rounded">
-                                  p.{page}
-                                </span>
-                              )}
-                            </div>
-                          </button>
-                        </motion.li>
-                      );
-                    })}
-                  </motion.ul>
-                </div>
-              )}
-
-              {/* Footer */}
-              <div className="mt-4 pt-3 border-t border-gray-700">
-                <p className="text-xs text-gray-400 text-center">
-                  {filtered.length} of {flat.length} headings
-                </p>
-              </div>
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
-    </>
+      {/* Footer */}
+      <div className="mt-4 pt-3 border-t border-gray-700">
+        <p className="text-xs text-gray-400 text-center">
+          {filtered.length} of {flat.length} headings
+        </p>
+      </div>
+    </div>
   );
 }

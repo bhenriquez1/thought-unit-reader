@@ -17,6 +17,7 @@ import {
   searchTOCForNavigation
 } from "@/lib/navigationUtils";
 import PageContextPanel from "@/components/PageContextPanel";
+import ChunkTOCBar from "@/components/ChunkTOCBar";
 
 type PVUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -276,6 +277,9 @@ export default function EnhancedProgressiveView({
   // Enhanced understood tracking with right-brain patterns
   const [understoodMap, setUnderstoodMap] = useState<Record<string, true>>({});
   const [rightBrainInsights, setRightBrainInsights] = useState<Record<string, any>>({});
+  
+  // ChunkTOCBar state
+  const [compactMode, setCompactMode] = useState(true);
   
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
@@ -838,56 +842,21 @@ export default function EnhancedProgressiveView({
           className="mb-4"
         />
 
-        {/* Enhanced Chunk Display */}
-        <div className="space-y-2">
-          {chunks.map((chunk, idx) => {
-            const isActive = idx === activeIdx;
-            const includesHighlight = highlightedWord && 
-              new RegExp(`\\b${escapeRegExp(highlightedWord)}\\b`).test(chunk);
-            const chunkId = stableChunkId(chunk);
-            const understood = !!understoodMap[chunkId];
-
-            return (
-              <div
-                key={`${idx}-${chunkId}`}
-                className={`
-                  idea-chunk p-3 rounded-lg cursor-pointer transition-all duration-300
-                  ${isActive ? 'active bg-yellow-500/20 border-2 border-yellow-500/50' : 'bg-gray-700/30'}
-                  ${includesHighlight ? 'ring-2 ring-yellow-400' : ''}
-                  ${understood ? 'border-l-4 border-green-500' : ''}
-                  hover:bg-yellow-500/10
-                `}
-                onClick={() => {
-                  setActiveIdx(idx);
-                  onWordClick?.(chunk);
-                  setSelectionText(chunk);
-                  onTextSelect?.(chunk);
-                  if (autoSpeak) speakChunk(chunk);
-                }}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    {focusMode === "core" ? (
-                      <div>
-                        <div className="font-medium text-yellow-300 mb-1">
-                          {analyzeChunkForRightBrain(chunk).coreIdea}
-                        </div>
-                        <div className="text-sm opacity-75">{chunk}</div>
-                      </div>
-                    ) : (
-                      <div>{chunk}</div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 ml-3">
-                    {understood && <span className="text-green-400 text-xs">✓</span>}
-                    {isActive && isSpeaking && <span className="text-blue-400 text-xs animate-pulse">🔊</span>}
-                    <span className="text-xs opacity-50">{idx + 1}</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        {/* ChunkTOCBar - New horizontal chip navigation */}
+        <ChunkTOCBar
+          chunks={chunks}
+          activeIdx={activeIdx}
+          onPick={(idx) => {
+            setActiveIdx(idx);
+            const chunk = chunks[idx];
+            onWordClick?.(chunk);
+            setSelectionText(chunk);
+            onTextSelect?.(chunk);
+            if (autoSpeak) speakChunk(chunk);
+          }}
+          compact={compactMode}
+          onToggleCompact={() => setCompactMode(!compactMode)}
+        />
 
         <RightBrainToolbar
           userId={userId}
