@@ -163,18 +163,23 @@ function shouldUseRedirect(): boolean {
 
 function readableAuthError(err: any): string {
   const code: string = err?.code || "";
+  const currentDomain = typeof window !== "undefined" ? window.location.hostname : "unknown";
+  
   switch (code) {
     case "auth/unauthorized-domain":
-      return "This domain isn’t authorized for Firebase Auth. Add your site domain under Firebase Auth → Settings → Authorized domains.";
+      return `This domain (${currentDomain}) isn't authorized for Firebase Auth. Add your site domain under Firebase Auth → Settings → Authorized domains.`;
     case "auth/invalid-api-key":
-      return "Invalid Firebase API key. Check your NEXT_PUBLIC_FIREBASE_API_KEY.";
+    case "auth/api-key-not-valid":
+      return `Invalid Firebase API key or domain not authorized. Current domain: ${currentDomain}. Check your Firebase project settings and add this domain to authorized domains.`;
     case "auth/invalid-credential":
     case "auth/invalid-id-token":
       return "Invalid credential. Try again or clear cookies for this site.";
     case "auth/popup-closed-by-user":
       return "Popup was closed before completing the sign-in.";
+    case "auth/operation-not-allowed":
+      return "Google Sign-In is not enabled in Firebase Auth. Enable it in Firebase Console → Authentication → Sign-in method.";
     default:
-      return `Google Sign-In failed (${code || "unknown"}). Check console for details.`;
+      return `Google Sign-In failed (${code || "unknown"}). Current domain: ${currentDomain}. Check console for details and ensure this domain is authorized in Firebase Auth settings.`;
   }
 }
 
