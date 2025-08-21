@@ -137,6 +137,47 @@ if (useEmulators && typeof window !== "undefined" && !window.__FIREBASE_EMU_CONN
    🔹 Auth Helpers
    ========================================================================= */
 export function listenForAuthChanges(callback: (user: User | null) => void) {
+  // Check if Google Sign-In is disabled and we should use mock user
+  const isDisabled = process.env.NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN === "1";
+  
+  if (isDisabled && typeof window !== "undefined") {
+    // Check if we have a stored mock user
+    const storedUser = localStorage.getItem("mock-auth-user");
+    if (storedUser) {
+      try {
+        const userData = JSON.parse(storedUser);
+        const mockUser = {
+          uid: userData.uid,
+          email: userData.email,
+          displayName: userData.displayName,
+          photoURL: null,
+          emailVerified: true,
+          isAnonymous: false,
+          providerData: [],
+          refreshToken: "mock-refresh-token",
+          tenantId: null,
+          delete: async () => {},
+          getIdToken: async () => "mock-id-token",
+          getIdTokenResult: async () => ({} as any),
+          reload: async () => {},
+          toJSON: () => ({})
+        } as User;
+        
+        // Immediately call callback with mock user
+        setTimeout(() => callback(mockUser), 0);
+        
+        // Return a dummy unsubscribe function
+        return () => {};
+      } catch {
+        // If parsing fails, fall through to normal auth
+      }
+    } else {
+      // No stored user, call callback with null initially
+      setTimeout(() => callback(null), 0);
+      return () => {};
+    }
+  }
+  
   return onAuthStateChanged(auth, callback);
 }
 
@@ -205,6 +246,40 @@ async function ensureUserProfile(u: User) {
 
 /** Call on button click. Uses popup when possible; falls back to redirect automatically. */
 export async function signInWithGoogle(): Promise<User | null> {
+  // Check if Google Sign-In is temporarily disabled
+  const isDisabled = process.env.NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN === "1";
+  if (isDisabled) {
+    console.log("ℹ️ Google Sign-In disabled, using mock authenticated user");
+    // Return a mock authenticated user so app functions normally
+    const mockUser = {
+      uid: "mock-user-dev",
+      email: "dev@thought-unit-reader.com",
+      displayName: "Development User",
+      photoURL: null,
+      emailVerified: true,
+      isAnonymous: false,
+      providerData: [],
+      refreshToken: "mock-refresh-token",
+      tenantId: null,
+      delete: async () => {},
+      getIdToken: async () => "mock-id-token",
+      getIdTokenResult: async () => ({} as any),
+      reload: async () => {},
+      toJSON: () => ({})
+    } as User;
+    
+    // Store mock user info in localStorage for persistence
+    if (typeof window !== "undefined") {
+      localStorage.setItem("mock-auth-user", JSON.stringify({
+        uid: mockUser.uid,
+        email: mockUser.email,
+        displayName: mockUser.displayName
+      }));
+    }
+    
+    return mockUser;
+  }
+
   // Check if Firebase is properly configured before attempting sign-in
   if (!isValidConfig) {
     const errorMsg = "Firebase configuration is invalid. Please check your environment variables.";
@@ -275,6 +350,16 @@ export async function handleRedirectResult(): Promise<User | null> {
 }
 
 export async function signOutUser(): Promise<void> {
+  // Check if Google Sign-In is disabled and we're using mock user
+  const isDisabled = process.env.NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN === "1";
+  
+  if (isDisabled && typeof window !== "undefined") {
+    // Clear mock user from localStorage
+    localStorage.removeItem("mock-auth-user");
+    console.log("ℹ️ Mock user signed out");
+    return;
+  }
+  
   try {
     await signOut(auth);
   } catch (err) {
