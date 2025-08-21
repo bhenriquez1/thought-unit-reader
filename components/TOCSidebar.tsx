@@ -115,46 +115,51 @@ export default function TOCSidebar({ toc, currentPage, onJumpToPage }: Props) {
   }, [q, flat]);
 
   return (
-    <aside className="w-64 bg-gray-900 text-white p-4 overflow-y-auto">
-      <h3 className="text-lg font-bold mb-4">📑 Table of Contents</h3>
+    <aside className="w-72 bg-gray-900 text-white p-3 h-full flex flex-col">
+      <h3 className="text-sm font-bold mb-3">📑 Table of Contents</h3>
 
       <input
         type="text"
         placeholder="Search…"
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        className="w-full p-2 mb-4 rounded bg-gray-800 text-sm outline-none"
+        className="w-full p-2 mb-3 rounded bg-gray-800 text-xs outline-none"
       />
 
       {filtered.length === 0 ? (
-        <p className="text-sm text-gray-400">No headings found.</p>
+        <p className="text-xs text-gray-400">No headings found.</p>
       ) : (
-        <ul>
-          {filtered.map((entry, idx) => {
-            const page = entry.page;
-            const active = typeof page === "number" && page === currentPage;
+        <div className="flex-1 overflow-y-auto">
+          <ul className="space-y-1">
+            {filtered.map((entry, idx) => {
+              const page = entry.page;
+              const active = typeof page === "number" && page === currentPage;
 
-            return (
-              <li key={`${entry.title}-${idx}`}>
-                <button
-                  onClick={() => page && onJumpToPage(page)}
-                  disabled={typeof page !== "number"}
-                  className={
-                    "w-full text-left cursor-pointer p-2 rounded hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed " +
-                    (active ? "bg-yellow-500 text-black" : "")
-                  }
-                  style={{ paddingLeft: `${entry.level * 12 + 8}px` }}
-                  title={typeof page === "number" ? `Go to page ${page}` : "Location unavailable"}
-                >
-                  {entry.title}
-                  {typeof page === "number" && (
-                    <span className="opacity-60 text-xs ml-2">p.{page}</span>
-                  )}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+              return (
+                <li key={`${entry.title}-${idx}`}>
+                  <button
+                    onClick={() => page && onJumpToPage(page)}
+                    disabled={typeof page !== "number"}
+                    className={`
+                      w-full text-left cursor-pointer px-2 py-1.5 rounded text-xs transition-colors
+                      hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed
+                      ${active ? "bg-yellow-500 text-black font-medium" : ""}
+                    `}
+                    style={{ paddingLeft: `${entry.level * 8 + 8}px` }}
+                    title={typeof page === "number" ? `Go to page ${page}` : "Location unavailable"}
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="truncate flex-1 leading-tight">{entry.title}</span>
+                      {typeof page === "number" && (
+                        <span className="opacity-60 text-[10px] ml-2 shrink-0">p.{page}</span>
+                      )}
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
     </aside>
   );

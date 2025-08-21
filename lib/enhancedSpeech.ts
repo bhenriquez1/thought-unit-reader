@@ -1,277 +1,353 @@
 // lib/enhancedSpeech.ts
-import React from 'react';
+"use client";
 
-export interface EnhancedSpeechOptions {
-  voice?: SpeechSynthesisVoice;
-  rate?: number;
-  pitch?: number;
-  volume?: number;
-  naturalPauses?: boolean;
-  punctuationEmphasis?: boolean;
+export interface VoiceOption {
+  name: string;
+  lang: string;
+  gender?: 'male' | 'female';
+  quality: 'standard' | 'premium' | 'neural';
+  description?: string;
+  voice: SpeechSynthesisVoice;
+}
+
+export interface SpeechSettings {
+  voice: SpeechSynthesisVoice | null;
+  rate: number;
+  pitch: number;
+  volume: number;
+  autoSpeak: boolean;
+  highlightWords: boolean;
 }
 
 export class EnhancedSpeechService {
+  private static instance: EnhancedSpeechService;
+  private voices: VoiceOption[] = [];
   private currentUtterance: SpeechSynthesisUtterance | null = null;
-  private isPlaying = false;
-  private onStateChange?: (isPlaying: boolean) => void;
+  private isInitialized = false;
+  private listeners: Set<() => void> = new Set();
 
-  constructor(onStateChange?: (isPlaying: boolean) => void) {
-    this.onStateChange = onStateChange;
+  static getInstance(): EnhancedSpeechService {
+    if (!EnhancedSpeechService.instance) {
+      EnhancedSpeechService.instance = new EnhancedSpeechService();
+    }
+    return EnhancedSpeechService.instance;
   }
 
-  // Get available voices, prioritizing natural-sounding ones
-  getAvailableVoices(): SpeechSynthesisVoice[] {
-    const voices = speechSynthesis.getVoices();
+  private constructor() {
+    if (typeof window !== 'undefined') {
+      this.initializeVoices();
+      speechSynthesis.addEventListener('voiceschanged', () => this.initializeVoices());
+    }
+  }
+
+  private initializeVoices() {
+    const systemVoices = speechSynthesis.getVoices();
     
-    // Sort voices to prioritize natural-sounding ones
-    return voices
+    this.voices = systemVoices
       .filter(voice => voice.lang.startsWith('en'))
+      .map(voice => {
+        const isNeural = voice.name.toLowerCase().includes('neural') || 
+                        voice.name.toLowerCase().includes('premium') ||
+                        voice.name.toLowerCase().includes('enhanced');
+        
+        const isPremium = voice.name.toLowerCase().includes('premium') ||
+                         voice.name.toLowerCase().includes('pro') ||
+                         voice.localService === false;
+
+        const gender = this.detectGender(voice.name);
+        
+        return {
+          name: voice.name,
+          lang: voice.lang,
+          gender,
+          quality: isNeural ? 'neural' : isPremium ? 'premium' : 'standard',
+          description: this.getVoiceDescription(voice),
+          voice
+        };
+      })
       .sort((a, b) => {
-        // Prioritize neural/natural voices
-        const aIsNatural = a.name.toLowerCase().includes('neural') || 
-                          a.name.toLowerCase().includes('natural') ||
-                          a.name.toLowerCase().includes('premium');
-        const bIsNatural = b.name.toLowerCase().includes('neural') || 
-                          b.name.toLowerCase().includes('natural') ||
-                          b.name.toLowerCase().includes('premium');
-        
-        if (aIsNatural && !bIsNatural) return -1;
-        if (!aIsNatural && bIsNatural) return 1;
-        
-        // Then prioritize by quality indicators
-        const aQuality = a.name.toLowerCase().includes('enhanced') ? 1 : 0;
-        const bQuality = b.name.toLowerCase().includes('enhanced') ? 1 : 0;
-        
-        return bQuality - aQuality;
+        // Sort by quality (neural > premium > standard), then by name
+        const qualityOrder = { neural: 3, premium: 2, standard: 1 };
+        const qualityDiff = qualityOrder[b.quality] - qualityOrder[a.quality];
+        if (qualityDiff !== 0) return qualityDiff;
+        return a.name.localeCompare(b.name);
       });
+
+    this.isInitialized = true;
+    this.notifyListeners();
   }
 
-  // Enhanced text preprocessing for natural speech
-  private preprocessText(text: string, options: EnhancedSpeechOptions): string {
-    let processed = text;
-
-    if (options.naturalPauses) {
-      // Add natural pauses at punctuation
-      processed = processed
-        .replace(/\./g, '. ') // Period pause
-        .replace(/,/g, ', ') // Comma pause
-        .replace(/;/g, '; ') // Semicolon pause
-        .replace(/:/g, ': ') // Colon pause
-        .replace(/\?/g, '? ') // Question pause
-        .replace(/!/g, '! ') // Exclamation pause
-        .replace(/\n/g, '. ') // Line break pause
-        .replace(/\s+/g, ' ') // Clean up extra spaces
-        .trim();
-    }
-
-    if (options.punctuationEmphasis) {
-      // Add SSML-like emphasis for important punctuation
-      processed = processed
-        .replace(/\*\*(.*?)\*\*/g, '$1') // Remove markdown bold but keep text
-        .replace(/\*(.*?)\*/g, '$1') // Remove markdown italic but keep text
-        .replace(/([.!?])\s*$/gm, '$1 ') // Ensure sentence endings have space
-        .replace(/([,:;])/g, '$1 '); // Add slight pause after punctuation
-    }
-
-    return processed;
+  private detectGender(voiceName: string): 'male' | 'female' | undefined {
+    const name = voiceName.toLowerCase();
+    
+    // Common patterns for gender detection
+    const femalePatterns = ['female', 'woman', 'girl', 'samantha', 'alex', 'victoria', 'karen', 'susan', 'allison', 'ava', 'serena', 'zoe'];
+    const malePatterns = ['male', 'man', 'boy', 'daniel', 'tom', 'fred', 'ralph', 'albert', 'bruce', 'aaron', 'oliver'];
+    
+    if (femalePatterns.some(pattern => name.includes(pattern))) return 'female';
+    if (malePatterns.some(pattern => name.includes(pattern))) return 'male';
+    
+    return undefined;
   }
 
-  // Speak text with enhanced natural flow
-  speak(text: string, options: EnhancedSpeechOptions = {}): Promise<void> {
+  private getVoiceDescription(voice: SpeechSynthesisVoice): string {
+    const parts = [];
+    
+    if (voice.localService) {
+      parts.push('Local');
+    } else {
+      parts.push('Cloud');
+    }
+    
+    if (voice.name.toLowerCase().includes('neural')) {
+      parts.push('Neural');
+    } else if (voice.name.toLowerCase().includes('premium')) {
+      parts.push('Premium');
+    }
+    
+    const gender = this.detectGender(voice.name);
+    if (gender) {
+      parts.push(gender.charAt(0).toUpperCase() + gender.slice(1));
+    }
+    
+    return parts.join(' • ');
+  }
+
+  getVoices(): VoiceOption[] {
+    return this.voices;
+  }
+
+  getBestVoices(): VoiceOption[] {
+    // Return top 5 highest quality voices
+    return this.voices.slice(0, 5);
+  }
+
+  getVoicesByGender(gender: 'male' | 'female'): VoiceOption[] {
+    return this.voices.filter(v => v.gender === gender);
+  }
+
+  findVoiceByName(name: string): VoiceOption | null {
+    return this.voices.find(v => v.name === name) || null;
+  }
+
+  speak(
+    text: string, 
+    settings: Partial<SpeechSettings> = {},
+    onWordBoundary?: (word: string, charIndex: number) => void,
+    onEnd?: () => void,
+    onError?: (error: SpeechSynthesisErrorEvent) => void
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
+      this.stop(); // Stop any current speech
+      
       if (!text.trim()) {
         resolve();
         return;
       }
 
-      // Stop any current speech
-      this.stop();
-
-      // Preprocess text for natural speech
-      const processedText = this.preprocessText(text, {
-        naturalPauses: true,
-        punctuationEmphasis: true,
-        ...options
-      });
-
-      const utterance = new SpeechSynthesisUtterance(processedText);
+      const utterance = new SpeechSynthesisUtterance(text);
       
-      // Apply voice settings
-      if (options.voice) {
-        utterance.voice = options.voice;
+      // Apply settings
+      if (settings.voice) {
+        utterance.voice = settings.voice;
       }
       
-      utterance.rate = options.rate || 1.0;
-      utterance.pitch = options.pitch || 1.0;
-      utterance.volume = options.volume || 1.0;
-
-      // Event handlers
+      utterance.rate = settings.rate ?? 1.0;
+      utterance.pitch = settings.pitch ?? 1.0;
+      utterance.volume = settings.volume ?? 1.0;
+      
+      // Enhanced event handlers
       utterance.onstart = () => {
-        this.isPlaying = true;
-        this.onStateChange?.(true);
+        console.log('🎵 Speech started');
       };
-
+      
       utterance.onend = () => {
-        this.isPlaying = false;
+        console.log('🎵 Speech ended');
         this.currentUtterance = null;
-        this.onStateChange?.(false);
+        onEnd?.();
         resolve();
       };
-
+      
       utterance.onerror = (event) => {
-        this.isPlaying = false;
+        console.error('🎵 Speech error:', event);
         this.currentUtterance = null;
-        this.onStateChange?.(false);
-        reject(new Error(`Speech synthesis error: ${event.error}`));
+        onError?.(event);
+        reject(event);
       };
-
+      
       utterance.onpause = () => {
-        this.onStateChange?.(false);
+        console.log('🎵 Speech paused');
       };
-
+      
       utterance.onresume = () => {
-        this.onStateChange?.(true);
+        console.log('🎵 Speech resumed');
       };
-
+      
+      // Word boundary events for highlighting
+      if (onWordBoundary) {
+        utterance.onboundary = (event) => {
+          if (event.name === 'word') {
+            const word = text.substring(event.charIndex, event.charIndex + event.charLength);
+            onWordBoundary(word, event.charIndex);
+          }
+        };
+      }
+      
       this.currentUtterance = utterance;
       speechSynthesis.speak(utterance);
     });
   }
 
-  // Speak text in chunks for better natural flow
-  async speakInChunks(text: string, options: EnhancedSpeechOptions = {}): Promise<void> {
-    const sentences = text
-      .split(/(?<=[.!?])\s+/)
-      .filter(s => s.trim().length > 0);
-
-    for (const sentence of sentences) {
-      if (!this.isPlaying) break; // Stop if cancelled
-      
-      await this.speak(sentence, options);
-      
-      // Natural pause between sentences
-      if (options.naturalPauses && this.isPlaying) {
-        await new Promise(resolve => setTimeout(resolve, 300));
-      }
+  stop(): void {
+    if (this.currentUtterance) {
+      speechSynthesis.cancel();
+      this.currentUtterance = null;
     }
   }
 
   pause(): void {
-    if (speechSynthesis.speaking) {
+    if (this.isSpeaking()) {
       speechSynthesis.pause();
     }
   }
 
   resume(): void {
-    if (speechSynthesis.paused) {
+    if (this.isPaused()) {
       speechSynthesis.resume();
     }
   }
 
-  stop(): void {
-    speechSynthesis.cancel();
-    this.isPlaying = false;
-    this.currentUtterance = null;
-    this.onStateChange?.(false);
+  isSpeaking(): boolean {
+    return speechSynthesis.speaking && !speechSynthesis.paused;
   }
 
-  getIsPlaying(): boolean {
-    return this.isPlaying;
+  isPaused(): boolean {
+    return speechSynthesis.paused;
   }
 
-  // Get recommended voice for natural reading
-  getRecommendedVoice(): SpeechSynthesisVoice | null {
-    const voices = this.getAvailableVoices();
+  isInitialized(): boolean {
+    return this.isInitialized;
+  }
+
+  // Enhanced text processing for better speech
+  preprocessText(text: string): string {
+    return text
+      // Add pauses for better pacing
+      .replace(/([.!?])\s+/g, '$1 <break time="500ms"/> ')
+      .replace(/([,;:])\s+/g, '$1 <break time="200ms"/> ')
+      // Expand common abbreviations
+      .replace(/\be\.g\./gi, 'for example')
+      .replace(/\bi\.e\./gi, 'that is')
+      .replace(/\betc\./gi, 'etcetera')
+      .replace(/\bvs\./gi, 'versus')
+      .replace(/\bdr\./gi, 'doctor')
+      .replace(/\bmr\./gi, 'mister')
+      .replace(/\bms\./gi, 'miss')
+      // Handle numbers and symbols better
+      .replace(/\b(\d+)%/g, '$1 percent')
+      .replace(/\b(\d+)°/g, '$1 degrees')
+      .replace(/\$/g, 'dollars')
+      .replace(/&/g, 'and')
+      // Clean up extra whitespace
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  // Chunk text for better speech pacing
+  chunkTextForSpeech(text: string, maxChunkLength: number = 200): string[] {
+    const sentences = text.split(/(?<=[.!?])\s+/);
+    const chunks: string[] = [];
+    let currentChunk = '';
     
-    // Look for specific high-quality voices
-    const preferred = [
-      'Microsoft Zira - English (United States)',
-      'Microsoft David - English (United States)', 
-      'Google US English',
-      'Alex',
-      'Samantha'
-    ];
-
-    for (const voiceName of preferred) {
-      const voice = voices.find(v => v.name === voiceName);
-      if (voice) return voice;
-    }
-
-    // Fallback to first available English voice
-    return voices[0] || null;
-  }
-}
-
-// Singleton instance
-let speechService: EnhancedSpeechService | null = null;
-
-export function getEnhancedSpeechService(onStateChange?: (isPlaying: boolean) => void): EnhancedSpeechService {
-  if (!speechService) {
-    speechService = new EnhancedSpeechService(onStateChange);
-  }
-  return speechService;
-}
-
-// Hook for React components
-export function useEnhancedSpeech() {
-  const [isPlaying, setIsPlaying] = React.useState(false);
-  const [availableVoices, setAvailableVoices] = React.useState<SpeechSynthesisVoice[]>([]);
-  const [selectedVoice, setSelectedVoice] = React.useState<SpeechSynthesisVoice | null>(null);
-  const [speechRate, setSpeechRate] = React.useState(1.0);
-
-  const speechService = React.useMemo(() => 
-    getEnhancedSpeechService(setIsPlaying), 
-    []
-  );
-
-  React.useEffect(() => {
-    const loadVoices = () => {
-      const voices = speechService.getAvailableVoices();
-      setAvailableVoices(voices);
-      
-      if (!selectedVoice && voices.length > 0) {
-        const recommended = speechService.getRecommendedVoice();
-        setSelectedVoice(recommended || voices[0]);
+    for (const sentence of sentences) {
+      if (currentChunk.length + sentence.length <= maxChunkLength) {
+        currentChunk += (currentChunk ? ' ' : '') + sentence;
+      } else {
+        if (currentChunk) {
+          chunks.push(currentChunk);
+        }
+        currentChunk = sentence;
       }
-    };
+    }
+    
+    if (currentChunk) {
+      chunks.push(currentChunk);
+    }
+    
+    return chunks;
+  }
 
-    loadVoices();
-    speechSynthesis.addEventListener('voiceschanged', loadVoices);
+  // Advanced speech with word highlighting
+  async speakWithHighlighting(
+    text: string,
+    settings: Partial<SpeechSettings> = {},
+    onWordHighlight?: (word: string, startIndex: number, endIndex: number) => void,
+    onComplete?: () => void
+  ): Promise<void> {
+    const processedText = this.preprocessText(text);
+    const chunks = this.chunkTextForSpeech(processedText, 300);
+    
+    let globalCharIndex = 0;
+    
+    for (const chunk of chunks) {
+      await this.speak(
+        chunk,
+        settings,
+        (word, charIndex) => {
+          const globalStart = globalCharIndex + charIndex;
+          const globalEnd = globalStart + word.length;
+          onWordHighlight?.(word, globalStart, globalEnd);
+        }
+      );
+      globalCharIndex += chunk.length + 1; // +1 for space between chunks
+    }
+    
+    onComplete?.();
+  }
 
-    return () => {
-      speechSynthesis.removeEventListener('voiceschanged', loadVoices);
-    };
-  }, [speechService, selectedVoice]);
+  // Event listener management
+  addListener(callback: () => void): void {
+    this.listeners.add(callback);
+  }
 
-  const speak = React.useCallback((text: string) => {
-    return speechService.speak(text, {
-      voice: selectedVoice || undefined,
-      rate: speechRate,
-      naturalPauses: true,
-      punctuationEmphasis: true
-    });
-  }, [speechService, selectedVoice, speechRate]);
+  removeListener(callback: () => void): void {
+    this.listeners.delete(callback);
+  }
 
-  const speakInChunks = React.useCallback((text: string) => {
-    return speechService.speakInChunks(text, {
-      voice: selectedVoice || undefined,
-      rate: speechRate,
-      naturalPauses: true,
-      punctuationEmphasis: true
-    });
-  }, [speechService, selectedVoice, speechRate]);
+  private notifyListeners(): void {
+    this.listeners.forEach(callback => callback());
+  }
 
-  return {
-    speak,
-    speakInChunks,
-    pause: speechService.pause.bind(speechService),
-    resume: speechService.resume.bind(speechService),
-    stop: speechService.stop.bind(speechService),
-    isPlaying,
-    availableVoices,
-    selectedVoice,
-    setSelectedVoice,
-    speechRate,
-    setSpeechRate
-  };
-}
+  // Get recommended settings for different use cases
+  getRecommendedSettings(useCase: 'reading' | 'explanation' | 'quick'): Partial<SpeechSettings> {
+    const bestVoice = this.getBestVoices()[0]?.voice || null;
+    
+    switch (useCase) {
+      case 'reading':
+        return {
+          voice: bestVoice,
+          rate: 0.9,
+          pitch: 1.0,
+          volume: 0.8,
+          highlightWords: true
+        };
+      case 'explanation':
+        return {
+          voice: bestVoice,
+          rate: 0.8,
+          pitch: 1.1,
+          volume: 0.9,
+          highlightWords: true
+        };
+      case 'quick':
+        return {
+          voice: bestVoice,
+          rate: 1.3,
+          pitch: 1.0,
+          volume: 0.7,
+          highlightWords: false
+        };
+      default:
+        return {
+          voice: bestVoice,
+          rate: 1.0,

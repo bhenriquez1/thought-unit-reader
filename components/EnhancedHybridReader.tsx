@@ -435,9 +435,9 @@ export default function EnhancedHybridReader({
   const understoodPct = chunks.length ? Math.round((understoodCount / chunks.length) * 100) : 0;
 
   return (
-    <div className="grid grid-cols-5 gap-4 p-4 h-full">
-      {/* Enhanced PDF View (Left - 60%) */}
-      <div className="col-span-3 bg-gray-800 rounded-lg overflow-hidden">
+    <div className="grid grid-cols-7 gap-4 p-4 h-full">
+      {/* Enhanced PDF View (Left - 70% more room) */}
+      <div className="col-span-4 bg-gray-800 rounded-lg overflow-hidden">
         <div className="flex items-center justify-between p-3 bg-gray-700">
           <h4 className="text-sm font-semibold text-yellow-400">📄 PDF Reader</h4>
           <div className="flex items-center gap-2">

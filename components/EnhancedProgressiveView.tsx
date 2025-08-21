@@ -321,10 +321,10 @@ export default function EnhancedProgressiveView({
   const effectiveSelection = (externalSelectionText?.trim() || selectionText).trim();
 
   return (
-    <div className="grid grid-cols-3 gap-4 p-4 h-full">
-      {/* PDF View (Left - 40%) */}
+    <div className="grid grid-cols-5 gap-4 p-4 h-full">
+      {/* PDF View (Left - 60% more room) */}
       {pdfUrl && showPdfOverlay && (
-        <div className="col-span-1 bg-gray-800 rounded-lg overflow-hidden">
+        <div className="col-span-3 bg-gray-800 rounded-lg overflow-hidden">
           <div className="flex items-center justify-between p-2 bg-gray-700">
             <h4 className="text-sm font-semibold text-yellow-400">PDF View</h4>
             <div className="flex items-center gap-2">

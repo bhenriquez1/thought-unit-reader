@@ -22,7 +22,7 @@ import {
   handleRedirectResult,
 } from "@/lib/firebase";
 
-import WhiteboardPanel from "@/components/WhiteboardPanel";
+import EnhancedWhiteboard from "@/components/EnhancedWhiteboard";
 
 import {
   parseBookWithChapters,
@@ -284,6 +284,10 @@ export default function ThoughtUnitReader() {
   const [clickSwitchesTo, setClickSwitchesTo] = useState(false);
   const [sampleText, setSampleText] = useState("");
   const [darkMode, setDarkMode] = useState(true);
+
+  // Voice settings state
+  const [selectedVoice, setSelectedVoice] = useState<SpeechSynthesisVoice | null>(null);
+  const [speechRate, setSpeechRate] = useState(1.0);
 
   const [tableOfContents, setTableOfContents] = useState<TOCEntry[]>([]);
   const [showTOC] = useState(true);
@@ -650,6 +654,10 @@ export default function ThoughtUnitReader() {
           onGenerateNote={handleOpenRightBrainNote}
           selBind={sel.bind}
           externalSelectionText={sel.selectionText}
+          selectedVoice={selectedVoice}
+          onVoiceChange={setSelectedVoice}
+          speechRate={speechRate}
+          onSpeechRateChange={setSpeechRate}
         />
       ) : (
         <div className="flex flex-col items-center justify-center h-full gap-4">
@@ -663,7 +671,7 @@ export default function ThoughtUnitReader() {
     }
 
     if (viewMode === "hybrid") {
-      return (
+      return fileUrl ? (
         <EnhancedHybridReader
           bookId={bookId}
           userId={USER_ID}
@@ -696,7 +704,19 @@ export default function ThoughtUnitReader() {
           selBind={sel.bind}
           externalSelectionText={sel.selectionText}
           onGenerateNote={handleOpenRightBrainNote}
+          selectedVoice={selectedVoice}
+          onVoiceChange={setSelectedVoice}
+          speechRate={speechRate}
+          onSpeechRateChange={setSpeechRate}
         />
+      ) : (
+        <div className="flex flex-col items-center justify-center h-full gap-4">
+          <p>📂 Upload a PDF to begin</p>
+          <label className="bg-yellow-500 text-black px-4 py-2 rounded cursor-pointer">
+            Upload PDF
+            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
+          </label>
+        </div>
       );
     }
 
@@ -869,7 +889,7 @@ export default function ThoughtUnitReader() {
                 ✖ Close
               </button>
             </div>
-            <WhiteboardPanel
+            <EnhancedWhiteboard
               concept={wbConcept}
               context={wbContext}
               stickyNotes={wbStickyNotes}
@@ -882,6 +902,11 @@ export default function ThoughtUnitReader() {
               /** keep whiteboard synced as you page around */
               reExplainOnPageChange
               currentPage={currentPage}
+              selectedVoice={selectedVoice}
+              onVoiceChange={setSelectedVoice}
+              speechRate={speechRate}
+              onSpeechRateChange={setSpeechRate}
+              naturalVoiceEnabled={true}
             />
           </div>
         )}
