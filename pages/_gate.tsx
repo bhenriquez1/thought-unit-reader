@@ -32,8 +32,14 @@ export default function Gate() {
           type="password"
           value={pwd}
           onChange={(e) => setPwd(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              handleSubmit(e);
+            }
+          }}
           className="w-full rounded px-3 py-2 text-black"
-          placeholder="El3n@&AmmayahH3nriqu3z2026"
+          placeholder="Enter password"
+          autoFocus
         />
         {err && <p className="text-red-400 text-sm mt-2">{err}</p>}
         <button

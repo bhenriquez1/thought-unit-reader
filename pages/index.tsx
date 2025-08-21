@@ -361,17 +361,35 @@ export default function ThoughtUnitReader() {
     let url: string;
     let libEntry: { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean };
 
-    if (firebaseConnected && user) {
-      url = await uploadPDF(file, USER_ID);
-      getPDFLibrary(USER_ID).then(setPdfLibrary);
-      libEntry = {
-        id: String(Date.now()),
-        name: file.name,
-        url,
-        uploadedAt: new Date().toISOString(),
-      };
+    // Check if we're using the bypass (mock user) or real Firebase
+    const isUsingBypass = process.env.NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN === "1";
+    const canUseFirebase = firebaseConnected && user && !isUsingBypass;
+
+    if (canUseFirebase) {
+      try {
+        url = await uploadPDF(file, USER_ID);
+        getPDFLibrary(USER_ID).then(setPdfLibrary);
+        libEntry = {
+          id: String(Date.now()),
+          name: file.name,
+          url,
+          uploadedAt: new Date().toISOString(),
+        };
+      } catch (error) {
+        console.error("Firebase upload failed, falling back to local:", error);
+        // Fall back to local mode if Firebase upload fails
+        url = URL.createObjectURL(file);
+        libEntry = {
+          id: String(Date.now()),
+          name: file.name,
+          url,
+          uploadedAt: new Date().toISOString(),
+          isLocal: true,
+        };
+        setPdfLibrary((prev) => [libEntry, ...prev]);
+      }
     } else {
-      // Guest mode: blob URL + session library
+      // Guest mode or bypass: blob URL + session library
       url = URL.createObjectURL(file);
       libEntry = {
         id: String(Date.now()),
