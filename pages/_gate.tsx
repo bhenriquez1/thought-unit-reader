@@ -38,7 +38,6 @@ export default function Gate() {
             }
           }}
           className="w-full rounded px-3 py-2 text-black"
-          placeholder="Enter password"
           autoFocus
         />
         {err && <p className="text-red-400 text-sm mt-2">{err}</p>}

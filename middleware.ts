@@ -51,7 +51,7 @@ export function middleware(req: NextRequest) {
 
   // --- Preview lock (optional) ---
   if (PREVIEW_ENABLED) {
-    const authed = req.cookies.get("preview_auth")?.value === "1";
+    const authed = req.cookies.get("preview_auth")?.value === "ok";
     if (!authed) {
       const url = req.nextUrl.clone();
       url.pathname = "/_gate";
