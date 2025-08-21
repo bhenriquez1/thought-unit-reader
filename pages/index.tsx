@@ -902,19 +902,22 @@ export default function ThoughtUnitReader() {
         </button>
       </div>
 
-      {/* Reader Content - Full Width */}
-      <div className="flex-1 overflow-hidden px-4">
-        <div className="w-full h-full bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
+      {/* Main Content Area with TOC Sidebar */}
+      <div className="flex-1 overflow-hidden flex">
+        {/* Always-visible TOC Sidebar */}
+        {fileUrl && (
+          <TOCSidebar
+            toc={tableOfContents}
+            currentPage={currentPage}
+            onJumpToPage={(p) => syncToPage(p)}
+          />
+        )}
+        
+        {/* Reader Content - Adjusted for TOC */}
+        <div className={`flex-1 overflow-hidden p-4 ${fileUrl ? 'ml-0' : ''}`}>
+          <div className="w-full h-full bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
+        </div>
       </div>
-
-      {/* Floating TOC Overlay */}
-      {fileUrl && (
-        <TOCSidebar
-          toc={tableOfContents}
-          currentPage={currentPage}
-          onJumpToPage={(p) => syncToPage(p)}
-        />
-      )}
 
       {/* Floating Whiteboard Toggle & Panel */}
       {wbConcept && (
