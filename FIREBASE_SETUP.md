@@ -20,7 +20,8 @@ If you're seeing the error "Google Sign-In failed (auth/api-key-not-valid.-pleas
 - Example: `your-codespace-name-port.app.github.dev`
 
 **For Production:**
-- Your production domain (e.g., `your-app.vercel.app`)
+- `thought-unit-reader.onrender.com` (your current Render deployment)
+- Any other production domains you use
 
 ### Step 3: Enable Google Sign-In
 1. Go to **Authentication** → **Sign-in method**
