@@ -23,7 +23,7 @@ export class EnhancedSpeechService {
   private static instance: EnhancedSpeechService;
   private voices: VoiceOption[] = [];
   private currentUtterance: SpeechSynthesisUtterance | null = null;
-  private isInitialized = false;
+  private initialized = false;
   private listeners: Set<() => void> = new Set();
 
   static getInstance(): EnhancedSpeechService {
@@ -60,7 +60,7 @@ export class EnhancedSpeechService {
           name: voice.name,
           lang: voice.lang,
           gender,
-          quality: isNeural ? 'neural' : isPremium ? 'premium' : 'standard',
+          quality: (isNeural ? 'neural' : isPremium ? 'premium' : 'standard') as 'standard' | 'premium' | 'neural',
           description: this.getVoiceDescription(voice),
           voice
         };
@@ -73,7 +73,7 @@ export class EnhancedSpeechService {
         return a.name.localeCompare(b.name);
       });
 
-    this.isInitialized = true;
+    this.initialized = true;
     this.notifyListeners();
   }
 
@@ -226,7 +226,7 @@ export class EnhancedSpeechService {
   }
 
   isInitialized(): boolean {
-    return this.isInitialized;
+    return this.initialized;
   }
 
   // Enhanced text processing for better speech
@@ -351,3 +351,10 @@ export class EnhancedSpeechService {
         return {
           voice: bestVoice,
           rate: 1.0,
+          pitch: 1.0,
+          volume: 0.8,
+          highlightWords: false
+        };
+    }
+  }
+}
