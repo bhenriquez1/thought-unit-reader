@@ -562,9 +562,11 @@ export default function ThoughtUnitReader() {
      🔹 Page/TOC sync (ALL modes) + optional whiteboard retrigger
   ========================================================================= */
   const syncToPage = (page: number) => {
+    console.log(`📄 syncToPage called: navigating to page ${page} (current: ${currentPage})`);
     setCurrentPage(page);
     const unit = pageToUnit(page, pdfPageCount, thoughtUnits.length);
     setCurrentThoughtUnit(unit);
+    console.log(`📄 Page navigation complete: page ${page}, unit ${unit}`);
 
     if (autoWhiteboard) {
       const seed = conceptForPage(page, thoughtUnits, pdfPageCount);

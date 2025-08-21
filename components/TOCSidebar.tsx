@@ -117,7 +117,16 @@ export default function TOCSidebar({
   const [q, setQ] = useState("");
   const [internalVisible, setInternalVisible] = useState(false);
 
-  const flat = useMemo(() => normalizeTOC(toc || []), [toc]);
+  const flat = useMemo(() => {
+    const normalized = normalizeTOC(toc || []);
+    console.log('🧭 TOC Debug:', {
+      originalToc: toc,
+      normalizedFlat: normalized,
+      tocLength: toc?.length || 0,
+      flatLength: normalized.length
+    });
+    return normalized;
+  }, [toc]);
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -220,8 +229,12 @@ export default function TOCSidebar({
                           <button
                             onClick={() => {
                               if (page) {
+                                console.log(`🧭 TOC Navigation: Jumping to page ${page} for "${entry.title}"`);
                                 onJumpToPage(page);
-                                toggleVisibility(); // Auto-close after navigation
+                                // Add a small delay before auto-closing to show the navigation happened
+                                setTimeout(() => {
+                                  toggleVisibility();
+                                }, 500);
                               }
                             }}
                             disabled={typeof page !== "number"}

@@ -16,6 +16,7 @@ import {
   createNavigationFeedback,
   searchTOCForNavigation
 } from "@/lib/navigationUtils";
+import PageContextPanel from "@/components/PageContextPanel";
 
 type PVUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -824,6 +825,18 @@ export default function EnhancedProgressiveView({
             </div>
           )}
         </div>
+
+        {/* Smart Page Context Panel */}
+        <PageContextPanel
+          currentPage={currentPage}
+          totalPages={pdfPageCount || 1}
+          chapterTitle={tableOfContents?.find(toc => toc.page <= currentPage)?.title}
+          currentPageSummary={activeChunk ? chunkAnalysis.coreIdea : undefined}
+          previousPageSummary={activeIdx > 0 ? analyzeChunkForRightBrain(chunks[activeIdx - 1] || "").coreIdea : undefined}
+          readingProgress={(activeIdx / Math.max(chunks.length - 1, 1)) * 100}
+          onPageChange={onPageChange}
+          className="mb-4"
+        />
 
         {/* Enhanced Chunk Display */}
         <div className="space-y-2">

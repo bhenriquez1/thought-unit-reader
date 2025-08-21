@@ -15,6 +15,7 @@ import {
   createNavigationFeedback,
   searchTOCForNavigation
 } from "@/lib/navigationUtils";
+import PageContextPanel from "@/components/PageContextPanel";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -868,6 +869,17 @@ export default function EnhancedHybridReader({
               </button>
             </div>
           </div>
+
+          {/* Smart Page Context Panel */}
+          <PageContextPanel
+            currentPage={currentPage}
+            totalPages={pdfPageCount || 1}
+            chapterTitle={tableOfContents?.find(toc => toc.page <= currentPage)?.title}
+            currentPageSummary={activeChunk ? (activeChunk.split(/(?<=[.!?])\s+/)[0] || activeChunk) : undefined}
+            previousPageSummary={activeIdx > 0 ? (chunks[activeIdx - 1]?.split(/(?<=[.!?])\s+/)[0] || chunks[activeIdx - 1]) : undefined}
+            readingProgress={(activeIdx / Math.max(chunks.length - 1, 1)) * 100}
+            onPageChange={onPageChange}
+          />
 
           {/* Quick quiz */}
           {showQuiz && (
