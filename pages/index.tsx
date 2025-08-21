@@ -922,24 +922,25 @@ export default function ThoughtUnitReader() {
                 </button>
               </div>
               <div className="flex-1 overflow-auto p-4">
-                <EnhancedWhiteboard
-                  concept={wbConcept}
-                  context={wbContext}
-                  stickyNotes={wbStickyNotes}
-                  autoTrigger
-                  lessonTitle={
-                    uploadedFile?.name ? `Whiteboard — ${uploadedFile.name}` : "Whiteboard Lesson"
-                  }
-                  lessonId={bookId}
-                  userId={USER_ID}
-                  reExplainOnPageChange
-                  currentPage={currentPage}
-                  selectedVoice={selectedVoice}
-                  onVoiceChange={setSelectedVoice}
-                  speechRate={speechRate}
-                  onSpeechRateChange={setSpeechRate}
-                  naturalVoiceEnabled={true}
-                />
+          <EnhancedWhiteboard
+            concept={wbConcept}
+            context={wbContext}
+            stickyNotes={wbStickyNotes}
+            autoTrigger
+            lessonTitle={
+              uploadedFile?.name ? `Whiteboard — ${uploadedFile.name}` : "Whiteboard Lesson"
+            }
+            lessonId={bookId}
+            userId={USER_ID}
+            reExplainOnPageChange={true}
+            currentPage={currentPage}
+            containsDiagramOrFormula={containsDiagramOrFormula}
+            selectedVoice={selectedVoice}
+            onVoiceChange={setSelectedVoice}
+            speechRate={speechRate}
+            onSpeechRateChange={setSpeechRate}
+            naturalVoiceEnabled={true}
+          />
               </div>
             </div>
           )}
