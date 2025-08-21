@@ -27,17 +27,44 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
+  const { script, voice = "alloy", format = "mp3" } = (req.body || {}) as Body;
+
+  if (!script || typeof script !== "string" || !script.trim()) {
+    return res.status(400).json({ error: "Bad request: 'script' must be a non-empty string." });
+  }
+
+  // Check if OpenAI API key is available and valid
+  const hasValidOpenAIKey = process.env.OPENAI_API_KEY && 
+                            process.env.OPENAI_API_KEY.startsWith('sk-') && 
+                            process.env.OPENAI_API_KEY.length > 20;
+
+  if (!hasValidOpenAIKey) {
+    // Fallback: Return instructions to use browser speech synthesis
+    console.log("🎵 OpenAI TTS not available, falling back to browser speech synthesis");
+    
+    const wantsJSON =
+      req.headers.accept?.includes("application/json") ||
+      (typeof req.query.return === "string" && req.query.return.toLowerCase() === "json");
+
+    if (wantsJSON) {
+      return res.status(200).json({ 
+        useBrowserSpeech: true,
+        script,
+        voice,
+        message: "Using enhanced browser speech synthesis for natural voice experience"
+      });
+    }
+
+    // Return a simple response indicating browser speech should be used
+    return res.status(200).json({ 
+      useBrowserSpeech: true,
+      script,
+      voice,
+      message: "Using enhanced browser speech synthesis"
+    });
   }
 
   try {
-    const { script, voice = "alloy", format = "mp3" } = (req.body || {}) as Body;
-
-    if (!script || typeof script !== "string" || !script.trim()) {
-      return res.status(400).json({ error: "Bad request: 'script' must be a non-empty string." });
-    }
-
     const fmt = (format || "mp3").toLowerCase() as Body["format"];
     const mime = FORMAT_TO_MIME[fmt] || "audio/mpeg";
 
@@ -67,6 +94,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).send(buffer);
   } catch (err: any) {
     console.error("TTS API error:", err?.message || err);
-    return res.status(500).json({ error: "TTS generation failed" });
+    
+    // Fallback to browser speech synthesis on error
+    console.log("🎵 OpenAI TTS failed, falling back to browser speech synthesis");
+    
+    const wantsJSON =
+      req.headers.accept?.includes("application/json") ||
+      (typeof req.query.return === "string" && req.query.return.toLowerCase() === "json");
+
+    if (wantsJSON) {
+      return res.status(200).json({ 
+        useBrowserSpeech: true,
+        script,
+        voice,
+        message: "OpenAI TTS unavailable, using enhanced browser speech synthesis"
+      });
+    }
+
+    return res.status(200).json({ 
+      useBrowserSpeech: true,
+      script,
+      voice,
+      message: "Using enhanced browser speech synthesis"
+    });
   }
 }

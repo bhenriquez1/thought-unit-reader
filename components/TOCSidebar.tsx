@@ -133,14 +133,18 @@ export default function TOCSidebar({
       {/* Floating Toggle Button */}
       <motion.button
         onClick={toggleVisibility}
-        className="fixed top-20 left-4 z-50 bg-gray-900/90 hover:bg-gray-800 text-white p-2 rounded-full shadow-lg backdrop-blur-sm border border-gray-700"
-        whileHover={{ scale: 1.05 }}
+        className="fixed top-20 left-4 z-[60] bg-gray-900/95 hover:bg-gray-800 text-white p-3 rounded-full shadow-xl backdrop-blur-sm border border-gray-600 hover:border-yellow-400 transition-all"
+        whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.95 }}
         title="Toggle Table of Contents"
+        style={{ 
+          boxShadow: '0 4px 20px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.1)' 
+        }}
       >
         <motion.div
           animate={{ rotate: visible ? 180 : 0 }}
           transition={{ duration: 0.2 }}
+          className="text-lg"
         >
           📑
         </motion.div>
