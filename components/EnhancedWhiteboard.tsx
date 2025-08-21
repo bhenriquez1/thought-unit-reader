@@ -696,7 +696,7 @@ export default function EnhancedWhiteboard({
                   <span>Preparing enhanced whiteboard explanation…</span>
                 </div>
               ) : (
-                "Click "Explain with Whiteboard" to generate an interactive explanation with natural voice."
+                <>Click &apos;Explain with Whiteboard&apos; to generate an interactive explanation with natural voice.</>
               )}
             </motion.div>
           )}

@@ -23,6 +23,7 @@ import {
 } from "@/lib/firebase";
 
 import EnhancedWhiteboard from "@/components/EnhancedWhiteboard";
+import LibraryPanel from "@/components/LibraryPanel";
 
 import {
   parseBookWithChapters,
@@ -293,6 +294,7 @@ export default function ThoughtUnitReader() {
   const [showTOC] = useState(true);
 
   const [showLibrary, setShowLibrary] = useState(false);
+  const [showStudyLibrary, setShowStudyLibrary] = useState(false);
   const [pdfLibrary, setPdfLibrary] = useState<
     { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean }[]
   >([]);
@@ -864,6 +866,14 @@ export default function ThoughtUnitReader() {
         >
           📚 Library
         </button>
+
+        {/* Study Library */}
+        <button
+          onClick={() => setShowStudyLibrary(true)}
+          className="text-xs px-3 py-1 rounded bg-purple-500 text-white shadow"
+        >
+          🎓 Study Notes
+        </button>
       </div>
 
       {/* Reader + WhiteboardPanel */}
@@ -996,6 +1006,20 @@ export default function ThoughtUnitReader() {
             setAttachments((prev) => [...prev, url]);
             setViewMode("rightbrain");
             setShowLinkModal(false);
+          }}
+        />
+      )}
+
+      {/* Study Library Panel */}
+      {showStudyLibrary && (
+        <LibraryPanel
+          userId={USER_ID}
+          bookId={bookId}
+          currentPage={currentPage}
+          isOpen={showStudyLibrary}
+          onClose={() => setShowStudyLibrary(false)}
+          onGenerateTopStudentNote={(content, pageNumber) => {
+            console.log("Generated top student note for page", pageNumber);
           }}
         />
       )}
