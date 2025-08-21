@@ -660,6 +660,7 @@ export default function ThoughtUnitReader() {
           onVoiceChange={setSelectedVoice}
           speechRate={speechRate}
           onSpeechRateChange={setSpeechRate}
+          tableOfContents={tableOfContents}
         />
       ) : (
         <div className="flex flex-col items-center justify-center h-full gap-4">
@@ -710,6 +711,7 @@ export default function ThoughtUnitReader() {
           onVoiceChange={setSelectedVoice}
           speechRate={speechRate}
           onSpeechRateChange={setSpeechRate}
+          tableOfContents={tableOfContents}
         />
       ) : (
         <div className="flex flex-col items-center justify-center h-full gap-4">
@@ -876,51 +878,73 @@ export default function ThoughtUnitReader() {
         </button>
       </div>
 
-      {/* Reader + WhiteboardPanel */}
-      <div className="flex flex-1 overflow-hidden px-4 gap-4">
-        {fileUrl && showTOC && (
-          <TOCSidebar
-            toc={tableOfContents}
-            currentPage={currentPage}
-            onJumpToPage={(p) => syncToPage(p)} // ✅ TOC works in ALL modes
-          />
-        )}
-
-        <div className="flex-1 bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
-
-        {showWhiteboardPanel && wbConcept && (
-          <div className="w-full md:w-[420px] lg:w-[480px] shrink-0 bg-gray-900 text-white rounded-lg p-3 overflow-auto">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="font-semibold">Whiteboard Explanation</h3>
-              <button
-                onClick={() => setShowWhiteboardPanel(false)}
-                className="text-sm bg-gray-700 hover:bg-gray-600 rounded px-2 py-1"
-              >
-                ✖ Close
-              </button>
-            </div>
-            <EnhancedWhiteboard
-              concept={wbConcept}
-              context={wbContext}
-              stickyNotes={wbStickyNotes}
-              autoTrigger
-              lessonTitle={
-                uploadedFile?.name ? `Whiteboard — ${uploadedFile.name}` : "Whiteboard Lesson"
-              }
-              lessonId={bookId}
-              userId={USER_ID}
-              /** keep whiteboard synced as you page around */
-              reExplainOnPageChange
-              currentPage={currentPage}
-              selectedVoice={selectedVoice}
-              onVoiceChange={setSelectedVoice}
-              speechRate={speechRate}
-              onSpeechRateChange={setSpeechRate}
-              naturalVoiceEnabled={true}
-            />
-          </div>
-        )}
+      {/* Reader Content - Full Width */}
+      <div className="flex-1 overflow-hidden px-4">
+        <div className="w-full h-full bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
       </div>
+
+      {/* Floating TOC Overlay */}
+      {fileUrl && (
+        <TOCSidebar
+          toc={tableOfContents}
+          currentPage={currentPage}
+          onJumpToPage={(p) => syncToPage(p)}
+        />
+      )}
+
+      {/* Floating Whiteboard Toggle & Panel */}
+      {wbConcept && (
+        <>
+          {/* Floating Whiteboard Toggle Button */}
+          {!showWhiteboardPanel && (
+            <button
+              onClick={() => setShowWhiteboardPanel(true)}
+              className="fixed bottom-6 right-6 z-40 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white p-3 rounded-full shadow-lg backdrop-blur-sm border border-purple-400"
+              title="Open Whiteboard Explanation"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🎨</span>
+                <span className="text-sm font-medium hidden sm:block">Whiteboard</span>
+              </div>
+            </button>
+          )}
+
+          {/* Sliding Whiteboard Panel */}
+          {showWhiteboardPanel && (
+            <div className="fixed top-0 right-0 w-full sm:w-[480px] h-full bg-gray-900/95 backdrop-blur-md text-white z-50 flex flex-col shadow-2xl border-l border-gray-700">
+              <div className="flex justify-between items-center p-4 border-b border-gray-700">
+                <h3 className="text-lg font-semibold">🎨 Whiteboard Explanation</h3>
+                <button
+                  onClick={() => setShowWhiteboardPanel(false)}
+                  className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-800"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto p-4">
+                <EnhancedWhiteboard
+                  concept={wbConcept}
+                  context={wbContext}
+                  stickyNotes={wbStickyNotes}
+                  autoTrigger
+                  lessonTitle={
+                    uploadedFile?.name ? `Whiteboard — ${uploadedFile.name}` : "Whiteboard Lesson"
+                  }
+                  lessonId={bookId}
+                  userId={USER_ID}
+                  reExplainOnPageChange
+                  currentPage={currentPage}
+                  selectedVoice={selectedVoice}
+                  onVoiceChange={setSelectedVoice}
+                  speechRate={speechRate}
+                  onSpeechRateChange={setSpeechRate}
+                  naturalVoiceEnabled={true}
+                />
+              </div>
+            </div>
+          )}
+        </>
+      )}
 
       {/* Library Drawer (guest + auth) */}
       {showLibrary && (

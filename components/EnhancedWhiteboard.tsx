@@ -155,42 +155,80 @@ export default function EnhancedWhiteboard({
     return `wb:${hashString(base)}`;
   }, [lessonId, lessonTitle, currentPage, effectiveConcept, effectiveContext]);
 
-  /** Enhanced speech function with natural voice */
-  const speakText = useCallback((text: string, options?: { rate?: number; voice?: SpeechSynthesisVoice }) => {
+  /** Enhanced speech function with natural voice and Speechify-like features */
+  const speakText = useCallback(async (text: string, options?: { rate?: number; voice?: SpeechSynthesisVoice }) => {
     if (!text.trim() || !naturalVoiceEnabled) return;
     
     // Cancel any existing speech
     speechSynthesis.cancel();
     setIsSpeaking(false);
     
-    const utterance = new SpeechSynthesisUtterance(text);
-    
-    // Use selected voice or best available natural voice
-    const voiceToUse = options?.voice || selectedVoice || availableVoices[0];
-    if (voiceToUse) {
-      utterance.voice = voiceToUse;
-    }
-    
-    utterance.rate = options?.rate || speechRate;
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
-    
-    utterance.onstart = () => {
+    // Use Enhanced Speech Service for better quality
+    try {
+      const { EnhancedSpeechService } = await import('@/lib/enhancedSpeech');
+      const speechService = EnhancedSpeechService.getInstance();
+      
+      // Preprocess text for better speech quality
+      const processedText = speechService.preprocessText(text);
+      
+      const voiceToUse = options?.voice || selectedVoice || speechService.getBestVoices()[0]?.voice;
+      
+      await speechService.speak(processedText, {
+        voice: voiceToUse,
+        rate: options?.rate || speechRate,
+        pitch: 1.0,
+        volume: 1.0,
+        highlightWords: true
+      }, 
+      // Word boundary callback for highlighting
+      (word, charIndex) => {
+        // Could add word highlighting animation here
+        console.log(`Speaking word: ${word} at position ${charIndex}`);
+      },
+      // On end callback
+      () => {
+        setIsSpeaking(false);
+        setCurrentUtterance(null);
+      },
+      // On error callback
+      (error) => {
+        console.error('Speech error:', error);
+        setIsSpeaking(false);
+        setCurrentUtterance(null);
+      });
+      
       setIsSpeaking(true);
-      setCurrentUtterance(utterance);
-    };
-    
-    utterance.onend = () => {
-      setIsSpeaking(false);
-      setCurrentUtterance(null);
-    };
-    
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-      setCurrentUtterance(null);
-    };
-    
-    speechSynthesis.speak(utterance);
+    } catch (error) {
+      // Fallback to basic speech synthesis
+      console.warn('Enhanced speech not available, using fallback:', error);
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      const voiceToUse = options?.voice || selectedVoice || availableVoices[0];
+      if (voiceToUse) {
+        utterance.voice = voiceToUse;
+      }
+      
+      utterance.rate = options?.rate || speechRate;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+      
+      utterance.onstart = () => {
+        setIsSpeaking(true);
+        setCurrentUtterance(utterance);
+      };
+      
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        setCurrentUtterance(null);
+      };
+      
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        setCurrentUtterance(null);
+      };
+      
+      speechSynthesis.speak(utterance);
+    }
   }, [selectedVoice, speechRate, availableVoices, naturalVoiceEnabled]);
 
   const stopSpeaking = useCallback(() => {
@@ -379,15 +417,22 @@ export default function EnhancedWhiteboard({
     if (!effectiveConcept || !effectiveContext) return;
     if (!containsDiagramOrFormula(effectiveConcept)) return;
 
-    // Page follow animation
+    // Enhanced page follow animation with natural transitions
     setPageFollowAnimation(true);
-    setTimeout(() => setPageFollowAnimation(false), 1000);
+    setShowDetectedChip(true);
+    
+    // Staggered animation timing for natural feel
+    setTimeout(() => setPageFollowAnimation(false), 1200);
+    setTimeout(() => {
+      if (narrationScript && naturalVoiceEnabled) {
+        speakText(`Following to page ${currentPage}. Let me explain what I see here.`);
+      }
+    }, 300);
 
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
-      setShowDetectedChip(true);
       runGenerate();
-    }, 600) as unknown as number;
+    }, 800) as unknown as number;
 
     return () => {
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
@@ -626,17 +671,42 @@ export default function EnhancedWhiteboard({
           {/* Enhanced chip for auto-refresh with page following */}
           {showDetectedChip && (
             <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="text-xs bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 px-3 py-2 rounded-lg border border-amber-500/30 inline-block"
+              initial={{ opacity: 0, y: -10, scale: 0.95 }}
+              animate={{ 
+                opacity: 1, 
+                y: 0, 
+                scale: 1,
+                boxShadow: pageFollowAnimation ? [
+                  "0 0 0 0 rgba(59, 130, 246, 0.4)",
+                  "0 0 0 15px rgba(59, 130, 246, 0.1)",
+                  "0 0 0 0 rgba(59, 130, 246, 0)"
+                ] : "0 0 0 0 rgba(59, 130, 246, 0)"
+              }}
+              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              transition={{ type: "spring", stiffness: 260, damping: 20 }}
+              className="text-xs bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-amber-500/20 text-blue-300 px-4 py-3 rounded-lg border border-blue-500/30 inline-block shadow-lg"
             >
-              <motion.span
-                animate={{ scale: [1, 1.05, 1] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              >
-                🧠 Following page {currentPage} - Diagram detected and explained
-              </motion.span>
+              <div className="flex items-center gap-2">
+                <motion.span
+                  animate={{ 
+                    rotate: pageFollowAnimation ? [0, 360] : 0,
+                    scale: [1, 1.1, 1] 
+                  }}
+                  transition={{ 
+                    rotate: { duration: 1, ease: "easeInOut" },
+                    scale: { duration: 2, repeat: Infinity, ease: "easeInOut" }
+                  }}
+                  className="text-blue-400"
+                >
+                  🧠
+                </motion.span>
+                <div>
+                  <div className="font-medium">Following Page {currentPage}</div>
+                  <div className="text-xs opacity-90">
+                    {pageFollowAnimation ? "Analyzing content..." : "Diagram detected and explained"}
+                  </div>
+                </div>
+              </div>
             </motion.div>
           )}
 

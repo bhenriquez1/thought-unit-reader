@@ -9,6 +9,13 @@ import { saveReadingProgress, loadReadingProgress } from "@/lib/firebase";
 import { chunkText, stableChunkId } from "@/lib/chunkers";
 import { loadUnderstood, markUnderstood } from "@/lib/understoodStore";
 import { Document, Page } from "react-pdf";
+import { 
+  handleWordClickNavigation, 
+  NavigationHistory, 
+  NavigationResult,
+  createNavigationFeedback,
+  searchTOCForNavigation
+} from "@/lib/navigationUtils";
 
 type PVUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -48,6 +55,9 @@ interface EnhancedProgressiveViewProps {
   onVoiceChange?: (voice: SpeechSynthesisVoice) => void;
   speechRate?: number;
   onSpeechRateChange?: (rate: number) => void;
+
+  // Navigation
+  tableOfContents?: any[];
 }
 
 function unitToText(u: PVUnit): string {
@@ -62,13 +72,18 @@ function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// Enhanced chunk highlighting with core idea extraction
+// Enhanced chunk highlighting with core idea extraction using right-brain principles
 function extractCoreIdea(chunk: string): string {
   const sentences = chunk.split(/[.!?]+/).filter(s => s.trim().length > 10);
   if (sentences.length === 0) return chunk;
   
-  // Find sentence with key indicators (definitions, main concepts)
-  const keyIndicators = ['is', 'are', 'means', 'refers to', 'defined as', 'concept of'];
+  // Enhanced key indicators for right-brain learning
+  const keyIndicators = [
+    'is', 'are', 'means', 'refers to', 'defined as', 'concept of',
+    'represents', 'symbolizes', 'demonstrates', 'illustrates', 'shows',
+    'causes', 'results in', 'leads to', 'creates', 'produces'
+  ];
+  
   const coreIdea = sentences.find(s => 
     keyIndicators.some(indicator => s.toLowerCase().includes(indicator))
   ) || sentences[0];
@@ -76,25 +91,130 @@ function extractCoreIdea(chunk: string): string {
   return coreIdea.trim();
 }
 
-// Right-brain focused chunk analysis
+// Enhanced right-brain focused chunk analysis with visual and conceptual mapping
 function analyzeChunkForRightBrain(chunk: string) {
   const words = chunk.split(/\s+/).filter(Boolean);
+  const sentences = chunk.split(/[.!?]+/).filter(s => s.trim().length > 5);
+  
+  // Enhanced key term detection
   const keyTerms = words.filter(w => 
     w.length > 5 || 
     /^[A-Z]/.test(w) || 
-    /\d/.test(w)
+    /\d/.test(w) ||
+    /^(the|a|an)\s+[A-Z]/.test(w) // Articles followed by capitalized words
   );
+  
+  // Visual and spatial cues
+  const visualCues = words.filter(w => 
+    ['diagram', 'figure', 'chart', 'graph', 'image', 'illustration', 'map', 'structure', 'pattern', 'shape', 'form'].includes(w.toLowerCase())
+  );
+  
+  // Process and action words for procedural understanding
+  const actionWords = words.filter(w => 
+    ['process', 'method', 'step', 'procedure', 'technique', 'approach', 'strategy', 'system', 'mechanism', 'pathway'].includes(w.toLowerCase())
+  );
+  
+  // Relationship indicators for conceptual connections
+  const relationshipWords = words.filter(w =>
+    ['because', 'therefore', 'however', 'although', 'while', 'whereas', 'since', 'thus', 'hence', 'consequently'].includes(w.toLowerCase())
+  );
+  
+  // Emotional/memory anchors for better retention
+  const memoryAnchors = sentences.filter(s => {
+    const lower = s.toLowerCase();
+    return lower.includes('important') || lower.includes('key') || lower.includes('critical') || 
+           lower.includes('remember') || lower.includes('note') || lower.includes('significant');
+  });
   
   return {
     coreIdea: extractCoreIdea(chunk),
-    keyTerms: keyTerms.slice(0, 3),
-    visualCues: words.filter(w => 
-      ['diagram', 'figure', 'chart', 'graph', 'image', 'illustration'].includes(w.toLowerCase())
-    ),
-    actionWords: words.filter(w => 
-      ['process', 'method', 'step', 'procedure', 'technique'].includes(w.toLowerCase())
-    )
+    keyTerms: keyTerms.slice(0, 4),
+    visualCues,
+    actionWords,
+    relationshipWords,
+    memoryAnchors: memoryAnchors.slice(0, 2),
+    complexity: sentences.length > 3 ? 'complex' : sentences.length > 1 ? 'moderate' : 'simple',
+    hasNumbers: /\d/.test(chunk),
+    hasFormulas: /[=+\-*/^(){}[\]]/.test(chunk)
   };
+}
+
+// Enhanced PDF text highlighting with intelligent positioning
+function highlightTextInPDF(
+  pdfContainer: HTMLElement,
+  text: string,
+  color: string = "rgba(255, 235, 59, 0.4)",
+  pulseAnimation: boolean = true
+) {
+  // Remove existing highlights
+  const existingHighlights = pdfContainer.querySelectorAll('.pdf-chunk-highlight');
+  existingHighlights.forEach(el => el.remove());
+
+  if (!text.trim()) return;
+
+  // Create multiple highlight attempts for better coverage
+  const searchTerms = [
+    text,
+    ...text.split(/\s+/).filter(w => w.length > 4).slice(0, 3), // Key words
+    extractCoreIdea(text).split(/\s+/).slice(0, 5).join(' ') // Core idea
+  ];
+
+  searchTerms.forEach((term, index) => {
+    if (!term.trim()) return;
+    
+    const walker = document.createTreeWalker(
+      pdfContainer,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+
+    const textNodes: Text[] = [];
+    let node;
+    while (node = walker.nextNode()) {
+      textNodes.push(node as Text);
+    }
+
+    textNodes.forEach(textNode => {
+      const nodeText = textNode.textContent || '';
+      const regex = new RegExp(escapeRegExp(term), 'gi');
+      const matches = [...nodeText.matchAll(regex)];
+
+      matches.forEach(match => {
+        if (match.index !== undefined) {
+          try {
+            const range = document.createRange();
+            range.setStart(textNode, match.index);
+            range.setEnd(textNode, match.index + match[0].length);
+
+            const rect = range.getBoundingClientRect();
+            const containerRect = pdfContainer.getBoundingClientRect();
+
+            if (rect.width > 0 && rect.height > 0) {
+              const highlight = document.createElement('div');
+              highlight.className = 'pdf-chunk-highlight';
+              highlight.style.cssText = `
+                position: absolute;
+                left: ${rect.left - containerRect.left + pdfContainer.scrollLeft}px;
+                top: ${rect.top - containerRect.top + pdfContainer.scrollTop}px;
+                width: ${rect.width}px;
+                height: ${rect.height}px;
+                background-color: ${color};
+                pointer-events: none;
+                z-index: 10;
+                border-radius: 3px;
+                opacity: ${0.8 - (index * 0.2)};
+                ${pulseAnimation ? 'animation: rightBrainPulse 3s ease-in-out infinite;' : ''}
+              `;
+
+              pdfContainer.appendChild(highlight);
+            }
+          } catch (e) {
+            // Ignore range errors
+          }
+        }
+      });
+    });
+  });
 }
 
 export default function EnhancedProgressiveView({
@@ -123,11 +243,17 @@ export default function EnhancedProgressiveView({
   onVoiceChange,
   speechRate = 1.0,
   onSpeechRateChange,
+  tableOfContents = [],
 }: EnhancedProgressiveViewProps) {
   const [loaded, setLoaded] = useState(false);
   const [selectionText, setSelectionText] = useState("");
   const [showNoteEditor, setShowNoteEditor] = useState(false);
   const [localPaused, setLocalPaused] = useState(false);
+  
+  // Navigation state
+  const [navigationHistory] = useState(() => new NavigationHistory());
+  const [navigationFeedback, setNavigationFeedback] = useState<string>("");
+  const [showNavigationFeedback, setShowNavigationFeedback] = useState(false);
   
   // Enhanced chunking with right-brain focus
   const [chunkChars, setChunkChars] = useState(200); // Smaller chunks for better focus
@@ -137,6 +263,7 @@ export default function EnhancedProgressiveView({
   // PDF view integration
   const [pdfScale, setPdfScale] = useState(0.8);
   const [showPdfOverlay, setShowPdfOverlay] = useState(true);
+  const pdfContainerRef = useRef<HTMLDivElement>(null);
   
   // Voice and speech
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -241,6 +368,21 @@ export default function EnhancedProgressiveView({
   const isUnderstood = !!understoodMap[activeChunkId];
   const chunkAnalysis = analyzeChunkForRightBrain(activeChunk);
 
+  // Enhanced PDF highlighting when active chunk changes
+  useEffect(() => {
+    if (pdfContainerRef.current && activeChunk && showPdfOverlay) {
+      setTimeout(() => {
+        const highlightColor = focusMode === "core" 
+          ? "rgba(255, 235, 59, 0.5)" 
+          : focusMode === "visual" 
+          ? "rgba(59, 130, 246, 0.4)"
+          : "rgba(34, 197, 94, 0.4)";
+        
+        highlightTextInPDF(pdfContainerRef.current!, activeChunk, highlightColor, true);
+      }, 200);
+    }
+  }, [activeChunk, currentPage, showPdfOverlay, focusMode]);
+
   // Enhanced speech function
   const speakChunk = (text: string) => {
     if (!text.trim()) return;
@@ -312,21 +454,62 @@ export default function EnhancedProgressiveView({
     markUnderstood(userId || "guest", bookId, activeChunkId).catch(() => {});
   }
 
+  // Enhanced word click handler with navigation
+  const handleEnhancedWordClick = async (text: string, event?: React.MouseEvent) => {
+    // Regular word click functionality
+    onWordClick?.(text);
+    setSelectionText(text);
+    onTextSelect?.(text);
+
+    // Navigation functionality
+    if (tableOfContents && tableOfContents.length > 0 && onPageChange) {
+      try {
+        // First search for navigation target
+        const searchResult = searchTOCForNavigation(text, tableOfContents);
+        
+        if (searchResult.found && searchResult.page && searchResult.page !== currentPage) {
+          // Add to navigation history
+          navigationHistory.addEntry(currentPage, `Page ${currentPage}`, 'word-click');
+          
+          // Navigate to target page
+          onPageChange(searchResult.page);
+          
+          // Show navigation feedback
+          const feedback = createNavigationFeedback(searchResult, text);
+          setNavigationFeedback(feedback);
+          setShowNavigationFeedback(true);
+          
+          // Auto-hide feedback after 3 seconds
+          setTimeout(() => {
+            setShowNavigationFeedback(false);
+          }, 3000);
+        }
+      } catch (error) {
+        console.warn('Navigation error:', error);
+      }
+    }
+  };
+
   const handleMouseUp = () => {
     const selection = window.getSelection()?.toString().trim() || "";
     setSelectionText(selection);
     onTextSelect?.(selection);
+    
+    // Handle navigation for selected text
+    if (selection) {
+      handleEnhancedWordClick(selection);
+    }
   };
 
   const effectiveSelection = (externalSelectionText?.trim() || selectionText).trim();
 
   return (
-    <div className="grid grid-cols-5 gap-4 p-4 h-full">
-      {/* PDF View (Left - 60% more room) */}
+    <div className="grid grid-cols-4 gap-4 p-4 h-full">
+      {/* Enhanced PDF View (Left - 75% more room with better focus) */}
       {pdfUrl && showPdfOverlay && (
-        <div className="col-span-3 bg-gray-800 rounded-lg overflow-hidden">
-          <div className="flex items-center justify-between p-2 bg-gray-700">
-            <h4 className="text-sm font-semibold text-yellow-400">PDF View</h4>
+        <div className="col-span-3 bg-gray-900 rounded-lg overflow-hidden border border-gray-700">
+          <div className="flex items-center justify-between p-3 bg-gray-800 border-b border-gray-700">
+            <h4 className="text-sm font-semibold text-yellow-400">📄 Enhanced PDF Reader</h4>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setPdfScale(s => Math.max(0.5, s - 0.1))}
@@ -349,154 +532,279 @@ export default function EnhancedProgressiveView({
               </button>
             </div>
           </div>
-          <div className="h-full overflow-auto">
+          <div 
+            ref={pdfContainerRef}
+            className="h-full overflow-auto relative"
+            onMouseUp={selBind?.onMouseUp ?? handleMouseUp}
+          >
             <Document file={pdfUrl}>
               <Page 
                 pageNumber={currentPage} 
                 scale={pdfScale}
-                renderTextLayer={false}
-                renderAnnotationLayer={false}
+                renderTextLayer={true}
+                renderAnnotationLayer={true}
               />
             </Document>
           </div>
         </div>
       )}
 
-      {/* Enhanced Progressive View (Center/Right) */}
+      {/* Enhanced Progressive View (Right - 25% focused interaction) */}
       <div 
-        className={`${showPdfOverlay && pdfUrl ? 'col-span-2' : 'col-span-3'} bg-gray-800 p-4 rounded-lg overflow-y-auto`}
+        className={`${showPdfOverlay && pdfUrl ? 'col-span-1' : 'col-span-3'} bg-gray-800 p-4 rounded-lg overflow-y-auto border border-gray-700`}
         style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
         onMouseUp={selBind?.onMouseUp ?? handleMouseUp}
       >
-        {/* Enhanced Controls */}
-        <div className="flex items-center gap-3 mb-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] opacity-75">Focus</span>
-            <select
-              className="text-xs bg-gray-700 rounded px-2 py-1"
-              value={focusMode}
-              onChange={(e) => setFocusMode(e.target.value as any)}
-            >
-              <option value="core">Core Ideas</option>
-              <option value="detail">Details</option>
-              <option value="visual">Visual Cues</option>
-            </select>
-          </div>
+        {/* Compact Enhanced Controls */}
+        <div className="space-y-3 mb-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] opacity-75">Chunk</span>
+              <input
+                type="range"
+                min={100}
+                max={300}
+                step={20}
+                value={chunkChars}
+                onChange={(e) => setChunkChars(Number(e.target.value))}
+                className="w-16"
+              />
+              <span className="text-[10px]">{chunkChars}</span>
+            </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] opacity-75">Chunk</span>
-            <input
-              type="range"
-              min={100}
-              max={300}
-              step={20}
-              value={chunkChars}
-              onChange={(e) => setChunkChars(Number(e.target.value))}
-              className="w-20"
-            />
-            <span className="text-xs">{chunkChars}</span>
-          </div>
-
-          <button
-            onClick={() => setLocalPaused((p) => !p)}
-            className="text-[11px] px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
-          >
-            {localPaused || isPaused ? "▶️ Resume" : "⏸️ Pause"}
-          </button>
-
-          <button
-            onClick={toggleUnderstood}
-            className={`text-[11px] px-2 py-1 rounded ${
-              isUnderstood ? "bg-green-500 text-black" : "bg-gray-700 hover:bg-gray-600"
-            }`}
-          >
-            {isUnderstood ? "✓ Got it" : "Got it?"}
-          </button>
-
-          {!showPdfOverlay && pdfUrl && (
             <button
-              onClick={() => setShowPdfOverlay(true)}
-              className="text-[11px] px-2 py-1 rounded bg-blue-600 hover:bg-blue-500"
+              onClick={() => setLocalPaused((p) => !p)}
+              className="text-[10px] px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
             >
-              📄 Show PDF
+              {localPaused || isPaused ? "▶️" : "⏸️"}
             </button>
-          )}
-        </div>
 
-        {/* Voice Controls */}
-        <div className="flex items-center gap-3 mb-4 p-3 bg-gray-900/50 rounded-lg">
-          <div className="flex items-center gap-2">
-            <span className="text-xs opacity-75">Voice:</span>
-            <select
-              className="text-xs bg-gray-700 rounded px-2 py-1 max-w-40"
-              value={selectedVoice?.name || ''}
-              onChange={(e) => {
-                const voice = availableVoices.find(v => v.name === e.target.value);
-                if (voice && onVoiceChange) onVoiceChange(voice);
-              }}
+            <button
+              onClick={toggleUnderstood}
+              className={`text-[10px] px-2 py-1 rounded ${
+                isUnderstood ? "bg-green-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+              }`}
             >
-              <option value="">Default</option>
-              {availableVoices
-                .filter(v => v.lang.startsWith('en'))
-                .map(voice => (
-                  <option key={voice.name} value={voice.name}>
-                    {voice.name} ({voice.lang})
-                  </option>
-                ))
-              }
-            </select>
-          </div>
+              {isUnderstood ? "✓" : "?"}
+            </button>
 
-          <div className="flex items-center gap-2">
-            <span className="text-xs opacity-75">Speed:</span>
-            <input
-              type="range"
-              min={0.5}
-              max={2.0}
-              step={0.1}
-              value={speechRate}
-              onChange={(e) => onSpeechRateChange?.(Number(e.target.value))}
-              className="w-16"
-            />
-            <span className="text-xs">{speechRate}x</span>
-          </div>
-
-          <button
-            onClick={() => setAutoSpeak(!autoSpeak)}
-            className={`text-xs px-2 py-1 rounded ${
-              autoSpeak ? "bg-green-600" : "bg-gray-700 hover:bg-gray-600"
-            }`}
-          >
-            🔊 Auto
-          </button>
-
-          <button
-            onClick={() => isSpeaking ? stopSpeaking() : speakChunk(activeChunk)}
-            className={`text-xs px-2 py-1 rounded ${
-              isSpeaking ? "bg-red-600 hover:bg-red-500" : "bg-blue-600 hover:bg-blue-500"
-            }`}
-          >
-            {isSpeaking ? "⏹️ Stop" : "🎵 Speak"}
-          </button>
-        </div>
-
-        {/* Right-Brain Analysis Panel */}
-        {focusMode === "core" && (
-          <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-            <h5 className="text-sm font-semibold text-yellow-400 mb-2">🧠 Core Idea</h5>
-            <p className="text-lg font-medium mb-2">{chunkAnalysis.coreIdea}</p>
-            {chunkAnalysis.keyTerms.length > 0 && (
-              <div className="flex gap-2 flex-wrap">
-                <span className="text-xs opacity-75">Key terms:</span>
-                {chunkAnalysis.keyTerms.map((term, i) => (
-                  <span key={i} className="text-xs bg-yellow-500/20 px-2 py-1 rounded">
-                    {term}
-                  </span>
-                ))}
-              </div>
+            {!showPdfOverlay && pdfUrl && (
+              <button
+                onClick={() => setShowPdfOverlay(true)}
+                className="text-[10px] px-2 py-1 rounded bg-blue-600 hover:bg-blue-500"
+              >
+                📄
+              </button>
             )}
           </div>
-        )}
+        </div>
+
+        {/* Enhanced Speechify-like Voice Controls */}
+        <div className="mb-4 p-3 bg-gradient-to-r from-blue-900/30 to-purple-900/30 rounded-lg border border-blue-500/30">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-medium text-blue-300">🎵 Natural Voice</span>
+            <div className="flex-1"></div>
+            <button
+              onClick={() => setAutoSpeak(!autoSpeak)}
+              className={`text-xs px-2 py-1 rounded ${
+                autoSpeak ? "bg-green-600" : "bg-gray-700 hover:bg-gray-600"
+              }`}
+            >
+              Auto {autoSpeak ? "✓" : "○"}
+            </button>
+          </div>
+          
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs opacity-75 w-12">Voice:</span>
+              <select
+                className="text-xs bg-gray-700 rounded px-2 py-1 flex-1"
+                value={selectedVoice?.name || ''}
+                onChange={(e) => {
+                  const voice = availableVoices.find(v => v.name === e.target.value);
+                  if (voice && onVoiceChange) onVoiceChange(voice);
+                }}
+              >
+                <option value="">System Default</option>
+                {availableVoices
+                  .filter(v => v.lang.startsWith('en'))
+                  .sort((a, b) => {
+                    // Prioritize neural/premium voices
+                    const aScore = (a.name.toLowerCase().includes('neural') ? 2 : 0) + 
+                                  (a.name.toLowerCase().includes('premium') ? 1 : 0);
+                    const bScore = (b.name.toLowerCase().includes('neural') ? 2 : 0) + 
+                                  (b.name.toLowerCase().includes('premium') ? 1 : 0);
+                    return bScore - aScore;
+                  })
+                  .map(voice => (
+                    <option key={voice.name} value={voice.name}>
+                      {voice.name.split(' ')[0]} 
+                      {voice.name.toLowerCase().includes('neural') && ' ⚡'}
+                      {voice.name.toLowerCase().includes('premium') && ' ✨'}
+                    </option>
+                  ))
+                }
+              </select>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <span className="text-xs opacity-75 w-12">Speed:</span>
+              <input
+                type="range"
+                min={0.5}
+                max={2.0}
+                step={0.1}
+                value={speechRate}
+                onChange={(e) => onSpeechRateChange?.(Number(e.target.value))}
+                className="flex-1 accent-blue-400"
+              />
+              <span className="text-xs w-8">{speechRate}x</span>
+            </div>
+            
+            <div className="flex gap-2">
+              <button
+                onClick={() => isSpeaking ? stopSpeaking() : speakChunk(activeChunk)}
+                className={`text-xs px-3 py-1 rounded flex-1 font-medium ${
+                  isSpeaking 
+                    ? "bg-red-600 hover:bg-red-500 text-white" 
+                    : "bg-blue-600 hover:bg-blue-500 text-white"
+                }`}
+              >
+                {isSpeaking ? "⏹️ Stop" : "🎵 Speak Chunk"}
+              </button>
+              
+              {selectedVoice && (
+                <button
+                  onClick={() => speakChunk("Hello! This is how I sound when reading your content.")}
+                  className="text-xs px-2 py-1 rounded bg-purple-600 hover:bg-purple-500"
+                  title="Preview voice"
+                >
+                  👂
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Enhanced Right-Brain Analysis Panel with Visual Cues */}
+        <div className="mb-4 p-4 bg-gradient-to-br from-yellow-500/10 via-orange-500/10 to-red-500/10 border border-yellow-500/30 rounded-lg">
+          <div className="flex items-center gap-2 mb-3">
+            <h5 className="text-sm font-semibold text-yellow-400">🧠 Right-Brain Focus</h5>
+            <div className="flex gap-1">
+              {["core", "visual", "detail"].map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setFocusMode(mode as any)}
+                  className={`text-xs px-2 py-1 rounded ${
+                    focusMode === mode 
+                      ? "bg-yellow-500 text-black" 
+                      : "bg-gray-700 hover:bg-gray-600"
+                  }`}
+                >
+                  {mode === "core" ? "💡" : mode === "visual" ? "👁️" : "🔍"}
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          {focusMode === "core" && (
+            <div>
+              <p className="text-lg font-medium mb-3 text-yellow-300">{chunkAnalysis.coreIdea}</p>
+              {chunkAnalysis.keyTerms.length > 0 && (
+                <div className="mb-3">
+                  <span className="text-xs opacity-75 block mb-2">🎯 Key Terms:</span>
+                  <div className="flex gap-2 flex-wrap">
+                    {chunkAnalysis.keyTerms.map((term, i) => (
+                      <span 
+                        key={i} 
+                        className="text-xs bg-yellow-500/20 px-2 py-1 rounded cursor-pointer hover:bg-yellow-500/30 transition-colors"
+                        onClick={() => handleEnhancedWordClick(term)}
+                      >
+                        {term}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {chunkAnalysis.memoryAnchors.length > 0 && (
+                <div className="text-xs">
+                  <span className="opacity-75 block mb-1">🎯 Memory Anchors:</span>
+                  {chunkAnalysis.memoryAnchors.map((anchor, i) => (
+                    <div key={i} className="text-orange-300 italic mb-1">{anchor}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          
+          {focusMode === "visual" && (
+            <div>
+              <p className="text-sm mb-2">🎨 Visual & Spatial Elements:</p>
+              {chunkAnalysis.visualCues.length > 0 ? (
+                <div className="flex gap-2 flex-wrap mb-3">
+                  {chunkAnalysis.visualCues.map((cue, i) => (
+                    <span key={i} className="text-xs bg-blue-500/20 px-2 py-1 rounded">
+                      📊 {cue}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs opacity-75 mb-3">No visual elements detected in this chunk</p>
+              )}
+              
+              {chunkAnalysis.actionWords.length > 0 && (
+                <div>
+                  <span className="text-xs opacity-75 block mb-1">⚡ Process Words:</span>
+                  <div className="flex gap-2 flex-wrap">
+                    {chunkAnalysis.actionWords.map((word, i) => (
+                      <span key={i} className="text-xs bg-green-500/20 px-2 py-1 rounded">
+                        {word}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {focusMode === "detail" && (
+            <div>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="opacity-75 block mb-1">📊 Complexity:</span>
+                  <span className={`px-2 py-1 rounded ${
+                    chunkAnalysis.complexity === 'complex' ? 'bg-red-500/20 text-red-300' :
+                    chunkAnalysis.complexity === 'moderate' ? 'bg-yellow-500/20 text-yellow-300' :
+                    'bg-green-500/20 text-green-300'
+                  }`}>
+                    {chunkAnalysis.complexity}
+                  </span>
+                </div>
+                <div>
+                  <span className="opacity-75 block mb-1">🔗 Relations:</span>
+                  <div className="flex gap-1 flex-wrap">
+                    {chunkAnalysis.relationshipWords.slice(0, 3).map((word, i) => (
+                      <span key={i} className="bg-purple-500/20 px-1 py-0.5 rounded text-purple-300">
+                        {word}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              
+              {(chunkAnalysis.hasNumbers || chunkAnalysis.hasFormulas) && (
+                <div className="mt-3 flex gap-2">
+                  {chunkAnalysis.hasNumbers && (
+                    <span className="text-xs bg-blue-500/20 px-2 py-1 rounded">📊 Contains Numbers</span>
+                  )}
+                  {chunkAnalysis.hasFormulas && (
+                    <span className="text-xs bg-purple-500/20 px-2 py-1 rounded">🧮 Contains Formulas</span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Enhanced Chunk Display */}
         <div className="space-y-2">
@@ -559,6 +867,27 @@ export default function EnhancedProgressiveView({
         />
       </div>
 
+      {/* Navigation Feedback */}
+      {showNavigationFeedback && (
+        <div className="fixed top-4 right-4 z-50 max-w-sm">
+          <div className="bg-blue-600 text-white px-4 py-3 rounded-lg shadow-lg border border-blue-500">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🧭</span>
+              <div className="flex-1">
+                <div className="text-sm font-medium">Navigation</div>
+                <div className="text-xs opacity-90">{navigationFeedback}</div>
+              </div>
+              <button
+                onClick={() => setShowNavigationFeedback(false)}
+                className="text-white/70 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Fallback note editor */}
       {showNoteEditor && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-6 z-50">
@@ -580,8 +909,16 @@ export default function EnhancedProgressiveView({
           70%  { box-shadow: 0 0 0 15px rgba(250, 204, 21, 0); }
           100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0); }
         }
+        @keyframes rightBrainPulse {
+          0%   { opacity: 0.4; transform: scale(1); }
+          50%  { opacity: 0.8; transform: scale(1.02); }
+          100% { opacity: 0.4; transform: scale(1); }
+        }
         .idea-chunk.active {
           animation: coreIdeaPulse 2s ease-out infinite;
+        }
+        .pdf-chunk-highlight {
+          transition: all 0.3s ease-in-out;
         }
       `}</style>
     </div>

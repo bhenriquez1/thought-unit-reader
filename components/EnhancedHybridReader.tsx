@@ -9,6 +9,12 @@ import { chunkText, stableChunkId } from "@/lib/chunkers";
 import { loadUnderstood, markUnderstood } from "@/lib/understoodStore";
 import ProgressRing from "@/components/ProgressRing";
 import { Document, Page } from "react-pdf";
+import { 
+  NavigationHistory, 
+  NavigationResult,
+  createNavigationFeedback,
+  searchTOCForNavigation
+} from "@/lib/navigationUtils";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -54,6 +60,9 @@ interface EnhancedHybridReaderProps {
   onVoiceChange?: (voice: SpeechSynthesisVoice) => void;
   speechRate?: number;
   onSpeechRateChange?: (rate: number) => void;
+
+  // Navigation
+  tableOfContents?: any[];
 }
 
 function unitToText(u: HRUnit): string {
@@ -79,11 +88,12 @@ function keyTokenFromChunk(chunk: string): string | null {
   return scored[0]?.w || null;
 }
 
-// Enhanced PDF highlighting overlay
+// Enhanced PDF highlighting overlay with right-brain focus
 function createHighlightOverlay(
   pdfContainer: HTMLElement,
   highlightText: string,
-  color: string = "rgba(255, 235, 59, 0.3)"
+  color: string = "rgba(255, 235, 59, 0.4)",
+  pulseAnimation: boolean = true
 ) {
   // Remove existing highlights
   const existingHighlights = pdfContainer.querySelectorAll('.pdf-highlight-overlay');
@@ -91,51 +101,66 @@ function createHighlightOverlay(
 
   if (!highlightText.trim()) return;
 
-  // Find text nodes in PDF
-  const walker = document.createTreeWalker(
-    pdfContainer,
-    NodeFilter.SHOW_TEXT,
-    null
-  );
+  // Create multiple highlight attempts for better coverage
+  const searchTerms = [
+    highlightText,
+    ...highlightText.split(/\s+/).filter(w => w.length > 4).slice(0, 3), // Key words
+  ];
 
-  const textNodes: Text[] = [];
-  let node;
-  while (node = walker.nextNode()) {
-    textNodes.push(node as Text);
-  }
+  searchTerms.forEach((term, index) => {
+    if (!term.trim()) return;
+    
+    const walker = document.createTreeWalker(
+      pdfContainer,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
 
-  // Search for matching text and create highlights
-  textNodes.forEach(textNode => {
-    const text = textNode.textContent || '';
-    const regex = new RegExp(escapeRegExp(highlightText), 'gi');
-    const matches = [...text.matchAll(regex)];
+    const textNodes: Text[] = [];
+    let node;
+    while (node = walker.nextNode()) {
+      textNodes.push(node as Text);
+    }
 
-    matches.forEach(match => {
-      if (match.index !== undefined) {
-        const range = document.createRange();
-        range.setStart(textNode, match.index);
-        range.setEnd(textNode, match.index + match[0].length);
+    textNodes.forEach(textNode => {
+      const text = textNode.textContent || '';
+      const regex = new RegExp(escapeRegExp(term), 'gi');
+      const matches = [...text.matchAll(regex)];
 
-        const rect = range.getBoundingClientRect();
-        const containerRect = pdfContainer.getBoundingClientRect();
+      matches.forEach(match => {
+        if (match.index !== undefined) {
+          try {
+            const range = document.createRange();
+            range.setStart(textNode, match.index);
+            range.setEnd(textNode, match.index + match[0].length);
 
-        const highlight = document.createElement('div');
-        highlight.className = 'pdf-highlight-overlay';
-        highlight.style.cssText = `
-          position: absolute;
-          left: ${rect.left - containerRect.left}px;
-          top: ${rect.top - containerRect.top}px;
-          width: ${rect.width}px;
-          height: ${rect.height}px;
-          background-color: ${color};
-          pointer-events: none;
-          z-index: 10;
-          border-radius: 2px;
-          animation: highlightPulse 2s ease-in-out infinite;
-        `;
+            const rect = range.getBoundingClientRect();
+            const containerRect = pdfContainer.getBoundingClientRect();
 
-        pdfContainer.appendChild(highlight);
-      }
+            if (rect.width > 0 && rect.height > 0) {
+              const highlight = document.createElement('div');
+              highlight.className = 'pdf-highlight-overlay';
+              highlight.style.cssText = `
+                position: absolute;
+                left: ${rect.left - containerRect.left + pdfContainer.scrollLeft}px;
+                top: ${rect.top - containerRect.top + pdfContainer.scrollTop}px;
+                width: ${rect.width}px;
+                height: ${rect.height}px;
+                background-color: ${color};
+                pointer-events: none;
+                z-index: 10;
+                border-radius: 3px;
+                opacity: ${0.8 - (index * 0.2)};
+                ${pulseAnimation ? 'animation: hybridPulse 3s ease-in-out infinite;' : ''}
+              `;
+
+              pdfContainer.appendChild(highlight);
+            }
+          } catch (e) {
+            // Ignore range errors
+          }
+        }
+      });
     });
   });
 }
@@ -191,11 +216,17 @@ export default function EnhancedHybridReader({
   onVoiceChange,
   speechRate = 1.0,
   onSpeechRateChange,
+  tableOfContents = [],
 }: EnhancedHybridReaderProps) {
   const [selectionText, setSelectionText] = useState("");
   const [promptIdx, setPromptIdx] = useState(0);
   const [phase, setPhase] = useState<"gist" | "pattern" | "detail">("gist");
   const [localPaused, setLocalPaused] = useState(false);
+
+  // Navigation state
+  const [navigationHistory] = useState(() => new NavigationHistory());
+  const [navigationFeedback, setNavigationFeedback] = useState<string>("");
+  const [showNavigationFeedback, setShowNavigationFeedback] = useState(false);
 
   // Enhanced PDF controls
   const [pdfScale, setPdfScale] = useState(1.2);
@@ -294,12 +325,52 @@ export default function EnhancedHybridReader({
     setIsSpeaking(false);
   };
 
+  // Enhanced word click handler with navigation
+  const handleEnhancedWordClick = async (text: string, event?: React.MouseEvent) => {
+    // Regular word click functionality
+    onWordClick(text);
+    setSelectionText(text);
+    onTextSelect?.(text);
+
+    // Navigation functionality
+    if (tableOfContents && tableOfContents.length > 0) {
+      try {
+        // First search for navigation target
+        const searchResult = searchTOCForNavigation(text, tableOfContents);
+        
+        if (searchResult.found && searchResult.page && searchResult.page !== currentPage) {
+          // Add to navigation history
+          navigationHistory.addEntry(currentPage, `Page ${currentPage}`, 'word-click');
+          
+          // Navigate to target page
+          onPageChange(searchResult.page);
+          
+          // Show navigation feedback
+          const feedback = createNavigationFeedback(searchResult, text);
+          setNavigationFeedback(feedback);
+          setShowNavigationFeedback(true);
+          
+          // Auto-hide feedback after 3 seconds
+          setTimeout(() => {
+            setShowNavigationFeedback(false);
+          }, 3000);
+        }
+      } catch (error) {
+        console.warn('Navigation error:', error);
+      }
+    }
+  };
+
   // Selection fallback
   const handleMouseUp = () => {
     if (typeof window === "undefined") return;
     const sel = window.getSelection()?.toString().trim() || "";
     setSelectionText(sel);
-    if (sel) onTextSelect?.(sel);
+    if (sel) {
+      onTextSelect?.(sel);
+      // Handle navigation for selected text
+      handleEnhancedWordClick(sel);
+    }
   };
 
   // Empty states
@@ -435,11 +506,11 @@ export default function EnhancedHybridReader({
   const understoodPct = chunks.length ? Math.round((understoodCount / chunks.length) * 100) : 0;
 
   return (
-    <div className="grid grid-cols-7 gap-4 p-4 h-full">
-      {/* Enhanced PDF View (Left - 70% more room) */}
-      <div className="col-span-4 bg-gray-800 rounded-lg overflow-hidden">
-        <div className="flex items-center justify-between p-3 bg-gray-700">
-          <h4 className="text-sm font-semibold text-yellow-400">📄 PDF Reader</h4>
+    <div className="grid grid-cols-10 gap-4 p-4 h-full">
+      {/* Enhanced PDF View (Left - 70% more room with original PDF format focus) */}
+      <div className="col-span-7 bg-gray-900 rounded-lg overflow-hidden border border-gray-700">
+        <div className="flex items-center justify-between p-3 bg-gray-800 border-b border-gray-700">
+          <h4 className="text-sm font-semibold text-yellow-400">📄 Original PDF Format</h4>
           <div className="flex items-center gap-2">
             <button
               onClick={() => onPageChange(Math.max(1, currentPage - 1))}
@@ -496,8 +567,8 @@ export default function EnhancedHybridReader({
         </div>
       </div>
 
-      {/* Enhanced Progressive Interaction Panel (Right - 40%) */}
-      <div className="col-span-2 bg-gray-800 rounded-lg overflow-hidden">
+      {/* Enhanced Progressive Interaction Panel (Right - 30%) */}
+      <div className="col-span-3 bg-gray-800 rounded-lg overflow-hidden border border-gray-700">
         <div className="flex items-center justify-between p-3 bg-gray-700">
           <h4 className="text-sm font-semibold text-yellow-400">🧠 Progressive View</h4>
           <div className="flex items-center gap-2">
@@ -506,94 +577,137 @@ export default function EnhancedHybridReader({
           </div>
         </div>
 
-        <div className="p-4 h-full overflow-y-auto space-y-4">
-          {/* Voice Controls */}
-          <div className="p-3 bg-gray-900/50 rounded-lg space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs opacity-75">Voice:</span>
-              <select
-                className="text-xs bg-gray-700 rounded px-2 py-1 flex-1"
-                value={selectedVoice?.name || ''}
-                onChange={(e) => {
-                  const voice = availableVoices.find(v => v.name === e.target.value);
-                  if (voice && onVoiceChange) onVoiceChange(voice);
-                }}
-              >
-                <option value="">Default</option>
-                {availableVoices
-                  .filter(v => v.lang.startsWith('en'))
-                  .map(voice => (
-                    <option key={voice.name} value={voice.name}>
-                      {voice.name.split(' ')[0]} ({voice.lang})
-                    </option>
-                  ))
-                }
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs opacity-75">Speed:</span>
-              <input
-                type="range"
-                min={0.5}
-                max={2.0}
-                step={0.1}
-                value={speechRate}
-                onChange={(e) => onSpeechRateChange?.(Number(e.target.value))}
-                className="flex-1"
-              />
-              <span className="text-xs">{speechRate}x</span>
-            </div>
-            <div className="flex gap-2">
+        <div className="p-4 h-full overflow-y-auto space-y-3">
+          {/* Enhanced Speechify-like Voice Controls */}
+          <div className="p-3 bg-gradient-to-r from-blue-900/30 to-purple-900/30 rounded-lg border border-blue-500/30">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-medium text-blue-300">🎵 Speechify Voice</span>
+              <div className="flex-1"></div>
               <button
                 onClick={() => setAutoSpeak(!autoSpeak)}
-                className={`text-xs px-2 py-1 rounded flex-1 ${
+                className={`text-xs px-2 py-1 rounded ${
                   autoSpeak ? "bg-green-600" : "bg-gray-700 hover:bg-gray-600"
                 }`}
               >
-                🔊 Auto
+                Auto {autoSpeak ? "✓" : "○"}
               </button>
-              <button
-                onClick={() => isSpeaking ? stopSpeaking() : speakText(activeChunk)}
-                className={`text-xs px-2 py-1 rounded flex-1 ${
-                  isSpeaking ? "bg-red-600 hover:bg-red-500" : "bg-blue-600 hover:bg-blue-500"
-                }`}
-              >
-                {isSpeaking ? "⏹️ Stop" : "🎵 Speak"}
-              </button>
+            </div>
+            
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs opacity-75 w-12">Voice:</span>
+                <select
+                  className="text-xs bg-gray-700 rounded px-2 py-1 flex-1"
+                  value={selectedVoice?.name || ''}
+                  onChange={(e) => {
+                    const voice = availableVoices.find(v => v.name === e.target.value);
+                    if (voice && onVoiceChange) onVoiceChange(voice);
+                  }}
+                >
+                  <option value="">System Default</option>
+                  {availableVoices
+                    .filter(v => v.lang.startsWith('en'))
+                    .sort((a, b) => {
+                      // Prioritize neural/premium voices like Speechify
+                      const aScore = (a.name.toLowerCase().includes('neural') ? 3 : 0) + 
+                                    (a.name.toLowerCase().includes('premium') ? 2 : 0) +
+                                    (a.name.toLowerCase().includes('enhanced') ? 1 : 0);
+                      const bScore = (b.name.toLowerCase().includes('neural') ? 3 : 0) + 
+                                    (b.name.toLowerCase().includes('premium') ? 2 : 0) +
+                                    (b.name.toLowerCase().includes('enhanced') ? 1 : 0);
+                      return bScore - aScore;
+                    })
+                    .map(voice => (
+                      <option key={voice.name} value={voice.name}>
+                        {voice.name.split(' ')[0]} 
+                        {voice.name.toLowerCase().includes('neural') && ' ⚡'}
+                        {voice.name.toLowerCase().includes('premium') && ' ✨'}
+                        {voice.name.toLowerCase().includes('enhanced') && ' 🔥'}
+                      </option>
+                    ))
+                  }
+                </select>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <span className="text-xs opacity-75 w-12">Speed:</span>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={2.0}
+                  step={0.1}
+                  value={speechRate}
+                  onChange={(e) => onSpeechRateChange?.(Number(e.target.value))}
+                  className="flex-1 accent-blue-400"
+                />
+                <span className="text-xs w-8">{speechRate}x</span>
+              </div>
+              
+              <div className="flex gap-2">
+                <button
+                  onClick={() => isSpeaking ? stopSpeaking() : speakText(activeChunk)}
+                  className={`text-xs px-3 py-1 rounded flex-1 font-medium ${
+                    isSpeaking 
+                      ? "bg-red-600 hover:bg-red-500 text-white" 
+                      : "bg-blue-600 hover:bg-blue-500 text-white"
+                  }`}
+                >
+                  {isSpeaking ? "⏹️ Stop Reading" : "🎵 Read Aloud"}
+                </button>
+                
+                {selectedVoice && (
+                  <button
+                    onClick={() => speakText("Hello! This is how I sound when reading your PDF content.")}
+                    className="text-xs px-2 py-1 rounded bg-purple-600 hover:bg-purple-500"
+                    title="Preview voice"
+                  >
+                    👂
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Enhanced Controls */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] opacity-75">Chunk</span>
-              <input
-                type="range"
-                min={120}
-                max={400}
-                step={20}
-                value={chunkChars}
-                onChange={(e) => setChunkChars(Number(e.target.value))}
-                className="w-16"
-              />
+          {/* Enhanced Progressive Controls */}
+          <div className="p-3 bg-gray-900/50 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-medium text-yellow-400">🧠 Progressive Reading</span>
+              <div className="flex-1"></div>
+              <button
+                onClick={toggleUnderstood}
+                className={`text-xs px-2 py-1 rounded ${
+                  isUnderstood ? "bg-green-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+                }`}
+              >
+                {isUnderstood ? "✓ Got it" : "Got it?"}
+              </button>
             </div>
-            <select
-              className="text-xs bg-gray-700 rounded px-1 py-0.5"
-              value={chunkMode}
-              onChange={(e) => setChunkMode(e.target.value as any)}
-            >
-              <option value="semantic">Semantic</option>
-              <option value="sentence">Sentence</option>
-              <option value="bullet-first">Bullet-first</option>
-            </select>
-            <button
-              onClick={toggleUnderstood}
-              className={`text-xs px-2 py-1 rounded ${
-                isUnderstood ? "bg-green-500 text-black" : "bg-gray-700 hover:bg-gray-600"
-              }`}
-            >
-              {isUnderstood ? "✓ Got it" : "Got it?"}
-            </button>
+            
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] opacity-75">Chunk Size:</span>
+                <input
+                  type="range"
+                  min={120}
+                  max={400}
+                  step={20}
+                  value={chunkChars}
+                  onChange={(e) => setChunkChars(Number(e.target.value))}
+                  className="w-20 accent-yellow-400"
+                />
+                <span className="text-[10px]">{chunkChars}</span>
+              </div>
+              
+              <select
+                className="text-xs bg-gray-700 rounded px-2 py-1"
+                value={chunkMode}
+                onChange={(e) => setChunkMode(e.target.value as any)}
+              >
+                <option value="semantic">Semantic</option>
+                <option value="sentence">Sentence</option>
+                <option value="bullet-first">Bullet-first</option>
+              </select>
+            </div>
           </div>
 
           {/* Right-Brain Phase Controls */}
@@ -611,38 +725,64 @@ export default function EnhancedHybridReader({
             ))}
           </div>
 
-          {/* Progressive Chunks Display */}
-          <div className="space-y-2 max-h-64 overflow-y-auto">
+          {/* Enhanced Progressive Chunks Display with Highlighting */}
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-medium text-gray-300">📖 Reading Chunks</span>
+              <div className="flex-1 bg-gray-700 h-1 rounded">
+                <div 
+                  className="bg-yellow-400 h-1 rounded transition-all duration-300"
+                  style={{ width: `${((activeIdx + 1) / chunks.length) * 100}%` }}
+                />
+              </div>
+              <span className="text-xs opacity-75">{activeIdx + 1}/{chunks.length}</span>
+            </div>
+            
             {chunks.map((chunk, idx) => {
               const isActive = idx === activeIdx;
               const includes = hlRegex ? hlRegex.test(chunk) : false;
               const chunkId = stableChunkId(chunk);
               const understood = !!understoodMap[chunkId];
+              const keyToken = keyTokenFromChunk(chunk);
 
               return (
                 <div
                   key={`${idx}-${chunkId}`}
                   className={`
-                    text-sm p-2 rounded cursor-pointer transition-all duration-200
-                    ${isActive ? 'bg-yellow-500/20 border border-yellow-500/50' : 'bg-gray-700/50'}
-                    ${includes ? 'ring-1 ring-yellow-400' : ''}
-                    ${understood ? 'border-l-2 border-green-500' : ''}
-                    hover:bg-yellow-500/10
+                    text-sm p-3 rounded-lg cursor-pointer transition-all duration-300 border
+                    ${isActive 
+                      ? 'bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border-yellow-500/50 shadow-lg' 
+                      : 'bg-gray-700/30 border-gray-600/30 hover:bg-yellow-500/10'
+                    }
+                    ${includes ? 'ring-2 ring-yellow-400' : ''}
+                    ${understood ? 'border-l-4 border-green-500' : ''}
                   `}
                   onClick={() => {
                     setActiveIdx(idx);
                     onWordClick(chunk);
-                    setHighlightedWord(keyTokenFromChunk(chunk) || chunk);
+                    setHighlightedWord(keyToken || chunk);
                     setSelectionText(chunk);
                     onTextSelect?.(chunk);
                     if (autoSpeak) speakText(chunk);
                   }}
                 >
                   <div className="flex items-start justify-between">
-                    <div className="flex-1 text-xs leading-relaxed">{chunk}</div>
+                    <div className="flex-1">
+                      {keyToken && isActive && (
+                        <div className="text-xs font-medium text-yellow-300 mb-1">
+                          🎯 Key: {keyToken}
+                        </div>
+                      )}
+                      <div className="text-xs leading-relaxed">{chunk}</div>
+                    </div>
                     <div className="flex items-center gap-1 ml-2">
                       {understood && <span className="text-green-400 text-xs">✓</span>}
-                      {isActive && isSpeaking && <span className="text-blue-400 text-xs animate-pulse">🔊</span>}
+                      {isActive && isSpeaking && (
+                        <span className="text-blue-400 text-xs animate-pulse">🔊</span>
+                      )}
+                      {isActive && (
+                        <span className="text-yellow-400 text-xs">●</span>
+                      )}
                       <span className="text-xs opacity-40">{idx + 1}</span>
                     </div>
                   </div>
@@ -755,6 +895,27 @@ export default function EnhancedHybridReader({
         </div>
       </div>
 
+      {/* Navigation Feedback */}
+      {showNavigationFeedback && (
+        <div className="fixed top-4 right-4 z-50 max-w-sm">
+          <div className="bg-blue-600 text-white px-4 py-3 rounded-lg shadow-lg border border-blue-500">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🧭</span>
+              <div className="flex-1">
+                <div className="text-sm font-medium">Navigation</div>
+                <div className="text-xs opacity-90">{navigationFeedback}</div>
+              </div>
+              <button
+                onClick={() => setShowNavigationFeedback(false)}
+                className="text-white/70 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Enhanced Styles */}
       <style jsx>{`
         @keyframes highlightPulse {
@@ -762,8 +923,14 @@ export default function EnhancedHybridReader({
           50%  { opacity: 0.6; }
           100% { opacity: 0.3; }
         }
+        @keyframes hybridPulse {
+          0%   { opacity: 0.4; transform: scale(1); }
+          50%  { opacity: 0.8; transform: scale(1.02); }
+          100% { opacity: 0.4; transform: scale(1); }
+        }
         .pdf-highlight-overlay {
           animation: highlightPulse 2s ease-in-out infinite;
+          transition: all 0.3s ease-in-out;
         }
       `}</style>
     </div>

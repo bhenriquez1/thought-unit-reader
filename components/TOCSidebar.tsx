@@ -1,5 +1,6 @@
 // components/TOCSidebar.tsx
 import React, { useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 /** Flexible item shape: works with tocParser + SmartPDFViewer onOutline */
 type TocLike = {
@@ -30,6 +31,9 @@ interface Props {
   toc: unknown[];
   currentPage: number;
   onJumpToPage: (page: number) => void;
+  /** Control visibility from parent */
+  isVisible?: boolean;
+  onToggleVisibility?: () => void;
 }
 
 /* -------------------- helpers -------------------- */
@@ -103,8 +107,15 @@ function normalizeTOC(inputUnknown: unknown[]): { title: string; page?: number; 
 
 /* -------------------- component -------------------- */
 
-export default function TOCSidebar({ toc, currentPage, onJumpToPage }: Props) {
+export default function TOCSidebar({ 
+  toc, 
+  currentPage, 
+  onJumpToPage, 
+  isVisible = false, 
+  onToggleVisibility 
+}: Props) {
   const [q, setQ] = useState("");
+  const [internalVisible, setInternalVisible] = useState(false);
 
   const flat = useMemo(() => normalizeTOC(toc || []), [toc]);
 
@@ -114,53 +125,136 @@ export default function TOCSidebar({ toc, currentPage, onJumpToPage }: Props) {
     return flat.filter((e) => e.title.toLowerCase().includes(term));
   }, [q, flat]);
 
+  const visible = isVisible !== undefined ? isVisible : internalVisible;
+  const toggleVisibility = onToggleVisibility || (() => setInternalVisible(!internalVisible));
+
   return (
-    <aside className="w-72 bg-gray-900 text-white p-3 h-full flex flex-col">
-      <h3 className="text-sm font-bold mb-3">📑 Table of Contents</h3>
+    <>
+      {/* Floating Toggle Button */}
+      <motion.button
+        onClick={toggleVisibility}
+        className="fixed top-20 left-4 z-50 bg-gray-900/90 hover:bg-gray-800 text-white p-2 rounded-full shadow-lg backdrop-blur-sm border border-gray-700"
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        title="Toggle Table of Contents"
+      >
+        <motion.div
+          animate={{ rotate: visible ? 180 : 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          📑
+        </motion.div>
+      </motion.button>
 
-      <input
-        type="text"
-        placeholder="Search…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        className="w-full p-2 mb-3 rounded bg-gray-800 text-xs outline-none"
-      />
+      {/* Sliding TOC Panel */}
+      <AnimatePresence>
+        {visible && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={toggleVisibility}
+              className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
+            />
 
-      {filtered.length === 0 ? (
-        <p className="text-xs text-gray-400">No headings found.</p>
-      ) : (
-        <div className="flex-1 overflow-y-auto">
-          <ul className="space-y-1">
-            {filtered.map((entry, idx) => {
-              const page = entry.page;
-              const active = typeof page === "number" && page === currentPage;
+            {/* TOC Panel */}
+            <motion.aside
+              initial={{ x: -320, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -320, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className="fixed top-0 left-0 w-80 h-full bg-gray-900/95 backdrop-blur-md text-white p-4 z-50 flex flex-col shadow-2xl border-r border-gray-700"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold">📑 Table of Contents</h3>
+                <button
+                  onClick={toggleVisibility}
+                  className="text-gray-400 hover:text-white transition-colors p-1 rounded"
+                >
+                  ✕
+                </button>
+              </div>
 
-              return (
-                <li key={`${entry.title}-${idx}`}>
-                  <button
-                    onClick={() => page && onJumpToPage(page)}
-                    disabled={typeof page !== "number"}
-                    className={`
-                      w-full text-left cursor-pointer px-2 py-1.5 rounded text-xs transition-colors
-                      hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed
-                      ${active ? "bg-yellow-500 text-black font-medium" : ""}
-                    `}
-                    style={{ paddingLeft: `${entry.level * 8 + 8}px` }}
-                    title={typeof page === "number" ? `Go to page ${page}` : "Location unavailable"}
+              {/* Search */}
+              <input
+                type="text"
+                placeholder="Search headings..."
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                className="w-full p-3 mb-4 rounded-lg bg-gray-800/80 text-sm outline-none border border-gray-700 focus:border-yellow-500 transition-colors"
+              />
+
+              {/* Content */}
+              {filtered.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <p className="text-sm text-gray-400 text-center">
+                    {flat.length === 0 ? "No table of contents available" : "No matching headings found"}
+                  </p>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto">
+                  <motion.ul 
+                    className="space-y-1"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.1 }}
                   >
-                    <div className="flex justify-between items-center">
-                      <span className="truncate flex-1 leading-tight">{entry.title}</span>
-                      {typeof page === "number" && (
-                        <span className="opacity-60 text-[10px] ml-2 shrink-0">p.{page}</span>
-                      )}
-                    </div>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
-    </aside>
+                    {filtered.map((entry, idx) => {
+                      const page = entry.page;
+                      const active = typeof page === "number" && page === currentPage;
+
+                      return (
+                        <motion.li 
+                          key={`${entry.title}-${idx}`}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: idx * 0.02 }}
+                        >
+                          <button
+                            onClick={() => {
+                              if (page) {
+                                onJumpToPage(page);
+                                toggleVisibility(); // Auto-close after navigation
+                              }
+                            }}
+                            disabled={typeof page !== "number"}
+                            className={`
+                              w-full text-left cursor-pointer px-3 py-2 rounded-lg text-sm transition-all duration-200
+                              hover:bg-gray-700/80 disabled:opacity-50 disabled:cursor-not-allowed
+                              ${active ? "bg-yellow-500/20 border-l-4 border-yellow-500 text-yellow-300 font-medium" : "hover:translate-x-1"}
+                            `}
+                            style={{ paddingLeft: `${entry.level * 12 + 12}px` }}
+                            title={typeof page === "number" ? `Go to page ${page}` : "Location unavailable"}
+                          >
+                            <div className="flex justify-between items-center">
+                              <span className="truncate flex-1 leading-relaxed">{entry.title}</span>
+                              {typeof page === "number" && (
+                                <span className="opacity-60 text-xs ml-3 shrink-0 bg-gray-800/50 px-2 py-0.5 rounded">
+                                  p.{page}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        </motion.li>
+                      );
+                    })}
+                  </motion.ul>
+                </div>
+              )}
+
+              {/* Footer */}
+              <div className="mt-4 pt-3 border-t border-gray-700">
+                <p className="text-xs text-gray-400 text-center">
+                  {filtered.length} of {flat.length} headings
+                </p>
+              </div>
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
