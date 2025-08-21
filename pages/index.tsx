@@ -305,7 +305,7 @@ export default function ThoughtUnitReader() {
   const [bookId, setBookId] = useState<string>("default-book");
 
   // ✅ Auto-whiteboard control + data
-  const [autoWhiteboard, setAutoWhiteboard] = useState<boolean>(true);
+  const [autoWhiteboard, setAutoWhiteboard] = useState<boolean>(false);
   const [showWhiteboardPanel, setShowWhiteboardPanel] = useState<boolean>(false);
   const [wbConcept, setWbConcept] = useState<string>("");
   const [wbContext, setWbContext] = useState<string>("");
@@ -877,6 +877,28 @@ export default function ThoughtUnitReader() {
           className="text-xs px-3 py-1 rounded bg-purple-500 text-white shadow"
         >
           🎓 Study Notes
+        </button>
+
+        {/* Manual Whiteboard Trigger */}
+        <button
+          onClick={() => {
+            const seed = conceptForPage(currentPage, thoughtUnits, pdfPageCount);
+            if (seed) {
+              setWbConcept(truncate(seed, 600));
+              const title = titleForPage(tableOfContents, currentPage);
+              setWbContext(title);
+              setShowWhiteboardPanel(true);
+            } else {
+              // Fallback if no content available
+              setWbConcept("Click to explain this page");
+              setWbContext(`Page ${currentPage}`);
+              setShowWhiteboardPanel(true);
+            }
+          }}
+          className="text-xs px-3 py-1 rounded bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow"
+          title="Open Whiteboard for current page"
+        >
+          🎨 Whiteboard
         </button>
       </div>
 
