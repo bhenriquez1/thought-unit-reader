@@ -5,7 +5,8 @@ import React, { useState, useEffect, useRef, useMemo, ChangeEvent } from "react"
 import { generateTOC, type TOCEntry, outlineToTOC } from "@/lib/tocParser";
 import TOCSidebar from "@/components/TOCSidebar";
 import type { ThoughtUnit, ReadingStats } from "@/types/reading";
-import HybridReader from "@/components/HybridReader";
+import EnhancedHybridReader from "@/components/EnhancedHybridReader";
+import EnhancedProgressiveView from "@/components/EnhancedProgressiveView";
 import HighlightPopup from "@/components/HighlightPopup";
 import RightBrainNoteEditor from "@/components/RightBrainNoteEditor";
 import LinkVideoModal from "@/components/LinkVideoModal";
@@ -619,49 +620,37 @@ export default function ThoughtUnitReader() {
     }
 
     if (viewMode === "progressive") {
-      // PDF with floating progressive overlay
       return fileUrl ? (
-        <div className="relative h-full" onMouseUp={sel.bind.onMouseUp}>
-          <SmartPDFViewer
-            fileUrl={fileUrl}
-            currentPage={currentPage}
-            onPageChange={(p) => syncToPage(p)}
-            scale={1.25}
-            onTextSelect={(t) => sel.setSelectionText(t)}
-            onPageCount={(n) => setPdfPageCount(n)}
-            onOutline={(items) => {
-              const normalized = outlineToTOC(items as any);
-              if (normalized && normalized.length) {
-                setTableOfContents(normalized);
-              }
-            }}
-          />
-
-          <ProgressiveOverlay
-            chunks={progressiveChunks}
-            activeIdx={progActiveIdx}
-            setActiveIdx={(i) => {
-              setProgActiveIdx(i);
-              // Add visual pulse to the newly active chunk in PDF
-              const activeText = progressiveChunks[i];
-              if (activeText) {
-                highlightChunkInPDF(currentPage, activeText);
-              }
-            }}
-            onChunkPicked={(text) => {
-              sel.setSelectionText(text);
-              setHighlightedWord(text.split(/\s+/)[0] || "");
-              if (autoWhiteboard) {
-                setWbConcept(truncate(text, 600));
-                setWbContext(titleForPage(tableOfContents, currentPage));
-                setShowWhiteboardPanel(true);
-              }
-              // visually mark inside the PDF with pulse
-              highlightChunkInPDF(currentPage, text);
-            }}
-            onOpenRightBrain={(built) => handleOpenRightBrainNote(built, undefined, "highYield")}
-          />
-        </div>
+        <EnhancedProgressiveView
+          bookId={bookId}
+          userId={USER_ID}
+          thoughtUnits={thoughtUnits}
+          currentThoughtUnit={currentThoughtUnit}
+          pdfUrl={fileUrl}
+          currentPage={currentPage}
+          pdfPageCount={pdfPageCount}
+          onPageChange={(p) => syncToPage(p)}
+          readingSpeed={readingSpeed}
+          isReading={isReading}
+          isPaused={isPaused}
+          highlightedWord={highlightedWord}
+          fontSize={fontSize}
+          fontFamily={fontFamily}
+          lineSpacing={lineSpacing}
+          onWordClick={(w) => {
+            setHighlightedWord(w);
+            if (autoWhiteboard && w.trim()) {
+              setWbConcept(truncate(w, 600));
+              setWbContext(`p.${currentPage}`);
+              setShowWhiteboardPanel(true);
+            }
+          }}
+          setReadingSpeed={setReadingSpeed}
+          onTextSelect={(t) => sel.setSelectionText(t)}
+          onGenerateNote={handleOpenRightBrainNote}
+          selBind={sel.bind}
+          externalSelectionText={sel.selectionText}
+        />
       ) : (
         <div className="flex flex-col items-center justify-center h-full gap-4">
           <p>📂 Upload a PDF to begin</p>
@@ -675,12 +664,14 @@ export default function ThoughtUnitReader() {
 
     if (viewMode === "hybrid") {
       return (
-        <HybridReader
+        <EnhancedHybridReader
           bookId={bookId}
           userId={USER_ID}
-          sampleText={sampleText}
+          pdfUrl={fileUrl || ""}
           currentPage={currentPage}
           pdfPageCount={pdfPageCount}
+          onPageChange={(p) => syncToPage(p)}
+          sampleText={sampleText}
           readingSpeed={readingSpeed}
           isReading={isReading}
           isPaused={isPaused}
@@ -689,11 +680,9 @@ export default function ThoughtUnitReader() {
           thoughtUnits={thoughtUnits}
           highlightedWord={highlightedWord}
           setHighlightedWord={setHighlightedWord}
-          stats={stats}
           fontSize={fontSize}
           fontFamily={fontFamily}
           lineSpacing={lineSpacing}
-          clickSwitchesTo={clickSwitchesTo}
           onWordClick={(w) => {
             setHighlightedWord(w);
             if (autoWhiteboard && w.trim()) {
@@ -703,7 +692,6 @@ export default function ThoughtUnitReader() {
             }
           }}
           setReadingSpeed={setReadingSpeed}
-          setCurrentPage={(p) => syncToPage(p)}
           onTextSelect={(t) => sel.setSelectionText(t)}
           selBind={sel.bind}
           externalSelectionText={sel.selectionText}
