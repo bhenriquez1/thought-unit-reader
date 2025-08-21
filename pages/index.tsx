@@ -565,20 +565,21 @@ export default function ThoughtUnitReader() {
             <p className="text-sm opacity-80 mb-4">
               Please sign in to upload PDFs and use the reader.
             </p>
-            {firebaseConnected ? (
-              <button
-                onClick={() => signInWithGoogle()}
-                className="px-4 py-2 rounded bg-blue-500 hover:bg-blue-600"
-              >
-                Sign in with Google
-              </button>
-            ) : (
-              <div className="text-xs bg-gray-700/60 rounded p-2">
-                Firebase isn't configured yet for this deploy. Add your{" "}
-                <code className="mx-1 px-1 rounded bg-black/30">NEXT_PUBLIC_FIREBASE_*</code> env vars
-                and redeploy to enable Google Sign-In.
-              </div>
-            )}
+            <button
+              onClick={async () => {
+                try {
+                  const user = await signInWithGoogle();
+                  if (user) {
+                    console.log("✅ Signed in:", user.displayName || user.email);
+                  }
+                } catch (error) {
+                  console.error("❌ Sign-in error:", error);
+                }
+              }}
+              className="px-4 py-2 rounded bg-blue-500 hover:bg-blue-600"
+            >
+              Sign in with Google
+            </button>
           </div>
         </div>
       );
@@ -826,12 +827,7 @@ export default function ThoughtUnitReader() {
               </button>
             </>
           ) : (
-            <button
-              onClick={() => signInWithGoogle()}
-              className="text-xs px-2 py-1 rounded bg-blue-500 hover:bg-blue-600"
-            >
-              Sign in with Google
-            </button>
+            <span className="text-xs opacity-60">Not signed in</span>
           )}
         </div>
 
