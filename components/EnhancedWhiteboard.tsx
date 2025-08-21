@@ -352,7 +352,7 @@ export default function EnhancedWhiteboard({
     // Enhanced underline with natural drawing
     const underlineProgress = Math.min(1, (progressWithinStep * stepMs) / UNDERLINE_MS);
     if (naturalAnimations) {
-      drawNaturalUnderline(PADDING_X, TITLE_Y + 8, titleWidth + 8, underlineProgress);
+      drawNaturalUnderline(ctx, PADDING_X, TITLE_Y + 8, titleWidth + 8, underlineProgress);
     } else {
       drawScribbleUnderline(ctx, PADDING_X, TITLE_Y + 6, titleWidth + 8, underlineProgress);
     }
