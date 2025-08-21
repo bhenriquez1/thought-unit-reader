@@ -24,6 +24,9 @@ import {
 
 import EnhancedWhiteboard from "@/components/EnhancedWhiteboard";
 import LibraryPanel from "@/components/LibraryPanel";
+import ChunkRail from "@/components/ChunkRail";
+import TOCBottomDock from "@/components/TOCBottomDock";
+import { useReaderSync, stableChunkId } from "@/lib/readerSync";
 
 import {
   parseBookWithChapters,
@@ -176,12 +179,13 @@ function ProgressiveOverlay({
 }: {
   chunks: string[];
   activeIdx: number;
-  setActiveIdx: (i: number) => void;
+  setActiveIdx: React.Dispatch<React.SetStateAction<number>>;
   onChunkPicked?: (t: string) => void;
   onOpenRightBrain?: (fullText: string) => void;
 }) {
   const [promptIdx, setPromptIdx] = useState(0);
   const activeText = chunks[activeIdx] || "";
+  const { setActiveChunkId } = useReaderSync();
 
   // keyboard: J/K or ArrowDown/ArrowUp to move; Enter to open in Right-Brain
   useEffect(() => {
@@ -201,12 +205,34 @@ function ProgressiveOverlay({
     return () => window.removeEventListener("keydown", onKey);
   }, [chunks.length, activeIdx, setActiveIdx, activeText, promptIdx, onOpenRightBrain]);
 
+  // Sync active chunk to global store
+  useEffect(() => {
+    if (activeText) {
+      const chunkId = stableChunkId(activeText);
+      setActiveChunkId(chunkId);
+    }
+  }, [activeText, setActiveChunkId]);
+
   if (!chunks.length) return null;
 
   return (
-    <div className="pointer-events-auto absolute top-3 right-3 bg-gray-900/85 border border-gray-700 rounded-lg shadow-lg w-[360px] max-h-[70vh] overflow-y-auto">
+    <div className="pointer-events-auto absolute top-3 right-3 bg-gray-900/85 border border-gray-700 rounded-lg shadow-lg w-[400px] max-h-[70vh] overflow-y-auto">
       <div className="sticky top-0 z-10 p-2 text-xs font-semibold text-yellow-300 bg-gray-900/95 border-b border-gray-800">
         Progressive Navigator
+      </div>
+
+      {/* Chunk Rail at the top */}
+      <div className="p-3 border-b border-gray-700">
+        <ChunkRail
+          chunks={chunks}
+          activeIdx={activeIdx}
+          setActiveIdx={setActiveIdx}
+          onPick={(text) => {
+            onChunkPicked?.(text);
+            // Highlight in PDF
+            highlightChunkInPDF(1, text); // Assuming current page for now
+          }}
+        />
       </div>
 
       <div className="p-2 text-sm leading-6">
@@ -253,6 +279,11 @@ function ProgressiveOverlay({
 
 export default function ThoughtUnitReader() {
   /* =========================================================================
+     🔹 Global Reader Sync Store
+  ========================================================================= */
+  const { page, unitIndex, activeChunkId, setPage, setUnitIndex, setActiveChunkId, updateSync } = useReaderSync();
+
+  /* =========================================================================
      🔹 State
   ========================================================================= */
   const [user, setUser] = useState<any>(null);
@@ -268,6 +299,9 @@ export default function ThoughtUnitReader() {
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(1);
+
+  // Bottom TOC dock state
+  const [bottomTOCHeight, setBottomTOCHeight] = useState(220);
 
   const [isReading, setIsReading] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -559,13 +593,17 @@ export default function ThoughtUnitReader() {
   }, [viewMode, progressiveChunks.length, readingSpeed, isReading, isPaused]);
 
   /* =========================================================================
-     🔹 Page/TOC sync (ALL modes) + optional whiteboard retrigger
+     🔹 Page/TOC sync (ALL modes) + optional whiteboard retrigger + global sync
   ========================================================================= */
   const syncToPage = (page: number) => {
     console.log(`📄 syncToPage called: navigating to page ${page} (current: ${currentPage})`);
     setCurrentPage(page);
     const unit = pageToUnit(page, pdfPageCount, thoughtUnits.length);
     setCurrentThoughtUnit(unit);
+    
+    // Update global sync store
+    updateSync({ page, unitIndex: unit });
+    
     console.log(`📄 Page navigation complete: page ${page}, unit ${unit}`);
 
     if (autoWhiteboard) {
@@ -903,7 +941,7 @@ export default function ThoughtUnitReader() {
       </div>
 
       {/* Main Content Area with TOC Sidebar */}
-      <div className="flex-1 overflow-hidden flex">
+      <div className="flex-1 overflow-hidden flex" style={{ paddingBottom: fileUrl ? `${bottomTOCHeight}px` : '0px' }}>
         {/* Always-visible TOC Sidebar */}
         {fileUrl && (
           <TOCSidebar
@@ -918,6 +956,17 @@ export default function ThoughtUnitReader() {
           <div className="w-full h-full bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
         </div>
       </div>
+
+      {/* Bottom TOC Dock - Always visible when file is loaded */}
+      {fileUrl && (
+        <TOCBottomDock
+          toc={tableOfContents}
+          currentPage={currentPage}
+          onJumpToPage={(p) => syncToPage(p)}
+          height={bottomTOCHeight}
+          onHeightChange={setBottomTOCHeight}
+        />
+      )}
 
       {/* Floating Whiteboard Toggle & Panel */}
       {wbConcept && (
