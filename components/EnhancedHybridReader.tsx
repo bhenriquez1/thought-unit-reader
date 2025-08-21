@@ -506,55 +506,69 @@ export default function EnhancedHybridReader({
   const understoodPct = chunks.length ? Math.round((understoodCount / chunks.length) * 100) : 0;
 
   return (
-    <div className="grid grid-cols-10 gap-4 p-4 h-full">
-      {/* Enhanced PDF View (Left - 70% more room with original PDF format focus) */}
-      <div className="col-span-7 bg-gray-900 rounded-lg overflow-hidden border border-gray-700">
-        <div className="flex items-center justify-between p-3 bg-gray-800 border-b border-gray-700">
-          <h4 className="text-sm font-semibold text-yellow-400">📄 Original PDF Format</h4>
+    <div className="grid grid-cols-2 gap-4 p-4 h-full">
+      {/* Enhanced Original PDF Format View (Left - 50% split) */}
+      <div className="col-span-1 bg-gray-900 rounded-lg overflow-hidden border border-gray-700 shadow-xl">
+        <div className="flex items-center justify-between p-3 bg-gradient-to-r from-gray-800 to-gray-700 border-b border-gray-600">
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-semibold text-yellow-400">📄 Original PDF Format</h4>
+            <span className="text-xs bg-yellow-500/20 px-2 py-1 rounded text-yellow-300">
+              Enhanced Reading
+            </span>
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => onPageChange(Math.max(1, currentPage - 1))}
               disabled={currentPage <= 1}
-              className="text-xs px-2 py-1 bg-gray-600 rounded hover:bg-gray-500 disabled:opacity-50"
+              className="text-xs px-3 py-1 bg-gray-600 rounded hover:bg-gray-500 disabled:opacity-50 transition-colors"
             >
-              ◀
+              ◀ Prev
             </button>
-            <span className="text-xs">{currentPage} / {pdfPageCount || '?'}</span>
+            <span className="text-xs bg-gray-700 px-2 py-1 rounded font-mono">
+              {currentPage} / {pdfPageCount || '?'}
+            </span>
             <button
               onClick={() => onPageChange(Math.min(pdfPageCount || 999, currentPage + 1))}
               disabled={currentPage >= (pdfPageCount || 999)}
-              className="text-xs px-2 py-1 bg-gray-600 rounded hover:bg-gray-500 disabled:opacity-50"
+              className="text-xs px-3 py-1 bg-gray-600 rounded hover:bg-gray-500 disabled:opacity-50 transition-colors"
             >
-              ▶
+              Next ▶
             </button>
             <div className="w-px h-4 bg-gray-600 mx-2" />
             <button
               onClick={() => setPdfScale(s => Math.max(0.5, s - 0.1))}
-              className="text-xs px-2 py-1 bg-gray-600 rounded hover:bg-gray-500"
+              className="text-xs px-2 py-1 bg-gray-600 rounded hover:bg-gray-500 transition-colors"
             >
               -
             </button>
-            <span className="text-xs">{Math.round(pdfScale * 100)}%</span>
+            <span className="text-xs bg-gray-700 px-2 py-1 rounded font-mono min-w-[3rem] text-center">
+              {Math.round(pdfScale * 100)}%
+            </span>
             <button
               onClick={() => setPdfScale(s => Math.min(3.0, s + 0.1))}
-              className="text-xs px-2 py-1 bg-gray-600 rounded hover:bg-gray-500"
+              className="text-xs px-2 py-1 bg-gray-600 rounded hover:bg-gray-500 transition-colors"
             >
               +
             </button>
             <button
               onClick={() => setShowProgressiveOverlay(!showProgressiveOverlay)}
-              className={`text-xs px-2 py-1 rounded ${
-                showProgressiveOverlay ? "bg-yellow-600" : "bg-gray-600 hover:bg-gray-500"
+              className={`text-xs px-3 py-1 rounded transition-all ${
+                showProgressiveOverlay 
+                  ? "bg-gradient-to-r from-yellow-600 to-orange-600 text-white shadow-lg" 
+                  : "bg-gray-600 hover:bg-gray-500"
               }`}
             >
-              ✨ Highlights
+              ✨ Progressive Highlights
             </button>
           </div>
         </div>
         <div 
           ref={pdfContainerRef}
-          className="h-full overflow-auto relative"
+          className="h-full overflow-auto relative bg-white"
           onMouseUp={selBind?.onMouseUp ?? handleMouseUp}
+          style={{
+            background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)'
+          }}
         >
           <Document file={pdfUrl}>
             <Page 
@@ -562,13 +576,24 @@ export default function EnhancedHybridReader({
               scale={pdfScale}
               renderTextLayer={true}
               renderAnnotationLayer={true}
+              className="shadow-lg"
             />
           </Document>
+          
+          {/* Enhanced Progressive Interaction Overlay */}
+          {showProgressiveOverlay && (
+            <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
+              <div className="absolute top-4 left-4 bg-gradient-to-r from-blue-600/90 to-purple-600/90 text-white px-3 py-2 rounded-lg shadow-lg backdrop-blur-sm">
+                <div className="text-xs font-medium">Progressive Reading Active</div>
+                <div className="text-xs opacity-90">Following: {cueToken || 'content'}</div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Enhanced Progressive Interaction Panel (Right - 30%) */}
-      <div className="col-span-3 bg-gray-800 rounded-lg overflow-hidden border border-gray-700">
+      {/* Enhanced Progressive Interaction Panel (Right - 50%) */}
+      <div className="col-span-1 bg-gray-800 rounded-lg overflow-hidden border border-gray-700">
         <div className="flex items-center justify-between p-3 bg-gray-700">
           <h4 className="text-sm font-semibold text-yellow-400">🧠 Progressive View</h4>
           <div className="flex items-center gap-2">

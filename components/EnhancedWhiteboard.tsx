@@ -163,13 +163,18 @@ export default function EnhancedWhiteboard({
     speechSynthesis.cancel();
     setIsSpeaking(false);
     
+    // Enhanced natural voice processing
+    const processedText = text
+      .replace(/\b(diagram|figure|chart|graph)\b/gi, '$1 visualization')
+      .replace(/\b(formula|equation)\b/gi, 'mathematical $1')
+      .replace(/\b(step \d+|phase \d+)\b/gi, 'step number $1')
+      .replace(/([.!?])\s+/g, '$1... ') // Add natural pauses
+      .replace(/,\s+/g, ', ... '); // Shorter pauses for commas
+    
     // Use Enhanced Speech Service for better quality
     try {
       const { EnhancedSpeechService } = await import('@/lib/enhancedSpeech');
       const speechService = EnhancedSpeechService.getInstance();
-      
-      // Preprocess text for better speech quality
-      const processedText = speechService.preprocessText(text);
       
       const voiceToUse = options?.voice || selectedVoice || speechService.getBestVoices()[0]?.voice;
       
@@ -180,10 +185,14 @@ export default function EnhancedWhiteboard({
         volume: 1.0,
         highlightWords: true
       }, 
-      // Word boundary callback for highlighting
+      // Word boundary callback for highlighting with animations
       (word, charIndex) => {
-        // Could add word highlighting animation here
-        console.log(`Speaking word: ${word} at position ${charIndex}`);
+        // Animate speaking word
+        const wordElements = document.querySelectorAll(`[data-word="${word}"]`);
+        wordElements.forEach(el => {
+          el.classList.add('speaking-word');
+          setTimeout(() => el.classList.remove('speaking-word'), 500);
+        });
       },
       // On end callback
       () => {
@@ -192,23 +201,32 @@ export default function EnhancedWhiteboard({
       },
       // On error callback
       (error) => {
-        console.error('Speech error:', error);
+        console.error('Enhanced speech error:', error);
         setIsSpeaking(false);
         setCurrentUtterance(null);
       });
       
       setIsSpeaking(true);
     } catch (error) {
-      // Fallback to basic speech synthesis
-      console.warn('Enhanced speech not available, using fallback:', error);
+      // Enhanced fallback with better voice selection
+      console.warn('Enhanced speech not available, using enhanced fallback:', error);
       
-      const utterance = new SpeechSynthesisUtterance(text);
-      const voiceToUse = options?.voice || selectedVoice || availableVoices[0];
+      const utterance = new SpeechSynthesisUtterance(processedText);
+      
+      // Select the most natural voice available
+      const naturalVoices = availableVoices.filter(voice => {
+        const name = voice.name.toLowerCase();
+        return name.includes('neural') || name.includes('premium') || 
+               name.includes('enhanced') || name.includes('natural') ||
+               !voice.localService; // Cloud voices are often better
+      });
+      
+      const voiceToUse = options?.voice || selectedVoice || naturalVoices[0] || availableVoices[0];
       if (voiceToUse) {
         utterance.voice = voiceToUse;
       }
       
-      utterance.rate = options?.rate || speechRate;
+      utterance.rate = (options?.rate || speechRate) * 0.9; // Slightly slower for clarity
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
       

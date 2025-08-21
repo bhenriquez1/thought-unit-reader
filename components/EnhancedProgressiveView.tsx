@@ -255,23 +255,26 @@ export default function EnhancedProgressiveView({
   const [navigationFeedback, setNavigationFeedback] = useState<string>("");
   const [showNavigationFeedback, setShowNavigationFeedback] = useState(false);
   
-  // Enhanced chunking with right-brain focus
-  const [chunkChars, setChunkChars] = useState(200); // Smaller chunks for better focus
+  // Enhanced chunking with right-brain focus - optimized for PDF reading
+  const [chunkChars, setChunkChars] = useState(180); // Smaller chunks for better PDF focus
   const [chunkMode, setChunkMode] = useState<"semantic" | "sentence" | "bullet-first">("semantic");
   const [focusMode, setFocusMode] = useState<"core" | "detail" | "visual">("core");
   
-  // PDF view integration
-  const [pdfScale, setPdfScale] = useState(0.8);
+  // Enhanced PDF view integration - more PDF-focused
+  const [pdfScale, setPdfScale] = useState(1.0); // Better default scale for reading
   const [showPdfOverlay, setShowPdfOverlay] = useState(true);
+  const [pdfViewMode, setPdfViewMode] = useState<"focus" | "overview">("focus"); // New PDF focus mode
   const pdfContainerRef = useRef<HTMLDivElement>(null);
   
-  // Voice and speech
+  // Enhanced voice and speech with Speechify-like features
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(false);
+  const [speechifyMode, setSpeechifyMode] = useState(true); // Enhanced speech mode
   
-  // Understood tracking
+  // Enhanced understood tracking with right-brain patterns
   const [understoodMap, setUnderstoodMap] = useState<Record<string, true>>({});
+  const [rightBrainInsights, setRightBrainInsights] = useState<Record<string, any>>({});
   
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
@@ -504,13 +507,29 @@ export default function EnhancedProgressiveView({
   const effectiveSelection = (externalSelectionText?.trim() || selectionText).trim();
 
   return (
-    <div className="grid grid-cols-4 gap-4 p-4 h-full">
-      {/* Enhanced PDF View (Left - 75% more room with better focus) */}
+    <div className="grid grid-cols-2 gap-4 p-4 h-full">
+      {/* Enhanced PDF View (Left - 50% split) */}
       {pdfUrl && showPdfOverlay && (
-        <div className="col-span-3 bg-gray-900 rounded-lg overflow-hidden border border-gray-700">
+        <div className="col-span-1 bg-gray-900 rounded-lg overflow-hidden border border-gray-700">
           <div className="flex items-center justify-between p-3 bg-gray-800 border-b border-gray-700">
             <h4 className="text-sm font-semibold text-yellow-400">📄 Enhanced PDF Reader</h4>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => onPageChange && onPageChange(Math.max(1, currentPage - 1))}
+                disabled={currentPage <= 1}
+                className="text-xs px-2 py-1 bg-gray-600 rounded hover:bg-gray-500 disabled:opacity-50"
+              >
+                ◀
+              </button>
+              <span className="text-xs">{currentPage} / {pdfPageCount || '?'}</span>
+              <button
+                onClick={() => onPageChange && onPageChange(Math.min(pdfPageCount || 999, currentPage + 1))}
+                disabled={currentPage >= (pdfPageCount || 999)}
+                className="text-xs px-2 py-1 bg-gray-600 rounded hover:bg-gray-500 disabled:opacity-50"
+              >
+                ▶
+              </button>
+              <div className="w-px h-4 bg-gray-600 mx-2" />
               <button
                 onClick={() => setPdfScale(s => Math.max(0.5, s - 0.1))}
                 className="text-xs px-2 py-1 bg-gray-600 rounded hover:bg-gray-500"
@@ -549,9 +568,9 @@ export default function EnhancedProgressiveView({
         </div>
       )}
 
-      {/* Enhanced Progressive View (Right - 25% focused interaction) */}
+      {/* Enhanced Progressive View (Right - 50% focused interaction) */}
       <div 
-        className={`${showPdfOverlay && pdfUrl ? 'col-span-1' : 'col-span-3'} bg-gray-800 p-4 rounded-lg overflow-y-auto border border-gray-700`}
+        className={`${showPdfOverlay && pdfUrl ? 'col-span-1' : 'col-span-2'} bg-gray-800 p-4 rounded-lg overflow-y-auto border border-gray-700`}
         style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
         onMouseUp={selBind?.onMouseUp ?? handleMouseUp}
       >
