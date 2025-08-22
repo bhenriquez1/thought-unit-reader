@@ -29,6 +29,7 @@ export interface ReaderSyncState {
   // Enhanced state for smart sync
   lastUpdateSource: SyncSource | null;
   lastUpdateTimestamp: number;
+  lastNavReason: 'SCROLL' | 'TOC_JUMP' | 'PROGRAMMATIC' | null;
   
   // Content mapping data
   totalPages: number;
@@ -38,6 +39,11 @@ export interface ReaderSyncState {
   
   // TOC integration
   tableOfContents: TOCEntry[];
+  
+  // Whiteboard chapter animation state
+  currentChapterId: string | null;
+  chapterAnimationSteps: Map<string, number>; // chapterId -> current step index
+  animationScriptCache: Map<string, any[]>; // chapterId -> animation steps
   
   // Actions with source tracking
   setPage: (page: number, source?: SyncSource) => void;
@@ -59,6 +65,13 @@ export interface ReaderSyncState {
   initializeContent: (totalPages: number, totalUnits: number, toc: TOCEntry[]) => void;
   updateContentDensity: (page: number, density: ContentDensity) => void;
   buildChapterBoundaries: () => void;
+  
+  // Whiteboard chapter animation methods
+  setCurrentChapter: (chapterId: string | null) => void;
+  getAnimationStep: (chapterId: string) => number;
+  setAnimationStep: (chapterId: string, step: number) => void;
+  cacheAnimationScript: (chapterId: string, script: any[]) => void;
+  getAnimationScript: (chapterId: string) => any[] | null;
 }
 
 export const useReaderSync = create<ReaderSyncState>((set, get) => ({
@@ -68,6 +81,7 @@ export const useReaderSync = create<ReaderSyncState>((set, get) => ({
   activeChunkId: null,
   lastUpdateSource: null,
   lastUpdateTimestamp: 0,
+  lastNavReason: null,
   
   // Content mapping
   totalPages: 1,
@@ -75,6 +89,11 @@ export const useReaderSync = create<ReaderSyncState>((set, get) => ({
   contentDensityMap: new Map(),
   chapterBoundaries: [],
   tableOfContents: [],
+  
+  // Whiteboard chapter animation state
+  currentChapterId: null,
+  chapterAnimationSteps: new Map(),
+  animationScriptCache: new Map(),
   
   // Enhanced actions with source tracking and relaxed loop prevention
   setPage: (page: number, source: SyncSource = "manual") => {
@@ -327,6 +346,38 @@ export const useReaderSync = create<ReaderSyncState>((set, get) => ({
     
     console.log(`🔄 ReaderSync: Built ${boundaries.length} chapter boundaries`);
     set({ chapterBoundaries: boundaries });
+  },
+  
+  // Whiteboard chapter animation methods
+  setCurrentChapter: (chapterId: string | null) => {
+    console.log(`🎨 ReaderSync: setCurrentChapter(${chapterId})`);
+    set({ currentChapterId: chapterId });
+  },
+  
+  getAnimationStep: (chapterId: string) => {
+    const state = get();
+    return state.chapterAnimationSteps.get(chapterId) || 0;
+  },
+  
+  setAnimationStep: (chapterId: string, step: number) => {
+    console.log(`🎨 ReaderSync: setAnimationStep(${chapterId}, ${step})`);
+    const state = get();
+    const newSteps = new Map(state.chapterAnimationSteps);
+    newSteps.set(chapterId, step);
+    set({ chapterAnimationSteps: newSteps });
+  },
+  
+  cacheAnimationScript: (chapterId: string, script: any[]) => {
+    console.log(`🎨 ReaderSync: cacheAnimationScript(${chapterId}, ${script.length} steps)`);
+    const state = get();
+    const newCache = new Map(state.animationScriptCache);
+    newCache.set(chapterId, script);
+    set({ animationScriptCache: newCache });
+  },
+  
+  getAnimationScript: (chapterId: string) => {
+    const state = get();
+    return state.animationScriptCache.get(chapterId) || null;
   },
 }));
 

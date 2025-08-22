@@ -640,19 +640,51 @@ export default function ThoughtUnitReader() {
   }, [viewMode, progressiveChunks.length, readingSpeed, isReading, isPaused]);
 
   /* =========================================================================
-     🔹 Page/TOC sync (ALL modes) + optional whiteboard retrigger + global sync
+     🔹 Enhanced Page/TOC sync with chapter-aware navigation + global sync
   ========================================================================= */
-  const syncToPage = (page: number) => {
-    console.log(`📄 syncToPage called: navigating to page ${page} (current: ${currentPage})`);
+  const syncToPage = (page: number, opts?: { reason?: 'SCROLL' | 'TOC_JUMP' | 'PROGRAMMATIC' }) => {
+    const reason = opts?.reason || 'PROGRAMMATIC';
+    console.log(`📄 syncToPage called: navigating to page ${page} (current: ${currentPage}) reason: ${reason}`);
+    
     setCurrentPage(page);
-    const unit = pageToUnit(page, pdfPageCount, thoughtUnits.length);
-    setCurrentThoughtUnit(unit);
+    let unit = pageToUnit(page, pdfPageCount, thoughtUnits.length);
     
-    // Update global sync store
-    updateSync({ page, unitIndex: unit });
-    
-    console.log(`📄 Page navigation complete: page ${page}, unit ${unit}`);
+    // Enhanced chapter-aware navigation for TOC jumps
+    if (reason === 'TOC_JUMP') {
+      // Use the sync store's chapter-aware functionality
+      const { syncToChapter, findNearestChapter } = useReaderSync.getState();
+      const nearestChapter = findNearestChapter(page);
+      
+      if (nearestChapter) {
+        console.log(`📄 TOC_JUMP: Found chapter "${nearestChapter.title}" for page ${page}`);
+        // Snap to chapter start page and first unit
+        const chapterStartPage = nearestChapter.page;
+        const chapterStartUnit = nearestChapter.unitStart;
+        
+        setCurrentPage(chapterStartPage);
+        setCurrentThoughtUnit(chapterStartUnit);
+        
+        // Update global sync store with chapter-aware data
+        updateSync({ 
+          page: chapterStartPage, 
+          unitIndex: chapterStartUnit 
+        }, 'toc');
+        
+        console.log(`📄 Chapter navigation complete: page ${chapterStartPage}, unit ${chapterStartUnit}`);
+      } else {
+        // Fallback to normal navigation if no chapter found
+        setCurrentThoughtUnit(unit);
+        updateSync({ page, unitIndex: unit }, 'toc');
+        console.log(`📄 Fallback navigation complete: page ${page}, unit ${unit}`);
+      }
+    } else {
+      // Normal scroll/programmatic navigation
+      setCurrentThoughtUnit(unit);
+      updateSync({ page, unitIndex: unit }, reason === 'SCROLL' ? 'pdf' : 'manual');
+      console.log(`📄 ${reason} navigation complete: page ${page}, unit ${unit}`);
+    }
 
+    // Auto-whiteboard trigger (unchanged)
     if (autoWhiteboard) {
       const seed = conceptForPage(page, thoughtUnits, pdfPageCount);
       if (seed) {
@@ -962,28 +994,6 @@ export default function ThoughtUnitReader() {
           className="text-xs px-3 py-1 rounded bg-purple-500 text-white shadow"
         >
           🎓 Study Notes
-        </button>
-
-        {/* Manual Whiteboard Trigger */}
-        <button
-          onClick={() => {
-            const seed = conceptForPage(currentPage, thoughtUnits, pdfPageCount);
-            if (seed) {
-              setWbConcept(truncate(seed, 600));
-              const title = titleForPage(tableOfContents, currentPage);
-              setWbContext(title);
-              setShowWhiteboardPanel(true);
-            } else {
-              // Fallback if no content available
-              setWbConcept("Click to explain this page");
-              setWbContext(`Page ${currentPage}`);
-              setShowWhiteboardPanel(true);
-            }
-          }}
-          className="text-xs px-3 py-1 rounded bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow"
-          title="Open Whiteboard for current page"
-        >
-          🎨 Whiteboard
         </button>
       </div>
 

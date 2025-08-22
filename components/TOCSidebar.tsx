@@ -183,9 +183,19 @@ export default function TOCSidebar({
   // Enhanced navigation with sync store integration
   const handleJumpToPage = (page: number, title: string) => {
     console.log(`🧭 TOC Navigation: Jumping to page ${page} for "${title}"`);
-    onJumpToPage(page);
     
-    // Try to sync to chapter in the global store
+    // Call onJumpToPage with TOC_JUMP reason for chapter-aware navigation
+    if (typeof onJumpToPage === 'function') {
+      // Check if onJumpToPage supports the enhanced signature
+      try {
+        (onJumpToPage as any)(page, { reason: 'TOC_JUMP' });
+      } catch (error) {
+        // Fallback to simple call if enhanced signature not supported
+        onJumpToPage(page);
+      }
+    }
+    
+    // Try to sync to chapter in the global store as backup
     syncToChapter(title);
     
     // Auto-collapse on mobile after navigation
