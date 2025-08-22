@@ -25,7 +25,6 @@ import {
 import EnhancedWhiteboard from "@/components/EnhancedWhiteboard";
 import LibraryPanel from "@/components/LibraryPanel";
 import ChunkRail from "@/components/ChunkRail";
-import TOCBottomDock from "@/components/TOCBottomDock";
 import { useReaderSync, stableChunkId, analyzeContentDensity } from "@/lib/readerSync";
 
 import {
@@ -293,6 +292,22 @@ export default function ThoughtUnitReader() {
     updateContentDensity
   } = useReaderSync();
 
+  // Subscribe to global sync changes for cross-view synchronization
+  useEffect(() => {
+    console.log(`🔄 Global sync state changed: page=${page}, unit=${unitIndex}, chunk=${activeChunkId}`);
+    
+    // Update local state when global sync changes (but avoid loops)
+    if (page !== currentPage) {
+      console.log(`🔄 Syncing local page: ${currentPage} -> ${page}`);
+      setCurrentPage(page);
+    }
+    
+    if (unitIndex !== currentThoughtUnit) {
+      console.log(`🔄 Syncing local unit: ${currentThoughtUnit} -> ${unitIndex}`);
+      setCurrentThoughtUnit(unitIndex);
+    }
+  }, [page, unitIndex, activeChunkId]);
+
   /* =========================================================================
      🔹 State
   ========================================================================= */
@@ -309,9 +324,6 @@ export default function ThoughtUnitReader() {
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(1);
-
-  // Bottom TOC dock state
-  const [bottomTOCHeight, setBottomTOCHeight] = useState(220);
 
   const [isReading, setIsReading] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -355,6 +367,9 @@ export default function ThoughtUnitReader() {
   const [wbContext, setWbContext] = useState<string>("");
   const [wbStickyNotes, setWbStickyNotes] = useState<StickyNote[]>([]);
   const lastDetectedUnitRef = useRef<string | null>(null);
+
+  // 📑 TOC Panel control (like whiteboard)
+  const [showTOCPanel, setShowTOCPanel] = useState<boolean>(false);
 
   // 🧠 Right-Brain prefill draft (for High-Yield / Sketch)
   const [rbDraftText, setRbDraftText] = useState<string>("");
@@ -972,32 +987,54 @@ export default function ThoughtUnitReader() {
         </button>
       </div>
 
-      {/* Main Content Area with TOC Sidebar */}
-      <div className="flex-1 overflow-hidden flex" style={{ paddingBottom: fileUrl ? `${bottomTOCHeight}px` : '0px' }}>
-        {/* Always-visible TOC Sidebar */}
-        {fileUrl && (
-          <TOCSidebar
-            toc={tableOfContents}
-            currentPage={currentPage}
-            onJumpToPage={(p) => syncToPage(p)}
-          />
-        )}
-        
-        {/* Reader Content - Adjusted for TOC */}
-        <div className={`flex-1 overflow-hidden p-4 ${fileUrl ? 'ml-0' : ''}`}>
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-hidden">
+        {/* Reader Content - Full Width */}
+        <div className="w-full h-full p-4">
           <div className="w-full h-full bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
         </div>
       </div>
 
-      {/* Bottom TOC Dock - Always visible when file is loaded */}
-      {fileUrl && (
-        <TOCBottomDock
-          toc={tableOfContents}
-          currentPage={currentPage}
-          onJumpToPage={(p) => syncToPage(p)}
-          height={bottomTOCHeight}
-          onHeightChange={setBottomTOCHeight}
-        />
+      {/* Floating TOC Toggle & Panel */}
+      {fileUrl && tableOfContents.length > 0 && (
+        <>
+          {/* Floating TOC Toggle Button */}
+          {!showTOCPanel && (
+            <button
+              onClick={() => setShowTOCPanel(true)}
+              className="fixed bottom-6 left-6 z-40 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white p-3 rounded-full shadow-lg backdrop-blur-sm border border-blue-400"
+              title="Open Table of Contents"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-lg">📑</span>
+                <span className="text-sm font-medium hidden sm:block">TOC</span>
+              </div>
+            </button>
+          )}
+
+          {/* Sliding TOC Panel */}
+          {showTOCPanel && (
+            <div className="fixed top-0 left-0 w-full sm:w-[400px] h-full bg-gray-900/95 backdrop-blur-md text-white z-50 flex flex-col shadow-2xl border-r border-gray-700">
+              <div className="flex justify-between items-center p-4 border-b border-gray-700">
+                <h3 className="text-lg font-semibold">📑 Table of Contents</h3>
+                <button
+                  onClick={() => setShowTOCPanel(false)}
+                  className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-800"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto">
+                <TOCSidebar
+                  toc={tableOfContents}
+                  currentPage={currentPage}
+                  onJumpToPage={(p) => syncToPage(p)}
+                  userId={USER_ID}
+                />
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Floating Whiteboard Toggle & Panel */}

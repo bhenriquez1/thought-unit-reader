@@ -76,19 +76,13 @@ export const useReaderSync = create<ReaderSyncState>((set, get) => ({
   chapterBoundaries: [],
   tableOfContents: [],
   
-  // Enhanced actions with source tracking and loop prevention
+  // Enhanced actions with source tracking and relaxed loop prevention
   setPage: (page: number, source: SyncSource = "manual") => {
     const state = get();
     const now = Date.now();
     
-    // Prevent rapid ping-pong updates from the same source
-    if (state.lastUpdateSource === source && now - state.lastUpdateTimestamp < 100) {
-      return;
-    }
-    
-    // Prevent loops between different sources
-    if (state.page === page && state.lastUpdateSource !== source && now - state.lastUpdateTimestamp < 500) {
-      console.log(`🔄 ReaderSync: Preventing ping-pong update from ${source} (last: ${state.lastUpdateSource})`);
+    // Only prevent rapid updates from the exact same source with same value
+    if (state.lastUpdateSource === source && state.page === page && now - state.lastUpdateTimestamp < 50) {
       return;
     }
     
@@ -109,8 +103,8 @@ export const useReaderSync = create<ReaderSyncState>((set, get) => ({
     const state = get();
     const now = Date.now();
     
-    // Prevent rapid ping-pong updates
-    if (state.lastUpdateSource === source && now - state.lastUpdateTimestamp < 100) {
+    // Only prevent rapid updates from the exact same source with same value
+    if (state.lastUpdateSource === source && state.unitIndex === unitIndex && now - state.lastUpdateTimestamp < 50) {
       return;
     }
     
@@ -140,13 +134,17 @@ export const useReaderSync = create<ReaderSyncState>((set, get) => ({
     });
   },
   
-  // Enhanced batch update with smart sync
+  // Enhanced batch update with smart sync and relaxed loop prevention
   updateSync: (updates, source: SyncSource = "manual") => {
     const state = get();
     const now = Date.now();
     
-    // Prevent rapid updates from same source
-    if (state.lastUpdateSource === source && now - state.lastUpdateTimestamp < 100) {
+    // Only prevent if exact same updates from same source within short time
+    const samePageUpdate = updates.page !== undefined && state.page === updates.page;
+    const sameUnitUpdate = updates.unitIndex !== undefined && state.unitIndex === updates.unitIndex;
+    const sameChunkUpdate = updates.activeChunkId !== undefined && state.activeChunkId === updates.activeChunkId;
+    
+    if (state.lastUpdateSource === source && (samePageUpdate || sameUnitUpdate || sameChunkUpdate) && now - state.lastUpdateTimestamp < 50) {
       return;
     }
     
