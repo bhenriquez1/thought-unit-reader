@@ -5,6 +5,14 @@ import type { WhiteboardStep } from "@/lib/WhiteboardExplanationService";
 import Whiteboard from "./Whiteboard";
 import { Button } from "./ui/button";
 import { AnimatePresence, motion } from "framer-motion";
+import { useReaderSync } from "@/lib/readerSync";
+import { 
+  generateChapterAnimation, 
+  detectChapterTransition, 
+  createChapterId,
+  containsDiagramOrFormula as defaultContainsDiagramOrFormula,
+  chapterAnimationCache
+} from "@/lib/chapterAnimations";
 
 /** Simple, fast hash for cache keys */
 function hashString(s: string): string {
@@ -107,9 +115,20 @@ export default function EnhancedWhiteboard({
   const scrollRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<number | null>(null);
   const lastCallTsRef = useRef<number>(0);
+  const previousPageRef = useRef<number>(currentPage || 1);
 
   const effectiveConcept = (concept || "").trim();
   const effectiveContext = (context || "").trim();
+
+  // Enhanced chapter-synced animation state
+  const { 
+    tableOfContents, 
+    setCurrentChapter, 
+    cacheAnimationScript, 
+    getAnimationScript 
+  } = useReaderSync();
+  const [chapterAnimationActive, setChapterAnimationActive] = useState(false);
+  const [currentChapterInfo, setCurrentChapterInfo] = useState<any>(null);
 
   // Load available voices with enhanced filtering
   useEffect(() => {
@@ -429,8 +448,78 @@ export default function EnhancedWhiteboard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoTrigger, effectiveConcept, effectiveContext]);
 
-  /** Enhanced auto re-explain when page changes with smooth page following */
+  /** Enhanced chapter transition detection and animation */
   useEffect(() => {
+    if (!currentPage || !tableOfContents.length) return;
+    
+    const previousPage = previousPageRef.current;
+    previousPageRef.current = currentPage;
+    
+    // Detect chapter transitions
+    const transition = detectChapterTransition(currentPage, previousPage, tableOfContents);
+    
+    if (transition.isTransition && transition.chapterInfo) {
+      console.log(`🎨 Chapter transition detected: ${transition.chapterInfo.title}`);
+      
+      const chapterId = createChapterId(transition.chapterInfo.title, currentPage);
+      setCurrentChapter(chapterId);
+      setCurrentChapterInfo(transition.chapterInfo);
+      setChapterAnimationActive(true);
+      
+      // Check if we have a cached animation for this chapter
+      let cachedScript = chapterAnimationCache.get(chapterId);
+      
+      if (!cachedScript) {
+        // Generate new chapter animation
+        const chapterScript = generateChapterAnimation(
+          chapterId,
+          transition.chapterInfo.title,
+          effectiveConcept + ' ' + effectiveContext
+        );
+        
+        // Cache the animation script
+        chapterAnimationCache.set(chapterId, chapterScript);
+        cacheAnimationScript(chapterId, chapterScript.strokes);
+        cachedScript = chapterScript;
+      }
+      
+      // Trigger chapter animation
+      if (cachedScript && containsDiagramOrFormula(effectiveConcept)) {
+        setJustDetected(true);
+        setShowDetectedChip(true);
+        setPageFollowAnimation(true);
+        
+        // Convert chapter animation to whiteboard steps
+        import('@/lib/chapterAnimations').then(({ strokesToWhiteboardSteps }) => {
+          const chapterSteps = strokesToWhiteboardSteps(cachedScript.strokes);
+          
+          setSteps(chapterSteps);
+          setNarrationScript(cachedScript.narrationScript);
+          setAudioBlob(null);
+          
+          // Enhanced chapter transition animations
+          setTimeout(() => {
+            setJustDetected(false);
+            setPageFollowAnimation(false);
+            setChapterAnimationActive(false);
+          }, 2500);
+          
+          // Speak chapter introduction
+          if (naturalVoiceEnabled && cachedScript.narrationScript) {
+            setTimeout(() => {
+              speakText(`New chapter: ${transition.chapterInfo.title}. ${cachedScript.narrationScript}`);
+            }, 800);
+          }
+        }).catch(error => {
+          console.error('Failed to load chapter animations:', error);
+          setChapterAnimationActive(false);
+        });
+        
+        return;
+      }
+    }
+    
+    // Fallback to regular page following if no chapter transition
     if (!reExplainOnPageChange) return;
     if (!effectiveConcept || !effectiveContext) return;
     if (!containsDiagramOrFormula(effectiveConcept)) return;
@@ -456,7 +545,7 @@ export default function EnhancedWhiteboard({
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reExplainOnPageChange, currentPage, effectiveConcept, effectiveContext]);
+  }, [reExplainOnPageChange, currentPage, effectiveConcept, effectiveContext, tableOfContents]);
 
   // Enhanced keyboard shortcuts
   useEffect(() => {

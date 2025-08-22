@@ -18,6 +18,15 @@ import {
 } from "@/lib/navigationUtils";
 import PageContextPanel from "@/components/PageContextPanel";
 import ChunkTOCBar from "@/components/ChunkTOCBar";
+import { useReaderSync } from "@/lib/readerSync";
+import { 
+  extractAnchorTokens, 
+  findChunkInPage, 
+  highlightChunkInPDF,
+  buildPageTextIndex,
+  type PageTextIndex,
+  type AnchorToken
+} from "@/lib/anchorSync";
 
 type PVUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -281,7 +290,21 @@ export default function EnhancedProgressiveView({
   // ChunkTOCBar state
   const [compactMode, setCompactMode] = useState(true);
   
+  // Bidirectional sync state
+  const [pageTextIndex, setPageTextIndex] = useState<Record<number, PageTextIndex>>({});
+  const [chunkAnchors, setChunkAnchors] = useState<Record<string, AnchorToken[]>>({});
+  const [syncDebounceRef] = useState<{ current: NodeJS.Timeout | null }>({ current: null });
+  
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
+  
+  // Reader sync integration
+  const { 
+    updateSync, 
+    cacheChunkAnchor, 
+    syncChunkToPDF, 
+    syncPDFToChunk,
+    startVisibleTextObserver 
+  } = useReaderSync();
 
   // Load available voices
   useEffect(() => {
@@ -375,6 +398,175 @@ export default function EnhancedProgressiveView({
   const activeChunkId = stableChunkId(activeChunk);
   const isUnderstood = !!understoodMap[activeChunkId];
   const chunkAnalysis = analyzeChunkForRightBrain(activeChunk);
+
+  // Build anchor tokens for current chunk
+  const chunkAnchorTokens = useMemo(() => {
+    if (!activeChunk) return [];
+    return extractAnchorTokens(activeChunk);
+  }, [activeChunk]);
+
+  // Cache chunk anchors for sync
+  useEffect(() => {
+    if (activeChunkId && activeChunk) {
+      cacheChunkAnchor(activeChunkId, activeChunk, currentPage);
+      setChunkAnchors(prev => ({
+        ...prev,
+        [activeChunkId]: chunkAnchorTokens
+      }));
+    }
+  }, [activeChunkId, activeChunk, currentPage, chunkAnchorTokens, cacheChunkAnchor]);
+
+  // Build page text index for current page
+  useEffect(() => {
+    if (!pdfContainerRef.current || !currentPage) return;
+    
+    // Debounce page text indexing
+    if (syncDebounceRef.current) {
+      clearTimeout(syncDebounceRef.current);
+    }
+    
+    syncDebounceRef.current = setTimeout(() => {
+      const pageText = buildPageTextIndex(currentPage, pdfContainerRef.current!);
+      if (pageText) {
+        setPageTextIndex(prev => ({
+          ...prev,
+          [currentPage]: pageText
+        }));
+      }
+    }, 300);
+
+    return () => {
+      if (syncDebounceRef.current) {
+        clearTimeout(syncDebounceRef.current);
+      }
+    };
+  }, [currentPage, pdfContainerRef.current]);
+
+  // Zero-stall auto-advance with PDF sync
+  useEffect(() => {
+    if (!chunks.length || !isReading || isPaused || localPaused) return;
+    
+    const msPerChunk = Math.max(800, (60_000 / Math.max(120, readingSpeed)) * 1.5);
+    
+    const t = window.setInterval(() => {
+      setActiveIdx((i) => {
+        const nextIdx = Math.min(i + 1, chunks.length - 1);
+        const nextChunk = chunks[nextIdx];
+        
+        if (nextIdx !== i && nextChunk) {
+          // Zero-stall sync: immediately sync to PDF
+          if (pdfContainerRef.current && onPageChange) {
+            const chunkTokens = extractAnchorTokens(nextChunk);
+            const pageIndex = pageTextIndex[currentPage];
+            
+            if (pageIndex && chunkTokens.length > 0) {
+              // Create chunk anchor for matching
+              const chunkAnchor = {
+                chunkId: stableChunkId(nextChunk),
+                tokens: chunkTokens,
+                originalText: nextChunk,
+                normalizedText: nextChunk.toLowerCase().replace(/\s+/g, ' ').trim(),
+                pageGuess: currentPage
+              };
+              
+              const matchResult = findChunkInPage(chunkAnchor, pageIndex);
+              
+              if (matchResult.found && matchResult.confidence > 0.3) {
+                // Highlight the chunk in PDF with debouncing (80-120ms)
+                setTimeout(() => {
+                  highlightTextInPDF(
+                    pdfContainerRef.current!,
+                    nextChunk,
+                    "rgba(255, 235, 59, 0.6)"
+                  );
+                }, 100); // 100ms debounce for smooth experience
+              } else {
+                // Fallback: try adjacent pages
+                const adjacentPages = [currentPage - 1, currentPage + 1].filter(p => p > 0 && p <= (pdfPageCount || 999));
+                
+                for (const page of adjacentPages) {
+                  const adjacentPageIndex = pageTextIndex[page];
+                  if (adjacentPageIndex) {
+                    const adjacentAnchor = {
+                      ...chunkAnchor,
+                      pageGuess: page
+                    };
+                    const adjacentMatch = findChunkInPage(adjacentAnchor, adjacentPageIndex);
+                    if (adjacentMatch.found && adjacentMatch.confidence > 0.4) {
+                      // Navigate to the page with better match
+                      onPageChange(page);
+                      setTimeout(() => {
+                        if (pdfContainerRef.current) {
+                          highlightTextInPDF(
+                            pdfContainerRef.current,
+                            nextChunk,
+                            "rgba(59, 130, 246, 0.6)"
+                          );
+                        }
+                      }, 150);
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+          }
+          
+          // Update sync state
+          updateSync({
+            page: currentPage,
+            unitIndex: currentThoughtUnit,
+            activeChunkId: stableChunkId(nextChunk)
+          }, 'progressive');
+          
+          // Auto-speak if enabled
+          if (autoSpeak) {
+            speakChunk(nextChunk);
+          }
+        }
+        
+        return nextIdx;
+      });
+    }, msPerChunk);
+    
+    return () => window.clearInterval(t);
+  }, [chunks, readingSpeed, isReading, isPaused, localPaused, autoSpeak, pageTextIndex, currentPage, onPageChange, pdfPageCount, currentThoughtUnit, updateSync]);
+
+  // Bidirectional sync: Progressive → PDF
+  useEffect(() => {
+    if (!activeChunk || !pdfContainerRef.current || !onPageChange) return;
+    
+    // Sync chunk to PDF with anchor matching
+    const syncToPDF = async () => {
+      try {
+        if (pdfContainerRef.current) {
+          const result = await syncChunkToPDF(
+            stableChunkId(activeChunk),
+            pdfContainerRef.current
+          );
+          
+          if (result) {
+            console.log(`🔄 Progressive → PDF sync: chunk found and highlighted`);
+          }
+        }
+      } catch (error) {
+        console.warn('Progressive → PDF sync error:', error);
+      }
+    };
+    
+    // Debounce sync to avoid excessive calls
+    if (syncDebounceRef.current) {
+      clearTimeout(syncDebounceRef.current);
+    }
+    
+    syncDebounceRef.current = setTimeout(syncToPDF, 200);
+    
+    return () => {
+      if (syncDebounceRef.current) {
+        clearTimeout(syncDebounceRef.current);
+      }
+    };
+  }, [activeChunk, currentPage, pageTextIndex, onPageChange, pdfPageCount, syncChunkToPDF]);
 
   // Enhanced PDF highlighting when active chunk changes
   useEffect(() => {

@@ -17,6 +17,20 @@ import {
 } from "@/lib/navigationUtils";
 import PageContextPanel from "@/components/PageContextPanel";
 import ChunkTOCBar from "@/components/ChunkTOCBar";
+import { useReaderSync } from "@/lib/readerSync";
+import { 
+  extractAnchorTokens, 
+  buildPageTextIndex, 
+  findChunkInPage, 
+  highlightChunkInPDF,
+  createChunkAnchor,
+  pageIndexCache,
+  createDebounced,
+  type PageTextIndex,
+  type ChunkAnchor,
+  type MatchResult
+} from "@/lib/anchorSync";
+import { detectChapterTransition } from "@/lib/chapterAnimations";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -248,6 +262,11 @@ export default function EnhancedHybridReader({
   // ChunkTOCBar state
   const [compactMode, setCompactMode] = useState(true);
 
+  // Bidirectional sync state
+  const readerSync = useReaderSync();
+  const [pageTextIndex, setPageTextIndex] = useState<PageTextIndex | null>(null);
+  const [syncDebounceTimer, setSyncDebounceTimer] = useState<number | null>(null);
+
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
   // Load voices
@@ -429,7 +448,147 @@ export default function EnhancedHybridReader({
 
   const effectiveSelection = (externalSelectionText?.trim() || selectionText).trim();
 
-  // Highlight in PDF when chunk changes
+  // Create debounced sync functions
+  const debouncedSyncChunkToPDF = useMemo(
+    () => createDebounced((chunkId: string, chunkText: string) => {
+      if (!pdfContainerRef.current || !chunkText.trim()) return;
+      
+      // Create chunk anchor
+      const anchor = createChunkAnchor(chunkId, chunkText, currentPage);
+      
+      // Cache the anchor
+      readerSync.cacheChunkAnchor(chunkId, chunkText, currentPage);
+      
+      // Sync chunk to PDF using the store method
+      readerSync.syncChunkToPDF(chunkId, pdfContainerRef.current).then(success => {
+        if (success) {
+          console.log(`✅ Successfully synced chunk ${chunkId} to PDF`);
+        }
+      }).catch(error => {
+        console.warn('Chunk to PDF sync failed:', error);
+      });
+    }, 100),
+    [currentPage, readerSync]
+  );
+
+  const debouncedSyncPDFToChunk = useMemo(
+    () => createDebounced((page: number, visibleText: string) => {
+      if (!visibleText.trim() || !chunks.length) return;
+      
+      // Build page index
+      let pageIndex = pageIndexCache.get(page);
+      if (!pageIndex && pdfContainerRef.current) {
+        pageIndex = buildPageTextIndex(page, pdfContainerRef.current);
+        if (pageIndex) {
+          pageIndexCache.set(page, pageIndex);
+        }
+      }
+      
+      if (!pageIndex) return;
+      
+      // Find best matching chunk
+      let bestMatch: { chunkIndex: number; confidence: number } | null = null;
+      
+      chunks.forEach((chunk, index) => {
+        const chunkId = stableChunkId(chunk);
+        let anchor = readerSync.getChunkAnchor(chunkId);
+        
+        if (!anchor) {
+          readerSync.cacheChunkAnchor(chunkId, chunk, page);
+          anchor = readerSync.getChunkAnchor(chunkId);
+        }
+        
+        if (anchor) {
+          const matchResult = findChunkInPage(anchor, pageIndex!);
+          
+          if (matchResult.found && matchResult.confidence > 0.2) {
+            if (!bestMatch || matchResult.confidence > bestMatch.confidence) {
+              bestMatch = { chunkIndex: index, confidence: matchResult.confidence };
+            }
+          }
+        }
+      });
+      
+      // Update active chunk if we found a good match
+      if (bestMatch && bestMatch.confidence > 0.4 && bestMatch.chunkIndex !== activeIdx) {
+        setActiveIdx(bestMatch.chunkIndex);
+        
+        // Update sync state using the store method
+        if (pdfContainerRef.current) {
+          readerSync.syncPDFToChunk(pdfContainerRef.current, chunks).then(matchedChunkId => {
+            if (matchedChunkId) {
+              console.log(`✅ Successfully synced PDF to chunk ${matchedChunkId}`);
+            }
+          }).catch(error => {
+            console.warn('PDF to chunk sync failed:', error);
+          });
+        }
+      }
+    }, 120),
+    [chunks, activeIdx, readerSync]
+  );
+
+  // Bidirectional sync: Progressive → PDF (zero-stall auto-advance)
+  useEffect(() => {
+    if (!activeChunk || !showProgressiveOverlay) return;
+    
+    // Immediate sync with debouncing for smooth experience
+    debouncedSyncChunkToPDF(activeChunkId, activeChunk);
+  }, [activeChunkId, activeChunk, showProgressiveOverlay, debouncedSyncChunkToPDF]);
+
+  // Bidirectional sync: PDF → Progressive (page change detection)
+  useEffect(() => {
+    if (!pdfContainerRef.current) return;
+    
+    // Build page text index when page changes
+    const pageIndex = buildPageTextIndex(currentPage, pdfContainerRef.current);
+    if (pageIndex) {
+      pageIndexCache.set(currentPage, pageIndex);
+      setPageTextIndex(pageIndex);
+      
+      // Sync PDF to chunk with visible text
+      const visibleText = pageIndex.text.slice(0, 400); // First 400 chars as context
+      debouncedSyncPDFToChunk(currentPage, visibleText);
+    }
+  }, [currentPage, debouncedSyncPDFToChunk]);
+
+  // Chapter transition detection and animation
+  const [previousPage, setPreviousPage] = useState(currentPage);
+  
+  useEffect(() => {
+    if (!tableOfContents?.length || !activeChunk) return;
+    
+    const currentChapter = tableOfContents.find(toc => toc.page <= currentPage);
+    if (!currentChapter) return;
+    
+    // Detect chapter transition (synchronous function)
+    const transition = detectChapterTransition(currentPage, previousPage, tableOfContents);
+    
+    if (transition.isTransition && transition.chapterInfo) {
+      // Cache chapter animation script using the store method
+      const chapterId = `chapter-${currentPage}-${currentChapter.title.replace(/\s+/g, '-').toLowerCase()}`;
+      
+      // Set current chapter
+      readerSync.setCurrentChapter(chapterId);
+      
+      // Generate simple animation steps for the chapter
+      const animationSteps = [
+        { type: 'title', content: currentChapter.title },
+        { type: 'concept', content: activeChunk.slice(0, 100) + '...' },
+        { type: 'highlight', content: 'Key concepts from this section' }
+      ];
+      
+      // Cache the animation script
+      readerSync.cacheAnimationScript(chapterId, animationSteps);
+      
+      console.log(`🎨 Chapter transition detected: ${currentChapter.title}`);
+    }
+    
+    // Update previous page for next comparison
+    setPreviousPage(currentPage);
+  }, [currentPage, activeChunk, tableOfContents, readerSync, previousPage]);
+
+  // Enhanced PDF highlighting with anchor-based sync
   useEffect(() => {
     if (pdfContainerRef.current && cueToken && showProgressiveOverlay) {
       setTimeout(() => {

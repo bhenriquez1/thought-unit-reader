@@ -1,6 +1,16 @@
 // lib/readerSync.ts
 import { create } from 'zustand';
 import type { TOCEntry } from './tocParser';
+import type { ChunkAnchor, PageTextIndex, MatchResult } from './anchorSync';
+import { 
+  createChunkAnchor, 
+  buildPageTextIndex, 
+  findChunkInPage, 
+  highlightChunkInPDF,
+  pageIndexCache,
+  getVisiblePageText,
+  createDebounced
+} from './anchorSync';
 
 export type SyncSource = "pdf" | "progressive" | "hybrid" | "toc" | "whiteboard" | "manual";
 
@@ -45,6 +55,12 @@ export interface ReaderSyncState {
   chapterAnimationSteps: Map<string, number>; // chapterId -> current step index
   animationScriptCache: Map<string, any[]>; // chapterId -> animation steps
   
+  // Enhanced anchor-based sync state
+  chunkAnchors: Map<string, ChunkAnchor>; // chunkId -> anchor data
+  visibleTextObserver: (() => void) | null; // cleanup function for observer
+  lastVisibleText: string;
+  syncInProgress: boolean;
+  
   // Actions with source tracking
   setPage: (page: number, source?: SyncSource) => void;
   setUnitIndex: (index: number, source?: SyncSource) => void;
@@ -72,6 +88,14 @@ export interface ReaderSyncState {
   setAnimationStep: (chapterId: string, step: number) => void;
   cacheAnimationScript: (chapterId: string, script: any[]) => void;
   getAnimationScript: (chapterId: string) => any[] | null;
+  
+  // Enhanced anchor-based sync methods
+  cacheChunkAnchor: (chunkId: string, text: string, pageGuess?: number) => void;
+  getChunkAnchor: (chunkId: string) => ChunkAnchor | null;
+  syncChunkToPDF: (chunkId: string, pageContainer: HTMLElement) => Promise<boolean>;
+  syncPDFToChunk: (pageContainer: HTMLElement, chunks: string[]) => Promise<string | null>;
+  startVisibleTextObserver: (pageContainer: HTMLElement, onVisibleTextChange: (text: string, topElement: HTMLElement | null) => void) => void;
+  stopVisibleTextObserver: () => void;
 }
 
 export const useReaderSync = create<ReaderSyncState>((set, get) => ({
@@ -94,6 +118,12 @@ export const useReaderSync = create<ReaderSyncState>((set, get) => ({
   currentChapterId: null,
   chapterAnimationSteps: new Map(),
   animationScriptCache: new Map(),
+  
+  // Enhanced anchor-based sync state
+  chunkAnchors: new Map(),
+  visibleTextObserver: null,
+  lastVisibleText: '',
+  syncInProgress: false,
   
   // Enhanced actions with source tracking and relaxed loop prevention
   setPage: (page: number, source: SyncSource = "manual") => {
@@ -378,6 +408,192 @@ export const useReaderSync = create<ReaderSyncState>((set, get) => ({
   getAnimationScript: (chapterId: string) => {
     const state = get();
     return state.animationScriptCache.get(chapterId) || null;
+  },
+  
+  // Enhanced anchor-based sync methods
+  cacheChunkAnchor: (chunkId: string, text: string, pageGuess?: number) => {
+    console.log(`🔗 ReaderSync: cacheChunkAnchor(${chunkId})`);
+    const anchor = createChunkAnchor(chunkId, text, pageGuess);
+    const state = get();
+    const newAnchors = new Map(state.chunkAnchors);
+    newAnchors.set(chunkId, anchor);
+    set({ chunkAnchors: newAnchors });
+  },
+  
+  getChunkAnchor: (chunkId: string) => {
+    const state = get();
+    return state.chunkAnchors.get(chunkId) || null;
+  },
+  
+  syncChunkToPDF: async (chunkId: string, pageContainer: HTMLElement) => {
+    const state = get();
+    if (state.syncInProgress) return false;
+    
+    set({ syncInProgress: true });
+    
+    try {
+      console.log(`🔗 ReaderSync: syncChunkToPDF(${chunkId})`);
+      
+      const anchor = state.getChunkAnchor(chunkId);
+      if (!anchor) {
+        console.warn(`🔗 No anchor found for chunk ${chunkId}`);
+        return false;
+      }
+      
+      const currentPage = state.page;
+      let pageIndex = pageIndexCache.get(currentPage);
+      
+      if (!pageIndex) {
+        pageIndex = buildPageTextIndex(currentPage, pageContainer);
+        if (pageIndex) {
+          pageIndexCache.set(currentPage, pageIndex);
+        }
+      }
+      
+      if (!pageIndex) {
+        console.warn(`🔗 Could not build page index for page ${currentPage}`);
+        return false;
+      }
+      
+      const matchResult = findChunkInPage(anchor, pageIndex);
+      
+      if (matchResult.found && matchResult.confidence > 0.3) {
+        console.log(`🔗 Found chunk match with confidence ${matchResult.confidence}`);
+        highlightChunkInPDF(pageContainer, matchResult, 'anchor-highlight');
+        return true;
+      } else {
+        // Try neighboring pages
+        const pagesToTry = [currentPage - 1, currentPage + 1].filter(p => p >= 1 && p <= state.totalPages);
+        
+        for (const page of pagesToTry) {
+          const neighborContainer = document.querySelector(`[data-page-number="${page}"]`) as HTMLElement;
+          if (!neighborContainer) continue;
+          
+          let neighborIndex = pageIndexCache.get(page);
+          if (!neighborIndex) {
+            neighborIndex = buildPageTextIndex(page, neighborContainer);
+            if (neighborIndex) {
+              pageIndexCache.set(page, neighborIndex);
+            }
+          }
+          
+          if (neighborIndex) {
+            const neighborMatch = findChunkInPage(anchor, neighborIndex);
+            if (neighborMatch.found && neighborMatch.confidence > 0.3) {
+              console.log(`🔗 Found chunk match on page ${page} with confidence ${neighborMatch.confidence}`);
+              // Navigate to the page with the match
+              state.setPage(page, 'progressive');
+              // Highlight after a brief delay to allow page to load
+              setTimeout(() => {
+                highlightChunkInPDF(neighborContainer, neighborMatch, 'anchor-highlight');
+              }, 200);
+              return true;
+            }
+          }
+        }
+        
+        console.log(`🔗 No match found for chunk ${chunkId}, falling back to page guess`);
+        if (anchor.pageGuess && anchor.pageGuess !== currentPage) {
+          state.setPage(anchor.pageGuess, 'progressive');
+        }
+        return false;
+      }
+    } finally {
+      set({ syncInProgress: false });
+    }
+  },
+  
+  syncPDFToChunk: async (pageContainer: HTMLElement, chunks: string[]) => {
+    const state = get();
+    if (state.syncInProgress || !chunks.length) return null;
+    
+    set({ syncInProgress: true });
+    
+    try {
+      console.log(`🔗 ReaderSync: syncPDFToChunk with ${chunks.length} chunks`);
+      
+      const currentPage = state.page;
+      let pageIndex = pageIndexCache.get(currentPage);
+      
+      if (!pageIndex) {
+        pageIndex = buildPageTextIndex(currentPage, pageContainer);
+        if (pageIndex) {
+          pageIndexCache.set(currentPage, pageIndex);
+        }
+      }
+      
+      if (!pageIndex) {
+        console.warn(`🔗 Could not build page index for page ${currentPage}`);
+        return null;
+      }
+      
+      // Get visible text context (~400 chars)
+      const visibleText = state.lastVisibleText || pageIndex.text.slice(0, 400);
+      
+      let bestMatch: { chunkId: string; confidence: number } | null = null;
+      
+      // Score each chunk against the visible text
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const chunkId = stableChunkId(chunk);
+        
+        // Get or create anchor for this chunk
+        let anchor = state.getChunkAnchor(chunkId);
+        if (!anchor) {
+          state.cacheChunkAnchor(chunkId, chunk, currentPage);
+          anchor = state.getChunkAnchor(chunkId);
+        }
+        
+        if (anchor) {
+          const matchResult = findChunkInPage(anchor, pageIndex);
+          
+          if (matchResult.found && matchResult.confidence > (bestMatch?.confidence || 0)) {
+            bestMatch = { chunkId, confidence: matchResult.confidence };
+          }
+        }
+      }
+      
+      if (bestMatch && bestMatch.confidence > 0.2) {
+        console.log(`🔗 Best chunk match: ${bestMatch.chunkId} (confidence: ${bestMatch.confidence})`);
+        return bestMatch.chunkId;
+      }
+      
+      console.log(`🔗 No good chunk match found, using fallback`);
+      return null;
+    } finally {
+      set({ syncInProgress: false });
+    }
+  },
+  
+  startVisibleTextObserver: (pageContainer: HTMLElement, onVisibleTextChange: (text: string, topElement: HTMLElement | null) => void) => {
+    const state = get();
+    
+    // Stop existing observer
+    if (state.visibleTextObserver) {
+      state.visibleTextObserver();
+    }
+    
+    console.log(`🔗 ReaderSync: startVisibleTextObserver`);
+    
+    // Create debounced callback to avoid excessive updates
+    const debouncedCallback = createDebounced((text: string, topElement: HTMLElement | null) => {
+      set({ lastVisibleText: text });
+      onVisibleTextChange(text, topElement);
+    }, 100);
+    
+    const cleanup = getVisiblePageText(pageContainer, debouncedCallback);
+    
+    set({ visibleTextObserver: cleanup });
+  },
+  
+  stopVisibleTextObserver: () => {
+    const state = get();
+    console.log(`🔗 ReaderSync: stopVisibleTextObserver`);
+    
+    if (state.visibleTextObserver) {
+      state.visibleTextObserver();
+      set({ visibleTextObserver: null });
+    }
   },
 }));
 
