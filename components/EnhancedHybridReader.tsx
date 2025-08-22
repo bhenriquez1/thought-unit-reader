@@ -244,13 +244,13 @@ export default function EnhancedHybridReader({
   const [navigationFeedback, setNavigationFeedback] = useState<string>("");
   const [showNavigationFeedback, setShowNavigationFeedback] = useState(false);
 
-  // Enhanced PDF controls
+  // Enhanced PDF controls - optimized defaults
   const [pdfScale, setPdfScale] = useState(1.2);
   const [showProgressiveOverlay, setShowProgressiveOverlay] = useState(true);
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
-  // Chunking and progressive features
-  const [chunkChars, setChunkChars] = useState(260);
+  // Chunking and progressive features - optimized chunk size
+  const [chunkChars, setChunkChars] = useState(240);
   const [chunkMode, setChunkMode] = useState<"semantic" | "sentence" | "bullet-first">("semantic");
   const [understoodMap, setUnderstoodMap] = useState<Record<string, true>>({});
 
@@ -262,10 +262,10 @@ export default function EnhancedHybridReader({
   // ChunkTOCBar state
   const [compactMode, setCompactMode] = useState(true);
 
-  // Bidirectional sync state
+  // Bidirectional sync state - optimized
   const readerSync = useReaderSync();
   const [pageTextIndex, setPageTextIndex] = useState<PageTextIndex | null>(null);
-  const [syncDebounceTimer, setSyncDebounceTimer] = useState<number | null>(null);
+  const syncDebounceRef = useRef<number | null>(null);
 
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
@@ -425,10 +425,10 @@ export default function EnhancedHybridReader({
   const [activeIdx, setActiveIdx] = useState(0);
   useEffect(() => setActiveIdx(0), [unitText, chunkChars, chunkMode]);
 
-  // Auto-advance with speech
+  // Auto-advance with speech - optimized timing
   useEffect(() => {
     if (!chunks.length || !isReading || isPaused || localPaused) return;
-    const msPerChunk = Math.max(600, (60_000 / Math.max(120, readingSpeed)) * 1.2);
+    const msPerChunk = Math.max(1000, (60_000 / Math.max(120, readingSpeed)) * 1.8); // Increased timing for smoother experience
     const t = window.setInterval(() => {
       setActiveIdx((i) => {
         const nextIdx = Math.min(i + 1, chunks.length - 1);
@@ -448,10 +448,10 @@ export default function EnhancedHybridReader({
 
   const effectiveSelection = (externalSelectionText?.trim() || selectionText).trim();
 
-  // Create debounced sync functions
+  // Create optimized debounced sync functions with higher thresholds
   const debouncedSyncChunkToPDF = useMemo(
     () => createDebounced((chunkId: string, chunkText: string) => {
-      if (!pdfContainerRef.current || !chunkText.trim()) return;
+      if (!pdfContainerRef.current || !chunkText.trim() || chunkText.length < 40) return;
       
       // Create chunk anchor
       const anchor = createChunkAnchor(chunkId, chunkText, currentPage);
@@ -467,13 +467,13 @@ export default function EnhancedHybridReader({
       }).catch(error => {
         console.warn('Chunk to PDF sync failed:', error);
       });
-    }, 100),
+    }, 300), // Increased debounce delay
     [currentPage, readerSync]
   );
 
   const debouncedSyncPDFToChunk = useMemo(
     () => createDebounced((page: number, visibleText: string) => {
-      if (!visibleText.trim() || !chunks.length) return;
+      if (!visibleText.trim() || !chunks.length || visibleText.length < 100) return;
       
       // Build page index
       let pageIndex = pageIndexCache.get(page);
@@ -486,10 +486,13 @@ export default function EnhancedHybridReader({
       
       if (!pageIndex) return;
       
-      // Find best matching chunk
+      // Find best matching chunk with higher confidence threshold
       let bestMatch: { chunkIndex: number; confidence: number } | null = null;
       
+      // Only check every 3rd chunk for better performance
       chunks.forEach((chunk, index) => {
+        if (index % 3 !== 0) return; // Skip 2/3 of chunks for performance
+        
         const chunkId = stableChunkId(chunk);
         let anchor = readerSync.getChunkAnchor(chunkId);
         
@@ -501,7 +504,7 @@ export default function EnhancedHybridReader({
         if (anchor) {
           const matchResult = findChunkInPage(anchor, pageIndex!);
           
-          if (matchResult.found && matchResult.confidence > 0.2) {
+          if (matchResult.found && matchResult.confidence > 0.4) { // Higher threshold
             if (!bestMatch || matchResult.confidence > bestMatch.confidence) {
               bestMatch = { chunkIndex: index, confidence: matchResult.confidence };
             }
@@ -509,8 +512,8 @@ export default function EnhancedHybridReader({
         }
       });
       
-      // Update active chunk if we found a good match
-      if (bestMatch && bestMatch.confidence > 0.4 && bestMatch.chunkIndex !== activeIdx) {
+      // Update active chunk if we found a good match with higher confidence
+      if (bestMatch && bestMatch.confidence > 0.6 && bestMatch.chunkIndex !== activeIdx) {
         setActiveIdx(bestMatch.chunkIndex);
         
         // Update sync state using the store method
@@ -524,32 +527,48 @@ export default function EnhancedHybridReader({
           });
         }
       }
-    }, 120),
+    }, 400), // Increased debounce delay
     [chunks, activeIdx, readerSync]
   );
 
-  // Bidirectional sync: Progressive → PDF (zero-stall auto-advance)
+  // Optimized bidirectional sync with reduced frequency
   useEffect(() => {
-    if (!activeChunk || !showProgressiveOverlay) return;
+    if (!activeChunk || !showProgressiveOverlay || activeChunk.length < 50) return;
     
-    // Immediate sync with debouncing for smooth experience
-    debouncedSyncChunkToPDF(activeChunkId, activeChunk);
-  }, [activeChunkId, activeChunk, showProgressiveOverlay, debouncedSyncChunkToPDF]);
+    // Only sync every 3rd chunk change for better performance
+    if (activeIdx % 3 === 0) {
+      debouncedSyncChunkToPDF(activeChunkId, activeChunk);
+    }
+  }, [activeChunkId, activeChunk, showProgressiveOverlay, activeIdx, debouncedSyncChunkToPDF]);
 
-  // Bidirectional sync: PDF → Progressive (page change detection)
+  // Optimized PDF → Progressive sync with longer debounce
   useEffect(() => {
     if (!pdfContainerRef.current) return;
     
-    // Build page text index when page changes
-    const pageIndex = buildPageTextIndex(currentPage, pdfContainerRef.current);
-    if (pageIndex) {
-      pageIndexCache.set(currentPage, pageIndex);
-      setPageTextIndex(pageIndex);
-      
-      // Sync PDF to chunk with visible text
-      const visibleText = pageIndex.text.slice(0, 400); // First 400 chars as context
-      debouncedSyncPDFToChunk(currentPage, visibleText);
+    // Debounce page text indexing
+    if (syncDebounceRef.current) {
+      clearTimeout(syncDebounceRef.current);
     }
+    
+    syncDebounceRef.current = window.setTimeout(() => {
+      const pageIndex = buildPageTextIndex(currentPage, pdfContainerRef.current!);
+      if (pageIndex) {
+        pageIndexCache.set(currentPage, pageIndex);
+        setPageTextIndex(pageIndex);
+        
+        // Sync PDF to chunk with visible text
+        const visibleText = pageIndex.text.slice(0, 300); // Reduced context for performance
+        debouncedSyncPDFToChunk(currentPage, visibleText);
+      }
+      syncDebounceRef.current = null;
+    }, 600); // Longer debounce for better performance
+    
+    return () => {
+      if (syncDebounceRef.current) {
+        clearTimeout(syncDebounceRef.current);
+        syncDebounceRef.current = null;
+      }
+    };
   }, [currentPage, debouncedSyncPDFToChunk]);
 
   // Chapter transition detection and animation
@@ -588,14 +607,17 @@ export default function EnhancedHybridReader({
     setPreviousPage(currentPage);
   }, [currentPage, activeChunk, tableOfContents, readerSync, previousPage]);
 
-  // Enhanced PDF highlighting with anchor-based sync
+  // Optimized PDF highlighting with reduced frequency
   useEffect(() => {
-    if (pdfContainerRef.current && cueToken && showProgressiveOverlay) {
-      setTimeout(() => {
+    if (pdfContainerRef.current && cueToken && showProgressiveOverlay && cueToken.length > 3) {
+      // Longer delay and less frequent highlighting
+      const timeoutId = setTimeout(() => {
         createHighlightOverlay(pdfContainerRef.current!, cueToken);
-      }, 100);
+      }, 300); // Increased delay for better performance
+      
+      return () => clearTimeout(timeoutId);
     }
-  }, [cueToken, currentPage, showProgressiveOverlay]);
+  }, [cueToken, showProgressiveOverlay]); // Removed currentPage dependency to reduce frequency
 
   // Memoize highlight regex
   const hlRegex = useMemo(() => {

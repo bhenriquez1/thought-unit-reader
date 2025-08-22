@@ -95,8 +95,8 @@ export function normalizeText(text: string): string {
     .trim();
 }
 
-// Extract anchor tokens from chunk text
-export function extractAnchorTokens(text: string, maxTokens: number = 8): AnchorToken[] {
+// Extract anchor tokens from chunk text - optimized for performance
+export function extractAnchorTokens(text: string, maxTokens: number = 4): AnchorToken[] {
   const normalized = normalizeText(text);
   const words = normalized.split(/\W+/).filter(Boolean);
   
@@ -172,7 +172,7 @@ export function buildPageTextIndex(pageNumber: number, pageContainer: HTMLElemen
   };
 }
 
-// Score match between anchor tokens and page text
+// Score match between anchor tokens and page text - optimized with confidence threshold
 export function scoreMatch(anchor: ChunkAnchor, pageIndex: PageTextIndex): MatchResult {
   if (!anchor.tokens.length || !pageIndex.normalizedText) {
     return { found: false, score: 0, matchedTokens: [], confidence: 0 };
@@ -183,8 +183,14 @@ export function scoreMatch(anchor: ChunkAnchor, pageIndex: PageTextIndex): Match
   let totalScore = 0;
   let positionBonus = 0;
   
-  // Check each anchor token
-  anchor.tokens.forEach((token, index) => {
+  // Early exit if text is too short for meaningful matching
+  if (pageText.length < 50) {
+    return { found: false, score: 0, matchedTokens: [], confidence: 0 };
+  }
+  
+  // Check each anchor token - optimized with early exit
+  for (let index = 0; index < anchor.tokens.length; index++) {
+    const token = anchor.tokens[index];
     const tokenRegex = new RegExp(`\\b${token.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
     const matches = [...pageText.matchAll(tokenRegex)];
     
@@ -201,7 +207,10 @@ export function scoreMatch(anchor: ChunkAnchor, pageIndex: PageTextIndex): Match
         positionBonus += 0.1;
       }
     }
-  });
+    
+    // Early exit if we have enough matches for confidence
+    if (matchedTokens.length >= 2 && index >= 2) break;
+  }
   
   // Calculate confidence based on token coverage and order
   const tokenCoverage = matchedTokens.length / anchor.tokens.length;
@@ -303,10 +312,10 @@ export function highlightChunkInPDF(
   });
 }
 
-// Debounced function creator for performance
+// Debounced function creator for performance - optimized delays
 export function createDebounced<T extends (...args: any[]) => any>(
   func: T,
-  delay: number
+  delay: number = 250 // Default to 250ms for better performance
 ): T & { cancel: () => void } {
   let timeoutId: number | null = null;
   
@@ -331,12 +340,12 @@ export function createDebounced<T extends (...args: any[]) => any>(
   return debounced;
 }
 
-// Cache for page text indexes with LRU eviction
+// Cache for page text indexes with LRU eviction - reduced size for performance
 export class PageIndexCache {
   private cache = new Map<number, PageTextIndex>();
   private maxSize: number;
   
-  constructor(maxSize: number = 10) {
+  constructor(maxSize: number = 5) {
     this.maxSize = maxSize;
   }
   
@@ -375,10 +384,10 @@ export class PageIndexCache {
   }
 }
 
-// Global cache instance
-export const pageIndexCache = new PageIndexCache(15);
+// Global cache instance - reduced size for better performance
+export const pageIndexCache = new PageIndexCache(5);
 
-// Utility to get visible text from page using IntersectionObserver
+// Utility to get visible text from page using IntersectionObserver - optimized
 export function getVisiblePageText(
   pageContainer: HTMLElement,
   callback: (visibleText: string, topElement: HTMLElement | null) => void
@@ -391,6 +400,16 @@ export function getVisiblePageText(
   
   const spans = Array.from(textLayer.querySelectorAll('span')) as HTMLElement[];
   const visibleSpans: { element: HTMLElement; text: string; ratio: number }[] = [];
+  
+  // Throttle callback to reduce frequency
+  let callbackTimeout: number | null = null;
+  const throttledCallback = (visibleText: string, topElement: HTMLElement | null) => {
+    if (callbackTimeout) return;
+    callbackTimeout = window.setTimeout(() => {
+      callback(visibleText, topElement);
+      callbackTimeout = null;
+    }, 200); // Throttle to 200ms
+  };
   
   const observer = new IntersectionObserver(
     (entries) => {
@@ -417,7 +436,7 @@ export function getVisiblePageText(
         }
       });
       
-      // Sort by intersection ratio and position
+      // Sort by intersection ratio and position - optimized
       visibleSpans.sort((a, b) => {
         const ratioSort = b.ratio - a.ratio;
         if (Math.abs(ratioSort) > 0.1) return ratioSort;
@@ -429,22 +448,30 @@ export function getVisiblePageText(
       });
       
       const visibleText = visibleSpans
-        .slice(0, 20) // Limit to top 20 most visible spans
+        .slice(0, 10) // Reduced from 20 to 10 for better performance
         .map(v => v.text)
         .join(' ');
       
       const topElement = visibleSpans.length > 0 ? visibleSpans[0].element : null;
       
-      callback(visibleText, topElement);
+      throttledCallback(visibleText, topElement);
     },
     {
       root: pageContainer,
       rootMargin: '0px',
-      threshold: [0, 0.25, 0.5, 0.75, 1.0]
+      threshold: [0, 0.5, 1.0] // Reduced thresholds for better performance
     }
   );
   
-  spans.forEach(span => observer.observe(span));
+  // Observe only every 3rd span for better performance
+  spans.forEach((span, index) => {
+    if (index % 3 === 0) observer.observe(span);
+  });
   
-  return () => observer.disconnect();
+  return () => {
+    observer.disconnect();
+    if (callbackTimeout) {
+      clearTimeout(callbackTimeout);
+    }
+  };
 }

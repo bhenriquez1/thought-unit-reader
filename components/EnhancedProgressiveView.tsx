@@ -267,7 +267,7 @@ export default function EnhancedProgressiveView({
   const [showNavigationFeedback, setShowNavigationFeedback] = useState(false);
   
   // Enhanced chunking with right-brain focus - optimized for PDF reading
-  const [chunkChars, setChunkChars] = useState(180); // Smaller chunks for better PDF focus
+  const [chunkChars, setChunkChars] = useState(220); // Optimized chunk size for better performance
   const [chunkMode, setChunkMode] = useState<"semantic" | "sentence" | "bullet-first">("semantic");
   const [focusMode, setFocusMode] = useState<"core" | "detail" | "visual">("core");
   
@@ -290,10 +290,10 @@ export default function EnhancedProgressiveView({
   // ChunkTOCBar state
   const [compactMode, setCompactMode] = useState(true);
   
-  // Bidirectional sync state
+  // Bidirectional sync state - optimized
   const [pageTextIndex, setPageTextIndex] = useState<Record<number, PageTextIndex>>({});
   const [chunkAnchors, setChunkAnchors] = useState<Record<string, AnchorToken[]>>({});
-  const [syncDebounceRef] = useState<{ current: NodeJS.Timeout | null }>({ current: null });
+  const syncDebounceRef = useRef<number | null>(null);
   
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
   
@@ -416,16 +416,16 @@ export default function EnhancedProgressiveView({
     }
   }, [activeChunkId, activeChunk, currentPage, chunkAnchorTokens, cacheChunkAnchor]);
 
-  // Build page text index for current page
+  // Build page text index for current page - optimized with longer debounce
   useEffect(() => {
     if (!pdfContainerRef.current || !currentPage) return;
     
-    // Debounce page text indexing
+    // Debounce page text indexing with longer delay for better performance
     if (syncDebounceRef.current) {
       clearTimeout(syncDebounceRef.current);
     }
     
-    syncDebounceRef.current = setTimeout(() => {
+    syncDebounceRef.current = window.setTimeout(() => {
       const pageText = buildPageTextIndex(currentPage, pdfContainerRef.current!);
       if (pageText) {
         setPageTextIndex(prev => ({
@@ -433,20 +433,22 @@ export default function EnhancedProgressiveView({
           [currentPage]: pageText
         }));
       }
-    }, 300);
+      syncDebounceRef.current = null;
+    }, 500); // Increased from 300ms to 500ms
 
     return () => {
       if (syncDebounceRef.current) {
         clearTimeout(syncDebounceRef.current);
+        syncDebounceRef.current = null;
       }
     };
-  }, [currentPage, pdfContainerRef.current]);
+  }, [currentPage]);
 
-  // Zero-stall auto-advance with PDF sync
+  // Optimized auto-advance with reduced sync frequency
   useEffect(() => {
     if (!chunks.length || !isReading || isPaused || localPaused) return;
     
-    const msPerChunk = Math.max(800, (60_000 / Math.max(120, readingSpeed)) * 1.5);
+    const msPerChunk = Math.max(1200, (60_000 / Math.max(120, readingSpeed)) * 2); // Increased timing for smoother experience
     
     const t = window.setInterval(() => {
       setActiveIdx((i) => {
@@ -454,7 +456,7 @@ export default function EnhancedProgressiveView({
         const nextChunk = chunks[nextIdx];
         
         if (nextIdx !== i && nextChunk) {
-          // Zero-stall sync: immediately sync to PDF
+          // Optimized sync: only sync if confidence threshold is met
           if (pdfContainerRef.current && onPageChange) {
             const chunkTokens = extractAnchorTokens(nextChunk);
             const pageIndex = pageTextIndex[currentPage];
@@ -471,53 +473,31 @@ export default function EnhancedProgressiveView({
               
               const matchResult = findChunkInPage(chunkAnchor, pageIndex);
               
-              if (matchResult.found && matchResult.confidence > 0.3) {
-                // Highlight the chunk in PDF with debouncing (80-120ms)
+              // Higher confidence threshold to reduce unnecessary operations
+              if (matchResult.found && matchResult.confidence > 0.5) {
+                // Delayed highlight with longer debounce for better performance
                 setTimeout(() => {
-                  highlightTextInPDF(
-                    pdfContainerRef.current!,
-                    nextChunk,
-                    "rgba(255, 235, 59, 0.6)"
-                  );
-                }, 100); // 100ms debounce for smooth experience
-              } else {
-                // Fallback: try adjacent pages
-                const adjacentPages = [currentPage - 1, currentPage + 1].filter(p => p > 0 && p <= (pdfPageCount || 999));
-                
-                for (const page of adjacentPages) {
-                  const adjacentPageIndex = pageTextIndex[page];
-                  if (adjacentPageIndex) {
-                    const adjacentAnchor = {
-                      ...chunkAnchor,
-                      pageGuess: page
-                    };
-                    const adjacentMatch = findChunkInPage(adjacentAnchor, adjacentPageIndex);
-                    if (adjacentMatch.found && adjacentMatch.confidence > 0.4) {
-                      // Navigate to the page with better match
-                      onPageChange(page);
-                      setTimeout(() => {
-                        if (pdfContainerRef.current) {
-                          highlightTextInPDF(
-                            pdfContainerRef.current,
-                            nextChunk,
-                            "rgba(59, 130, 246, 0.6)"
-                          );
-                        }
-                      }, 150);
-                      break;
-                    }
+                  if (pdfContainerRef.current) {
+                    highlightTextInPDF(
+                      pdfContainerRef.current,
+                      nextChunk,
+                      "rgba(255, 235, 59, 0.6)"
+                    );
                   }
-                }
+                }, 250); // Increased debounce for smoother experience
               }
+              // Removed adjacent page search for better performance
             }
           }
           
-          // Update sync state
-          updateSync({
-            page: currentPage,
-            unitIndex: currentThoughtUnit,
-            activeChunkId: stableChunkId(nextChunk)
-          }, 'progressive');
+          // Update sync state less frequently
+          if (nextIdx % 3 === 0) { // Only update sync every 3rd chunk
+            updateSync({
+              page: currentPage,
+              unitIndex: currentThoughtUnit,
+              activeChunkId: stableChunkId(nextChunk)
+            }, 'progressive');
+          }
           
           // Auto-speak if enabled
           if (autoSpeak) {
@@ -530,11 +510,14 @@ export default function EnhancedProgressiveView({
     }, msPerChunk);
     
     return () => window.clearInterval(t);
-  }, [chunks, readingSpeed, isReading, isPaused, localPaused, autoSpeak, pageTextIndex, currentPage, onPageChange, pdfPageCount, currentThoughtUnit, updateSync]);
+  }, [chunks, readingSpeed, isReading, isPaused, localPaused, autoSpeak, pageTextIndex, currentPage, onPageChange, currentThoughtUnit, updateSync]);
 
-  // Bidirectional sync: Progressive → PDF
+  // Optimized bidirectional sync: Progressive → PDF with higher thresholds
   useEffect(() => {
     if (!activeChunk || !pdfContainerRef.current || !onPageChange) return;
+    
+    // Only sync if chunk has sufficient content
+    if (activeChunk.length < 50) return;
     
     // Sync chunk to PDF with anchor matching
     const syncToPDF = async () => {
@@ -554,34 +537,38 @@ export default function EnhancedProgressiveView({
       }
     };
     
-    // Debounce sync to avoid excessive calls
+    // Longer debounce to reduce sync frequency
     if (syncDebounceRef.current) {
       clearTimeout(syncDebounceRef.current);
     }
     
-    syncDebounceRef.current = setTimeout(syncToPDF, 200);
+    syncDebounceRef.current = window.setTimeout(syncToPDF, 400); // Increased from 200ms to 400ms
     
     return () => {
       if (syncDebounceRef.current) {
         clearTimeout(syncDebounceRef.current);
+        syncDebounceRef.current = null;
       }
     };
-  }, [activeChunk, currentPage, pageTextIndex, onPageChange, pdfPageCount, syncChunkToPDF]);
+  }, [activeChunk, syncChunkToPDF]);
 
-  // Enhanced PDF highlighting when active chunk changes
+  // Optimized PDF highlighting with reduced frequency
   useEffect(() => {
-    if (pdfContainerRef.current && activeChunk && showPdfOverlay) {
-      setTimeout(() => {
+    if (pdfContainerRef.current && activeChunk && showPdfOverlay && activeChunk.length > 30) {
+      // Longer delay and less frequent highlighting
+      const timeoutId = setTimeout(() => {
         const highlightColor = focusMode === "core" 
-          ? "rgba(255, 235, 59, 0.5)" 
+          ? "rgba(255, 235, 59, 0.4)" 
           : focusMode === "visual" 
-          ? "rgba(59, 130, 246, 0.4)"
-          : "rgba(34, 197, 94, 0.4)";
+          ? "rgba(59, 130, 246, 0.3)"
+          : "rgba(34, 197, 94, 0.3)";
         
-        highlightTextInPDF(pdfContainerRef.current!, activeChunk, highlightColor, true);
-      }, 200);
+        highlightTextInPDF(pdfContainerRef.current!, activeChunk, highlightColor, false); // Disabled pulse animation for performance
+      }, 400); // Increased delay for better performance
+      
+      return () => clearTimeout(timeoutId);
     }
-  }, [activeChunk, currentPage, showPdfOverlay, focusMode]);
+  }, [activeChunk, showPdfOverlay, focusMode]); // Removed currentPage dependency to reduce frequency
 
   // Enhanced speech function
   const speakChunk = (text: string) => {

@@ -130,8 +130,8 @@ export const useReaderSync = create<ReaderSyncState>((set, get) => ({
     const state = get();
     const now = Date.now();
     
-    // Only prevent rapid updates from the exact same source with same value
-    if (state.lastUpdateSource === source && state.page === page && now - state.lastUpdateTimestamp < 50) {
+    // Optimized: prevent rapid updates with longer debounce for better performance
+    if (state.lastUpdateSource === source && state.page === page && now - state.lastUpdateTimestamp < 200) {
       return;
     }
     
@@ -152,8 +152,8 @@ export const useReaderSync = create<ReaderSyncState>((set, get) => ({
     const state = get();
     const now = Date.now();
     
-    // Only prevent rapid updates from the exact same source with same value
-    if (state.lastUpdateSource === source && state.unitIndex === unitIndex && now - state.lastUpdateTimestamp < 50) {
+    // Optimized: prevent rapid updates with longer debounce for better performance
+    if (state.lastUpdateSource === source && state.unitIndex === unitIndex && now - state.lastUpdateTimestamp < 200) {
       return;
     }
     
@@ -188,12 +188,12 @@ export const useReaderSync = create<ReaderSyncState>((set, get) => ({
     const state = get();
     const now = Date.now();
     
-    // Only prevent if exact same updates from same source within short time
+    // Optimized: prevent if exact same updates from same source within longer time for better performance
     const samePageUpdate = updates.page !== undefined && state.page === updates.page;
     const sameUnitUpdate = updates.unitIndex !== undefined && state.unitIndex === updates.unitIndex;
     const sameChunkUpdate = updates.activeChunkId !== undefined && state.activeChunkId === updates.activeChunkId;
     
-    if (state.lastUpdateSource === source && (samePageUpdate || sameUnitUpdate || sameChunkUpdate) && now - state.lastUpdateTimestamp < 50) {
+    if (state.lastUpdateSource === source && (samePageUpdate || sameUnitUpdate || sameChunkUpdate) && now - state.lastUpdateTimestamp < 200) {
       return;
     }
     
