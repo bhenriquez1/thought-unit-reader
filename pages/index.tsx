@@ -26,7 +26,7 @@ import EnhancedWhiteboard from "@/components/EnhancedWhiteboard";
 import LibraryPanel from "@/components/LibraryPanel";
 import ChunkRail from "@/components/ChunkRail";
 import TOCBottomDock from "@/components/TOCBottomDock";
-import { useReaderSync, stableChunkId } from "@/lib/readerSync";
+import { useReaderSync, stableChunkId, analyzeContentDensity } from "@/lib/readerSync";
 
 import {
   parseBookWithChapters,
@@ -279,9 +279,19 @@ function ProgressiveOverlay({
 
 export default function ThoughtUnitReader() {
   /* =========================================================================
-     🔹 Global Reader Sync Store
+     🔹 Enhanced Global Reader Sync Store
   ========================================================================= */
-  const { page, unitIndex, activeChunkId, setPage, setUnitIndex, setActiveChunkId, updateSync } = useReaderSync();
+  const { 
+    page, 
+    unitIndex, 
+    activeChunkId, 
+    setPage, 
+    setUnitIndex, 
+    setActiveChunkId, 
+    updateSync,
+    initializeContent,
+    updateContentDensity
+  } = useReaderSync();
 
   /* =========================================================================
      🔹 State
@@ -481,6 +491,28 @@ export default function ThoughtUnitReader() {
       console.warn("Whiteboard auto-detect skipped (parse failed):", err);
     }
   };
+
+  // Initialize enhanced sync system when content is loaded
+  useEffect(() => {
+    if (pdfPageCount > 1 && thoughtUnits.length > 0 && tableOfContents.length > 0) {
+      console.log('🔄 Initializing enhanced sync system');
+      initializeContent(pdfPageCount, thoughtUnits.length, tableOfContents);
+      
+      // Analyze content density for current page
+      if (thoughtUnits[currentThoughtUnit - 1]?.text) {
+        const density = analyzeContentDensity(thoughtUnits[currentThoughtUnit - 1].text, currentPage);
+        updateContentDensity(currentPage, density);
+      }
+    }
+  }, [pdfPageCount, thoughtUnits.length, tableOfContents.length, initializeContent, updateContentDensity, analyzeContentDensity, currentThoughtUnit, currentPage]);
+
+  // Update content density when page changes
+  useEffect(() => {
+    if (thoughtUnits[currentThoughtUnit - 1]?.text) {
+      const density = analyzeContentDensity(thoughtUnits[currentThoughtUnit - 1].text, currentPage);
+      updateContentDensity(currentPage, density);
+    }
+  }, [currentPage, currentThoughtUnit, thoughtUnits, analyzeContentDensity, updateContentDensity]);
 
   /* =========================================================================
      🔹 Load PDF from Library

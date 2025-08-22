@@ -1,8 +1,9 @@
 // components/TOCBottomDock.tsx
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useReaderSync } from "@/lib/readerSync";
 
 /** Flexible item shape: works with tocParser + SmartPDFViewer onOutline */
 type TocLike = {
@@ -118,6 +119,21 @@ export default function TOCBottomDock({
 }: TOCBottomDockProps) {
   const [q, setQ] = useState("");
   const [isExpanded, setIsExpanded] = useState(true);
+  const [showMode, setShowMode] = useState<"contextual" | "full">("contextual");
+  const { findNearestChapter, syncToChapter } = useReaderSync();
+
+  // Auto-hide on small screens when left TOC is visible
+  const [shouldAutoHide, setShouldAutoHide] = useState(false);
+  
+  useEffect(() => {
+    const checkScreenSize = () => {
+      setShouldAutoHide(window.innerWidth < 1024); // Hide on screens smaller than lg
+    };
+    
+    checkScreenSize();
+    window.addEventListener('resize', checkScreenSize);
+    return () => window.removeEventListener('resize', checkScreenSize);
+  }, []);
 
   const flat = useMemo(() => {
     const normalized = normalizeTOC(toc || []);
@@ -130,11 +146,41 @@ export default function TOCBottomDock({
     return normalized;
   }, [toc]);
 
+  // Find current chapter and nearby entries for contextual mode
+  const contextualEntries = useMemo(() => {
+    if (showMode === "full") return flat;
+    
+    const currentChapter = findNearestChapter(currentPage);
+    if (!currentChapter) return flat.slice(0, 6); // Show first 6 if no chapter found
+    
+    // Find current chapter in flat list
+    const currentIndex = flat.findIndex(entry => 
+      entry.title.toLowerCase().includes(currentChapter.title.toLowerCase()) ||
+      currentChapter.title.toLowerCase().includes(entry.title.toLowerCase())
+    );
+    
+    if (currentIndex === -1) return flat.slice(0, 6);
+    
+    // Show current chapter + 2 before + 3 after (contextual window)
+    const start = Math.max(0, currentIndex - 2);
+    const end = Math.min(flat.length, currentIndex + 4);
+    
+    return flat.slice(start, end);
+  }, [flat, currentPage, findNearestChapter, showMode]);
+
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
-    if (!term) return flat;
-    return flat.filter((e) => e.title.toLowerCase().includes(term));
-  }, [q, flat]);
+    const sourceEntries = showMode === "contextual" ? contextualEntries : flat;
+    if (!term) return sourceEntries;
+    return sourceEntries.filter((e) => e.title.toLowerCase().includes(term));
+  }, [q, contextualEntries, flat, showMode]);
+
+  // Enhanced navigation with sync integration
+  const handleJumpToPage = (page: number, title: string) => {
+    console.log(`🧭 Bottom TOC Navigation: Jumping to page ${page} for "${title}"`);
+    onJumpToPage(page);
+    syncToChapter(title);
+  };
 
   const toggleHeight = () => {
     const newHeight = height === 160 ? 280 : 160;
