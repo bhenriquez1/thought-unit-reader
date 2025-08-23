@@ -644,54 +644,81 @@ export default function ThoughtUnitReader() {
   ========================================================================= */
   const syncToPage = (page: number, opts?: { reason?: 'SCROLL' | 'TOC_JUMP' | 'PROGRAMMATIC' }) => {
     const reason = opts?.reason || 'PROGRAMMATIC';
-    console.log(`📄 syncToPage called: navigating to page ${page} (current: ${currentPage}) reason: ${reason}`);
+    console.log(`📄 index.tsx syncToPage called: navigating to page ${page} (current: ${currentPage}) reason: ${reason}`);
     
-    setCurrentPage(page);
-    let unit = pageToUnit(page, pdfPageCount, thoughtUnits.length);
-    
-    // Enhanced chapter-aware navigation for TOC jumps
-    if (reason === 'TOC_JUMP') {
-      // Use the sync store's chapter-aware functionality
-      const { syncToChapter, findNearestChapter } = useReaderSync.getState();
-      const nearestChapter = findNearestChapter(page);
-      
-      if (nearestChapter) {
-        console.log(`📄 TOC_JUMP: Found chapter "${nearestChapter.title}" for page ${page}`);
-        // Snap to chapter start page and first unit
-        const chapterStartPage = nearestChapter.page;
-        const chapterStartUnit = nearestChapter.unitStart;
-        
-        setCurrentPage(chapterStartPage);
-        setCurrentThoughtUnit(chapterStartUnit);
-        
-        // Update global sync store with chapter-aware data
-        updateSync({ 
-          page: chapterStartPage, 
-          unitIndex: chapterStartUnit 
-        }, 'toc');
-        
-        console.log(`📄 Chapter navigation complete: page ${chapterStartPage}, unit ${chapterStartUnit}`);
-      } else {
-        // Fallback to normal navigation if no chapter found
-        setCurrentThoughtUnit(unit);
-        updateSync({ page, unitIndex: unit }, 'toc');
-        console.log(`📄 Fallback navigation complete: page ${page}, unit ${unit}`);
-      }
-    } else {
-      // Normal scroll/programmatic navigation
-      setCurrentThoughtUnit(unit);
-      updateSync({ page, unitIndex: unit }, reason === 'SCROLL' ? 'pdf' : 'manual');
-      console.log(`📄 ${reason} navigation complete: page ${page}, unit ${unit}`);
+    // Validate page bounds
+    if (page < 1 || (pdfPageCount > 0 && page > pdfPageCount)) {
+      console.warn(`📄 index.tsx: Invalid page ${page}, bounds: 1-${pdfPageCount}`);
+      return;
     }
+    
+    try {
+      // Update local state first
+      setCurrentPage(page);
+      let unit = pageToUnit(page, pdfPageCount, thoughtUnits.length);
+      
+      // Enhanced chapter-aware navigation for TOC jumps
+      if (reason === 'TOC_JUMP') {
+        // Use the sync store's chapter-aware functionality
+        const { syncToChapter, findNearestChapter } = useReaderSync.getState();
+        const nearestChapter = findNearestChapter(page);
+        
+        if (nearestChapter) {
+          console.log(`📄 TOC_JUMP: Found chapter "${nearestChapter.title}" for page ${page}`);
+          // Snap to chapter start page and first unit
+          const chapterStartPage = nearestChapter.page;
+          const chapterStartUnit = nearestChapter.unitStart;
+          
+          setCurrentPage(chapterStartPage);
+          setCurrentThoughtUnit(chapterStartUnit);
+          
+          // Update global sync store with chapter-aware data
+          updateSync({ 
+            page: chapterStartPage, 
+            unitIndex: chapterStartUnit 
+          }, 'toc');
+          
+          console.log(`📄 Chapter navigation complete: page ${chapterStartPage}, unit ${chapterStartUnit}`);
+        } else {
+          // Fallback to normal navigation if no chapter found
+          setCurrentThoughtUnit(unit);
+          updateSync({ page, unitIndex: unit }, 'toc');
+          console.log(`📄 Fallback navigation complete: page ${page}, unit ${unit}`);
+        }
+      } else {
+        // Normal scroll/programmatic navigation with enhanced sync
+        setCurrentThoughtUnit(unit);
+        
+        // Use the enhanced sync store with proper source mapping
+        const syncSource = reason === 'SCROLL' ? 'pdf' : 'manual';
+        updateSync({ page, unitIndex: unit }, syncSource);
+        
+        console.log(`📄 ${reason} navigation complete: page ${page}, unit ${unit}, source: ${syncSource}`);
+      }
 
-    // Auto-whiteboard trigger (unchanged)
-    if (autoWhiteboard) {
-      const seed = conceptForPage(page, thoughtUnits, pdfPageCount);
-      if (seed) {
-        setWbConcept(truncate(seed, 600));
-        const title = titleForPage(tableOfContents, page);
-        setWbContext(title);
-        setShowWhiteboardPanel(true);
+      // Auto-whiteboard trigger (unchanged)
+      if (autoWhiteboard) {
+        const seed = conceptForPage(page, thoughtUnits, pdfPageCount);
+        if (seed) {
+          setWbConcept(truncate(seed, 600));
+          const title = titleForPage(tableOfContents, page);
+          setWbContext(title);
+          setShowWhiteboardPanel(true);
+        }
+      }
+      
+      console.log(`📄 index.tsx: Successfully navigated to page ${page}`);
+    } catch (error) {
+      console.error(`📄 index.tsx: Navigation error for page ${page}:`, error);
+      
+      // Fallback: just update local state
+      try {
+        setCurrentPage(page);
+        const unit = pageToUnit(page, pdfPageCount, thoughtUnits.length);
+        setCurrentThoughtUnit(unit);
+        console.log(`📄 index.tsx: Fallback navigation to page ${page} succeeded`);
+      } catch (fallbackError) {
+        console.error(`📄 index.tsx: Fallback navigation failed:`, fallbackError);
       }
     }
   };
