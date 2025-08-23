@@ -125,17 +125,23 @@ export const useReaderSync = create<ReaderSyncState>((set, get) => ({
   lastVisibleText: '',
   syncInProgress: false,
   
-  // Enhanced actions with source tracking and relaxed loop prevention
+  // Enhanced actions with source tracking and improved navigation handling
   setPage: (page: number, source: SyncSource = "manual") => {
     const state = get();
     const now = Date.now();
     
-    // Optimized: prevent rapid updates with longer debounce for better performance
-    if (state.lastUpdateSource === source && state.page === page && now - state.lastUpdateTimestamp < 200) {
-      return;
-    }
+    // Differentiate debouncing based on source - be less aggressive for user navigation
+    const debounceTime = (source === "manual" || source === "toc") ? 50 : 200;
     
-    console.log(`🔄 ReaderSync: setPage(${page}) from ${source}`);
+    // Allow immediate navigation if page is different, regardless of source
+    if (state.page !== page) {
+      console.log(`🔄 ReaderSync: setPage(${page}) from ${source} - page changed`);
+    } else if (state.lastUpdateSource === source && now - state.lastUpdateTimestamp < debounceTime) {
+      console.log(`🔄 ReaderSync: setPage(${page}) from ${source} - debounced (${now - state.lastUpdateTimestamp}ms < ${debounceTime}ms)`);
+      return;
+    } else {
+      console.log(`🔄 ReaderSync: setPage(${page}) from ${source} - allowed`);
+    }
     
     // Calculate corresponding unit using smart mapping
     const smartUnit = state.pageToUnitSmart(page);
@@ -152,12 +158,18 @@ export const useReaderSync = create<ReaderSyncState>((set, get) => ({
     const state = get();
     const now = Date.now();
     
-    // Optimized: prevent rapid updates with longer debounce for better performance
-    if (state.lastUpdateSource === source && state.unitIndex === unitIndex && now - state.lastUpdateTimestamp < 200) {
-      return;
-    }
+    // Differentiate debouncing based on source - be less aggressive for user navigation
+    const debounceTime = (source === "manual" || source === "toc") ? 50 : 200;
     
-    console.log(`🔄 ReaderSync: setUnitIndex(${unitIndex}) from ${source}`);
+    // Allow immediate navigation if unit is different, regardless of source
+    if (state.unitIndex !== unitIndex) {
+      console.log(`🔄 ReaderSync: setUnitIndex(${unitIndex}) from ${source} - unit changed`);
+    } else if (state.lastUpdateSource === source && now - state.lastUpdateTimestamp < debounceTime) {
+      console.log(`🔄 ReaderSync: setUnitIndex(${unitIndex}) from ${source} - debounced (${now - state.lastUpdateTimestamp}ms < ${debounceTime}ms)`);
+      return;
+    } else {
+      console.log(`🔄 ReaderSync: setUnitIndex(${unitIndex}) from ${source} - allowed`);
+    }
     
     // Calculate corresponding page using smart mapping
     const smartPage = state.unitToPageSmart(unitIndex);

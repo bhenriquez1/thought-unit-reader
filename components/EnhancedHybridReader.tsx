@@ -704,7 +704,11 @@ export default function EnhancedHybridReader({
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+              onClick={() => {
+                const prevPage = Math.max(1, currentPage - 1);
+                console.log(`🔄 HybridReader: Prev button clicked - ${currentPage} -> ${prevPage}`);
+                onPageChange(prevPage);
+              }}
               disabled={currentPage <= 1}
               className="text-xs px-3 py-1 bg-gray-600 rounded hover:bg-gray-500 disabled:opacity-50 transition-colors"
             >
@@ -714,7 +718,11 @@ export default function EnhancedHybridReader({
               {currentPage} / {pdfPageCount || '?'}
             </span>
             <button
-              onClick={() => onPageChange(Math.min(pdfPageCount || 999, currentPage + 1))}
+              onClick={() => {
+                const nextPage = Math.min(pdfPageCount || 999, currentPage + 1);
+                console.log(`🔄 HybridReader: Next button clicked - ${currentPage} -> ${nextPage}`);
+                onPageChange(nextPage);
+              }}
               disabled={currentPage >= (pdfPageCount || 999)}
               className="text-xs px-3 py-1 bg-gray-600 rounded hover:bg-gray-500 disabled:opacity-50 transition-colors"
             >

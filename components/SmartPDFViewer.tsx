@@ -113,15 +113,35 @@ export default function SmartPDFViewer({
     setPageInput(String(currentPage));
   }, [currentPage]);
 
-  // Enhanced page change handler with sync integration
+  // Enhanced page change handler with sync integration and fallback
   const handlePageChangeWithSync = (newPage: number, source: 'scroll' | 'navigation' | 'programmatic' = 'navigation') => {
     console.log(`📄 SmartPDFViewer: Page change ${currentPage} -> ${newPage} (${source})`);
     
-    // Update sync store
-    setPage(newPage, source === 'scroll' ? 'pdf' : 'manual');
+    // Validate page bounds
+    if (newPage < 1 || (numPages > 0 && newPage > numPages)) {
+      console.warn(`📄 SmartPDFViewer: Invalid page ${newPage}, bounds: 1-${numPages}`);
+      return;
+    }
     
-    // Call parent callback
-    onPageChange(newPage);
+    try {
+      // Update sync store first
+      setPage(newPage, source === 'scroll' ? 'pdf' : 'manual');
+      
+      // Call parent callback with fallback
+      onPageChange(newPage);
+      
+      console.log(`📄 SmartPDFViewer: Successfully navigated to page ${newPage}`);
+    } catch (error) {
+      console.error(`📄 SmartPDFViewer: Navigation error for page ${newPage}:`, error);
+      
+      // Fallback: direct parent callback without sync
+      try {
+        onPageChange(newPage);
+        console.log(`📄 SmartPDFViewer: Fallback navigation to page ${newPage} succeeded`);
+      } catch (fallbackError) {
+        console.error(`📄 SmartPDFViewer: Fallback navigation failed:`, fallbackError);
+      }
+    }
   };
 
   // Enhanced visible text observer with optimized sync timing
