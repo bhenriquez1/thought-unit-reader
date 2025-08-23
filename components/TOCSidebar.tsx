@@ -184,19 +184,22 @@ export default function TOCSidebar({
   const handleJumpToPage = (page: number, title: string) => {
     console.log(`🧭 TOC Navigation: Jumping to page ${page} for "${title}"`);
     
-    // Call onJumpToPage with TOC_JUMP reason for chapter-aware navigation
-    if (typeof onJumpToPage === 'function') {
-      // Check if onJumpToPage supports the enhanced signature
-      try {
-        (onJumpToPage as any)(page, { reason: 'TOC_JUMP' });
-      } catch (error) {
-        // Fallback to simple call if enhanced signature not supported
-        onJumpToPage(page);
-      }
+    // Use sync store for chapter-aware navigation
+    const { setPage, findNearestChapter, syncToChapter } = useReaderSync.getState();
+    
+    // Set page with TOC source for chapter-aware handling
+    setPage(page, "toc");
+    
+    // Try to sync to chapter for enhanced navigation
+    const success = syncToChapter(title);
+    if (success) {
+      console.log(`🧭 Successfully synced to chapter: ${title}`);
     }
     
-    // Try to sync to chapter in the global store as backup
-    syncToChapter(title);
+    // Call parent callback as fallback
+    if (typeof onJumpToPage === 'function') {
+      onJumpToPage(page);
+    }
     
     // Auto-collapse on mobile after navigation
     if (window.innerWidth < 768) {

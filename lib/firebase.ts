@@ -446,8 +446,23 @@ export async function saveReadingProgress(
     return;
   }
 
-  const docRef = doc(db, "users", uid, "books", bookId, "progress");
-  await setDoc(docRef, { ...progress, updatedAt: new Date().toISOString() }, { merge: true });
+  try {
+    const docRef = doc(db, "users", uid, "books", bookId, "progress");
+    await setDoc(docRef, { ...progress, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (error) {
+    console.warn("⚠️ Firebase write failed, falling back to localStorage:", error);
+    // Fallback to localStorage if Firebase fails
+    try {
+      const key = LS_KEY(uid, bookId);
+      const prev = JSON.parse(localStorage.getItem(key) || "{}");
+      localStorage.setItem(
+        key,
+        JSON.stringify({ ...prev, ...progress, updatedAt: new Date().toISOString() })
+      );
+    } catch {
+      /* ignore localStorage fallback failure */
+    }
+  }
 }
 
 export async function loadReadingProgress(
@@ -466,9 +481,20 @@ export async function loadReadingProgress(
     }
   }
 
-  const docRef = doc(db, "users", uid, "books", bookId, "progress");
-  const snap = await getDoc(docRef);
-  return snap.exists() ? (snap.data() as ProgressPatch) : null;
+  try {
+    const docRef = doc(db, "users", uid, "books", bookId, "progress");
+    const snap = await getDoc(docRef);
+    return snap.exists() ? (snap.data() as ProgressPatch) : null;
+  } catch (error) {
+    console.warn("⚠️ Firebase read failed, falling back to localStorage:", error);
+    // Fallback to localStorage if Firebase fails
+    try {
+      const raw = localStorage.getItem(LS_KEY(uid, bookId));
+      return raw ? (JSON.parse(raw) as ProgressPatch) : null;
+    } catch {
+      return null;
+    }
+  }
 }
 
 /* =========================================================================

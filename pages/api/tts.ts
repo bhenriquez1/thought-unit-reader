@@ -39,8 +39,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                             process.env.OPENAI_API_KEY.length > 20;
 
   if (!hasValidOpenAIKey) {
-    // Fallback: Return instructions to use browser speech synthesis
-    console.log("🎵 OpenAI TTS not available, falling back to browser speech synthesis");
+    // Fallback: Return instructions to use enhanced browser speech synthesis
+    console.log("🎵 OpenAI TTS not available, falling back to enhanced browser speech synthesis");
+    
+    // Process text with enhanced speech service for better naturalness
+    let processedScript = script;
+    try {
+      // Import and use enhanced speech processing
+      const { EnhancedSpeechService } = await import('../../lib/enhancedSpeech');
+      const speechService = EnhancedSpeechService.getInstance();
+      processedScript = speechService.preprocessText(script, { mode: 'reading' });
+    } catch (error) {
+      console.warn('Enhanced speech processing failed, using original text:', error);
+    }
     
     const wantsJSON =
       req.headers.accept?.includes("application/json") ||
@@ -49,18 +60,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (wantsJSON) {
       return res.status(200).json({ 
         useBrowserSpeech: true,
-        script,
+        script: processedScript,
+        originalScript: script,
         voice,
-        message: "Using enhanced browser speech synthesis for natural voice experience"
+        message: "Using enhanced browser speech synthesis with natural language processing"
       });
     }
 
     // Return a simple response indicating browser speech should be used
     return res.status(200).json({ 
       useBrowserSpeech: true,
-      script,
+      script: processedScript,
+      originalScript: script,
       voice,
-      message: "Using enhanced browser speech synthesis"
+      message: "Using enhanced browser speech synthesis with grammar correction and natural flow"
     });
   }
 
@@ -95,8 +108,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (err: any) {
     console.error("TTS API error:", err?.message || err);
     
-    // Fallback to browser speech synthesis on error
-    console.log("🎵 OpenAI TTS failed, falling back to browser speech synthesis");
+    // Fallback to enhanced browser speech synthesis on error
+    console.log("🎵 OpenAI TTS failed, falling back to enhanced browser speech synthesis");
+    
+    // Process text with enhanced speech service for better naturalness
+    let processedScript = script;
+    try {
+      const { EnhancedSpeechService } = await import('../../lib/enhancedSpeech');
+      const speechService = EnhancedSpeechService.getInstance();
+      processedScript = speechService.preprocessText(script, { mode: 'reading' });
+    } catch (error) {
+      console.warn('Enhanced speech processing failed, using original text:', error);
+    }
     
     const wantsJSON =
       req.headers.accept?.includes("application/json") ||
@@ -105,17 +128,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (wantsJSON) {
       return res.status(200).json({ 
         useBrowserSpeech: true,
-        script,
+        script: processedScript,
+        originalScript: script,
         voice,
-        message: "OpenAI TTS unavailable, using enhanced browser speech synthesis"
+        message: "OpenAI TTS unavailable, using enhanced browser speech synthesis with natural language processing"
       });
     }
 
     return res.status(200).json({ 
       useBrowserSpeech: true,
-      script,
+      script: processedScript,
+      originalScript: script,
       voice,
-      message: "Using enhanced browser speech synthesis"
+      message: "Using enhanced browser speech synthesis with grammar correction and natural flow"
     });
   }
 }

@@ -997,122 +997,101 @@ export default function ThoughtUnitReader() {
         </button>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 overflow-hidden">
-        {/* Reader Content - Full Width */}
-        <div className="w-full h-full p-4">
-          <div className="w-full h-full bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
-        </div>
-      </div>
+      {/* Main Content Area - New Layout: [TOC | PDF | Right Pane] */}
+      <div className="flex-1 overflow-hidden flex">
+        {/* Left TOC Sidebar - Always visible when content is loaded */}
+        {fileUrl && tableOfContents.length > 0 && (
+          <TOCSidebar
+            toc={tableOfContents}
+            currentPage={currentPage}
+            onJumpToPage={(p) => syncToPage(p, { reason: 'TOC_JUMP' })}
+            userId={USER_ID}
+          />
+        )}
 
-      {/* Floating TOC Toggle & Panel */}
-      {fileUrl && tableOfContents.length > 0 && (
-        <>
-          {/* Floating TOC Toggle Button */}
-          {!showTOCPanel && (
-            <button
-              onClick={() => setShowTOCPanel(true)}
-              className="fixed bottom-6 left-6 z-40 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white p-3 rounded-full shadow-lg backdrop-blur-sm border border-blue-400"
-              title="Open Table of Contents"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-lg">📑</span>
-                <span className="text-sm font-medium hidden sm:block">TOC</span>
-              </div>
-            </button>
-          )}
-
-          {/* Sliding TOC Panel */}
-          {showTOCPanel && (
-            <div className="fixed top-0 left-0 w-full sm:w-[400px] h-full bg-gray-900/95 backdrop-blur-md text-white z-50 flex flex-col shadow-2xl border-r border-gray-700">
-              <div className="flex justify-between items-center p-4 border-b border-gray-700">
-                <h3 className="text-lg font-semibold">📑 Table of Contents</h3>
-                <button
-                  onClick={() => setShowTOCPanel(false)}
-                  className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-800"
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="flex-1 overflow-auto">
-                <TOCSidebar
-                  toc={tableOfContents}
-                  currentPage={currentPage}
-                  onJumpToPage={(p) => syncToPage(p)}
-                  userId={USER_ID}
-                />
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Floating Whiteboard Toggle & Panel - Always Available */}
-      <>
-        {/* Floating Whiteboard Toggle Button - Always Visible */}
-        {!showWhiteboardPanel && (
+        {/* Floating TOC Toggle Pill on PDF (when TOC is collapsed or hidden) */}
+        {fileUrl && tableOfContents.length > 0 && (
           <button
-            onClick={() => {
-              setShowWhiteboardPanel(true);
-              // If no concept is set, use current page content as concept
-              if (!wbConcept && thoughtUnits.length > 0) {
-                const currentConcept = conceptForPage(currentPage, thoughtUnits, pdfPageCount);
-                if (currentConcept) {
-                  setWbConcept(truncate(currentConcept, 600));
-                  setWbContext(titleForPage(tableOfContents, currentPage));
-                } else {
-                  // Fallback to a generic concept
-                  setWbConcept("Current page content");
-                  setWbContext(`Page ${currentPage}`);
-                }
-              }
-            }}
-            className="fixed bottom-6 right-6 z-40 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white p-3 rounded-full shadow-lg backdrop-blur-sm border border-purple-400"
-            title="Open Whiteboard Explanation"
+            onClick={() => setShowTOCPanel(true)}
+            className="fixed bottom-6 left-6 z-40 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-3 py-2 rounded-full shadow-lg backdrop-blur-sm border border-blue-400"
+            title="Toggle Table of Contents"
           >
             <div className="flex items-center gap-2">
-              <span className="text-lg">🎨</span>
-              <span className="text-sm font-medium hidden sm:block">Whiteboard</span>
+              <span className="text-sm">📑</span>
+              <span className="text-xs font-medium hidden sm:block">TOC</span>
             </div>
           </button>
         )}
 
-        {/* Sliding Whiteboard Panel */}
-        {showWhiteboardPanel && (
-          <div className="fixed top-0 right-0 w-full sm:w-[480px] h-full bg-gray-900/95 backdrop-blur-md text-white z-50 flex flex-col shadow-2xl border-l border-gray-700">
-            <div className="flex justify-between items-center p-4 border-b border-gray-700">
-              <h3 className="text-lg font-semibold">🎨 Whiteboard Explanation</h3>
-              <button
-                onClick={() => setShowWhiteboardPanel(false)}
-                className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-800"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="flex-1 overflow-auto p-4">
-              <EnhancedWhiteboard
-                concept={wbConcept || "Current page content"}
-                context={wbContext || `Page ${currentPage}`}
-                stickyNotes={wbStickyNotes}
-                autoTrigger={!!wbConcept}
-                lessonTitle={
-                  uploadedFile?.name ? `Whiteboard — ${uploadedFile.name}` : "Whiteboard Lesson"
-                }
-                lessonId={bookId}
-                userId={USER_ID}
-                reExplainOnPageChange={true}
-                currentPage={currentPage}
-                containsDiagramOrFormula={containsDiagramOrFormula}
-                selectedVoice={selectedVoice}
-                onVoiceChange={setSelectedVoice}
-                speechRate={speechRate}
-                onSpeechRateChange={setSpeechRate}
-                naturalVoiceEnabled={true}
-              />
-            </div>
+        {/* Main Reader Content Area */}
+        <div className="flex-1 h-full">
+          <div className="w-full h-full bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
+        </div>
+      </div>
+
+      {/* Single Whiteboard FAB - Bottom Right (Always Available) */}
+      {!showWhiteboardPanel && (
+        <button
+          onClick={() => {
+            setShowWhiteboardPanel(true);
+            // If no concept is set, use current page content as concept
+            if (!wbConcept && thoughtUnits.length > 0) {
+              const currentConcept = conceptForPage(currentPage, thoughtUnits, pdfPageCount);
+              if (currentConcept) {
+                setWbConcept(truncate(currentConcept, 600));
+                setWbContext(titleForPage(tableOfContents, currentPage));
+              } else {
+                // Fallback to a generic concept
+                setWbConcept("Current page content");
+                setWbContext(`Page ${currentPage}`);
+              }
+            }
+          }}
+          className="fixed bottom-6 right-6 z-40 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white p-3 rounded-full shadow-lg backdrop-blur-sm border border-purple-400"
+          title="Open Whiteboard Explanation"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🎨</span>
+            <span className="text-sm font-medium hidden sm:block">Whiteboard</span>
           </div>
-        )}
-      </>
+        </button>
+      )}
+
+      {/* Sliding Whiteboard Panel */}
+      {showWhiteboardPanel && (
+        <div className="fixed top-0 right-0 w-full sm:w-[480px] h-full bg-gray-900/95 backdrop-blur-md text-white z-50 flex flex-col shadow-2xl border-l border-gray-700">
+          <div className="flex justify-between items-center p-4 border-b border-gray-700">
+            <h3 className="text-lg font-semibold">🎨 Whiteboard Explanation</h3>
+            <button
+              onClick={() => setShowWhiteboardPanel(false)}
+              className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-800"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto p-4">
+            <EnhancedWhiteboard
+              concept={wbConcept || "Current page content"}
+              context={wbContext || `Page ${currentPage}`}
+              stickyNotes={wbStickyNotes}
+              autoTrigger={!!wbConcept}
+              lessonTitle={
+                uploadedFile?.name ? `Whiteboard — ${uploadedFile.name}` : "Whiteboard Lesson"
+              }
+              lessonId={bookId}
+              userId={USER_ID}
+              reExplainOnPageChange={true}
+              currentPage={currentPage}
+              containsDiagramOrFormula={containsDiagramOrFormula}
+              selectedVoice={selectedVoice}
+              onVoiceChange={setSelectedVoice}
+              speechRate={speechRate}
+              onSpeechRateChange={setSpeechRate}
+              naturalVoiceEnabled={true}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Library Drawer (guest + auth) */}
       {showLibrary && (

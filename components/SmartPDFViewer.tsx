@@ -4,6 +4,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api"; // ✅ correct type source
+import { useReaderSync } from "@/lib/readerSync";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
 
@@ -95,11 +96,78 @@ export default function SmartPDFViewer({
   const [pageInput, setPageInput] = useState<string>(String(currentPage));
   const [showToolbar, setShowToolbar] = useState<boolean>(true);
   const [errMsg, setErrMsg] = useState<string | null>(null);
+  const [highlightPulse, setHighlightPulse] = useState<boolean>(false);
   const viewerRef = useRef<HTMLDivElement>(null);
+  const pageContainerRef = useRef<HTMLDivElement>(null);
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Enhanced sync integration
+  const { 
+    setPage, 
+    startVisibleTextObserver, 
+    stopVisibleTextObserver,
+    syncPDFToChunk 
+  } = useReaderSync();
 
   useEffect(() => {
     setPageInput(String(currentPage));
   }, [currentPage]);
+
+  // Enhanced page change handler with sync integration
+  const handlePageChangeWithSync = (newPage: number, source: 'scroll' | 'navigation' | 'programmatic' = 'navigation') => {
+    console.log(`📄 SmartPDFViewer: Page change ${currentPage} -> ${newPage} (${source})`);
+    
+    // Update sync store
+    setPage(newPage, source === 'scroll' ? 'pdf' : 'manual');
+    
+    // Call parent callback
+    onPageChange(newPage);
+  };
+
+  // Enhanced visible text observer with optimized sync timing
+  useEffect(() => {
+    if (!pageContainerRef.current || !fileUrl) return;
+
+    const container = pageContainerRef.current;
+    
+    // Enhanced debounced callback with pulse animation
+    const handleVisibleTextChange = (visibleText: string, topElement: HTMLElement | null) => {
+      console.log(`👁️ SmartPDFViewer: Visible text changed (${visibleText.length} chars)`);
+      
+      // Clear any existing sync timeout
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+      
+      // Debounce sync to achieve ~200ms target
+      syncTimeoutRef.current = setTimeout(() => {
+        if (visibleText.length > 50) { // Only sync if we have substantial text
+          syncPDFToChunk(container, [visibleText]).then(matchedChunkId => {
+            if (matchedChunkId) {
+              console.log(`🔄 SmartPDFViewer: Synced to chunk ${matchedChunkId}`);
+              
+              // Trigger highlight pulse animation
+              setHighlightPulse(true);
+              setTimeout(() => setHighlightPulse(false), 1000);
+            }
+          }).catch(error => {
+            console.warn('PDF to chunk sync failed:', error);
+          });
+        }
+      }, 150); // 150ms debounce for ~200ms total response time
+    };
+
+    // Start the observer
+    startVisibleTextObserver(container, handleVisibleTextChange);
+
+    // Cleanup on unmount
+    return () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+      stopVisibleTextObserver();
+    };
+  }, [fileUrl, startVisibleTextObserver, stopVisibleTextObserver, syncPDFToChunk]);
 
   // Resolve & memoize what the <Document /> will fetch
   const fileSpec = useMemo(() => {
@@ -147,7 +215,7 @@ export default function SmartPDFViewer({
   const handlePrevPage = () => {
     if (currentPage > 1) {
       const next = currentPage - 1;
-      onPageChange(next);
+      handlePageChangeWithSync(next, 'navigation');
       setPageInput(String(next));
     }
   };
@@ -155,7 +223,7 @@ export default function SmartPDFViewer({
   const handleNextPage = () => {
     if (currentPage < numPages) {
       const next = currentPage + 1;
-      onPageChange(next);
+      handlePageChangeWithSync(next, 'navigation');
       setPageInput(String(next));
     }
   };
@@ -164,7 +232,7 @@ export default function SmartPDFViewer({
     e.preventDefault();
     const pageNum = parseInt(pageInput, 10);
     if (!Number.isNaN(pageNum) && pageNum >= 1 && pageNum <= numPages) {
-      onPageChange(pageNum);
+      handlePageChangeWithSync(pageNum, 'navigation');
     } else {
       setPageInput(String(currentPage));
     }
@@ -222,17 +290,33 @@ export default function SmartPDFViewer({
         </button>
       )}
 
-      <div className="flex justify-center items-start h-full overflow-auto p-4 transition-all duration-300">
+      <div 
+        ref={pageContainerRef}
+        className="relative flex justify-center items-start h-full overflow-auto p-4 transition-all duration-300"
+      >
         {fileSpec ? (
-          <Document
-            key={(fileSpec as any).url}
-            file={fileSpec}
-            onLoadSuccess={onDocumentLoadSuccess}
-            onLoadError={onDocumentLoadError}
-            onSourceError={onSourceError}
-          >
-            <Page pageNumber={currentPage} scale={zoom} renderTextLayer renderAnnotationLayer />
-          </Document>
+          <div className="relative">
+            <Document
+              key={(fileSpec as any).url}
+              file={fileSpec}
+              onLoadSuccess={onDocumentLoadSuccess}
+              onLoadError={onDocumentLoadError}
+              onSourceError={onSourceError}
+            >
+              <Page pageNumber={currentPage} scale={zoom} renderTextLayer renderAnnotationLayer />
+            </Document>
+            
+            {/* Highlight pulse animation overlay */}
+            {highlightPulse && (
+              <div 
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  background: 'radial-gradient(circle, rgba(255, 255, 0, 0.2) 0%, rgba(255, 255, 0, 0.1) 50%, transparent 100%)',
+                  animation: 'pulse 1s ease-out',
+                }}
+              />
+            )}
+          </div>
         ) : (
           <p className="text-gray-400">📂 No PDF loaded.</p>
         )}

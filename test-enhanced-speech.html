@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Natural Speech Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .test-section {
+            background: #2a2a2a;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            border: 1px solid #444;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        .original {
+            background: #333;
+            padding: 10px;
+            margin: 10px 0;
+            border-left: 4px solid #ff6b6b;
+        }
+        .enhanced {
+            background: #333;
+            padding: 10px;
+            margin: 10px 0;
+            border-left: 4px solid #4ecdc4;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        select, input {
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 5px;
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎵 Enhanced Natural Speech Test</h1>
+    <p>Test the new natural speech processing with grammar correction, academic text handling, and prosody controls.</p>
+
+    <div class="controls">
+        <label>Voice: </label>
+        <select id="voiceSelect">
+            <option value="">System Default</option>
+        </select>
+        
+        <label>Speed: </label>
+        <input type="range" id="speedRange" min="0.5" max="2" step="0.1" value="1">
+        <span id="speedValue">1.0x</span>
+        
+        <label>Mode: </label>
+        <select id="modeSelect">
+            <option value="reading">Reading</option>
+            <option value="explanation">Explanation</option>
+            <option value="study">Study</option>
+        </select>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 1: Academic Text with Citations</h2>
+        <div class="original">
+            <strong>Original:</strong><br>
+            Smith et al. (2023) found that H2O molecules exhibit significant behavior at 25°C±2°C (n=150, p<0.05). Fig. 2 shows the results vs. control group. The pH was 7.4±0.2.
+        </div>
+        <div class="enhanced" id="enhanced1">
+            <strong>Enhanced:</strong><br>
+            <em>Processing...</em>
+        </div>
+        <button onclick="testAcademicText()">🎵 Speak Enhanced</button>
+        <button onclick="speakOriginal('Smith et al. (2023) found that H2O molecules exhibit significant behavior at 25°C±2°C (n=150, p<0.05). Fig. 2 shows the results vs. control group. The pH was 7.4±0.2.')">🔊 Speak Original</button>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 2: Grammar Correction</h2>
+        <div class="original">
+            <strong>Original:</strong><br>
+            this is important concept.however,the results show significant difference furthermore the data indicates strong correlation
+        </div>
+        <div class="enhanced" id="enhanced2">
+            <strong>Enhanced:</strong><br>
+            <em>Processing...</em>
+        </div>
+        <button onclick="testGrammarCorrection()">🎵 Speak Enhanced</button>
+        <button onclick="speakOriginal('this is important concept.however,the results show significant difference furthermore the data indicates strong correlation')">🔊 Speak Original</button>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 3: Mathematical Expressions</h2>
+        <div class="original">
+            <strong>Original:</strong><br>
+            The equation shows 5×3=15 and 10÷2≈5. The temperature was 37°C and the concentration was 2.5mg/ml with 95% confidence.
+        </div>
+        <div class="enhanced" id="enhanced3">
+            <strong>Enhanced:</strong><br>
+            <em>Processing...</em>
+        </div>
+        <button onclick="testMathematical()">🎵 Speak Enhanced</button>
+        <button onclick="speakOriginal('The equation shows 5×3=15 and 10÷2≈5. The temperature was 37°C and the concentration was 2.5mg/ml with 95% confidence.')">🔊 Speak Original</button>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 4: Complex Academic Passage</h2>
+        <div class="original">
+            <strong>Original:</strong><br>
+            The study by Johnson & Smith (2024) demonstrates that DNA replication occurs at a rate of 50bp/sec in E. coli. Fig. 3.1 illustrates the process. The researchers found that ATP concentration affects the rate (r=0.85, p<0.001). In contrast, RNA polymerase II shows different kinetics. Therefore, we conclude that these mechanisms are fundamentally different.
+        </div>
+        <div class="enhanced" id="enhanced4">
+            <strong>Enhanced:</strong><br>
+            <em>Processing...</em>
+        </div>
+        <button onclick="testComplexPassage()">🎵 Speak Enhanced</button>
+        <button onclick="speakOriginal('The study by Johnson & Smith (2024) demonstrates that DNA replication occurs at a rate of 50bp/sec in E. coli. Fig. 3.1 illustrates the process. The researchers found that ATP concentration affects the rate (r=0.85, p<0.001). In contrast, RNA polymerase II shows different kinetics. Therefore, we conclude that these mechanisms are fundamentally different.')">🔊 Speak Original</button>
+    </div>
+
+    <div class="controls">
+        <button onclick="stopSpeaking()" style="background: #f44336;">⏹️ Stop All Speech</button>
+    </div>
+
+    <script>
+        // Load voices
+        function loadVoices() {
+            const voices = speechSynthesis.getVoices();
+            const voiceSelect = document.getElementById('voiceSelect');
+            voiceSelect.innerHTML = '<option value="">System Default</option>';
+            
+            voices.filter(voice => voice.lang.startsWith('en'))
+                .sort((a, b) => {
+                    const aScore = (a.name.toLowerCase().includes('neural') ? 2 : 0) + 
+                                  (a.name.toLowerCase().includes('premium') ? 1 : 0);
+                    const bScore = (b.name.toLowerCase().includes('neural') ? 2 : 0) + 
+                                  (b.name.toLowerCase().includes('premium') ? 1 : 0);
+                    return bScore - aScore;
+                })
+                .forEach(voice => {
+                    const option = document.createElement('option');
+                    option.value = voice.name;
+                    option.textContent = voice.name + 
+                        (voice.name.toLowerCase().includes('neural') ? ' ⚡' : '') +
+                        (voice.name.toLowerCase().includes('premium') ? ' ✨' : '');
+                    voiceSelect.appendChild(option);
+                });
+        }
+
+        // Speed control
+        document.getElementById('speedRange').addEventListener('input', function() {
+            document.getElementById('speedValue').textContent = this.value + 'x';
+        });
+
+        // Enhanced speech processing (simplified version for demo)
+        function processText(text, mode = 'reading') {
+            let processed = text;
+            
+            // Grammar correction
+            processed = processed
+                .replace(/([a-z])([A-Z])/g, '$1. $2')
+                .replace(/\s+([.!?])/g, '$1')
+                .replace(/([.!?])([a-zA-Z])/g, '$1 $2')
+                .replace(/([,;:])([a-zA-Z])/g, '$1 $2')
+                .replace(/^([a-z])/gm, match => match.toUpperCase())
+                .replace(/([.!?]\s+)([a-z])/g, (match, p1, p2) => p1 + p2.toUpperCase());
+            
+            // Academic text processing
+            processed = processed
+                .replace(/\bFig\.?\s*(\d+(?:\.\d+)?)/gi, 'Figure $1')
+                .replace(/\b(\w+)\s+et\s+al\.?/gi, '$1 and colleagues')
+                .replace(/\b(\w+)\s*&\s*(\w+)/g, '$1 and $2')
+                .replace(/\be\.g\./gi, 'for example')
+                .replace(/\bi\.e\./gi, 'that is')
+                .replace(/\bvs\.?/gi, 'versus')
+                .replace(/\bH2O\b/g, 'water')
+                .replace(/\bDNA\b/g, 'D-N-A')
+                .replace(/\bRNA\b/g, 'R-N-A')
+                .replace(/\bATP\b/g, 'A-T-P')
+                .replace(/\b(\d+(?:\.\d+)?)\s*±\s*(\d+(?:\.\d+)?)/g, '$1, plus or minus $2')
+                .replace(/\b(\d+(?:\.\d+)?)\s*×\s*(\d+(?:\.\d+)?)/g, '$1 times $2')
+                .replace(/\b(\d+(?:\.\d+)?)\s*÷\s*(\d+(?:\.\d+)?)/g, '$1 divided by $2')
+                .replace(/\b(\d+(?:\.\d+)?)\s*≈\s*(\d+(?:\.\d+)?)/g, '$1 approximately equals $2')
+                .replace(/\bn\s*=\s*(\d+)/gi, 'n equals $1')
+                .replace(/\bp\s*<\s*(\d+(?:\.\d+)?)/gi, 'p less than $1')
+                .replace(/\br\s*=\s*(\d+(?:\.\d+)?)/gi, 'r equals $1')
+                .replace(/\b(\d+(?:\.\d+)?)\s*°C\b/g, '$1 degrees Celsius')
+                .replace(/\b(\d+(?:\.\d+)?)\s*mg\/ml\b/g, '$1 milligrams per milliliter')
+                .replace(/\b(\d+(?:\.\d+)?)\s*bp\/sec\b/g, '$1 base pairs per second')
+                .replace(/\b(\d+(?:\.\d+)?)\s*%/g, '$1 percent');
+            
+            // Natural language enhancement
+            processed = processed
+                .replace(/\b(very|really|quite|rather|extremely)\s+(very|really|quite|rather|extremely)\s+/gi, '$1 ')
+                .replace(/\bthat\s+that\b/gi, 'that');
+            
+            return processed;
+        }
+
+        function speak(text, enhanced = false) {
+            const voiceSelect = document.getElementById('voiceSelect');
+            const speedRange = document.getElementById('speedRange');
+            const modeSelect = document.getElementById('modeSelect');
+            
+            const processedText = enhanced ? processText(text, modeSelect.value) : text;
+            
+            const utterance = new SpeechSynthesisUtterance(processedText);
+            
+            if (voiceSelect.value) {
+                const voices = speechSynthesis.getVoices();
+                const selectedVoice = voices.find(voice => voice.name === voiceSelect.value);
+                if (selectedVoice) utterance.voice = selectedVoice;
+            }
+            
+            utterance.rate = parseFloat(speedRange.value);
+            utterance.pitch = enhanced && modeSelect.value === 'explanation' ? 1.1 : 1.0;
+            utterance.volume = 0.8;
+            
+            speechSynthesis.cancel();
+            speechSynthesis.speak(utterance);
+            
+            return processedText;
+        }
+
+        function speakOriginal(text) {
+            speak(text, false);
+        }
+
+        function testAcademicText() {
+            const original = "Smith et al. (2023) found that H2O molecules exhibit significant behavior at 25°C±2°C (n=150, p<0.05). Fig. 2 shows the results vs. control group. The pH was 7.4±0.2.";
+            const enhanced = speak(original, true);
+            document.getElementById('enhanced1').innerHTML = '<strong>Enhanced:</strong><br>' + enhanced;
+        }
+
+        function testGrammarCorrection() {
+            const original = "this is important concept.however,the results show significant difference furthermore the data indicates strong correlation";
+            const enhanced = speak(original, true);
+            document.getElementById('enhanced2').innerHTML = '<strong>Enhanced:</strong><br>' + enhanced;
+        }
+
+        function testMathematical() {
+            const original = "The equation shows 5×3=15 and 10÷2≈5. The temperature was 37°C and the concentration was 2.5mg/ml with 95% confidence.";
+            const enhanced = speak(original, true);
+            document.getElementById('enhanced3').innerHTML = '<strong>Enhanced:</strong><br>' + enhanced;
+        }
+
+        function testComplexPassage() {
+            const original = "The study by Johnson & Smith (2024) demonstrates that DNA replication occurs at a rate of 50bp/sec in E. coli. Fig. 3.1 illustrates the process. The researchers found that ATP concentration affects the rate (r=0.85, p<0.001). In contrast, RNA polymerase II shows different kinetics. Therefore, we conclude that these mechanisms are fundamentally different.";
+            const enhanced = speak(original, true);
+            document.getElementById('enhanced4').innerHTML = '<strong>Enhanced:</strong><br>' + enhanced;
+        }
+
+        function stopSpeaking() {
+            speechSynthesis.cancel();
+        }
+
+        // Initialize
+        loadVoices();
+        speechSynthesis.addEventListener('voiceschanged', loadVoices);
+
+        // Process all examples on load
+        setTimeout(() => {
+            document.getElementById('enhanced1').innerHTML = '<strong>Enhanced:</strong><br>' + 
+                processText("Smith et al. (2023) found that H2O molecules exhibit significant behavior at 25°C±2°C (n=150, p<0.05). Fig. 2 shows the results vs. control group. The pH was 7.4±0.2.");
+            
+            document.getElementById('enhanced2').innerHTML = '<strong>Enhanced:</strong><br>' + 
+                processText("this is important concept.however,the results show significant difference furthermore the data indicates strong correlation");
+            
+            document.getElementById('enhanced3').innerHTML = '<strong>Enhanced:</strong><br>' + 
+                processText("The equation shows 5×3=15 and 10÷2≈5. The temperature was 37°C and the concentration was 2.5mg/ml with 95% confidence.");
+            
+            document.getElementById('enhanced4').innerHTML = '<strong>Enhanced:</strong><br>' + 
+                processText("The study by Johnson & Smith (2024) demonstrates that DNA replication occurs at a rate of 50bp/sec in E. coli. Fig. 3.1 illustrates the process. The researchers found that ATP concentration affects the rate (r=0.85, p<0.001). In contrast, RNA polymerase II shows different kinetics. Therefore, we conclude that these mechanisms are fundamentally different.");
+        }, 1000);
+    </script>
+</body>
+</html>

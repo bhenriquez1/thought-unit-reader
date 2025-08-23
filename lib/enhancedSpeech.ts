@@ -229,28 +229,191 @@ export class EnhancedSpeechService {
     return this.initialized;
   }
 
-  // Enhanced text processing for better speech
-  preprocessText(text: string): string {
+  // Enhanced text processing for better speech with comprehensive grammar and natural language processing
+  preprocessText(text: string, options: { mode?: 'reading' | 'explanation' | 'study' } = {}): string {
+    const mode = options.mode || 'reading';
+    
+    let processedText = text;
+    
+    // Phase 1: Grammar correction and normalization
+    processedText = this.correctGrammar(processedText);
+    
+    // Phase 2: Academic and technical text processing
+    processedText = this.processAcademicText(processedText);
+    
+    // Phase 3: Natural language enhancement
+    processedText = this.enhanceNaturalLanguage(processedText, mode);
+    
+    // Phase 4: SSML and prosody enhancement
+    processedText = this.addProsodyControls(processedText, mode);
+    
+    return processedText;
+  }
+
+  private correctGrammar(text: string): string {
     return text
-      // Add pauses for better pacing
-      .replace(/([.!?])\s+/g, '$1 <break time="500ms"/> ')
-      .replace(/([,;:])\s+/g, '$1 <break time="200ms"/> ')
-      // Expand common abbreviations
+      // Fix common sentence structure issues
+      .replace(/([a-z])([A-Z])/g, '$1. $2') // Add periods between sentences
+      .replace(/\s+([.!?])/g, '$1') // Remove spaces before punctuation
+      .replace(/([.!?])([a-zA-Z])/g, '$1 $2') // Add space after punctuation
+      .replace(/([,;:])([a-zA-Z])/g, '$1 $2') // Add space after commas, semicolons, colons
+      
+      // Fix capitalization
+      .replace(/^([a-z])/gm, (match) => match.toUpperCase()) // Capitalize first letter of lines
+      .replace(/([.!?]\s+)([a-z])/g, (match, p1, p2) => p1 + p2.toUpperCase()) // Capitalize after periods
+      
+      // Fix common punctuation issues
+      .replace(/\s*,\s*,\s*/g, ', ') // Fix double commas
+      .replace(/\s*\.\s*\.\s*/g, '. ') // Fix double periods
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+  }
+
+  private processAcademicText(text: string): string {
+    return text
+      // Academic abbreviations and references
+      .replace(/\bFig\.?\s*(\d+(?:\.\d+)?)/gi, 'Figure $1')
+      .replace(/\bTable\.?\s*(\d+(?:\.\d+)?)/gi, 'Table $1')
+      .replace(/\bCh\.?\s*(\d+)/gi, 'Chapter $1')
+      .replace(/\bSec\.?\s*(\d+(?:\.\d+)?)/gi, 'Section $1')
+      .replace(/\bEq\.?\s*(\d+(?:\.\d+)?)/gi, 'Equation $1')
+      .replace(/\bRef\.?\s*(\d+)/gi, 'Reference $1')
+      .replace(/\bpp\.?\s*(\d+)/gi, 'pages $1')
+      .replace(/\bp\.?\s*(\d+)/gi, 'page $1')
+      
+      // Author citations
+      .replace(/\b(\w+)\s+et\s+al\.?/gi, '$1 and colleagues')
+      .replace(/\b(\w+)\s*&\s*(\w+)/g, '$1 and $2')
+      
+      // Common academic abbreviations
       .replace(/\be\.g\./gi, 'for example')
       .replace(/\bi\.e\./gi, 'that is')
-      .replace(/\betc\./gi, 'etcetera')
-      .replace(/\bvs\./gi, 'versus')
-      .replace(/\bdr\./gi, 'doctor')
-      .replace(/\bmr\./gi, 'mister')
-      .replace(/\bms\./gi, 'miss')
-      // Handle numbers and symbols better
-      .replace(/\b(\d+)%/g, '$1 percent')
-      .replace(/\b(\d+)°/g, '$1 degrees')
+      .replace(/\betc\./gi, 'and so forth')
+      .replace(/\bvs\.?/gi, 'versus')
+      .replace(/\bcf\.?/gi, 'compare')
+      .replace(/\bviz\.?/gi, 'namely')
+      .replace(/\bN\.B\.?/gi, 'note well')
+      .replace(/\bQ\.E\.D\.?/gi, 'which was to be demonstrated')
+      
+      // Scientific notation and formulas
+      .replace(/\bH2O\b/g, 'water')
+      .replace(/\bCO2\b/g, 'carbon dioxide')
+      .replace(/\bO2\b/g, 'oxygen')
+      .replace(/\bN2\b/g, 'nitrogen')
+      .replace(/\bNaCl\b/g, 'sodium chloride')
+      .replace(/\bDNA\b/g, 'D-N-A')
+      .replace(/\bRNA\b/g, 'R-N-A')
+      .replace(/\bATP\b/g, 'A-T-P')
+      
+      // Mathematical expressions
+      .replace(/\b(\d+(?:\.\d+)?)\s*±\s*(\d+(?:\.\d+)?)/g, '$1, plus or minus $2')
+      .replace(/\b(\d+(?:\.\d+)?)\s*×\s*(\d+(?:\.\d+)?)/g, '$1 times $2')
+      .replace(/\b(\d+(?:\.\d+)?)\s*÷\s*(\d+(?:\.\d+)?)/g, '$1 divided by $2')
+      .replace(/\b(\d+(?:\.\d+)?)\s*≈\s*(\d+(?:\.\d+)?)/g, '$1 approximately equals $2')
+      .replace(/\b(\d+(?:\.\d+)?)\s*≤\s*(\d+(?:\.\d+)?)/g, '$1 is less than or equal to $2')
+      .replace(/\b(\d+(?:\.\d+)?)\s*≥\s*(\d+(?:\.\d+)?)/g, '$1 is greater than or equal to $2')
+      .replace(/\b(\d+(?:\.\d+)?)\s*<\s*(\d+(?:\.\d+)?)/g, '$1 is less than $2')
+      .replace(/\b(\d+(?:\.\d+)?)\s*>\s*(\d+(?:\.\d+)?)/g, '$1 is greater than $2')
+      
+      // Statistical notation
+      .replace(/\bn\s*=\s*(\d+)/gi, 'n equals $1')
+      .replace(/\bp\s*<\s*(\d+(?:\.\d+)?)/gi, 'p less than $1')
+      .replace(/\bp\s*>\s*(\d+(?:\.\d+)?)/gi, 'p greater than $1')
+      .replace(/\br\s*=\s*(\d+(?:\.\d+)?)/gi, 'r equals $1')
+      
+      // Units and measurements
+      .replace(/\b(\d+(?:\.\d+)?)\s*mm\b/g, '$1 millimeters')
+      .replace(/\b(\d+(?:\.\d+)?)\s*cm\b/g, '$1 centimeters')
+      .replace(/\b(\d+(?:\.\d+)?)\s*m\b/g, '$1 meters')
+      .replace(/\b(\d+(?:\.\d+)?)\s*km\b/g, '$1 kilometers')
+      .replace(/\b(\d+(?:\.\d+)?)\s*mg\b/g, '$1 milligrams')
+      .replace(/\b(\d+(?:\.\d+)?)\s*g\b/g, '$1 grams')
+      .replace(/\b(\d+(?:\.\d+)?)\s*kg\b/g, '$1 kilograms')
+      .replace(/\b(\d+(?:\.\d+)?)\s*ml\b/g, '$1 milliliters')
+      .replace(/\b(\d+(?:\.\d+)?)\s*l\b/g, '$1 liters')
+      .replace(/\b(\d+(?:\.\d+)?)\s*°C\b/g, '$1 degrees Celsius')
+      .replace(/\b(\d+(?:\.\d+)?)\s*°F\b/g, '$1 degrees Fahrenheit')
+      .replace(/\b(\d+(?:\.\d+)?)\s*K\b/g, '$1 Kelvin')
+      
+      // Percentages and symbols
+      .replace(/\b(\d+(?:\.\d+)?)\s*%/g, '$1 percent')
+      .replace(/\b(\d+(?:\.\d+)?)\s*°/g, '$1 degrees')
       .replace(/\$/g, 'dollars')
       .replace(/&/g, 'and')
-      // Clean up extra whitespace
-      .replace(/\s+/g, ' ')
-      .trim();
+      .replace(/@/g, 'at')
+      .replace(/#/g, 'number');
+  }
+
+  private enhanceNaturalLanguage(text: string, mode: string): string {
+    let enhanced = text;
+    
+    // Add transitional phrases for better flow
+    enhanced = enhanced
+      .replace(/\bHowever,/g, 'However,')
+      .replace(/\bTherefore,/g, 'Therefore,')
+      .replace(/\bFurthermore,/g, 'Furthermore,')
+      .replace(/\bMoreover,/g, 'Moreover,')
+      .replace(/\bNevertheless,/g, 'Nevertheless,')
+      .replace(/\bConsequently,/g, 'Consequently,')
+      .replace(/\bIn contrast,/g, 'In contrast,')
+      .replace(/\bAs a result,/g, 'As a result,')
+      .replace(/\bOn the other hand,/g, 'On the other hand,')
+      .replace(/\bIn addition,/g, 'In addition,');
+    
+    // Remove redundant phrases
+    enhanced = enhanced
+      .replace(/\b(very|really|quite|rather|extremely)\s+(very|really|quite|rather|extremely)\s+/gi, '$1 ')
+      .replace(/\b(the|a|an)\s+(the|a|an)\s+/gi, '$1 ')
+      .replace(/\bthat\s+that\b/gi, 'that')
+      .replace(/\bwhich\s+which\b/gi, 'which');
+    
+    // Enhance clarity based on mode
+    if (mode === 'explanation') {
+      enhanced = enhanced
+        .replace(/\bThis\b/g, 'This concept')
+        .replace(/\bThat\b/g, 'That idea')
+        .replace(/\bIt\b/g, 'This');
+    }
+    
+    return enhanced;
+  }
+
+  private addProsodyControls(text: string, mode: string): string {
+    let prosodyText = text;
+    
+    // Add contextual pauses based on punctuation and content
+    prosodyText = prosodyText
+      .replace(/([.!?])\s+/g, '$1 <break time="700ms"/> ')
+      .replace(/([,;:])\s+/g, '$1 <break time="300ms"/> ')
+      .replace(/(\w+)\s*-\s*(\w+)/g, '$1 <break time="200ms"/> $2') // Dashes
+      .replace(/\s*\(\s*/g, ' <break time="200ms"/> <prosody rate="0.9">(')
+      .replace(/\s*\)\s*/g, ')</prosody> <break time="200ms"/> ');
+    
+    // Add emphasis for key terms and concepts
+    prosodyText = prosodyText
+      .replace(/\b(important|significant|crucial|essential|critical|key|major|primary|fundamental)\b/gi, 
+               '<emphasis level="moderate">$1</emphasis>')
+      .replace(/\b(however|therefore|furthermore|moreover|consequently|nevertheless)\b/gi, 
+               '<emphasis level="moderate">$1</emphasis>')
+      .replace(/\b(first|second|third|finally|lastly|in conclusion)\b/gi, 
+               '<emphasis level="strong">$1</emphasis>');
+    
+    // Adjust rate based on content complexity and mode
+    if (mode === 'study') {
+      prosodyText = `<prosody rate="0.85">${prosodyText}</prosody>`;
+    } else if (mode === 'explanation') {
+      prosodyText = `<prosody rate="0.9" pitch="+5%">${prosodyText}</prosody>`;
+    }
+    
+    // Add breathing pauses for long passages
+    const sentences = prosodyText.split(/(?<=[.!?])\s+/);
+    if (sentences.length > 3) {
+      const midPoint = Math.floor(sentences.length / 2);
+      sentences[midPoint] = sentences[midPoint] + ' <break time="1s"/>';
+      prosodyText = sentences.join(' ');
+    }
+    
+    return prosodyText;
   }
 
   // Chunk text for better speech pacing
