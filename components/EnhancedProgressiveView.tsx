@@ -17,7 +17,7 @@ import {
   searchTOCForNavigation
 } from "@/lib/navigationUtils";
 import PageContextPanel from "@/components/PageContextPanel";
-import ChunkTOCBar from "@/components/ChunkTOCBar";
+import ChunkRail from "@/components/ChunkRail";
 import { useReaderSync } from "@/lib/readerSync";
 import { 
   extractAnchorTokens, 
@@ -69,6 +69,9 @@ interface EnhancedProgressiveViewProps {
 
   // Navigation
   tableOfContents?: any[];
+  
+  // Chunk pick callback for 3-step process
+  onChunkPick?: (text: string) => void;
 }
 
 function unitToText(u: PVUnit): string {
@@ -1021,21 +1024,45 @@ export default function EnhancedProgressiveView({
           className="mb-4"
         />
 
-        {/* ChunkTOCBar - New horizontal chip navigation */}
-        <ChunkTOCBar
-          chunks={chunks}
-          activeIdx={activeIdx}
-          onPick={(idx) => {
-            setActiveIdx(idx);
-            const chunk = chunks[idx];
-            onWordClick?.(chunk);
-            setSelectionText(chunk);
-            onTextSelect?.(chunk);
-            if (autoSpeak) speakChunk(chunk);
-          }}
-          compact={compactMode}
-          onToggleCompact={() => setCompactMode(!compactMode)}
-        />
+        {/* Single-row Chunk Rail - Pinned at top of right pane */}
+        <div className="mb-4 p-3 bg-gray-900/50 rounded-lg border border-gray-700">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-sm font-medium text-yellow-400">💭 Chunk Rail</span>
+            <div className="flex-1"></div>
+            <button
+              onClick={() => setCompactMode(!compactMode)}
+              className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
+              title={compactMode ? "Expand view" : "Compact view"}
+            >
+              {compactMode ? "⬍" : "⬌"}
+            </button>
+          </div>
+          <ChunkRail
+            chunks={chunks}
+            activeIdx={activeIdx}
+            setActiveIdx={setActiveIdx}
+            onPick={(text) => {
+              // 3-step process: setLocalUnit → updateSync → onChunkPick
+              const idx = chunks.indexOf(text);
+              if (idx !== -1) {
+                setActiveIdx(idx);
+                updateSync({
+                  page: currentPage,
+                  unitIndex: currentThoughtUnit,
+                  activeChunkId: stableChunkId(text)
+                }, 'progressive');
+                onChunkPick?.(text);
+              }
+              
+              // Additional actions
+              onWordClick?.(text);
+              setSelectionText(text);
+              onTextSelect?.(text);
+              if (autoSpeak) speakChunk(text);
+            }}
+            compact={compactMode}
+          />
+        </div>
 
         <RightBrainToolbar
           userId={userId}

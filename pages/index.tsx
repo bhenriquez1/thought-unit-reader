@@ -175,12 +175,14 @@ function ProgressiveOverlay({
   setActiveIdx,
   onChunkPicked,
   onOpenRightBrain,
+  currentPage,
 }: {
   chunks: string[];
   activeIdx: number;
   setActiveIdx: React.Dispatch<React.SetStateAction<number>>;
   onChunkPicked?: (t: string) => void;
   onOpenRightBrain?: (fullText: string) => void;
+  currentPage: number;
 }) {
   const [promptIdx, setPromptIdx] = useState(0);
   const activeText = chunks[activeIdx] || "";
@@ -229,7 +231,7 @@ function ProgressiveOverlay({
           onPick={(text) => {
             onChunkPicked?.(text);
             // Highlight in PDF
-            highlightChunkInPDF(1, text); // Assuming current page for now
+            highlightChunkInPDF(currentPage, text);
           }}
         />
       </div>
@@ -529,6 +531,37 @@ export default function ThoughtUnitReader() {
     }
   }, [currentPage, currentThoughtUnit, thoughtUnits, analyzeContentDensity, updateContentDensity]);
 
+  // Tab sync effects: snap Progressive/Hybrid to current chapter's first unit when switching tabs
+  useEffect(() => {
+    if (viewMode === "progressive" || viewMode === "hybrid") {
+      console.log(`🔄 Tab switch to ${viewMode}: syncing to current chapter`);
+      
+      // Use the sync store's chapter-aware functionality
+      const { findNearestChapter } = useReaderSync.getState();
+      const nearestChapter = findNearestChapter(currentPage);
+      
+      if (nearestChapter) {
+        console.log(`🔄 Tab sync: Found chapter "${nearestChapter.title}" for page ${currentPage}`);
+        // Snap to chapter's first unit (don't change page, just unit)
+        const chapterStartUnit = nearestChapter.unitStart;
+        
+        setCurrentThoughtUnit(chapterStartUnit);
+        updateSync({ 
+          page: currentPage, 
+          unitIndex: chapterStartUnit 
+        }, 'manual');
+        
+        console.log(`🔄 Tab sync complete: staying on page ${currentPage}, unit ${chapterStartUnit}`);
+      } else {
+        // Fallback: ensure we're synced to current page
+        const unit = pageToUnit(currentPage, pdfPageCount, thoughtUnits.length);
+        setCurrentThoughtUnit(unit);
+        updateSync({ page: currentPage, unitIndex: unit }, 'manual');
+        console.log(`🔄 Tab sync fallback: page ${currentPage}, unit ${unit}`);
+      }
+    }
+  }, [viewMode, currentPage, pdfPageCount, thoughtUnits.length, updateSync]);
+
   /* =========================================================================
      🔹 Load PDF from Library
   ========================================================================= */
@@ -807,6 +840,11 @@ export default function ThoughtUnitReader() {
           speechRate={speechRate}
           onSpeechRateChange={setSpeechRate}
           tableOfContents={tableOfContents}
+          onChunkPick={(text) => {
+            // Handle chunk pick with highlighting on current page
+            highlightChunkInPDF(currentPage, text);
+            sel.setSelectionText(text);
+          }}
         />
       ) : (
         <div className="flex flex-col items-center justify-center h-full gap-4">
@@ -858,6 +896,11 @@ export default function ThoughtUnitReader() {
           speechRate={speechRate}
           onSpeechRateChange={setSpeechRate}
           tableOfContents={tableOfContents}
+          onChunkPick={(text) => {
+            // Handle chunk pick with highlighting on current page
+            highlightChunkInPDF(currentPage, text);
+            sel.setSelectionText(text);
+          }}
         />
       ) : (
         <div className="flex flex-col items-center justify-center h-full gap-4">
@@ -1036,19 +1079,6 @@ export default function ThoughtUnitReader() {
           />
         )}
 
-        {/* Floating TOC Toggle Pill on PDF (when TOC is collapsed or hidden) */}
-        {fileUrl && tableOfContents.length > 0 && (
-          <button
-            onClick={() => setShowTOCPanel(true)}
-            className="fixed bottom-6 left-6 z-40 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-3 py-2 rounded-full shadow-lg backdrop-blur-sm border border-blue-400"
-            title="Toggle Table of Contents"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-sm">📑</span>
-              <span className="text-xs font-medium hidden sm:block">TOC</span>
-            </div>
-          </button>
-        )}
 
         {/* Main Reader Content Area */}
         <div className="flex-1 h-full">

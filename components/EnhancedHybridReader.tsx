@@ -16,7 +16,7 @@ import {
   searchTOCForNavigation
 } from "@/lib/navigationUtils";
 import PageContextPanel from "@/components/PageContextPanel";
-import ChunkTOCBar from "@/components/ChunkTOCBar";
+import ChunkRail from "@/components/ChunkRail";
 import { useReaderSync } from "@/lib/readerSync";
 import { 
   extractAnchorTokens, 
@@ -79,6 +79,9 @@ interface EnhancedHybridReaderProps {
 
   // Navigation
   tableOfContents?: any[];
+  
+  // Chunk pick callback for 3-step process
+  onChunkPick?: (text: string) => void;
 }
 
 function unitToText(u: HRUnit): string {
@@ -944,23 +947,48 @@ export default function EnhancedHybridReader({
             ))}
           </div>
 
-          {/* ChunkTOCBar - New horizontal chip navigation */}
-          <ChunkTOCBar
-            chunks={chunks}
-            activeIdx={activeIdx}
-            onPick={(idx) => {
-              setActiveIdx(idx);
-              const chunk = chunks[idx];
-              const keyToken = keyTokenFromChunk(chunk);
-              onWordClick(chunk);
-              setHighlightedWord(keyToken || chunk);
-              setSelectionText(chunk);
-              onTextSelect?.(chunk);
-              if (autoSpeak) speakText(chunk);
-            }}
-            compact={compactMode}
-            onToggleCompact={() => setCompactMode(!compactMode)}
-          />
+          {/* Single-row Chunk Rail - Pinned at top of right pane */}
+          <div className="mb-4 p-3 bg-gray-900/50 rounded-lg border border-gray-700">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm font-medium text-yellow-400">💭 Chunk Rail</span>
+              <div className="flex-1"></div>
+              <button
+                onClick={() => setCompactMode(!compactMode)}
+                className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
+                title={compactMode ? "Expand view" : "Compact view"}
+              >
+                {compactMode ? "⬍" : "⬌"}
+              </button>
+            </div>
+            <ChunkRail
+              chunks={chunks}
+              activeIdx={activeIdx}
+              setActiveIdx={setActiveIdx}
+              onPick={(text) => {
+                // 3-step process: setLocalUnit → updateSync → onChunkPick
+                const idx = chunks.indexOf(text);
+                if (idx !== -1) {
+                  setActiveIdx(idx);
+                  readerSync.updateSync({
+                    page: currentPage,
+                    unitIndex: currentThoughtUnit,
+                    activeChunkId: stableChunkId(text)
+                  }, 'hybrid');
+                  // Call parent's onChunkPick if provided
+                  // onChunkPick?.(text); // Will be passed from parent
+                }
+                
+                // Additional actions
+                const keyToken = keyTokenFromChunk(text);
+                onWordClick(text);
+                setHighlightedWord(keyToken || text);
+                setSelectionText(text);
+                onTextSelect?.(text);
+                if (autoSpeak) speakText(text);
+              }}
+              compact={compactMode}
+            />
+          </div>
 
           {/* Right-Brain Analysis */}
           <div className="p-3 bg-gray-900/60 rounded-lg">
