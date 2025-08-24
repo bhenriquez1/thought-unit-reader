@@ -111,52 +111,121 @@ function extractCoreIdea(chunk: string): string {
   return coreIdea.trim();
 }
 
-// Enhanced right-brain focused chunk analysis with visual and conceptual mapping
-function analyzeChunkForRightBrain(chunk: string) {
-  const words = chunk.split(/\s+/).filter(Boolean);
-  const sentences = chunk.split(/[.!?]+/).filter(s => s.trim().length > 5);
-  
-  // Enhanced key term detection
-  const keyTerms = words.filter(w => 
-    w.length > 5 || 
-    /^[A-Z]/.test(w) || 
-    /\d/.test(w) ||
-    /^(the|a|an)\s+[A-Z]/.test(w) // Articles followed by capitalized words
-  );
-  
-  // Visual and spatial cues
-  const visualCues = words.filter(w => 
-    ['diagram', 'figure', 'chart', 'graph', 'image', 'illustration', 'map', 'structure', 'pattern', 'shape', 'form'].includes(w.toLowerCase())
-  );
-  
-  // Process and action words for procedural understanding
-  const actionWords = words.filter(w => 
-    ['process', 'method', 'step', 'procedure', 'technique', 'approach', 'strategy', 'system', 'mechanism', 'pathway'].includes(w.toLowerCase())
-  );
-  
-  // Relationship indicators for conceptual connections
-  const relationshipWords = words.filter(w =>
-    ['because', 'therefore', 'however', 'although', 'while', 'whereas', 'since', 'thus', 'hence', 'consequently'].includes(w.toLowerCase())
-  );
-  
-  // Emotional/memory anchors for better retention
-  const memoryAnchors = sentences.filter(s => {
-    const lower = s.toLowerCase();
-    return lower.includes('important') || lower.includes('key') || lower.includes('critical') || 
-           lower.includes('remember') || lower.includes('note') || lower.includes('significant');
-  });
-  
-  return {
-    coreIdea: extractCoreIdea(chunk),
-    keyTerms: keyTerms.slice(0, 4),
-    visualCues,
-    actionWords,
-    relationshipWords,
-    memoryAnchors: memoryAnchors.slice(0, 2),
-    complexity: sentences.length > 3 ? 'complex' : sentences.length > 1 ? 'moderate' : 'simple',
-    hasNumbers: /\d/.test(chunk),
-    hasFormulas: /[=+\-*/^(){}[\]]/.test(chunk)
+// Enhanced Pattern Recognition Component
+function PatternIndicator({ pattern, className = "" }: { pattern: any, className?: string }) {
+  const getPatternIcon = () => {
+    switch (pattern.type) {
+      case 'cause-effect': return '→';
+      case 'compare-contrast': return '⚖️';
+      case 'sequence': return '📋';
+      case 'problem-solution': return '🔧';
+      case 'description': return '📝';
+      case 'narrative': return '📖';
+      default: return '💭';
+    }
   };
+
+  const getPatternColor = () => {
+    switch (pattern.type) {
+      case 'cause-effect': return 'from-orange-500/20 to-red-500/20 border-orange-500/40';
+      case 'compare-contrast': return 'from-green-500/20 to-blue-500/20 border-green-500/40';
+      case 'sequence': return 'from-blue-500/20 to-purple-500/20 border-blue-500/40';
+      case 'problem-solution': return 'from-red-500/20 to-green-500/20 border-red-500/40';
+      case 'description': return 'from-gray-500/20 to-slate-500/20 border-gray-500/40';
+      case 'narrative': return 'from-purple-500/20 to-pink-500/20 border-purple-500/40';
+      default: return 'from-yellow-500/20 to-orange-500/20 border-yellow-500/40';
+    }
+  };
+
+  return (
+    <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r ${getPatternColor()} border ${className}`}>
+      <span className="text-lg">{getPatternIcon()}</span>
+      <span className="text-xs font-medium capitalize">{pattern.type.replace('-', ' → ')}</span>
+      <span className="text-xs opacity-75">({Math.round(pattern.confidence * 100)}%)</span>
+    </div>
+  );
+}
+
+// Enhanced Visual Metaphor Display
+function VisualMetaphorCard({ metaphor, className = "" }: { metaphor: any, className?: string }) {
+  return (
+    <div className={`p-4 rounded-lg border-2 ${className}`} 
+         style={{ 
+           backgroundColor: `${metaphor.color}15`,
+           borderColor: `${metaphor.color}40`
+         }}>
+      <div className="flex items-center gap-2 mb-2">
+        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: metaphor.color }}></div>
+        <span className="text-sm font-semibold">{metaphor.metaphor}</span>
+      </div>
+      <p className="text-sm opacity-90 italic leading-relaxed">{metaphor.imagery}</p>
+      <div className="mt-2 text-xs opacity-75">
+        Emotion: <span className="capitalize">{metaphor.emotion}</span>
+      </div>
+    </div>
+  );
+}
+
+// Cognitive Load Indicator
+function CognitiveLoadIndicator({ load, processingTime, className = "" }: { 
+  load: string, 
+  processingTime: number, 
+  className?: string 
+}) {
+  const getLoadColor = () => {
+    switch (load) {
+      case 'high': return 'text-red-400 bg-red-500/20';
+      case 'medium': return 'text-yellow-400 bg-yellow-500/20';
+      case 'low': return 'text-green-400 bg-green-500/20';
+      default: return 'text-gray-400 bg-gray-500/20';
+    }
+  };
+
+  return (
+    <div className={`inline-flex items-center gap-2 px-2 py-1 rounded ${getLoadColor()} ${className}`}>
+      <span className="text-xs font-medium">🧠 {load.toUpperCase()}</span>
+      <span className="text-xs opacity-75">~{Math.round(processingTime)}s</span>
+    </div>
+  );
+}
+
+// Spatial Positioning Component
+function SpatialChunkDisplay({ 
+  chunk, 
+  analysis, 
+  isActive, 
+  onClick 
+}: { 
+  chunk: string, 
+  analysis: any, 
+  isActive: boolean, 
+  onClick: () => void 
+}) {
+  const getPositionStyle = () => {
+    const base = "absolute transition-all duration-500 ease-in-out cursor-pointer";
+    switch (analysis.spatialPosition) {
+      case 'left': return `${base} left-0 top-1/2 transform -translate-y-1/2`;
+      case 'right': return `${base} right-0 top-1/2 transform -translate-y-1/2`;
+      case 'top': return `${base} top-0 left-1/2 transform -translate-x-1/2`;
+      case 'bottom': return `${base} bottom-0 left-1/2 transform -translate-x-1/2`;
+      default: return `${base} top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2`;
+    }
+  };
+
+  return (
+    <div 
+      className={getPositionStyle()}
+      onClick={onClick}
+      style={{ backgroundColor: analysis.colorCode + '20' }}
+    >
+      <div className={`p-3 rounded-lg border-2 max-w-xs ${
+        isActive ? 'border-yellow-400 shadow-lg' : 'border-gray-600'
+      }`}>
+        <div className="text-sm font-medium mb-1">{analysis.coreIdea.slice(0, 50)}...</div>
+        <div className="text-xs opacity-75">{chunk.slice(0, 100)}...</div>
+      </div>
+    </div>
+  );
 }
 
 // Enhanced PDF text highlighting with intelligent positioning
@@ -409,10 +478,36 @@ export default function EnhancedProgressiveView({
     }
   }, [unitText, chunkMode, chunkChars, globalActiveChunkId]);
 
-  // Auto-advance with speech integration
+  // Enhanced auto-advance with cognitive load adaptation
   useEffect(() => {
     if (!chunks.length || !isReading || isPaused || localPaused) return;
-    const msPerChunk = Math.max(800, (60_000 / Math.max(120, readingSpeed)) * 1.5);
+    
+    // Adaptive timing based on cognitive load
+    const currentChunk = chunks[activeIdx] || "";
+    const chunkAnalysis = analyzeChunkWithRightBrain(currentChunk, activeIdx, chunks.length);
+    
+    let adaptiveMultiplier = 1.5; // Base multiplier
+    switch (chunkAnalysis.cognitiveLoad) {
+      case 'high':
+        adaptiveMultiplier = 2.5; // Much slower for complex content
+        break;
+      case 'medium':
+        adaptiveMultiplier = 1.8; // Slightly slower
+        break;
+      case 'low':
+        adaptiveMultiplier = 1.2; // Faster for simple content
+        break;
+    }
+    
+    // Additional adjustments based on text pattern
+    if (chunkAnalysis.textPattern.type === 'problem-solution') {
+      adaptiveMultiplier *= 1.3; // Extra time for problem-solving content
+    } else if (chunkAnalysis.textPattern.type === 'sequence') {
+      adaptiveMultiplier *= 1.1; // Slightly more time for sequential content
+    }
+    
+    const msPerChunk = Math.max(800, (60_000 / Math.max(120, readingSpeed)) * adaptiveMultiplier);
+    
     const t = window.setInterval(
       () => setActiveIdx((i) => {
         const nextIdx = Math.min(i + 1, chunks.length - 1);
@@ -424,7 +519,7 @@ export default function EnhancedProgressiveView({
       msPerChunk
     );
     return () => window.clearInterval(t);
-  }, [chunks, readingSpeed, isReading, isPaused, localPaused, autoSpeak]);
+  }, [chunks, readingSpeed, isReading, isPaused, localPaused, autoSpeak, activeIdx]);
 
   const activeChunk = chunks[activeIdx] || "";
   const activeChunkId = stableChunkId(activeChunk);
@@ -1139,25 +1234,114 @@ export default function EnhancedProgressiveView({
           totalPages={pdfPageCount || 1}
           chapterTitle={tableOfContents?.find(toc => toc.page <= currentPage)?.title}
           currentPageSummary={activeChunk ? chunkAnalysis.coreIdea : undefined}
-          previousPageSummary={activeIdx > 0 ? analyzeChunkForRightBrain(chunks[activeIdx - 1] || "").coreIdea : undefined}
+          previousPageSummary={activeIdx > 0 ? analyzeChunkWithRightBrain(chunks[activeIdx - 1] || "", activeIdx - 1, chunks.length).coreIdea : undefined}
           readingProgress={(activeIdx / Math.max(chunks.length - 1, 1)) * 100}
           onPageChange={onPageChange}
           className="mb-4"
         />
 
-        {/* Single-row Chunk Rail - Pinned at top of right pane */}
-        <div className="mb-4 p-3 bg-gray-900/50 rounded-lg border border-gray-700">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-sm font-medium text-yellow-400">💭 Chunk Rail</span>
+        {/* Enhanced Spatial Learning Features */}
+        <div className="mb-4 p-4 bg-gradient-to-r from-indigo-900/30 to-cyan-900/30 rounded-lg border border-indigo-500/30">
+          <div className="flex items-center gap-2 mb-3">
+            <h5 className="text-sm font-semibold text-indigo-400">🗺️ Spatial Learning</h5>
             <div className="flex-1"></div>
             <button
               onClick={() => setCompactMode(!compactMode)}
-              className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
-              title={compactMode ? "Expand view" : "Compact view"}
+              className="text-xs px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500"
             >
-              {compactMode ? "⬍" : "⬌"}
+              {compactMode ? "🔍 Expand Map" : "📋 Compact"}
             </button>
           </div>
+          
+          {/* Concept Relationship Map */}
+          <div className="mb-3 p-3 bg-black/20 rounded border border-indigo-500/20">
+            <div className="text-xs font-medium text-indigo-300 mb-2">🧠 Memory Palace Layout</div>
+            <div className="relative h-24 bg-gradient-to-r from-indigo-900/20 to-purple-900/20 rounded overflow-hidden">
+              {chunks.map((chunk, idx) => {
+                const analysis = analyzeChunkWithRightBrain(chunk, idx, chunks.length);
+                const isActive = idx === activeIdx;
+                const progress = (idx / Math.max(chunks.length - 1, 1)) * 100;
+                
+                return (
+                  <div
+                    key={idx}
+                    className={`absolute transition-all duration-300 cursor-pointer ${
+                      isActive ? 'z-10 scale-110' : 'z-0'
+                    }`}
+                    style={{
+                      left: `${progress}%`,
+                      top: analysis.spatialPosition === 'top' ? '10%' : 
+                           analysis.spatialPosition === 'bottom' ? '70%' : '40%',
+                      transform: 'translateX(-50%)',
+                      backgroundColor: analysis.colorCode + (isActive ? '80' : '40'),
+                      borderColor: analysis.colorCode,
+                    }}
+                    onClick={() => {
+                      setActiveIdx(idx);
+                      if (autoSpeak) speakChunk(chunk);
+                    }}
+                  >
+                    <div className={`w-3 h-3 rounded-full border-2 ${
+                      isActive ? 'animate-pulse shadow-lg' : ''
+                    }`} />
+                    {isActive && (
+                      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
+                        {analysis.coreIdea.slice(0, 30)}...
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          
+          {/* Spatial Navigation Controls */}
+          <div className="grid grid-cols-3 gap-2 text-xs">
+            <button
+              onClick={() => {
+                const prevIdx = Math.max(activeIdx - 1, 0);
+                setActiveIdx(prevIdx);
+                if (autoSpeak) speakChunk(chunks[prevIdx]);
+              }}
+              className="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50"
+              disabled={activeIdx === 0}
+            >
+              ← Previous Room
+            </button>
+            <div className="text-center py-1 text-indigo-300">
+              Room {activeIdx + 1} of {chunks.length}
+            </div>
+            <button
+              onClick={() => {
+                const nextIdx = Math.min(activeIdx + 1, chunks.length - 1);
+                setActiveIdx(nextIdx);
+                if (autoSpeak) speakChunk(chunks[nextIdx]);
+              }}
+              className="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50"
+              disabled={activeIdx === chunks.length - 1}
+            >
+              Next Room →
+            </button>
+          </div>
+        </div>
+
+        {/* Enhanced Chunk Rail with Spatial Indicators */}
+        <div className="mb-4 p-3 bg-gray-900/50 rounded-lg border border-gray-700">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-sm font-medium text-yellow-400">💭 Enhanced Chunk Rail</span>
+            <div className="flex-1"></div>
+            <div className="text-xs opacity-75">
+              <CognitiveLoadIndicator 
+                load={rightBrainAnalysis.cognitiveLoad} 
+                processingTime={rightBrainAnalysis.processingTime}
+                className="mr-2"
+              />
+              <PatternIndicator pattern={rightBrainAnalysis.textPattern} />
+            </div>
+          </div>
+          
+          {/* Enhanced chunk rail with right-brain indicators */}
+          <div className="space-y-2">
             <ChunkRail
               chunks={chunks}
               activeIdx={activeIdx}
@@ -1187,6 +1371,120 @@ export default function EnhancedProgressiveView({
               }}
               compact={compactMode}
             />
+            
+            {/* Chunk relationship indicators */}
+            {!compactMode && (
+              <div className="mt-2 p-2 bg-black/20 rounded">
+                <div className="text-xs opacity-75 mb-1">🔗 Conceptual Connections:</div>
+                <div className="flex gap-1 flex-wrap">
+                  {rightBrainAnalysis.keyTerms.slice(0, 3).map((term, i) => (
+                    <span 
+                      key={i}
+                      className="text-xs bg-cyan-500/20 px-2 py-1 rounded cursor-pointer hover:bg-cyan-500/30"
+                      onClick={() => {
+                        // Find related chunks with similar terms
+                        const relatedChunks = chunks
+                          .map((chunk, idx) => ({ chunk, idx, analysis: analyzeChunkWithRightBrain(chunk, idx, chunks.length) }))
+                          .filter(({ analysis }) => 
+                            analysis.keyTerms.some(keyTerm => 
+                              keyTerm.toLowerCase().includes(term.toLowerCase()) || 
+                              term.toLowerCase().includes(keyTerm.toLowerCase())
+                            )
+                          );
+                        
+                        if (relatedChunks.length > 1) {
+                          // Navigate to next related chunk
+                          const currentRelatedIdx = relatedChunks.findIndex(({ idx }) => idx === activeIdx);
+                          const nextRelatedIdx = (currentRelatedIdx + 1) % relatedChunks.length;
+                          const targetIdx = relatedChunks[nextRelatedIdx].idx;
+                          setActiveIdx(targetIdx);
+                          if (autoSpeak) speakChunk(chunks[targetIdx]);
+                        }
+                      }}
+                    >
+                      {term}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Enhanced Note Integration Panel */}
+        <div className="mb-4 p-4 bg-gradient-to-r from-green-900/30 to-emerald-900/30 rounded-lg border border-green-500/30">
+          <div className="flex items-center gap-2 mb-3">
+            <h5 className="text-sm font-semibold text-green-400">📝 Smart Notes</h5>
+            <div className="flex-1"></div>
+            <button
+              onClick={() => setShowNoteEditor(true)}
+              className="text-xs px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-white font-medium"
+            >
+              ✨ Quick Note
+            </button>
+          </div>
+          
+          {/* Auto-generated note suggestions based on right-brain analysis */}
+          <div className="space-y-2">
+            <div className="text-xs opacity-75 mb-2">💡 Suggested Notes:</div>
+            
+            {/* Core Idea Note Suggestion */}
+            <div className="p-2 bg-black/20 rounded border border-green-500/20 hover:border-green-500/40 transition-colors cursor-pointer"
+                 onClick={() => onGenerateNote?.(
+                   `Core Idea: ${rightBrainAnalysis.coreIdea}\n\nKey Terms: ${rightBrainAnalysis.keyTerms.join(', ')}\n\nPattern: ${rightBrainAnalysis.textPattern.type}`,
+                   rightBrainAnalysis.visualMetaphor.metaphor,
+                   "highYield"
+                 )}>
+              <div className="text-xs font-medium text-green-300 mb-1">🎯 Core Concept Note</div>
+              <div className="text-xs text-green-200 opacity-80 line-clamp-2">
+                {rightBrainAnalysis.coreIdea.slice(0, 80)}...
+              </div>
+            </div>
+            
+            {/* Visual Metaphor Note Suggestion */}
+            <div className="p-2 bg-black/20 rounded border border-purple-500/20 hover:border-purple-500/40 transition-colors cursor-pointer"
+                 onClick={() => onGenerateNote?.(
+                   `Visual Metaphor: ${rightBrainAnalysis.visualMetaphor.metaphor}\n\n${rightBrainAnalysis.visualMetaphor.imagery}\n\nMind Movie: ${rightBrainAnalysis.mindMovieScene}`,
+                   rightBrainAnalysis.visualMetaphor.metaphor,
+                   "sketch"
+                 )}>
+              <div className="text-xs font-medium text-purple-300 mb-1">🎨 Visual Memory Note</div>
+              <div className="text-xs text-purple-200 opacity-80 line-clamp-2">
+                {rightBrainAnalysis.visualMetaphor.imagery.slice(0, 80)}...
+              </div>
+            </div>
+            
+            {/* Pattern-based Note Suggestion */}
+            {rightBrainAnalysis.textPattern.type !== 'description' && (
+              <div className="p-2 bg-black/20 rounded border border-blue-500/20 hover:border-blue-500/40 transition-colors cursor-pointer"
+                   onClick={() => onGenerateNote?.(
+                     `Text Pattern: ${rightBrainAnalysis.textPattern.type}\n\nStructure: ${rightBrainAnalysis.textPattern.structure}\n\nKey Indicators: ${rightBrainAnalysis.textPattern.indicators.join(', ')}\n\nContent: ${activeChunk}`,
+                     `${rightBrainAnalysis.textPattern.type} pattern`,
+                     "highYield"
+                   )}>
+                <div className="text-xs font-medium text-blue-300 mb-1">🔗 Pattern Analysis Note</div>
+                <div className="text-xs text-blue-200 opacity-80 line-clamp-2">
+                  {rightBrainAnalysis.textPattern.structure.slice(0, 80)}...
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Quick Actions */}
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={() => onGenerateNote?.(effectiveSelection || activeChunk, rightBrainAnalysis.visualMetaphor.metaphor, "sketch")}
+              className="text-xs px-2 py-1 rounded bg-purple-600 hover:bg-purple-500 flex-1"
+            >
+              🎨 Sketch Note
+            </button>
+            <button
+              onClick={() => onGenerateNote?.(effectiveSelection || activeChunk, rightBrainAnalysis.visualMetaphor.metaphor, "highYield")}
+              className="text-xs px-2 py-1 rounded bg-orange-600 hover:bg-orange-500 flex-1"
+            >
+              📚 Study Note
+            </button>
+          </div>
         </div>
 
         <RightBrainToolbar
