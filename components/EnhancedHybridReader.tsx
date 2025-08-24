@@ -31,6 +31,12 @@ import {
   type MatchResult
 } from "@/lib/anchorSync";
 import { detectChapterTransition } from "@/lib/chapterAnimations";
+import { 
+  analyzeChunkWithRightBrain,
+  type RightBrainChunkAnalysis,
+  type TextPattern,
+  type VisualMetaphor
+} from "@/lib/rightBrainReading";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -239,7 +245,7 @@ export default function EnhancedHybridReader({
 }: EnhancedHybridReaderProps) {
   const [selectionText, setSelectionText] = useState("");
   const [promptIdx, setPromptIdx] = useState(0);
-  const [phase, setPhase] = useState<"gist" | "pattern" | "detail">("gist");
+  const [phase, setPhase] = useState<"gist" | "pattern" | "detail" | "movie">("gist");
   const [localPaused, setLocalPaused] = useState(false);
 
   // Navigation state
@@ -473,6 +479,12 @@ export default function EnhancedHybridReader({
   const cueToken = keyTokenFromChunk(activeChunk);
   const activeChunkId = stableChunkId(activeChunk);
   const isUnderstood = !!understoodMap[activeChunkId];
+
+  // Enhanced right-brain analysis
+  const rightBrainAnalysis = useMemo(() => 
+    analyzeChunkWithRightBrain(activeChunk, activeIdx, chunks.length),
+    [activeChunk, activeIdx, chunks.length]
+  );
 
   const effectiveSelection = (externalSelectionText?.trim() || selectionText).trim();
 
@@ -1010,36 +1022,218 @@ export default function EnhancedHybridReader({
             />
           </div>
 
-          {/* Right-Brain Analysis */}
-          <div className="p-3 bg-gray-900/60 rounded-lg">
-            <div className="text-xs uppercase tracking-wide text-gray-300 mb-2">
-              Right-Brain: {phase === "gist" ? "Gist" : phase === "pattern" ? "Pattern" : "Detail"}
+          {/* Enhanced Right-Brain Analysis Panel with Visual Cues */}
+          <div className="mb-4 p-4 bg-gradient-to-br from-yellow-500/10 via-orange-500/10 to-red-500/10 border border-yellow-500/30 rounded-lg">
+            <div className="flex items-center gap-2 mb-3">
+              <h5 className="text-sm font-semibold text-yellow-400">🧠 Right-Brain Reading</h5>
+              <div className="flex gap-1">
+                {["gist", "pattern", "detail", "movie"].map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setPhase(mode as any)}
+                    className={`text-xs px-2 py-1 rounded ${
+                      phase === mode 
+                        ? "bg-yellow-500 text-black" 
+                        : "bg-gray-700 hover:bg-gray-600"
+                    }`}
+                  >
+                    {mode === "gist" ? "💡" : mode === "pattern" ? "🔗" : mode === "detail" ? "🔍" : "🎬"}
+                  </button>
+                ))}
+              </div>
+              <div className="flex-1"></div>
+              <div className="text-xs opacity-75">
+                Pattern: <span className="text-yellow-300">{rightBrainAnalysis.textPattern.type}</span>
+              </div>
             </div>
-
+            
             {phase === "gist" && (
-              <div className="text-sm">
-                <p className="font-semibold mb-1 text-yellow-300">{cueToken || "Key idea"}</p>
-                <p className="text-xs opacity-90">{(activeChunk || unitText).split(/(?<=[.!?])\s+/)[0]}</p>
+              <div>
+                <p className="text-lg font-medium mb-3 text-yellow-300">{rightBrainAnalysis.coreIdea}</p>
+                {rightBrainAnalysis.keyTerms.length > 0 && (
+                  <div className="mb-3">
+                    <span className="text-xs opacity-75 block mb-2">🎯 Key Terms:</span>
+                    <div className="flex gap-2 flex-wrap">
+                      {rightBrainAnalysis.keyTerms.map((term, i) => (
+                        <span 
+                          key={i} 
+                          className="text-xs bg-yellow-500/20 px-2 py-1 rounded cursor-pointer hover:bg-yellow-500/30 transition-colors"
+                          onClick={() => handleEnhancedWordClick(term)}
+                        >
+                          {term}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {rightBrainAnalysis.memoryAnchors.length > 0 && (
+                  <div className="text-xs">
+                    <span className="opacity-75 block mb-1">🎯 Memory Anchors:</span>
+                    {rightBrainAnalysis.memoryAnchors.map((anchor, i) => (
+                      <div key={i} className="text-orange-300 italic mb-1">{anchor}</div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
-
+            
             {phase === "pattern" && (
-              <div className="text-xs space-y-1">
-                <p className="mb-1">Look for relations:</p>
-                <ul className="list-disc pl-4 space-y-0.5 opacity-90">
-                  <li>Cause → effect? <span className="opacity-70">(because, therefore)</span></li>
-                  <li>Compare/contrast? <span className="opacity-70">(however, whereas)</span></li>
-                  <li>Sequence? <span className="opacity-70">(first, next, then)</span></li>
-                </ul>
+              <div>
+                <p className="text-sm mb-2">🔗 Text Pattern & Structure:</p>
+                <div className="mb-3 p-2 bg-black/20 rounded border border-yellow-500/20">
+                  <div className="text-xs font-medium text-yellow-300 mb-1">
+                    {rightBrainAnalysis.textPattern.type.replace('-', ' → ')}
+                  </div>
+                  <div className="text-xs text-yellow-200 opacity-80">
+                    {rightBrainAnalysis.textPattern.structure}
+                  </div>
+                </div>
+                
+                {rightBrainAnalysis.textPattern.indicators.length > 0 && (
+                  <div className="mb-3">
+                    <span className="text-xs opacity-75 block mb-1">🔍 Pattern Indicators:</span>
+                    <div className="flex gap-1 flex-wrap">
+                      {rightBrainAnalysis.textPattern.indicators.map((indicator, i) => (
+                        <span key={i} className="text-xs bg-blue-500/20 px-2 py-1 rounded text-blue-300">
+                          {indicator}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {rightBrainAnalysis.relationshipWords.length > 0 && (
+                  <div>
+                    <span className="text-xs opacity-75 block mb-1">⚡ Relationship Words:</span>
+                    <div className="flex gap-2 flex-wrap">
+                      {rightBrainAnalysis.relationshipWords.map((word, i) => (
+                        <span key={i} className="text-xs bg-purple-500/20 px-2 py-1 rounded text-purple-300">
+                          {word}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
-
+            
             {phase === "detail" && (
-              <div className="text-xs opacity-90">{activeChunk || unitText}</div>
+              <div>
+                <div className="grid grid-cols-2 gap-3 text-xs mb-3">
+                  <div>
+                    <span className="opacity-75 block mb-1">📊 Complexity:</span>
+                    <span className={`px-2 py-1 rounded ${
+                      rightBrainAnalysis.complexity === 'complex' ? 'bg-red-500/20 text-red-300' :
+                      rightBrainAnalysis.complexity === 'moderate' ? 'bg-yellow-500/20 text-yellow-300' :
+                      'bg-green-500/20 text-green-300'
+                    }`}>
+                      {rightBrainAnalysis.complexity}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="opacity-75 block mb-1">🧠 Cognitive Load:</span>
+                    <span className={`px-2 py-1 rounded ${
+                      rightBrainAnalysis.cognitiveLoad === 'high' ? 'bg-red-500/20 text-red-300' :
+                      rightBrainAnalysis.cognitiveLoad === 'medium' ? 'bg-yellow-500/20 text-yellow-300' :
+                      'bg-green-500/20 text-green-300'
+                    }`}>
+                      {rightBrainAnalysis.cognitiveLoad}
+                    </span>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3 text-xs mb-3">
+                  <div>
+                    <span className="opacity-75 block mb-1">🎭 Emotional Tone:</span>
+                    <span className={`px-2 py-1 rounded ${
+                      rightBrainAnalysis.emotionalTone === 'exciting' ? 'bg-orange-500/20 text-orange-300' :
+                      rightBrainAnalysis.emotionalTone === 'positive' ? 'bg-green-500/20 text-green-300' :
+                      rightBrainAnalysis.emotionalTone === 'calming' ? 'bg-blue-500/20 text-blue-300' :
+                      rightBrainAnalysis.emotionalTone === 'negative' ? 'bg-red-500/20 text-red-300' :
+                      'bg-gray-500/20 text-gray-300'
+                    }`}>
+                      {rightBrainAnalysis.emotionalTone}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="opacity-75 block mb-1">⏱️ Processing Time:</span>
+                    <span className="text-xs text-purple-300 font-medium px-2 py-1 rounded bg-purple-500/20">
+                      {Math.round(rightBrainAnalysis.processingTime)}s
+                    </span>
+                  </div>
+                </div>
+                
+                {(rightBrainAnalysis.hasNumbers || rightBrainAnalysis.hasFormulas) && (
+                  <div className="flex gap-2 mb-3">
+                    {rightBrainAnalysis.hasNumbers && (
+                      <span className="text-xs bg-blue-500/20 px-2 py-1 rounded">📊 Contains Numbers</span>
+                    )}
+                    {rightBrainAnalysis.hasFormulas && (
+                      <span className="text-xs bg-purple-500/20 px-2 py-1 rounded">🧮 Contains Formulas</span>
+                    )}
+                  </div>
+                )}
+                
+                {rightBrainAnalysis.visualCues.length > 0 && (
+                  <div>
+                    <span className="text-xs opacity-75 block mb-1">👁️ Visual Elements:</span>
+                    <div className="flex gap-2 flex-wrap">
+                      {rightBrainAnalysis.visualCues.map((cue, i) => (
+                        <span key={i} className="text-xs bg-blue-500/20 px-2 py-1 rounded">
+                          📊 {cue}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {phase === "movie" && (
+              <div>
+                <div className="mb-3 p-3 bg-gradient-to-r from-purple-900/30 to-pink-900/30 rounded-lg border border-purple-500/30">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-sm font-medium text-purple-300">🎬 Mind Movie</span>
+                    <div className="flex-1"></div>
+                    <span className="text-xs px-2 py-1 rounded bg-purple-500/20 text-purple-300">
+                      {rightBrainAnalysis.textPattern.type}
+                    </span>
+                  </div>
+                  <p className="text-sm text-purple-200 mb-3 italic leading-relaxed">
+                    {rightBrainAnalysis.mindMovieScene}
+                  </p>
+                  
+                  <div className="mb-3 p-2 bg-black/20 rounded border border-purple-500/20">
+                    <div className="text-xs font-medium text-purple-300 mb-1">Visual Metaphor:</div>
+                    <div className="text-xs text-purple-200">
+                      <span className="font-medium">{rightBrainAnalysis.visualMetaphor.metaphor}</span>
+                      <br />
+                      <span className="opacity-80">{rightBrainAnalysis.visualMetaphor.imagery}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => speakText(rightBrainAnalysis.mindMovieScene)}
+                      className="text-xs px-2 py-1 rounded bg-purple-600 hover:bg-purple-500"
+                      title="Narrate the scene"
+                    >
+                      🎙️ Narrate Scene
+                    </button>
+                    <button
+                      onClick={() => speakText(rightBrainAnalysis.visualMetaphor.imagery)}
+                      className="text-xs px-2 py-1 rounded bg-pink-600 hover:bg-pink-500"
+                      title="Describe the metaphor"
+                    >
+                      🎨 Describe Metaphor
+                    </button>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Action buttons */}
-            <div className="mt-2 flex flex-wrap gap-1">
+            <div className="mt-3 flex flex-wrap gap-1">
               {COMPREHENSION_PROMPTS.map((p, i) => (
                 <button
                   key={p.label}
