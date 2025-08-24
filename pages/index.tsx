@@ -213,7 +213,7 @@ export default function ThoughtUnitReader() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const [viewMode, setViewMode] =
-    useState<"original" | "progressive" | "hybrid" | "rightbrain">("original");
+    useState<"original" | "rightbrain">("original");
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(1);
@@ -422,9 +422,9 @@ export default function ThoughtUnitReader() {
     }
   }, [currentPage, currentThoughtUnit, thoughtUnits, analyzeContentDensity, updateContentDensity]);
 
-  // Tab sync effects: snap Progressive/Hybrid to current chapter's first unit when switching tabs
+  // Tab sync effects: snap Right-Brain Reading to current chapter's first unit when switching tabs
   useEffect(() => {
-    if (viewMode === "progressive" || viewMode === "hybrid") {
+    if (viewMode === "rightbrain") {
       console.log(`🔄 Tab switch to ${viewMode}: syncing to current chapter`);
       
       // Use the sync store's chapter-aware functionality
@@ -541,27 +541,6 @@ export default function ThoughtUnitReader() {
     setViewMode("rightbrain");
   };
 
-  /* =========================================================================
-     🔹 Progressive overlay derivations + auto-advance
-  ========================================================================= */
-  const activeUnitText = useMemo(
-    () => (thoughtUnits[currentThoughtUnit - 1]?.text || ""),
-    [thoughtUnits, currentThoughtUnit]
-  );
-  const progressiveChunks = useMemo(() => chunkIntoIdeas(activeUnitText), [activeUnitText]);
-  const [progActiveIdx, setProgActiveIdx] = useState(0);
-  useEffect(() => setProgActiveIdx(0), [currentThoughtUnit]);
-
-  useEffect(() => {
-    if (viewMode !== "progressive" || !progressiveChunks.length) return;
-    if (!(isReading && !isPaused)) return; // advance only when reading
-    const msPerChunk = Math.max(600, (60_000 / Math.max(120, readingSpeed)) * 1.2);
-    const t = window.setInterval(
-      () => setProgActiveIdx((i) => (i + 1) % progressiveChunks.length),
-      msPerChunk
-    );
-    return () => window.clearInterval(t);
-  }, [viewMode, progressiveChunks.length, readingSpeed, isReading, isPaused]);
 
   /* =========================================================================
      🔹 Enhanced Page/TOC sync with chapter-aware navigation + global sync
@@ -680,75 +659,25 @@ export default function ThoughtUnitReader() {
       );
     }
 
+    // Right-Brain Reading view (unified Progressive + Hybrid features)
     if (viewMode === "rightbrain") {
-      return (
-        <RightBrainNoteEditor
-          bookId={bookId}
-          initialText={rbDraftText || sel.selectionText}
-          attachments={attachments}
-          currentPage={currentPage}
-          onDone={() => {
-            setRbDraftText("");
-            setViewMode("progressive");
-          }}
-        />
-      );
-    }
+      // Check if we're in note editor mode
+      if (rbDraftText) {
+        return (
+          <RightBrainNoteEditor
+            bookId={bookId}
+            initialText={rbDraftText || sel.selectionText}
+            attachments={attachments}
+            currentPage={currentPage}
+            onDone={() => {
+              setRbDraftText("");
+              // Stay in rightbrain mode after note editing
+            }}
+          />
+        );
+      }
 
-    if (viewMode === "progressive") {
-      return fileUrl ? (
-        <EnhancedProgressiveView
-          bookId={bookId}
-          userId={USER_ID}
-          thoughtUnits={thoughtUnits}
-          currentThoughtUnit={currentThoughtUnit}
-          pdfUrl={fileUrl}
-          currentPage={currentPage}
-          pdfPageCount={pdfPageCount}
-          onPageChange={(p) => syncToPage(p)}
-          readingSpeed={readingSpeed}
-          isReading={isReading}
-          isPaused={isPaused}
-          highlightedWord={highlightedWord}
-          fontSize={fontSize}
-          fontFamily={fontFamily}
-          lineSpacing={lineSpacing}
-          onWordClick={(w) => {
-            setHighlightedWord(w);
-            if (autoWhiteboard && w.trim()) {
-              setWbConcept(truncate(w, 600));
-              setWbContext(`p.${currentPage}`);
-              setShowWhiteboardPanel(true);
-            }
-          }}
-          setReadingSpeed={setReadingSpeed}
-          onTextSelect={(t) => sel.setSelectionText(t)}
-          onGenerateNote={handleOpenRightBrainNote}
-          selBind={sel.bind}
-          externalSelectionText={sel.selectionText}
-          selectedVoice={selectedVoice}
-          onVoiceChange={setSelectedVoice}
-          speechRate={speechRate}
-          onSpeechRateChange={setSpeechRate}
-          tableOfContents={tableOfContents}
-          onChunkPick={(text) => {
-            // Handle chunk pick with highlighting on current page
-            highlightChunkInPDF(currentPage, text);
-            sel.setSelectionText(text);
-          }}
-        />
-      ) : (
-        <div className="flex flex-col items-center justify-center h-full gap-4">
-          <p>📂 Upload a PDF to begin</p>
-          <label className="bg-yellow-500 text-black px-4 py-2 rounded cursor-pointer">
-            Upload PDF
-            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-          </label>
-        </div>
-      );
-    }
-
-    if (viewMode === "hybrid") {
+      // Main Right-Brain Reading interface (combining best of Progressive + Hybrid)
       return fileUrl ? (
         <EnhancedHybridReader
           bookId={bookId}
@@ -795,9 +724,14 @@ export default function ThoughtUnitReader() {
         />
       ) : (
         <div className="flex flex-col items-center justify-center h-full gap-4">
-          <p>📂 Upload a PDF to begin</p>
-          <label className="bg-yellow-500 text-black px-4 py-2 rounded cursor-pointer">
-            Upload PDF
+          <div className="text-center">
+            <h3 className="text-lg font-semibold mb-2 text-yellow-400">🧠 Right-Brain Reading</h3>
+            <p className="text-sm opacity-80 mb-4">
+              Experience enhanced learning with visual metaphors, pattern recognition, and mind movie scenes
+            </p>
+          </div>
+          <label className="bg-gradient-to-r from-yellow-500 to-orange-500 text-black px-6 py-3 rounded-lg cursor-pointer font-medium hover:from-yellow-400 hover:to-orange-400 transition-all">
+            📂 Upload PDF to Begin Right-Brain Reading
             <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
           </label>
         </div>
@@ -855,17 +789,22 @@ export default function ThoughtUnitReader() {
       <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-gray-800">
         <div className="flex items-center gap-2">
           <span className="text-sm opacity-80 mr-1">View:</span>
-          {(["original", "progressive", "hybrid", "rightbrain"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setViewMode(m)}
-              className={`text-xs px-2 py-1 rounded ${
-                viewMode === m ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
-              }`}
-            >
-              {m}
-            </button>
-          ))}
+          <button
+            onClick={() => setViewMode("original")}
+            className={`text-xs px-3 py-1 rounded ${
+              viewMode === "original" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+            }`}
+          >
+            📄 Original PDF
+          </button>
+          <button
+            onClick={() => setViewMode("rightbrain")}
+            className={`text-xs px-3 py-1 rounded ${
+              viewMode === "rightbrain" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+            }`}
+          >
+            🧠 Right-Brain Reading
+          </button>
         </div>
 
         {/* Tiny reader controls for progressive auto-advance */}
