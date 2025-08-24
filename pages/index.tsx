@@ -213,7 +213,7 @@ export default function ThoughtUnitReader() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const [viewMode, setViewMode] =
-    useState<"original" | "rightbrain">("original");
+    useState<"original" | "progressive" | "hybrid" | "rightbrain">("original");
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(1);
@@ -422,9 +422,9 @@ export default function ThoughtUnitReader() {
     }
   }, [currentPage, currentThoughtUnit, thoughtUnits, analyzeContentDensity, updateContentDensity]);
 
-  // Tab sync effects: snap Right-Brain Reading to current chapter's first unit when switching tabs
+  // Tab sync effects: snap Progressive/Hybrid/Right-Brain to current chapter's first unit when switching tabs
   useEffect(() => {
-    if (viewMode === "rightbrain") {
+    if (viewMode === "progressive" || viewMode === "hybrid" || viewMode === "rightbrain") {
       console.log(`🔄 Tab switch to ${viewMode}: syncing to current chapter`);
       
       // Use the sync store's chapter-aware functionality
@@ -659,6 +659,127 @@ export default function ThoughtUnitReader() {
       );
     }
 
+    // Progressive view with Right-Brain features
+    if (viewMode === "progressive") {
+      return fileUrl ? (
+        <EnhancedProgressiveView
+          bookId={bookId}
+          userId={USER_ID}
+          thoughtUnits={thoughtUnits}
+          currentThoughtUnit={currentThoughtUnit}
+          pdfUrl={fileUrl || ""}
+          currentPage={currentPage}
+          pdfPageCount={pdfPageCount}
+          onPageChange={(p) => syncToPage(p)}
+          readingSpeed={readingSpeed}
+          isReading={isReading}
+          isPaused={isPaused}
+          highlightedWord={highlightedWord}
+          fontSize={fontSize}
+          fontFamily={fontFamily}
+          lineSpacing={lineSpacing}
+          onWordClick={(w) => {
+            setHighlightedWord(w);
+            if (autoWhiteboard && w.trim()) {
+              setWbConcept(truncate(w, 600));
+              setWbContext(`p.${currentPage}`);
+              setShowWhiteboardPanel(true);
+            }
+          }}
+          setReadingSpeed={setReadingSpeed}
+          onTextSelect={(t) => sel.setSelectionText(t)}
+          selBind={sel.bind}
+          externalSelectionText={sel.selectionText}
+          onGenerateNote={handleOpenRightBrainNote}
+          selectedVoice={selectedVoice}
+          onVoiceChange={setSelectedVoice}
+          speechRate={speechRate}
+          onSpeechRateChange={setSpeechRate}
+          tableOfContents={tableOfContents}
+          onChunkPick={(text) => {
+            // Handle chunk pick with highlighting on current page
+            highlightChunkInPDF(currentPage, text);
+            sel.setSelectionText(text);
+          }}
+        />
+      ) : (
+        <div className="flex flex-col items-center justify-center h-full gap-4">
+          <div className="text-center">
+            <h3 className="text-lg font-semibold mb-2 text-blue-400">⚡ Progressive Reading</h3>
+            <p className="text-sm opacity-80 mb-4">
+              Enhanced progressive reading with Right-Brain analysis and one-row chunk rail
+            </p>
+          </div>
+          <label className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-6 py-3 rounded-lg cursor-pointer font-medium hover:from-blue-400 hover:to-purple-400 transition-all">
+            📂 Upload PDF to Begin Progressive Reading
+            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
+          </label>
+        </div>
+      );
+    }
+
+    // Hybrid view with Right-Brain features
+    if (viewMode === "hybrid") {
+      return fileUrl ? (
+        <EnhancedHybridReader
+          bookId={bookId}
+          userId={USER_ID}
+          pdfUrl={fileUrl || ""}
+          currentPage={currentPage}
+          pdfPageCount={pdfPageCount}
+          onPageChange={(p) => syncToPage(p)}
+          sampleText={sampleText}
+          readingSpeed={readingSpeed}
+          isReading={isReading}
+          isPaused={isPaused}
+          currentThoughtUnit={currentThoughtUnit}
+          setCurrentThoughtUnit={setCurrentThoughtUnit}
+          thoughtUnits={thoughtUnits}
+          highlightedWord={highlightedWord}
+          setHighlightedWord={setHighlightedWord}
+          fontSize={fontSize}
+          fontFamily={fontFamily}
+          lineSpacing={lineSpacing}
+          onWordClick={(w) => {
+            setHighlightedWord(w);
+            if (autoWhiteboard && w.trim()) {
+              setWbConcept(truncate(w, 600));
+              setWbContext(`p.${currentPage}`);
+              setShowWhiteboardPanel(true);
+            }
+          }}
+          setReadingSpeed={setReadingSpeed}
+          onTextSelect={(t) => sel.setSelectionText(t)}
+          selBind={sel.bind}
+          externalSelectionText={sel.selectionText}
+          onGenerateNote={handleOpenRightBrainNote}
+          selectedVoice={selectedVoice}
+          onVoiceChange={setSelectedVoice}
+          speechRate={speechRate}
+          onSpeechRateChange={setSpeechRate}
+          tableOfContents={tableOfContents}
+          onChunkPick={(text) => {
+            // Handle chunk pick with highlighting on current page
+            highlightChunkInPDF(currentPage, text);
+            sel.setSelectionText(text);
+          }}
+        />
+      ) : (
+        <div className="flex flex-col items-center justify-center h-full gap-4">
+          <div className="text-center">
+            <h3 className="text-lg font-semibold mb-2 text-green-400">🔄 Hybrid Reading</h3>
+            <p className="text-sm opacity-80 mb-4">
+              Combined PDF and enhanced reading with Right-Brain analysis and chunk rail
+            </p>
+          </div>
+          <label className="bg-gradient-to-r from-green-500 to-teal-500 text-white px-6 py-3 rounded-lg cursor-pointer font-medium hover:from-green-400 hover:to-teal-400 transition-all">
+            📂 Upload PDF to Begin Hybrid Reading
+            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
+          </label>
+        </div>
+      );
+    }
+
     // Right-Brain Reading view (unified Progressive + Hybrid features)
     if (viewMode === "rightbrain") {
       // Check if we're in note editor mode
@@ -796,6 +917,22 @@ export default function ThoughtUnitReader() {
             }`}
           >
             📄 Original PDF
+          </button>
+          <button
+            onClick={() => setViewMode("progressive")}
+            className={`text-xs px-3 py-1 rounded ${
+              viewMode === "progressive" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+            }`}
+          >
+            ⚡ Progressive
+          </button>
+          <button
+            onClick={() => setViewMode("hybrid")}
+            className={`text-xs px-3 py-1 rounded ${
+              viewMode === "hybrid" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+            }`}
+          >
+            🔄 Hybrid
           </button>
           <button
             onClick={() => setViewMode("rightbrain")}
