@@ -1037,31 +1037,30 @@ export default function EnhancedProgressiveView({
               {compactMode ? "⬍" : "⬌"}
             </button>
           </div>
-          <ChunkRail
-            chunks={chunks}
-            activeIdx={activeIdx}
-            setActiveIdx={setActiveIdx}
-            onPick={(text) => {
-              // 3-step process: setLocalUnit → updateSync → onChunkPick
-              const idx = chunks.indexOf(text);
-              if (idx !== -1) {
-                setActiveIdx(idx);
-                updateSync({
-                  page: currentPage,
-                  unitIndex: currentThoughtUnit,
-                  activeChunkId: stableChunkId(text)
-                }, 'progressive');
-                onChunkPick?.(text);
-              }
-              
-              // Additional actions
-              onWordClick?.(text);
-              setSelectionText(text);
-              onTextSelect?.(text);
-              if (autoSpeak) speakChunk(text);
-            }}
-            compact={compactMode}
-          />
+            <ChunkRail
+              chunks={chunks}
+              activeIdx={activeIdx}
+              setActiveIdx={setActiveIdx}
+              onPick={(text) => {
+                // 3-step process: setLocalUnit → updateSync → onChunkPick
+                const idx = chunks.indexOf(text);
+                if (idx !== -1) {
+                  setActiveIdx(idx);
+                  updateSync({
+                    page: currentPage,
+                    unitIndex: currentThoughtUnit,
+                    activeChunkId: stableChunkId(text)
+                  }, 'progressive');
+                }
+                
+                // Additional actions
+                onWordClick?.(text);
+                setSelectionText(text);
+                onTextSelect?.(text);
+                if (autoSpeak) speakChunk(text);
+              }}
+              compact={compactMode}
+            />
         </div>
 
         <RightBrainToolbar

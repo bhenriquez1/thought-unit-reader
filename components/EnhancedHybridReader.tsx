@@ -974,8 +974,6 @@ export default function EnhancedHybridReader({
                     unitIndex: currentThoughtUnit,
                     activeChunkId: stableChunkId(text)
                   }, 'hybrid');
-                  // Call parent's onChunkPick if provided
-                  // onChunkPick?.(text); // Will be passed from parent
                 }
                 
                 // Additional actions
