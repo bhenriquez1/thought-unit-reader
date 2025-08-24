@@ -590,11 +590,7 @@ export default function EnhancedWhiteboard({
             scale: 1,
             // Page follow animation
             ...(pageFollowAnimation && {
-              boxShadow: [
-                "0 0 0 0 rgba(59, 130, 246, 0.5)",
-                "0 0 0 10px rgba(59, 130, 246, 0.1)",
-                "0 0 0 0 rgba(59, 130, 246, 0)"
-              ]
+              boxShadow: "0 0 0 10px rgba(59, 130, 246, 0.1)"
             })
           }}
           exit={{ x: 24, opacity: 0, scale: 0.98 }}
@@ -783,11 +779,9 @@ export default function EnhancedWhiteboard({
                 opacity: 1, 
                 y: 0, 
                 scale: 1,
-                boxShadow: pageFollowAnimation ? [
-                  "0 0 0 0 rgba(59, 130, 246, 0.4)",
-                  "0 0 0 15px rgba(59, 130, 246, 0.1)",
+                boxShadow: pageFollowAnimation ? 
+                  "0 0 0 15px rgba(59, 130, 246, 0.1)" : 
                   "0 0 0 0 rgba(59, 130, 246, 0)"
-                ] : "0 0 0 0 rgba(59, 130, 246, 0)"
               }}
               exit={{ opacity: 0, y: -10, scale: 0.95 }}
               transition={{ type: "spring", stiffness: 260, damping: 20 }}

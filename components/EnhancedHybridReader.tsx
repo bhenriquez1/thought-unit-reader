@@ -281,6 +281,22 @@ export default function EnhancedHybridReader({
 
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
+  // Subscribe to global sync changes for cross-view synchronization
+  useEffect(() => {
+    console.log(`🔄 HybridReader: Global sync state changed: page=${globalPage}, unit=${globalUnitIndex}, chunk=${globalActiveChunkId}`);
+    
+    // Update local state when global sync changes (but avoid loops)
+    if (globalPage !== currentPage) {
+      console.log(`🔄 HybridReader: Syncing local page: ${currentPage} -> ${globalPage}`);
+      onPageChange(globalPage);
+    }
+    
+    if (globalUnitIndex !== currentThoughtUnit) {
+      console.log(`🔄 HybridReader: Syncing local unit: ${currentThoughtUnit} -> ${globalUnitIndex}`);
+      setCurrentThoughtUnit(globalUnitIndex);
+    }
+  }, [globalPage, globalUnitIndex, globalActiveChunkId, currentPage, currentThoughtUnit, onPageChange, setCurrentThoughtUnit]);
+
   // Load voices
   useEffect(() => {
     const loadVoices = () => {
