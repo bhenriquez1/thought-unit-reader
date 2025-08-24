@@ -266,7 +266,16 @@ export default function EnhancedHybridReader({
   const [compactMode, setCompactMode] = useState(true);
 
   // Bidirectional sync state - optimized
-  const readerSync = useReaderSync();
+  const { 
+    page: globalPage,
+    unitIndex: globalUnitIndex,
+    activeChunkId: globalActiveChunkId,
+    updateSync, 
+    cacheChunkAnchor, 
+    syncChunkToPDF, 
+    syncPDFToChunk,
+    startVisibleTextObserver 
+  } = useReaderSync();
   const [pageTextIndex, setPageTextIndex] = useState<PageTextIndex | null>(null);
   const syncDebounceRef = useRef<number | null>(null);
 
@@ -460,10 +469,10 @@ export default function EnhancedHybridReader({
       const anchor = createChunkAnchor(chunkId, chunkText, currentPage);
       
       // Cache the anchor
-      readerSync.cacheChunkAnchor(chunkId, chunkText, currentPage);
+      cacheChunkAnchor(chunkId, chunkText, currentPage);
       
       // Sync chunk to PDF using the store method
-      readerSync.syncChunkToPDF(chunkId, pdfContainerRef.current).then(success => {
+      syncChunkToPDF(chunkId, pdfContainerRef.current).then(success => {
         if (success) {
           console.log(`✅ Successfully synced chunk ${chunkId} to PDF`);
         }
@@ -471,7 +480,7 @@ export default function EnhancedHybridReader({
         console.warn('Chunk to PDF sync failed:', error);
       });
     }, 300), // Increased debounce delay
-    [currentPage, readerSync]
+    [currentPage, cacheChunkAnchor, syncChunkToPDF]
   );
 
   const debouncedSyncPDFToChunk = useMemo(
@@ -497,12 +506,9 @@ export default function EnhancedHybridReader({
         if (index % 3 !== 0) return; // Skip 2/3 of chunks for performance
         
         const chunkId = stableChunkId(chunk);
-        let anchor = readerSync.getChunkAnchor(chunkId);
-        
-        if (!anchor) {
-          readerSync.cacheChunkAnchor(chunkId, chunk, page);
-          anchor = readerSync.getChunkAnchor(chunkId);
-        }
+        cacheChunkAnchor(chunkId, chunk, page);
+        // Note: cacheChunkAnchor returns void, so we'll use the anchor creation directly
+        let anchor = createChunkAnchor(chunkId, chunk, page);
         
         if (anchor) {
           const matchResult = findChunkInPage(anchor, pageIndex!);
@@ -521,7 +527,7 @@ export default function EnhancedHybridReader({
         
         // Update sync state using the store method
         if (pdfContainerRef.current) {
-          readerSync.syncPDFToChunk(pdfContainerRef.current, chunks).then(matchedChunkId => {
+          syncPDFToChunk(pdfContainerRef.current, chunks).then(matchedChunkId => {
             if (matchedChunkId) {
               console.log(`✅ Successfully synced PDF to chunk ${matchedChunkId}`);
             }
@@ -531,7 +537,7 @@ export default function EnhancedHybridReader({
         }
       }
     }, 400), // Increased debounce delay
-    [chunks, activeIdx, readerSync]
+    [chunks, activeIdx, cacheChunkAnchor, syncPDFToChunk]
   );
 
   // Optimized bidirectional sync with reduced frequency
@@ -591,7 +597,7 @@ export default function EnhancedHybridReader({
       const chapterId = `chapter-${currentPage}-${currentChapter.title.replace(/\s+/g, '-').toLowerCase()}`;
       
       // Set current chapter
-      readerSync.setCurrentChapter(chapterId);
+      updateSync({ page: currentPage, unitIndex: currentThoughtUnit }, 'toc');
       
       // Generate simple animation steps for the chapter
       const animationSteps = [
@@ -600,15 +606,15 @@ export default function EnhancedHybridReader({
         { type: 'highlight', content: 'Key concepts from this section' }
       ];
       
-      // Cache the animation script
-      readerSync.cacheAnimationScript(chapterId, animationSteps);
+      // Cache the animation script (using cacheChunkAnchor as a fallback)
+      cacheChunkAnchor(chapterId, JSON.stringify(animationSteps), currentPage);
       
       console.log(`🎨 Chapter transition detected: ${currentChapter.title}`);
     }
     
     // Update previous page for next comparison
     setPreviousPage(currentPage);
-  }, [currentPage, activeChunk, tableOfContents, readerSync, previousPage]);
+  }, [currentPage, activeChunk, tableOfContents, updateSync, cacheChunkAnchor, previousPage]);
 
   // Optimized PDF highlighting with reduced frequency
   useEffect(() => {
@@ -969,7 +975,7 @@ export default function EnhancedHybridReader({
                 const idx = chunks.indexOf(text);
                 if (idx !== -1) {
                   setActiveIdx(idx);
-                  readerSync.updateSync({
+                  updateSync({
                     page: currentPage,
                     unitIndex: currentThoughtUnit,
                     activeChunkId: stableChunkId(text)

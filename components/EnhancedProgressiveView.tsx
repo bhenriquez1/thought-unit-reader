@@ -27,6 +27,12 @@ import {
   type PageTextIndex,
   type AnchorToken
 } from "@/lib/anchorSync";
+import { 
+  analyzeChunkWithRightBrain,
+  type RightBrainChunkAnalysis,
+  type TextPattern,
+  type VisualMetaphor
+} from "@/lib/rightBrainReading";
 
 type PVUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -258,6 +264,7 @@ export default function EnhancedProgressiveView({
   speechRate = 1.0,
   onSpeechRateChange,
   tableOfContents = [],
+  onChunkPick,
 }: EnhancedProgressiveViewProps) {
   const [loaded, setLoaded] = useState(false);
   const [selectionText, setSelectionText] = useState("");
@@ -272,7 +279,7 @@ export default function EnhancedProgressiveView({
   // Enhanced chunking with right-brain focus - optimized for PDF reading
   const [chunkChars, setChunkChars] = useState(220); // Optimized chunk size for better performance
   const [chunkMode, setChunkMode] = useState<"semantic" | "sentence" | "bullet-first">("semantic");
-  const [focusMode, setFocusMode] = useState<"core" | "detail" | "visual">("core");
+  const [focusMode, setFocusMode] = useState<"core" | "detail" | "visual" | "movie">("core");
   
   // Enhanced PDF view integration - more PDF-focused
   const [pdfScale, setPdfScale] = useState(1.0); // Better default scale for reading
@@ -300,14 +307,28 @@ export default function EnhancedProgressiveView({
   
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
   
-  // Reader sync integration
+  // Reader sync integration - subscribe to global state
   const { 
+    page: globalPage,
+    unitIndex: globalUnitIndex,
+    activeChunkId: globalActiveChunkId,
     updateSync, 
     cacheChunkAnchor, 
     syncChunkToPDF, 
     syncPDFToChunk,
     startVisibleTextObserver 
   } = useReaderSync();
+
+  // Subscribe to global state changes and reflect them (controlled behavior)
+  useEffect(() => {
+    // Don't reset on mount - only update if there's a meaningful change
+    if (globalUnitIndex !== currentThoughtUnit && globalUnitIndex > 0) {
+      console.log(`🔄 Progressive: Global unit changed ${currentThoughtUnit} -> ${globalUnitIndex}`);
+      // Don't call setCurrentThoughtUnit here as it would cause a loop
+      // The parent component manages this state
+    }
+  }, [globalUnitIndex, currentThoughtUnit]);
+
 
   // Load available voices
   useEffect(() => {
@@ -378,7 +399,15 @@ export default function EnhancedProgressiveView({
   );
 
   const [activeIdx, setActiveIdx] = useState(0);
-  useEffect(() => setActiveIdx(0), [unitText, chunkMode, chunkChars]);
+  
+  // Don't reset activeIdx on unit change - let it be controlled by sync
+  useEffect(() => {
+    // Only reset if we're switching to a completely different unit
+    // and there's no global chunk state to preserve
+    if (!globalActiveChunkId) {
+      setActiveIdx(0);
+    }
+  }, [unitText, chunkMode, chunkChars, globalActiveChunkId]);
 
   // Auto-advance with speech integration
   useEffect(() => {
@@ -400,7 +429,15 @@ export default function EnhancedProgressiveView({
   const activeChunk = chunks[activeIdx] || "";
   const activeChunkId = stableChunkId(activeChunk);
   const isUnderstood = !!understoodMap[activeChunkId];
-  const chunkAnalysis = analyzeChunkForRightBrain(activeChunk);
+  
+  // Enhanced right-brain analysis
+  const rightBrainAnalysis = useMemo(() => 
+    analyzeChunkWithRightBrain(activeChunk, activeIdx, chunks.length),
+    [activeChunk, activeIdx, chunks.length]
+  );
+  
+  // Keep backward compatibility
+  const chunkAnalysis = rightBrainAnalysis;
 
   // Build anchor tokens for current chunk
   const chunkAnchorTokens = useMemo(() => {
@@ -895,9 +932,9 @@ export default function EnhancedProgressiveView({
         {/* Enhanced Right-Brain Analysis Panel with Visual Cues */}
         <div className="mb-4 p-4 bg-gradient-to-br from-yellow-500/10 via-orange-500/10 to-red-500/10 border border-yellow-500/30 rounded-lg">
           <div className="flex items-center gap-2 mb-3">
-            <h5 className="text-sm font-semibold text-yellow-400">🧠 Right-Brain Focus</h5>
+            <h5 className="text-sm font-semibold text-yellow-400">🧠 Right-Brain Reading</h5>
             <div className="flex gap-1">
-              {["core", "visual", "detail"].map((mode) => (
+              {["core", "visual", "detail", "movie"].map((mode) => (
                 <button
                   key={mode}
                   onClick={() => setFocusMode(mode as any)}
@@ -907,9 +944,13 @@ export default function EnhancedProgressiveView({
                       : "bg-gray-700 hover:bg-gray-600"
                   }`}
                 >
-                  {mode === "core" ? "💡" : mode === "visual" ? "👁️" : "🔍"}
+                  {mode === "core" ? "💡" : mode === "visual" ? "👁️" : mode === "detail" ? "🔍" : "🎬"}
                 </button>
               ))}
+            </div>
+            <div className="flex-1"></div>
+            <div className="text-xs opacity-75">
+              Pattern: <span className="text-yellow-300">{rightBrainAnalysis.textPattern.type}</span>
             </div>
           </div>
           
@@ -1010,6 +1051,86 @@ export default function EnhancedProgressiveView({
               )}
             </div>
           )}
+          
+          {focusMode === "movie" && (
+            <div>
+              <div className="mb-3 p-3 bg-gradient-to-r from-purple-900/30 to-pink-900/30 rounded-lg border border-purple-500/30">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-sm font-medium text-purple-300">🎬 Mind Movie</span>
+                  <div className="flex-1"></div>
+                  <span className="text-xs px-2 py-1 rounded bg-purple-500/20 text-purple-300">
+                    {rightBrainAnalysis.textPattern.type}
+                  </span>
+                </div>
+                <p className="text-sm text-purple-200 mb-3 italic leading-relaxed">
+                  {rightBrainAnalysis.mindMovieScene}
+                </p>
+                
+                <div className="mb-3 p-2 bg-black/20 rounded border border-purple-500/20">
+                  <div className="text-xs font-medium text-purple-300 mb-1">Visual Metaphor:</div>
+                  <div className="text-xs text-purple-200">
+                    <span className="font-medium">{rightBrainAnalysis.visualMetaphor.metaphor}</span>
+                    <br />
+                    <span className="opacity-80">{rightBrainAnalysis.visualMetaphor.imagery}</span>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="opacity-75 block mb-1">🎭 Emotional Tone:</span>
+                    <span className={`px-2 py-1 rounded ${
+                      rightBrainAnalysis.emotionalTone === 'exciting' ? 'bg-orange-500/20 text-orange-300' :
+                      rightBrainAnalysis.emotionalTone === 'positive' ? 'bg-green-500/20 text-green-300' :
+                      rightBrainAnalysis.emotionalTone === 'calming' ? 'bg-blue-500/20 text-blue-300' :
+                      rightBrainAnalysis.emotionalTone === 'negative' ? 'bg-red-500/20 text-red-300' :
+                      'bg-gray-500/20 text-gray-300'
+                    }`}>
+                      {rightBrainAnalysis.emotionalTone}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="opacity-75 block mb-1">🧠 Cognitive Load:</span>
+                    <span className={`px-2 py-1 rounded ${
+                      rightBrainAnalysis.cognitiveLoad === 'high' ? 'bg-red-500/20 text-red-300' :
+                      rightBrainAnalysis.cognitiveLoad === 'medium' ? 'bg-yellow-500/20 text-yellow-300' :
+                      'bg-green-500/20 text-green-300'
+                    }`}>
+                      {rightBrainAnalysis.cognitiveLoad}
+                    </span>
+                  </div>
+                </div>
+                
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="text-xs opacity-75">⏱️ Processing Time:</span>
+                  <span className="text-xs text-purple-300 font-medium">
+                    {Math.round(rightBrainAnalysis.processingTime)}s
+                  </span>
+                  <div className="flex-1"></div>
+                  <button
+                    onClick={() => speakChunk(rightBrainAnalysis.mindMovieScene)}
+                    className="text-xs px-2 py-1 rounded bg-purple-600 hover:bg-purple-500"
+                    title="Narrate the scene"
+                  >
+                    🎙️ Narrate
+                  </button>
+                </div>
+              </div>
+              
+              <div className="text-xs opacity-75 mb-2">
+                Pattern Structure: {rightBrainAnalysis.textPattern.structure}
+              </div>
+              
+              {rightBrainAnalysis.textPattern.indicators.length > 0 && (
+                <div className="flex gap-1 flex-wrap">
+                  {rightBrainAnalysis.textPattern.indicators.map((indicator, i) => (
+                    <span key={i} className="text-xs bg-purple-500/20 px-2 py-1 rounded text-purple-300">
+                      {indicator}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Smart Page Context Panel */}
@@ -1051,6 +1172,11 @@ export default function EnhancedProgressiveView({
                     unitIndex: currentThoughtUnit,
                     activeChunkId: stableChunkId(text)
                   }, 'progressive');
+                }
+                
+                // Call the parent's onChunkPick callback
+                if (onChunkPick) {
+                  onChunkPick(text);
                 }
                 
                 // Additional actions

@@ -977,33 +977,33 @@ export default function ThoughtUnitReader() {
         </div>
       </div>
 
-      {/* Single Whiteboard FAB - Bottom Right (Always Available) */}
-      {!showWhiteboardPanel && (
-        <button
-          onClick={() => {
-            setShowWhiteboardPanel(true);
-            // If no concept is set, use current page content as concept
-            if (!wbConcept && thoughtUnits.length > 0) {
-              const currentConcept = conceptForPage(currentPage, thoughtUnits, pdfPageCount);
-              if (currentConcept) {
-                setWbConcept(truncate(currentConcept, 600));
-                setWbContext(titleForPage(tableOfContents, currentPage));
-              } else {
-                // Fallback to a generic concept
-                setWbConcept("Current page content");
-                setWbContext(`Page ${currentPage}`);
+        {/* Single Whiteboard FAB - Bottom Right (Always Available) */}
+        {!showWhiteboardPanel && (
+          <button
+            onClick={() => {
+              setShowWhiteboardPanel(true);
+              // If no concept is set, use current page content as concept
+              if (!wbConcept && thoughtUnits.length > 0) {
+                const currentConcept = conceptForPage(currentPage, thoughtUnits, pdfPageCount);
+                if (currentConcept) {
+                  setWbConcept(truncate(currentConcept, 600));
+                  setWbContext(titleForPage(tableOfContents, currentPage));
+                } else {
+                  // Fallback to a generic concept
+                  setWbConcept("Current page content");
+                  setWbContext(`Page ${currentPage}`);
+                }
               }
-            }
-          }}
-          className="fixed bottom-6 right-6 z-40 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white p-3 rounded-full shadow-lg backdrop-blur-sm border border-purple-400"
-          title="Open Whiteboard Explanation"
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-lg">🎨</span>
-            <span className="text-sm font-medium hidden sm:block">Whiteboard</span>
-          </div>
-        </button>
-      )}
+            }}
+            className="fixed bottom-6 right-6 z-40 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white p-3 rounded-full shadow-lg backdrop-blur-sm border border-purple-400"
+            title="Open Whiteboard Explanation"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🎨</span>
+              <span className="text-sm font-medium hidden sm:block">Whiteboard</span>
+            </div>
+          </button>
+        )}
 
       {/* Sliding Whiteboard Panel */}
       {showWhiteboardPanel && (
