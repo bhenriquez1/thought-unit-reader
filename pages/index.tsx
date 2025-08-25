@@ -7,6 +7,9 @@ import TOCSidebar from "@/components/TOCSidebar";
 import type { ThoughtUnit, ReadingStats } from "@/types/reading";
 import EnhancedHybridReader from "@/components/EnhancedHybridReader";
 import EnhancedProgressiveView from "@/components/EnhancedProgressiveView";
+import CleanProgressiveView from "@/components/CleanProgressiveView";
+import CleanHybridReader from "@/components/CleanHybridReader";
+import VisualRightBrainReader from "@/components/VisualRightBrainReader";
 import HighlightPopup from "@/components/HighlightPopup";
 import RightBrainNoteEditor from "@/components/RightBrainNoteEditor";
 import LinkVideoModal from "@/components/LinkVideoModal";
@@ -659,22 +662,17 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // Progressive view with Right-Brain features
+    // Clean Progressive Reading - focused, minimal interface
     if (viewMode === "progressive") {
       return fileUrl ? (
-        <EnhancedProgressiveView
+        <CleanProgressiveView
           bookId={bookId}
           userId={USER_ID}
           thoughtUnits={thoughtUnits}
           currentThoughtUnit={currentThoughtUnit}
-          pdfUrl={fileUrl || ""}
-          currentPage={currentPage}
-          pdfPageCount={pdfPageCount}
-          onPageChange={(p) => syncToPage(p)}
           readingSpeed={readingSpeed}
           isReading={isReading}
           isPaused={isPaused}
-          highlightedWord={highlightedWord}
           fontSize={fontSize}
           fontFamily={fontFamily}
           lineSpacing={lineSpacing}
@@ -686,28 +684,15 @@ export default function ThoughtUnitReader() {
               setShowWhiteboardPanel(true);
             }
           }}
-          setReadingSpeed={setReadingSpeed}
           onTextSelect={(t) => sel.setSelectionText(t)}
           selBind={sel.bind}
-          externalSelectionText={sel.selectionText}
-          onGenerateNote={handleOpenRightBrainNote}
-          selectedVoice={selectedVoice}
-          onVoiceChange={setSelectedVoice}
-          speechRate={speechRate}
-          onSpeechRateChange={setSpeechRate}
-          tableOfContents={tableOfContents}
-          onChunkPick={(text) => {
-            // Handle chunk pick with highlighting on current page
-            highlightChunkInPDF(currentPage, text);
-            sel.setSelectionText(text);
-          }}
         />
       ) : (
         <div className="flex flex-col items-center justify-center h-full gap-4">
           <div className="text-center">
-            <h3 className="text-lg font-semibold mb-2 text-blue-400">⚡ Progressive Reading</h3>
+            <h3 className="text-lg font-semibold mb-2 text-blue-400">📖 Clean Progressive Reading</h3>
             <p className="text-sm opacity-80 mb-4">
-              Enhanced progressive reading with Right-Brain analysis and one-row chunk rail
+              Focused, sequential reading with minimal distractions
             </p>
           </div>
           <label className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-6 py-3 rounded-lg cursor-pointer font-medium hover:from-blue-400 hover:to-purple-400 transition-all">
@@ -718,25 +703,18 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // Hybrid view with Right-Brain features
+    // Clean Hybrid Reading - PDF + smart enhancements bridge
     if (viewMode === "hybrid") {
       return fileUrl ? (
-        <EnhancedHybridReader
+        <CleanHybridReader
           bookId={bookId}
           userId={USER_ID}
-          pdfUrl={fileUrl || ""}
+          thoughtUnits={thoughtUnits}
+          currentThoughtUnit={currentThoughtUnit}
+          pdfUrl={fileUrl}
           currentPage={currentPage}
           pdfPageCount={pdfPageCount}
           onPageChange={(p) => syncToPage(p)}
-          sampleText={sampleText}
-          readingSpeed={readingSpeed}
-          isReading={isReading}
-          isPaused={isPaused}
-          currentThoughtUnit={currentThoughtUnit}
-          setCurrentThoughtUnit={setCurrentThoughtUnit}
-          thoughtUnits={thoughtUnits}
-          highlightedWord={highlightedWord}
-          setHighlightedWord={setHighlightedWord}
           fontSize={fontSize}
           fontFamily={fontFamily}
           lineSpacing={lineSpacing}
@@ -748,28 +726,16 @@ export default function ThoughtUnitReader() {
               setShowWhiteboardPanel(true);
             }
           }}
-          setReadingSpeed={setReadingSpeed}
           onTextSelect={(t) => sel.setSelectionText(t)}
           selBind={sel.bind}
-          externalSelectionText={sel.selectionText}
-          onGenerateNote={handleOpenRightBrainNote}
-          selectedVoice={selectedVoice}
-          onVoiceChange={setSelectedVoice}
-          speechRate={speechRate}
-          onSpeechRateChange={setSpeechRate}
           tableOfContents={tableOfContents}
-          onChunkPick={(text) => {
-            // Handle chunk pick with highlighting on current page
-            highlightChunkInPDF(currentPage, text);
-            sel.setSelectionText(text);
-          }}
         />
       ) : (
         <div className="flex flex-col items-center justify-center h-full gap-4">
           <div className="text-center">
-            <h3 className="text-lg font-semibold mb-2 text-green-400">🔄 Hybrid Reading</h3>
+            <h3 className="text-lg font-semibold mb-2 text-green-400">� Clean Hybrid Reading</h3>
             <p className="text-sm opacity-80 mb-4">
-              Combined PDF and enhanced reading with Right-Brain analysis and chunk rail
+              Bridge between traditional PDF reading and smart enhancements
             </p>
           </div>
           <label className="bg-gradient-to-r from-green-500 to-teal-500 text-white px-6 py-3 rounded-lg cursor-pointer font-medium hover:from-green-400 hover:to-teal-400 transition-all">
