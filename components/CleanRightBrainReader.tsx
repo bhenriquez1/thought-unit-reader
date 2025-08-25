@@ -355,6 +355,9 @@ export default function CleanRightBrainReader({
   const [audioEnabled, setAudioEnabled] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
 
+  // Debug logging
+  console.log("CleanRightBrainReader - thoughtUnits:", thoughtUnits?.length, "currentThoughtUnit:", currentThoughtUnit);
+
   // Empty state
   if (!thoughtUnits || thoughtUnits.length === 0) {
     return (
@@ -369,18 +372,43 @@ export default function CleanRightBrainReader({
   }
 
   const rawUnit = thoughtUnits[currentThoughtUnit - 1];
+  console.log("CleanRightBrainReader - rawUnit:", rawUnit);
+  
   if (!rawUnit) {
     return (
       <div className="flex items-center justify-center h-full bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white">
         <div className="text-center">
           <div className="text-4xl mb-4 animate-spin">🌌</div>
           <p className="text-gray-300">Generating your visual learning experience...</p>
+          <p className="text-xs text-gray-400 mt-2">
+            Unit {currentThoughtUnit} of {thoughtUnits.length}
+          </p>
         </div>
       </div>
     );
   }
 
   const unitText = unitToText(rawUnit);
+  console.log("CleanRightBrainReader - unitText:", unitText?.slice(0, 100));
+
+  // If unitText is empty or too short, show a helpful message
+  if (!unitText || unitText.trim().length < 10) {
+    return (
+      <div className="flex items-center justify-center h-full bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white">
+        <div className="text-center max-w-md">
+          <div className="text-4xl mb-4">📖</div>
+          <h2 className="text-xl font-bold mb-2">Content Processing</h2>
+          <p className="text-gray-300 mb-4">
+            This section appears to have minimal text content. Try navigating to a different section with more substantial content.
+          </p>
+          <div className="text-sm text-gray-400">
+            <p>Current unit: {currentThoughtUnit} of {thoughtUnits.length}</p>
+            <p>Text length: {unitText?.length || 0} characters</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Generate visual metaphor
   const visualMetaphor = useMemo(() => 

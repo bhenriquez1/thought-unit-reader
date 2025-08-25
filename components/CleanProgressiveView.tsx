@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef, useMemo } from "react";
 import type { ThoughtUnit as BaseThoughtUnit, ReadingStats } from "@/types/reading";
 import { Document, Page } from "react-pdf";
+import { useReaderSync } from "@/lib/readerSync";
 
 type PVUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -284,6 +285,15 @@ export default function CleanProgressiveView({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
 
+  // Global sync integration
+  const { 
+    page, 
+    unitIndex, 
+    updateSync 
+  } = useReaderSync();
+
+  console.log("CleanProgressiveView - Global sync:", { page, unitIndex, currentPage, currentThoughtUnit });
+
   // Empty states
   if (!thoughtUnits || thoughtUnits.length === 0) {
     return (
@@ -327,6 +337,46 @@ export default function CleanProgressiveView({
       sentence.length > 50 // Longer sentences often contain key concepts
     ).slice(0, 10); // Limit to 10 key concepts
   }, [sentences]);
+
+  // Unified progress calculation across all modes
+  const getUnifiedProgress = () => {
+    switch (speedMode) {
+      case "rsvp":
+        return currentWordIndex / Math.max(words.length - 1, 1);
+      case "bionic":
+        return 0; // Bionic is user-controlled, no auto progress
+      case "guided":
+        return currentSentenceIndex / Math.max(sentences.length - 1, 1);
+      case "flash":
+        return currentConceptIndex / Math.max(concepts.length - 1, 1);
+      default:
+        return 0;
+    }
+  };
+
+  // Cross-mode position preservation
+  const preservePositionAcrossModes = (newMode: SpeedMode, oldMode: SpeedMode) => {
+    const currentProgress = getUnifiedProgress();
+    console.log(`Preserving position: ${oldMode} -> ${newMode}, progress: ${currentProgress}`);
+    
+    switch (newMode) {
+      case "rsvp":
+        const newWordIndex = Math.floor(currentProgress * Math.max(words.length - 1, 1));
+        setCurrentWordIndex(newWordIndex);
+        break;
+      case "bionic":
+        // Bionic doesn't need position preservation
+        break;
+      case "guided":
+        const newSentenceIndex = Math.floor(currentProgress * Math.max(sentences.length - 1, 1));
+        setCurrentSentenceIndex(newSentenceIndex);
+        break;
+      case "flash":
+        const newConceptIndex = Math.floor(currentProgress * Math.max(concepts.length - 1, 1));
+        setCurrentConceptIndex(newConceptIndex);
+        break;
+    }
+  };
 
   // Auto-advance logic for different modes
   useEffect(() => {
@@ -464,11 +514,12 @@ export default function CleanProgressiveView({
               <button
                 key={mode}
                 onClick={() => {
-                  setSpeedMode(mode as SpeedMode);
-                  // Reset indices when switching modes
-                  setCurrentWordIndex(0);
-                  setCurrentSentenceIndex(0);
-                  setCurrentConceptIndex(0);
+                  const newMode = mode as SpeedMode;
+                  if (newMode !== speedMode) {
+                    // Preserve position across modes before switching
+                    preservePositionAcrossModes(newMode, speedMode);
+                    setSpeedMode(newMode);
+                  }
                 }}
                 className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
                   speedMode === mode
