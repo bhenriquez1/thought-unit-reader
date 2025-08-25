@@ -285,11 +285,14 @@ export default function CleanProgressiveView({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
 
-  // Global sync integration with error handling
+  // Enhanced global sync integration with TOC awareness
   const { 
     page, 
     unitIndex, 
-    updateSync 
+    updateSync,
+    syncToChapter,
+    findNearestChapter,
+    tableOfContents: globalTOC
   } = useReaderSync();
 
   // Safe logging with error handling
@@ -298,6 +301,22 @@ export default function CleanProgressiveView({
   } catch (error) {
     console.warn("CleanProgressiveView - Sync logging error:", error);
   }
+
+  // TOC-aware sync when global state changes
+  useEffect(() => {
+    if (page !== currentPage && page > 0) {
+      console.log(`🔄 Progressive: Global page sync ${currentPage} -> ${page}`);
+      onPageChange?.(page);
+    }
+  }, [page, currentPage, onPageChange]);
+
+  useEffect(() => {
+    if (unitIndex !== currentThoughtUnit && unitIndex > 0) {
+      console.log(`🔄 Progressive: Global unit sync ${currentThoughtUnit} -> ${unitIndex}`);
+      // Update local state to match global sync
+      // Note: We don't call setCurrentThoughtUnit here to avoid loops
+    }
+  }, [unitIndex, currentThoughtUnit]);
 
   // Empty states
   if (!thoughtUnits || thoughtUnits.length === 0) {
@@ -359,10 +378,16 @@ export default function CleanProgressiveView({
     }
   };
 
-  // Cross-mode position preservation
+  // Enhanced cross-mode position preservation with TOC awareness
   const preservePositionAcrossModes = (newMode: SpeedMode, oldMode: SpeedMode) => {
     const currentProgress = getUnifiedProgress();
     console.log(`Preserving position: ${oldMode} -> ${newMode}, progress: ${currentProgress}`);
+    
+    // Update global sync when switching modes
+    updateSync({ 
+      page: currentPage, 
+      unitIndex: currentThoughtUnit 
+    }, 'progressive');
     
     switch (newMode) {
       case "rsvp":
@@ -370,7 +395,7 @@ export default function CleanProgressiveView({
         setCurrentWordIndex(newWordIndex);
         break;
       case "bionic":
-        // Bionic doesn't need position preservation
+        // Bionic doesn't need position preservation but sync with TOC
         break;
       case "guided":
         const newSentenceIndex = Math.floor(currentProgress * Math.max(sentences.length - 1, 1));
@@ -383,7 +408,7 @@ export default function CleanProgressiveView({
     }
   };
 
-  // Auto-advance logic for different modes
+  // Enhanced auto-advance logic with TOC sync
   useEffect(() => {
     if (!isReading || isPaused || localPaused) return;
 
@@ -393,35 +418,61 @@ export default function CleanProgressiveView({
 
     switch (speedMode) {
       case "rsvp":
-        // RSVP: advance word by word
+        // RSVP: advance word by word with progress sync
         interval = window.setInterval(() => {
           setCurrentWordIndex(prev => {
-            if (prev >= words.length - 1) return 0; // Loop back
-            return prev + 1;
+            const newIndex = prev >= words.length - 1 ? 0 : prev + 1;
+            
+            // Sync progress every 10 words or at completion
+            if (newIndex % 10 === 0 || newIndex === 0) {
+              const progress = newIndex / Math.max(words.length - 1, 1);
+              updateSync({ 
+                page: currentPage, 
+                unitIndex: currentThoughtUnit 
+              }, 'progressive');
+            }
+            
+            return newIndex;
           });
         }, baseInterval);
         break;
 
       case "bionic":
-        // Bionic: no auto-advance, user controls
+        // Bionic: no auto-advance, but sync on manual navigation
         break;
 
       case "guided":
-        // Guided: advance sentence by sentence (slower)
+        // Guided: advance sentence by sentence with sync
         interval = window.setInterval(() => {
           setCurrentSentenceIndex(prev => {
-            if (prev >= sentences.length - 1) return 0;
-            return prev + 1;
+            const newIndex = prev >= sentences.length - 1 ? 0 : prev + 1;
+            
+            // Sync on sentence completion
+            if (newIndex === 0 || newIndex % 3 === 0) {
+              updateSync({ 
+                page: currentPage, 
+                unitIndex: currentThoughtUnit 
+              }, 'progressive');
+            }
+            
+            return newIndex;
           });
         }, baseInterval * 8); // Much slower for sentences
         break;
 
       case "flash":
-        // Flash: advance concept by concept (slowest)
+        // Flash: advance concept by concept with sync
         interval = window.setInterval(() => {
           setCurrentConceptIndex(prev => {
-            if (prev >= concepts.length - 1) return 0;
-            return prev + 1;
+            const newIndex = prev >= concepts.length - 1 ? 0 : prev + 1;
+            
+            // Sync on each concept change
+            updateSync({ 
+              page: currentPage, 
+              unitIndex: currentThoughtUnit 
+            }, 'progressive');
+            
+            return newIndex;
           });
         }, baseInterval * 15); // Very slow for concepts
         break;
@@ -430,7 +481,7 @@ export default function CleanProgressiveView({
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [speedMode, readingSpeed, isReading, isPaused, localPaused, words.length, sentences.length, concepts.length]);
+  }, [speedMode, readingSpeed, isReading, isPaused, localPaused, words.length, sentences.length, concepts.length, updateSync, currentPage, currentThoughtUnit]);
 
   // Speech synthesis
   const speakText = (text: string) => {

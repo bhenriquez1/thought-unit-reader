@@ -538,30 +538,44 @@ export default function ThoughtUnitReader() {
   ) => {
     const seed = (text || sel.selectionText || "").trim();
     if (!seed) {
-      alert("Select text first.");
+      alert("Select text first to create a top student note.");
       return;
     }
 
-    if (mode === "highYield") {
-      const draft = await buildHighYieldDraft(seed);
-      setRbDraftText(draft);
-    } else if (mode === "sketch") {
+    console.log(`🎓 Creating ${mode || 'standard'} note for: ${seed.slice(0, 50)}...`);
+
+    try {
+      if (mode === "highYield" || mode === "sketch") {
+        const draft = await buildTopStudentNote(seed, mode);
+        setRbDraftText(draft);
+      } else {
+        // Default to high-yield top student note
+        const draft = await buildTopStudentNote(seed, "highYield");
+        setRbDraftText(draft);
+      }
+
+      setViewMode("rightbrain");
+    } catch (error) {
+      console.error("Error creating top student note:", error);
+      // Fallback to basic note
       setRbDraftText(
         [
-          `# Sketch Note`,
+          `# 📚 Study Note`,
           ``,
-          `What I see:`,
-          `- Shapes / arrows / labels…`,
-          ``,
-          `Idea in one line:`,
+          `## Content`,
           seed,
+          ``,
+          `## My Understanding`,
+          `[Add your insights here]`,
+          ``,
+          `## Key Points`,
+          `- [Point 1]`,
+          `- [Point 2]`,
+          `- [Point 3]`,
         ].join("\n")
       );
-    } else {
-      setRbDraftText(seed);
+      setViewMode("rightbrain");
     }
-
-    setViewMode("rightbrain");
   };
 
 
@@ -793,41 +807,54 @@ export default function ThoughtUnitReader() {
       }
 
       // Main Right-Brain Reading interface (Visual learning modes)
-      return fileUrl ? (
-        <CleanRightBrainReader
-          bookId={bookId}
-          userId={USER_ID}
-          thoughtUnits={thoughtUnits}
-          currentThoughtUnit={currentThoughtUnit}
-          fontSize={fontSize}
-          fontFamily={fontFamily}
-          lineSpacing={lineSpacing}
-          totalPages={pdfPageCount}
-          tableOfContents={tableOfContents}
-          onPageChange={(p) => syncToPage(p)}
-          onWordClick={(w) => {
-            setHighlightedWord(w);
-            if (autoWhiteboard && w.trim()) {
-              setWbConcept(truncate(w, 600));
-              setWbContext(`p.${currentPage}`);
-              setShowWhiteboardPanel(true);
-            }
-          }}
-          onTextSelect={(t) => sel.setSelectionText(t)}
-          onGenerateNote={handleOpenRightBrainNote}
-        />
+      return fileUrl && thoughtUnits.length > 0 ? (
+        <div className="h-full w-full">
+          <CleanRightBrainReader
+            bookId={bookId}
+            userId={USER_ID}
+            thoughtUnits={thoughtUnits}
+            currentThoughtUnit={currentThoughtUnit}
+            fontSize={fontSize}
+            fontFamily={fontFamily}
+            lineSpacing={lineSpacing}
+            totalPages={pdfPageCount}
+            tableOfContents={tableOfContents}
+            onPageChange={(p) => syncToPage(p)}
+            onWordClick={(w) => {
+              setHighlightedWord(w);
+              if (autoWhiteboard && w.trim()) {
+                setWbConcept(truncate(w, 600));
+                setWbContext(`p.${currentPage}`);
+                setShowWhiteboardPanel(true);
+              }
+            }}
+            onTextSelect={(t) => sel.setSelectionText(t)}
+            onGenerateNote={handleOpenRightBrainNote}
+          />
+        </div>
       ) : (
-        <div className="flex flex-col items-center justify-center h-full gap-4">
+        <div className="flex flex-col items-center justify-center h-full gap-4 bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
           <div className="text-center">
-            <h3 className="text-lg font-semibold mb-2 text-yellow-400">🧠 Visual Right-Brain Reading</h3>
-            <p className="text-sm opacity-80 mb-4">
-              Experience visual learning with Mind Maps, Memory Palace, Storyboards, and Concept Webs
+            <div className="text-6xl mb-4">🧠</div>
+            <h3 className="text-2xl font-bold mb-2 text-white">Visual Right-Brain Reading</h3>
+            <p className="text-lg opacity-80 mb-4 text-gray-300 max-w-md">
+              Experience visual learning with Galaxy, Forest, City, Ocean, and Mountain metaphors
             </p>
+            {!fileUrl ? (
+              <label className="bg-gradient-to-r from-yellow-500 to-orange-500 text-black px-6 py-3 rounded-lg cursor-pointer font-medium hover:from-yellow-400 hover:to-orange-400 transition-all shadow-lg">
+                📂 Upload PDF to Begin Visual Journey
+                <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
+              </label>
+            ) : (
+              <div className="text-yellow-300">
+                <div className="animate-spin text-4xl mb-2">🌌</div>
+                <p>Processing your document for visual learning...</p>
+                <p className="text-sm opacity-75 mt-2">
+                  {thoughtUnits.length} thought units loaded
+                </p>
+              </div>
+            )}
           </div>
-          <label className="bg-gradient-to-r from-yellow-500 to-orange-500 text-black px-6 py-3 rounded-lg cursor-pointer font-medium hover:from-yellow-400 hover:to-orange-400 transition-all">
-            📂 Upload PDF to Begin Visual Right-Brain Reading
-            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-          </label>
         </div>
       );
     }

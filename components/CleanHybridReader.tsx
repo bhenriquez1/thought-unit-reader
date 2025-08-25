@@ -72,11 +72,13 @@ function unitToText(u: HRUnit): string {
 // Smart annotation types
 interface SmartAnnotation {
   id: string;
-  type: "definition" | "summary" | "question" | "note" | "highlight";
+  type: "definition" | "summary" | "question" | "note" | "highlight" | "concept" | "idea";
   text: string;
   context: string;
   position: { x: number; y: number; page: number };
   timestamp: number;
+  importance?: "high" | "medium" | "low";
+  conceptType?: "main" | "supporting" | "example" | "detail";
 }
 
 // Reading pattern analysis
@@ -87,39 +89,160 @@ interface ReadingPattern {
   readingFlow: "linear" | "jumping" | "reviewing";
 }
 
-// Smart sidebar content generator
+// Right-brain style concept highlighting
+interface ConceptHighlight {
+  id: string;
+  text: string;
+  type: "main-idea" | "supporting-concept" | "example" | "definition" | "relationship";
+  color: string;
+  importance: number; // 0-1 scale
+  connections: string[]; // IDs of related concepts
+}
+
+// Enhanced smart sidebar content generator with right-brain understanding
 function generateSmartContent(selectedText: string, pageContext: string): {
   definitions: string[];
   summary: string;
   questions: string[];
   relatedConcepts: string[];
+  mainIdeas: string[];
+  visualMetaphors: string[];
+  understandingLevel: "surface" | "deep" | "mastery";
 } {
   const words = selectedText.toLowerCase().split(/\s+/);
   
-  // Simple keyword extraction for definitions
+  // Enhanced keyword extraction for definitions
   const technicalTerms = words.filter(word => 
     word.length > 6 && 
     /^[a-z]+$/.test(word) &&
-    !['however', 'therefore', 'because', 'through', 'without', 'between'].includes(word)
+    !['however', 'therefore', 'because', 'through', 'without', 'between', 'important', 'significant'].includes(word)
   );
 
-  // Generate summary (first sentence or key phrase)
-  const sentences = selectedText.split(/[.!?]+/);
-  const summary = sentences[0]?.trim() + (sentences.length > 1 ? "..." : "");
-
-  // Generate comprehension questions
-  const questions = [
-    `What is the main concept in: "${selectedText.slice(0, 50)}..."?`,
-    `How does this relate to the broader context?`,
-    `What are the key implications of this information?`
+  // Extract main ideas using right-brain patterns
+  const ideaPatterns = [
+    /\b(the key|main|primary|central|core|fundamental|essential)\s+(\w+(?:\s+\w+){0,3})\b/gi,
+    /\b(concept|principle|theory|law|rule|method|approach|strategy)\s+of\s+(\w+(?:\s+\w+){0,2})/gi,
+    /\b(\w+(?:\s+\w+){0,2})\s+(is|are|means|refers to|represents|symbolizes)/gi
   ];
+  
+  const mainIdeas: string[] = [];
+  ideaPatterns.forEach(pattern => {
+    const matches = selectedText.match(pattern);
+    if (matches) {
+      mainIdeas.push(...matches.slice(0, 2));
+    }
+  });
+
+  // Generate visual metaphors for understanding
+  const visualMetaphors = [
+    `Think of this like a ${getRandomMetaphor()} where...`,
+    `Imagine this concept as a ${getRandomMetaphor()} that...`,
+    `This works similar to how a ${getRandomMetaphor()} functions...`
+  ];
+
+  // Enhanced summary with understanding focus
+  const sentences = selectedText.split(/[.!?]+/);
+  const summary = sentences.length > 1 
+    ? `Key insight: ${sentences[0]?.trim()}. This means: ${sentences[1]?.trim().slice(0, 50)}...`
+    : sentences[0]?.trim() + "...";
+
+  // Right-brain focused comprehension questions
+  const questions = [
+    `What's the BIG PICTURE idea here?`,
+    `How does this connect to what you already know?`,
+    `If you had to explain this to a friend, what would you say?`,
+    `What would happen if this concept didn't exist?`
+  ];
+
+  // Determine understanding level
+  const understandingLevel = selectedText.length > 200 ? "deep" : 
+                           selectedText.length > 50 ? "surface" : "mastery";
 
   return {
     definitions: technicalTerms.slice(0, 3),
     summary: summary || selectedText.slice(0, 100) + "...",
     questions: questions.slice(0, 2),
-    relatedConcepts: technicalTerms.slice(0, 5)
+    relatedConcepts: technicalTerms.slice(0, 5),
+    mainIdeas: mainIdeas.slice(0, 3),
+    visualMetaphors: visualMetaphors.slice(0, 1),
+    understandingLevel
   };
+}
+
+// Helper function for visual metaphors
+function getRandomMetaphor(): string {
+  const metaphors = [
+    "tree with branches", "river flowing", "building with floors", 
+    "puzzle piece", "bridge connecting", "key unlocking", "map showing paths",
+    "garden growing", "machine with gears", "story unfolding"
+  ];
+  return metaphors[Math.floor(Math.random() * metaphors.length)];
+}
+
+// Right-brain concept extraction
+function extractConcepts(text: string): ConceptHighlight[] {
+  const concepts: ConceptHighlight[] = [];
+  
+  // Main ideas (highest importance)
+  const mainIdeaPatterns = [
+    /\b(the main|primary|key|central|core|fundamental)\s+(\w+(?:\s+\w+){0,4})/gi,
+    /\b(principle|concept|theory|law|rule)\s+of\s+(\w+(?:\s+\w+){0,3})/gi
+  ];
+  
+  mainIdeaPatterns.forEach(pattern => {
+    const matches = [...text.matchAll(pattern)];
+    matches.forEach((match, index) => {
+      concepts.push({
+        id: `main-${index}`,
+        text: match[0],
+        type: "main-idea",
+        color: "#FFD700", // Gold for main ideas
+        importance: 0.9,
+        connections: []
+      });
+    });
+  });
+
+  // Supporting concepts
+  const supportingPatterns = [
+    /\b(because|since|due to|as a result|therefore|thus|hence)\s+(\w+(?:\s+\w+){0,5})/gi,
+    /\b(for example|such as|including|like)\s+(\w+(?:\s+\w+){0,4})/gi
+  ];
+  
+  supportingPatterns.forEach(pattern => {
+    const matches = [...text.matchAll(pattern)];
+    matches.forEach((match, index) => {
+      concepts.push({
+        id: `support-${index}`,
+        text: match[0],
+        type: "supporting-concept",
+        color: "#87CEEB", // Sky blue for supporting
+        importance: 0.6,
+        connections: []
+      });
+    });
+  });
+
+  // Definitions
+  const definitionPatterns = [
+    /\b(\w+(?:\s+\w+){0,2})\s+(is|are|means|refers to|defined as)\s+(\w+(?:\s+\w+){0,6})/gi
+  ];
+  
+  definitionPatterns.forEach(pattern => {
+    const matches = [...text.matchAll(pattern)];
+    matches.forEach((match, index) => {
+      concepts.push({
+        id: `def-${index}`,
+        text: match[0],
+        type: "definition",
+        color: "#98FB98", // Light green for definitions
+        importance: 0.7,
+        connections: []
+      });
+    });
+  });
+
+  return concepts.slice(0, 10); // Limit to prevent overwhelming
 }
 
 export default function CleanHybridReader({
@@ -169,10 +292,12 @@ export default function CleanHybridReader({
   const [showReadingGuide, setShowReadingGuide] = useState(false);
   const [pageNotes, setPageNotes] = useState<Record<number, string>>({});
   
-  // Smart features
+  // Enhanced smart features with right-brain highlighting
   const [smartContent, setSmartContent] = useState<ReturnType<typeof generateSmartContent> | null>(null);
   const [pageTextIndex, setPageTextIndex] = useState<PageTextIndex | null>(null);
   const [focusStartTime, setFocusStartTime] = useState<number>(Date.now());
+  const [conceptHighlights, setConceptHighlights] = useState<ConceptHighlight[]>([]);
+  const [rightBrainMode, setRightBrainMode] = useState<boolean>(true);
   
   // Voice and speech
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -233,16 +358,23 @@ export default function CleanHybridReader({
     };
   }, [currentPage]);
 
-  // Smart content generation
+  // Enhanced smart content generation with concept extraction
   useEffect(() => {
     if (selectionText && selectionText.length > 10) {
       const pageContext = pageTextIndex?.text.slice(0, 500) || "";
       const content = generateSmartContent(selectionText, pageContext);
       setSmartContent(content);
+      
+      // Extract concepts for right-brain highlighting
+      if (rightBrainMode) {
+        const concepts = extractConcepts(selectionText);
+        setConceptHighlights(concepts);
+      }
     } else {
       setSmartContent(null);
+      setConceptHighlights([]);
     }
-  }, [selectionText, pageTextIndex]);
+  }, [selectionText, pageTextIndex, rightBrainMode]);
 
   // Enhanced text selection handler
   const handleMouseUp = (e: React.MouseEvent) => {
@@ -303,47 +435,91 @@ export default function CleanHybridReader({
     setIsSpeaking(false);
   };
 
-  // Smart highlighting based on reading patterns
+  // Enhanced right-brain highlighting based on concept understanding
   useEffect(() => {
     if (highlightMode === "smart" && pageTextIndex && pdfContainerRef.current) {
-      // Highlight important terms and concepts
-      const importantTerms = pageTextIndex.text
-        .split(/\s+/)
-        .filter(word => 
-          word.length > 6 && 
-          /^[A-Z]/.test(word) && // Capitalized words
-          !['However', 'Therefore', 'Because', 'Through'].includes(word)
-        )
-        .slice(0, 5);
-
-      importantTerms.forEach(term => {
-        if (pdfContainerRef.current) {
-          // Create a simple highlight overlay for the term
-          const walker = document.createTreeWalker(
-            pdfContainerRef.current,
-            NodeFilter.SHOW_TEXT,
-            null
-          );
-          
-          const textNodes: Text[] = [];
-          let node;
-          while (node = walker.nextNode()) {
-            textNodes.push(node as Text);
-          }
-          
-          textNodes.forEach(textNode => {
-            const text = textNode.textContent || '';
-            if (text.toLowerCase().includes(term.toLowerCase())) {
-              const parent = textNode.parentElement;
-              if (parent) {
-                parent.style.backgroundColor = "rgba(255, 235, 59, 0.2)";
-              }
-            }
-          });
-        }
+      // Clear previous highlights
+      const existingHighlights = pdfContainerRef.current.querySelectorAll('.concept-highlight');
+      existingHighlights.forEach(el => {
+        (el as HTMLElement).style.backgroundColor = '';
+        el.classList.remove('concept-highlight');
       });
+
+      if (rightBrainMode) {
+        // Right-brain concept highlighting
+        const concepts = extractConcepts(pageTextIndex.text);
+        
+        concepts.forEach(concept => {
+          if (pdfContainerRef.current) {
+            const walker = document.createTreeWalker(
+              pdfContainerRef.current,
+              NodeFilter.SHOW_TEXT,
+              null
+            );
+            
+            const textNodes: Text[] = [];
+            let node;
+            while (node = walker.nextNode()) {
+              textNodes.push(node as Text);
+            }
+            
+            // Find and highlight concept text
+            const conceptWords = concept.text.toLowerCase().split(/\s+/);
+            textNodes.forEach(textNode => {
+              const text = textNode.textContent?.toLowerCase() || '';
+              const hasConceptWords = conceptWords.some(word => text.includes(word));
+              
+              if (hasConceptWords && textNode.parentElement) {
+                const parent = textNode.parentElement;
+                parent.style.backgroundColor = concept.color + '40'; // Add transparency
+                parent.style.borderLeft = `3px solid ${concept.color}`;
+                parent.style.paddingLeft = '2px';
+                parent.classList.add('concept-highlight');
+                parent.title = `${concept.type}: ${concept.text}`;
+              }
+            });
+          }
+        });
+      } else {
+        // Traditional smart highlighting
+        const importantTerms = pageTextIndex.text
+          .split(/\s+/)
+          .filter(word => 
+            word.length > 6 && 
+            /^[A-Z]/.test(word) && 
+            !['However', 'Therefore', 'Because', 'Through'].includes(word)
+          )
+          .slice(0, 5);
+
+        importantTerms.forEach(term => {
+          if (pdfContainerRef.current) {
+            const walker = document.createTreeWalker(
+              pdfContainerRef.current,
+              NodeFilter.SHOW_TEXT,
+              null
+            );
+            
+            const textNodes: Text[] = [];
+            let node;
+            while (node = walker.nextNode()) {
+              textNodes.push(node as Text);
+            }
+            
+            textNodes.forEach(textNode => {
+              const text = textNode.textContent || '';
+              if (text.toLowerCase().includes(term.toLowerCase())) {
+                const parent = textNode.parentElement;
+                if (parent) {
+                  parent.style.backgroundColor = "rgba(255, 235, 59, 0.2)";
+                  parent.classList.add('concept-highlight');
+                }
+              }
+            });
+          }
+        });
+      }
     }
-  }, [pageTextIndex, highlightMode]);
+  }, [pageTextIndex, highlightMode, rightBrainMode]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -456,15 +632,30 @@ export default function CleanHybridReader({
             </div>
 
             {/* Highlight Mode */}
-            <select
-              value={highlightMode}
-              onChange={(e) => setHighlightMode(e.target.value as any)}
-              className="text-sm border border-gray-300 rounded px-2 py-1"
-            >
-              <option value="smart">Smart Highlights</option>
-              <option value="manual">Manual Only</option>
-              <option value="off">No Highlights</option>
-            </select>
+            <div className="flex items-center gap-2">
+              <select
+                value={highlightMode}
+                onChange={(e) => setHighlightMode(e.target.value as any)}
+                className="text-sm border border-gray-300 rounded px-2 py-1"
+              >
+                <option value="smart">Smart Highlights</option>
+                <option value="manual">Manual Only</option>
+                <option value="off">No Highlights</option>
+              </select>
+              
+              {/* Right-Brain Mode Toggle */}
+              <button
+                onClick={() => setRightBrainMode(!rightBrainMode)}
+                className={`px-2 py-1 rounded text-xs ${
+                  rightBrainMode
+                    ? "bg-purple-600 hover:bg-purple-500 text-white"
+                    : "bg-gray-200 hover:bg-gray-300 text-gray-700"
+                }`}
+                title="Toggle right-brain concept highlighting"
+              >
+                🧠 Ideas
+              </button>
+            </div>
 
             {/* Voice Control */}
             <button
@@ -594,12 +785,50 @@ export default function CleanHybridReader({
               </div>
             )}
 
-            {/* Smart Content */}
+            {/* Enhanced Smart Content with Right-Brain Understanding */}
             {smartContent && (
               <div className="space-y-3">
-                {/* Summary */}
+                {/* Understanding Level Indicator */}
+                <div className={`p-2 rounded-lg text-center text-xs font-medium ${
+                  smartContent.understandingLevel === "mastery" ? "bg-green-100 text-green-800" :
+                  smartContent.understandingLevel === "deep" ? "bg-blue-100 text-blue-800" :
+                  "bg-orange-100 text-orange-800"
+                }`}>
+                  Understanding Level: {smartContent.understandingLevel.toUpperCase()}
+                </div>
+
+                {/* Main Ideas (Right-Brain Focus) */}
+                {smartContent.mainIdeas.length > 0 && (
+                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg p-3">
+                    <h5 className="text-sm font-semibold text-purple-700 mb-2">💡 Main Ideas</h5>
+                    <div className="space-y-2">
+                      {smartContent.mainIdeas.map((idea, idx) => (
+                        <div
+                          key={idx}
+                          className="px-3 py-2 bg-white border-l-4 border-purple-400 rounded text-sm text-gray-700 shadow-sm"
+                        >
+                          {idea}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Visual Metaphors */}
+                {smartContent.visualMetaphors.length > 0 && (
+                  <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border border-orange-200 rounded-lg p-3">
+                    <h5 className="text-sm font-semibold text-orange-700 mb-2">🎨 Think of it like...</h5>
+                    {smartContent.visualMetaphors.map((metaphor, idx) => (
+                      <p key={idx} className="text-sm text-gray-700 italic">
+                        {metaphor}
+                      </p>
+                    ))}
+                  </div>
+                )}
+
+                {/* Enhanced Summary */}
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                  <h5 className="text-sm font-semibold text-green-700 mb-2">📋 Summary</h5>
+                  <h5 className="text-sm font-semibold text-green-700 mb-2">📋 Understanding Summary</h5>
                   <p className="text-sm text-gray-700">{smartContent.summary}</p>
                 </div>
 
@@ -611,7 +840,7 @@ export default function CleanHybridReader({
                       {smartContent.definitions.map((term, idx) => (
                         <span
                           key={idx}
-                          className="px-2 py-1 bg-yellow-200 text-yellow-800 rounded text-xs cursor-pointer hover:bg-yellow-300"
+                          className="px-2 py-1 bg-yellow-200 text-yellow-800 rounded text-xs cursor-pointer hover:bg-yellow-300 transition-colors"
                           onClick={() => onWordClick(term)}
                         >
                           {term}
@@ -621,17 +850,39 @@ export default function CleanHybridReader({
                   </div>
                 )}
 
-                {/* Questions */}
+                {/* Right-Brain Questions */}
                 <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                  <h5 className="text-sm font-semibold text-purple-700 mb-2">❓ Think About</h5>
+                  <h5 className="text-sm font-semibold text-purple-700 mb-2">🤔 Deep Understanding</h5>
                   <ul className="space-y-2">
                     {smartContent.questions.map((question, idx) => (
-                      <li key={idx} className="text-sm text-gray-700">
-                        • {question}
+                      <li key={idx} className="text-sm text-gray-700 flex items-start gap-2">
+                        <span className="text-purple-500 font-bold">•</span>
+                        <span>{question}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
+
+                {/* Concept Highlights Legend */}
+                {rightBrainMode && conceptHighlights.length > 0 && (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                    <h5 className="text-sm font-semibold text-gray-700 mb-2">🎯 Concept Types</h5>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-xs">
+                        <div className="w-3 h-3 rounded" style={{ backgroundColor: "#FFD700" }}></div>
+                        <span>Main Ideas</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <div className="w-3 h-3 rounded" style={{ backgroundColor: "#87CEEB" }}></div>
+                        <span>Supporting Concepts</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <div className="w-3 h-3 rounded" style={{ backgroundColor: "#98FB98" }}></div>
+                        <span>Definitions</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
