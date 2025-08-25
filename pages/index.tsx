@@ -662,7 +662,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // Clean Progressive Reading - focused, minimal interface
+    // Enhanced Progressive Reading - advanced speed reading with TOC sync
     if (viewMode === "progressive") {
       return fileUrl ? (
         <CleanProgressiveView
@@ -676,6 +676,9 @@ export default function ThoughtUnitReader() {
           fontSize={fontSize}
           fontFamily={fontFamily}
           lineSpacing={lineSpacing}
+          totalPages={pdfPageCount}
+          tableOfContents={tableOfContents}
+          onPageChange={(p) => syncToPage(p)}
           onWordClick={(w) => {
             setHighlightedWord(w);
             if (autoWhiteboard && w.trim()) {
@@ -690,13 +693,13 @@ export default function ThoughtUnitReader() {
       ) : (
         <div className="flex flex-col items-center justify-center h-full gap-4">
           <div className="text-center">
-            <h3 className="text-lg font-semibold mb-2 text-blue-400">📖 Clean Progressive Reading</h3>
+            <h3 className="text-lg font-semibold mb-2 text-blue-400">⚡ Advanced Speed Reading</h3>
             <p className="text-sm opacity-80 mb-4">
-              Focused, sequential reading with minimal distractions
+              RSVP mode, adaptive speed control, and TOC-synchronized reading
             </p>
           </div>
           <label className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-6 py-3 rounded-lg cursor-pointer font-medium hover:from-blue-400 hover:to-purple-400 transition-all">
-            📂 Upload PDF to Begin Progressive Reading
+            📂 Upload PDF to Begin Speed Reading
             <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
           </label>
         </div>
@@ -729,6 +732,7 @@ export default function ThoughtUnitReader() {
           onTextSelect={(t) => sel.setSelectionText(t)}
           selBind={sel.bind}
           tableOfContents={tableOfContents}
+          totalPages={pdfPageCount}
         />
       ) : (
         <div className="flex flex-col items-center justify-center h-full gap-4">
@@ -764,27 +768,19 @@ export default function ThoughtUnitReader() {
         );
       }
 
-      // Main Right-Brain Reading interface (combining best of Progressive + Hybrid)
+      // Main Right-Brain Reading interface (Visual learning modes)
       return fileUrl ? (
-        <EnhancedHybridReader
+        <VisualRightBrainReader
           bookId={bookId}
           userId={USER_ID}
-          pdfUrl={fileUrl || ""}
-          currentPage={currentPage}
-          pdfPageCount={pdfPageCount}
-          onPageChange={(p) => syncToPage(p)}
-          sampleText={sampleText}
-          readingSpeed={readingSpeed}
-          isReading={isReading}
-          isPaused={isPaused}
-          currentThoughtUnit={currentThoughtUnit}
-          setCurrentThoughtUnit={setCurrentThoughtUnit}
           thoughtUnits={thoughtUnits}
-          highlightedWord={highlightedWord}
-          setHighlightedWord={setHighlightedWord}
+          currentThoughtUnit={currentThoughtUnit}
           fontSize={fontSize}
           fontFamily={fontFamily}
           lineSpacing={lineSpacing}
+          totalPages={pdfPageCount}
+          tableOfContents={tableOfContents}
+          onPageChange={(p) => syncToPage(p)}
           onWordClick={(w) => {
             setHighlightedWord(w);
             if (autoWhiteboard && w.trim()) {
@@ -793,32 +789,19 @@ export default function ThoughtUnitReader() {
               setShowWhiteboardPanel(true);
             }
           }}
-          setReadingSpeed={setReadingSpeed}
           onTextSelect={(t) => sel.setSelectionText(t)}
-          selBind={sel.bind}
-          externalSelectionText={sel.selectionText}
           onGenerateNote={handleOpenRightBrainNote}
-          selectedVoice={selectedVoice}
-          onVoiceChange={setSelectedVoice}
-          speechRate={speechRate}
-          onSpeechRateChange={setSpeechRate}
-          tableOfContents={tableOfContents}
-          onChunkPick={(text) => {
-            // Handle chunk pick with highlighting on current page
-            highlightChunkInPDF(currentPage, text);
-            sel.setSelectionText(text);
-          }}
         />
       ) : (
         <div className="flex flex-col items-center justify-center h-full gap-4">
           <div className="text-center">
-            <h3 className="text-lg font-semibold mb-2 text-yellow-400">🧠 Right-Brain Reading</h3>
+            <h3 className="text-lg font-semibold mb-2 text-yellow-400">🧠 Visual Right-Brain Reading</h3>
             <p className="text-sm opacity-80 mb-4">
-              Experience enhanced learning with visual metaphors, pattern recognition, and mind movie scenes
+              Experience visual learning with Mind Maps, Memory Palace, Storyboards, and Concept Webs
             </p>
           </div>
           <label className="bg-gradient-to-r from-yellow-500 to-orange-500 text-black px-6 py-3 rounded-lg cursor-pointer font-medium hover:from-yellow-400 hover:to-orange-400 transition-all">
-            📂 Upload PDF to Begin Right-Brain Reading
+            📂 Upload PDF to Begin Visual Right-Brain Reading
             <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
           </label>
         </div>

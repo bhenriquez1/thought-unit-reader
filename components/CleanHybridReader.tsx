@@ -5,6 +5,8 @@ import type { ThoughtUnit as BaseThoughtUnit } from "@/types/reading";
 import { Document, Page } from "react-pdf";
 import { chunkText, stableChunkId } from "@/lib/chunkers";
 import { loadUnderstood, markUnderstood } from "@/lib/understoodStore";
+import { useReaderSync } from "@/lib/readerSync";
+import type { TOCEntry } from "@/lib/tocParser";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -28,8 +30,9 @@ interface CleanHybridReaderProps {
   onTextSelect?: (text: string) => void;
   selBind?: { onMouseUp?: (e: React.MouseEvent) => void };
   
-  // Optional enhancements
-  tableOfContents?: any[];
+  // TOC Integration for enhanced navigation
+  tableOfContents?: TOCEntry[];
+  totalPages?: number;
 }
 
 function unitToText(u: HRUnit): string {
@@ -117,12 +120,38 @@ export default function CleanHybridReader({
   onTextSelect,
   selBind,
   tableOfContents = [],
+  totalPages,
 }: CleanHybridReaderProps) {
   const [pdfScale, setPdfScale] = useState(1.0);
   const [showEnhancements, setShowEnhancements] = useState(true);
   const [highlightedTerm, setHighlightedTerm] = useState<string>("");
   const [understoodMap, setUnderstoodMap] = useState<Record<string, true>>({});
+  const [showTOC, setShowTOC] = useState(false);
   const pdfContainerRef = useRef<HTMLDivElement>(null);
+  
+  // ReaderSync integration for TOC synchronization
+  const readerSync = useReaderSync();
+
+  // Initialize ReaderSync with content data
+  useEffect(() => {
+    if (tableOfContents.length > 0 && totalPages && thoughtUnits.length > 0) {
+      readerSync.initializeContent(totalPages, thoughtUnits.length, tableOfContents);
+    }
+  }, [tableOfContents, totalPages, thoughtUnits.length, readerSync]);
+
+  // Sync current page with ReaderSync
+  useEffect(() => {
+    if (currentPage !== readerSync.page) {
+      readerSync.setPage(currentPage, "hybrid");
+    }
+  }, [currentPage, readerSync]);
+
+  // Sync current unit with ReaderSync
+  useEffect(() => {
+    if (currentThoughtUnit !== readerSync.unitIndex) {
+      readerSync.setUnitIndex(currentThoughtUnit, "hybrid");
+    }
+  }, [currentThoughtUnit, readerSync]);
 
   // Load understood chunks
   useEffect(() => {
@@ -232,26 +261,79 @@ export default function CleanHybridReader({
     }
   };
 
-  const currentChapter = tableOfContents.find(toc => toc.page <= currentPage);
+  // Enhanced chapter detection using ReaderSync
+  const currentChapter = readerSync.findNearestChapter(currentPage);
+  const currentTOCEntry = tableOfContents.find(toc => toc.pageNumber <= currentPage);
+
+  // Navigation handlers
+  const handlePreviousPage = () => {
+    const newPage = Math.max(1, currentPage - 1);
+    onPageChange(newPage);
+    readerSync.setPage(newPage, "hybrid");
+  };
+
+  const handleNextPage = () => {
+    const newPage = Math.min(pdfPageCount || 999, currentPage + 1);
+    onPageChange(newPage);
+    readerSync.setPage(newPage, "hybrid");
+  };
+
+  const handleChapterJump = (tocEntry: TOCEntry) => {
+    onPageChange(tocEntry.pageNumber);
+    readerSync.setPage(tocEntry.pageNumber, "toc");
+    setShowTOC(false);
+  };
+
+  const handlePreviousChapter = () => {
+    const currentChapterIndex = tableOfContents.findIndex(toc => toc.pageNumber <= currentPage);
+    if (currentChapterIndex > 0) {
+      const prevChapter = tableOfContents[currentChapterIndex - 1];
+      handleChapterJump(prevChapter);
+    }
+  };
+
+  const handleNextChapter = () => {
+    const currentChapterIndex = tableOfContents.findIndex(toc => toc.pageNumber <= currentPage);
+    if (currentChapterIndex >= 0 && currentChapterIndex < tableOfContents.length - 1) {
+      const nextChapter = tableOfContents[currentChapterIndex + 1];
+      handleChapterJump(nextChapter);
+    }
+  };
 
   return (
     <div className="h-full flex bg-gray-900">
       {/* PDF View - Left Side (60%) */}
       <div className="w-3/5 bg-gray-800 border-r border-gray-700 flex flex-col">
-        {/* PDF Controls */}
+        {/* Enhanced PDF Controls with TOC Navigation */}
         <div className="flex items-center justify-between p-3 bg-gray-700 border-b border-gray-600">
           <div className="flex items-center gap-2">
-            <h4 className="text-sm font-semibold text-blue-400">📄 Original Document</h4>
-            {currentChapter && (
+            <h4 className="text-sm font-semibold text-blue-400">📄 Hybrid Reader</h4>
+            {currentTOCEntry && (
               <span className="text-xs bg-blue-500/20 px-2 py-1 rounded text-blue-300">
-                {currentChapter.title}
+                {currentTOCEntry.title}
+              </span>
+            )}
+            {currentChapter && (
+              <span className="text-xs bg-green-500/20 px-2 py-1 rounded text-green-300">
+                Unit {currentChapter.unitStart}-{currentChapter.unitEnd}
               </span>
             )}
           </div>
           
           <div className="flex items-center gap-2">
+            {/* Chapter Navigation */}
             <button
-              onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+              onClick={handlePreviousChapter}
+              disabled={!tableOfContents.length || tableOfContents.findIndex(toc => toc.pageNumber <= currentPage) <= 0}
+              className="text-xs px-2 py-1 bg-purple-600 rounded hover:bg-purple-500 disabled:opacity-50"
+              title="Previous Chapter"
+            >
+              ⏮
+            </button>
+            
+            {/* Page Navigation */}
+            <button
+              onClick={handlePreviousPage}
               disabled={currentPage <= 1}
               className="text-xs px-3 py-1 bg-gray-600 rounded hover:bg-gray-500 disabled:opacity-50"
             >
@@ -261,15 +343,40 @@ export default function CleanHybridReader({
               {currentPage} / {pdfPageCount || '?'}
             </span>
             <button
-              onClick={() => onPageChange(Math.min(pdfPageCount || 999, currentPage + 1))}
+              onClick={handleNextPage}
               disabled={currentPage >= (pdfPageCount || 999)}
               className="text-xs px-3 py-1 bg-gray-600 rounded hover:bg-gray-500 disabled:opacity-50"
             >
               Next →
             </button>
             
+            <button
+              onClick={handleNextChapter}
+              disabled={!tableOfContents.length || tableOfContents.findIndex(toc => toc.pageNumber <= currentPage) >= tableOfContents.length - 1}
+              className="text-xs px-2 py-1 bg-purple-600 rounded hover:bg-purple-500 disabled:opacity-50"
+              title="Next Chapter"
+            >
+              ⏭
+            </button>
+            
             <div className="w-px h-4 bg-gray-600 mx-2" />
             
+            {/* TOC Toggle */}
+            <button
+              onClick={() => setShowTOC(!showTOC)}
+              className={`text-xs px-3 py-1 rounded ${
+                showTOC 
+                  ? "bg-purple-600 text-white" 
+                  : "bg-gray-600 hover:bg-gray-500"
+              }`}
+              disabled={!tableOfContents.length}
+            >
+              📑 TOC
+            </button>
+            
+            <div className="w-px h-4 bg-gray-600 mx-2" />
+            
+            {/* Zoom Controls */}
             <button
               onClick={() => setPdfScale(s => Math.max(0.5, s - 0.1))}
               className="text-xs px-2 py-1 bg-gray-600 rounded hover:bg-gray-500"
@@ -299,7 +406,7 @@ export default function CleanHybridReader({
           </div>
         </div>
 
-        {/* PDF Viewer */}
+        {/* PDF Viewer with TOC Overlay */}
         <div 
           ref={pdfContainerRef}
           className="flex-1 overflow-auto relative bg-white"
@@ -313,6 +420,59 @@ export default function CleanHybridReader({
               renderAnnotationLayer={true}
             />
           </Document>
+          
+          {/* TOC Overlay */}
+          {showTOC && tableOfContents.length > 0 && (
+            <div className="absolute top-4 left-4 w-80 max-h-96 bg-gray-800/95 backdrop-blur-sm rounded-lg border border-gray-600 shadow-xl z-20">
+              <div className="flex items-center justify-between p-3 border-b border-gray-600">
+                <h5 className="text-sm font-semibold text-purple-300">📑 Table of Contents</h5>
+                <button
+                  onClick={() => setShowTOC(false)}
+                  className="text-gray-400 hover:text-white text-lg leading-none"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="max-h-80 overflow-y-auto p-2">
+                {tableOfContents.map((entry, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleChapterJump(entry)}
+                    className={`w-full text-left p-2 rounded text-sm transition-colors ${
+                      entry.pageNumber === currentPage || 
+                      (entry.pageNumber <= currentPage && 
+                       (idx === tableOfContents.length - 1 || tableOfContents[idx + 1].pageNumber > currentPage))
+                        ? "bg-purple-600/30 text-purple-200 border border-purple-500/50"
+                        : "text-gray-300 hover:bg-gray-700/50"
+                    }`}
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="truncate pr-2">{entry.title}</span>
+                      <span className="text-xs text-gray-400 flex-shrink-0">
+                        p.{entry.pageNumber}
+                      </span>
+                    </div>
+                    {entry.subChapters && entry.subChapters.length > 0 && (
+                      <div className="ml-3 mt-1 space-y-1">
+                        {entry.subChapters.slice(0, 3).map((sub, subIdx) => (
+                          <button
+                            key={subIdx}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleChapterJump(sub);
+                            }}
+                            className="block w-full text-left text-xs text-gray-400 hover:text-gray-200 truncate"
+                          >
+                            • {sub.title} (p.{sub.pageNumber})
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -456,9 +616,9 @@ export default function CleanHybridReader({
             </div>
           </div>
 
-          {/* Reading Progress */}
+          {/* Enhanced Reading Progress with Chapter Info */}
           <div className="p-3 bg-gray-700/50 rounded-lg border border-gray-600">
-            <h5 className="text-sm font-medium text-gray-300 mb-2">📊 Progress</h5>
+            <h5 className="text-sm font-medium text-gray-300 mb-2">📊 Reading Progress</h5>
             <div className="space-y-2">
               <div className="flex justify-between text-xs text-gray-400">
                 <span>Page Progress</span>
@@ -471,6 +631,25 @@ export default function CleanHybridReader({
                 />
               </div>
               
+              {currentChapter && (
+                <>
+                  <div className="flex justify-between text-xs text-gray-400">
+                    <span>Chapter Progress</span>
+                    <span>{currentChapter.title}</span>
+                  </div>
+                  <div className="w-full bg-gray-600 rounded-full h-2">
+                    <div 
+                      className="bg-purple-400 h-2 rounded-full transition-all duration-300"
+                      style={{ 
+                        width: `${currentChapter.unitEnd > currentChapter.unitStart 
+                          ? ((currentThoughtUnit - currentChapter.unitStart) / (currentChapter.unitEnd - currentChapter.unitStart)) * 100 
+                          : 0}%` 
+                      }}
+                    />
+                  </div>
+                </>
+              )}
+              
               <div className="flex justify-between text-xs text-gray-400">
                 <span>Chunks Understood</span>
                 <span>{Object.keys(understoodMap).length} / {chunks.length}</span>
@@ -480,6 +659,14 @@ export default function CleanHybridReader({
                   className="bg-green-400 h-2 rounded-full transition-all duration-300"
                   style={{ width: `${chunks.length > 0 ? (Object.keys(understoodMap).length / chunks.length) * 100 : 0}%` }}
                 />
+              </div>
+              
+              {/* Sync Status */}
+              <div className="flex justify-between text-xs text-gray-500 pt-1 border-t border-gray-600">
+                <span>Sync Status</span>
+                <span className="text-green-400">
+                  {readerSync.lastUpdateSource === "hybrid" ? "✓ Synced" : "⚡ Auto-sync"}
+                </span>
               </div>
             </div>
           </div>
