@@ -427,32 +427,52 @@ export default function ThoughtUnitReader() {
 
   // Tab sync effects: snap Progressive/Hybrid/Right-Brain to current chapter's first unit when switching tabs
   useEffect(() => {
-    if (viewMode === "progressive" || viewMode === "hybrid" || viewMode === "rightbrain") {
-      console.log(`🔄 Tab switch to ${viewMode}: syncing to current chapter`);
-      
-      // Use the sync store's chapter-aware functionality
-      const { findNearestChapter } = useReaderSync.getState();
-      const nearestChapter = findNearestChapter(currentPage);
-      
-      if (nearestChapter) {
-        console.log(`🔄 Tab sync: Found chapter "${nearestChapter.title}" for page ${currentPage}`);
-        // Snap to chapter's first unit (don't change page, just unit)
-        const chapterStartUnit = nearestChapter.unitStart;
+    try {
+      if (viewMode === "progressive" || viewMode === "hybrid" || viewMode === "rightbrain") {
+        console.log(`🔄 Tab switch to ${viewMode}: syncing to current chapter`);
         
-        setCurrentThoughtUnit(chapterStartUnit);
-        updateSync({ 
-          page: currentPage, 
-          unitIndex: chapterStartUnit 
-        }, 'manual');
-        
-        console.log(`🔄 Tab sync complete: staying on page ${currentPage}, unit ${chapterStartUnit}`);
-      } else {
-        // Fallback: ensure we're synced to current page
-        const unit = pageToUnit(currentPage, pdfPageCount, thoughtUnits.length);
-        setCurrentThoughtUnit(unit);
-        updateSync({ page: currentPage, unitIndex: unit }, 'manual');
-        console.log(`🔄 Tab sync fallback: page ${currentPage}, unit ${unit}`);
+        // Use the sync store's chapter-aware functionality with error handling
+        try {
+          const { findNearestChapter } = useReaderSync.getState();
+          const nearestChapter = findNearestChapter(currentPage);
+          
+          if (nearestChapter && nearestChapter.unitStart) {
+            console.log(`🔄 Tab sync: Found chapter "${nearestChapter.title}" for page ${currentPage}`);
+            // Snap to chapter's first unit (don't change page, just unit)
+            const chapterStartUnit = nearestChapter.unitStart;
+            
+            // Validate unit bounds
+            if (chapterStartUnit >= 1 && chapterStartUnit <= thoughtUnits.length) {
+              setCurrentThoughtUnit(chapterStartUnit);
+              updateSync({ 
+                page: currentPage, 
+                unitIndex: chapterStartUnit 
+              }, 'manual');
+              
+              console.log(`🔄 Tab sync complete: staying on page ${currentPage}, unit ${chapterStartUnit}`);
+            } else {
+              console.warn(`🔄 Tab sync: Invalid chapter unit ${chapterStartUnit}, using fallback`);
+              throw new Error('Invalid chapter unit');
+            }
+          } else {
+            console.log(`🔄 Tab sync: No chapter found for page ${currentPage}, using fallback`);
+            throw new Error('No chapter found');
+          }
+        } catch (chapterError) {
+          console.warn(`🔄 Tab sync chapter error:`, chapterError);
+          // Fallback: ensure we're synced to current page
+          const unit = pageToUnit(currentPage, pdfPageCount, thoughtUnits.length);
+          if (unit >= 1 && unit <= thoughtUnits.length) {
+            setCurrentThoughtUnit(unit);
+            updateSync({ page: currentPage, unitIndex: unit }, 'manual');
+            console.log(`🔄 Tab sync fallback: page ${currentPage}, unit ${unit}`);
+          } else {
+            console.warn(`🔄 Tab sync fallback failed: invalid unit ${unit}`);
+          }
+        }
       }
+    } catch (error) {
+      console.error(`🔄 Tab sync error for ${viewMode}:`, error);
     }
   }, [viewMode, currentPage, pdfPageCount, thoughtUnits.length, updateSync]);
 

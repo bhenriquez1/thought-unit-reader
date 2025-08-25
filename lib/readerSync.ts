@@ -127,31 +127,48 @@ export const useReaderSync = create<ReaderSyncState>((set, get) => ({
   
   // Enhanced actions with source tracking and improved navigation handling
   setPage: (page: number, source: SyncSource = "manual") => {
-    const state = get();
-    const now = Date.now();
-    
-    // Differentiate debouncing based on source - be less aggressive for user navigation
-    const debounceTime = (source === "manual" || source === "toc") ? 50 : 200;
-    
-    // Allow immediate navigation if page is different, regardless of source
-    if (state.page !== page) {
-      console.log(`🔄 ReaderSync: setPage(${page}) from ${source} - page changed`);
-    } else if (state.lastUpdateSource === source && now - state.lastUpdateTimestamp < debounceTime) {
-      console.log(`🔄 ReaderSync: setPage(${page}) from ${source} - debounced (${now - state.lastUpdateTimestamp}ms < ${debounceTime}ms)`);
-      return;
-    } else {
-      console.log(`🔄 ReaderSync: setPage(${page}) from ${source} - allowed`);
+    try {
+      const state = get();
+      const now = Date.now();
+      
+      // Validate page number
+      if (!page || page < 1 || (state.totalPages > 0 && page > state.totalPages)) {
+        console.warn(`🔄 ReaderSync: Invalid page ${page}, bounds: 1-${state.totalPages}`);
+        return;
+      }
+      
+      // Differentiate debouncing based on source - be less aggressive for user navigation
+      const debounceTime = (source === "manual" || source === "toc") ? 50 : 200;
+      
+      // Allow immediate navigation if page is different, regardless of source
+      if (state.page !== page) {
+        console.log(`🔄 ReaderSync: setPage(${page}) from ${source} - page changed`);
+      } else if (state.lastUpdateSource === source && now - state.lastUpdateTimestamp < debounceTime) {
+        console.log(`🔄 ReaderSync: setPage(${page}) from ${source} - debounced (${now - state.lastUpdateTimestamp}ms < ${debounceTime}ms)`);
+        return;
+      } else {
+        console.log(`🔄 ReaderSync: setPage(${page}) from ${source} - allowed`);
+      }
+      
+      // Calculate corresponding unit using smart mapping with error handling
+      let smartUnit = 1;
+      try {
+        smartUnit = state.pageToUnitSmart(page);
+      } catch (error) {
+        console.warn(`🔄 ReaderSync: Error in pageToUnitSmart for page ${page}:`, error);
+        // Fallback to simple calculation
+        smartUnit = Math.max(1, Math.min(state.totalUnits, Math.round((page / Math.max(1, state.totalPages)) * state.totalUnits)));
+      }
+      
+      set({ 
+        page, 
+        unitIndex: smartUnit,
+        lastUpdateSource: source,
+        lastUpdateTimestamp: now
+      });
+    } catch (error) {
+      console.error(`🔄 ReaderSync: Error in setPage(${page}, ${source}):`, error);
     }
-    
-    // Calculate corresponding unit using smart mapping
-    const smartUnit = state.pageToUnitSmart(page);
-    
-    set({ 
-      page, 
-      unitIndex: smartUnit,
-      lastUpdateSource: source,
-      lastUpdateTimestamp: now
-    });
   },
   
   setUnitIndex: (unitIndex: number, source: SyncSource = "manual") => {
@@ -308,18 +325,42 @@ export const useReaderSync = create<ReaderSyncState>((set, get) => ({
   },
   
   findNearestChapter: (page: number) => {
-    const state = get();
-    let nearest: ChapterBoundary | null = null;
-    
-    for (const chapter of state.chapterBoundaries) {
-      if (chapter.page <= page) {
-        if (!nearest || chapter.page > nearest.page) {
-          nearest = chapter;
+    try {
+      const state = get();
+      
+      // Validate input
+      if (!page || page < 1) {
+        console.warn(`🔄 ReaderSync: Invalid page ${page} for findNearestChapter`);
+        return null;
+      }
+      
+      // Check if chapterBoundaries exists and is an array
+      if (!state.chapterBoundaries || !Array.isArray(state.chapterBoundaries)) {
+        console.warn(`🔄 ReaderSync: No chapter boundaries available`);
+        return null;
+      }
+      
+      let nearest: ChapterBoundary | null = null;
+      
+      for (const chapter of state.chapterBoundaries) {
+        // Validate chapter object
+        if (!chapter || typeof chapter.page !== 'number') {
+          console.warn(`🔄 ReaderSync: Invalid chapter boundary:`, chapter);
+          continue;
+        }
+        
+        if (chapter.page <= page) {
+          if (!nearest || chapter.page > nearest.page) {
+            nearest = chapter;
+          }
         }
       }
+      
+      return nearest;
+    } catch (error) {
+      console.error(`🔄 ReaderSync: Error in findNearestChapter(${page}):`, error);
+      return null;
     }
-    
-    return nearest;
   },
   
   // Setup and maintenance methods

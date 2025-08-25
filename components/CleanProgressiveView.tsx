@@ -285,14 +285,19 @@ export default function CleanProgressiveView({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
 
-  // Global sync integration
+  // Global sync integration with error handling
   const { 
     page, 
     unitIndex, 
     updateSync 
   } = useReaderSync();
 
-  console.log("CleanProgressiveView - Global sync:", { page, unitIndex, currentPage, currentThoughtUnit });
+  // Safe logging with error handling
+  try {
+    console.log("CleanProgressiveView - Global sync:", { page, unitIndex, currentPage, currentThoughtUnit });
+  } catch (error) {
+    console.warn("CleanProgressiveView - Sync logging error:", error);
+  }
 
   // Empty states
   if (!thoughtUnits || thoughtUnits.length === 0) {
