@@ -9,7 +9,7 @@ import EnhancedHybridReader from "@/components/EnhancedHybridReader";
 import EnhancedProgressiveView from "@/components/EnhancedProgressiveView";
 import CleanProgressiveView from "@/components/CleanProgressiveView";
 import CleanHybridReader from "@/components/CleanHybridReader";
-import VisualRightBrainReader from "@/components/VisualRightBrainReader";
+import CleanRightBrainReader from "@/components/CleanRightBrainReader";
 import HighlightPopup from "@/components/HighlightPopup";
 import RightBrainNoteEditor from "@/components/RightBrainNoteEditor";
 import LinkVideoModal from "@/components/LinkVideoModal";
@@ -676,8 +676,10 @@ export default function ThoughtUnitReader() {
           fontSize={fontSize}
           fontFamily={fontFamily}
           lineSpacing={lineSpacing}
-          totalPages={pdfPageCount}
-          tableOfContents={tableOfContents}
+          pdfUrl={fileUrl}
+          currentPage={currentPage}
+          pdfPageCount={pdfPageCount}
+          highlightedWord={highlightedWord}
           onPageChange={(p) => syncToPage(p)}
           onWordClick={(w) => {
             setHighlightedWord(w);
@@ -688,7 +690,6 @@ export default function ThoughtUnitReader() {
             }
           }}
           onTextSelect={(t) => sel.setSelectionText(t)}
-          selBind={sel.bind}
         />
       ) : (
         <div className="flex flex-col items-center justify-center h-full gap-4">
@@ -717,6 +718,10 @@ export default function ThoughtUnitReader() {
           pdfUrl={fileUrl}
           currentPage={currentPage}
           pdfPageCount={pdfPageCount}
+          sampleText={sampleText}
+          setCurrentThoughtUnit={setCurrentThoughtUnit}
+          highlightedWord={highlightedWord}
+          setHighlightedWord={setHighlightedWord}
           onPageChange={(p) => syncToPage(p)}
           fontSize={fontSize}
           fontFamily={fontFamily}
@@ -732,7 +737,6 @@ export default function ThoughtUnitReader() {
           onTextSelect={(t) => sel.setSelectionText(t)}
           selBind={sel.bind}
           tableOfContents={tableOfContents}
-          totalPages={pdfPageCount}
         />
       ) : (
         <div className="flex flex-col items-center justify-center h-full gap-4">
@@ -770,7 +774,7 @@ export default function ThoughtUnitReader() {
 
       // Main Right-Brain Reading interface (Visual learning modes)
       return fileUrl ? (
-        <VisualRightBrainReader
+        <CleanRightBrainReader
           bookId={bookId}
           userId={USER_ID}
           thoughtUnits={thoughtUnits}
