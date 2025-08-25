@@ -501,34 +501,277 @@ export default function ThoughtUnitReader() {
   };
 
   /* =========================================================================
-     🔹 High-Yield & Sketch note helpers
+     🔹 Enhanced High-Yield & Sketch note helpers - Top Student Quality
   ========================================================================= */
-  async function buildHighYieldDraft(seed: string) {
+  
+  // Helper functions for enhanced note generation
+  function extractKeyConceptsFromText(text: string): string[] {
+    const conceptPatterns = [
+      /\b(concept|principle|theory|law|rule|method|approach|strategy|technique)\s+of\s+(\w+(?:\s+\w+){0,2})/gi,
+      /\b(the|a|an)\s+(main|key|primary|central|core|fundamental|essential)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /\b(\w+(?:\s+\w+){0,2})\s+(is|are|means|refers to|represents|involves)/gi
+    ];
+    
+    const concepts: string[] = [];
+    conceptPatterns.forEach(pattern => {
+      const matches = text.match(pattern);
+      if (matches) concepts.push(...matches.slice(0, 3));
+    });
+    
+    return [...new Set(concepts)].slice(0, 8);
+  }
+
+  function findConceptConnections(text: string): string[] {
+    const connectionPatterns = [
+      /\b(because|since|due to|as a result|therefore|thus|hence|leads to|causes|results in)\s+(\w+(?:\s+\w+){0,4})/gi,
+      /\b(related to|connected to|associated with|linked to|depends on)\s+(\w+(?:\s+\w+){0,3})/gi
+    ];
+    
+    const connections: string[] = [];
+    connectionPatterns.forEach(pattern => {
+      const matches = text.match(pattern);
+      if (matches) connections.push(...matches.slice(0, 2));
+    });
+    
+    return [...new Set(connections)].slice(0, 5);
+  }
+
+  function extractExamples(text: string): string[] {
+    const examplePatterns = [
+      /\b(for example|such as|including|like|instance)\s+([^.!?]+)/gi,
+      /\b(e\.g\.|i\.e\.)\s+([^.!?]+)/gi
+    ];
+    
+    const examples: string[] = [];
+    examplePatterns.forEach(pattern => {
+      const matches = text.match(pattern);
+      if (matches) examples.push(...matches.slice(0, 2));
+    });
+    
+    return examples.slice(0, 4);
+  }
+
+  function extractDefinitions(text: string): Array<{term: string, definition: string}> {
+    const definitionPattern = /\b(\w+(?:\s+\w+){0,2})\s+(is|are|means|refers to|defined as)\s+([^.!?]+)/gi;
+    const definitions: Array<{term: string, definition: string}> = [];
+    
+    let match;
+    while ((match = definitionPattern.exec(text)) !== null && definitions.length < 3) {
+      definitions.push({
+        term: match[1].trim(),
+        definition: match[3].trim()
+      });
+    }
+    
+    return definitions;
+  }
+
+  function extractMainPoint(text: string): string {
+    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 10);
+    const firstSentence = sentences[0]?.trim() || "";
+    
+    // Look for key indicator phrases
+    const keyPhrases = [
+      /\b(the main|primary|key|central|most important)\s+([^.!?]+)/i,
+      /\b(in summary|in conclusion|overall|essentially)\s+([^.!?]+)/i
+    ];
+    
+    for (const pattern of keyPhrases) {
+      const match = text.match(pattern);
+      if (match) return match[0];
+    }
+    
+    return firstSentence.slice(0, 100) + (firstSentence.length > 100 ? "..." : "");
+  }
+
+  function extractLogicalSteps(text: string): string[] {
+    const stepPatterns = [
+      /\b(first|second|third|next|then|finally|lastly)\s+([^.!?]+)/gi,
+      /\b(\d+\.)\s+([^.!?]+)/gi,
+      /\b(step \d+|stage \d+)\s*:?\s*([^.!?]+)/gi
+    ];
+    
+    const steps: string[] = [];
+    stepPatterns.forEach(pattern => {
+      const matches = text.match(pattern);
+      if (matches) steps.push(...matches.slice(0, 2));
+    });
+    
+    if (steps.length === 0) {
+      // Fallback: break into logical chunks
+      const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 20);
+      return sentences.slice(0, 4).map(s => s.trim());
+    }
+    
+    return steps.slice(0, 5);
+  }
+
+  function extractCaveats(text: string): string[] {
+    const caveatPatterns = [
+      /\b(however|but|although|except|unless|warning|caution|note that)\s+([^.!?]+)/gi,
+      /\b(not to be confused|different from|unlike|contrary to)\s+([^.!?]+)/gi
+    ];
+    
+    const caveats: string[] = [];
+    caveatPatterns.forEach(pattern => {
+      const matches = text.match(pattern);
+      if (matches) caveats.push(...matches.slice(0, 2));
+    });
+    
+    return caveats.length > 0 ? caveats.slice(0, 3) : [
+      "Double-check understanding with examples",
+      "Review connections to related concepts",
+      "Practice applying in different contexts"
+    ];
+  }
+
+  function getVisualMetaphor(text: string): string {
+    const metaphors = [
+      "a tree with branches (main trunk = core idea, branches = details)",
+      "a building (foundation = basics, floors = complexity levels)",
+      "a river system (main flow = key concept, tributaries = supporting ideas)",
+      "a puzzle (pieces = components, complete picture = understanding)",
+      "a recipe (ingredients = elements, process = how it works)",
+      "a machine (parts = components, function = purpose)",
+      "a story (characters = key elements, plot = how they interact)"
+    ];
+    
+    // Try to match content to appropriate metaphor
+    if (/\b(process|step|method|procedure)\b/i.test(text)) {
+      return "a recipe (ingredients = elements, process = how it works)";
+    }
+    if (/\b(system|component|part|element)\b/i.test(text)) {
+      return "a machine (parts = components, function = purpose)";
+    }
+    if (/\b(connect|relationship|link|associate)\b/i.test(text)) {
+      return "a river system (main flow = key concept, tributaries = supporting ideas)";
+    }
+    
+    return metaphors[Math.floor(Math.random() * metaphors.length)];
+  }
+
+  async function buildTopStudentNote(seed: string, mode: "highYield" | "sketch" = "highYield") {
     const base = seed.trim();
     if (!base) return "";
+    
+    // Enhanced AI processing for top student quality
     const [sum, mnem] = await Promise.allSettled([summarizeText(base), generateMnemonic(base)]);
     const summary = sum.status === "fulfilled" && sum.value ? sum.value : base;
     const mnemonic = mnem.status === "fulfilled" && mnem.value ? mnem.value : "";
+    
+    // Extract key concepts and relationships
+    const concepts = extractKeyConceptsFromText(base);
+    const connections = findConceptConnections(base);
+    const examples = extractExamples(base);
+    const definitions = extractDefinitions(base);
+    
+    if (mode === "sketch") {
+      return [
+        `# 🎨 Visual Learning Note`,
+        ``,
+        `## 🎯 Core Concept`,
+        `**What is this really about?**`,
+        summary,
+        ``,
+        `## 🖼️ Visual Representation`,
+        `**Draw/Describe the mental picture:**`,
+        `- Main elements: ${concepts.slice(0, 3).join(", ")}`,
+        `- How they connect: ${connections.slice(0, 2).join(" → ")}`,
+        `- Visual metaphor: Think of it like ${getVisualMetaphor(base)}`,
+        ``,
+        `## 📝 Sketch Space`,
+        `[Draw your diagram here - boxes, arrows, labels]`,
+        ``,
+        `## 🔗 Connections to What I Know`,
+        `- This reminds me of: ___________`,
+        `- Similar to: ___________`,
+        `- Different from: ___________`,
+        ``,
+        `## 💡 Memory Hook`,
+        mnemonic || `Create a story: ${concepts[0]} meets ${concepts[1]}...`,
+        ``,
+        `## ✅ Quick Check`,
+        `- Can I explain this to a friend? Yes/No`,
+        `- Can I draw it from memory? Yes/No`,
+        `- Do I see the big picture? Yes/No`,
+      ].join("\n");
+    }
+    
+    // High-yield mode - comprehensive top student note
     return [
-      `# Title: `,
+      `# 📚 Top Student Study Note`,
       ``,
-      `## Big Idea`,
-      summary,
+      `## 🎯 THE BIG IDEA (What's the point?)`,
+      `**In one sentence:** ${extractMainPoint(base)}`,
       ``,
-      `## Evidence / Details`,
-      `- Key facts / steps`,
-      `- Exceptions / edge-cases`,
+      `**Why this matters:** ${summary}`,
       ``,
-      `## Visual Sketch (describe or doodle)`,
-      `- Diagram plan: boxes/arrows/labels to show relationships`,
+      `## 🔑 Key Concepts & Definitions`,
+      ...definitions.map(def => `**${def.term}:** ${def.definition}`),
+      definitions.length === 0 ? `**Main terms:** ${concepts.slice(0, 5).join(", ")}` : "",
       ``,
-      `## Mnemonic`,
-      mnemonic || "…",
+      `## 🧠 How It Works (The Logic)`,
+      `**Step-by-step understanding:**`,
+      `1. ${extractLogicalSteps(base).join("\n2. ")}`,
       ``,
-      `## Q → A (self-test)`,
-      `- Q: …`,
-      `  A: …`,
+      `## 📊 Evidence & Examples`,
+      examples.length > 0 ? `**Real examples:**` : `**Key supporting facts:**`,
+      ...examples.slice(0, 3).map((ex, i) => `${i + 1}. ${ex}`),
+      examples.length === 0 ? `- [Add specific examples here]` : "",
+      ``,
+      `## ⚠️ Common Mistakes & Exceptions`,
+      `**Watch out for:**`,
+      `- ${extractCaveats(base).join("\n- ")}`,
+      `- Don't confuse with: [similar concepts]`,
+      ``,
+      `## 🔗 Connections & Context`,
+      `**This connects to:**`,
+      ...connections.slice(0, 3).map(conn => `- ${conn}`),
+      ``,
+      `**Builds on:** [prerequisite knowledge]`,
+      `**Leads to:** [what comes next]`,
+      ``,
+      `## 🎨 Visual Memory Aid`,
+      `**Mental picture:** ${getVisualMetaphor(base)}`,
+      ``,
+      `**Diagram idea:** [Sketch boxes/arrows showing relationships]`,
+      ``,
+      `## 🧠 Memory Techniques`,
+      `**Mnemonic:** ${mnemonic || "Create acronym/story/rhyme"}`,
+      ``,
+      `**Story method:** [Turn concepts into a memorable story]`,
+      ``,
+      `## 🎯 Self-Test Questions`,
+      `**Level 1 (Recall):**`,
+      `- What is ${concepts[0]}?`,
+      `- List the main components.`,
+      ``,
+      `**Level 2 (Understanding):**`,
+      `- Why does this work this way?`,
+      `- How does this relate to [related concept]?`,
+      ``,
+      `**Level 3 (Application):**`,
+      `- When would you use this?`,
+      `- What would happen if...?`,
+      ``,
+      `## ⭐ Key Takeaways (For Review)`,
+      `1. **Main point:** ${extractMainPoint(base)}`,
+      `2. **Most important detail:** [highlight critical info]`,
+      `3. **Practical application:** [how to use this]`,
+      ``,
+      `## 📅 Review Schedule`,
+      `- [ ] Review in 1 day`,
+      `- [ ] Review in 1 week`,
+      `- [ ] Review in 1 month`,
+      ``,
+      `---`,
+      `*Created: ${new Date().toLocaleDateString()} | Page: ${currentPage} | Understanding Level: ⭐⭐⭐*`,
     ].join("\n");
+  }
+
+  // Legacy function for backward compatibility
+  async function buildHighYieldDraft(seed: string) {
+    return await buildTopStudentNote(seed, "highYield");
   }
 
   const handleOpenRightBrainNote = async (
