@@ -650,6 +650,106 @@ export default function ThoughtUnitReader() {
     return metaphors[Math.floor(Math.random() * metaphors.length)];
   }
 
+  // David Butler-style helper functions for story-based learning
+  function extractProblemFromText(text: string): string {
+    const problemPatterns = [
+      /\b(problem|issue|challenge|difficulty|obstacle)\s+(?:is|was|involves?)\s+([^.!?]+)/gi,
+      /\b(pain|dysfunction|disorder|condition)\s+(?:occurs?|happens?|develops?)\s+([^.!?]+)/gi,
+      /\b(when|if)\s+([^,]+),?\s+(?:then|this causes?|results? in)\s+([^.!?]+)/gi
+    ];
+    
+    for (const pattern of problemPatterns) {
+      const match = text.match(pattern);
+      if (match) return match[0].slice(0, 80) + "...";
+    }
+    
+    return "Something isn't working as it should";
+  }
+
+  function extractSolutionFromText(text: string): string {
+    const solutionPatterns = [
+      /\b(solution|treatment|approach|method|way to)\s+([^.!?]+)/gi,
+      /\b(by|through|via)\s+([^,]+),?\s+(?:we can|this helps?|it works?)\s+([^.!?]+)/gi,
+      /\b(to fix|to solve|to address|to treat)\s+([^.!?]+)/gi
+    ];
+    
+    for (const pattern of solutionPatterns) {
+      const match = text.match(pattern);
+      if (match) return match[0].slice(0, 80) + "...";
+    }
+    
+    return "There's a way to address this";
+  }
+
+  function extractOutcomeFromText(text: string): string {
+    const outcomePatterns = [
+      /\b(result|outcome|effect|consequence)\s+(?:is|was|will be)\s+([^.!?]+)/gi,
+      /\b(this leads? to|causes?|results? in)\s+([^.!?]+)/gi,
+      /\b(ultimately|finally|in the end)\s+([^.!?]+)/gi
+    ];
+    
+    for (const pattern of outcomePatterns) {
+      const match = text.match(pattern);
+      if (match) return match[0].slice(0, 80) + "...";
+    }
+    
+    return "Things get better/change happens";
+  }
+
+  function extractActionFromText(text: string): string {
+    const actionPatterns = [
+      /\b(acts?|works?|functions?|operates?|moves?|changes?)\s+([^.!?]+)/gi,
+      /\b(does|performs?|executes?|carries? out)\s+([^.!?]+)/gi,
+      /\b(to\s+\w+)\s+([^.!?]+)/gi
+    ];
+    
+    for (const pattern of actionPatterns) {
+      const match = text.match(pattern);
+      if (match) return match[0].slice(0, 60) + "...";
+    }
+    
+    return "take action";
+  }
+
+  function getButlerStyleMetaphor(text: string): string {
+    // David Butler-inspired medical/educational metaphors
+    const butlerMetaphors = [
+      "your body's alarm system - it's trying to tell you something important",
+      "electrical wiring carrying messages throughout your system",
+      "a sophisticated command center processing all the information",
+      "elastic bands that stretch, contract, and need proper tension",
+      "a skilled construction crew rebuilding and repairing",
+      "emergency responders rushing to help (sometimes overdoing it)",
+      "well-choreographed dance - smooth, coordinated, and purposeful",
+      "a tightrope walker making constant tiny adjustments",
+      "an assembly line where each part has a specific role",
+      "bridges linking different areas in a network",
+      "intelligent shape-shifting to meet new challenges"
+    ];
+    
+    // Match content to appropriate Butler-style metaphor
+    if (/\b(pain|hurt|ache|discomfort)\b/i.test(text)) {
+      return "your body's alarm system - it's trying to tell you something important";
+    }
+    if (/\b(nerve|neural|brain|cerebral)\b/i.test(text)) {
+      return "electrical wiring carrying messages throughout your system";
+    }
+    if (/\b(muscle|tissue|movement|motion)\b/i.test(text)) {
+      return "elastic bands that stretch, contract, and need proper tension";
+    }
+    if (/\b(healing|recovery|repair)\b/i.test(text)) {
+      return "a skilled construction crew rebuilding and repairing";
+    }
+    if (/\b(balance|coordination|stability)\b/i.test(text)) {
+      return "a tightrope walker making constant tiny adjustments";
+    }
+    if (/\b(system|process|mechanism)\b/i.test(text)) {
+      return "an assembly line where each part has a specific role";
+    }
+    
+    return butlerMetaphors[Math.floor(Math.random() * butlerMetaphors.length)];
+  }
+
   async function buildTopStudentNote(seed: string, mode: "highYield" | "sketch" = "highYield") {
     const base = seed.trim();
     if (!base) return "";
@@ -666,34 +766,55 @@ export default function ThoughtUnitReader() {
     const definitions = extractDefinitions(base);
     
     if (mode === "sketch") {
+      // David Butler-inspired visual learning note
       return [
-        `# 🎨 Visual Learning Note`,
+        `# 🎨 David Butler-Style Visual Learning Note`,
         ``,
-        `## 🎯 Core Concept`,
-        `**What is this really about?**`,
+        `## 🎯 The Big Picture Story`,
+        `**What's really happening here?**`,
         summary,
         ``,
-        `## 🖼️ Visual Representation`,
-        `**Draw/Describe the mental picture:**`,
-        `- Main elements: ${concepts.slice(0, 3).join(", ")}`,
-        `- How they connect: ${connections.slice(0, 2).join(" → ")}`,
-        `- Visual metaphor: Think of it like ${getVisualMetaphor(base)}`,
+        `## 🧠 Right-Brain Understanding`,
+        `**Think of this like a story:**`,
+        `- Main character: ${concepts[0] || "The key concept"}`,
+        `- The problem: ${extractProblemFromText(base)}`,
+        `- The solution: ${extractSolutionFromText(base)}`,
+        `- The outcome: ${extractOutcomeFromText(base)}`,
+        ``,
+        `## 🖼️ Visual Metaphor (Butler-Style)`,
+        `**Mental picture:** ${getButlerStyleMetaphor(base)}`,
+        ``,
+        `**Draw this scene:**`,
+        `- Setting: [Where does this happen?]`,
+        `- Characters: [What are the main players?]`,
+        `- Action: [What's happening?]`,
+        `- Result: [What's the outcome?]`,
+        ``,
+        `## 🔗 Spatial Relationships`,
+        `**How things connect in space:**`,
+        `- Above/Below: ${connections.slice(0, 2).join(" ↕ ")}`,
+        `- Left/Right: [What's on each side?]`,
+        `- Inside/Outside: [What contains what?]`,
+        `- Before/After: [What's the sequence?]`,
         ``,
         `## 📝 Sketch Space`,
-        `[Draw your diagram here - boxes, arrows, labels]`,
+        `[Draw your diagram here - use boxes, arrows, stick figures, whatever helps!]`,
         ``,
-        `## 🔗 Connections to What I Know`,
-        `- This reminds me of: ___________`,
-        `- Similar to: ___________`,
-        `- Different from: ___________`,
+        `## 🎭 Memory Story`,
+        `**Create a memorable story:**`,
+        mnemonic || `Once upon a time, ${concepts[0]} decided to ${extractActionFromText(base)}...`,
         ``,
-        `## 💡 Memory Hook`,
-        mnemonic || `Create a story: ${concepts[0]} meets ${concepts[1]}...`,
+        `## 🔄 Movement & Flow`,
+        `**How does this move or change?**`,
+        `- What starts it? ___________`,
+        `- What keeps it going? ___________`,
+        `- What stops it? ___________`,
         ``,
-        `## ✅ Quick Check`,
-        `- Can I explain this to a friend? Yes/No`,
-        `- Can I draw it from memory? Yes/No`,
-        `- Do I see the big picture? Yes/No`,
+        `## ✅ Understanding Check`,
+        `- Can I tell the story without looking? Yes/No`,
+        `- Can I draw the main idea? Yes/No`,
+        `- Do I see how it all fits together? Yes/No`,
+        `- Can I explain it using gestures? Yes/No`,
       ].join("\n");
     }
     

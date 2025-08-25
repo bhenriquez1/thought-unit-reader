@@ -180,32 +180,59 @@ export default function TOCSidebar({
     return flat.filter((e) => e.title.toLowerCase().includes(term));
   }, [q, flat]);
 
-  // Enhanced navigation with sync store integration
+  // Enhanced navigation with sync store integration - Fixed flickering
   const handleJumpToPage = (page: number, title: string) => {
     console.log(`🧭 TOC Navigation: Jumping to page ${page} for "${title}"`);
     
-    // Use sync store for chapter-aware navigation
-    const { setPage, findNearestChapter, syncToChapter } = useReaderSync.getState();
-    
-    // Set page with TOC source for chapter-aware handling
-    setPage(page, "toc");
-    
-    // Try to sync to chapter for enhanced navigation
-    const success = syncToChapter(title);
-    if (success) {
-      console.log(`🧭 Successfully synced to chapter: ${title}`);
+    // Prevent multiple rapid clicks
+    if (handleJumpToPage.isNavigating) {
+      console.log(`🧭 TOC Navigation: Already navigating, ignoring click`);
+      return;
     }
     
-    // Call parent callback as fallback
-    if (typeof onJumpToPage === 'function') {
-      onJumpToPage(page);
-    }
+    handleJumpToPage.isNavigating = true;
     
-    // Auto-collapse on mobile after navigation
-    if (window.innerWidth < 768) {
-      setIsCollapsed(true);
+    try {
+      // Call parent callback first for immediate UI update
+      if (typeof onJumpToPage === 'function') {
+        onJumpToPage(page);
+      }
+      
+      // Then update sync store without causing conflicts
+      setTimeout(() => {
+        try {
+          const { syncToChapter } = useReaderSync.getState();
+          
+          // Try to sync to chapter for enhanced navigation
+          const success = syncToChapter(title);
+          if (success) {
+            console.log(`🧭 Successfully synced to chapter: ${title}`);
+          } else {
+            // Fallback: just update the sync store page
+            const { setPage } = useReaderSync.getState();
+            setPage(page, "toc");
+          }
+        } catch (error) {
+          console.warn(`🧭 TOC sync error:`, error);
+        }
+        
+        // Auto-collapse on mobile after navigation
+        if (window.innerWidth < 768) {
+          setIsCollapsed(true);
+        }
+        
+        // Reset navigation flag
+        handleJumpToPage.isNavigating = false;
+      }, 100);
+      
+    } catch (error) {
+      console.error(`🧭 TOC Navigation error:`, error);
+      handleJumpToPage.isNavigating = false;
     }
   };
+  
+  // Add navigation flag to prevent rapid clicks
+  handleJumpToPage.isNavigating = false;
 
   const shouldExpand = isHovering && isCollapsed;
   const effectiveWidth = isCollapsed && !shouldExpand ? 80 : 320;

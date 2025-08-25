@@ -66,27 +66,129 @@ interface VisualMetaphor {
   soundscape?: string;
 }
 
-// Generate visual metaphor from text
+// David Butler-inspired medical/educational concept extraction
+interface MedicalConcept {
+  text: string;
+  importance: number;
+  type: "definition" | "process" | "relationship" | "example" | "principle";
+  connections: string[];
+}
+
+function extractMedicalConcepts(text: string, sentences: string[]): MedicalConcept[] {
+  const concepts: MedicalConcept[] = [];
+  
+  // Medical/educational keyword patterns (Butler-style)
+  const patterns = {
+    definitions: /\b(\w+(?:\s+\w+){0,2})\s+(is|are|means|refers to|defined as|represents)\s+([^.!?]+)/gi,
+    processes: /\b(process|mechanism|pathway|system|method|procedure)\s+(?:of|for|that)\s+([^.!?]+)/gi,
+    relationships: /\b(causes?|leads? to|results? in|affects?|influences?|connects? to)\s+([^.!?]+)/gi,
+    principles: /\b(principle|law|rule|theory|concept)\s+(?:of|that|states?)\s+([^.!?]+)/gi,
+    examples: /\b(for example|such as|like|including|e\.g\.)\s+([^.!?]+)/gi
+  };
+  
+  // Extract concepts with importance scoring
+  Object.entries(patterns).forEach(([type, pattern]) => {
+    let match;
+    while ((match = pattern.exec(text)) !== null && concepts.length < 12) {
+      const conceptText = match[0].trim();
+      const importance = calculateImportance(conceptText, type as keyof typeof patterns);
+      
+      concepts.push({
+        text: conceptText,
+        importance,
+        type: type as MedicalConcept['type'],
+        connections: []
+      });
+    }
+  });
+  
+  // If no specific patterns found, extract key sentences
+  if (concepts.length === 0) {
+    sentences.slice(0, 8).forEach((sentence, i) => {
+      const importance = Math.max(0.3, 1 - (i * 0.1)); // Decreasing importance
+      concepts.push({
+        text: sentence.trim(),
+        importance,
+        type: "principle",
+        connections: []
+      });
+    });
+  }
+  
+  // Sort by importance and limit
+  return concepts
+    .sort((a, b) => b.importance - a.importance)
+    .slice(0, 10);
+}
+
+function calculateImportance(text: string, type: string): number {
+  let importance = 0.5; // Base importance
+  
+  // Type-based importance
+  const typeWeights = {
+    definitions: 0.9,
+    principles: 0.8,
+    processes: 0.7,
+    relationships: 0.6,
+    examples: 0.4
+  };
+  
+  importance = typeWeights[type as keyof typeof typeWeights] || 0.5;
+  
+  // Content-based adjustments (Butler-style medical focus)
+  const highValueTerms = [
+    'pain', 'brain', 'nervous system', 'pathway', 'mechanism', 'treatment',
+    'diagnosis', 'symptom', 'cause', 'effect', 'function', 'structure',
+    'process', 'system', 'response', 'adaptation', 'healing', 'recovery'
+  ];
+  
+  const medicalTerms = [
+    'anatomy', 'physiology', 'pathology', 'therapy', 'clinical', 'patient',
+    'medical', 'health', 'disease', 'condition', 'syndrome', 'disorder'
+  ];
+  
+  // Boost importance for medical/educational terms
+  const lowerText = text.toLowerCase();
+  highValueTerms.forEach(term => {
+    if (lowerText.includes(term)) importance += 0.1;
+  });
+  
+  medicalTerms.forEach(term => {
+    if (lowerText.includes(term)) importance += 0.05;
+  });
+  
+  // Length and complexity adjustments
+  if (text.length > 100) importance += 0.1;
+  if (text.length < 30) importance -= 0.1;
+  
+  return Math.min(1.0, Math.max(0.1, importance));
+}
+
+// David Butler-inspired visual metaphor generation for medical/educational concepts
 function generateVisualMetaphor(text: string, mode: VisualMode): VisualMetaphor {
   const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 10);
-  const concepts = sentences.map(s => s.trim().slice(0, 50));
+  
+  // Enhanced concept extraction with medical/educational focus
+  const concepts = extractMedicalConcepts(text, sentences);
   
   const metaphorGenerators = {
     galaxy: () => ({
       type: "galaxy" as const,
       elements: concepts.map((concept, i) => ({
         id: `star-${i}`,
-        concept,
-        visualElement: i === 0 ? "central-star" : i < 3 ? "planet" : "asteroid",
+        concept: concept.text,
+        visualElement: concept.importance > 0.8 ? "central-star" : 
+                      concept.importance > 0.6 ? "planet" : 
+                      concept.importance > 0.4 ? "moon" : "asteroid",
         position: {
-          x: i === 0 ? 400 : 200 + Math.cos(i * 0.8) * (100 + i * 30),
-          y: i === 0 ? 300 : 200 + Math.sin(i * 0.8) * (100 + i * 30),
-          z: i * 10
+          x: concept.importance > 0.8 ? 400 : 200 + Math.cos(i * 0.8) * (80 + concept.importance * 150),
+          y: concept.importance > 0.8 ? 300 : 200 + Math.sin(i * 0.8) * (80 + concept.importance * 150),
+          z: i * 10 + concept.importance * 20
         },
-        animation: i === 0 ? "pulse" : "orbit",
+        animation: concept.importance > 0.8 ? "pulse" : "orbit",
         interaction: "gravitational-pull"
       })),
-      narrative: "Navigate through a cosmic knowledge system where concepts orbit around central ideas like planets around stars.",
+      narrative: "Explore a universe of understanding where core concepts are like stars, with supporting ideas orbiting around them. The brighter the star, the more fundamental the concept.",
       soundscape: "cosmic-ambient"
     }),
     
@@ -94,17 +196,18 @@ function generateVisualMetaphor(text: string, mode: VisualMode): VisualMetaphor 
       type: "forest" as const,
       elements: concepts.map((concept, i) => ({
         id: `tree-${i}`,
-        concept,
-        visualElement: i === 0 ? "ancient-oak" : i < 3 ? "tall-pine" : "flowering-bush",
+        concept: concept.text,
+        visualElement: concept.importance > 0.8 ? "ancient-oak" : 
+                      concept.importance > 0.6 ? "tall-pine" : "flowering-bush",
         position: {
           x: 100 + (i % 4) * 150,
           y: 500 - (Math.floor(i / 4) * 100) - Math.random() * 50,
-          z: Math.random() * 50
+          z: Math.random() * 50 + concept.importance * 30
         },
         animation: "sway",
         interaction: "root-connection"
       })),
-      narrative: "Explore a living forest of knowledge where ideas grow and interconnect through root systems.",
+      narrative: "Explore a living forest of knowledge where ideas grow and interconnect through root systems. Taller trees represent more important concepts.",
       soundscape: "forest-ambient"
     }),
     
@@ -112,17 +215,18 @@ function generateVisualMetaphor(text: string, mode: VisualMode): VisualMetaphor 
       type: "city" as const,
       elements: concepts.map((concept, i) => ({
         id: `building-${i}`,
-        concept,
-        visualElement: i === 0 ? "skyscraper" : i < 3 ? "office-building" : "house",
+        concept: concept.text,
+        visualElement: concept.importance > 0.8 ? "skyscraper" : 
+                      concept.importance > 0.6 ? "office-building" : "house",
         position: {
           x: 50 + (i % 5) * 120,
-          y: 400 - (i < 3 ? 150 : 50),
-          z: i * 5
+          y: 400 - (concept.importance > 0.6 ? 150 : 50),
+          z: i * 5 + concept.importance * 20
         },
         animation: "lights-flicker",
         interaction: "network-connection"
       })),
-      narrative: "Navigate a bustling city of ideas where concepts are buildings connected by information highways.",
+      narrative: "Navigate a bustling city of ideas where concepts are buildings connected by information highways. Skyscrapers house the most important concepts.",
       soundscape: "urban-ambient"
     }),
     
@@ -130,17 +234,18 @@ function generateVisualMetaphor(text: string, mode: VisualMode): VisualMetaphor 
       type: "ocean" as const,
       elements: concepts.map((concept, i) => ({
         id: `sea-${i}`,
-        concept,
-        visualElement: i === 0 ? "whale" : i < 3 ? "dolphin" : "fish",
+        concept: concept.text,
+        visualElement: concept.importance > 0.8 ? "whale" : 
+                      concept.importance > 0.6 ? "dolphin" : "fish",
         position: {
           x: 100 + Math.random() * 600,
           y: 200 + i * 40 + Math.random() * 100,
-          z: Math.random() * 100
+          z: Math.random() * 100 + concept.importance * 50
         },
         animation: "swim",
         interaction: "current-flow"
       })),
-      narrative: "Dive into an ocean of knowledge where concepts flow like sea creatures in underwater currents.",
+      narrative: "Dive into an ocean of knowledge where concepts flow like sea creatures in underwater currents. Larger creatures represent more fundamental ideas.",
       soundscape: "ocean-ambient"
     }),
     
@@ -148,17 +253,18 @@ function generateVisualMetaphor(text: string, mode: VisualMode): VisualMetaphor 
       type: "mountain" as const,
       elements: concepts.map((concept, i) => ({
         id: `peak-${i}`,
-        concept,
-        visualElement: i === 0 ? "summit" : i < 3 ? "cliff" : "boulder",
+        concept: concept.text,
+        visualElement: concept.importance > 0.8 ? "summit" : 
+                      concept.importance > 0.6 ? "cliff" : "boulder",
         position: {
           x: 400 + (i - concepts.length/2) * 80,
-          y: 500 - i * 60 - Math.random() * 30,
-          z: i * 15
+          y: 500 - i * 60 - Math.random() * 30 - concept.importance * 100,
+          z: i * 15 + concept.importance * 25
         },
         animation: "mist-swirl",
         interaction: "elevation-connection"
       })),
-      narrative: "Climb a mountain of understanding where concepts build upon each other toward enlightenment.",
+      narrative: "Climb a mountain of understanding where concepts build upon each other toward enlightenment. Higher peaks represent more important principles.",
       soundscape: "mountain-ambient"
     })
   };

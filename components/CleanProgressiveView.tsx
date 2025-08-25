@@ -590,7 +590,7 @@ export default function CleanProgressiveView({
         </div>
 
         <div className="flex items-center gap-4">
-          {/* Speed Control */}
+          {/* Speed Control - Fixed */}
           <div className="flex items-center gap-2">
             <label className="text-xs text-gray-400">Speed:</label>
             <input
@@ -599,19 +599,31 @@ export default function CleanProgressiveView({
               max={1000}
               step={50}
               value={readingSpeed}
-              onChange={(e) => setReadingSpeed?.(Number(e.target.value))}
+              onChange={(e) => {
+                const newSpeed = Number(e.target.value);
+                console.log(`🎛️ Speed control: ${readingSpeed} -> ${newSpeed}`);
+                if (setReadingSpeed) {
+                  setReadingSpeed(newSpeed);
+                } else {
+                  console.warn('🎛️ setReadingSpeed prop not provided');
+                }
+              }}
               className="w-24 accent-green-400"
             />
             <span className="text-xs text-gray-400 w-16">{readingSpeed} WPM</span>
           </div>
 
-          {/* Controls */}
+          {/* Controls - Fixed play/pause functionality */}
           <button
-            onClick={() => setLocalPaused(!localPaused)}
-            className={`px-3 py-1 rounded text-sm ${
+            onClick={() => {
+              const newPausedState = !localPaused;
+              console.log(`⏯️ Play/Pause clicked: ${localPaused} -> ${newPausedState}`);
+              setLocalPaused(newPausedState);
+            }}
+            className={`px-3 py-1 rounded text-sm transition-colors ${
               localPaused || isPaused
-                ? "bg-green-600 hover:bg-green-500"
-                : "bg-red-600 hover:bg-red-500"
+                ? "bg-green-600 hover:bg-green-500 text-white"
+                : "bg-red-600 hover:bg-red-500 text-white"
             }`}
           >
             {localPaused || isPaused ? "▶️ Play" : "⏸️ Pause"}

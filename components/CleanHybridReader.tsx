@@ -89,14 +89,62 @@ interface ReadingPattern {
   readingFlow: "linear" | "jumping" | "reviewing";
 }
 
-// Right-brain style concept highlighting
+// David Butler-inspired concept highlighting for medical/educational content
 interface ConceptHighlight {
   id: string;
   text: string;
-  type: "main-idea" | "supporting-concept" | "example" | "definition" | "relationship";
+  type: "main-idea" | "supporting-concept" | "example" | "definition" | "relationship" | "process" | "mechanism";
   color: string;
   importance: number; // 0-1 scale
   connections: string[]; // IDs of related concepts
+  visualMetaphor?: string; // Butler-style metaphor
+  spatialPosition?: { x: number; y: number }; // For spatial understanding
+}
+
+// Butler-style visual metaphor suggestions
+interface ButlerMetaphor {
+  concept: string;
+  metaphor: string;
+  explanation: string;
+  visualCue: string;
+}
+
+function generateButlerMetaphors(text: string): ButlerMetaphor[] {
+  const metaphors: ButlerMetaphor[] = [];
+  
+  // Medical/pain-related metaphors (Butler's specialty)
+  const painPatterns = [
+    { pattern: /pain|hurt|ache|discomfort/gi, metaphor: "alarm system", explanation: "Think of pain as your body's alarm system - it's trying to tell you something important", visualCue: "🚨" },
+    { pattern: /nerve|neural|neuron/gi, metaphor: "electrical wiring", explanation: "Nerves are like electrical wires carrying messages throughout your body", visualCue: "⚡" },
+    { pattern: /brain|cerebral|cortex/gi, metaphor: "command center", explanation: "The brain is like a sophisticated command center processing all information", visualCue: "🧠" },
+    { pattern: /muscle|tissue|fiber/gi, metaphor: "elastic bands", explanation: "Muscles work like elastic bands - they stretch, contract, and need proper tension", visualCue: "🎯" },
+    { pattern: /healing|recovery|repair/gi, metaphor: "construction crew", explanation: "Your body's healing process is like a skilled construction crew rebuilding and repairing", visualCue: "🔧" },
+    { pattern: /inflammation|swelling/gi, metaphor: "emergency response", explanation: "Inflammation is like emergency responders rushing to help - sometimes helpful, sometimes overdone", visualCue: "🚑" },
+    { pattern: /movement|motion|mobility/gi, metaphor: "dance choreography", explanation: "Good movement is like well-choreographed dance - smooth, coordinated, and purposeful", visualCue: "💃" },
+    { pattern: /balance|stability|coordination/gi, metaphor: "tightrope walker", explanation: "Balance requires constant tiny adjustments, like a skilled tightrope walker", visualCue: "🤹" }
+  ];
+  
+  // Educational metaphors for complex concepts
+  const educationalPatterns = [
+    { pattern: /system|process|mechanism/gi, metaphor: "factory assembly line", explanation: "Complex systems work like assembly lines - each part has a specific role", visualCue: "🏭" },
+    { pattern: /connection|relationship|link/gi, metaphor: "bridge network", explanation: "Connections form networks like bridges linking different areas", visualCue: "🌉" },
+    { pattern: /function|purpose|role/gi, metaphor: "job description", explanation: "Each part has a specific job description in the bigger picture", visualCue: "📋" },
+    { pattern: /adaptation|change|evolution/gi, metaphor: "shape-shifting", explanation: "Adaptation is like intelligent shape-shifting to meet new challenges", visualCue: "🔄" }
+  ];
+  
+  [...painPatterns, ...educationalPatterns].forEach(({ pattern, metaphor, explanation, visualCue }) => {
+    const matches = text.match(pattern);
+    if (matches && matches.length > 0) {
+      metaphors.push({
+        concept: matches[0],
+        metaphor,
+        explanation,
+        visualCue
+      });
+    }
+  });
+  
+  return metaphors.slice(0, 5); // Limit to prevent overwhelming
 }
 
 // Enhanced smart sidebar content generator with right-brain understanding
