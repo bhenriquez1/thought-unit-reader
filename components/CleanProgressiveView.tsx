@@ -1,11 +1,8 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import type { ThoughtUnit as BaseThoughtUnit, ReadingStats } from "@/types/reading";
-import { chunkText, stableChunkId } from "@/lib/chunkers";
-import { loadUnderstood, markUnderstood } from "@/lib/understoodStore";
-import { useReaderSync } from "@/lib/readerSync";
-import type { TOCEntry } from "@/lib/tocParser";
+import { Document, Page } from "react-pdf";
 
 type PVUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -14,19 +11,31 @@ interface CleanProgressiveViewProps {
   userId: string;
   thoughtUnits: PVUnit[];
   currentThoughtUnit: number;
+  
+  // PDF Integration (minimal - just for reference)
+  pdfUrl?: string;
+  currentPage: number;
+  pdfPageCount?: number;
+  onPageChange?: (page: number) => void;
+
   readingSpeed: number;
   isReading?: boolean;
   isPaused?: boolean;
+
+  stats?: ReadingStats;
+  highlightedWord: string;
+
   fontSize: number;
   fontFamily: string;
   lineSpacing: number;
+
   onWordClick?: (word: string) => void;
+  setReadingSpeed?: (speed: number) => void;
   onTextSelect?: (text: string) => void;
-  selBind?: { onMouseUp?: (e: React.MouseEvent) => void };
-  // New props for enhanced features
-  totalPages?: number;
-  tableOfContents?: TOCEntry[];
-  onPageChange?: (page: number) => void;
+
+  // Voice settings
+  selectedVoice?: SpeechSynthesisVoice;
+  speechRate?: number;
 }
 
 function unitToText(u: PVUnit): string {
@@ -37,58 +46,249 @@ function unitToText(u: PVUnit): string {
   return typeof maybeText === "string" ? maybeText : JSON.stringify(u);
 }
 
+// Speed reading modes
+type SpeedMode = "rsvp" | "bionic" | "guided" | "flash";
+
+// RSVP (Rapid Serial Visual Presentation) - one word at a time
+function RSVPDisplay({ 
+  words, 
+  currentIndex, 
+  fontSize, 
+  fontFamily 
+}: { 
+  words: string[], 
+  currentIndex: number, 
+  fontSize: number, 
+  fontFamily: string 
+}) {
+  const currentWord = words[currentIndex] || "";
+  
+  // Calculate optimal reading position (ORP) - usually 1/3 into the word
+  const orp = Math.floor(currentWord.length / 3);
+  const beforeORP = currentWord.slice(0, orp);
+  const atORP = currentWord[orp] || "";
+  const afterORP = currentWord.slice(orp + 1);
+
+  return (
+    <div className="flex items-center justify-center h-full bg-black text-white">
+      <div className="text-center">
+        {/* Progress indicator */}
+        <div className="mb-8">
+          <div className="w-96 h-1 bg-gray-800 rounded-full mx-auto">
+            <div 
+              className="h-full bg-green-400 rounded-full transition-all duration-100"
+              style={{ width: `${(currentIndex / Math.max(words.length - 1, 1)) * 100}%` }}
+            />
+          </div>
+          <div className="text-xs text-gray-400 mt-2">
+            {currentIndex + 1} / {words.length} words
+          </div>
+        </div>
+
+        {/* RSVP Word Display */}
+        <div 
+          className="font-mono tracking-wider"
+          style={{ 
+            fontSize: `${fontSize * 2}px`, 
+            fontFamily,
+            minHeight: `${fontSize * 3}px`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          <span className="text-gray-300">{beforeORP}</span>
+          <span className="text-red-400 font-bold">{atORP}</span>
+          <span className="text-gray-300">{afterORP}</span>
+        </div>
+
+        {/* Context preview */}
+        <div className="mt-8 text-sm text-gray-500 max-w-md mx-auto">
+          {words.slice(Math.max(0, currentIndex - 3), currentIndex).join(" ")} 
+          <span className="text-white font-semibold"> {currentWord} </span>
+          {words.slice(currentIndex + 1, currentIndex + 4).join(" ")}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Bionic Reading - bold prefixes for faster recognition
+function BionicDisplay({ 
+  text, 
+  fontSize, 
+  fontFamily, 
+  lineSpacing 
+}: { 
+  text: string, 
+  fontSize: number, 
+  fontFamily: string, 
+  lineSpacing: number 
+}) {
+  const bionicText = useMemo(() => {
+    return text.split(/\s+/).map(word => {
+      if (word.length <= 2) return { bold: word, normal: "", full: word };
+      const boldLength = Math.ceil(word.length / 2);
+      const boldPart = word.slice(0, boldLength);
+      const normalPart = word.slice(boldLength);
+      return { bold: boldPart, normal: normalPart, full: word };
+    });
+  }, [text]);
+
+  return (
+    <div 
+      className="p-8 leading-relaxed text-white bg-gray-900 h-full overflow-y-auto"
+      style={{ 
+        fontSize: `${fontSize}px`, 
+        fontFamily,
+        lineHeight: lineSpacing
+      }}
+    >
+      {bionicText.map((word, index) => (
+        <span key={index} className="mr-2">
+          <span className="font-bold text-blue-300">{word.bold}</span>
+          <span className="text-gray-300">{word.normal}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// Guided Reading - highlight current line/sentence
+function GuidedDisplay({ 
+  text, 
+  currentSentence, 
+  fontSize, 
+  fontFamily, 
+  lineSpacing 
+}: { 
+  text: string, 
+  currentSentence: number, 
+  fontSize: number, 
+  fontFamily: string, 
+  lineSpacing: number 
+}) {
+  const sentences = useMemo(() => {
+    return text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+  }, [text]);
+
+  return (
+    <div 
+      className="p-8 text-white bg-gray-900 h-full overflow-y-auto"
+      style={{ 
+        fontSize: `${fontSize}px`, 
+        fontFamily,
+        lineHeight: lineSpacing
+      }}
+    >
+      {sentences.map((sentence, index) => (
+        <div
+          key={index}
+          className={`mb-4 p-3 rounded transition-all duration-300 ${
+            index === currentSentence
+              ? "bg-blue-600/30 border-l-4 border-blue-400 text-white shadow-lg"
+              : index < currentSentence
+              ? "text-gray-500 opacity-60"
+              : "text-gray-400"
+          }`}
+        >
+          {sentence.trim()}.
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Flash Cards - key concepts one at a time
+function FlashDisplay({ 
+  concepts, 
+  currentIndex, 
+  fontSize, 
+  fontFamily 
+}: { 
+  concepts: string[], 
+  currentIndex: number, 
+  fontSize: number, 
+  fontFamily: string 
+}) {
+  const currentConcept = concepts[currentIndex] || "";
+
+  return (
+    <div className="flex items-center justify-center h-full bg-gradient-to-br from-purple-900 to-blue-900">
+      <div className="max-w-2xl mx-auto text-center p-8">
+        {/* Card */}
+        <div className="bg-white/10 backdrop-blur-sm rounded-xl p-8 border border-white/20 shadow-2xl">
+          <div className="text-xs text-purple-300 mb-4">
+            CONCEPT {currentIndex + 1} OF {concepts.length}
+          </div>
+          
+          <div 
+            className="text-white font-medium leading-relaxed"
+            style={{ 
+              fontSize: `${fontSize * 1.2}px`, 
+              fontFamily
+            }}
+          >
+            {currentConcept}
+          </div>
+          
+          <div className="mt-6 flex justify-center">
+            <div className="flex gap-2">
+              {concepts.map((_, idx) => (
+                <div
+                  key={idx}
+                  className={`w-2 h-2 rounded-full ${
+                    idx === currentIndex ? "bg-purple-400" : "bg-gray-600"
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CleanProgressiveView({
   bookId,
   userId,
   thoughtUnits,
   currentThoughtUnit,
+  pdfUrl,
+  currentPage,
+  pdfPageCount,
+  onPageChange,
   readingSpeed,
   isReading = true,
   isPaused = false,
+  highlightedWord,
   fontSize,
   fontFamily,
   lineSpacing,
   onWordClick,
+  setReadingSpeed,
   onTextSelect,
-  selBind,
-  totalPages = 1,
-  tableOfContents = [],
-  onPageChange,
+  selectedVoice,
+  speechRate = 1.0,
 }: CleanProgressiveViewProps) {
-  // Enhanced state for speed reading
+  const [speedMode, setSpeedMode] = useState<SpeedMode>("rsvp");
+  const [currentWordIndex, setCurrentWordIndex] = useState(0);
+  const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
+  const [currentConceptIndex, setCurrentConceptIndex] = useState(0);
   const [localPaused, setLocalPaused] = useState(false);
-  const [chunkSize, setChunkSize] = useState(200);
-  const [understoodMap, setUnderstoodMap] = useState<Record<string, true>>({});
-  const [rsvpMode, setRsvpMode] = useState(false);
-  const [chunkingMode, setChunkingMode] = useState<"semantic" | "sentence" | "phrase">("semantic");
-  const [adaptiveSpeed, setAdaptiveSpeed] = useState(true);
-  const [currentWPM, setCurrentWPM] = useState(0);
-  const [focusPoint, setFocusPoint] = useState(true);
+  const [showPdfReference, setShowPdfReference] = useState(false);
+  const [eyeTrainingMode, setEyeTrainingMode] = useState(false);
 
-  // ReaderSync integration
-  const { 
-    page: currentPage, 
-    setPage, 
-    syncToChapter, 
-    findNearestChapter,
-    chapterBoundaries,
-    cacheChunkAnchor,
-    syncChunkToPDF
-  } = useReaderSync();
+  // Voice synthesis
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
 
-  // Load understood chunks
-  useEffect(() => {
-    if (!bookId) return;
-    loadUnderstood(userId || "guest", bookId)
-      .then((m) => setUnderstoodMap(m || {}))
-      .catch(() => {});
-  }, [userId, bookId]);
-
-  // Empty state
+  // Empty states
   if (!thoughtUnits || thoughtUnits.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-400 italic">
-        📖 Please upload a PDF to start Progressive Reading
+      <div className="p-4 flex items-center justify-center text-gray-400 italic h-full bg-black">
+        ⚡ Please upload a PDF to start Speed Reading Mode.
       </div>
     );
   }
@@ -96,491 +296,371 @@ export default function CleanProgressiveView({
   const rawUnit = thoughtUnits[currentThoughtUnit - 1];
   if (!rawUnit) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-400 italic">
-        ⏳ Loading reading content...
+      <div className="p-4 flex items-center justify-center text-gray-400 italic h-full bg-black">
+        ⏳ Preparing your speed reading experience...
       </div>
     );
   }
 
   const unitText = unitToText(rawUnit);
 
-  // Advanced chunking strategies
-  const chunks = useMemo(() => {
-    switch (chunkingMode) {
-      case "sentence":
-        return unitText.split(/(?<=[.!?])\s+/).filter(Boolean);
-      case "phrase":
-        return unitText.split(/[,;:—–]|\s+(?:and|but|or|however|therefore|meanwhile)\s+/i).filter(Boolean);
-      default:
-        return chunkText(unitText, { mode: "semantic", targetChars: chunkSize });
+  // Process text for different modes
+  const words = useMemo(() => {
+    return unitText.split(/\s+/).filter(word => word.trim().length > 0);
+  }, [unitText]);
+
+  const sentences = useMemo(() => {
+    return unitText.split(/[.!?]+/).filter(s => s.trim().length > 0);
+  }, [unitText]);
+
+  const concepts = useMemo(() => {
+    // Extract key concepts (sentences with important keywords)
+    const keywordPatterns = [
+      /\b(is|are|means|refers to|defined as|concept of|represents|symbolizes)\b/i,
+      /\b(important|key|main|primary|essential|crucial|significant)\b/i,
+      /\b(because|therefore|thus|hence|consequently|as a result)\b/i,
+      /\b(first|second|third|finally|in conclusion|moreover|furthermore)\b/i
+    ];
+    
+    return sentences.filter(sentence => 
+      keywordPatterns.some(pattern => pattern.test(sentence)) ||
+      sentence.length > 50 // Longer sentences often contain key concepts
+    ).slice(0, 10); // Limit to 10 key concepts
+  }, [sentences]);
+
+  // Auto-advance logic for different modes
+  useEffect(() => {
+    if (!isReading || isPaused || localPaused) return;
+
+    const baseInterval = 60000 / Math.max(100, readingSpeed); // Convert WPM to milliseconds
+
+    let interval: number;
+
+    switch (speedMode) {
+      case "rsvp":
+        // RSVP: advance word by word
+        interval = window.setInterval(() => {
+          setCurrentWordIndex(prev => {
+            if (prev >= words.length - 1) return 0; // Loop back
+            return prev + 1;
+          });
+        }, baseInterval);
+        break;
+
+      case "bionic":
+        // Bionic: no auto-advance, user controls
+        break;
+
+      case "guided":
+        // Guided: advance sentence by sentence (slower)
+        interval = window.setInterval(() => {
+          setCurrentSentenceIndex(prev => {
+            if (prev >= sentences.length - 1) return 0;
+            return prev + 1;
+          });
+        }, baseInterval * 8); // Much slower for sentences
+        break;
+
+      case "flash":
+        // Flash: advance concept by concept (slowest)
+        interval = window.setInterval(() => {
+          setCurrentConceptIndex(prev => {
+            if (prev >= concepts.length - 1) return 0;
+            return prev + 1;
+          });
+        }, baseInterval * 15); // Very slow for concepts
+        break;
     }
-  }, [unitText, chunkSize, chunkingMode]);
 
-  // Find current chapter info
-  const currentChapter = useMemo(() => {
-    return findNearestChapter(currentPage);
-  }, [currentPage, findNearestChapter]);
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [speedMode, readingSpeed, isReading, isPaused, localPaused, words.length, sentences.length, concepts.length]);
 
-  // Cache chunk anchors for PDF sync
-  useEffect(() => {
-    chunks.forEach((chunk, index) => {
-      const chunkId = stableChunkId(chunk);
-      cacheChunkAnchor(chunkId, chunk, currentPage);
-    });
-  }, [chunks, currentPage, cacheChunkAnchor]);
-
-  const [activeIdx, setActiveIdx] = useState(0);
-  
-  // Reset when content changes
-  useEffect(() => setActiveIdx(0), [unitText]);
-
-  // Advanced auto-advance with adaptive speed
-  useEffect(() => {
-    if (!chunks.length || !isReading || isPaused || localPaused) return;
-    
-    const activeChunk = chunks[activeIdx] || "";
-    let baseSpeed = readingSpeed;
-    
-    // Adaptive speed based on content complexity
-    if (adaptiveSpeed) {
-      // Slow down for complex content
-      if (/[A-Z]{2,}|[0-9]+%|[∑∏∫√≈≠≤≥→↔⇌Δ±∞μ°Ωπθαβγλ]/.test(activeChunk)) {
-        baseSpeed *= 0.7; // 30% slower for formulas/acronyms
-      }
-      // Slow down for long sentences
-      if (activeChunk.length > 100) {
-        baseSpeed *= 0.8; // 20% slower for long chunks
-      }
-      // Speed up for simple content
-      if (activeChunk.length < 30 && !/[.!?]/.test(activeChunk)) {
-        baseSpeed *= 1.3; // 30% faster for short phrases
-      }
+  // Speech synthesis
+  const speakText = (text: string) => {
+    if (speechRef.current) {
+      speechSynthesis.cancel();
     }
-    
-    const wordsInChunk = activeChunk.split(/\s+/).length;
-    const msPerChunk = Math.max(500, (wordsInChunk / baseSpeed) * 60_000);
-    
-    // Update WPM display
-    setCurrentWPM(Math.round((wordsInChunk / (msPerChunk / 60_000))));
-    
-    const timer = setInterval(() => {
-      setActiveIdx((i) => {
-        const nextIdx = Math.min(i + 1, chunks.length - 1);
-        
-        // Auto-advance to next chapter when reaching end
-        if (nextIdx === chunks.length - 1 && i === chunks.length - 1) {
-          // Try to advance to next chapter
-          const nextChapter = chapterBoundaries.find(ch => ch.page > currentPage);
-          if (nextChapter && onPageChange) {
-            setTimeout(() => {
-              setPage(nextChapter.page, "progressive");
-              onPageChange(nextChapter.page);
-            }, 1000);
-          }
-        }
-        
-        return nextIdx;
-      });
-    }, msPerChunk);
-    
-    return () => clearInterval(timer);
-  }, [chunks, activeIdx, readingSpeed, isReading, isPaused, localPaused, adaptiveSpeed, chapterBoundaries, currentPage, setPage, onPageChange]);
 
-  const activeChunk = chunks[activeIdx] || "";
-  const activeChunkId = stableChunkId(activeChunk);
-  const isUnderstood = !!understoodMap[activeChunkId];
+    const utterance = new SpeechSynthesisUtterance(text);
+    if (selectedVoice) utterance.voice = selectedVoice;
+    utterance.rate = speechRate;
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    
+    speechRef.current = utterance;
+    speechSynthesis.speak(utterance);
+  };
 
-  // Simple keyboard controls
+  // Keyboard controls
   useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
+    const handleKeyPress = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
 
       switch (e.code) {
         case "Space":
           e.preventDefault();
-          setLocalPaused(p => !p);
+          setLocalPaused(prev => !prev);
           break;
         case "ArrowRight":
         case "KeyJ":
-          setActiveIdx(i => Math.min(i + 1, chunks.length - 1));
+          e.preventDefault();
+          if (speedMode === "rsvp") {
+            setCurrentWordIndex(prev => Math.min(prev + 1, words.length - 1));
+          } else if (speedMode === "guided") {
+            setCurrentSentenceIndex(prev => Math.min(prev + 1, sentences.length - 1));
+          } else if (speedMode === "flash") {
+            setCurrentConceptIndex(prev => Math.min(prev + 1, concepts.length - 1));
+          }
           break;
         case "ArrowLeft":
         case "KeyK":
-          setActiveIdx(i => Math.max(i - 1, 0));
-          break;
-        case "KeyG":
           e.preventDefault();
-          toggleUnderstood();
+          if (speedMode === "rsvp") {
+            setCurrentWordIndex(prev => Math.max(prev - 1, 0));
+          } else if (speedMode === "guided") {
+            setCurrentSentenceIndex(prev => Math.max(prev - 1, 0));
+          } else if (speedMode === "flash") {
+            setCurrentConceptIndex(prev => Math.max(prev - 1, 0));
+          }
           break;
-        case "KeyR":
+        case "KeyS":
           e.preventDefault();
-          setRsvpMode(r => !r);
-          break;
-        case "KeyC":
-          e.preventDefault();
-          jumpToNextChapter();
+          if (isSpeaking) {
+            speechSynthesis.cancel();
+            setIsSpeaking(false);
+          } else {
+            const textToSpeak = speedMode === "rsvp" ? words[currentWordIndex] :
+                               speedMode === "guided" ? sentences[currentSentenceIndex] :
+                               speedMode === "flash" ? concepts[currentConceptIndex] :
+                               unitText.slice(0, 200);
+            speakText(textToSpeak);
+          }
           break;
       }
     };
 
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [chunks.length, activeChunkId]);
-
-  function toggleUnderstood() {
-    setUnderstoodMap((m) => {
-      const next = { ...m };
-      if (next[activeChunkId]) {
-        delete next[activeChunkId];
-      } else {
-        next[activeChunkId] = true;
-      }
-      return next;
-    });
-    markUnderstood(userId || "guest", bookId, activeChunkId).catch(() => {});
-  }
-
-  // Navigation functions
-  function jumpToNextChapter() {
-    const nextChapter = chapterBoundaries.find(ch => ch.page > currentPage);
-    if (nextChapter && onPageChange) {
-      setPage(nextChapter.page, "progressive");
-      onPageChange(nextChapter.page);
-    }
-  }
-
-  function jumpToPreviousChapter() {
-    const prevChapter = [...chapterBoundaries]
-      .reverse()
-      .find(ch => ch.page < currentPage);
-    if (prevChapter && onPageChange) {
-      setPage(prevChapter.page, "progressive");
-      onPageChange(prevChapter.page);
-    }
-  }
-
-  function handleJumpToChapter(chapterTitle: string) {
-    const success = syncToChapter(chapterTitle);
-    if (success && onPageChange) {
-      const newChapter = findNearestChapter(currentPage);
-      if (newChapter) {
-        onPageChange(newChapter.page);
-      }
-    }
-  }
-
-  const handleMouseUp = () => {
-    const selection = window.getSelection()?.toString().trim() || "";
-    if (selection) {
-      onTextSelect?.(selection);
-    }
-  };
-
-  // Calculate progress
-  const understoodCount = chunks.reduce((count, chunk) => 
-    count + (understoodMap[stableChunkId(chunk)] ? 1 : 0), 0
-  );
-  const progressPercent = chunks.length > 0 ? Math.round((activeIdx / chunks.length) * 100) : 0;
-  const comprehensionPercent = chunks.length > 0 ? Math.round((understoodCount / chunks.length) * 100) : 0;
+    window.addEventListener("keydown", handleKeyPress);
+    return () => window.removeEventListener("keydown", handleKeyPress);
+  }, [speedMode, currentWordIndex, currentSentenceIndex, currentConceptIndex, words, sentences, concepts, unitText, isSpeaking]);
 
   return (
-    <div className="h-full flex flex-col bg-gray-900">
-      {/* Enhanced header with speed reading controls */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-700 bg-gray-800">
+    <div className="h-full flex flex-col bg-black text-white">
+      {/* Speed Reading Controls */}
+      <div className="flex items-center justify-between p-4 bg-gray-900 border-b border-gray-700">
         <div className="flex items-center gap-4">
-          <h3 className="text-lg font-semibold text-yellow-400">⚡ Speed Reading</h3>
-          <div className="text-sm text-gray-400">
-            Chunk {activeIdx + 1} of {chunks.length}
-          </div>
-          {currentWPM > 0 && (
-            <div className="text-sm font-mono bg-blue-600/20 text-blue-300 px-2 py-1 rounded">
-              {currentWPM} WPM
-            </div>
-          )}
-        </div>
-        
-        <div className="flex items-center gap-3">
-          {/* Reading mode toggle */}
-          <button
-            onClick={() => setRsvpMode(r => !r)}
-            className={`px-3 py-1 rounded text-sm font-medium ${
-              rsvpMode 
-                ? "bg-purple-600 text-white" 
-                : "bg-gray-600 hover:bg-gray-500 text-white"
-            }`}
-            title="Toggle RSVP Mode"
-          >
-            {rsvpMode ? "📍 RSVP" : "📄 Normal"}
-          </button>
-
-          {/* Chunking mode selector */}
-          <select
-            value={chunkingMode}
-            onChange={(e) => setChunkingMode(e.target.value as any)}
-            className="bg-gray-700 text-white text-xs px-2 py-1 rounded border border-gray-600 focus:border-yellow-500 outline-none"
-          >
-            <option value="semantic">Smart Chunks</option>
-            <option value="sentence">Sentences</option>
-            <option value="phrase">Phrases</option>
-          </select>
-
-          {/* Adaptive speed toggle */}
-          <label className="flex items-center gap-1 text-xs text-gray-400">
-            <input
-              type="checkbox"
-              checked={adaptiveSpeed}
-              onChange={(e) => setAdaptiveSpeed(e.target.checked)}
-              className="accent-yellow-400"
-            />
-            Adaptive
-          </label>
+          <h3 className="text-lg font-semibold text-green-400">⚡ Speed Reading</h3>
           
-          <button
-            onClick={() => setLocalPaused(p => !p)}
-            className={`px-3 py-1 rounded text-sm font-medium ${
-              localPaused || isPaused 
-                ? "bg-green-600 hover:bg-green-500 text-white" 
-                : "bg-gray-600 hover:bg-gray-500 text-white"
-            }`}
-          >
-            {localPaused || isPaused ? "▶ Resume" : "⏸ Pause"}
-          </button>
-          
-          <button
-            onClick={toggleUnderstood}
-            className={`px-3 py-1 rounded text-sm font-medium ${
-              isUnderstood 
-                ? "bg-green-500 text-black" 
-                : "bg-gray-600 hover:bg-gray-500 text-white"
-            }`}
-          >
-            {isUnderstood ? "✓ Got it" : "Got it?"}
-          </button>
-        </div>
-      </div>
-
-      {/* Chapter Navigation Bar */}
-      <div className="flex items-center justify-between p-3 bg-gray-800/50 border-b border-gray-700/50">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={jumpToPreviousChapter}
-            className="flex items-center gap-2 px-3 py-1 bg-yellow-600 hover:bg-yellow-500 text-black rounded text-sm transition-colors"
-          >
-            ← Previous Chapter
-          </button>
-          
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-gray-300">Page</span>
-            <span className="bg-yellow-600 text-black px-2 py-1 rounded font-mono">
-              {currentPage}
-            </span>
-            <span className="text-gray-400">of {totalPages}</span>
-          </div>
-          
-          <button
-            onClick={jumpToNextChapter}
-            className="flex items-center gap-2 px-3 py-1 bg-yellow-600 hover:bg-yellow-500 text-black rounded text-sm transition-colors"
-          >
-            Next Chapter →
-          </button>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Chapter Info */}
-          {currentChapter && (
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-gray-400">Chapter:</span>
-              <span className="bg-amber-600/20 text-amber-300 px-2 py-1 rounded text-xs max-w-48 truncate">
-                {currentChapter.title}
-              </span>
-            </div>
-          )}
-          
-          {/* TOC Quick Jump */}
-          {tableOfContents.length > 0 && (
-            <select
-              onChange={(e) => {
-                const selectedTitle = e.target.value;
-                if (selectedTitle) {
-                  handleJumpToChapter(selectedTitle);
-                }
-              }}
-              className="bg-gray-700 text-white text-xs px-2 py-1 rounded border border-gray-600 focus:border-yellow-500 outline-none"
-              value=""
-            >
-              <option value="">Jump to Chapter...</option>
-              {tableOfContents.map((entry, index) => (
-                <option key={index} value={entry.title}>
-                  {entry.title} (p.{entry.pageNumber})
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-      </div>
-
-      {/* Progress indicators */}
-      <div className="px-4 py-2 bg-gray-800 border-b border-gray-700">
-        <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
-          <span>Reading Progress</span>
-          <span>{progressPercent}% complete</span>
-        </div>
-        <div className="w-full bg-gray-700 rounded-full h-2 mb-2">
-          <div 
-            className="bg-yellow-400 h-2 rounded-full transition-all duration-300"
-            style={{ width: `${progressPercent}%` }}
-          />
-        </div>
-        
-        <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
-          <span>Comprehension</span>
-          <span>{understoodCount}/{chunks.length} chunks understood ({comprehensionPercent}%)</span>
-        </div>
-        <div className="w-full bg-gray-700 rounded-full h-2">
-          <div 
-            className="bg-green-400 h-2 rounded-full transition-all duration-300"
-            style={{ width: `${comprehensionPercent}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Main reading area - RSVP or Normal mode */}
-      <div 
-        className="flex-1 overflow-hidden"
-        style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
-        onMouseUp={selBind?.onMouseUp ?? handleMouseUp}
-      >
-        {rsvpMode ? (
-          // RSVP Mode - Single chunk focus
-          <div className="h-full flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800">
-            <div className="text-center max-w-2xl px-8">
-              {/* Focus point indicator */}
-              {focusPoint && (
-                <div className="mb-8">
-                  <div className="w-2 h-2 bg-yellow-400 rounded-full mx-auto animate-pulse"></div>
-                </div>
-              )}
-              
-              {/* Active chunk display */}
-              <div 
-                className="text-2xl md:text-3xl lg:text-4xl font-medium text-white leading-relaxed mb-8 p-6 bg-gray-800/50 rounded-lg border border-yellow-400/30 shadow-2xl"
-                style={{ 
-                  fontSize: `${fontSize * 1.5}px`,
-                  animation: 'rsvpFadeIn 0.3s ease-in-out'
+          {/* Mode Selection */}
+          <div className="flex gap-2">
+            {[
+              { mode: "rsvp", icon: "👁️", label: "RSVP" },
+              { mode: "bionic", icon: "🔤", label: "Bionic" },
+              { mode: "guided", icon: "📍", label: "Guided" },
+              { mode: "flash", icon: "⚡", label: "Flash" },
+            ].map(({ mode, icon, label }) => (
+              <button
+                key={mode}
+                onClick={() => {
+                  setSpeedMode(mode as SpeedMode);
+                  // Reset indices when switching modes
+                  setCurrentWordIndex(0);
+                  setCurrentSentenceIndex(0);
+                  setCurrentConceptIndex(0);
                 }}
+                className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                  speedMode === mode
+                    ? "bg-green-600 text-white"
+                    : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                }`}
               >
-                {activeChunk}
-              </div>
-              
-              {/* RSVP controls */}
-              <div className="flex items-center justify-center gap-4 text-sm text-gray-400">
-                <div className="bg-gray-800/50 px-3 py-1 rounded">
-                  {activeIdx + 1} / {chunks.length}
-                </div>
-                {isUnderstood && (
-                  <div className="bg-green-500/20 text-green-300 px-3 py-1 rounded">
-                    ✓ Understood
-                  </div>
-                )}
-                <div className="bg-blue-600/20 text-blue-300 px-3 py-1 rounded">
-                  {currentWPM} WPM
-                </div>
+                {icon} {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4">
+          {/* Speed Control */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-400">Speed:</label>
+            <input
+              type="range"
+              min={100}
+              max={1000}
+              step={50}
+              value={readingSpeed}
+              onChange={(e) => setReadingSpeed?.(Number(e.target.value))}
+              className="w-24 accent-green-400"
+            />
+            <span className="text-xs text-gray-400 w-16">{readingSpeed} WPM</span>
+          </div>
+
+          {/* Controls */}
+          <button
+            onClick={() => setLocalPaused(!localPaused)}
+            className={`px-3 py-1 rounded text-sm ${
+              localPaused || isPaused
+                ? "bg-green-600 hover:bg-green-500"
+                : "bg-red-600 hover:bg-red-500"
+            }`}
+          >
+            {localPaused || isPaused ? "▶️ Play" : "⏸️ Pause"}
+          </button>
+
+          <button
+            onClick={() => {
+              const textToSpeak = speedMode === "rsvp" ? words.slice(currentWordIndex, currentWordIndex + 10).join(" ") :
+                                 speedMode === "guided" ? sentences[currentSentenceIndex] :
+                                 speedMode === "flash" ? concepts[currentConceptIndex] :
+                                 unitText.slice(0, 200);
+              if (isSpeaking) {
+                speechSynthesis.cancel();
+                setIsSpeaking(false);
+              } else {
+                speakText(textToSpeak);
+              }
+            }}
+            className={`px-3 py-1 rounded text-sm ${
+              isSpeaking
+                ? "bg-red-600 hover:bg-red-500"
+                : "bg-blue-600 hover:bg-blue-500"
+            }`}
+          >
+            {isSpeaking ? "🔇 Stop" : "🔊 Speak"}
+          </button>
+
+          {/* PDF Reference Toggle */}
+          {pdfUrl && (
+            <button
+              onClick={() => setShowPdfReference(!showPdfReference)}
+              className={`px-3 py-1 rounded text-sm ${
+                showPdfReference
+                  ? "bg-yellow-600 hover:bg-yellow-500"
+                  : "bg-gray-700 hover:bg-gray-600"
+              }`}
+            >
+              📄 PDF
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex">
+        {/* Speed Reading Display */}
+        <div className={`${showPdfReference ? "w-2/3" : "w-full"} relative`}>
+          {speedMode === "rsvp" && (
+            <RSVPDisplay
+              words={words}
+              currentIndex={currentWordIndex}
+              fontSize={fontSize}
+              fontFamily={fontFamily}
+            />
+          )}
+          
+          {speedMode === "bionic" && (
+            <BionicDisplay
+              text={unitText}
+              fontSize={fontSize}
+              fontFamily={fontFamily}
+              lineSpacing={lineSpacing}
+            />
+          )}
+          
+          {speedMode === "guided" && (
+            <GuidedDisplay
+              text={unitText}
+              currentSentence={currentSentenceIndex}
+              fontSize={fontSize}
+              fontFamily={fontFamily}
+              lineSpacing={lineSpacing}
+            />
+          )}
+          
+          {speedMode === "flash" && (
+            <FlashDisplay
+              concepts={concepts}
+              currentIndex={currentConceptIndex}
+              fontSize={fontSize}
+              fontFamily={fontFamily}
+            />
+          )}
+
+          {/* Eye Training Overlay */}
+          {eyeTrainingMode && (
+            <div className="absolute inset-0 pointer-events-none">
+              <div className="absolute top-1/2 left-1/2 w-2 h-2 bg-red-500 rounded-full transform -translate-x-1/2 -translate-y-1/2 animate-pulse" />
+              <div className="absolute top-1/4 left-1/4 w-1 h-1 bg-blue-400 rounded-full animate-ping" />
+              <div className="absolute top-3/4 right-1/4 w-1 h-1 bg-blue-400 rounded-full animate-ping" style={{ animationDelay: "0.5s" }} />
+            </div>
+          )}
+        </div>
+
+        {/* PDF Reference Panel */}
+        {showPdfReference && pdfUrl && (
+          <div className="w-1/3 bg-gray-800 border-l border-gray-700">
+            <div className="flex items-center justify-between p-3 bg-gray-700 border-b border-gray-600">
+              <h4 className="text-sm font-semibold text-yellow-400">📄 Reference</h4>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => onPageChange && onPageChange(Math.max(1, currentPage - 1))}
+                  disabled={currentPage <= 1}
+                  className="text-xs px-2 py-1 bg-gray-600 rounded hover:bg-gray-500 disabled:opacity-50"
+                >
+                  ◀
+                </button>
+                <span className="text-xs">{currentPage} / {pdfPageCount || '?'}</span>
+                <button
+                  onClick={() => onPageChange && onPageChange(Math.min(pdfPageCount || 999, currentPage + 1))}
+                  disabled={currentPage >= (pdfPageCount || 999)}
+                  className="text-xs px-2 py-1 bg-gray-600 rounded hover:bg-gray-500 disabled:opacity-50"
+                >
+                  ▶
+                </button>
               </div>
             </div>
-          </div>
-        ) : (
-          // Normal Mode - All chunks visible
-          <div className="h-full p-6 overflow-y-auto">
-            <div className="max-w-4xl mx-auto">
-              {chunks.map((chunk, idx) => {
-                const isActive = idx === activeIdx;
-                const chunkId = stableChunkId(chunk);
-                const isChunkUnderstood = !!understoodMap[chunkId];
-                
-                return (
-                  <span
-                    key={`${idx}-${chunkId}`}
-                    className={`
-                      inline-block mr-2 mb-2 px-2 py-1 rounded cursor-pointer transition-all duration-200
-                      ${isActive 
-                        ? "bg-yellow-400/20 text-yellow-100 ring-2 ring-yellow-400/50 shadow-lg transform scale-105" 
-                        : isChunkUnderstood
-                        ? "bg-green-500/20 text-green-100"
-                        : "bg-gray-700/50 text-gray-300 hover:bg-gray-600/50"
-                      }
-                    `}
-                    onClick={() => {
-                      setActiveIdx(idx);
-                      onWordClick?.(chunk);
-                      onTextSelect?.(chunk);
-                    }}
-                    title={isChunkUnderstood ? "Understood ✓" : "Click to focus"}
-                    style={{
-                      animation: isActive ? 'activeChunkPulse 2s infinite' : undefined
-                    }}
-                  >
-                    {chunk}
-                  </span>
-                );
-              })}
+            <div className="h-full overflow-auto">
+              <Document file={pdfUrl}>
+                <Page 
+                  pageNumber={currentPage} 
+                  scale={0.6}
+                  renderTextLayer={false}
+                  renderAnnotationLayer={false}
+                />
+              </Document>
             </div>
           </div>
         )}
       </div>
 
-      {/* Enhanced footer with keyboard shortcuts */}
-      <div className="px-4 py-2 bg-gray-800 border-t border-gray-700">
-        <div className="flex items-center justify-center gap-4 text-xs text-gray-400">
-          <span><kbd className="bg-gray-700 px-1 rounded">Space</kbd> Pause/Resume</span>
-          <span><kbd className="bg-gray-700 px-1 rounded">←/→</kbd> Navigate</span>
-          <span><kbd className="bg-gray-700 px-1 rounded">G</kbd> Mark understood</span>
-          <span><kbd className="bg-gray-700 px-1 rounded">R</kbd> Toggle RSVP</span>
-          <span><kbd className="bg-gray-700 px-1 rounded">C</kbd> Next Chapter</span>
+      {/* Status Bar */}
+      <div className="p-2 bg-gray-900 border-t border-gray-700 text-xs text-gray-400">
+        <div className="flex justify-between items-center">
+          <div className="flex gap-4">
+            <span>Mode: {speedMode.toUpperCase()}</span>
+            <span>Speed: {readingSpeed} WPM</span>
+            {speedMode === "rsvp" && <span>Word: {currentWordIndex + 1}/{words.length}</span>}
+            {speedMode === "guided" && <span>Sentence: {currentSentenceIndex + 1}/{sentences.length}</span>}
+            {speedMode === "flash" && <span>Concept: {currentConceptIndex + 1}/{concepts.length}</span>}
+          </div>
+          <div className="flex gap-4">
+            <span>Unit: {currentThoughtUnit}</span>
+            {pdfUrl && <span>Page: {currentPage}</span>}
+            <span>Status: {localPaused || isPaused ? "Paused" : "Reading"}</span>
+          </div>
         </div>
       </div>
 
-      {/* Enhanced animation styles */}
-      <style jsx>{`
-        @keyframes activeChunkPulse {
-          0% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.4); }
-          70% { box-shadow: 0 0 0 10px rgba(250, 204, 21, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0); }
-        }
-        
-        @keyframes rsvpFadeIn {
-          0% { 
-            opacity: 0; 
-            transform: translateY(20px) scale(0.95); 
-          }
-          100% { 
-            opacity: 1; 
-            transform: translateY(0) scale(1); 
-          }
-        }
-        
-        @keyframes focusPointPulse {
-          0%, 100% { 
-            opacity: 1; 
-            transform: scale(1); 
-          }
-          50% { 
-            opacity: 0.6; 
-            transform: scale(1.2); 
-          }
-        }
-        
-        kbd {
-          font-family: monospace;
-          font-size: 0.75em;
-          padding: 0.125rem 0.25rem;
-          border-radius: 0.125rem;
-        }
-        
-        .animate-pulse {
-          animation: focusPointPulse 2s ease-in-out infinite;
-        }
-      `}</style>
+      {/* Keyboard Shortcuts Help */}
+      <div className="absolute bottom-4 right-4 bg-black/80 p-2 rounded text-xs text-gray-400">
+        <div className="font-medium mb-1">Shortcuts:</div>
+        <div>Space: Pause/Play</div>
+        <div>← →: Navigate</div>
+        <div>S: Speak</div>
+      </div>
     </div>
   );
 }

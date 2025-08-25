@@ -821,29 +821,33 @@ export default function VisualRightBrainReader({
             {showConnections ? "Hide" : "Show"} Connections
           </button>
           
-          {/* TOC Toggle */}
+          {/* TOC Toggle - NEW FEATURE */}
           <button
             onClick={() => setShowTOC(!showTOC)}
-            className={`px-3 py-1 rounded text-xs ${
+            className={`px-3 py-1 rounded text-xs relative ${
               showTOC 
                 ? "bg-purple-600 text-white" 
                 : "bg-gray-700 text-gray-300 hover:bg-gray-600"
             }`}
             disabled={!tableOfContents.length}
+            title="NEW: Table of Contents with chapter navigation"
           >
             📑 TOC
+            <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
           </button>
           
-          {/* Accessibility Toggle */}
+          {/* Accessibility Toggle - NEW FEATURE */}
           <button
             onClick={() => setShowAccessibilityPanel(!showAccessibilityPanel)}
-            className={`px-3 py-1 rounded text-xs ${
+            className={`px-3 py-1 rounded text-xs relative ${
               showAccessibilityPanel 
                 ? "bg-blue-600 text-white" 
                 : "bg-gray-700 text-gray-300 hover:bg-gray-600"
             }`}
+            title="NEW: Accessibility settings for dyslexia & OCD support"
           >
             ♿ Access
+            <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
           </button>
         </div>
       </div>
