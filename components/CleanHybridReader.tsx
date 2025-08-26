@@ -112,27 +112,47 @@ interface ButlerMetaphor {
 function generateButlerMetaphors(text: string): ButlerMetaphor[] {
   const metaphors: ButlerMetaphor[] = [];
   
-  // Medical/pain-related metaphors (Butler's specialty)
-  const painPatterns = [
-    { pattern: /pain|hurt|ache|discomfort/gi, metaphor: "alarm system", explanation: "Think of pain as your body's alarm system - it's trying to tell you something important", visualCue: "🚨" },
-    { pattern: /nerve|neural|neuron/gi, metaphor: "electrical wiring", explanation: "Nerves are like electrical wires carrying messages throughout your body", visualCue: "⚡" },
-    { pattern: /brain|cerebral|cortex/gi, metaphor: "command center", explanation: "The brain is like a sophisticated command center processing all information", visualCue: "🧠" },
-    { pattern: /muscle|tissue|fiber/gi, metaphor: "elastic bands", explanation: "Muscles work like elastic bands - they stretch, contract, and need proper tension", visualCue: "🎯" },
-    { pattern: /healing|recovery|repair/gi, metaphor: "construction crew", explanation: "Your body's healing process is like a skilled construction crew rebuilding and repairing", visualCue: "🔧" },
-    { pattern: /inflammation|swelling/gi, metaphor: "emergency response", explanation: "Inflammation is like emergency responders rushing to help - sometimes helpful, sometimes overdone", visualCue: "🚑" },
-    { pattern: /movement|motion|mobility/gi, metaphor: "dance choreography", explanation: "Good movement is like well-choreographed dance - smooth, coordinated, and purposeful", visualCue: "💃" },
-    { pattern: /balance|stability|coordination/gi, metaphor: "tightrope walker", explanation: "Balance requires constant tiny adjustments, like a skilled tightrope walker", visualCue: "🤹" }
+  // Enhanced DAT-focused medical/dental metaphors (Butler's specialty)
+  const dentalMedicalPatterns = [
+    // Dental-specific for DAT
+    { pattern: /tooth|teeth|dental|enamel|dentin|pulp/gi, metaphor: "fortress with layers", explanation: "Think of a tooth like a medieval fortress - enamel is the outer wall, dentin is the inner structure, and pulp is the protected core with all the vital supplies", visualCue: "🏰" },
+    { pattern: /cavity|caries|decay/gi, metaphor: "enemy siege", explanation: "Tooth decay is like an enemy army slowly breaking down the fortress walls - bacteria are the invaders weakening your defenses", visualCue: "⚔️" },
+    { pattern: /gum|gingiva|periodontal/gi, metaphor: "foundation and moat", explanation: "Gums are like the foundation and protective moat around your tooth fortress - they need to stay strong to protect the whole structure", visualCue: "🌊" },
+    { pattern: /root|root canal/gi, metaphor: "underground supply lines", explanation: "Tooth roots are like underground supply lines bringing nutrients and removing waste - when they're damaged, the whole system suffers", visualCue: "🚇" },
+    { pattern: /bite|occlusion|jaw/gi, metaphor: "precision machinery", explanation: "Your bite is like precision machinery where every gear (tooth) must align perfectly for smooth operation", visualCue: "⚙️" },
+    
+    // Medical/anatomical for DAT
+    { pattern: /pain|hurt|ache|discomfort/gi, metaphor: "alarm system", explanation: "Think of pain as your body's sophisticated alarm system - it's trying to tell you something important about what needs attention", visualCue: "🚨" },
+    { pattern: /nerve|neural|neuron/gi, metaphor: "electrical highway", explanation: "Nerves are like a complex electrical highway system carrying messages at lightning speed throughout your body", visualCue: "⚡" },
+    { pattern: /brain|cerebral|cortex/gi, metaphor: "mission control center", explanation: "The brain is like NASA's mission control - monitoring everything, making split-second decisions, and coordinating complex operations", visualCue: "🧠" },
+    { pattern: /muscle|tissue|fiber/gi, metaphor: "elastic rope system", explanation: "Muscles work like an intelligent elastic rope system - they can stretch, contract, and adjust tension based on what you need", visualCue: "🎯" },
+    { pattern: /bone|skeleton|calcium/gi, metaphor: "living scaffolding", explanation: "Bones are like living scaffolding that's constantly rebuilding itself - strong yet adaptable, supporting everything above", visualCue: "🏗️" },
+    { pattern: /blood|circulation|heart/gi, metaphor: "delivery network", explanation: "Your circulatory system is like the world's most efficient delivery network - bringing supplies and removing waste 24/7", visualCue: "🚚" },
+    { pattern: /healing|recovery|repair/gi, metaphor: "master craftsmen", explanation: "Your body's healing process is like master craftsmen who know exactly how to rebuild and restore damaged areas", visualCue: "🔧" },
+    { pattern: /inflammation|swelling/gi, metaphor: "emergency response team", explanation: "Inflammation is like an emergency response team rushing to help - sometimes they're heroes, sometimes they overreact", visualCue: "🚑" },
+    
+    // Physiological processes for DAT
+    { pattern: /enzyme|catalyst|reaction/gi, metaphor: "molecular matchmakers", explanation: "Enzymes are like molecular matchmakers - they bring the right chemicals together at exactly the right time to make reactions happen", visualCue: "💕" },
+    { pattern: /hormone|endocrine|signal/gi, metaphor: "chemical messengers", explanation: "Hormones are like chemical messengers carrying important news throughout your body's communication network", visualCue: "📨" },
+    { pattern: /membrane|barrier|transport/gi, metaphor: "smart security gate", explanation: "Cell membranes are like smart security gates - they know exactly what to let in, what to keep out, and when to open", visualCue: "🚪" },
+    { pattern: /metabolism|energy|ATP/gi, metaphor: "cellular power plant", explanation: "Metabolism is like having millions of tiny power plants in your cells, converting fuel into usable energy", visualCue: "⚡" },
+    
+    // Organic chemistry for DAT
+    { pattern: /molecule|compound|structure/gi, metaphor: "molecular architecture", explanation: "Molecules are like tiny architectural structures - the shape determines the function, just like buildings", visualCue: "🏛️" },
+    { pattern: /bond|electron|orbital/gi, metaphor: "atomic handshakes", explanation: "Chemical bonds are like atomic handshakes - atoms sharing or trading electrons to stay stable and happy", visualCue: "🤝" },
+    { pattern: /reaction|synthesis|breakdown/gi, metaphor: "molecular dance", explanation: "Chemical reactions are like choreographed molecular dances - partners change, but the dance follows predictable patterns", visualCue: "💃" }
   ];
   
   // Educational metaphors for complex concepts
   const educationalPatterns = [
-    { pattern: /system|process|mechanism/gi, metaphor: "factory assembly line", explanation: "Complex systems work like assembly lines - each part has a specific role", visualCue: "🏭" },
-    { pattern: /connection|relationship|link/gi, metaphor: "bridge network", explanation: "Connections form networks like bridges linking different areas", visualCue: "🌉" },
-    { pattern: /function|purpose|role/gi, metaphor: "job description", explanation: "Each part has a specific job description in the bigger picture", visualCue: "📋" },
-    { pattern: /adaptation|change|evolution/gi, metaphor: "shape-shifting", explanation: "Adaptation is like intelligent shape-shifting to meet new challenges", visualCue: "🔄" }
+    { pattern: /system|process|mechanism/gi, metaphor: "orchestrated symphony", explanation: "Complex biological systems work like a symphony orchestra - each part plays its role in perfect harmony to create something beautiful", visualCue: "🎼" },
+    { pattern: /connection|relationship|link/gi, metaphor: "living web", explanation: "Biological connections form a living web where everything influences everything else - pull one strand and the whole web responds", visualCue: "🕸️" },
+    { pattern: /function|purpose|role/gi, metaphor: "specialized job", explanation: "Every biological structure has a specialized job - like workers in a city, each one essential for the whole community to thrive", visualCue: "👷" },
+    { pattern: /adaptation|change|evolution/gi, metaphor: "intelligent problem-solving", explanation: "Biological adaptation is like intelligent problem-solving - finding creative solutions to environmental challenges over time", visualCue: "🧩" },
+    { pattern: /balance|homeostasis|equilibrium/gi, metaphor: "master juggler", explanation: "Your body maintaining balance is like a master juggler keeping multiple balls in the air - constant tiny adjustments to maintain stability", visualCue: "🤹" }
   ];
   
-  [...painPatterns, ...educationalPatterns].forEach(({ pattern, metaphor, explanation, visualCue }) => {
+  [...dentalMedicalPatterns, ...educationalPatterns].forEach(({ pattern, metaphor, explanation, visualCue }) => {
     const matches = text.match(pattern);
     if (matches && matches.length > 0) {
       metaphors.push({
@@ -144,7 +164,7 @@ function generateButlerMetaphors(text: string): ButlerMetaphor[] {
     }
   });
   
-  return metaphors.slice(0, 5); // Limit to prevent overwhelming
+  return metaphors.slice(0, 6); // Slightly more for richer understanding
 }
 
 // Enhanced smart sidebar content generator with right-brain understanding
