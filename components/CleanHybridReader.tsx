@@ -164,7 +164,7 @@ function generateButlerMetaphors(text: string): ButlerMetaphor[] {
     }
   });
   
-  return metaphors.slice(0, 6); // Slightly more for richer understanding
+  return metaphors.slice(0, 6); // Enhanced DAT-focused metaphors for better understanding
 }
 
 // Enhanced smart sidebar content generator with right-brain understanding
@@ -247,70 +247,143 @@ function getRandomMetaphor(): string {
   return metaphors[Math.floor(Math.random() * metaphors.length)];
 }
 
-// Right-brain concept extraction
+// Enhanced right-brain concept extraction with intelligent chunking
 function extractConcepts(text: string): ConceptHighlight[] {
   const concepts: ConceptHighlight[] = [];
   
-  // Main ideas (highest importance)
+  // Enhanced main ideas patterns (highest importance)
   const mainIdeaPatterns = [
-    /\b(the main|primary|key|central|core|fundamental)\s+(\w+(?:\s+\w+){0,4})/gi,
-    /\b(principle|concept|theory|law|rule)\s+of\s+(\w+(?:\s+\w+){0,3})/gi
+    /\b(the main|primary|key|central|core|fundamental|essential|most important)\s+(\w+(?:\s+\w+){0,4})/gi,
+    /\b(principle|concept|theory|law|rule|mechanism|process)\s+(?:of|that|which)\s+(\w+(?:\s+\w+){0,3})/gi,
+    /\b(understanding|comprehension|knowledge)\s+(?:of|about)\s+(\w+(?:\s+\w+){0,3})/gi,
+    // Sentence-level main ideas
+    /^([^.!?]*(?:important|significant|crucial|vital|essential|key)[^.!?]*[.!?])/gmi,
+    /^([^.!?]*(?:remember|note that|keep in mind)[^.!?]*[.!?])/gmi
   ];
   
-  mainIdeaPatterns.forEach(pattern => {
+  mainIdeaPatterns.forEach((pattern, patternIndex) => {
     const matches = [...text.matchAll(pattern)];
     matches.forEach((match, index) => {
-      concepts.push({
-        id: `main-${index}`,
-        text: match[0],
-        type: "main-idea",
-        color: "#FFD700", // Gold for main ideas
-        importance: 0.9,
-        connections: []
-      });
+      const conceptText = match[0].trim();
+      if (conceptText.length > 10) { // Filter out very short matches
+        concepts.push({
+          id: `main-${patternIndex}-${index}`,
+          text: conceptText,
+          type: "main-idea",
+          color: "#FFD700", // Gold for main ideas
+          importance: 0.9,
+          connections: []
+        });
+      }
     });
   });
 
-  // Supporting concepts
+  // Enhanced supporting concepts with chunking
   const supportingPatterns = [
-    /\b(because|since|due to|as a result|therefore|thus|hence)\s+(\w+(?:\s+\w+){0,5})/gi,
-    /\b(for example|such as|including|like)\s+(\w+(?:\s+\w+){0,4})/gi
+    /\b(because|since|due to|as a result|therefore|thus|hence|consequently)\s+([^.!?]+[.!?])/gi,
+    /\b(for example|such as|including|like|specifically|namely)\s+([^.!?]+[.!?])/gi,
+    /\b(this means|in other words|that is|i\.e\.|e\.g\.)\s+([^.!?]+[.!?])/gi,
+    // Cause and effect chunking
+    /([^.!?]*(?:causes?|leads? to|results? in|triggers?|produces?)[^.!?]*[.!?])/gi,
+    // Process steps chunking
+    /([^.!?]*(?:first|second|third|next|then|finally|lastly)[^.!?]*[.!?])/gi
   ];
   
-  supportingPatterns.forEach(pattern => {
+  supportingPatterns.forEach((pattern, patternIndex) => {
     const matches = [...text.matchAll(pattern)];
     matches.forEach((match, index) => {
-      concepts.push({
-        id: `support-${index}`,
-        text: match[0],
-        type: "supporting-concept",
-        color: "#87CEEB", // Sky blue for supporting
-        importance: 0.6,
-        connections: []
-      });
+      const conceptText = match[0].trim();
+      if (conceptText.length > 15) {
+        concepts.push({
+          id: `support-${patternIndex}-${index}`,
+          text: conceptText,
+          type: "supporting-concept",
+          color: "#87CEEB", // Sky blue for supporting
+          importance: 0.6,
+          connections: []
+        });
+      }
     });
   });
 
-  // Definitions
+  // Enhanced definitions with better chunking
   const definitionPatterns = [
-    /\b(\w+(?:\s+\w+){0,2})\s+(is|are|means|refers to|defined as)\s+(\w+(?:\s+\w+){0,6})/gi
+    /\b(\w+(?:\s+\w+){0,2})\s+(is|are|means|refers to|defined as|represents)\s+([^.!?]+[.!?])/gi,
+    // Full sentence definitions
+    /([^.!?]*(?:definition|define|term|concept)\s+(?:of|for)\s+\w+[^.!?]*[.!?])/gi,
+    // Medical/scientific definitions
+    /([^.!?]*(?:condition|disease|syndrome|disorder|symptom)\s+(?:is|are|means)[^.!?]*[.!?])/gi
   ];
   
-  definitionPatterns.forEach(pattern => {
+  definitionPatterns.forEach((pattern, patternIndex) => {
     const matches = [...text.matchAll(pattern)];
     matches.forEach((match, index) => {
-      concepts.push({
-        id: `def-${index}`,
-        text: match[0],
-        type: "definition",
-        color: "#98FB98", // Light green for definitions
-        importance: 0.7,
-        connections: []
-      });
+      const conceptText = match[0].trim();
+      if (conceptText.length > 10) {
+        concepts.push({
+          id: `def-${patternIndex}-${index}`,
+          text: conceptText,
+          type: "definition",
+          color: "#98FB98", // Light green for definitions
+          importance: 0.7,
+          connections: []
+        });
+      }
     });
   });
 
-  return concepts.slice(0, 10); // Limit to prevent overwhelming
+  // New: Process and mechanism chunking (great for DAT content)
+  const processPatterns = [
+    /([^.!?]*(?:process|mechanism|pathway|system|method|procedure)[^.!?]*[.!?])/gi,
+    /([^.!?]*(?:occurs?|happens?|takes? place|develops?)[^.!?]*[.!?])/gi,
+    /([^.!?]*(?:function|role|purpose|job)[^.!?]*[.!?])/gi
+  ];
+  
+  processPatterns.forEach((pattern, patternIndex) => {
+    const matches = [...text.matchAll(pattern)];
+    matches.forEach((match, index) => {
+      const conceptText = match[0].trim();
+      if (conceptText.length > 20) {
+        concepts.push({
+          id: `process-${patternIndex}-${index}`,
+          text: conceptText,
+          type: "process",
+          color: "#DDA0DD", // Plum for processes
+          importance: 0.8,
+          connections: []
+        });
+      }
+    });
+  });
+
+  // New: Relationship chunking
+  const relationshipPatterns = [
+    /([^.!?]*(?:relationship|connection|link|association|correlation)[^.!?]*[.!?])/gi,
+    /([^.!?]*(?:affects?|influences?|impacts?|interacts? with)[^.!?]*[.!?])/gi,
+    /([^.!?]*(?:similar to|different from|compared to|unlike)[^.!?]*[.!?])/gi
+  ];
+  
+  relationshipPatterns.forEach((pattern, patternIndex) => {
+    const matches = [...text.matchAll(pattern)];
+    matches.forEach((match, index) => {
+      const conceptText = match[0].trim();
+      if (conceptText.length > 15) {
+        concepts.push({
+          id: `rel-${patternIndex}-${index}`,
+          text: conceptText,
+          type: "relationship",
+          color: "#F0E68C", // Khaki for relationships
+          importance: 0.65,
+          connections: []
+        });
+      }
+    });
+  });
+
+  // Sort by importance and limit to prevent overwhelming
+  return concepts
+    .sort((a, b) => b.importance - a.importance)
+    .slice(0, 15); // Increased limit for better coverage
 }
 
 export default function CleanHybridReader({
@@ -963,23 +1036,36 @@ export default function CleanHybridReader({
                   </ul>
                 </div>
 
-                {/* Concept Highlights Legend */}
+                {/* Enhanced Concept Highlights Legend with Chunking Types */}
                 {rightBrainMode && conceptHighlights.length > 0 && (
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                    <h5 className="text-sm font-semibold text-gray-700 mb-2">🎯 Concept Types</h5>
+                    <h5 className="text-sm font-semibold text-gray-700 mb-2">🎯 Smart Chunking & Highlights</h5>
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 text-xs">
                         <div className="w-3 h-3 rounded" style={{ backgroundColor: "#FFD700" }}></div>
-                        <span>Main Ideas</span>
+                        <span>Main Ideas & Key Points</span>
                       </div>
                       <div className="flex items-center gap-2 text-xs">
-                        <div className="w-3 h-3 rounded" style={{ backgroundColor: "#87CEEB" }}></div>
-                        <span>Supporting Concepts</span>
+                        <div className="w-3 h-3 rounded" style={{ backgroundColor: "#DDA0DD" }}></div>
+                        <span>Processes & Mechanisms</span>
                       </div>
                       <div className="flex items-center gap-2 text-xs">
                         <div className="w-3 h-3 rounded" style={{ backgroundColor: "#98FB98" }}></div>
-                        <span>Definitions</span>
+                        <span>Definitions & Terms</span>
                       </div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <div className="w-3 h-3 rounded" style={{ backgroundColor: "#87CEEB" }}></div>
+                        <span>Supporting Details</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <div className="w-3 h-3 rounded" style={{ backgroundColor: "#F0E68C" }}></div>
+                        <span>Relationships & Connections</span>
+                      </div>
+                    </div>
+                    <div className="mt-2 pt-2 border-t border-gray-300">
+                      <p className="text-xs text-gray-600 italic">
+                        📖 Intelligent chunking highlights complete thoughts and main ideas for better understanding
+                      </p>
                     </div>
                   </div>
                 )}
