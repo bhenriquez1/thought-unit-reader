@@ -102,47 +102,141 @@ export async function parseBookWithChapters(file: File): Promise<{
   chapters: Chapter[];
   original: string;
 }> {
+  console.log("📚 Starting PDF parsing for:", file.name, "Size:", file.size, "bytes");
+  
   try {
+    // ✅ Enhanced text extraction with better error handling
     const text = await extractText(file);
+    console.log("📚 Text extraction result - Length:", text.length, "Preview:", text.slice(0, 100));
+    
+    // ✅ Validate extracted text
+    if (!text || text.trim().length === 0) {
+      throw new Error("No text content extracted from PDF - file may be empty or contain only images");
+    }
+    
+    if (text.includes("Error processing PDF") || text.includes("Error extracting")) {
+      throw new Error(`PDF processing failed: ${text}`);
+    }
+    
+    // ✅ Enhanced chapter splitting with validation
     const chapters = splitIntoChapters(text);
-
+    console.log("📚 Chapter splitting result - Chapters found:", chapters.length);
+    
     const parsedUnits: string[][] = [];
+    let totalValidUnits = 0;
+    
     chapters.forEach((chapter, index) => {
       if (!chapter.content) chapter.content = "";
 
       const sentences = parseIntoUnits(chapter.content);
       chapter.page = index + 1;
+      
+      console.log(`📚 Chapter ${index + 1} - Sentences: ${sentences.length}, Content length: ${chapter.content.length}`);
 
       const paragraphs: string[][] = [];
       let currentParagraph: string[] = [];
 
       sentences.forEach((sentence) => {
-        currentParagraph.push(sentence);
-        if (sentence.endsWith("\n\n")) {
-          paragraphs.push([...currentParagraph]);
-          currentParagraph = [];
+        if (sentence.trim().length > 0) { // ✅ Only add non-empty sentences
+          currentParagraph.push(sentence);
+          if (sentence.endsWith("\n\n")) {
+            paragraphs.push([...currentParagraph]);
+            currentParagraph = [];
+          }
         }
       });
 
       if (currentParagraph.length > 0) paragraphs.push(currentParagraph);
-      parsedUnits.push(...(paragraphs.length > 0 ? paragraphs : [[]]));
+      
+      // ✅ Only add paragraphs with actual content
+      const validParagraphs = paragraphs.filter(p => 
+        p.length > 0 && p.some(sentence => sentence.trim().length > 5)
+      );
+      
+      if (validParagraphs.length > 0) {
+        parsedUnits.push(...validParagraphs);
+        totalValidUnits += validParagraphs.length;
+      }
     });
 
-    if (chapters.length === 0) {
-      chapters.push({ title: "Content", content: text, page: 1 });
+    // ✅ Fallback for documents without clear chapter structure
+    if (chapters.length === 0 || totalValidUnits === 0) {
+      console.log("📚 No chapters found or no valid units, creating fallback structure");
+      
+      // Create a single chapter with all content
+      const fallbackChapter = { title: "Content", content: text, page: 1 };
+      chapters.length = 0; // Clear existing chapters
+      chapters.push(fallbackChapter);
+      
+      // Parse the entire text into units
+      const allSentences = parseIntoUnits(text);
+      console.log("📚 Fallback parsing - Total sentences:", allSentences.length);
+      
+      if (allSentences.length > 0) {
+        // Group sentences into reasonable chunks (5-10 sentences per unit)
+        const chunkSize = 7;
+        parsedUnits.length = 0; // Clear existing units
+        
+        for (let i = 0; i < allSentences.length; i += chunkSize) {
+          const chunk = allSentences.slice(i, i + chunkSize).filter(s => s.trim().length > 5);
+          if (chunk.length > 0) {
+            parsedUnits.push(chunk);
+          }
+        }
+        
+        totalValidUnits = parsedUnits.length;
+      }
+    }
+    
+    // ✅ Final validation
+    if (parsedUnits.length === 0 || totalValidUnits === 0) {
+      console.warn("📚 No valid content units created, using emergency fallback");
+      
+      // Emergency fallback - create basic units from raw text
+      const words = text.split(/\s+/).filter(w => w.trim().length > 0);
+      if (words.length > 0) {
+        // Create units of ~50 words each
+        const wordsPerUnit = 50;
+        parsedUnits.length = 0;
+        
+        for (let i = 0; i < words.length; i += wordsPerUnit) {
+          const wordChunk = words.slice(i, i + wordsPerUnit);
+          if (wordChunk.length > 0) {
+            parsedUnits.push([wordChunk.join(" ")]);
+          }
+        }
+        
+        console.log("📚 Emergency fallback created", parsedUnits.length, "units from", words.length, "words");
+      } else {
+        throw new Error("No readable text content found in the PDF");
+      }
     }
 
+    console.log("📚 Final parsing result:", {
+      chapters: chapters.length,
+      parsedUnits: parsedUnits.length,
+      totalValidUnits,
+      originalTextLength: text.length
+    });
+
     return {
-      parsedUnits: parsedUnits.length > 0 ? parsedUnits : [[]],
-      chapters,
+      parsedUnits: parsedUnits.length > 0 ? parsedUnits : [["No content available"]],
+      chapters: chapters.length > 0 ? chapters : [{ title: "Content", content: text || "No content", page: 1 }],
       original: text,
     };
   } catch (error) {
-    console.error("Error parsing book with chapters:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("📚 Critical parsing error:", errorMessage, "File:", file.name);
+    
+    // ✅ Enhanced error response with more context
     return {
-      parsedUnits: [[]],
-      chapters: [{ title: "Content", content: "Error parsing content", page: 1 }],
-      original: "Error parsing book",
+      parsedUnits: [["Error: " + errorMessage]],
+      chapters: [{ 
+        title: "Parsing Error", 
+        content: `Failed to parse ${file.name}: ${errorMessage}`, 
+        page: 1 
+      }],
+      original: `Error parsing ${file.name}: ${errorMessage}`,
     };
   }
 }

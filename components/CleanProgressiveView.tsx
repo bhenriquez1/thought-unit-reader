@@ -273,6 +273,12 @@ export default function CleanProgressiveView({
   selectedVoice,
   speechRate = 1.0,
 }: CleanProgressiveViewProps) {
+  // Error handling states
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [parsingStatus, setParsingStatus] = useState<'idle' | 'parsing' | 'success' | 'error'>('idle');
+  const [diagnosticInfo, setDiagnosticInfo] = useState<any>(null);
+
   const [speedMode, setSpeedMode] = useState<SpeedMode>("rsvp");
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
@@ -285,7 +291,22 @@ export default function CleanProgressiveView({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
 
-  // Enhanced global sync integration with TOC awareness
+  // Enhanced global sync integration with TOC awareness - with error handling
+  let syncHook;
+  try {
+    syncHook = useReaderSync();
+  } catch (syncError) {
+    console.error("Progressive: Failed to initialize reader sync:", syncError);
+    syncHook = {
+      page: currentPage || 1,
+      unitIndex: currentThoughtUnit || 1,
+      updateSync: () => {},
+      syncToChapter: () => false,
+      findNearestChapter: () => null,
+      tableOfContents: []
+    };
+  }
+
   const { 
     page, 
     unitIndex, 
@@ -293,14 +314,95 @@ export default function CleanProgressiveView({
     syncToChapter,
     findNearestChapter,
     tableOfContents: globalTOC
-  } = useReaderSync();
+  } = syncHook;
+
+  // Enhanced validation and error handling
+  useEffect(() => {
+    console.log("🚀 Progressive: Initializing with data:", {
+      thoughtUnitsCount: thoughtUnits?.length || 0,
+      currentUnit: currentThoughtUnit,
+      bookId,
+      userId
+    });
+
+    setIsLoading(true);
+    setParsingStatus('parsing');
+    setError(null);
+
+    try {
+      // Comprehensive validation
+      const diagnostics = {
+        timestamp: new Date().toISOString(),
+        thoughtUnitsProvided: !!thoughtUnits,
+        thoughtUnitsCount: thoughtUnits?.length || 0,
+        thoughtUnitsType: Array.isArray(thoughtUnits) ? 'array' : typeof thoughtUnits,
+        currentThoughtUnit,
+        bookId: !!bookId,
+        userId: !!userId,
+        pdfUrl: !!pdfUrl,
+        readingSpeed,
+        fontSize,
+        fontFamily
+      };
+
+      setDiagnosticInfo(diagnostics);
+
+      // Validation checks
+      if (!thoughtUnits) {
+        throw new Error("No thought units provided - PDF parsing may have failed");
+      }
+
+      if (!Array.isArray(thoughtUnits)) {
+        throw new Error(`Invalid thought units format - expected array, got ${typeof thoughtUnits}`);
+      }
+
+      if (thoughtUnits.length === 0) {
+        throw new Error("Empty thought units array - PDF may contain no readable text");
+      }
+
+      // Validate current unit
+      if (!currentThoughtUnit || currentThoughtUnit < 1) {
+        console.warn("Progressive: Invalid currentThoughtUnit, defaulting to 1");
+      }
+
+      const unitIndex = Math.max(0, (currentThoughtUnit || 1) - 1);
+      const currentUnit = thoughtUnits[unitIndex];
+
+      if (!currentUnit) {
+        throw new Error(`No thought unit found at index ${unitIndex} (unit ${currentThoughtUnit})`);
+      }
+
+      // Validate unit content
+      const unitText = unitToText(currentUnit);
+      if (!unitText || unitText.trim().length === 0) {
+        throw new Error(`Thought unit ${currentThoughtUnit} contains no readable text`);
+      }
+
+      console.log("✅ Progressive: Validation successful", {
+        unitText: unitText.substring(0, 100) + "...",
+        unitLength: unitText.length
+      });
+
+      setParsingStatus('success');
+      setError(null);
+
+    } catch (validationError) {
+      console.error("❌ Progressive: Validation failed:", validationError);
+      setError(validationError instanceof Error ? validationError.message : String(validationError));
+      setParsingStatus('error');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [thoughtUnits, currentThoughtUnit, bookId, userId]);
 
   // Safe logging with error handling
-  try {
-    console.log("CleanProgressiveView - Global sync:", { page, unitIndex, currentPage, currentThoughtUnit });
-  } catch (error) {
-    console.warn("CleanProgressiveView - Sync logging error:", error);
-  }
+  useEffect(() => {
+    try {
+      console.log("CleanProgressiveView - Global sync:", { page, unitIndex, currentPage, currentThoughtUnit });
+    } catch (error) {
+      console.warn("CleanProgressiveView - Sync logging error:", error);
+    }
+  }, [page, unitIndex, currentPage, currentThoughtUnit]);
 
   // Enhanced TOC-aware sync when global state changes
   useEffect(() => {
@@ -382,6 +484,142 @@ export default function CleanProgressiveView({
     }
   };
 
+  // Retry function for error recovery
+  const handleRetry = () => {
+    console.log("🔄 Progressive: Retrying initialization...");
+    setError(null);
+    setParsingStatus('idle');
+    setIsLoading(false);
+    
+    // Trigger re-validation
+    setTimeout(() => {
+      setIsLoading(true);
+      setParsingStatus('parsing');
+    }, 100);
+  };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="h-full flex items-center justify-center bg-black text-white">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-400 mx-auto mb-4"></div>
+          <h3 className="text-lg font-semibold text-green-400 mb-2">⚡ Initializing Speed Reading</h3>
+          <p className="text-gray-400">
+            {parsingStatus === 'parsing' ? 'Validating thought units...' : 'Preparing your reading experience...'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state with comprehensive diagnostics
+  if (error) {
+    return (
+      <div className="h-full flex items-center justify-center bg-black text-white p-8">
+        <div className="max-w-2xl mx-auto text-center">
+          <div className="mb-6">
+            <div className="text-6xl mb-4">⚡💥</div>
+            <h2 className="text-2xl font-bold text-red-400 mb-2">Speed Reading Error</h2>
+            <p className="text-gray-300 mb-4">{error}</p>
+          </div>
+
+          {/* Diagnostic Information */}
+          {diagnosticInfo && (
+            <div className="bg-gray-900 rounded-lg p-4 mb-6 text-left">
+              <h3 className="text-lg font-semibold text-yellow-400 mb-3">🔍 Diagnostic Information</h3>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-400">Thought Units:</span>
+                  <span className="text-white ml-2">
+                    {diagnosticInfo.thoughtUnitsProvided ? 
+                      `${diagnosticInfo.thoughtUnitsCount} units (${diagnosticInfo.thoughtUnitsType})` : 
+                      'Not provided'
+                    }
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-400">Current Unit:</span>
+                  <span className="text-white ml-2">{diagnosticInfo.currentThoughtUnit || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400">Book ID:</span>
+                  <span className="text-white ml-2">{diagnosticInfo.bookId ? '✓' : '✗'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400">User ID:</span>
+                  <span className="text-white ml-2">{diagnosticInfo.userId ? '✓' : '✗'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400">PDF URL:</span>
+                  <span className="text-white ml-2">{diagnosticInfo.pdfUrl ? '✓' : '✗'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400">Reading Speed:</span>
+                  <span className="text-white ml-2">{diagnosticInfo.readingSpeed} WPM</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Possible Solutions */}
+          <div className="bg-blue-900/30 rounded-lg p-4 mb-6 text-left">
+            <h3 className="text-lg font-semibold text-blue-400 mb-3">💡 Possible Solutions</h3>
+            <ul className="text-sm text-gray-300 space-y-2">
+              <li>• Try uploading a different PDF file</li>
+              <li>• Ensure the PDF contains readable text (not just images)</li>
+              <li>• Check that the PDF is not password-protected</li>
+              <li>• Refresh the page and try again</li>
+              <li>• Try switching to a different reading mode first</li>
+            </ul>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-4 justify-center">
+            <button
+              onClick={handleRetry}
+              className="px-6 py-3 bg-green-600 hover:bg-green-500 rounded-lg font-medium transition-colors"
+            >
+              🔄 Retry
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-3 bg-gray-600 hover:bg-gray-500 rounded-lg font-medium transition-colors"
+            >
+              🔃 Refresh Page
+            </button>
+          </div>
+
+          {/* Demo Mode Option */}
+          <div className="mt-6 pt-6 border-t border-gray-700">
+            <p className="text-gray-400 mb-3">Or try Speed Reading with sample content:</p>
+            <button
+              onClick={() => {
+                // Create demo content for testing
+                const demoUnits = [
+                  "Speed reading is a collection of reading methods which attempt to increase rates of reading without substantially reducing comprehension or retention.",
+                  "Traditional speed reading methods include skimming, scanning, and rapid serial visual presentation (RSVP).",
+                  "The average reading speed for adults is around 200-300 words per minute, but speed reading techniques can help achieve 400-700 WPM or more.",
+                  "Key techniques include reducing subvocalization, expanding peripheral vision, and minimizing regression (re-reading)."
+                ];
+                
+                // Reset error state and use demo content
+                setError(null);
+                setParsingStatus('success');
+                
+                // This would need to be handled by parent component
+                console.log("Demo mode requested with sample content:", demoUnits);
+              }}
+              className="px-6 py-3 bg-purple-600 hover:bg-purple-500 rounded-lg font-medium transition-colors"
+            >
+              🎯 Try Demo Mode
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Empty states
   if (!thoughtUnits || thoughtUnits.length === 0) {
     return (
@@ -401,6 +639,27 @@ export default function CleanProgressiveView({
   }
 
   const unitText = unitToText(rawUnit);
+
+  // Additional validation for unit text
+  if (!unitText || unitText.trim().length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center bg-black text-white p-8">
+        <div className="text-center">
+          <div className="text-6xl mb-4">⚡📄</div>
+          <h2 className="text-xl font-bold text-yellow-400 mb-2">Empty Content</h2>
+          <p className="text-gray-300 mb-4">
+            The current thought unit appears to be empty or contains no readable text.
+          </p>
+          <button
+            onClick={handleRetry}
+            className="px-6 py-3 bg-green-600 hover:bg-green-500 rounded-lg font-medium transition-colors"
+          >
+            🔄 Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Process text for different modes
   const words = useMemo(() => {

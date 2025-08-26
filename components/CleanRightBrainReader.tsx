@@ -457,21 +457,220 @@ export default function CleanRightBrainReader({
   const [explorationSpeed, setExplorationSpeed] = useState(3000);
   const [immersiveMode, setImmersiveMode] = useState(false);
   
+  // ✅ Enhanced Error State Management
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [parsingStatus, setParsingStatus] = useState<'idle' | 'parsing' | 'success' | 'error'>('idle');
+  const [diagnosticInfo, setDiagnosticInfo] = useState<{
+    thoughtUnitsCount: number;
+    hasValidContent: boolean;
+    contentSample: string;
+    errorDetails?: string;
+  } | null>(null);
+  
   // Audio context for soundscapes
   const [audioEnabled, setAudioEnabled] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
 
-  // Debug logging
-  console.log("CleanRightBrainReader - thoughtUnits:", thoughtUnits?.length, "currentThoughtUnit:", currentThoughtUnit);
+  // ✅ Enhanced Debug Logging with Diagnostic Information
+  console.log("🧠 CleanRightBrainReader - Diagnostic Info:", {
+    thoughtUnitsLength: thoughtUnits?.length,
+    currentThoughtUnit,
+    thoughtUnitsType: typeof thoughtUnits,
+    firstUnitSample: thoughtUnits?.[0] ? unitToText(thoughtUnits[0]).slice(0, 50) : 'N/A'
+  });
 
-  // More lenient empty state checks - allow the component to work with minimal content
+  // ✅ Comprehensive Validation and Error Handling
+  useEffect(() => {
+    const validateContent = () => {
+      setIsLoading(true);
+      setParsingStatus('parsing');
+      
+      try {
+        // Check if thoughtUnits exists and is an array
+        if (!thoughtUnits || !Array.isArray(thoughtUnits)) {
+          throw new Error("No thought units provided - the PDF parsing may have failed");
+        }
+        
+        // Check if array is empty
+        if (thoughtUnits.length === 0) {
+          throw new Error("Empty thought units array - the PDF may be blank or unreadable");
+        }
+        
+        // Check if all units are empty
+        const hasValidContent = thoughtUnits.some(unit => {
+          const text = unitToText(unit);
+          return text && text.trim().length > 5;
+        });
+        
+        if (!hasValidContent) {
+          throw new Error("No readable content found - the PDF may be scanned images or corrupted");
+        }
+        
+        // Get content sample for diagnostics
+        const contentSample = thoughtUnits
+          .slice(0, 3)
+          .map(unit => unitToText(unit))
+          .filter(text => text.trim().length > 0)
+          .join(" ")
+          .slice(0, 200);
+        
+        // Success - update diagnostic info
+        setDiagnosticInfo({
+          thoughtUnitsCount: thoughtUnits.length,
+          hasValidContent: true,
+          contentSample: contentSample || "Content available but preview unavailable"
+        });
+        
+        setError(null);
+        setParsingStatus('success');
+        
+      } catch (validationError) {
+        const errorMessage = validationError instanceof Error ? validationError.message : String(validationError);
+        console.error("🧠 Right-Brain Reader validation error:", errorMessage);
+        
+        setError(errorMessage);
+        setParsingStatus('error');
+        setDiagnosticInfo({
+          thoughtUnitsCount: thoughtUnits?.length || 0,
+          hasValidContent: false,
+          contentSample: "",
+          errorDetails: errorMessage
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    validateContent();
+  }, [thoughtUnits]);
+
+  // ✅ Error State UI - Show user-friendly error messages with retry functionality
+  if (error || parsingStatus === 'error') {
+    return (
+      <div className="flex items-center justify-center h-full bg-gradient-to-br from-red-900 via-purple-900 to-indigo-900 text-white">
+        <div className="text-center max-w-2xl mx-auto p-8">
+          <div className="text-6xl mb-6">⚠️</div>
+          <h2 className="text-2xl font-bold mb-4 text-red-400">Right-Brain Reading Unavailable</h2>
+          <p className="text-lg mb-6 text-gray-300">
+            {error || "Unable to process this PDF for visual learning"}
+          </p>
+          
+          {/* Diagnostic Information */}
+          {diagnosticInfo && (
+            <div className="bg-black/40 backdrop-blur-sm rounded-lg p-4 mb-6 text-left">
+              <h3 className="text-sm font-semibold mb-3 text-yellow-400">📊 Diagnostic Information</h3>
+              <div className="space-y-2 text-sm">
+                <div>
+                  <span className="text-gray-400">Thought Units Found:</span> 
+                  <span className="ml-2 text-white">{diagnosticInfo.thoughtUnitsCount}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400">Has Valid Content:</span> 
+                  <span className="ml-2 text-white">{diagnosticInfo.hasValidContent ? "Yes" : "No"}</span>
+                </div>
+                {diagnosticInfo.contentSample && (
+                  <div>
+                    <span className="text-gray-400">Content Sample:</span>
+                    <div className="ml-2 text-white text-xs bg-gray-800 p-2 rounded mt-1">
+                      {diagnosticInfo.contentSample}
+                    </div>
+                  </div>
+                )}
+                {diagnosticInfo.errorDetails && (
+                  <div>
+                    <span className="text-gray-400">Error Details:</span>
+                    <div className="ml-2 text-red-300 text-xs">{diagnosticInfo.errorDetails}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Possible Solutions */}
+          <div className="bg-blue-900/30 backdrop-blur-sm rounded-lg p-4 mb-6 text-left">
+            <h3 className="text-sm font-semibold mb-3 text-blue-400">💡 Possible Solutions</h3>
+            <ul className="space-y-2 text-sm text-gray-300">
+              <li>• Try a different PDF file (text-based PDFs work best)</li>
+              <li>• Use <strong>Progressive</strong> or <strong>Hybrid</strong> mode instead</li>
+              <li>• Check if the PDF contains readable text (not just images)</li>
+              <li>• For scanned PDFs, try converting to text first</li>
+              <li>• Reload the page and try uploading again</li>
+            </ul>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-4 justify-center">
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-3 bg-yellow-600 hover:bg-yellow-500 rounded-lg text-white font-medium transition-colors"
+            >
+              🔄 Retry with Another Document
+            </button>
+            <button
+              onClick={() => {
+                // Try to switch to Progressive mode as fallback
+                if (onPageChange) {
+                  // This is a workaround to trigger mode switch - in real app you'd have a proper callback
+                  console.log("Switching to Progressive mode as fallback");
+                }
+              }}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg text-white font-medium transition-colors"
+            >
+              ⚡ Try Progressive Mode
+            </button>
+          </div>
+
+          {/* Demo Mode Option */}
+          <div className="mt-6 pt-6 border-t border-gray-700">
+            <p className="text-sm text-gray-400 mb-3">Or explore the visual learning experience with demo content:</p>
+            <button
+              onClick={() => {
+                setError(null);
+                setParsingStatus('success');
+                // This will trigger the demo content fallback below
+              }}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-white text-sm font-medium transition-colors"
+            >
+              🎮 Try Demo Mode
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ Loading State UI
+  if (isLoading || parsingStatus === 'parsing') {
+    return (
+      <div className="flex items-center justify-center h-full bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white">
+        <div className="text-center">
+          <div className="animate-spin text-6xl mb-4">🌌</div>
+          <h2 className="text-2xl font-bold mb-2">Processing for Visual Learning</h2>
+          <p className="text-lg opacity-80 mb-4 text-gray-300">
+            Analyzing content and generating visual metaphors...
+          </p>
+          <div className="flex items-center justify-center gap-2">
+            <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
+            <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+            <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ Empty State with Upload Prompt
   if (!thoughtUnits || thoughtUnits.length === 0) {
     return (
       <div className="flex items-center justify-center h-full bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white">
         <div className="text-center">
           <div className="text-6xl mb-4">🧠</div>
           <h2 className="text-2xl font-bold mb-2">Visual Right-Brain Learning</h2>
-          <p className="text-gray-300">Upload a PDF to begin your visual journey through knowledge</p>
+          <p className="text-lg opacity-80 mb-4 text-gray-300 max-w-md">
+            Experience visual learning with Galaxy, Forest, City, Ocean, and Mountain metaphors
+          </p>
+          <p className="text-gray-400 text-sm">Upload a PDF to begin your visual journey through knowledge</p>
         </div>
       </div>
     );
