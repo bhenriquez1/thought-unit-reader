@@ -433,30 +433,35 @@ export default function ThoughtUnitReader() {
         
         // Use the sync store's chapter-aware functionality with error handling
         try {
-          const { findNearestChapter } = useReaderSync.getState();
-          const nearestChapter = findNearestChapter(currentPage);
-          
-          if (nearestChapter && nearestChapter.unitStart) {
-            console.log(`🔄 Tab sync: Found chapter "${nearestChapter.title}" for page ${currentPage}`);
-            // Snap to chapter's first unit (don't change page, just unit)
-            const chapterStartUnit = nearestChapter.unitStart;
+          const syncState = useReaderSync.getState();
+          if (syncState && typeof syncState.findNearestChapter === 'function') {
+            const nearestChapter = syncState.findNearestChapter(currentPage);
             
-            // Validate unit bounds
-            if (chapterStartUnit >= 1 && chapterStartUnit <= thoughtUnits.length) {
-              setCurrentThoughtUnit(chapterStartUnit);
-              updateSync({ 
-                page: currentPage, 
-                unitIndex: chapterStartUnit 
-              }, 'manual');
+            if (nearestChapter && nearestChapter.unitStart) {
+              console.log(`🔄 Tab sync: Found chapter "${nearestChapter.title}" for page ${currentPage}`);
+              // Snap to chapter's first unit (don't change page, just unit)
+              const chapterStartUnit = nearestChapter.unitStart;
               
-              console.log(`🔄 Tab sync complete: staying on page ${currentPage}, unit ${chapterStartUnit}`);
+              // Validate unit bounds
+              if (chapterStartUnit >= 1 && chapterStartUnit <= thoughtUnits.length) {
+                setCurrentThoughtUnit(chapterStartUnit);
+                updateSync({ 
+                  page: currentPage, 
+                  unitIndex: chapterStartUnit 
+                }, 'manual');
+                
+                console.log(`🔄 Tab sync complete: staying on page ${currentPage}, unit ${chapterStartUnit}`);
+              } else {
+                console.warn(`🔄 Tab sync: Invalid chapter unit ${chapterStartUnit}, using fallback`);
+                throw new Error('Invalid chapter unit');
+              }
             } else {
-              console.warn(`🔄 Tab sync: Invalid chapter unit ${chapterStartUnit}, using fallback`);
-              throw new Error('Invalid chapter unit');
+              console.log(`🔄 Tab sync: No chapter found for page ${currentPage}, using fallback`);
+              throw new Error('No chapter found');
             }
           } else {
-            console.log(`🔄 Tab sync: No chapter found for page ${currentPage}, using fallback`);
-            throw new Error('No chapter found');
+            console.warn(`🔄 Tab sync: Invalid sync state or missing findNearestChapter function`);
+            throw new Error('Invalid sync state');
           }
         } catch (chapterError) {
           console.warn(`🔄 Tab sync chapter error:`, chapterError);
