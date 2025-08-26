@@ -983,31 +983,46 @@ export default function ThoughtUnitReader() {
       
       // Enhanced chapter-aware navigation for TOC jumps
       if (reason === 'TOC_JUMP') {
-        // Use the sync store's chapter-aware functionality
-        const { syncToChapter, findNearestChapter } = useReaderSync.getState();
-        const nearestChapter = findNearestChapter(page);
-        
-        if (nearestChapter) {
-          console.log(`📄 TOC_JUMP: Found chapter "${nearestChapter.title}" for page ${page}`);
-          // Snap to chapter start page and first unit
-          const chapterStartPage = nearestChapter.page;
-          const chapterStartUnit = nearestChapter.unitStart;
+        // Use the sync store's chapter-aware functionality with safe error handling
+        try {
+          const syncStore = useReaderSync.getState();
           
-          setCurrentPage(chapterStartPage);
-          setCurrentThoughtUnit(chapterStartUnit);
-          
-          // Update global sync store with chapter-aware data
-          updateSync({ 
-            page: chapterStartPage, 
-            unitIndex: chapterStartUnit 
-          }, 'toc');
-          
-          console.log(`📄 Chapter navigation complete: page ${chapterStartPage}, unit ${chapterStartUnit}`);
-        } else {
-          // Fallback to normal navigation if no chapter found
+          if (syncStore && syncStore.findNearestChapter && typeof syncStore.findNearestChapter === 'function') {
+            const nearestChapter = syncStore.findNearestChapter(page);
+            
+            if (nearestChapter) {
+              console.log(`📄 TOC_JUMP: Found chapter "${nearestChapter.title}" for page ${page}`);
+              // Snap to chapter start page and first unit
+              const chapterStartPage = nearestChapter.page;
+              const chapterStartUnit = nearestChapter.unitStart;
+              
+              setCurrentPage(chapterStartPage);
+              setCurrentThoughtUnit(chapterStartUnit);
+              
+              // Update global sync store with chapter-aware data
+              updateSync({ 
+                page: chapterStartPage, 
+                unitIndex: chapterStartUnit 
+              }, 'toc');
+              
+              console.log(`📄 Chapter navigation complete: page ${chapterStartPage}, unit ${chapterStartUnit}`);
+            } else {
+              // Fallback to normal navigation if no chapter found
+              setCurrentThoughtUnit(unit);
+              updateSync({ page, unitIndex: unit }, 'toc');
+              console.log(`📄 Fallback navigation complete: page ${page}, unit ${unit}`);
+            }
+          } else {
+            console.warn(`📄 TOC_JUMP: Sync store not ready or missing findNearestChapter function`);
+            // Fallback to normal navigation
+            setCurrentThoughtUnit(unit);
+            updateSync({ page, unitIndex: unit }, 'toc');
+          }
+        } catch (tocError) {
+          console.warn(`📄 TOC_JUMP error:`, tocError);
+          // Fallback to normal navigation
           setCurrentThoughtUnit(unit);
           updateSync({ page, unitIndex: unit }, 'toc');
-          console.log(`📄 Fallback navigation complete: page ${page}, unit ${unit}`);
         }
       } else {
         // Normal scroll/programmatic navigation with enhanced sync
