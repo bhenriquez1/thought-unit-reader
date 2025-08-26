@@ -431,15 +431,17 @@ export default function ThoughtUnitReader() {
       if (viewMode === "progressive" || viewMode === "hybrid" || viewMode === "rightbrain") {
         console.log(`🔄 Tab switch to ${viewMode}: syncing to current chapter`);
         
-        // Use the sync store's chapter-aware functionality with error handling
+        // Safe chapter-aware navigation with proper error handling
         try {
-          const syncState = useReaderSync.getState();
-          if (syncState && typeof syncState.findNearestChapter === 'function') {
-            const nearestChapter = syncState.findNearestChapter(currentPage);
+          // Get sync state safely without destructuring
+          const syncStore = useReaderSync.getState();
+          
+          if (syncStore && syncStore.findNearestChapter && typeof syncStore.findNearestChapter === 'function') {
+            const nearestChapter = syncStore.findNearestChapter(currentPage);
             
-            if (nearestChapter && nearestChapter.unitStart) {
+            if (nearestChapter && nearestChapter.unitStart && nearestChapter.unitStart > 0) {
               console.log(`🔄 Tab sync: Found chapter "${nearestChapter.title}" for page ${currentPage}`);
-              // Snap to chapter's first unit (don't change page, just unit)
+              
               const chapterStartUnit = nearestChapter.unitStart;
               
               // Validate unit bounds
@@ -451,35 +453,48 @@ export default function ThoughtUnitReader() {
                 }, 'manual');
                 
                 console.log(`🔄 Tab sync complete: staying on page ${currentPage}, unit ${chapterStartUnit}`);
+                return; // Success, exit early
               } else {
-                console.warn(`🔄 Tab sync: Invalid chapter unit ${chapterStartUnit}, using fallback`);
-                throw new Error('Invalid chapter unit');
+                console.warn(`🔄 Tab sync: Invalid chapter unit ${chapterStartUnit}, bounds: 1-${thoughtUnits.length}`);
               }
             } else {
-              console.log(`🔄 Tab sync: No chapter found for page ${currentPage}, using fallback`);
-              throw new Error('No chapter found');
+              console.log(`🔄 Tab sync: No valid chapter found for page ${currentPage}`);
             }
           } else {
-            console.warn(`🔄 Tab sync: Invalid sync state or missing findNearestChapter function`);
-            throw new Error('Invalid sync state');
+            console.warn(`🔄 Tab sync: Sync store not ready or missing findNearestChapter function`);
           }
-        } catch (chapterError) {
-          console.warn(`🔄 Tab sync chapter error:`, chapterError);
-          // Fallback: ensure we're synced to current page
-          const unit = pageToUnit(currentPage, pdfPageCount, thoughtUnits.length);
-          if (unit >= 1 && unit <= thoughtUnits.length) {
-            setCurrentThoughtUnit(unit);
-            updateSync({ page: currentPage, unitIndex: unit }, 'manual');
-            console.log(`🔄 Tab sync fallback: page ${currentPage}, unit ${unit}`);
+          
+          // Fallback: use page-to-unit mapping
+          const fallbackUnit = pageToUnit(currentPage, pdfPageCount, thoughtUnits.length);
+          if (fallbackUnit >= 1 && fallbackUnit <= thoughtUnits.length) {
+            setCurrentThoughtUnit(fallbackUnit);
+            updateSync({ page: currentPage, unitIndex: fallbackUnit }, 'manual');
+            console.log(`🔄 Tab sync fallback: page ${currentPage}, unit ${fallbackUnit}`);
           } else {
-            console.warn(`🔄 Tab sync fallback failed: invalid unit ${unit}`);
+            console.warn(`🔄 Tab sync fallback failed: invalid unit ${fallbackUnit}, bounds: 1-${thoughtUnits.length}`);
+          }
+          
+        } catch (chapterError) {
+          console.warn(`🔄 Tab sync chapter navigation error:`, chapterError);
+          
+          // Final fallback: just ensure we have a valid unit
+          try {
+            const safeUnit = Math.max(1, Math.min(currentThoughtUnit, thoughtUnits.length));
+            if (safeUnit !== currentThoughtUnit) {
+              setCurrentThoughtUnit(safeUnit);
+              updateSync({ page: currentPage, unitIndex: safeUnit }, 'manual');
+              console.log(`🔄 Tab sync final fallback: unit ${safeUnit}`);
+            }
+          } catch (finalError) {
+            console.error(`🔄 Tab sync final fallback failed:`, finalError);
           }
         }
       }
     } catch (error) {
-      console.error(`🔄 Tab sync error for ${viewMode}:`, error);
+      console.error(`🔄 Tab sync critical error for ${viewMode}:`, error);
+      // Don't crash the app, just log the error
     }
-  }, [viewMode, currentPage, pdfPageCount, thoughtUnits.length, updateSync]);
+  }, [viewMode, currentPage, pdfPageCount, thoughtUnits.length, updateSync, currentThoughtUnit]);
 
   /* =========================================================================
      🔹 Load PDF from Library

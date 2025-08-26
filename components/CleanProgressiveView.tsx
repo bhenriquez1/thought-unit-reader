@@ -302,7 +302,7 @@ export default function CleanProgressiveView({
     console.warn("CleanProgressiveView - Sync logging error:", error);
   }
 
-  // TOC-aware sync when global state changes
+  // Enhanced TOC-aware sync when global state changes
   useEffect(() => {
     if (page !== currentPage && page > 0) {
       console.log(`🔄 Progressive: Global page sync ${currentPage} -> ${page}`);
@@ -317,6 +317,70 @@ export default function CleanProgressiveView({
       // Note: We don't call setCurrentThoughtUnit here to avoid loops
     }
   }, [unitIndex, currentThoughtUnit]);
+
+  // Enhanced chapter-aware navigation for Progressive mode
+  const navigateToChapter = (chapterTitle: string) => {
+    try {
+      const syncStore = useReaderSync.getState();
+      if (syncStore && syncStore.syncToChapter && typeof syncStore.syncToChapter === 'function') {
+        const success = syncStore.syncToChapter(chapterTitle);
+        if (success) {
+          console.log(`🔄 Progressive: Successfully navigated to chapter "${chapterTitle}"`);
+          // Reset reading position within the new chapter
+          setCurrentWordIndex(0);
+          setCurrentSentenceIndex(0);
+          setCurrentConceptIndex(0);
+        } else {
+          console.warn(`🔄 Progressive: Failed to navigate to chapter "${chapterTitle}"`);
+        }
+      }
+    } catch (error) {
+      console.error(`🔄 Progressive: Chapter navigation error:`, error);
+    }
+  };
+
+  // Enhanced unit completion detection with TOC sync
+  const handleUnitCompletion = () => {
+    try {
+      console.log(`🔄 Progressive: Unit ${currentThoughtUnit} completed`);
+      
+      // Check if we're at the end of a chapter
+      const syncStore = useReaderSync.getState();
+      if (syncStore && syncStore.findNearestChapter && typeof syncStore.findNearestChapter === 'function') {
+        const currentChapter = syncStore.findNearestChapter(currentPage);
+        
+        if (currentChapter && currentChapter.unitEnd && currentThoughtUnit >= currentChapter.unitEnd) {
+          console.log(`🔄 Progressive: Completed chapter "${currentChapter.title}"`);
+          
+          // Auto-advance to next chapter if available - find by title in TOC
+          const currentTOCEntry = globalTOC.find(toc => 
+            toc.title.toLowerCase().includes(currentChapter.title.toLowerCase()) ||
+            currentChapter.title.toLowerCase().includes(toc.title.toLowerCase())
+          );
+          
+          if (currentTOCEntry) {
+            const currentTOCIndex = globalTOC.indexOf(currentTOCEntry);
+            const nextTOCEntry = globalTOC[currentTOCIndex + 1];
+            
+            if (nextTOCEntry) {
+              console.log(`🔄 Progressive: Auto-advancing to next chapter "${nextTOCEntry.title}"`);
+              navigateToChapter(nextTOCEntry.title);
+              return;
+            }
+          }
+        }
+      }
+      
+      // Normal unit completion sync
+      updateSync({ 
+        page: currentPage, 
+        unitIndex: currentThoughtUnit 
+      }, 'progressive');
+      
+    } catch (error) {
+      console.warn('Progressive unit completion sync error:', error);
+    }
+  };
 
   // Empty states
   if (!thoughtUnits || thoughtUnits.length === 0) {
@@ -408,9 +472,12 @@ export default function CleanProgressiveView({
     }
   };
 
-  // Enhanced auto-advance logic with TOC sync
+  // Enhanced auto-advance logic with proper state management and TOC sync
   useEffect(() => {
-    if (!isReading || isPaused || localPaused) return;
+    // Use parent state as primary source of truth, with local pause as override
+    const shouldRun = isReading && !isPaused && !localPaused;
+    
+    if (!shouldRun) return;
 
     const baseInterval = 60000 / Math.max(100, readingSpeed); // Convert WPM to milliseconds
 
@@ -425,11 +492,14 @@ export default function CleanProgressiveView({
             
             // Sync progress every 10 words or at completion
             if (newIndex % 10 === 0 || newIndex === 0) {
-              const progress = newIndex / Math.max(words.length - 1, 1);
-              updateSync({ 
-                page: currentPage, 
-                unitIndex: currentThoughtUnit 
-              }, 'progressive');
+              try {
+                updateSync({ 
+                  page: currentPage, 
+                  unitIndex: currentThoughtUnit 
+                }, 'progressive');
+              } catch (error) {
+                console.warn('Progressive sync error:', error);
+              }
             }
             
             return newIndex;
@@ -449,10 +519,14 @@ export default function CleanProgressiveView({
             
             // Sync on sentence completion
             if (newIndex === 0 || newIndex % 3 === 0) {
-              updateSync({ 
-                page: currentPage, 
-                unitIndex: currentThoughtUnit 
-              }, 'progressive');
+              try {
+                updateSync({ 
+                  page: currentPage, 
+                  unitIndex: currentThoughtUnit 
+                }, 'progressive');
+              } catch (error) {
+                console.warn('Progressive sync error:', error);
+              }
             }
             
             return newIndex;
@@ -467,10 +541,14 @@ export default function CleanProgressiveView({
             const newIndex = prev >= concepts.length - 1 ? 0 : prev + 1;
             
             // Sync on each concept change
-            updateSync({ 
-              page: currentPage, 
-              unitIndex: currentThoughtUnit 
-            }, 'progressive');
+            try {
+              updateSync({ 
+                page: currentPage, 
+                unitIndex: currentThoughtUnit 
+              }, 'progressive');
+            } catch (error) {
+              console.warn('Progressive sync error:', error);
+            }
             
             return newIndex;
           });

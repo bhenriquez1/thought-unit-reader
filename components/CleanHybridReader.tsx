@@ -833,6 +833,38 @@ export default function CleanHybridReader({
               </div>
             )}
 
+            {/* David Butler Metaphors Panel */}
+            {effectiveSelection && (
+              <div className="bg-gradient-to-r from-teal-50 to-cyan-50 border border-teal-200 rounded-lg p-3">
+                <h5 className="text-sm font-semibold text-teal-700 mb-2">🎭 David Butler Metaphors</h5>
+                {(() => {
+                  const butlerMetaphors = generateButlerMetaphors(effectiveSelection);
+                  return butlerMetaphors.length > 0 ? (
+                    <div className="space-y-2">
+                      {butlerMetaphors.map((metaphor, idx) => (
+                        <div key={idx} className="bg-white border-l-4 border-teal-400 rounded p-2 shadow-sm">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-lg">{metaphor.visualCue}</span>
+                            <span className="text-xs font-semibold text-teal-600 uppercase">{metaphor.concept}</span>
+                          </div>
+                          <div className="text-xs text-gray-600 mb-1">
+                            <strong>Think of it as:</strong> {metaphor.metaphor}
+                          </div>
+                          <div className="text-xs text-gray-700 italic">
+                            {metaphor.explanation}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-600 italic">
+                      Select text with medical/educational concepts to see Butler-style metaphors
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
             {/* Enhanced Smart Content with Right-Brain Understanding */}
             {smartContent && (
               <div className="space-y-3">
