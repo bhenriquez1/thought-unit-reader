@@ -562,6 +562,35 @@ export default function EnhancedHybridReader({
 
   const effectiveSelection = (externalSelectionText?.trim() || selectionText).trim();
 
+  // Analyze and render thought units when page or chunk changes
+  useEffect(() => {
+    if (!thoughtUnitRenderer || !showThoughtUnits || !activeChunk) return;
+    
+    const analyzeAndRender = async () => {
+      try {
+        // Get page text from PDF container
+        const pageText = pdfContainerRef.current?.textContent || activeChunk;
+        
+        // Render thought units on the current page
+        await thoughtUnitRenderer.renderThoughtUnits(pageText, currentPage);
+        
+        // Update state with current analysis
+        const analysis = analyzeTextForThoughtUnits(activeChunk, activeIdx);
+        setCurrentThoughtUnits(analysis.thoughtUnits);
+        setCurrentMainIdea(analysis.mainIdeaAnalysis);
+        
+        console.log(`🧠 Analyzed ${analysis.thoughtUnits.length} thought units for page ${currentPage}`);
+        
+      } catch (error) {
+        console.error('Error analyzing thought units:', error);
+      }
+    };
+    
+    // Debounce the analysis to avoid excessive processing
+    const timeoutId = setTimeout(analyzeAndRender, 500);
+    return () => clearTimeout(timeoutId);
+  }, [thoughtUnitRenderer, showThoughtUnits, activeChunk, currentPage, activeIdx]);
+
   // Create optimized debounced sync functions with higher thresholds
   const debouncedSyncChunkToPDF = useMemo(
     () => createDebounced((chunkId: string, chunkText: string) => {
@@ -865,6 +894,17 @@ export default function EnhancedHybridReader({
             >
               ✨ Progressive Highlights
             </button>
+            <button
+              onClick={() => setShowThoughtUnits(!showThoughtUnits)}
+              className={`text-xs px-3 py-1 rounded transition-all ${
+                showThoughtUnits 
+                  ? "bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-lg" 
+                  : "bg-gray-600 hover:bg-gray-500"
+              }`}
+              title="Toggle David Butler's Right-Brain highlighting"
+            >
+              🧠 Thought Units
+            </button>
           </div>
         </div>
         <div 
@@ -1038,6 +1078,154 @@ export default function EnhancedHybridReader({
                 <option value="bullet-first">Bullet-first</option>
               </select>
             </div>
+          </div>
+
+          {/* Thought Unit Controls Panel */}
+          <div className="p-3 bg-gradient-to-r from-amber-900/30 to-orange-900/30 rounded-lg border border-amber-500/30">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs font-medium text-amber-300">🎯 Thought Unit Highlighting</span>
+              <div className="flex-1"></div>
+              <button
+                onClick={() => setShowThoughtUnits(!showThoughtUnits)}
+                className={`text-xs px-2 py-1 rounded ${
+                  showThoughtUnits ? "bg-amber-600" : "bg-gray-700 hover:bg-gray-600"
+                }`}
+              >
+                {showThoughtUnits ? "ON" : "OFF"}
+              </button>
+            </div>
+            
+            {showThoughtUnits && (
+              <div className="space-y-3">
+                {/* Sensitivity Controls */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs opacity-75">Highlight Sensitivity:</span>
+                    <select
+                      className="text-xs bg-gray-700 rounded px-2 py-1 flex-1"
+                      value={thoughtUnitConfig.highlightSensitivity}
+                      onChange={(e) => setThoughtUnitConfig(prev => ({
+                        ...prev,
+                        highlightSensitivity: e.target.value as 'minimal' | 'moderate' | 'detailed'
+                      }))}
+                    >
+                      <option value="minimal">Minimal (Only strongest main ideas)</option>
+                      <option value="moderate">Moderate (Balanced highlighting)</option>
+                      <option value="detailed">Detailed (More comprehensive)</option>
+                    </select>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs opacity-75">Main Idea Threshold:</span>
+                    <input
+                      type="range"
+                      min={0.6}
+                      max={0.95}
+                      step={0.05}
+                      value={thoughtUnitConfig.mainIdeaConfidenceThreshold}
+                      onChange={(e) => setThoughtUnitConfig(prev => ({
+                        ...prev,
+                        mainIdeaConfidenceThreshold: Number(e.target.value)
+                      }))}
+                      className="flex-1 accent-amber-400"
+                    />
+                    <span className="text-xs w-10">{Math.round(thoughtUnitConfig.mainIdeaConfidenceThreshold * 100)}%</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs opacity-75">Max Main Ideas/Page:</span>
+                    <input
+                      type="range"
+                      min={1}
+                      max={5}
+                      step={1}
+                      value={thoughtUnitConfig.maxMainIdeasPerPage}
+                      onChange={(e) => setThoughtUnitConfig(prev => ({
+                        ...prev,
+                        maxMainIdeasPerPage: Number(e.target.value)
+                      }))}
+                      className="flex-1 accent-amber-400"
+                    />
+                    <span className="text-xs w-4">{thoughtUnitConfig.maxMainIdeasPerPage}</span>
+                  </div>
+                </div>
+
+                {/* Highlight Type Controls */}
+                <div>
+                  <span className="text-xs opacity-75 block mb-2">Highlight Types:</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={thoughtUnitConfig.showMainIdeas}
+                        onChange={(e) => setThoughtUnitConfig(prev => ({
+                          ...prev,
+                          showMainIdeas: e.target.checked
+                        }))}
+                        className="accent-amber-400"
+                      />
+                      <span className="text-xs">Main Ideas</span>
+                    </label>
+                    
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={thoughtUnitConfig.showSupportingDetails}
+                        onChange={(e) => setThoughtUnitConfig(prev => ({
+                          ...prev,
+                          showSupportingDetails: e.target.checked
+                        }))}
+                        className="accent-blue-400"
+                      />
+                      <span className="text-xs">Supporting Details</span>
+                    </label>
+                    
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={thoughtUnitConfig.showTransitions}
+                        onChange={(e) => setThoughtUnitConfig(prev => ({
+                          ...prev,
+                          showTransitions: e.target.checked
+                        }))}
+                        className="accent-green-400"
+                      />
+                      <span className="text-xs">Transitions</span>
+                    </label>
+                    
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={thoughtUnitConfig.animationEnabled}
+                        onChange={(e) => setThoughtUnitConfig(prev => ({
+                          ...prev,
+                          animationEnabled: e.target.checked
+                        }))}
+                        className="accent-purple-400"
+                      />
+                      <span className="text-xs">Animations</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Current Analysis Display */}
+                {currentMainIdea && (
+                  <div className="p-2 bg-black/20 rounded border border-amber-500/20">
+                    <div className="text-xs font-medium text-amber-300 mb-1">
+                      Current Main Idea ({Math.round(currentMainIdea.confidence * 100)}% confidence):
+                    </div>
+                    <div className="text-xs text-amber-200 opacity-90 line-clamp-2">
+                      {currentMainIdea.primaryIdea}
+                    </div>
+                    {currentThoughtUnits.length > 0 && (
+                      <div className="text-xs text-amber-300 mt-1">
+                        {currentThoughtUnits.length} thought units detected
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Right-Brain Phase Controls */}
