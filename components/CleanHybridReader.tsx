@@ -748,29 +748,43 @@ export default function CleanHybridReader({
   useEffect(() => {
     if (thoughtUnitRenderer) {
       console.log('🔄 Updating thought unit renderer config:', overlayConfig);
-      thoughtUnitRenderer.updateConfig(overlayConfig);
       
-      // Re-render thought units with new config if we have content
-      if (pageTextIndex && thoughtUnitEnabled) {
-        const reprocessThoughtUnits = async () => {
-          try {
-            await thoughtUnitRenderer.renderThoughtUnits(pageTextIndex.text, currentPage);
-            
-            // Update main idea analysis
-            const mainIdea = extractMainIdea(pageTextIndex.text);
-            setCurrentMainIdea(mainIdea.primaryIdea || "");
-            setMainIdeaConfidence(mainIdea.confidence || 0);
-            
-            console.log('✅ Thought units re-rendered with new config');
-          } catch (error) {
-            console.error('Error re-processing thought units:', error);
-          }
-        };
+      // Check if we need full re-analysis or just config update
+      const needsReanalysis = thoughtUnitRenderer.needsReanalysis(overlayConfig);
+      
+      if (needsReanalysis) {
+        console.log('🔍 Config change requires re-analysis - triggering full re-render');
         
-        reprocessThoughtUnits();
+        // For changes that require re-analysis, we need to re-render thought units
+        if (pageTextIndex && thoughtUnitEnabled) {
+          const reprocessThoughtUnits = async () => {
+            try {
+              // Update config first
+              thoughtUnitRenderer.updateConfig(overlayConfig);
+              
+              // Then re-analyze and render with new thresholds
+              await thoughtUnitRenderer.renderThoughtUnits(pageTextIndex.text, currentPage);
+              
+              // Update main idea analysis with new config
+              const mainIdea = extractMainIdea(pageTextIndex.text);
+              setCurrentMainIdea(mainIdea.primaryIdea || "");
+              setMainIdeaConfidence(mainIdea.confidence || 0);
+              
+              console.log('✅ Thought units re-analyzed and re-rendered with new config');
+            } catch (error) {
+              console.error('Error re-processing thought units:', error);
+            }
+          };
+          
+          reprocessThoughtUnits();
+        }
+      } else {
+        console.log('🎨 Config change only affects visuals - updating config only');
+        // For visual-only changes, just update config (this will refresh overlays)
+        thoughtUnitRenderer.updateConfig(overlayConfig);
       }
     }
-  }, [overlayConfig.highlightSensitivity, overlayConfig.mainIdeaConfidenceThreshold, overlayConfig.maxMainIdeasPerPage, overlayConfig.showMainIdeas, overlayConfig.showSupportingDetails, overlayConfig.showTransitions, overlayConfig.animationEnabled]);
+  }, [overlayConfig.highlightSensitivity, overlayConfig.mainIdeaConfidenceThreshold, overlayConfig.maxMainIdeasPerPage, overlayConfig.showMainIdeas, overlayConfig.showSupportingDetails, overlayConfig.showTransitions, overlayConfig.animationEnabled, overlayConfig.sentenceLevelPrecision]);
 
   // Keyboard shortcuts
   useEffect(() => {

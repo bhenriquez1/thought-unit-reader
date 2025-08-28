@@ -733,8 +733,37 @@ export class PDFThoughtUnitRenderer {
 
   // Public methods for external control
   public updateConfig(newConfig: Partial<OverlayConfig>): void {
+    const oldConfig = { ...this.config };
     this.config = { ...this.config, ...newConfig };
-    this.refreshOverlays();
+    
+    // Check if we need full re-analysis vs just refresh
+    const needsReanalysis = this.configRequiresReanalysis(oldConfig, this.config);
+    
+    if (needsReanalysis) {
+      console.log('🔄 Config change requires full re-analysis');
+      // Don't re-analyze here - let the caller handle it
+      // This prevents infinite loops and gives better control
+    } else {
+      console.log('🔄 Config change only requires overlay refresh');
+      this.refreshOverlays();
+    }
+  }
+
+  // Check if config changes require full re-analysis
+  private configRequiresReanalysis(oldConfig: OverlayConfig, newConfig: OverlayConfig): boolean {
+    // These changes require re-analyzing the text with new thresholds
+    return (
+      oldConfig.highlightSensitivity !== newConfig.highlightSensitivity ||
+      oldConfig.mainIdeaConfidenceThreshold !== newConfig.mainIdeaConfidenceThreshold ||
+      oldConfig.maxMainIdeasPerPage !== newConfig.maxMainIdeasPerPage ||
+      oldConfig.sentenceLevelPrecision !== newConfig.sentenceLevelPrecision
+    );
+  }
+
+  // New method to check if re-analysis is needed
+  public needsReanalysis(newConfig: Partial<OverlayConfig>): boolean {
+    const tempConfig = { ...this.config, ...newConfig };
+    return this.configRequiresReanalysis(this.config, tempConfig);
   }
 
   public clearOverlays(): void {
