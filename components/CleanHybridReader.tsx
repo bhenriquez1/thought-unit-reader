@@ -608,7 +608,7 @@ export default function CleanHybridReader({
 
   // Enhanced right-brain highlighting based on concept understanding
   useEffect(() => {
-    if (highlightMode === "smart" && pageTextIndex && pdfContainerRef.current) {
+    if (highlightMode === "smart" && pageTextIndex && pdfContainerRef.current && pageTextIndex.text.trim().length > 0) {
       // Clear previous highlights
       const existingHighlights = pdfContainerRef.current.querySelectorAll('.concept-highlight');
       existingHighlights.forEach(el => {
@@ -617,77 +617,98 @@ export default function CleanHybridReader({
       });
 
       if (rightBrainMode) {
-        // Right-brain concept highlighting
-        const concepts = extractConcepts(pageTextIndex.text);
-        
-        concepts.forEach(concept => {
-          if (pdfContainerRef.current) {
-            const walker = document.createTreeWalker(
-              pdfContainerRef.current,
-              NodeFilter.SHOW_TEXT,
-              null
-            );
-            
-            const textNodes: Text[] = [];
-            let node;
-            while (node = walker.nextNode()) {
-              textNodes.push(node as Text);
-            }
-            
-            // Find and highlight concept text
-            const conceptWords = concept.text.toLowerCase().split(/\s+/);
-            textNodes.forEach(textNode => {
-              const text = textNode.textContent?.toLowerCase() || '';
-              const hasConceptWords = conceptWords.some(word => text.includes(word));
+        // Right-brain concept highlighting - only if we have substantial text
+        if (pageTextIndex.text.length > 50) {
+          const concepts = extractConcepts(pageTextIndex.text);
+          
+          concepts.forEach(concept => {
+            if (pdfContainerRef.current && concept.text.length > 10) {
+              const walker = document.createTreeWalker(
+                pdfContainerRef.current,
+                NodeFilter.SHOW_TEXT,
+                null
+              );
               
-              if (hasConceptWords && textNode.parentElement) {
-                const parent = textNode.parentElement;
-                parent.style.backgroundColor = concept.color + '40'; // Add transparency
-                parent.style.borderLeft = `3px solid ${concept.color}`;
-                parent.style.paddingLeft = '2px';
-                parent.classList.add('concept-highlight');
-                parent.title = `${concept.type}: ${concept.text}`;
-              }
-            });
-          }
-        });
-      } else {
-        // Traditional smart highlighting
-        const importantTerms = pageTextIndex.text
-          .split(/\s+/)
-          .filter(word => 
-            word.length > 6 && 
-            /^[A-Z]/.test(word) && 
-            !['However', 'Therefore', 'Because', 'Through'].includes(word)
-          )
-          .slice(0, 5);
-
-        importantTerms.forEach(term => {
-          if (pdfContainerRef.current) {
-            const walker = document.createTreeWalker(
-              pdfContainerRef.current,
-              NodeFilter.SHOW_TEXT,
-              null
-            );
-            
-            const textNodes: Text[] = [];
-            let node;
-            while (node = walker.nextNode()) {
-              textNodes.push(node as Text);
-            }
-            
-            textNodes.forEach(textNode => {
-              const text = textNode.textContent || '';
-              if (text.toLowerCase().includes(term.toLowerCase())) {
-                const parent = textNode.parentElement;
-                if (parent) {
-                  parent.style.backgroundColor = "rgba(255, 235, 59, 0.2)";
-                  parent.classList.add('concept-highlight');
+              const textNodes: Text[] = [];
+              let node;
+              while (node = walker.nextNode()) {
+                const textContent = node.textContent;
+                if (textContent && textContent.trim().length > 0) {
+                  textNodes.push(node as Text);
                 }
               }
-            });
-          }
-        });
+              
+              // Find and highlight concept text with better matching
+              const conceptWords = concept.text.toLowerCase().split(/\s+/).filter(word => word.length > 3);
+              let highlightApplied = false;
+              
+              textNodes.forEach(textNode => {
+                const text = textNode.textContent?.toLowerCase() || '';
+                if (text.length > 5) { // Only consider substantial text nodes
+                  const matchingWords = conceptWords.filter(word => text.includes(word));
+                  const matchRatio = matchingWords.length / conceptWords.length;
+                  
+                  // Only highlight if we have a good match ratio and the parent element has visible content
+                  if (matchRatio >= 0.5 && textNode.parentElement && !highlightApplied) {
+                    const parent = textNode.parentElement;
+                    const parentText = parent.textContent?.trim();
+                    
+                    if (parentText && parentText.length > 5) {
+                      parent.style.backgroundColor = concept.color + '40'; // Add transparency
+                      parent.style.borderLeft = `3px solid ${concept.color}`;
+                      parent.style.paddingLeft = '2px';
+                      parent.classList.add('concept-highlight');
+                      parent.title = `${concept.type}: ${concept.text.slice(0, 100)}`;
+                      highlightApplied = true; // Prevent multiple highlights for the same concept
+                    }
+                  }
+                }
+              });
+            }
+          });
+        }
+      } else {
+        // Traditional smart highlighting - only if we have substantial text
+        if (pageTextIndex.text.length > 50) {
+          const importantTerms = pageTextIndex.text
+            .split(/\s+/)
+            .filter(word => 
+              word.length > 6 && 
+              /^[A-Z]/.test(word) && 
+              !['However', 'Therefore', 'Because', 'Through'].includes(word)
+            )
+            .slice(0, 5);
+
+          importantTerms.forEach(term => {
+            if (pdfContainerRef.current && term.length > 3) {
+              const walker = document.createTreeWalker(
+                pdfContainerRef.current,
+                NodeFilter.SHOW_TEXT,
+                null
+              );
+              
+              const textNodes: Text[] = [];
+              let node;
+              while (node = walker.nextNode()) {
+                const textContent = node.textContent;
+                if (textContent && textContent.trim().length > 0) {
+                  textNodes.push(node as Text);
+                }
+              }
+              
+              textNodes.forEach(textNode => {
+                const text = textNode.textContent || '';
+                if (text.length > 5 && text.toLowerCase().includes(term.toLowerCase())) {
+                  const parent = textNode.parentElement;
+                  if (parent && parent.textContent?.trim() && parent.textContent.trim().length > 5) {
+                    parent.style.backgroundColor = "rgba(255, 235, 59, 0.2)";
+                    parent.classList.add('concept-highlight');
+                  }
+                }
+              });
+            }
+          });
+        }
       }
     }
   }, [pageTextIndex, highlightMode, rightBrainMode]);
@@ -873,7 +894,7 @@ export default function CleanHybridReader({
               }`}
               title="Toggle thought unit highlighting"
             >
-              🧠 Ideas
+              🧠 Thought Units
             </button>
 
             {/* Voice Control */}
@@ -909,6 +930,175 @@ export default function CleanHybridReader({
             </button>
           </div>
         </div>
+
+        {/* Thought Unit Controls Sidebar */}
+        {thoughtUnitEnabled && (
+          <div className="absolute top-16 right-4 w-80 bg-white border border-gray-300 rounded-lg shadow-xl z-30 max-h-96 overflow-y-auto">
+            <div className="p-3 bg-gradient-to-r from-amber-900/30 to-orange-900/30 border-b border-amber-500/30">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-sm font-medium text-amber-700">🎯 Thought Unit Controls</span>
+                <div className="flex-1"></div>
+                <button
+                  onClick={() => setThoughtUnitEnabled(false)}
+                  className="text-xs px-2 py-1 rounded bg-gray-200 hover:bg-gray-300"
+                >
+                  ✕
+                </button>
+              </div>
+              
+              <div className="space-y-3">
+                {/* Sensitivity Controls */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs text-gray-700">Highlight Sensitivity:</span>
+                    <select
+                      className="text-xs bg-white border border-gray-300 rounded px-2 py-1 flex-1"
+                      value={overlayConfig.highlightSensitivity}
+                      onChange={(e) => setOverlayConfig(prev => ({
+                        ...prev,
+                        highlightSensitivity: e.target.value as 'minimal' | 'moderate' | 'detailed'
+                      }))}
+                    >
+                      <option value="minimal">Minimal (Only strongest main ideas)</option>
+                      <option value="moderate">Moderate (Balanced highlighting)</option>
+                      <option value="detailed">Detailed (More comprehensive)</option>
+                    </select>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs text-gray-700">Main Idea Threshold:</span>
+                    <input
+                      type="range"
+                      min={0.6}
+                      max={0.95}
+                      step={0.05}
+                      value={overlayConfig.mainIdeaConfidenceThreshold}
+                      onChange={(e) => setOverlayConfig(prev => ({
+                        ...prev,
+                        mainIdeaConfidenceThreshold: Number(e.target.value)
+                      }))}
+                      className="flex-1 accent-amber-400"
+                    />
+                    <span className="text-xs w-10">{Math.round(overlayConfig.mainIdeaConfidenceThreshold * 100)}%</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs text-gray-700">Max Main Ideas/Page:</span>
+                    <input
+                      type="range"
+                      min={1}
+                      max={5}
+                      step={1}
+                      value={overlayConfig.maxMainIdeasPerPage}
+                      onChange={(e) => setOverlayConfig(prev => ({
+                        ...prev,
+                        maxMainIdeasPerPage: Number(e.target.value)
+                      }))}
+                      className="flex-1 accent-amber-400"
+                    />
+                    <span className="text-xs w-4">{overlayConfig.maxMainIdeasPerPage}</span>
+                  </div>
+                </div>
+
+                {/* Highlight Type Controls */}
+                <div>
+                  <span className="text-xs text-gray-700 block mb-2">Highlight Types:</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={overlayConfig.showMainIdeas}
+                        onChange={(e) => setOverlayConfig(prev => ({
+                          ...prev,
+                          showMainIdeas: e.target.checked
+                        }))}
+                        className="accent-amber-400"
+                      />
+                      <span className="text-xs">Main Ideas</span>
+                    </label>
+                    
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={overlayConfig.showSupportingDetails}
+                        onChange={(e) => setOverlayConfig(prev => ({
+                          ...prev,
+                          showSupportingDetails: e.target.checked
+                        }))}
+                        className="accent-blue-400"
+                      />
+                      <span className="text-xs">Supporting Details</span>
+                    </label>
+                    
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={overlayConfig.showTransitions}
+                        onChange={(e) => setOverlayConfig(prev => ({
+                          ...prev,
+                          showTransitions: e.target.checked
+                        }))}
+                        className="accent-green-400"
+                      />
+                      <span className="text-xs">Transitions</span>
+                    </label>
+                    
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={overlayConfig.animationEnabled}
+                        onChange={(e) => setOverlayConfig(prev => ({
+                          ...prev,
+                          animationEnabled: e.target.checked
+                        }))}
+                        className="accent-purple-400"
+                      />
+                      <span className="text-xs">Animations</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Current Analysis Display */}
+                {currentMainIdea && (
+                  <div className="p-2 bg-black/10 rounded border border-amber-500/20">
+                    <div className="text-xs font-medium text-amber-700 mb-1">
+                      Current Main Idea ({Math.round(mainIdeaConfidence * 100)}% confidence):
+                    </div>
+                    <div className="text-xs text-amber-800 line-clamp-2">
+                      {currentMainIdea}
+                    </div>
+                  </div>
+                )}
+
+                {/* Quick Actions */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      if (currentMainIdea) {
+                        speakText(currentMainIdea);
+                      }
+                    }}
+                    className="text-xs px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white flex-1"
+                    disabled={!currentMainIdea}
+                  >
+                    🔊 Read Main Idea
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (currentMainIdea) {
+                        onGenerateNote?.(currentMainIdea, undefined, "highYield");
+                      }
+                    }}
+                    className="text-xs px-2 py-1 rounded bg-green-600 hover:bg-green-500 text-white flex-1"
+                    disabled={!currentMainIdea}
+                  >
+                    📝 Note
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* PDF Content */}
         <div 
