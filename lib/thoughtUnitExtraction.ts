@@ -126,9 +126,9 @@ export function detectThoughtUnitBoundaries(text: string): ThoughtUnitBoundary[]
     );
 }
 
-// Main Idea Detection
+// Enhanced Main Idea Detection with Precision Focus
 export function extractMainIdea(text: string): MainIdeaAnalysis {
-  const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 10);
+  const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 15);
   
   if (sentences.length === 0) {
     return {
@@ -141,65 +141,110 @@ export function extractMainIdea(text: string): MainIdeaAnalysis {
     };
   }
   
-  // Identify topic sentence (usually first or last)
-  const firstSentence = sentences[0].trim();
-  const lastSentence = sentences[sentences.length - 1].trim();
-  
-  // Score sentences for main idea likelihood
+  // Enhanced sentence scoring with stricter criteria
   const sentenceScores = sentences.map((sentence, index) => {
     let score = 0;
     const lowerSentence = sentence.toLowerCase();
+    const wordCount = sentence.split(/\s+/).length;
     
-    // Position scoring (first and last sentences often contain main ideas)
-    if (index === 0) score += 3;
-    if (index === sentences.length - 1) score += 2;
+    // STRICT position scoring - be more selective
+    if (index === 0 && wordCount >= 8) score += 4; // First sentence must be substantial
+    if (index === sentences.length - 1 && wordCount >= 8) score += 3;
     
-    // Length scoring (main ideas are often substantial)
-    if (sentence.length > 50) score += 2;
-    if (sentence.length > 100) score += 1;
+    // STRICT length scoring - main ideas should be substantial but not too long
+    if (sentence.length >= 60 && sentence.length <= 150) score += 3; // Sweet spot for main ideas
+    if (sentence.length > 150) score -= 1; // Penalize overly long sentences
+    if (sentence.length < 40) score -= 2; // Penalize short sentences
     
-    // Key phrase indicators
-    const mainIdeaIndicators = [
-      'the main', 'the key', 'the primary', 'the central', 'the fundamental',
-      'in summary', 'in conclusion', 'overall', 'essentially', 'basically',
-      'the purpose', 'the goal', 'the objective', 'the point'
+    // HIGH-VALUE main idea indicators (much stricter)
+    const strongMainIdeaIndicators = [
+      'the main point', 'the key concept', 'the primary purpose', 'the central idea',
+      'in essence', 'fundamentally', 'the core principle', 'most importantly'
     ];
     
-    mainIdeaIndicators.forEach(indicator => {
-      if (lowerSentence.includes(indicator)) score += 3;
+    strongMainIdeaIndicators.forEach(indicator => {
+      if (lowerSentence.includes(indicator)) score += 5; // Higher boost for strong indicators
     });
     
-    // Abstract concept indicators
-    const abstractIndicators = [
-      'concept', 'principle', 'theory', 'idea', 'notion', 'approach',
-      'method', 'process', 'system', 'framework', 'model'
+    // MEDIUM-VALUE indicators
+    const mediumIndicators = [
+      'the main', 'the key', 'the primary', 'the central', 'the fundamental',
+      'overall', 'essentially', 'basically', 'the purpose', 'the goal'
     ];
     
-    abstractIndicators.forEach(indicator => {
+    mediumIndicators.forEach(indicator => {
       if (lowerSentence.includes(indicator)) score += 2;
     });
     
-    // Definition indicators
-    if (lowerSentence.includes(' is ') || lowerSentence.includes(' are ') || 
-        lowerSentence.includes(' means ') || lowerSentence.includes(' refers to ')) {
-      score += 2;
-    }
+    // Abstract concept indicators (more selective)
+    const conceptIndicators = [
+      'concept', 'principle', 'theory', 'framework', 'approach', 'method'
+    ];
     
-    return { sentence, score, index };
+    conceptIndicators.forEach(indicator => {
+      if (lowerSentence.includes(indicator)) score += 1;
+    });
+    
+    // Definition indicators (strong signal for main ideas)
+    const definitionPatterns = [
+      / is defined as /i, / means that /i, / refers to /i, / can be understood as /i
+    ];
+    
+    definitionPatterns.forEach(pattern => {
+      if (pattern.test(sentence)) score += 3;
+    });
+    
+    // PENALTY for supporting detail indicators
+    const supportingDetailIndicators = [
+      'for example', 'such as', 'including', 'like', 'specifically',
+      'in addition', 'furthermore', 'moreover', 'also', 'additionally'
+    ];
+    
+    supportingDetailIndicators.forEach(indicator => {
+      if (lowerSentence.includes(indicator)) score -= 2; // Penalize supporting details
+    });
+    
+    // PENALTY for transitional phrases
+    const transitionPenalties = [
+      'however', 'but', 'although', 'while', 'whereas', 'on the other hand'
+    ];
+    
+    transitionPenalties.forEach(transition => {
+      if (lowerSentence.includes(transition)) score -= 1;
+    });
+    
+    return { sentence, score, index, wordCount };
   });
   
-  // Find the highest scoring sentence as primary idea
-  const primarySentence = sentenceScores.reduce((max, current) => 
-    current.score > max.score ? current : max
-  );
+  // STRICT FILTERING: Only consider sentences with score >= 4 as potential main ideas
+  const viableCandidates = sentenceScores.filter(s => s.score >= 4);
   
-  // Extract supporting points (other sentences)
+  let primarySentence;
+  if (viableCandidates.length > 0) {
+    // Find the highest scoring viable candidate
+    primarySentence = viableCandidates.reduce((max, current) => 
+      current.score > max.score ? current : max
+    );
+  } else {
+    // Fallback: use the best available sentence but mark low confidence
+    primarySentence = sentenceScores.reduce((max, current) => 
+      current.score > max.score ? current : max
+    );
+    primarySentence.score = Math.max(primarySentence.score, 2); // Ensure minimum score for fallback
+  }
+  
+  // Extract supporting points (exclude the primary sentence and low-scoring sentences)
   const supportingPoints = sentenceScores
-    .filter(s => s.index !== primarySentence.index && s.sentence.trim().length > 20)
-    .map(s => s.sentence.trim())
-    .slice(0, 4); // Limit to top 4 supporting points
+    .filter(s => 
+      s.index !== primarySentence.index && 
+      s.sentence.trim().length > 25 &&
+      s.score >= 1 // Only include sentences with some relevance
+    )
+    .sort((a, b) => b.score - a.score) // Sort by score
+    .slice(0, 3) // Limit to top 3 supporting points
+    .map(s => s.sentence.trim());
   
-  // Extract key terms
+  // Extract key terms with better filtering
   const keyTerms = extractKeyTerms(text);
   
   // Determine conceptual framework
@@ -208,14 +253,15 @@ export function extractMainIdea(text: string): MainIdeaAnalysis {
   // Generate visual metaphor
   const visualMetaphor = generateThoughtUnitMetaphor(primarySentence.sentence, framework);
   
-  // Calculate confidence based on various factors
-  const confidence = Math.min(
-    (primarySentence.score / 10) + 
-    (keyTerms.length / 20) + 
-    (sentences.length > 1 ? 0.3 : 0) +
-    0.2, // Base confidence
-    1.0
-  );
+  // STRICT confidence calculation - much higher threshold for main ideas
+  const baseConfidence = Math.min(primarySentence.score / 12, 0.8); // Normalize against higher threshold
+  const termBonus = Math.min(keyTerms.length / 30, 0.15); // Smaller bonus from terms
+  const structureBonus = sentences.length > 2 ? 0.05 : 0; // Small bonus for structured text
+  
+  const confidence = Math.min(baseConfidence + termBonus + structureBonus, 1.0);
+  
+  // If confidence is too low, this might not be a true main idea
+  const adjustedConfidence = confidence < 0.6 ? confidence * 0.7 : confidence;
   
   return {
     primaryIdea: primarySentence.sentence.trim(),
@@ -223,7 +269,7 @@ export function extractMainIdea(text: string): MainIdeaAnalysis {
     keyTerms,
     conceptualFramework: framework,
     visualMetaphor,
-    confidence
+    confidence: adjustedConfidence
   };
 }
 

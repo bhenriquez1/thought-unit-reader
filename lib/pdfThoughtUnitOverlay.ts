@@ -22,7 +22,14 @@ export interface OverlayConfig {
   intensityMultiplier: number;
   borderWidth: number;
   pulseOnFocus: boolean;
+  // New precision controls
+  mainIdeaConfidenceThreshold: number; // Only highlight as main idea if confidence >= this
+  highlightSensitivity: 'minimal' | 'moderate' | 'detailed';
+  maxMainIdeasPerPage: number;
+  sentenceLevelPrecision: boolean;
 }
+
+export type ThoughtUnitLevel = 'primary-concept' | 'secondary-concept' | 'supporting-detail' | 'transition' | 'example-evidence';
 
 export class PDFThoughtUnitRenderer {
   private container: HTMLElement;
@@ -41,6 +48,11 @@ export class PDFThoughtUnitRenderer {
       intensityMultiplier: 1.0,
       borderWidth: 2,
       pulseOnFocus: true,
+      // New precision controls with optimized defaults
+      mainIdeaConfidenceThreshold: 0.85, // Only highlight as main idea if 85%+ confident
+      highlightSensitivity: 'moderate',
+      maxMainIdeasPerPage: 2, // Maximum 2 main ideas per page
+      sentenceLevelPrecision: true,
       ...config
     };
     

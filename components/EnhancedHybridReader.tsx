@@ -44,6 +44,7 @@ import {
   type ThoughtUnit,
   type MainIdeaAnalysis
 } from "@/lib/pdfThoughtUnitOverlay";
+import { analyzeTextForThoughtUnits } from "@/lib/thoughtUnitExtraction";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -289,9 +290,60 @@ export default function EnhancedHybridReader({
     intensityMultiplier: 1.0,
     borderWidth: 2,
     pulseOnFocus: true,
+    // Precision controls to prevent over-highlighting
+    mainIdeaConfidenceThreshold: 0.85, // Only highlight as main idea if 85%+ confident
+    highlightSensitivity: 'moderate',
+    maxMainIdeasPerPage: 2, // Maximum 2 main ideas per page
+    sentenceLevelPrecision: true,
   });
   const [currentThoughtUnits, setCurrentThoughtUnits] = useState<ThoughtUnit[]>([]);
   const [currentMainIdea, setCurrentMainIdea] = useState<MainIdeaAnalysis | null>(null);
+
+  // Initialize thought unit renderer when PDF container is ready
+  useEffect(() => {
+    if (pdfContainerRef.current && !thoughtUnitRenderer && showThoughtUnits) {
+      const renderer = createThoughtUnitRenderer(pdfContainerRef.current, thoughtUnitConfig);
+      setThoughtUnitRenderer(renderer);
+      
+      // Add event listeners for thought unit interactions
+      const handleThoughtUnitClick = (event: CustomEvent) => {
+        const unit = event.detail.unit as ThoughtUnit;
+        console.log('🧠 Thought unit clicked:', unit.type, unit.text.slice(0, 50));
+        
+        // Speak the thought unit if auto-speak is enabled
+        if (autoSpeak) {
+          speakText(unit.text);
+        }
+        
+        // Update selection
+        setSelectionText(unit.text);
+        onTextSelect?.(unit.text);
+      };
+      
+      const handleThoughtUnitFocus = (event: CustomEvent) => {
+        const unit = event.detail.unit as ThoughtUnit;
+        console.log('🧠 Thought unit focused:', unit.type);
+      };
+      
+      pdfContainerRef.current.addEventListener('thoughtUnitClick', handleThoughtUnitClick as EventListener);
+      pdfContainerRef.current.addEventListener('thoughtUnitFocus', handleThoughtUnitFocus as EventListener);
+      
+      return () => {
+        if (pdfContainerRef.current) {
+          pdfContainerRef.current.removeEventListener('thoughtUnitClick', handleThoughtUnitClick as EventListener);
+          pdfContainerRef.current.removeEventListener('thoughtUnitFocus', handleThoughtUnitFocus as EventListener);
+        }
+        renderer.destroy();
+      };
+    }
+  }, [pdfContainerRef.current, showThoughtUnits, thoughtUnitConfig, autoSpeak, onTextSelect]);
+
+  // Update thought unit renderer when config changes
+  useEffect(() => {
+    if (thoughtUnitRenderer) {
+      thoughtUnitRenderer.updateConfig(thoughtUnitConfig);
+    }
+  }, [thoughtUnitRenderer, thoughtUnitConfig]);
 
   // Bidirectional sync state - optimized
   const { 
