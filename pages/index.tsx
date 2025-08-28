@@ -1140,10 +1140,10 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // Clean Hybrid Reading - PDF + smart enhancements bridge
+    // Enhanced Hybrid Reading - PDF + thought unit highlighting with David Butler's methodology
     if (viewMode === "hybrid") {
       return fileUrl ? (
-        <CleanHybridReader
+        <EnhancedHybridReader
           bookId={bookId}
           userId={USER_ID}
           thoughtUnits={thoughtUnits}
@@ -1174,13 +1174,13 @@ export default function ThoughtUnitReader() {
       ) : (
         <div className="flex flex-col items-center justify-center h-full gap-4">
           <div className="text-center">
-            <h3 className="text-lg font-semibold mb-2 text-green-400">� Clean Hybrid Reading</h3>
+            <h3 className="text-lg font-semibold mb-2 text-green-400">🧠 Enhanced Hybrid Reading</h3>
             <p className="text-sm opacity-80 mb-4">
-              Bridge between traditional PDF reading and smart enhancements
+              PDF reading with intelligent thought unit highlighting using David Butler's methodology
             </p>
           </div>
           <label className="bg-gradient-to-r from-green-500 to-teal-500 text-white px-6 py-3 rounded-lg cursor-pointer font-medium hover:from-green-400 hover:to-teal-400 transition-all">
-            📂 Upload PDF to Begin Hybrid Reading
+            📂 Upload PDF to Begin Enhanced Reading
             <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
           </label>
         </div>
