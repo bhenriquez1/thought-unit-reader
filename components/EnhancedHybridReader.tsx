@@ -37,6 +37,13 @@ import {
   type TextPattern,
   type VisualMetaphor
 } from "@/lib/rightBrainReading";
+import { 
+  createThoughtUnitRenderer,
+  type PDFThoughtUnitRenderer,
+  type OverlayConfig,
+  type ThoughtUnit,
+  type MainIdeaAnalysis
+} from "@/lib/pdfThoughtUnitOverlay";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -270,6 +277,21 @@ export default function EnhancedHybridReader({
 
   // ChunkTOCBar state
   const [compactMode, setCompactMode] = useState(true);
+
+  // Thought Unit Overlay System
+  const [thoughtUnitRenderer, setThoughtUnitRenderer] = useState<PDFThoughtUnitRenderer | null>(null);
+  const [showThoughtUnits, setShowThoughtUnits] = useState(true);
+  const [thoughtUnitConfig, setThoughtUnitConfig] = useState<OverlayConfig>({
+    showMainIdeas: true,
+    showSupportingDetails: true,
+    showTransitions: true,
+    animationEnabled: true,
+    intensityMultiplier: 1.0,
+    borderWidth: 2,
+    pulseOnFocus: true,
+  });
+  const [currentThoughtUnits, setCurrentThoughtUnits] = useState<ThoughtUnit[]>([]);
+  const [currentMainIdea, setCurrentMainIdea] = useState<MainIdeaAnalysis | null>(null);
 
   // Bidirectional sync state - optimized
   const { 
