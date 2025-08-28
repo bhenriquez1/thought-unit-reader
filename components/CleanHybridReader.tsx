@@ -742,7 +742,35 @@ export default function CleanHybridReader({
       
       processThoughtUnits();
     }
-  }, [thoughtUnitRenderer, pageTextIndex, currentPage, thoughtUnitEnabled]);
+  }, [thoughtUnitRenderer, pageTextIndex, currentPage, thoughtUnitEnabled, overlayConfig]);
+
+  // Update renderer config when overlay config changes
+  useEffect(() => {
+    if (thoughtUnitRenderer) {
+      console.log('🔄 Updating thought unit renderer config:', overlayConfig);
+      thoughtUnitRenderer.updateConfig(overlayConfig);
+      
+      // Re-render thought units with new config if we have content
+      if (pageTextIndex && thoughtUnitEnabled) {
+        const reprocessThoughtUnits = async () => {
+          try {
+            await thoughtUnitRenderer.renderThoughtUnits(pageTextIndex.text, currentPage);
+            
+            // Update main idea analysis
+            const mainIdea = extractMainIdea(pageTextIndex.text);
+            setCurrentMainIdea(mainIdea.primaryIdea || "");
+            setMainIdeaConfidence(mainIdea.confidence || 0);
+            
+            console.log('✅ Thought units re-rendered with new config');
+          } catch (error) {
+            console.error('Error re-processing thought units:', error);
+          }
+        };
+        
+        reprocessThoughtUnits();
+      }
+    }
+  }, [overlayConfig.highlightSensitivity, overlayConfig.mainIdeaConfidenceThreshold, overlayConfig.maxMainIdeasPerPage, overlayConfig.showMainIdeas, overlayConfig.showSupportingDetails, overlayConfig.showTransitions, overlayConfig.animationEnabled]);
 
   // Keyboard shortcuts
   useEffect(() => {

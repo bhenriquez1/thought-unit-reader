@@ -180,14 +180,27 @@ export class PDFThoughtUnitRenderer {
   }
 
   private async createThoughtUnitOverlays(thoughtUnits: ThoughtUnit[], fullText: string): Promise<void> {
-    for (const unit of thoughtUnits) {
+    // Apply precision filtering based on config
+    const filteredUnits = this.applyPrecisionFiltering(thoughtUnits);
+    
+    for (const unit of filteredUnits) {
       if (!this.shouldShowUnit(unit)) continue;
       
       const textNodes = this.findTextNodesForUnit(unit, fullText);
-      if (textNodes.length === 0) continue;
+      if (textNodes.length === 0) {
+        console.log(`⚠️ No text nodes found for thought unit: ${unit.id}`);
+        continue;
+      }
       
-      const overlay = this.createOverlayElement(unit, textNodes);
-      if (overlay) {
+      // Validate that text nodes have actual content and are visible
+      const validTextNodes = this.validateTextNodes(textNodes);
+      if (validTextNodes.length === 0) {
+        console.log(`⚠️ No valid text nodes for thought unit: ${unit.id}`);
+        continue;
+      }
+      
+      const overlay = this.createOverlayElement(unit, validTextNodes);
+      if (overlay && this.validateOverlayDimensions(overlay)) {
         this.overlays.set(unit.id, {
           id: unit.id,
           element: overlay,
@@ -202,22 +215,52 @@ export class PDFThoughtUnitRenderer {
         if (this.config.animationEnabled) {
           this.animateOverlayIn(unit.id);
         }
+        
+        console.log(`✅ Created overlay for thought unit: ${unit.id} (${unit.type})`);
+      } else {
+        console.log(`❌ Failed to create valid overlay for thought unit: ${unit.id}`);
       }
     }
   }
 
   private shouldShowUnit(unit: ThoughtUnit): boolean {
+    // First check type-based visibility
+    let typeVisible = false;
     switch (unit.type) {
       case 'topic-sentence':
-        return this.config.showMainIdeas;
+        typeVisible = this.config.showMainIdeas;
+        break;
       case 'supporting-detail':
       case 'example':
       case 'definition':
-        return this.config.showSupportingDetails;
+        typeVisible = this.config.showSupportingDetails;
+        break;
       case 'transition':
-        return this.config.showTransitions;
+        typeVisible = this.config.showTransitions;
+        break;
       case 'conclusion':
-        return this.config.showMainIdeas;
+        typeVisible = this.config.showMainIdeas;
+        break;
+      default:
+        typeVisible = true;
+    }
+    
+    if (!typeVisible) return false;
+    
+    // Apply confidence threshold for main ideas
+    if (unit.isMainIdea && unit.confidence < this.config.mainIdeaConfidenceThreshold) {
+      console.log(`🎯 Main idea filtered out due to low confidence: ${unit.confidence} < ${this.config.mainIdeaConfidenceThreshold}`);
+      return false;
+    }
+    
+    // Apply sensitivity filtering
+    switch (this.config.highlightSensitivity) {
+      case 'minimal':
+        return unit.isMainIdea && unit.confidence >= 0.8;
+      case 'moderate':
+        return unit.confidence >= 0.6;
+      case 'detailed':
+        return unit.confidence >= 0.4;
       default:
         return true;
     }
@@ -234,22 +277,34 @@ export class PDFThoughtUnitRenderer {
     const searchText = unit.text.trim();
     if (searchText.length < 10) return textNodes; // Skip very short units
     
-    // Create multiple search patterns for better matching
-    const searchPatterns = [
-      searchText,
-      searchText.replace(/\s+/g, ' '), // Normalize whitespace
-      searchText.slice(0, Math.min(50, searchText.length)), // First part
-      ...this.extractKeyPhrases(searchText) // Key phrases
-    ];
+    // Enhanced search patterns for better precision
+    const searchPatterns = this.createEnhancedSearchPatterns(searchText);
     
+    // Collect all text nodes first
+    const allTextNodes: Text[] = [];
     let node;
     while (node = walker.nextNode()) {
       const textNode = node as Text;
+      if (textNode.textContent && textNode.textContent.trim().length > 0) {
+        allTextNodes.push(textNode);
+      }
+    }
+    
+    // Try sentence-level precision first if enabled
+    if (this.config.sentenceLevelPrecision) {
+      const sentenceNodes = this.findSentenceLevelMatches(searchText, allTextNodes);
+      if (sentenceNodes.length > 0) {
+        return sentenceNodes;
+      }
+    }
+    
+    // Fallback to phrase-level matching
+    for (const textNode of allTextNodes) {
       const nodeText = textNode.textContent || '';
       
       // Check if this text node contains part of our thought unit
       for (const pattern of searchPatterns) {
-        if (pattern.length > 10 && this.fuzzyTextMatch(nodeText, pattern)) {
+        if (pattern.length > 10 && this.enhancedTextMatch(nodeText, pattern)) {
           textNodes.push(textNode);
           break;
         }
@@ -257,6 +312,120 @@ export class PDFThoughtUnitRenderer {
     }
     
     return textNodes;
+  }
+
+  private createEnhancedSearchPatterns(searchText: string): string[] {
+    const patterns: string[] = [];
+    
+    // Original text
+    patterns.push(searchText);
+    
+    // Normalized whitespace
+    patterns.push(searchText.replace(/\s+/g, ' '));
+    
+    // Split into sentences for sentence-level matching
+    const sentences = searchText.split(/[.!?]+/).filter(s => s.trim().length > 15);
+    patterns.push(...sentences.map(s => s.trim()));
+    
+    // Extract key phrases (4-6 word chunks)
+    const words = searchText.split(/\s+/);
+    for (let i = 0; i <= words.length - 4; i++) {
+      const phrase = words.slice(i, i + Math.min(6, words.length - i)).join(' ');
+      if (phrase.length > 20) {
+        patterns.push(phrase);
+      }
+    }
+    
+    // Extract meaningful substrings (first/last parts)
+    if (searchText.length > 50) {
+      patterns.push(searchText.slice(0, 50));
+      patterns.push(searchText.slice(-50));
+    }
+    
+    return patterns.filter((p, i, arr) => arr.indexOf(p) === i); // Remove duplicates
+  }
+
+  private findSentenceLevelMatches(searchText: string, textNodes: Text[]): Text[] {
+    const matchingNodes: Text[] = [];
+    const sentences = searchText.split(/[.!?]+/).filter(s => s.trim().length > 15);
+    
+    for (const sentence of sentences) {
+      const sentenceWords = sentence.trim().toLowerCase().split(/\s+/);
+      if (sentenceWords.length < 4) continue; // Skip very short sentences
+      
+      for (const textNode of textNodes) {
+        const nodeText = (textNode.textContent || '').toLowerCase();
+        
+        // Check if this node contains most words from the sentence
+        const matchingWords = sentenceWords.filter(word => 
+          word.length > 3 && nodeText.includes(word)
+        );
+        
+        const matchRatio = matchingWords.length / sentenceWords.length;
+        if (matchRatio >= 0.6) { // 60% of words must match
+          matchingNodes.push(textNode);
+        }
+      }
+    }
+    
+    return matchingNodes;
+  }
+
+  private enhancedTextMatch(nodeText: string, searchText: string): boolean {
+    const normalizeText = (text: string) => 
+      text.toLowerCase().replace(/\s+/g, ' ').replace(/[^\w\s]/g, '').trim();
+    
+    const normalizedNode = normalizeText(nodeText);
+    const normalizedSearch = normalizeText(searchText);
+    
+    // Exact match (highest priority)
+    if (normalizedNode.includes(normalizedSearch)) return true;
+    
+    // Partial sentence match
+    if (normalizedSearch.length > 30) {
+      const searchStart = normalizedSearch.slice(0, 30);
+      const searchEnd = normalizedSearch.slice(-30);
+      
+      if (normalizedNode.includes(searchStart) || normalizedNode.includes(searchEnd)) {
+        return true;
+      }
+    }
+    
+    // Word-based fuzzy match (improved threshold)
+    const searchWords = normalizedSearch.split(/\s+/).filter(w => w.length > 3);
+    const nodeWords = normalizedNode.split(/\s+/);
+    
+    if (searchWords.length === 0) return false;
+    
+    const matchingWords = searchWords.filter(word => 
+      nodeWords.some(nodeWord => 
+        nodeWord.includes(word) || word.includes(nodeWord) || 
+        this.levenshteinDistance(word, nodeWord) <= 2
+      )
+    );
+    
+    const matchRatio = matchingWords.length / searchWords.length;
+    return matchRatio >= 0.75; // Increased threshold for better precision
+  }
+
+  private levenshteinDistance(str1: string, str2: string): number {
+    const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
+    
+    for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
+    for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
+    
+    for (let j = 1; j <= str2.length; j++) {
+      for (let i = 1; i <= str1.length; i++) {
+        const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
+        matrix[j][i] = Math.min(
+          matrix[j][i - 1] + 1,     // deletion
+          matrix[j - 1][i] + 1,     // insertion
+          matrix[j - 1][i - 1] + indicator // substitution
+        );
+      }
+    }
+    
+    return matrix[str2.length][str1.length];
   }
 
   private extractKeyPhrases(text: string): string[] {
@@ -602,6 +771,70 @@ export class PDFThoughtUnitRenderer {
 
   public getMainIdeas(): ThoughtUnit[] {
     return this.getThoughtUnits().filter(unit => unit.isMainIdea);
+  }
+
+  private applyPrecisionFiltering(thoughtUnits: ThoughtUnit[]): ThoughtUnit[] {
+    // Apply maxMainIdeasPerPage limit
+    const mainIdeas = thoughtUnits.filter(unit => unit.isMainIdea)
+      .sort((a, b) => b.confidence - a.confidence) // Sort by confidence descending
+      .slice(0, this.config.maxMainIdeasPerPage);
+    
+    const nonMainIdeas = thoughtUnits.filter(unit => !unit.isMainIdea);
+    
+    // Combine and return filtered units
+    const filteredUnits = [...mainIdeas, ...nonMainIdeas];
+    
+    console.log(`🎯 Precision filtering: ${thoughtUnits.length} → ${filteredUnits.length} units (${mainIdeas.length} main ideas)`);
+    
+    return filteredUnits;
+  }
+
+  private validateTextNodes(textNodes: Text[]): Text[] {
+    return textNodes.filter(textNode => {
+      // Check if text node has actual content
+      const content = textNode.textContent?.trim();
+      if (!content || content.length < 5) return false;
+      
+      // Check if text node is visible (has a parent element that's rendered)
+      const parentElement = textNode.parentElement;
+      if (!parentElement) return false;
+      
+      // Check if parent element is visible
+      const style = window.getComputedStyle(parentElement);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+        return false;
+      }
+      
+      // Check if parent element has dimensions
+      const rect = parentElement.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return false;
+      
+      return true;
+    });
+  }
+
+  private validateOverlayDimensions(overlay: HTMLElement): boolean {
+    const rect = overlay.getBoundingClientRect();
+    
+    // Check if overlay has valid dimensions
+    if (rect.width <= 0 || rect.height <= 0) {
+      console.log(`❌ Invalid overlay dimensions: ${rect.width}x${rect.height}`);
+      return false;
+    }
+    
+    // Check if overlay is too small to be meaningful
+    if (rect.width < 10 || rect.height < 5) {
+      console.log(`❌ Overlay too small: ${rect.width}x${rect.height}`);
+      return false;
+    }
+    
+    // Check if overlay is unreasonably large (likely an error)
+    if (rect.width > 2000 || rect.height > 1000) {
+      console.log(`❌ Overlay too large: ${rect.width}x${rect.height}`);
+      return false;
+    }
+    
+    return true;
   }
 
   private refreshOverlays(): void {
