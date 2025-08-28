@@ -12,6 +12,17 @@ import {
   type PageTextIndex,
   type ChunkAnchor
 } from "@/lib/anchorSync";
+import { 
+  createThoughtUnits, 
+  extractMainIdea, 
+  type ThoughtUnit, 
+  type ThoughtUnitBoundary 
+} from "@/lib/thoughtUnitExtraction";
+import { 
+  PDFThoughtUnitRenderer, 
+  type OverlayConfig, 
+  type PDFThoughtUnitOverlay 
+} from "@/lib/pdfThoughtUnitOverlay";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -440,6 +451,25 @@ export default function CleanHybridReader({
   const [conceptHighlights, setConceptHighlights] = useState<ConceptHighlight[]>([]);
   const [rightBrainMode, setRightBrainMode] = useState<boolean>(true);
   
+  // Enhanced Thought Unit Features
+  const [thoughtUnitEnabled, setThoughtUnitEnabled] = useState<boolean>(false);
+  const [thoughtUnitRenderer, setThoughtUnitRenderer] = useState<PDFThoughtUnitRenderer | null>(null);
+  const [overlayConfig, setOverlayConfig] = useState<OverlayConfig>({
+    showMainIdeas: true,
+    showSupportingDetails: true,
+    showTransitions: true,
+    animationEnabled: true,
+    intensityMultiplier: 1.0,
+    borderWidth: 2,
+    pulseOnFocus: true,
+    mainIdeaConfidenceThreshold: 0.85,
+    highlightSensitivity: 'moderate',
+    maxMainIdeasPerPage: 2,
+    sentenceLevelPrecision: true
+  });
+  const [currentMainIdea, setCurrentMainIdea] = useState<string>("");
+  const [mainIdeaConfidence, setMainIdeaConfidence] = useState<number>(0);
+  
   // Voice and speech
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -662,6 +692,37 @@ export default function CleanHybridReader({
     }
   }, [pageTextIndex, highlightMode, rightBrainMode]);
 
+  // Initialize thought unit renderer when enabled
+  useEffect(() => {
+    if (thoughtUnitEnabled && pdfContainerRef.current && !thoughtUnitRenderer) {
+      const renderer = new PDFThoughtUnitRenderer(pdfContainerRef.current, overlayConfig);
+      setThoughtUnitRenderer(renderer);
+    } else if (!thoughtUnitEnabled && thoughtUnitRenderer) {
+      thoughtUnitRenderer.destroy();
+      setThoughtUnitRenderer(null);
+    }
+  }, [thoughtUnitEnabled, overlayConfig]);
+
+  // Process thought units when page changes or renderer is available
+  useEffect(() => {
+    if (thoughtUnitRenderer && pageTextIndex && thoughtUnitEnabled) {
+      const processThoughtUnits = async () => {
+        try {
+          await thoughtUnitRenderer.renderThoughtUnits(pageTextIndex.text, currentPage);
+          
+          // Extract main idea for current page
+          const mainIdea = extractMainIdea(pageTextIndex.text);
+          setCurrentMainIdea(mainIdea.primaryIdea || "");
+          setMainIdeaConfidence(mainIdea.confidence || 0);
+        } catch (error) {
+          console.error('Error processing thought units:', error);
+        }
+      };
+      
+      processThoughtUnits();
+    }
+  }, [thoughtUnitRenderer, pageTextIndex, currentPage, thoughtUnitEnabled]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -696,12 +757,16 @@ export default function CleanHybridReader({
             onGenerateNote?.(selectionText, undefined, "highYield");
           }
           break;
+        case "KeyT":
+          e.preventDefault();
+          setThoughtUnitEnabled(!thoughtUnitEnabled);
+          break;
       }
     };
 
     window.addEventListener("keydown", handleKeyPress);
     return () => window.removeEventListener("keydown", handleKeyPress);
-  }, [selectionText, isSpeaking, showSmartSidebar]);
+  }, [selectionText, isSpeaking, showSmartSidebar, thoughtUnitEnabled]);
 
   const effectiveSelection = (externalSelectionText?.trim() || selectionText).trim();
 
@@ -797,6 +862,19 @@ export default function CleanHybridReader({
                 🧠 Ideas
               </button>
             </div>
+
+            {/* Thought Unit Toggle */}
+            <button
+              onClick={() => setThoughtUnitEnabled(!thoughtUnitEnabled)}
+              className={`px-3 py-1 rounded text-sm ${
+                thoughtUnitEnabled
+                  ? "bg-amber-600 hover:bg-amber-500 text-white"
+                  : "bg-gray-200 hover:bg-gray-300 text-gray-700"
+              }`}
+              title="Toggle thought unit highlighting"
+            >
+              🧠 Ideas
+            </button>
 
             {/* Voice Control */}
             <button
