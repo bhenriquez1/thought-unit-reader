@@ -1140,7 +1140,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-        // Unified Hybrid Reading - Single system with concept-based highlighting
+        // Enhanced Clean Hybrid Reading - AI-powered thought unit system with advanced features
         if (viewMode === "hybrid") {
           return fileUrl ? (
             <CleanHybridReader
@@ -1179,13 +1179,16 @@ export default function ThoughtUnitReader() {
           ) : (
             <div className="flex flex-col items-center justify-center h-full gap-4">
               <div className="text-center">
-                <h3 className="text-lg font-semibold mb-2 text-green-400">🧠 Concept-Based Hybrid Reading</h3>
+                <h3 className="text-lg font-semibold mb-2 text-green-400">🧠 Enhanced Clean Hybrid Reading</h3>
                 <p className="text-sm opacity-80 mb-4">
-                  Smart highlighting that marks ideas, not lines - highlights stay with concepts
+                  Smart highlighting, David Butler metaphors, right-brain analysis, and concept-anchored learning
                 </p>
+                <div className="text-xs opacity-70 mb-2">
+                  Features: Thought Unit Detection • Butler Metaphors • Progressive Overlay • AI Learning
+                </div>
               </div>
-              <label className="bg-gradient-to-r from-green-500 to-teal-500 text-white px-6 py-3 rounded-lg cursor-pointer font-medium hover:from-green-400 hover:to-teal-400 transition-all">
-                📂 Upload PDF to Begin Concept-Based Reading
+              <label className="bg-gradient-to-r from-green-500 to-teal-500 text-white px-6 py-3 rounded-lg cursor-pointer font-medium hover:from-green-400 hover:to-teal-400 transition-all shadow-lg">
+                📂 Upload PDF to Begin Enhanced Clean Reading
                 <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
               </label>
             </div>

@@ -24,6 +24,16 @@ import {
   type ConceptHighlightConfig,
   type ConceptAnchor
 } from "@/lib/conceptAnchoredHighlighting";
+import { 
+  analyzeChunkWithRightBrain,
+  type RightBrainChunkAnalysis,
+  type TextPattern,
+  type VisualMetaphor
+} from "@/lib/rightBrainReading";
+import { chunkText, stableChunkId } from "@/lib/chunkers";
+import { useReaderSync } from "@/lib/readerSync";
+import ChunkRail from "@/components/ChunkRail";
+import { aiLearningEngine, type UserFeedback } from "@/lib/aiLearningEngine";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -472,6 +482,28 @@ export default function CleanHybridReader({
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
+  
+  // Enhanced Progressive Features
+  const [showProgressiveOverlay, setShowProgressiveOverlay] = useState(true);
+  const [chunkChars, setChunkChars] = useState(240);
+  const [chunkMode, setChunkMode] = useState<"semantic" | "sentence" | "bullet-first">("semantic");
+  const [phase, setPhase] = useState<"gist" | "pattern" | "detail" | "movie">("gist");
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  
+  // Right-Brain Analysis
+  const [rightBrainAnalysis, setRightBrainAnalysis] = useState<RightBrainChunkAnalysis | null>(null);
+  
+  // Global sync integration
+  const { 
+    page: globalPage,
+    unitIndex: globalUnitIndex,
+    activeChunkId: globalActiveChunkId,
+    updateSync, 
+    cacheChunkAnchor, 
+    syncChunkToPDF, 
+    syncPDFToChunk
+  } = useReaderSync();
   
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
