@@ -185,24 +185,31 @@ export class ConceptAnchoredHighlighter {
   private createConceptAnchors(thoughtUnits: ThoughtUnit[], fullText: string): ConceptAnchor[] {
     const anchors: ConceptAnchor[] = [];
     
-    // Filter thought units based on config
+    // Filter thought units based on config and sensitivity
     const filteredUnits = thoughtUnits.filter(unit => this.shouldHighlightConcept(unit));
     
-    // Limit main ideas per page
-    const mainIdeas = filteredUnits.filter(unit => unit.isMainIdea)
+    // Apply sensitivity-based filtering
+    const sensitivityFilteredUnits = this.applySensitivityFiltering(filteredUnits);
+    
+    // Limit main ideas per page based on config
+    const mainIdeas = sensitivityFilteredUnits.filter(unit => unit.isMainIdea)
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, this.config.maxMainIdeasPerPage);
     
-    const otherUnits = filteredUnits.filter(unit => !unit.isMainIdea);
+    // Apply sensitivity to other units as well
+    const otherUnits = sensitivityFilteredUnits.filter(unit => !unit.isMainIdea);
+    const limitedOtherUnits = this.limitOtherUnitsBySensitivity(otherUnits);
     
     // Create anchors for main ideas and other important concepts
-    [...mainIdeas, ...otherUnits].forEach(unit => {
+    [...mainIdeas, ...limitedOtherUnits].forEach(unit => {
       const anchor = this.createConceptAnchor(unit, fullText);
       if (anchor) {
         anchors.push(anchor);
         this.conceptAnchors.set(anchor.id, anchor);
       }
     });
+    
+    console.log(`🎯 Created ${anchors.length} concept anchors (${mainIdeas.length} main ideas, ${limitedOtherUnits.length} other units) with ${this.config.highlightSensitivity} sensitivity`);
     
     return anchors;
   }
@@ -583,14 +590,23 @@ export class ConceptAnchoredHighlighter {
   }
 
   private shouldHighlightConcept(unit: ThoughtUnit): boolean {
-    // Apply filtering based on config
+    // Apply main idea confidence threshold
     if (unit.isMainIdea && unit.confidence < this.config.mainIdeaConfidenceThreshold) {
+      console.log(`❌ Main idea filtered out: confidence ${unit.confidence} < threshold ${this.config.mainIdeaConfidenceThreshold}`);
       return false;
     }
     
-    // Type-based filtering
+    // Apply general confidence threshold based on sensitivity
+    const generalThreshold = this.getGeneralConfidenceThreshold();
+    if (unit.confidence < generalThreshold) {
+      console.log(`❌ Unit filtered out: confidence ${unit.confidence} < general threshold ${generalThreshold}`);
+      return false;
+    }
+    
+    // Type-based filtering based on config
     switch (unit.type) {
       case 'topic-sentence':
+      case 'conclusion':
         return this.config.showMainIdeas;
       case 'supporting-detail':
       case 'example':
@@ -599,7 +615,69 @@ export class ConceptAnchoredHighlighter {
       case 'transition':
         return this.config.showTransitions;
       default:
-        return true;
+        return this.config.showSupportingDetails; // Default to supporting details setting
+    }
+  }
+
+  private getGeneralConfidenceThreshold(): number {
+    // Set confidence thresholds based on sensitivity level
+    switch (this.config.highlightSensitivity) {
+      case 'minimal':
+        return 0.8; // Only very high confidence concepts
+      case 'moderate':
+        return 0.6; // Balanced approach
+      case 'detailed':
+        return 0.4; // Include more concepts
+      default:
+        return 0.6;
+    }
+  }
+
+  private applySensitivityFiltering(units: ThoughtUnit[]): ThoughtUnit[] {
+    // Apply additional filtering based on sensitivity level
+    switch (this.config.highlightSensitivity) {
+      case 'minimal':
+        // Only keep the highest confidence units
+        return units
+          .sort((a, b) => b.confidence - a.confidence)
+          .slice(0, Math.max(3, Math.floor(units.length * 0.3)));
+      
+      case 'moderate':
+        // Keep a balanced selection
+        return units
+          .sort((a, b) => b.confidence - a.confidence)
+          .slice(0, Math.max(5, Math.floor(units.length * 0.6)));
+      
+      case 'detailed':
+        // Keep most units that pass basic filtering
+        return units
+          .sort((a, b) => b.confidence - a.confidence)
+          .slice(0, Math.max(8, Math.floor(units.length * 0.9)));
+      
+      default:
+        return units;
+    }
+  }
+
+  private limitOtherUnitsBySensitivity(otherUnits: ThoughtUnit[]): ThoughtUnit[] {
+    // Limit non-main-idea units based on sensitivity
+    const maxOtherUnits = this.getMaxOtherUnits();
+    return otherUnits
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, maxOtherUnits);
+  }
+
+  private getMaxOtherUnits(): number {
+    // Determine max number of non-main-idea units based on sensitivity
+    switch (this.config.highlightSensitivity) {
+      case 'minimal':
+        return 2; // Very few supporting highlights
+      case 'moderate':
+        return 5; // Balanced number of supporting highlights
+      case 'detailed':
+        return 10; // More comprehensive highlighting
+      default:
+        return 5;
     }
   }
 
@@ -672,7 +750,28 @@ export class ConceptAnchoredHighlighter {
 
   // Public methods for external control
   public updateConfig(newConfig: Partial<ConceptHighlightConfig>): void {
+    const oldConfig = { ...this.config };
     this.config = { ...this.config, ...newConfig };
+    
+    // Clear cache if significant config changes occurred
+    const significantChanges = [
+      'highlightSensitivity',
+      'mainIdeaConfidenceThreshold',
+      'maxMainIdeasPerPage',
+      'showMainIdeas',
+      'showSupportingDetails',
+      'showTransitions'
+    ];
+    
+    const hasSignificantChanges = significantChanges.some(key => 
+      oldConfig[key as keyof ConceptHighlightConfig] !== this.config[key as keyof ConceptHighlightConfig]
+    );
+    
+    if (hasSignificantChanges) {
+      console.log('🗑️ Clearing concept cache due to significant config changes');
+      this.clearCache();
+    }
+    
     console.log('🔄 Updated concept highlighting config:', this.config);
   }
 
