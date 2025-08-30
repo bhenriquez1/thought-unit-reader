@@ -126,7 +126,7 @@ export function detectThoughtUnitBoundaries(text: string): ThoughtUnitBoundary[]
     );
 }
 
-// Enhanced Main Idea Detection with Precision Focus
+// Enhanced Main Idea Detection with Advanced Semantic Analysis
 export function extractMainIdea(text: string): MainIdeaAnalysis {
   const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 15);
   
@@ -141,136 +141,368 @@ export function extractMainIdea(text: string): MainIdeaAnalysis {
     };
   }
   
-  // Enhanced sentence scoring with stricter criteria
-  const sentenceScores = sentences.map((sentence, index) => {
-    let score = 0;
-    const lowerSentence = sentence.toLowerCase();
-    const wordCount = sentence.split(/\s+/).length;
-    
-    // STRICT position scoring - be more selective
-    if (index === 0 && wordCount >= 8) score += 4; // First sentence must be substantial
-    if (index === sentences.length - 1 && wordCount >= 8) score += 3;
-    
-    // STRICT length scoring - main ideas should be substantial but not too long
-    if (sentence.length >= 60 && sentence.length <= 150) score += 3; // Sweet spot for main ideas
-    if (sentence.length > 150) score -= 1; // Penalize overly long sentences
-    if (sentence.length < 40) score -= 2; // Penalize short sentences
-    
-    // HIGH-VALUE main idea indicators (much stricter)
-    const strongMainIdeaIndicators = [
-      'the main point', 'the key concept', 'the primary purpose', 'the central idea',
-      'in essence', 'fundamentally', 'the core principle', 'most importantly'
-    ];
-    
-    strongMainIdeaIndicators.forEach(indicator => {
-      if (lowerSentence.includes(indicator)) score += 5; // Higher boost for strong indicators
-    });
-    
-    // MEDIUM-VALUE indicators
-    const mediumIndicators = [
-      'the main', 'the key', 'the primary', 'the central', 'the fundamental',
-      'overall', 'essentially', 'basically', 'the purpose', 'the goal'
-    ];
-    
-    mediumIndicators.forEach(indicator => {
-      if (lowerSentence.includes(indicator)) score += 2;
-    });
-    
-    // Abstract concept indicators (more selective)
-    const conceptIndicators = [
-      'concept', 'principle', 'theory', 'framework', 'approach', 'method'
-    ];
-    
-    conceptIndicators.forEach(indicator => {
-      if (lowerSentence.includes(indicator)) score += 1;
-    });
-    
-    // Definition indicators (strong signal for main ideas)
-    const definitionPatterns = [
-      / is defined as /i, / means that /i, / refers to /i, / can be understood as /i
-    ];
-    
-    definitionPatterns.forEach(pattern => {
-      if (pattern.test(sentence)) score += 3;
-    });
-    
-    // PENALTY for supporting detail indicators
-    const supportingDetailIndicators = [
-      'for example', 'such as', 'including', 'like', 'specifically',
-      'in addition', 'furthermore', 'moreover', 'also', 'additionally'
-    ];
-    
-    supportingDetailIndicators.forEach(indicator => {
-      if (lowerSentence.includes(indicator)) score -= 2; // Penalize supporting details
-    });
-    
-    // PENALTY for transitional phrases
-    const transitionPenalties = [
-      'however', 'but', 'although', 'while', 'whereas', 'on the other hand'
-    ];
-    
-    transitionPenalties.forEach(transition => {
-      if (lowerSentence.includes(transition)) score -= 1;
-    });
-    
-    return { sentence, score, index, wordCount };
+  // Multi-pass analysis for better accuracy
+  const sentenceAnalyses = sentences.map((sentence, index) => {
+    const analysis = analyzeMainIdeaSentence(sentence, index, sentences);
+    return { sentence, index, ...analysis };
   });
   
-  // STRICT FILTERING: Only consider sentences with score >= 4 as potential main ideas
-  const viableCandidates = sentenceScores.filter(s => s.score >= 4);
+  // Apply semantic coherence scoring
+  const coherenceScores = calculateSemanticCoherence(sentenceAnalyses, text);
   
-  let primarySentence;
-  if (viableCandidates.length > 0) {
-    // Find the highest scoring viable candidate
-    primarySentence = viableCandidates.reduce((max, current) => 
-      current.score > max.score ? current : max
-    );
-  } else {
-    // Fallback: use the best available sentence but mark low confidence
-    primarySentence = sentenceScores.reduce((max, current) => 
-      current.score > max.score ? current : max
-    );
-    primarySentence.score = Math.max(primarySentence.score, 2); // Ensure minimum score for fallback
-  }
+  // Combine scores with coherence weighting
+  const finalScores = sentenceAnalyses.map((analysis, index) => ({
+    ...analysis,
+    finalScore: analysis.baseScore + (coherenceScores[index] * 0.3),
+    confidence: calculateSentenceConfidence(analysis, coherenceScores[index])
+  }));
   
-  // Extract supporting points (exclude the primary sentence and low-scoring sentences)
-  const supportingPoints = sentenceScores
-    .filter(s => 
-      s.index !== primarySentence.index && 
-      s.sentence.trim().length > 25 &&
-      s.score >= 1 // Only include sentences with some relevance
-    )
-    .sort((a, b) => b.score - a.score) // Sort by score
-    .slice(0, 3) // Limit to top 3 supporting points
-    .map(s => s.sentence.trim());
+  // Select primary idea with enhanced filtering
+  const primarySentence = selectPrimaryIdea(finalScores);
   
-  // Extract key terms with better filtering
-  const keyTerms = extractKeyTerms(text);
+  // Extract supporting points with relationship analysis
+  const supportingPoints = extractSupportingPoints(finalScores, primarySentence.index);
   
-  // Determine conceptual framework
+  // Enhanced key term extraction with semantic clustering
+  const keyTerms = extractEnhancedKeyTerms(text, primarySentence.sentence);
+  
+  // Determine conceptual framework with pattern recognition
   const framework = determineConceptualFramework(text, primarySentence.sentence);
   
-  // Generate visual metaphor
+  // Generate contextual visual metaphor
   const visualMetaphor = generateThoughtUnitMetaphor(primarySentence.sentence, framework);
   
-  // STRICT confidence calculation - much higher threshold for main ideas
-  const baseConfidence = Math.min(primarySentence.score / 12, 0.8); // Normalize against higher threshold
-  const termBonus = Math.min(keyTerms.length / 30, 0.15); // Smaller bonus from terms
-  const structureBonus = sentences.length > 2 ? 0.05 : 0; // Small bonus for structured text
-  
-  const confidence = Math.min(baseConfidence + termBonus + structureBonus, 1.0);
-  
-  // If confidence is too low, this might not be a true main idea
-  const adjustedConfidence = confidence < 0.6 ? confidence * 0.7 : confidence;
+  // Advanced confidence calculation with multiple factors
+  const confidence = calculateMainIdeaConfidence(primarySentence, supportingPoints, keyTerms, text);
   
   return {
     primaryIdea: primarySentence.sentence.trim(),
-    supportingPoints,
+    supportingPoints: supportingPoints.map(p => p.sentence.trim()),
     keyTerms,
     conceptualFramework: framework,
     visualMetaphor,
-    confidence: adjustedConfidence
+    confidence
   };
+}
+
+// Advanced sentence analysis for main idea detection
+function analyzeMainIdeaSentence(sentence: string, index: number, allSentences: string[]) {
+  let baseScore = 0;
+  const lowerSentence = sentence.toLowerCase();
+  const wordCount = sentence.split(/\s+/).length;
+  const sentenceLength = sentence.length;
+  
+  // Position-based scoring with context awareness
+  const totalSentences = allSentences.length;
+  if (index === 0 && wordCount >= 8) {
+    baseScore += totalSentences > 3 ? 5 : 3; // Higher weight for first sentence in longer texts
+  }
+  if (index === totalSentences - 1 && wordCount >= 8) {
+    baseScore += 4; // Conclusion sentences often contain main ideas
+  }
+  
+  // Optimal length scoring for main ideas
+  if (sentenceLength >= 50 && sentenceLength <= 180) {
+    baseScore += 4; // Sweet spot for comprehensive main ideas
+  } else if (sentenceLength >= 30 && sentenceLength <= 250) {
+    baseScore += 2; // Acceptable range
+  } else if (sentenceLength < 30) {
+    baseScore -= 3; // Too short for main ideas
+  } else if (sentenceLength > 250) {
+    baseScore -= 2; // Likely too detailed/complex
+  }
+  
+  // Enhanced main idea indicators with weighted scoring
+  const strongIndicators = [
+    { pattern: /\b(the main point|the key concept|the primary purpose|the central idea)\b/i, weight: 6 },
+    { pattern: /\b(in essence|fundamentally|the core principle|most importantly)\b/i, weight: 5 },
+    { pattern: /\b(the main|the key|the primary|the central|the fundamental)\b/i, weight: 3 },
+    { pattern: /\b(overall|essentially|basically|the purpose|the goal)\b/i, weight: 2 }
+  ];
+  
+  strongIndicators.forEach(({ pattern, weight }) => {
+    if (pattern.test(sentence)) baseScore += weight;
+  });
+  
+  // Academic and conceptual indicators
+  const conceptualIndicators = [
+    { pattern: /\b(concept|principle|theory|framework|approach|method)\b/i, weight: 2 },
+    { pattern: /\b(hypothesis|thesis|argument|proposition)\b/i, weight: 3 },
+    { pattern: /\b(research shows|studies indicate|evidence suggests)\b/i, weight: 2 }
+  ];
+  
+  conceptualIndicators.forEach(({ pattern, weight }) => {
+    if (pattern.test(sentence)) baseScore += weight;
+  });
+  
+  // Definition patterns (strong main idea signals)
+  const definitionPatterns = [
+    { pattern: /\bis defined as\b/i, weight: 4 },
+    { pattern: /\bmeans that\b/i, weight: 3 },
+    { pattern: /\brefers to\b/i, weight: 3 },
+    { pattern: /\bcan be understood as\b/i, weight: 3 }
+  ];
+  
+  definitionPatterns.forEach(({ pattern, weight }) => {
+    if (pattern.test(sentence)) baseScore += weight;
+  });
+  
+  // Penalties for supporting details and transitions
+  const penaltyPatterns = [
+    { pattern: /\b(for example|such as|including|like|specifically)\b/i, penalty: 3 },
+    { pattern: /\b(in addition|furthermore|moreover|also|additionally)\b/i, penalty: 2 },
+    { pattern: /\b(however|but|although|while|whereas|on the other hand)\b/i, penalty: 1 }
+  ];
+  
+  penaltyPatterns.forEach(({ pattern, penalty }) => {
+    if (pattern.test(sentence)) baseScore -= penalty;
+  });
+  
+  // Complexity analysis
+  const complexity = analyzeComplexity(sentence);
+  if (complexity === 'optimal') baseScore += 2;
+  else if (complexity === 'too-simple') baseScore -= 2;
+  else if (complexity === 'too-complex') baseScore -= 1;
+  
+  return {
+    baseScore,
+    wordCount,
+    sentenceLength,
+    complexity,
+    hasStrongIndicators: strongIndicators.some(({ pattern }) => pattern.test(sentence)),
+    hasDefinitionPattern: definitionPatterns.some(({ pattern }) => pattern.test(sentence))
+  };
+}
+
+// Calculate semantic coherence between sentences
+function calculateSemanticCoherence(sentenceAnalyses: any[], fullText: string): number[] {
+  const coherenceScores = sentenceAnalyses.map((analysis, index) => {
+    let coherenceScore = 0;
+    const sentence = analysis.sentence.toLowerCase();
+    
+    // Check thematic consistency with full text
+    const textWords = fullText.toLowerCase().split(/\s+/);
+    const sentenceWords = sentence.split(/\s+/);
+    
+    // Calculate word overlap with full text (excluding common words)
+    const commonWords = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'this', 'that', 'these', 'those']);
+    
+    const meaningfulSentenceWords = sentenceWords.filter(word => 
+      word.length > 3 && !commonWords.has(word)
+    );
+    
+    const overlapCount = meaningfulSentenceWords.filter(word => 
+      textWords.includes(word)
+    ).length;
+    
+    const overlapRatio = meaningfulSentenceWords.length > 0 ? 
+      overlapCount / meaningfulSentenceWords.length : 0;
+    
+    coherenceScore += overlapRatio * 3;
+    
+    // Check for topic consistency with other high-scoring sentences
+    const otherHighScoringSentences = sentenceAnalyses.filter((other, otherIndex) => 
+      otherIndex !== index && other.baseScore >= 3
+    );
+    
+    if (otherHighScoringSentences.length > 0) {
+      const topicConsistency = calculateTopicConsistency(sentence, otherHighScoringSentences);
+      coherenceScore += topicConsistency * 2;
+    }
+    
+    return Math.min(coherenceScore, 5); // Cap coherence score
+  });
+  
+  return coherenceScores;
+}
+
+// Calculate topic consistency between sentences
+function calculateTopicConsistency(sentence: string, otherSentences: any[]): number {
+  const sentenceWords = new Set(sentence.toLowerCase().split(/\s+/).filter(w => w.length > 4));
+  
+  let totalConsistency = 0;
+  otherSentences.forEach(other => {
+    const otherWords = new Set(other.sentence.toLowerCase().split(/\s+/).filter(w => w.length > 4));
+    const intersection = new Set([...sentenceWords].filter(x => otherWords.has(x)));
+    const union = new Set([...sentenceWords, ...otherWords]);
+    
+    const jaccardSimilarity = union.size > 0 ? intersection.size / union.size : 0;
+    totalConsistency += jaccardSimilarity;
+  });
+  
+  return otherSentences.length > 0 ? totalConsistency / otherSentences.length : 0;
+}
+
+// Calculate confidence for individual sentences
+function calculateSentenceConfidence(analysis: any, coherenceScore: number): number {
+  let confidence = 0;
+  
+  // Base score contribution (normalized)
+  confidence += Math.min(analysis.baseScore / 15, 0.6);
+  
+  // Coherence contribution
+  confidence += Math.min(coherenceScore / 5, 0.3);
+  
+  // Bonus for strong indicators
+  if (analysis.hasStrongIndicators) confidence += 0.1;
+  if (analysis.hasDefinitionPattern) confidence += 0.1;
+  
+  // Penalty for suboptimal characteristics
+  if (analysis.complexity === 'too-simple') confidence -= 0.1;
+  if (analysis.complexity === 'too-complex') confidence -= 0.05;
+  
+  return Math.max(0, Math.min(1, confidence));
+}
+
+// Select the primary idea with enhanced logic
+function selectPrimaryIdea(scoredSentences: any[]) {
+  // Filter viable candidates (higher threshold)
+  const viableCandidates = scoredSentences.filter(s => s.finalScore >= 5 && s.confidence >= 0.5);
+  
+  if (viableCandidates.length > 0) {
+    // Select based on combined score and confidence
+    return viableCandidates.reduce((best, current) => {
+      const bestCombined = best.finalScore * 0.7 + best.confidence * 0.3;
+      const currentCombined = current.finalScore * 0.7 + current.confidence * 0.3;
+      return currentCombined > bestCombined ? current : best;
+    });
+  }
+  
+  // Fallback to best available sentence
+  const fallback = scoredSentences.reduce((best, current) => 
+    current.finalScore > best.finalScore ? current : best
+  );
+  
+  // Mark as low confidence fallback
+  fallback.confidence = Math.min(fallback.confidence, 0.4);
+  return fallback;
+}
+
+// Extract supporting points with relationship analysis
+function extractSupportingPoints(scoredSentences: any[], primaryIndex: number) {
+  return scoredSentences
+    .filter(s => 
+      s.index !== primaryIndex && 
+      s.sentence.trim().length > 25 &&
+      s.finalScore >= 2 &&
+      s.confidence >= 0.3
+    )
+    .sort((a, b) => b.finalScore - a.finalScore)
+    .slice(0, 3);
+}
+
+// Enhanced key term extraction with semantic clustering
+function extractEnhancedKeyTerms(text: string, primaryIdea: string): string[] {
+  const words = text.split(/\s+/).filter(word => word.length > 3);
+  const primaryWords = primaryIdea.split(/\s+/).filter(word => word.length > 3);
+  
+  // Create term frequency map
+  const termFreq = new Map<string, number>();
+  const termPositions = new Map<string, number[]>();
+  
+  words.forEach((word, index) => {
+    const cleaned = word.replace(/[^\w]/g, '').toLowerCase();
+    if (cleaned.length > 3) {
+      termFreq.set(cleaned, (termFreq.get(cleaned) || 0) + 1);
+      if (!termPositions.has(cleaned)) termPositions.set(cleaned, []);
+      termPositions.get(cleaned)!.push(index);
+    }
+  });
+  
+  // Score terms based on multiple factors
+  const scoredTerms = Array.from(termFreq.entries()).map(([term, freq]) => {
+    let score = freq;
+    
+    // Boost terms that appear in primary idea
+    const inPrimary = primaryWords.some(w => w.toLowerCase().includes(term) || term.includes(w.toLowerCase()));
+    if (inPrimary) score += 5;
+    
+    // Boost capitalized terms (proper nouns, important concepts)
+    const originalTerm = words.find(w => w.toLowerCase().includes(term));
+    if (originalTerm && /^[A-Z]/.test(originalTerm)) score += 3;
+    
+    // Boost longer terms (more specific concepts)
+    if (term.length > 6) score += 2;
+    if (term.length > 10) score += 3;
+    
+    // Boost technical/academic terms
+    if (term.match(/(tion|ment|ness|ism|ity|ology|graphy)$/)) score += 2;
+    
+    // Boost terms with good distribution (not clustered)
+    const positions = termPositions.get(term) || [];
+    if (positions.length > 1) {
+      const distribution = calculateDistribution(positions, words.length);
+      score += distribution * 2;
+    }
+    
+    return { term: originalTerm || term, score, frequency: freq };
+  });
+  
+  // Return top scoring terms with diversity
+  return scoredTerms
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 12)
+    .filter(t => t.score >= 2) // Minimum relevance threshold
+    .map(t => t.term);
+}
+
+// Calculate term distribution across text
+function calculateDistribution(positions: number[], textLength: number): number {
+  if (positions.length <= 1) return 0;
+  
+  const segments = 5; // Divide text into 5 segments
+  const segmentSize = textLength / segments;
+  const segmentCounts = new Array(segments).fill(0);
+  
+  positions.forEach(pos => {
+    const segment = Math.min(Math.floor(pos / segmentSize), segments - 1);
+    segmentCounts[segment]++;
+  });
+  
+  const nonEmptySegments = segmentCounts.filter(count => count > 0).length;
+  return nonEmptySegments / segments; // Return distribution ratio
+}
+
+// Analyze sentence complexity
+function analyzeComplexity(sentence: string): 'too-simple' | 'optimal' | 'too-complex' {
+  const wordCount = sentence.split(/\s+/).length;
+  const avgWordLength = sentence.replace(/[^\w\s]/g, '').split(/\s+/).reduce((sum, word) => sum + word.length, 0) / wordCount;
+  const clauseCount = (sentence.match(/[,;:]/g) || []).length + 1;
+  
+  // Calculate complexity score
+  const complexityScore = (wordCount * 0.3) + (avgWordLength * 2) + (clauseCount * 1.5);
+  
+  if (complexityScore < 15) return 'too-simple';
+  if (complexityScore > 45) return 'too-complex';
+  return 'optimal';
+}
+
+// Advanced confidence calculation for main ideas
+function calculateMainIdeaConfidence(primarySentence: any, supportingPoints: any[], keyTerms: string[], fullText: string): number {
+  let confidence = 0;
+  
+  // Base confidence from sentence analysis
+  confidence += primarySentence.confidence * 0.5;
+  
+  // Boost from supporting evidence
+  const supportingEvidence = supportingPoints.length / 3; // Normalize to 0-1
+  confidence += supportingEvidence * 0.2;
+  
+  // Boost from key term density
+  const keyTermDensity = Math.min(keyTerms.length / 10, 1); // Normalize to 0-1
+  confidence += keyTermDensity * 0.15;
+  
+  // Boost from text structure
+  const sentences = fullText.split(/[.!?]+/).filter(s => s.trim().length > 15);
+  const structureBonus = sentences.length > 3 ? 0.1 : 0.05;
+  confidence += structureBonus;
+  
+  // Penalty for very short or very long texts
+  if (fullText.length < 100) confidence *= 0.8;
+  if (fullText.length > 2000) confidence *= 0.9;
+  
+  // Final confidence adjustment
+  return Math.max(0.1, Math.min(1.0, confidence));
 }
 
 // Extract Key Terms using enhanced analysis

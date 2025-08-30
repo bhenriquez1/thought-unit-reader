@@ -45,6 +45,8 @@ import {
   type MainIdeaAnalysis
 } from "@/lib/pdfThoughtUnitOverlay";
 import { analyzeTextForThoughtUnits } from "@/lib/thoughtUnitExtraction";
+import { aiLearningEngine, type UserFeedback } from "@/lib/aiLearningEngine";
+import ThoughtUnitFeedback, { QuickFeedbackButtons } from "@/components/ThoughtUnitFeedback";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -279,7 +281,7 @@ export default function EnhancedHybridReader({
   // ChunkTOCBar state
   const [compactMode, setCompactMode] = useState(true);
 
-  // Thought Unit Overlay System
+  // Thought Unit Overlay System with AI Learning
   const [thoughtUnitRenderer, setThoughtUnitRenderer] = useState<PDFThoughtUnitRenderer | null>(null);
   const [showThoughtUnits, setShowThoughtUnits] = useState(true);
   const [thoughtUnitConfig, setThoughtUnitConfig] = useState<OverlayConfig>({
@@ -298,6 +300,12 @@ export default function EnhancedHybridReader({
   });
   const [currentThoughtUnits, setCurrentThoughtUnits] = useState<ThoughtUnit[]>([]);
   const [currentMainIdea, setCurrentMainIdea] = useState<MainIdeaAnalysis | null>(null);
+  
+  // AI Learning Integration
+  const [showFeedbackPanel, setShowFeedbackPanel] = useState(false);
+  const [selectedThoughtUnit, setSelectedThoughtUnit] = useState<ThoughtUnit | null>(null);
+  const [learningMode, setLearningMode] = useState(false);
+  const [adaptiveSettings, setAdaptiveSettings] = useState<any>(null);
 
   // Initialize thought unit renderer when PDF container is ready
   useEffect(() => {
@@ -1080,11 +1088,20 @@ export default function EnhancedHybridReader({
             </div>
           </div>
 
-          {/* Thought Unit Controls Panel */}
+          {/* AI-Enhanced Thought Unit Controls Panel */}
           <div className="p-3 bg-gradient-to-r from-amber-900/30 to-orange-900/30 rounded-lg border border-amber-500/30">
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-xs font-medium text-amber-300">🎯 Thought Unit Highlighting</span>
+              <span className="text-xs font-medium text-amber-300">🎯 AI Thought Unit System</span>
               <div className="flex-1"></div>
+              <button
+                onClick={() => setLearningMode(!learningMode)}
+                className={`text-xs px-2 py-1 rounded mr-2 ${
+                  learningMode ? "bg-green-600" : "bg-gray-700 hover:bg-gray-600"
+                }`}
+                title="Enable AI learning from your feedback"
+              >
+                🧠 {learningMode ? "Learning" : "Static"}
+              </button>
               <button
                 onClick={() => setShowThoughtUnits(!showThoughtUnits)}
                 className={`text-xs px-2 py-1 rounded ${
