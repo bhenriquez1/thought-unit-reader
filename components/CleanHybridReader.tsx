@@ -19,10 +19,11 @@ import {
   type ThoughtUnitBoundary 
 } from "@/lib/thoughtUnitExtraction";
 import { 
-  PDFThoughtUnitRenderer, 
-  type OverlayConfig, 
-  type PDFThoughtUnitOverlay 
-} from "@/lib/pdfThoughtUnitOverlay";
+  ConceptAnchoredHighlighter,
+  createConceptAnchoredHighlighter,
+  type ConceptHighlightConfig,
+  type ConceptAnchor
+} from "@/lib/conceptAnchoredHighlighting";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -451,24 +452,21 @@ export default function CleanHybridReader({
   const [conceptHighlights, setConceptHighlights] = useState<ConceptHighlight[]>([]);
   const [rightBrainMode, setRightBrainMode] = useState<boolean>(true);
   
-  // Enhanced Thought Unit Features
+  // Enhanced Concept-Anchored Highlighting Features
   const [thoughtUnitEnabled, setThoughtUnitEnabled] = useState<boolean>(false);
-  const [thoughtUnitRenderer, setThoughtUnitRenderer] = useState<PDFThoughtUnitRenderer | null>(null);
-  const [overlayConfig, setOverlayConfig] = useState<OverlayConfig>({
+  const [conceptHighlighter, setConceptHighlighter] = useState<ConceptAnchoredHighlighter | null>(null);
+  const [highlightConfig, setHighlightConfig] = useState<ConceptHighlightConfig>({
     showMainIdeas: true,
     showSupportingDetails: true,
     showTransitions: true,
-    animationEnabled: true,
-    intensityMultiplier: 1.0,
-    borderWidth: 2,
-    pulseOnFocus: true,
     mainIdeaConfidenceThreshold: 0.85,
     highlightSensitivity: 'moderate',
     maxMainIdeasPerPage: 2,
-    sentenceLevelPrecision: true
+    conceptPersistence: true
   });
   const [currentMainIdea, setCurrentMainIdea] = useState<string>("");
   const [mainIdeaConfidence, setMainIdeaConfidence] = useState<number>(0);
+  const [activeConceptAnchors, setActiveConceptAnchors] = useState<ConceptAnchor[]>([]);
   
   // Voice and speech
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -713,78 +711,93 @@ export default function CleanHybridReader({
     }
   }, [pageTextIndex, highlightMode, rightBrainMode]);
 
-  // Initialize thought unit renderer when enabled
+  // Initialize concept-anchored highlighter when enabled
   useEffect(() => {
-    if (thoughtUnitEnabled && pdfContainerRef.current && !thoughtUnitRenderer) {
-      const renderer = new PDFThoughtUnitRenderer(pdfContainerRef.current, overlayConfig);
-      setThoughtUnitRenderer(renderer);
-    } else if (!thoughtUnitEnabled && thoughtUnitRenderer) {
-      thoughtUnitRenderer.destroy();
-      setThoughtUnitRenderer(null);
+    if (thoughtUnitEnabled && pdfContainerRef.current && !conceptHighlighter) {
+      const highlighter = createConceptAnchoredHighlighter(pdfContainerRef.current, highlightConfig);
+      setConceptHighlighter(highlighter);
+      
+      // Add event listeners for concept interactions
+      const handleConceptClick = (event: CustomEvent) => {
+        const anchor = event.detail.anchor as ConceptAnchor;
+        console.log('🧠 Concept clicked:', anchor.type, anchor.conceptFingerprint);
+        
+        // Update selection and trigger actions
+        setSelectionText(anchor.persistentData.originalText);
+        onTextSelect?.(anchor.persistentData.originalText);
+        onWordClick(anchor.persistentData.originalText);
+      };
+      
+      pdfContainerRef.current.addEventListener('conceptClick', handleConceptClick as EventListener);
+      
+      return () => {
+        if (pdfContainerRef.current) {
+          pdfContainerRef.current.removeEventListener('conceptClick', handleConceptClick as EventListener);
+        }
+        highlighter.destroy();
+      };
+    } else if (!thoughtUnitEnabled && conceptHighlighter) {
+      conceptHighlighter.destroy();
+      setConceptHighlighter(null);
     }
-  }, [thoughtUnitEnabled, overlayConfig]);
+  }, [thoughtUnitEnabled, highlightConfig]);
 
-  // Process thought units when page changes or renderer is available
+  // Process concept highlighting when page changes or highlighter is available
   useEffect(() => {
-    if (thoughtUnitRenderer && pageTextIndex && thoughtUnitEnabled) {
-      const processThoughtUnits = async () => {
+    if (conceptHighlighter && pageTextIndex && thoughtUnitEnabled) {
+      const processConceptHighlighting = async () => {
         try {
-          await thoughtUnitRenderer.renderThoughtUnits(pageTextIndex.text, currentPage);
+          await conceptHighlighter.highlightConcepts(pageTextIndex.text, currentPage);
           
           // Extract main idea for current page
           const mainIdea = extractMainIdea(pageTextIndex.text);
           setCurrentMainIdea(mainIdea.primaryIdea || "");
           setMainIdeaConfidence(mainIdea.confidence || 0);
+          
+          // Update active concept anchors
+          const anchors = conceptHighlighter.getActiveConceptAnchors();
+          setActiveConceptAnchors(anchors);
+          
         } catch (error) {
-          console.error('Error processing thought units:', error);
+          console.error('Error processing concept highlighting:', error);
         }
       };
       
-      processThoughtUnits();
+      processConceptHighlighting();
     }
-  }, [thoughtUnitRenderer, pageTextIndex, currentPage, thoughtUnitEnabled, overlayConfig]);
+  }, [conceptHighlighter, pageTextIndex, currentPage, thoughtUnitEnabled, highlightConfig]);
 
-  // Update renderer config when overlay config changes
+  // Update highlighter config when highlight config changes
   useEffect(() => {
-    if (thoughtUnitRenderer) {
-      console.log('🔄 Updating thought unit renderer config:', overlayConfig);
+    if (conceptHighlighter) {
+      console.log('🔄 Updating concept highlighter config:', highlightConfig);
+      conceptHighlighter.updateConfig(highlightConfig);
       
-      // Check if we need full re-analysis or just config update
-      const needsReanalysis = thoughtUnitRenderer.needsReanalysis(overlayConfig);
-      
-      if (needsReanalysis) {
-        console.log('🔍 Config change requires re-analysis - triggering full re-render');
+      // Re-highlight with new config if we have page text
+      if (pageTextIndex && thoughtUnitEnabled) {
+        const reprocessHighlighting = async () => {
+          try {
+            await conceptHighlighter.highlightConcepts(pageTextIndex.text, currentPage);
+            
+            // Update main idea analysis with new config
+            const mainIdea = extractMainIdea(pageTextIndex.text);
+            setCurrentMainIdea(mainIdea.primaryIdea || "");
+            setMainIdeaConfidence(mainIdea.confidence || 0);
+            
+            // Update active concept anchors
+            const anchors = conceptHighlighter.getActiveConceptAnchors();
+            setActiveConceptAnchors(anchors);
+            
+            console.log('✅ Concept highlighting re-processed with new config');
+          } catch (error) {
+            console.error('Error re-processing concept highlighting:', error);
+          }
+        };
         
-        // For changes that require re-analysis, we need to re-render thought units
-        if (pageTextIndex && thoughtUnitEnabled) {
-          const reprocessThoughtUnits = async () => {
-            try {
-              // Update config first
-              thoughtUnitRenderer.updateConfig(overlayConfig);
-              
-              // Then re-analyze and render with new thresholds
-              await thoughtUnitRenderer.renderThoughtUnits(pageTextIndex.text, currentPage);
-              
-              // Update main idea analysis with new config
-              const mainIdea = extractMainIdea(pageTextIndex.text);
-              setCurrentMainIdea(mainIdea.primaryIdea || "");
-              setMainIdeaConfidence(mainIdea.confidence || 0);
-              
-              console.log('✅ Thought units re-analyzed and re-rendered with new config');
-            } catch (error) {
-              console.error('Error re-processing thought units:', error);
-            }
-          };
-          
-          reprocessThoughtUnits();
-        }
-      } else {
-        console.log('🎨 Config change only affects visuals - updating config only');
-        // For visual-only changes, just update config (this will refresh overlays)
-        thoughtUnitRenderer.updateConfig(overlayConfig);
+        reprocessHighlighting();
       }
     }
-  }, [overlayConfig.highlightSensitivity, overlayConfig.mainIdeaConfidenceThreshold, overlayConfig.maxMainIdeasPerPage, overlayConfig.showMainIdeas, overlayConfig.showSupportingDetails, overlayConfig.showTransitions, overlayConfig.animationEnabled, overlayConfig.sentenceLevelPrecision]);
+  }, [highlightConfig.highlightSensitivity, highlightConfig.mainIdeaConfidenceThreshold, highlightConfig.maxMainIdeasPerPage, highlightConfig.showMainIdeas, highlightConfig.showSupportingDetails, highlightConfig.showTransitions, highlightConfig.conceptPersistence]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -995,8 +1008,8 @@ export default function CleanHybridReader({
                     <span className="text-xs text-gray-700">Highlight Sensitivity:</span>
                     <select
                       className="text-xs bg-white border border-gray-300 rounded px-2 py-1 flex-1"
-                      value={overlayConfig.highlightSensitivity}
-                      onChange={(e) => setOverlayConfig(prev => ({
+                      value={highlightConfig.highlightSensitivity}
+                      onChange={(e) => setHighlightConfig(prev => ({
                         ...prev,
                         highlightSensitivity: e.target.value as 'minimal' | 'moderate' | 'detailed'
                       }))}
@@ -1014,14 +1027,14 @@ export default function CleanHybridReader({
                       min={0.6}
                       max={0.95}
                       step={0.05}
-                      value={overlayConfig.mainIdeaConfidenceThreshold}
-                      onChange={(e) => setOverlayConfig(prev => ({
+                      value={highlightConfig.mainIdeaConfidenceThreshold}
+                      onChange={(e) => setHighlightConfig(prev => ({
                         ...prev,
                         mainIdeaConfidenceThreshold: Number(e.target.value)
                       }))}
                       className="flex-1 accent-amber-400"
                     />
-                    <span className="text-xs w-10">{Math.round(overlayConfig.mainIdeaConfidenceThreshold * 100)}%</span>
+                    <span className="text-xs w-10">{Math.round(highlightConfig.mainIdeaConfidenceThreshold * 100)}%</span>
                   </div>
                   
                   <div className="flex items-center gap-2 mb-2">
@@ -1031,14 +1044,14 @@ export default function CleanHybridReader({
                       min={1}
                       max={5}
                       step={1}
-                      value={overlayConfig.maxMainIdeasPerPage}
-                      onChange={(e) => setOverlayConfig(prev => ({
+                      value={highlightConfig.maxMainIdeasPerPage}
+                      onChange={(e) => setHighlightConfig(prev => ({
                         ...prev,
                         maxMainIdeasPerPage: Number(e.target.value)
                       }))}
                       className="flex-1 accent-amber-400"
                     />
-                    <span className="text-xs w-4">{overlayConfig.maxMainIdeasPerPage}</span>
+                    <span className="text-xs w-4">{highlightConfig.maxMainIdeasPerPage}</span>
                   </div>
                 </div>
 
@@ -1049,8 +1062,8 @@ export default function CleanHybridReader({
                     <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
-                        checked={overlayConfig.showMainIdeas}
-                        onChange={(e) => setOverlayConfig(prev => ({
+                        checked={highlightConfig.showMainIdeas}
+                        onChange={(e) => setHighlightConfig(prev => ({
                           ...prev,
                           showMainIdeas: e.target.checked
                         }))}
@@ -1062,8 +1075,8 @@ export default function CleanHybridReader({
                     <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
-                        checked={overlayConfig.showSupportingDetails}
-                        onChange={(e) => setOverlayConfig(prev => ({
+                        checked={highlightConfig.showSupportingDetails}
+                        onChange={(e) => setHighlightConfig(prev => ({
                           ...prev,
                           showSupportingDetails: e.target.checked
                         }))}
@@ -1075,8 +1088,8 @@ export default function CleanHybridReader({
                     <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
-                        checked={overlayConfig.showTransitions}
-                        onChange={(e) => setOverlayConfig(prev => ({
+                        checked={highlightConfig.showTransitions}
+                        onChange={(e) => setHighlightConfig(prev => ({
                           ...prev,
                           showTransitions: e.target.checked
                         }))}
@@ -1088,14 +1101,14 @@ export default function CleanHybridReader({
                     <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
-                        checked={overlayConfig.animationEnabled}
-                        onChange={(e) => setOverlayConfig(prev => ({
+                        checked={highlightConfig.conceptPersistence}
+                        onChange={(e) => setHighlightConfig(prev => ({
                           ...prev,
-                          animationEnabled: e.target.checked
+                          conceptPersistence: e.target.checked
                         }))}
                         className="accent-purple-400"
                       />
-                      <span className="text-xs">Animations</span>
+                      <span className="text-xs">Concept Persistence</span>
                     </label>
                   </div>
                 </div>

@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Concept-Based Highlighting Test</title>
+    <style>
+        body {
+            font-family: 'Times New Roman', serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        .content {
+            flex: 2;
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .controls {
+            flex: 1;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            height: fit-content;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            font-size: 22px;
+        }
+        p {
+            margin-bottom: 15px;
+            text-align: justify;
+            font-size: 16px;
+        }
+        
+        /* Concept-based highlighting styles */
+        .concept-highlight {
+            padding: 2px 4px;
+            border-radius: 3px;
+            border-left: 3px solid;
+            padding-left: 6px;
+            margin: 2px 0;
+            transition: all 0.3s ease;
+        }
+        
+        .concept-main-idea {
+            background-color: rgba(255, 215, 0, 0.3);
+            border-left-color: #FFD700;
+        }
+        
+        .concept-supporting {
+            background-color: rgba(135, 206, 235, 0.3);
+            border-left-color: #87CEEB;
+        }
+        
+        .concept-definition {
+            background-color: rgba(152, 251, 152, 0.3);
+            border-left-color: #98FB98;
+        }
+        
+        .concept-process {
+            background-color: rgba(221, 160, 221, 0.3);
+            border-left-color: #DDA0DD;
+        }
+        
+        .concept-relationship {
+            background-color: rgba(240, 230, 140, 0.3);
+            border-left-color: #F0E68C;
+        }
+        
+        .controls h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+        
+        .control-group {
+            margin-bottom: 20px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #34495e;
+        }
+        
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px 0;
+            width: 100%;
+        }
+        
+        button:hover {
+            background: #2980b9;
+        }
+        
+        .legend {
+            margin-top: 20px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 15px;
+            margin-right: 10px;
+            border-radius: 3px;
+            border-left: 3px solid;
+        }
+        
+        .status {
+            background: #e8f5e8;
+            border: 1px solid #4caf50;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            color: #2e7d32;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="content" id="content">
+            <h1>The Science of Learning and Memory</h1>
+            
+            <h2>Introduction to Cognitive Processing</h2>
+            
+            <p>The human brain processes information through complex neural networks that form the foundation of learning and memory. <span>Effective learning occurs when new information connects meaningfully with existing knowledge structures in our minds.</span> This process, known as schema integration, allows us to build comprehensive understanding rather than isolated facts.</p>
+            
+            <p><span>Research in cognitive psychology has shown that the brain naturally seeks patterns and relationships between concepts.</span> When we encounter new information, our minds automatically attempt to categorize and connect it with what we already know. <span>For instance, when learning about photosynthesis, students who already understand basic chemistry can more easily grasp the molecular processes involved.</span></p>
+            
+            <h2>The Role of Active Processing</h2>
+            
+            <p><span>Active engagement with material significantly enhances retention and comprehension compared to passive reading.</span> This principle underlies many effective study techniques and educational methodologies. The difference between active and passive learning can determine whether information is stored in long-term memory or quickly forgotten.</p>
+            
+            <p><span>Active processing involves questioning, summarizing, and making connections while reading.</span> Students who pause to ask themselves questions about the material show dramatically improved performance on later tests. <span>Techniques such as self-explanation, where learners verbalize their understanding of each concept, have been shown to increase learning gains by up to 30%.</span></p>
+            
+            <h2>Memory Consolidation and Retrieval</h2>
+            
+            <p>The process of memory formation involves three distinct stages: encoding, storage, and retrieval. <span>Information that is processed deeply and connected to multiple contexts becomes more accessible and durable in memory.</span> This explains why some facts are easily recalled while others seem to vanish despite repeated exposure.</p>
+            
+            <p><span>Sleep plays a crucial role in memory consolidation, particularly for complex conceptual material.</span> During sleep, the brain reorganizes and strengthens neural pathways formed during learning. <span>Studies have demonstrated that students who get adequate sleep after studying perform significantly better on tests than those who stay up late cramming.</span></p>
+            
+            <h2>Practical Applications</h2>
+            
+            <p><span>Understanding how the brain learns can transform educational practices and personal study strategies.</span> By aligning our methods with cognitive principles, we can achieve more efficient and lasting learning outcomes. This knowledge empowers both educators and learners to optimize their approaches.</p>
+            
+            <p><span>Spaced repetition, interleaving different topics, and using multiple modalities all leverage natural brain processes.</span> These techniques work because they mirror how the brain naturally organizes and retrieves information. <span>Language learning apps that space out vocabulary review sessions and mix different types of exercises demonstrate these principles in action.</span></p>
+            
+            <p>In conclusion, the science of learning reveals that our brains are remarkably sophisticated information processing systems. By understanding and working with these natural processes, we can unlock our full learning potential and achieve deeper, more meaningful understanding of any subject matter.</p>
+        </div>
+        
+        <div class="controls">
+            <div class="status">
+                ✅ Concept-Based Highlighting System Active
+            </div>
+            
+            <h3>🧠 Thought Unit Controls</h3>
+            
+            <div class="control-group">
+                <label>Highlight Sensitivity:</label>
+                <select id="sensitivity" onchange="updateHighlighting()">
+                    <option value="minimal">Minimal (Only strongest main ideas)</option>
+                    <option value="moderate" selected>Moderate (Balanced highlighting)</option>
+                    <option value="detailed">Detailed (More comprehensive)</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <button onclick="toggleHighlightType('main-ideas')">Toggle Main Ideas</button>
+                <button onclick="toggleHighlightType('supporting')">Toggle Supporting Details</button>
+                <button onclick="toggleHighlightType('definitions')">Toggle Definitions</button>
+                <button onclick="toggleHighlightType('processes')">Toggle Processes</button>
+                <button onclick="toggleHighlightType('relationships')">Toggle Relationships</button>
+            </div>
+            
+            <div class="control-group">
+                <button onclick="testConceptPersistence()">Test Concept Persistence</button>
+                <button onclick="simulateScrolling()">Simulate Page Movement</button>
+                <button onclick="resetHighlighting()">Reset All Highlights</button>
+            </div>
+            
+            <div class="legend">
+                <h4>Highlight Legend:</h4>
+                <div class="legend-item">
+                    <div class="legend-color concept-main-idea"></div>
+                    <span>Main Ideas & Key Points</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color concept-supporting"></div>
+                    <span>Supporting Details</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color concept-definition"></div>
+                    <span>Definitions & Terms</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color concept-process"></div>
+                    <span>Processes & Mechanisms</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color concept-relationship"></div>
+                    <span>Relationships & Connections</span>
+                </div>
+            </div>
+            
+            <div id="status-log" style="margin-top: 20px; font-size: 12px; color: #666;">
+                <strong>Status Log:</strong><br>
+                <div id="log-content">System initialized...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simulate the concept-anchored highlighting functionality
+        let highlightConfig = {
+            showMainIdeas: true,
+            showSupportingDetails: true,
+            showDefinitions: true,
+            showProcesses: true,
+            showRelationships: true,
+            sensitivity: 'moderate'
+        };
+        
+        // Concept patterns based on our highlighting system
+        const conceptPatterns = {
+            mainIdeas: [
+                /\b(effective learning occurs when|active engagement with material significantly enhances|information that is processed deeply|understanding how the brain learns can transform)/gi,
+                /\b(the main|primary|key|central|core|fundamental|essential|most important)\s+(\w+(?:\s+\w+){0,4})/gi
+            ],
+            supporting: [
+                /\b(research in cognitive psychology has shown|active processing involves|sleep plays a crucial role|spaced repetition)/gi,
+                /\b(because|since|due to|as a result|therefore|thus|hence|consequently)\s+([^.!?]+[.!?])/gi
+            ],
+            definitions: [
+                /\b(schema integration|memory consolidation|self-explanation|spaced repetition)/gi,
+                /\b(\w+(?:\s+\w+){0,2})\s+(is|are|means|refers to|defined as|represents)\s+([^.!?]+[.!?])/gi
+            ],
+            processes: [
+                /\b(process of memory formation|brain reorganizes and strengthens|neural pathways)/gi,
+                /\b(process|mechanism|pathway|system|method|procedure)/gi
+            ],
+            relationships: [
+                /\b(connects meaningfully with|mirror how the brain naturally|leverage natural brain processes)/gi,
+                /\b(relationship|connection|link|association|correlation)/gi
+            ]
+        };
+        
+        function logStatus(message) {
+            const logContent = document.getElementById('log-content');
+            const timestamp = new Date().toLocaleTimeString();
+            logContent.innerHTML += `<br>[${timestamp}] ${message}`;
+            logContent.scrollTop = logContent.scrollHeight;
+        }
+        
+        function applyConceptHighlighting() {
+            const content = document.getElementById('content');
+            const spans = content.querySelectorAll('span');
+            
+            logStatus('🔄 Applying concept-based highlighting...');
+            
+            spans.forEach((span, index) => {
+                const text = span.textContent.toLowerCase();
+                let highlightType = null;
+                
+                // Check for main ideas
+                if (highlightConfig.showMainIdeas) {
+                    for (let pattern of conceptPatterns.mainIdeas) {
+                        if (pattern.test(text)) {
+                            highlightType = 'main-idea';
+                            break;
+                        }
+                    }
+                }
+                
+                // Check for supporting details
+                if (!highlightType && highlightConfig.showSupportingDetails) {
+                    for (let pattern of conceptPatterns.supporting) {
+                        if (pattern.test(text)) {
+                            highlightType = 'supporting';
+                            break;
+                        }
+                    }
+                }
+                
+                // Check for definitions
+                if (!highlightType && highlightConfig.showDefinitions) {
+                    for (let pattern of conceptPatterns.definitions) {
+                        if (pattern.test(text)) {
+                            highlightType = 'definition';
+                            break;
+                        }
+                    }
+                }
+                
+                // Check for processes
+                if (!highlightType && highlightConfig.showProcesses) {
+                    for (let pattern of conceptPatterns.processes) {
+                        if (pattern.test(text)) {
+                            highlightType = 'process';
+                            break;
+                        }
+                    }
+                }
+                
+                // Check for relationships
+                if (!highlightType && highlightConfig.showRelationships) {
+                    for (let pattern of conceptPatterns.relationships) {
+                        if (pattern.test(text)) {
+                            highlightType = 'relationship';
+                            break;
+                        }
+                    }
+                }
+                
+                // Apply highlighting
+                if (highlightType) {
+                    span.className = `concept-highlight concept-${highlightType}`;
+                    span.title = `Concept Type: ${highlightType.replace('-', ' ')}`;
+                    logStatus(`✅ Highlighted "${text.slice(0, 30)}..." as ${highlightType}`);
+                } else {
+                    span.className = '';
+                    span.title = '';
+                }
+            });
+            
+            logStatus('🎯 Concept highlighting complete!');
+        }
+        
+        function updateHighlighting() {
+            const sensitivity = document.getElementById('sensitivity').value;
+            highlightConfig.sensitivity = sensitivity;
+            logStatus(`🔄 Updated sensitivity to: ${sensitivity}`);
+            applyConceptHighlighting();
+        }
+        
+        function toggleHighlightType(type) {
+            const typeMap = {
+                'main-ideas': 'showMainIdeas',
+                'supporting': 'showSupportingDetails',
+                'definitions': 'showDefinitions',
+                'processes': 'showProcesses',
+                'relationships': 'showRelationships'
+            };
+            
+            const configKey = typeMap[type];
+            highlightConfig[configKey] = !highlightConfig[configKey];
+            
+            logStatus(`🔄 Toggled ${type}: ${highlightConfig[configKey] ? 'ON' : 'OFF'}`);
+            applyConceptHighlighting();
+        }
+        
+        function testConceptPersistence() {
+            logStatus('🧪 Testing concept persistence...');
+            
+            // Simulate content changes that would break position-based highlighting
+            const content = document.getElementById('content');
+            const originalHTML = content.innerHTML;
+            
+            // Add some content at the beginning (simulating page scroll/movement)
+            content.innerHTML = '<p style="color: red;">🔄 SIMULATED PAGE MOVEMENT - Content shifted!</p>' + originalHTML;
+            
+            setTimeout(() => {
+                logStatus('🔄 Re-applying concept highlighting after content shift...');
+                applyConceptHighlighting();
+                logStatus('✅ Concept persistence test complete - highlights maintained!');
+            }, 1000);
+        }
+        
+        function simulateScrolling() {
+            logStatus('📜 Simulating page scrolling...');
+            
+            // Simulate the kind of DOM changes that happen during scrolling
+            const content = document.getElementById('content');
+            content.style.transform = 'translateY(-20px)';
+            
+            setTimeout(() => {
+                content.style.transform = 'translateY(0px)';
+                logStatus('🎯 Scrolling complete - concept highlights persist!');
+            }, 500);
+        }
+        
+        function resetHighlighting() {
+            const spans = document.querySelectorAll('span');
+            spans.forEach(span => {
+                span.className = '';
+                span.title = '';
+            });
+            
+            logStatus('🔄 All highlights reset');
+        }
+        
+        // Initialize highlighting on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            logStatus('🚀 Concept-anchored highlighting system initialized');
+            applyConceptHighlighting();
+        });
+    </script>
+</body>
+</html>

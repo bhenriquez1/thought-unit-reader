@@ -1140,52 +1140,57 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // Clean Hybrid Reading - PDF + smart enhancements bridge
-    if (viewMode === "hybrid") {
-      return fileUrl ? (
-        <CleanHybridReader
-          bookId={bookId}
-          userId={USER_ID}
-          thoughtUnits={thoughtUnits}
-          currentThoughtUnit={currentThoughtUnit}
-          pdfUrl={fileUrl}
-          currentPage={currentPage}
-          pdfPageCount={pdfPageCount}
-          sampleText={sampleText}
-          setCurrentThoughtUnit={setCurrentThoughtUnit}
-          highlightedWord={highlightedWord}
-          setHighlightedWord={setHighlightedWord}
-          onPageChange={(p) => syncToPage(p)}
-          fontSize={fontSize}
-          fontFamily={fontFamily}
-          lineSpacing={lineSpacing}
-          onWordClick={(w) => {
-            setHighlightedWord(w);
-            if (autoWhiteboard && w.trim()) {
-              setWbConcept(truncate(w, 600));
-              setWbContext(`p.${currentPage}`);
-              setShowWhiteboardPanel(true);
-            }
-          }}
-          onTextSelect={(t) => sel.setSelectionText(t)}
-          selBind={sel.bind}
-          tableOfContents={tableOfContents}
-        />
-      ) : (
-        <div className="flex flex-col items-center justify-center h-full gap-4">
-          <div className="text-center">
-            <h3 className="text-lg font-semibold mb-2 text-green-400">🔄 Clean Hybrid Reading</h3>
-            <p className="text-sm opacity-80 mb-4">
-              Bridge between traditional PDF reading and smart enhancements
-            </p>
-          </div>
-          <label className="bg-gradient-to-r from-green-500 to-teal-500 text-white px-6 py-3 rounded-lg cursor-pointer font-medium hover:from-green-400 hover:to-teal-400 transition-all">
-            📂 Upload PDF to Begin Hybrid Reading
-            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-          </label>
-        </div>
-      );
-    }
+        // Unified Hybrid Reading - Single system with concept-based highlighting
+        if (viewMode === "hybrid") {
+          return fileUrl ? (
+            <CleanHybridReader
+              bookId={bookId}
+              userId={USER_ID}
+              thoughtUnits={thoughtUnits}
+              currentThoughtUnit={currentThoughtUnit}
+              pdfUrl={fileUrl}
+              currentPage={currentPage}
+              pdfPageCount={pdfPageCount}
+              sampleText={sampleText}
+              setCurrentThoughtUnit={setCurrentThoughtUnit}
+              highlightedWord={highlightedWord}
+              setHighlightedWord={setHighlightedWord}
+              onPageChange={(p) => syncToPage(p)}
+              fontSize={fontSize}
+              fontFamily={fontFamily}
+              lineSpacing={lineSpacing}
+              onWordClick={(w) => {
+                setHighlightedWord(w);
+                if (autoWhiteboard && w.trim()) {
+                  setWbConcept(truncate(w, 600));
+                  setWbContext(`p.${currentPage}`);
+                  setShowWhiteboardPanel(true);
+                }
+              }}
+              onTextSelect={(t) => sel.setSelectionText(t)}
+              onGenerateNote={handleOpenRightBrainNote}
+              selBind={sel.bind}
+              tableOfContents={tableOfContents}
+              selectedVoice={selectedVoice}
+              onVoiceChange={setSelectedVoice}
+              speechRate={speechRate}
+              onSpeechRateChange={setSpeechRate}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full gap-4">
+              <div className="text-center">
+                <h3 className="text-lg font-semibold mb-2 text-green-400">🧠 Concept-Based Hybrid Reading</h3>
+                <p className="text-sm opacity-80 mb-4">
+                  Smart highlighting that marks ideas, not lines - highlights stay with concepts
+                </p>
+              </div>
+              <label className="bg-gradient-to-r from-green-500 to-teal-500 text-white px-6 py-3 rounded-lg cursor-pointer font-medium hover:from-green-400 hover:to-teal-400 transition-all">
+                📂 Upload PDF to Begin Concept-Based Reading
+                <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
+              </label>
+            </div>
+          );
+        }
 
     // Right-Brain Reading view (unified Progressive + Hybrid features)
     if (viewMode === "rightbrain") {
