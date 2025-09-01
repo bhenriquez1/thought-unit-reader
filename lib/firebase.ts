@@ -141,47 +141,103 @@ export function listenForAuthChanges(callback: (user: User | null) => void) {
   const isDisabled = process.env.NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN === "1";
   
   if (isDisabled && typeof window !== "undefined") {
-    // Check if we have a stored mock user
-    const storedUser = localStorage.getItem("mock-auth-user");
-    if (storedUser) {
-      try {
-        const userData = JSON.parse(storedUser);
-        const mockUser = {
-          uid: userData.uid,
-          email: userData.email,
-          displayName: userData.displayName,
-          photoURL: null,
-          emailVerified: true,
-          isAnonymous: false,
-          providerData: [],
-          refreshToken: "mock-refresh-token",
-          tenantId: null,
-          metadata: {
-            creationTime: new Date().toISOString(),
-            lastSignInTime: new Date().toISOString()
-          },
-          phoneNumber: null,
-          providerId: "mock",
-          delete: async () => {},
-          getIdToken: async () => "mock-id-token",
-          getIdTokenResult: async () => ({} as any),
-          reload: async () => {},
-          toJSON: () => ({})
-        } as User;
-        
-        // Immediately call callback with mock user
-        setTimeout(() => callback(mockUser), 0);
-        
-        // Return a dummy unsubscribe function
-        return () => {};
-      } catch {
-        // If parsing fails, fall through to normal auth
+    // Create a persistent mock user
+    const createMockUser = (): User => ({
+      uid: "mock-user-dev",
+      email: "dev@thought-unit-reader.com", 
+      displayName: "Development User",
+      photoURL: null,
+      emailVerified: true,
+      isAnonymous: false,
+      providerData: [],
+      refreshToken: "mock-refresh-token",
+      tenantId: null,
+      metadata: {
+        creationTime: new Date().toISOString(),
+        lastSignInTime: new Date().toISOString()
+      },
+      phoneNumber: null,
+      providerId: "mock",
+      delete: async () => {},
+      getIdToken: async () => "mock-id-token",
+      getIdTokenResult: async () => ({} as any),
+      reload: async () => {},
+      toJSON: () => ({})
+    } as User);
+    
+    // Check current auth state
+    const checkCurrentAuthState = () => {
+      const storedUser = localStorage.getItem("mock-auth-user");
+      if (storedUser) {
+        try {
+          const userData = JSON.parse(storedUser);
+          return {
+            ...createMockUser(),
+            uid: userData.uid,
+            email: userData.email,
+            displayName: userData.displayName
+          };
+        } catch {
+          return null;
+        }
       }
-    } else {
-      // No stored user, call callback with null initially
-      setTimeout(() => callback(null), 0);
-      return () => {};
-    }
+      return null;
+    };
+    
+    // Initially call with current state
+    const currentUser = checkCurrentAuthState();
+    setTimeout(() => callback(currentUser), 0);
+    
+    // Listen for storage events to detect mock auth state changes
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'mock-auth-user') {
+        if (e.newValue) {
+          // User signed in
+          try {
+            const userData = JSON.parse(e.newValue);
+            const mockUser = {
+              ...createMockUser(),
+              uid: userData.uid,
+              email: userData.email,
+              displayName: userData.displayName
+            };
+            callback(mockUser);
+          } catch {
+            callback(null);
+          }
+        } else {
+          // User signed out
+          callback(null);
+        }
+      }
+    };
+    
+    // Also listen for custom events for same-tab changes
+    const handleCustomAuthEvent = (e: CustomEvent) => {
+      if (e.detail.type === 'mock-signin') {
+        const mockUser = {
+          ...createMockUser(),
+          uid: e.detail.userData.uid,
+          email: e.detail.userData.email,
+          displayName: e.detail.userData.displayName
+        };
+        callback(mockUser);
+      } else if (e.detail.type === 'mock-signout') {
+        callback(null);
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('mock-auth-change', handleCustomAuthEvent as any);
+    
+    // Return cleanup function
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('mock-auth-change', handleCustomAuthEvent as any);
+      // Clear mock user on cleanup
+      localStorage.removeItem("mock-auth-user");
+      callback(null);
+    };
   }
   
   return onAuthStateChanged(auth, callback);
@@ -256,11 +312,33 @@ export async function signInWithGoogle(): Promise<User | null> {
   const isDisabled = process.env.NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN === "1";
   if (isDisabled) {
     console.log("ℹ️ Google Sign-In disabled, using mock authenticated user");
-    // Return a mock authenticated user so app functions normally
-    const mockUser = {
+    // Create and store mock user
+    const mockUserData = {
       uid: "mock-user-dev",
       email: "dev@thought-unit-reader.com",
-      displayName: "Development User",
+      displayName: "Development User"
+    };
+    
+    // Store mock user info in localStorage for persistence
+    if (typeof window !== "undefined") {
+      localStorage.setItem("mock-auth-user", JSON.stringify(mockUserData));
+      
+      // Dispatch custom event for same-tab auth changes
+      window.dispatchEvent(new CustomEvent('mock-auth-change', {
+        detail: {
+          type: 'mock-signin',
+          userData: mockUserData
+        }
+      }));
+    }
+    
+    console.log("✅ Signed in:", mockUserData.displayName);
+    
+    // Return mock user object
+    return {
+      uid: mockUserData.uid,
+      email: mockUserData.email,
+      displayName: mockUserData.displayName,
       photoURL: null,
       emailVerified: true,
       isAnonymous: false,
@@ -279,17 +357,6 @@ export async function signInWithGoogle(): Promise<User | null> {
       reload: async () => {},
       toJSON: () => ({})
     } as User;
-    
-    // Store mock user info in localStorage for persistence
-    if (typeof window !== "undefined") {
-      localStorage.setItem("mock-auth-user", JSON.stringify({
-        uid: mockUser.uid,
-        email: mockUser.email,
-        displayName: mockUser.displayName
-      }));
-    }
-    
-    return mockUser;
   }
 
   // Check if Firebase is properly configured before attempting sign-in
@@ -368,6 +435,14 @@ export async function signOutUser(): Promise<void> {
   if (isDisabled && typeof window !== "undefined") {
     // Clear mock user from localStorage
     localStorage.removeItem("mock-auth-user");
+    
+    // Dispatch custom event for same-tab auth changes
+    window.dispatchEvent(new CustomEvent('mock-auth-change', {
+      detail: {
+        type: 'mock-signout'
+      }
+    }));
+    
     console.log("ℹ️ Mock user signed out");
     return;
   }
