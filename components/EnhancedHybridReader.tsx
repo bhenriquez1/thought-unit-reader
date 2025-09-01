@@ -647,15 +647,13 @@ export default function EnhancedHybridReader({
         const chunkId = stableChunkId(chunk);
         cacheChunkAnchor(chunkId, chunk, page);
         // Note: cacheChunkAnchor returns void, so we'll use the anchor creation directly
-        let anchor = createChunkAnchor(chunkId, chunk, page);
+        const anchor = createChunkAnchor(chunkId, chunk, page);
         
-        if (anchor) {
-          const matchResult = findChunkInPage(anchor, pageIndex!);
-          
-          if (matchResult.found && matchResult.confidence > 0.4) { // Higher threshold
-            if (!bestMatch || matchResult.confidence > bestMatch.confidence) {
-              bestMatch = { chunkIndex: index, confidence: matchResult.confidence };
-            }
+        const matchResult = findChunkInPage(anchor, pageIndex!);
+        
+        if (matchResult.found && matchResult.confidence > 0.4) { // Higher threshold
+          if (!bestMatch || matchResult.confidence > bestMatch.confidence) {
+            bestMatch = { chunkIndex: index, confidence: matchResult.confidence };
           }
         }
       });
