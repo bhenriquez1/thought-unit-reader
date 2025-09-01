@@ -1424,6 +1424,14 @@ export default function ThoughtUnitReader() {
           )}
         </div>
 
+        {/* DAT Apex */}
+        <button
+          onClick={() => window.location.href = '/apex'}
+          className="text-xs px-3 py-1 rounded bg-gradient-to-r from-blue-500 to-electric-blue-500 text-white shadow hover:from-blue-400 hover:to-blue-600 transition-all"
+        >
+          ⚡ DAT Apex
+        </button>
+
         {/* Library */}
         <button
           onClick={() => setShowLibrary(true)}
