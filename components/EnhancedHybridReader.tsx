@@ -638,11 +638,8 @@ export default function EnhancedHybridReader({
       if (!pageIndex) return;
       
       // Find best matching chunk with higher confidence threshold
-      interface BestMatch {
-        chunkIndex: number;
-        confidence: number;
-      }
-      let bestMatch: BestMatch | null = null;
+      type BestMatchType = { chunkIndex: number; confidence: number };
+      let bestMatch: BestMatchType | null = null;
       
       // Only check every 3rd chunk for better performance
       chunks.forEach((chunk, index) => {
@@ -655,16 +652,17 @@ export default function EnhancedHybridReader({
         
         const matchResult = findChunkInPage(anchor, pageIndex!);
         
-        if (matchResult.found && matchResult.confidence && matchResult.confidence > 0.4) { // Higher threshold
-          if (!bestMatch || matchResult.confidence > bestMatch.confidence) {
-            bestMatch = { chunkIndex: index, confidence: matchResult.confidence };
+        if (matchResult.found && typeof matchResult.confidence === 'number' && matchResult.confidence > 0.4) { // Higher threshold
+          const currentMatch: BestMatchType = { chunkIndex: index, confidence: matchResult.confidence };
+          if (!bestMatch || currentMatch.confidence > bestMatch.confidence) {
+            bestMatch = currentMatch;
           }
         }
       });
       
       // Update active chunk if we found a good match with higher confidence
-      if (bestMatch && bestMatch.confidence > 0.6 && bestMatch.chunkIndex !== activeIdx) {
-        setActiveIdx(bestMatch.chunkIndex);
+      if (bestMatch && (bestMatch as BestMatchType).confidence > 0.6 && (bestMatch as BestMatchType).chunkIndex !== activeIdx) {
+        setActiveIdx((bestMatch as BestMatchType).chunkIndex);
         
         // Update sync state using the store method
         if (pdfContainerRef.current) {
