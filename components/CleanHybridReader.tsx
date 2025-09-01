@@ -15,9 +15,14 @@ import {
 import { 
   createThoughtUnits, 
   extractMainIdea, 
+  analyzeTextForThoughtUnitsEnhanced,
   type ThoughtUnit, 
   type ThoughtUnitBoundary 
 } from "@/lib/thoughtUnitExtraction";
+import { 
+  enhancedHybridAnalysisEngine,
+  type ComprehensiveAnalysisResult 
+} from "@/lib/enhancedHybridAnalysis";
 import { 
   ConceptAnchoredHighlighter,
   createConceptAnchoredHighlighter,
@@ -462,6 +467,10 @@ export default function CleanHybridReader({
   const [conceptHighlights, setConceptHighlights] = useState<ConceptHighlight[]>([]);
   const [rightBrainMode, setRightBrainMode] = useState<boolean>(true);
   
+  // Enhanced Hybrid Analysis Integration
+  const [comprehensiveAnalysis, setComprehensiveAnalysis] = useState<ComprehensiveAnalysisResult | null>(null);
+  const [enhancedMode, setEnhancedMode] = useState<boolean>(true);
+  
   // Enhanced Concept-Anchored Highlighting Features
   const [thoughtUnitEnabled, setThoughtUnitEnabled] = useState<boolean>(false);
   const [conceptHighlighter, setConceptHighlighter] = useState<ConceptAnchoredHighlighter | null>(null);
@@ -559,23 +568,59 @@ export default function CleanHybridReader({
     };
   }, [currentPage]);
 
-  // Enhanced smart content generation with concept extraction
+  // Enhanced smart content generation with comprehensive analysis
   useEffect(() => {
     if (selectionText && selectionText.length > 10) {
       const pageContext = pageTextIndex?.text.slice(0, 500) || "";
       const content = generateSmartContent(selectionText, pageContext);
       setSmartContent(content);
       
-      // Extract concepts for right-brain highlighting
-      if (rightBrainMode) {
-        const concepts = extractConcepts(selectionText);
-        setConceptHighlights(concepts);
+      // Enhanced analysis integration
+      if (enhancedMode) {
+        const performEnhancedAnalysis = async () => {
+          try {
+            const analysis = await enhancedHybridAnalysisEngine.analyzeText(selectionText);
+            setComprehensiveAnalysis(analysis);
+            
+            // Use enhanced concept extraction
+            const enhancedThoughtUnits = await analyzeTextForThoughtUnitsEnhanced(selectionText);
+            if (enhancedThoughtUnits.thoughtUnits.length > 0) {
+              const enhancedConcepts = enhancedThoughtUnits.thoughtUnits
+                .filter(unit => unit.isMainIdea || unit.confidence > 0.7)
+                .map(unit => ({
+                  id: `enhanced-${unit.id}`,
+                  text: unit.text,
+                  type: "main-idea" as const,
+                  color: "#FFD700",
+                  importance: unit.confidence,
+                  connections: []
+                }));
+              setConceptHighlights(enhancedConcepts);
+            }
+          } catch (error) {
+            console.error('Enhanced analysis error:', error);
+            // Fallback to original concept extraction
+            if (rightBrainMode) {
+              const concepts = extractConcepts(selectionText);
+              setConceptHighlights(concepts);
+            }
+          }
+        };
+        
+        performEnhancedAnalysis();
+      } else {
+        // Original concept extraction for right-brain highlighting
+        if (rightBrainMode) {
+          const concepts = extractConcepts(selectionText);
+          setConceptHighlights(concepts);
+        }
       }
     } else {
       setSmartContent(null);
       setConceptHighlights([]);
+      setComprehensiveAnalysis(null);
     }
-  }, [selectionText, pageTextIndex, rightBrainMode]);
+  }, [selectionText, pageTextIndex, rightBrainMode, enhancedMode]);
 
   // Enhanced text selection handler
   const handleMouseUp = (e: React.MouseEvent) => {
@@ -969,6 +1014,19 @@ export default function CleanHybridReader({
               >
                 🧠 Ideas
               </button>
+              
+              {/* Enhanced Mode Toggle */}
+              <button
+                onClick={() => setEnhancedMode(!enhancedMode)}
+                className={`px-2 py-1 rounded text-xs ${
+                  enhancedMode
+                    ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                    : "bg-gray-200 hover:bg-gray-300 text-gray-700"
+                }`}
+                title="Toggle enhanced semantic analysis"
+              >
+                ⚡ Enhanced
+              </button>
             </div>
 
             {/* Thought Unit Toggle */}
@@ -1313,6 +1371,75 @@ export default function CleanHybridReader({
               </div>
             )}
 
+            {/* Enhanced Comprehensive Analysis Results */}
+            {comprehensiveAnalysis && enhancedMode && (
+              <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-lg p-3 mb-4">
+                <h5 className="text-sm font-semibold text-emerald-700 mb-2">⚡ Enhanced Analysis</h5>
+                
+                {/* Quality Metrics */}
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div className="bg-white rounded p-2 text-center">
+                    <div className="text-xs text-gray-600">Thought Units</div>
+                    <div className="text-sm font-bold text-emerald-600">
+                      {comprehensiveAnalysis.thoughtUnits.length}
+                    </div>
+                  </div>
+                  <div className="bg-white rounded p-2 text-center">
+                    <div className="text-xs text-gray-600">Quality Score</div>
+                    <div className="text-sm font-bold text-emerald-600">
+                      {Math.round(comprehensiveAnalysis.qualityMetrics.overallAccuracy * 100)}%
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Enhanced Main Ideas */}
+                {comprehensiveAnalysis.enhancedMainIdeaAnalysis.supportingPoints.length > 0 && (
+                  <div className="mb-3">
+                    <h6 className="text-xs font-semibold text-emerald-600 mb-1">🎯 Enhanced Main Ideas</h6>
+                    <div className="space-y-1">
+                      <div className="bg-white border-l-4 border-emerald-400 rounded p-2 text-xs">
+                        <div className="font-medium text-gray-800">{comprehensiveAnalysis.enhancedMainIdeaAnalysis.primaryIdea}</div>
+                        <div className="text-gray-600 mt-1">
+                          Confidence: {Math.round(comprehensiveAnalysis.enhancedMainIdeaAnalysis.confidence * 100)}% | 
+                          Support: {comprehensiveAnalysis.enhancedMainIdeaAnalysis.supportingPoints.length} items
+                        </div>
+                      </div>
+                      {comprehensiveAnalysis.enhancedMainIdeaAnalysis.supportingPoints.slice(0, 2).map((point, idx) => (
+                        <div key={idx} className="bg-white border-l-4 border-emerald-300 rounded p-2 text-xs">
+                          <div className="text-gray-700">{point}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Support Classification */}
+                {comprehensiveAnalysis.supportAnalysis.classifications.length > 0 && (
+                  <div className="mb-3">
+                    <h6 className="text-xs font-semibold text-emerald-600 mb-1">📋 Support Types</h6>
+                    <div className="flex flex-wrap gap-1">
+                      {comprehensiveAnalysis.supportAnalysis.classifications.slice(0, 5).map((support, idx) => (
+                        <span key={idx} className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs">
+                          {support.type}: {support.subtype}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Document Structure */}
+                {comprehensiveAnalysis.documentOutline && (
+                  <div>
+                    <h6 className="text-xs font-semibold text-emerald-600 mb-1">🏗️ Structure</h6>
+                    <div className="text-xs text-gray-700">
+                      Sections: {comprehensiveAnalysis.documentOutline.sections.length} | 
+                      Hierarchy Depth: {comprehensiveAnalysis.comprehensiveInsights.informationArchitecture.hierarchyDepth}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Enhanced Smart Content with Right-Brain Understanding */}
             {smartContent && (
               <div className="space-y-3">
@@ -1323,6 +1450,9 @@ export default function CleanHybridReader({
                   "bg-orange-100 text-orange-800"
                 }`}>
                   Understanding Level: {smartContent.understandingLevel.toUpperCase()}
+                  {enhancedMode && comprehensiveAnalysis && (
+                    <span className="ml-2 text-emerald-600">⚡ Enhanced</span>
+                  )}
                 </div>
 
                 {/* Main Ideas (Right-Brain Focus) */}

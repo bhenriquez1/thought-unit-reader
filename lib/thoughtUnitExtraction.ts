@@ -1,10 +1,25 @@
 /**
- * Thought Unit Extraction System
+ * Enhanced Thought Unit Extraction System
  * Based on David Butler's "Reading with the Right Brain" approach
  * Identifies complete thoughts and main ideas within text while preserving layout
+ * Now enhanced with advanced semantic analysis and support classification
  */
 
 import { analyzeChunkWithRightBrain, type RightBrainChunkAnalysis, type TextPattern } from './rightBrainReading';
+import { 
+  enhancedSemanticAnalyzer, 
+  type EnhancedMainIdeaAnalysis, 
+  type AnalysisContext,
+  type EnhancedAnalysisOptions 
+} from './enhancedSemanticAnalysis';
+import { 
+  supportClassificationEngine, 
+  type SupportClassification, 
+  type SupportAnalysisResult 
+} from './supportClassification';
+import { hierarchicalArchitectureEngine } from './hierarchicalArchitecture';
+import { contextualMainIdeaExtractionEngine } from './contextualMainIdeaExtraction';
+import { dynamicAdaptationSystem } from './dynamicAdaptationSystem';
 
 export interface ThoughtUnit {
   id: string;
@@ -877,7 +892,202 @@ function establishThoughtUnitRelationships(thoughtUnits: ThoughtUnit[]): void {
   });
 }
 
-// Main export function for integration
+// Enhanced analysis function with semantic understanding
+export function analyzeTextForThoughtUnitsEnhanced(
+  text: string, 
+  chunkIndex: number = 0,
+  options: EnhancedAnalysisOptions = {
+    enableSemanticClustering: true,
+    confidenceThreshold: 0.6,
+    maxTopicClusters: 3,
+    semanticSimilarityThreshold: 0.4
+  }
+): {
+  thoughtUnits: ThoughtUnit[];
+  mainIdeaAnalysis: MainIdeaAnalysis;
+  enhancedMainIdeaAnalysis: EnhancedMainIdeaAnalysis;
+  supportAnalysis: SupportAnalysisResult;
+  boundaries: ThoughtUnitBoundary[];
+  semanticCoherence: number;
+} {
+  // Get base analysis
+  const baseAnalysis = analyzeTextForThoughtUnits(text, chunkIndex);
+  
+  // Perform enhanced semantic analysis
+  const enhancedMainIdeaAnalysis = enhancedSemanticAnalyzer.detectMainIdeasWithSemantics(text, options.context);
+  
+  // Extract supporting sentences for classification
+  const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 15);
+  const supportingSentences = sentences.filter(sentence => 
+    sentence !== enhancedMainIdeaAnalysis.primaryIdea
+  );
+  
+  // Classify supporting information
+  const supportAnalysis = supportClassificationEngine.analyzeSupportingInformation(
+    supportingSentences,
+    enhancedMainIdeaAnalysis.primaryIdea,
+    options.context
+  );
+  
+  // Enhance thought units with semantic information
+  const enhancedThoughtUnits = enhanceThoughtUnitsWithSemantics(
+    baseAnalysis.thoughtUnits,
+    enhancedMainIdeaAnalysis,
+    supportAnalysis
+  );
+  
+  return {
+    thoughtUnits: enhancedThoughtUnits,
+    mainIdeaAnalysis: baseAnalysis.mainIdeaAnalysis,
+    enhancedMainIdeaAnalysis,
+    supportAnalysis,
+    boundaries: baseAnalysis.boundaries,
+    semanticCoherence: enhancedMainIdeaAnalysis.semanticCoherence
+  };
+}
+
+// Enhance existing thought units with semantic information
+function enhanceThoughtUnitsWithSemantics(
+  thoughtUnits: ThoughtUnit[],
+  enhancedAnalysis: EnhancedMainIdeaAnalysis,
+  supportAnalysis: SupportAnalysisResult
+): ThoughtUnit[] {
+  return thoughtUnits.map(unit => {
+    // Find corresponding support classification
+    const supportClassification = supportAnalysis.classifications.find(c => 
+      c.text.includes(unit.text.slice(0, 50)) || unit.text.includes(c.text.slice(0, 50))
+    );
+    
+    // Update confidence based on semantic analysis
+    let enhancedConfidence = unit.confidence;
+    
+    if (unit.isMainIdea) {
+      // Use enhanced main idea confidence
+      enhancedConfidence = enhancedAnalysis.confidenceFactors.combinedConfidence;
+    } else if (supportClassification) {
+      // Use support classification confidence
+      const supportConfidence = supportClassification.relevanceScore * supportClassification.evidenceStrength;
+      enhancedConfidence = (unit.confidence + supportConfidence) / 2;
+    }
+    
+    // Update visual cues based on semantic analysis
+    const enhancedVisualCues = enhanceVisualCues(unit.visualCues, supportClassification, unit.isMainIdea);
+    
+    // Update cognitive markers with semantic information
+    const enhancedCognitiveMarkers = {
+      ...unit.cognitiveMarkers,
+      complexity: determineSemanticComplexity(unit.text, enhancedAnalysis),
+      memoryAnchor: unit.cognitiveMarkers.memoryAnchor || extractSemanticMemoryAnchor(unit.text, enhancedAnalysis)
+    };
+    
+    return {
+      ...unit,
+      confidence: enhancedConfidence,
+      visualCues: enhancedVisualCues,
+      cognitiveMarkers: enhancedCognitiveMarkers
+    };
+  });
+}
+
+// Enhance visual cues based on semantic analysis
+function enhanceVisualCues(
+  originalCues: ThoughtUnit['visualCues'],
+  supportClassification?: SupportClassification,
+  isMainIdea?: boolean
+): ThoughtUnit['visualCues'] {
+  if (isMainIdea) {
+    return {
+      ...originalCues,
+      color: '#fbbf24', // Enhanced amber for main ideas
+      intensity: Math.min(originalCues.intensity + 0.2, 1.0),
+      borderStyle: 'solid'
+    };
+  }
+  
+  if (supportClassification) {
+    // Color code based on support type
+    const typeColors = {
+      'example': '#10b981', // Green for examples
+      'evidence': '#3b82f6', // Blue for evidence
+      'explanation': '#8b5cf6', // Purple for explanations
+      'definition': '#f59e0b', // Orange for definitions
+      'analogy': '#ec4899', // Pink for analogies
+      'statistic': '#06b6d4', // Cyan for statistics
+      'quote': '#84cc16', // Lime for quotes
+      'contradiction': '#ef4444', // Red for contradictions
+      'elaboration': '#6366f1', // Indigo for elaborations
+      'cause-effect': '#f97316' // Orange for cause-effect
+    };
+    
+    const color = typeColors[supportClassification.type] || originalCues.color;
+    const intensity = supportClassification.confidenceLevel === 'high' ? 0.8 :
+                     supportClassification.confidenceLevel === 'medium' ? 0.6 : 0.4;
+    
+    return {
+      color,
+      intensity,
+      borderStyle: supportClassification.confidenceLevel === 'high' ? 'solid' : 'dashed'
+    };
+  }
+  
+  return originalCues;
+}
+
+// Determine semantic complexity
+function determineSemanticComplexity(
+  text: string, 
+  enhancedAnalysis: EnhancedMainIdeaAnalysis
+): 'simple' | 'moderate' | 'complex' {
+  const textVector = enhancedSemanticAnalyzer.analyzeSentenceSemantics(text);
+  
+  // Consider multiple factors
+  const conceptualDensity = textVector.conceptualDensity;
+  const abstractionLevel = textVector.abstractionLevel;
+  const keyTermCount = textVector.keyTerms.length;
+  
+  let complexityScore = 0;
+  
+  // Conceptual density contribution
+  if (conceptualDensity > 0.7) complexityScore += 2;
+  else if (conceptualDensity > 0.4) complexityScore += 1;
+  
+  // Abstraction level contribution
+  if (abstractionLevel === 'abstract') complexityScore += 2;
+  else if (abstractionLevel === 'mixed') complexityScore += 1;
+  
+  // Key term density contribution
+  if (keyTermCount > 6) complexityScore += 1;
+  
+  // Semantic coherence contribution
+  if (enhancedAnalysis.semanticCoherence < 0.5) complexityScore += 1; // Low coherence = higher complexity
+  
+  if (complexityScore >= 4) return 'complex';
+  if (complexityScore >= 2) return 'moderate';
+  return 'simple';
+}
+
+// Extract semantic memory anchor
+function extractSemanticMemoryAnchor(
+  text: string, 
+  enhancedAnalysis: EnhancedMainIdeaAnalysis
+): string | undefined {
+  // Use key terms from enhanced analysis
+  const keyTerms = enhancedAnalysis.keyTerms.slice(0, 3);
+  
+  if (keyTerms.length > 0) {
+    return `Key concepts: ${keyTerms.join(', ')}`;
+  }
+  
+  // Fallback to visual metaphor
+  if (enhancedAnalysis.visualMetaphor) {
+    return enhancedAnalysis.visualMetaphor.slice(0, 80) + '...';
+  }
+  
+  // Final fallback to original extraction
+  return extractMemoryAnchor(text);
+}
+
+// Main export function for integration (backward compatible)
 export function analyzeTextForThoughtUnits(text: string, chunkIndex: number = 0): {
   thoughtUnits: ThoughtUnit[];
   mainIdeaAnalysis: MainIdeaAnalysis;
