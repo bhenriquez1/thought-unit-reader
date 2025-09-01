@@ -132,11 +132,11 @@ export function createChunkAnchor(chunkId: string, text: string, pageGuess?: num
 }
 
 // Build page text index from PDF page elements
-export function buildPageTextIndex(pageNumber: number, pageContainer: HTMLElement): PageTextIndex | null {
-  if (!pageContainer) return null;
+export function buildPageTextIndex(pageNumber: number, pageContainer: HTMLElement): PageTextIndex | undefined {
+  if (!pageContainer) return undefined;
   
   const textLayer = pageContainer.querySelector('.textLayer') as HTMLElement;
-  if (!textLayer) return null;
+  if (!textLayer) return undefined;
   
   const spans = Array.from(textLayer.querySelectorAll('span')) as HTMLElement[];
   const spanInfos: TextSpanInfo[] = [];
