@@ -848,6 +848,9 @@ export default function EnhancedWhiteboard({
                   playbackSpeed={playbackSpeed}
                   lessonId={lessonId}
                   userId={userId}
+                  enableDrawing={true}
+                  concept={effectiveConcept}
+                  context={effectiveContext}
                 />
               </motion.div>
             </motion.div>

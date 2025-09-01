@@ -8,6 +8,7 @@ import {
   deleteStepNote,
   type StepNote as PersistedStepNote,
 } from "@/lib/StickyNoteService";
+import { SmartDrawingEngine, type DrawingState, type SmartSuggestion } from "@/lib/smartDrawingEngine";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -37,6 +38,11 @@ interface WhiteboardProps {
   /** 🔐 Persistence (optional). If omitted, overlay still works in-memory. */
   lessonId?: string;   // e.g. document id or slug
   userId?: string;     // current user id (if available)
+  
+  /** Enhanced drawing capabilities */
+  enableDrawing?: boolean;
+  concept?: string;
+  context?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -69,6 +75,9 @@ export default function Whiteboard({
   playbackSpeed, // parent may control speed
   lessonId,
   userId,
+  enableDrawing = true,
+  concept = "",
+  context = "",
 }: WhiteboardProps) {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -86,6 +95,15 @@ export default function Whiteboard({
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  
+  // Enhanced drawing functionality
+  const drawingCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [drawingEngine, setDrawingEngine] = useState<SmartDrawingEngine | null>(null);
+  const [drawingMode, setDrawingMode] = useState(false);
+  const [smartSuggestions, setSmartSuggestions] = useState<SmartSuggestion[]>([]);
+  const [currentDrawingTool, setCurrentDrawingTool] = useState<'pen' | 'highlighter' | 'eraser' | 'shape' | 'text' | 'smart-suggest'>('pen');
+  const [drawingColor, setDrawingColor] = useState('#2563eb');
+  const [drawingWidth, setDrawingWidth] = useState(2);
 
   // For TTS/silent fallback: track elapsed time across play/pause
   const ttsStartRef = useRef<number | null>(null);
@@ -100,6 +118,75 @@ export default function Whiteboard({
   const [showNoteEditor, setShowNoteEditor] = useState(false);
   const [editingNote, setEditingNote] = useState<StepNote | null>(null);
   const [noteText, setNoteText] = useState("");
+
+  // Initialize drawing engine when canvas is ready
+  useEffect(() => {
+    if (!enableDrawing || !drawingCanvasRef.current || drawingEngine) return;
+    
+    const engine = new SmartDrawingEngine(drawingCanvasRef.current);
+    setDrawingEngine(engine);
+    
+    // Initialize semantic context if available
+    if (concept && context) {
+      engine.initializeSemanticContext(context, [concept]);
+    }
+    
+    return () => {
+      // Cleanup if needed
+    };
+  }, [enableDrawing, concept, context, drawingEngine]);
+
+  // Update smart suggestions when drawing engine changes
+  useEffect(() => {
+    if (!drawingEngine) return;
+    
+    const updateSuggestions = () => {
+      setSmartSuggestions(drawingEngine.getSuggestions());
+    };
+    
+    // Update suggestions periodically
+    const interval = setInterval(updateSuggestions, 2000);
+    return () => clearInterval(interval);
+  }, [drawingEngine]);
+
+  // Handle drawing tool changes
+  const handleToolChange = (tool: typeof currentDrawingTool) => {
+    setCurrentDrawingTool(tool);
+    if (drawingEngine) {
+      drawingEngine.setTool(tool);
+    }
+  };
+
+  const handleColorChange = (color: string) => {
+    setDrawingColor(color);
+    if (drawingEngine) {
+      drawingEngine.setColor(color);
+    }
+  };
+
+  const handleWidthChange = (width: number) => {
+    setDrawingWidth(width);
+    if (drawingEngine) {
+      drawingEngine.setWidth(width);
+    }
+  };
+
+  const clearDrawing = () => {
+    if (drawingEngine) {
+      drawingEngine.clear();
+    }
+  };
+
+  const undoDrawing = () => {
+    if (drawingEngine) {
+      drawingEngine.undo();
+    }
+  };
+
+  const applySuggestion = (suggestion: SmartSuggestion) => {
+    suggestion.action();
+    setSmartSuggestions(drawingEngine?.getSuggestions() || []);
+  };
 
   // 🔌 Online/local-only indicator
   const [isOnline, setIsOnline] = useState(true);
@@ -685,12 +772,30 @@ export default function Whiteboard({
   return (
     <div className="flex flex-col items-center gap-4">
       <div className="relative">
+        {/* Main whiteboard canvas */}
         <canvas
           ref={canvasRef}
           width={CANVAS_W}
           height={CANVAS_H}
           className="border rounded bg-white shadow-sm"
+          style={{ position: 'absolute', zIndex: 1 }}
         />
+        
+        {/* Interactive drawing canvas overlay */}
+        {enableDrawing && (
+          <canvas
+            ref={drawingCanvasRef}
+            width={CANVAS_W}
+            height={CANVAS_H}
+            className="border rounded shadow-sm"
+            style={{ 
+              position: 'absolute', 
+              zIndex: 2,
+              background: 'transparent',
+              pointerEvents: drawingMode ? 'auto' : 'none'
+            }}
+          />
+        )}
 
         {/* Sticky notes overlay UI (per-step) */}
         <div className="absolute right-3 top-3 w-80 max-w-[90vw] bg-white/95 text-gray-900 rounded shadow border border-gray-200 p-3 space-y-2">
@@ -778,6 +883,132 @@ export default function Whiteboard({
           className="hidden"
           controls
         />
+      )}
+
+      {/* Enhanced Drawing Controls */}
+      {enableDrawing && (
+        <div className="flex flex-col gap-3 w-full max-w-4xl">
+          {/* Drawing Mode Toggle */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setDrawingMode(!drawingMode)}
+              className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                drawingMode 
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg' 
+                  : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+              }`}
+            >
+              {drawingMode ? '🎨 Drawing Mode ON' : '✏️ Enable Drawing'}
+            </button>
+            
+            {drawingMode && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={undoDrawing}
+                  className="px-3 py-1 bg-yellow-500 hover:bg-yellow-600 text-white rounded text-sm"
+                  title="Undo last stroke"
+                >
+                  ↶ Undo
+                </button>
+                <button
+                  onClick={clearDrawing}
+                  className="px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-sm"
+                  title="Clear all drawings"
+                >
+                  🗑️ Clear
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Drawing Tools */}
+          {drawingMode && (
+            <div className="flex flex-wrap items-center gap-4 p-4 bg-gray-50 rounded-lg border">
+              {/* Tool Selection */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-700">Tool:</span>
+                <div className="flex gap-1">
+                  {(['pen', 'highlighter', 'eraser', 'shape', 'text'] as const).map(tool => (
+                    <button
+                      key={tool}
+                      onClick={() => handleToolChange(tool)}
+                      className={`px-3 py-1 rounded text-sm transition-colors ${
+                        currentDrawingTool === tool
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white hover:bg-gray-100 text-gray-700 border'
+                      }`}
+                    >
+                      {tool === 'pen' && '✏️'}
+                      {tool === 'highlighter' && '🖍️'}
+                      {tool === 'eraser' && '🧽'}
+                      {tool === 'shape' && '⬜'}
+                      {tool === 'text' && '📝'}
+                      {' '}{tool.charAt(0).toUpperCase() + tool.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Color Picker */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-700">Color:</span>
+                <div className="flex gap-1">
+                  {['#2563eb', '#dc2626', '#16a34a', '#ca8a04', '#9333ea', '#000000'].map(color => (
+                    <button
+                      key={color}
+                      onClick={() => handleColorChange(color)}
+                      className={`w-8 h-8 rounded border-2 transition-all ${
+                        drawingColor === color ? 'border-gray-800 scale-110' : 'border-gray-300'
+                      }`}
+                      style={{ backgroundColor: color }}
+                      title={`Select ${color}`}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    value={drawingColor}
+                    onChange={(e) => handleColorChange(e.target.value)}
+                    className="w-8 h-8 rounded border border-gray-300 cursor-pointer"
+                    title="Custom color"
+                  />
+                </div>
+              </div>
+
+              {/* Brush Size */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-700">Size:</span>
+                <input
+                  type="range"
+                  min={1}
+                  max={20}
+                  value={drawingWidth}
+                  onChange={(e) => handleWidthChange(Number(e.target.value))}
+                  className="w-20 accent-blue-600"
+                />
+                <span className="text-sm text-gray-600 w-6">{drawingWidth}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Smart Suggestions */}
+          {drawingMode && smartSuggestions.length > 0 && (
+            <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+              <h4 className="text-sm font-medium text-blue-800 mb-2">💡 Smart Suggestions</h4>
+              <div className="flex flex-wrap gap-2">
+                {smartSuggestions.slice(0, 3).map((suggestion, index) => (
+                  <button
+                    key={index}
+                    onClick={() => applySuggestion(suggestion)}
+                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition-colors"
+                    title={`Confidence: ${Math.round(suggestion.confidence * 100)}%`}
+                  >
+                    {suggestion.description}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Transport */}

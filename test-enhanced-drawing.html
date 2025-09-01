@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Drawing Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .canvas-container {
+            position: relative;
+            display: inline-block;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .drawing-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 2;
+            cursor: crosshair;
+        }
+        .whiteboard-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+            background: white;
+        }
+        .controls {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+        }
+        .tool-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tool-button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tool-button.active {
+            background: #2563eb;
+            color: white;
+            border-color: #2563eb;
+        }
+        .tool-button:hover {
+            background: #f0f0f0;
+        }
+        .tool-button.active:hover {
+            background: #1d4ed8;
+        }
+        .color-button {
+            width: 32px;
+            height: 32px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .color-button.active {
+            border-color: #333;
+            transform: scale(1.1);
+        }
+        .suggestions {
+            margin: 20px 0;
+            padding: 15px;
+            background: #e3f2fd;
+            border-radius: 8px;
+            border-left: 4px solid #2196f3;
+        }
+        .suggestion-button {
+            margin: 5px;
+            padding: 8px 12px;
+            background: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .suggestion-button:hover {
+            background: #1976d2;
+        }
+        .info {
+            margin: 20px 0;
+            padding: 15px;
+            background: #fff3cd;
+            border-radius: 8px;
+            border-left: 4px solid #ffc107;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 Enhanced Drawing Test</h1>
+        <p>Test the interactive drawing functionality with smart suggestions and semantic analysis.</p>
+        
+        <div class="info">
+            <strong>Instructions:</strong>
+            <ul>
+                <li>Click "Enable Drawing" to start drawing on the canvas</li>
+                <li>Try drawing circles, rectangles, and arrows - they'll be auto-recognized</li>
+                <li>Use different tools and colors</li>
+                <li>Smart suggestions will appear based on your drawings</li>
+            </ul>
+        </div>
+
+        <div class="controls">
+            <div class="tool-group">
+                <label><strong>Mode:</strong></label>
+                <button id="toggleDrawing" class="tool-button">Enable Drawing</button>
+            </div>
+            
+            <div class="tool-group" id="drawingControls" style="display: none;">
+                <label><strong>Tool:</strong></label>
+                <button class="tool-button active" data-tool="pen">✏️ Pen</button>
+                <button class="tool-button" data-tool="highlighter">🖍️ Highlighter</button>
+                <button class="tool-button" data-tool="eraser">🧽 Eraser</button>
+                <button class="tool-button" data-tool="shape">⬜ Shape</button>
+                <button class="tool-button" data-tool="text">📝 Text</button>
+            </div>
+
+            <div class="tool-group" id="colorControls" style="display: none;">
+                <label><strong>Color:</strong></label>
+                <button class="color-button active" data-color="#2563eb" style="background: #2563eb;"></button>
+                <button class="color-button" data-color="#dc2626" style="background: #dc2626;"></button>
+                <button class="color-button" data-color="#16a34a" style="background: #16a34a;"></button>
+                <button class="color-button" data-color="#ca8a04" style="background: #ca8a04;"></button>
+                <button class="color-button" data-color="#9333ea" style="background: #9333ea;"></button>
+                <button class="color-button" data-color="#000000" style="background: #000000;"></button>
+            </div>
+
+            <div class="tool-group" id="sizeControls" style="display: none;">
+                <label><strong>Size:</strong></label>
+                <input type="range" id="brushSize" min="1" max="20" value="2" style="width: 80px;">
+                <span id="sizeDisplay">2</span>
+            </div>
+
+            <div class="tool-group" id="actionControls" style="display: none;">
+                <button id="undoBtn" class="tool-button">↶ Undo</button>
+                <button id="clearBtn" class="tool-button">🗑️ Clear</button>
+            </div>
+        </div>
+
+        <div class="canvas-container">
+            <canvas id="whiteboardCanvas" width="900" height="460" class="whiteboard-canvas"></canvas>
+            <canvas id="drawingCanvas" width="900" height="460" class="drawing-canvas" style="display: none;"></canvas>
+        </div>
+
+        <div id="suggestions" class="suggestions" style="display: none;">
+            <h3>💡 Smart Suggestions</h3>
+            <div id="suggestionButtons"></div>
+        </div>
+
+        <div class="info">
+            <h3>🧠 Semantic Context</h3>
+            <p><strong>Concept:</strong> Machine Learning Algorithms</p>
+            <p><strong>Context:</strong> Understanding how neural networks process information through layers, with each layer extracting increasingly complex features from the input data. This involves forward propagation, backpropagation, and gradient descent optimization.</p>
+        </div>
+    </div>
+
+    <script type="module">
+        // Simplified SmartDrawingEngine for testing
+        class TestDrawingEngine {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.isDrawing = false;
+                this.currentStroke = [];
+                this.strokes = [];
+                this.shapes = [];
+                this.currentTool = 'pen';
+                this.currentColor = '#2563eb';
+                this.currentWidth = 2;
+                this.suggestions = [];
+                
+                this.setupEventListeners();
+                this.initializeSemanticContext();
+            }
+
+            setupEventListeners() {
+                this.canvas.addEventListener('mousedown', this.startDrawing.bind(this));
+                this.canvas.addEventListener('mousemove', this.continueDrawing.bind(this));
+                this.canvas.addEventListener('mouseup', this.endDrawing.bind(this));
+                this.canvas.addEventListener('mouseleave', this.endDrawing.bind(this));
+            }
+
+            startDrawing(e) {
+                this.isDrawing = true;
+                const rect = this.canvas.getBoundingClientRect();
+                const point = {
+                    x: e.clientX - rect.left,
+                    y: e.clientY - rect.top,
+                    timestamp: Date.now()
+                };
+                this.currentStroke = [point];
+            }
+
+            continueDrawing(e) {
+                if (!this.isDrawing) return;
+                
+                const rect = this.canvas.getBoundingClientRect();
+                const point = {
+                    x: e.clientX - rect.left,
+                    y: e.clientY - rect.top,
+                    timestamp: Date.now()
+                };
+                
+                this.currentStroke.push(point);
+                this.drawLine(this.currentStroke[this.currentStroke.length - 2], point);
+            }
+
+            endDrawing() {
+                if (!this.isDrawing) return;
+                this.isDrawing = false;
+                
+                // Recognize shapes
+                const shape = this.recognizeShape(this.currentStroke);
+                if (shape) {
+                    this.addShape(shape);
+                } else {
+                    this.addStroke(this.currentStroke);
+                }
+                
+                this.currentStroke = [];
+                this.updateSuggestions();
+            }
+
+            drawLine(from, to) {
+                this.ctx.save();
+                this.ctx.strokeStyle = this.currentColor;
+                this.ctx.lineWidth = this.currentWidth;
+                this.ctx.lineCap = 'round';
+                this.ctx.lineJoin = 'round';
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(from.x, from.y);
+                this.ctx.lineTo(to.x, to.y);
+                this.ctx.stroke();
+                this.ctx.restore();
+            }
+
+            recognizeShape(points) {
+                if (points.length < 5) return null;
+                
+                // Simple circle detection
+                if (this.isCircular(points)) {
+                    const bounds = this.getBounds(points);
+                    return {
+                        type: 'circle',
+                        centerX: bounds.x + bounds.width / 2,
+                        centerY: bounds.y + bounds.height / 2,
+                        radius: Math.min(bounds.width, bounds.height) / 2
+                    };
+                }
+                
+                // Simple rectangle detection
+                if (this.isRectangular(points)) {
+                    return {
+                        type: 'rectangle',
+                        bounds: this.getBounds(points)
+                    };
+                }
+                
+                return null;
+            }
+
+            isCircular(points) {
+                const bounds = this.getBounds(points);
+                const center = {
+                    x: bounds.x + bounds.width / 2,
+                    y: bounds.y + bounds.height / 2
+                };
+                const avgRadius = bounds.width / 2;
+                
+                let variance = 0;
+                points.forEach(point => {
+                    const distance = Math.sqrt(
+                        Math.pow(point.x - center.x, 2) + Math.pow(point.y - center.y, 2)
+                    );
+                    variance += Math.abs(distance - avgRadius);
+                });
+                
+                return (variance / (points.length * avgRadius)) < 0.3;
+            }
+
+            isRectangular(points) {
+                const bounds = this.getBounds(points);
+                const corners = [
+                    { x: bounds.x, y: bounds.y },
+                    { x: bounds.x + bounds.width, y: bounds.y },
+                    { x: bounds.x + bounds.width, y: bounds.y + bounds.height },
+                    { x: bounds.x, y: bounds.y + bounds.height }
+                ];
+                
+                let cornerHits = 0;
+                corners.forEach(corner => {
+                    const nearby = points.some(point => 
+                        Math.sqrt(Math.pow(point.x - corner.x, 2) + Math.pow(point.y - corner.y, 2)) < 20
+                    );
+                    if (nearby) cornerHits++;
+                });
+                
+                return cornerHits >= 3;
+            }
+
+            getBounds(points) {
+                const xs = points.map(p => p.x);
+                const ys = points.map(p => p.y);
+                return {
+                    x: Math.min(...xs),
+                    y: Math.min(...ys),
+                    width: Math.max(...xs) - Math.min(...xs),
+                    height: Math.max(...ys) - Math.min(...ys)
+                };
+            }
+
+            addStroke(points) {
+                this.strokes.push({
+                    points,
+                    color: this.currentColor,
+                    width: this.currentWidth,
+                    tool: this.currentTool
+                });
+            }
+
+            addShape(shape) {
+                this.shapes.push(shape);
+                this.redraw();
+            }
+
+            redraw() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Draw strokes
+                this.strokes.forEach(stroke => {
+                    this.ctx.save();
+                    this.ctx.strokeStyle = stroke.color;
+                    this.ctx.lineWidth = stroke.width;
+                    this.ctx.lineCap = 'round';
+                    this.ctx.lineJoin = 'round';
+                    
+                    this.ctx.beginPath();
+                    stroke.points.forEach((point, i) => {
+                        if (i === 0) this.ctx.moveTo(point.x, point.y);
+                        else this.ctx.lineTo(point.x, point.y);
+                    });
+                    this.ctx.stroke();
+                    this.ctx.restore();
+                });
+                
+                // Draw shapes
+                this.shapes.forEach(shape => {
+                    this.ctx.save();
+                    this.ctx.strokeStyle = this.currentColor;
+                    this.ctx.lineWidth = 2;
+                    
+                    if (shape.type === 'circle') {
+                        this.ctx.beginPath();
+                        this.ctx.arc(shape.centerX, shape.centerY, shape.radius, 0, 2 * Math.PI);
+                        this.ctx.stroke();
+                    } else if (shape.type === 'rectangle') {
+                        this.ctx.strokeRect(shape.bounds.x, shape.bounds.y, shape.bounds.width, shape.bounds.height);
+                    }
+                    this.ctx.restore();
+                });
+            }
+
+            initializeSemanticContext() {
+                // Generate some test suggestions
+                this.suggestions = [
+                    {
+                        description: 'Create neural network diagram',
+                        confidence: 0.9,
+                        action: () => this.createNeuralNetworkDiagram()
+                    },
+                    {
+                        description: 'Draw process flow',
+                        confidence: 0.8,
+                        action: () => this.createProcessFlow()
+                    },
+                    {
+                        description: 'Add concept bubbles',
+                        confidence: 0.7,
+                        action: () => this.createConceptBubbles()
+                    }
+                ];
+            }
+
+            createNeuralNetworkDiagram() {
+                // Create a simple neural network visualization
+                const layers = [3, 4, 2]; // nodes per layer
+                const layerSpacing = 200;
+                const nodeSpacing = 60;
+                const startX = 100;
+                const startY = 150;
+
+                layers.forEach((nodeCount, layerIndex) => {
+                    const x = startX + layerIndex * layerSpacing;
+                    for (let i = 0; i < nodeCount; i++) {
+                        const y = startY + i * nodeSpacing;
+                        this.addShape({
+                            type: 'circle',
+                            centerX: x,
+                            centerY: y,
+                            radius: 20
+                        });
+                    }
+                });
+                
+                this.updateSuggestions();
+            }
+
+            createProcessFlow() {
+                const steps = ['Input', 'Process', 'Output'];
+                const stepWidth = 150;
+                const startX = 150;
+                const y = 200;
+
+                steps.forEach((step, index) => {
+                    const x = startX + index * stepWidth;
+                    this.addShape({
+                        type: 'rectangle',
+                        bounds: { x: x - 50, y: y - 25, width: 100, height: 50 }
+                    });
+                });
+                
+                this.updateSuggestions();
+            }
+
+            createConceptBubbles() {
+                const concepts = ['Input Layer', 'Hidden Layer', 'Output Layer'];
+                const radius = 120;
+                const centerX = 450;
+                const centerY = 230;
+
+                concepts.forEach((concept, index) => {
+                    const angle = (index / concepts.length) * 2 * Math.PI;
+                    const x = centerX + radius * Math.cos(angle);
+                    const y = centerY + radius * Math.sin(angle);
+                    
+                    this.addShape({
+                        type: 'circle',
+                        centerX: x,
+                        centerY: y,
+                        radius: 40
+                    });
+                });
+                
+                this.updateSuggestions();
+            }
+
+            updateSuggestions() {
+                // Update suggestions based on current drawing
+                const hasCircles = this.shapes.filter(s => s.type === 'circle').length;
+                const hasRectangles = this.shapes.filter(s => s.type === 'rectangle').length;
+                
+                this.suggestions = [];
+                
+                if (hasCircles >= 2) {
+                    this.suggestions.push({
+                        description: 'Connect circles with arrows',
+                        confidence: 0.9,
+                        action: () => this.connectShapes()
+                    });
+                }
+                
+                if (hasRectangles >= 1) {
+                    this.suggestions.push({
+                        description: 'Add process labels',
+                        confidence: 0.8,
+                        action: () => this.addLabels()
+                    });
+                }
+                
+                if (this.shapes.length === 0) {
+                    this.suggestions.push({
+                        description: 'Start with concept map',
+                        confidence: 0.7,
+                        action: () => this.createConceptBubbles()
+                    });
+                }
+            }
+
+            connectShapes() {
+                const circles = this.shapes.filter(s => s.type === 'circle');
+                for (let i = 0; i < circles.length - 1; i++) {
+                    this.drawArrow(circles[i].centerX, circles[i].centerY, 
+                                 circles[i + 1].centerX, circles[i + 1].centerY);
+                }
+            }
+
+            drawArrow(x1, y1, x2, y2) {
+                this.ctx.save();
+                this.ctx.strokeStyle = '#10b981';
+                this.ctx.lineWidth = 2;
+                
+                // Draw line
+                this.ctx.beginPath();
+                this.ctx.moveTo(x1, y1);
+                this.ctx.lineTo(x2, y2);
+                this.ctx.stroke();
+                
+                // Draw arrowhead
+                const angle = Math.atan2(y2 - y1, x2 - x1);
+                const headLength = 15;
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(x2, y2);
+                this.ctx.lineTo(
+                    x2 - headLength * Math.cos(angle - Math.PI / 6),
+                    y2 - headLength * Math.sin(angle - Math.PI / 6)
+                );
+                this.ctx.moveTo(x2, y2);
+                this.ctx.lineTo(
+                    x2 - headLength * Math.cos(angle + Math.PI / 6),
+                    y2 - headLength * Math.sin(angle + Math.PI / 6)
+                );
+                this.ctx.stroke();
+                this.ctx.restore();
+            }
+
+            addLabels() {
+                // Simple label addition
+                this.ctx.save();
+                this.ctx.fillStyle = '#000000';
+                this.ctx.font = '14px Arial';
+                this.ctx.fillText('Neural Network', 50, 50);
+                this.ctx.restore();
+            }
+
+            setTool(tool) {
+                this.currentTool = tool;
+            }
+
+            setColor(color) {
+                this.currentColor = color;
+            }
+
+            setWidth(width) {
+                this.currentWidth = width;
+            }
+
+            clear() {
+                this.strokes = [];
+                this.shapes = [];
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.updateSuggestions();
+            }
+
+            undo() {
+                if (this.shapes.length > 0) {
+                    this.shapes.pop();
+                } else if (this.strokes.length > 0) {
+                    this.strokes.pop();
+                }
+                this.redraw();
+                this.updateSuggestions();
+            }
+
+            getSuggestions() {
+                return this.suggestions;
+            }
+        }
+
+        // Initialize the test
+        let drawingEngine = null;
+        let drawingMode = false;
+
+        const drawingCanvas = document.getElementById('drawingCanvas');
+        const whiteboardCanvas = document.getElementById('whiteboardCanvas');
+        const toggleBtn = document.getElementById('toggleDrawing');
+        const drawingControls = document.getElementById('drawingControls');
+        const colorControls = document.getElementById('colorControls');
+        const sizeControls = document.getElementById('sizeControls');
+        const actionControls = document.getElementById('actionControls');
+        const suggestionsDiv = document.getElementById('suggestions');
+        const suggestionButtons = document.getElementById('suggestionButtons');
+
+        // Draw sample whiteboard content
+        const whiteboardCtx = whiteboardCanvas.getContext('2d');
+        whiteboardCtx.fillStyle = '#ffffff';
+        whiteboardCtx.fillRect(0, 0, 900, 460);
+        whiteboardCtx.fillStyle = '#111827';
+        whiteboardCtx.font = 'bold 22px Arial';
+        whiteboardCtx.fillText('Machine Learning: Neural Networks', 24, 40);
+        whiteboardCtx.font = '18px Arial';
+        whiteboardCtx.fillStyle = '#1f2937';
+        whiteboardCtx.fillText('Neural networks process information through interconnected layers,', 24, 80);
+        whiteboardCtx.fillText('with each layer extracting increasingly complex features.', 24, 106);
+
+        toggleBtn.addEventListener('click', () => {
+            drawingMode = !drawingMode;
+            
+            if (drawingMode) {
+                drawingCanvas.style.display = 'block';
+                drawingCanvas.style.pointerEvents = 'auto';
+                drawingControls.style.display = 'flex';
+                colorControls.style.display = 'flex';
+                sizeControls.style.display = 'flex';
+                actionControls.style.display = 'flex';
+                toggleBtn.textContent = '🎨 Drawing Mode ON';
+                toggleBtn.classList.add('active');
+                
+                if (!drawingEngine) {
+                    drawingEngine = new TestDrawingEngine(drawingCanvas);
+                }
+                
+                updateSuggestionsUI();
+            } else {
+                drawingCanvas.style.pointerEvents = 'none';
+                drawingControls.style.display = 'none';
+                colorControls.style.display = 'none';
+                sizeControls.style.display = 'none';
+                actionControls.style.display = 'none';
+                suggestionsDiv.style.display = 'none';
+                toggleBtn.textContent = 'Enable Drawing';
+                toggleBtn.classList.remove('active');
+            }
+        });
+
+        // Tool selection
+        document.querySelectorAll('[data-tool]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                if (drawingEngine) {
+                    drawingEngine.setTool(btn.dataset.tool);
+                }
+            });
+        });
+
+        // Color selection
+        document.querySelectorAll('[data-color]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('[data-color]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                if (drawingEngine) {
+                    drawingEngine.setColor(btn.dataset.color);
+                }
+            });
+        });
+
+        // Brush size
+        const brushSize = document.getElementById('brushSize');
+        const sizeDisplay = document.getElementById('sizeDisplay');
+        brushSize.addEventListener('input', () => {
+            const size = parseInt(brushSize.value);
+            sizeDisplay.textContent = size;
+            if (drawingEngine) {
+                drawingEngine.setWidth(size);
+            }
+        });
+
+        // Actions
+        document.getElementById('undoBtn').addEventListener('click', () => {
+            if (drawingEngine) drawingEngine.undo();
+            updateSuggestionsUI();
+        });
+
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            if (drawingEngine) drawingEngine.clear();
+            updateSuggestionsUI();
+        });
+
+        function updateSuggestionsUI() {
+            if (!drawingEngine) return;
+            
+            const suggestions = drawingEngine.getSuggestions();
+            if (suggestions.length > 0) {
+                suggestionsDiv.style.display = 'block';
+                suggestionButtons.innerHTML = '';
+                
+                suggestions.forEach(suggestion => {
+                    const btn = document.createElement('button');
+                    btn.className = 'suggestion-button';
+                    btn.textContent = suggestion.description;
+                    btn.title = `Confidence: ${Math.round(suggestion.confidence * 100)}%`;
+                    btn.addEventListener('click', () => {
+                        suggestion.action();
+                        updateSuggestionsUI();
+                    });
+                    suggestionButtons.appendChild(btn);
+                });
+            } else {
+                suggestionsDiv.style.display = 'none';
+            }
+        }
+
+        console.log('Enhanced Drawing Test initialized successfully!');
+    </script>
+</body>
+</html>
