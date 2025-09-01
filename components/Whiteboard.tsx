@@ -726,7 +726,7 @@ export default function Whiteboard({
         y += 16;
 
         doc.setFont("helvetica", "normal");
-        y = addWrappedText(doc, s.description, 40, y, 520, 14);
+        y = addWrappedText(doc, s.description || "", 40, y, 520, 14);
         if ((s as any).visualPrompt) {
           y = addWrappedText(doc, `(Draw: ${(s as any).visualPrompt})`, 40, y + 6, 520, 14, "#555");
         }

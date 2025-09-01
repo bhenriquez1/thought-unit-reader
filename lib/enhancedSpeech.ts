@@ -91,7 +91,7 @@ export class EnhancedSpeechService {
   }
 
   private getVoiceDescription(voice: SpeechSynthesisVoice): string {
-    const parts = [];
+    const parts: string[] = [];
     
     if (voice.localService) {
       parts.push('Local');

@@ -267,7 +267,7 @@ class LibraryService {
   }
 
   private suggestVisualAids(content: string): string[] {
-    const suggestions = [];
+    const suggestions: string[] = [];
     
     if (content.includes('process') || content.includes('step')) {
       suggestions.push("Flowchart showing the process steps");

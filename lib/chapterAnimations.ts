@@ -438,8 +438,8 @@ export function detectChapterTransition(
   }
   
   // Check if we've moved to a new chapter (even if not on first page)
-  const getCurrentChapter = (page: number) => {
-    let current = null;
+  const getCurrentChapter = (page: number): any => {
+    let current: any = null;
     for (const toc of tableOfContents) {
       const tocPage = toc.pageNumber || toc.page;
       if (tocPage <= page) {

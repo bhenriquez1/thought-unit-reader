@@ -156,6 +156,12 @@ export function listenForAuthChanges(callback: (user: User | null) => void) {
           providerData: [],
           refreshToken: "mock-refresh-token",
           tenantId: null,
+          metadata: {
+            creationTime: new Date().toISOString(),
+            lastSignInTime: new Date().toISOString()
+          },
+          phoneNumber: null,
+          providerId: "mock",
           delete: async () => {},
           getIdToken: async () => "mock-id-token",
           getIdTokenResult: async () => ({} as any),
@@ -261,6 +267,12 @@ export async function signInWithGoogle(): Promise<User | null> {
       providerData: [],
       refreshToken: "mock-refresh-token",
       tenantId: null,
+      metadata: {
+        creationTime: new Date().toISOString(),
+        lastSignInTime: new Date().toISOString()
+      },
+      phoneNumber: null,
+      providerId: "mock",
       delete: async () => {},
       getIdToken: async () => "mock-id-token",
       getIdTokenResult: async () => ({} as any),

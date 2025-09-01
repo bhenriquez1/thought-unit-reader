@@ -78,18 +78,21 @@ export class ExamGenerator {
       name: this.generateExamName(options),
       description: this.generateExamDescription(options),
       sections: this.buildSectionConfig(options, baseConfig),
-      totalTimeLimit: options.timeLimit || baseConfig.totalTimeLimit,
-      allowPause: baseConfig.allowPause,
-      showTimer: baseConfig.showTimer,
-      showProgress: baseConfig.showProgress,
-      randomizeQuestions: options.randomize ?? baseConfig.randomizeQuestions,
-      randomizeOptions: baseConfig.randomizeOptions,
-      immediateReview: baseConfig.immediateReview,
-      showExplanations: baseConfig.showExplanations,
-      enableTUExplanations: baseConfig.enableTUExplanations,
-      strictMode: baseConfig.strictMode,
-      autoSubmit: baseConfig.autoSubmit,
-      warningThresholds: baseConfig.warningThresholds
+      totalTimeLimit: options.timeLimit || baseConfig.totalTimeLimit || 60,
+      allowPause: baseConfig.allowPause ?? true,
+      showTimer: baseConfig.showTimer ?? true,
+      showProgress: baseConfig.showProgress ?? true,
+      randomizeQuestions: options.randomize ?? baseConfig.randomizeQuestions ?? true,
+      randomizeOptions: baseConfig.randomizeOptions ?? false,
+      immediateReview: baseConfig.immediateReview ?? true,
+      showExplanations: baseConfig.showExplanations ?? true,
+      enableTUExplanations: baseConfig.enableTUExplanations ?? true,
+      strictMode: baseConfig.strictMode ?? false,
+      autoSubmit: baseConfig.autoSubmit ?? false,
+      warningThresholds: baseConfig.warningThresholds ?? {
+        timeRemaining: 5,
+        questionsRemaining: 5
+      }
     };
 
     // Select questions based on configuration
