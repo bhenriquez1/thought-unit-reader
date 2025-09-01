@@ -39,6 +39,7 @@ import { chunkText, stableChunkId } from "@/lib/chunkers";
 import { useReaderSync } from "@/lib/readerSync";
 import ChunkRail from "@/components/ChunkRail";
 import { aiLearningEngine, type UserFeedback } from "@/lib/aiLearningEngine";
+import TUInteractionModal from "@/components/TUInteractionModal";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -120,7 +121,7 @@ interface ReadingPattern {
 interface ConceptHighlight {
   id: string;
   text: string;
-  type: "main-idea" | "supporting-concept" | "example" | "definition" | "relationship" | "process" | "mechanism";
+  type: "main-idea" | "supporting-concept" | "definition" | "process" | "relationship";
   color: string;
   importance: number; // 0-1 scale
   connections: string[]; // IDs of related concepts
@@ -503,6 +504,21 @@ export default function CleanHybridReader({
   // Right-Brain Analysis
   const [rightBrainAnalysis, setRightBrainAnalysis] = useState<RightBrainChunkAnalysis | null>(null);
   
+  // TU Interaction Modal State
+  const [tuModalState, setTuModalState] = useState<{
+    isOpen: boolean;
+    text: string;
+    conceptType: "main-idea" | "supporting-concept" | "definition" | "process" | "relationship";
+    position: { x: number; y: number };
+    confidence: number;
+  }>({
+    isOpen: false,
+    text: "",
+    conceptType: "main-idea",
+    position: { x: 0, y: 0 },
+    confidence: 0
+  });
+  
   // Global sync integration
   const { 
     page: globalPage,
@@ -684,11 +700,22 @@ export default function CleanHybridReader({
   // Enhanced right-brain highlighting based on concept understanding
   useEffect(() => {
     if (highlightMode === "smart" && pageTextIndex && pdfContainerRef.current && pageTextIndex.text.trim().length > 0) {
-      // Clear previous highlights
+      // Clear previous highlights and their event listeners
       const existingHighlights = pdfContainerRef.current.querySelectorAll('.concept-highlight');
       existingHighlights.forEach(el => {
-        (el as HTMLElement).style.backgroundColor = '';
-        el.classList.remove('concept-highlight');
+        const htmlEl = el as HTMLElement;
+        htmlEl.style.backgroundColor = '';
+        htmlEl.style.borderLeft = '';
+        htmlEl.style.paddingLeft = '';
+        htmlEl.style.cursor = '';
+        htmlEl.classList.remove('concept-highlight');
+        
+        // Remove click event listener by cloning the element (removes all listeners)
+        const conceptId = htmlEl.getAttribute('data-concept-id');
+        if (conceptId) {
+          const newElement = htmlEl.cloneNode(true) as HTMLElement;
+          htmlEl.parentNode?.replaceChild(newElement, htmlEl);
+        }
       });
 
       if (rightBrainMode) {
@@ -732,8 +759,33 @@ export default function CleanHybridReader({
                       parent.style.backgroundColor = concept.color + '40'; // Add transparency
                       parent.style.borderLeft = `3px solid ${concept.color}`;
                       parent.style.paddingLeft = '2px';
+                      parent.style.cursor = 'pointer';
                       parent.classList.add('concept-highlight');
-                      parent.title = `${concept.type}: ${concept.text.slice(0, 100)}`;
+                      parent.title = `Click to explore: ${concept.type} - ${concept.text.slice(0, 100)}`;
+                      
+                      // Make it interactive - add click handler
+                      const clickHandler = (e: Event) => {
+                        e.stopPropagation();
+                        const rect = parent.getBoundingClientRect();
+                        const containerRect = pdfContainerRef.current?.getBoundingClientRect();
+                        
+                        if (containerRect) {
+                          setTuModalState({
+                            isOpen: true,
+                            text: concept.text,
+                            conceptType: concept.type,
+                            position: {
+                              x: rect.left - containerRect.left + 20,
+                              y: rect.top - containerRect.top + 20
+                            },
+                            confidence: concept.importance
+                          });
+                        }
+                      };
+                      
+                      parent.addEventListener('click', clickHandler);
+                      parent.setAttribute('data-concept-id', concept.id);
+                      
                       highlightApplied = true; // Prevent multiple highlights for the same concept
                     }
                   }
@@ -1636,6 +1688,18 @@ export default function CleanHybridReader({
           </div>
         </div>
       )}
+
+      {/* TU Interaction Modal */}
+      <TUInteractionModal
+        isOpen={tuModalState.isOpen}
+        onClose={() => setTuModalState(prev => ({ ...prev, isOpen: false }))}
+        thoughtUnitText={tuModalState.text}
+        conceptType={tuModalState.conceptType}
+        position={tuModalState.position}
+        confidence={tuModalState.confidence}
+        onGenerateNote={onGenerateNote}
+        onSpeak={speakText}
+      />
     </div>
   );
 }

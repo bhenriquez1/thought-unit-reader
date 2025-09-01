@@ -52,9 +52,8 @@ export class ExamGenerator {
   // Load questions from JSON file
   static async fromQuestionBank(questionBankPath?: string): Promise<ExamGenerator> {
     try {
-      // In a real implementation, this would load from the file system or API
-      // For now, we'll use a mock implementation
-      const response = await fetch('/data/apex/questions.json');
+      // Load from public folder where client can access it
+      const response = await fetch('/questions.json');
       const data = await response.json();
       return new ExamGenerator(data.questions);
     } catch (error) {
