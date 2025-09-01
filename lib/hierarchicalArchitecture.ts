@@ -157,7 +157,7 @@ export class HierarchicalArchitectureEngine {
     
     // Use semantic analysis to identify key concepts
     const semantics = enhancedSemanticAnalyzer.analyzeSentenceSemantics(sentence);
-    const supportInfo = await supportClassificationEngine.analyzeSupportingInformation([sentence]);
+    const supportInfo = await supportClassificationEngine.analyzeSupportingInformation([sentence], sentence);
 
     // Determine concept type based on semantic and support analysis
     const conceptType = this.determineConceptType(sentence, semantics, supportInfo);
