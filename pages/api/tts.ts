@@ -78,7 +78,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const fmt = (format || "mp3").toLowerCase() as Body["format"];
+    const fmt = (format || "mp3").toLowerCase() as NonNullable<Body["format"]>;
     const mime = FORMAT_TO_MIME[fmt] || "audio/mpeg";
 
     // Generate audio with OpenAI (Node SDK v5)

@@ -1171,7 +1171,7 @@ export default function ThoughtUnitReader() {
               onGenerateNote={handleOpenRightBrainNote}
               selBind={sel.bind}
               tableOfContents={tableOfContents}
-              selectedVoice={selectedVoice}
+              selectedVoice={selectedVoice || undefined}
               onVoiceChange={setSelectedVoice}
               speechRate={speechRate}
               onSpeechRateChange={setSpeechRate}
@@ -1514,7 +1514,7 @@ export default function ThoughtUnitReader() {
               reExplainOnPageChange={true}
               currentPage={currentPage}
               containsDiagramOrFormula={containsDiagramOrFormula}
-              selectedVoice={selectedVoice}
+              selectedVoice={selectedVoice || undefined}
               onVoiceChange={setSelectedVoice}
               speechRate={speechRate}
               onSpeechRateChange={setSpeechRate}
