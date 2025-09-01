@@ -638,7 +638,11 @@ export default function EnhancedHybridReader({
       if (!pageIndex) return;
       
       // Find best matching chunk with higher confidence threshold
-      let bestMatch: { chunkIndex: number; confidence: number } | null = null;
+      interface BestMatch {
+        chunkIndex: number;
+        confidence: number;
+      }
+      let bestMatch: BestMatch | null = null;
       
       // Only check every 3rd chunk for better performance
       chunks.forEach((chunk, index) => {

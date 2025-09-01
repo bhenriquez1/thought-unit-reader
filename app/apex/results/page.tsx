@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { calculateSectionScore, formatTime, DAT_SECTIONS } from '@/types/apex-exam';
 import type { ExamAttempt, DATQuestion } from '@/types/apex-exam';
 import type { GeneratedExam } from '@/lib/apex/examGenerator';
+import TUExplainModal from '@/components/apex/TUExplainModal';
+import { mistakeLogger } from '@/lib/apex/mistakeLogger';
 
 interface ExamResults {
   attempt: ExamAttempt;
@@ -42,6 +44,9 @@ export default function ExamResultsPage() {
   const [results, setResults] = useState<ExamResults | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'sections' | 'topics' | 'review'>('overview');
+  const [tuModalOpen, setTuModalOpen] = useState(false);
+  const [selectedQuestion, setSelectedQuestion] = useState<DATQuestion | null>(null);
+  const [selectedUserAnswer, setSelectedUserAnswer] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const loadResults = () => {
@@ -177,6 +182,14 @@ export default function ExamResultsPage() {
           timeAnalysis
         });
 
+        // Log mistakes for spaced repetition
+        try {
+          const userId = 'demo-user'; // In a real app, get from auth
+          mistakeLogger.logMistakesFromAttempt(userId, attempt, exam.questions);
+        } catch (mistakeError) {
+          console.error('Failed to log mistakes:', mistakeError);
+        }
+
       } catch (error) {
         console.error('Failed to load results:', error);
       } finally {
@@ -219,6 +232,12 @@ export default function ExamResultsPage() {
       link.click();
       URL.revokeObjectURL(url);
     }
+  };
+
+  const handleTUExplain = (question: DATQuestion, userAnswer?: string) => {
+    setSelectedQuestion(question);
+    setSelectedUserAnswer(userAnswer);
+    setTuModalOpen(true);
   };
 
   if (loading) {
@@ -554,8 +573,30 @@ export default function ExamResultsPage() {
                       
                       {question.explanation && (
                         <div className="mt-3 p-3 bg-blue-900/20 rounded border border-blue-500/30">
-                          <div className="text-xs font-semibold text-blue-400 mb-1">Explanation:</div>
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="text-xs font-semibold text-blue-400">Explanation:</div>
+                            <button
+                              onClick={() => handleTUExplain(question, response?.selectedAnswer)}
+                              className="px-2 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-semibold transition-colors"
+                            >
+                              🧠 Explain in TU
+                            </button>
+                          </div>
                           <div className="text-sm text-blue-200">{question.explanation}</div>
+                        </div>
+                      )}
+                      
+                      {!question.explanation && (
+                        <div className="mt-3 p-3 bg-gray-900/20 rounded border border-gray-500/30">
+                          <div className="flex items-center justify-between">
+                            <div className="text-xs text-gray-400">No standard explanation available</div>
+                            <button
+                              onClick={() => handleTUExplain(question, response?.selectedAnswer)}
+                              className="px-2 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-semibold transition-colors"
+                            >
+                              🧠 Generate TU Explanation
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -566,6 +607,20 @@ export default function ExamResultsPage() {
           )}
         </div>
       </div>
+
+      {/* TU Explanation Modal */}
+      {selectedQuestion && (
+        <TUExplainModal
+          question={selectedQuestion}
+          userAnswer={selectedUserAnswer}
+          isOpen={tuModalOpen}
+          onClose={() => {
+            setTuModalOpen(false);
+            setSelectedQuestion(null);
+            setSelectedUserAnswer(undefined);
+          }}
+        />
+      )}
     </div>
   );
 }
