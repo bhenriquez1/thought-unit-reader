@@ -9,6 +9,12 @@ import {
   type ExamAttempt,
   type ExamResults 
 } from '@/types/apex-exam';
+import { 
+  percentageToDATScore, 
+  formatDATScore, 
+  getDATScoreColor,
+  getDATScoreLabel 
+} from '@/lib/apex/datScoring';
 
 interface DashboardStats {
   totalAttempts: number;
@@ -119,8 +125,11 @@ export default function DATApexHub() {
               
               <div className="text-right">
                 <div className="text-sm text-blue-200">Best Score</div>
-                <div className="text-xl font-bold text-blue-400">
-                  {stats.bestScore.toFixed(1)}%
+                <div className={`text-xl font-bold ${getDATScoreColor(percentageToDATScore(stats.bestScore))}`}>
+                  {formatDATScore(percentageToDATScore(stats.bestScore))}
+                </div>
+                <div className="text-xs text-gray-400">
+                  {getDATScoreLabel(percentageToDATScore(stats.bestScore))}
                 </div>
               </div>
             </div>
@@ -145,7 +154,12 @@ export default function DATApexHub() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-blue-200 text-sm">Average Score</p>
-                <p className="text-2xl font-bold text-white">{stats.averageScore.toFixed(1)}%</p>
+                <p className={`text-2xl font-bold ${getDATScoreColor(percentageToDATScore(stats.averageScore))}`}>
+                  {formatDATScore(percentageToDATScore(stats.averageScore))}
+                </p>
+                <p className="text-xs text-gray-400">
+                  {getDATScoreLabel(percentageToDATScore(stats.averageScore))}
+                </p>
               </div>
               <div className="text-green-400 text-2xl">📈</div>
             </div>
@@ -165,7 +179,12 @@ export default function DATApexHub() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-blue-200 text-sm">Best Score</p>
-                <p className="text-2xl font-bold text-white">{stats.bestScore.toFixed(1)}%</p>
+                <p className={`text-2xl font-bold ${getDATScoreColor(percentageToDATScore(stats.bestScore))}`}>
+                  {formatDATScore(percentageToDATScore(stats.bestScore))}
+                </p>
+                <p className="text-xs text-gray-400">
+                  {getDATScoreLabel(percentageToDATScore(stats.bestScore))}
+                </p>
               </div>
               <div className="text-yellow-400 text-2xl">🏆</div>
             </div>
@@ -315,8 +334,8 @@ export default function DATApexHub() {
                     
                     <div className="text-right">
                       {activity.score && (
-                        <div className="text-sm font-semibold text-blue-400">
-                          {activity.score.toFixed(1)}%
+                        <div className={`text-sm font-semibold ${getDATScoreColor(percentageToDATScore(activity.score))}`}>
+                          {formatDATScore(percentageToDATScore(activity.score))}
                         </div>
                       )}
                       <div className="text-xs text-gray-400">
