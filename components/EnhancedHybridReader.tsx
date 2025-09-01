@@ -655,7 +655,7 @@ export default function EnhancedHybridReader({
         
         const matchResult = findChunkInPage(anchor, pageIndex!);
         
-        if (matchResult.found && matchResult.confidence > 0.4) { // Higher threshold
+        if (matchResult.found && matchResult.confidence && matchResult.confidence > 0.4) { // Higher threshold
           if (!bestMatch || matchResult.confidence > bestMatch.confidence) {
             bestMatch = { chunkIndex: index, confidence: matchResult.confidence };
           }
