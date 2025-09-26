@@ -585,6 +585,174 @@ export async function loadReadingProgress(
 }
 
 /* =========================================================================
+   🔹 Pattern Mastery Functions (for DAT Pattern Recognition)
+   ========================================================================= */
+import type { PatternAttempt, PatternMastery } from "@/types/patterns";
+
+export async function savePatternAttempt(
+  userId: string,
+  attempt: PatternAttempt
+): Promise<void> {
+  const uid = userId || "guest-user";
+  const isGuest = !firebaseConnected || uid === "guest-user";
+
+  if (isGuest) {
+    try {
+      const key = `pattern-attempts::${uid}`;
+      const existing = JSON.parse(localStorage.getItem(key) || "[]");
+      existing.push(attempt);
+      localStorage.setItem(key, JSON.stringify(existing));
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+
+  try {
+    const docRef = doc(db, "users", uid, "patternAttempts", attempt.id);
+    await setDoc(docRef, attempt);
+  } catch (error) {
+    console.warn("⚠️ Firebase pattern attempt save failed, falling back to localStorage:", error);
+    try {
+      const key = `pattern-attempts::${uid}`;
+      const existing = JSON.parse(localStorage.getItem(key) || "[]");
+      existing.push(attempt);
+      localStorage.setItem(key, JSON.stringify(existing));
+    } catch {
+      /* ignore localStorage fallback failure */
+    }
+  }
+}
+
+export async function loadPatternAttempts(userId: string): Promise<PatternAttempt[]> {
+  const uid = userId || "guest-user";
+  const isGuest = !firebaseConnected || uid === "guest-user";
+
+  if (isGuest) {
+    try {
+      const key = `pattern-attempts::${uid}`;
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  try {
+    const querySnapshot = await getDocs(collection(db, "users", uid, "patternAttempts"));
+    const attempts: PatternAttempt[] = [];
+    querySnapshot.forEach((docSnap) => {
+      attempts.push(docSnap.data() as PatternAttempt);
+    });
+    return attempts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  } catch (error) {
+    console.warn("⚠️ Firebase pattern attempts load failed, falling back to localStorage:", error);
+    try {
+      const key = `pattern-attempts::${uid}`;
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+}
+
+export async function loadPatternMastery(userId: string): Promise<PatternMastery[]> {
+  const attempts = await loadPatternAttempts(userId);
+  const uid = userId || "guest-user";
+  
+  // Group by pattern and calculate mastery
+  const masteryMap = new Map<string, PatternMastery>();
+  
+  attempts.forEach(attempt => {
+    if (!masteryMap.has(attempt.patternId)) {
+      masteryMap.set(attempt.patternId, {
+        patternId: attempt.patternId,
+        userId: uid,
+        attempts: 0,
+        correct: 0,
+        lastAttempt: attempt.timestamp,
+        masteryLevel: 'learning',
+        averageTime: 0,
+        commonErrors: []
+      });
+    }
+    
+    const mastery = masteryMap.get(attempt.patternId)!;
+    mastery.attempts++;
+    if (attempt.correct) mastery.correct++;
+    if (new Date(attempt.timestamp) > new Date(mastery.lastAttempt)) {
+      mastery.lastAttempt = attempt.timestamp;
+    }
+    
+    // Calculate average time
+    mastery.averageTime = (mastery.averageTime * (mastery.attempts - 1) + attempt.timeSpent) / mastery.attempts;
+    
+    // Track common errors (if note contains error indicators)
+    if (!attempt.correct && attempt.notes) {
+      const errorIndicators = ['confused', 'missed', 'forgot', 'wrong', 'mistake'];
+      if (errorIndicators.some(indicator => attempt.notes!.toLowerCase().includes(indicator))) {
+        if (!mastery.commonErrors.includes(attempt.notes)) {
+          mastery.commonErrors.push(attempt.notes);
+        }
+      }
+    }
+    
+    // Calculate mastery level
+    const accuracy = mastery.correct / mastery.attempts;
+    if (accuracy >= 0.8 && mastery.attempts >= 5) {
+      mastery.masteryLevel = 'mastered';
+    } else if (accuracy >= 0.6 && mastery.attempts >= 3) {
+      mastery.masteryLevel = 'practicing';
+    } else {
+      mastery.masteryLevel = 'learning';
+    }
+  });
+  
+  return Array.from(masteryMap.values());
+}
+
+export async function savePatternMasteryCache(
+  userId: string,
+  mastery: PatternMastery[]
+): Promise<void> {
+  const uid = userId || "guest-user";
+  const isGuest = !firebaseConnected || uid === "guest-user";
+
+  if (isGuest) {
+    try {
+      const key = `pattern-mastery::${uid}`;
+      localStorage.setItem(key, JSON.stringify({
+        mastery,
+        updatedAt: new Date().toISOString()
+      }));
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+
+  try {
+    const docRef = doc(db, "users", uid, "patterns", "mastery");
+    await setDoc(docRef, {
+      mastery,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.warn("⚠️ Firebase pattern mastery cache save failed, falling back to localStorage:", error);
+    try {
+      const key = `pattern-mastery::${uid}`;
+      localStorage.setItem(key, JSON.stringify({
+        mastery,
+        updatedAt: new Date().toISOString()
+      }));
+    } catch {
+      /* ignore localStorage fallback failure */
+    }
+  }
+}
+
+/* =========================================================================
    🔹 Exports
    ========================================================================= */
 export { app, auth, db, storage, firebaseConnected, useEmulators };

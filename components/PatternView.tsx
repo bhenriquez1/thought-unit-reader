@@ -10,7 +10,13 @@ import {
   type PatternAttempt,
   type PatternMastery
 } from "@/types/patterns";
-import { saveReadingProgress, loadReadingProgress } from "@/lib/firebase";
+import { 
+  saveReadingProgress, 
+  loadReadingProgress,
+  savePatternAttempt,
+  loadPatternMastery,
+  savePatternMasteryCache 
+} from "@/lib/firebase";
 import { auth } from "@/lib/firebase";
 import type { User } from "firebase/auth";
 
@@ -43,54 +49,6 @@ function unitToText(u: PVUnit): string {
   return typeof maybeText === "string" ? maybeText : JSON.stringify(u);
 }
 
-// Pattern mastery storage (localStorage for now, can be moved to Firebase later)
-function savePatternAttempt(attempt: PatternAttempt) {
-  const attempts = JSON.parse(localStorage.getItem('pattern-attempts') || '[]');
-  attempts.push(attempt);
-  localStorage.setItem('pattern-attempts', JSON.stringify(attempts));
-}
-
-function loadPatternMastery(userId: string): PatternMastery[] {
-  const attempts = JSON.parse(localStorage.getItem('pattern-attempts') || '[]') as PatternAttempt[];
-  const userAttempts = attempts.filter(a => a.userId === userId);
-  
-  // Group by pattern and calculate mastery
-  const masteryMap = new Map<string, PatternMastery>();
-  
-  userAttempts.forEach(attempt => {
-    if (!masteryMap.has(attempt.patternId)) {
-      masteryMap.set(attempt.patternId, {
-        patternId: attempt.patternId,
-        userId,
-        attempts: 0,
-        correct: 0,
-        lastAttempt: attempt.timestamp,
-        masteryLevel: 'learning',
-        averageTime: 0,
-        commonErrors: []
-      });
-    }
-    
-    const mastery = masteryMap.get(attempt.patternId)!;
-    mastery.attempts++;
-    if (attempt.correct) mastery.correct++;
-    if (new Date(attempt.timestamp) > new Date(mastery.lastAttempt)) {
-      mastery.lastAttempt = attempt.timestamp;
-    }
-    
-    // Calculate mastery level
-    const accuracy = mastery.correct / mastery.attempts;
-    if (accuracy >= 0.8 && mastery.attempts >= 5) {
-      mastery.masteryLevel = 'mastered';
-    } else if (accuracy >= 0.6 && mastery.attempts >= 3) {
-      mastery.masteryLevel = 'practicing';
-    } else {
-      mastery.masteryLevel = 'learning';
-    }
-  });
-  
-  return Array.from(masteryMap.values());
-}
 
 // Pattern suggestion based on content analysis
 function suggestPatterns(text: string): Pattern[] {
@@ -165,8 +123,7 @@ export default function PatternView({
   // Load pattern mastery
   useEffect(() => {
     if (userId) {
-      const mastery = loadPatternMastery(userId);
-      setPatternMastery(mastery);
+      loadPatternMastery(userId).then(setPatternMastery);
     }
   }, [userId]);
 
@@ -245,13 +202,12 @@ export default function PatternView({
       notes: userAttempt
     };
     
-    savePatternAttempt(attempt);
+    savePatternAttempt(userId || "guest", attempt);
     setIsCorrect(correct);
     
     // Update mastery
     if (userId) {
-      const mastery = loadPatternMastery(userId);
-      setPatternMastery(mastery);
+      loadPatternMastery(userId).then(setPatternMastery);
     }
   };
 
@@ -271,7 +227,7 @@ export default function PatternView({
       skipped: true
     };
     
-    savePatternAttempt(attempt);
+    savePatternAttempt(userId || "guest", attempt);
     
     // Move to next unit or reset
     setSelectedPatternId("");
