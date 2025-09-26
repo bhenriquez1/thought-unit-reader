@@ -7,6 +7,8 @@ import TOCSidebar from "@/components/TOCSidebar";
 import type { ThoughtUnit, ReadingStats } from "@/types/reading";
 import EnhancedHybridReader from "@/components/EnhancedHybridReader";
 import EnhancedProgressiveView from "@/components/EnhancedProgressiveView";
+import PatternView from "@/components/PatternView";
+import NoteLabView from "@/components/NoteLabView";
 import CleanProgressiveView from "@/components/CleanProgressiveView";
 import CleanHybridReader from "@/components/CleanHybridReader";
 import CleanRightBrainReader from "@/components/CleanRightBrainReader";
@@ -216,7 +218,7 @@ export default function ThoughtUnitReader() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const [viewMode, setViewMode] =
-    useState<"original" | "progressive" | "hybrid" | "rightbrain">("original");
+    useState<"original" | "progressive" | "hybrid" | "rightbrain" | "pattern" | "notelab">("original");
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(1);
@@ -1311,6 +1313,157 @@ export default function ThoughtUnitReader() {
           );
         }
 
+    // Pattern Recognition Training view
+    if (viewMode === "pattern") {
+      return fileUrl && thoughtUnits.length > 0 ? (
+        <PatternView
+          bookId={bookId}
+          userId={USER_ID}
+          thoughtUnits={thoughtUnits}
+          currentThoughtUnit={currentThoughtUnit}
+          stats={stats}
+          currentPage={currentPage}
+          pdfPageCount={pdfPageCount}
+          fontSize={fontSize}
+          fontFamily={fontFamily}
+          lineSpacing={lineSpacing}
+          onWordClick={(w) => {
+            setHighlightedWord(w);
+            if (autoWhiteboard && w.trim()) {
+              setWbConcept(truncate(w, 600));
+              setWbContext(`p.${currentPage}`);
+              setShowWhiteboardPanel(true);
+            }
+          }}
+          onTextSelect={(t) => sel.setSelectionText(t)}
+          onGenerateNote={handleOpenRightBrainNote}
+          selBind={sel.bind}
+          externalSelectionText={sel.selectionText}
+        />
+      ) : (
+        <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900">
+          <div className="text-center max-w-2xl">
+            <div className="text-6xl mb-4">🎯</div>
+            <h3 className="text-3xl font-bold mb-4 text-white">DAT Pattern Recognition Training</h3>
+            <p className="text-lg opacity-90 mb-6 text-gray-200">
+              Master 14 high-yield patterns including CARDIO, 5Q Rule, SN/E Flow, and more for DAT success
+            </p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8 text-sm">
+              <div className="bg-black/20 rounded-lg p-4 border border-blue-500/30">
+                <div className="text-2xl mb-2">🧪</div>
+                <h4 className="font-semibold text-blue-400">Organic Chemistry</h4>
+                <p className="text-gray-300">CARDIO, 5Q Rule, SN/E Flow, EAS patterns</p>
+              </div>
+              <div className="bg-black/20 rounded-lg p-4 border border-green-500/30">
+                <div className="text-2xl mb-2">⚗️</div>
+                <h4 className="font-semibold text-green-400">General Chemistry</h4>
+                <p className="text-gray-300">Q vs K, ΔG signs, Gas Laws patterns</p>
+              </div>
+              <div className="bg-black/20 rounded-lg p-4 border border-purple-500/30">
+                <div className="text-2xl mb-2">🧬</div>
+                <h4 className="font-semibold text-purple-400">Biology</h4>
+                <p className="text-gray-300">Organelles, Hardy-Weinberg, Reading patterns</p>
+              </div>
+              <div className="bg-black/20 rounded-lg p-4 border border-yellow-500/30">
+                <div className="text-2xl mb-2">🦷</div>
+                <h4 className="font-semibold text-yellow-400">Dentistry</h4>
+                <p className="text-gray-300">Caries treatment, Endodontic diagnosis</p>
+              </div>
+              <div className="bg-black/20 rounded-lg p-4 border border-pink-500/30">
+                <div className="text-2xl mb-2">📖</div>
+                <h4 className="font-semibold text-pink-400">Reading Comprehension</h4>
+                <p className="text-gray-300">Cause-Effect, Compare-Contrast patterns</p>
+              </div>
+              <div className="bg-black/20 rounded-lg p-4 border border-orange-500/30">
+                <div className="text-2xl mb-2">📈</div>
+                <h4 className="font-semibold text-orange-400">Mastery Tracking</h4>
+                <p className="text-gray-300">Pattern progress and mistake analysis</p>
+              </div>
+            </div>
+          </div>
+          
+          <label className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-400 hover:to-purple-400 text-white px-8 py-4 rounded-xl cursor-pointer font-semibold text-lg transition-all transform hover:scale-105 shadow-xl">
+            📂 Upload PDF to Start Pattern Training
+            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
+          </label>
+        </div>
+      );
+    }
+
+    // NoteLab structured note-taking view
+    if (viewMode === "notelab") {
+      return fileUrl && thoughtUnits.length > 0 ? (
+        <NoteLabView
+          bookId={bookId}
+          userId={USER_ID}
+          thoughtUnits={thoughtUnits}
+          currentThoughtUnit={currentThoughtUnit}
+          currentPage={currentPage}
+          fontSize={fontSize}
+          fontFamily={fontFamily}
+          lineSpacing={lineSpacing}
+          onWordClick={(w) => {
+            setHighlightedWord(w);
+            if (autoWhiteboard && w.trim()) {
+              setWbConcept(truncate(w, 600));
+              setWbContext(`p.${currentPage}`);
+              setShowWhiteboardPanel(true);
+            }
+          }}
+          onTextSelect={(t) => sel.setSelectionText(t)}
+        />
+      ) : (
+        <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-green-900 to-emerald-900">
+          <div className="text-center max-w-2xl">
+            <div className="text-6xl mb-4">📝</div>
+            <h3 className="text-3xl font-bold mb-4 text-white">NoteLab - Structured Study Notes</h3>
+            <p className="text-lg opacity-90 mb-6 text-gray-200">
+              Create organized, pattern-tagged notes with flashcard generation and study outline export
+            </p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8 text-sm">
+              <div className="bg-black/20 rounded-lg p-4 border border-green-500/30">
+                <div className="text-2xl mb-2">🏷️</div>
+                <h4 className="font-semibold text-green-400">Pattern Tagging</h4>
+                <p className="text-gray-300">Tag notes with DAT patterns for organization</p>
+              </div>
+              <div className="bg-black/20 rounded-lg p-4 border border-blue-500/30">
+                <div className="text-2xl mb-2">📇</div>
+                <h4 className="font-semibold text-blue-400">Flashcard Export</h4>
+                <p className="text-gray-300">Auto-generate flashcards from your notes</p>
+              </div>
+              <div className="bg-black/20 rounded-lg p-4 border border-purple-500/30">
+                <div className="text-2xl mb-2">📄</div>
+                <h4 className="font-semibold text-purple-400">Study Outlines</h4>
+                <p className="text-gray-300">Export organized study guides by pattern</p>
+              </div>
+              <div className="bg-black/20 rounded-lg p-4 border border-yellow-500/30">
+                <div className="text-2xl mb-2">🎯</div>
+                <h4 className="font-semibold text-yellow-400">Study Levels</h4>
+                <p className="text-gray-300">Basic, Intermediate, Advanced categorization</p>
+              </div>
+              <div className="bg-black/20 rounded-lg p-4 border border-pink-500/30">
+                <div className="text-2xl mb-2">🔗</div>
+                <h4 className="font-semibold text-pink-400">Thought Unit Links</h4>
+                <p className="text-gray-300">Notes linked to specific content sections</p>
+              </div>
+              <div className="bg-black/20 rounded-lg p-4 border border-orange-500/30">
+                <div className="text-2xl mb-2">🔍</div>
+                <h4 className="font-semibold text-orange-400">Smart Search</h4>
+                <p className="text-gray-300">Filter by pattern, level, and content</p>
+              </div>
+            </div>
+          </div>
+          
+          <label className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 text-white px-8 py-4 rounded-xl cursor-pointer font-semibold text-lg transition-all transform hover:scale-105 shadow-xl">
+            📂 Upload PDF to Start Note-Taking
+            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
+          </label>
+        </div>
+      );
+    }
+
     // Right-Brain Reading view (unified Progressive + Hybrid features)
     if (viewMode === "rightbrain") {
       // Check if we're in note editor mode
@@ -1464,6 +1617,22 @@ export default function ThoughtUnitReader() {
             }`}
           >
             🧠 Right-Brain Reading
+          </button>
+          <button
+            onClick={() => setViewMode("pattern")}
+            className={`text-xs px-3 py-1 rounded ${
+              viewMode === "pattern" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+            }`}
+          >
+            🎯 Pattern Training
+          </button>
+          <button
+            onClick={() => setViewMode("notelab")}
+            className={`text-xs px-3 py-1 rounded ${
+              viewMode === "notelab" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+            }`}
+          >
+            📝 NoteLab
           </button>
         </div>
 

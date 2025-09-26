@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import type { ThoughtUnit as BaseThoughtUnit } from "@/types/reading";
 import { 
   analyzeChunkWithRightBrain,
