@@ -1595,14 +1595,6 @@ export default function ThoughtUnitReader() {
             📄 Original PDF
           </button>
           <button
-            onClick={() => setViewMode("progressive")}
-            className={`text-xs px-3 py-1 rounded ${
-              viewMode === "progressive" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
-            }`}
-          >
-            ⚡ Progressive
-          </button>
-          <button
             onClick={() => setViewMode("hybrid")}
             className={`text-xs px-3 py-1 rounded ${
               viewMode === "hybrid" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
