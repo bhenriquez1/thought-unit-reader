@@ -42,6 +42,8 @@ import { generateMnemonic } from "@/lib/mnemonicAI";
 
 // Lazy-load to keep SSR clean
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
+const PatternTrainingPDFReader = dynamic(() => import("@/components/PatternTrainingPDFReader"), { ssr: false });
+const NoteLabPDFReader = dynamic(() => import("@/components/NoteLabPDFReader"), { ssr: false });
 
 type StickyNote = { pageNumber: number; content: string };
 
@@ -1380,21 +1382,39 @@ export default function ThoughtUnitReader() {
 
       return fileUrl && thoughtUnits.length > 0 ? (
         <div className="h-full flex">
-          {/* PDF Viewer Side */}
-          <div className="w-1/2 h-full border-r border-gray-700" onMouseUp={sel.bind.onMouseUp}>
-            <SmartPDFViewer
-              fileUrl={fileUrl}
+          {/* Pattern Training PDF Reader with integrated pattern recognition */}
+          <div className="w-1/2 h-full border-r border-gray-700">
+            <PatternTrainingPDFReader
+              bookId={bookId}
+              userId={USER_ID}
+              pdfUrl={fileUrl}
               currentPage={currentPage}
+              pdfPageCount={pdfPageCount}
               onPageChange={(p) => syncToPage(p)}
-              scale={1.0}
-              onTextSelect={(t) => sel.setSelectionText(t)}
-              onPageCount={(n) => setPdfPageCount(n)}
-              onOutline={(items) => {
-                const normalized = outlineToTOC(items as any);
-                if (normalized && normalized.length) {
-                  setTableOfContents(normalized);
+              thoughtUnits={thoughtUnits}
+              currentThoughtUnit={currentThoughtUnit}
+              setCurrentThoughtUnit={setCurrentThoughtUnit}
+              highlightedWord={highlightedWord}
+              setHighlightedWord={setHighlightedWord}
+              onWordClick={(w) => {
+                setHighlightedWord(w);
+                if (autoWhiteboard && w.trim()) {
+                  setWbConcept(truncate(w, 600));
+                  setWbContext(`p.${currentPage}`);
+                  setShowWhiteboardPanel(true);
                 }
               }}
+              onTextSelect={(t) => sel.setSelectionText(t)}
+              selBind={sel.bind}
+              externalSelectionText={sel.selectionText}
+              fontSize={fontSize}
+              fontFamily={fontFamily}
+              lineSpacing={lineSpacing}
+              selectedVoice={selectedVoice || undefined}
+              onVoiceChange={setSelectedVoice}
+              speechRate={speechRate}
+              onSpeechRateChange={setSpeechRate}
+              tableOfContents={tableOfContents}
             />
           </div>
           
@@ -1522,21 +1542,39 @@ export default function ThoughtUnitReader() {
 
       return fileUrl && thoughtUnits.length > 0 ? (
         <div className="h-full flex">
-          {/* PDF Viewer Side */}
-          <div className="w-1/2 h-full border-r border-gray-700" onMouseUp={sel.bind.onMouseUp}>
-            <SmartPDFViewer
-              fileUrl={fileUrl}
+          {/* NoteLab PDF Reader with integrated note-taking */}
+          <div className="w-1/2 h-full border-r border-gray-700">
+            <NoteLabPDFReader
+              bookId={bookId}
+              userId={USER_ID}
+              pdfUrl={fileUrl}
               currentPage={currentPage}
+              pdfPageCount={pdfPageCount}
               onPageChange={(p) => syncToPage(p)}
-              scale={1.0}
-              onTextSelect={(t) => sel.setSelectionText(t)}
-              onPageCount={(n) => setPdfPageCount(n)}
-              onOutline={(items) => {
-                const normalized = outlineToTOC(items as any);
-                if (normalized && normalized.length) {
-                  setTableOfContents(normalized);
+              thoughtUnits={thoughtUnits}
+              currentThoughtUnit={currentThoughtUnit}
+              setCurrentThoughtUnit={setCurrentThoughtUnit}
+              highlightedWord={highlightedWord}
+              setHighlightedWord={setHighlightedWord}
+              onWordClick={(w) => {
+                setHighlightedWord(w);
+                if (autoWhiteboard && w.trim()) {
+                  setWbConcept(truncate(w, 600));
+                  setWbContext(`p.${currentPage}`);
+                  setShowWhiteboardPanel(true);
                 }
               }}
+              onTextSelect={(t) => sel.setSelectionText(t)}
+              selBind={sel.bind}
+              externalSelectionText={sel.selectionText}
+              fontSize={fontSize}
+              fontFamily={fontFamily}
+              lineSpacing={lineSpacing}
+              selectedVoice={selectedVoice || undefined}
+              onVoiceChange={setSelectedVoice}
+              speechRate={speechRate}
+              onSpeechRateChange={setSpeechRate}
+              tableOfContents={tableOfContents}
             />
           </div>
           
