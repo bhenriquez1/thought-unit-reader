@@ -345,7 +345,8 @@ export default function NoteLabView({
     });
   };
 
-  const rawUnit = thoughtUnits[currentThoughtUnit - 1];
+  // ✅ Simplified validation - main index.tsx handles empty states
+  const rawUnit = thoughtUnits[currentThoughtUnit - 1] || thoughtUnits[0];
   const unitText = rawUnit ? unitToText(rawUnit) : "";
 
   const filteredNotes = getFilteredNotes();

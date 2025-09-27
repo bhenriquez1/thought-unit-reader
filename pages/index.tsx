@@ -270,6 +270,17 @@ export default function ThoughtUnitReader() {
   // 🧠 Right-Brain prefill draft (for High-Yield / Sketch)
   const [rbDraftText, setRbDraftText] = useState<string>("");
 
+  // ✅ PDF Parsing State Management
+  const [pdfParsingState, setPdfParsingState] = useState<{
+    isLoading: boolean;
+    error: string | null;
+    progress: string;
+  }>({
+    isLoading: false,
+    error: null,
+    progress: "",
+  });
+
   /* =========================================================================
      🔹 Auth Listener + complete redirect
   ========================================================================= */
@@ -316,30 +327,57 @@ export default function ThoughtUnitReader() {
       alert("Please upload a PDF file.");
       return;
     }
+
+    // ✅ Initialize parsing state
+    setPdfParsingState({
+      isLoading: true,
+      error: null,
+      progress: "Preparing file..."
+    });
+
+    // Reset thought units immediately to prevent race conditions
+    setThoughtUnits([]);
+    setCurrentThoughtUnit(1);
+
     setUploadedFile(file);
     setViewMode("original");
     setBookId(file.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book");
 
-    let url: string;
-    let libEntry: { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean };
+    try {
+      let url: string;
+      let libEntry: { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean };
 
-    // Check if we're using the bypass (mock user) or real Firebase
-    const isUsingBypass = process.env.NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN === "1";
-    const canUseFirebase = firebaseConnected && user && !isUsingBypass;
+      // Check if we're using the bypass (mock user) or real Firebase
+      const isUsingBypass = process.env.NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN === "1";
+      const canUseFirebase = firebaseConnected && user && !isUsingBypass;
 
-    if (canUseFirebase) {
-      try {
-        url = await uploadPDF(file, USER_ID);
-        getPDFLibrary(USER_ID).then(setPdfLibrary);
-        libEntry = {
-          id: String(Date.now()),
-          name: file.name,
-          url,
-          uploadedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        console.error("Firebase upload failed, falling back to local:", error);
-        // Fall back to local mode if Firebase upload fails
+      setPdfParsingState(prev => ({ ...prev, progress: "Uploading to cloud..." }));
+
+      if (canUseFirebase) {
+        try {
+          url = await uploadPDF(file, USER_ID);
+          getPDFLibrary(USER_ID).then(setPdfLibrary);
+          libEntry = {
+            id: String(Date.now()),
+            name: file.name,
+            url,
+            uploadedAt: new Date().toISOString(),
+          };
+        } catch (error) {
+          console.error("Firebase upload failed, falling back to local:", error);
+          // Fall back to local mode if Firebase upload fails
+          url = URL.createObjectURL(file);
+          libEntry = {
+            id: String(Date.now()),
+            name: file.name,
+            url,
+            uploadedAt: new Date().toISOString(),
+            isLocal: true,
+          };
+          setPdfLibrary((prev) => [libEntry, ...prev]);
+        }
+      } else {
+        // Guest mode or bypass: blob URL + session library
         url = URL.createObjectURL(file);
         libEntry = {
           id: String(Date.now()),
@@ -350,31 +388,32 @@ export default function ThoughtUnitReader() {
         };
         setPdfLibrary((prev) => [libEntry, ...prev]);
       }
-    } else {
-      // Guest mode or bypass: blob URL + session library
-      url = URL.createObjectURL(file);
-      libEntry = {
-        id: String(Date.now()),
-        name: file.name,
-        url,
-        uploadedAt: new Date().toISOString(),
-        isLocal: true,
-      };
-      setPdfLibrary((prev) => [libEntry, ...prev]);
-    }
 
-    setFileUrl(url);
+      setFileUrl(url);
 
-    // Heuristic TOC (viewer outline will override later)
-    generateTOC(url).then(setTableOfContents).catch(() => {});
+      setPdfParsingState(prev => ({ ...prev, progress: "Generating table of contents..." }));
 
-    // Parse → normalize → store
-    try {
+      // Heuristic TOC (viewer outline will override later)
+      generateTOC(url).then(setTableOfContents).catch(() => {});
+
+      setPdfParsingState(prev => ({ ...prev, progress: "Extracting and analyzing content..." }));
+
+      // Parse → normalize → store
       const { parsedUnits, chapters } = await parseBookWithChapters(file);
 
+      setPdfParsingState(prev => ({ ...prev, progress: "Processing thought units..." }));
+
       const normalized = normalizeParsedUnits(parsedUnits);
+      
+      // ✅ Validate parsed content before setting
+      if (!normalized || normalized.length === 0) {
+        throw new Error("No readable content found in PDF");
+      }
+
       setThoughtUnits(normalized);
       setSampleText(normalized[0]?.text ?? "");
+
+      setPdfParsingState(prev => ({ ...prev, progress: "Setting up learning features..." }));
 
       // Whiteboard auto-detect
       const matches = detectWhiteboardSections(parsedUnits);
@@ -398,8 +437,37 @@ export default function ThoughtUnitReader() {
       } else {
         setShowWhiteboardPanel(false);
       }
-    } catch (err) {
-      console.warn("Whiteboard auto-detect skipped (parse failed):", err);
+
+      // ✅ Success - clear loading state
+      setPdfParsingState({
+        isLoading: false,
+        error: null,
+        progress: "Complete"
+      });
+
+      console.log("✅ PDF processing complete:", {
+        thoughtUnits: normalized.length,
+        chapters: chapters.length,
+        fileName: file.name
+      });
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to process PDF";
+      console.error("❌ PDF processing failed:", errorMessage);
+
+      // ✅ Set error state
+      setPdfParsingState({
+        isLoading: false,
+        error: errorMessage,
+        progress: "Failed"
+      });
+
+      // Reset states on error
+      setThoughtUnits([]);
+      setFileUrl(null);
+      setUploadedFile(null);
+      
+      alert(`Failed to process PDF: ${errorMessage}`);
     }
   };
 
@@ -1267,8 +1335,49 @@ export default function ThoughtUnitReader() {
           );
         }
 
-    // Pattern Recognition Training view
+    // ✅ Show loading state during PDF parsing for Pattern view
     if (viewMode === "pattern") {
+      // Show loading state during parsing
+      if (pdfParsingState.isLoading) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900">
+            <div className="text-center max-w-2xl">
+              <div className="animate-spin text-6xl mb-4">🎯</div>
+              <h3 className="text-3xl font-bold mb-4 text-white">Processing for Pattern Training</h3>
+              <p className="text-lg opacity-90 mb-6 text-gray-200">
+                {pdfParsingState.progress}
+              </p>
+              <div className="flex items-center justify-center gap-2">
+                <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // Show error state if parsing failed
+      if (pdfParsingState.error) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-red-900 to-purple-900">
+            <div className="text-center max-w-2xl">
+              <div className="text-6xl mb-4">❌</div>
+              <h3 className="text-3xl font-bold mb-4 text-white">Pattern Training Unavailable</h3>
+              <p className="text-lg mb-6 text-red-300">
+                {pdfParsingState.error}
+              </p>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg text-white font-medium"
+              >
+                🔄 Try Again
+              </button>
+            </div>
+          </div>
+        );
+      }
+
       return fileUrl && thoughtUnits.length > 0 ? (
         <PatternView
           bookId={bookId}
@@ -1345,8 +1454,49 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // NoteLab structured note-taking view
+    // ✅ Show loading state during PDF parsing for NoteLab view
     if (viewMode === "notelab") {
+      // Show loading state during parsing
+      if (pdfParsingState.isLoading) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-green-900 to-emerald-900">
+            <div className="text-center max-w-2xl">
+              <div className="animate-spin text-6xl mb-4">📝</div>
+              <h3 className="text-3xl font-bold mb-4 text-white">Processing for NoteLab</h3>
+              <p className="text-lg opacity-90 mb-6 text-gray-200">
+                {pdfParsingState.progress}
+              </p>
+              <div className="flex items-center justify-center gap-2">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                <div className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // Show error state if parsing failed
+      if (pdfParsingState.error) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-red-900 to-emerald-900">
+            <div className="text-center max-w-2xl">
+              <div className="text-6xl mb-4">❌</div>
+              <h3 className="text-3xl font-bold mb-4 text-white">NoteLab Unavailable</h3>
+              <p className="text-lg mb-6 text-red-300">
+                {pdfParsingState.error}
+              </p>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-6 py-3 bg-green-600 hover:bg-green-500 rounded-lg text-white font-medium"
+              >
+                🔄 Try Again
+              </button>
+            </div>
+          </div>
+        );
+      }
+
       return fileUrl && thoughtUnits.length > 0 ? (
         <NoteLabView
           bookId={bookId}
@@ -1433,6 +1583,47 @@ export default function ThoughtUnitReader() {
               // Stay in rightbrain mode after note editing
             }}
           />
+        );
+      }
+
+      // ✅ Show loading state during PDF parsing for Right-Brain view
+      if (pdfParsingState.isLoading) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-purple-900 to-indigo-900">
+            <div className="text-center max-w-2xl">
+              <div className="animate-spin text-6xl mb-4">🧠</div>
+              <h3 className="text-3xl font-bold mb-4 text-white">Processing for Visual Learning</h3>
+              <p className="text-lg opacity-90 mb-6 text-gray-200">
+                {pdfParsingState.progress}
+              </p>
+              <div className="flex items-center justify-center gap-2">
+                <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                <div className="w-2 h-2 bg-pink-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // Show error state if parsing failed
+      if (pdfParsingState.error) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-red-900 to-indigo-900">
+            <div className="text-center max-w-2xl">
+              <div className="text-6xl mb-4">❌</div>
+              <h3 className="text-3xl font-bold mb-4 text-white">Visual Learning Unavailable</h3>
+              <p className="text-lg mb-6 text-red-300">
+                {pdfParsingState.error}
+              </p>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-6 py-3 bg-purple-600 hover:bg-purple-500 rounded-lg text-white font-medium"
+              >
+                🔄 Try Again
+              </button>
+            </div>
+          </div>
         );
       }
 

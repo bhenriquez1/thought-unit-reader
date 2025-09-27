@@ -137,28 +137,26 @@ export default function PatternView({
     setAttemptStartTime(Date.now());
   }, [currentThoughtUnit]);
 
-  // Empty state
-  if (!thoughtUnits || thoughtUnits.length === 0) {
-    return (
-      <div
-        className="p-4 flex items-center justify-center text-gray-400 italic"
-        style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
-      >
-        📚 Please upload a PDF to start Pattern Recognition Training.
-      </div>
-    );
-  }
-
+  // ✅ Simplified validation - main index.tsx handles empty states
   const rawUnit = thoughtUnits[currentThoughtUnit - 1];
   if (!rawUnit) {
-    return (
-      <div
-        className="p-4 flex items-center justify-center text-gray-400 italic"
-        style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
-      >
-        ⏳ Preparing your pattern recognition view...
-      </div>
-    );
+    // Fallback to first available unit if current index is out of bounds
+    const fallbackUnit = thoughtUnits[0];
+    if (!fallbackUnit) {
+      return (
+        <div
+          className="p-4 flex items-center justify-center text-gray-400 italic"
+          style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
+        >
+          ⏳ Loading content for pattern recognition...
+        </div>
+      );
+    }
+    // Use fallback unit
+    const unitText = unitToText(fallbackUnit);
+    const selectedPattern = selectedPatternId ? getPatternById(selectedPatternId) : null;
+    const suggestedPatterns = useMemo(() => suggestPatterns(unitText), [unitText]);
+    // Continue with fallback unit...
   }
 
   const unitText = unitToText(rawUnit);
