@@ -290,143 +290,158 @@ function getRandomMetaphor(): string {
   return metaphors[Math.floor(Math.random() * metaphors.length)];
 }
 
-// Enhanced right-brain concept extraction with intelligent chunking
-function extractConcepts(text: string): ConceptHighlight[] {
+// Enhanced learning-focused concept extraction for educational effectiveness
+function extractEducationalConcepts(text: string): ConceptHighlight[] {
   const concepts: ConceptHighlight[] = [];
   
-  // Enhanced main ideas patterns (highest importance)
-  const mainIdeaPatterns = [
-    /\b(the main|primary|key|central|core|fundamental|essential|most important)\s+(\w+(?:\s+\w+){0,4})/gi,
-    /\b(principle|concept|theory|law|rule|mechanism|process)\s+(?:of|that|which)\s+(\w+(?:\s+\w+){0,3})/gi,
-    /\b(understanding|comprehension|knowledge)\s+(?:of|about)\s+(\w+(?:\s+\w+){0,3})/gi,
-    // Sentence-level main ideas
-    /^([^.!?]*(?:important|significant|crucial|vital|essential|key)[^.!?]*[.!?])/gmi,
-    /^([^.!?]*(?:remember|note that|keep in mind)[^.!?]*[.!?])/gmi
+  // 🔴 CRITICAL MAIN IDEAS (Red) - Highest priority for learning
+  const criticalPatterns = [
+    // Educational trigger words
+    /^([^.!?]*(?:important|crucial|key|essential|remember|note that|critical|main point)[^.!?]*[.!?])/gmi,
+    // Topic sentences and main ideas
+    /^([^.!?]*(?:the main|primary|central|core|fundamental)[^.!?]*[.!?])/gmi,
+    // Learning objectives
+    /([^.!?]*(?:understand|learn|know|master|grasp)[^.!?]*[.!?])/gi,
+    // Summaries and conclusions
+    /([^.!?]*(?:in summary|in conclusion|to summarize|overall|the point is)[^.!?]*[.!?])/gi
   ];
   
-  mainIdeaPatterns.forEach((pattern, patternIndex) => {
+  criticalPatterns.forEach((pattern, patternIndex) => {
     const matches = [...text.matchAll(pattern)];
     matches.forEach((match, index) => {
       const conceptText = match[0].trim();
-      if (conceptText.length > 10) { // Filter out very short matches
+      if (conceptText.length > 15 && conceptText.length < 200) { // Optimal length for main ideas
         concepts.push({
-          id: `main-${patternIndex}-${index}`,
+          id: `critical-${patternIndex}-${index}`,
           text: conceptText,
           type: "main-idea",
-          color: "#FFD700", // Gold for main ideas
-          importance: 0.9,
-          connections: []
+          color: "#DC2626", // Red for critical content
+          importance: 1.0,
+          connections: [],
+          visualMetaphor: "🔴 Critical Learning Point"
         });
       }
     });
   });
 
-  // Enhanced supporting concepts with chunking
+  // 🟡 IMPORTANT SUPPORTING FACTS (Yellow) - High value for understanding
   const supportingPatterns = [
-    /\b(because|since|due to|as a result|therefore|thus|hence|consequently)\s+([^.!?]+[.!?])/gi,
-    /\b(for example|such as|including|like|specifically|namely)\s+([^.!?]+[.!?])/gi,
-    /\b(this means|in other words|that is|i\.e\.|e\.g\.)\s+([^.!?]+[.!?])/gi,
-    // Cause and effect chunking
-    /([^.!?]*(?:causes?|leads? to|results? in|triggers?|produces?)[^.!?]*[.!?])/gi,
-    // Process steps chunking
-    /([^.!?]*(?:first|second|third|next|then|finally|lastly)[^.!?]*[.!?])/gi
+    // Evidence and examples
+    /([^.!?]*(?:for example|such as|evidence shows|research indicates|studies show)[^.!?]*[.!?])/gi,
+    // Cause and effect (crucial for learning)
+    /([^.!?]*(?:because|since|therefore|as a result|leads to|causes)[^.!?]*[.!?])/gi,
+    // Problem-solution patterns
+    /([^.!?]*(?:problem|issue|solution|answer|resolve)[^.!?]*[.!?])/gi,
+    // Explanatory content
+    /([^.!?]*(?:this means|in other words|that is|explains why)[^.!?]*[.!?])/gi
   ];
   
   supportingPatterns.forEach((pattern, patternIndex) => {
     const matches = [...text.matchAll(pattern)];
     matches.forEach((match, index) => {
       const conceptText = match[0].trim();
-      if (conceptText.length > 15) {
+      if (conceptText.length > 20 && conceptText.length < 150) {
         concepts.push({
           id: `support-${patternIndex}-${index}`,
           text: conceptText,
           type: "supporting-concept",
-          color: "#87CEEB", // Sky blue for supporting
-          importance: 0.6,
-          connections: []
+          color: "#FBBF24", // Yellow for important supporting content
+          importance: 0.8,
+          connections: [],
+          visualMetaphor: "🟡 Key Supporting Detail"
         });
       }
     });
   });
 
-  // Enhanced definitions with better chunking
-  const definitionPatterns = [
-    /\b(\w+(?:\s+\w+){0,2})\s+(is|are|means|refers to|defined as|represents)\s+([^.!?]+[.!?])/gi,
-    // Full sentence definitions
-    /([^.!?]*(?:definition|define|term|concept)\s+(?:of|for)\s+\w+[^.!?]*[.!?])/gi,
-    // Medical/scientific definitions
-    /([^.!?]*(?:condition|disease|syndrome|disorder|symptom)\s+(?:is|are|means)[^.!?]*[.!?])/gi
+  // 🟢 KEY TERMS & DEFINITIONS (Green) - Essential vocabulary
+  const termPatterns = [
+    // Explicit definitions
+    /\b(\w+(?:\s+\w+){0,2})\s+(is|are|means|refers to|defined as)\s+([^.!?]+[.!?])/gi,
+    // Technical terms with context
+    /([^.!?]*(?:term|concept|definition|refers to)[^.!?]*[.!?])/gi,
+    // Important vocabulary signals
+    /([^.!?]*(?:called|known as|termed|named)[^.!?]*[.!?])/gi
   ];
   
-  definitionPatterns.forEach((pattern, patternIndex) => {
+  termPatterns.forEach((pattern, patternIndex) => {
     const matches = [...text.matchAll(pattern)];
     matches.forEach((match, index) => {
       const conceptText = match[0].trim();
-      if (conceptText.length > 10) {
+      if (conceptText.length > 10 && conceptText.length < 120) {
         concepts.push({
-          id: `def-${patternIndex}-${index}`,
+          id: `term-${patternIndex}-${index}`,
           text: conceptText,
           type: "definition",
-          color: "#98FB98", // Light green for definitions
+          color: "#10B981", // Green for definitions and terms
           importance: 0.7,
-          connections: []
+          connections: [],
+          visualMetaphor: "🟢 Key Term"
         });
       }
     });
   });
 
-  // New: Process and mechanism chunking (great for DAT content)
-  const processPatterns = [
-    /([^.!?]*(?:process|mechanism|pathway|system|method|procedure)[^.!?]*[.!?])/gi,
-    /([^.!?]*(?:occurs?|happens?|takes? place|develops?)[^.!?]*[.!?])/gi,
-    /([^.!?]*(?:function|role|purpose|job)[^.!?]*[.!?])/gi
+  // 🔵 LEARNING CONNECTIONS (Blue) - Relationships and processes
+  const connectionPatterns = [
+    // Process steps
+    /([^.!?]*(?:first|second|then|next|finally|process|step)[^.!?]*[.!?])/gi,
+    // Relationships
+    /([^.!?]*(?:relationship|connection|relates to|connected to)[^.!?]*[.!?])/gi,
+    // Comparisons (great for learning)
+    /([^.!?]*(?:similar to|different from|compared to|unlike|contrast)[^.!?]*[.!?])/gi,
+    // Functions and purposes
+    /([^.!?]*(?:function|purpose|role|used to|serves to)[^.!?]*[.!?])/gi
   ];
   
-  processPatterns.forEach((pattern, patternIndex) => {
+  connectionPatterns.forEach((pattern, patternIndex) => {
     const matches = [...text.matchAll(pattern)];
     matches.forEach((match, index) => {
       const conceptText = match[0].trim();
-      if (conceptText.length > 20) {
+      if (conceptText.length > 15 && conceptText.length < 130) {
         concepts.push({
-          id: `process-${patternIndex}-${index}`,
-          text: conceptText,
-          type: "process",
-          color: "#DDA0DD", // Plum for processes
-          importance: 0.8,
-          connections: []
-        });
-      }
-    });
-  });
-
-  // New: Relationship chunking
-  const relationshipPatterns = [
-    /([^.!?]*(?:relationship|connection|link|association|correlation)[^.!?]*[.!?])/gi,
-    /([^.!?]*(?:affects?|influences?|impacts?|interacts? with)[^.!?]*[.!?])/gi,
-    /([^.!?]*(?:similar to|different from|compared to|unlike)[^.!?]*[.!?])/gi
-  ];
-  
-  relationshipPatterns.forEach((pattern, patternIndex) => {
-    const matches = [...text.matchAll(pattern)];
-    matches.forEach((match, index) => {
-      const conceptText = match[0].trim();
-      if (conceptText.length > 15) {
-        concepts.push({
-          id: `rel-${patternIndex}-${index}`,
+          id: `connection-${patternIndex}-${index}`,
           text: conceptText,
           type: "relationship",
-          color: "#F0E68C", // Khaki for relationships
+          color: "#3B82F6", // Blue for connections and relationships
           importance: 0.65,
-          connections: []
+          connections: [],
+          visualMetaphor: "🔵 Learning Connection"
         });
       }
     });
   });
 
-  // Sort by importance and limit to prevent overwhelming
-  return concepts
+  // Educational value scoring and filtering
+  const scoredConcepts = concepts.map(concept => {
+    let educationalScore = concept.importance;
+    
+    // Boost score for educational keywords
+    const educationalKeywords = /\b(learn|understand|study|remember|important|key|main|critical|essential|definition|example|because|therefore)\b/gi;
+    const keywordMatches = (concept.text.match(educationalKeywords) || []).length;
+    educationalScore += keywordMatches * 0.1;
+    
+    // Boost score for optimal length (not too short, not too long)
+    if (concept.text.length >= 30 && concept.text.length <= 100) {
+      educationalScore += 0.2;
+    }
+    
+    // Boost score for complete sentences
+    if (concept.text.match(/[.!?]$/)) {
+      educationalScore += 0.1;
+    }
+    
+    return {
+      ...concept,
+      importance: Math.min(1.0, educationalScore) // Cap at 1.0
+    };
+  });
+
+  // Return top educational concepts, prioritizing learning effectiveness
+  return scoredConcepts
     .sort((a, b) => b.importance - a.importance)
-    .slice(0, 15); // Increased limit for better coverage
+    .slice(0, 8) // Limit to 8 high-quality educational highlights
+    .filter(concept => concept.importance > 0.5); // Only keep educationally valuable content
 }
 
 export default function CleanHybridReader({
@@ -638,7 +653,7 @@ export default function CleanHybridReader({
             console.error('Enhanced analysis error:', error);
             // Fallback to original concept extraction
             if (rightBrainMode) {
-              const concepts = extractConcepts(selectionText);
+              const concepts = extractEducationalConcepts(selectionText);
               setConceptHighlights(concepts);
             }
           }
@@ -646,11 +661,11 @@ export default function CleanHybridReader({
         
         performEnhancedAnalysis();
       } else {
-        // Original concept extraction for right-brain highlighting
-        if (rightBrainMode) {
-          const concepts = extractConcepts(selectionText);
-          setConceptHighlights(concepts);
-        }
+              // Original concept extraction for right-brain highlighting
+              if (rightBrainMode) {
+                const concepts = extractEducationalConcepts(selectionText);
+                setConceptHighlights(concepts);
+              }
       }
     } else {
       setSmartContent(null);
@@ -739,148 +754,70 @@ export default function CleanHybridReader({
     setIsSpeaking(false);
   };
 
-  // Enhanced right-brain highlighting based on concept understanding
+  // Simplified highlighting system - debounced and optimized
   useEffect(() => {
-    if (highlightMode === "smart" && pageTextIndex && pdfContainerRef.current && pageTextIndex.text.trim().length > 0) {
-      // Clear previous highlights and their event listeners
-      const existingHighlights = pdfContainerRef.current.querySelectorAll('.concept-highlight');
-      existingHighlights.forEach(el => {
-        const htmlEl = el as HTMLElement;
-        htmlEl.style.backgroundColor = '';
-        htmlEl.style.borderLeft = '';
-        htmlEl.style.paddingLeft = '';
-        htmlEl.style.cursor = '';
-        htmlEl.classList.remove('concept-highlight');
-        
-        // Remove click event listener by cloning the element (removes all listeners)
-        const conceptId = htmlEl.getAttribute('data-concept-id');
-        if (conceptId) {
-          const newElement = htmlEl.cloneNode(true) as HTMLElement;
-          htmlEl.parentNode?.replaceChild(newElement, htmlEl);
-        }
-      });
+    if (highlightMode === "smart" && pageTextIndex && pdfContainerRef.current && pageTextIndex.text.trim().length > 50) {
+      // Debounce highlighting to prevent excessive processing
+      const timeoutId = setTimeout(() => {
+        try {
+          // Clear previous highlights safely
+          const existingHighlights = pdfContainerRef.current!.querySelectorAll('.concept-highlight');
+          existingHighlights.forEach(el => {
+            const htmlEl = el as HTMLElement;
+            htmlEl.style.backgroundColor = '';
+            htmlEl.style.borderLeft = '';
+            htmlEl.style.paddingLeft = '';
+            htmlEl.style.cursor = '';
+            htmlEl.classList.remove('concept-highlight');
+            htmlEl.removeAttribute('data-concept-id');
+            htmlEl.removeAttribute('title');
+          });
 
-      if (rightBrainMode) {
-        // Right-brain concept highlighting - only if we have substantial text
-        if (pageTextIndex.text.length > 50) {
-          const concepts = extractConcepts(pageTextIndex.text);
+          // Simple, reliable highlighting system
+          const concepts = extractEducationalConcepts(pageTextIndex.text);
           
-          concepts.forEach(concept => {
-            if (pdfContainerRef.current && concept.text.length > 10) {
+          concepts.slice(0, 3).forEach((concept, index) => { // Limit to 3 concepts to prevent overload
+            if (pdfContainerRef.current && concept.text.length > 15) {
+              // Find text nodes containing concept keywords
               const walker = document.createTreeWalker(
                 pdfContainerRef.current,
                 NodeFilter.SHOW_TEXT,
-                null
-              );
-              
-              const textNodes: Text[] = [];
-              let node;
-              while (node = walker.nextNode()) {
-                const textContent = node.textContent;
-                if (textContent && textContent.trim().length > 0) {
-                  textNodes.push(node as Text);
-                }
-              }
-              
-              // Find and highlight concept text with better matching
-              const conceptWords = concept.text.toLowerCase().split(/\s+/).filter(word => word.length > 3);
-              let highlightApplied = false;
-              
-              textNodes.forEach(textNode => {
-                const text = textNode.textContent?.toLowerCase() || '';
-                if (text.length > 5) { // Only consider substantial text nodes
-                  const matchingWords = conceptWords.filter(word => text.includes(word));
-                  const matchRatio = matchingWords.length / conceptWords.length;
-                  
-                  // Only highlight if we have a good match ratio and the parent element has visible content
-                  if (matchRatio >= 0.5 && textNode.parentElement && !highlightApplied) {
-                    const parent = textNode.parentElement;
-                    const parentText = parent.textContent?.trim();
-                    
-                    if (parentText && parentText.length > 5) {
-                      parent.style.backgroundColor = concept.color + '40'; // Add transparency
-                      parent.style.borderLeft = `3px solid ${concept.color}`;
-                      parent.style.paddingLeft = '2px';
-                      parent.style.cursor = 'pointer';
-                      parent.classList.add('concept-highlight');
-                      parent.title = `Click to explore: ${concept.type} - ${concept.text.slice(0, 100)}`;
-                      
-                      // Make it interactive - add click handler
-                      const clickHandler = (e: Event) => {
-                        e.stopPropagation();
-                        const rect = parent.getBoundingClientRect();
-                        const containerRect = pdfContainerRef.current?.getBoundingClientRect();
-                        
-                        if (containerRect) {
-                          setTuModalState({
-                            isOpen: true,
-                            text: concept.text,
-                            conceptType: concept.type,
-                            position: {
-                              x: rect.left - containerRect.left + 20,
-                              y: rect.top - containerRect.top + 20
-                            },
-                            confidence: concept.importance
-                          });
-                        }
-                      };
-                      
-                      parent.addEventListener('click', clickHandler);
-                      parent.setAttribute('data-concept-id', concept.id);
-                      
-                      highlightApplied = true; // Prevent multiple highlights for the same concept
-                    }
+                {
+                  acceptNode: (node) => {
+                    const text = node.textContent?.toLowerCase() || '';
+                    const conceptWords = concept.text.toLowerCase().split(/\s+/).filter(word => word.length > 4);
+                    const hasMatch = conceptWords.some(word => text.includes(word));
+                    return hasMatch ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
                   }
                 }
-              });
-            }
-          });
-        }
-      } else {
-        // Traditional smart highlighting - only if we have substantial text
-        if (pageTextIndex.text.length > 50) {
-          const importantTerms = pageTextIndex.text
-            .split(/\s+/)
-            .filter(word => 
-              word.length > 6 && 
-              /^[A-Z]/.test(word) && 
-              !['However', 'Therefore', 'Because', 'Through'].includes(word)
-            )
-            .slice(0, 5);
-
-          importantTerms.forEach(term => {
-            if (pdfContainerRef.current && term.length > 3) {
-              const walker = document.createTreeWalker(
-                pdfContainerRef.current,
-                NodeFilter.SHOW_TEXT,
-                null
               );
               
-              const textNodes: Text[] = [];
               let node;
-              while (node = walker.nextNode()) {
-                const textContent = node.textContent;
-                if (textContent && textContent.trim().length > 0) {
-                  textNodes.push(node as Text);
+              let highlightCount = 0;
+              while (node = walker.nextNode() && highlightCount < 2) { // Limit highlights per concept
+                const parent = node.parentElement;
+                if (parent && !parent.classList.contains('concept-highlight') && parent.textContent && parent.textContent.trim().length > 10) {
+                  parent.style.backgroundColor = `${concept.color}30`; // Light transparency
+                  parent.style.borderLeft = `3px solid ${concept.color}`;
+                  parent.style.paddingLeft = '4px';
+                  parent.classList.add('concept-highlight');
+                  parent.setAttribute('data-concept-id', concept.id);
+                  parent.title = `${concept.type}: ${concept.text.slice(0, 60)}...`;
+                  highlightCount++;
                 }
               }
-              
-              textNodes.forEach(textNode => {
-                const text = textNode.textContent || '';
-                if (text.length > 5 && text.toLowerCase().includes(term.toLowerCase())) {
-                  const parent = textNode.parentElement;
-                  if (parent && parent.textContent?.trim() && parent.textContent.trim().length > 5) {
-                    parent.style.backgroundColor = "rgba(255, 235, 59, 0.2)";
-                    parent.classList.add('concept-highlight');
-                  }
-                }
-              });
             }
           });
+          
+        } catch (error) {
+          console.error('Highlighting error:', error);
+          // Fail silently to prevent crashes
         }
-      }
+      }, 500); // 500ms debounce
+      
+      return () => clearTimeout(timeoutId);
     }
-  }, [pageTextIndex, highlightMode, rightBrainMode]);
+  }, [pageTextIndex, highlightMode]);
 
   // Initialize concept-anchored highlighter when enabled
   useEffect(() => {

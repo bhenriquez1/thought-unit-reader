@@ -227,7 +227,7 @@ export default function NoteLabHybridReader({
     };
   }, []);
 
-  // Enhanced Note-Aware Butler Analysis
+  // Enhanced Note-Aware Butler Analysis with performance optimizations and error boundaries
   useEffect(() => {
     if (thoughtUnits.length > 0 && currentThoughtUnit >= 1 && currentThoughtUnit <= thoughtUnits.length) {
       const currentUnitText = unitToText(thoughtUnits[currentThoughtUnit - 1]);
@@ -235,39 +235,84 @@ export default function NoteLabHybridReader({
       if (currentUnitText && currentUnitText.length > 50) {
         console.log('📝 NoteLab Butler: Analyzing unit text...');
         
-        const performNoteAnalysis = async () => {
-          try {
-            // Standard Butler analysis
-            const baseAnalysis = await analyzeTextWithButler(currentUnitText);
-            
-            // Enhanced note-worthy content analysis
-            const noteAnalysis = analyzeForNoteWorthy(currentUnitText);
-            const studyQuestions = generateStudyQuestions(currentUnitText);
-            
-            // Create note-enhanced analysis
-            const noteButlerAnalysis: NoteButlerAnalysis = {
-              ...baseAnalysis,
-              noteWorthyContent: noteAnalysis.keyTerms,
-              keyTerms: noteAnalysis.keyTerms,
-              summaryPoints: noteAnalysis.definitions.map(d => `${d.term}: ${d.definition}`),
-              studyQuestions,
-              memoryAids: noteAnalysis.examples.map(ex => ex.replace(/^.+?:\s*/, '')),
-              visualConcepts: noteAnalysis.processes
-            };
-            
-            setButlerAnalysis(noteButlerAnalysis);
-            setButlerHighlights(noteButlerAnalysis.highlights);
-            
-            console.log(`📝 NoteLab Butler analysis complete: ${noteButlerAnalysis.highlights.length} highlights, ${noteAnalysis.keyTerms.length} key terms`);
-          } catch (error) {
-            console.error('NoteLab Butler analysis error:', error);
-          }
-        };
+        // Debounce analysis to prevent excessive processing
+        const timeoutId = setTimeout(() => {
+          const performNoteAnalysis = async () => {
+            try {
+              // Add loading state
+              setButlerAnalysis(null);
+              setButlerHighlights([]);
+              
+              // Standard Butler analysis with timeout
+              const analysisPromise = analyzeTextWithButler(currentUnitText);
+              const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Analysis timeout')), 10000)
+              );
+              
+              const baseAnalysis = await Promise.race([analysisPromise, timeoutPromise]) as any;
+              
+              // Enhanced note-worthy content analysis
+              const noteAnalysis = analyzeForNoteWorthy(currentUnitText);
+              const studyQuestions = generateStudyQuestions(currentUnitText);
+              
+              // Create note-enhanced analysis
+              const noteButlerAnalysis: NoteButlerAnalysis = {
+                ...baseAnalysis,
+                noteWorthyContent: noteAnalysis.keyTerms.slice(0, 10), // Limit to prevent overload
+                keyTerms: noteAnalysis.keyTerms.slice(0, 8),
+                summaryPoints: noteAnalysis.definitions.slice(0, 5).map(d => `${d.term}: ${d.definition}`),
+                studyQuestions: studyQuestions.slice(0, 4),
+                memoryAids: noteAnalysis.examples.slice(0, 3).map(ex => ex.replace(/^.+?:\s*/, '')),
+                visualConcepts: noteAnalysis.processes.slice(0, 4)
+              };
+              
+              setButlerAnalysis(noteButlerAnalysis);
+              setButlerHighlights(noteButlerAnalysis.highlights);
+              
+              console.log(`📝 NoteLab Butler analysis complete: ${noteButlerAnalysis.highlights.length} highlights, ${noteAnalysis.keyTerms.length} key terms`);
+            } catch (error) {
+              console.error('NoteLab Butler analysis error:', error);
+              // Graceful fallback - create basic analysis
+              const fallbackAnalysis: NoteButlerAnalysis = {
+                comprehensionScore: 0.5,
+                highlights: [],
+                mainIdeas: [],
+                supportingConcepts: [],
+                definitions: [],
+                processes: [],
+                relationships: [],
+                fluffContent: [],
+                cleanedText: currentUnitText,
+                readingTime: Math.ceil(currentUnitText.length / 200),
+                keyTerms: [],
+                noteWorthyContent: [],
+                summaryPoints: [currentUnitText.slice(0, 150) + '...'],
+                studyQuestions: ['What is the main point of this section?'],
+                memoryAids: ['Review this content again'],
+                visualConcepts: []
+              };
+              setButlerAnalysis(fallbackAnalysis);
+              setButlerHighlights([]);
+            }
+          };
+          
+          performNoteAnalysis();
+        }, 300); // 300ms debounce
         
-        performNoteAnalysis();
+        return () => clearTimeout(timeoutId);
       }
     }
   }, [thoughtUnits, currentThoughtUnit]);
+
+  // Memory management and cleanup
+  useEffect(() => {
+    return () => {
+      if (speechRef.current) {
+        speechSynthesis.cancel();
+      }
+      // Clear any analysis timeouts
+    };
+  }, []);
 
   // Enhanced text selection handler
   const handleMouseUp = (e: React.MouseEvent) => {
