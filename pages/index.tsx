@@ -28,6 +28,7 @@ import {
 import EnhancedWhiteboard from "@/components/EnhancedWhiteboard";
 import LibraryPanel from "@/components/LibraryPanel";
 import ChunkRail from "@/components/ChunkRail";
+import { MultiViewContainer } from "@/components/ViewContainer";
 import { useReaderSync, stableChunkId, analyzeContentDensity } from "@/lib/readerSync";
 
 import {
@@ -1132,7 +1133,7 @@ export default function ThoughtUnitReader() {
   };
 
   /* =========================================================================
-     🔹 Render Reader Content
+     🔹 Render Reader Content with Persistent Views (Performance Optimized)
   ========================================================================= */
   const renderContent = () => {
     // 🔐 Gate the app: must be signed in before doing anything
@@ -1164,10 +1165,11 @@ export default function ThoughtUnitReader() {
       );
     }
 
-
-        // Enhanced Clean Hybrid Reading - AI-powered thought unit system with advanced features
-        if (viewMode === "hybrid") {
-          return fileUrl ? (
+    // ✅ Enhanced View System - Optimized for Performance
+    if (fileUrl && thoughtUnits.length > 0) {
+      // Return the appropriate view based on viewMode
+      if (viewMode === "hybrid") {
+        return fileUrl ? (
             <div className="h-full flex flex-col">
               {/* Enhanced Hybrid Reader Controls */}
               <div className="bg-gray-800 border-b border-gray-700 p-3 flex items-center justify-between">
@@ -1335,6 +1337,7 @@ export default function ThoughtUnitReader() {
             </div>
           );
         }
+      }
 
     // ✅ Show loading state during PDF parsing for Pattern view
     if (viewMode === "pattern") {
