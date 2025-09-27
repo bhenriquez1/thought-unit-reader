@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import type { ThoughtUnit as BaseThoughtUnit, ReadingStats } from "@/types/reading";
 import { 
   DAT_PATTERNS, 
@@ -11,11 +11,8 @@ import {
   type PatternMastery
 } from "@/types/patterns";
 import { 
-  saveReadingProgress, 
-  loadReadingProgress,
   savePatternAttempt,
-  loadPatternMastery,
-  savePatternMasteryCache 
+  loadPatternMastery
 } from "@/lib/firebase";
 import { auth } from "@/lib/firebase";
 import type { User } from "firebase/auth";
@@ -49,6 +46,18 @@ function unitToText(u: PVUnit): string {
   return typeof maybeText === "string" ? maybeText : JSON.stringify(u);
 }
 
+// Training workflow steps
+type TrainingStep = 'content' | 'pattern-selection' | 'rules' | 'attempt' | 'solution' | 'assessment' | 'complete';
+
+interface TrainingState {
+  step: TrainingStep;
+  selectedPatternId: string | null;
+  userAttempt: string;
+  attemptStartTime: number;
+  isCorrect: boolean | null;
+  showHint: boolean;
+  attemptsCount: number;
+}
 
 // Pattern suggestion based on content analysis
 function suggestPatterns(text: string): Pattern[] {
@@ -105,14 +114,19 @@ export default function PatternView({
   externalSelectionText,
 }: PatternViewProps) {
   const [user, setUser] = useState<User | null>(null);
-  const [selectedPatternId, setSelectedPatternId] = useState<string>("");
-  const [showRules, setShowRules] = useState(false);
-  const [userAttempt, setUserAttempt] = useState("");
-  const [showSolution, setShowSolution] = useState(false);
-  const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
-  const [attemptStartTime, setAttemptStartTime] = useState(Date.now());
   const [patternMastery, setPatternMastery] = useState<PatternMastery[]>([]);
   const [showMasteryPanel, setShowMasteryPanel] = useState(false);
+  
+  // Training workflow state
+  const [trainingState, setTrainingState] = useState<TrainingState>({
+    step: 'content',
+    selectedPatternId: null,
+    userAttempt: '',
+    attemptStartTime: Date.now(),
+    isCorrect: null,
+    showHint: false,
+    attemptsCount: 0
+  });
 
   // Auth
   useEffect(() => {
@@ -127,14 +141,17 @@ export default function PatternView({
     }
   }, [userId]);
 
-  // Reset for new thought unit
+  // Reset training for new thought unit
   useEffect(() => {
-    setSelectedPatternId("");
-    setShowRules(false);
-    setUserAttempt("");
-    setShowSolution(false);
-    setIsCorrect(null);
-    setAttemptStartTime(Date.now());
+    setTrainingState({
+      step: 'content',
+      selectedPatternId: null,
+      userAttempt: '',
+      attemptStartTime: Date.now(),
+      isCorrect: null,
+      showHint: false,
+      attemptsCount: 0
+    });
   }, [currentThoughtUnit]);
 
   // ✅ Simplified validation - main index.tsx handles empty states
@@ -152,70 +169,73 @@ export default function PatternView({
         </div>
       );
     }
-    // Use fallback unit
-    const unitText = unitToText(fallbackUnit);
-    const selectedPattern = selectedPatternId ? getPatternById(selectedPatternId) : null;
-    const suggestedPatterns = useMemo(() => suggestPatterns(unitText), [unitText]);
-    // Continue with fallback unit...
   }
 
   const unitText = unitToText(rawUnit);
-  const selectedPattern = selectedPatternId ? getPatternById(selectedPatternId) : null;
+  const selectedPattern = trainingState.selectedPatternId ? getPatternById(trainingState.selectedPatternId) : null;
   const suggestedPatterns = useMemo(() => suggestPatterns(unitText), [unitText]);
 
-  const handlePatternSelect = (patternId: string) => {
-    setSelectedPatternId(patternId);
-    setShowRules(true);
-    setUserAttempt("");
-    setShowSolution(false);
-    setIsCorrect(null);
-  };
+  // Interactive training workflow handlers
+  const handlePatternSelect = useCallback((patternId: string) => {
+    setTrainingState(prev => ({
+      ...prev,
+      step: 'rules',
+      selectedPatternId: patternId,
+      attemptStartTime: Date.now()
+    }));
+  }, []);
 
-  const handleSubmitAttempt = () => {
-    if (!selectedPatternId || !userAttempt.trim()) {
+  const handleStartAttempt = useCallback(() => {
+    setTrainingState(prev => ({ ...prev, step: 'attempt' }));
+  }, []);
+
+  const handleSubmitAttempt = useCallback(() => {
+    if (!trainingState.selectedPatternId || !trainingState.userAttempt.trim()) {
       alert("Please select a pattern and provide your reasoning.");
       return;
     }
+    setTrainingState(prev => ({ ...prev, step: 'solution', attemptsCount: prev.attemptsCount + 1 }));
+  }, [trainingState.selectedPatternId, trainingState.userAttempt]);
 
-    // For now, we'll let the user self-evaluate
-    // In a real implementation, this could use AI or predefined answers
-    setShowSolution(true);
-  };
-
-  const handleGradeAttempt = (correct: boolean) => {
-    const timeSpent = Math.round((Date.now() - attemptStartTime) / 1000);
+  const handleGradeAttempt = useCallback((correct: boolean) => {
+    const timeSpent = Math.round((Date.now() - trainingState.attemptStartTime) / 1000);
     
-    // Save attempt
+    // Save attempt to Firebase
     const attempt: PatternAttempt = {
       id: `${Date.now()}-${Math.random()}`,
       userId: userId || "guest",
-      patternId: selectedPatternId,
+      patternId: trainingState.selectedPatternId!,
       thoughtUnitId: currentThoughtUnit.toString(),
       bookId,
       timestamp: new Date().toISOString(),
-      selectedPattern: selectedPatternId,
+      selectedPattern: trainingState.selectedPatternId!,
       correct,
       timeSpent,
       skipped: false,
-      notes: userAttempt
+      notes: trainingState.userAttempt
     };
     
     savePatternAttempt(userId || "guest", attempt);
-    setIsCorrect(correct);
     
-    // Update mastery
+    setTrainingState(prev => ({
+      ...prev,
+      step: 'assessment',
+      isCorrect: correct
+    }));
+    
+    // Update mastery data
     if (userId) {
       loadPatternMastery(userId).then(setPatternMastery);
     }
-  };
+  }, [trainingState.selectedPatternId, trainingState.userAttempt, trainingState.attemptStartTime, userId, currentThoughtUnit, bookId]);
 
-  const handleSkip = () => {
-    const timeSpent = Math.round((Date.now() - attemptStartTime) / 1000);
+  const handleSkip = useCallback(() => {
+    const timeSpent = Math.round((Date.now() - trainingState.attemptStartTime) / 1000);
     
     const attempt: PatternAttempt = {
       id: `${Date.now()}-${Math.random()}`,
       userId: userId || "guest",
-      patternId: selectedPatternId || "unknown",
+      patternId: trainingState.selectedPatternId || "unknown",
       thoughtUnitId: currentThoughtUnit.toString(),
       bookId,
       timestamp: new Date().toISOString(),
@@ -227,13 +247,17 @@ export default function PatternView({
     
     savePatternAttempt(userId || "guest", attempt);
     
-    // Move to next unit or reset
-    setSelectedPatternId("");
-    setShowRules(false);
-    setUserAttempt("");
-    setShowSolution(false);
-    setIsCorrect(null);
-  };
+    // Reset training state for next unit
+    setTrainingState({
+      step: 'content',
+      selectedPatternId: null,
+      userAttempt: '',
+      attemptStartTime: Date.now(),
+      isCorrect: null,
+      showHint: false,
+      attemptsCount: 0
+    });
+  }, [trainingState.selectedPatternId, trainingState.attemptStartTime, userId, currentThoughtUnit, bookId]);
 
   const getMasteryForPattern = (patternId: string): PatternMastery | undefined => {
     return patternMastery.find(m => m.patternId === patternId);
@@ -315,13 +339,13 @@ export default function PatternView({
       <div className="flex-1 flex">
         {/* Main Content */}
         <div className="flex-1 p-6">
-          {/* Thought Unit Display */}
+          {/* Step 1: Thought Unit Display */}
           <div
             className="mb-6 p-4 bg-gray-800 rounded-lg border-l-4 border-blue-400"
             style={{ fontSize: `${fontSize}px`, fontFamily, lineHeight: lineSpacing }}
             onMouseUp={selBind?.onMouseUp}
           >
-            <h3 className="text-lg font-semibold text-blue-400 mb-3">Thought Unit Content</h3>
+            <h3 className="text-lg font-semibold text-blue-400 mb-3">📖 Step 1: Read the Thought Unit</h3>
             <div className="leading-relaxed">
               {unitText.split(' ').map((word, idx) => (
                 <span
@@ -335,14 +359,14 @@ export default function PatternView({
             </div>
           </div>
 
-          {/* Pattern Selection */}
+          {/* Step 2: Pattern Selection */}
           <div className="mb-6">
-            <h3 className="text-lg font-semibold mb-3">🎯 Step 1: Identify the Pattern</h3>
+            <h3 className="text-lg font-semibold mb-3">🎯 Step 2: Select the Best Pattern</h3>
             
             {/* Suggested Patterns */}
-            {suggestedPatterns.length > 0 && !selectedPatternId && (
+            {suggestedPatterns.length > 0 && trainingState.step === 'content' && (
               <div className="mb-4 p-3 bg-purple-900 bg-opacity-30 rounded-lg">
-                <h4 className="text-sm font-medium text-purple-400 mb-2">💡 Suggested Patterns:</h4>
+                <h4 className="text-sm font-medium text-purple-400 mb-2">💡 AI Suggested Patterns:</h4>
                 <div className="flex flex-wrap gap-2">
                   {suggestedPatterns.map(pattern => (
                     <button
@@ -358,220 +382,19 @@ export default function PatternView({
             )}
 
             {/* Pattern Categories */}
-            <div className="space-y-3">
-              {Object.entries(PATTERN_CATEGORIES).map(([categoryKey, categoryName]) => (
-                <div key={categoryKey}>
-                  <h4 className="text-sm font-medium text-gray-400 mb-2">{categoryName}</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {DAT_PATTERNS.filter(p => p.category === categoryKey).map(pattern => {
-                      const mastery = getMasteryForPattern(pattern.id);
-                      const isSelected = selectedPatternId === pattern.id;
-                      
-                      return (
-                        <button
-                          key={pattern.id}
-                          onClick={() => handlePatternSelect(pattern.id)}
-                          className={`px-3 py-2 rounded text-sm transition-colors ${
-                            isSelected
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-gray-700 hover:bg-gray-600 text-gray-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            {mastery && <span>{getMasteryIcon(mastery.masteryLevel)}</span>}
-                            <span>{pattern.name}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Decision Rules Checklist */}
-          {showRules && selectedPattern && (
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold mb-3">📋 Step 2: Apply Decision Rules</h3>
-              <div className="p-4 bg-gray-800 rounded-lg">
-                <h4 className="font-semibold text-yellow-400 mb-3">{selectedPattern.name}</h4>
-                <p className="text-gray-300 mb-4">{selectedPattern.description}</p>
-                
-                <div className="space-y-3">
-                  {selectedPattern.rules.map((rule, index) => (
-                    <div key={index} className="flex items-start gap-3">
-                      <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-xs font-bold">
-                        {index + 1}
-                      </div>
-                      <div className="flex-1">
-                        <div className="font-medium text-blue-400">{rule.key}</div>
-                        <div className="text-gray-300">{rule.description}</div>
-                        {rule.example && (
-                          <div className="text-sm text-gray-400 mt-1">
-                            Example: {rule.example}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* User Attempt */}
-          {showRules && (
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold mb-3">✍️ Step 3: Your Reasoning</h3>
-              <textarea
-                value={userAttempt}
-                onChange={(e) => setUserAttempt(e.target.value)}
-                placeholder="Apply the decision rules to this thought unit. Walk through your reasoning step by step..."
-                className="w-full h-32 p-3 bg-gray-800 rounded-lg border border-gray-600 resize-none"
-                disabled={showSolution}
-              />
-              
-              <div className="flex gap-3 mt-3">
-                {!showSolution ? (
-                  <>
-                    <button
-                      onClick={handleSubmitAttempt}
-                      className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded"
-                      disabled={!userAttempt.trim()}
-                    >
-                      Submit Attempt
-                    </button>
-                    <button
-                      onClick={handleSkip}
-                      className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded"
-                    >
-                      Skip This Unit
-                    </button>
-                  </>
-                ) : (
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => handleGradeAttempt(true)}
-                      className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded"
-                      disabled={isCorrect !== null}
-                    >
-                      ✅ I Got It Right
-                    </button>
-                    <button
-                      onClick={() => handleGradeAttempt(false)}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-500 rounded"
-                      disabled={isCorrect !== null}
-                    >
-                      ❌ I Need More Practice
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Solution/Feedback */}
-          {showSolution && selectedPattern && (
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold mb-3">💡 Pattern Application & Examples</h3>
-              <div className="p-4 bg-gray-800 rounded-lg">
-                <div className="mb-4">
-                  <h4 className="font-semibold text-green-400 mb-2">Example Applications:</h4>
-                  <ul className="list-disc list-inside space-y-1 text-gray-300">
-                    {selectedPattern.examples.map((example, index) => (
-                      <li key={index}>{example}</li>
-                    ))}
-                  </ul>
-                </div>
-                
-                <div>
-                  <h4 className="font-semibold text-red-400 mb-2">Common Mistakes:</h4>
-                  <ul className="list-disc list-inside space-y-1 text-gray-300">
-                    {selectedPattern.commonMistakes.map((mistake, index) => (
-                      <li key={index}>{mistake}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              {isCorrect !== null && (
-                <div className={`mt-4 p-3 rounded-lg ${
-                  isCorrect ? 'bg-green-900 bg-opacity-50 border border-green-500' : 'bg-red-900 bg-opacity-50 border border-red-500'
-                }`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-lg">{isCorrect ? '🎉' : '💪'}</span>
-                    <span className="font-semibold">
-                      {isCorrect ? 'Great job!' : 'Keep practicing!'}
-                    </span>
-                  </div>
-                  <p className="text-sm">
-                    {isCorrect 
-                      ? 'You\'re building strong pattern recognition skills. Continue to the next unit!'
-                      : 'Pattern recognition takes practice. Review the decision rules and try similar problems.'
-                    }
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Sidebar - Quick Reference */}
-        <div className="w-80 bg-gray-800 p-4 border-l border-gray-700 overflow-y-auto">
-          <h3 className="font-semibold mb-4">🔍 Pattern Quick Reference</h3>
-          
-          {selectedPattern ? (
-            <div className="space-y-3">
-              <div className="p-3 bg-gray-700 rounded">
-                <h4 className="font-medium text-yellow-400">{selectedPattern.name}</h4>
-                <p className="text-sm text-gray-300 mt-1">{selectedPattern.description}</p>
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {selectedPattern.tags.map(tag => (
-                    <span key={tag} className="px-2 py-1 bg-gray-600 rounded text-xs">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {DAT_PATTERNS.slice(0, 6).map(pattern => (
-                <div key={pattern.id} className="p-2 bg-gray-700 rounded text-sm">
-                  <div className="font-medium">{pattern.name}</div>
-                  <div className="text-xs text-gray-400">{pattern.category}</div>
-                </div>
-              ))}
-              <div className="text-xs text-gray-500 mt-2">
-                Select a pattern above to see detailed rules and examples
-              </div>
-            </div>
-          )}
-
-          {/* Performance Summary */}
-          <div className="mt-6">
-            <h4 className="font-semibold mb-3">📈 Your Progress</h4>
-            <div className="space-y-2">
-              {['mastered', 'practicing', 'learning'].map(level => {
-                const count = patternMastery.filter(m => m.masteryLevel === level).length;
-                const icon = getMasteryIcon(level as PatternMastery['masteryLevel']);
-                const color = getMasteryColor(level as PatternMastery['masteryLevel']);
-                
-                return (
-                  <div key={level} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span>{icon}</span>
-                      <span className={`text-sm capitalize ${color}`}>{level}</span>
-                    </div>
-                    <span className="text-sm">{count}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+            {trainingState.step === 'content' && (
+              <div className="space-y-3">
+                {Object.entries(PATTERN_CATEGORIES).map(([categoryKey, categoryName]) => (
+                  <div key={categoryKey}>
+                    <h4 className="text-sm font-medium text-gray-400 mb-2">{categoryName}</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {DAT_PATTERNS.filter(p => p.category === categoryKey).map(pattern => {
+                        const mastery = getMasteryForPattern(pattern.id);
+                        
+                        return (
+                          <button
+                            key={pattern.id}
+                            onClick={() => handlePatternSelect(pattern.id)}
+                            className="px-3 py-2 rounded text-sm transition-colors bg-gray-700 hover:bg-gray-600 text-gray-200"
+                          >
+                            <div className="flex items-center gap-

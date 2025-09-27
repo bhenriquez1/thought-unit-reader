@@ -1,6 +1,23 @@
 "use client";
 
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
+
+// Debouncing utility for performance optimization
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
 import type { ThoughtUnit as BaseThoughtUnit, ReadingStats } from "@/types/reading";
 import { Document, Page } from "react-pdf";
 import { 
@@ -620,80 +637,221 @@ export default function CleanHybridReader({
     };
   }, [currentPage]);
 
-  // Enhanced smart content generation with comprehensive analysis
+  // Debounced selection text for performance
+  const debouncedSelectionText = useDebounce(selectionText, 300);
+  const debouncedPageTextIndex = useDebounce(pageTextIndex, 500);
+
+  // Enhanced smart content generation with comprehensive analysis - DEBOUNCED
   useEffect(() => {
-    if (selectionText && selectionText.length > 10) {
-      const pageContext = pageTextIndex?.text.slice(0, 500) || "";
-      const content = generateSmartContent(selectionText, pageContext);
-      setSmartContent(content);
-      
-      // Enhanced analysis integration
-      if (enhancedMode) {
-        const performEnhancedAnalysis = async () => {
-          try {
-            const analysis = await enhancedHybridAnalysisEngine.analyzeText(selectionText);
-            setComprehensiveAnalysis(analysis);
-            
-            // Use enhanced concept extraction
-            const enhancedThoughtUnits = await analyzeTextForThoughtUnitsEnhanced(selectionText);
-            if (enhancedThoughtUnits.thoughtUnits.length > 0) {
-              const enhancedConcepts = enhancedThoughtUnits.thoughtUnits
-                .filter(unit => unit.isMainIdea || unit.confidence > 0.7)
-                .map(unit => ({
-                  id: `enhanced-${unit.id}`,
-                  text: unit.text,
-                  type: "main-idea" as const,
-                  color: "#FFD700",
-                  importance: unit.confidence,
-                  connections: []
-                }));
-              setConceptHighlights(enhancedConcepts);
-            }
-          } catch (error) {
-            console.error('Enhanced analysis error:', error);
-            // Fallback to original concept extraction
-            if (rightBrainMode) {
-              const concepts = extractEducationalConcepts(selectionText);
-              setConceptHighlights(concepts);
-            }
-          }
-        };
-        
-        performEnhancedAnalysis();
-      } else {
-              // Original concept extraction for right-brain highlighting
-              if (rightBrainMode) {
-                const concepts = extractEducationalConcepts(selectionText);
-                setConceptHighlights(concepts);
-              }
-      }
-    } else {
+    if (!debouncedSelectionText || debouncedSelectionText.length <= 10) {
       setSmartContent(null);
       setConceptHighlights([]);
       setComprehensiveAnalysis(null);
+      return;
     }
-  }, [selectionText, pageTextIndex, rightBrainMode, enhancedMode]);
 
-  // Butler Analysis Effects
+    const abortController = new AbortController();
+    
+    const performAnalysis = async () => {
+      try {
+        if (abortController.signal.aborted) return;
+
+        const pageContext = debouncedPageTextIndex?.text.slice(0, 500) || "";
+        const content = generateSmartContent(debouncedSelectionText, pageContext);
+        
+        if (abortController.signal.aborted) return;
+        setSmartContent(content);
+        
+        // Enhanced analysis integration - with abort control
+        if (enhancedMode) {
+          const [analysis, enhancedThoughtUnits] = await Promise.allSettled([
+            enhancedHybridAnalysisEngine.analyzeText(debouncedSelectionText),
+            analyzeTextForThoughtUnitsEnhanced(debouncedSelectionText)
+          ]);
+          
+          if (abortController.signal.aborted) return;
+          
+          if (analysis.status === 'fulfilled') {
+            setComprehensiveAnalysis(analysis.value);
+          }
+          
+          if (enhancedThoughtUnits.status === 'fulfilled' && enhancedThoughtUnits.value.thoughtUnits.length > 0) {
+            const enhancedConcepts = enhancedThoughtUnits.value.thoughtUnits
+              .filter(unit => unit.isMainIdea || unit.confidence > 0.7)
+              .map(unit => ({
+                id: `enhanced-${unit.id}`,
+                text: unit.text,
+                type: "main-idea" as const,
+                color: "#FFD700",
+                importance: unit.confidence,
+                connections: []
+              }));
+            setConceptHighlights(enhancedConcepts);
+          } else {
+            // Fallback to original concept extraction
+            if (rightBrainMode) {
+              const concepts = extractEducationalConcepts(debouncedSelectionText);
+              setConceptHighlights(concepts);
+            }
+          }
+        } else {
+          // Original concept extraction for right-brain highlighting
+          if (rightBrainMode) {
+            const concepts = extractEducationalConcepts(debouncedSelectionText);
+            setConceptHighlights(concepts);
+          }
+        }
+      } catch (error) {
+        if (!abortController.signal.aborted) {
+          console.error('Analysis error:', error);
+          // Fallback to basic highlighting
+          if (rightBrainMode) {
+            const concepts = extractEducationalConcepts(debouncedSelectionText);
+            setConceptHighlights(concepts);
+          }
+        }
+      }
+    };
+    
+    performAnalysis();
+    
+    return () => {
+      abortController.abort();
+    };
+  }, [debouncedSelectionText, debouncedPageTextIndex, rightBrainMode, enhancedMode]);
+
+  // Butler Analysis Effects - DEBOUNCED with DOM highlighting
   useEffect(() => {
-    if (pageTextIndex?.text && pageTextIndex.text.length > 50) {
+    if (debouncedPageTextIndex?.text && debouncedPageTextIndex.text.length > 50) {
       console.log('🎯 Butler: Analyzing page text...');
+      
+      const abortController = new AbortController();
       
       const performButlerAnalysis = async () => {
         try {
-          const analysis = await analyzeTextWithButler(pageTextIndex.text);
+          if (abortController.signal.aborted) return;
+          
+          const analysis = await analyzeTextWithButler(debouncedPageTextIndex.text);
+          
+          if (abortController.signal.aborted) return;
+          
           setButlerAnalysis(analysis);
           setButlerHighlights(analysis.highlights);
           
+          // Apply Butler highlights to DOM
+          if (pdfContainerRef.current && analysis.highlights.length > 0) {
+            setTimeout(() => applyButlerHighlights(analysis.highlights), 100);
+          }
+          
           console.log(`🎯 Butler analysis complete: ${analysis.highlights.length} highlights, comprehension: ${Math.round(analysis.comprehensionScore * 100)}%`);
         } catch (error) {
-          console.error('Butler analysis error:', error);
+          if (!abortController.signal.aborted) {
+            console.error('Butler analysis error:', error);
+          }
         }
       };
       
       performButlerAnalysis();
+      
+      return () => {
+        abortController.abort();
+      };
     }
-  }, [pageTextIndex]);
+  }, [debouncedPageTextIndex]);
+
+  // Apply Butler highlights to PDF DOM
+  const applyButlerHighlights = useCallback((highlights: ButlerHighlight[]) => {
+    if (!pdfContainerRef.current) return;
+    
+    try {
+      console.log('🎯 Applying Butler highlights to DOM...');
+      
+      // Clear existing Butler highlights
+      const existingButlerHighlights = pdfContainerRef.current.querySelectorAll('.butler-highlight');
+      existingButlerHighlights.forEach(el => {
+        const htmlEl = el as HTMLElement;
+        htmlEl.style.backgroundColor = '';
+        htmlEl.style.border = '';
+        htmlEl.style.fontWeight = '';
+        htmlEl.classList.remove('butler-highlight', 'butler-main-idea', 'butler-supporting', 'butler-definition');
+      });
+
+      // Apply highlights based on Butler analysis
+      const topHighlights = highlights
+        .filter(h => h.confidence > 0.7)
+        .slice(0, 5); // Limit to top 5 highlights to prevent overload
+
+      topHighlights.forEach((highlight, index) => {
+        if (highlight.text.length < 10) return; // Skip very short highlights
+        
+        // Use a more flexible text matching approach
+        const searchText = highlight.text.toLowerCase().trim();
+        const cleanedText = searchText.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
+        
+        // Find text nodes containing the highlight text or similar content
+        const walker = document.createTreeWalker(
+          pdfContainerRef.current!,
+          NodeFilter.SHOW_TEXT,
+          {
+            acceptNode: (node) => {
+              const nodeText = node.textContent?.toLowerCase() || '';
+              const nodeCleanedText = nodeText.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
+              
+              // Check for exact match or partial match of key words
+              const keyWords = cleanedText.split(' ').filter(word => word.length > 3);
+              const hasKeyWords = keyWords.some(word => nodeCleanedText.includes(word));
+              
+              return (nodeCleanedText.includes(cleanedText) || hasKeyWords) 
+                ? NodeFilter.FILTER_ACCEPT 
+                : NodeFilter.FILTER_REJECT;
+            }
+          }
+        );
+        
+        let highlightCount = 0;
+        let node;
+        while (node = walker.nextNode() && highlightCount < 2) { // Limit to 2 highlights per concept
+          const parent = node.parentElement;
+          if (parent && !parent.classList.contains('butler-highlight')) {
+            // Apply Butler-specific styling based on highlight type
+            const butlerClass = `butler-${highlight.type}`;
+            parent.classList.add('butler-highlight', butlerClass);
+            
+            switch (highlight.importance) {
+              case 'gold':
+                parent.style.backgroundColor = '#FFD70030';
+                parent.style.borderLeft = '4px solid #FFD700';
+                parent.style.fontWeight = '600';
+                break;
+              case 'blue':
+                parent.style.backgroundColor = '#4169E130';
+                parent.style.borderLeft = '3px solid #4169E1';
+                break;
+              case 'green':
+                parent.style.backgroundColor = '#32CD3230';
+                parent.style.borderLeft = '2px solid #32CD32';
+                break;
+              default:
+                parent.style.backgroundColor = '#DDD0DD20';
+                parent.style.borderLeft = '1px solid #DDD0DD';
+                break;
+            }
+            
+            parent.style.paddingLeft = '6px';
+            parent.style.margin = '1px 0';
+            parent.title = `Butler ${highlight.type}: ${highlight.text.slice(0, 80)}... (${Math.round(highlight.confidence * 100)}% confidence)`;
+            
+            highlightCount++;
+          }
+        }
+      });
+      
+      console.log(`✅ Applied ${topHighlights.length} Butler highlights to DOM`);
+      
+    } catch (error) {
+      console.error('Error applying Butler highlights:', error);
+    }
+  }, []);
 
   // Enhanced text selection handler
   const handleMouseUp = (e: React.MouseEvent) => {

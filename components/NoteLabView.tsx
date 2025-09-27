@@ -18,6 +18,14 @@ import { createFlashcardFromSelection } from "@/lib/flashcardService";
 import { addMindMapNode } from "@/lib/mindMapService";
 import { auth } from "@/lib/firebase";
 import type { User } from "firebase/auth";
+import { 
+  loadPatternAttempts, 
+  loadPatternMastery 
+} from "@/lib/firebase";
+import { 
+  type PatternAttempt, 
+  type PatternMastery 
+} from "@/types/patterns";
 
 type PVUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
