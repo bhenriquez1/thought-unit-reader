@@ -42,8 +42,8 @@ import { generateMnemonic } from "@/lib/mnemonicAI";
 
 // Lazy-load to keep SSR clean
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
-const PatternTrainingPDFReader = dynamic(() => import("@/components/PatternTrainingPDFReader"), { ssr: false });
-const NoteLabPDFReader = dynamic(() => import("@/components/NoteLabPDFReader"), { ssr: false });
+const PatternTrainingHybridReader = dynamic(() => import("@/components/PatternTrainingHybridReader"), { ssr: false });
+const NoteLabHybridReader = dynamic(() => import("@/components/NoteLabHybridReader"), { ssr: false });
 
 type StickyNote = { pageNumber: number; content: string };
 
@@ -248,7 +248,6 @@ export default function ThoughtUnitReader() {
   const [showTOC] = useState(true);
 
   const [showLibrary, setShowLibrary] = useState(false);
-  const [showStudyLibrary, setShowStudyLibrary] = useState(false);
   const [pdfLibrary, setPdfLibrary] = useState<
     { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean }[]
   >([]);
@@ -1381,10 +1380,42 @@ export default function ThoughtUnitReader() {
       }
 
       return fileUrl && thoughtUnits.length > 0 ? (
-        <div className="h-full flex">
-          {/* Pattern Training PDF Reader with integrated pattern recognition */}
-          <div className="w-1/2 h-full border-r border-gray-700">
-            <PatternTrainingPDFReader
+        <div className="h-full flex flex-col">
+          {/* Pattern Training Butler Header */}
+          <div className="bg-gray-800 border-b border-gray-700 p-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <h3 className="text-lg font-semibold text-blue-400">🎯 Pattern Training Butler</h3>
+              <span className="text-sm text-gray-400">
+                Page {currentPage} of {pdfPageCount} • Unit {currentThoughtUnit} of {thoughtUnits.length}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  const selectedText = sel.selectionText?.trim();
+                  const currentUnitText = thoughtUnits[currentThoughtUnit - 1]?.text?.trim();
+                  const textToAnalyze = selectedText || currentUnitText || "";
+                  
+                  if (textToAnalyze) {
+                    try {
+                      const patternNote = await buildTopStudentNote(textToAnalyze, "highYield");
+                      setRbDraftText(patternNote);
+                      setViewMode("rightbrain");
+                    } catch (error) {
+                      console.error("Pattern note creation failed:", error);
+                    }
+                  }
+                }}
+                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white px-3 py-2 rounded-lg font-medium"
+              >
+                🎯 Pattern Note
+              </button>
+            </div>
+          </div>
+          
+          {/* Integrated Pattern Training Hybrid Reader */}
+          <div className="flex-1 overflow-hidden">
+            <PatternTrainingHybridReader
               bookId={bookId}
               userId={USER_ID}
               pdfUrl={fileUrl}
@@ -1405,6 +1436,7 @@ export default function ThoughtUnitReader() {
                 }
               }}
               onTextSelect={(t) => sel.setSelectionText(t)}
+              onGenerateNote={handleOpenRightBrainNote}
               selBind={sel.bind}
               externalSelectionText={sel.selectionText}
               fontSize={fontSize}
@@ -1415,34 +1447,6 @@ export default function ThoughtUnitReader() {
               speechRate={speechRate}
               onSpeechRateChange={setSpeechRate}
               tableOfContents={tableOfContents}
-            />
-          </div>
-          
-          {/* Pattern Training Side */}
-          <div className="w-1/2 h-full">
-            <PatternView
-              bookId={bookId}
-              userId={USER_ID}
-              thoughtUnits={thoughtUnits}
-              currentThoughtUnit={currentThoughtUnit}
-              stats={stats}
-              currentPage={currentPage}
-              pdfPageCount={pdfPageCount}
-              fontSize={fontSize}
-              fontFamily={fontFamily}
-              lineSpacing={lineSpacing}
-              onWordClick={(w) => {
-                setHighlightedWord(w);
-                if (autoWhiteboard && w.trim()) {
-                  setWbConcept(truncate(w, 600));
-                  setWbContext(`p.${currentPage}`);
-                  setShowWhiteboardPanel(true);
-                }
-              }}
-              onTextSelect={(t) => sel.setSelectionText(t)}
-              onGenerateNote={handleOpenRightBrainNote}
-              selBind={sel.bind}
-              externalSelectionText={sel.selectionText}
             />
           </div>
         </div>
@@ -1541,10 +1545,42 @@ export default function ThoughtUnitReader() {
       }
 
       return fileUrl && thoughtUnits.length > 0 ? (
-        <div className="h-full flex">
-          {/* NoteLab PDF Reader with integrated note-taking */}
-          <div className="w-1/2 h-full border-r border-gray-700">
-            <NoteLabPDFReader
+        <div className="h-full flex flex-col">
+          {/* NoteLab Butler Header */}
+          <div className="bg-gray-800 border-b border-gray-700 p-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <h3 className="text-lg font-semibold text-green-400">📝 NoteLab Butler</h3>
+              <span className="text-sm text-gray-400">
+                Page {currentPage} of {pdfPageCount} • Unit {currentThoughtUnit} of {thoughtUnits.length}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  const selectedText = sel.selectionText?.trim();
+                  const currentUnitText = thoughtUnits[currentThoughtUnit - 1]?.text?.trim();
+                  const textToAnalyze = selectedText || currentUnitText || "";
+                  
+                  if (textToAnalyze) {
+                    try {
+                      const noteNote = await buildTopStudentNote(textToAnalyze, "highYield");
+                      setRbDraftText(noteNote);
+                      setViewMode("rightbrain");
+                    } catch (error) {
+                      console.error("Note creation failed:", error);
+                    }
+                  }
+                }}
+                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white px-3 py-2 rounded-lg font-medium"
+              >
+                📝 Study Note
+              </button>
+            </div>
+          </div>
+          
+          {/* Integrated NoteLab Hybrid Reader */}
+          <div className="flex-1 overflow-hidden">
+            <NoteLabHybridReader
               bookId={bookId}
               userId={USER_ID}
               pdfUrl={fileUrl}
@@ -1565,6 +1601,7 @@ export default function ThoughtUnitReader() {
                 }
               }}
               onTextSelect={(t) => sel.setSelectionText(t)}
+              onGenerateNote={handleOpenRightBrainNote}
               selBind={sel.bind}
               externalSelectionText={sel.selectionText}
               fontSize={fontSize}
@@ -1575,29 +1612,6 @@ export default function ThoughtUnitReader() {
               speechRate={speechRate}
               onSpeechRateChange={setSpeechRate}
               tableOfContents={tableOfContents}
-            />
-          </div>
-          
-          {/* NoteLab Side */}
-          <div className="w-1/2 h-full">
-            <NoteLabView
-              bookId={bookId}
-              userId={USER_ID}
-              thoughtUnits={thoughtUnits}
-              currentThoughtUnit={currentThoughtUnit}
-              currentPage={currentPage}
-              fontSize={fontSize}
-              fontFamily={fontFamily}
-              lineSpacing={lineSpacing}
-              onWordClick={(w) => {
-                setHighlightedWord(w);
-                if (autoWhiteboard && w.trim()) {
-                  setWbConcept(truncate(w, 600));
-                  setWbContext(`p.${currentPage}`);
-                  setShowWhiteboardPanel(true);
-                }
-              }}
-              onTextSelect={(t) => sel.setSelectionText(t)}
             />
           </div>
         </div>
@@ -1857,36 +1871,7 @@ export default function ThoughtUnitReader() {
           </button>
         </div>
 
-        {/* Tiny reader controls for progressive auto-advance */}
-        <div className="flex items-center gap-2 ml-2">
-          <button
-            onClick={() => {
-              setIsReading(true);
-              setIsPaused(false);
-            }}
-            className="text-xs px-2 py-1 rounded bg-blue-600 hover:bg-blue-700"
-            title="Start auto-advance"
-          >
-            ▶ Read
-          </button>
-          <button
-            onClick={() => setIsPaused((p) => !p)}
-            className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
-            title="Pause/Resume"
-          >
-            {isPaused ? "Resume" : "Pause"}
-          </button>
-          <button
-            onClick={() => {
-              setIsReading(false);
-              setIsPaused(false);
-            }}
-            className="text-xs px-2 py-1 rounded bg-red-600 hover:bg-red-700"
-            title="Stop auto-advance"
-          >
-            ⏹ Stop
-          </button>
-        </div>
+
 
         <div className="flex-1" />
 
@@ -1946,13 +1931,6 @@ export default function ThoughtUnitReader() {
           📚 Library
         </button>
 
-        {/* Study Library */}
-        <button
-          onClick={() => setShowStudyLibrary(true)}
-          className="text-xs px-3 py-1 rounded bg-purple-500 text-white shadow"
-        >
-          🎓 Study Notes
-        </button>
       </div>
 
       {/* Main Content Area - New Layout: [TOC | PDF | Right Pane] */}
@@ -2126,19 +2104,6 @@ export default function ThoughtUnitReader() {
         />
       )}
 
-      {/* Study Library Panel */}
-      {showStudyLibrary && (
-        <LibraryPanel
-          userId={USER_ID}
-          bookId={bookId}
-          currentPage={currentPage}
-          isOpen={showStudyLibrary}
-          onClose={() => setShowStudyLibrary(false)}
-          onGenerateTopStudentNote={(content, pageNumber) => {
-            console.log("Generated top student note for page", pageNumber);
-          }}
-        />
-      )}
     </div>
   );
 }

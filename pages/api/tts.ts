@@ -39,18 +39,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                             process.env.OPENAI_API_KEY.length > 20;
 
   if (!hasValidOpenAIKey) {
-    // Fallback: Return instructions to use enhanced browser speech synthesis
-    console.log("🎵 OpenAI TTS not available, falling back to enhanced browser speech synthesis");
+    // Fallback: Return instructions to use Butler speech synthesis
+    console.log("🎵 OpenAI TTS not available, falling back to Butler speech synthesis");
     
-    // Process text with enhanced speech service for better naturalness
+    // Process text with Butler speech engine for smart content selection
     let processedScript = script;
+    let butlerAnalysis: any = null;
+    
     try {
-      // Import and use enhanced speech processing
-      const { EnhancedSpeechService } = await import('../../lib/enhancedSpeech');
-      const speechService = EnhancedSpeechService.getInstance();
-      processedScript = speechService.preprocessText(script, { mode: 'reading' });
+      // Import and use Butler speech processing
+      const { butlerSpeechEngine } = await import('../../lib/butlerSpeechEngine');
+      const { analyzeTextWithButler, getReadableContent } = await import('../../lib/butlerThoughtUnits');
+      
+      // Analyze text with Butler to identify important content
+      butlerAnalysis = analyzeTextWithButler(script);
+      
+      // Get readable content based on speech mode (default to 'smart')
+      const speechMode = req.query.speechMode as string || 'smart';
+      const readableContent = getReadableContent(butlerAnalysis);
+      
+      // Select content based on speech mode
+      if (speechMode === 'smart') {
+        processedScript = readableContent.essential || readableContent.supporting;
+      } else {
+        processedScript = readableContent.full;
+      }
+      
+      // If no essential content found, use supporting or full
+      if (!processedScript.trim()) {
+        processedScript = readableContent.supporting || readableContent.full;
+      }
+      
     } catch (error) {
-      console.warn('Enhanced speech processing failed, using original text:', error);
+      console.warn('Butler speech processing failed, using original text:', error);
+      // Fallback to enhanced speech processing
+      try {
+        const { EnhancedSpeechService } = await import('../../lib/enhancedSpeech');
+        const speechService = EnhancedSpeechService.getInstance();
+        processedScript = speechService.preprocessText(script, { mode: 'reading' });
+      } catch (fallbackError) {
+        console.warn('Enhanced speech processing also failed:', fallbackError);
+      }
     }
     
     const wantsJSON =
@@ -62,8 +91,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         useBrowserSpeech: true,
         script: processedScript,
         originalScript: script,
+        butlerAnalysis,
         voice,
-        message: "Using enhanced browser speech synthesis with natural language processing"
+        message: "Using Butler speech synthesis with smart content selection and natural delivery"
       });
     }
 
@@ -72,8 +102,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       useBrowserSpeech: true,
       script: processedScript,
       originalScript: script,
+      butlerAnalysis,
       voice,
-      message: "Using enhanced browser speech synthesis with grammar correction and natural flow"
+      message: "Using Butler speech synthesis with intelligent content filtering and natural flow"
     });
   }
 
@@ -108,17 +139,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (err: any) {
     console.error("TTS API error:", err?.message || err);
     
-    // Fallback to enhanced browser speech synthesis on error
-    console.log("🎵 OpenAI TTS failed, falling back to enhanced browser speech synthesis");
+    // Fallback to Butler speech synthesis on error
+    console.log("🎵 OpenAI TTS failed, falling back to Butler speech synthesis");
     
-    // Process text with enhanced speech service for better naturalness
+    // Process text with Butler speech engine for smart content selection
     let processedScript = script;
+    let butlerAnalysis: any = null;
+    
     try {
-      const { EnhancedSpeechService } = await import('../../lib/enhancedSpeech');
-      const speechService = EnhancedSpeechService.getInstance();
-      processedScript = speechService.preprocessText(script, { mode: 'reading' });
+      // Import and use Butler speech processing
+      const { butlerSpeechEngine } = await import('../../lib/butlerSpeechEngine');
+      const { analyzeTextWithButler, getReadableContent } = await import('../../lib/butlerThoughtUnits');
+      
+      // Analyze text with Butler to identify important content
+      butlerAnalysis = analyzeTextWithButler(script);
+      
+      // Get readable content based on speech mode (default to 'smart')
+      const speechMode = req.query.speechMode as string || 'smart';
+      const readableContent = getReadableContent(butlerAnalysis);
+      
+      // Select content based on speech mode
+      if (speechMode === 'smart') {
+        processedScript = readableContent.essential || readableContent.supporting;
+      } else {
+        processedScript = readableContent.full;
+      }
+      
+      // If no essential content found, use supporting or full
+      if (!processedScript.trim()) {
+        processedScript = readableContent.supporting || readableContent.full;
+      }
+      
     } catch (error) {
-      console.warn('Enhanced speech processing failed, using original text:', error);
+      console.warn('Butler speech processing failed, using original text:', error);
+      // Fallback to enhanced speech processing
+      try {
+        const { EnhancedSpeechService } = await import('../../lib/enhancedSpeech');
+        const speechService = EnhancedSpeechService.getInstance();
+        processedScript = speechService.preprocessText(script, { mode: 'reading' });
+      } catch (fallbackError) {
+        console.warn('Enhanced speech processing also failed:', fallbackError);
+      }
     }
     
     const wantsJSON =
@@ -130,8 +191,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         useBrowserSpeech: true,
         script: processedScript,
         originalScript: script,
+        butlerAnalysis,
         voice,
-        message: "OpenAI TTS unavailable, using enhanced browser speech synthesis with natural language processing"
+        message: "OpenAI TTS unavailable, using Butler speech synthesis with smart content selection"
       });
     }
 
@@ -139,8 +201,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       useBrowserSpeech: true,
       script: processedScript,
       originalScript: script,
+      butlerAnalysis,
       voice,
-      message: "Using enhanced browser speech synthesis with grammar correction and natural flow"
+      message: "Using Butler speech synthesis with intelligent content filtering and natural delivery"
     });
   }
 }

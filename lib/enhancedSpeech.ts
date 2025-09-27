@@ -1,6 +1,20 @@
 // lib/enhancedSpeech.ts
 "use client";
 
+// Import Butler Speech Engine for smart speech understanding
+import { 
+  butlerSpeechEngine,
+  type ButlerHighlight,
+  type SpeechMode,
+  type ButlerSpeechOptions,
+  DEFAULT_BUTLER_SPEECH
+} from './butlerSpeechEngine';
+import { 
+  analyzeTextWithButler,
+  getReadableContent,
+  type ButlerAnalysisResult 
+} from './butlerThoughtUnits';
+
 export interface VoiceOption {
   name: string;
   lang: string;
@@ -17,6 +31,8 @@ export interface SpeechSettings {
   volume: number;
   autoSpeak: boolean;
   highlightWords: boolean;
+  speechMode?: SpeechMode; // Add Butler speech mode
+  useButlerAnalysis?: boolean; // Enable Butler smart speech
 }
 
 export class EnhancedSpeechService {

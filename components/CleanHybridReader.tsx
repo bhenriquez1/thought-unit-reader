@@ -40,6 +40,21 @@ import { useReaderSync } from "@/lib/readerSync";
 import ChunkRail from "@/components/ChunkRail";
 import { aiLearningEngine, type UserFeedback } from "@/lib/aiLearningEngine";
 import TUInteractionModal from "@/components/TUInteractionModal";
+// Butler System Imports
+import { 
+  butlerSpeechEngine, 
+  type ButlerHighlight, 
+  type SpeechMode, 
+  createButlerHighlight,
+  type ButlerSpeechOptions,
+  DEFAULT_BUTLER_SPEECH
+} from "@/lib/butlerSpeechEngine";
+import { 
+  butlerThoughtUnitAnalyzer, 
+  analyzeTextWithButler,
+  getReadableContent,
+  type ButlerAnalysisResult 
+} from "@/lib/butlerThoughtUnits";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -473,7 +488,7 @@ export default function CleanHybridReader({
   const [enhancedMode, setEnhancedMode] = useState<boolean>(true);
   
   // Enhanced Concept-Anchored Highlighting Features
-  const [thoughtUnitEnabled, setThoughtUnitEnabled] = useState<boolean>(false);
+  const [thoughtUnitEnabled, setThoughtUnitEnabled] = useState<boolean>(true); // Enable by default for Butler mode
   const [conceptHighlighter, setConceptHighlighter] = useState<ConceptAnchoredHighlighter | null>(null);
   const [highlightConfig, setHighlightConfig] = useState<ConceptHighlightConfig>({
     showMainIdeas: true,
@@ -482,11 +497,17 @@ export default function CleanHybridReader({
     mainIdeaConfidenceThreshold: 0.85,
     highlightSensitivity: 'moderate',
     maxMainIdeasPerPage: 2,
-    conceptPersistence: true
+    conceptPersistence: true // This ensures highlights stick/persist
   });
   const [currentMainIdea, setCurrentMainIdea] = useState<string>("");
   const [mainIdeaConfidence, setMainIdeaConfidence] = useState<number>(0);
   const [activeConceptAnchors, setActiveConceptAnchors] = useState<ConceptAnchor[]>([]);
+  
+  // Butler System State
+  const [butlerAnalysis, setButlerAnalysis] = useState<ButlerAnalysisResult | null>(null);
+  const [butlerHighlights, setButlerHighlights] = useState<ButlerHighlight[]>([]);
+  const [speechMode, setSpeechMode] = useState<SpeechMode>('smart');
+  const [butlerSpeechOptions, setButlerSpeechOptions] = useState<ButlerSpeechOptions>(DEFAULT_BUTLER_SPEECH);
   
   // Voice and speech
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -637,6 +658,27 @@ export default function CleanHybridReader({
       setComprehensiveAnalysis(null);
     }
   }, [selectionText, pageTextIndex, rightBrainMode, enhancedMode]);
+
+  // Butler Analysis Effects
+  useEffect(() => {
+    if (pageTextIndex?.text && pageTextIndex.text.length > 50) {
+      console.log('🎯 Butler: Analyzing page text...');
+      
+      const performButlerAnalysis = async () => {
+        try {
+          const analysis = await analyzeTextWithButler(pageTextIndex.text);
+          setButlerAnalysis(analysis);
+          setButlerHighlights(analysis.highlights);
+          
+          console.log(`🎯 Butler analysis complete: ${analysis.highlights.length} highlights, comprehension: ${Math.round(analysis.comprehensionScore * 100)}%`);
+        } catch (error) {
+          console.error('Butler analysis error:', error);
+        }
+      };
+      
+      performButlerAnalysis();
+    }
+  }, [pageTextIndex]);
 
   // Enhanced text selection handler
   const handleMouseUp = (e: React.MouseEvent) => {
@@ -979,23 +1021,28 @@ export default function CleanHybridReader({
     <div className="h-full flex bg-gray-50">
       {/* Main PDF View (Primary - 75% width) */}
       <div className="flex-1 bg-white border-r border-gray-200">
-        {/* PDF Controls */}
-        <div className="flex items-center justify-between p-4 bg-white border-b border-gray-200 shadow-sm">
+        {/* Simplified Butler-Style Header */}
+        <div className="flex items-center justify-between p-3 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-200">
           <div className="flex items-center gap-4">
-            <h3 className="text-lg font-semibold text-blue-600">📖 Interactive PDF Reader</h3>
-            
-            {/* Navigation */}
             <div className="flex items-center gap-2">
+              <span className="text-2xl">🎯</span>
+              <div>
+                <h3 className="text-lg font-bold text-amber-800">Butler Reader</h3>
+                <p className="text-xs text-amber-600">Smart content selection • Natural speech</p>
+              </div>
+            </div>
+            
+            {/* Core Navigation */}
+            <div className="flex items-center gap-2 bg-white/60 backdrop-blur rounded-lg px-3 py-1">
               <button
                 onClick={() => onPageChange(Math.max(1, currentPage - 1))}
                 disabled={currentPage <= 1}
-                className="px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-300 disabled:opacity-50 text-white rounded text-sm transition-colors"
+                className="px-2 py-1 bg-amber-600 hover:bg-amber-500 disabled:bg-gray-300 disabled:opacity-50 text-white rounded text-sm"
               >
-                ← Previous
+                ←
               </button>
               
-              <div className="flex items-center gap-2 px-3 py-1 bg-gray-100 rounded">
-                <span className="text-sm text-gray-600">Page</span>
+              <div className="flex items-center gap-1">
                 <input
                   type="number"
                   min={1}
@@ -1007,124 +1054,94 @@ export default function CleanHybridReader({
                       onPageChange(page);
                     }
                   }}
-                  className="w-16 text-center text-sm border border-gray-300 rounded px-1"
+                  className="w-12 text-center text-sm border border-amber-300 rounded px-1"
                 />
-                <span className="text-sm text-gray-600">of {pdfPageCount || '?'}</span>
+                <span className="text-xs text-gray-600">/{pdfPageCount || '?'}</span>
               </div>
               
               <button
                 onClick={() => onPageChange(Math.min(pdfPageCount || 999, currentPage + 1))}
                 disabled={currentPage >= (pdfPageCount || 999)}
-                className="px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-300 disabled:opacity-50 text-white rounded text-sm transition-colors"
+                className="px-2 py-1 bg-amber-600 hover:bg-amber-500 disabled:bg-gray-300 disabled:opacity-50 text-white rounded text-sm"
               >
-                Next →
+                →
               </button>
             </div>
-          </div>
+            
+            {/* Butler Speech Controls */}
+            <div className="flex items-center gap-2 bg-white/60 backdrop-blur rounded-lg px-3 py-1">
+              <button
+                onClick={() => setSpeechMode(speechMode === 'smart' ? 'full' : 'smart')}
+                className={`px-2 py-1 rounded text-xs ${
+                  speechMode === 'smart' 
+                    ? 'bg-amber-600 text-white' 
+                    : 'bg-gray-200 text-gray-700'
+                }`}
+                title="Toggle between smart and full speech modes"
+              >
+                {speechMode === 'smart' ? '🎯 Smart' : '📖 Full'}
+              </button>
+              
+              <button
+                onClick={() => {
+                  if (isSpeaking) {
+                    stopSpeaking();
+                  } else if (effectiveSelection) {
+                    speakText(effectiveSelection);
+                  } else if (pageTextIndex) {
+                    speakText(pageTextIndex.text.slice(0, 200));
+                  }
+                }}
+                className={`px-2 py-1 rounded text-xs ${
+                  isSpeaking
+                    ? 'bg-red-600 hover:bg-red-500 text-white'
+                    : 'bg-green-600 hover:bg-green-500 text-white'
+                }`}
+              >
+                {isSpeaking ? '🔇 Stop' : '🔊 Read'}
+              </button>
+              
+              <button
+                onClick={() => setShowSmartSidebar(!showSmartSidebar)}
+                className={`px-2 py-1 rounded text-xs ${
+                  showSmartSidebar
+                    ? 'bg-purple-600 hover:bg-purple-500 text-white'
+                    : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                }`}
+              >
+                🧠 Smart
+              </button>
+              
+              <button
+                onClick={() => setThoughtUnitEnabled(!thoughtUnitEnabled)}
+                className={`px-2 py-1 rounded text-xs ${
+                  thoughtUnitEnabled
+                    ? 'bg-amber-600 hover:bg-amber-500 text-white'
+                    : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                }`}
+              >
+                🎯 TU
+              </button>
+            </div>
 
-          <div className="flex items-center gap-3">
             {/* Zoom Controls */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-white/60 backdrop-blur rounded-lg px-2 py-1">
               <button
                 onClick={() => setPdfScale(s => Math.max(0.5, s - 0.1))}
-                className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm"
+                className="px-1 py-1 bg-gray-200 hover:bg-gray-300 rounded text-xs"
               >
                 -
               </button>
-              <span className="text-sm text-gray-600 min-w-[3rem] text-center">
+              <span className="text-xs text-gray-600 min-w-[2.5rem] text-center">
                 {Math.round(pdfScale * 100)}%
               </span>
               <button
                 onClick={() => setPdfScale(s => Math.min(3.0, s + 0.1))}
-                className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm"
+                className="px-1 py-1 bg-gray-200 hover:bg-gray-300 rounded text-xs"
               >
                 +
               </button>
             </div>
-
-            {/* Highlight Mode */}
-            <div className="flex items-center gap-2">
-              <select
-                value={highlightMode}
-                onChange={(e) => setHighlightMode(e.target.value as any)}
-                className="text-sm border border-gray-300 rounded px-2 py-1"
-              >
-                <option value="smart">Smart Highlights</option>
-                <option value="manual">Manual Only</option>
-                <option value="off">No Highlights</option>
-              </select>
-              
-              {/* Right-Brain Mode Toggle */}
-              <button
-                onClick={() => setRightBrainMode(!rightBrainMode)}
-                className={`px-2 py-1 rounded text-xs ${
-                  rightBrainMode
-                    ? "bg-purple-600 hover:bg-purple-500 text-white"
-                    : "bg-gray-200 hover:bg-gray-300 text-gray-700"
-                }`}
-                title="Toggle right-brain concept highlighting"
-              >
-                🧠 Ideas
-              </button>
-              
-              {/* Enhanced Mode Toggle */}
-              <button
-                onClick={() => setEnhancedMode(!enhancedMode)}
-                className={`px-2 py-1 rounded text-xs ${
-                  enhancedMode
-                    ? "bg-emerald-600 hover:bg-emerald-500 text-white"
-                    : "bg-gray-200 hover:bg-gray-300 text-gray-700"
-                }`}
-                title="Toggle enhanced semantic analysis"
-              >
-                ⚡ Enhanced
-              </button>
-            </div>
-
-            {/* Thought Unit Toggle */}
-            <button
-              onClick={() => setThoughtUnitEnabled(!thoughtUnitEnabled)}
-              className={`px-3 py-1 rounded text-sm ${
-                thoughtUnitEnabled
-                  ? "bg-amber-600 hover:bg-amber-500 text-white"
-                  : "bg-gray-200 hover:bg-gray-300 text-gray-700"
-              }`}
-              title="Toggle thought unit highlighting"
-            >
-              🧠 Thought Units
-            </button>
-
-            {/* Voice Control */}
-            <button
-              onClick={() => {
-                if (isSpeaking) {
-                  stopSpeaking();
-                } else if (effectiveSelection) {
-                  speakText(effectiveSelection);
-                } else if (pageTextIndex) {
-                  speakText(pageTextIndex.text.slice(0, 200));
-                }
-              }}
-              className={`px-3 py-1 rounded text-sm ${
-                isSpeaking
-                  ? "bg-red-600 hover:bg-red-500 text-white"
-                  : "bg-green-600 hover:bg-green-500 text-white"
-              }`}
-            >
-              {isSpeaking ? "🔇 Stop" : "🔊 Read"}
-            </button>
-
-            {/* Smart Sidebar Toggle */}
-            <button
-              onClick={() => setShowSmartSidebar(!showSmartSidebar)}
-              className={`px-3 py-1 rounded text-sm ${
-                showSmartSidebar
-                  ? "bg-purple-600 hover:bg-purple-500 text-white"
-                  : "bg-gray-200 hover:bg-gray-300 text-gray-700"
-              }`}
-            >
-              🧠 Smart Panel
-            </button>
           </div>
         </div>
 
