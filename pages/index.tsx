@@ -1379,30 +1379,53 @@ export default function ThoughtUnitReader() {
       }
 
       return fileUrl && thoughtUnits.length > 0 ? (
-        <PatternView
-          bookId={bookId}
-          userId={USER_ID}
-          thoughtUnits={thoughtUnits}
-          currentThoughtUnit={currentThoughtUnit}
-          stats={stats}
-          currentPage={currentPage}
-          pdfPageCount={pdfPageCount}
-          fontSize={fontSize}
-          fontFamily={fontFamily}
-          lineSpacing={lineSpacing}
-          onWordClick={(w) => {
-            setHighlightedWord(w);
-            if (autoWhiteboard && w.trim()) {
-              setWbConcept(truncate(w, 600));
-              setWbContext(`p.${currentPage}`);
-              setShowWhiteboardPanel(true);
-            }
-          }}
-          onTextSelect={(t) => sel.setSelectionText(t)}
-          onGenerateNote={handleOpenRightBrainNote}
-          selBind={sel.bind}
-          externalSelectionText={sel.selectionText}
-        />
+        <div className="h-full flex">
+          {/* PDF Viewer Side */}
+          <div className="w-1/2 h-full border-r border-gray-700" onMouseUp={sel.bind.onMouseUp}>
+            <SmartPDFViewer
+              fileUrl={fileUrl}
+              currentPage={currentPage}
+              onPageChange={(p) => syncToPage(p)}
+              scale={1.0}
+              onTextSelect={(t) => sel.setSelectionText(t)}
+              onPageCount={(n) => setPdfPageCount(n)}
+              onOutline={(items) => {
+                const normalized = outlineToTOC(items as any);
+                if (normalized && normalized.length) {
+                  setTableOfContents(normalized);
+                }
+              }}
+            />
+          </div>
+          
+          {/* Pattern Training Side */}
+          <div className="w-1/2 h-full">
+            <PatternView
+              bookId={bookId}
+              userId={USER_ID}
+              thoughtUnits={thoughtUnits}
+              currentThoughtUnit={currentThoughtUnit}
+              stats={stats}
+              currentPage={currentPage}
+              pdfPageCount={pdfPageCount}
+              fontSize={fontSize}
+              fontFamily={fontFamily}
+              lineSpacing={lineSpacing}
+              onWordClick={(w) => {
+                setHighlightedWord(w);
+                if (autoWhiteboard && w.trim()) {
+                  setWbConcept(truncate(w, 600));
+                  setWbContext(`p.${currentPage}`);
+                  setShowWhiteboardPanel(true);
+                }
+              }}
+              onTextSelect={(t) => sel.setSelectionText(t)}
+              onGenerateNote={handleOpenRightBrainNote}
+              selBind={sel.bind}
+              externalSelectionText={sel.selectionText}
+            />
+          </div>
+        </div>
       ) : (
         <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900">
           <div className="text-center max-w-2xl">
@@ -1498,25 +1521,48 @@ export default function ThoughtUnitReader() {
       }
 
       return fileUrl && thoughtUnits.length > 0 ? (
-        <NoteLabView
-          bookId={bookId}
-          userId={USER_ID}
-          thoughtUnits={thoughtUnits}
-          currentThoughtUnit={currentThoughtUnit}
-          currentPage={currentPage}
-          fontSize={fontSize}
-          fontFamily={fontFamily}
-          lineSpacing={lineSpacing}
-          onWordClick={(w) => {
-            setHighlightedWord(w);
-            if (autoWhiteboard && w.trim()) {
-              setWbConcept(truncate(w, 600));
-              setWbContext(`p.${currentPage}`);
-              setShowWhiteboardPanel(true);
-            }
-          }}
-          onTextSelect={(t) => sel.setSelectionText(t)}
-        />
+        <div className="h-full flex">
+          {/* PDF Viewer Side */}
+          <div className="w-1/2 h-full border-r border-gray-700" onMouseUp={sel.bind.onMouseUp}>
+            <SmartPDFViewer
+              fileUrl={fileUrl}
+              currentPage={currentPage}
+              onPageChange={(p) => syncToPage(p)}
+              scale={1.0}
+              onTextSelect={(t) => sel.setSelectionText(t)}
+              onPageCount={(n) => setPdfPageCount(n)}
+              onOutline={(items) => {
+                const normalized = outlineToTOC(items as any);
+                if (normalized && normalized.length) {
+                  setTableOfContents(normalized);
+                }
+              }}
+            />
+          </div>
+          
+          {/* NoteLab Side */}
+          <div className="w-1/2 h-full">
+            <NoteLabView
+              bookId={bookId}
+              userId={USER_ID}
+              thoughtUnits={thoughtUnits}
+              currentThoughtUnit={currentThoughtUnit}
+              currentPage={currentPage}
+              fontSize={fontSize}
+              fontFamily={fontFamily}
+              lineSpacing={lineSpacing}
+              onWordClick={(w) => {
+                setHighlightedWord(w);
+                if (autoWhiteboard && w.trim()) {
+                  setWbConcept(truncate(w, 600));
+                  setWbContext(`p.${currentPage}`);
+                  setShowWhiteboardPanel(true);
+                }
+              }}
+              onTextSelect={(t) => sel.setSelectionText(t)}
+            />
+          </div>
+        </div>
       ) : (
         <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-green-900 to-emerald-900">
           <div className="text-center max-w-2xl">
