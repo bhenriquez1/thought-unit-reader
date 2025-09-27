@@ -447,7 +447,7 @@ export default function NoteLabHybridReader({
           </div>
         </div>
 
-        {/* PDF Content */}
+        {/* PDF Content with Loading States */}
         <div 
           ref={pdfContainerRef}
           className="h-full overflow-auto bg-gray-100 p-4"
@@ -460,12 +460,43 @@ export default function NoteLabHybridReader({
         >
           <div className="flex justify-center">
             <div className="bg-white shadow-lg">
-              <Document file={pdfUrl}>
+              <Document 
+                file={pdfUrl}
+                loading={
+                  <div className="flex flex-col items-center justify-center p-8">
+                    <div className="animate-spin text-4xl mb-4">📝</div>
+                    <p className="text-gray-600">Loading PDF for visual note-taking...</p>
+                  </div>
+                }
+                error={
+                  <div className="flex flex-col items-center justify-center p-8">
+                    <div className="text-4xl mb-4 text-red-500">❌</div>
+                    <p className="text-red-600 font-semibold">Failed to load PDF</p>
+                    <p className="text-gray-600 text-sm">Please try uploading the file again</p>
+                  </div>
+                }
+                onLoadSuccess={(pdf) => {
+                  console.log('✅ NoteLab PDF loaded successfully:', pdf.numPages, 'pages');
+                }}
+                onLoadError={(error) => {
+                  console.error('❌ NoteLab PDF loading error:', error);
+                }}
+              >
                 <Page 
                   pageNumber={currentPage} 
                   scale={pdfScale}
                   renderTextLayer={true}
                   renderAnnotationLayer={true}
+                  loading={
+                    <div className="flex items-center justify-center p-12">
+                      <div className="animate-pulse text-2xl">📝 Loading page...</div>
+                    </div>
+                  }
+                  error={
+                    <div className="flex items-center justify-center p-12">
+                      <div className="text-red-500">❌ Failed to load page {currentPage}</div>
+                    </div>
+                  }
                 />
               </Document>
             </div>

@@ -1109,18 +1109,7 @@ export default function CleanHybridReader({
                     : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
                 }`}
               >
-                🧠 Smart
-              </button>
-              
-              <button
-                onClick={() => setThoughtUnitEnabled(!thoughtUnitEnabled)}
-                className={`px-2 py-1 rounded text-xs ${
-                  thoughtUnitEnabled
-                    ? 'bg-amber-600 hover:bg-amber-500 text-white'
-                    : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
-                }`}
-              >
-                🎯 TU
+                🧠 Analysis
               </button>
             </div>
 

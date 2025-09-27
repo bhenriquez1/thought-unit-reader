@@ -1846,20 +1846,12 @@ export default function ThoughtUnitReader() {
             🔄 Hybrid
           </button>
           <button
-            onClick={() => setViewMode("rightbrain")}
-            className={`text-xs px-3 py-1 rounded ${
-              viewMode === "rightbrain" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
-            }`}
-          >
-            🧠 Right-Brain Reading
-          </button>
-          <button
             onClick={() => setViewMode("pattern")}
             className={`text-xs px-3 py-1 rounded ${
               viewMode === "pattern" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
             }`}
           >
-            🎯 Pattern Training
+            🎯 Pattern Analysis
           </button>
           <button
             onClick={() => setViewMode("notelab")}
@@ -1867,7 +1859,7 @@ export default function ThoughtUnitReader() {
               viewMode === "notelab" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
             }`}
           >
-            📝 NoteLab
+            📝 NoteLab Visual
           </button>
         </div>
 

@@ -264,7 +264,7 @@ export default function PatternTrainingHybridReader({
     };
   }, []);
 
-  // Enhanced Pattern-Aware Butler Analysis
+  // Enhanced Pattern-Aware Butler Analysis with Performance Optimizations
   useEffect(() => {
     if (thoughtUnits.length > 0 && currentThoughtUnit >= 1 && currentThoughtUnit <= thoughtUnits.length) {
       const currentUnitText = unitToText(thoughtUnits[currentThoughtUnit - 1]);
@@ -272,47 +272,65 @@ export default function PatternTrainingHybridReader({
       if (currentUnitText && currentUnitText.length > 50) {
         console.log('🎯 Pattern Training Butler: Analyzing unit text...');
         
-        const performPatternAnalysis = async () => {
-          try {
-            // Standard Butler analysis
-            const baseAnalysis = await analyzeTextWithButler(currentUnitText);
-            
-            // Enhanced pattern detection for DAT content
-            const datPatterns = detectDATPatterns(currentUnitText);
-            setDetectedPatterns(datPatterns);
-            
-            // Create pattern-enhanced analysis
-            const patternAnalysis: PatternButlerAnalysis = {
-              ...baseAnalysis,
-              detectedPatterns: datPatterns,
-              patternConfidence: datPatterns.length > 0 ? 0.8 : 0.3,
-              organicChemistryHints: datPatterns
-                .filter(p => p.category === 'organic-chemistry')
-                .map(p => p.description),
-              generalChemistryHints: datPatterns
-                .filter(p => p.category === 'general-chemistry')
-                .map(p => p.description),
-              biologyHints: datPatterns
-                .filter(p => p.category === 'biology')
-                .map(p => p.description),
-              readingComprehensionHints: datPatterns
-                .filter(p => p.category === 'reading-comprehension')
-                .map(p => p.description),
-            };
-            
-            setButlerAnalysis(patternAnalysis);
-            setButlerHighlights(patternAnalysis.highlights);
-            
-            console.log(`🎯 Pattern Training Butler analysis complete: ${patternAnalysis.highlights.length} highlights, ${datPatterns.length} patterns detected`);
-          } catch (error) {
-            console.error('Pattern Training Butler analysis error:', error);
-          }
-        };
+        // Debounce analysis to prevent excessive processing
+        const timeoutId = setTimeout(() => {
+          const performPatternAnalysis = async () => {
+            try {
+              // Standard Butler analysis
+              const baseAnalysis = await analyzeTextWithButler(currentUnitText);
+              
+              // Enhanced pattern detection for DAT content
+              const datPatterns = detectDATPatterns(currentUnitText);
+              setDetectedPatterns(datPatterns);
+              
+              // Create pattern-enhanced analysis
+              const patternAnalysis: PatternButlerAnalysis = {
+                ...baseAnalysis,
+                detectedPatterns: datPatterns,
+                patternConfidence: datPatterns.length > 0 ? 0.8 : 0.3,
+                organicChemistryHints: datPatterns
+                  .filter(p => p.category === 'organic-chemistry')
+                  .map(p => p.description),
+                generalChemistryHints: datPatterns
+                  .filter(p => p.category === 'general-chemistry')
+                  .map(p => p.description),
+                biologyHints: datPatterns
+                  .filter(p => p.category === 'biology')
+                  .map(p => p.description),
+                readingComprehensionHints: datPatterns
+                  .filter(p => p.category === 'reading-comprehension')
+                  .map(p => p.description),
+              };
+              
+              setButlerAnalysis(patternAnalysis);
+              setButlerHighlights(patternAnalysis.highlights);
+              
+              console.log(`🎯 Pattern Training Butler analysis complete: ${patternAnalysis.highlights.length} highlights, ${datPatterns.length} patterns detected`);
+            } catch (error) {
+              console.error('Pattern Training Butler analysis error:', error);
+              // Graceful fallback - don't crash the app
+              setButlerAnalysis(null);
+              setDetectedPatterns([]);
+            }
+          };
+          
+          performPatternAnalysis();
+        }, 300); // Debounce by 300ms
         
-        performPatternAnalysis();
+        return () => clearTimeout(timeoutId);
       }
     }
   }, [thoughtUnits, currentThoughtUnit]);
+
+  // Cleanup effect for memory management
+  useEffect(() => {
+    return () => {
+      if (speechRef.current) {
+        speechSynthesis.cancel();
+      }
+      // Clear any timeouts or intervals if needed
+    };
+  }, []);
 
   // Enhanced text selection handler
   const handleMouseUp = (e: React.MouseEvent) => {
@@ -370,8 +388,8 @@ export default function PatternTrainingHybridReader({
             <div className="flex items-center gap-2">
               <span className="text-2xl">🎯</span>
               <div>
-                <h3 className="text-lg font-bold text-blue-800">Pattern Training Butler</h3>
-                <p className="text-xs text-blue-600">DAT pattern recognition • Smart speech</p>
+                <h3 className="text-lg font-bold text-blue-800">Pattern Analysis Butler</h3>
+                <p className="text-xs text-blue-600">Universal pattern recognition • Smart speech</p>
               </div>
             </div>
             
@@ -478,7 +496,7 @@ export default function PatternTrainingHybridReader({
           </div>
         </div>
 
-        {/* PDF Content */}
+        {/* PDF Content with Loading States */}
         <div 
           ref={pdfContainerRef}
           className="h-full overflow-auto bg-gray-100 p-4"
@@ -491,12 +509,43 @@ export default function PatternTrainingHybridReader({
         >
           <div className="flex justify-center">
             <div className="bg-white shadow-lg">
-              <Document file={pdfUrl}>
+              <Document 
+                file={pdfUrl}
+                loading={
+                  <div className="flex flex-col items-center justify-center p-8">
+                    <div className="animate-spin text-4xl mb-4">📄</div>
+                    <p className="text-gray-600">Loading PDF for pattern analysis...</p>
+                  </div>
+                }
+                error={
+                  <div className="flex flex-col items-center justify-center p-8">
+                    <div className="text-4xl mb-4 text-red-500">❌</div>
+                    <p className="text-red-600 font-semibold">Failed to load PDF</p>
+                    <p className="text-gray-600 text-sm">Please try uploading the file again</p>
+                  </div>
+                }
+                onLoadSuccess={(pdf) => {
+                  console.log('✅ Pattern Training PDF loaded successfully:', pdf.numPages, 'pages');
+                }}
+                onLoadError={(error) => {
+                  console.error('❌ Pattern Training PDF loading error:', error);
+                }}
+              >
                 <Page 
                   pageNumber={currentPage} 
                   scale={pdfScale}
                   renderTextLayer={true}
                   renderAnnotationLayer={true}
+                  loading={
+                    <div className="flex items-center justify-center p-12">
+                      <div className="animate-pulse text-2xl">🎯 Loading page...</div>
+                    </div>
+                  }
+                  error={
+                    <div className="flex items-center justify-center p-12">
+                      <div className="text-red-500">❌ Failed to load page {currentPage}</div>
+                    </div>
+                  }
                 />
               </Document>
             </div>
