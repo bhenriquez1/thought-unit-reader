@@ -6,10 +6,8 @@ import { generateTOC, type TOCEntry, outlineToTOC } from "@/lib/tocParser";
 import TOCSidebar from "@/components/TOCSidebar";
 import type { ThoughtUnit, ReadingStats } from "@/types/reading";
 import EnhancedHybridReader from "@/components/EnhancedHybridReader";
-import EnhancedProgressiveView from "@/components/EnhancedProgressiveView";
 import PatternView from "@/components/PatternView";
 import NoteLabView from "@/components/NoteLabView";
-import CleanProgressiveView from "@/components/CleanProgressiveView";
 import CleanHybridReader from "@/components/CleanHybridReader";
 import CleanRightBrainReader from "@/components/CleanRightBrainReader";
 import HighlightPopup from "@/components/HighlightPopup";
@@ -218,7 +216,7 @@ export default function ThoughtUnitReader() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const [viewMode, setViewMode] =
-    useState<"original" | "progressive" | "hybrid" | "rightbrain" | "pattern" | "notelab">("original");
+    useState<"original" | "hybrid" | "rightbrain" | "pattern" | "notelab">("original");
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(1);
@@ -427,10 +425,10 @@ export default function ThoughtUnitReader() {
     }
   }, [currentPage, currentThoughtUnit, thoughtUnits, analyzeContentDensity, updateContentDensity]);
 
-  // Tab sync effects: snap Progressive/Hybrid/Right-Brain to current chapter's first unit when switching tabs
+  // Tab sync effects: snap Hybrid/Right-Brain to current chapter's first unit when switching tabs
   useEffect(() => {
     try {
-      if (viewMode === "progressive" || viewMode === "hybrid" || viewMode === "rightbrain") {
+      if (viewMode === "hybrid" || viewMode === "rightbrain") {
         console.log(`🔄 Tab switch to ${viewMode}: syncing to current chapter`);
         
         // Safe chapter-aware navigation with proper error handling
@@ -1097,50 +1095,6 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // Enhanced Progressive Reading - advanced speed reading with TOC sync
-    if (viewMode === "progressive") {
-      return fileUrl ? (
-        <CleanProgressiveView
-          bookId={bookId}
-          userId={USER_ID}
-          thoughtUnits={thoughtUnits}
-          currentThoughtUnit={currentThoughtUnit}
-          readingSpeed={readingSpeed}
-          isReading={isReading}
-          isPaused={isPaused}
-          fontSize={fontSize}
-          fontFamily={fontFamily}
-          lineSpacing={lineSpacing}
-          pdfUrl={fileUrl}
-          currentPage={currentPage}
-          pdfPageCount={pdfPageCount}
-          highlightedWord={highlightedWord}
-          onPageChange={(p) => syncToPage(p)}
-          onWordClick={(w) => {
-            setHighlightedWord(w);
-            if (autoWhiteboard && w.trim()) {
-              setWbConcept(truncate(w, 600));
-              setWbContext(`p.${currentPage}`);
-              setShowWhiteboardPanel(true);
-            }
-          }}
-          onTextSelect={(t) => sel.setSelectionText(t)}
-        />
-      ) : (
-        <div className="flex flex-col items-center justify-center h-full gap-4">
-          <div className="text-center">
-            <h3 className="text-lg font-semibold mb-2 text-blue-400">⚡ Advanced Speed Reading</h3>
-            <p className="text-sm opacity-80 mb-4">
-              RSVP mode, adaptive speed control, and TOC-synchronized reading
-            </p>
-          </div>
-          <label className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-6 py-3 rounded-lg cursor-pointer font-medium hover:from-blue-400 hover:to-purple-400 transition-all">
-            📂 Upload PDF to Begin Speed Reading
-            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-          </label>
-        </div>
-      );
-    }
 
         // Enhanced Clean Hybrid Reading - AI-powered thought unit system with advanced features
         if (viewMode === "hybrid") {
