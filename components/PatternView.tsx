@@ -397,4 +397,208 @@ export default function PatternView({
                             onClick={() => handlePatternSelect(pattern.id)}
                             className="px-3 py-2 rounded text-sm transition-colors bg-gray-700 hover:bg-gray-600 text-gray-200"
                           >
-                            <div className="flex items-center gap-
+                            <div className="flex items-center gap-2">
+                              {mastery && <span>{getMasteryIcon(mastery.masteryLevel)}</span>}
+                              <span>{pattern.name}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Step 3: Rules Display */}
+          {trainingState.step === 'rules' && selectedPattern && (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-3">📋 Step 3: Review Pattern Rules</h3>
+              <div className="p-4 bg-gray-800 rounded-lg">
+                <h4 className="font-semibold text-yellow-400 mb-3">{selectedPattern.name}</h4>
+                <p className="text-gray-300 mb-4">{selectedPattern.description}</p>
+                
+                <div className="space-y-3">
+                  {selectedPattern.rules.map((rule, index) => (
+                    <div key={index} className="flex items-start gap-3">
+                      <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-xs font-bold">
+                        {index + 1}
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-blue-400">{rule.key}</div>
+                        <div className="text-gray-300">{rule.description}</div>
+                        {rule.example && (
+                          <div className="text-sm text-gray-400 mt-1">
+                            Example: {rule.example}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={handleStartAttempt}
+                  className="mt-4 px-4 py-2 bg-green-600 hover:bg-green-500 rounded"
+                >
+                  Start Practice
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: User Attempt */}
+          {trainingState.step === 'attempt' && (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-3">✍️ Step 4: Apply the Pattern</h3>
+              <textarea
+                value={trainingState.userAttempt}
+                onChange={(e) => setTrainingState(prev => ({ ...prev, userAttempt: e.target.value }))}
+                placeholder="Apply the pattern rules to this thought unit. Walk through your reasoning step by step..."
+                className="w-full h-32 p-3 bg-gray-800 rounded-lg border border-gray-600 resize-none"
+              />
+              
+              <div className="flex gap-3 mt-3">
+                <button
+                  onClick={handleSubmitAttempt}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded"
+                  disabled={!trainingState.userAttempt.trim()}
+                >
+                  Submit Attempt
+                </button>
+                <button
+                  onClick={handleSkip}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded"
+                >
+                  Skip This Unit
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 5: Solution & Self-Assessment */}
+          {trainingState.step === 'solution' && selectedPattern && (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-3">💡 Step 5: Compare with Examples</h3>
+              <div className="p-4 bg-gray-800 rounded-lg mb-4">
+                <div className="mb-4">
+                  <h4 className="font-semibold text-green-400 mb-2">Example Applications:</h4>
+                  <ul className="list-disc list-inside space-y-1 text-gray-300">
+                    {selectedPattern.examples.map((example, index) => (
+                      <li key={index}>{example}</li>
+                    ))}
+                  </ul>
+                </div>
+                
+                <div>
+                  <h4 className="font-semibold text-red-400 mb-2">Common Mistakes:</h4>
+                  <ul className="list-disc list-inside space-y-1 text-gray-300">
+                    {selectedPattern.commonMistakes.map((mistake, index) => (
+                      <li key={index}>{mistake}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              <div className="p-4 bg-blue-900 bg-opacity-30 rounded-lg mb-4">
+                <h4 className="font-semibold text-blue-400 mb-2">Your Response:</h4>
+                <p className="text-gray-300">{trainingState.userAttempt}</p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => handleGradeAttempt(true)}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded"
+                  disabled={trainingState.isCorrect !== null}
+                >
+                  ✅ I Got It Right
+                </button>
+                <button
+                  onClick={() => handleGradeAttempt(false)}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-500 rounded"
+                  disabled={trainingState.isCorrect !== null}
+                >
+                  ❌ I Need More Practice
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 6: Assessment Feedback */}
+          {trainingState.step === 'assessment' && trainingState.isCorrect !== null && (
+            <div className={`p-4 rounded-lg ${
+              trainingState.isCorrect 
+                ? 'bg-green-900 bg-opacity-50 border border-green-500' 
+                : 'bg-red-900 bg-opacity-50 border border-red-500'
+            }`}>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-lg">{trainingState.isCorrect ? '🎉' : '💪'}</span>
+                <span className="font-semibold">
+                  {trainingState.isCorrect ? 'Great job!' : 'Keep practicing!'}
+                </span>
+              </div>
+              <p className="text-sm mb-4">
+                {trainingState.isCorrect 
+                  ? 'You\'re building strong pattern recognition skills. Continue to the next unit!'
+                  : 'Pattern recognition takes practice. Review the rules and try similar problems.'
+                }
+              </p>
+              <button
+                onClick={() => {
+                  setTrainingState({
+                    step: 'content',
+                    selectedPatternId: null,
+                    userAttempt: '',
+                    attemptStartTime: Date.now(),
+                    isCorrect: null,
+                    showHint: false,
+                    attemptsCount: 0
+                  });
+                }}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded"
+              >
+                Next Unit
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Sidebar */}
+        <div className="w-80 bg-gray-800 p-4 border-l border-gray-700">
+          <h3 className="font-semibold mb-4">📊 Progress Summary</h3>
+          
+          {/* Current Pattern */}
+          {selectedPattern && (
+            <div className="mb-4 p-3 bg-gray-700 rounded">
+              <h4 className="font-medium text-yellow-400 mb-1">Current Pattern</h4>
+              <p className="text-sm">{selectedPattern.name}</p>
+            </div>
+          )}
+
+          {/* Performance Summary */}
+          <div className="mt-6">
+            <h4 className="font-semibold mb-3">📈 Your Progress</h4>
+            <div className="space-y-2">
+              {['mastered', 'practicing', 'learning'].map(level => {
+                const count = patternMastery.filter(m => m.masteryLevel === level).length;
+                const icon = getMasteryIcon(level as PatternMastery['masteryLevel']);
+                const color = getMasteryColor(level as PatternMastery['masteryLevel']);
+                
+                return (
+                  <div key={level} className="flex justify-between items-center text-sm">
+                    <span className="flex items-center gap-2">
+                      <span>{icon}</span>
+                      <span className={`capitalize ${color}`}>{level}</span>
+                    </span>
+                    <span className="text-gray-400">{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
