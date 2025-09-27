@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 
-// Debouncing utility for performance optimization
+// Enhanced debouncing utility for performance optimization with aggressive delays
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
 
@@ -18,6 +18,54 @@ function useDebounce<T>(value: T, delay: number): T {
 
   return debouncedValue;
 }
+
+// Enhanced throttling utility for DOM operations
+function useThrottle<T>(value: T, delay: number): T {
+  const [throttledValue, setThrottledValue] = useState<T>(value);
+  const lastExecuted = useRef<number>(0);
+
+  useEffect(() => {
+    const now = Date.now();
+    if (now - lastExecuted.current >= delay) {
+      setThrottledValue(value);
+      lastExecuted.current = now;
+    } else {
+      const timeoutId = setTimeout(() => {
+        setThrottledValue(value);
+        lastExecuted.current = Date.now();
+      }, delay - (now - lastExecuted.current));
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [value, delay]);
+
+  return throttledValue;
+}
+
+// Performance optimization: Memoized components
+const MemoizedSmartContent = React.memo(({ content }: { content: any }) => {
+  if (!content) return null;
+  
+  return (
+    <div className="space-y-3">
+      {/* Content rendering optimized */}
+      {content.mainIdeas?.length > 0 && (
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg p-3">
+          <h5 className="text-sm font-semibold text-purple-700 mb-2">💡 Main Ideas</h5>
+          <div className="space-y-2">
+            {content.mainIdeas.map((idea: string, idx: number) => (
+              <div key={idx} className="px-3 py-2 bg-white border-l-4 border-purple-400 rounded text-sm text-gray-700 shadow-sm">
+                {idea}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
+MemoizedSmartContent.displayName = 'MemoizedSmartContent';
 import type { ThoughtUnit as BaseThoughtUnit, ReadingStats } from "@/types/reading";
 import { Document, Page } from "react-pdf";
 import { 
@@ -637,11 +685,11 @@ export default function CleanHybridReader({
     };
   }, [currentPage]);
 
-  // Debounced selection text for performance
-  const debouncedSelectionText = useDebounce(selectionText, 300);
-  const debouncedPageTextIndex = useDebounce(pageTextIndex, 500);
+  // AGGRESSIVE DEBOUNCING for performance (1000ms to prevent analysis spam)
+  const debouncedSelectionText = useDebounce(selectionText, 1000);
+  const debouncedPageTextIndex = useThrottle(pageTextIndex, 1500); // Use throttle for page analysis
 
-  // Enhanced smart content generation with comprehensive analysis - DEBOUNCED
+  // Enhanced smart content generation with comprehensive analysis - HEAVILY DEBOUNCED
   useEffect(() => {
     if (!debouncedSelectionText || debouncedSelectionText.length <= 10) {
       setSmartContent(null);
@@ -651,63 +699,78 @@ export default function CleanHybridReader({
     }
 
     const abortController = new AbortController();
+    let timeoutId: NodeJS.Timeout;
     
     const performAnalysis = async () => {
       try {
         if (abortController.signal.aborted) return;
 
+        // Immediate basic content first
         const pageContext = debouncedPageTextIndex?.text.slice(0, 500) || "";
         const content = generateSmartContent(debouncedSelectionText, pageContext);
         
         if (abortController.signal.aborted) return;
         setSmartContent(content);
         
-        // Enhanced analysis integration - with abort control
-        if (enhancedMode) {
-          const [analysis, enhancedThoughtUnits] = await Promise.allSettled([
-            enhancedHybridAnalysisEngine.analyzeText(debouncedSelectionText),
-            analyzeTextForThoughtUnitsEnhanced(debouncedSelectionText)
-          ]);
-          
-          if (abortController.signal.aborted) return;
-          
-          if (analysis.status === 'fulfilled') {
-            setComprehensiveAnalysis(analysis.value);
-          }
-          
-          if (enhancedThoughtUnits.status === 'fulfilled' && enhancedThoughtUnits.value.thoughtUnits.length > 0) {
-            const enhancedConcepts = enhancedThoughtUnits.value.thoughtUnits
-              .filter(unit => unit.isMainIdea || unit.confidence > 0.7)
-              .map(unit => ({
-                id: `enhanced-${unit.id}`,
-                text: unit.text,
-                type: "main-idea" as const,
-                color: "#FFD700",
-                importance: unit.confidence,
-                connections: []
-              }));
-            setConceptHighlights(enhancedConcepts);
-          } else {
-            // Fallback to original concept extraction
-            if (rightBrainMode) {
-              const concepts = extractEducationalConcepts(debouncedSelectionText);
-              setConceptHighlights(concepts);
+        // Defer heavy analysis to prevent blocking
+        timeoutId = setTimeout(async () => {
+          try {
+            if (abortController.signal.aborted) return;
+            
+            // Enhanced analysis integration - with abort control and chunking
+            if (enhancedMode && debouncedSelectionText.length < 500) { // Only analyze shorter selections
+              const [analysis, enhancedThoughtUnits] = await Promise.allSettled([
+                enhancedHybridAnalysisEngine.analyzeText(debouncedSelectionText),
+                analyzeTextForThoughtUnitsEnhanced(debouncedSelectionText)
+              ]);
+              
+              if (abortController.signal.aborted) return;
+              
+              if (analysis.status === 'fulfilled') {
+                setComprehensiveAnalysis(analysis.value);
+              }
+              
+              if (enhancedThoughtUnits.status === 'fulfilled' && enhancedThoughtUnits.value.thoughtUnits.length > 0) {
+                const enhancedConcepts = enhancedThoughtUnits.value.thoughtUnits
+                  .filter(unit => unit.isMainIdea || unit.confidence > 0.7)
+                  .slice(0, 5) // Limit concepts
+                  .map(unit => ({
+                    id: `enhanced-${unit.id}`,
+                    text: unit.text,
+                    type: "main-idea" as const,
+                    color: "#FFD700",
+                    importance: unit.confidence,
+                    connections: []
+                  }));
+                setConceptHighlights(enhancedConcepts);
+              } else {
+                // Fallback to lighter concept extraction
+                if (rightBrainMode) {
+                  const concepts = extractEducationalConcepts(debouncedSelectionText);
+                  setConceptHighlights(concepts.slice(0, 4)); // Limit to 4 concepts
+                }
+              }
+            } else {
+              // Lightweight concept extraction for right-brain highlighting
+              if (rightBrainMode) {
+                const concepts = extractEducationalConcepts(debouncedSelectionText);
+                setConceptHighlights(concepts.slice(0, 4)); // Limit to 4 concepts
+              }
+            }
+          } catch (error) {
+            if (!abortController.signal.aborted) {
+              console.error('Deferred analysis error:', error);
             }
           }
-        } else {
-          // Original concept extraction for right-brain highlighting
-          if (rightBrainMode) {
-            const concepts = extractEducationalConcepts(debouncedSelectionText);
-            setConceptHighlights(concepts);
-          }
-        }
+        }, 300); // Defer heavy work by 300ms
+        
       } catch (error) {
         if (!abortController.signal.aborted) {
           console.error('Analysis error:', error);
           // Fallback to basic highlighting
           if (rightBrainMode) {
             const concepts = extractEducationalConcepts(debouncedSelectionText);
-            setConceptHighlights(concepts);
+            setConceptHighlights(concepts.slice(0, 3));
           }
         }
       }
@@ -717,139 +780,208 @@ export default function CleanHybridReader({
     
     return () => {
       abortController.abort();
+      if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [debouncedSelectionText, debouncedPageTextIndex, rightBrainMode, enhancedMode]);
+  }, [debouncedSelectionText, debouncedPageTextIndex?.text, rightBrainMode, enhancedMode]); // Fixed dependencies
 
-  // Butler Analysis Effects - DEBOUNCED with DOM highlighting
+  // Butler Analysis Effects - HEAVILY DEBOUNCED with DOM highlighting
   useEffect(() => {
-    if (debouncedPageTextIndex?.text && debouncedPageTextIndex.text.length > 50) {
-      console.log('🎯 Butler: Analyzing page text...');
-      
-      const abortController = new AbortController();
-      
-      const performButlerAnalysis = async () => {
-        try {
-          if (abortController.signal.aborted) return;
-          
-          const analysis = await analyzeTextWithButler(debouncedPageTextIndex.text);
-          
-          if (abortController.signal.aborted) return;
-          
-          setButlerAnalysis(analysis);
-          setButlerHighlights(analysis.highlights);
-          
-          // Apply Butler highlights to DOM
-          if (pdfContainerRef.current && analysis.highlights.length > 0) {
-            setTimeout(() => applyButlerHighlights(analysis.highlights), 100);
-          }
-          
-          console.log(`🎯 Butler analysis complete: ${analysis.highlights.length} highlights, comprehension: ${Math.round(analysis.comprehensionScore * 100)}%`);
-        } catch (error) {
-          if (!abortController.signal.aborted) {
-            console.error('Butler analysis error:', error);
-          }
-        }
-      };
-      
-      performButlerAnalysis();
-      
-      return () => {
-        abortController.abort();
-      };
+    if (!debouncedPageTextIndex?.text || debouncedPageTextIndex.text.length <= 50) {
+      return;
     }
-  }, [debouncedPageTextIndex]);
 
-  // Apply Butler highlights to PDF DOM
+    console.log('🎯 Butler: Analyzing page text...');
+    
+    const abortController = new AbortController();
+    let analysisTimeout: NodeJS.Timeout;
+    let highlightTimeout: NodeJS.Timeout;
+    
+    const performButlerAnalysis = async () => {
+      try {
+        if (abortController.signal.aborted) return;
+        
+        // Analyze in chunks to prevent blocking
+        const textChunk = debouncedPageTextIndex.text.slice(0, 1000); // Limit analysis size
+        const analysis = await analyzeTextWithButler(textChunk);
+        
+        if (abortController.signal.aborted) return;
+        
+        setButlerAnalysis(analysis);
+        setButlerHighlights(analysis.highlights);
+        
+        // Defer DOM highlighting to prevent blocking render
+        highlightTimeout = setTimeout(() => {
+          if (pdfContainerRef.current && analysis.highlights.length > 0 && !abortController.signal.aborted) {
+            // Use requestAnimationFrame for smooth DOM updates
+            requestAnimationFrame(() => {
+              if (!abortController.signal.aborted) {
+                applyButlerHighlights(analysis.highlights.slice(0, 3)); // Limit highlights
+              }
+            });
+          }
+        }, 200);
+        
+        console.log(`🎯 Butler analysis complete: ${analysis.highlights.length} highlights, comprehension: ${Math.round(analysis.comprehensionScore * 100)}%`);
+      } catch (error) {
+        if (!abortController.signal.aborted) {
+          console.error('Butler analysis error:', error);
+        }
+      }
+    };
+    
+    // Defer Butler analysis to prevent blocking
+    analysisTimeout = setTimeout(performButlerAnalysis, 500);
+    
+    return () => {
+      abortController.abort();
+      if (analysisTimeout) clearTimeout(analysisTimeout);
+      if (highlightTimeout) clearTimeout(highlightTimeout);
+    };
+  }, [debouncedPageTextIndex?.text]); // Fixed dependencies
+
+  // Enhanced Butler highlights with better DOM targeting and timing
   const applyButlerHighlights = useCallback((highlights: ButlerHighlight[]) => {
-    if (!pdfContainerRef.current) return;
+    if (!pdfContainerRef.current) {
+      console.log('❌ Butler: No PDF container ref available');
+      return;
+    }
     
     try {
-      console.log('🎯 Applying Butler highlights to DOM...');
+      console.log('🎯 Butler: Applying highlights to DOM...', highlights.length);
       
-      // Clear existing Butler highlights
-      const existingButlerHighlights = pdfContainerRef.current.querySelectorAll('.butler-highlight');
-      existingButlerHighlights.forEach(el => {
-        const htmlEl = el as HTMLElement;
-        htmlEl.style.backgroundColor = '';
-        htmlEl.style.border = '';
-        htmlEl.style.fontWeight = '';
-        htmlEl.classList.remove('butler-highlight', 'butler-main-idea', 'butler-supporting', 'butler-definition');
-      });
-
-      // Apply highlights based on Butler analysis
-      const topHighlights = highlights
-        .filter(h => h.confidence > 0.7)
-        .slice(0, 5); // Limit to top 5 highlights to prevent overload
-
-      topHighlights.forEach((highlight, index) => {
-        if (highlight.text.length < 10) return; // Skip very short highlights
+      // Wait for PDF text to be fully rendered
+      setTimeout(() => {
+        if (!pdfContainerRef.current) return;
         
-        // Use a more flexible text matching approach
-        const searchText = highlight.text.toLowerCase().trim();
-        const cleanedText = searchText.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
-        
-        // Find text nodes containing the highlight text or similar content
-        const walker = document.createTreeWalker(
-          pdfContainerRef.current!,
-          NodeFilter.SHOW_TEXT,
-          {
-            acceptNode: (node) => {
-              const nodeText = node.textContent?.toLowerCase() || '';
-              const nodeCleanedText = nodeText.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
-              
-              // Check for exact match or partial match of key words
-              const keyWords = cleanedText.split(' ').filter(word => word.length > 3);
-              const hasKeyWords = keyWords.some(word => nodeCleanedText.includes(word));
-              
-              return (nodeCleanedText.includes(cleanedText) || hasKeyWords) 
-                ? NodeFilter.FILTER_ACCEPT 
-                : NodeFilter.FILTER_REJECT;
-            }
+        // Clear existing Butler highlights first
+        const existingButlerHighlights = pdfContainerRef.current.querySelectorAll('.butler-highlight');
+        existingButlerHighlights.forEach(el => {
+          const htmlEl = el as HTMLElement;
+          htmlEl.style.backgroundColor = '';
+          htmlEl.style.borderLeft = '';
+          htmlEl.style.fontWeight = '';
+          htmlEl.style.paddingLeft = '';
+          htmlEl.classList.remove('butler-highlight', 'butler-main-idea', 'butler-supporting', 'butler-definition');
+          htmlEl.removeAttribute('title');
+        });
+
+        // Apply highlights based on Butler analysis
+        const topHighlights = highlights
+          .filter(h => h.confidence > 0.65) // Slightly lower threshold
+          .sort((a, b) => b.confidence - a.confidence)
+          .slice(0, 6); // Slightly more highlights
+
+        console.log(`🎯 Butler: Processing ${topHighlights.length} top highlights`);
+
+        topHighlights.forEach((highlight, index) => {
+          if (highlight.text.length < 8) return; // Skip very short highlights
+          
+          // Enhanced text matching with multiple strategies
+          const searchText = highlight.text.trim();
+          const searchWords = searchText.toLowerCase().split(/\s+/).filter(word => word.length > 3);
+          
+          console.log(`🔍 Butler: Looking for "${searchText.slice(0, 50)}..." (${searchWords.length} keywords)`);
+          
+          // Strategy 1: Direct text matching with proper TypeScript types
+          let highlightApplied = false;
+          const textNodes: Text[] = [];
+          const walker = document.createTreeWalker(
+            pdfContainerRef.current!,
+            NodeFilter.SHOW_TEXT,
+            null
+          );
+          
+          let node: Node | null;
+          while (node = walker.nextNode()) {
+            textNodes.push(node as Text);
           }
-        );
-        
-        let highlightCount = 0;
-        let node;
-        while (node = walker.nextNode() && highlightCount < 2) { // Limit to 2 highlights per concept
-          const parent = node.parentElement;
-          if (parent && !parent.classList.contains('butler-highlight')) {
-            // Apply Butler-specific styling based on highlight type
-            const butlerClass = `butler-${highlight.type}`;
-            parent.classList.add('butler-highlight', butlerClass);
+          
+          // Find best matching text nodes
+          const matches = textNodes.filter((textNode: Text) => {
+            const nodeText = textNode.textContent?.toLowerCase() || '';
             
-            switch (highlight.importance) {
-              case 'gold':
-                parent.style.backgroundColor = '#FFD70030';
-                parent.style.borderLeft = '4px solid #FFD700';
-                parent.style.fontWeight = '600';
-                break;
-              case 'blue':
-                parent.style.backgroundColor = '#4169E130';
-                parent.style.borderLeft = '3px solid #4169E1';
-                break;
-              case 'green':
-                parent.style.backgroundColor = '#32CD3230';
-                parent.style.borderLeft = '2px solid #32CD32';
-                break;
-              default:
-                parent.style.backgroundColor = '#DDD0DD20';
-                parent.style.borderLeft = '1px solid #DDD0DD';
-                break;
+            // Exact match
+            if (nodeText.includes(searchText.toLowerCase())) {
+              return true;
             }
             
-            parent.style.paddingLeft = '6px';
-            parent.style.margin = '1px 0';
-            parent.title = `Butler ${highlight.type}: ${highlight.text.slice(0, 80)}... (${Math.round(highlight.confidence * 100)}% confidence)`;
-            
-            highlightCount++;
+            // Keyword match (at least 60% of keywords present)
+            const matchingKeywords = searchWords.filter(word => nodeText.includes(word));
+            return matchingKeywords.length >= Math.ceil(searchWords.length * 0.6);
+          });
+          
+          console.log(`🔍 Butler: Found ${matches.length} matching text nodes for highlight ${index + 1}`);
+          
+          // Apply highlighting to best matches
+          matches.slice(0, 2).forEach((textNode: Text) => {
+            const parent = textNode.parentElement;
+            if (parent && !parent.classList.contains('butler-highlight')) {
+              // Apply Butler-specific styling
+              const butlerClass = `butler-${highlight.type}`;
+              parent.classList.add('butler-highlight', butlerClass);
+              
+              // Enhanced visual styling based on importance
+              switch (highlight.importance) {
+                case 'gold':
+                  parent.style.backgroundColor = '#FFD70040'; // More visible
+                  parent.style.borderLeft = '4px solid #FFD700';
+                  parent.style.fontWeight = '600';
+                  parent.style.boxShadow = '0 1px 3px rgba(255, 215, 0, 0.3)';
+                  break;
+                case 'blue':
+                  parent.style.backgroundColor = '#4169E140'; // More visible
+                  parent.style.borderLeft = '3px solid #4169E1';
+                  parent.style.fontWeight = '500';
+                  break;
+                case 'green':
+                  parent.style.backgroundColor = '#32CD3240'; // More visible
+                  parent.style.borderLeft = '2px solid #32CD32';
+                  break;
+                default:
+                  parent.style.backgroundColor = '#DDD0DD30';
+                  parent.style.borderLeft = '2px solid #DDD0DD';
+                  break;
+              }
+              
+              parent.style.paddingLeft = '8px';
+              parent.style.margin = '2px 0';
+              parent.style.borderRadius = '2px';
+              parent.style.transition = 'all 0.2s ease';
+              
+              // Enhanced tooltip with more information
+              const confidencePercent = Math.round(highlight.confidence * 100);
+              const tooltip = `Butler ${highlight.type.toUpperCase()}: "${highlight.text.slice(0, 60)}..." (${confidencePercent}% confidence)`;
+              parent.title = tooltip;
+              
+              // Add hover effects
+              parent.style.cursor = 'help';
+              parent.addEventListener('mouseenter', () => {
+                parent.style.transform = 'scale(1.01)';
+                parent.style.zIndex = '10';
+              });
+              
+              parent.addEventListener('mouseleave', () => {
+                parent.style.transform = 'scale(1)';
+                parent.style.zIndex = '1';
+              });
+              
+              highlightApplied = true;
+              
+              console.log(`✅ Butler: Applied ${highlight.importance} highlight to "${highlight.text.slice(0, 30)}..."`);
+            }
+          });
+          
+          if (!highlightApplied) {
+            console.log(`❌ Butler: Failed to apply highlight for "${searchText.slice(0, 30)}..."`);
           }
-        }
-      });
-      
-      console.log(`✅ Applied ${topHighlights.length} Butler highlights to DOM`);
+        });
+        
+        console.log(`✅ Butler: Highlight application complete`);
+        
+      }, 300); // Wait 300ms for PDF to render
       
     } catch (error) {
-      console.error('Error applying Butler highlights:', error);
+      console.error('❌ Butler: Error applying highlights:', error);
     }
   }, []);
 

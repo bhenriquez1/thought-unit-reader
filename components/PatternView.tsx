@@ -141,9 +141,10 @@ export default function PatternView({
     }
   }, [userId]);
 
-  // Reset training for new thought unit
+  // Reset training for new thought unit - optimized to prevent loops
   useEffect(() => {
-    setTrainingState({
+    setTrainingState(prev => ({
+      ...prev,
       step: 'content',
       selectedPatternId: null,
       userAttempt: '',
@@ -151,8 +152,8 @@ export default function PatternView({
       isCorrect: null,
       showHint: false,
       attemptsCount: 0
-    });
-  }, [currentThoughtUnit]);
+    }));
+  }, [currentThoughtUnit]); // Only depend on currentThoughtUnit
 
   // ✅ Simplified validation - main index.tsx handles empty states
   const rawUnit = thoughtUnits[currentThoughtUnit - 1];
