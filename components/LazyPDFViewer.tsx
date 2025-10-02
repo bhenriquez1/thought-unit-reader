@@ -1,0 +1,498 @@
+// components/LazyPDFViewer.tsx
+"use client";
+
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { Document, Page, pdfjs } from "react-pdf";
+import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api";
+import { useReaderSync } from "@/lib/readerSync";
+
+// Optimized worker configuration
+try {
+  pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+} catch {
+  // Fallback handled by react-pdf
+}
+
+export type TocItem = {
+  title: string;
+  pageNumber?: number;
+  items?: TocItem[];
+};
+
+export interface LazyPDFViewerProps {
+  fileUrl: string;
+  currentPage: number;
+  onPageChange: (page: number) => void;
+  scale?: number;
+  onTextSelect?: (text: string) => void;
+  onPageCount?: (n: number) => void;
+  onOutline?: (items: TocItem[]) => void;
+}
+
+// Enhanced same-origin conversion with caching
+const urlCache = new Map<string, string>();
+
+function toSameOrigin(url: string): string {
+  if (urlCache.has(url)) {
+    return urlCache.get(url)!;
+  }
+
+  try {
+    if (!/^https?:/i.test(url)) {
+      urlCache.set(url, url);
+      return url;
+    }
+    if (typeof window !== "undefined") {
+      const u = new URL(url);
+      if (u.origin === window.location.origin) {
+        urlCache.set(url, url);
+        return url;
+      }
+    }
+    const proxiedUrl = `/api/proxy-pdf?url=${encodeURIComponent(url)}`;
+    urlCache.set(url, proxiedUrl);
+    return proxiedUrl;
+  } catch {
+    urlCache.set(url, url);
+    return url;
+  }
+}
+
+// Optimized outline resolver with caching
+const outlineCache = new Map<string, TocItem[]>();
+
+async function resolveOutline(
+  pdf: PDFDocumentProxy,
+  nodes: any[] | null | undefined,
+  cacheKey: string
+): Promise<TocItem[]> {
+  if (outlineCache.has(cacheKey)) {
+    return outlineCache.get(cacheKey)!;
+  }
+
+  if (!nodes || !nodes.length) {
+    outlineCache.set(cacheKey, []);
+    return [];
+  }
+
+  const out: TocItem[] = [];
+
+  for (const node of nodes) {
+    let pageNumber: number | undefined = undefined;
+
+    let dest: any = node?.dest;
+    try {
+      if (typeof dest === "string") dest = await (pdf as any).getDestination(dest);
+      if (Array.isArray(dest) && dest.length) {
+        const pageRef = dest[0];
+        const index = await (pdf as any).getPageIndex(pageRef);
+        if (Number.isFinite(index)) pageNumber = (index as number) + 1;
+      }
+    } catch {
+      // Ignore resolution failures
+    }
+
+    const children = await resolveOutline(pdf, node.items || node.children, `${cacheKey}-${node.title}`);
+    out.push({
+      title: node?.title || "Untitled",
+      pageNumber,
+      items: children,
+    });
+  }
+
+  outlineCache.set(cacheKey, out);
+  return out;
+}
+
+// Performance monitoring hook
+function usePerformanceMonitor() {
+  const [loadTime, setLoadTime] = useState<number>(0);
+  const [renderTime, setRenderTime] = useState<number>(0);
+  const startTime = useRef<number>(0);
+
+  const startTimer = useCallback(() => {
+    startTime.current = performance.now();
+  }, []);
+
+  const endTimer = useCallback((type: 'load' | 'render') => {
+    const elapsed = performance.now() - startTime.current;
+    if (type === 'load') {
+      setLoadTime(elapsed);
+    } else {
+      setRenderTime(elapsed);
+    }
+  }, []);
+
+  return { loadTime, renderTime, startTimer, endTimer };
+}
+
+export default React.memo(function LazyPDFViewer({
+  fileUrl,
+  currentPage,
+  onPageChange,
+  scale = 1.25,
+  onTextSelect,
+  onPageCount,
+  onOutline,
+}: LazyPDFViewerProps) {
+  const [numPages, setNumPages] = useState<number>(0);
+  const [zoom, setZoom] = useState<number>(scale);
+  const [pageInput, setPageInput] = useState<string>(String(currentPage));
+  const [showToolbar, setShowToolbar] = useState<boolean>(true);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadingProgress, setLoadingProgress] = useState<number>(0);
+  
+  // Page rendering optimization
+  const [renderedPages, setRenderedPages] = useState<Set<number>>(new Set([currentPage]));
+  const [preloadRange, setPreloadRange] = useState<{start: number, end: number}>({start: currentPage, end: currentPage});
+  
+  const viewerRef = useRef<HTMLDivElement>(null);
+  const pageContainerRef = useRef<HTMLDivElement>(null);
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const { loadTime, renderTime, startTimer, endTimer } = usePerformanceMonitor();
+
+  // Enhanced sync integration
+  const { 
+    setPage, 
+    startVisibleTextObserver, 
+    stopVisibleTextObserver,
+    syncPDFToChunk 
+  } = useReaderSync();
+
+  // Update page input when currentPage changes
+  useEffect(() => {
+    setPageInput(String(currentPage));
+    
+    // Update preload range (current page ± 2)
+    const newStart = Math.max(1, currentPage - 2);
+    const newEnd = Math.min(numPages || currentPage + 2, currentPage + 2);
+    setPreloadRange({ start: newStart, end: newEnd });
+    
+    // Add current page to rendered pages
+    setRenderedPages(prev => new Set([...prev, currentPage]));
+  }, [currentPage, numPages]);
+
+  // Preload adjacent pages for smooth navigation
+  useEffect(() => {
+    if (numPages > 0) {
+      const pagesToPreload = [];
+      for (let i = preloadRange.start; i <= preloadRange.end; i++) {
+        if (i >= 1 && i <= numPages && !renderedPages.has(i)) {
+          pagesToPreload.push(i);
+        }
+      }
+      
+      // Gradually add pages to rendered set (avoid rendering all at once)
+      if (pagesToPreload.length > 0) {
+        const timer = setTimeout(() => {
+          setRenderedPages(prev => {
+            const newSet = new Set([...prev]);
+            pagesToPreload.slice(0, 2).forEach(p => newSet.add(p)); // Max 2 at a time
+            return newSet;
+          });
+        }, 100);
+        
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [preloadRange, numPages, renderedPages]);
+
+  // Enhanced page change handler with performance tracking
+  const handlePageChangeWithSync = useCallback((newPage: number, source: 'scroll' | 'navigation' | 'programmatic' = 'navigation') => {
+    console.log(`📄 LazyPDFViewer: Page change ${currentPage} -> ${newPage} (${source})`);
+    
+    if (newPage < 1 || (numPages > 0 && newPage > numPages)) {
+      console.warn(`📄 LazyPDFViewer: Invalid page ${newPage}, bounds: 1-${numPages}`);
+      return;
+    }
+    
+    startTimer();
+    
+    try {
+      setPage(newPage, source === 'scroll' ? 'pdf' : 'manual');
+      onPageChange(newPage);
+      endTimer('render');
+      console.log(`📄 LazyPDFViewer: Successfully navigated to page ${newPage}`);
+    } catch (error) {
+      console.error(`📄 LazyPDFViewer: Navigation error for page ${newPage}:`, error);
+      // Fallback
+      try {
+        onPageChange(newPage);
+        console.log(`📄 LazyPDFViewer: Fallback navigation succeeded`);
+      } catch (fallbackError) {
+        console.error(`📄 LazyPDFViewer: Fallback navigation failed:`, fallbackError);
+      }
+    }
+  }, [currentPage, numPages, setPage, onPageChange, startTimer, endTimer]);
+
+  // Optimized visible text observer
+  useEffect(() => {
+    if (!pageContainerRef.current || !fileUrl) return;
+
+    const container = pageContainerRef.current;
+    
+    const handleVisibleTextChange = (visibleText: string, topElement: HTMLElement | null) => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+      
+      syncTimeoutRef.current = setTimeout(() => {
+        if (visibleText.length > 30) { // Reduced threshold for faster response
+          syncPDFToChunk(container, [visibleText]).catch(error => {
+            console.warn('PDF to chunk sync failed:', error);
+          });
+        }
+      }, 100); // Reduced debounce time
+    };
+
+    startVisibleTextObserver(container, handleVisibleTextChange);
+
+    return () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+      stopVisibleTextObserver();
+    };
+  }, [fileUrl, startVisibleTextObserver, stopVisibleTextObserver, syncPDFToChunk]);
+
+  // Memoized file specification
+  const fileSpec = useMemo(() => {
+    if (!fileUrl) return null;
+    const resolved = toSameOrigin(fileUrl);
+    return { url: resolved };
+  }, [fileUrl]);
+
+  // Document load success handler with performance tracking
+  const onDocumentLoadSuccess = useCallback(async (pdf: PDFDocumentProxy) => {
+    startTimer();
+    setErrMsg(null);
+    setNumPages(pdf.numPages);
+    setIsLoading(false);
+    onPageCount?.(pdf.numPages);
+
+    if (onOutline) {
+      try {
+        const raw = await (pdf as any).getOutline?.();
+        if (raw?.length) {
+          const cacheKey = `outline-${fileUrl}`;
+          const items = await resolveOutline(pdf, raw, cacheKey);
+          onOutline(items);
+        } else {
+          onOutline([]);
+        }
+      } catch {
+        onOutline?.([]);
+      }
+    }
+    
+    endTimer('load');
+    console.log(`📊 PDF loaded in ${loadTime.toFixed(2)}ms`);
+  }, [fileUrl, onPageCount, onOutline, startTimer, endTimer, loadTime]);
+
+  const onDocumentLoadError = useCallback((err: unknown) => {
+    const m = (err as any)?.message || String(err);
+    setErrMsg(m);
+    setIsLoading(false);
+    console.error("❌ PDF load error", err);
+  }, []);
+
+  const onSourceError = useCallback((err: unknown) => {
+    const m = (err as any)?.message || String(err);
+    setErrMsg(m);
+    setIsLoading(false);
+    console.error("❌ PDF source error", err);
+  }, []);
+
+  // Optimized navigation handlers
+  const handleZoomIn = useCallback(() => setZoom((z) => Math.min(z + 0.25, 3)), []);
+  const handleZoomOut = useCallback(() => setZoom((z) => Math.max(z - 0.25, 0.5)), []);
+
+  const handlePrevPage = useCallback(() => {
+    if (currentPage > 1) {
+      const next = currentPage - 1;
+      handlePageChangeWithSync(next, 'navigation');
+      setPageInput(String(next));
+    }
+  }, [currentPage, handlePageChangeWithSync]);
+
+  const handleNextPage = useCallback(() => {
+    if (currentPage < numPages) {
+      const next = currentPage + 1;
+      handlePageChangeWithSync(next, 'navigation');
+      setPageInput(String(next));
+    }
+  }, [currentPage, numPages, handlePageChangeWithSync]);
+
+  const handlePageInputSubmit = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    const pageNum = parseInt(pageInput, 10);
+    if (!Number.isNaN(pageNum) && pageNum >= 1 && pageNum <= numPages) {
+      handlePageChangeWithSync(pageNum, 'navigation');
+    } else {
+      setPageInput(String(currentPage));
+    }
+  }, [pageInput, numPages, handlePageChangeWithSync, currentPage]);
+
+  const handleMouseUp = useCallback(() => {
+    const selection = window.getSelection()?.toString().trim();
+    if (selection && onTextSelect) onTextSelect(selection);
+  }, [onTextSelect]);
+
+  // Loading progress simulation for better UX
+  useEffect(() => {
+    if (isLoading) {
+      const interval = setInterval(() => {
+        setLoadingProgress(prev => {
+          const newProgress = prev + Math.random() * 10;
+          return newProgress >= 95 ? 95 : newProgress;
+        });
+      }, 200);
+      
+      return () => clearInterval(interval);
+    } else {
+      setLoadingProgress(100);
+    }
+  }, [isLoading]);
+
+  return (
+    <div
+      className="relative h-full w-full bg-gray-900"
+      ref={viewerRef}
+      onMouseUp={handleMouseUp}
+    >
+      {/* Enhanced Loading Indicator */}
+      {isLoading && (
+        <div className="absolute inset-0 bg-gray-900 flex flex-col items-center justify-center z-50">
+          <div className="text-center max-w-md">
+            <div className="text-6xl mb-4 animate-pulse">📄</div>
+            <h3 className="text-xl font-bold mb-4 text-white">Loading PDF...</h3>
+            
+            {/* Progress Bar */}
+            <div className="w-full bg-gray-700 rounded-full h-2 mb-4">
+              <div 
+                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${loadingProgress}%` }}
+              />
+            </div>
+            
+            <p className="text-gray-400">
+              {loadingProgress < 30 && "Fetching PDF..."}
+              {loadingProgress >= 30 && loadingProgress < 60 && "Processing document..."}
+              {loadingProgress >= 60 && loadingProgress < 95 && "Preparing pages..."}
+              {loadingProgress >= 95 && "Almost ready!"}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Toolbar */}
+      {showToolbar ? (
+        <div className="absolute top-4 right-4 bg-black/60 text-white rounded-lg px-3 py-2 flex gap-2 items-center shadow-lg z-50">
+          <button onClick={handleZoomOut} className="hover:text-yellow-400" aria-label="Zoom out">➖</button>
+          <button onClick={handleZoomIn} className="hover:text-yellow-400" aria-label="Zoom in">➕</button>
+          <button onClick={handlePrevPage} disabled={currentPage <= 1} aria-label="Previous page">◀</button>
+          <form onSubmit={handlePageInputSubmit} className="flex items-center">
+            <input
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={pageInput}
+              onChange={(e) => setPageInput(e.target.value)}
+              className="w-12 text-center text-black rounded"
+              aria-label="Page number"
+            />
+            <span className="ml-1 text-sm">/ {numPages || "—"}</span>
+          </form>
+          <button
+            onClick={handleNextPage}
+            disabled={numPages === 0 || currentPage >= numPages}
+            aria-label="Next page"
+          >
+            ▶
+          </button>
+          
+          {/* Performance indicator */}
+          {loadTime > 0 && renderTime > 0 && (
+            <div className="ml-2 text-xs text-green-400" title="Load/Render time">
+              ⚡ {loadTime.toFixed(0)}/{renderTime.toFixed(0)}ms
+            </div>
+          )}
+          
+          <button
+            onClick={() => setShowToolbar(false)}
+            className="ml-2 text-red-400 hover:text-red-300"
+            aria-label="Hide toolbar"
+          >
+            ✕
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setShowToolbar(true)}
+          className="absolute top-4 right-4 bg-yellow-500 text-black px-2 py-1 rounded-lg shadow-lg z-50"
+          aria-label="Show toolbar"
+        >
+          ⚙
+        </button>
+      )}
+
+      {/* PDF Container with Lazy Loading */}
+      <div 
+        ref={pageContainerRef}
+        className="relative flex justify-center items-start h-full overflow-auto p-4"
+      >
+        {fileSpec && !isLoading ? (
+          <div className="relative">
+            <Document
+              key={(fileSpec as any).url}
+              file={fileSpec}
+              onLoadSuccess={onDocumentLoadSuccess}
+              onLoadError={onDocumentLoadError}
+              onSourceError={onSourceError}
+              loading={
+                <div className="flex items-center justify-center p-8">
+                  <div className="animate-spin text-4xl">📄</div>
+                </div>
+              }
+            >
+              {/* Render current page and preloaded pages */}
+              {Array.from(renderedPages).map(pageNum => (
+                <Page
+                  key={pageNum}
+                  pageNumber={pageNum}
+                  scale={zoom}
+                  renderTextLayer={pageNum === currentPage} // Only render text layer for current page
+                  renderAnnotationLayer={pageNum === currentPage} // Only render annotations for current page
+                  loading={pageNum === currentPage ? 
+                    <div className="flex items-center justify-center p-8">
+                      <div className="animate-spin text-2xl">⏳</div>
+                    </div> : 
+                    null
+                  }
+                  className={pageNum === currentPage ? 'block' : 'hidden'}
+                />
+              ))}
+            </Document>
+          </div>
+        ) : !isLoading ? (
+          <p className="text-gray-400">📂 No PDF loaded.</p>
+        ) : null}
+      </div>
+
+      {/* Error Message */}
+      {errMsg && (
+        <div className="absolute left-4 bottom-4 bg-red-600 text-white text-xs rounded px-2 py-1 shadow z-40">
+          Failed to load PDF: {errMsg}
+        </div>
+      )}
+      
+      {/* Memory usage indicator (development) */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="absolute left-4 top-4 bg-black/60 text-white text-xs rounded px-2 py-1 shadow z-40">
+          Pages rendered: {renderedPages.size}/{numPages || '?'}
+        </div>
+      )}
+    </div>
+  );
+});

@@ -41,10 +41,12 @@ import { usePdfSelection } from "@/hooks/usePdfSelection";
 import summarizeText from "@/lib/aiSummary";
 import { generateMnemonic } from "@/lib/mnemonicAI";
 
-// Lazy-load to keep SSR clean
-const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
+// Lazy-load to keep SSR clean with performance optimizations
+const SmartPDFViewer = dynamic(() => import("@/components/LazyPDFViewer"), { ssr: false });
 const PatternTrainingHybridReader = dynamic(() => import("@/components/PatternTrainingHybridReader"), { ssr: false });
 const NoteLabHybridReader = dynamic(() => import("@/components/NoteLabHybridReader"), { ssr: false });
+const OptimizedPatternView = dynamic(() => import("@/components/OptimizedPatternView"), { ssr: false });
+const OptimizedNoteLabView = dynamic(() => import("@/components/OptimizedNoteLabView"), { ssr: false });
 
 type StickyNote = { pageNumber: number; content: string };
 
