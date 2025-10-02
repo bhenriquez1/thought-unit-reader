@@ -177,7 +177,7 @@ export default React.memo(function LazyPDFViewer({
   // Preload adjacent pages for smooth navigation
   useEffect(() => {
     if (numPages > 0) {
-      const pagesToPreload = [];
+      const pagesToPreload: number[] = [];
       for (let i = preloadRange.start; i <= preloadRange.end; i++) {
         if (i >= 1 && i <= numPages && !renderedPages.has(i)) {
           pagesToPreload.push(i);
