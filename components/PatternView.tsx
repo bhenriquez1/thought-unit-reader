@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useMemo, useCallback, Suspense } from "react";
 import type { ThoughtUnit as BaseThoughtUnit, ReadingStats } from "@/types/reading";
 import { 
   DAT_PATTERNS, 
@@ -16,6 +16,7 @@ import {
 } from "@/lib/firebase";
 import { auth } from "@/lib/firebase";
 import type { User } from "firebase/auth";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 type PVUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -283,26 +284,52 @@ export default function PatternView({
   };
 
   return (
-    <div className="h-full flex flex-col bg-gray-900 text-white">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-700">
-        <div className="flex items-center gap-4">
-          <h2 className="text-xl font-bold text-blue-400">🎯 Pattern Recognition Training</h2>
-          <span className="text-sm text-gray-400">
-            Unit {currentThoughtUnit} of {thoughtUnits.length}
-            {pdfPageCount && ` • Page ${currentPage}`}
-          </span>
+    <ErrorBoundary
+      fallback={
+        <div className="h-full flex flex-col bg-gray-900 text-white">
+          <div className="flex items-center justify-between p-4 border-b border-gray-700">
+            <h2 className="text-xl font-bold text-red-400">⚠️ Pattern View Error</h2>
+          </div>
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-6xl mb-4">🚨</div>
+              <h3 className="text-xl font-bold text-red-400 mb-2">PatternView failed to load</h3>
+              <p className="text-gray-400 mb-4">There was an issue loading the pattern recognition interface.</p>
+              <div className="space-y-2">
+                <p className="text-sm text-gray-500">This might be caused by:</p>
+                <ul className="text-sm text-gray-500 list-disc list-inside space-y-1">
+                  <li>Network connectivity issues</li>
+                  <li>Invalid pattern data</li>
+                  <li>Authentication problems</li>
+                  <li>Thought unit data corruption</li>
+                </ul>
+              </div>
+            </div>
+          </div>
         </div>
-        
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowMasteryPanel(!showMasteryPanel)}
-            className="px-3 py-1 bg-purple-600 hover:bg-purple-500 rounded text-sm"
-          >
-            📊 Mastery
-          </button>
+      }
+      resetKeys={[currentThoughtUnit, userId, thoughtUnits.length]}
+    >
+      <div className="h-full flex flex-col bg-gray-900 text-white">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-gray-700">
+          <div className="flex items-center gap-4">
+            <h2 className="text-xl font-bold text-blue-400">🎯 Pattern Recognition Training</h2>
+            <span className="text-sm text-gray-400">
+              Unit {currentThoughtUnit} of {thoughtUnits.length}
+              {pdfPageCount && ` • Page ${currentPage}`}
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowMasteryPanel(!showMasteryPanel)}
+              className="px-3 py-1 bg-purple-600 hover:bg-purple-500 rounded text-sm"
+            >
+              📊 Mastery
+            </button>
+          </div>
         </div>
-      </div>
 
       {/* Mastery Panel */}
       {showMasteryPanel && (
@@ -601,5 +628,6 @@ export default function PatternView({
         </div>
       </div>
     </div>
+    </ErrorBoundary>
   );
 }
