@@ -211,6 +211,9 @@ class FeatureFlagManager {
   }
 
   private loadFromStorage() {
+    // Only access localStorage in browser environment
+    if (typeof window === 'undefined') return;
+    
     try {
       const stored = localStorage.getItem('tuReader_featureFlags');
       if (stored) {
@@ -237,6 +240,9 @@ class FeatureFlagManager {
   }
 
   private saveToStorage() {
+    // Only access localStorage in browser environment
+    if (typeof window === 'undefined') return;
+    
     try {
       localStorage.setItem('tuReader_featureFlags', JSON.stringify(this.flags));
     } catch (error) {
@@ -245,10 +251,13 @@ class FeatureFlagManager {
   }
 
   private startPerformanceMonitoring() {
-    this.monitoringInterval = window.setInterval(() => {
-      this.updatePerformanceMetrics();
-      this.checkAutomaticDegradation();
-    }, 5000); // Check every 5 seconds
+    // Only start monitoring in browser environment
+    if (typeof window !== 'undefined') {
+      this.monitoringInterval = window.setInterval(() => {
+        this.updatePerformanceMetrics();
+        this.checkAutomaticDegradation();
+      }, 5000); // Check every 5 seconds
+    }
   }
 
   private updatePerformanceMetrics() {
