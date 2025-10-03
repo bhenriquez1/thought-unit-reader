@@ -37,6 +37,13 @@ interface FeatureFlags {
   REQUEST_BATCHING: FeatureConfig;
   OFFLINE_MODE: FeatureConfig;
   PRELOAD_STRATEGY: FeatureConfig;
+  
+  // Prototype testing flags
+  PROTOTYPE_TESTING_MODE: FeatureConfig;
+  DISABLE_CLEAN_HYBRID_READER: FeatureConfig;
+  DISABLE_PATTERN_VIEW: FeatureConfig;
+  DISABLE_PATTERN_TRAINING_HYBRID: FeatureConfig;
+  ENABLE_UNIVERSAL_PATTERN_BUTLER: FeatureConfig;
 }
 
 // Default feature configuration
@@ -145,6 +152,32 @@ const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
     enabled: true,
     description: 'Preload critical resources',
     threshold: 2 // Number of pages to preload
+  },
+  
+  // Prototype testing flags
+  PROTOTYPE_TESTING_MODE: {
+    enabled: true,
+    description: 'Enable prototype testing mode - routes to UniversalPatternButlerReader'
+  },
+  
+  DISABLE_CLEAN_HYBRID_READER: {
+    enabled: true,
+    description: 'Temporarily disable CleanHybridReader for prototype testing'
+  },
+  
+  DISABLE_PATTERN_VIEW: {
+    enabled: true,
+    description: 'Temporarily disable PatternView for prototype testing'
+  },
+  
+  DISABLE_PATTERN_TRAINING_HYBRID: {
+    enabled: true,
+    description: 'Temporarily disable PatternTrainingHybridReader for prototype testing'
+  },
+  
+  ENABLE_UNIVERSAL_PATTERN_BUTLER: {
+    enabled: true,
+    description: 'Enable UniversalPatternButlerReader prototype component'
   }
 };
 

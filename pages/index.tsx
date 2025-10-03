@@ -5,6 +5,9 @@ import React, { useState, useEffect, useRef, useMemo, ChangeEvent } from "react"
 import { generateTOC, type TOCEntry, outlineToTOC } from "@/lib/tocParser";
 import TOCSidebar from "@/components/TOCSidebar";
 import type { ThoughtUnit, ReadingStats } from "@/types/reading";
+import { useFeatureFlags } from "@/lib/features/featureFlags";
+
+// Feature flag controlled imports
 import EnhancedHybridReader from "@/components/EnhancedHybridReader";
 import PatternView from "@/components/PatternView";
 import NoteLabView from "@/components/NoteLabView";
@@ -13,6 +16,9 @@ import CleanRightBrainReader from "@/components/CleanRightBrainReader";
 import HighlightPopup from "@/components/HighlightPopup";
 import RightBrainNoteEditor from "@/components/RightBrainNoteEditor";
 import LinkVideoModal from "@/components/LinkVideoModal";
+
+// Prototype component import
+import UniversalPatternButlerReader from "@/components/UniversalPatternButlerReader";
 
 import {
   firebaseConnected,
@@ -178,6 +184,11 @@ const COMPREHENSION_PROMPTS = [
 
 
 export default function ThoughtUnitReader() {
+  /* =========================================================================
+     🔹 Feature Flags for Prototype Testing
+  ========================================================================= */
+  const { isEnabled: isFeatureEnabled } = useFeatureFlags();
+
   /* =========================================================================
      🔹 Enhanced Global Reader Sync Store
   ========================================================================= */
@@ -1162,6 +1173,108 @@ export default function ThoughtUnitReader() {
             >
               Sign in with Google
             </button>
+          </div>
+        </div>
+      );
+    }
+
+    // 🎯 PROTOTYPE TESTING MODE - Route to UniversalPatternButlerReader
+    if (isFeatureEnabled('PROTOTYPE_TESTING_MODE') && isFeatureEnabled('ENABLE_UNIVERSAL_PATTERN_BUTLER')) {
+      console.log('🎯 Prototype testing mode active - routing to UniversalPatternButlerReader');
+      
+      return fileUrl && thoughtUnits.length > 0 ? (
+        <div className="h-full flex flex-col">
+          {/* Prototype Testing Header */}
+          <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🎯</span>
+              <div>
+                <h3 className="text-lg font-bold">Universal Pattern Butler Reader - PROTOTYPE</h3>
+                <p className="text-sm opacity-90">Advanced three-way component merger testing</p>
+              </div>
+            </div>
+            <div className="text-sm bg-white/20 backdrop-blur rounded-lg px-3 py-1">
+              Testing Mode Active
+            </div>
+          </div>
+          
+          {/* Universal Pattern Butler Reader Component */}
+          <div className="flex-1 overflow-hidden">
+            <UniversalPatternButlerReader
+              bookId={bookId}
+              userId={USER_ID}
+              pdfUrl={fileUrl}
+              currentPage={currentPage}
+              pdfPageCount={pdfPageCount}
+              onPageChange={(p) => syncToPage(p)}
+              thoughtUnits={thoughtUnits}
+              currentThoughtUnit={currentThoughtUnit}
+              setCurrentThoughtUnit={setCurrentThoughtUnit}
+              highlightedWord={highlightedWord}
+              setHighlightedWord={setHighlightedWord}
+              onWordClick={(w) => {
+                setHighlightedWord(w);
+                if (autoWhiteboard && w.trim()) {
+                  setWbConcept(truncate(w, 600));
+                  setWbContext(`p.${currentPage}`);
+                  setShowWhiteboardPanel(true);
+                }
+              }}
+              onTextSelect={(t) => sel.setSelectionText(t)}
+              onGenerateNote={handleOpenRightBrainNote}
+              selBind={sel.bind}
+              externalSelectionText={sel.selectionText}
+              fontSize={fontSize}
+              fontFamily={fontFamily}
+              lineSpacing={lineSpacing}
+              selectedVoice={selectedVoice || undefined}
+              onVoiceChange={setSelectedVoice}
+              speechRate={speechRate}
+              onSpeechRateChange={setSpeechRate}
+              tableOfContents={tableOfContents}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
+          <div className="text-center max-w-3xl">
+            <div className="text-8xl mb-6">🎯</div>
+            <h3 className="text-4xl font-bold mb-4 text-white">Universal Pattern Butler Reader</h3>
+            <p className="text-xl opacity-90 mb-8 text-gray-200">
+              Prototype Testing Mode - Advanced Three-Way Component Merger
+            </p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 text-base">
+              <div className="bg-black/30 rounded-xl p-6 border border-green-500/40">
+                <div className="text-4xl mb-4">📖</div>
+                <h4 className="font-bold text-green-400 mb-2">Pattern Exploration</h4>
+                <p className="text-gray-300">Real-time universal pattern detection with confidence scoring</p>
+              </div>
+              <div className="bg-black/30 rounded-xl p-6 border border-blue-500/40">
+                <div className="text-4xl mb-4">🎯</div>
+                <h4 className="font-bold text-blue-400 mb-2">Active Training</h4>
+                <p className="text-gray-300">Step-by-step pattern application with self-assessment</p>
+              </div>
+              <div className="bg-black/30 rounded-xl p-6 border border-purple-500/40">
+                <div className="text-4xl mb-4">🧠</div>
+                <h4 className="font-bold text-purple-400 mb-2">Butler Analysis</h4>
+                <p className="text-gray-300">Advanced thought unit detection with metaphors</p>
+              </div>
+            </div>
+          </div>
+          
+          <label className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-400 hover:via-purple-400 hover:to-pink-400 text-white px-10 py-5 rounded-2xl cursor-pointer font-bold text-xl transition-all transform hover:scale-105 shadow-2xl">
+            📂 Upload PDF to Test Universal Pattern Butler
+            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
+          </label>
+          
+          <div className="mt-6 text-center">
+            <p className="text-sm text-gray-400 mb-2">Testing prototype merger of:</p>
+            <div className="flex gap-4 text-xs">
+              <span className="bg-green-600/20 text-green-300 px-2 py-1 rounded">PatternView</span>
+              <span className="bg-blue-600/20 text-blue-300 px-2 py-1 rounded">CleanHybridReader</span>
+              <span className="bg-purple-600/20 text-purple-300 px-2 py-1 rounded">PatternTrainingHybridReader</span>
+            </div>
           </div>
         </div>
       );
