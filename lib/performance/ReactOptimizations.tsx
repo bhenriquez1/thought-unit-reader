@@ -125,6 +125,12 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = memo(({
 // 2. VIRTUALIZED LIST COMPONENT
 // ===============================
 
+interface VirtualizedItemData {
+  index: number;
+  item: any;
+  style: React.CSSProperties;
+}
+
 interface VirtualizedListProps {
   items: any[];
   itemHeight: number;
@@ -152,7 +158,7 @@ export const VirtualizedList: React.FC<VirtualizedListProps> = memo(({
   );
 
   const visibleItems = useMemo(() => {
-    const visible = [];
+    const visible: VirtualizedItemData[] = [];
     for (let i = startIndex; i <= endIndex; i++) {
       if (items[i]) {
         visible.push({
