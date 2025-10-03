@@ -384,7 +384,7 @@ export default function UniversalPatternButlerReader({
         
         // 4. Right-Brain Analysis for visual learners
         if (patterns.length > 0) {
-          const rightBrain = await analyzeChunkWithRightBrain(selectionText);
+          const rightBrain = analyzeChunkWithRightBrain(selectionText, currentThoughtUnit - 1, thoughtUnits.length);
           setRightBrainAnalysis(rightBrain);
         }
         
