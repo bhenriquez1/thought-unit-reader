@@ -1687,8 +1687,18 @@ export default function UniversalPatternButlerReader({
       {/* 🔧 DEBUG TOGGLE BUTTON - Lower Left Position (like whiteboard button) */}
       <button
         onClick={() => {
-          debugLog(`🖱️ CLICK: Debug Button Toggle ${debugMode ? 'OFF' : 'ON'}`);
-          setDebugMode(!debugMode);
+          const newDebugMode = !debugMode;
+          console.log(`🔧 DEBUG BUTTON CLICKED! Switching from ${debugMode} to ${newDebugMode}`);
+          
+          setDebugMode(newDebugMode);
+          
+          // Immediate feedback
+          if (newDebugMode) {
+            console.log(`✅ DEBUG MODE ENABLED! You will now see comprehensive logging.`);
+            console.log(`🎯 Try clicking buttons, scrolling, or switching modes to see debug output.`);
+          } else {
+            console.log(`❌ DEBUG MODE DISABLED! Logging will be minimal now.`);
+          }
         }}
         className={`fixed bottom-4 left-4 w-12 h-12 rounded-full shadow-lg z-50 flex items-center justify-center transition-all duration-300 ${
           debugMode 
@@ -1702,6 +1712,13 @@ export default function UniversalPatternButlerReader({
           <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-400 rounded-full animate-ping"></span>
         )}
       </button>
+
+      {/* Debug Mode Indicator */}
+      {debugMode && (
+        <div className="fixed top-4 right-4 bg-red-600 text-white px-3 py-1 rounded-full text-xs z-50 animate-pulse">
+          🔧 DEBUG MODE ACTIVE
+        </div>
+      )}
 
       {/* TU Interaction Modal */}
       <TUInteractionModal
