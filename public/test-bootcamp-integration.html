@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DAT Bootcamp Integration Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+            background: linear-gradient(135deg, #1e293b 0%, #3b82f6 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        
+        .container {
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border-radius: 1rem;
+            padding: 2rem;
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 2.5rem;
+            background: linear-gradient(45deg, #60a5fa, #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .section {
+            background: rgba(30, 41, 59, 0.4);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+        
+        .section h2 {
+            margin-top: 0;
+            color: #60a5fa;
+        }
+        
+        .test-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .test-card {
+            background: rgba(15, 23, 42, 0.6);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            border: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        
+        .test-button {
+            background: linear-gradient(45deg, #3b82f6, #1d4ed8);
+            border: none;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin: 0.25rem;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+        
+        .test-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
+        
+        .test-button.success {
+            background: linear-gradient(45deg, #10b981, #059669);
+        }
+        
+        .test-button.warning {
+            background: linear-gradient(45deg, #f59e0b, #d97706);
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            font-size: 0.8rem;
+            font-weight: 500;
+            margin-left: 0.5rem;
+        }
+        
+        .status.supported {
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+            border: 1px solid #10b981;
+        }
+        
+        .status.not-supported {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            border: 1px solid #ef4444;
+        }
+        
+        .status.pending {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fbbf24;
+            border: 1px solid #f59e0b;
+        }
+        
+        .log {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-top: 1rem;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.8rem;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+        
+        .log-entry {
+            margin-bottom: 0.5rem;
+            padding: 0.25rem;
+            border-radius: 0.25rem;
+        }
+        
+        .log-entry.info {
+            color: #60a5fa;
+        }
+        
+        .log-entry.success {
+            color: #34d399;
+        }
+        
+        .log-entry.error {
+            color: #f87171;
+        }
+        
+        .log-entry.warning {
+            color: #fbbf24;
+        }
+        
+        .integration-demo {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-top: 1rem;
+        }
+        
+        .bootcamp-sim {
+            background: linear-gradient(135deg, #f97316, #ea580c);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            text-align: center;
+        }
+        
+        .thought-unit-sim {
+            background: linear-gradient(135deg, #3b82f6, #1e40af);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧠 DAT Bootcamp Integration Test</h1>
+            <p>Testing custom protocol handler for seamless learning flow</p>
+        </div>
+
+        <div class="section">
+            <h2>Protocol Support Status</h2>
+            <p>Custom protocol handler registration status:</p>
+            <div id="protocol-status">
+                <span>Protocol Support:</span>
+                <span id="support-status" class="status pending">Checking...</span>
+                <br><br>
+                <span>Registration Status:</span>
+                <span id="registration-status" class="status pending">Checking...</span>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Protocol URL Tests</h2>
+            <p>Test various protocol URLs to ensure proper handling:</p>
+            
+            <div class="test-grid">
+                <div class="test-card">
+                    <h3>Basic Return Test</h3>
+                    <p>Test simple return from DAT Bootcamp</p>
+                    <a href="thought-unit-reader://return?section=qr&resource=test&progress=completed&score=85" 
+                       class="test-button">
+                        Test QR Return (85%)
+                    </a>
+                </div>
+                
+                <div class="test-card">
+                    <h3>Biology Section Test</h3>
+                    <p>Test return with biology content</p>
+                    <a href="thought-unit-reader://return?section=biology&resource=cell-biology&progress=completed&score=92" 
+                       class="test-button success">
+                        Test Biology (92%)
+                    </a>
+                </div>
+                
+                <div class="test-card">
+                    <h3>Organic Chemistry Test</h3>
+                    <p>Test return with organic chemistry</p>
+                    <a href="thought-unit-reader://return?section=organic-chemistry&resource=cardio-method&progress=partial&score=78" 
+                       class="test-button warning">
+                        Test OC (78%)
+                    </a>
+                </div>
+                
+                <div class="test-card">
+                    <h3>Navigation Test</h3>
+                    <p>Test direct navigation to patterns</p>
+                    <a href="thought-unit-reader://navigate?section=pat&pattern=spatial-reasoning" 
+                       class="test-button">
+                        Navigate to PAT Patterns
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Integration Flow Demo</h2>
+            <p>Simulate the complete integration flow between platforms:</p>
+            
+            <div class="integration-demo">
+                <div class="bootcamp-sim">
+                    <h3>🚀 DAT Bootcamp Simulator</h3>
+                    <p>Practice session in progress...</p>
+                    <div style="margin: 1rem 0;">
+                        <div>Section: Quantitative Reasoning</div>
+                        <div>Progress: 15/20 questions</div>
+                        <div>Current Score: 88%</div>
+                        <div>Time Spent: 23 minutes</div>
+                    </div>
+                    <button class="test-button" onclick="simulateBootcampReturn()">
+                        Finish Session & Return
+                    </button>
+                </div>
+                
+                <div class="thought-unit-sim">
+                    <h3>📚 Thought Unit Reader</h3>
+                    <p>Ready to receive learning data...</p>
+                    <div id="learning-data">
+                        <div>Status: Waiting for external data</div>
+                        <div>Active Session: None</div>
+                        <div>Last Sync: Never</div>
+                    </div>
+                    <button class="test-button" onclick="checkLearningStatus()">
+                        Check Learning Status
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Debug Log</h2>
+            <div id="log-container" class="log">
+                <div class="log-entry info">🔄 Initializing protocol integration test...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Protocol handler detection and testing
+        let protocolSupported = false;
+        let registrationStatus = false;
+        
+        function log(message, type = 'info') {
+            const logContainer = document.getElementById('log-container');
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${type}`;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+        
+        function updateStatus() {
+            // Check if protocol handler is supported
+            if ('registerProtocolHandler' in navigator) {
+                protocolSupported = true;
+                document.getElementById('support-status').textContent = 'Supported';
+                document.getElementById('support-status').className = 'status supported';
+                log('✅ Custom protocol handler is supported', 'success');
+                
+                // Try to register the protocol
+                try {
+                    const baseUrl = window.location.origin;
+                    navigator.registerProtocolHandler(
+                        'thought-unit-reader',
+                        `${baseUrl}/protocol-handler?url=%s`
+                    );
+                    registrationStatus = true;
+                    document.getElementById('registration-status').textContent = 'Registered';
+                    document.getElementById('registration-status').className = 'status supported';
+                    log('✅ Protocol handler registered successfully', 'success');
+                } catch (error) {
+                    log(`❌ Protocol registration failed: ${error.message}`, 'error');
+                    document.getElementById('registration-status').textContent = 'Failed';
+                    document.getElementById('registration-status').className = 'status not-supported';
+                }
+            } else {
+                protocolSupported = false;
+                document.getElementById('support-status').textContent = 'Not Supported';
+                document.getElementById('support-status').className = 'status not-supported';
+                document.getElementById('registration-status').textContent = 'N/A';
+                document.getElementById('registration-status').className = 'status not-supported';
+                log('❌ Custom protocol handler is not supported in this browser', 'error');
+            }
+        }
+        
+        function simulateBootcampReturn() {
+            log('🚀 Simulating DAT Bootcamp session completion...', 'info');
+            
+            // Simulate external learning data
+            const learningData = {
+                source: 'datbootcamp',
+                userId: 'test-user',
+                section: 'qr',
+                topic: 'Quantitative Reasoning Practice',
+                resourceId: 'qr-practice-set-1',
+                completed: true,
+                score: 88,
+                progress: 75,
+                duration: 23,
+                startTime: new Date(Date.now() - 23 * 60 * 1000).toISOString(),
+                endTime: new Date().toISOString(),
+                interactions: [
+                    { type: 'practice', timestamp: new Date().toISOString(), data: { questionId: 1 } },
+                    { type: 'mistake', timestamp: new Date().toISOString(), data: { questionId: 5 } },
+                    { type: 'review', timestamp: new Date().toISOString(), data: { questionId: 5 } },
+                    { type: 'mastery', timestamp: new Date().toISOString(), data: { questionId: 10 } }
+                ]
+            };
+            
+            // Simulate protocol URL with encoded data
+            const params = new URLSearchParams({
+                action: 'return',
+                section: learningData.section,
+                resource: learningData.resourceId,
+                progress: learningData.completed ? 'completed' : 'partial',
+                score: learningData.score.toString(),
+                timestamp: learningData.duration.toString()
+            });
+            
+            const protocolUrl = `thought-unit-reader://return?${params.toString()}`;
+            
+            log(`📤 Generated protocol URL: ${protocolUrl}`, 'info');
+            
+            // Store learning data locally for demo
+            localStorage.setItem('bootcamp_progress', JSON.stringify([learningData]));
+            log('💾 Saved learning data to localStorage', 'success');
+            
+            // Update UI
+            document.getElementById('learning-data').innerHTML = `
+                <div>Status: ✅ Data received from DAT Bootcamp</div>
+                <div>Active Session: QR Practice (${learningData.score}%)</div>
+                <div>Last Sync: ${new Date().toLocaleTimeString()}</div>
+                <div>Duration: ${learningData.duration} minutes</div>
+            `;
+            
+            log('🎓 Learning session data processed successfully', 'success');
+            
+            // Try to trigger protocol URL
+            try {
+                window.location.href = protocolUrl;
+                log('🔗 Attempting to trigger protocol URL...', 'info');
+            } catch (error) {
+                log(`⚠️  Direct protocol trigger failed: ${error.message}`, 'warning');
+                log('💡 In a real scenario, this would open the Thought Unit Reader app', 'info');
+            }
+        }
+        
+        function checkLearningStatus() {
+            log('🔍 Checking learning status...', 'info');
+            
+            try {
+                const bootcampData = JSON.parse(localStorage.getItem('bootcamp_progress') || '[]');
+                const completedSessions = JSON.parse(localStorage.getItem('completed_learning_sessions') || '[]');
+                
+                log(`📊 Found ${bootcampData.length} DAT Bootcamp sessions`, 'info');
+                log(`📊 Found ${completedSessions.length} completed learning sessions`, 'info');
+                
+                if (bootcampData.length > 0) {
+                    const latest = bootcampData[bootcampData.length - 1];
+                    log(`📈 Latest session: ${latest.section} (${latest.score}%)`, 'success');
+                    
+                    // Generate AI insights
+                    const insights = [];
+                    if (latest.score >= 90) {
+                        insights.push('Excellent performance! Consider advancing to harder material.');
+                    } else if (latest.score < 70) {
+                        insights.push(`Focus more practice needed in ${latest.section}.`);
+                    }
+                    
+                    if (latest.interactions?.some(i => i.type === 'mistake')) {
+                        insights.push('Review recent mistakes for better retention.');
+                    }
+                    
+                    insights.forEach(insight => {
+                        log(`💡 AI Insight: ${insight}`, 'info');
+                    });
+                }
+            } catch (error) {
+                log(`❌ Failed to check learning status: ${error.message}`, 'error');
+            }
+        }
+        
+        // Listen for protocol messages
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'PROTOCOL_URL') {
+                log(`🔗 Received protocol URL: ${event.data.url}`, 'success');
+                
+                try {
+                    const url = new URL(event.data.url);
+                    const params = {};
+                    url.searchParams.forEach((value, key) => {
+                        params[key] = value;
+                    });
+                    
+                    log(`📋 Protocol parameters: ${JSON.stringify(params)}`, 'info');
+                    
+                    if (params.action === 'return') {
+                        log(`🎓 Processing return from ${params.section} section`, 'success');
+                        log(`📊 Score: ${params.score}%, Progress: ${params.progress}`, 'info');
+                        
+                        // Update UI to show successful integration
+                        document.getElementById('learning-data').innerHTML = `
+                            <div>Status: ✅ Successfully processed protocol return</div>
+                            <div>Section: ${params.section}</div>
+                            <div>Score: ${params.score}%</div>
+                            <div>Progress: ${params.progress}</div>
+                            <div>Resource: ${params.resource}</div>
+                        `;
+                    }
+                } catch (error) {
+                    log(`❌ Failed to parse protocol URL: ${error.message}`, 'error');
+                }
+            }
+        });
+        
+        // Initialize on page load
+        window.addEventListener('load', () => {
+            log('🚀 DAT Bootcamp Integration Test initialized', 'info');
+            updateStatus();
+            
+            // Check for existing learning data
+            setTimeout(checkLearningStatus, 1000);
+        });
+        
+        // Add click handlers for protocol links
+        document.addEventListener('click', (event) => {
+            if (event.target.tagName === 'A' && event.target.href.startsWith('thought-unit-reader://')) {
+                event.preventDefault();
+                log(`🔗 Testing protocol URL: ${event.target.href}`, 'info');
+                
+                try {
+                    // In a real scenario, this would open the app
+                    window.location.href = event.target.href;
+                } catch (error) {
+                    log(`⚠️  Protocol trigger failed: ${error.message}`, 'warning');
+                    log('💡 This is expected in a test environment', 'info');
+                }
+            }
+        });
+    </script>
+</body>
+</html>

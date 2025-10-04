@@ -753,6 +753,83 @@ export async function savePatternMasteryCache(
 }
 
 /* =========================================================================
+   🔹 DAT Bootcamp Integration Functions
+   ========================================================================= */
+export async function saveBootcampProgress(
+  userId: string,
+  data: any
+): Promise<void> {
+  const uid = userId || "guest-user";
+  const isGuest = !firebaseConnected || uid === "guest-user";
+
+  if (isGuest) {
+    try {
+      const key = `bootcamp-progress::${uid}`;
+      const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      existing.push(data);
+      localStorage.setItem(key, JSON.stringify(existing));
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+
+  try {
+    const docRef = doc(db, "users", uid, "bootcamp", "progress");
+    const existingDoc = await getDoc(docRef);
+    const existing = existingDoc.exists() ? existingDoc.data().sessions || [] : [];
+    existing.push(data);
+    
+    await setDoc(docRef, {
+      sessions: existing,
+      lastUpdated: new Date().toISOString()
+    });
+  } catch (error) {
+    console.warn("⚠️ Firebase bootcamp progress save failed:", error);
+    // Fallback to localStorage
+    try {
+      const key = `bootcamp-progress::${uid}`;
+      const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      existing.push(data);
+      localStorage.setItem(key, JSON.stringify(existing));
+    } catch {
+      /* ignore localStorage fallback failure */
+    }
+  }
+}
+
+export async function loadBootcampProgress(userId: string): Promise<any[]> {
+  const uid = userId || "guest-user";
+  const isGuest = !firebaseConnected || uid === "guest-user";
+
+  if (isGuest) {
+    try {
+      const key = `bootcamp-progress::${uid}`;
+      const data = localStorage.getItem(key);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  try {
+    const docRef = doc(db, "users", uid, "bootcamp", "progress");
+    const docSnap = await getDoc(docRef);
+    return docSnap.exists() ? docSnap.data().sessions || [] : [];
+  } catch (error) {
+    console.warn("⚠️ Firebase bootcamp progress load failed:", error);
+    // Fallback to localStorage
+    try {
+      const key = `bootcamp-progress::${uid}`;
+      const data = localStorage.getItem(key);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  }
+}
+
+/* =========================================================================
    🔹 Exports
    ========================================================================= */
 export { app, auth, db, storage, firebaseConnected, useEmulators };

@@ -3,84 +3,105 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { 
-  DAT_SECTIONS, 
-  DEFAULT_EXAM_CONFIGS, 
-  type ExamConfiguration,
-  type ExamAttempt,
-  type ExamResults 
+  DAT_SECTIONS
 } from '@/types/apex-exam';
-import { 
-  percentageToDATScore, 
-  formatDATScore, 
-  getDATScoreColor,
-  getDATScoreLabel 
-} from '@/lib/apex/datScoring';
 import { 
   DAT_PATTERNS, 
   PATTERN_CATEGORIES,
   getPatternsByCategory,
   type Pattern 
 } from '@/types/patterns';
-import TOCSidebar from '@/components/TOCSidebar';
+import { protocolHandler, generateBootcampReturnUrl, isProtocolSupported } from '@/lib/protocolHandler';
+import { EnhancedBootcampLink, BootcampPracticeLink } from '@/components/LearningAwareBootcampLink';
 
-interface DashboardStats {
-  totalAttempts: number;
-  averageScore: number;
-  bestScore: number;
+interface LearningStats {
   totalStudyTime: number; // minutes
-  weakestTopics: string[];
-  strongestTopics: string[];
-  recentActivity: {
+  patternsLearned: number;
+  bootcampSessions: number;
+  weeklyProgress: number; // percentage increase
+  currentStreak: number; // days
+  aiInsights: string[];
+  focusAreas: string[];
+  strengths: string[];
+  recentSessions: {
     date: string;
-    type: 'exam' | 'practice' | 'review';
-    score?: number;
+    source: 'thought-unit' | 'datbootcamp' | 'patterns';
     duration: number;
+    topic?: string;
+    progress?: number;
   }[];
 }
 
-export default function DATApexHub() {
-  const [stats, setStats] = useState<DashboardStats>({
-    totalAttempts: 0,
-    averageScore: 0,
-    bestScore: 0,
+export default function DATLearningHub() {
+  const [stats, setStats] = useState<LearningStats>({
     totalStudyTime: 0,
-    weakestTopics: [],
-    strongestTopics: [],
-    recentActivity: []
+    patternsLearned: 0,
+    bootcampSessions: 0,
+    weeklyProgress: 0,
+    currentStreak: 0,
+    aiInsights: [],
+    focusAreas: [],
+    strengths: [],
+    recentSessions: []
   });
 
-  const [recentAttempts, setRecentAttempts] = useState<ExamAttempt[]>([]);
+  const [protocolStatus, setProtocolStatus] = useState({
+    supported: false,
+    registered: false
+  });
+  
   const [loading, setLoading] = useState(true);
 
-  // Load user stats and recent attempts
+  // Load learning stats and initialize protocol handler
   useEffect(() => {
-    const loadDashboardData = async () => {
+    const loadLearningData = async () => {
       try {
-        // TODO: Replace with actual API calls
-        // For now, using mock data
-        const mockStats: DashboardStats = {
-          totalAttempts: 12,
-          averageScore: 78.5,
-          bestScore: 89.2,
-          totalStudyTime: 1440, // 24 hours
-          weakestTopics: ['Organic Chemistry', 'PAT (Perceptual Ability)'],
-          strongestTopics: ['Biology', 'Reading Comprehension'],
-          recentActivity: [
-            { date: '2025-01-01', type: 'exam', score: 82.1, duration: 255 },
-            { date: '2024-12-30', type: 'practice', score: 76.8, duration: 90 },
-            { date: '2024-12-28', type: 'review', duration: 45 },
+        // Initialize protocol handler
+        setProtocolStatus({
+          supported: isProtocolSupported(),
+          registered: protocolHandler.getRegistrationStatus()
+        });
+
+        // Load bootcamp progress from localStorage
+        const bootcampData = JSON.parse(localStorage.getItem('bootcamp_progress') || '[]');
+        
+        // Calculate learning stats
+        const mockStats: LearningStats = {
+          totalStudyTime: 2760, // 46 hours
+          patternsLearned: 8,
+          bootcampSessions: bootcampData.length,
+          weeklyProgress: 23.5,
+          currentStreak: 5,
+          aiInsights: [
+            'Focus more on PAT spatial reasoning patterns',
+            'Strong progress in Organic Chemistry CARDIO method',
+            'Consider more practice with quantitative reasoning'
+          ],
+          focusAreas: ['PAT (Perceptual Ability)', 'Quantitative Reasoning'],
+          strengths: ['Organic Chemistry', 'Biology Patterns'],
+          recentSessions: [
+            { date: '2025-01-01', source: 'datbootcamp', duration: 45, topic: 'QR Practice', progress: 85 },
+            { date: '2024-12-31', source: 'patterns', duration: 30, topic: 'CARDIO Method' },
+            { date: '2024-12-30', source: 'thought-unit', duration: 60, topic: 'Biology Study' },
+            ...bootcampData.slice(-3).map((item: any) => ({
+              date: item.timestamp,
+              source: 'datbootcamp' as const,
+              duration: Math.round(item.timeSpent / 60),
+              topic: item.section,
+              progress: item.score
+            }))
           ]
         };
 
         setStats(mockStats);
         setLoading(false);
       } catch (error) {
-        console.error('Failed to load dashboard data:', error);
+        console.error('Failed to load learning data:', error);
         setLoading(false);
       }
     };
 
-    loadDashboardData();
+    loadLearningData();
   }, []);
 
   const formatTime = (minutes: number): string => {
@@ -101,7 +122,7 @@ export default function DATApexHub() {
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto mb-4"></div>
-          <p className="text-blue-200">Loading DAT Apex...</p>
+          <p className="text-blue-200">Loading DAT Learning Hub...</p>
         </div>
       </div>
     );
@@ -115,10 +136,10 @@ export default function DATApexHub() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-white">
-                ⚡ DAT Apex
+                🧠 DAT Learning Hub
               </h1>
               <p className="text-blue-200 mt-1">
-                Practice Exam Generator for Dental Admission Test
+                AI-Powered Learning with DAT Bootcamp Integration
               </p>
             </div>
             
@@ -131,12 +152,12 @@ export default function DATApexHub() {
               </Link>
               
               <div className="text-right">
-                <div className="text-sm text-blue-200">Best Score</div>
-                <div className={`text-xl font-bold ${getDATScoreColor(percentageToDATScore(stats.bestScore))}`}>
-                  {formatDATScore(percentageToDATScore(stats.bestScore))}
+                <div className="text-sm text-blue-200">Current Streak</div>
+                <div className="text-xl font-bold text-green-400">
+                  {stats.currentStreak} days
                 </div>
                 <div className="text-xs text-gray-400">
-                  {getDATScoreLabel(percentageToDATScore(stats.bestScore))}
+                  Keep it up!
                 </div>
               </div>
             </div>
@@ -150,31 +171,6 @@ export default function DATApexHub() {
           <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-blue-200 text-sm">Total Attempts</p>
-                <p className="text-2xl font-bold text-white">{stats.totalAttempts}</p>
-              </div>
-              <div className="text-blue-400 text-2xl">📊</div>
-            </div>
-          </div>
-
-          <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-blue-200 text-sm">Average Score</p>
-                <p className={`text-2xl font-bold ${getDATScoreColor(percentageToDATScore(stats.averageScore))}`}>
-                  {formatDATScore(percentageToDATScore(stats.averageScore))}
-                </p>
-                <p className="text-xs text-gray-400">
-                  {getDATScoreLabel(percentageToDATScore(stats.averageScore))}
-                </p>
-              </div>
-              <div className="text-green-400 text-2xl">📈</div>
-            </div>
-          </div>
-
-          <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
-            <div className="flex items-center justify-between">
-              <div>
                 <p className="text-blue-200 text-sm">Study Time</p>
                 <p className="text-2xl font-bold text-white">{formatTime(stats.totalStudyTime)}</p>
               </div>
@@ -185,15 +181,30 @@ export default function DATApexHub() {
           <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-blue-200 text-sm">Best Score</p>
-                <p className={`text-2xl font-bold ${getDATScoreColor(percentageToDATScore(stats.bestScore))}`}>
-                  {formatDATScore(percentageToDATScore(stats.bestScore))}
-                </p>
-                <p className="text-xs text-gray-400">
-                  {getDATScoreLabel(percentageToDATScore(stats.bestScore))}
-                </p>
+                <p className="text-blue-200 text-sm">Patterns Learned</p>
+                <p className="text-2xl font-bold text-green-400">{stats.patternsLearned}</p>
               </div>
-              <div className="text-yellow-400 text-2xl">🏆</div>
+              <div className="text-green-400 text-2xl">🧠</div>
+            </div>
+          </div>
+
+          <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-blue-200 text-sm">Bootcamp Sessions</p>
+                <p className="text-2xl font-bold text-orange-400">{stats.bootcampSessions}</p>
+              </div>
+              <div className="text-orange-400 text-2xl">🚀</div>
+            </div>
+          </div>
+
+          <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-blue-200 text-sm">Weekly Progress</p>
+                <p className="text-2xl font-bold text-blue-400">+{stats.weeklyProgress}%</p>
+              </div>
+              <div className="text-blue-400 text-2xl">📈</div>
             </div>
           </div>
         </div>
@@ -317,14 +328,13 @@ export default function DATApexHub() {
                         >
                           Study Patterns
                         </Link>
-                        <Link
-                          href={`https://datbootcamp.com/category/${categoryKey.replace('-', '-')}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <EnhancedBootcampLink
+                          section={categoryKey}
+                          category={categoryName}
                           className="flex-1 text-center px-3 py-2 bg-orange-600/30 hover:bg-orange-600/40 text-orange-200 rounded text-xs transition-colors border border-orange-500/30"
                         >
                           🔗 DAT Bootcamp
-                        </Link>
+                        </EnhancedBootcampLink>
                       </div>
                     </div>
                   );
@@ -382,14 +392,9 @@ export default function DATApexHub() {
                 >
                   🎯 Pattern-Focused Practice
                 </Link>
-                <Link
-                  href="https://datbootcamp.com/practice-exams"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white rounded-lg text-sm font-medium transition-all"
-                >
+                <BootcampPracticeLink className="px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white rounded-lg text-sm font-medium transition-all">
                   🚀 DAT Bootcamp Exams
-                </Link>
+                </BootcampPracticeLink>
               </div>
             </div>
 
@@ -431,22 +436,22 @@ export default function DATApexHub() {
             <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
               <h2 className="text-lg font-bold text-white mb-4">📊 Performance</h2>
               
-              {stats.strongestTopics.length > 0 && (
+              {stats.strengths.length > 0 && (
                 <div className="mb-4">
                   <h3 className="text-sm font-semibold text-green-400 mb-2">💪 Strengths</h3>
                   <div className="space-y-1">
-                    {stats.strongestTopics.map((topic, idx) => (
+                    {stats.strengths.map((topic, idx) => (
                       <div key={idx} className="text-sm text-gray-300">{topic}</div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {stats.weakestTopics.length > 0 && (
+              {stats.focusAreas.length > 0 && (
                 <div>
                   <h3 className="text-sm font-semibold text-red-400 mb-2">🎯 Focus Areas</h3>
                   <div className="space-y-1">
-                    {stats.weakestTopics.map((topic, idx) => (
+                    {stats.focusAreas.map((topic, idx) => (
                       <div key={idx} className="text-sm text-gray-300">{topic}</div>
                     ))}
                   </div>
@@ -454,36 +459,72 @@ export default function DATApexHub() {
               )}
             </div>
 
-            {/* Recent Activity */}
+            {/* Recent Learning Sessions */}
             <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
-              <h2 className="text-lg font-bold text-white mb-4">📅 Recent Activity</h2>
+              <h2 className="text-lg font-bold text-white mb-4">📅 Recent Sessions</h2>
               
               <div className="space-y-3">
-                {stats.recentActivity.map((activity, idx) => (
+                {stats.recentSessions.map((session, idx) => (
                   <div key={idx} className="flex items-center justify-between py-2 border-b border-gray-600/30 last:border-b-0">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm">
-                          {activity.type === 'exam' ? '📝' : 
-                           activity.type === 'practice' ? '⚡' : '🧠'}
+                          {session.source === 'datbootcamp' ? '🚀' : 
+                           session.source === 'patterns' ? '🧠' : '📚'}
                         </span>
-                        <span className="text-sm text-white capitalize">{activity.type}</span>
+                        <span className="text-sm text-white capitalize">
+                          {session.source === 'datbootcamp' ? 'DAT Bootcamp' : 
+                           session.source === 'patterns' ? 'Patterns' : 'Thought Unit'}
+                        </span>
                       </div>
-                      <div className="text-xs text-gray-400">{formatDate(activity.date)}</div>
+                      <div className="text-xs text-gray-400">
+                        {formatDate(session.date)} {session.topic && `• ${session.topic}`}
+                      </div>
                     </div>
                     
                     <div className="text-right">
-                      {activity.score && (
-                        <div className={`text-sm font-semibold ${getDATScoreColor(percentageToDATScore(activity.score))}`}>
-                          {formatDATScore(percentageToDATScore(activity.score))}
+                      {session.progress && (
+                        <div className="text-sm font-semibold text-green-400">
+                          {session.progress}%
                         </div>
                       )}
                       <div className="text-xs text-gray-400">
-                        {formatTime(activity.duration)}
+                        {formatTime(session.duration)}
                       </div>
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            {/* AI Learning Insights */}
+            <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
+              <h2 className="text-lg font-bold text-white mb-4">🤖 AI Insights</h2>
+              
+              <div className="space-y-3">
+                {stats.aiInsights.map((insight, idx) => (
+                  <div key={idx} className="flex items-start gap-3 p-3 bg-blue-600/10 rounded-lg border border-blue-500/20">
+                    <span className="text-blue-400 text-sm">💡</span>
+                    <p className="text-sm text-gray-300 flex-1">{insight}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Protocol Status */}
+              <div className="mt-4 pt-4 border-t border-gray-600/30">
+                <div className="text-xs text-gray-400 mb-2">DAT Bootcamp Integration</div>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${protocolStatus.supported ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                  <span className="text-xs text-gray-300">
+                    {protocolStatus.supported ? 'Protocol Supported' : 'Protocol Not Supported'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <div className={`w-2 h-2 rounded-full ${protocolStatus.registered ? 'bg-green-400' : 'bg-yellow-400'}`}></div>
+                  <span className="text-xs text-gray-300">
+                    {protocolStatus.registered ? 'Deep Linking Active' : 'Registration Pending'}
+                  </span>
+                </div>
               </div>
             </div>
 
