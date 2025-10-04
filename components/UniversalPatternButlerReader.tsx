@@ -847,23 +847,25 @@ export default function UniversalPatternButlerReader({
 
             {/* Controls Row */}
             <div className="flex items-center gap-3">
-              {/* TOC Toggle */}
-              <button
-                onClick={() => setTocVisible(!tocVisible)}
-                className={`px-2 py-1 rounded text-xs flex items-center gap-1 ${
-                  tocVisible 
-                    ? 'bg-amber-600 text-white shadow-md' 
-                    : 'bg-white/60 text-gray-700 hover:bg-white/80'
-                }`}
-                title={tocVisible ? "Hide Table of Contents" : "Show Table of Contents"}
-              >
-                📑 TOC
-                {tableOfContents && tableOfContents.length > 0 && (
-                  <span className="bg-white/20 px-1 rounded text-xs">
-                    {tableOfContents.length}
-                  </span>
-                )}
-              </button>
+              {/* TOC Toggle - DISABLED FOR TESTING */}
+              {false && (
+                <button
+                  onClick={() => setTocVisible(!tocVisible)}
+                  className={`px-2 py-1 rounded text-xs flex items-center gap-1 ${
+                    tocVisible 
+                      ? 'bg-amber-600 text-white shadow-md' 
+                      : 'bg-white/60 text-gray-700 hover:bg-white/80'
+                  }`}
+                  title={tocVisible ? "Hide Table of Contents" : "Show Table of Contents"}
+                >
+                  📑 TOC
+                  {tableOfContents && tableOfContents.length > 0 && (
+                    <span className="bg-white/20 px-1 rounded text-xs">
+                      {tableOfContents.length}
+                    </span>
+                  )}
+                </button>
+              )}
 
               {/* Speech Controls */}
               <div className="flex items-center gap-2 bg-white/60 backdrop-blur rounded-lg px-3 py-1">
