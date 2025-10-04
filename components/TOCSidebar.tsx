@@ -180,59 +180,36 @@ export default function TOCSidebar({
     return flat.filter((e) => e.title.toLowerCase().includes(term));
   }, [q, flat]);
 
-  // Enhanced navigation with sync store integration - Fixed flickering
-  const handleJumpToPage = (page: number, title: string) => {
+  // Fix navigation logic - Remove problematic sync store integration
+  const handleJumpToPage = React.useCallback((page: number, title: string) => {
     console.log(`🧭 TOC Navigation: Jumping to page ${page} for "${title}"`);
     
-    // Prevent multiple rapid clicks
-    if (handleJumpToPage.isNavigating) {
-      console.log(`🧭 TOC Navigation: Already navigating, ignoring click`);
-      return;
-    }
-    
-    handleJumpToPage.isNavigating = true;
-    
     try {
-      // Call parent callback first for immediate UI update
+      // Call the parent callback directly - this should trigger the PDF page change
       if (typeof onJumpToPage === 'function') {
+        console.log(`🧭 TOC Navigation: Calling onJumpToPage(${page})`);
         onJumpToPage(page);
-      }
-      
-      // Then update sync store without causing conflicts
-      setTimeout(() => {
-        try {
-          const { syncToChapter } = useReaderSync.getState();
-          
-          // Try to sync to chapter for enhanced navigation
-          const success = syncToChapter(title);
-          if (success) {
-            console.log(`🧭 Successfully synced to chapter: ${title}`);
-          } else {
-            // Fallback: just update the sync store page
-            const { setPage } = useReaderSync.getState();
-            setPage(page, "toc");
-          }
-        } catch (error) {
-          console.warn(`🧭 TOC sync error:`, error);
-        }
         
         // Auto-collapse on mobile after navigation
         if (window.innerWidth < 768) {
           setIsCollapsed(true);
         }
         
-        // Reset navigation flag
-        handleJumpToPage.isNavigating = false;
-      }, 100);
+        // Optional: Try sync integration without breaking navigation
+        try {
+          syncToChapter(title);
+          console.log(`🧭 Successfully synced to chapter: ${title}`);
+        } catch (error) {
+          console.warn(`🧭 TOC sync failed (non-critical):`, error);
+        }
+      } else {
+        console.error('🧭 TOC Navigation: onJumpToPage callback not provided!');
+      }
       
     } catch (error) {
       console.error(`🧭 TOC Navigation error:`, error);
-      handleJumpToPage.isNavigating = false;
     }
-  };
-  
-  // Add navigation flag to prevent rapid clicks
-  handleJumpToPage.isNavigating = false;
+  }, [onJumpToPage, syncToChapter]);
 
   const shouldExpand = isHovering && isCollapsed;
   const effectiveWidth = isCollapsed && !shouldExpand ? 80 : 320;

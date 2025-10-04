@@ -922,11 +922,23 @@ export default function UniversalPatternButlerReader({
             <div className="flex justify-center">
               <div className="bg-white shadow-lg">
                 <Document 
+                  key={`pdf-${pdfUrl}-${currentPage}`} // Force re-render on page change
                   file={pdfUrl}
+                  onLoadSuccess={(pdf) => {
+                    console.log(`📄 PDF loaded successfully: ${pdf.numPages} pages`);
+                    if (currentPage > pdf.numPages) {
+                      console.warn(`⚠️ Current page ${currentPage} exceeds PDF pages ${pdf.numPages}, adjusting...`);
+                      onPageChange(1);
+                    }
+                  }}
+                  onLoadError={(error) => {
+                    console.error('📄 PDF load error:', error);
+                  }}
                   loading={
                     <div className="flex flex-col items-center justify-center p-8">
                       <div className="animate-spin text-4xl mb-4">📄</div>
                       <p className="text-gray-600">Loading PDF for universal analysis...</p>
+                      <p className="text-xs text-gray-500 mt-2">Page {currentPage}</p>
                     </div>
                   }
                   error={
@@ -934,22 +946,43 @@ export default function UniversalPatternButlerReader({
                       <div className="text-4xl mb-4 text-red-500">❌</div>
                       <p className="text-red-600 font-semibold">Failed to load PDF</p>
                       <p className="text-gray-600 text-sm">Please try uploading the file again</p>
+                      <p className="text-xs text-gray-500 mt-2">Attempted page: {currentPage}</p>
                     </div>
                   }
                 >
                   <Page 
+                    key={`page-${currentPage}-${pdfScale}`} // Force re-render on page/scale change
                     pageNumber={currentPage} 
                     scale={pdfScale}
                     renderTextLayer={true}
                     renderAnnotationLayer={true}
+                    onLoadSuccess={(page) => {
+                      console.log(`📄 Page ${currentPage} loaded successfully`);
+                    }}
+                    onLoadError={(error) => {
+                      console.error(`📄 Page ${currentPage} load error:`, error);
+                    }}
+                    onRenderSuccess={() => {
+                      console.log(`📄 Page ${currentPage} rendered successfully`);
+                      // Scroll to top of page after render
+                      if (pdfContainerRef.current) {
+                        pdfContainerRef.current.scrollTop = 0;
+                      }
+                    }}
                     loading={
                       <div className="flex items-center justify-center p-12">
-                        <div className="animate-pulse text-2xl">🎯 Loading page...</div>
+                        <div className="animate-pulse text-2xl">🎯 Loading page {currentPage}...</div>
                       </div>
                     }
                     error={
                       <div className="flex items-center justify-center p-12">
                         <div className="text-red-500">❌ Failed to load page {currentPage}</div>
+                        <button
+                          onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+                          className="ml-4 px-2 py-1 bg-blue-500 text-white rounded text-sm"
+                        >
+                          Try Previous Page
+                        </button>
                       </div>
                     }
                   />
