@@ -15,6 +15,13 @@ import {
   getDATScoreColor,
   getDATScoreLabel 
 } from '@/lib/apex/datScoring';
+import { 
+  DAT_PATTERNS, 
+  PATTERN_CATEGORIES,
+  getPatternsByCategory,
+  type Pattern 
+} from '@/types/patterns';
+import TOCSidebar from '@/components/TOCSidebar';
 
 interface DashboardStats {
   totalAttempts: number;
@@ -249,6 +256,139 @@ export default function DATApexHub() {
                       30-question mixed practice session for quick skill building
                     </p>
                   </div>
+                </Link>
+              </div>
+            </div>
+
+            {/* Pattern Rules & Decision Making System */}
+            <div className="bg-black/30 backdrop-blur-sm rounded-xl p-6 border border-blue-500/20">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-white">🎯 Pattern Rules & Decision Making</h2>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs bg-gradient-to-r from-orange-500/20 to-red-500/20 text-orange-300 px-2 py-1 rounded border border-orange-500/30">
+                    NEW: DAT Bootcamp Integration
+                  </span>
+                </div>
+              </div>
+              
+              <p className="text-gray-300 text-sm mb-6">
+                Master the 14 high-yield DAT patterns with systematic decision trees and practice from DAT Bootcamp resources.
+              </p>
+
+              {/* Pattern Categories Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                {Object.entries(PATTERN_CATEGORIES).map(([categoryKey, categoryName]) => {
+                  const categoryPatterns = getPatternsByCategory(categoryKey as keyof typeof PATTERN_CATEGORIES);
+                  const categoryColors = {
+                    'organic-chemistry': 'from-green-600/20 to-emerald-600/20 border-green-500/30',
+                    'general-chemistry': 'from-blue-600/20 to-cyan-600/20 border-blue-500/30',
+                    'biology': 'from-purple-600/20 to-violet-600/20 border-purple-500/30',
+                    'dentistry': 'from-yellow-600/20 to-orange-600/20 border-yellow-500/30',
+                    'reading-comprehension': 'from-pink-600/20 to-rose-600/20 border-pink-500/30'
+                  };
+                  
+                  return (
+                    <div key={categoryKey} className={`bg-gradient-to-br ${categoryColors[categoryKey as keyof typeof categoryColors]} rounded-lg p-4 border`}>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-semibold text-white">{categoryName}</h3>
+                        <span className="text-xs bg-white/10 px-2 py-1 rounded text-gray-300">
+                          {categoryPatterns.length} patterns
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-2 mb-4">
+                        {categoryPatterns.slice(0, 2).map((pattern) => (
+                          <div key={pattern.id} className="text-sm">
+                            <span className="text-white font-medium">• {pattern.name}</span>
+                            <p className="text-gray-300 text-xs mt-1">{pattern.description}</p>
+                          </div>
+                        ))}
+                        {categoryPatterns.length > 2 && (
+                          <div className="text-xs text-gray-400">
+                            +{categoryPatterns.length - 2} more patterns
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/apex/patterns?category=${categoryKey}`}
+                          className="flex-1 text-center px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded text-xs transition-colors"
+                        >
+                          Study Patterns
+                        </Link>
+                        <Link
+                          href={`https://datbootcamp.com/category/${categoryKey.replace('-', '-')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 text-center px-3 py-2 bg-orange-600/30 hover:bg-orange-600/40 text-orange-200 rounded text-xs transition-colors border border-orange-500/30"
+                        >
+                          🔗 DAT Bootcamp
+                        </Link>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* High-Yield Pattern Spotlight */}
+              <div className="bg-gradient-to-r from-yellow-600/10 to-orange-600/10 rounded-lg p-4 border border-yellow-500/30 mb-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg">⭐</span>
+                  <h3 className="font-semibold text-yellow-300">High-Yield Pattern Spotlight</h3>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {DAT_PATTERNS.filter(p => p.tags.includes('high-yield')).slice(0, 3).map((pattern) => (
+                    <div key={pattern.id} className="bg-black/20 rounded-lg p-3 border border-gray-600/30">
+                      <h4 className="font-medium text-white mb-2">{pattern.name}</h4>
+                      <p className="text-xs text-gray-300 mb-3">{pattern.description}</p>
+                      <div className="flex gap-2">
+                        <Link
+                          href={`/apex/patterns/${pattern.id}`}
+                          className="text-xs px-2 py-1 bg-blue-600/30 text-blue-200 rounded hover:bg-blue-600/40 transition-colors"
+                        >
+                          Learn Rules
+                        </Link>
+                        <Link
+                          href={`/apex/generator?pattern=${pattern.id}`}
+                          className="text-xs px-2 py-1 bg-green-600/30 text-green-200 rounded hover:bg-green-600/40 transition-colors"
+                        >
+                          Practice
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick Pattern Tools */}
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  href="/apex/patterns/decision-tree"
+                  className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-lg text-sm font-medium transition-all"
+                >
+                  🌳 Interactive Decision Trees
+                </Link>
+                <Link
+                  href="/apex/patterns/flashcards"
+                  className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg text-sm font-medium transition-all"
+                >
+                  🃏 Pattern Flashcards
+                </Link>
+                <Link
+                  href="/apex/generator?mode=pattern-focused"
+                  className="px-4 py-2 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white rounded-lg text-sm font-medium transition-all"
+                >
+                  🎯 Pattern-Focused Practice
+                </Link>
+                <Link
+                  href="https://datbootcamp.com/practice-exams"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white rounded-lg text-sm font-medium transition-all"
+                >
+                  🚀 DAT Bootcamp Exams
                 </Link>
               </div>
             </div>

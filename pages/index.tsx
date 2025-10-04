@@ -1068,8 +1068,8 @@ export default function ThoughtUnitReader() {
         if (reason === 'TOC_JUMP') {
           console.log(`📄 TOC_JUMP: Attempting chapter-aware navigation to page ${page}`);
           
-          // Try to find chapter from tableOfContents directly (more reliable)
-          let nearestChapter = null;
+          // Try to find chapter from tableOfContents directly (more reliable)  
+          let nearestChapter: TOCEntry | null = null;
           try {
             // Find the chapter that contains this page
             for (const tocEntry of tableOfContents) {
