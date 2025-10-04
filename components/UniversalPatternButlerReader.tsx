@@ -401,8 +401,10 @@ export default function UniversalPatternButlerReader({
     }
   }, [userId]);
 
-  // 🪜 SCROLL-BASED PAGE NAVIGATION - Detect scroll position and update current page
+  // 🪜 SCROLL-BASED PAGE NAVIGATION - COMPREHENSIVE DEBUG LOGGING
   const handleScroll = useCallback((e: Event) => {
+    console.log(`🔄 SCROLL EVENT FIRED! ${scrollingProgrammatically ? '(PROGRAMMATIC - IGNORING)' : '(USER SCROLL - PROCESSING)'}`);
+
     if (scrollingProgrammatically) return; // Don't interfere with programmatic scrolling
 
     const target = e.target as HTMLElement;
@@ -410,41 +412,99 @@ export default function UniversalPatternButlerReader({
     const containerHeight = target.clientHeight;
     const totalHeight = target.scrollHeight;
 
+    console.log(`📊 SCROLL METRICS:`, {
+      scrollTop: Math.round(scrollTop),
+      containerHeight,
+      totalHeight,
+      pdfPageCount,
+      currentPage
+    });
+
     // Clear existing timeout
     if (scrollTimeoutRef.current) {
       clearTimeout(scrollTimeoutRef.current);
+      console.log(`⏰ Cleared previous scroll timeout`);
     }
 
     // Set scrolling state
     setIsScrolling(true);
+    console.log(`🏃 Set isScrolling = true`);
 
     // Debounced page detection (150ms delay to avoid excessive updates)
     scrollTimeoutRef.current = setTimeout(() => {
-      if (!pdfPageCount || pdfPageCount <= 1) return;
+      console.log(`⚡ SCROLL TIMEOUT FIRED - Starting page detection...`);
+
+      if (!pdfPageCount || pdfPageCount <= 1) {
+        console.log(`❌ ABORTED: Invalid page count (${pdfPageCount})`);
+        return;
+      }
+
+      console.log(`🎯 CALCULATING PAGE FROM SCROLL POSITION...`);
 
       // Calculate which page is currently most visible based on scroll position
       // Assume each page takes up roughly equal height in the scroll container
       const pageHeight = totalHeight / pdfPageCount;
       const currentScrollPage = Math.floor(scrollTop / pageHeight) + 1;
       const nextScrollPage = Math.min(pdfPageCount, currentScrollPage + 1);
-      
+
+      console.log(`📐 PAGE CALCULATIONS:`, {
+        pageHeight: Math.round(pageHeight),
+        currentScrollPage,
+        nextScrollPage,
+        calculation: `Math.floor(${scrollTop} / ${pageHeight}) + 1`
+      });
+
       // Check which page has more visible area
       const currentPageTop = (currentScrollPage - 1) * pageHeight;
       const currentPageBottom = currentScrollPage * pageHeight;
       const nextPageTop = (nextScrollPage - 1) * pageHeight;
-      
+
       const currentPageVisible = Math.max(0, Math.min(scrollTop + containerHeight, currentPageBottom) - Math.max(scrollTop, currentPageTop));
       const nextPageVisible = scrollTop + containerHeight > nextPageTop ? Math.max(0, Math.min(scrollTop + containerHeight, nextPageTop + pageHeight) - Math.max(scrollTop, nextPageTop)) : 0;
-      
+
+      console.log(`👁️ VISIBILITY ANALYSIS:`, {
+        currentPage: {
+          number: currentScrollPage,
+          top: Math.round(currentPageTop),
+          bottom: Math.round(currentPageBottom),
+          visiblePixels: Math.round(currentPageVisible),
+          visiblePercent: Math.round((currentPageVisible / containerHeight) * 100)
+        },
+        nextPage: {
+          number: nextScrollPage,
+          top: Math.round(nextPageTop),
+          visiblePixels: Math.round(nextPageVisible),
+          visiblePercent: Math.round((nextPageVisible / containerHeight) * 100)
+        },
+        threshold: Math.round(containerHeight * 0.3)
+      });
+
       const bestPage = currentPageVisible >= nextPageVisible ? currentScrollPage : nextScrollPage;
-      
+      const maxVisibility = Math.max(currentPageVisible, nextPageVisible);
+      const thresholdMet = maxVisibility > containerHeight * 0.3;
+
+      console.log(`🏆 BEST PAGE DETERMINATION:`, {
+        bestPage,
+        currentPageState: currentPage,
+        isDifferent: bestPage !== currentPage,
+        maxVisiblePixels: Math.round(maxVisibility),
+        thresholdRequired: Math.round(containerHeight * 0.3),
+        thresholdMet,
+        willUpdate: bestPage !== currentPage && thresholdMet
+      });
+
       // Only update if we found a different page and there's significant visibility (at least 30% of viewport)
-      if (bestPage !== currentPage && Math.max(currentPageVisible, nextPageVisible) > containerHeight * 0.3) {
-        console.log(`🪜 Scroll navigation: page ${currentPage} → ${bestPage} (scroll: ${Math.round(scrollTop)}/${Math.round(totalHeight)})`);
+      if (bestPage !== currentPage && thresholdMet) {
+        console.log(`🎯 PAGE CHANGE TRIGGERED: ${currentPage} → ${bestPage}`);
         onPageChange(bestPage);
+      } else {
+        console.log(`⚪ NO PAGE CHANGE: ${
+          bestPage === currentPage ? 'Same page' : 'Below threshold'
+        }`);
       }
 
       setIsScrolling(false);
+      console.log(`🏁 Set isScrolling = false, scroll analysis complete`);
     }, 150);
   }, [currentPage, pdfPageCount, scrollingProgrammatically, onPageChange]);
 
@@ -1051,7 +1111,22 @@ export default function UniversalPatternButlerReader({
                     
                     intersectionObserverRef.current = new IntersectionObserver(
                       (entries) => {
-                        if (scrollingProgrammatically) return;
+                        console.log(`👁️ INTERSECTION OBSERVER CALLBACK FIRED! ${scrollingProgrammatically ? '(PROGRAMMATIC - IGNORING)' : '(USER SCROLL - PROCESSING)'}`);
+                        console.log(`📊 IntersectionObserver entries:`, entries.map(e => ({
+                          pageNum: e.target.getAttribute('data-page-number'),
+                          intersectionRatio: Math.round(e.intersectionRatio * 100) + '%',
+                          isIntersecting: e.isIntersecting,
+                          boundingClientRect: {
+                            top: Math.round(e.boundingClientRect.top),
+                            bottom: Math.round(e.boundingClientRect.bottom),
+                            height: Math.round(e.boundingClientRect.height)
+                          }
+                        })));
+
+                        if (scrollingProgrammatically) {
+                          console.log(`⚪ IGNORING IntersectionObserver due to programmatic scroll`);
+                          return;
+                        }
                         
                         // Find the page that's most visible
                         let bestEntry = entries[0];
@@ -1063,13 +1138,25 @@ export default function UniversalPatternButlerReader({
                             bestEntry = entry;
                           }
                         });
+
+                        console.log(`🏆 INTERSECTION ANALYSIS:`, {
+                          bestEntryPage: bestEntry?.target.getAttribute('data-page-number'),
+                          maxVisibilityRatio: Math.round(maxRatio * 100) + '%',
+                          thresholdRequired: '30%',
+                          currentPageState: currentPage,
+                          willTriggerPageChange: bestEntry && maxRatio > 0.3
+                        });
                         
                         if (bestEntry && maxRatio > 0.3) {
                           const pageNum = parseInt(bestEntry.target.getAttribute('data-page-number') || '1');
                           if (pageNum !== currentPage) {
-                            console.log(`🪜 Intersection Observer: page ${currentPage} → ${pageNum} (${Math.round(maxRatio * 100)}% visible)`);
+                            console.log(`🎯 INTERSECTION PAGE CHANGE: ${currentPage} → ${pageNum} (${Math.round(maxRatio * 100)}% visible)`);
                             onPageChange(pageNum);
+                          } else {
+                            console.log(`⚪ NO PAGE CHANGE: Already on page ${pageNum}`);
                           }
+                        } else {
+                          console.log(`⚪ NO PAGE CHANGE: Best entry visibility ${Math.round(maxRatio * 100)}% below 30% threshold`);
                         }
                       },
                       {
