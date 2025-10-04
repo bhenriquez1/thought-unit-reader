@@ -280,6 +280,14 @@ export default function UniversalPatternButlerReader({
   onSpeechRateChange,
   tableOfContents = [],
 }: UniversalPatternButlerReaderProps) {
+  
+  // 🚨 GUARANTEED DEBUGGING - These logs will ALWAYS show
+  console.log('🎯 UniversalPatternButlerReader LOADED!', {
+    currentPage,
+    pdfPageCount,
+    pdfUrl: pdfUrl ? 'PDF URL provided' : 'NO PDF URL',
+    timestamp: new Date().toLocaleTimeString()
+  });
   // Core State Management - DEFAULT TO TRAINING MODE
   const [currentMode, setCurrentMode] = useState<ReaderMode>('training');
   const [selectionText, setSelectionText] = useState("");
@@ -993,7 +1001,12 @@ export default function UniversalPatternButlerReader({
             {/* Navigation Controls */}
             <div className="flex items-center gap-2 bg-white/60 backdrop-blur rounded-lg px-3 py-1">
               <button
-                onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+                onClick={() => {
+                  console.log(`🚨 PREVIOUS BUTTON CLICKED! Current page: ${currentPage}`);
+                  const newPage = Math.max(1, currentPage - 1);
+                  console.log(`🚨 Calling onPageChange(${newPage})`);
+                  onPageChange(newPage);
+                }}
                 disabled={currentPage <= 1}
                 className="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-300 disabled:opacity-50 text-white rounded text-sm"
               >
@@ -1007,11 +1020,14 @@ export default function UniversalPatternButlerReader({
                   max={pdfPageCount || 999}
                   value={currentPage}
                   onChange={(e) => {
+                    console.log(`🚨 PAGE INPUT CHANGED! Input value: ${e.target.value}`);
                     const page = parseInt(e.target.value) || 1;
                     const targetPage = Math.max(1, Math.min(page, pdfPageCount || 999));
+                    console.log(`🚨 Calculated target page: ${targetPage}`);
 
                     // Set programmatic scroll flag to prevent scroll events from interfering
                     setScrollingProgrammatically(true);
+                    console.log(`🚨 Calling onPageChange(${targetPage})`);
                     onPageChange(targetPage);
 
                     // Clear flag after navigation completes
@@ -1031,7 +1047,12 @@ export default function UniversalPatternButlerReader({
               </div>
               
               <button
-                onClick={() => onPageChange(Math.min(pdfPageCount || 999, currentPage + 1))}
+                onClick={() => {
+                  console.log(`🚨 NEXT BUTTON CLICKED! Current page: ${currentPage}`);
+                  const newPage = Math.min(pdfPageCount || 999, currentPage + 1);
+                  console.log(`🚨 Calling onPageChange(${newPage})`);
+                  onPageChange(newPage);
+                }}
                 disabled={currentPage >= (pdfPageCount || 999)}
                 className="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-300 disabled:opacity-50 text-white rounded text-sm"
               >
