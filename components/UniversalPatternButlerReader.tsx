@@ -345,6 +345,11 @@ export default function UniversalPatternButlerReader({
   // 📑 TOC Integration State
   const [tocVisible, setTocVisible] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // 🪜 Page Navigation State - Key additions for scroll-based navigation
+  const [isScrolling, setIsScrolling] = useState(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [scrollingProgrammatically, setScrollingProgrammatically] = useState(false);
   
   // Debug TOC visibility changes
   useEffect(() => {
@@ -392,6 +397,62 @@ export default function UniversalPatternButlerReader({
       loadPatternMastery(userId).then(setPatternMastery);
     }
   }, [userId]);
+
+  // 🪜 SCROLL-BASED PAGE NAVIGATION - Detect scroll position and update current page
+  const handleScroll = useCallback((e: Event) => {
+    if (scrollingProgrammatically) return; // Don't interfere with programmatic scrolling
+
+    const target = e.target as HTMLElement;
+    const scrollTop = target.scrollTop;
+    const containerHeight = target.clientHeight;
+    const totalHeight = target.scrollHeight;
+
+    // Clear existing timeout
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
+
+    // Set scrolling state
+    setIsScrolling(true);
+
+    // Debounced page detection (150ms delay to avoid excessive updates)
+    scrollTimeoutRef.current = setTimeout(() => {
+      if (!pdfPageCount || pdfPageCount <= 1) return;
+
+      // Calculate which page is currently most visible based on scroll position
+      // Assume each page takes up roughly equal height in the scroll container
+      const pageHeight = totalHeight / pdfPageCount;
+      const currentScrollPage = Math.floor(scrollTop / pageHeight) + 1;
+      const nextScrollPage = Math.min(pdfPageCount, currentScrollPage + 1);
+      
+      // Check which page has more visible area
+      const currentPageTop = (currentScrollPage - 1) * pageHeight;
+      const currentPageBottom = currentScrollPage * pageHeight;
+      const nextPageTop = (nextScrollPage - 1) * pageHeight;
+      
+      const currentPageVisible = Math.max(0, Math.min(scrollTop + containerHeight, currentPageBottom) - Math.max(scrollTop, currentPageTop));
+      const nextPageVisible = scrollTop + containerHeight > nextPageTop ? Math.max(0, Math.min(scrollTop + containerHeight, nextPageTop + pageHeight) - Math.max(scrollTop, nextPageTop)) : 0;
+      
+      const bestPage = currentPageVisible >= nextPageVisible ? currentScrollPage : nextScrollPage;
+      
+      // Only update if we found a different page and there's significant visibility (at least 30% of viewport)
+      if (bestPage !== currentPage && Math.max(currentPageVisible, nextPageVisible) > containerHeight * 0.3) {
+        console.log(`🪜 Scroll navigation: page ${currentPage} → ${bestPage} (scroll: ${Math.round(scrollTop)}/${Math.round(totalHeight)})`);
+        onPageChange(bestPage);
+      }
+
+      setIsScrolling(false);
+    }, 150);
+  }, [currentPage, pdfPageCount, scrollingProgrammatically, onPageChange]);
+
+  // Attach scroll listener to PDF container
+  useEffect(() => {
+    const container = pdfContainerRef.current;
+    if (container) {
+      container.addEventListener('scroll', handleScroll, { passive: true });
+      return () => container.removeEventListener('scroll', handleScroll);
+    }
+  }, [handleScroll]);
 
   // 🧠 ADAPTIVE LEARNING INITIALIZATION - INTELLIGENCE ACTIVATION
   useEffect(() => {
@@ -826,14 +887,27 @@ export default function UniversalPatternButlerReader({
                   max={pdfPageCount || 999}
                   value={currentPage}
                   onChange={(e) => {
-                    const page = parseInt(e.target.value);
-                    if (page >= 1 && page <= (pdfPageCount || 999)) {
-                      onPageChange(page);
-                    }
+                    const page = parseInt(e.target.value) || 1;
+                    const targetPage = Math.max(1, Math.min(page, pdfPageCount || 999));
+
+                    // Set programmatic scroll flag to prevent scroll events from interfering
+                    setScrollingProgrammatically(true);
+                    onPageChange(targetPage);
+
+                    // Clear flag after navigation completes
+                    setTimeout(() => setScrollingProgrammatically(false), 300);
                   }}
                   className="w-12 text-center text-sm border border-indigo-300 rounded px-1"
+                  title={`Scroll or type to go to page (${pdfPageCount || '?'} total)`}
                 />
-                <span className="text-xs text-gray-600">/{pdfPageCount || '?'}</span>
+                <span className="text-xs text-gray-600 flex items-center gap-1">
+                  /{pdfPageCount || '?'}
+                  {isScrolling && (
+                    <span className="animate-pulse text-blue-500" title="Detecting page...">
+                      🪜
+                    </span>
+                  )}
+                </span>
               </div>
               
               <button
