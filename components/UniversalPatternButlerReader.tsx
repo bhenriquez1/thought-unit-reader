@@ -353,6 +353,20 @@ export default function UniversalPatternButlerReader({
   const pageRefsMap = useRef<Map<number, HTMLDivElement>>(new Map());
   const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
   const [scrollingProgrammatically, setScrollingProgrammatically] = useState(false);
+
+  // 🔧 DEBUG MODE STATE - Interactive debugging toggle
+  const [debugMode, setDebugMode] = useState(false);
+  
+  // Debug logger - only logs when debug mode is enabled
+  const debugLog = useCallback((message: string, data?: any) => {
+    if (debugMode) {
+      if (data) {
+        console.log(message, data);
+      } else {
+        console.log(message);
+      }
+    }
+  }, [debugMode]);
   
   // Debug TOC visibility changes
   useEffect(() => {
@@ -401,9 +415,9 @@ export default function UniversalPatternButlerReader({
     }
   }, [userId]);
 
-  // 🪜 SCROLL-BASED PAGE NAVIGATION - COMPREHENSIVE DEBUG LOGGING
+  // 🪜 SCROLL-BASED PAGE NAVIGATION - CONDITIONAL DEBUG LOGGING
   const handleScroll = useCallback((e: Event) => {
-    console.log(`🔄 SCROLL EVENT FIRED! ${scrollingProgrammatically ? '(PROGRAMMATIC - IGNORING)' : '(USER SCROLL - PROCESSING)'}`);
+    debugLog(`🔄 SCROLL EVENT FIRED! ${scrollingProgrammatically ? '(PROGRAMMATIC - IGNORING)' : '(USER SCROLL - PROCESSING)'}`);
 
     if (scrollingProgrammatically) return; // Don't interfere with programmatic scrolling
 
@@ -412,7 +426,7 @@ export default function UniversalPatternButlerReader({
     const containerHeight = target.clientHeight;
     const totalHeight = target.scrollHeight;
 
-    console.log(`📊 SCROLL METRICS:`, {
+    debugLog(`📊 SCROLL METRICS:`, {
       scrollTop: Math.round(scrollTop),
       containerHeight,
       totalHeight,
@@ -423,23 +437,23 @@ export default function UniversalPatternButlerReader({
     // Clear existing timeout
     if (scrollTimeoutRef.current) {
       clearTimeout(scrollTimeoutRef.current);
-      console.log(`⏰ Cleared previous scroll timeout`);
+      debugLog(`⏰ Cleared previous scroll timeout`);
     }
 
     // Set scrolling state
     setIsScrolling(true);
-    console.log(`🏃 Set isScrolling = true`);
+    debugLog(`🏃 Set isScrolling = true`);
 
     // Debounced page detection (150ms delay to avoid excessive updates)
     scrollTimeoutRef.current = setTimeout(() => {
-      console.log(`⚡ SCROLL TIMEOUT FIRED - Starting page detection...`);
+      debugLog(`⚡ SCROLL TIMEOUT FIRED - Starting page detection...`);
 
       if (!pdfPageCount || pdfPageCount <= 1) {
-        console.log(`❌ ABORTED: Invalid page count (${pdfPageCount})`);
+        debugLog(`❌ ABORTED: Invalid page count (${pdfPageCount})`);
         return;
       }
 
-      console.log(`🎯 CALCULATING PAGE FROM SCROLL POSITION...`);
+      debugLog(`🎯 CALCULATING PAGE FROM SCROLL POSITION...`);
 
       // Calculate which page is currently most visible based on scroll position
       // Assume each page takes up roughly equal height in the scroll container
@@ -447,7 +461,7 @@ export default function UniversalPatternButlerReader({
       const currentScrollPage = Math.floor(scrollTop / pageHeight) + 1;
       const nextScrollPage = Math.min(pdfPageCount, currentScrollPage + 1);
 
-      console.log(`📐 PAGE CALCULATIONS:`, {
+      debugLog(`📐 PAGE CALCULATIONS:`, {
         pageHeight: Math.round(pageHeight),
         currentScrollPage,
         nextScrollPage,
@@ -462,7 +476,7 @@ export default function UniversalPatternButlerReader({
       const currentPageVisible = Math.max(0, Math.min(scrollTop + containerHeight, currentPageBottom) - Math.max(scrollTop, currentPageTop));
       const nextPageVisible = scrollTop + containerHeight > nextPageTop ? Math.max(0, Math.min(scrollTop + containerHeight, nextPageTop + pageHeight) - Math.max(scrollTop, nextPageTop)) : 0;
 
-      console.log(`👁️ VISIBILITY ANALYSIS:`, {
+      debugLog(`👁️ VISIBILITY ANALYSIS:`, {
         currentPage: {
           number: currentScrollPage,
           top: Math.round(currentPageTop),
@@ -483,7 +497,7 @@ export default function UniversalPatternButlerReader({
       const maxVisibility = Math.max(currentPageVisible, nextPageVisible);
       const thresholdMet = maxVisibility > containerHeight * 0.3;
 
-      console.log(`🏆 BEST PAGE DETERMINATION:`, {
+      debugLog(`🏆 BEST PAGE DETERMINATION:`, {
         bestPage,
         currentPageState: currentPage,
         isDifferent: bestPage !== currentPage,
@@ -495,18 +509,18 @@ export default function UniversalPatternButlerReader({
 
       // Only update if we found a different page and there's significant visibility (at least 30% of viewport)
       if (bestPage !== currentPage && thresholdMet) {
-        console.log(`🎯 PAGE CHANGE TRIGGERED: ${currentPage} → ${bestPage}`);
+        debugLog(`🎯 PAGE CHANGE TRIGGERED: ${currentPage} → ${bestPage}`);
         onPageChange(bestPage);
       } else {
-        console.log(`⚪ NO PAGE CHANGE: ${
+        debugLog(`⚪ NO PAGE CHANGE: ${
           bestPage === currentPage ? 'Same page' : 'Below threshold'
         }`);
       }
 
       setIsScrolling(false);
-      console.log(`🏁 Set isScrolling = false, scroll analysis complete`);
+      debugLog(`🏁 Set isScrolling = false, scroll analysis complete`);
     }, 150);
-  }, [currentPage, pdfPageCount, scrollingProgrammatically, onPageChange]);
+  }, [currentPage, pdfPageCount, scrollingProgrammatically, onPageChange, debugLog]);
 
   // Attach scroll listener to PDF container
   useEffect(() => {
@@ -1015,6 +1029,24 @@ export default function UniversalPatternButlerReader({
 
             {/* Controls Row */}
             <div className="flex items-center gap-3">
+              {/* DEBUG TOGGLE BUTTON - Interactive debugging */}
+              <button
+                onClick={() => setDebugMode(!debugMode)}
+                className={`px-2 py-1 rounded text-xs flex items-center gap-1 ${
+                  debugMode 
+                    ? 'bg-red-600 text-white shadow-md animate-pulse' 
+                    : 'bg-white/60 text-gray-700 hover:bg-white/80'
+                }`}
+                title={debugMode ? "Disable Debug Logging" : "Enable Debug Logging"}
+              >
+                🔧 Debug
+                {debugMode && (
+                  <span className="bg-white/20 px-1 rounded text-xs">
+                    ON
+                  </span>
+                )}
+              </button>
+
               {/* TOC Toggle - DISABLED FOR TESTING */}
               {false && (
                 <button
