@@ -150,19 +150,29 @@ export default function TOCSidebar({
     }
   };
 
-  // Auto-collapse on mobile - but don't interfere with parent visibility
+  // Stabilized mobile handling - no interference with parent visibility
   useEffect(() => {
     const checkMobile = () => {
-      if (window.innerWidth < 768 && !isCollapsed) {
+      // Only auto-collapse on initial load for mobile, not during visibility changes
+      if (window.innerWidth < 768 && !isCollapsed && !isHovering) {
         setIsCollapsed(true);
       }
     };
     
-    // Only run on mount and resize, not when visibility changes
+    let timeoutId: NodeJS.Timeout;
+    const debouncedCheck = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(checkMobile, 150);
+    };
+    
+    // Only check on mount and debounced resize
     checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []); // Remove isCollapsed dependency to prevent loops
+    window.addEventListener('resize', debouncedCheck);
+    return () => {
+      window.removeEventListener('resize', debouncedCheck);
+      clearTimeout(timeoutId);
+    };
+  }, []); // Completely stable - no dependencies
 
   const flat = useMemo(() => {
     const normalized = normalizeTOC(toc || []);
