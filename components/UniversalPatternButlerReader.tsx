@@ -346,9 +346,12 @@ export default function UniversalPatternButlerReader({
   const [tocVisible, setTocVisible] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  // 🪜 Page Navigation State - Key additions for scroll-based navigation
+  // 🪜 Continuous Scroll Navigation State - Complete redesign
   const [isScrolling, setIsScrolling] = useState(false);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [pageElements, setPageElements] = useState<HTMLDivElement[]>([]);
+  const pageRefsMap = useRef<Map<number, HTMLDivElement>>(new Map());
+  const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
   const [scrollingProgrammatically, setScrollingProgrammatically] = useState(false);
   
   // Debug TOC visibility changes
@@ -453,6 +456,37 @@ export default function UniversalPatternButlerReader({
       return () => container.removeEventListener('scroll', handleScroll);
     }
   }, [handleScroll]);
+
+  // 🎯 SMOOTH SCROLLING TO SPECIFIC PAGES
+  const scrollToPage = useCallback((targetPage: number) => {
+    const pageElement = pageRefsMap.current.get(targetPage);
+    if (pageElement && pdfContainerRef.current) {
+      console.log(`🎯 Smooth scrolling to page ${targetPage}`);
+      
+      // Set programmatic scroll flag
+      setScrollingProgrammatically(true);
+      
+      // Smooth scroll to the target page
+      pageElement.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+        inline: 'nearest'
+      });
+      
+      // Clear the flag after scroll completes
+      setTimeout(() => {
+        setScrollingProgrammatically(false);
+        console.log(`📍 Arrived at page ${targetPage}`);
+      }, 800); // Allow time for smooth scroll animation
+    }
+  }, []);
+
+  // Listen for page changes and scroll accordingly
+  useEffect(() => {
+    if (pdfPageCount && currentPage >= 1 && currentPage <= pdfPageCount) {
+      scrollToPage(currentPage);
+    }
+  }, [currentPage, pdfPageCount, scrollToPage]);
 
   // 🧠 ADAPTIVE LEARNING INITIALIZATION - INTELLIGENCE ACTIVATION
   useEffect(() => {
@@ -992,7 +1026,7 @@ export default function UniversalPatternButlerReader({
             </div>
           </div>
 
-          {/* PDF Content */}
+          {/* 🪜 CONTINUOUS PDF CONTENT - All pages rendered for natural scrolling */}
           <div 
             ref={pdfContainerRef}
             className="h-full overflow-auto bg-gray-100 p-4"
@@ -1006,14 +1040,43 @@ export default function UniversalPatternButlerReader({
             <div className="flex justify-center">
               <div className="bg-white shadow-lg">
                 <Document 
-                  key={`pdf-${pdfUrl}-${currentPage}`} // Force re-render on page change
                   file={pdfUrl}
                   onLoadSuccess={(pdf) => {
-                    console.log(`📄 PDF loaded successfully: ${pdf.numPages} pages`);
-                    if (currentPage > pdf.numPages) {
-                      console.warn(`⚠️ Current page ${currentPage} exceeds PDF pages ${pdf.numPages}, adjusting...`);
-                      onPageChange(1);
+                    console.log(`📄 PDF loaded successfully: ${pdf.numPages} pages - CONTINUOUS MODE`);
+                    
+                    // Set up intersection observer for page detection
+                    if (intersectionObserverRef.current) {
+                      intersectionObserverRef.current.disconnect();
                     }
+                    
+                    intersectionObserverRef.current = new IntersectionObserver(
+                      (entries) => {
+                        if (scrollingProgrammatically) return;
+                        
+                        // Find the page that's most visible
+                        let bestEntry = entries[0];
+                        let maxRatio = 0;
+                        
+                        entries.forEach(entry => {
+                          if (entry.intersectionRatio > maxRatio) {
+                            maxRatio = entry.intersectionRatio;
+                            bestEntry = entry;
+                          }
+                        });
+                        
+                        if (bestEntry && maxRatio > 0.3) {
+                          const pageNum = parseInt(bestEntry.target.getAttribute('data-page-number') || '1');
+                          if (pageNum !== currentPage) {
+                            console.log(`🪜 Intersection Observer: page ${currentPage} → ${pageNum} (${Math.round(maxRatio * 100)}% visible)`);
+                            onPageChange(pageNum);
+                          }
+                        }
+                      },
+                      {
+                        root: pdfContainerRef.current,
+                        threshold: [0.1, 0.3, 0.5, 0.7]
+                      }
+                    );
                   }}
                   onLoadError={(error) => {
                     console.error('📄 PDF load error:', error);
@@ -1021,8 +1084,8 @@ export default function UniversalPatternButlerReader({
                   loading={
                     <div className="flex flex-col items-center justify-center p-8">
                       <div className="animate-spin text-4xl mb-4">📄</div>
-                      <p className="text-gray-600">Loading PDF for universal analysis...</p>
-                      <p className="text-xs text-gray-500 mt-2">Page {currentPage}</p>
+                      <p className="text-gray-600">Loading continuous PDF reader...</p>
+                      <p className="text-xs text-gray-500 mt-2">Book-like scrolling experience</p>
                     </div>
                   }
                   error={
@@ -1030,46 +1093,58 @@ export default function UniversalPatternButlerReader({
                       <div className="text-4xl mb-4 text-red-500">❌</div>
                       <p className="text-red-600 font-semibold">Failed to load PDF</p>
                       <p className="text-gray-600 text-sm">Please try uploading the file again</p>
-                      <p className="text-xs text-gray-500 mt-2">Attempted page: {currentPage}</p>
                     </div>
                   }
                 >
-                  <Page 
-                    key={`page-${currentPage}-${pdfScale}`} // Force re-render on page/scale change
-                    pageNumber={currentPage} 
-                    scale={pdfScale}
-                    renderTextLayer={true}
-                    renderAnnotationLayer={true}
-                    onLoadSuccess={(page) => {
-                      console.log(`📄 Page ${currentPage} loaded successfully`);
-                    }}
-                    onLoadError={(error) => {
-                      console.error(`📄 Page ${currentPage} load error:`, error);
-                    }}
-                    onRenderSuccess={() => {
-                      console.log(`📄 Page ${currentPage} rendered successfully`);
-                      // Scroll to top of page after render
-                      if (pdfContainerRef.current) {
-                        pdfContainerRef.current.scrollTop = 0;
-                      }
-                    }}
-                    loading={
-                      <div className="flex items-center justify-center p-12">
-                        <div className="animate-pulse text-2xl">🎯 Loading page {currentPage}...</div>
+                  {/* Render ALL pages for continuous scrolling */}
+                  {pdfPageCount && Array.from({ length: pdfPageCount }, (_, i) => i + 1).map(pageNum => (
+                    <div
+                      key={`page-container-${pageNum}`}
+                      data-page-number={pageNum}
+                      ref={(el) => {
+                        if (el) {
+                          pageRefsMap.current.set(pageNum, el);
+                          // Add to intersection observer
+                          if (intersectionObserverRef.current) {
+                            intersectionObserverRef.current.observe(el);
+                          }
+                        }
+                      }}
+                      className={`mb-4 ${
+                        pageNum === currentPage ? 'ring-2 ring-blue-500 ring-opacity-50' : ''
+                      }`}
+                    >
+                      <div className="relative">
+                        {/* Page number indicator */}
+                        <div className="absolute top-2 right-2 bg-black/70 text-white px-2 py-1 rounded text-xs z-10">
+                          Page {pageNum}
+                        </div>
+                        
+                        <Page 
+                          pageNumber={pageNum} 
+                          scale={pdfScale}
+                          renderTextLayer={true}
+                          renderAnnotationLayer={true}
+                          onLoadSuccess={() => {
+                            console.log(`📄 Page ${pageNum} loaded in continuous mode`);
+                          }}
+                          onLoadError={(error) => {
+                            console.error(`📄 Page ${pageNum} load error:`, error);
+                          }}
+                          loading={
+                            <div className="flex items-center justify-center p-12">
+                              <div className="animate-pulse text-lg">🎯 Loading page {pageNum}...</div>
+                            </div>
+                          }
+                          error={
+                            <div className="flex items-center justify-center p-12">
+                              <div className="text-red-500">❌ Failed to load page {pageNum}</div>
+                            </div>
+                          }
+                        />
                       </div>
-                    }
-                    error={
-                      <div className="flex items-center justify-center p-12">
-                        <div className="text-red-500">❌ Failed to load page {currentPage}</div>
-                        <button
-                          onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-                          className="ml-4 px-2 py-1 bg-blue-500 text-white rounded text-sm"
-                        >
-                          Try Previous Page
-                        </button>
-                      </div>
-                    }
-                  />
+                    </div>
+                  ))}
                 </Document>
               </div>
             </div>
