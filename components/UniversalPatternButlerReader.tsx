@@ -59,6 +59,16 @@ import {
 import { auth } from "@/lib/firebase";
 import type { User } from "firebase/auth";
 
+// Adaptive Learning Integration
+import { 
+  getAdaptiveLearningEngine,
+  type IntelligentUserModel,
+  type ModeRecommendation,
+  type LearningPrediction,
+  type AdaptiveLearningEngine
+} from "@/lib/adaptiveLearning";
+import LearningAnalyticsDashboard from "@/components/LearningAnalyticsDashboard";
+
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
 interface UniversalPatternButlerReaderProps {
@@ -324,6 +334,13 @@ export default function UniversalPatternButlerReader({
     confidence: 0
   });
   
+  // 🧠 Adaptive Learning State - INTELLIGENT PERSONALIZATION
+  const [adaptiveLearningEngine, setAdaptiveLearningEngine] = useState<AdaptiveLearningEngine | null>(null);
+  const [userModel, setUserModel] = useState<IntelligentUserModel | null>(null);
+  const [modeRecommendation, setModeRecommendation] = useState<ModeRecommendation | null>(null);
+  const [intelligentPatternSuggestions, setIntelligentPatternSuggestions] = useState<Pattern[]>([]);
+  const [adaptiveComplexityLevel, setAdaptiveComplexityLevel] = useState(3);
+  
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
   // Get effective selection text (needs to be early for use in effects)
@@ -356,6 +373,81 @@ export default function UniversalPatternButlerReader({
       loadPatternMastery(userId).then(setPatternMastery);
     }
   }, [userId]);
+
+  // 🧠 ADAPTIVE LEARNING INITIALIZATION - INTELLIGENCE ACTIVATION
+  useEffect(() => {
+    if (userId) {
+      console.log('🧠 Initializing Adaptive Learning Engine for user:', userId);
+      const engine = getAdaptiveLearningEngine(userId);
+      setAdaptiveLearningEngine(engine);
+      
+      // Load user model
+      const model = engine.getUserModel();
+      setUserModel(model);
+      
+      console.log('📊 User model loaded:', {
+        experience: model.experienceLevel,
+        confidence: model.confidence,
+        totalTimeSpent: model.totalTimeSpent
+      });
+      
+      // Set adaptive complexity based on user model
+      setAdaptiveComplexityLevel(model.optimalComplexityLevel);
+      
+      // Record session start
+      engine.recordEvent({
+        timestamp: Date.now(),
+        action: 'mode_switched',
+        contextData: {
+          contentType: 'pdf',
+          domain: 'general',
+          difficulty: model.optimalComplexityLevel,
+          pageNumber: currentPage,
+          thoughtUnitIndex: currentThoughtUnit
+        }
+      });
+    }
+  }, [userId, currentPage, currentThoughtUnit]);
+
+  // 🎯 INTELLIGENT MODE RECOMMENDATIONS - ADAPTIVE TRANSITIONS
+  useEffect(() => {
+    if (adaptiveLearningEngine && selectionText && detectedPatterns.length > 0) {
+      const contextData = {
+        patterns: detectedPatterns,
+        textLength: selectionText.length,
+        complexity: detectedPatterns.reduce((sum, p) => sum + ((p as any).confidence || 0), 0) / detectedPatterns.length
+      };
+      
+      const recommendation = adaptiveLearningEngine.recommendNextMode(currentMode, contextData);
+      setModeRecommendation(recommendation);
+      
+      console.log('💡 Mode recommendation:', recommendation.recommendedMode, 
+        `(${Math.round(recommendation.confidence * 100)}% confidence)`, recommendation.reasons);
+    }
+  }, [adaptiveLearningEngine, currentMode, selectionText, detectedPatterns]);
+
+  // 🎯 INTELLIGENT PATTERN SUGGESTIONS - PERSONALIZED LEARNING
+  useEffect(() => {
+    if (adaptiveLearningEngine && userModel && detectedPatterns.length > 0) {
+      // Filter patterns based on user's learning level and preferences
+      const intelligentSuggestions = detectedPatterns.filter(pattern => {
+        const prediction = adaptiveLearningEngine.predictPatternSuccess(pattern.id, {});
+        
+        // Show patterns that are appropriately challenging
+        const isAppropriate = prediction.predictedSuccessRate >= 0.3 && prediction.predictedSuccessRate <= 0.8;
+        
+        // Boost patterns user hasn't mastered yet
+        const needsPractice = !userModel.preferredPatterns.includes(pattern.id);
+        
+        return isAppropriate || needsPractice;
+      }).slice(0, Math.max(2, Math.min(5, adaptiveComplexityLevel))); // Adaptive complexity
+      
+      setIntelligentPatternSuggestions(intelligentSuggestions);
+      
+      console.log('🎯 Intelligent pattern suggestions generated:', 
+        intelligentSuggestions.map(p => p.name));
+    }
+  }, [adaptiveLearningEngine, userModel, detectedPatterns, adaptiveComplexityLevel]);
 
   // AUTO-CONTENT SELECTION - Engage immediately when content loads
   useEffect(() => {
@@ -501,6 +593,40 @@ export default function UniversalPatternButlerReader({
   const handleSelfAssessment = useCallback((correct: boolean) => {
     const timeSpent = Math.round((Date.now() - trainingState.startTime) / 1000);
     
+    // 🧠 ADAPTIVE LEARNING - RECORD TRAINING COMPLETION
+    if (adaptiveLearningEngine && trainingState.selectedPattern) {
+      adaptiveLearningEngine.recordEvent({
+        timestamp: Date.now(),
+        action: 'training_completed',
+        patternId: trainingState.selectedPattern.id,
+        successScore: correct ? 85 : 45, // Convert boolean to score
+        timeSpent,
+        contextData: {
+          contentType: 'pdf',
+          domain: 'general',
+          difficulty: adaptiveComplexityLevel,
+          pageNumber: currentPage,
+          thoughtUnitIndex: currentThoughtUnit
+        },
+        metadata: {
+          attempts: trainingState.attempts,
+          userResponse: trainingState.userResponse,
+          patternName: trainingState.selectedPattern.name
+        }
+      });
+      
+      // Update user model
+      const updatedModel = adaptiveLearningEngine.getUserModel();
+      setUserModel(updatedModel);
+      
+      console.log('📊 Training completion recorded:', {
+        pattern: trainingState.selectedPattern.name,
+        success: correct,
+        newExperience: updatedModel.experienceLevel,
+        newConfidence: Math.round(updatedModel.confidence * 100) + '%'
+      });
+    }
+    
     // Save attempt (using local storage for prototype)
     const attempt: PatternAttempt = {
       id: `${Date.now()}-${Math.random()}`,
@@ -526,7 +652,7 @@ export default function UniversalPatternButlerReader({
       step: 'assessment',
       isCorrect: correct
     }));
-  }, [trainingState.selectedPattern, trainingState.userResponse, trainingState.startTime, userId, currentThoughtUnit, bookId]);
+  }, [adaptiveLearningEngine, trainingState.selectedPattern, trainingState.userResponse, trainingState.startTime, trainingState.attempts, userId, currentThoughtUnit, bookId, adaptiveComplexityLevel, currentPage]);
 
   const resetTraining = useCallback(() => {
     setTrainingState({
@@ -852,28 +978,95 @@ export default function UniversalPatternButlerReader({
             {/* TRAINING MODE */}
             {currentMode === 'training' && (
               <div className="space-y-4">
+                {/* 🧠 Intelligent Learning Analytics Dashboard */}
+                {userModel && adaptiveLearningEngine && (
+                  <LearningAnalyticsDashboard
+                    userModel={userModel}
+                    modeRecommendation={modeRecommendation}
+                    onModeSwitch={setCurrentMode}
+                    onComplexityAdjust={(level) => {
+                      setAdaptiveComplexityLevel(level);
+                      // Update user model complexity level
+                      adaptiveLearningEngine.recordEvent({
+                        timestamp: Date.now(),
+                        action: 'mode_switched',
+                        contextData: {
+                          contentType: 'pdf',
+                          domain: 'general',
+                          difficulty: level,
+                          pageNumber: currentPage,
+                          thoughtUnitIndex: currentThoughtUnit
+                        },
+                        metadata: {
+                          complexityAdjustment: level,
+                          previousLevel: adaptiveComplexityLevel
+                        }
+                      });
+                    }}
+                  />
+                )}
+
                 {trainingState.step === 'selection' && (
                   <div className="text-center py-8">
                     <div className="text-4xl mb-4">🎯</div>
-                    <h5 className="text-lg font-semibold text-blue-700 mb-2">Training Mode</h5>
-                    <p className="text-gray-600">Select text from the PDF to start pattern training</p>
+                    <h5 className="text-lg font-semibold text-blue-700 mb-2">Intelligent Training Mode</h5>
+                    <p className="text-gray-600">Select text from the PDF to start adaptive pattern training</p>
+                    {userModel && userModel.strugglingPatterns.length > 0 && (
+                      <p className="text-xs text-blue-600 mt-2">
+                        Focus areas: {userModel.strugglingPatterns.slice(0, 2).join(", ")}
+                      </p>
+                    )}
                   </div>
                 )}
 
                 {trainingState.step === 'pattern-choice' && detectedPatterns.length > 0 && (
                   <div>
-                    <h5 className="text-sm font-semibold text-blue-700 mb-3">Choose a Pattern to Practice</h5>
+                    <div className="flex items-center justify-between mb-3">
+                      <h5 className="text-sm font-semibold text-blue-700">
+                        {intelligentPatternSuggestions.length > 0 ? '🎯 Intelligent Pattern Suggestions' : 'Choose a Pattern to Practice'}
+                      </h5>
+                      {userModel && (
+                        <div className="text-xs text-blue-600">
+                          Complexity: {adaptiveComplexityLevel}/10
+                        </div>
+                      )}
+                    </div>
+                    
                     <div className="space-y-2">
-                      {detectedPatterns.slice(0, 3).map((pattern, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => handlePatternSelect(pattern)}
-                          className="w-full text-left p-3 border border-blue-200 rounded-lg hover:bg-blue-50"
-                        >
-                          <div className="font-medium text-blue-700">{pattern.name}</div>
-                          <div className="text-xs text-gray-600">{pattern.description}</div>
-                        </button>
-                      ))}
+                      {(intelligentPatternSuggestions.length > 0 ? intelligentPatternSuggestions : detectedPatterns.slice(0, 3)).map((pattern, idx) => {
+                        const isIntelligentSuggestion = intelligentPatternSuggestions.includes(pattern);
+                        const prediction = adaptiveLearningEngine?.predictPatternSuccess(pattern.id, {});
+                        
+                        return (
+                          <button
+                            key={idx}
+                            onClick={() => handlePatternSelect(pattern)}
+                            className={`w-full text-left p-3 border rounded-lg hover:bg-blue-50 ${
+                              isIntelligentSuggestion 
+                                ? 'border-blue-400 bg-blue-50/50 shadow-sm' 
+                                : 'border-blue-200'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="font-medium text-blue-700 flex items-center gap-2">
+                                {isIntelligentSuggestion && <span className="text-xs">🎯</span>}
+                                {pattern.name}
+                              </div>
+                              {prediction && (
+                                <div className="text-xs text-blue-600">
+                                  {Math.round(prediction.predictedSuccessRate * 100)}% success
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-600">{pattern.description}</div>
+                            {isIntelligentSuggestion && (
+                              <div className="text-xs text-blue-500 mt-1">
+                                ⚡ Recommended for your learning level
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
