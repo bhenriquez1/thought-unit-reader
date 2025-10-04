@@ -1064,50 +1064,57 @@ export default function ThoughtUnitReader() {
       setCurrentPage(page);
       let unit = pageToUnit(page, pdfPageCount, thoughtUnits.length);
       
-      // Enhanced chapter-aware navigation for TOC jumps
-      if (reason === 'TOC_JUMP') {
-        // Use the sync store's chapter-aware functionality with safe error handling
-        try {
-          const syncStore = useReaderSync.getState();
+        // Enhanced chapter-aware navigation for TOC jumps
+        if (reason === 'TOC_JUMP') {
+          console.log(`📄 TOC_JUMP: Attempting chapter-aware navigation to page ${page}`);
           
-          if (syncStore && syncStore.findNearestChapter && typeof syncStore.findNearestChapter === 'function') {
-            const nearestChapter = syncStore.findNearestChapter(page);
+          // Try to find chapter from tableOfContents directly (more reliable)
+          let nearestChapter = null;
+          try {
+            // Find the chapter that contains this page
+            for (const tocEntry of tableOfContents) {
+              const tocPage = getTocPage(tocEntry);
+              if (tocPage && tocPage <= page) {
+                const nearestTocPage = nearestChapter ? getTocPage(nearestChapter) : undefined;
+                if (!nearestChapter || (nearestTocPage !== undefined && tocPage > nearestTocPage)) {
+                  nearestChapter = tocEntry;
+                }
+              }
+            }
             
             if (nearestChapter) {
-              console.log(`📄 TOC_JUMP: Found chapter "${nearestChapter.title}" for page ${page}`);
-              // Snap to chapter start page and first unit
-              const chapterStartPage = nearestChapter.page;
-              const chapterStartUnit = nearestChapter.unitStart;
+              const chapterPage = getTocPage(nearestChapter) || page;
+              const chapterTitle = (nearestChapter as any).title || `Chapter at page ${chapterPage}`;
               
-              setCurrentPage(chapterStartPage);
-              setCurrentThoughtUnit(chapterStartUnit);
+              console.log(`📄 TOC_JUMP: Found chapter "${chapterTitle}" starting at page ${chapterPage}`);
               
-              // Update global sync store with chapter-aware data
+              // Calculate unit for the chapter start
+              const chapterUnit = pageToUnit(chapterPage, pdfPageCount, thoughtUnits.length);
+              
+              // Navigate to chapter start
+              setCurrentPage(chapterPage);
+              setCurrentThoughtUnit(chapterUnit);
+              
+              // Update global sync
               updateSync({ 
-                page: chapterStartPage, 
-                unitIndex: chapterStartUnit 
+                page: chapterPage, 
+                unitIndex: chapterUnit 
               }, 'toc');
               
-              console.log(`📄 Chapter navigation complete: page ${chapterStartPage}, unit ${chapterStartUnit}`);
+              console.log(`📄 Chapter navigation complete: page ${chapterPage}, unit ${chapterUnit}`);
+              return; // Exit early on success
             } else {
-              // Fallback to normal navigation if no chapter found
-              setCurrentThoughtUnit(unit);
-              updateSync({ page, unitIndex: unit }, 'toc');
-              console.log(`📄 Fallback navigation complete: page ${page}, unit ${unit}`);
+              console.log(`📄 TOC_JUMP: No chapter found for page ${page}, using direct navigation`);
             }
-          } else {
-            console.warn(`📄 TOC_JUMP: Sync store not ready or missing findNearestChapter function`);
-            // Fallback to normal navigation
-            setCurrentThoughtUnit(unit);
-            updateSync({ page, unitIndex: unit }, 'toc');
+          } catch (chapterError) {
+            console.warn(`📄 TOC_JUMP chapter lookup error:`, chapterError);
           }
-        } catch (tocError) {
-          console.warn(`📄 TOC_JUMP error:`, tocError);
-          // Fallback to normal navigation
+          
+          // Fallback: direct navigation to requested page
           setCurrentThoughtUnit(unit);
           updateSync({ page, unitIndex: unit }, 'toc');
-        }
-      } else {
+          console.log(`📄 TOC_JUMP fallback: page ${page}, unit ${unit}`);
+        } else {
         // Normal scroll/programmatic navigation with enhanced sync
         setCurrentThoughtUnit(unit);
         
