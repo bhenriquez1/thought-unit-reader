@@ -182,15 +182,32 @@ export default function ProtocolHandlerPage() {
         // Store enriched data for the APEX page to pick up
         localStorage.setItem('protocol_return_data', JSON.stringify(enrichedData));
         
-        // Redirect to APEX hub with success parameters
+        // Redirect to APEX Patterns page with success parameters for immediate pattern application
         const redirectParams = new URLSearchParams();
         redirectParams.set('protocol_return', 'true');
         redirectParams.set('section', learningData.section);
         redirectParams.set('ai_insights', 'true');
+        redirectParams.set('bootcamp_session', 'true');
         if (learningData.score) redirectParams.set('score', learningData.score.toString());
+        if (learningData.duration) redirectParams.set('duration', learningData.duration.toString());
+        if (learningData.progress) redirectParams.set('progress', learningData.progress.toString());
+        
+        // Map DAT sections to pattern categories for focused learning
+        const sectionToCategory = {
+          'organic-chemistry': 'organic-chemistry',
+          'general-chemistry': 'general-chemistry', 
+          'biology': 'biology',
+          'pat': 'pat',
+          'reading-comprehension': 'reading-comprehension',
+          'quantitative-reasoning': 'pat' // QR patterns often overlap with PAT logical reasoning
+        };
+        
+        const patternCategory = sectionToCategory[learningData.section as keyof typeof sectionToCategory] || 'organic-chemistry';
+        redirectParams.set('category', patternCategory);
+        redirectParams.set('focus_mode', 'true');
         
         setTimeout(() => {
-          router.replace(`/apex?${redirectParams.toString()}`);
+          router.replace(`/apex/patterns?${redirectParams.toString()}`);
         }, 1500);
       }
 

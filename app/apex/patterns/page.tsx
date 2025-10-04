@@ -17,14 +17,74 @@ export default function DATPatternBrowser() {
   const [searchQuery, setSearchQuery] = useState('');
   const [decisionMode, setDecisionMode] = useState(false);
   const [showTOC, setShowTOC] = useState(false);
+  const [bootcampReturn, setBootcampReturn] = useState<{
+    isReturn: boolean;
+    section: string;
+    score?: number;
+    duration?: number;
+    aiInsights: string[];
+    focusMode: boolean;
+  } | null>(null);
   
   // Parse URL parameters on client side for static export compatibility
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
+      
+      // Handle standard category parameter
       const categoryParam = urlParams.get('category');
       if (categoryParam) {
         setActiveCategory(categoryParam);
+      }
+      
+      // Handle DAT Bootcamp return parameters
+      const protocolReturn = urlParams.get('protocol_return') === 'true';
+      const bootcampSession = urlParams.get('bootcamp_session') === 'true';
+      
+      if (protocolReturn && bootcampSession) {
+        const section = urlParams.get('section') || 'unknown';
+        const score = urlParams.get('score') ? parseInt(urlParams.get('score')!) : undefined;
+        const duration = urlParams.get('duration') ? parseInt(urlParams.get('duration')!) : undefined;
+        const focusMode = urlParams.get('focus_mode') === 'true';
+        
+        // Try to get AI insights from stored protocol return data
+        let aiInsights: string[] = [];
+        try {
+          const protocolData = localStorage.getItem('protocol_return_data');
+          if (protocolData) {
+            const data = JSON.parse(protocolData);
+            aiInsights = data.aiInsights || [];
+            // Clean up the stored data
+            localStorage.removeItem('protocol_return_data');
+          }
+        } catch (error) {
+          console.warn('Failed to parse protocol return data:', error);
+        }
+        
+        // Generate fallback insights if none found
+        if (aiInsights.length === 0) {
+          aiInsights = [
+            `🎓 Successfully returned from ${section.replace('-', ' ').toUpperCase()} study session`,
+            '🧠 Ready to apply learned concepts with pattern decision trees',
+            '🎯 Focus on the patterns below to reinforce your learning'
+          ];
+          if (score) aiInsights.push(`📊 Session performance: ${score}% - Apply these patterns to improve!`);
+          if (duration) aiInsights.push(`⏱️ ${duration} minutes of focused study completed`);
+        }
+        
+        setBootcampReturn({
+          isReturn: true,
+          section,
+          score,
+          duration,
+          aiInsights,
+          focusMode
+        });
+        
+        // Auto-enable decision mode for focused learning
+        if (focusMode) {
+          setDecisionMode(true);
+        }
       }
     }
   }, []);
@@ -220,6 +280,92 @@ export default function DATPatternBrowser() {
 
         {/* Main Content */}
         <div className="flex-1 p-6">
+          {/* AI Learning Insights Banner - Only shown on DAT Bootcamp return */}
+          {bootcampReturn?.isReturn && (
+            <div className="bg-gradient-to-r from-blue-900/40 to-purple-900/40 backdrop-blur-sm rounded-xl p-6 mb-6 border border-blue-500/30">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="text-2xl">🧠</div>
+                  <div>
+                    <h2 className="text-xl font-bold text-white">AI Learning Integration Complete</h2>
+                    <p className="text-blue-200 text-sm">
+                      Welcome back from {bootcampReturn.section.replace('-', ' ').toUpperCase()} study session
+                      {bootcampReturn.score && ` • ${bootcampReturn.score}% performance`}
+                      {bootcampReturn.duration && ` • ${bootcampReturn.duration}min study time`}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setBootcampReturn(null)}
+                  className="px-3 py-1 bg-gray-600/50 hover:bg-gray-600 text-gray-300 rounded text-sm transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                    <span>🤖</span> AI Insights
+                  </h3>
+                  <div className="space-y-2">
+                    {bootcampReturn.aiInsights.map((insight, idx) => (
+                      <div key={idx} className="bg-black/20 rounded-lg p-3 border border-blue-500/20">
+                        <span className="text-blue-200 text-sm">{insight}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                <div>
+                  <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                    <span>🎯</span> Recommended Actions
+                  </h3>
+                  <div className="space-y-3">
+                    <div className="bg-indigo-600/20 border border-indigo-500/30 rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-indigo-200 text-sm">
+                          🌳 Practice {bootcampReturn.section.replace('-', ' ').toUpperCase()} patterns with decision trees
+                        </span>
+                        {!decisionMode && (
+                          <button
+                            onClick={() => setDecisionMode(true)}
+                            className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs"
+                          >
+                            Enable
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="bg-green-600/20 border border-green-500/30 rounded-lg p-3">
+                      <span className="text-green-200 text-sm">
+                        📖 Review pattern rules below to reinforce learning
+                      </span>
+                    </div>
+                    
+                    {bootcampReturn.score && bootcampReturn.score < 80 && (
+                      <div className="bg-yellow-600/20 border border-yellow-500/30 rounded-lg p-3">
+                        <span className="text-yellow-200 text-sm">
+                          💪 Focus on challenging patterns for improvement
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              
+              {bootcampReturn.focusMode && (
+                <div className="mt-4 p-3 bg-purple-600/20 border border-purple-500/30 rounded-lg">
+                  <div className="flex items-center gap-2 text-purple-200 text-sm">
+                    <span>⚡</span>
+                    <span><strong>Focus Mode Active:</strong> Pattern category auto-filtered to {activeCategory.replace('-', ' ').toUpperCase()}. Decision mode enabled for enhanced learning.</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Search and Filter Bar */}
           <div className="bg-black/30 backdrop-blur-sm rounded-xl p-4 mb-6 border border-indigo-500/20">
             <div className="flex flex-col md:flex-row gap-4">
