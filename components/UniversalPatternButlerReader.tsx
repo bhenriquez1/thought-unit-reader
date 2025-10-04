@@ -946,7 +946,11 @@ export default function UniversalPatternButlerReader({
               {/* Mode Toggle */}
               <div className="flex items-center gap-1 bg-white/70 backdrop-blur rounded-lg p-1">
                 <button
-                  onClick={() => setCurrentMode('exploration')}
+                  onClick={() => {
+                    debugLog(`🖱️ CLICK: Mode Switch → Exploration (from ${currentMode})`);
+                    debugLog(`📊 STATE_CHANGE: currentMode: ${currentMode} → exploration`);
+                    setCurrentMode('exploration');
+                  }}
                   className={`px-3 py-2 rounded text-sm font-medium transition-all ${
                     currentMode === 'exploration' 
                       ? 'bg-green-500 text-white shadow-md' 
@@ -956,7 +960,11 @@ export default function UniversalPatternButlerReader({
                   📖 Exploration
                 </button>
                 <button
-                  onClick={() => setCurrentMode('training')}
+                  onClick={() => {
+                    debugLog(`🖱️ CLICK: Mode Switch → Training (from ${currentMode})`);
+                    debugLog(`📊 STATE_CHANGE: currentMode: ${currentMode} → training`);
+                    setCurrentMode('training');
+                  }}
                   className={`px-3 py-2 rounded text-sm font-medium transition-all ${
                     currentMode === 'training' 
                       ? 'bg-blue-500 text-white shadow-md' 
@@ -966,7 +974,11 @@ export default function UniversalPatternButlerReader({
                   🎯 Training
                 </button>
                 <button
-                  onClick={() => setCurrentMode('butler')}
+                  onClick={() => {
+                    debugLog(`🖱️ CLICK: Mode Switch → Butler (from ${currentMode})`);
+                    debugLog(`📊 STATE_CHANGE: currentMode: ${currentMode} → butler`);
+                    setCurrentMode('butler');
+                  }}
                   className={`px-3 py-2 rounded text-sm font-medium transition-all ${
                     currentMode === 'butler' 
                       ? 'bg-purple-500 text-white shadow-md' 
@@ -1029,24 +1041,6 @@ export default function UniversalPatternButlerReader({
 
             {/* Controls Row */}
             <div className="flex items-center gap-3">
-              {/* DEBUG TOGGLE BUTTON - Interactive debugging */}
-              <button
-                onClick={() => setDebugMode(!debugMode)}
-                className={`px-2 py-1 rounded text-xs flex items-center gap-1 ${
-                  debugMode 
-                    ? 'bg-red-600 text-white shadow-md animate-pulse' 
-                    : 'bg-white/60 text-gray-700 hover:bg-white/80'
-                }`}
-                title={debugMode ? "Disable Debug Logging" : "Enable Debug Logging"}
-              >
-                🔧 Debug
-                {debugMode && (
-                  <span className="bg-white/20 px-1 rounded text-xs">
-                    ON
-                  </span>
-                )}
-              </button>
-
               {/* TOC Toggle - DISABLED FOR TESTING */}
               {false && (
                 <button
@@ -1689,6 +1683,25 @@ export default function UniversalPatternButlerReader({
           </div>
         </div>
       </div>
+
+      {/* 🔧 DEBUG TOGGLE BUTTON - Lower Left Position (like whiteboard button) */}
+      <button
+        onClick={() => {
+          debugLog(`🖱️ CLICK: Debug Button Toggle ${debugMode ? 'OFF' : 'ON'}`);
+          setDebugMode(!debugMode);
+        }}
+        className={`fixed bottom-4 left-4 w-12 h-12 rounded-full shadow-lg z-50 flex items-center justify-center transition-all duration-300 ${
+          debugMode 
+            ? 'bg-red-600 text-white shadow-red-500/30 animate-pulse' 
+            : 'bg-gray-700 text-white hover:bg-gray-600 shadow-gray-500/30'
+        }`}
+        title={debugMode ? "🔧 Debug Mode ON - Click to disable" : "🔧 Debug Mode OFF - Click to enable comprehensive logging"}
+      >
+        <span className="text-xl">🔧</span>
+        {debugMode && (
+          <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-400 rounded-full animate-ping"></span>
+        )}
+      </button>
 
       {/* TU Interaction Modal */}
       <TUInteractionModal
