@@ -68,6 +68,7 @@ import {
   type AdaptiveLearningEngine
 } from "@/lib/adaptiveLearning";
 import LearningAnalyticsDashboard from "@/components/LearningAnalyticsDashboard";
+import TOCSidebar from "@/components/TOCSidebar";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -341,6 +342,19 @@ export default function UniversalPatternButlerReader({
   const [intelligentPatternSuggestions, setIntelligentPatternSuggestions] = useState<Pattern[]>([]);
   const [adaptiveComplexityLevel, setAdaptiveComplexityLevel] = useState(3);
   
+  // 📑 TOC Integration State
+  const [tocVisible, setTocVisible] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  
+  // Performance optimization: Cache analysis results
+  const analysisCache = useRef<Map<string, {
+    patterns: Pattern[];
+    butler: ButlerAnalysisResult;
+    comprehensive?: ComprehensiveAnalysisResult;
+    rightBrain?: RightBrainChunkAnalysis;
+    timestamp: number;
+  }>>(new Map());
+  
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
   // Get effective selection text (needs to be early for use in effects)
@@ -472,51 +486,90 @@ export default function UniversalPatternButlerReader({
     }
   }, [thoughtUnits, currentThoughtUnit, selectionText, effectiveSelection, currentMode, trainingState.step]);
 
-  // Advanced Analysis Pipeline
+  // Optimized Analysis Pipeline with Caching and Debouncing
   useEffect(() => {
     if (!selectionText || selectionText.length < 10) {
       setDetectedPatterns([]);
       setButlerAnalysis(null);
       setComprehensiveAnalysis(null);
+      setRightBrainAnalysis(null);
+      setIsAnalyzing(false);
       return;
     }
 
-    const runAnalysis = async () => {
+    const runOptimizedAnalysis = async () => {
+      const textHash = btoa(selectionText).slice(0, 32); // Create cache key
+      const cached = analysisCache.current.get(textHash);
+      
+      // Check cache (valid for 5 minutes)
+      if (cached && Date.now() - cached.timestamp < 300000) {
+        console.log('📦 Using cached analysis results');
+        setDetectedPatterns(cached.patterns);
+        setButlerAnalysis(cached.butler);
+        setButlerHighlights(cached.butler.highlights);
+        if (cached.comprehensive) setComprehensiveAnalysis(cached.comprehensive);
+        if (cached.rightBrain) setRightBrainAnalysis(cached.rightBrain);
+        setIsAnalyzing(false);
+        return;
+      }
+
       try {
-        console.log('🎯 Running Universal Analysis Pipeline...');
+        setIsAnalyzing(true);
+        console.log('🎯 Running Optimized Analysis Pipeline...');
         
-        // 1. Pattern Detection
+        // 1. Fast Pattern Detection (synchronous)
         const patterns = detectUniversalPatterns(selectionText);
         setDetectedPatterns(patterns);
         
-        // 2. Butler Analysis
+        // 2. Butler Analysis (async but prioritized)
         const butler = await analyzeTextWithButler(selectionText);
         setButlerAnalysis(butler);
         setButlerHighlights(butler.highlights);
         
-        // 3. Enhanced Analysis (if enabled)
-        if (selectionText.length < 800) { // Limit for performance
-          const enhanced = await enhancedHybridAnalysisEngine.analyzeText(selectionText);
-          setComprehensiveAnalysis(enhanced);
+        // 3. Enhanced Analysis (only for shorter texts and in butler mode)
+        let enhanced: ComprehensiveAnalysisResult | undefined = undefined;
+        if (selectionText.length < 500 && currentMode === 'butler') {
+          try {
+            enhanced = await enhancedHybridAnalysisEngine.analyzeText(selectionText);
+            setComprehensiveAnalysis(enhanced);
+          } catch (error) {
+            console.warn('Enhanced analysis failed:', error);
+          }
         }
         
-        // 4. Right-Brain Analysis for visual learners
-        if (patterns.length > 0) {
-          const rightBrain = analyzeChunkWithRightBrain(selectionText, currentThoughtUnit - 1, thoughtUnits.length);
-          setRightBrainAnalysis(rightBrain);
+        // 4. Right-Brain Analysis (only if patterns detected)
+        let rightBrain: RightBrainChunkAnalysis | undefined = undefined;
+        if (patterns.length > 0 && currentMode === 'butler') {
+          try {
+            rightBrain = analyzeChunkWithRightBrain(selectionText, currentThoughtUnit - 1, thoughtUnits.length);
+            setRightBrainAnalysis(rightBrain);
+          } catch (error) {
+            console.warn('Right-brain analysis failed:', error);
+          }
         }
+        
+        // Cache results
+        analysisCache.current.set(textHash, {
+          patterns,
+          butler,
+          comprehensive: enhanced,
+          rightBrain,
+          timestamp: Date.now()
+        });
         
         console.log(`✅ Analysis complete: ${patterns.length} patterns, ${butler.highlights.length} highlights`);
         
       } catch (error) {
         console.error('Analysis pipeline error:', error);
+      } finally {
+        setIsAnalyzing(false);
       }
     };
 
-    // Debounce analysis
-    const timeoutId = setTimeout(runAnalysis, 500);
+    // Longer debounce to prevent analysis spam
+    const timeoutId = setTimeout(runOptimizedAnalysis, 800);
     return () => clearTimeout(timeoutId);
-  }, [selectionText]);
+  }, [selectionText, currentMode, currentThoughtUnit, thoughtUnits.length]);
 
   // Handle text selection
   const handleMouseUp = useCallback((e: React.MouseEvent) => {
@@ -686,8 +739,22 @@ export default function UniversalPatternButlerReader({
       resetKeys={[currentMode, currentPage, userId]}
     >
       <div className="h-full flex bg-gray-50">
-        {/* Main PDF View (60% width) */}
-        <div className="w-3/5 bg-white border-r border-gray-200">
+        {/* TOC Sidebar - Conditionally Rendered */}
+        {tocVisible && (
+          <div className="flex-shrink-0">
+            <TOCSidebar
+              toc={tableOfContents}
+              currentPage={currentPage}
+              onJumpToPage={onPageChange}
+              isVisible={tocVisible}
+              onToggleVisibility={() => setTocVisible(false)}
+              userId={userId}
+            />
+          </div>
+        )}
+
+        {/* Main PDF View - Responsive width based on TOC visibility */}
+        <div className={`${tocVisible ? 'w-1/2' : 'w-3/5'} bg-white border-r border-gray-200 transition-all duration-300`}>
           {/* Universal Header with Mode Switching */}
           <div className="flex items-center justify-between p-3 bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 border-b border-indigo-200">
             <div className="flex items-center gap-4">
@@ -770,52 +837,74 @@ export default function UniversalPatternButlerReader({
               </button>
             </div>
 
-            {/* Speech Controls */}
-            <div className="flex items-center gap-2 bg-white/60 backdrop-blur rounded-lg px-3 py-1">
+            {/* Controls Row */}
+            <div className="flex items-center gap-3">
+              {/* TOC Toggle */}
               <button
-                onClick={() => setSpeechMode(speechMode === 'smart' ? 'full' : 'smart')}
-                className={`px-2 py-1 rounded text-xs ${
-                  speechMode === 'smart' 
-                    ? 'bg-indigo-600 text-white' 
-                    : 'bg-gray-200 text-gray-700'
+                onClick={() => setTocVisible(!tocVisible)}
+                className={`px-2 py-1 rounded text-xs flex items-center gap-1 ${
+                  tocVisible 
+                    ? 'bg-amber-600 text-white shadow-md' 
+                    : 'bg-white/60 text-gray-700 hover:bg-white/80'
                 }`}
+                title={tocVisible ? "Hide Table of Contents" : "Show Table of Contents"}
               >
-                {speechMode === 'smart' ? '🎯 Smart' : '📖 Full'}
-              </button>
-              
-              <button
-                onClick={() => {
-                  if (isSpeaking) {
-                    stopSpeaking();
-                  } else if (effectiveSelection) {
-                    speakText(effectiveSelection);
-                  }
-                }}
-                className={`px-2 py-1 rounded text-xs ${
-                  isSpeaking
-                    ? 'bg-red-600 hover:bg-red-500 text-white'
-                    : 'bg-green-600 hover:bg-green-500 text-white'
-                }`}
-              >
-                {isSpeaking ? '🔇 Stop' : '🔊 Read'}
+                📑 TOC
+                {tableOfContents && tableOfContents.length > 0 && (
+                  <span className="bg-white/20 px-1 rounded text-xs">
+                    {tableOfContents.length}
+                  </span>
+                )}
               </button>
 
-              {/* Zoom Controls */}
-              <button
-                onClick={() => setPdfScale(s => Math.max(0.5, s - 0.1))}
-                className="px-1 py-1 bg-gray-200 hover:bg-gray-300 rounded text-xs"
-              >
-                -
-              </button>
-              <span className="text-xs text-gray-600 min-w-[2rem] text-center">
-                {Math.round(pdfScale * 100)}%
-              </span>
-              <button
-                onClick={() => setPdfScale(s => Math.min(3.0, s + 0.1))}
-                className="px-1 py-1 bg-gray-200 hover:bg-gray-300 rounded text-xs"
-              >
-                +
-              </button>
+              {/* Speech Controls */}
+              <div className="flex items-center gap-2 bg-white/60 backdrop-blur rounded-lg px-3 py-1">
+                <button
+                  onClick={() => setSpeechMode(speechMode === 'smart' ? 'full' : 'smart')}
+                  className={`px-2 py-1 rounded text-xs ${
+                    speechMode === 'smart' 
+                      ? 'bg-indigo-600 text-white' 
+                      : 'bg-gray-200 text-gray-700'
+                  }`}
+                >
+                  {speechMode === 'smart' ? '🎯 Smart' : '📖 Full'}
+                </button>
+                
+                <button
+                  onClick={() => {
+                    if (isSpeaking) {
+                      stopSpeaking();
+                    } else if (effectiveSelection) {
+                      speakText(effectiveSelection);
+                    }
+                  }}
+                  className={`px-2 py-1 rounded text-xs ${
+                    isSpeaking
+                      ? 'bg-red-600 hover:bg-red-500 text-white'
+                      : 'bg-green-600 hover:bg-green-500 text-white'
+                  }`}
+                  disabled={!effectiveSelection && !isSpeaking}
+                >
+                  {isSpeaking ? '🔇 Stop' : '🔊 Read'}
+                </button>
+
+                {/* Zoom Controls */}
+                <button
+                  onClick={() => setPdfScale(s => Math.max(0.5, s - 0.1))}
+                  className="px-1 py-1 bg-gray-200 hover:bg-gray-300 rounded text-xs"
+                >
+                  -
+                </button>
+                <span className="text-xs text-gray-600 min-w-[2rem] text-center">
+                  {Math.round(pdfScale * 100)}%
+                </span>
+                <button
+                  onClick={() => setPdfScale(s => Math.min(3.0, s + 0.1))}
+                  className="px-1 py-1 bg-gray-200 hover:bg-gray-300 rounded text-xs"
+                >
+                  +
+                </button>
+              </div>
             </div>
           </div>
 
