@@ -346,6 +346,11 @@ export default function UniversalPatternButlerReader({
   const [tocVisible, setTocVisible] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
+  // Debug TOC visibility changes
+  useEffect(() => {
+    console.log('📑 TOC visibility changed:', tocVisible);
+  }, [tocVisible]);
+  
   // Performance optimization: Cache analysis results
   const analysisCache = useRef<Map<string, {
     patterns: Pattern[];
@@ -747,7 +752,10 @@ export default function UniversalPatternButlerReader({
               currentPage={currentPage}
               onJumpToPage={onPageChange}
               isVisible={tocVisible}
-              onToggleVisibility={() => setTocVisible(false)}
+              onToggleVisibility={() => {
+                console.log('📑 TOC Close button clicked - hiding TOC');
+                setTocVisible(false);
+              }}
               userId={userId}
             />
           </div>

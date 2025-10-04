@@ -150,7 +150,7 @@ export default function TOCSidebar({
     }
   };
 
-  // Auto-collapse on mobile
+  // Auto-collapse on mobile - but don't interfere with parent visibility
   useEffect(() => {
     const checkMobile = () => {
       if (window.innerWidth < 768 && !isCollapsed) {
@@ -158,10 +158,11 @@ export default function TOCSidebar({
       }
     };
     
+    // Only run on mount and resize, not when visibility changes
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
-  }, [isCollapsed]);
+  }, []); // Remove isCollapsed dependency to prevent loops
 
   const flat = useMemo(() => {
     const normalized = normalizeTOC(toc || []);
