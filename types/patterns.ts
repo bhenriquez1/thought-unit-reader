@@ -10,7 +10,7 @@ export interface PatternRule {
 export interface Pattern {
   id: string;
   name: string;
-  category: 'organic-chemistry' | 'general-chemistry' | 'biology' | 'dentistry' | 'reading-comprehension';
+  category: 'organic-chemistry' | 'general-chemistry' | 'biology' | 'pat' | 'reading-comprehension';
   description: string;
   rules: PatternRule[];
   examples: string[];
@@ -435,84 +435,240 @@ export const DAT_PATTERNS: Pattern[] = [
     tags: ['genetics', 'population-genetics', 'allele-frequency']
   },
 
-  // DENTISTRY PATTERNS
+  // PAT (PERCEPTUAL ABILITY TEST) PATTERNS
   {
-    id: 'caries-treatment',
-    name: 'Caries/Treatment Algorithm',
-    category: 'dentistry',
-    description: 'Systematic approach to caries diagnosis and treatment planning',
+    id: 'apertures-keyholes',
+    name: 'Apertures (Keyholes)',
+    category: 'pat',
+    description: 'Systematic approach to hole punching and aperture problems',
     rules: [
       {
-        key: 'Assess caries risk',
-        description: 'Categorize as low, moderate, or high risk',
-        example: 'High: frequent snacking, poor hygiene, dry mouth'
+        key: 'Visualize the fold',
+        description: 'Imagine how the paper folds along the indicated lines',
+        example: 'Paper folded in half creates symmetrical holes when punched'
       },
       {
-        key: 'Evaluate lesion depth',
-        description: 'Classify as incipient, moderate, or cavitated',
-        example: 'Radiographic depth: enamel, outer/inner dentin, pulpal'
+        key: 'Count fold layers',
+        description: 'Determine how many layers of paper the hole goes through',
+        example: '1 fold = 2 layers, 2 folds = 4 layers, etc.'
       },
       {
-        key: 'Choose management approach',
-        description: 'Preventive → Restorative → Surgical as needed',
-        example: 'Fluoride/SDF → GIC/composite → RCT/extraction'
+        key: 'Apply symmetry rules',
+        description: 'Holes appear symmetrically across fold lines when unfolded',
+        example: 'Hole near fold line creates mirror image on opposite side'
       },
       {
-        key: 'Consider patient factors',
-        description: 'Age, cooperation, medical history, prognosis',
-        example: 'Pediatric patients may need different approach'
+        key: 'Check all positions',
+        description: 'Systematically verify each hole position in the unfolded pattern',
+        example: 'Work through each punch mark methodically'
       }
     ],
     examples: [
-      'White spot lesion in high-risk patient',
-      'Moderate dentin caries in primary tooth',
-      'Deep caries approaching pulp in permanent tooth'
+      'Paper folded once vertically, single hole punched',
+      'Paper folded twice, multiple holes punched',
+      'Complex folding pattern with edge holes'
     ],
     commonMistakes: [
-      'Over-treating incipient lesions',
-      'Ignoring patient risk factors',
-      'Not considering tooth prognosis'
+      'Forgetting symmetry across fold lines',
+      'Miscounting paper layers',
+      'Not tracking fold sequence properly'
     ],
-    tags: ['caries', 'treatment-planning', 'preventive-dentistry']
+    tags: ['apertures', 'keyholes', 'symmetry', 'spatial-visualization']
   },
   {
-    id: 'endo-pulp-diagnosis',
-    name: 'Endo Pulp Vitality Diagnosis',
-    category: 'dentistry',
-    description: 'Systematic pulpal diagnosis using testing and symptoms',
+    id: 'orthographic-projections',
+    name: 'View Recognition (Orthographic)',
+    category: 'pat',
+    description: 'Master systematic approach to top, front, and side view identification',
     rules: [
       {
-        key: 'Cold test/EPT response',
-        description: 'Normal, lingering, or no response to thermal/electrical tests',
-        example: 'Lingering cold pain suggests irreversible pulpitis'
+        key: 'Establish orientation',
+        description: 'Identify top, front, and right side views clearly',
+        example: 'Top view shows object looking down from above'
       },
       {
-        key: 'Pain characteristics',
-        description: 'Spontaneous, provoked, duration, quality',
-        example: 'Throbbing, spontaneous pain = irreversible pulpitis'
+        key: 'Project edges systematically',
+        description: 'Trace how 3D edges appear in each 2D projection',
+        example: 'Vertical edge appears as line in front/side, point in top'
       },
       {
-        key: 'Diagnostic categories',
-        description: 'Normal pulp, reversible pulpitis, irreversible pulpitis, necrotic',
-        example: 'Based on test results and symptoms'
+        key: 'Hidden lines = dashed',
+        description: 'Features blocked from view shown as dashed lines',
+        example: 'Hole on back surface shows dashed circle in front view'
       },
       {
-        key: 'Treatment planning',
-        description: 'Monitor, restore, or RCT based on diagnosis',
-        example: 'Irreversible pulpitis requires RCT or extraction'
+        key: 'Check all features',
+        description: 'Verify every hole, edge, and surface appears correctly',
+        example: 'Count holes, measure proportions, verify alignments'
       }
     ],
     examples: [
-      'Brief cold sensitivity after restoration',
-      'Spontaneous throbbing pain keeping patient awake',
-      'No response to cold test, percussion positive'
+      'Rectangular block with cylindrical hole through center',
+      'L-shaped object with multiple holes',
+      'Complex object with angled surfaces'
     ],
     commonMistakes: [
-      'Relying on single test result',
-      'Ignoring patient pain history',
-      'Confusing reversible vs irreversible pulpitis'
+      'Confusing solid vs dashed lines',
+      'Wrong view orientation',
+      'Missing hidden features'
     ],
-    tags: ['endodontics', 'pulpal-diagnosis', 'pain-management']
+    tags: ['orthographic', 'projections', 'technical-drawing', '3d-visualization']
+  },
+  {
+    id: 'angle-discrimination',
+    name: 'Angle Discrimination',
+    category: 'pat',
+    description: 'Precise angle measurement and comparison strategies',
+    rules: [
+      {
+        key: 'Use reference angles',
+        description: 'Compare to known angles: 90°, 45°, 30°, 60°',
+        example: 'Is angle greater than, less than, or equal to 90°?'
+      },
+      {
+        key: 'Bisection technique',
+        description: 'Mentally bisect angles to estimate smaller increments',
+        example: '45° bisected gives 22.5°, useful for fine discrimination'
+      },
+      {
+        key: 'Overlay comparison',
+        description: 'Mentally overlay one angle on another to compare',
+        example: 'Which angle would fit inside the other?'
+      },
+      {
+        key: 'Systematic elimination',
+        description: 'Rule out obviously incorrect angles first',
+        example: 'If target is acute, eliminate all obtuse options'
+      }
+    ],
+    examples: [
+      'Identify angle closest to 37°',
+      'Which of four angles is exactly 83°?',
+      'Rank angles from smallest to largest'
+    ],
+    commonMistakes: [
+      'Rushing visual estimation',
+      'Not using reference angles',
+      'Misreading angle orientation'
+    ],
+    tags: ['angles', 'measurement', 'discrimination', 'precision']
+  },
+  {
+    id: 'paper-folding',
+    name: 'Paper Folding',
+    category: 'pat',
+    description: 'Master complex folding sequences and hole prediction',
+    rules: [
+      {
+        key: 'Track fold sequence',
+        description: 'Follow each fold step-by-step in the correct order',
+        example: 'Fold 1: vertical, Fold 2: horizontal, then punch'
+      },
+      {
+        key: 'Maintain orientation',
+        description: 'Keep track of paper orientation after each fold',
+        example: 'After vertical fold, left edge becomes center crease'
+      },
+      {
+        key: 'Layer counting',
+        description: 'Determine how many paper layers hole penetrates',
+        example: '3 folds = 8 layers, so 1 punch = 8 holes when unfolded'
+      },
+      {
+        key: 'Unfold in reverse',
+        description: 'Mentally reverse the folding sequence to reveal pattern',
+        example: 'Last fold opens first, creating initial hole positions'
+      }
+    ],
+    examples: [
+      'Two perpendicular folds with center punch',
+      'Diagonal fold followed by edge fold',
+      'Multiple holes punched in complex fold pattern'
+    ],
+    commonMistakes: [
+      'Losing track of fold sequence',
+      'Incorrect layer counting',
+      'Wrong unfolding order'
+    ],
+    tags: ['paper-folding', 'sequences', 'layering', 'reverse-engineering']
+  },
+  {
+    id: 'cube-counting',
+    name: 'Cube Counting',
+    category: 'pat',
+    description: 'Systematic counting of hidden and visible cubes in 3D arrangements',
+    rules: [
+      {
+        key: 'Layer-by-layer analysis',
+        description: 'Count cubes systematically by layer (front to back, bottom to top)',
+        example: 'Front layer: 6 cubes, middle layer: 4 cubes, back layer: 2 cubes'
+      },
+      {
+        key: 'Use visible constraints',
+        description: 'Hidden cubes must exist to support visible ones above/in front',
+        example: 'Floating cube impossible - must have support underneath'
+      },
+      {
+        key: 'Shadow analysis',
+        description: 'Use shading patterns to infer depth and hidden cubes',
+        example: 'Darker faces suggest cubes extending into the structure'
+      },
+      {
+        key: 'Grid projection',
+        description: 'Mentally project grid lines to count systematically',
+        example: 'Divide structure into XYZ coordinates for accuracy'
+      }
+    ],
+    examples: [
+      'L-shaped arrangement with partial occlusion',
+      'Pyramid-like structure with varying heights',
+      'Complex interlocking cube arrangement'
+    ],
+    commonMistakes: [
+      'Double-counting visible cubes',
+      'Missing structural support requirements',
+      'Incorrect depth perception'
+    ],
+    tags: ['cube-counting', '3d-structures', 'spatial-reasoning', 'hidden-objects']
+  },
+  {
+    id: 'form-development',
+    name: '3D Form Development',
+    category: 'pat',
+    description: 'Master unfolding 3D objects into 2D net patterns',
+    rules: [
+      {
+        key: 'Identify base shape',
+        description: 'Recognize the fundamental 3D shape (cube, pyramid, cylinder, etc.)',
+        example: 'Cube has 6 faces, pyramid has triangular faces + base'
+      },
+      {
+        key: 'Trace fold lines',
+        description: 'Identify where faces connect and how they fold',
+        example: 'Adjacent faces in 3D become connected faces in net'
+      },
+      {
+        key: 'Check face relationships',
+        description: 'Verify which faces are adjacent vs opposite in 3D',
+        example: 'Opposite faces of cube never touch in correct net'
+      },
+      {
+        key: 'Validate fold patterns',
+        description: 'Ensure net can actually fold into the target shape',
+        example: 'No overlapping faces, all connections physically possible'
+      }
+    ],
+    examples: [
+      'Cube with specific face markings',
+      'Triangular prism with different face patterns',
+      'Irregular polyhedron with unique features'
+    ],
+    commonMistakes: [
+      'Confusing adjacent vs opposite faces',
+      'Creating invalid fold patterns',
+      'Misreading 3D orientation'
+    ],
+    tags: ['form-development', 'nets', '3d-unfolding', 'geometric-analysis']
   },
 
   // READING COMPREHENSION PATTERNS
@@ -601,7 +757,7 @@ export const PATTERN_CATEGORIES = {
   'organic-chemistry': 'Organic Chemistry',
   'general-chemistry': 'General Chemistry', 
   'biology': 'Biology',
-  'dentistry': 'Dentistry',
+  'pat': 'PAT (Perceptual Ability)',
   'reading-comprehension': 'Reading Comprehension'
 } as const;
 

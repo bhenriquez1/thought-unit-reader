@@ -63,7 +63,7 @@ export default function DATApexHub() {
           averageScore: 78.5,
           bestScore: 89.2,
           totalStudyTime: 1440, // 24 hours
-          weakestTopics: ['Organic Chemistry', 'Perceptual Ability'],
+          weakestTopics: ['Organic Chemistry', 'PAT (Perceptual Ability)'],
           strongestTopics: ['Biology', 'Reading Comprehension'],
           recentActivity: [
             { date: '2025-01-01', type: 'exam', score: 82.1, duration: 255 },
@@ -283,7 +283,7 @@ export default function DATApexHub() {
                     'organic-chemistry': 'from-green-600/20 to-emerald-600/20 border-green-500/30',
                     'general-chemistry': 'from-blue-600/20 to-cyan-600/20 border-blue-500/30',
                     'biology': 'from-purple-600/20 to-violet-600/20 border-purple-500/30',
-                    'dentistry': 'from-yellow-600/20 to-orange-600/20 border-yellow-500/30',
+                    'pat': 'from-yellow-600/20 to-orange-600/20 border-yellow-500/30',
                     'reading-comprehension': 'from-pink-600/20 to-rose-600/20 border-pink-500/30'
                   };
                   

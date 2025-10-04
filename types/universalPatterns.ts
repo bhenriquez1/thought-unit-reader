@@ -5,7 +5,7 @@ import type { Pattern as BasePattern, PatternRule, PatternMastery, PatternAttemp
 
 // Extended Pattern interface for universal categories
 export interface UniversalPattern extends Omit<BasePattern, 'category'> {
-  category: 'organic-chemistry' | 'general-chemistry' | 'biology' | 'dentistry' | 'reading-comprehension' | 
+  category: 'organic-chemistry' | 'general-chemistry' | 'biology' | 'pat' | 'reading-comprehension' | 
            'analytical-reasoning' | 'scientific-method' | 'business-analysis' | 'learning-patterns';
 }
 
@@ -14,7 +14,7 @@ export const UNIVERSAL_PATTERN_CATEGORIES = {
   'organic-chemistry': 'Organic Chemistry',
   'general-chemistry': 'General Chemistry', 
   'biology': 'Biology',
-  'dentistry': 'Dentistry',
+  'pat': 'PAT (Perceptual Ability)',
   'reading-comprehension': 'Reading Comprehension',
   'analytical-reasoning': 'Analytical Reasoning',
   'scientific-method': 'Scientific Method',
