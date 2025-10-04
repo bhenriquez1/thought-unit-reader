@@ -282,10 +282,14 @@ export default function UniversalPatternButlerReader({
 }: UniversalPatternButlerReaderProps) {
   
   // 🚨 GUARANTEED DEBUGGING - These logs will ALWAYS show
-  console.log('🎯 UniversalPatternButlerReader LOADED!', {
+  console.log('🔕 TESTING: UniversalPatternButlerReader is LOADED');
+  console.log('🚨 This message should ALWAYS appear when component loads');
+  console.log('🎉 If you see this, the component is working!');
+  console.log('📊 Props received:', {
     currentPage,
     pdfPageCount,
     pdfUrl: pdfUrl ? 'PDF URL provided' : 'NO PDF URL',
+    onPageChange: typeof onPageChange,
     timestamp: new Date().toLocaleTimeString()
   });
   // Core State Management - DEFAULT TO TRAINING MODE
@@ -1002,13 +1006,29 @@ export default function UniversalPatternButlerReader({
             <div className="flex items-center gap-2 bg-white/60 backdrop-blur rounded-lg px-3 py-1">
               <button
                 onClick={() => {
-                  console.log(`🚨 PREVIOUS BUTTON CLICKED! Current page: ${currentPage}`);
+                  console.log(`🟢 CLICK DETECTED: Previous button was clicked!`);
+                  console.log(`🎯 Current page before change: ${currentPage}`);
+                  console.log(`📄 REQUESTED PAGE CHANGE: Going to page ${Math.max(1, currentPage - 1)}`);
+                  console.log(`✅ Navigation system activated!`);
+                  
                   const newPage = Math.max(1, currentPage - 1);
-                  console.log(`🚨 Calling onPageChange(${newPage})`);
-                  onPageChange(newPage);
+                  console.log(`🚨 Testing onPageChange prop function...`);
+                  console.log(`🚨 onPageChange type: ${typeof onPageChange}`);
+                  console.log(`🚨 Calling onPageChange(${newPage}) now...`);
+                  
+                  try {
+                    onPageChange(newPage);
+                    console.log(`✅ onPageChange(${newPage}) called successfully!`);
+                  } catch (error) {
+                    console.error(`❌ ERROR calling onPageChange:`, error);
+                  }
                 }}
                 disabled={currentPage <= 1}
-                className="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-300 disabled:opacity-50 text-white rounded text-sm"
+                className={`px-2 py-1 rounded text-sm transition-all duration-200 ${
+                  currentPage <= 1 
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                    : 'bg-indigo-600 hover:bg-indigo-500 active:bg-green-600 text-white transform active:scale-95'
+                }`}
               >
                 ←
               </button>
