@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { 
   DAT_PATTERNS, 
   PATTERN_CATEGORIES,
@@ -19,14 +18,16 @@ export default function DATPatternBrowser() {
   const [decisionMode, setDecisionMode] = useState(false);
   const [showTOC, setShowTOC] = useState(false);
   
-  const searchParams = useSearchParams();
-  const categoryParam = searchParams?.get('category');
-  
+  // Parse URL parameters on client side for static export compatibility
   useEffect(() => {
-    if (categoryParam) {
-      setActiveCategory(categoryParam);
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const categoryParam = urlParams.get('category');
+      if (categoryParam) {
+        setActiveCategory(categoryParam);
+      }
     }
-  }, [categoryParam]);
+  }, []);
 
   const filteredPatterns = React.useMemo(() => {
     let patterns = DAT_PATTERNS;
