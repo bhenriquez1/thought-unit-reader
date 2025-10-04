@@ -269,8 +269,8 @@ export default function UniversalPatternButlerReader({
   onSpeechRateChange,
   tableOfContents = [],
 }: UniversalPatternButlerReaderProps) {
-  // Core State Management
-  const [currentMode, setCurrentMode] = useState<ReaderMode>('exploration');
+  // Core State Management - DEFAULT TO TRAINING MODE
+  const [currentMode, setCurrentMode] = useState<ReaderMode>('training');
   const [selectionText, setSelectionText] = useState("");
   const [user, setUser] = useState<User | null>(null);
   
@@ -326,6 +326,9 @@ export default function UniversalPatternButlerReader({
   
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
+  // Get effective selection text (needs to be early for use in effects)
+  const effectiveSelection = (externalSelectionText?.trim() || selectionText).trim();
+
   // Authentication
   useEffect(() => {
     const unsub = auth.onAuthStateChanged((u) => setUser(u));
@@ -353,6 +356,29 @@ export default function UniversalPatternButlerReader({
       loadPatternMastery(userId).then(setPatternMastery);
     }
   }, [userId]);
+
+  // AUTO-CONTENT SELECTION - Engage immediately when content loads
+  useEffect(() => {
+    if (thoughtUnits.length > 0 && currentThoughtUnit >= 1 && currentThoughtUnit <= thoughtUnits.length) {
+      const currentUnitText = unitToText(thoughtUnits[currentThoughtUnit - 1]).trim();
+      
+      // Auto-select first meaningful thought unit if no selection exists
+      if (!selectionText && !effectiveSelection && currentUnitText.length > 50) {
+        console.log('🎯 Auto-selecting content for immediate engagement:', currentUnitText.slice(0, 50) + '...');
+        setSelectionText(currentUnitText);
+        
+        // Also trigger training mode workflow
+        if (currentMode === 'training' && trainingState.step === 'selection') {
+          setTrainingState(prev => ({
+            ...prev,
+            step: 'pattern-choice',
+            selectedText: currentUnitText,
+            startTime: Date.now()
+          }));
+        }
+      }
+    }
+  }, [thoughtUnits, currentThoughtUnit, selectionText, effectiveSelection, currentMode, trainingState.step]);
 
   // Advanced Analysis Pipeline
   useEffect(() => {
@@ -514,9 +540,6 @@ export default function UniversalPatternButlerReader({
       startTime: Date.now()
     });
   }, []);
-
-  // Get effective selection text
-  const effectiveSelection = (externalSelectionText?.trim() || selectionText).trim();
 
   return (
     <ErrorBoundary
