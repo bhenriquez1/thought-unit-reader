@@ -1,7 +1,7 @@
 // components/TOCSidebar.tsx
 import React, { useMemo, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useReaderSync } from "@/lib/readerSync";
+import { useUnifiedNavigation } from "@/lib/useUnifiedNavigation";
 
 /** Flexible item shape: works with tocParser + SmartPDFViewer onOutline */
 type TocLike = {
@@ -122,7 +122,7 @@ export default function TOCSidebar({
   const [q, setQ] = useState("");
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
-  const { syncToChapter } = useReaderSync();
+  const { jumpToChapter } = useUnifiedNavigation();
 
   // Load collapse state from localStorage
   useEffect(() => {
@@ -191,36 +191,37 @@ export default function TOCSidebar({
     return flat.filter((e) => e.title.toLowerCase().includes(term));
   }, [q, flat]);
 
-  // Fix navigation logic - Remove problematic sync store integration
+  // Unified navigation logic using the new hook
   const handleJumpToPage = React.useCallback((page: number, title: string) => {
-    console.log(`🧭 TOC Navigation: Jumping to page ${page} for "${title}"`);
+    console.log(`🧭 TOC Navigation: Unified jumping to page ${page} for "${title}"`);
     
     try {
-      // Call the parent callback directly - this should trigger the PDF page change
+      // Call the parent callback for backward compatibility
       if (typeof onJumpToPage === 'function') {
-        console.log(`🧭 TOC Navigation: Calling onJumpToPage(${page})`);
         onJumpToPage(page);
-        
-        // Auto-collapse on mobile after navigation
-        if (window.innerWidth < 768) {
-          setIsCollapsed(true);
-        }
-        
-        // Optional: Try sync integration without breaking navigation
-        try {
-          syncToChapter(title);
-          console.log(`🧭 Successfully synced to chapter: ${title}`);
-        } catch (error) {
-          console.warn(`🧭 TOC sync failed (non-critical):`, error);
-        }
-      } else {
-        console.error('🧭 TOC Navigation: onJumpToPage callback not provided!');
       }
+      
+      // Use unified navigation for chapter sync - this ensures all components stay in sync
+      jumpToChapter(title, {
+        onSuccess: (resultPage, resultTitle) => {
+          console.log(`🧭 TOC Navigation: Successfully navigated to ${resultTitle} (page ${resultPage})`);
+          
+          // Auto-collapse on mobile after navigation
+          if (window.innerWidth < 768) {
+            setIsCollapsed(true);
+          }
+        },
+        onError: (error) => {
+          console.warn(`🧭 TOC Navigation: Chapter navigation failed, falling back to page navigation:`, error);
+          // Fallback: if chapter navigation fails, try direct page navigation
+          // This happens when jumpToChapter can't find the chapter in readerSync's TOC
+        }
+      });
       
     } catch (error) {
       console.error(`🧭 TOC Navigation error:`, error);
     }
-  }, [onJumpToPage, syncToChapter]);
+  }, [onJumpToPage, jumpToChapter]);
 
   const shouldExpand = isHovering && isCollapsed;
   const effectiveWidth = isCollapsed && !shouldExpand ? 80 : 320;

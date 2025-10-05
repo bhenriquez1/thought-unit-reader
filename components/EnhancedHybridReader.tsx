@@ -17,7 +17,7 @@ import {
 } from "@/lib/navigationUtils";
 import PageContextPanel from "@/components/PageContextPanel";
 import ChunkRail from "@/components/ChunkRail";
-import { useReaderSync } from "@/lib/readerSync";
+import { useUnifiedNavigation } from "@/lib/useUnifiedNavigation";
 import { 
   extractAnchorTokens, 
   buildPageTextIndex, 
@@ -353,37 +353,34 @@ export default function EnhancedHybridReader({
     }
   }, [thoughtUnitRenderer, thoughtUnitConfig]);
 
-  // Bidirectional sync state - optimized
+  // Unified navigation for sync - using the new system
   const { 
-    page: globalPage,
-    unitIndex: globalUnitIndex,
-    activeChunkId: globalActiveChunkId,
-    updateSync, 
-    cacheChunkAnchor, 
-    syncChunkToPDF, 
-    syncPDFToChunk,
-    startVisibleTextObserver 
-  } = useReaderSync();
+    jumpToPage,
+    jumpToChapter,
+    navigateProgrammatically,
+    currentPage: unifiedCurrentPage,
+    currentUnit: unifiedCurrentUnit
+  } = useUnifiedNavigation();
   const [pageTextIndex, setPageTextIndex] = useState<PageTextIndex | null>(null);
   const syncDebounceRef = useRef<number | null>(null);
 
   const { isReviewMode, currentCard, startReview, gradeCard } = useStartReview(userId);
 
-  // Subscribe to global sync changes for cross-view synchronization
+  // Use unified navigation for sync between components
   useEffect(() => {
-    console.log(`🔄 HybridReader: Global sync state changed: page=${globalPage}, unit=${globalUnitIndex}, chunk=${globalActiveChunkId}`);
+    console.log(`🔄 HybridReader: Navigation state: page=${unifiedCurrentPage}, unit=${unifiedCurrentUnit}`);
     
-    // Update local state when global sync changes (but avoid loops)
-    if (globalPage !== currentPage) {
-      console.log(`🔄 HybridReader: Syncing local page: ${currentPage} -> ${globalPage}`);
-      onPageChange(globalPage);
+    // Sync with unified navigation state when it changes
+    if (unifiedCurrentPage !== currentPage && unifiedCurrentPage > 0) {
+      console.log(`🔄 HybridReader: Syncing to unified page: ${currentPage} -> ${unifiedCurrentPage}`);
+      onPageChange(unifiedCurrentPage);
     }
     
-    if (globalUnitIndex !== currentThoughtUnit) {
-      console.log(`🔄 HybridReader: Syncing local unit: ${currentThoughtUnit} -> ${globalUnitIndex}`);
-      setCurrentThoughtUnit(globalUnitIndex);
+    if (unifiedCurrentUnit !== currentThoughtUnit && unifiedCurrentUnit > 0) {
+      console.log(`🔄 HybridReader: Syncing to unified unit: ${currentThoughtUnit} -> ${unifiedCurrentUnit}`);
+      setCurrentThoughtUnit(unifiedCurrentUnit);
     }
-  }, [globalPage, globalUnitIndex, globalActiveChunkId, currentPage, currentThoughtUnit, onPageChange, setCurrentThoughtUnit]);
+  }, [unifiedCurrentPage, unifiedCurrentUnit, currentPage, currentThoughtUnit, onPageChange, setCurrentThoughtUnit]);
 
   // Load voices
   useEffect(() => {
@@ -599,101 +596,11 @@ export default function EnhancedHybridReader({
     return () => clearTimeout(timeoutId);
   }, [thoughtUnitRenderer, showThoughtUnits, activeChunk, currentPage, activeIdx]);
 
-  // Create optimized debounced sync functions with higher thresholds
-  const debouncedSyncChunkToPDF = useMemo(
-    () => createDebounced((chunkId: string, chunkText: string) => {
-      if (!pdfContainerRef.current || !chunkText.trim() || chunkText.length < 40) return;
-      
-      // Create chunk anchor
-      const anchor = createChunkAnchor(chunkId, chunkText, currentPage);
-      
-      // Cache the anchor
-      cacheChunkAnchor(chunkId, chunkText, currentPage);
-      
-      // Sync chunk to PDF using the store method
-      syncChunkToPDF(chunkId, pdfContainerRef.current).then(success => {
-        if (success) {
-          console.log(`✅ Successfully synced chunk ${chunkId} to PDF`);
-        }
-      }).catch(error => {
-        console.warn('Chunk to PDF sync failed:', error);
-      });
-    }, 300), // Increased debounce delay
-    [currentPage, cacheChunkAnchor, syncChunkToPDF]
-  );
-
-  const debouncedSyncPDFToChunk = useMemo(
-    () => createDebounced((page: number, visibleText: string) => {
-      if (!visibleText.trim() || !chunks.length || visibleText.length < 100) return;
-      
-      // Build page index
-      let pageIndex = pageIndexCache.get(page);
-      if (!pageIndex && pdfContainerRef.current) {
-        pageIndex = buildPageTextIndex(page, pdfContainerRef.current);
-        if (pageIndex) {
-          pageIndexCache.set(page, pageIndex);
-        }
-      }
-      
-      if (!pageIndex) return;
-      
-      // Find best matching chunk with higher confidence threshold
-      type BestMatchType = { chunkIndex: number; confidence: number };
-      let bestMatch: BestMatchType | null = null;
-      
-      // Only check every 3rd chunk for better performance
-      chunks.forEach((chunk, index) => {
-        if (index % 3 !== 0) return; // Skip 2/3 of chunks for performance
-        
-        const chunkId = stableChunkId(chunk);
-        cacheChunkAnchor(chunkId, chunk, page);
-        // Note: cacheChunkAnchor returns void, so we'll use the anchor creation directly
-        const anchor = createChunkAnchor(chunkId, chunk, page);
-        
-        const matchResult = findChunkInPage(anchor, pageIndex!);
-        
-        if (matchResult.found && typeof matchResult.confidence === 'number' && matchResult.confidence > 0.4) { // Higher threshold
-          const currentMatch: BestMatchType = { chunkIndex: index, confidence: matchResult.confidence };
-          if (!bestMatch || currentMatch.confidence > bestMatch.confidence) {
-            bestMatch = currentMatch;
-          }
-        }
-      });
-      
-      // Update active chunk if we found a good match with higher confidence
-      if (bestMatch && (bestMatch as BestMatchType).confidence > 0.6 && (bestMatch as BestMatchType).chunkIndex !== activeIdx) {
-        setActiveIdx((bestMatch as BestMatchType).chunkIndex);
-        
-        // Update sync state using the store method
-        if (pdfContainerRef.current) {
-          syncPDFToChunk(pdfContainerRef.current, chunks).then(matchedChunkId => {
-            if (matchedChunkId) {
-              console.log(`✅ Successfully synced PDF to chunk ${matchedChunkId}`);
-            }
-          }).catch(error => {
-            console.warn('PDF to chunk sync failed:', error);
-          });
-        }
-      }
-    }, 400), // Increased debounce delay
-    [chunks, activeIdx, cacheChunkAnchor, syncPDFToChunk]
-  );
-
-  // Optimized bidirectional sync with reduced frequency
-  useEffect(() => {
-    if (!activeChunk || !showProgressiveOverlay || activeChunk.length < 50) return;
-    
-    // Only sync every 3rd chunk change for better performance
-    if (activeIdx % 3 === 0) {
-      debouncedSyncChunkToPDF(activeChunkId, activeChunk);
-    }
-  }, [activeChunkId, activeChunk, showProgressiveOverlay, activeIdx, debouncedSyncChunkToPDF]);
-
-  // Optimized PDF → Progressive sync with longer debounce
+  // Simplified highlighting for better performance
   useEffect(() => {
     if (!pdfContainerRef.current) return;
     
-    // Debounce page text indexing
+    // Simple page indexing for navigation context
     if (syncDebounceRef.current) {
       clearTimeout(syncDebounceRef.current);
     }
@@ -703,13 +610,9 @@ export default function EnhancedHybridReader({
       if (pageIndex) {
         pageIndexCache.set(currentPage, pageIndex);
         setPageTextIndex(pageIndex);
-        
-        // Sync PDF to chunk with visible text
-        const visibleText = pageIndex.text.slice(0, 300); // Reduced context for performance
-        debouncedSyncPDFToChunk(currentPage, visibleText);
       }
       syncDebounceRef.current = null;
-    }, 600); // Longer debounce for better performance
+    }, 600);
     
     return () => {
       if (syncDebounceRef.current) {
@@ -717,9 +620,9 @@ export default function EnhancedHybridReader({
         syncDebounceRef.current = null;
       }
     };
-  }, [currentPage, debouncedSyncPDFToChunk]);
+  }, [currentPage]);
 
-  // Chapter transition detection and animation
+  // Chapter transition detection (simplified)
   const [previousPage, setPreviousPage] = useState(currentPage);
   
   useEffect(() => {
@@ -732,28 +635,12 @@ export default function EnhancedHybridReader({
     const transition = detectChapterTransition(currentPage, previousPage, tableOfContents);
     
     if (transition.isTransition && transition.chapterInfo) {
-      // Cache chapter animation script using the store method
-      const chapterId = `chapter-${currentPage}-${currentChapter.title.replace(/\s+/g, '-').toLowerCase()}`;
-      
-      // Set current chapter
-      updateSync({ page: currentPage, unitIndex: currentThoughtUnit }, 'toc');
-      
-      // Generate simple animation steps for the chapter
-      const animationSteps = [
-        { type: 'title', content: currentChapter.title },
-        { type: 'concept', content: activeChunk.slice(0, 100) + '...' },
-        { type: 'highlight', content: 'Key concepts from this section' }
-      ];
-      
-      // Cache the animation script (using cacheChunkAnchor as a fallback)
-      cacheChunkAnchor(chapterId, JSON.stringify(animationSteps), currentPage);
-      
       console.log(`🎨 Chapter transition detected: ${currentChapter.title}`);
     }
     
     // Update previous page for next comparison
     setPreviousPage(currentPage);
-  }, [currentPage, activeChunk, tableOfContents, updateSync, cacheChunkAnchor, previousPage]);
+  }, [currentPage, activeChunk, tableOfContents, previousPage]);
 
   // Optimized PDF highlighting with reduced frequency
   useEffect(() => {
@@ -1278,11 +1165,11 @@ export default function EnhancedHybridReader({
               activeIdx={activeIdx}
               setActiveIdx={setActiveIdx}
               onPick={(text) => {
-                // 3-step process: setLocalUnit → updateSync → onChunkPick
+                // Unified navigation: setLocalUnit → navigateProgrammatically → onChunkPick
                 const idx = chunks.indexOf(text);
                 if (idx !== -1) {
                   setActiveIdx(idx);
-                  updateSync({
+                  navigateProgrammatically({
                     page: currentPage,
                     unitIndex: currentThoughtUnit,
                     activeChunkId: stableChunkId(text)

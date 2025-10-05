@@ -3,7 +3,7 @@
 
 import React, { useMemo, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useReaderSync } from "@/lib/readerSync";
+import { useUnifiedNavigation } from "@/lib/useUnifiedNavigation";
 
 /** Flexible item shape: works with tocParser + SmartPDFViewer onOutline */
 type TocLike = {
@@ -120,7 +120,7 @@ export default function TOCBottomDock({
   const [q, setQ] = useState("");
   const [isExpanded, setIsExpanded] = useState(true);
   const [showMode, setShowMode] = useState<"contextual" | "full">("contextual");
-  const { findNearestChapter, syncToChapter } = useReaderSync();
+  const { jumpToChapter, jumpToPage } = useUnifiedNavigation();
 
   // Auto-hide on small screens when left TOC is visible
   const [shouldAutoHide, setShouldAutoHide] = useState(false);
@@ -150,23 +150,22 @@ export default function TOCBottomDock({
   const contextualEntries = useMemo(() => {
     if (showMode === "full") return flat;
     
-    const currentChapter = findNearestChapter(currentPage);
-    if (!currentChapter) return flat.slice(0, 6); // Show first 6 if no chapter found
+    // Find current page in flat list for contextual navigation
+    const currentPageEntries = flat.filter(entry => entry.page === currentPage);
     
-    // Find current chapter in flat list
-    const currentIndex = flat.findIndex(entry => 
-      entry.title.toLowerCase().includes(currentChapter.title.toLowerCase()) ||
-      currentChapter.title.toLowerCase().includes(entry.title.toLowerCase())
-    );
+    if (currentPageEntries.length > 0) {
+      // Find the entry for current page and show context around it
+      const currentIndex = flat.findIndex(entry => entry.page === currentPage);
+      if (currentIndex !== -1) {
+        const start = Math.max(0, currentIndex - 2);
+        const end = Math.min(flat.length, currentIndex + 4);
+        return flat.slice(start, end);
+      }
+    }
     
-    if (currentIndex === -1) return flat.slice(0, 6);
-    
-    // Show current chapter + 2 before + 3 after (contextual window)
-    const start = Math.max(0, currentIndex - 2);
-    const end = Math.min(flat.length, currentIndex + 4);
-    
-    return flat.slice(start, end);
-  }, [flat, currentPage, findNearestChapter, showMode]);
+    // Fallback: show first 6 entries if no current page match
+    return flat.slice(0, 6);
+  }, [flat, currentPage, showMode]);
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -175,12 +174,32 @@ export default function TOCBottomDock({
     return sourceEntries.filter((e) => e.title.toLowerCase().includes(term));
   }, [q, contextualEntries, flat, showMode]);
 
-  // Enhanced navigation with sync integration
-  const handleJumpToPage = (page: number, title: string) => {
-    console.log(`🧭 Bottom TOC Navigation: Jumping to page ${page} for "${title}"`);
-    onJumpToPage(page);
-    syncToChapter(title);
-  };
+  // Unified navigation with sync integration
+  const handleJumpToPage = React.useCallback((page: number, title: string) => {
+    console.log(`🧭 Bottom TOC Navigation: Unified jumping to page ${page} for "${title}"`);
+    
+    try {
+      // Call the parent callback for backward compatibility
+      if (typeof onJumpToPage === 'function') {
+        onJumpToPage(page);
+      }
+      
+      // Use unified navigation for chapter sync - this ensures all components stay in sync
+      jumpToChapter(title, {
+        onSuccess: (resultPage, resultTitle) => {
+          console.log(`🧭 Bottom TOC Navigation: Successfully navigated to ${resultTitle} (page ${resultPage})`);
+        },
+        onError: (error) => {
+          console.warn(`🧭 Bottom TOC Navigation: Chapter navigation failed, using page navigation:`, error);
+          // Fallback to direct page navigation if chapter navigation fails
+          jumpToPage(page, 'toc');
+        }
+      });
+      
+    } catch (error) {
+      console.error(`🧭 Bottom TOC Navigation error:`, error);
+    }
+  }, [onJumpToPage, jumpToChapter, jumpToPage]);
 
   const toggleHeight = () => {
     const newHeight = height === 160 ? 280 : 160;
@@ -271,8 +290,7 @@ export default function TOCBottomDock({
                         key={`${entry.title}-${idx}`}
                         onClick={() => {
                           if (page) {
-                            console.log(`🧭 Bottom TOC Navigation: Jumping to page ${page} for "${entry.title}"`);
-                            onJumpToPage(page);
+                            handleJumpToPage(page, entry.title);
                           }
                         }}
                         disabled={typeof page !== "number"}
