@@ -156,7 +156,7 @@ const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   
   // Prototype testing flags
   PROTOTYPE_TESTING_MODE: {
-    enabled: true,
+    enabled: false,
     description: 'Enable prototype testing mode - routes to UniversalPatternButlerReader'
   },
   

@@ -239,7 +239,7 @@ export default function ThoughtUnitReader() {
     useState<"original" | "hybrid" | "rightbrain" | "pattern" | "notelab">("original");
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [pdfPageCount, setPdfPageCount] = useState(1);
+  const [pdfPageCount, setPdfPageCount] = useState(0); // Start with 0 to indicate not loaded
 
   const [isReading, setIsReading] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -1929,7 +1929,14 @@ export default function ThoughtUnitReader() {
           onPageChange={(p) => syncToPage(p)}
           scale={1.25}
           onTextSelect={(t) => sel.setSelectionText(t)}
-          onPageCount={(n) => setPdfPageCount(n)}
+          onPageCount={(n) => {
+            console.log(`📄 PDF page count detected: ${n}`);
+            setPdfPageCount(n);
+            // Ensure global sync knows about page count
+            if (n > 1) {
+              updateSync({ page: Math.min(currentPage, n), unitIndex: currentThoughtUnit }, 'pdf');
+            }
+          }}
           onOutline={(items) => {
             const normalized = outlineToTOC(items as any);
             if (normalized && normalized.length) {
@@ -2069,14 +2076,26 @@ export default function ThoughtUnitReader() {
 
       {/* Main Content Area - New Layout: [TOC | PDF | Right Pane] */}
       <div className="flex-1 overflow-hidden flex">
-        {/* Left TOC Sidebar - Always visible when content is loaded */}
-        {fileUrl && tableOfContents.length > 0 && (
-          <TOCSidebar
-            toc={tableOfContents}
-            currentPage={currentPage}
-            onJumpToPage={(p) => syncToPage(p, { reason: 'TOC_JUMP' })}
-            userId={USER_ID}
-          />
+        {/* Left TOC Sidebar - Show when content loaded and TOC available */}
+        {fileUrl && pdfPageCount > 0 && (
+          tableOfContents.length > 0 ? (
+            <TOCSidebar
+              toc={tableOfContents}
+              currentPage={currentPage}
+              onJumpToPage={(p) => syncToPage(p, { reason: 'TOC_JUMP' })}
+              userId={USER_ID}
+            />
+          ) : (
+            <div className="w-64 bg-gray-800 border-r border-gray-700 p-4 text-center">
+              <div className="text-gray-400 text-sm">
+                <div className="text-2xl mb-2">📖</div>
+                <p>No table of contents detected in this PDF</p>
+                <p className="text-xs mt-2 opacity-60">
+                  Navigation available via page numbers
+                </p>
+              </div>
+            </div>
+          )
         )}
 
 
