@@ -200,6 +200,7 @@ export default function SmartPDFViewer({
   const onDocumentLoadSuccess = async (pdf: PDFDocumentProxy) => {
     setErrMsg(null);
     setNumPages(pdf.numPages);
+    console.log(`✅ SmartPDFViewer: PDF loaded successfully with ${pdf.numPages} pages`);
     onPageCount?.(pdf.numPages);
 
     if (onOutline) {
@@ -208,25 +209,52 @@ export default function SmartPDFViewer({
         if (raw?.length) {
           const items = await resolveOutline(pdf, raw);
           onOutline(items);
+          console.log(`📋 SmartPDFViewer: Outline loaded with ${items.length} items`);
         } else {
           onOutline([]);
+          console.log(`📋 SmartPDFViewer: No outline found`);
         }
-      } catch {
+      } catch (error) {
+        console.warn(`📋 SmartPDFViewer: Outline loading failed:`, error);
         onOutline?.([]);
       }
     }
   };
 
   const onDocumentLoadError = (err: unknown) => {
-    const m = (err as any)?.message || String(err);
-    setErrMsg(m);
-    console.error("❌ PDF load error", err);
+    const errorObj = err as any;
+    const message = errorObj?.message || String(err);
+    const name = errorObj?.name || 'PDFError';
+    
+    console.error("❌ SmartPDFViewer Document Load Error:", { name, message, err });
+    
+    // Set a more user-friendly error message
+    const userMessage = message.includes('fetch') 
+      ? `Failed to fetch PDF. Please check if the file exists and is accessible.`
+      : message.includes('Invalid PDF')
+      ? `Invalid PDF file. Please ensure the file is not corrupted.`
+      : `PDF loading failed: ${message}`;
+    
+    setErrMsg(userMessage);
+    setNumPages(0); // Explicitly set to 0 to avoid showing "?"
   };
 
   const onSourceError = (err: unknown) => {
-    const m = (err as any)?.message || String(err);
-    setErrMsg(m);
-    console.error("❌ PDF source error", err);
+    const errorObj = err as any;
+    const message = errorObj?.message || String(err);
+    const name = errorObj?.name || 'SourceError';
+    
+    console.error("❌ SmartPDFViewer Source Error:", { name, message, err });
+    
+    // Set a more user-friendly error message
+    const userMessage = message.includes('NetworkError') || message.includes('fetch')
+      ? `Network error loading PDF. Check your internet connection and try again.`
+      : message.includes('cors')
+      ? `CORS error loading PDF. The PDF source may not allow cross-origin requests.`
+      : `PDF source error: ${message}`;
+    
+    setErrMsg(userMessage);
+    setNumPages(0); // Explicitly set to 0 to avoid showing "?"
   };
 
   const handleZoomIn = () => setZoom((z) => Math.min(z + 0.25, 3));
@@ -343,8 +371,17 @@ export default function SmartPDFViewer({
       </div>
 
       {errMsg && (
-        <div className="absolute left-4 bottom-4 bg-red-600 text-white text-xs rounded px-2 py-1 shadow">
-          Failed to load PDF: {errMsg}
+        <div className="absolute inset-x-4 bottom-4 bg-red-600 text-white rounded-lg p-4 shadow-lg z-40">
+          <div className="flex items-start gap-3">
+            <div className="text-xl">❌</div>
+            <div className="flex-1">
+              <div className="font-semibold mb-1">PDF Loading Failed</div>
+              <div className="text-sm opacity-90">{errMsg}</div>
+              <div className="mt-2 text-xs opacity-75">
+                Try refreshing the page or uploading a different PDF file.
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

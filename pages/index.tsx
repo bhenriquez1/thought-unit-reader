@@ -240,6 +240,8 @@ export default function ThoughtUnitReader() {
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(0); // Start with 0 to indicate not loaded
+  const [pdfLoadingState, setPdfLoadingState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   const [isReading, setIsReading] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -1923,27 +1925,69 @@ export default function ThoughtUnitReader() {
     // Original view (PDF)
     return fileUrl ? (
       <div className="h-full" onMouseUp={sel.bind.onMouseUp}>
-        <SmartPDFViewer
-          fileUrl={fileUrl}
-          currentPage={currentPage}
-          onPageChange={(p) => syncToPage(p)}
-          scale={1.25}
-          onTextSelect={(t) => sel.setSelectionText(t)}
-          onPageCount={(n) => {
-            console.log(`📄 PDF page count detected: ${n}`);
-            setPdfPageCount(n);
-            // Ensure global sync knows about page count
-            if (n > 1) {
-              updateSync({ page: Math.min(currentPage, n), unitIndex: currentThoughtUnit }, 'pdf');
-            }
-          }}
-          onOutline={(items) => {
-            const normalized = outlineToTOC(items as any);
-            if (normalized && normalized.length) {
-              setTableOfContents(normalized);
-            }
-          }}
-        />
+        <div className="relative h-full">
+          <SmartPDFViewer
+            fileUrl={fileUrl}
+            currentPage={currentPage}
+            onPageChange={(p) => syncToPage(p)}
+            scale={1.25}
+            onTextSelect={(t) => sel.setSelectionText(t)}
+            onPageCount={(n) => {
+              console.log(`📄 PDF page count detected: ${n}`);
+              setPdfPageCount(n);
+              setPdfLoadingState('loaded');
+              setPdfError(null);
+              // Ensure global sync knows about page count
+              if (n > 1) {
+                updateSync({ page: Math.min(currentPage, n), unitIndex: currentThoughtUnit }, 'pdf');
+              }
+            }}
+            onOutline={(items) => {
+              const normalized = outlineToTOC(items as any);
+              if (normalized && normalized.length) {
+                setTableOfContents(normalized);
+              }
+            }}
+          />
+          
+          {/* PDF Loading Overlay */}
+          {pdfLoadingState === 'loading' && (
+            <div className="absolute inset-0 bg-gray-900/90 flex items-center justify-center z-50">
+              <div className="text-center text-white">
+                <div className="text-4xl mb-4 animate-pulse">📄</div>
+                <h3 className="text-lg font-semibold mb-2">Loading PDF...</h3>
+                <p className="text-sm opacity-75">Please wait while we prepare your document</p>
+              </div>
+            </div>
+          )}
+          
+          {/* PDF Error Overlay */}
+          {pdfLoadingState === 'error' && pdfError && (
+            <div className="absolute inset-0 bg-gray-900/90 flex items-center justify-center z-50">
+              <div className="bg-red-600 text-white rounded-lg p-6 max-w-md mx-4">
+                <div className="flex items-start gap-3">
+                  <div className="text-2xl">❌</div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold mb-2">PDF Loading Failed</h3>
+                    <p className="text-sm opacity-90 mb-4">{pdfError}</p>
+                    <button
+                      onClick={() => {
+                        setPdfLoadingState('loading');
+                        setPdfError(null);
+                        // Force refresh the PDF
+                        setFileUrl('');
+                        setTimeout(() => setFileUrl(fileUrl), 100);
+                      }}
+                      className="bg-white text-red-600 px-4 py-2 rounded font-medium hover:bg-gray-100 transition-colors"
+                    >
+                      🔄 Try Again
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     ) : (
       <div className="flex flex-col items-center justify-center h-full gap-4">

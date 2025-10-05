@@ -191,7 +191,7 @@ export default function BaseInteractivePDFReader({
           break;
         case "ArrowRight":
           e.preventDefault();
-          onPageChange(Math.min(pdfPageCount || 999, currentPage + 1));
+          onPageChange(Math.min((pdfPageCount ?? 999), currentPage + 1));
           break;
       }
     };
@@ -234,7 +234,9 @@ export default function BaseInteractivePDFReader({
                 }}
                 className="w-16 text-center text-sm border border-gray-300 rounded px-1"
               />
-              <span className="text-sm text-gray-600">of {pdfPageCount || '?'}</span>
+              <span className="text-sm text-gray-600">
+                of {pdfPageCount > 0 ? pdfPageCount : 'loading...'}
+              </span>
             </div>
             
             <button

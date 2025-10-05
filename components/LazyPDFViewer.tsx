@@ -270,6 +270,8 @@ export default React.memo(function LazyPDFViewer({
     setErrMsg(null);
     setNumPages(pdf.numPages);
     setIsLoading(false);
+    
+    console.log(`✅ PDF loaded successfully: ${pdf.numPages} pages`);
     onPageCount?.(pdf.numPages);
 
     if (onOutline) {
@@ -279,10 +281,13 @@ export default React.memo(function LazyPDFViewer({
           const cacheKey = `outline-${fileUrl}`;
           const items = await resolveOutline(pdf, raw, cacheKey);
           onOutline(items);
+          console.log(`📋 Outline loaded: ${items.length} items`);
         } else {
           onOutline([]);
+          console.log(`📋 No outline found`);
         }
-      } catch {
+      } catch (error) {
+        console.warn(`📋 Outline loading failed:`, error);
         onOutline?.([]);
       }
     }
@@ -292,17 +297,41 @@ export default React.memo(function LazyPDFViewer({
   }, [fileUrl, onPageCount, onOutline, startTimer, endTimer, loadTime]);
 
   const onDocumentLoadError = useCallback((err: unknown) => {
-    const m = (err as any)?.message || String(err);
-    setErrMsg(m);
+    const errorObj = err as any;
+    const message = errorObj?.message || String(err);
+    const name = errorObj?.name || 'PDFError';
+    
+    console.error("❌ PDF Document Load Error:", { name, message, err });
+    
+    // Set a more user-friendly error message
+    const userMessage = message.includes('fetch') 
+      ? `Failed to fetch PDF. Please check if the file exists and is accessible.`
+      : message.includes('Invalid PDF')
+      ? `Invalid PDF file. Please ensure the file is not corrupted.`
+      : `PDF loading failed: ${message}`;
+    
+    setErrMsg(userMessage);
     setIsLoading(false);
-    console.error("❌ PDF load error", err);
+    setNumPages(0); // Explicitly set to 0 to avoid showing "?"
   }, []);
 
   const onSourceError = useCallback((err: unknown) => {
-    const m = (err as any)?.message || String(err);
-    setErrMsg(m);
+    const errorObj = err as any;
+    const message = errorObj?.message || String(err);
+    const name = errorObj?.name || 'SourceError';
+    
+    console.error("❌ PDF Source Error:", { name, message, err });
+    
+    // Set a more user-friendly error message
+    const userMessage = message.includes('NetworkError') || message.includes('fetch')
+      ? `Network error loading PDF. Check your internet connection and try again.`
+      : message.includes('cors')
+      ? `CORS error loading PDF. The PDF source may not allow cross-origin requests.`
+      : `PDF source error: ${message}`;
+    
+    setErrMsg(userMessage);
     setIsLoading(false);
-    console.error("❌ PDF source error", err);
+    setNumPages(0); // Explicitly set to 0 to avoid showing "?"
   }, []);
 
   // Optimized navigation handlers
@@ -480,10 +509,19 @@ export default React.memo(function LazyPDFViewer({
         ) : null}
       </div>
 
-      {/* Error Message */}
+      {/* Enhanced Error Message */}
       {errMsg && (
-        <div className="absolute left-4 bottom-4 bg-red-600 text-white text-xs rounded px-2 py-1 shadow z-40">
-          Failed to load PDF: {errMsg}
+        <div className="absolute inset-x-4 bottom-4 bg-red-600 text-white rounded-lg p-4 shadow-lg z-40">
+          <div className="flex items-start gap-3">
+            <div className="text-xl">❌</div>
+            <div className="flex-1">
+              <div className="font-semibold mb-1">PDF Loading Failed</div>
+              <div className="text-sm opacity-90">{errMsg}</div>
+              <div className="mt-2 text-xs opacity-75">
+                Try refreshing the page or uploading a different PDF file.
+              </div>
+            </div>
+          </div>
         </div>
       )}
       
