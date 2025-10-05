@@ -37,6 +37,7 @@ import ChunkRail from "@/components/ChunkRail";
 import { MultiViewContainer } from "@/components/ViewContainer";
 import { useReaderSync, stableChunkId, analyzeContentDensity } from "@/lib/readerSync";
 import { useUnifiedNavigation } from "@/lib/useUnifiedNavigation";
+import ThoughtDetectionWidget from "@/components/ThoughtDetectionWidget";
 
 import {
   parseBookWithChapters,
@@ -291,6 +292,16 @@ export default function ThoughtUnitReader() {
   // 🧠 Right-Brain prefill draft (for High-Yield / Sketch)
   const [rbDraftText, setRbDraftText] = useState<string>("");
 
+  // 💭 Thought Detection Panel
+  const [showThoughtPanel, setShowThoughtPanel] = useState<boolean>(false);
+  const [detectedThoughts, setDetectedThoughts] = useState<Array<{
+    id: string;
+    text: string;
+    analysis: any;
+    timestamp: Date;
+    page?: number;
+  }>>([]);
+
   // ✅ PDF Parsing State Management
   const [pdfParsingState, setPdfParsingState] = useState<{
     isLoading: boolean;
@@ -338,6 +349,23 @@ export default function ThoughtUnitReader() {
     contextLabel: uploadedFile?.name ? `From ${uploadedFile.name}` : undefined,
     debounceMs: 0,
   });
+
+  /* =========================================================================
+     🔹 Handle Thought Detection
+  ========================================================================= */
+  const handleThoughtDetected = (thoughtText: string, analysis: any) => {
+    console.log('💭 New thought detected:', { thoughtText: thoughtText.slice(0, 50) + '...', analysis });
+    
+    const newThought = {
+      id: Date.now().toString(),
+      text: thoughtText,
+      analysis,
+      timestamp: new Date(),
+      page: currentPage
+    };
+    
+    setDetectedThoughts(prev => [newThought, ...prev.slice(0, 9)]); // Keep max 10 thoughts
+  };
 
   /* =========================================================================
      🔹 Upload PDF — parse + detect diagrams
@@ -2149,33 +2177,137 @@ export default function ThoughtUnitReader() {
         </div>
       </div>
 
-        {/* Single Whiteboard FAB - Bottom Right (Always Available) */}
-        {!showWhiteboardPanel && (
-          <button
-            onClick={() => {
-              setShowWhiteboardPanel(true);
-              // If no concept is set, use current page content as concept
-              if (!wbConcept && thoughtUnits.length > 0) {
-                const currentConcept = conceptForPage(currentPage, thoughtUnits, pdfPageCount);
-                if (currentConcept) {
-                  setWbConcept(truncate(currentConcept, 600));
-                  setWbContext(titleForPage(tableOfContents, currentPage));
-                } else {
-                  // Fallback to a generic concept
-                  setWbConcept("Current page content");
-                  setWbContext(`Page ${currentPage}`);
+        {/* Floating Action Buttons - Bottom Right Stack */}
+        <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-3">
+          {/* Thought Detection FAB */}
+          {!showThoughtPanel && (
+            <button
+              onClick={() => setShowThoughtPanel(true)}
+              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white p-3 rounded-full shadow-lg backdrop-blur-sm border border-blue-400 transition-all transform hover:scale-105"
+              title="Open Thought Detection"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-lg">💭</span>
+                <span className="text-sm font-medium hidden sm:block">Thoughts</span>
+              </div>
+            </button>
+          )}
+          
+          {/* Whiteboard FAB */}
+          {!showWhiteboardPanel && (
+            <button
+              onClick={() => {
+                setShowWhiteboardPanel(true);
+                // If no concept is set, use current page content as concept
+                if (!wbConcept && thoughtUnits.length > 0) {
+                  const currentConcept = conceptForPage(currentPage, thoughtUnits, pdfPageCount);
+                  if (currentConcept) {
+                    setWbConcept(truncate(currentConcept, 600));
+                    setWbContext(titleForPage(tableOfContents, currentPage));
+                  } else {
+                    // Fallback to a generic concept
+                    setWbConcept("Current page content");
+                    setWbContext(`Page ${currentPage}`);
+                  }
                 }
-              }
-            }}
-            className="fixed bottom-6 right-6 z-40 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white p-3 rounded-full shadow-lg backdrop-blur-sm border border-purple-400"
-            title="Open Whiteboard Explanation"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-lg">🎨</span>
-              <span className="text-sm font-medium hidden sm:block">Whiteboard</span>
+              }}
+              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white p-3 rounded-full shadow-lg backdrop-blur-sm border border-purple-400 transition-all transform hover:scale-105"
+              title="Open Whiteboard Explanation"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🎨</span>
+                <span className="text-sm font-medium hidden sm:block">Whiteboard</span>
+              </div>
+            </button>
+          )}
+        </div>
+
+      {/* Sliding Thought Detection Panel */}
+      {showThoughtPanel && (
+        <div className="fixed top-0 left-0 w-full sm:w-[480px] h-full bg-gray-900/95 backdrop-blur-md text-white z-50 flex flex-col shadow-2xl border-r border-gray-700">
+          <div className="flex justify-between items-center p-4 border-b border-gray-700">
+            <h3 className="text-lg font-semibold">💭 Thought Detection</h3>
+            <button
+              onClick={() => setShowThoughtPanel(false)}
+              className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-800"
+            >
+              ✕
+            </button>
+          </div>
+          
+          <div className="flex-1 overflow-auto p-4">
+            {/* Current Page Context */}
+            <div className="mb-4 p-3 bg-blue-900/30 rounded-lg border border-blue-700/30">
+              <div className="text-sm text-blue-300 mb-1">
+                📖 Page {currentPage} {uploadedFile?.name && `• ${truncate(uploadedFile.name, 30)}`}
+              </div>
+              <div className="text-xs text-gray-400">
+                {titleForPage(tableOfContents, currentPage)}
+              </div>
             </div>
-          </button>
-        )}
+
+            {/* Thought Input Widget */}
+            <ThoughtDetectionWidget
+              onThoughtDetected={handleThoughtDetected}
+              placeholder="What are you thinking about this page? Write your thoughts, questions, or insights here..."
+              className="mb-6"
+            />
+
+            {/* Previous Thoughts */}
+            {detectedThoughts.length > 0 && (
+              <div className="space-y-4">
+                <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2">
+                  💭 Your Recent Thoughts ({detectedThoughts.length})
+                </h4>
+                
+                <div className="space-y-3 max-h-60 overflow-y-auto">
+                  {detectedThoughts.map((thought, index) => (
+                    <div
+                      key={thought.id}
+                      className="p-3 bg-gray-800/50 rounded-lg border border-gray-700/50"
+                    >
+                      {/* Thought metadata */}
+                      <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
+                        <span>
+                          {thought.analysis.thoughtType === 'question' && '❓'}
+                          {thought.analysis.thoughtType === 'insight' && '💡'}
+                          {thought.analysis.thoughtType === 'confusion' && '🤔'}
+                          {thought.analysis.thoughtType === 'connection' && '🔗'}
+                          {thought.analysis.thoughtType === 'reflection' && '🧠'}
+                          {' '}
+                          {thought.analysis.thoughtType}
+                        </span>
+                        <span>
+                          Page {thought.page} • {thought.timestamp.toLocaleTimeString()}
+                        </span>
+                      </div>
+                      
+                      {/* Thought text */}
+                      <div className="text-sm text-gray-200 mb-2">
+                        "{truncate(thought.text, 100)}"
+                      </div>
+                      
+                      {/* Keywords */}
+                      {thought.analysis.keywords.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {thought.analysis.keywords.slice(0, 3).map((keyword: string, keyIndex: number) => (
+                            <span
+                              key={keyIndex}
+                              className="px-2 py-1 bg-blue-900/30 text-blue-200 rounded text-xs"
+                            >
+                              {keyword}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Sliding Whiteboard Panel */}
       {showWhiteboardPanel && (
