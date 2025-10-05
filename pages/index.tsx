@@ -36,6 +36,7 @@ import LibraryPanel from "@/components/LibraryPanel";
 import ChunkRail from "@/components/ChunkRail";
 import { MultiViewContainer } from "@/components/ViewContainer";
 import { useReaderSync, stableChunkId, analyzeContentDensity } from "@/lib/readerSync";
+import { useUnifiedNavigation } from "@/lib/useUnifiedNavigation";
 
 import {
   parseBookWithChapters,
@@ -203,6 +204,9 @@ export default function ThoughtUnitReader() {
     initializeContent,
     updateContentDensity
   } = useReaderSync();
+
+  // Unified navigation hook for consistent navigation across all components
+  const { jumpToPage, jumpToChapter, navigateProgrammatically } = useUnifiedNavigation();
 
   // Subscribe to global sync changes for cross-view synchronization
   useEffect(() => {
@@ -1049,6 +1053,7 @@ export default function ThoughtUnitReader() {
   /* =========================================================================
      🔹 Enhanced Page/TOC sync with chapter-aware navigation + global sync
   ========================================================================= */
+  // Unified navigation using the new system - all page changes go through here
   const syncToPage = (page: number, opts?: { reason?: 'SCROLL' | 'TOC_JUMP' | 'PROGRAMMATIC' }) => {
     const reason = opts?.reason || 'PROGRAMMATIC';
     console.log(`📄 index.tsx syncToPage called: navigating to page ${page} (current: ${currentPage}) reason: ${reason}`);
@@ -1060,69 +1065,82 @@ export default function ThoughtUnitReader() {
     }
     
     try {
-      // Update local state first
-      setCurrentPage(page);
-      let unit = pageToUnit(page, pdfPageCount, thoughtUnits.length);
-      
-        // Enhanced chapter-aware navigation for TOC jumps
-        if (reason === 'TOC_JUMP') {
-          console.log(`📄 TOC_JUMP: Attempting chapter-aware navigation to page ${page}`);
-          
-          // Try to find chapter from tableOfContents directly (more reliable)  
-          let nearestChapter: TOCEntry | null = null;
-          try {
-            // Find the chapter that contains this page
-            for (const tocEntry of tableOfContents) {
-              const tocPage = getTocPage(tocEntry);
-              if (tocPage && tocPage <= page) {
-                const nearestTocPage = nearestChapter ? getTocPage(nearestChapter) : undefined;
-                if (!nearestChapter || (nearestTocPage !== undefined && tocPage > nearestTocPage)) {
-                  nearestChapter = tocEntry;
-                }
-              }
+      // Use unified navigation system for TOC jumps
+      if (reason === 'TOC_JUMP') {
+        console.log(`📄 TOC_JUMP: Using unified navigation for chapter-aware navigation to page ${page}`);
+        
+        // Find the chapter that contains this page
+        let nearestChapter: TOCEntry | null = null;
+        for (const tocEntry of tableOfContents) {
+          const tocPage = getTocPage(tocEntry);
+          if (tocPage && tocPage <= page) {
+            const nearestTocPage = nearestChapter ? getTocPage(nearestChapter) : undefined;
+            if (!nearestChapter || (nearestTocPage !== undefined && tocPage > nearestTocPage)) {
+              nearestChapter = tocEntry;
             }
-            
-            if (nearestChapter) {
-              const chapterPage = getTocPage(nearestChapter) || page;
-              const chapterTitle = (nearestChapter as any).title || `Chapter at page ${chapterPage}`;
-              
-              console.log(`📄 TOC_JUMP: Found chapter "${chapterTitle}" starting at page ${chapterPage}`);
-              
-              // Calculate unit for the chapter start
-              const chapterUnit = pageToUnit(chapterPage, pdfPageCount, thoughtUnits.length);
-              
-              // Navigate to chapter start
-              setCurrentPage(chapterPage);
-              setCurrentThoughtUnit(chapterUnit);
-              
-              // Update global sync
-              updateSync({ 
-                page: chapterPage, 
-                unitIndex: chapterUnit 
-              }, 'toc');
-              
-              console.log(`📄 Chapter navigation complete: page ${chapterPage}, unit ${chapterUnit}`);
-              return; // Exit early on success
-            } else {
-              console.log(`📄 TOC_JUMP: No chapter found for page ${page}, using direct navigation`);
-            }
-          } catch (chapterError) {
-            console.warn(`📄 TOC_JUMP chapter lookup error:`, chapterError);
           }
+        }
+        
+        if (nearestChapter) {
+          const chapterTitle = (nearestChapter as any).title || `Chapter at page ${page}`;
+          console.log(`📄 TOC_JUMP: Found chapter "${chapterTitle}"`);
           
-          // Fallback: direct navigation to requested page
-          setCurrentThoughtUnit(unit);
-          updateSync({ page, unitIndex: unit }, 'toc');
-          console.log(`📄 TOC_JUMP fallback: page ${page}, unit ${unit}`);
+          // Use unified chapter navigation
+          jumpToChapter(chapterTitle, {
+            onSuccess: (resultPage, resultTitle) => {
+              console.log(`📄 TOC_JUMP: Successfully navigated to ${resultTitle} (page ${resultPage})`);
+              setCurrentPage(resultPage);
+              const unit = pageToUnit(resultPage, pdfPageCount, thoughtUnits.length);
+              setCurrentThoughtUnit(unit);
+            },
+            onError: (error) => {
+              console.warn(`📄 TOC_JUMP: Chapter navigation failed, using page navigation:`, error);
+              // Fallback to direct page navigation
+              jumpToPage(page, 'toc', {
+                onSuccess: (resultPage) => {
+                  console.log(`📄 TOC_JUMP: Page navigation success: ${resultPage}`);
+                  setCurrentPage(resultPage);
+                  const unit = pageToUnit(resultPage, pdfPageCount, thoughtUnits.length);
+                  setCurrentThoughtUnit(unit);
+                },
+                onError: (error) => {
+                  console.error(`📄 TOC_JUMP: Page navigation also failed:`, error);
+                }
+              });
+            }
+          });
         } else {
-        // Normal scroll/programmatic navigation with enhanced sync
-        setCurrentThoughtUnit(unit);
+          // No chapter found, use direct page navigation
+          console.log(`📄 TOC_JUMP: No chapter found, using direct page navigation`);
+          jumpToPage(page, 'toc', {
+            onSuccess: (resultPage) => {
+              console.log(`📄 TOC_JUMP: Direct page navigation success: ${resultPage}`);
+              setCurrentPage(resultPage);
+              const unit = pageToUnit(resultPage, pdfPageCount, thoughtUnits.length);
+              setCurrentThoughtUnit(unit);
+            }
+          });
+        }
+      } else {
+        // Normal scroll/programmatic navigation using unified system
+        const source = reason === 'SCROLL' ? 'pdf' : 'manual';
+        console.log(`📄 ${reason}: Using unified navigation with source: ${source}`);
         
-        // Use the enhanced sync store with proper source mapping
-        const syncSource = reason === 'SCROLL' ? 'pdf' : 'manual';
-        updateSync({ page, unitIndex: unit }, syncSource);
-        
-        console.log(`📄 ${reason} navigation complete: page ${page}, unit ${unit}, source: ${syncSource}`);
+        jumpToPage(page, source, {
+          onSuccess: (resultPage) => {
+            console.log(`📄 ${reason}: Navigation success: ${resultPage}`);
+            setCurrentPage(resultPage);
+            const unit = pageToUnit(resultPage, pdfPageCount, thoughtUnits.length);
+            setCurrentThoughtUnit(unit);
+          },
+          onError: (error) => {
+            console.error(`📄 ${reason}: Navigation error:`, error);
+            // Fallback: just update local state
+            setCurrentPage(page);
+            const unit = pageToUnit(page, pdfPageCount, thoughtUnits.length);
+            setCurrentThoughtUnit(unit);
+          }
+        });
       }
 
       // Auto-whiteboard trigger (unchanged)
@@ -1136,7 +1154,6 @@ export default function ThoughtUnitReader() {
         }
       }
       
-      console.log(`📄 index.tsx: Successfully navigated to page ${page}`);
     } catch (error) {
       console.error(`📄 index.tsx: Navigation error for page ${page}:`, error);
       
