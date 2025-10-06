@@ -137,7 +137,7 @@ export default React.memo(function LazyPDFViewer({
   onOutline,
 }: LazyPDFViewerProps) {
   const [zoom, setZoom] = useState<number>(scale);
-  const [pageInput, setPageInput] = useState<string>(String(currentPage));
+  const [pageInput, setPageInput] = useState<string>(String(Math.max(1, currentPage)));
   const [showToolbar, setShowToolbar] = useState<boolean>(true);
   
   // Page rendering optimization
@@ -205,9 +205,10 @@ export default React.memo(function LazyPDFViewer({
     }
   }, [pdfLoadState.document, onOutline, fileUrl]);
 
-  // Update page input when currentPage changes
+  // Update page input when currentPage changes - ensure it's never below 1
   useEffect(() => {
-    setPageInput(String(currentPage));
+    const safePage = Math.max(1, currentPage);
+    setPageInput(String(safePage));
     
     // Update preload range (current page ± 2)
     const newStart = Math.max(1, currentPage - 2);
@@ -247,29 +248,32 @@ export default React.memo(function LazyPDFViewer({
   const handlePageChangeWithSync = useCallback((newPage: number, source: 'scroll' | 'navigation' | 'programmatic' = 'navigation') => {
     console.log(`📄 LazyPDFViewer: Page change ${currentPage} -> ${newPage} (${source})`);
     
+    // Ensure newPage is always at least 1
+    const safePage = Math.max(1, newPage);
+    
     // Validate page bounds - only proceed if PDF is loaded and we have valid page count
     if (!pdfLoadState.isLoaded || pdfLoadState.pageCount === null) {
-      console.warn(`📄 LazyPDFViewer: PDF not loaded yet, cannot navigate to page ${newPage}`);
+      console.warn(`📄 LazyPDFViewer: PDF not loaded yet, cannot navigate to page ${safePage}`);
       return;
     }
 
-    if (newPage < 1 || newPage > pdfLoadState.pageCount) {
-      console.warn(`📄 LazyPDFViewer: Invalid page ${newPage}, bounds: 1-${pdfLoadState.pageCount}`);
+    if (safePage > pdfLoadState.pageCount) {
+      console.warn(`📄 LazyPDFViewer: Invalid page ${safePage}, max: ${pdfLoadState.pageCount}`);
       return;
     }
     
     startTimer();
     
     try {
-      setPage(newPage, source === 'scroll' ? 'pdf' : 'manual');
-      onPageChange(newPage);
+      setPage(safePage, source === 'scroll' ? 'pdf' : 'manual');
+      onPageChange(safePage);
       endTimer('render');
-      console.log(`📄 LazyPDFViewer: Successfully navigated to page ${newPage}`);
+      console.log(`📄 LazyPDFViewer: Successfully navigated to page ${safePage}`);
     } catch (error) {
-      console.error(`📄 LazyPDFViewer: Navigation error for page ${newPage}:`, error);
+      console.error(`📄 LazyPDFViewer: Navigation error for page ${safePage}:`, error);
       // Fallback
       try {
-        onPageChange(newPage);
+        onPageChange(safePage);
         console.log(`📄 LazyPDFViewer: Fallback navigation succeeded`);
       } catch (fallbackError) {
         console.error(`📄 LazyPDFViewer: Fallback navigation failed:`, fallbackError);
@@ -336,10 +340,14 @@ export default React.memo(function LazyPDFViewer({
   const handlePageInputSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     const pageNum = parseInt(pageInput, 10);
+    const safePage = Math.max(1, Math.min(pageNum || 1, numPages || 1));
+    
     if (!Number.isNaN(pageNum) && pageNum >= 1 && pageNum <= numPages) {
       handlePageChangeWithSync(pageNum, 'navigation');
     } else {
-      setPageInput(String(currentPage));
+      // Reset to current page if invalid input
+      const currentSafePage = Math.max(1, currentPage);
+      setPageInput(String(currentSafePage));
     }
   }, [pageInput, numPages, handlePageChangeWithSync, currentPage]);
 
@@ -396,7 +404,8 @@ export default React.memo(function LazyPDFViewer({
               aria-label="Page number"
             />
             <span className="ml-1 text-sm">
-              / {pdfLoadState.pageCount || (pdfLoadState.isLoading ? 'loading...' : '?')}
+              / {pdfLoadState.pageCount !== null ? pdfLoadState.pageCount : 
+                  pdfLoadState.isLoading ? '...' : '?'}
             </span>
           </form>
           <button
