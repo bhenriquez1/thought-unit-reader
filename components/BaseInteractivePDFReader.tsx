@@ -7,6 +7,7 @@ import {
   buildPageTextIndex, 
   type PageTextIndex
 } from "@/lib/anchorSync";
+import { usePDFLoading } from "@/lib/pdfLoadingManager";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -99,6 +100,13 @@ export default function BaseInteractivePDFReader({
   const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
   
   const pdfContainerRef = useRef<HTMLDivElement>(null);
+  
+  // PDF loading management
+  const pdfLoadState = usePDFLoading(pdfUrl, {
+    onProgress: (progress) => {
+      console.log(`PDF loading progress: ${progress}%`);
+    }
+  });
 
   // Load voices
   useEffect(() => {
@@ -224,24 +232,29 @@ export default function BaseInteractivePDFReader({
               <input
                 type="number"
                 min={1}
-                max={pdfPageCount || 999}
+                max={pdfLoadState.pageCount || pdfPageCount || 999}
                 value={currentPage}
                 onChange={(e) => {
                   const page = parseInt(e.target.value);
-                  if (page >= 1 && page <= (pdfPageCount || 999)) {
+                  const maxPage = pdfLoadState.pageCount || pdfPageCount || 999;
+                  if (page >= 1 && page <= maxPage) {
                     onPageChange(page);
                   }
                 }}
                 className="w-16 text-center text-sm border border-gray-300 rounded px-1"
+                disabled={pdfLoadState.isLoading}
               />
               <span className="text-sm text-gray-600">
-                of {pdfPageCount && pdfPageCount > 0 ? pdfPageCount : 'loading...'}
+                of {pdfLoadState.pageCount || pdfPageCount || (pdfLoadState.isLoading ? 'loading...' : '?')}
               </span>
             </div>
             
             <button
-              onClick={() => onPageChange(Math.min(pdfPageCount || 999, currentPage + 1))}
-              disabled={currentPage >= (pdfPageCount || 999)}
+              onClick={() => {
+                const maxPage = pdfLoadState.pageCount || pdfPageCount || 999;
+                onPageChange(Math.min(maxPage, currentPage + 1));
+              }}
+              disabled={currentPage >= (pdfLoadState.pageCount || pdfPageCount || 999) || pdfLoadState.isLoading}
               className="px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-300 disabled:opacity-50 text-white rounded text-sm transition-colors"
             >
               Next →
@@ -307,14 +320,76 @@ export default function BaseInteractivePDFReader({
       >
         <div className="flex justify-center">
           <div className="bg-white shadow-lg">
-            <Document file={pdfUrl}>
-              <Page 
-                pageNumber={currentPage} 
-                scale={pdfScale}
-                renderTextLayer={true}
-                renderAnnotationLayer={true}
-              />
-            </Document>
+            {pdfLoadState.hasError ? (
+              <div className="p-8 text-center">
+                <div className="text-red-600 mb-4">
+                  <div className="text-6xl mb-4">📄❌</div>
+                  <h3 className="text-lg font-semibold mb-2">PDF Loading Error</h3>
+                  <p className="text-sm text-gray-600 mb-4">{pdfLoadState.error}</p>
+                  <button
+                    onClick={() => pdfLoadState.retry()}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded"
+                  >
+                    🔄 Try Again
+                  </button>
+                </div>
+              </div>
+            ) : pdfLoadState.isLoading ? (
+              <div className="p-8 text-center">
+                <div className="text-blue-600 mb-4">
+                  <div className="text-6xl mb-4">📄⏳</div>
+                  <h3 className="text-lg font-semibold mb-2">Loading PDF...</h3>
+                  <div className="w-64 mx-auto bg-gray-200 rounded-full h-2 mb-2">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${pdfLoadState.progress}%` }}
+                    />
+                  </div>
+                  <p className="text-sm text-gray-600">{pdfLoadState.progress}% complete</p>
+                </div>
+              </div>
+            ) : pdfLoadState.isLoaded && pdfLoadState.document ? (
+              <Document 
+                file={pdfLoadState.document}
+                loading={
+                  <div className="p-8 text-center text-gray-600">
+                    <div className="text-4xl mb-2">📄</div>
+                    <p>Rendering page...</p>
+                  </div>
+                }
+                error={
+                  <div className="p-8 text-center text-red-600">
+                    <div className="text-4xl mb-2">📄❌</div>
+                    <p>Failed to render PDF page</p>
+                  </div>
+                }
+              >
+                <Page 
+                  pageNumber={currentPage} 
+                  scale={pdfScale}
+                  renderTextLayer={true}
+                  renderAnnotationLayer={true}
+                  loading={
+                    <div className="p-8 text-center text-gray-600">
+                      <div className="text-4xl mb-2">📄</div>
+                      <p>Loading page {currentPage}...</p>
+                    </div>
+                  }
+                  error={
+                    <div className="p-8 text-center text-red-600">
+                      <div className="text-4xl mb-2">📄❌</div>
+                      <p>Failed to load page {currentPage}</p>
+                    </div>
+                  }
+                />
+              </Document>
+            ) : (
+              <div className="p-8 text-center text-gray-600">
+                <div className="text-6xl mb-4">📄</div>
+                <h3 className="text-lg font-semibold mb-2">No PDF Loaded</h3>
+                <p className="text-sm">Please provide a valid PDF URL</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

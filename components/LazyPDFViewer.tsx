@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import { Document, Page, pdfjs } from "react-pdf";
 import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api";
 import { useReaderSync } from "@/lib/readerSync";
+import { usePDFLoading } from "@/lib/pdfLoadingManager";
 
 // Optimized worker configuration
 try {
@@ -135,13 +136,9 @@ export default React.memo(function LazyPDFViewer({
   onPageCount,
   onOutline,
 }: LazyPDFViewerProps) {
-  const [numPages, setNumPages] = useState<number>(0);
   const [zoom, setZoom] = useState<number>(scale);
   const [pageInput, setPageInput] = useState<string>(String(currentPage));
   const [showToolbar, setShowToolbar] = useState<boolean>(true);
-  const [errMsg, setErrMsg] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [loadingProgress, setLoadingProgress] = useState<number>(0);
   
   // Page rendering optimization
   const [renderedPages, setRenderedPages] = useState<Set<number>>(new Set([currentPage]));
@@ -153,6 +150,13 @@ export default React.memo(function LazyPDFViewer({
   
   const { loadTime, renderTime, startTimer, endTimer } = usePerformanceMonitor();
 
+  // PDF loading management with enhanced error handling
+  const pdfLoadState = usePDFLoading(toSameOrigin(fileUrl), {
+    onProgress: (progress) => {
+      console.log(`📄 LazyPDFViewer: Loading progress ${progress}%`);
+    }
+  });
+
   // Enhanced sync integration
   const { 
     setPage, 
@@ -160,6 +164,46 @@ export default React.memo(function LazyPDFViewer({
     stopVisibleTextObserver,
     syncPDFToChunk 
   } = useReaderSync();
+
+  // Derived state from PDF loading manager
+  const numPages = pdfLoadState.pageCount || 0;
+  const isLoading = pdfLoadState.isLoading;
+  const errMsg = pdfLoadState.error;
+
+  // Update parent when page count is available
+  useEffect(() => {
+    if (pdfLoadState.pageCount !== null && pdfLoadState.pageCount > 0) {
+      console.log(`✅ LazyPDFViewer: Page count available: ${pdfLoadState.pageCount}`);
+      onPageCount?.(pdfLoadState.pageCount);
+    }
+  }, [pdfLoadState.pageCount, onPageCount]);
+
+  // Handle outline extraction when document is loaded
+  useEffect(() => {
+    if (pdfLoadState.document && onOutline) {
+      console.log(`📋 LazyPDFViewer: Extracting outline from loaded document`);
+      
+      const extractOutline = async () => {
+        try {
+          const raw = await (pdfLoadState.document as any).getOutline?.();
+          if (raw?.length) {
+            const cacheKey = `outline-${fileUrl}`;
+            const items = await resolveOutline(pdfLoadState.document!, raw, cacheKey);
+            onOutline(items);
+            console.log(`📋 LazyPDFViewer: Outline extracted with ${items.length} items`);
+          } else {
+            onOutline([]);
+            console.log(`📋 LazyPDFViewer: No outline found in document`);
+          }
+        } catch (error) {
+          console.warn(`📋 LazyPDFViewer: Outline extraction failed:`, error);
+          onOutline?.([]);
+        }
+      };
+
+      extractOutline();
+    }
+  }, [pdfLoadState.document, onOutline, fileUrl]);
 
   // Update page input when currentPage changes
   useEffect(() => {
@@ -203,8 +247,14 @@ export default React.memo(function LazyPDFViewer({
   const handlePageChangeWithSync = useCallback((newPage: number, source: 'scroll' | 'navigation' | 'programmatic' = 'navigation') => {
     console.log(`📄 LazyPDFViewer: Page change ${currentPage} -> ${newPage} (${source})`);
     
-    if (newPage < 1 || (numPages > 0 && newPage > numPages)) {
-      console.warn(`📄 LazyPDFViewer: Invalid page ${newPage}, bounds: 1-${numPages}`);
+    // Validate page bounds - only proceed if PDF is loaded and we have valid page count
+    if (!pdfLoadState.isLoaded || pdfLoadState.pageCount === null) {
+      console.warn(`📄 LazyPDFViewer: PDF not loaded yet, cannot navigate to page ${newPage}`);
+      return;
+    }
+
+    if (newPage < 1 || newPage > pdfLoadState.pageCount) {
+      console.warn(`📄 LazyPDFViewer: Invalid page ${newPage}, bounds: 1-${pdfLoadState.pageCount}`);
       return;
     }
     
@@ -225,7 +275,7 @@ export default React.memo(function LazyPDFViewer({
         console.error(`📄 LazyPDFViewer: Fallback navigation failed:`, fallbackError);
       }
     }
-  }, [currentPage, numPages, setPage, onPageChange, startTimer, endTimer]);
+  }, [currentPage, pdfLoadState.isLoaded, pdfLoadState.pageCount, setPage, onPageChange, startTimer, endTimer]);
 
   // Optimized visible text observer
   useEffect(() => {
@@ -257,82 +307,11 @@ export default React.memo(function LazyPDFViewer({
     };
   }, [fileUrl, startVisibleTextObserver, stopVisibleTextObserver, syncPDFToChunk]);
 
-  // Memoized file specification
-  const fileSpec = useMemo(() => {
-    if (!fileUrl) return null;
-    const resolved = toSameOrigin(fileUrl);
-    return { url: resolved };
-  }, [fileUrl]);
-
-  // Document load success handler with performance tracking
-  const onDocumentLoadSuccess = useCallback(async (pdf: PDFDocumentProxy) => {
-    startTimer();
-    setErrMsg(null);
-    setNumPages(pdf.numPages);
-    setIsLoading(false);
-    
-    console.log(`✅ PDF loaded successfully: ${pdf.numPages} pages`);
-    onPageCount?.(pdf.numPages);
-
-    if (onOutline) {
-      try {
-        const raw = await (pdf as any).getOutline?.();
-        if (raw?.length) {
-          const cacheKey = `outline-${fileUrl}`;
-          const items = await resolveOutline(pdf, raw, cacheKey);
-          onOutline(items);
-          console.log(`📋 Outline loaded: ${items.length} items`);
-        } else {
-          onOutline([]);
-          console.log(`📋 No outline found`);
-        }
-      } catch (error) {
-        console.warn(`📋 Outline loading failed:`, error);
-        onOutline?.([]);
-      }
-    }
-    
-    endTimer('load');
-    console.log(`📊 PDF loaded in ${loadTime.toFixed(2)}ms`);
-  }, [fileUrl, onPageCount, onOutline, startTimer, endTimer, loadTime]);
-
-  const onDocumentLoadError = useCallback((err: unknown) => {
-    const errorObj = err as any;
-    const message = errorObj?.message || String(err);
-    const name = errorObj?.name || 'PDFError';
-    
-    console.error("❌ PDF Document Load Error:", { name, message, err });
-    
-    // Set a more user-friendly error message
-    const userMessage = message.includes('fetch') 
-      ? `Failed to fetch PDF. Please check if the file exists and is accessible.`
-      : message.includes('Invalid PDF')
-      ? `Invalid PDF file. Please ensure the file is not corrupted.`
-      : `PDF loading failed: ${message}`;
-    
-    setErrMsg(userMessage);
-    setIsLoading(false);
-    setNumPages(0); // Explicitly set to 0 to avoid showing "?"
-  }, []);
-
-  const onSourceError = useCallback((err: unknown) => {
-    const errorObj = err as any;
-    const message = errorObj?.message || String(err);
-    const name = errorObj?.name || 'SourceError';
-    
-    console.error("❌ PDF Source Error:", { name, message, err });
-    
-    // Set a more user-friendly error message
-    const userMessage = message.includes('NetworkError') || message.includes('fetch')
-      ? `Network error loading PDF. Check your internet connection and try again.`
-      : message.includes('cors')
-      ? `CORS error loading PDF. The PDF source may not allow cross-origin requests.`
-      : `PDF source error: ${message}`;
-    
-    setErrMsg(userMessage);
-    setIsLoading(false);
-    setNumPages(0); // Explicitly set to 0 to avoid showing "?"
-  }, []);
+  // Performance tracking for render operations
+  const onPageRenderSuccess = useCallback(() => {
+    endTimer('render');
+    console.log(`📊 Page rendered in ${renderTime.toFixed(2)}ms`);
+  }, [endTimer, renderTime]);
 
   // Optimized navigation handlers
   const handleZoomIn = useCallback(() => setZoom((z) => Math.min(z + 0.25, 3)), []);
@@ -369,21 +348,6 @@ export default React.memo(function LazyPDFViewer({
     if (selection && onTextSelect) onTextSelect(selection);
   }, [onTextSelect]);
 
-  // Loading progress simulation for better UX
-  useEffect(() => {
-    if (isLoading) {
-      const interval = setInterval(() => {
-        setLoadingProgress(prev => {
-          const newProgress = prev + Math.random() * 10;
-          return newProgress >= 95 ? 95 : newProgress;
-        });
-      }, 200);
-      
-      return () => clearInterval(interval);
-    } else {
-      setLoadingProgress(100);
-    }
-  }, [isLoading]);
 
   return (
     <div
@@ -392,7 +356,7 @@ export default React.memo(function LazyPDFViewer({
       onMouseUp={handleMouseUp}
     >
       {/* Enhanced Loading Indicator */}
-      {isLoading && (
+      {pdfLoadState.isLoading && (
         <div className="absolute inset-0 bg-gray-900 flex flex-col items-center justify-center z-50">
           <div className="text-center max-w-md">
             <div className="text-6xl mb-4 animate-pulse">📄</div>
@@ -402,15 +366,15 @@ export default React.memo(function LazyPDFViewer({
             <div className="w-full bg-gray-700 rounded-full h-2 mb-4">
               <div 
                 className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${loadingProgress}%` }}
+                style={{ width: `${pdfLoadState.progress}%` }}
               />
             </div>
             
             <p className="text-gray-400">
-              {loadingProgress < 30 && "Fetching PDF..."}
-              {loadingProgress >= 30 && loadingProgress < 60 && "Processing document..."}
-              {loadingProgress >= 60 && loadingProgress < 95 && "Preparing pages..."}
-              {loadingProgress >= 95 && "Almost ready!"}
+              {pdfLoadState.progress < 30 && "Fetching PDF..."}
+              {pdfLoadState.progress >= 30 && pdfLoadState.progress < 60 && "Processing document..."}
+              {pdfLoadState.progress >= 60 && pdfLoadState.progress < 95 && "Preparing pages..."}
+              {pdfLoadState.progress >= 95 && "Almost ready!"}
             </p>
           </div>
         </div>
@@ -431,7 +395,9 @@ export default React.memo(function LazyPDFViewer({
               className="w-12 text-center text-black rounded"
               aria-label="Page number"
             />
-            <span className="ml-1 text-sm">/ {numPages || "—"}</span>
+            <span className="ml-1 text-sm">
+              / {pdfLoadState.pageCount || (pdfLoadState.isLoading ? 'loading...' : '?')}
+            </span>
           </form>
           <button
             onClick={handleNextPage}
@@ -471,14 +437,25 @@ export default React.memo(function LazyPDFViewer({
         ref={pageContainerRef}
         className="relative flex justify-center items-start h-full overflow-auto p-4"
       >
-        {fileSpec && !isLoading ? (
+        {pdfLoadState.hasError ? (
+          <div className="p-8 text-center">
+            <div className="text-red-600 mb-4">
+              <div className="text-6xl mb-4">📄❌</div>
+              <h3 className="text-lg font-semibold mb-2">PDF Loading Error</h3>
+              <p className="text-sm text-gray-400 mb-4">{pdfLoadState.error}</p>
+              <button
+                onClick={() => pdfLoadState.retry()}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded"
+              >
+                🔄 Try Again
+              </button>
+            </div>
+          </div>
+        ) : pdfLoadState.isLoaded && pdfLoadState.document ? (
           <div className="relative">
             <Document
-              key={(fileSpec as any).url}
-              file={fileSpec}
-              onLoadSuccess={onDocumentLoadSuccess}
-              onLoadError={onDocumentLoadError}
-              onSourceError={onSourceError}
+              key={fileUrl}
+              file={pdfLoadState.document}
               loading={
                 <div className="flex items-center justify-center p-8">
                   <div className="animate-spin text-4xl">📄</div>
@@ -493,6 +470,7 @@ export default React.memo(function LazyPDFViewer({
                   scale={zoom}
                   renderTextLayer={pageNum === currentPage} // Only render text layer for current page
                   renderAnnotationLayer={pageNum === currentPage} // Only render annotations for current page
+                  onRenderSuccess={pageNum === currentPage ? onPageRenderSuccess : undefined}
                   loading={pageNum === currentPage ? 
                     <div className="flex items-center justify-center p-8">
                       <div className="animate-spin text-2xl">⏳</div>
@@ -504,26 +482,11 @@ export default React.memo(function LazyPDFViewer({
               ))}
             </Document>
           </div>
-        ) : !isLoading ? (
+        ) : !pdfLoadState.isLoading ? (
           <p className="text-gray-400">📂 No PDF loaded.</p>
         ) : null}
       </div>
 
-      {/* Enhanced Error Message */}
-      {errMsg && (
-        <div className="absolute inset-x-4 bottom-4 bg-red-600 text-white rounded-lg p-4 shadow-lg z-40">
-          <div className="flex items-start gap-3">
-            <div className="text-xl">❌</div>
-            <div className="flex-1">
-              <div className="font-semibold mb-1">PDF Loading Failed</div>
-              <div className="text-sm opacity-90">{errMsg}</div>
-              <div className="mt-2 text-xs opacity-75">
-                Try refreshing the page or uploading a different PDF file.
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
       
       {/* Memory usage indicator (development) */}
       {process.env.NODE_ENV === 'development' && (

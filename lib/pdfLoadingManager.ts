@@ -4,10 +4,12 @@ import * as pdfjsLib from "pdfjs-dist/build/pdf";
 import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api";
 
 // Configure PDF.js worker
-try {
-  pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
-} catch {
-  console.warn("PDF.js worker configuration failed, will use fallback");
+if (typeof window !== 'undefined') {
+  try {
+    pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+  } catch (error) {
+    console.warn("PDF.js worker configuration failed, will use fallback:", error);
+  }
 }
 
 export interface PDFLoadState {
