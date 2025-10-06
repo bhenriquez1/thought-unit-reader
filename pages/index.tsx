@@ -2050,14 +2050,25 @@ export default function ThoughtUnitReader() {
       <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-gray-800">
         <div className="flex items-center gap-2">
           <span className="text-sm opacity-80 mr-1">View:</span>
-          <button
-            onClick={() => setViewMode("original")}
-            className={`text-xs px-3 py-1 rounded ${
-              viewMode === "original" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
-            }`}
-          >
-            📄 Original PDF
-          </button>
+          {!isFeatureEnabled('DISABLE_ORIGINAL_PDF_VIEW') && (
+            <button
+              onClick={() => setViewMode("original")}
+              className={`text-xs px-3 py-1 rounded ${
+                viewMode === "original" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+              }`}
+            >
+              📄 Original PDF
+            </button>
+          )}
+          {isFeatureEnabled('DISABLE_ORIGINAL_PDF_VIEW') && (
+            <button
+              disabled
+              className="text-xs px-3 py-1 rounded bg-gray-600 opacity-50 cursor-not-allowed"
+              title="Original PDF view temporarily disabled due to loading issues"
+            >
+              📄 Original PDF ❌
+            </button>
+          )}
           <button
             onClick={() => setViewMode("hybrid")}
             className={`text-xs px-3 py-1 rounded ${

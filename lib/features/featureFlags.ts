@@ -45,6 +45,7 @@ interface FeatureFlags {
   DISABLE_PATTERN_TRAINING_HYBRID: FeatureConfig;
   ENABLE_UNIVERSAL_PATTERN_BUTLER: FeatureConfig;
   ENABLE_READER_TYPE_SELECTOR: FeatureConfig;
+  DISABLE_ORIGINAL_PDF_VIEW: FeatureConfig;
 }
 
 // Default feature configuration
@@ -184,6 +185,11 @@ const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   ENABLE_READER_TYPE_SELECTOR: {
     enabled: true,
     description: 'Enable reader-type toggle between Universal and NoteLab modes in UniversalPatternButlerReader'
+  },
+  
+  DISABLE_ORIGINAL_PDF_VIEW: {
+    enabled: true,
+    description: 'Temporarily disable original PDF view due to loading issues - routes users to working readers'
   }
 };
 
