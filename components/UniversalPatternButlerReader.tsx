@@ -1054,10 +1054,10 @@ export default function UniversalPatternButlerReader({
                     setTimeout(() => setScrollingProgrammatically(false), 300);
                   }}
                   className="w-12 text-center text-sm border border-indigo-300 rounded px-1"
-                  title={`Scroll or type to go to page (${pdfPageCount || '?'} total)`}
+                  title={`Scroll or type to go to page (${pdfPageCount && pdfPageCount > 0 ? pdfPageCount : 'loading...'} total)`}
                 />
                 <span className="text-xs text-gray-600 flex items-center gap-1">
-                  /{pdfPageCount || '?'}
+                  /{pdfPageCount && pdfPageCount > 0 ? pdfPageCount : 'loading...'}
                   {isScrolling && (
                     <span className="animate-pulse text-blue-500" title="Detecting page...">
                       🪜
