@@ -46,6 +46,7 @@ interface FeatureFlags {
   ENABLE_UNIVERSAL_PATTERN_BUTLER: FeatureConfig;
   ENABLE_READER_TYPE_SELECTOR: FeatureConfig;
   DISABLE_ORIGINAL_PDF_VIEW: FeatureConfig;
+  ENABLE_NOTELAB_PROTOTYPE_MODE: FeatureConfig;
 }
 
 // Default feature configuration
@@ -158,23 +159,28 @@ const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   
   // Prototype testing flags
   PROTOTYPE_TESTING_MODE: {
-    enabled: true,
-    description: 'Enable prototype testing mode - routes to UniversalPatternButlerReader'
+    enabled: false,
+    description: 'Disabled - now using unified reader architecture'
   },
   
   DISABLE_CLEAN_HYBRID_READER: {
-    enabled: true,
-    description: 'Temporarily disable CleanHybridReader for prototype testing'
+    enabled: false,
+    description: 'Clean Hybrid Reader enabled - integrated into unified reader'
   },
   
   DISABLE_PATTERN_VIEW: {
-    enabled: true,
-    description: 'Temporarily disable PatternView for prototype testing'
+    enabled: false,
+    description: 'Pattern View enabled - integrated into unified reader'
   },
   
   DISABLE_PATTERN_TRAINING_HYBRID: {
+    enabled: false,
+    description: 'Pattern Training enabled - integrated into unified reader'
+  },
+  
+  ENABLE_NOTELAB_PROTOTYPE_MODE: {
     enabled: true,
-    description: 'Temporarily disable PatternTrainingHybridReader for prototype testing'
+    description: 'Enable NoteLab as separate prototype mode like UniversalPatternButlerReader was'
   },
   
   ENABLE_UNIVERSAL_PATTERN_BUTLER: {

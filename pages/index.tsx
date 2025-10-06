@@ -1232,29 +1232,70 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // 🎯 PROTOTYPE TESTING MODE - Route to UniversalPatternButlerReader
-    if (isFeatureEnabled('PROTOTYPE_TESTING_MODE') && isFeatureEnabled('ENABLE_UNIVERSAL_PATTERN_BUTLER')) {
-      console.log('🎯 Prototype testing mode active - routing to UniversalPatternButlerReader');
+    // 📝 NOTELAB PROTOTYPE MODE - Similar to old UniversalPatternButlerReader prototype  
+    if (isFeatureEnabled('ENABLE_NOTELAB_PROTOTYPE_MODE') && viewMode === "notelab") {
+      console.log('📝 NoteLab prototype mode active - routing to NoteLabHybridReader');
       
+      // Show loading state during parsing
+      if (pdfParsingState.isLoading) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-green-900 to-emerald-900">
+            <div className="text-center max-w-2xl">
+              <div className="animate-spin text-6xl mb-4">📝</div>
+              <h3 className="text-3xl font-bold mb-4 text-white">Processing for NoteLab</h3>
+              <p className="text-lg opacity-90 mb-6 text-gray-200">
+                {pdfParsingState.progress}
+              </p>
+              <div className="flex items-center justify-center gap-2">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                <div className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // Show error state if parsing failed
+      if (pdfParsingState.error) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-red-900 to-emerald-900">
+            <div className="text-center max-w-2xl">
+              <div className="text-6xl mb-4">❌</div>
+              <h3 className="text-3xl font-bold mb-4 text-white">NoteLab Unavailable</h3>
+              <p className="text-lg mb-6 text-red-300">
+                {pdfParsingState.error}
+              </p>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-6 py-3 bg-green-600 hover:bg-green-500 rounded-lg text-white font-medium"
+              >
+                🔄 Try Again
+              </button>
+            </div>
+          </div>
+        );
+      }
+
       return fileUrl && thoughtUnits.length > 0 ? (
         <div className="h-full flex flex-col">
-          {/* Prototype Testing Header */}
-          <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white p-4 flex items-center justify-between">
+          {/* NoteLab Prototype Header */}
+          <div className="bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 text-white p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <span className="text-2xl">🎯</span>
+              <span className="text-2xl">📝</span>
               <div>
-                <h3 className="text-lg font-bold">Universal Pattern Butler Reader - PROTOTYPE</h3>
-                <p className="text-sm opacity-90">Advanced three-way component merger testing</p>
+                <h3 className="text-lg font-bold">NoteLab - Advanced Study Notes</h3>
+                <p className="text-sm opacity-90">Pattern-tagged notes with study levels and flashcard export</p>
               </div>
             </div>
             <div className="text-sm bg-white/20 backdrop-blur rounded-lg px-3 py-1">
-              Testing Mode Active
+              Prototype Mode
             </div>
           </div>
           
-          {/* Universal Pattern Butler Reader Component */}
+          {/* NoteLab Hybrid Reader Component */}
           <div className="flex-1 overflow-hidden">
-            <UniversalPatternButlerReader
+            <NoteLabHybridReader
               bookId={bookId}
               userId={USER_ID}
               pdfUrl={fileUrl}
@@ -1290,46 +1331,52 @@ export default function ThoughtUnitReader() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
-          <div className="text-center max-w-3xl">
-            <div className="text-8xl mb-6">🎯</div>
-            <h3 className="text-4xl font-bold mb-4 text-white">Universal Pattern Butler Reader</h3>
-            <p className="text-xl opacity-90 mb-8 text-gray-200">
-              Prototype Testing Mode - Advanced Three-Way Component Merger
+        <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-green-900 to-emerald-900">
+          <div className="text-center max-w-2xl">
+            <div className="text-6xl mb-4">📝</div>
+            <h3 className="text-3xl font-bold mb-4 text-white">NoteLab - Structured Study Notes</h3>
+            <p className="text-lg opacity-90 mb-6 text-gray-200">
+              Create organized, pattern-tagged notes with flashcard generation and study outline export
             </p>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 text-base">
-              <div className="bg-black/30 rounded-xl p-6 border border-green-500/40">
-                <div className="text-4xl mb-4">📖</div>
-                <h4 className="font-bold text-green-400 mb-2">Pattern Exploration</h4>
-                <p className="text-gray-300">Real-time universal pattern detection with confidence scoring</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8 text-sm">
+              <div className="bg-black/20 rounded-lg p-4 border border-green-500/30">
+                <div className="text-2xl mb-2">🏷️</div>
+                <h4 className="font-semibold text-green-400">Pattern Tagging</h4>
+                <p className="text-gray-300">Tag notes with DAT patterns for organization</p>
               </div>
-              <div className="bg-black/30 rounded-xl p-6 border border-blue-500/40">
-                <div className="text-4xl mb-4">🎯</div>
-                <h4 className="font-bold text-blue-400 mb-2">Active Training</h4>
-                <p className="text-gray-300">Step-by-step pattern application with self-assessment</p>
+              <div className="bg-black/20 rounded-lg p-4 border border-blue-500/30">
+                <div className="text-2xl mb-2">📇</div>
+                <h4 className="font-semibold text-blue-400">Flashcard Export</h4>
+                <p className="text-gray-300">Auto-generate flashcards from your notes</p>
               </div>
-              <div className="bg-black/30 rounded-xl p-6 border border-purple-500/40">
-                <div className="text-4xl mb-4">🧠</div>
-                <h4 className="font-bold text-purple-400 mb-2">Butler Analysis</h4>
-                <p className="text-gray-300">Advanced thought unit detection with metaphors</p>
+              <div className="bg-black/20 rounded-lg p-4 border border-purple-500/30">
+                <div className="text-2xl mb-2">📄</div>
+                <h4 className="font-semibold text-purple-400">Study Outlines</h4>
+                <p className="text-gray-300">Export organized study guides by pattern</p>
+              </div>
+              <div className="bg-black/20 rounded-lg p-4 border border-yellow-500/30">
+                <div className="text-2xl mb-2">🎯</div>
+                <h4 className="font-semibold text-yellow-400">Study Levels</h4>
+                <p className="text-gray-300">Basic, Intermediate, Advanced categorization</p>
+              </div>
+              <div className="bg-black/20 rounded-lg p-4 border border-pink-500/30">
+                <div className="text-2xl mb-2">🔗</div>
+                <h4 className="font-semibold text-pink-400">Thought Unit Links</h4>
+                <p className="text-gray-300">Notes linked to specific content sections</p>
+              </div>
+              <div className="bg-black/20 rounded-lg p-4 border border-orange-500/30">
+                <div className="text-2xl mb-2">🔍</div>
+                <h4 className="font-semibold text-orange-400">Smart Search</h4>
+                <p className="text-gray-300">Filter by pattern, level, and content</p>
               </div>
             </div>
           </div>
           
-          <label className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-400 hover:via-purple-400 hover:to-pink-400 text-white px-10 py-5 rounded-2xl cursor-pointer font-bold text-xl transition-all transform hover:scale-105 shadow-2xl">
-            📂 Upload PDF to Test Universal Pattern Butler
+          <label className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 text-white px-8 py-4 rounded-xl cursor-pointer font-semibold text-lg transition-all transform hover:scale-105 shadow-xl">
+            📂 Upload PDF to Start Note-Taking
             <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
           </label>
-          
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-400 mb-2">Testing prototype merger of:</p>
-            <div className="flex gap-4 text-xs">
-              <span className="bg-green-600/20 text-green-300 px-2 py-1 rounded">PatternView</span>
-              <span className="bg-blue-600/20 text-blue-300 px-2 py-1 rounded">CleanHybridReader</span>
-              <span className="bg-purple-600/20 text-purple-300 px-2 py-1 rounded">PatternTrainingHybridReader</span>
-            </div>
-          </div>
         </div>
       );
     }
@@ -1950,80 +1997,101 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // Original view (PDF)
+    // Unified Reader - Merged with Universal Pattern Butler features
     return fileUrl ? (
-      <div className="h-full" onMouseUp={sel.bind.onMouseUp}>
-        <div className="relative h-full">
-          <SmartPDFViewer
-            fileUrl={fileUrl}
+      <div className="h-full flex flex-col">
+        {/* Unified Reader Header */}
+        <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🎯</span>
+            <div>
+              <h3 className="text-lg font-bold">Universal Pattern Butler Reader</h3>
+              <p className="text-sm opacity-90">Unified reader with pattern detection, hybrid analysis, and original PDF view</p>
+            </div>
+          </div>
+          <div className="text-sm bg-white/20 backdrop-blur rounded-lg px-3 py-1">
+            Unified Mode
+          </div>
+        </div>
+        
+        {/* Universal Pattern Butler Reader Component */}
+        <div className="flex-1 overflow-hidden">
+          <UniversalPatternButlerReader
+            bookId={bookId}
+            userId={USER_ID}
+            pdfUrl={fileUrl}
             currentPage={currentPage}
+            pdfPageCount={pdfPageCount}
             onPageChange={(p) => syncToPage(p)}
-            scale={1.25}
+            thoughtUnits={thoughtUnits}
+            currentThoughtUnit={currentThoughtUnit}
+            setCurrentThoughtUnit={setCurrentThoughtUnit}
+            highlightedWord={highlightedWord}
+            setHighlightedWord={setHighlightedWord}
+            onWordClick={(w) => {
+              setHighlightedWord(w);
+              if (autoWhiteboard && w.trim()) {
+                setWbConcept(truncate(w, 600));
+                setWbContext(`p.${currentPage}`);
+                setShowWhiteboardPanel(true);
+              }
+            }}
             onTextSelect={(t) => sel.setSelectionText(t)}
-            onPageCount={(n) => {
-              console.log(`📄 PDF page count detected: ${n}`);
-              setPdfPageCount(n);
-              setPdfLoadingState('loaded');
-              setPdfError(null);
-              // Ensure global sync knows about page count
-              if (n > 1) {
-                updateSync({ page: Math.min(currentPage, n), unitIndex: currentThoughtUnit }, 'pdf');
-              }
-            }}
-            onOutline={(items) => {
-              const normalized = outlineToTOC(items as any);
-              if (normalized && normalized.length) {
-                setTableOfContents(normalized);
-              }
-            }}
+            onGenerateNote={handleOpenRightBrainNote}
+            selBind={sel.bind}
+            externalSelectionText={sel.selectionText}
+            fontSize={fontSize}
+            fontFamily={fontFamily}
+            lineSpacing={lineSpacing}
+            selectedVoice={selectedVoice || undefined}
+            onVoiceChange={setSelectedVoice}
+            speechRate={speechRate}
+            onSpeechRateChange={setSpeechRate}
+            tableOfContents={tableOfContents}
           />
-          
-          {/* PDF Loading Overlay */}
-          {pdfLoadingState === 'loading' && (
-            <div className="absolute inset-0 bg-gray-900/90 flex items-center justify-center z-50">
-              <div className="text-center text-white">
-                <div className="text-4xl mb-4 animate-pulse">📄</div>
-                <h3 className="text-lg font-semibold mb-2">Loading PDF...</h3>
-                <p className="text-sm opacity-75">Please wait while we prepare your document</p>
-              </div>
-            </div>
-          )}
-          
-          {/* PDF Error Overlay */}
-          {pdfLoadingState === 'error' && pdfError && (
-            <div className="absolute inset-0 bg-gray-900/90 flex items-center justify-center z-50">
-              <div className="bg-red-600 text-white rounded-lg p-6 max-w-md mx-4">
-                <div className="flex items-start gap-3">
-                  <div className="text-2xl">❌</div>
-                  <div className="flex-1">
-                    <h3 className="font-semibold mb-2">PDF Loading Failed</h3>
-                    <p className="text-sm opacity-90 mb-4">{pdfError}</p>
-                    <button
-                      onClick={() => {
-                        setPdfLoadingState('loading');
-                        setPdfError(null);
-                        // Force refresh the PDF
-                        setFileUrl('');
-                        setTimeout(() => setFileUrl(fileUrl), 100);
-                      }}
-                      className="bg-white text-red-600 px-4 py-2 rounded font-medium hover:bg-gray-100 transition-colors"
-                    >
-                      🔄 Try Again
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     ) : (
-      <div className="flex flex-col items-center justify-center h-full gap-4">
-        <p>📂 Upload a PDF to begin</p>
-        <label className="bg-yellow-500 text-black px-4 py-2 rounded cursor-pointer">
-          Upload PDF
+      <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
+        <div className="text-center max-w-3xl">
+          <div className="text-8xl mb-6">🎯</div>
+          <h3 className="text-4xl font-bold mb-4 text-white">Universal Pattern Butler Reader</h3>
+          <p className="text-xl opacity-90 mb-8 text-gray-200">
+            Unified reader with pattern detection, hybrid analysis, PDF viewing, and reader-type selector
+          </p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 text-base">
+            <div className="bg-black/30 rounded-xl p-6 border border-green-500/40">
+              <div className="text-4xl mb-4">📖</div>
+              <h4 className="font-bold text-green-400 mb-2">Universal Reader</h4>
+              <p className="text-gray-300">Pattern exploration with PDF viewing and navigation</p>
+            </div>
+            <div className="bg-black/30 rounded-xl p-6 border border-blue-500/40">
+              <div className="text-4xl mb-4">🎯</div>
+              <h4 className="font-bold text-blue-400 mb-2">Pattern Training</h4>
+              <p className="text-gray-300">Step-by-step pattern application with self-assessment</p>
+            </div>
+            <div className="bg-black/30 rounded-xl p-6 border border-purple-500/40">
+              <div className="text-4xl mb-4">🧠</div>
+              <h4 className="font-bold text-purple-400 mb-2">Butler Analysis</h4>
+              <p className="text-gray-300">Advanced thought unit detection with metaphors</p>
+            </div>
+          </div>
+        </div>
+        
+        <label className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-400 hover:via-purple-400 hover:to-pink-400 text-white px-10 py-5 rounded-2xl cursor-pointer font-bold text-xl transition-all transform hover:scale-105 shadow-2xl">
+          📂 Upload PDF to Access Unified Reader
           <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
         </label>
+        
+        <div className="mt-6 text-center">
+          <p className="text-sm text-gray-400 mb-2">Includes all features from:</p>
+          <div className="flex gap-4 text-xs">
+            <span className="bg-green-600/20 text-green-300 px-2 py-1 rounded">Hybrid Reader</span>
+            <span className="bg-blue-600/20 text-blue-300 px-2 py-1 rounded">Pattern Training</span>
+            <span className="bg-purple-600/20 text-purple-300 px-2 py-1 rounded">Original PDF View</span>
+          </div>
+        </div>
       </div>
     );
   };
@@ -2049,41 +2117,22 @@ export default function ThoughtUnitReader() {
       {/* Quick controls */}
       <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-gray-800">
         <div className="flex items-center gap-2">
-          <span className="text-sm opacity-80 mr-1">View:</span>
-          {!isFeatureEnabled('DISABLE_ORIGINAL_PDF_VIEW') && (
-            <button
-              onClick={() => setViewMode("original")}
-              className={`text-xs px-3 py-1 rounded ${
-                viewMode === "original" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
-              }`}
-            >
-              📄 Original PDF
-            </button>
-          )}
-          {isFeatureEnabled('DISABLE_ORIGINAL_PDF_VIEW') && (
-            <button
-              disabled
-              className="text-xs px-3 py-1 rounded bg-gray-600 opacity-50 cursor-not-allowed"
-              title="Original PDF view temporarily disabled due to loading issues"
-            >
-              📄 Original PDF ❌
-            </button>
-          )}
+          <span className="text-sm opacity-80 mr-1">Reader:</span>
           <button
-            onClick={() => setViewMode("hybrid")}
+            onClick={() => setViewMode("original")}
             className={`text-xs px-3 py-1 rounded ${
-              viewMode === "hybrid" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+              viewMode === "original" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
             }`}
           >
-            🔄 Hybrid
+            🎯 Unified Reader
           </button>
           <button
-            onClick={() => setViewMode("pattern")}
+            onClick={() => setViewMode("rightbrain")}
             className={`text-xs px-3 py-1 rounded ${
-              viewMode === "pattern" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+              viewMode === "rightbrain" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
             }`}
           >
-            🎯 Pattern Analysis
+            🧠 Right-Brain
           </button>
           <button
             onClick={() => setViewMode("notelab")}
@@ -2091,7 +2140,7 @@ export default function ThoughtUnitReader() {
               viewMode === "notelab" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
             }`}
           >
-            📝 NoteLab Visual
+            📝 NoteLab Prototype
           </button>
         </div>
 
