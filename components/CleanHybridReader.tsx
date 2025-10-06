@@ -1283,7 +1283,7 @@ export default function CleanHybridReader({
                   }}
                   className="w-12 text-center text-sm border border-amber-300 rounded px-1"
                 />
-                <span className="text-xs text-gray-600">/{pdfPageCount || '?'}</span>
+                <span className="text-xs text-gray-600">/{pdfPageCount && pdfPageCount > 0 ? pdfPageCount : 'loading...'}</span>
               </div>
               
               <button
