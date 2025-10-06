@@ -102,7 +102,10 @@ interface UniversalPatternButlerReaderProps {
 // Combine universal patterns with DAT patterns
 const ALL_PATTERNS: Pattern[] = [...UNIVERSAL_PATTERNS, ...DAT_PATTERNS];
 
-// Mode Types
+// Reader Type (top-level selector)
+type ReaderType = 'universal' | 'notelab';
+
+// Mode Types (within Universal Reader)
 type ReaderMode = 'exploration' | 'training' | 'butler';
 
 // Training Workflow State
@@ -254,6 +257,113 @@ function generateAdvancedButlerMetaphors(text: string, patterns: Pattern[]): Arr
   return metaphors.slice(0, 3); // Limit to prevent overwhelming
 }
 
+// 📝 NOTELAB ANALYSIS FUNCTIONS - Integrated from NoteLabHybridReader
+function analyzeForNoteWorthy(text: string): {
+  keyTerms: string[];
+  definitions: Array<{term: string, definition: string}>;
+  processes: string[];
+  relationships: string[];
+  examples: string[];
+  warnings: string[];
+} {
+  const lowerText = text.toLowerCase();
+  
+  // Key term extraction
+  const keyTerms: string[] = [];
+  const medicalTerms = text.match(/\b[A-Z][a-z]+(?:osis|itis|emia|uria|pathy|trophy|plasia|genesis|lysis|ectomy|otomy|ostomy|gram|graph|scope|meter)\b/g) || [];
+  const chemicalTerms = text.match(/\b(?:acid|base|ion|molecule|compound|reaction|catalyst|enzyme|hormone|protein|amino|nucleic|carbohydrate|lipid|steroid)\b/gi) || [];
+  const biologicalTerms = text.match(/\b(?:cell|tissue|organ|system|metabolism|homeostasis|evolution|genetics|DNA|RNA|chromosome|gene|allele|protein|enzyme)\b/gi) || [];
+  keyTerms.push(...medicalTerms, ...chemicalTerms, ...biologicalTerms);
+
+  // Definition extraction
+  const definitions: Array<{term: string, definition: string}> = [];
+  const definitionPattern = /\b(\w+(?:\s+\w+){0,2})\s+(is|are|means|refers to|defined as)\s+([^.!?]+)/gi;
+  let match;
+  while ((match = definitionPattern.exec(text)) !== null && definitions.length < 5) {
+    definitions.push({
+      term: match[1].trim(),
+      definition: match[3].trim()
+    });
+  }
+
+  // Process extraction
+  const processes = text.match(/(?:process|mechanism|pathway|cycle|reaction|synthesis|breakdown|metabolism|transport|signaling)(?:\s+of\s+\w+)?/gi) || [];
+  
+  // Relationship extraction
+  const relationships = text.match(/(?:causes?|leads? to|results? in|affects?|influences?|controls?|regulates?|inhibits?|activates?)(?:\s+\w+){1,3}/gi) || [];
+  
+  // Example extraction
+  const examples = text.match(/(?:for example|such as|including|like|specifically|namely|e\.g\.)\s+([^.!?]+)/gi) || [];
+  
+  // Warning/caution extraction
+  const warnings = text.match(/(?:warning|caution|note|important|critical|dangerous|avoid|do not|never|always)(?:\s+\w+){1,5}/gi) || [];
+
+  return {
+    keyTerms: [...new Set(keyTerms)].slice(0, 10),
+    definitions,
+    processes: [...new Set(processes)].slice(0, 5),
+    relationships: [...new Set(relationships)].slice(0, 5),
+    examples: [...new Set(examples)].slice(0, 3),
+    warnings: [...new Set(warnings)].slice(0, 3)
+  };
+}
+
+// Generate study questions from content
+function generateStudyQuestions(text: string): string[] {
+  const questions: string[] = [];
+  
+  // Extract key concepts for questions
+  const concepts = text.match(/\b(?:concept|principle|theory|law|rule|method|process|mechanism|system|structure|function)\b/gi) || [];
+  const entities = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?/g) || [];
+  
+  // Generate different types of questions
+  if (concepts.length > 0) {
+    questions.push(`What is the main ${concepts[0]?.toLowerCase()} discussed in this section?`);
+    questions.push(`How does ${concepts[0]?.toLowerCase()} relate to other concepts?`);
+  }
+  
+  if (entities.length > 0) {
+    questions.push(`What is the significance of ${entities[0]}?`);
+    questions.push(`What would happen if ${entities[0]} was altered or removed?`);
+  }
+  
+  // Add general comprehension questions
+  questions.push("What are the key takeaways from this content?");
+  questions.push("How can this information be applied in practice?");
+  questions.push("What connections can you make to previously learned material?");
+  
+  return questions.slice(0, 5);
+}
+
+// NoteLab-specific Butler analysis
+interface NoteButlerAnalysis extends ButlerAnalysisResult {
+  noteWorthyContent: string[];
+  keyTerms: string[];
+  summaryPoints: string[];
+  studyQuestions: string[];
+  memoryAids: string[];
+  visualConcepts: string[];
+}
+
+// Quick note creation functions
+function createQuickNote(text: string, template: string, page: number): string {
+  const timestamp = new Date().toLocaleString();
+  const pageRef = `Page ${page}`;
+  
+  switch (template) {
+    case 'cornell':
+      return `# Cornell Notes - ${pageRef}\n\n**Date:** ${timestamp}\n\n## Notes\n${text}\n\n## Cues\n- \n\n## Summary\n- \n\n---\n`;
+    case 'outline':
+      return `# Outline Notes - ${pageRef}\n\n**Date:** ${timestamp}\n\nI. Main Topic\n   A. ${text}\n      1. Supporting detail\n      2. \n   B. \n\nII. \n\n---\n`;
+    case 'mind-map':
+      return `# Mind Map - ${pageRef}\n\n**Date:** ${timestamp}\n\n**Central Concept:** ${text}\n\n**Connected Ideas:**\n- Branch 1: \n- Branch 2: \n- Branch 3: \n\n**Relationships:**\n- Connection A → B: \n- Connection B → C: \n\n---\n`;
+    case 'flashcard':
+      return `# Flashcard - ${pageRef}\n\n**Date:** ${timestamp}\n\n**Front:** What is ${text}?\n\n**Back:** \n\n**Hint:** \n\n**Tags:** #page${page}\n\n---\n`;
+    default:
+      return `# Quick Note - ${pageRef}\n\n**Date:** ${timestamp}\n\n${text}\n\n**Key Points:**\n- \n\n**Questions:**\n- \n\n---\n`;
+  }
+}
+
 export default function UniversalPatternButlerReader({
   bookId,
   userId,
@@ -292,10 +402,19 @@ export default function UniversalPatternButlerReader({
     onPageChange: typeof onPageChange,
     timestamp: new Date().toLocaleTimeString()
   });
+  // 🎯 READER TYPE STATE - Top-level selector between Universal and NoteLab
+  const [readerType, setReaderType] = useState<ReaderType>('universal');
+  
   // Core State Management - DEFAULT TO TRAINING MODE
   const [currentMode, setCurrentMode] = useState<ReaderMode>('training');
   const [selectionText, setSelectionText] = useState("");
   const [user, setUser] = useState<User | null>(null);
+
+  // 📝 NOTELAB-SPECIFIC STATE - Study levels, templates, notes
+  const [studyLevel, setStudyLevel] = useState<'basic' | 'intermediate' | 'advanced'>('intermediate');
+  const [noteTemplate, setNoteTemplate] = useState<'outline' | 'cornell' | 'mind-map' | 'flashcard'>('outline');
+  const [quickNotes, setQuickNotes] = useState<Record<number, string>>({});
+  const [showNotePanel, setShowNotePanel] = useState(true);
   
   // PDF interaction state  
   const [pdfScale, setPdfScale] = useState(1.3);
@@ -944,62 +1063,129 @@ export default function UniversalPatternButlerReader({
 
         {/* Main PDF View - Responsive width based on TOC visibility */}
         <div className={`${tocVisible ? 'w-1/2' : 'w-3/5'} bg-white border-r border-gray-200 transition-all duration-300`}>
-          {/* Universal Header with Mode Switching */}
+          {/* Universal Header with Reader Type & Mode Switching */}
           <div className="flex items-center justify-between p-3 bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 border-b border-indigo-200">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
-                <span className="text-2xl">🎯</span>
+                <span className="text-2xl">{readerType === 'universal' ? '🎯' : '📝'}</span>
                 <div>
-                  <h3 className="text-lg font-bold text-indigo-800">Universal Pattern Butler</h3>
-                  <p className="text-xs text-indigo-600">Advanced analysis • Active training • Butler speech</p>
+                  <h3 className="text-lg font-bold text-indigo-800">
+                    {readerType === 'universal' ? 'Universal Pattern Butler' : 'NoteLab Reader'}
+                  </h3>
+                  <p className="text-xs text-indigo-600">
+                    {readerType === 'universal' 
+                      ? 'Advanced analysis • Active training • Butler speech'
+                      : 'Smart note-taking • Study optimization • Template-based'
+                    }
+                  </p>
                 </div>
               </div>
               
-              {/* Mode Toggle */}
-              <div className="flex items-center gap-1 bg-white/70 backdrop-blur rounded-lg p-1">
+              {/* Reader Type Toggle */}
+              <div className="flex items-center gap-1 bg-white/90 backdrop-blur rounded-lg p-1 border border-indigo-300">
                 <button
                   onClick={() => {
-                    debugLog(`🖱️ CLICK: Mode Switch → Exploration (from ${currentMode})`);
-                    debugLog(`📊 STATE_CHANGE: currentMode: ${currentMode} → exploration`);
-                    setCurrentMode('exploration');
+                    debugLog(`🔄 READER TYPE SWITCH: ${readerType} → universal`);
+                    setReaderType('universal');
                   }}
-                  className={`px-3 py-2 rounded text-sm font-medium transition-all ${
-                    currentMode === 'exploration' 
-                      ? 'bg-green-500 text-white shadow-md' 
+                  className={`px-2 py-1 rounded text-xs font-medium transition-all ${
+                    readerType === 'universal' 
+                      ? 'bg-indigo-600 text-white shadow-sm' 
+                      : 'text-indigo-700 hover:bg-indigo-100'
+                  }`}
+                >
+                  🎯 Universal
+                </button>
+                <button
+                  onClick={() => {
+                    debugLog(`🔄 READER TYPE SWITCH: ${readerType} → notelab`);
+                    setReaderType('notelab');
+                  }}
+                  className={`px-2 py-1 rounded text-xs font-medium transition-all ${
+                    readerType === 'notelab' 
+                      ? 'bg-green-600 text-white shadow-sm' 
                       : 'text-green-700 hover:bg-green-100'
                   }`}
                 >
-                  📖 Exploration
-                </button>
-                <button
-                  onClick={() => {
-                    debugLog(`🖱️ CLICK: Mode Switch → Training (from ${currentMode})`);
-                    debugLog(`📊 STATE_CHANGE: currentMode: ${currentMode} → training`);
-                    setCurrentMode('training');
-                  }}
-                  className={`px-3 py-2 rounded text-sm font-medium transition-all ${
-                    currentMode === 'training' 
-                      ? 'bg-blue-500 text-white shadow-md' 
-                      : 'text-blue-700 hover:bg-blue-100'
-                  }`}
-                >
-                  🎯 Training
-                </button>
-                <button
-                  onClick={() => {
-                    debugLog(`🖱️ CLICK: Mode Switch → Butler (from ${currentMode})`);
-                    debugLog(`📊 STATE_CHANGE: currentMode: ${currentMode} → butler`);
-                    setCurrentMode('butler');
-                  }}
-                  className={`px-3 py-2 rounded text-sm font-medium transition-all ${
-                    currentMode === 'butler' 
-                      ? 'bg-purple-500 text-white shadow-md' 
-                      : 'text-purple-700 hover:bg-purple-100'
-                  }`}
-                >
-                  🧠 Butler
+                  📝 NoteLab
                 </button>
               </div>
+              
+              {/* Universal Mode Toggle - Only show for Universal reader */}
+              {readerType === 'universal' && (
+                <div className="flex items-center gap-1 bg-white/70 backdrop-blur rounded-lg p-1">
+                  <button
+                    onClick={() => {
+                      debugLog(`🖱️ CLICK: Mode Switch → Exploration (from ${currentMode})`);
+                      debugLog(`📊 STATE_CHANGE: currentMode: ${currentMode} → exploration`);
+                      setCurrentMode('exploration');
+                    }}
+                    className={`px-3 py-2 rounded text-sm font-medium transition-all ${
+                      currentMode === 'exploration' 
+                        ? 'bg-green-500 text-white shadow-md' 
+                        : 'text-green-700 hover:bg-green-100'
+                    }`}
+                  >
+                    📖 Exploration
+                  </button>
+                  <button
+                    onClick={() => {
+                      debugLog(`🖱️ CLICK: Mode Switch → Training (from ${currentMode})`);
+                      debugLog(`📊 STATE_CHANGE: currentMode: ${currentMode} → training`);
+                      setCurrentMode('training');
+                    }}
+                    className={`px-3 py-2 rounded text-sm font-medium transition-all ${
+                      currentMode === 'training' 
+                        ? 'bg-blue-500 text-white shadow-md' 
+                        : 'text-blue-700 hover:bg-blue-100'
+                    }`}
+                  >
+                    🎯 Training
+                  </button>
+                  <button
+                    onClick={() => {
+                      debugLog(`🖱️ CLICK: Mode Switch → Butler (from ${currentMode})`);
+                      debugLog(`📊 STATE_CHANGE: currentMode: ${currentMode} → butler`);
+                      setCurrentMode('butler');
+                    }}
+                    className={`px-3 py-2 rounded text-sm font-medium transition-all ${
+                      currentMode === 'butler' 
+                        ? 'bg-purple-500 text-white shadow-md' 
+                        : 'text-purple-700 hover:bg-purple-100'
+                    }`}
+                  >
+                    🧠 Butler
+                  </button>
+                </div>
+              )}
+              
+              {/* NoteLab Controls - Only show for NoteLab reader */}
+              {readerType === 'notelab' && (
+                <div className="flex items-center gap-2">
+                  {/* Study Level Selector */}
+                  <select
+                    value={studyLevel}
+                    onChange={(e) => setStudyLevel(e.target.value as any)}
+                    className="px-2 py-1 bg-white/80 border border-green-300 rounded text-xs"
+                  >
+                    <option value="basic">📚 Basic</option>
+                    <option value="intermediate">🎯 Intermediate</option>
+                    <option value="advanced">🚀 Advanced</option>
+                  </select>
+                  
+                  {/* Note Template Selector */}
+                  <select
+                    value={noteTemplate}
+                    onChange={(e) => setNoteTemplate(e.target.value as any)}
+                    className="px-2 py-1 bg-white/80 border border-green-300 rounded text-xs"
+                  >
+                    <option value="outline">📋 Outline</option>
+                    <option value="cornell">📓 Cornell</option>
+                    <option value="mind-map">🗺️ Mind Map</option>
+                    <option value="flashcard">💳 Flashcard</option>
+                  </select>
+                </div>
+              )}
             </div>
             
             {/* Navigation Controls */}
@@ -1325,15 +1511,17 @@ export default function UniversalPatternButlerReader({
             </div>
           </div>
 
-          {/* Content Area - Mode Specific */}
+          {/* Content Area - Reader Type Conditional Rendering */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             
             {/* Current Selection Display */}
             {effectiveSelection && (
               <div className={`border rounded-lg p-3 ${
-                currentMode === 'exploration' ? 'bg-green-50 border-green-200' :
-                currentMode === 'training' ? 'bg-blue-50 border-blue-200' :
-                'bg-purple-50 border-purple-200'
+                readerType === 'universal' 
+                  ? (currentMode === 'exploration' ? 'bg-green-50 border-green-200' :
+                     currentMode === 'training' ? 'bg-blue-50 border-blue-200' :
+                     'bg-purple-50 border-purple-200')
+                  : 'bg-green-50 border-green-200'
               }`}>
                 <h5 className="text-sm font-semibold mb-2">📝 Selected Text</h5>
                 <p className="text-sm text-gray-700 italic mb-3">
@@ -1344,74 +1532,106 @@ export default function UniversalPatternButlerReader({
                   <button
                     onClick={() => speakText(effectiveSelection)}
                     className={`px-2 py-1 rounded text-xs text-white ${
-                      currentMode === 'exploration' ? 'bg-green-600 hover:bg-green-500' :
-                      currentMode === 'training' ? 'bg-blue-600 hover:bg-blue-500' :
-                      'bg-purple-600 hover:bg-purple-500'
+                      readerType === 'universal' 
+                        ? (currentMode === 'exploration' ? 'bg-green-600 hover:bg-green-500' :
+                           currentMode === 'training' ? 'bg-blue-600 hover:bg-blue-500' :
+                           'bg-purple-600 hover:bg-purple-500')
+                        : 'bg-green-600 hover:bg-green-500'
                     }`}
                   >
                     🔊 Read
                   </button>
-                  <button
-                    onClick={() => onGenerateNote?.(effectiveSelection, undefined, "highYield")}
-                    className="px-2 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs"
-                  >
-                    📝 Note
-                  </button>
+                  
+                  {readerType === 'notelab' && (
+                    <>
+                      {/* NoteLab Template Quick Actions */}
+                      <button
+                        onClick={() => {
+                          const note = createQuickNote(effectiveSelection, noteTemplate, currentPage);
+                          onGenerateNote?.(note, undefined, "highYield");
+                        }}
+                        className="px-2 py-1 bg-green-600 hover:bg-green-500 text-white rounded text-xs"
+                      >
+                        📝 {noteTemplate.charAt(0).toUpperCase() + noteTemplate.slice(1)}
+                      </button>
+                      <button
+                        onClick={() => {
+                          const flashcard = createQuickNote(effectiveSelection, 'flashcard', currentPage);
+                          onGenerateNote?.(flashcard, undefined, "highYield");
+                        }}
+                        className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs"
+                      >
+                        💳 Card
+                      </button>
+                    </>
+                  )}
+                  
+                  {readerType === 'universal' && (
+                    <button
+                      onClick={() => onGenerateNote?.(effectiveSelection, undefined, "highYield")}
+                      className="px-2 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs"
+                    >
+                      📝 Note
+                    </button>
+                  )}
                 </div>
               </div>
             )}
 
-            {/* EXPLORATION MODE */}
-            {currentMode === 'exploration' && (
-              <div className="space-y-4">
-                <h5 className="text-sm font-semibold text-green-700">🔍 Detected Patterns</h5>
-                
-                {detectedPatterns.length > 0 ? (
-                  <div className="space-y-3">
-                    {detectedPatterns.map((pattern, idx) => (
-                      <div key={idx} className="border border-green-200 rounded-lg p-3 bg-green-50">
-                        <div className="flex items-center justify-between mb-2">
-                          <h6 className="text-sm font-medium text-green-700">{pattern.name}</h6>
-                          <span className="text-xs px-2 py-1 bg-green-200 text-green-800 rounded">
-                            {UNIVERSAL_PATTERN_CATEGORIES[pattern.category]}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-600 mb-2">{pattern.description}</p>
-                        
-                        {(pattern as any).confidence && (
-                          <div className="text-xs text-green-600 mb-2">
-                            Confidence: {Math.round((pattern as any).confidence * 100)}%
+            {/* 🎯 UNIVERSAL READER CONTENT */}
+            {readerType === 'universal' && (
+              <>
+                {/* EXPLORATION MODE */}
+                {currentMode === 'exploration' && (
+                  <div className="space-y-4">
+                    <h5 className="text-sm font-semibold text-green-700">🔍 Detected Patterns</h5>
+                    
+                    {detectedPatterns.length > 0 ? (
+                      <div className="space-y-3">
+                        {detectedPatterns.map((pattern, idx) => (
+                          <div key={idx} className="border border-green-200 rounded-lg p-3 bg-green-50">
+                            <div className="flex items-center justify-between mb-2">
+                              <h6 className="text-sm font-medium text-green-700">{pattern.name}</h6>
+                              <span className="text-xs px-2 py-1 bg-green-200 text-green-800 rounded">
+                                {UNIVERSAL_PATTERN_CATEGORIES[pattern.category]}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-600 mb-2">{pattern.description}</p>
+                            
+                            {(pattern as any).confidence && (
+                              <div className="text-xs text-green-600 mb-2">
+                                Confidence: {Math.round((pattern as any).confidence * 100)}%
+                              </div>
+                            )}
+                            
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => speakText(`${pattern.name}: ${pattern.description}`)}
+                                className="px-2 py-1 bg-green-600 hover:bg-green-500 text-white rounded text-xs"
+                              >
+                                🔊 Explain
+                              </button>
+                              <button
+                                onClick={() => setCurrentMode('training')}
+                                className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs"
+                              >
+                                🎯 Practice
+                              </button>
+                            </div>
                           </div>
-                        )}
-                        
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => speakText(`${pattern.name}: ${pattern.description}`)}
-                            className="px-2 py-1 bg-green-600 hover:bg-green-500 text-white rounded text-xs"
-                          >
-                            🔊 Explain
-                          </button>
-                          <button
-                            onClick={() => setCurrentMode('training')}
-                            className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs"
-                          >
-                            🎯 Practice
-                          </button>
-                        </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <div className="text-4xl mb-2">🔍</div>
-                    <p>Select text to detect patterns</p>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        <div className="text-4xl mb-2">🔍</div>
+                        <p>Select text to detect patterns</p>
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
-            )}
 
-            {/* TRAINING MODE */}
-            {currentMode === 'training' && (
+                {/* TRAINING MODE */}
+                {currentMode === 'training' && (
               <div className="space-y-4">
                 {/* 🧠 Intelligent Learning Analytics Dashboard */}
                 {userModel && adaptiveLearningEngine && (
@@ -1630,93 +1850,261 @@ export default function UniversalPatternButlerReader({
               </div>
             )}
 
-            {/* BUTLER MODE */}
-            {currentMode === 'butler' && (
-              <div className="space-y-4">
-                <h5 className="text-sm font-semibold text-purple-700">🧠 Butler Analysis</h5>
-                
-                {butlerAnalysis ? (
+                {/* BUTLER MODE */}
+                {currentMode === 'butler' && (
                   <div className="space-y-4">
-                    {/* Butler Highlights */}
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                      <h6 className="font-semibold text-amber-700 mb-2">Thought Units Detected</h6>
-                      <div className="grid grid-cols-2 gap-2 mb-3">
-                        <div className="bg-white rounded p-2 text-center">
-                          <div className="text-xs text-gray-600">Main Ideas</div>
-                          <div className="text-sm font-bold text-amber-600">
-                            {butlerHighlights.filter(h => h.importance === 'gold').length}
+                    <h5 className="text-sm font-semibold text-purple-700">🧠 Butler Analysis</h5>
+                    
+                    {butlerAnalysis ? (
+                      <div className="space-y-4">
+                        {/* Butler Highlights */}
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                          <h6 className="font-semibold text-amber-700 mb-2">Thought Units Detected</h6>
+                          <div className="grid grid-cols-2 gap-2 mb-3">
+                            <div className="bg-white rounded p-2 text-center">
+                              <div className="text-xs text-gray-600">Main Ideas</div>
+                              <div className="text-sm font-bold text-amber-600">
+                                {butlerHighlights.filter(h => h.importance === 'gold').length}
+                              </div>
+                            </div>
+                            <div className="bg-white rounded p-2 text-center">
+                              <div className="text-xs text-gray-600">Supporting</div>
+                              <div className="text-sm font-bold text-amber-600">
+                                {butlerHighlights.filter(h => h.importance === 'blue').length}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-xs text-gray-600">
+                            Comprehension Score: {Math.round(butlerAnalysis.comprehensionScore * 100)}%
                           </div>
                         </div>
-                        <div className="bg-white rounded p-2 text-center">
-                          <div className="text-xs text-gray-600">Supporting</div>
-                          <div className="text-sm font-bold text-amber-600">
-                            {butlerHighlights.filter(h => h.importance === 'blue').length}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-xs text-gray-600">
-                        Comprehension Score: {Math.round(butlerAnalysis.comprehensionScore * 100)}%
-                      </div>
-                    </div>
 
-                    {/* Butler Metaphors */}
-                    {(() => {
-                      const metaphors = generateAdvancedButlerMetaphors(effectiveSelection, detectedPatterns);
-                      return metaphors.length > 0 ? (
-                        <div className="bg-teal-50 border border-teal-200 rounded-lg p-3">
-                          <h6 className="font-semibold text-teal-700 mb-2">🎭 Butler Metaphors</h6>
-                          <div className="space-y-2">
-                            {metaphors.map((metaphor, idx) => (
-                              <div key={idx} className="bg-white rounded p-2">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span>{metaphor.visualCue}</span>
-                                  <span className="text-xs font-semibold text-teal-600">{metaphor.concept}</span>
-                                </div>
-                                <div className="text-xs text-gray-600 mb-1">
-                                  <strong>Think of it as:</strong> {metaphor.metaphor}
-                                </div>
-                                <div className="text-xs text-gray-700 italic">
-                                  {metaphor.explanation}
+                        {/* Butler Metaphors */}
+                        {(() => {
+                          const metaphors = generateAdvancedButlerMetaphors(effectiveSelection, detectedPatterns);
+                          return metaphors.length > 0 ? (
+                            <div className="bg-teal-50 border border-teal-200 rounded-lg p-3">
+                              <h6 className="font-semibold text-teal-700 mb-2">🎭 Butler Metaphors</h6>
+                              <div className="space-y-2">
+                                {metaphors.map((metaphor, idx) => (
+                                  <div key={idx} className="bg-white rounded p-2">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span>{metaphor.visualCue}</span>
+                                      <span className="text-xs font-semibold text-teal-600">{metaphor.concept}</span>
+                                    </div>
+                                    <div className="text-xs text-gray-600 mb-1">
+                                      <strong>Think of it as:</strong> {metaphor.metaphor}
+                                    </div>
+                                    <div className="text-xs text-gray-700 italic">
+                                      {metaphor.explanation}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null;
+                        })()}
+
+                        {/* Enhanced Analysis */}
+                        {comprehensiveAnalysis && (
+                          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                            <h6 className="font-semibold text-emerald-700 mb-2">⚡ Enhanced Analysis</h6>
+                            <div className="grid grid-cols-2 gap-2 mb-3">
+                              <div className="bg-white rounded p-2 text-center">
+                                <div className="text-xs text-gray-600">Quality Score</div>
+                                <div className="text-sm font-bold text-emerald-600">
+                                  {Math.round(comprehensiveAnalysis.qualityMetrics.overallAccuracy * 100)}%
                                 </div>
                               </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null;
-                    })()}
-
-                    {/* Enhanced Analysis */}
-                    {comprehensiveAnalysis && (
-                      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-                        <h6 className="font-semibold text-emerald-700 mb-2">⚡ Enhanced Analysis</h6>
-                        <div className="grid grid-cols-2 gap-2 mb-3">
-                          <div className="bg-white rounded p-2 text-center">
-                            <div className="text-xs text-gray-600">Quality Score</div>
-                            <div className="text-sm font-bold text-emerald-600">
-                              {Math.round(comprehensiveAnalysis.qualityMetrics.overallAccuracy * 100)}%
+                              <div className="bg-white rounded p-2 text-center">
+                                <div className="text-xs text-gray-600">Thought Units</div>
+                                <div className="text-sm font-bold text-emerald-600">
+                                  {comprehensiveAnalysis.thoughtUnits.length}
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                          <div className="bg-white rounded p-2 text-center">
-                            <div className="text-xs text-gray-600">Thought Units</div>
-                            <div className="text-sm font-bold text-emerald-600">
-                              {comprehensiveAnalysis.thoughtUnits.length}
-                            </div>
-                          </div>
-                        </div>
-                        
-                        {comprehensiveAnalysis.enhancedMainIdeaAnalysis.primaryIdea && (
-                          <div className="bg-white rounded p-2 text-xs">
-                            <div className="font-medium text-emerald-700">Primary Idea:</div>
-                            <div className="text-gray-700">{comprehensiveAnalysis.enhancedMainIdeaAnalysis.primaryIdea}</div>
+                            
+                            {comprehensiveAnalysis.enhancedMainIdeaAnalysis.primaryIdea && (
+                              <div className="bg-white rounded p-2 text-xs">
+                                <div className="font-medium text-emerald-700">Primary Idea:</div>
+                                <div className="text-gray-700">{comprehensiveAnalysis.enhancedMainIdeaAnalysis.primaryIdea}</div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        <div className="text-4xl mb-2">🧠</div>
+                        <p>Select text for Butler analysis</p>
+                      </div>
                     )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* 📝 NOTELAB READER CONTENT */}
+            {readerType === 'notelab' && (
+              <div className="space-y-4">
+                <h5 className="text-sm font-semibold text-green-700">📝 NoteLab Analysis</h5>
+                
+                {effectiveSelection ? (
+                  <div className="space-y-4">
+                    {/* NoteLab Note Analysis */}
+                    {(() => {
+                      const analysis = analyzeForNoteWorthy(effectiveSelection);
+                      const questions = generateStudyQuestions(effectiveSelection);
+                      
+                      return (
+                        <>
+                          {/* Key Terms */}
+                          {analysis.keyTerms.length > 0 && (
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                              <h6 className="text-sm font-semibold text-blue-700 mb-2">🔑 Key Terms</h6>
+                              <div className="flex flex-wrap gap-1 mb-2">
+                                {analysis.keyTerms.map((term, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="px-2 py-1 bg-blue-200 text-blue-800 rounded text-xs cursor-pointer hover:bg-blue-300"
+                                    onClick={() => {
+                                      const termNote = createQuickNote(term, 'flashcard', currentPage);
+                                      onGenerateNote?.(termNote, undefined, "highYield");
+                                    }}
+                                  >
+                                    {term}
+                                  </span>
+                                ))}
+                              </div>
+                              <button
+                                onClick={() => {
+                                  const allTerms = analysis.keyTerms.join(', ');
+                                  const termNote = createQuickNote(`Key terms: ${allTerms}`, 'outline', currentPage);
+                                  onGenerateNote?.(termNote, undefined, "highYield");
+                                }}
+                                className="text-xs px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded"
+                              >
+                                📝 Create Terms Note
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Study Questions */}
+                          {questions.length > 0 && (
+                            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                              <h6 className="text-sm font-semibold text-purple-700 mb-2">🤔 Study Questions</h6>
+                              <ul className="text-xs text-gray-700 space-y-1 mb-2">
+                                {questions.slice(0, 3).map((question, idx) => (
+                                  <li key={idx} className="flex items-start gap-1">
+                                    <span className="text-purple-500">Q{idx + 1}:</span>
+                                    <span>{question}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                              <button
+                                onClick={() => {
+                                  const questionNote = `# Study Questions - Page ${currentPage}\n\n${questions.map((q, i) => `**Q${i + 1}:** ${q}\n\n**Answer:** \n\n`).join('')}`;
+                                  onGenerateNote?.(questionNote, undefined, "highYield");
+                                }}
+                                className="text-xs px-2 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded"
+                              >
+                                📝 Create Q&A Note
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Template Quick Actions */}
+                          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                            <h6 className="text-sm font-semibold text-green-700 mb-2">📝 Quick Note Templates</h6>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                onClick={() => {
+                                  const note = createQuickNote(effectiveSelection, 'cornell', currentPage);
+                                  onGenerateNote?.(note, undefined, "highYield");
+                                }}
+                                className="px-2 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs flex items-center gap-1"
+                              >
+                                📓 Cornell
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const note = createQuickNote(effectiveSelection, 'mind-map', currentPage);
+                                  onGenerateNote?.(note, undefined, "sketch");
+                                }}
+                                className="px-2 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded text-xs flex items-center gap-1"
+                              >
+                                🗺️ Mind Map
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const note = createQuickNote(effectiveSelection, 'outline', currentPage);
+                                  onGenerateNote?.(note, undefined, "highYield");
+                                }}
+                                className="px-2 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs flex items-center gap-1"
+                              >
+                                📋 Outline
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const note = createQuickNote(effectiveSelection, 'flashcard', currentPage);
+                                  onGenerateNote?.(note, undefined, "highYield");
+                                }}
+                                className="px-2 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded text-xs flex items-center gap-1"
+                              >
+                                💳 Flashcard
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Page Notes */}
+                          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                            <h6 className="text-sm font-semibold text-gray-700 mb-2">📄 Quick Page Notes</h6>
+                            <textarea
+                              value={quickNotes[currentPage] || ""}
+                              onChange={(e) => setQuickNotes(prev => ({
+                                ...prev,
+                                [currentPage]: e.target.value
+                              }))}
+                              placeholder="Add quick notes for this page..."
+                              className="w-full h-20 text-xs border border-gray-300 rounded p-2 resize-none"
+                            />
+                            <div className="flex gap-2 mt-2">
+                              <button
+                                onClick={() => {
+                                  const pageNote = quickNotes[currentPage];
+                                  if (pageNote) {
+                                    const formattedNote = createQuickNote(pageNote, noteTemplate, currentPage);
+                                    onGenerateNote?.(formattedNote, undefined, "highYield");
+                                  }
+                                }}
+                                className="text-xs px-2 py-1 bg-gray-600 hover:bg-gray-500 text-white rounded"
+                                disabled={!quickNotes[currentPage]?.trim()}
+                              >
+                                📝 Format Note
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const pageNote = quickNotes[currentPage];
+                                  if (pageNote) {
+                                    speakText(pageNote);
+                                  }
+                                }}
+                                className="text-xs px-2 py-1 bg-green-600 hover:bg-green-500 text-white rounded"
+                                disabled={!quickNotes[currentPage]?.trim()}
+                              >
+                                🔊 Read Notes
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 ) : (
                   <div className="text-center py-8 text-gray-500">
-                    <div className="text-4xl mb-2">🧠</div>
-                    <p>Select text for Butler analysis</p>
+                    <div className="text-4xl mb-2">📝</div>
+                    <p>Select text for NoteLab analysis</p>
+                    <p className="text-xs mt-2">Study level: {studyLevel} • Template: {noteTemplate}</p>
                   </div>
                 )}
               </div>
