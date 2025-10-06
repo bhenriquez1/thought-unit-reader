@@ -1997,61 +1997,61 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // Unified Reader - Merged with Universal Pattern Butler features
-    return fileUrl ? (
-      <div className="h-full flex flex-col">
-        {/* Unified Reader Header */}
-        <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🎯</span>
-            <div>
-              <h3 className="text-lg font-bold">Universal Pattern Butler Reader</h3>
-              <p className="text-sm opacity-90">Unified reader with pattern detection, hybrid analysis, and original PDF view</p>
+        // 🎯 UNIFIED RIGHT-BRAIN READER - Merged Universal + Right-Brain
+        return fileUrl ? (
+          <div className="h-full flex flex-col">
+            {/* Unified Reader Header */}
+            <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-600 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🧠</span>
+                <div>
+                  <h3 className="text-lg font-bold">Unified Right-Brain Reader</h3>
+                  <p className="text-sm opacity-90">Universal patterns + Right-brain visual analysis + PDF navigation</p>
+                </div>
+              </div>
+              <div className="text-sm bg-white/20 backdrop-blur rounded-lg px-3 py-1">
+                Merged Mode
+              </div>
+            </div>
+            
+            {/* Universal Pattern Butler Reader with Right-Brain Integration */}
+            <div className="flex-1 overflow-hidden">
+              <UniversalPatternButlerReader
+                bookId={bookId}
+                userId={USER_ID}
+                pdfUrl={fileUrl}
+                currentPage={currentPage}
+                pdfPageCount={pdfPageCount}
+                onPageChange={(p) => syncToPage(p)}
+                thoughtUnits={thoughtUnits}
+                currentThoughtUnit={currentThoughtUnit}
+                setCurrentThoughtUnit={setCurrentThoughtUnit}
+                highlightedWord={highlightedWord}
+                setHighlightedWord={setHighlightedWord}
+                onWordClick={(w) => {
+                  setHighlightedWord(w);
+                  if (autoWhiteboard && w.trim()) {
+                    setWbConcept(truncate(w, 600));
+                    setWbContext(`p.${currentPage}`);
+                    setShowWhiteboardPanel(true);
+                  }
+                }}
+                onTextSelect={(t) => sel.setSelectionText(t)}
+                onGenerateNote={handleOpenRightBrainNote}
+                selBind={sel.bind}
+                externalSelectionText={sel.selectionText}
+                fontSize={fontSize}
+                fontFamily={fontFamily}
+                lineSpacing={lineSpacing}
+                selectedVoice={selectedVoice || undefined}
+                onVoiceChange={setSelectedVoice}
+                speechRate={speechRate}
+                onSpeechRateChange={setSpeechRate}
+                tableOfContents={tableOfContents}
+              />
             </div>
           </div>
-          <div className="text-sm bg-white/20 backdrop-blur rounded-lg px-3 py-1">
-            Unified Mode
-          </div>
-        </div>
-        
-        {/* Universal Pattern Butler Reader Component */}
-        <div className="flex-1 overflow-hidden">
-          <UniversalPatternButlerReader
-            bookId={bookId}
-            userId={USER_ID}
-            pdfUrl={fileUrl}
-            currentPage={currentPage}
-            pdfPageCount={pdfPageCount}
-            onPageChange={(p) => syncToPage(p)}
-            thoughtUnits={thoughtUnits}
-            currentThoughtUnit={currentThoughtUnit}
-            setCurrentThoughtUnit={setCurrentThoughtUnit}
-            highlightedWord={highlightedWord}
-            setHighlightedWord={setHighlightedWord}
-            onWordClick={(w) => {
-              setHighlightedWord(w);
-              if (autoWhiteboard && w.trim()) {
-                setWbConcept(truncate(w, 600));
-                setWbContext(`p.${currentPage}`);
-                setShowWhiteboardPanel(true);
-              }
-            }}
-            onTextSelect={(t) => sel.setSelectionText(t)}
-            onGenerateNote={handleOpenRightBrainNote}
-            selBind={sel.bind}
-            externalSelectionText={sel.selectionText}
-            fontSize={fontSize}
-            fontFamily={fontFamily}
-            lineSpacing={lineSpacing}
-            selectedVoice={selectedVoice || undefined}
-            onVoiceChange={setSelectedVoice}
-            speechRate={speechRate}
-            onSpeechRateChange={setSpeechRate}
-            tableOfContents={tableOfContents}
-          />
-        </div>
-      </div>
-    ) : (
+        ) : (
       <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
         <div className="text-center max-w-3xl">
           <div className="text-8xl mb-6">🎯</div>

@@ -103,10 +103,13 @@ interface UniversalPatternButlerReaderProps {
 const ALL_PATTERNS: Pattern[] = [...UNIVERSAL_PATTERNS, ...DAT_PATTERNS];
 
 // Reader Type (top-level selector)
-type ReaderType = 'universal' | 'notelab';
+type ReaderType = 'universal' | 'rightbrain';
 
 // Mode Types (within Universal Reader)
 type ReaderMode = 'exploration' | 'training' | 'butler';
+
+// Right-Brain Mode Types 
+type RightBrainMode = 'galaxy' | 'forest' | 'city' | 'ocean' | 'mountain';
 
 // Training Workflow State
 type TrainingStep = 'selection' | 'pattern-choice' | 'rules' | 'application' | 'feedback' | 'assessment';
@@ -1067,15 +1070,15 @@ export default function UniversalPatternButlerReader({
           <div className="flex items-center justify-between p-3 bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 border-b border-indigo-200">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
-                <span className="text-2xl">{readerType === 'universal' ? '🎯' : '📝'}</span>
+                <span className="text-2xl">{readerType === 'universal' ? '🎯' : '🧠'}</span>
                 <div>
                   <h3 className="text-lg font-bold text-indigo-800">
-                    {readerType === 'universal' ? 'Universal Pattern Butler' : 'NoteLab Reader'}
+                    {readerType === 'universal' ? 'Universal Pattern Butler' : 'Right-Brain Reader'}
                   </h3>
                   <p className="text-xs text-indigo-600">
                     {readerType === 'universal' 
                       ? 'Advanced analysis • Active training • Butler speech'
-                      : 'Smart note-taking • Study optimization • Template-based'
+                      : 'Visual learning • Metaphors • Creative analysis'
                     }
                   </p>
                 </div>
@@ -1098,16 +1101,16 @@ export default function UniversalPatternButlerReader({
                 </button>
                 <button
                   onClick={() => {
-                    debugLog(`🔄 READER TYPE SWITCH: ${readerType} → notelab`);
-                    setReaderType('notelab');
+                    debugLog(`🔄 READER TYPE SWITCH: ${readerType} → rightbrain`);
+                    setReaderType('rightbrain');
                   }}
                   className={`px-2 py-1 rounded text-xs font-medium transition-all ${
-                    readerType === 'notelab' 
-                      ? 'bg-green-600 text-white shadow-sm' 
-                      : 'text-green-700 hover:bg-green-100'
+                    readerType === 'rightbrain' 
+                      ? 'bg-cyan-600 text-white shadow-sm' 
+                      : 'text-cyan-700 hover:bg-cyan-100'
                   }`}
                 >
-                  📝 NoteLab
+                  🧠 Right-Brain
                 </button>
               </div>
               
@@ -1944,8 +1947,183 @@ export default function UniversalPatternButlerReader({
               </>
             )}
 
-            {/* 📝 NOTELAB READER CONTENT */}
-            {readerType === 'notelab' && (
+            {/* 🧠 RIGHT-BRAIN READER CONTENT */}
+            {readerType === 'rightbrain' && (
+              <div className="space-y-4">
+                <h5 className="text-sm font-semibold text-cyan-700">🧠 Right-Brain Visual Analysis</h5>
+                
+                {effectiveSelection ? (
+                  <div className="space-y-4">
+                    {/* Right-Brain Visual Analysis */}
+                    {rightBrainAnalysis && (
+                      <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-3">
+                        <h6 className="text-sm font-semibold text-cyan-700 mb-2">🌟 Visual Analysis</h6>
+                        <div className="bg-white rounded p-2 mb-2">
+                          <div className="text-xs text-gray-700 mb-2">
+                            <strong>Cognitive Load:</strong> {rightBrainAnalysis.cognitiveLoad}/10
+                          </div>
+                          <div className="text-xs text-gray-700">
+                            <strong>Analysis Complete:</strong> ✅
+                          </div>
+                        </div>
+                        
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            onClick={() => {
+                              const analysisText = `This content has a cognitive load of ${rightBrainAnalysis.cognitiveLoad} out of 10. Right-brain analysis complete.`;
+                              speakText(analysisText);
+                            }}
+                            className="text-xs px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded"
+                          >
+                            🔊 Read Analysis
+                          </button>
+                          <button
+                            onClick={() => {
+                              const visualNote = `# Visual Learning Note - Page ${currentPage}\n\n## Selected Content\n${effectiveSelection}\n\n## Visual Analysis\n- Cognitive Load: ${rightBrainAnalysis.cognitiveLoad}/10\n- Analysis Status: Complete ✅\n\n## Creative Connections\n- [Add your visual connections here]\n- [Draw or describe mental images]\n- [Link to personal experiences]\n\n---\n`;
+                              onGenerateNote?.(visualNote, undefined, "sketch");
+                            }}
+                            className="text-xs px-2 py-1 bg-orange-600 hover:bg-orange-500 text-white rounded"
+                          >
+                            🎨 Create Visual Note
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Pattern Visualization */}
+                    {detectedPatterns.length > 0 && (
+                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                        <h6 className="text-sm font-semibold text-purple-700 mb-2">🎭 Pattern Stories</h6>
+                        {detectedPatterns.slice(0, 2).map((pattern, idx) => (
+                          <div key={idx} className="bg-white rounded p-2 mb-2">
+                            <div className="font-medium text-purple-700 text-xs mb-1">{pattern.name}</div>
+                            <div className="text-xs text-gray-600 mb-2">{pattern.description}</div>
+                            <div className="text-xs text-purple-600">
+                              <strong>Visual Story:</strong> Imagine this as {generateAdvancedButlerMetaphors(effectiveSelection, [pattern])[0]?.metaphor || 'a connected system of moving parts'}
+                            </div>
+                          </div>
+                        ))}
+                        
+                        <button
+                          onClick={() => {
+                            const storyNote = `# Pattern Stories - Page ${currentPage}\n\n## Content\n${effectiveSelection}\n\n## Visual Pattern Stories\n${detectedPatterns.slice(0, 2).map(p => `**${p.name}**\nPattern: ${p.description}\nVisual Story: Imagine this as ${generateAdvancedButlerMetaphors(effectiveSelection, [p])[0]?.metaphor || 'a connected system'}\n`).join('\n')}\n\n## My Visual Story\n[Create your own visual story connecting these patterns]\n\n---\n`;
+                            onGenerateNote?.(storyNote, undefined, "sketch");
+                          }}
+                          className="text-xs px-2 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded"
+                        >
+                          📖 Create Story Note
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Spatial Learning */}
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                      <h6 className="text-sm font-semibold text-emerald-700 mb-2">🗺️ Spatial Connections</h6>
+                      <div className="space-y-2 mb-3">
+                        <div className="bg-white rounded p-2">
+                          <div className="text-xs font-medium text-emerald-700">Above/Below Relationships</div>
+                          <div className="text-xs text-gray-600">What concepts are hierarchically connected?</div>
+                        </div>
+                        <div className="bg-white rounded p-2">
+                          <div className="text-xs font-medium text-emerald-700">Left/Right Sequences</div>
+                          <div className="text-xs text-gray-600">What happens in order or opposition?</div>
+                        </div>
+                        <div className="bg-white rounded p-2">
+                          <div className="text-xs font-medium text-emerald-700">Inside/Outside Boundaries</div>
+                          <div className="text-xs text-gray-600">What contains or is contained by what?</div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            const spatialNote = `# Spatial Mind Map - Page ${currentPage}\n\n## Central Concept\n${effectiveSelection.split('.')[0] || effectiveSelection.slice(0, 50)}...\n\n## Spatial Relationships\n\n**Above/Below (Hierarchy):**\n- Higher level: ___________\n- Current level: ${effectiveSelection.split('.')[0] || 'Main concept'}\n- Lower level: ___________\n\n**Left/Right (Sequence/Opposition):**\n- Before: ___________\n- Current: ${effectiveSelection.split('.')[0] || 'Main concept'}\n- After: ___________\n\n**Inside/Outside (Containment):**\n- Contains: ___________\n- Is contained by: ___________\n- Boundaries: ___________\n\n## Visual Sketch Area\n[Draw your spatial relationships here]\n\n---\n`;
+                            onGenerateNote?.(spatialNote, undefined, "sketch");
+                          }}
+                          className="text-xs px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded"
+                        >
+                          🗺️ Mind Map
+                        </button>
+                        <button
+                          onClick={() => {
+                            const movementText = `Visualize how ${effectiveSelection.slice(0, 30)} moves through space and time. Imagine the flow, direction, and energy of these concepts.`;
+                            speakText(movementText);
+                          }}
+                          className="text-xs px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded"
+                        >
+                          🎯 Visualize Movement
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Creative Connections */}
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                      <h6 className="text-sm font-semibold text-yellow-700 mb-2">✨ Creative Connections</h6>
+                      <div className="grid grid-cols-2 gap-2 mb-3">
+                        <div className="bg-white rounded p-2 text-center">
+                          <div className="text-xs text-gray-600">Personal Experience</div>
+                          <div className="text-xs text-yellow-700 font-medium">How does this relate to your life?</div>
+                        </div>
+                        <div className="bg-white rounded p-2 text-center">
+                          <div className="text-xs text-gray-600">Emotional Connection</div>
+                          <div className="text-xs text-yellow-700 font-medium">What feeling does this evoke?</div>
+                        </div>
+                        <div className="bg-white rounded p-2 text-center">
+                          <div className="text-xs text-gray-600">Color & Shape</div>
+                          <div className="text-xs text-yellow-700 font-medium">What would this look like?</div>
+                        </div>
+                        <div className="bg-white rounded p-2 text-center">
+                          <div className="text-xs text-gray-600">Movement & Sound</div>
+                          <div className="text-xs text-yellow-700 font-medium">How would this move or sound?</div>
+                        </div>
+                      </div>
+                      
+                      <button
+                        onClick={() => {
+                          const creativeNote = `# Creative Learning - Page ${currentPage}\n\n## Content to Explore\n${effectiveSelection}\n\n## Personal Connections\n**Life Experience:** How does this relate to something in your life?\n\n**Emotional Response:** What feelings does this content evoke?\n\n**Visual Imagery:** If this were a scene, what would you see?\n- Colors: \n- Shapes: \n- Movement: \n- Atmosphere: \n\n**Sensory Experience:** Beyond visual, what would you:\n- Hear: \n- Feel (touch): \n- Smell: \n- Taste: \n\n## Memory Palace\n**Location:** Where would you store this information in your mind?\n\n**Characters:** Who are the main "characters" in this content?\n\n**Story:** Turn this into a memorable story:\n\n---\n*Use all your senses and creativity to make this unforgettable!*\n`;
+                          onGenerateNote?.(creativeNote, undefined, "sketch");
+                        }}
+                        className="text-xs px-2 py-1 bg-yellow-600 hover:bg-yellow-500 text-white rounded"
+                      >
+                        ✨ Creative Note
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <div className="text-4xl mb-2">🧠</div>
+                    <p>Select text for visual right-brain analysis</p>
+                    <p className="text-xs mt-2">Transform concepts into visual stories and spatial relationships</p>
+                    
+                    <div className="grid grid-cols-2 gap-4 mt-6 text-xs">
+                      <div className="bg-cyan-50 rounded-lg p-3 border border-cyan-200">
+                        <div className="text-lg mb-1">🌟</div>
+                        <div className="font-semibold text-cyan-700">Visual Metaphors</div>
+                        <div className="text-gray-600">Transform abstract concepts into concrete images</div>
+                      </div>
+                      <div className="bg-purple-50 rounded-lg p-3 border border-purple-200">
+                        <div className="text-lg mb-1">🎭</div>
+                        <div className="font-semibold text-purple-700">Pattern Stories</div>
+                        <div className="text-gray-600">Turn learning patterns into memorable narratives</div>
+                      </div>
+                      <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
+                        <div className="text-lg mb-1">🗺️</div>
+                        <div className="font-semibold text-emerald-700">Spatial Maps</div>
+                        <div className="text-gray-600">Organize information using spatial relationships</div>
+                      </div>
+                      <div className="bg-yellow-50 rounded-lg p-3 border border-yellow-200">
+                        <div className="text-lg mb-1">✨</div>
+                        <div className="font-semibold text-yellow-700">Creative Links</div>
+                        <div className="text-gray-600">Connect new information to personal experiences</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 📝 NOTELAB READER CONTENT - REMOVED FROM UNIFIED READER */}
+            {false && (
               <div className="space-y-4">
                 <h5 className="text-sm font-semibold text-green-700">📝 NoteLab Analysis</h5>
                 
