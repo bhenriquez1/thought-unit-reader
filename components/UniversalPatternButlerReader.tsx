@@ -1162,33 +1162,6 @@ export default function UniversalPatternButlerReader({
                 </div>
               )}
               
-              {/* NoteLab Controls - Only show for NoteLab reader */}
-              {readerType === 'notelab' && (
-                <div className="flex items-center gap-2">
-                  {/* Study Level Selector */}
-                  <select
-                    value={studyLevel}
-                    onChange={(e) => setStudyLevel(e.target.value as any)}
-                    className="px-2 py-1 bg-white/80 border border-green-300 rounded text-xs"
-                  >
-                    <option value="basic">📚 Basic</option>
-                    <option value="intermediate">🎯 Intermediate</option>
-                    <option value="advanced">🚀 Advanced</option>
-                  </select>
-                  
-                  {/* Note Template Selector */}
-                  <select
-                    value={noteTemplate}
-                    onChange={(e) => setNoteTemplate(e.target.value as any)}
-                    className="px-2 py-1 bg-white/80 border border-green-300 rounded text-xs"
-                  >
-                    <option value="outline">📋 Outline</option>
-                    <option value="cornell">📓 Cornell</option>
-                    <option value="mind-map">🗺️ Mind Map</option>
-                    <option value="flashcard">💳 Flashcard</option>
-                  </select>
-                </div>
-              )}
             </div>
             
             {/* Navigation Controls */}
@@ -1545,7 +1518,7 @@ export default function UniversalPatternButlerReader({
                     🔊 Read
                   </button>
                   
-                  {readerType === 'notelab' && (
+                  {false && (
                     <>
                       {/* NoteLab Template Quick Actions */}
                       <button
