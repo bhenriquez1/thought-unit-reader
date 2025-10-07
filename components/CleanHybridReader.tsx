@@ -94,12 +94,7 @@ import {
   type ConceptHighlightConfig,
   type ConceptAnchor
 } from "@/lib/conceptAnchoredHighlighting";
-import { 
-  analyzeChunkWithRightBrain,
-  type RightBrainChunkAnalysis,
-  type TextPattern,
-  type VisualMetaphor
-} from "@/lib/rightBrainReading";
+// Removed right-brain imports - functionality simplified
 import { chunkText, stableChunkId } from "@/lib/chunkers";
 import { useReaderSync } from "@/lib/readerSync";
 import ChunkRail from "@/components/ChunkRail";
@@ -602,8 +597,8 @@ export default function CleanHybridReader({
   const [activeIdx, setActiveIdx] = useState(0);
   const [autoSpeak, setAutoSpeak] = useState(false);
   
-  // Right-Brain Analysis
-  const [rightBrainAnalysis, setRightBrainAnalysis] = useState<RightBrainChunkAnalysis | null>(null);
+  // Right-Brain Analysis - Simplified
+  const [rightBrainAnalysis, setRightBrainAnalysis] = useState<any>(null);
   
   // TU Interaction Modal State
   const [tuModalState, setTuModalState] = useState<{
