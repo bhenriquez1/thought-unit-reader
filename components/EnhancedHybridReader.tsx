@@ -31,12 +31,7 @@ import {
   type MatchResult
 } from "@/lib/anchorSync";
 import { detectChapterTransition } from "@/lib/chapterAnimations";
-import { 
-  analyzeChunkWithRightBrain,
-  type RightBrainChunkAnalysis,
-  type TextPattern,
-  type VisualMetaphor
-} from "@/lib/rightBrainReading";
+// Removed right-brain imports - functionality simplified
 import { 
   createThoughtUnitRenderer,
   type PDFThoughtUnitRenderer,
@@ -559,11 +554,34 @@ export default function EnhancedHybridReader({
   const activeChunkId = stableChunkId(activeChunk);
   const isUnderstood = !!understoodMap[activeChunkId];
 
-  // Enhanced right-brain analysis
-  const rightBrainAnalysis = useMemo(() => 
-    analyzeChunkWithRightBrain(activeChunk, activeIdx, chunks.length),
-    [activeChunk, activeIdx, chunks.length]
-  );
+  // Simplified right-brain analysis (placeholder for deleted functionality)
+  const rightBrainAnalysis = useMemo(() => {
+    const length = activeChunk.length;
+    const hasNumbers = /\d/.test(activeChunk);
+    const hasFormulas = /[=+\-*/()]/.test(activeChunk);
+    
+    // Variable complexity based on content
+    const complexity = length > 200 ? "complex" : length > 100 ? "moderate" : "simple";
+    const cognitiveLoad = hasFormulas ? "high" : length > 150 ? "medium" : "low";
+    const emotionalTone = hasNumbers ? "analytical" : length > 100 ? "engaging" : "neutral";
+    
+    return {
+      coreIdea: activeChunk.slice(0, 100) + (length > 100 ? "..." : ""),
+      keyTerms: activeChunk.split(/\s+/).filter(w => w.length > 4).slice(0, 3),
+      memoryAnchors: [activeChunk.slice(0, 50) + (length > 50 ? "..." : "")],
+      textPattern: { type: "descriptive", structure: "Simple content", indicators: [] },
+      relationshipWords: [],
+      complexity: complexity as "simple" | "moderate" | "complex",
+      cognitiveLoad: cognitiveLoad as "low" | "medium" | "high",
+      emotionalTone: emotionalTone as "neutral" | "positive" | "negative" | "exciting" | "calming" | "analytical" | "engaging",
+      processingTime: Math.max(10, length / 5),
+      hasNumbers,
+      hasFormulas,
+      visualCues: [],
+      mindMovieScene: `Imagine understanding: ${activeChunk.slice(0, 60)}${length > 60 ? "..." : ""}`,
+      visualMetaphor: { metaphor: "learning concept", imagery: "Think of this as a building block of knowledge" }
+    };
+  }, [activeChunk, activeIdx, chunks.length]);
 
   const effectiveSelection = (externalSelectionText?.trim() || selectionText).trim();
 
