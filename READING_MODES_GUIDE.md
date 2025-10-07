@@ -100,8 +100,8 @@ Previously, the "Enhanced" versions of Progressive and Hybrid reading were essen
 - `lib/understoodStore.ts` - Understanding tracking (used by all)
 
 ### Specialized Libraries:
-- `lib/cleanRightBrainReading.ts` - Visual learning utilities (Visual mode only)
-- `lib/rightBrainReading.ts` - Original complex analysis (legacy Enhanced components)
+- Right-brain functionality is now integrated into CleanHybridReader
+- Legacy right-brain libraries have been removed and consolidated
 
 ### Component Hierarchy:
 ```

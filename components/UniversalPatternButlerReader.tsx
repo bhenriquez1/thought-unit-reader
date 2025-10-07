@@ -34,12 +34,9 @@ import {
   type ConceptHighlightConfig,
   type ConceptAnchor
 } from "@/lib/conceptAnchoredHighlighting";
-import { 
-  analyzeChunkWithRightBrain,
-  type RightBrainChunkAnalysis,
-  type TextPattern,
-  type VisualMetaphor
-} from "@/lib/rightBrainReading";
+
+// Unified Navigation Integration
+import { useUnifiedNavigation } from "@/lib/useUnifiedNavigation";
 
 // Pattern System Integration - Universal Patterns
 import { 
@@ -431,7 +428,6 @@ export default function UniversalPatternButlerReader({
   // Enhanced Analysis State
   const [comprehensiveAnalysis, setComprehensiveAnalysis] = useState<ComprehensiveAnalysisResult | null>(null);
   const [conceptHighlighter, setConceptHighlighter] = useState<ConceptAnchoredHighlighter | null>(null);
-  const [rightBrainAnalysis, setRightBrainAnalysis] = useState<RightBrainChunkAnalysis | null>(null);
   
   // Pattern System State
   const [detectedPatterns, setDetectedPatterns] = useState<Pattern[]>([]);
@@ -512,7 +508,6 @@ export default function UniversalPatternButlerReader({
     patterns: Pattern[];
     butler: ButlerAnalysisResult;
     comprehensive?: ComprehensiveAnalysisResult;
-    rightBrain?: RightBrainChunkAnalysis;
     timestamp: number;
   }>>(new Map());
   
@@ -800,7 +795,6 @@ export default function UniversalPatternButlerReader({
       setDetectedPatterns([]);
       setButlerAnalysis(null);
       setComprehensiveAnalysis(null);
-      setRightBrainAnalysis(null);
       setIsAnalyzing(false);
       return;
     }
@@ -816,7 +810,6 @@ export default function UniversalPatternButlerReader({
         setButlerAnalysis(cached.butler);
         setButlerHighlights(cached.butler.highlights);
         if (cached.comprehensive) setComprehensiveAnalysis(cached.comprehensive);
-        if (cached.rightBrain) setRightBrainAnalysis(cached.rightBrain);
         setIsAnalyzing(false);
         return;
       }
@@ -845,23 +838,11 @@ export default function UniversalPatternButlerReader({
           }
         }
         
-        // 4. Right-Brain Analysis (only if patterns detected)
-        let rightBrain: RightBrainChunkAnalysis | undefined = undefined;
-        if (patterns.length > 0 && currentMode === 'butler') {
-          try {
-            rightBrain = analyzeChunkWithRightBrain(selectionText, currentThoughtUnit - 1, thoughtUnits.length);
-            setRightBrainAnalysis(rightBrain);
-          } catch (error) {
-            console.warn('Right-brain analysis failed:', error);
-          }
-        }
-        
         // Cache results
         analysisCache.current.set(textHash, {
           patterns,
           butler,
           comprehensive: enhanced,
-          rightBrain,
           timestamp: Date.now()
         });
         
@@ -1927,41 +1908,39 @@ export default function UniversalPatternButlerReader({
                 
                 {effectiveSelection ? (
                   <div className="space-y-4">
-                    {/* Right-Brain Visual Analysis */}
-                    {rightBrainAnalysis && (
-                      <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-3">
-                        <h6 className="text-sm font-semibold text-cyan-700 mb-2">🌟 Visual Analysis</h6>
-                        <div className="bg-white rounded p-2 mb-2">
-                          <div className="text-xs text-gray-700 mb-2">
-                            <strong>Cognitive Load:</strong> {rightBrainAnalysis.cognitiveLoad}/10
-                          </div>
-                          <div className="text-xs text-gray-700">
-                            <strong>Analysis Complete:</strong> ✅
-                          </div>
+                    {/* Visual Analysis - Simplified */}
+                    <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-3">
+                      <h6 className="text-sm font-semibold text-cyan-700 mb-2">🌟 Visual Analysis</h6>
+                      <div className="bg-white rounded p-2 mb-2">
+                        <div className="text-xs text-gray-700 mb-2">
+                          <strong>Text Length:</strong> {effectiveSelection.length} characters
                         </div>
-                        
-                        <div className="mt-3 flex gap-2">
-                          <button
-                            onClick={() => {
-                              const analysisText = `This content has a cognitive load of ${rightBrainAnalysis.cognitiveLoad} out of 10. Right-brain analysis complete.`;
-                              speakText(analysisText);
-                            }}
-                            className="text-xs px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded"
-                          >
-                            🔊 Read Analysis
-                          </button>
-                          <button
-                            onClick={() => {
-                              const visualNote = `# Visual Learning Note - Page ${currentPage}\n\n## Selected Content\n${effectiveSelection}\n\n## Visual Analysis\n- Cognitive Load: ${rightBrainAnalysis.cognitiveLoad}/10\n- Analysis Status: Complete ✅\n\n## Creative Connections\n- [Add your visual connections here]\n- [Draw or describe mental images]\n- [Link to personal experiences]\n\n---\n`;
-                              onGenerateNote?.(visualNote, undefined, "sketch");
-                            }}
-                            className="text-xs px-2 py-1 bg-orange-600 hover:bg-orange-500 text-white rounded"
-                          >
-                            🎨 Create Visual Note
-                          </button>
+                        <div className="text-xs text-gray-700">
+                          <strong>Ready for Visual Processing:</strong> ✅
                         </div>
                       </div>
-                    )}
+                      
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          onClick={() => {
+                            const analysisText = `This content has ${effectiveSelection.length} characters and is ready for visual right-brain processing.`;
+                            speakText(analysisText);
+                          }}
+                          className="text-xs px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded"
+                        >
+                          🔊 Read Analysis
+                        </button>
+                        <button
+                          onClick={() => {
+                            const visualNote = `# Visual Learning Note - Page ${currentPage}\n\n## Selected Content\n${effectiveSelection}\n\n## Visual Analysis\n- Text Length: ${effectiveSelection.length} characters\n- Processing Status: Ready ✅\n\n## Creative Connections\n- [Add your visual connections here]\n- [Draw or describe mental images]\n- [Link to personal experiences]\n\n---\n`;
+                            onGenerateNote?.(visualNote, undefined, "sketch");
+                          }}
+                          className="text-xs px-2 py-1 bg-orange-600 hover:bg-orange-500 text-white rounded"
+                        >
+                          🎨 Create Visual Note
+                        </button>
+                      </div>
+                    </div>
 
                     {/* Pattern Visualization */}
                     {detectedPatterns.length > 0 && (

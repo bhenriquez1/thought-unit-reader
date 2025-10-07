@@ -12,7 +12,6 @@ import EnhancedHybridReader from "@/components/EnhancedHybridReader";
 import PatternView from "@/components/PatternView";
 import NoteLabView from "@/components/NoteLabView";
 import CleanHybridReader from "@/components/CleanHybridReader";
-import CleanRightBrainReader from "@/components/CleanRightBrainReader";
 import HighlightPopup from "@/components/HighlightPopup";
 import RightBrainNoteEditor from "@/components/RightBrainNoteEditor";
 import LinkVideoModal from "@/components/LinkVideoModal";
@@ -1944,20 +1943,25 @@ export default function ThoughtUnitReader() {
         );
       }
 
-      // Main Right-Brain Reading interface (Visual learning modes)
+      // Main Right-Brain Reading interface (Visual learning modes) - Using CleanHybridReader as base
       return fileUrl && thoughtUnits.length > 0 ? (
         <div className="h-full w-full">
-          <CleanRightBrainReader
+          <CleanHybridReader
             bookId={bookId}
             userId={USER_ID}
             thoughtUnits={thoughtUnits}
             currentThoughtUnit={currentThoughtUnit}
+            pdfUrl={fileUrl}
+            currentPage={currentPage}
+            pdfPageCount={pdfPageCount}
+            sampleText={sampleText}
+            setCurrentThoughtUnit={setCurrentThoughtUnit}
+            highlightedWord={highlightedWord}
+            setHighlightedWord={setHighlightedWord}
+            onPageChange={(p) => syncToPage(p)}
             fontSize={fontSize}
             fontFamily={fontFamily}
             lineSpacing={lineSpacing}
-            totalPages={pdfPageCount}
-            tableOfContents={tableOfContents}
-            onPageChange={(p) => syncToPage(p)}
             onWordClick={(w) => {
               setHighlightedWord(w);
               if (autoWhiteboard && w.trim()) {
@@ -1968,6 +1972,12 @@ export default function ThoughtUnitReader() {
             }}
             onTextSelect={(t) => sel.setSelectionText(t)}
             onGenerateNote={handleOpenRightBrainNote}
+            selBind={sel.bind}
+            tableOfContents={tableOfContents}
+            selectedVoice={selectedVoice || undefined}
+            onVoiceChange={setSelectedVoice}
+            speechRate={speechRate}
+            onSpeechRateChange={setSpeechRate}
           />
         </div>
       ) : (
