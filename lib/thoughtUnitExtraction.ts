@@ -5,7 +5,7 @@
  * Now enhanced with advanced semantic analysis and support classification
  */
 
-import { analyzeChunkWithRightBrain, type RightBrainChunkAnalysis, type TextPattern } from './rightBrainReading';
+// Removed right-brain import - functionality integrated directly
 import { 
   enhancedSemanticAnalyzer, 
   type EnhancedMainIdeaAnalysis, 
@@ -635,7 +635,13 @@ function generateThoughtUnitMetaphor(primaryIdea: string, framework: string): st
 export function createThoughtUnits(text: string, chunkIndex: number = 0): ThoughtUnit[] {
   const boundaries = detectThoughtUnitBoundaries(text);
   const mainIdeaAnalysis = extractMainIdea(text);
-  const rightBrainAnalysis = analyzeChunkWithRightBrain(text, chunkIndex, 1);
+  
+  // Simple analysis replacement for removed right-brain functionality
+  const simpleAnalysis = {
+    complexity: 'moderate' as const,
+    processingTime: Math.max(10, text.split(/\s+/).length / 3), // ~3 words per second
+    memoryAnchors: [mainIdeaAnalysis.primaryIdea.slice(0, 80)]
+  };
   
   const thoughtUnits: ThoughtUnit[] = [];
   let currentStart = 0;
@@ -647,7 +653,7 @@ export function createThoughtUnits(text: string, chunkIndex: number = 0): Though
       0, 
       text.length, 
       mainIdeaAnalysis, 
-      rightBrainAnalysis,
+      simpleAnalysis,
       `thought-unit-${chunkIndex}-0`
     );
     return [unit];
@@ -676,7 +682,7 @@ export function createThoughtUnits(text: string, chunkIndex: number = 0): Though
         },
         visualCues: generateVisualCues(unitText, isMainIdea, boundary.type),
         cognitiveMarkers: {
-          complexity: rightBrainAnalysis.complexity,
+          complexity: simpleAnalysis.complexity,
           processingTime: calculateThoughtUnitProcessingTime(unitText),
           memoryAnchor: extractMemoryAnchor(unitText)
         }
@@ -709,7 +715,7 @@ export function createThoughtUnits(text: string, chunkIndex: number = 0): Though
       },
       visualCues: generateVisualCues(remainingText, isMainIdea, 'hard'),
       cognitiveMarkers: {
-        complexity: rightBrainAnalysis.complexity,
+        complexity: simpleAnalysis.complexity,
         processingTime: calculateThoughtUnitProcessingTime(remainingText),
         memoryAnchor: extractMemoryAnchor(remainingText)
       }
@@ -730,7 +736,7 @@ function createSingleThoughtUnit(
   start: number, 
   end: number, 
   mainIdeaAnalysis: MainIdeaAnalysis,
-  rightBrainAnalysis: RightBrainChunkAnalysis,
+  simpleAnalysis: { complexity: 'simple' | 'moderate' | 'complex', processingTime: number, memoryAnchors: string[] },
   id: string
 ): ThoughtUnit {
   const isMainIdea = text.length > 50; // Assume substantial single units contain main ideas
@@ -750,9 +756,9 @@ function createSingleThoughtUnit(
     },
     visualCues: generateVisualCues(text, isMainIdea, 'hard'),
     cognitiveMarkers: {
-      complexity: rightBrainAnalysis.complexity,
-      processingTime: rightBrainAnalysis.processingTime,
-      memoryAnchor: rightBrainAnalysis.memoryAnchors[0]
+      complexity: simpleAnalysis.complexity,
+      processingTime: simpleAnalysis.processingTime,
+      memoryAnchor: simpleAnalysis.memoryAnchors[0]
     }
   };
 }
