@@ -309,7 +309,7 @@ class PDRMEngine {
     // Add concept connections from analysis
     const conceptConnections = analysisResult.enhancedMainIdeaAnalysis.topicClusters
       .slice(0, maxLinks - relatedPatterns.length)
-      .map(cluster => `Connected Concept: ${cluster.topicName}`);
+      .map(cluster => `Connected Concept: ${cluster.mainTopic}`);
     
     crossLinks.push(...conceptConnections);
     
