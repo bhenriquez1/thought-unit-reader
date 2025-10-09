@@ -1082,97 +1082,36 @@ export default function ThoughtUnitReader() {
   /* =========================================================================
      🔹 Enhanced Page/TOC sync with chapter-aware navigation + global sync
   ========================================================================= */
-  // Unified navigation using the new system - all page changes go through here
+  // Simplified navigation function - single source of truth
   const syncToPage = (page: number, opts?: { reason?: 'SCROLL' | 'TOC_JUMP' | 'PROGRAMMATIC' }) => {
     const reason = opts?.reason || 'PROGRAMMATIC';
-    console.log(`📄 index.tsx syncToPage called: navigating to page ${page} (current: ${currentPage}) reason: ${reason}`);
+    console.log(`📄 syncToPage: ${page} (current: ${currentPage}) reason: ${reason}`);
     
     // Validate page bounds
     if (page < 1 || (pdfPageCount > 0 && page > pdfPageCount)) {
-      console.warn(`📄 index.tsx: Invalid page ${page}, bounds: 1-${pdfPageCount}`);
+      console.warn(`📄 Invalid page ${page}, bounds: 1-${pdfPageCount}`);
+      return;
+    }
+    
+    // Skip if already on the page (unless it's a scroll event)
+    if (page === currentPage && reason !== 'SCROLL') {
+      console.log(`📄 Already on page ${page}, skipping`);
       return;
     }
     
     try {
-      // Use unified navigation system for TOC jumps
-      if (reason === 'TOC_JUMP') {
-        console.log(`📄 TOC_JUMP: Using unified navigation for chapter-aware navigation to page ${page}`);
-        
-        // Find the chapter that contains this page
-        let nearestChapter: TOCEntry | null = null;
-        for (const tocEntry of tableOfContents) {
-          const tocPage = getTocPage(tocEntry);
-          if (tocPage && tocPage <= page) {
-            const nearestTocPage = nearestChapter ? getTocPage(nearestChapter) : undefined;
-            if (!nearestChapter || (nearestTocPage !== undefined && tocPage > nearestTocPage)) {
-              nearestChapter = tocEntry;
-            }
-          }
-        }
-        
-        if (nearestChapter) {
-          const chapterTitle = (nearestChapter as any).title || `Chapter at page ${page}`;
-          console.log(`📄 TOC_JUMP: Found chapter "${chapterTitle}"`);
-          
-          // Use unified chapter navigation
-          jumpToChapter(chapterTitle, {
-            onSuccess: (resultPage, resultTitle) => {
-              console.log(`📄 TOC_JUMP: Successfully navigated to ${resultTitle} (page ${resultPage})`);
-              setCurrentPage(resultPage);
-              const unit = pageToUnit(resultPage, pdfPageCount, thoughtUnits.length);
-              setCurrentThoughtUnit(unit);
-            },
-            onError: (error) => {
-              console.warn(`📄 TOC_JUMP: Chapter navigation failed, using page navigation:`, error);
-              // Fallback to direct page navigation
-              jumpToPage(page, 'toc', {
-                onSuccess: (resultPage) => {
-                  console.log(`📄 TOC_JUMP: Page navigation success: ${resultPage}`);
-                  setCurrentPage(resultPage);
-                  const unit = pageToUnit(resultPage, pdfPageCount, thoughtUnits.length);
-                  setCurrentThoughtUnit(unit);
-                },
-                onError: (error) => {
-                  console.error(`📄 TOC_JUMP: Page navigation also failed:`, error);
-                }
-              });
-            }
-          });
-        } else {
-          // No chapter found, use direct page navigation
-          console.log(`📄 TOC_JUMP: No chapter found, using direct page navigation`);
-          jumpToPage(page, 'toc', {
-            onSuccess: (resultPage) => {
-              console.log(`📄 TOC_JUMP: Direct page navigation success: ${resultPage}`);
-              setCurrentPage(resultPage);
-              const unit = pageToUnit(resultPage, pdfPageCount, thoughtUnits.length);
-              setCurrentThoughtUnit(unit);
-            }
-          });
-        }
-      } else {
-        // Normal scroll/programmatic navigation using unified system
-        const source = reason === 'SCROLL' ? 'pdf' : 'manual';
-        console.log(`📄 ${reason}: Using unified navigation with source: ${source}`);
-        
-        jumpToPage(page, source, {
-          onSuccess: (resultPage) => {
-            console.log(`📄 ${reason}: Navigation success: ${resultPage}`);
-            setCurrentPage(resultPage);
-            const unit = pageToUnit(resultPage, pdfPageCount, thoughtUnits.length);
-            setCurrentThoughtUnit(unit);
-          },
-          onError: (error) => {
-            console.error(`📄 ${reason}: Navigation error:`, error);
-            // Fallback: just update local state
-            setCurrentPage(page);
-            const unit = pageToUnit(page, pdfPageCount, thoughtUnits.length);
-            setCurrentThoughtUnit(unit);
-          }
-        });
-      }
-
-      // Auto-whiteboard trigger (unchanged)
+      // Update local state immediately for responsive UI
+      setCurrentPage(page);
+      const unit = pageToUnit(page, pdfPageCount, thoughtUnits.length);
+      setCurrentThoughtUnit(unit);
+      
+      // Update global sync state
+      updateSync({ 
+        page, 
+        unitIndex: unit 
+      }, reason === 'SCROLL' ? 'pdf' : 'manual');
+      
+      // Auto-whiteboard trigger
       if (autoWhiteboard) {
         const seed = conceptForPage(page, thoughtUnits, pdfPageCount);
         if (seed) {
@@ -1183,17 +1122,18 @@ export default function ThoughtUnitReader() {
         }
       }
       
-    } catch (error) {
-      console.error(`📄 index.tsx: Navigation error for page ${page}:`, error);
+      console.log(`📄 Navigation successful: page ${page}, unit ${unit}`);
       
-      // Fallback: just update local state
+    } catch (error) {
+      console.error(`📄 Navigation error for page ${page}:`, error);
+      
+      // Ensure state is consistent even on error
       try {
         setCurrentPage(page);
         const unit = pageToUnit(page, pdfPageCount, thoughtUnits.length);
         setCurrentThoughtUnit(unit);
-        console.log(`📄 index.tsx: Fallback navigation to page ${page} succeeded`);
       } catch (fallbackError) {
-        console.error(`📄 index.tsx: Fallback navigation failed:`, fallbackError);
+        console.error(`📄 Fallback navigation failed:`, fallbackError);
       }
     }
   };

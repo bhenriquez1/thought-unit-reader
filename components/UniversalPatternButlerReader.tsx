@@ -1149,28 +1149,17 @@ export default function UniversalPatternButlerReader({
             <div className="flex items-center gap-2 bg-white/60 backdrop-blur rounded-lg px-3 py-1">
               <button
                 onClick={() => {
-                  console.log(`🟢 CLICK DETECTED: Previous button was clicked!`);
-                  console.log(`🎯 Current page before change: ${currentPage}`);
-                  console.log(`📄 REQUESTED PAGE CHANGE: Going to page ${Math.max(1, currentPage - 1)}`);
-                  console.log(`✅ Navigation system activated!`);
-                  
                   const newPage = Math.max(1, currentPage - 1);
-                  console.log(`🚨 Testing onPageChange prop function...`);
-                  console.log(`🚨 onPageChange type: ${typeof onPageChange}`);
-                  console.log(`🚨 Calling onPageChange(${newPage}) now...`);
-                  
-                  try {
+                  if (newPage !== currentPage) {
+                    console.log(`🎯 Previous: ${currentPage} → ${newPage}`);
                     onPageChange(newPage);
-                    console.log(`✅ onPageChange(${newPage}) called successfully!`);
-                  } catch (error) {
-                    console.error(`❌ ERROR calling onPageChange:`, error);
                   }
                 }}
                 disabled={currentPage <= 1}
-                className={`px-2 py-1 rounded text-sm transition-all duration-200 ${
+                className={`px-2 py-1 rounded text-sm transition-all ${
                   currentPage <= 1 
                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                    : 'bg-indigo-600 hover:bg-indigo-500 active:bg-green-600 text-white transform active:scale-95'
+                    : 'bg-indigo-600 hover:bg-indigo-500 text-white'
                 }`}
               >
                 ←
