@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import type { ThoughtUnit as BaseThoughtUnit, ReadingStats } from "@/types/reading";
-import { Document, Page } from "react-pdf";
+import { Page } from "react-pdf";
 import { 
   buildPageTextIndex, 
   type PageTextIndex
@@ -349,40 +349,26 @@ export default function BaseInteractivePDFReader({
                 </div>
               </div>
             ) : pdfLoadState.isLoaded && pdfLoadState.document ? (
-              <Document 
-                file={pdfLoadState.document}
+              <Page 
+                key={`${pdfUrl}-${currentPage}`}
+                pdf={pdfLoadState.document}
+                pageNumber={currentPage} 
+                scale={pdfScale}
+                renderTextLayer={true}
+                renderAnnotationLayer={true}
                 loading={
                   <div className="p-8 text-center text-gray-600">
                     <div className="text-4xl mb-2">📄</div>
-                    <p>Rendering page...</p>
+                    <p>Loading page {currentPage}...</p>
                   </div>
                 }
                 error={
                   <div className="p-8 text-center text-red-600">
                     <div className="text-4xl mb-2">📄❌</div>
-                    <p>Failed to render PDF page</p>
+                    <p>Failed to load page {currentPage}</p>
                   </div>
                 }
-              >
-                <Page 
-                  pageNumber={currentPage} 
-                  scale={pdfScale}
-                  renderTextLayer={true}
-                  renderAnnotationLayer={true}
-                  loading={
-                    <div className="p-8 text-center text-gray-600">
-                      <div className="text-4xl mb-2">📄</div>
-                      <p>Loading page {currentPage}...</p>
-                    </div>
-                  }
-                  error={
-                    <div className="p-8 text-center text-red-600">
-                      <div className="text-4xl mb-2">📄❌</div>
-                      <p>Failed to load page {currentPage}</p>
-                    </div>
-                  }
-                />
-              </Document>
+              />
             ) : (
               <div className="p-8 text-center text-gray-600">
                 <div className="text-6xl mb-4">📄</div>

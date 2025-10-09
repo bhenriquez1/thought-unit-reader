@@ -1,8 +1,8 @@
 // components/SmartPDFViewer.tsx
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Document, Page, pdfjs } from "react-pdf";
+import React, { useEffect, useRef, useState } from "react";
+import { Page, pdfjs } from "react-pdf";
 import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api"; // ✅ correct type source
 import { useReaderSync } from "@/lib/readerSync";
 import { usePDFLoading } from "@/lib/pdfLoadingManager";
@@ -240,13 +240,6 @@ export default function SmartPDFViewer({
     };
   }, [fileUrl, startVisibleTextObserver, stopVisibleTextObserver, syncPDFToChunk]);
 
-  // Resolve & memoize what the <Document /> will fetch
-  const fileSpec = useMemo(() => {
-    if (!fileUrl) return null;
-    const resolved = toSameOrigin(fileUrl);
-    return { url: resolved };
-  }, [fileUrl]);
-
   const handleZoomIn = () => setZoom((z) => Math.min(z + 0.25, 3));
   const handleZoomOut = () => setZoom((z) => Math.max(z - 0.25, 0.5));
 
@@ -356,13 +349,15 @@ export default function SmartPDFViewer({
       >
         {isLoaded && pdfDocument ? (
           <div className="relative">
-            <Document
-              key={fileUrl}
-              file={pdfDocument}
-            >
-              <Page pageNumber={currentPage} scale={zoom} renderTextLayer renderAnnotationLayer />
-            </Document>
-            
+            <Page
+              key={`${fileUrl}-${currentPage}`}
+              pdf={pdfDocument}
+              pageNumber={currentPage}
+              scale={zoom}
+              renderTextLayer
+              renderAnnotationLayer
+            />
+
             {/* Highlight pulse animation overlay */}
             {highlightPulse && (
               <div 

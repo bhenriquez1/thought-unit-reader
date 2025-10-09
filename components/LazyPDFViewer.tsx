@@ -1,8 +1,8 @@
 // components/LazyPDFViewer.tsx
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { Document, Page, pdfjs } from "react-pdf";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { Page, pdfjs } from "react-pdf";
 import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api";
 import { useReaderSync } from "@/lib/readerSync";
 import { usePDFLoading } from "@/lib/pdfLoadingManager";
@@ -462,34 +462,25 @@ export default React.memo(function LazyPDFViewer({
           </div>
         ) : pdfLoadState.isLoaded && pdfLoadState.document ? (
           <div className="relative">
-            <Document
-              key={fileUrl}
-              file={pdfLoadState.document}
-              loading={
-                <div className="flex items-center justify-center p-8">
-                  <div className="animate-spin text-4xl">📄</div>
-                </div>
-              }
-            >
-              {/* Render current page and preloaded pages */}
-              {Array.from(renderedPages).map(pageNum => (
-                <Page
-                  key={pageNum}
-                  pageNumber={pageNum}
-                  scale={zoom}
-                  renderTextLayer={pageNum === currentPage} // Only render text layer for current page
-                  renderAnnotationLayer={pageNum === currentPage} // Only render annotations for current page
-                  onRenderSuccess={pageNum === currentPage ? onPageRenderSuccess : undefined}
-                  loading={pageNum === currentPage ? 
-                    <div className="flex items-center justify-center p-8">
-                      <div className="animate-spin text-2xl">⏳</div>
-                    </div> : 
-                    null
-                  }
-                  className={pageNum === currentPage ? 'block' : 'hidden'}
-                />
-              ))}
-            </Document>
+            {/* Render current page and preloaded pages */}
+            {Array.from(renderedPages).map(pageNum => (
+              <Page
+                key={`${fileUrl}-${pageNum}`}
+                pdf={pdfLoadState.document}
+                pageNumber={pageNum}
+                scale={zoom}
+                renderTextLayer={pageNum === currentPage} // Only render text layer for current page
+                renderAnnotationLayer={pageNum === currentPage} // Only render annotations for current page
+                onRenderSuccess={pageNum === currentPage ? onPageRenderSuccess : undefined}
+                loading={pageNum === currentPage ? 
+                  <div className="flex items-center justify-center p-8">
+                    <div className="animate-spin text-2xl">⏳</div>
+                  </div> : 
+                  null
+                }
+                className={pageNum === currentPage ? 'block' : 'hidden'}
+              />
+            ))}
           </div>
         ) : !pdfLoadState.isLoading ? (
           <p className="text-gray-400">📂 No PDF loaded.</p>
