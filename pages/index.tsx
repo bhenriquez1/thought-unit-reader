@@ -1228,9 +1228,6 @@ export default function ThoughtUnitReader() {
                 <p className="text-sm opacity-90">Pattern-tagged notes with study levels and flashcard export</p>
               </div>
             </div>
-            <div className="text-sm bg-white/20 backdrop-blur rounded-lg px-3 py-1">
-              Prototype Mode
-            </div>
           </div>
           
           {/* NoteLab Hybrid Reader Component */}
@@ -1827,19 +1824,72 @@ export default function ThoughtUnitReader() {
 
     // Right-Brain Reading view (unified Progressive + Hybrid features)
     if (viewMode === "rightbrain") {
-      // Check if we're in note editor mode
+      // Unified Right-Brain Reader with integrated note editor overlay
       if (rbDraftText) {
+        // Show note editor as overlay instead of replacing entire view
         return (
-          <RightBrainNoteEditor
-            bookId={bookId}
-            initialText={rbDraftText || sel.selectionText}
-            attachments={attachments}
-            currentPage={currentPage}
-            onDone={() => {
-              setRbDraftText("");
-              // Stay in rightbrain mode after note editing
-            }}
-          />
+          <div className="h-full w-full relative">
+            {/* Base Reader */}
+            <CleanHybridReader
+              bookId={bookId}
+              userId={USER_ID}
+              thoughtUnits={thoughtUnits}
+              currentThoughtUnit={currentThoughtUnit}
+              pdfUrl={fileUrl}
+              currentPage={currentPage}
+              pdfPageCount={pdfPageCount}
+              sampleText={sampleText}
+              setCurrentThoughtUnit={setCurrentThoughtUnit}
+              highlightedWord={highlightedWord}
+              setHighlightedWord={setHighlightedWord}
+              onPageChange={(p) => syncToPage(p)}
+              fontSize={fontSize}
+              fontFamily={fontFamily}
+              lineSpacing={lineSpacing}
+              onWordClick={(w) => {
+                setHighlightedWord(w);
+                if (autoWhiteboard && w.trim()) {
+                  setWbConcept(truncate(w, 600));
+                  setWbContext(`p.${currentPage}`);
+                  setShowWhiteboardPanel(true);
+                }
+              }}
+              onTextSelect={(t) => sel.setSelectionText(t)}
+              onGenerateNote={handleOpenRightBrainNote}
+              selBind={sel.bind}
+              tableOfContents={tableOfContents}
+              selectedVoice={selectedVoice || undefined}
+              onVoiceChange={setSelectedVoice}
+              speechRate={speechRate}
+              onSpeechRateChange={setSpeechRate}
+            />
+            
+            {/* Right-Brain Note Editor Overlay - Fused Integration */}
+            <div className="absolute top-0 right-0 w-96 h-full bg-gray-900/95 backdrop-blur-md text-white z-50 flex flex-col shadow-2xl border-l border-gray-700">
+              <div className="flex justify-between items-center p-4 border-b border-gray-700">
+                <h3 className="text-lg font-semibold">🧠 Right-Brain Note Editor</h3>
+                <button
+                  onClick={() => setRbDraftText("")}
+                  className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-800"
+                >
+                  ✕
+                </button>
+              </div>
+              
+              <div className="flex-1 overflow-auto p-4">
+                <RightBrainNoteEditor
+                  bookId={bookId}
+                  initialText={rbDraftText || sel.selectionText || ""}
+                  attachments={attachments}
+                  currentPage={currentPage}
+                  onDone={() => {
+                    setRbDraftText("");
+                    // Continue in rightbrain mode with overlay closed
+                  }}
+                />
+              </div>
+            </div>
+          </div>
         );
       }
 
@@ -2045,9 +2095,9 @@ export default function ThoughtUnitReader() {
       <header className="bg-gradient-to-r from-purple-600 via-pink-500 to-yellow-400 text-white shadow-md">
         <div className="py-4 flex flex-col items-center justify-center text-center">
           <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide drop-shadow-lg">
-            Avrrio Reader
+            Surgeon-View PDRM
           </h1>
-          <p className="text-sm md:text-lg italic opacity-90">Universal PDRM Analysis for Any Subject</p>
+          <p className="text-sm md:text-lg italic opacity-90">Study smarter, learn faster.</p>
         </div>
       </header>
 
