@@ -273,7 +273,7 @@ export default function SurgeonViewPdrmReader({
           break;
           
         default:
-          result = `**${action.type.toUpperCase()}:**\n\n${JSON.stringify(action.payload, null, 2)}`;
+          result = `**${(action.type as string).toUpperCase()}:**\n\n${JSON.stringify(action.payload, null, 2)}`;
       }
       
       setActionResults(prev => ({
@@ -581,7 +581,7 @@ export default function SurgeonViewPdrmReader({
                     {systems.map(system => (
                       <button
                         key={system}
-                        onClick={() => setSystemFilter(system)}
+                        onClick={() => setSystemFilter(system!)}
                         className={`px-2 py-1 rounded text-xs ${
                           systemFilter === system
                             ? 'bg-purple-600 text-white'
