@@ -1835,7 +1835,7 @@ export default function ThoughtUnitReader() {
               userId={USER_ID}
               thoughtUnits={thoughtUnits}
               currentThoughtUnit={currentThoughtUnit}
-              pdfUrl={fileUrl}
+              pdfUrl={fileUrl || ""}
               currentPage={currentPage}
               pdfPageCount={pdfPageCount}
               sampleText={sampleText}
