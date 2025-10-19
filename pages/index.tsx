@@ -18,6 +18,7 @@ import LinkVideoModal from "@/components/LinkVideoModal";
 
 // Prototype component import
 import UniversalPatternButlerReader from "@/components/UniversalPatternButlerReader";
+import SurgeonViewPdrmReader from "@/components/SurgeonViewPdrmReader";
 
 import {
   firebaseConnected,
@@ -1964,9 +1965,9 @@ export default function ThoughtUnitReader() {
               </div>
             </div>
             
-            {/* Universal Pattern Butler Reader with Right-Brain Integration */}
+            {/* Surgeon-View PDRM Butler 2.1 - Default Reader */}
             <div className="flex-1 overflow-hidden">
-              <UniversalPatternButlerReader
+              <SurgeonViewPdrmReader
                 bookId={bookId}
                 userId={USER_ID}
                 pdfUrl={fileUrl}
@@ -1976,27 +1977,13 @@ export default function ThoughtUnitReader() {
                 thoughtUnits={thoughtUnits}
                 currentThoughtUnit={currentThoughtUnit}
                 setCurrentThoughtUnit={setCurrentThoughtUnit}
-                highlightedWord={highlightedWord}
-                setHighlightedWord={setHighlightedWord}
-                onWordClick={(w) => {
-                  setHighlightedWord(w);
-                  if (autoWhiteboard && w.trim()) {
-                    setWbConcept(truncate(w, 600));
-                    setWbContext(`p.${currentPage}`);
-                    setShowWhiteboardPanel(true);
-                  }
-                }}
                 onTextSelect={(t) => sel.setSelectionText(t)}
                 onGenerateNote={handleOpenRightBrainNote}
-                selBind={sel.bind}
-                externalSelectionText={sel.selectionText}
                 fontSize={fontSize}
                 fontFamily={fontFamily}
                 lineSpacing={lineSpacing}
                 selectedVoice={selectedVoice || undefined}
-                onVoiceChange={setSelectedVoice}
                 speechRate={speechRate}
-                onSpeechRateChange={setSpeechRate}
                 tableOfContents={tableOfContents}
               />
             </div>
@@ -2058,9 +2045,9 @@ export default function ThoughtUnitReader() {
       <header className="bg-gradient-to-r from-purple-600 via-pink-500 to-yellow-400 text-white shadow-md">
         <div className="py-4 flex flex-col items-center justify-center text-center">
           <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide drop-shadow-lg">
-            Thought Unit Reader
+            Avrrio Reader
           </h1>
-          <p className="text-sm md:text-lg italic opacity-90">Read Smarter, Remember Longer</p>
+          <p className="text-sm md:text-lg italic opacity-90">Universal PDRM Analysis for Any Subject</p>
         </div>
       </header>
 

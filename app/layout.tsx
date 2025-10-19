@@ -5,8 +5,8 @@ import '../styles/globals.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Thought Unit Reader - DAT Apex',
-  description: 'Advanced reading comprehension with DAT practice exam generator',
+  title: 'Avrrio Reader',
+  description: 'Universal PDRM analysis with intelligent Butler coaching system for any subject',
 }
 
 export default function RootLayout({
