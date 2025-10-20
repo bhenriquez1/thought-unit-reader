@@ -59,10 +59,18 @@ export class ButlerSpeechEngine {
   private isInitialized = false;
 
   constructor() {
-    this.initializeVoices();
+    // Only initialize voices in browser environment
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      this.initializeVoices();
+    }
   }
 
   private async initializeVoices(): Promise<void> {
+    // Guard against server-side execution
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      return Promise.resolve();
+    }
+
     return new Promise((resolve) => {
       const loadVoices = () => {
         this.availableVoices = speechSynthesis.getVoices();
@@ -82,7 +90,7 @@ export class ButlerSpeechEngine {
    * Get the best natural-sounding voice for Butler speech
    */
   public getBestVoice(): SpeechSynthesisVoice | null {
-    if (!this.isInitialized || this.availableVoices.length === 0) {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window) || !this.isInitialized || this.availableVoices.length === 0) {
       return null;
     }
 
@@ -287,7 +295,11 @@ export class ButlerSpeechEngine {
   public createNaturalSpeechUtterance(
     speechText: string, 
     options: ButlerSpeechOptions
-  ): SpeechSynthesisUtterance {
+  ): SpeechSynthesisUtterance | null {
+    if (typeof window === 'undefined' || !('SpeechSynthesisUtterance' in window)) {
+      return null;
+    }
+
     const utterance = new SpeechSynthesisUtterance(speechText);
     
     // Apply Butler-style natural settings
@@ -312,6 +324,11 @@ export class ButlerSpeechEngine {
     highlights: ButlerHighlight[],
     options: Partial<ButlerSpeechOptions> = {}
   ): Promise<void> {
+    // Guard against server-side execution
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      return Promise.resolve();
+    }
+
     const speechOptions: ButlerSpeechOptions = {
       ...DEFAULT_BUTLER_SPEECH,
       ...options
@@ -355,7 +372,11 @@ export class ButlerSpeechEngine {
         reject(new Error(`Speech synthesis error: ${event.error}`));
       };
       
-      speechSynthesis.speak(this.currentUtterance);
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        speechSynthesis.speak(this.currentUtterance);
+      } else {
+        resolve();
+      }
     });
   }
 
@@ -363,7 +384,7 @@ export class ButlerSpeechEngine {
    * Stop current speech
    */
   public stop(): void {
-    if (this.currentUtterance) {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window && this.currentUtterance) {
       speechSynthesis.cancel();
       this.currentUtterance = null;
     }
@@ -373,6 +394,9 @@ export class ButlerSpeechEngine {
    * Check if currently speaking
    */
   public isSpeaking(): boolean {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      return false;
+    }
     return speechSynthesis.speaking;
   }
 

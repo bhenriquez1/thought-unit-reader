@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF.js Test - Direct PDF Loading</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        
+        #pdfContainer {
+            border: 2px solid #333;
+            margin: 20px 0;
+            min-height: 400px;
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        
+        .controls {
+            margin: 10px 0;
+            padding: 10px;
+            background: #333;
+            border-radius: 5px;
+        }
+        
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        
+        .success { background: #2d5016; color: #90ee90; }
+        .error { background: #5d1f1f; color: #ffb3b3; }
+        .info { background: #1f3d5d; color: #add8e6; }
+        
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        
+        button:hover { background: #45a049; }
+        button:disabled { background: #666; cursor: not-allowed; }
+        
+        canvas {
+            border: 1px solid #555;
+            margin: 10px 0;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔬 PDF.js Direct Loading Test</h1>
+    <p>Testing PDF loading functionality without authentication</p>
+    
+    <div class="controls">
+        <button onclick="loadSamplePDF()">📄 Load Sample PDF</button>
+        <button onclick="testWorker()">⚙️ Test PDF Worker</button>
+        <input type="file" id="fileInput" accept=".pdf" onchange="loadUploadedPDF(event)" style="margin: 10px;">
+    </div>
+    
+    <div id="status" class="status info">Ready to test PDF loading...</div>
+    
+    <div id="pdfContainer">
+        <div id="pdfContent">No PDF loaded yet</div>
+    </div>
+    
+    <script>
+        // Test PDF.js worker loading
+        async function testWorker() {
+            const status = document.getElementById('status');
+            status.className = 'status info';
+            status.textContent = 'Testing PDF worker...';
+            
+            try {
+                // Check if PDF worker file exists
+                const workerResponse = await fetch('/pdf.worker.min.mjs');
+                if (!workerResponse.ok) {
+                    throw new Error(`Worker file not found: ${workerResponse.status}`);
+                }
+                
+                status.className = 'status success';
+                status.textContent = '✅ PDF worker file found and accessible';
+                
+                // Try to import PDF.js
+                const pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+                
+                status.textContent = '✅ PDF.js loaded successfully. Worker ready.';
+                console.log('PDF.js version:', pdfjsLib.version);
+                
+            } catch (error) {
+                status.className = 'status error';
+                status.textContent = `❌ Worker test failed: ${error.message}`;
+                console.error('Worker test error:', error);
+            }
+        }
+        
+        // Load sample PDF
+        async function loadSamplePDF() {
+            const status = document.getElementById('status');
+            const pdfContent = document.getElementById('pdfContent');
+            
+            status.className = 'status info';
+            status.textContent = 'Loading sample PDF...';
+            
+            try {
+                // Check if sample PDF exists
+                const response = await fetch('/sample.pdf');
+                if (!response.ok) {
+                    throw new Error(`Sample PDF not found: ${response.status}`);
+                }
+                
+                const pdfData = await response.arrayBuffer();
+                status.textContent = `✅ Sample PDF loaded (${pdfData.byteLength} bytes). Processing...`;
+                
+                await renderPDF(pdfData, 'sample.pdf');
+                
+            } catch (error) {
+                status.className = 'status error';
+                status.textContent = `❌ Failed to load sample PDF: ${error.message}`;
+                console.error('Sample PDF error:', error);
+            }
+        }
+        
+        // Load uploaded PDF
+        async function loadUploadedPDF(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const status = document.getElementById('status');
+            status.className = 'status info';
+            status.textContent = `Loading ${file.name}...`;
+            
+            try {
+                const pdfData = await file.arrayBuffer();
+                status.textContent = `✅ ${file.name} loaded (${pdfData.byteLength} bytes). Processing...`;
+                
+                await renderPDF(pdfData, file.name);
+                
+            } catch (error) {
+                status.className = 'status error';
+                status.textContent = `❌ Failed to load ${file.name}: ${error.message}`;
+                console.error('Upload PDF error:', error);
+            }
+        }
+        
+        // Render PDF using PDF.js
+        async function renderPDF(pdfData, fileName) {
+            const status = document.getElementById('status');
+            const pdfContent = document.getElementById('pdfContent');
+            
+            try {
+                // Import PDF.js from CDN
+                const pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+                
+                // Set worker path to our local worker
+                pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+                
+                status.textContent = 'Parsing PDF document...';
+                
+                // Load PDF document
+                const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+                
+                status.textContent = `✅ PDF parsed successfully: ${pdf.numPages} pages`;
+                
+                // Clear previous content
+                pdfContent.innerHTML = `
+                    <h3>📄 ${fileName}</h3>
+                    <p><strong>Pages:</strong> ${pdf.numPages}</p>
+                    <p><strong>PDF Info:</strong></p>
+                    <div id="pdfInfo" style="background: #333; padding: 10px; margin: 10px 0; border-radius: 5px;"></div>
+                    <h4>Page 1 Preview:</h4>
+                `;
+                
+                // Get PDF metadata
+                try {
+                    const metadata = await pdf.getMetadata();
+                    const infoDiv = document.getElementById('pdfInfo');
+                    infoDiv.innerHTML = `
+                        <pre style="margin: 0; font-size: 12px;">${JSON.stringify({
+                            title: metadata.info.Title || 'N/A',
+                            author: metadata.info.Author || 'N/A',
+                            subject: metadata.info.Subject || 'N/A',
+                            creator: metadata.info.Creator || 'N/A',
+                            producer: metadata.info.Producer || 'N/A'
+                        }, null, 2)}</pre>
+                    `;
+                } catch (metaError) {
+                    console.warn('Could not get PDF metadata:', metaError);
+                }
+                
+                // Render first page
+                const page = await pdf.getPage(1);
+                const scale = 1.5;
+                const viewport = page.getViewport({ scale });
+                
+                // Create canvas
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                
+                // Render page
+                await page.render({ canvasContext: context, viewport }).promise;
+                
+                pdfContent.appendChild(canvas);
+                
+                // Try to extract text from first page
+                try {
+                    const textContent = await page.getTextContent();
+                    const textDiv = document.createElement('div');
+                    textDiv.style.cssText = 'background: #222; padding: 15px; margin: 10px 0; border-radius: 5px; max-height: 200px; overflow-y: auto;';
+                    textDiv.innerHTML = `
+                        <h4>📝 Extracted Text (First 500 chars):</h4>
+                        <pre style="white-space: pre-wrap; font-size: 12px;">${textContent.items.map(item => item.str).join(' ').slice(0, 500)}...</pre>
+                    `;
+                    pdfContent.appendChild(textDiv);
+                } catch (textError) {
+                    console.warn('Could not extract text:', textError);
+                }
+                
+                status.className = 'status success';
+                status.textContent = `✅ PDF rendered successfully! ${fileName} is working properly.`;
+                
+            } catch (error) {
+                status.className = 'status error';
+                status.textContent = `❌ PDF rendering failed: ${error.message}`;
+                console.error('PDF rendering error:', error);
+                
+                pdfContent.innerHTML = `
+                    <div style="color: #ffb3b3;">
+                        <h3>❌ PDF Rendering Failed</h3>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                        <p><strong>Possible causes:</strong></p>
+                        <ul>
+                            <li>PDF file is corrupted or invalid</li>
+                            <li>PDF.js worker not loaded properly</li>
+                            <li>PDF contains unsupported features</li>
+                            <li>Network connection issues</li>
+                        </ul>
+                    </div>
+                `;
+            }
+        }
+        
+        // Auto-test on load
+        window.addEventListener('load', () => {
+            console.log('🔬 PDF.js Direct Test page loaded');
+        });
+    </script>
+</body>
+</html>

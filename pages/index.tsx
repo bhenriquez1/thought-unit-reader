@@ -391,10 +391,10 @@ export default function ThoughtUnitReader() {
       return;
     }
 
-    // Check file size (50MB limit)
-    const maxSizeInBytes = 50 * 1024 * 1024; // 50MB
+    // Check file size (500MB limit)
+    const maxSizeInBytes = 500 * 1024 * 1024; // 500MB
     if (file.size > maxSizeInBytes) {
-      alert(`File too large. Please upload a PDF smaller than 50MB. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB.`);
+      alert(`File too large. Please upload a PDF smaller than 500MB. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB.`);
       return;
     }
 

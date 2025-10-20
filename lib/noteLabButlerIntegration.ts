@@ -296,7 +296,7 @@ class NoteLab_Butler_Integration {
         `✅ This note is ready for flashcard generation with Butler insights included.`,
         ``,
         `**Suggested flashcard format:**`,
-        `- **Front:** ${note.pdrmSection.pattern.content.slice(0, 100)}...`,
+        `- **Front:** ${this.extractContent(note.pdrmSection.pattern).slice(0, 100)}...`,
         `- **Back:** PDRM analysis + Butler insights`,
         ``
       );
