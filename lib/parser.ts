@@ -91,17 +91,32 @@ export function splitIntoChapters(text: string): Chapter[] {
   return chapters;
 }
 
-export async function parseBookWithChapters(file: File): Promise<{
+export async function parseBookWithChapters(
+  file: File, 
+  progressCallback?: (progress: string) => void
+): Promise<{
   parsedUnits: string[][];
   chapters: Chapter[];
   original: string;
 }> {
   console.log("📚 Starting PDF parsing for:", file.name, "Size:", file.size, "bytes");
   
+  if (progressCallback) {
+    progressCallback(`Analyzing ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)}MB)...`);
+  }
+  
   try {
     // ✅ Enhanced text extraction with better error handling
+    if (progressCallback) {
+      progressCallback("Extracting text content from PDF...");
+    }
+    
     const text = await extractText(file);
     console.log("📚 Text extraction result - Length:", text.length, "Preview:", text.slice(0, 100));
+    
+    if (progressCallback) {
+      progressCallback(`Extracted ${Math.round(text.length / 1000)}k characters, processing content...`);
+    }
     
     // ✅ Validate extracted text
     if (!text || text.trim().length === 0) {

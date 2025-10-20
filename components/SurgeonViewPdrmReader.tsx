@@ -28,6 +28,7 @@ interface SurgeonViewPdrmReaderProps {
   currentPage: number;
   pdfPageCount?: number;
   onPageChange: (page: number) => void;
+  onPageCount?: (count: number) => void;
   thoughtUnits: BaseThoughtUnit[];
   currentThoughtUnit: number;
   setCurrentThoughtUnit: React.Dispatch<React.SetStateAction<number>>;
@@ -81,6 +82,7 @@ export default function SurgeonViewPdrmReader({
   currentPage,
   pdfPageCount,
   onPageChange,
+  onPageCount,
   thoughtUnits,
   currentThoughtUnit,
   setCurrentThoughtUnit,
@@ -463,6 +465,7 @@ export default function SurgeonViewPdrmReader({
                   file={pdfUrl}
                   onLoadSuccess={(pdf) => {
                     console.log(`📄 PDF loaded: ${pdf.numPages} pages`);
+                    onPageCount?.(pdf.numPages);
                   }}
                   onLoadError={(error) => {
                     console.error('📄 PDF load error:', error);

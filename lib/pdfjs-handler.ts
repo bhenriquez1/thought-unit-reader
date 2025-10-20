@@ -21,42 +21,140 @@ export async function extractTextFromPdf(file: File): Promise<string> {
     const pdfjs = await getPdfjs();
     if (!pdfjs) throw new Error("pdfjs failed to load");
 
-    const data = new Uint8Array(await file.arrayBuffer());
+    // ✅ Create timeout promise to prevent hanging
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error("PDF processing timed out after 30 seconds. The file may be too large or complex."));
+      }, 30000); // 30 second timeout
+    });
 
-    // v4 API
-    const loadingTask: any = (pdfjs as any).getDocument({ data });
-    const doc = await loadingTask.promise;
+    // ✅ Enhanced PDF loading with validation
+    const data = new Uint8Array(await file.arrayBuffer());
+    
+    // Check if the file actually contains PDF data
+    const pdfHeader = new TextDecoder().decode(data.slice(0, 5));
+    if (!pdfHeader.startsWith('%PDF-')) {
+      throw new Error("File does not appear to be a valid PDF (missing PDF header)");
+    }
+
+    // v4 API with enhanced error handling
+    const loadingTask: any = (pdfjs as any).getDocument({ 
+      data,
+      verbosity: 0, // Reduce console noise
+      maxImageSize: 1024 * 1024, // 1MB max per image to prevent memory issues
+      disableFontFace: true, // Speed up loading
+    });
+
+    // Race between loading and timeout
+    const doc = await Promise.race([loadingTask.promise, timeoutPromise]);
+
+    // ✅ Validate document properties
+    if (!doc || typeof doc.numPages !== 'number' || doc.numPages < 1) {
+      throw new Error("Invalid PDF document - no readable pages found");
+    }
+
+    if (doc.numPages > 500) {
+      console.warn(`⚠️ Large PDF detected: ${doc.numPages} pages. Processing may be slow.`);
+    }
 
     const pages: string[] = [];
+    let totalCharsExtracted = 0;
+    
+    // ✅ Process pages with progress tracking and early text detection
     for (let i = 1; i <= doc.numPages; i++) {
-      const page = await doc.getPage(i);
-      const content = await page.getTextContent();
+      try {
+        // Add timeout for individual page processing
+        const pagePromise = doc.getPage(i);
+        const page = await Promise.race([
+          pagePromise,
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error(`Page ${i} processing timed out`)), 10000);
+          })
+        ]);
 
-      const pageText = (content.items as any[])
-        .map((item: any) => {
-          // v4 items have `str`; keep fallbacks for safety
-          if (typeof item?.str === "string") return item.str;
-          if (typeof item?.unicode === "string") return item.unicode;
-          if (typeof item?.text === "string") return item.text;
-          return "";
-        })
-        .join(" ");
+        const content = await page.getTextContent();
 
-      pages.push(pageText);
+        const pageText = (content.items as any[])
+          .map((item: any) => {
+            // v4 items have `str`; keep fallbacks for safety
+            if (typeof item?.str === "string") return item.str;
+            if (typeof item?.unicode === "string") return item.unicode;
+            if (typeof item?.text === "string") return item.text;
+            return "";
+          })
+          .filter(text => text.trim().length > 0) // Remove empty strings
+          .join(" ");
+
+        pages.push(pageText);
+        totalCharsExtracted += pageText.length;
+
+        // Early detection of text-less PDFs (after first 5 pages)
+        if (i === 5 && totalCharsExtracted < 100) {
+          console.warn("⚠️ Very little text found in first 5 pages - may be a scanned/image PDF");
+        }
+
+        // Memory management for large documents
+        if (i % 50 === 0) {
+          console.log(`📄 Processed ${i}/${doc.numPages} pages, ${totalCharsExtracted} characters extracted`);
+        }
+
+      } catch (pageError) {
+        console.warn(`⚠️ Failed to process page ${i}:`, pageError);
+        pages.push(`[Page ${i} could not be processed]`);
+      }
     }
+
+    // ✅ Validate extracted content
+    const fullText = pages.join("\n\n").trim();
+    
+    if (!fullText || fullText.length < 50) {
+      if (doc.numPages > 0) {
+        throw new Error("No readable text content found in PDF. This appears to be a scanned document or contains only images. Consider using OCR software to make it searchable first.");
+      } else {
+        throw new Error("PDF appears to be empty or corrupted");
+      }
+    }
+
+    // Log success stats
+    console.log(`✅ PDF text extraction complete: ${doc.numPages} pages, ${totalCharsExtracted} characters`);
 
     // Best-effort cleanup (optional)
     try {
       await doc.cleanup?.();
       await doc.destroy?.();
     } catch {
-      /* ignore */
+      /* ignore cleanup errors */
     }
 
-    return pages.join("\n\n").trim();
+    return fullText;
+    
   } catch (error) {
     console.error("Error extracting text from PDF:", error);
-    return "Error extracting PDF text. The PDF viewer will still work for viewing.";
+    
+    // ✅ Provide specific error messages
+    if (error instanceof Error) {
+      if (error.message.includes("timeout")) {
+        throw new Error("PDF processing took too long. Try a smaller or less complex PDF.");
+      }
+      if (error.message.includes("password") || error.message.includes("encrypted")) {
+        throw new Error("This PDF is password-protected or encrypted. Please provide an unlocked PDF file.");
+      }
+      if (error.message.includes("Invalid PDF") || error.message.includes("not a valid PDF")) {
+        throw new Error("File is corrupted or not a valid PDF. Please try a different file.");
+      }
+      if (error.message.includes("No readable text")) {
+        throw new Error("No readable text content found in PDF");
+      }
+      // Re-throw the original error if it's already user-friendly
+      if (error.message.includes("readable text content") || 
+          error.message.includes("scanned document") ||
+          error.message.includes("PDF header")) {
+        throw error;
+      }
+    }
+    
+    // Generic fallback error
+    throw new Error("Failed to extract text from PDF. The file may be corrupted, password-protected, or contain only images.");
   }
 }
 

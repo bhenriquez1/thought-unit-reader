@@ -369,16 +369,44 @@ export default function ThoughtUnitReader() {
   ========================================================================= */
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || file.type !== "application/pdf") {
-      alert("Please upload a PDF file.");
+    
+    // ✅ Enhanced PDF validation
+    if (!file) {
+      alert("Please select a file.");
       return;
     }
 
-    // ✅ Initialize parsing state
+    // Check file extension
+    const fileName = file.name.toLowerCase();
+    if (!fileName.endsWith('.pdf')) {
+      alert("Please upload a PDF file. Selected file does not have a .pdf extension.");
+      return;
+    }
+
+    // Check MIME type (more comprehensive check)
+    if (file.type !== "application/pdf" && !file.type.includes("pdf")) {
+      alert("Please upload a PDF file. The selected file type is not recognized as a PDF.");
+      return;
+    }
+
+    // Check file size (50MB limit)
+    const maxSizeInBytes = 50 * 1024 * 1024; // 50MB
+    if (file.size > maxSizeInBytes) {
+      alert(`File too large. Please upload a PDF smaller than 50MB. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB.`);
+      return;
+    }
+
+    // Check minimum file size (avoid empty files)
+    if (file.size < 1024) { // 1KB minimum
+      alert("File appears to be empty or corrupted. Please select a valid PDF file.");
+      return;
+    }
+
+    // ✅ Initialize parsing state with better messaging
     setPdfParsingState({
       isLoading: true,
       error: null,
-      progress: "Preparing file..."
+      progress: `Preparing ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)}MB)...`
     });
 
     // Reset thought units immediately to prevent race conditions
@@ -501,10 +529,25 @@ export default function ThoughtUnitReader() {
       const errorMessage = error instanceof Error ? error.message : "Failed to process PDF";
       console.error("❌ PDF processing failed:", errorMessage);
 
-      // ✅ Set error state
+      // ✅ Enhanced error handling with specific messages
+      let userFriendlyMessage = errorMessage;
+      
+      if (errorMessage.includes("password") || errorMessage.includes("encrypted")) {
+        userFriendlyMessage = "This PDF is password-protected or encrypted. Please provide an unlocked PDF file.";
+      } else if (errorMessage.includes("corrupted") || errorMessage.includes("invalid")) {
+        userFriendlyMessage = "This PDF file appears to be corrupted or invalid. Please try a different PDF file.";
+      } else if (errorMessage.includes("No readable content")) {
+        userFriendlyMessage = "This PDF contains no readable text (possibly scanned images only). Try a text-based PDF or consider using OCR software first.";
+      } else if (errorMessage.includes("timeout") || errorMessage.includes("took too long")) {
+        userFriendlyMessage = "PDF processing timed out. This file may be too complex or large. Try a smaller or simpler PDF.";
+      } else if (errorMessage.includes("memory") || errorMessage.includes("out of")) {
+        userFriendlyMessage = "Not enough memory to process this PDF. Try a smaller file or refresh the page and try again.";
+      }
+
+      // ✅ Set error state with user-friendly message
       setPdfParsingState({
         isLoading: false,
-        error: errorMessage,
+        error: userFriendlyMessage,
         progress: "Failed"
       });
 
@@ -513,7 +556,7 @@ export default function ThoughtUnitReader() {
       setFileUrl(null);
       setUploadedFile(null);
       
-      alert(`Failed to process PDF: ${errorMessage}`);
+      alert(`Failed to process PDF: ${userFriendlyMessage}`);
     }
   };
 
@@ -1816,25 +1859,26 @@ export default function ThoughtUnitReader() {
             
             {/* Surgeon-View PDRM Butler 2.1 - Default Reader */}
             <div className="flex-1 overflow-hidden">
-              <SurgeonViewPdrmReader
-                bookId={bookId}
-                userId={USER_ID}
-                pdfUrl={fileUrl}
-                currentPage={currentPage}
-                pdfPageCount={pdfPageCount}
-                onPageChange={(p) => syncToPage(p)}
-                thoughtUnits={thoughtUnits}
-                currentThoughtUnit={currentThoughtUnit}
-                setCurrentThoughtUnit={setCurrentThoughtUnit}
-                onTextSelect={(t) => sel.setSelectionText(t)}
-                onGenerateNote={handleOpenRightBrainNote}
-                fontSize={fontSize}
-                fontFamily={fontFamily}
-                lineSpacing={lineSpacing}
-                selectedVoice={selectedVoice || undefined}
-                speechRate={speechRate}
-                tableOfContents={tableOfContents}
-              />
+            <SurgeonViewPdrmReader
+              bookId={bookId}
+              userId={USER_ID}
+              pdfUrl={fileUrl}
+              currentPage={currentPage}
+              pdfPageCount={pdfPageCount}
+              onPageChange={(p) => syncToPage(p)}
+              onPageCount={(count) => setPdfPageCount(count)}
+              thoughtUnits={thoughtUnits}
+              currentThoughtUnit={currentThoughtUnit}
+              setCurrentThoughtUnit={setCurrentThoughtUnit}
+              onTextSelect={(t) => sel.setSelectionText(t)}
+              onGenerateNote={handleOpenRightBrainNote}
+              fontSize={fontSize}
+              fontFamily={fontFamily}
+              lineSpacing={lineSpacing}
+              selectedVoice={selectedVoice || undefined}
+              speechRate={speechRate}
+              tableOfContents={tableOfContents}
+            />
             </div>
           </div>
         ) : (
