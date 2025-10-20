@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Universal PDRM Butler Reader - Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .pdrm-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .butler-insight {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 0.8; }
+            50% { opacity: 1; }
+        }
+        .concept-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+    <!-- Header -->
+    <header class="bg-gradient-to-r from-purple-600 via-blue-600 to-indigo-600 text-white shadow-lg">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <span class="text-3xl">🔬</span>
+                    <div>
+                        <h1 class="text-2xl font-bold">Universal PDRM Butler Reader</h1>
+                        <p class="text-purple-200 text-sm">Complete comprehension through embedded Butler insights</p>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <p class="text-sm opacity-90">Version 2.1</p>
+                    <p class="text-xs opacity-75">Universal Subject Analysis</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Demo Container -->
+    <div class="container mx-auto px-6 py-8">
+        
+        <!-- System Overview -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4 flex items-center">
+                <span class="text-3xl mr-3">🎯</span>
+                Universal PDRM Workflow with Embedded Butler System
+            </h2>
+            
+            <div class="grid md:grid-cols-3 gap-6 mb-6">
+                <div class="text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg">
+                    <div class="text-3xl mb-2">📚</div>
+                    <h3 class="font-semibold text-blue-800">Universal Analysis</h3>
+                    <p class="text-sm text-blue-600 mt-2">Works across all subjects: Biology, Chemistry, Physics, Math, Business, History, Literature, etc.</p>
+                </div>
+                
+                <div class="text-center p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg">
+                    <div class="text-3xl mb-2">🤖</div>
+                    <h3 class="font-semibold text-green-800">Embedded Butler</h3>
+                    <p class="text-sm text-green-600 mt-2">Butler insights live within the text stream, providing persistent understanding</p>
+                </div>
+                
+                <div class="text-center p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg">
+                    <div class="text-3xl mb-2">🚀</div>
+                    <h3 class="font-semibold text-purple-800">High Capacity</h3>
+                    <p class="text-sm text-purple-600 mt-2">Handles 50MB → 200MB PDFs with progressive rendering</p>
+                </div>
+            </div>
+            
+            <div class="bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg p-4">
+                <h4 class="font-semibold text-gray-800 mb-2">🔄 Complete Workflow</h4>
+                <ol class="text-sm text-gray-700 space-y-1">
+                    <li><strong>1. Upload:</strong> Any PDF, any subject → Automatic concept detection</li>
+                    <li><strong>2. Analysis:</strong> Generate 8-section PDRM for each key concept</li>
+                    <li><strong>3. Butler Integration:</strong> Embed insights directly within each section</li>
+                    <li><strong>4. Understanding:</strong> Complete comprehension without reading original text</li>
+                    <li><strong>5. Persistence:</strong> Butler insights remain visible across page navigation</li>
+                </ol>
+            </div>
+        </div>
+
+        <!-- Live Demo: Embryonic Induction Example -->
+        <div class="bg-white rounded-lg shadow-lg overflow-hidden mb-8">
+            <div class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-4">
+                <h2 class="text-xl font-bold flex items-center">
+                    <span class="text-2xl mr-3">🧬</span>
+                    Live Demo: Embryonic Induction PDRM Analysis
+                </h2>
+                <p class="text-indigo-200 text-sm mt-1">Perfect rendering with embedded Butler insights</p>
+            </div>
+            
+            <div class="flex">
+                <!-- Mock PDF Viewer -->
+                <div class="w-3/5 p-6 border-r border-gray-200">
+                    <div class="bg-gray-50 rounded-lg p-4 mb-4">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-3">📄 PDF Content (Page 1)</h3>
+                        <div class="text-sm text-gray-700 leading-relaxed space-y-3">
+                            <p><strong>Neural Crest Formation</strong></p>
+                            <p>Neural crest cells are a remarkable population of cells that arise during embryonic development in vertebrates. These cells originate from the ectoderm at the border between the neural plate and the non-neural ectoderm.</p>
+                            <p>The formation of neural crest cells begins during neurulation, when the neural plate folds to form the neural tube. At the dorsal aspect of the neural tube, a population of cells delaminates and begins to migrate throughout the embryo.</p>
+                            <p>This process is regulated by a network of transcription factors including Snail, Slug, FoxD3, and Sox10...</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex justify-center space-x-4">
+                        <button class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-500 transition-colors">← Prev</button>
+                        <span class="px-4 py-2 bg-gray-200 rounded">Page 1 of 15</span>
+                        <button class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-500 transition-colors">Next →</button>
+                    </div>
+                </div>
+
+                <!-- PDRM Analysis Panel -->
+                <div class="w-2/5 bg-gray-50">
+                    <!-- TOC Navigation -->
+                    <div class="p-4 border-b border-gray-200">
+                        <h4 class="text-sm font-semibold text-gray-700 mb-3">📚 Concepts (3 sections)</h4>
+                        <div class="space-y-2">
+                            <button class="w-full text-left p-3 bg-purple-600 text-white rounded text-sm">
+                                <div class="font-medium">Neural crest cells formation</div>
+                                <div class="text-xs opacity-75">Page 1 • 🤖 Butler insights</div>
+                            </button>
+                            <button class="w-full text-left p-3 bg-white text-gray-700 rounded text-sm hover:bg-gray-100">
+                                <div class="font-medium">BMP signaling pathways</div>
+                                <div class="text-xs opacity-75">Page 3 • 🤖 Butler insights</div>
+                            </button>
+                            <button class="w-full text-left p-3 bg-white text-gray-700 rounded text-sm hover:bg-gray-100">
+                                <div class="font-medium">Clinical implications</div>
+                                <div class="text-xs opacity-75">Page 7 • 🤖 Butler insights</div>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Active PDRM Section -->
+                    <div class="p-4 h-96 overflow-y-auto">
+                        <h4 class="text-sm font-semibold text-purple-700 mb-3">🔬 Neural Crest Formation Analysis</h4>
+                        <p class="text-xs text-gray-600 mb-4">Subject: <strong>Biology</strong> • Confidence: <strong>87%</strong></p>
+                        
+                        <!-- Sample PDRM Subsections -->
+                        <div class="space-y-4">
+                            
+                            <!-- Pattern Section -->
+                            <div class="bg-white rounded border border-gray-200 overflow-hidden">
+                                <div class="bg-gray-50 px-3 py-2 border-b">
+                                    <h5 class="text-xs font-semibold text-gray-800">🎯 Pattern</h5>
+                                </div>
+                                <div class="p-3">
+                                    <p class="text-sm text-gray-700 mb-3">Neural crest cells originate from ectoderm at neural plate borders during neurulation. They delaminate from the dorsal neural tube and migrate throughout the embryo.</p>
+                                    
+                                    <!-- Embedded Butler Insight -->
+                                    <div class="bg-indigo-50 border border-indigo-200 rounded p-3">
+                                        <div class="flex items-start space-x-2">
+                                            <span class="text-sm">🧠</span>
+                                            <p class="text-sm text-indigo-800 leading-relaxed">
+                                                <strong>Butler:</strong> Think of this like watching how different animals behave in their natural habitat - it helps you see the bigger picture of how neural crest formation works.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Decision Rule Section -->
+                            <div class="bg-white rounded border border-gray-200 overflow-hidden">
+                                <div class="bg-gray-50 px-3 py-2 border-b">
+                                    <h5 class="text-xs font-semibold text-gray-800">🚦 Decision Rule</h5>
+                                </div>
+                                <div class="p-3">
+                                    <p class="text-sm text-gray-700 mb-3"><strong>When to apply:</strong> Look for ectoderm, neural plate, neurulation contexts. Consider biological systems and cellular processes.</p>
+                                    
+                                    <!-- Embedded Butler Insight -->
+                                    <div class="bg-amber-50 border border-amber-200 rounded p-3">
+                                        <div class="flex items-start space-x-2">
+                                            <span class="text-sm">🚦</span>
+                                            <p class="text-sm text-amber-800 leading-relaxed">
+                                                <strong>Butler:</strong> Like a traffic light system - these decision criteria tell you when to stop, go, or proceed with caution when applying neural crest concepts.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Mechanism Section -->
+                            <div class="bg-white rounded border border-gray-200 overflow-hidden">
+                                <div class="bg-gray-50 px-3 py-2 border-b">
+                                    <h5 class="text-xs font-semibold text-gray-800">⚙️ Mechanism</h5>
+                                </div>
+                                <div class="p-3">
+                                    <p class="text-sm text-gray-700 mb-3">BMP gradients create morphogen signaling that induces neural crest identity through transcription factor networks (Snail, Slug, FoxD3, Sox10).</p>
+                                    
+                                    <!-- Embedded Butler Insight (Persistent) -->
+                                    <div class="bg-blue-50 border border-blue-200 rounded p-3">
+                                        <div class="flex items-start space-x-2">
+                                            <span class="text-sm">⚙️</span>
+                                            <div class="flex-1">
+                                                <p class="text-sm text-blue-800 leading-relaxed mb-2">
+                                                    <strong>Butler (Persistent):</strong> Think of this as the engine under the hood - you see the neural crest migration results, but this explains what's actually making it work.
+                                                </p>
+                                                <div class="flex space-x-1">
+                                                    <span class="px-2 py-0.5 bg-blue-200 text-blue-800 rounded text-xs">BMP signaling</span>
+                                                    <span class="px-2 py-0.5 bg-blue-200 text-blue-800 rounded text-xs">transcription factors</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Application Section -->
+                            <div class="bg-white rounded border border-gray-200 overflow-hidden">
+                                <div class="bg-gray-50 px-3 py-2 border-b flex justify-between items-center">
+                                    <h5 class="text-xs font-semibold text-gray-800">🛠️ Application</h5>
+                                    <button class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-500">
+                                        🔊 Speak
+                                    </button>
+                                </div>
+                                <div class="p-3">
+                                    <p class="text-sm text-gray-700 mb-3">Understanding neural crest development explains craniofacial birth defects (neurocristopathies) like Hirschsprung disease and Waardenburg syndrome.</p>
+                                    
+                                    <!-- Embedded Butler Insight -->
+                                    <div class="bg-green-50 border border-green-200 rounded p-3">
+                                        <div class="flex items-start space-x-2">
+                                            <span class="text-sm">🛠️</span>
+                                            <p class="text-sm text-green-800 leading-relaxed">
+                                                <strong>Butler:</strong> This is where theory meets reality - like having a toolkit, you now know which tool (neural crest knowledge) to use for which clinical job.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Key Innovation Highlights -->
+        <div class="grid md:grid-cols-2 gap-8 mb-8">
+            
+            <!-- Butler Persistence Feature -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h3 class="text-xl font-bold text-gray-800 mb-4 flex items-center">
+                    <span class="text-2xl mr-3">🔄</span>
+                    Butler Insight Persistence
+                </h3>
+                
+                <div class="space-y-4">
+                    <div class="p-4 bg-blue-50 border-l-4 border-blue-400 rounded-r">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium text-blue-700">Mechanism Insight (Persistent)</span>
+                            <span class="text-xs text-blue-600">85% confidence</span>
+                        </div>
+                        <p class="text-sm text-blue-800">Think of this as the engine under the hood - persists across pages when relevant.</p>
+                        <div class="flex space-x-1 mt-2">
+                            <span class="px-2 py-0.5 bg-blue-200 text-blue-800 rounded text-xs">BMP signaling</span>
+                            <span class="px-2 py-0.5 bg-blue-200 text-blue-800 rounded text-xs">neural crest</span>
+                        </div>
+                    </div>
+                    
+                    <div class="p-4 bg-amber-50 border-l-4 border-amber-400 rounded-r">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium text-amber-700">Application Insight (Contextual)</span>
+                            <span class="text-xs text-amber-600">72% confidence</span>
+                        </div>
+                        <p class="text-sm text-amber-800">Appears when relevant to current section, fades when topic shifts.</p>
+                        <div class="flex space-x-1 mt-2">
+                            <span class="px-2 py-0.5 bg-amber-200 text-amber-800 rounded text-xs">clinical applications</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-4 p-3 bg-gray-50 rounded">
+                    <h5 class="text-sm font-semibold text-gray-700 mb-2">🧠 Smart Persistence Logic</h5>
+                    <ul class="text-xs text-gray-600 space-y-1">
+                        <li>• Mechanism insights persist across related concepts</li>
+                        <li>• Warning insights remain visible to prevent mistakes</li>
+                        <li>• Memory aids stay available for reinforcement</li>
+                        <li>• Contextual insights fade when topics shift</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Subject Universality -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h3 class="text-xl font-bold text-gray-800 mb-4 flex items-center">
+                    <span class="text-2xl mr-3">🌍</span>
+                    Universal Subject Coverage
+                </h3>
+                
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                    <div class="p-3 bg-gradient-to-br from-blue-50 to-indigo-50 rounded text-center">
+                        <div class="text-xl mb-1">🧬</div>
+                        <div class="text-xs font-medium text-blue-700">Biology</div>
+                        <div class="text-xs text-blue-600">Cell, DNA, Evolution</div>
+                    </div>
+                    
+                    <div class="p-3 bg-gradient-to-br from-green-50 to-emerald-50 rounded text-center">
+                        <div class="text-xl mb-1">⚗️</div>
+                        <div class="text-xs font-medium text-green-700">Chemistry</div>
+                        <div class="text-xs text-green-600">Atoms, Bonds, Reactions</div>
+                    </div>
+                    
+                    <div class="p-3 bg-gradient-to-br from-purple-50 to-pink-50 rounded text-center">
+                        <div class="text-xl mb-1">⚛️</div>
+                        <div class="text-xs font-medium text-purple-700">Physics</div>
+                        <div class="text-xs text-purple-600">Forces, Energy, Waves</div>
+                    </div>
+                    
+                    <div class="p-3 bg-gradient-to-br from-yellow-50 to-orange-50 rounded text-center">
+                        <div class="text-xl mb-1">📊</div>
+                        <div class="text-xs font-medium text-orange-700">Math</div>
+                        <div class="text-xs text-orange-600">Calculus, Algebra, Stats</div>
+                    </div>
+                    
+                    <div class="p-3 bg-gradient-to-br from-gray-50 to-slate-50 rounded text-center">
+                        <div class="text-xl mb-1">💼</div>
+                        <div class="text-xs font-medium text-gray-700">Business</div>
+                        <div class="text-xs text-gray-600">Strategy, Finance, Ops</div>
+                    </div>
+                    
+                    <div class="p-3 bg-gradient-to-br from-red-50 to-pink-50 rounded text-center">
+                        <div class="text-xl mb-1">📚</div>
+                        <div class="text-xs font-medium text-red-700">Literature</div>
+                        <div class="text-xs text-red-600">Plot, Character, Theme</div>
+                    </div>
+                </div>
+                
+                <div class="p-3 bg-gradient-to-r from-gray-50 to-gray-100 rounded">
+                    <h5 class="text-sm font-semibold text-gray-700 mb-2">🎯 Adaptive Analysis</h5>
+                    <p class="text-xs text-gray-600 leading-relaxed">
+                        The system automatically detects subject matter and applies appropriate:
+                        • Knowledge mapping • Butler metaphors • Subject-specific patterns
+                        • Cross-disciplinary connections • Contextual applications
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Performance & Export Features -->
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <h3 class="text-xl font-bold text-gray-800 mb-4 flex items-center">
+                <span class="text-2xl mr-3">🚀</span>
+                Performance & Integration Features
+            </h3>
+            
+            <div class="grid md:grid-cols-3 gap-6">
+                
+                <!-- High-Capacity Processing -->
+                <div class="p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="font-semibold text-green-800">High-Capacity PDFs</h4>
+                        <div class="text-2xl">📄</div>
+                    </div>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-green-700">≤20MB files:</span>
+                            <span class="font-medium text-green-800">≤2s load</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-green-700">200MB textbooks:</span>
+                            <span class="font-medium text-green-800">≤8s load</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-green-700">Page switching:</span>
+                            <span class="font-medium text-green-800">Zero lag</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-green-700">Memory usage:</span>
+                            <span class="font-medium text-green-800">≤100MB</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Export Integration -->
+                <div class="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="font-semibold text-blue-800">Export & Integration</h4>
+                        <div class="text-2xl">📤</div>
+                    </div>
+                    <div class="space-y-3 text-sm">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2 h-2 bg-blue-500 rounded-full"></div>
+                            <span class="text-blue-700">NoteLab JSON export</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2 h-2 bg-blue-500 rounded-full"></div>
+                            <span class="text-blue-700">Memo.cards integration</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2 h-2 bg-blue-500 rounded-full"></div>
+                            <span class="text-blue-700">Compressed state snapshots</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2 h-2 bg-blue-500 rounded-full"></div>
+                            <span class="text-blue-700">Butler insight preservation</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Butler Continuity -->
+                <div class="p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="font-semibold text-purple-800">Butler Continuity</h4>
+                        <div class="text-2xl">🤖</div>
+                    </div>
+                    <div class="space-y-3 text-sm">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2 h-2 bg-purple-500 rounded-full"></div>
+                            <span class="text-purple-700">Persistent insights</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2 h-2 bg-purple-500 rounded-full"></div>
+                            <span class="text-purple-700">Cross-page connections</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2 h-2 bg-purple-500 rounded-full"></div>
+                            <span class="text-purple-700">Context-aware fading</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2 h-2 bg-purple-500 rounded-full"></div>
+                            <span class="text-purple-700">Understanding continuity</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="text-center py-8 text-gray-600">
+            <p class="text-sm">Universal PDRM Butler Reader - Complete comprehension through embedded AI insights</p>
+            <p class="text-xs mt-2 opacity-75">The first system to achieve true understanding without reading through Butler-integrated analysis</p>
+        </div>
+        
+    </div>
+
+    <script>
+        // Simple demo interactions
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🔬 Universal PDRM Butler Reader Demo Loaded');
+            
+            // Add some interactive elements
+            const buttons = document.querySelectorAll('button');
+            buttons.forEach(button => {
+                button.addEventListener('click', function() {
+                    // Create a simple visual feedback
+                    this.style.transform = 'scale(0.95)';
+                    setTimeout(() => {
+                        this.style.transform = 'scale(1)';
+                    }, 150);
+                });
+            });
+            
+            // Demo progress simulation
+            let progressDemo = false;
+            const demoButton = document.querySelector('.concept-card');
+            if (demoButton) {
+                demoButton.addEventListener('click', function() {
+                    if (!progressDemo) {
+                        progressDemo = true;
+                        console.log('🎯 Simulating PDRM generation...');
+                        // You could add more interactive demos here
+                    }
+                });
+            }
+        });
+    </script>
+
+</body>
+</html>
