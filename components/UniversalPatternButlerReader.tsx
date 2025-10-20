@@ -64,7 +64,7 @@ import {
   type LearningPrediction,
   type AdaptiveLearningEngine
 } from "@/lib/adaptiveLearning";
-import LearningAnalyticsDashboard from "@/components/LearningAnalyticsDashboard";
+// LearningAnalyticsDashboard removed during cleanup - using simplified analytics
 import TOCSidebar from "@/components/TOCSidebar";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
@@ -1579,32 +1579,29 @@ export default function UniversalPatternButlerReader({
                 {/* TRAINING MODE */}
                 {currentMode === 'training' && (
               <div className="space-y-4">
-                {/* 🧠 Intelligent Learning Analytics Dashboard */}
+                {/* Simplified Learning Analytics (LearningAnalyticsDashboard removed during cleanup) */}
                 {userModel && adaptiveLearningEngine && (
-                  <LearningAnalyticsDashboard
-                    userModel={userModel}
-                    modeRecommendation={modeRecommendation}
-                    onModeSwitch={setCurrentMode}
-                    onComplexityAdjust={(level) => {
-                      setAdaptiveComplexityLevel(level);
-                      // Update user model complexity level
-                      adaptiveLearningEngine.recordEvent({
-                        timestamp: Date.now(),
-                        action: 'mode_switched',
-                        contextData: {
-                          contentType: 'pdf',
-                          domain: 'general',
-                          difficulty: level,
-                          pageNumber: currentPage,
-                          thoughtUnitIndex: currentThoughtUnit
-                        },
-                        metadata: {
-                          complexityAdjustment: level,
-                          previousLevel: adaptiveComplexityLevel
-                        }
-                      });
-                    }}
-                  />
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                    <h6 className="text-sm font-semibold text-blue-700 mb-2">📊 Learning Analytics</h6>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="bg-white rounded p-2">
+                        <div className="text-gray-600">Experience</div>
+                        <div className="font-semibold text-blue-700">{userModel.experienceLevel}</div>
+                      </div>
+                      <div className="bg-white rounded p-2">
+                        <div className="text-gray-600">Confidence</div>
+                        <div className="font-semibold text-blue-700">{Math.round(userModel.confidence * 100)}%</div>
+                      </div>
+                    </div>
+                    {modeRecommendation && (
+                      <div className="mt-2 text-xs text-blue-600">
+                        💡 Suggested: {modeRecommendation.recommendedMode}
+                      </div>
+                    )}
+                    <div className="mt-2 text-xs text-gray-500">
+                      Full analytics dashboard temporarily disabled during cleanup.
+                    </div>
+                  </div>
                 )}
 
                 {trainingState.step === 'selection' && (

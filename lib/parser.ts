@@ -21,15 +21,9 @@ export async function extractText(file: File): Promise<string> {
       return "Error processing PDF file. The PDF viewer will still work for viewing.";
     }
   } else if (extension === "docx") {
-    try {
-      const mammoth = await import("mammoth");
-      const arrayBuffer = await file.arrayBuffer();
-      const result = await mammoth.extractRawText({ arrayBuffer });
-      return result.value;
-    } catch (error) {
-      console.error("Error extracting DOCX text:", error);
-      return "Error extracting DOCX text. Please try a different file format.";
-    }
+    // DOCX parsing disabled - mammoth dependency removed during cleanup
+    console.warn("DOCX parsing not available - mammoth dependency was removed");
+    return "DOCX parsing is currently disabled. Please convert to PDF or TXT format.";
   } else if (extension === "txt") {
     try {
       return await file.text();

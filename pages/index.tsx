@@ -13,7 +13,6 @@ import PatternView from "@/components/PatternView";
 import NoteLabView from "@/components/NoteLabView";
 import CleanHybridReader from "@/components/CleanHybridReader";
 import HighlightPopup from "@/components/HighlightPopup";
-import RightBrainNoteEditor from "@/components/RightBrainNoteEditor";
 import LinkVideoModal from "@/components/LinkVideoModal";
 
 // Prototype component import
@@ -237,7 +236,7 @@ export default function ThoughtUnitReader() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const [viewMode, setViewMode] =
-    useState<"original" | "hybrid" | "rightbrain" | "pattern" | "notelab">("original");
+    useState<"original" | "hybrid" | "pattern" | "notelab">("original");
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(0); // Start with 0 to indicate not loaded
@@ -289,8 +288,6 @@ export default function ThoughtUnitReader() {
   // 📑 TOC Panel control (like whiteboard)
   const [showTOCPanel, setShowTOCPanel] = useState<boolean>(false);
 
-  // 🧠 Right-Brain prefill draft (for High-Yield / Sketch)
-  const [rbDraftText, setRbDraftText] = useState<string>("");
 
   // 💭 Thought Detection Panel
   const [showThoughtPanel, setShowThoughtPanel] = useState<boolean>(false);
@@ -542,10 +539,10 @@ export default function ThoughtUnitReader() {
     }
   }, [currentPage, currentThoughtUnit, thoughtUnits, analyzeContentDensity, updateContentDensity]);
 
-  // Tab sync effects: snap Hybrid/Right-Brain to current chapter's first unit when switching tabs
+  // Tab sync effects: snap Hybrid to current chapter's first unit when switching tabs
   useEffect(() => {
     try {
-      if (viewMode === "hybrid" || viewMode === "rightbrain") {
+      if (viewMode === "hybrid") {
         console.log(`🔄 Tab switch to ${viewMode}: syncing to current chapter`);
         
         // Safe chapter-aware navigation with proper error handling
@@ -1039,43 +1036,20 @@ export default function ThoughtUnitReader() {
   ) => {
     const seed = (text || sel.selectionText || "").trim();
     if (!seed) {
-      alert("Select text first to create a top student note.");
+      alert("Select text first to create a study note.");
       return;
     }
 
-    console.log(`🎓 Creating ${mode || 'standard'} note for: ${seed.slice(0, 50)}...`);
+    console.log(`📝 Creating ${mode || 'standard'} note for: ${seed.slice(0, 50)}...`);
 
     try {
-      if (mode === "highYield" || mode === "sketch") {
-        const draft = await buildTopStudentNote(seed, mode);
-        setRbDraftText(draft);
-      } else {
-        // Default to high-yield top student note
-        const draft = await buildTopStudentNote(seed, "highYield");
-        setRbDraftText(draft);
-      }
-
-      setViewMode("rightbrain");
+      const draft = await buildTopStudentNote(seed, mode || "highYield");
+      // For now, just log the note since Right-Brain view is removed
+      console.log("📝 Generated study note:", draft);
+      alert("Study note generated! (Right-Brain view has been removed - note logged to console)");
     } catch (error) {
-      console.error("Error creating top student note:", error);
-      // Fallback to basic note
-      setRbDraftText(
-        [
-          `# 📚 Study Note`,
-          ``,
-          `## Content`,
-          seed,
-          ``,
-          `## My Understanding`,
-          `[Add your insights here]`,
-          ``,
-          `## Key Points`,
-          `- [Point 1]`,
-          `- [Point 2]`,
-          `- [Point 3]`,
-        ].join("\n")
-      );
-      setViewMode("rightbrain");
+      console.error("Error creating study note:", error);
+      alert("Study note creation failed. Please try again.");
     }
   };
 
@@ -1353,9 +1327,9 @@ export default function ThoughtUnitReader() {
                         // Create comprehensive enhanced note combining idea extraction and thought units
                         const enhancedNote = await buildTopStudentNote(textToAnalyze, "highYield");
                         
-                        // Set the note and switch to right-brain view
-                        setRbDraftText(enhancedNote);
-                        setViewMode("rightbrain");
+                        // Log the note since right-brain view is removed
+                        console.log("📝 Enhanced note generated:", enhancedNote);
+                        alert("Enhanced note generated! (Note logged to console)");
                         
                         console.log("✅ Enhanced TU Analysis complete, switching to right-brain view");
                       } catch (error) {
@@ -1384,8 +1358,8 @@ export default function ThoughtUnitReader() {
                       
                       try {
                         const visualNote = await buildTopStudentNote(textToAnalyze, "sketch");
-                        setRbDraftText(visualNote);
-                        setViewMode("rightbrain");
+                        console.log("🎨 Visual note generated:", visualNote);
+                        alert("Visual note generated! (Note logged to console)");
                       } catch (error) {
                         console.error("Visual note creation failed:", error);
                         alert("Visual note creation failed. Please try again.");
@@ -1555,8 +1529,8 @@ export default function ThoughtUnitReader() {
                   if (textToAnalyze) {
                     try {
                       const patternNote = await buildTopStudentNote(textToAnalyze, "highYield");
-                      setRbDraftText(patternNote);
-                      setViewMode("rightbrain");
+                      console.log("🎯 Pattern note generated:", patternNote);
+                      alert("Pattern note generated! (Note logged to console)");
                     } catch (error) {
                       console.error("Pattern note creation failed:", error);
                     }
@@ -1720,8 +1694,8 @@ export default function ThoughtUnitReader() {
                   if (textToAnalyze) {
                     try {
                       const noteNote = await buildTopStudentNote(textToAnalyze, "highYield");
-                      setRbDraftText(noteNote);
-                      setViewMode("rightbrain");
+                      console.log("📝 Study note generated:", noteNote);
+                      alert("Study note generated! (Note logged to console)");
                     } catch (error) {
                       console.error("Note creation failed:", error);
                     }
@@ -1822,181 +1796,6 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // Right-Brain Reading view (unified Progressive + Hybrid features)
-    if (viewMode === "rightbrain") {
-      // Unified Right-Brain Reader with integrated note editor overlay
-      if (rbDraftText) {
-        // Show note editor as overlay instead of replacing entire view
-        return (
-          <div className="h-full w-full relative">
-            {/* Base Reader */}
-            <CleanHybridReader
-              bookId={bookId}
-              userId={USER_ID}
-              thoughtUnits={thoughtUnits}
-              currentThoughtUnit={currentThoughtUnit}
-              pdfUrl={fileUrl || ""}
-              currentPage={currentPage}
-              pdfPageCount={pdfPageCount}
-              sampleText={sampleText}
-              setCurrentThoughtUnit={setCurrentThoughtUnit}
-              highlightedWord={highlightedWord}
-              setHighlightedWord={setHighlightedWord}
-              onPageChange={(p) => syncToPage(p)}
-              fontSize={fontSize}
-              fontFamily={fontFamily}
-              lineSpacing={lineSpacing}
-              onWordClick={(w) => {
-                setHighlightedWord(w);
-                if (autoWhiteboard && w.trim()) {
-                  setWbConcept(truncate(w, 600));
-                  setWbContext(`p.${currentPage}`);
-                  setShowWhiteboardPanel(true);
-                }
-              }}
-              onTextSelect={(t) => sel.setSelectionText(t)}
-              onGenerateNote={handleOpenRightBrainNote}
-              selBind={sel.bind}
-              tableOfContents={tableOfContents}
-              selectedVoice={selectedVoice || undefined}
-              onVoiceChange={setSelectedVoice}
-              speechRate={speechRate}
-              onSpeechRateChange={setSpeechRate}
-            />
-            
-            {/* Right-Brain Note Editor Overlay - Fused Integration */}
-            <div className="absolute top-0 right-0 w-96 h-full bg-gray-900/95 backdrop-blur-md text-white z-50 flex flex-col shadow-2xl border-l border-gray-700">
-              <div className="flex justify-between items-center p-4 border-b border-gray-700">
-                <h3 className="text-lg font-semibold">🧠 Right-Brain Note Editor</h3>
-                <button
-                  onClick={() => setRbDraftText("")}
-                  className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-800"
-                >
-                  ✕
-                </button>
-              </div>
-              
-              <div className="flex-1 overflow-auto p-4">
-                <RightBrainNoteEditor
-                  bookId={bookId}
-                  initialText={rbDraftText || sel.selectionText || ""}
-                  attachments={attachments}
-                  currentPage={currentPage}
-                  onDone={() => {
-                    setRbDraftText("");
-                    // Continue in rightbrain mode with overlay closed
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-        );
-      }
-
-      // ✅ Show loading state during PDF parsing for Right-Brain view
-      if (pdfParsingState.isLoading) {
-        return (
-          <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-purple-900 to-indigo-900">
-            <div className="text-center max-w-2xl">
-              <div className="animate-spin text-6xl mb-4">🧠</div>
-              <h3 className="text-3xl font-bold mb-4 text-white">Processing for Visual Learning</h3>
-              <p className="text-lg opacity-90 mb-6 text-gray-200">
-                {pdfParsingState.progress}
-              </p>
-              <div className="flex items-center justify-center gap-2">
-                <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                <div className="w-2 h-2 bg-pink-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-              </div>
-            </div>
-          </div>
-        );
-      }
-
-      // Show error state if parsing failed
-      if (pdfParsingState.error) {
-        return (
-          <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-red-900 to-indigo-900">
-            <div className="text-center max-w-2xl">
-              <div className="text-6xl mb-4">❌</div>
-              <h3 className="text-3xl font-bold mb-4 text-white">Visual Learning Unavailable</h3>
-              <p className="text-lg mb-6 text-red-300">
-                {pdfParsingState.error}
-              </p>
-              <button
-                onClick={() => window.location.reload()}
-                className="px-6 py-3 bg-purple-600 hover:bg-purple-500 rounded-lg text-white font-medium"
-              >
-                🔄 Try Again
-              </button>
-            </div>
-          </div>
-        );
-      }
-
-      // Main Right-Brain Reading interface (Visual learning modes) - Using CleanHybridReader as base
-      return fileUrl && thoughtUnits.length > 0 ? (
-        <div className="h-full w-full">
-          <CleanHybridReader
-            bookId={bookId}
-            userId={USER_ID}
-            thoughtUnits={thoughtUnits}
-            currentThoughtUnit={currentThoughtUnit}
-            pdfUrl={fileUrl}
-            currentPage={currentPage}
-            pdfPageCount={pdfPageCount}
-            sampleText={sampleText}
-            setCurrentThoughtUnit={setCurrentThoughtUnit}
-            highlightedWord={highlightedWord}
-            setHighlightedWord={setHighlightedWord}
-            onPageChange={(p) => syncToPage(p)}
-            fontSize={fontSize}
-            fontFamily={fontFamily}
-            lineSpacing={lineSpacing}
-            onWordClick={(w) => {
-              setHighlightedWord(w);
-              if (autoWhiteboard && w.trim()) {
-                setWbConcept(truncate(w, 600));
-                setWbContext(`p.${currentPage}`);
-                setShowWhiteboardPanel(true);
-              }
-            }}
-            onTextSelect={(t) => sel.setSelectionText(t)}
-            onGenerateNote={handleOpenRightBrainNote}
-            selBind={sel.bind}
-            tableOfContents={tableOfContents}
-            selectedVoice={selectedVoice || undefined}
-            onVoiceChange={setSelectedVoice}
-            speechRate={speechRate}
-            onSpeechRateChange={setSpeechRate}
-          />
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center h-full gap-4 bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
-          <div className="text-center">
-            <div className="text-6xl mb-4">🧠</div>
-            <h3 className="text-2xl font-bold mb-2 text-white">Visual Right-Brain Reading</h3>
-            <p className="text-lg opacity-80 mb-4 text-gray-300 max-w-md">
-              Experience visual learning with Galaxy, Forest, City, Ocean, and Mountain metaphors
-            </p>
-            {!fileUrl ? (
-              <label className="bg-gradient-to-r from-yellow-500 to-orange-500 text-black px-6 py-3 rounded-lg cursor-pointer font-medium hover:from-yellow-400 hover:to-orange-400 transition-all shadow-lg">
-                📂 Upload PDF to Begin Visual Journey
-                <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-              </label>
-            ) : (
-              <div className="text-yellow-300">
-                <div className="animate-spin text-4xl mb-2">🌌</div>
-                <p>Processing your document for visual learning...</p>
-                <p className="text-sm opacity-75 mt-2">
-                  {thoughtUnits.length} thought units loaded
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      );
-    }
 
         // 🎯 UNIFIED RIGHT-BRAIN READER - Merged Universal + Right-Brain
         return fileUrl ? (
@@ -2095,7 +1894,7 @@ export default function ThoughtUnitReader() {
       <header className="bg-gradient-to-r from-purple-600 via-pink-500 to-yellow-400 text-white shadow-md">
         <div className="py-4 flex flex-col items-center justify-center text-center">
           <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide drop-shadow-lg">
-            Surgeon-View PDRM
+            Avrrio Reader
           </h1>
           <p className="text-sm md:text-lg italic opacity-90">Study smarter, learn faster.</p>
         </div>
@@ -2111,15 +1910,7 @@ export default function ThoughtUnitReader() {
               viewMode === "original" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
             }`}
           >
-            🎯 Unified Reader
-          </button>
-          <button
-            onClick={() => setViewMode("rightbrain")}
-            className={`text-xs px-3 py-1 rounded ${
-              viewMode === "rightbrain" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
-            }`}
-          >
-            🧠 Right-Brain
+            🎯 Surgeon-View PDRM
           </button>
           <button
             onClick={() => setViewMode("notelab")}
@@ -2460,7 +2251,7 @@ export default function ThoughtUnitReader() {
             if (note) {
               await handleOpenRightBrainNote(note, undefined, "highYield");
             } else {
-              setViewMode("rightbrain");
+              console.log("📝 Note creation completed");
             }
           }}
           onAddFlashcard={() => console.log("Flashcard created")}
@@ -2474,7 +2265,7 @@ export default function ThoughtUnitReader() {
           onClose={() => setShowLinkModal(false)}
           onSave={(url) => {
             setAttachments((prev) => [...prev, url]);
-            setViewMode("rightbrain");
+            console.log("📎 Link attached:", url);
             setShowLinkModal(false);
           }}
         />

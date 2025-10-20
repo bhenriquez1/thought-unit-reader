@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { ThoughtUnit as BaseThoughtUnit, ReadingStats } from "@/types/reading";
 import { saveReadingProgress, loadReadingProgress } from "@/lib/firebase";
-import RightBrainToolbar from "@/components/RightBrainToolbar";
+// RightBrainToolbar removed during cleanup - using simplified controls
 import { useStartReview } from "@/hooks/useStartReview";
 
 import { chunkText, stableChunkId } from "@/lib/chunkers";
@@ -346,14 +346,29 @@ export default function HybridReader({
           cueToken
         )}
 
-        <RightBrainToolbar
-          userId={userId}
-          bookId={bookId}
-          currentPage={currentPage}
-          selectionText={effectiveSelection}
-          onGenerateNote={onGenerateNote}
-          startReview={startReview}
-        />
+        {/* Simplified Right-Brain Controls (RightBrainToolbar removed during cleanup) */}
+        {effectiveSelection && (
+          <div className="p-3 bg-purple-900/30 rounded-lg border border-purple-500/30">
+            <div className="text-xs font-medium text-purple-300 mb-2">🧠 Selected Text Tools</div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => onGenerateNote?.(effectiveSelection, undefined, "highYield")}
+                className="text-xs px-3 py-2 bg-purple-600 hover:bg-purple-500 rounded transition-colors"
+              >
+                📝 Generate Note
+              </button>
+              <button
+                onClick={() => startReview()}
+                className="text-xs px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded transition-colors"
+              >
+                📚 Start Review
+              </button>
+            </div>
+            <div className="text-xs text-purple-200 mt-2 opacity-75 line-clamp-2">
+              "{effectiveSelection.slice(0, 100)}${effectiveSelection.length > 100 ? '...' : ''}"
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Progressive Idea View (right) */}
@@ -571,14 +586,7 @@ export default function HybridReader({
           </div>
         )}
 
-        <RightBrainToolbar
-          userId={userId}
-          bookId={bookId}
-          currentPage={currentPage}
-          selectionText={effectiveSelection}
-          onGenerateNote={onGenerateNote}
-          startReview={startReview}
-        />
+        {/* RightBrainToolbar removed during cleanup - controls integrated above */}
       </div>
 
       {/* Local styles for gentle idea-pulse */}

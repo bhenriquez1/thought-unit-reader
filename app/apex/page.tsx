@@ -12,7 +12,7 @@ import {
   type Pattern 
 } from '@/types/patterns';
 import { protocolHandler, generateBootcampReturnUrl, isProtocolSupported } from '@/lib/protocolHandler';
-import { EnhancedBootcampLink, BootcampPracticeLink } from '@/components/LearningAwareBootcampLink';
+// LearningAwareBootcampLink components removed during cleanup - using fallback buttons
 
 interface LearningStats {
   totalStudyTime: number; // minutes
@@ -328,13 +328,13 @@ export default function DATLearningHub() {
                         >
                           Study Patterns
                         </Link>
-                        <EnhancedBootcampLink
-                          section={categoryKey}
-                          category={categoryName}
-                          className="flex-1 text-center px-3 py-2 bg-orange-600/30 hover:bg-orange-600/40 text-orange-200 rounded text-xs transition-colors border border-orange-500/30"
+                        <button
+                          disabled
+                          title="DAT Bootcamp integration temporarily disabled"
+                          className="flex-1 text-center px-3 py-2 bg-gray-600/30 text-gray-400 rounded text-xs border border-gray-500/30 cursor-not-allowed"
                         >
-                          🔗 DAT Bootcamp
-                        </EnhancedBootcampLink>
+                          🔗 DAT Bootcamp (Disabled)
+                        </button>
                       </div>
                     </div>
                   );
@@ -392,9 +392,13 @@ export default function DATLearningHub() {
                 >
                   🎯 Pattern-Focused Practice
                 </Link>
-                <BootcampPracticeLink className="px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white rounded-lg text-sm font-medium transition-all">
-                  🚀 DAT Bootcamp Exams
-                </BootcampPracticeLink>
+                <button
+                  disabled
+                  title="DAT Bootcamp integration temporarily disabled"
+                  className="px-4 py-2 bg-gradient-to-r from-gray-600 to-gray-700 text-gray-300 rounded-lg text-sm font-medium cursor-not-allowed"
+                >
+                  🚀 DAT Bootcamp Exams (Disabled)
+                </button>
               </div>
             </div>
 
