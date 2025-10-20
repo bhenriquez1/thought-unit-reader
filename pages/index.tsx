@@ -18,6 +18,7 @@ import LinkVideoModal from "@/components/LinkVideoModal";
 // Prototype component import
 import UniversalPatternButlerReader from "@/components/UniversalPatternButlerReader";
 import SurgeonViewPdrmReader from "@/components/SurgeonViewPdrmReader";
+import UniversalPDRMReader from "@/components/UniversalPDRMReader";
 
 import {
   firebaseConnected,
@@ -1840,26 +1841,26 @@ export default function ThoughtUnitReader() {
     }
 
 
-        // 🎯 UNIFIED RIGHT-BRAIN READER - Merged Universal + Right-Brain
+        // 🔬 UNIVERSAL PDRM BUTLER READER - Embedded Butler + PDRM Analysis
         return fileUrl ? (
           <div className="h-full flex flex-col">
-            {/* Unified Reader Header */}
+            {/* Universal PDRM Butler Reader Header */}
             <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-600 text-white p-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <span className="text-2xl">🧠</span>
+                <span className="text-2xl">🔬</span>
                 <div>
-                  <h3 className="text-lg font-bold">Unified Right-Brain Reader</h3>
-                  <p className="text-sm opacity-90">Universal patterns + Right-brain visual analysis + PDF navigation</p>
+                  <h3 className="text-lg font-bold">Universal PDRM Butler Reader</h3>
+                  <p className="text-sm opacity-90">Embedded Butler insights + Universal PDRM analysis + PDF navigation</p>
                 </div>
               </div>
               <div className="text-sm bg-white/20 backdrop-blur rounded-lg px-3 py-1">
-                Merged Mode
+                Version 2.1
               </div>
             </div>
             
-            {/* Surgeon-View PDRM Butler 2.1 - Default Reader */}
+            {/* Universal PDRM Reader with Embedded Butler System */}
             <div className="flex-1 overflow-hidden">
-            <SurgeonViewPdrmReader
+            <UniversalPDRMReader
               bookId={bookId}
               userId={USER_ID}
               pdfUrl={fileUrl}
@@ -1867,9 +1868,6 @@ export default function ThoughtUnitReader() {
               pdfPageCount={pdfPageCount}
               onPageChange={(p) => syncToPage(p)}
               onPageCount={(count) => setPdfPageCount(count)}
-              thoughtUnits={thoughtUnits}
-              currentThoughtUnit={currentThoughtUnit}
-              setCurrentThoughtUnit={setCurrentThoughtUnit}
               onTextSelect={(t) => sel.setSelectionText(t)}
               onGenerateNote={handleOpenRightBrainNote}
               fontSize={fontSize}
