@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart TOC Surgeon-View PDRM Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 100%);
+            color: white;
+            overflow-x: hidden;
+        }
+
+        .header {
+            background: rgba(20, 20, 35, 0.95);
+            backdrop-filter: blur(12px);
+            padding: 20px;
+            border-bottom: 1px solid rgba(147, 51, 234, 0.3);
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            background: linear-gradient(45deg, #8b5cf6, #06b6d4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 1.1rem;
+        }
+
+        .main-container {
+            display: flex;
+            min-height: calc(100vh - 100px);
+            position: relative;
+        }
+
+        /* TOC Sidebar Simulation */
+        .toc-sidebar {
+            width: 320px;
+            background: rgba(30, 30, 45, 0.95);
+            backdrop-filter: blur(8px);
+            border-right: 1px solid rgba(147, 51, 234, 0.2);
+            padding: 20px;
+            overflow-y: auto;
+            height: calc(100vh - 100px);
+            position: sticky;
+            top: 100px;
+        }
+
+        .toc-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .toc-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: white;
+        }
+
+        .toc-tabs {
+            display: flex;
+            background: rgba(50, 50, 65, 0.5);
+            border-radius: 8px;
+            padding: 4px;
+            margin-bottom: 16px;
+        }
+
+        .toc-tab {
+            flex: 1;
+            padding: 8px 12px;
+            border: none;
+            background: transparent;
+            color: rgba(255, 255, 255, 0.7);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }
+
+        .toc-tab.active {
+            background: #8b5cf6;
+            color: white;
+            box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+        }
+
+        .toc-tab:not(.active):hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        /* Smart TOC Entries */
+        .smart-toc-entry {
+            border: 1px solid rgba(100, 100, 120, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .smart-toc-entry:hover {
+            border-color: rgba(147, 51, 234, 0.6);
+            background: rgba(147, 51, 234, 0.05);
+        }
+
+        .smart-toc-entry.active {
+            border-color: #8b5cf6;
+            background: rgba(139, 92, 246, 0.1);
+        }
+
+        .chapter-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .chapter-title {
+            font-weight: 600;
+            color: white;
+            font-size: 0.95rem;
+        }
+
+        .processing-status {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .status-complete { background: #10b981; }
+        .status-processing { background: #f59e0b; animation: pulse 2s infinite; }
+        .status-pending { background: #6b7280; }
+        .status-error { background: #ef4444; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .pdrm-sections {
+            margin-top: 8px;
+        }
+
+        .pdrm-section {
+            background: rgba(50, 50, 65, 0.4);
+            border-radius: 4px;
+            padding: 6px 8px;
+            margin: 4px 0;
+            font-size: 0.8rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.2s ease;
+            cursor: pointer;
+        }
+
+        .pdrm-section:hover {
+            background: rgba(70, 70, 85, 0.6);
+        }
+
+        .section-name {
+            color: rgba(255, 255, 255, 0.8);
+            text-transform: capitalize;
+        }
+
+        .section-confidence {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.75rem;
+        }
+
+        .butler-insights {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .insight-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .insight-badge {
+            background: rgba(139, 92, 246, 0.2);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            color: #c4b5fd;
+            padding: 2px 6px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .insight-badge:hover {
+            background: rgba(139, 92, 246, 0.3);
+            border-color: rgba(139, 92, 246, 0.5);
+        }
+
+        /* PDF Content Area */
+        .pdf-content {
+            flex: 1;
+            padding: 20px;
+            position: relative;
+            overflow-y: auto;
+            height: calc(100vh - 100px);
+        }
+
+        .pdf-page {
+            background: white;
+            color: black;
+            margin: 0 auto 20px auto;
+            max-width: 800px;
+            min-height: 1000px;
+            padding: 40px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            position: relative;
+            line-height: 1.6;
+        }
+
+        .page-number {
+            position: absolute;
+            bottom: 20px;
+            right: 30px;
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        /* Butler Overlays */
+        .butler-overlay {
+            position: absolute;
+            max-width: 280px;
+            background: rgba(20, 20, 20, 0.95);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(147, 51, 234, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            color: white;
+            font-size: 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+            z-index: 50;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.3s ease;
+        }
+
+        .butler-overlay.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .overlay-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .overlay-title {
+            font-weight: 600;
+            color: #c4b5fd;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .overlay-controls {
+            display: flex;
+            gap: 4px;
+        }
+
+        .overlay-btn {
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.6);
+            cursor: pointer;
+            padding: 2px;
+            border-radius: 2px;
+            transition: color 0.2s ease;
+        }
+
+        .overlay-btn:hover {
+            color: white;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .overlay-content {
+            color: rgba(255, 255, 255, 0.9);
+            line-height: 1.4;
+            margin-bottom: 8px;
+        }
+
+        .overlay-footer {
+            padding-top: 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        /* Readless Navigation Controls */
+        .readless-controls {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(30, 30, 45, 0.95);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(147, 51, 234, 0.3);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            z-index: 60;
+        }
+
+        .readless-btn {
+            background: rgba(139, 92, 246, 0.8);
+            border: none;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .readless-btn:hover {
+            background: #8b5cf6;
+            transform: translateY(-1px);
+        }
+
+        .readless-btn:disabled {
+            background: rgba(100, 100, 120, 0.3);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .progress-indicator {
+            background: rgba(50, 50, 65, 0.8);
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        /* Demo Status Panel */
+        .demo-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(30, 30, 45, 0.95);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 8px;
+            padding: 12px 16px;
+            z-index: 70;
+            font-size: 0.9rem;
+        }
+
+        .demo-status h3 {
+            color: #10b981;
+            margin-bottom: 8px;
+            font-size: 1rem;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 4px 0;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .status-value {
+            color: #06b6d4;
+            font-weight: 500;
+        }
+
+        /* Highlight effect for text */
+        .highlight-text {
+            background: rgba(139, 92, 246, 0.2);
+            padding: 2px 4px;
+            border-radius: 3px;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .highlight-text:hover {
+            background: rgba(139, 92, 246, 0.3);
+        }
+
+        /* Animations */
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .slide-in-right {
+            animation: slideInRight 0.4s ease-out;
+        }
+
+        @keyframes slideInRight {
+            from { opacity: 0; transform: translateX(20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🧠 Smart TOC Surgeon-View PDRM</h1>
+        <p>Full Chapter Absorption & Embedded Butler Integration Demo</p>
+    </div>
+
+    <!-- Demo Status Panel -->
+    <div class="demo-status">
+        <h3>🎯 System Status</h3>
+        <div class="status-item">
+            <span>Smart TOC:</span>
+            <span class="status-value">Active</span>
+        </div>
+        <div class="status-item">
+            <span>PDRM Pipeline:</span>
+            <span class="status-value">Processing</span>
+        </div>
+        <div class="status-item">
+            <span>Butler Overlays:</span>
+            <span class="status-value">3 Active</span>
+        </div>
+        <div class="status-item">
+            <span>Readless Mode:</span>
+            <span class="status-value" id="readless-status">Ready</span>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <!-- Smart TOC Sidebar -->
+        <div class="toc-sidebar">
+            <div class="toc-header">
+                <h3 class="toc-title">📑 Table of Contents</h3>
+            </div>
+
+            <!-- TOC Mode Tabs -->
+            <div class="toc-tabs">
+                <button class="toc-tab" id="regular-tab">📄 Regular</button>
+                <button class="toc-tab active" id="smart-tab">🧠 Smart</button>
+            </div>
+
+            <!-- Smart TOC Entries -->
+            <div class="smart-toc-entries">
+                <!-- Chapter 1 -->
+                <div class="smart-toc-entry active" data-chapter="chapter-1">
+                    <div class="chapter-header">
+                        <div class="chapter-title">Chapter 1: Introduction to Neural Networks</div>
+                        <span class="processing-status status-complete"></span>
+                    </div>
+                    
+                    <div class="pdrm-sections">
+                        <div class="pdrm-section" data-section="pattern">
+                            <span class="section-name">Pattern Recognition</span>
+                            <span class="section-confidence">92%</span>
+                        </div>
+                        <div class="pdrm-section" data-section="decision">
+                            <span class="section-name">Decision Rules</span>
+                            <span class="section-confidence">87%</span>
+                        </div>
+                        <div class="pdrm-section" data-section="mechanism">
+                            <span class="section-name">Core Mechanisms</span>
+                            <span class="section-confidence">95%</span>
+                        </div>
+                        <div class="pdrm-section" data-section="application">
+                            <span class="section-name">Applications</span>
+                            <span class="section-confidence">89%</span>
+                        </div>
+                    </div>
+
+                    <div class="butler-insights">
+                        <div class="insight-badges">
+                            <span class="insight-badge">🧠 Explain</span>
+                            <span class="insight-badge">❓ Quiz</span>
+                            <span class="insight-badge">🎯 Memory Aid</span>
+                            <span class="insight-badge">📊 Diagram</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chapter 2 -->
+                <div class="smart-toc-entry" data-chapter="chapter-2">
+                    <div class="chapter-header">
+                        <div class="chapter-title">Chapter 2: Deep Learning Foundations</div>
+                        <span class="processing-status status-processing"></span>
+                    </div>
+                    
+                    <div class="pdrm-sections">
+                        <div class="pdrm-section" data-section="pattern">
+                            <span class="section-name">Pattern Analysis</span>
+                            <span class="section-confidence">85%</span>
+                        </div>
+                        <div class="pdrm-section" data-section="mechanism">
+                            <span class="section-name">Learning Mechanisms</span>
+                            <span class="section-confidence">91%</span>
+                        </div>
+                    </div>
+
+                    <div class="butler-insights">
+                        <div class="insight-badges">
+                            <span class="insight-badge">🧠 Explain</span>
+                            <span class="insight-badge">⚖️ Compare</span>
+                            <span class="insight-badge">📊 Timeline</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chapter 3 -->
+                <div class="smart-toc-entry" data-chapter="chapter-3">
+                    <div class="chapter-header">
+                        <div class="chapter-title">Chapter 3: Advanced Architectures</div>
+                        <span class="processing-status status-pending"></span>
+                    </div>
+                    
+                    <div class="pdrm-sections">
+                        <div class="pdrm-section" data-section="pending">
+                            <span class="section-name">Awaiting Processing...</span>
+                            <span class="section-confidence">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PDF Content Area -->
+        <div class="pdf-content">
+            <div class="pdf-page" id="page-1">
+                <h1>Chapter 1: Introduction to Neural Networks</h1>
+                
+                <p>Neural networks represent one of the most significant breakthroughs in modern artificial intelligence. These computational models, inspired by the structure and function of biological neural networks, have revolutionized how machines process and understand complex data patterns.</p>
+
+                <h2>Core Concepts</h2>
+                
+                <p>At their foundation, <span class="highlight-text" data-insight="pattern-recognition">neural networks excel at pattern recognition</span> tasks that traditional algorithms struggle with. By mimicking the interconnected nature of neurons in biological systems, these networks can learn complex representations from data.</p>
+
+                <p>The <span class="highlight-text" data-insight="decision-mechanism">decision-making process</span> in neural networks involves multiple layers of computation, each transforming input data through weighted connections and activation functions. This hierarchical processing enables the network to build increasingly abstract representations of the input.</p>
+
+                <h2>Key Mechanisms</h2>
+
+                <p><span class="highlight-text" data-insight="backpropagation">Backpropagation</span> serves as the fundamental learning algorithm, allowing networks to adjust their internal parameters based on prediction errors. This iterative process enables the network to improve its performance over time.</p>
+
+                <p>The architecture typically consists of an input layer, one or more hidden layers, and an output layer. Each layer contains nodes (neurons) that apply mathematical transformations to their inputs, producing outputs that serve as inputs to the next layer.</p>
+
+                <h2>Applications</h2>
+
+                <p>Modern neural networks find applications across diverse domains, from computer vision and natural language processing to autonomous vehicles and medical diagnosis. Their ability to learn from large datasets makes them particularly valuable in today's data-rich environment.</p>
+
+                <div class="page-number">Page 1</div>
+            </div>
+
+            <!-- Butler Overlays -->
+            <div class="butler-overlay visible" id="pattern-overlay" style="top: 280px; left: 420px;">
+                <div class="overlay-header">
+                    <div class="overlay-title">
+                        <span>🧠</span>
+                        <span>Pattern Recognition Explained</span>
+                    </div>
+                    <div class="overlay-controls">
+                        <button class="overlay-btn" title="Pin overlay">📍</button>
+                        <button class="overlay-btn" title="Close overlay">✕</button>
+                    </div>
+                </div>
+                <div class="overlay-content">
+                    Pattern recognition in neural networks involves identifying recurring structures in data. Unlike traditional rule-based systems, neural networks learn to detect patterns automatically through exposure to examples.
+                </div>
+                <div class="overlay-footer">
+                    <span>89% confidence</span>
+                    <span>Page 1</span>
+                </div>
+            </div>
+
+            <div class="butler-overlay" id="decision-overlay" style="top: 420px; left: 380px;">
+                <div class="overlay-header">
+                    <div class="overlay-title">
+                        <span>⚡</span>
+                        <span>Decision Mechanism</span>
+                    </div>
+                    <div class="overlay-controls">
+                        <button class="overlay-btn" title="Pin overlay">📍</button>
+                        <button class="overlay-btn" title="Close overlay">✕</button>
+                    </div>
+                </div>
+                <div class="overlay-content">
+                    Neural networks make decisions through weighted voting across multiple neurons. Each neuron contributes to the final output based on its activation level and connection strength.
+                </div>
+                <div class="overlay-footer">
+                    <span>92% confidence</span>
+                    <span>Page 1</span>
+                </div>
+            </div>
+
+            <div class="butler-overlay" id="backprop-overlay" style="top: 580px; left: 220px;">
+                <div class="overlay-header">
+                    <div class="overlay-title">
+                        <span>🔄</span>
+                        <span>Backpropagation Process</span>
+                    </div>
+                    <div class="overlay-controls">
+                        <button class="overlay-btn" title="Pin overlay">📍</button>
+                        <button class="overlay-btn" title="Close overlay">✕</button>
+                    </div>
+                </div>
+                <div class="overlay-content">
+                    Backpropagation calculates how much each weight contributed to the error and adjusts them accordingly. It works backward from the output to input layers, hence the name "back-propagation."
+                </div>
+                <div class="overlay-footer">
+                    <span>95% confidence</span>
+                    <span>Page 1</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Readless Navigation Controls -->
+    <div class="readless-controls">
+        <button class="readless-btn" id="prev-btn" disabled>
+            ← Previous
+        </button>
+        <div class="progress-indicator" id="progress-display">
+            Concept 1 of 12
+        </div>
+        <button class="readless-btn" id="next-btn">
+            Next Concept ▶
+        </button>
+        <button class="readless-btn" id="auto-btn">
+            🤖 Auto: OFF
+        </button>
+        <button class="readless-btn" id="readless-toggle">
+            🧠 Start Readless
+        </button>
+    </div>
+
+    <script>
+        // Simulation State
+        let currentChapter = 'chapter-1';
+        let currentConcept = 1;
+        let totalConcepts = 12;
+        let isReadlessActive = false;
+        let autoAdvance = false;
+        let autoTimer = null;
+
+        // DOM Elements
+        const smartTocEntries = document.querySelectorAll('.smart-toc-entry');
+        const butlerOverlays = document.querySelectorAll('.butler-overlay');
+        const highlightTexts = document.querySelectorAll('.highlight-text');
+        const readlessToggle = document.getElementById('readless-toggle');
+        const autoBtn = document.getElementById('auto-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const prevBtn = document.getElementById('prev-btn');
+        const progressDisplay = document.getElementById('progress-display');
+        const readlessStatus = document.getElementById('readless-status');
+
+        // Initialize Demo
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('🧠 Smart TOC Surgeon-View PDRM Demo Initialized');
+            setupEventListeners();
+            updateProgress();
+            simulateProcessing();
+        });
+
+        function setupEventListeners() {
+            // TOC Entry Navigation
+            smartTocEntries.forEach(entry => {
+                entry.addEventListener('click', () => {
+                    selectChapter(entry.dataset.chapter);
+                });
+            });
+
+            // PDRM Section Navigation
+            document.querySelectorAll('.pdrm-section').forEach(section => {
+                section.addEventListener('click', () => {
+                    if (section.dataset.section !== 'pending') {
+                        showSectionContent(section.dataset.section);
+                    }
+                });
+            });
+
+            // Butler Insight Badges
+            document.querySelectorAll('.insight-badge').forEach(badge => {
+                badge.addEventListener('click', () => {
+                    showInsightModal(badge.textContent);
+                });
+            });
+
+            // Highlighted Text
+            highlightTexts.forEach(text => {
+                text.addEventListener('click', () => {
+                    showRelatedOverlay(text.dataset.insight);
+                });
+            });
+
+            // Readless Controls
+            readlessToggle.addEventListener('click', toggleReadlessMode);
+            autoBtn.addEventListener('click', toggleAutoAdvance);
+            nextBtn.addEventListener('click', nextConcept);
+            prevBtn.addEventListener('click', previousConcept);
+
+            // Overlay Controls
+            document.querySelectorAll('.overlay-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (btn.title.includes('Pin')) {
+                        togglePin(btn);
+                    } else if (btn.title.includes('Close')) {
+                        closeOverlay(btn);
+                    }
+                });
+            });
+
+            // Keyboard Navigation
+            document.addEventListener('keydown', handleKeyboard);
+        }
+
+        function selectChapter(chapterId) {
+            // Update active chapter
+            smartTocEntries.forEach(entry => {
+                entry.classList.remove('active');
+            });
+            document.querySelector(`[data-chapter="${chapterId}"]`).classList.add('active');
+            
+            currentChapter = chapterId;
+            console.log(`📖 Navigated to ${chapterId}`);
+            
+            // Simulate chapter content loading
+            animateChapterTransition();
+        }
+
+        function showSectionContent(sectionType) {
+            console.log(`🔍 Showing PDRM section: ${sectionType}`);
+            
+            // Simulate section highlight
+            const sectionElement = document.querySelector(`[data-section="${sectionType}"]`);
+            sectionElement.style.background = 'rgba(139, 92, 246, 0.3)';
+            setTimeout(() => {
+                sectionElement.style.background = '';
+            }, 1000);
+
+            // Show relevant overlays
+            showSectionOverlays(sectionType);
+        }
+
+        function showSectionOverlays(sectionType) {
+            const overlayMap = {
+                'pattern': 'pattern-overlay',
+                'decision': 'decision-overlay',
+                'mechanism': 'backprop-overlay',
+                'application': 'pattern-overlay'
+            };
+
+            const overlayId = overlayMap[sectionType];
+            if (overlayId) {
+                const overlay = document.getElementById(overlayId);
+                overlay.classList.add('visible');
+                
+                // Auto-hide after 5 seconds
+                setTimeout(() => {
+                    if (!overlay.querySelector('[title="Pin overlay"]').textContent.includes('📌')) {
+                        overlay.classList.remove('visible');
+                    }
+                }, 5000);
+            }
+        }
+
+        function showRelatedOverlay(insightType) {
+            console.log(`💡 Showing Butler insight: ${insightType}`);
+            
+            const overlayMap = {
+                'pattern-recognition': 'pattern-overlay',
+                'decision-mechanism': 'decision-overlay',
+                'backpropagation': 'backprop-overlay'
+            };
+
+            const overlayId = overlayMap[insightType];
+            if (overlayId) {
+                const overlay = document.getElementById(overlayId);
+                overlay.classList.add('visible');
+                
+                // Animate overlay appearance
+                overlay.style.animation = 'slideInRight 0.4s ease-out';
+            }
+        }
+
+        function toggleReadlessMode() {
+            isReadlessActive = !isReadlessActive;
+            
+            if (isReadlessActive) {
+                startReadlessMode();
+            } else {
+                stopReadlessMode();
+            }
+        }
+
+        function startReadlessMode() {
+            console.log('🧠 Starting Readless Mode');
+            
+            readlessToggle.textContent = '🧠 Stop Readless';
+            readlessToggle.style.background = '#ef4444';
+            readlessStatus.textContent = 'Active';
+            readlessStatus.style.color = '#10b981';
+            
+            // Enable navigation buttons
+            nextBtn.disabled = false;
+            prevBtn.disabled = currentConcept <= 1;
+            
+            // Start auto-advance if enabled
+            if (autoAdvance) {
+                scheduleAutoAdvance();
+            }
+        }
+
+        function stopReadlessMode() {
+            console.log('🧠 Stopping Readless Mode');
+            
+            readlessToggle.textContent = '🧠 Start Readless';
+            readlessToggle.style.background = 'rgba(139, 92, 246, 0.8)';
+            readlessStatus.textContent = 'Ready';
+            readlessStatus.style.color = '#06b6d4';
+            
+            // Disable navigation buttons
+            nextBtn.disabled = true;
+            prevBtn.disabled = true;
+            
+            // Clear auto-advance
+            clearAutoAdvance();
+        }
+
+        function toggleAutoAdvance() {
+            autoAdvance = !autoAdvance;
+            autoBtn.textContent = `🤖 Auto: ${autoAdvance ? 'ON' : 'OFF'}`;
+            autoBtn.style.background = autoAdvance ? '#10b981' : 'rgba(139, 92, 246, 0.8)';
+            
+            if (isReadlessActive) {
+                if (autoAdvance) {
+                    scheduleAutoAdvance();
+                } else {
+                    clearAutoAdvance();
+                }
+            }
+            
+            console.log(`🤖 Auto-advance: ${autoAdvance ? 'enabled' : 'disabled'}`);
+        }
+
+        function nextConcept() {
+            if (currentConcept < totalConcepts) {
+                currentConcept++;
+                updateProgress();
+                simulateConceptNavigation('next');
+                
+                if (autoAdvance && isReadlessActive) {
+                    scheduleAutoAdvance();
+                }
+            } else {
+                console.log('🎉 Readless navigation complete!');
+                completeReadlessMode();
+            }
+        }
+
+        function previousConcept() {
+            if (currentConcept > 1) {
+                currentConcept--;
+                updateProgress();
+                simulateConceptNavigation('previous');
+                
+                if (autoAdvance && isReadlessActive) {
+                    scheduleAutoAdvance();
+                }
+            }
+        }
+
+        function updateProgress() {
+            progressDisplay.textContent = `Concept ${currentConcept} of ${totalConcepts}`;
+            prevBtn.disabled = !isReadlessActive || currentConcept <= 1;
+            nextBtn.disabled = !isReadlessActive || currentConcept >= totalConcepts;
+        }
+
+        function scheduleAutoAdvance() {
+            clearAutoAdvance();
+            if (autoAdvance && isReadlessActive) {
+                autoTimer = setTimeout(() => {
+                    nextConcept();
+                }, 6000); // 6 seconds per concept
+            }
+        }
+
+        function clearAutoAdvance() {
+            if (autoTimer) {
+                clearTimeout(autoTimer);
+                autoTimer = null;
+            }
+        }
+
+        function completeReadlessMode() {
+            stopReadlessMode();
+            showCompletionMessage();
+        }
+
+        function simulateConceptNavigation(direction) {
+            console.log(`🔄 Navigating ${direction} to concept ${currentConcept}`);
+            
+            // Simulate different concept types
+            const conceptTypes = ['chapter', 'section', 'insight', 'quiz'];
+            const conceptType = conceptTypes[currentConcept % conceptTypes.length];
+            
+            switch (conceptType) {
+                case 'chapter':
+                    simulateChapterConcept();
+                    break;
+                case 'section':
+                    simulateSectionConcept();
+                    break;
+                case 'insight':
+                    simulateInsightConcept();
+                    break;
+                case 'quiz':
+                    simulateQuizConcept();
+                    break;
+            }
+        }
+
+        function simulateChapterConcept() {
+            // Highlight a different chapter based on progress
+            const chapterIndex = Math.floor(currentConcept / 4);
+            const chapterIds = ['chapter-1', 'chapter-2', 'chapter-3'];
+            const targetChapter = chapterIds[chapterIndex % chapterIds.length];
+            
+            if (targetChapter !== currentChapter) {
+                selectChapter(targetChapter);
+            }
+            
+            console.log('📖 Showing chapter overview');
+        }
+
+        function simulateSectionConcept() {
+            // Show a specific PDRM section
+            const sections = ['pattern', 'decision', 'mechanism', 'application'];
+            const sectionType = sections[currentConcept % sections.length];
+            showSectionContent(sectionType);
+            
+            console.log(`📋 Showing PDRM section: ${sectionType}`);
+        }
+
+        function simulateInsightConcept() {
+            // Show Butler insight overlays
+            const insights = ['pattern-recognition', 'decision-mechanism', 'backpropagation'];
+            const insightType = insights[currentConcept % insights.length];
+            showRelatedOverlay(insightType);
+            
+            console.log(`💡 Showing Butler insight: ${insightType}`);
+        }
+
+        function simulateQuizConcept() {
+            // Simulate quiz interaction (pause auto-advance)
+            if (autoAdvance) {
+                clearAutoAdvance();
+                showQuizModal();
+            }
+            
+            console.log('❓ Quiz concept - pausing for interaction');
+        }
+
+        function showInsightModal(insightText) {
+            console.log(`💡 Showing insight modal: ${insightText}`);
+            
+            // Simple insight feedback
+            const insight = document.createElement('div');
+            insight.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(30, 30, 45, 0.98);
+                border: 1px solid rgba(139, 92, 246, 0.5);
+                border-radius: 12px;
+                padding: 24px;
+                color: white;
+                z-index: 100;
+                max-width: 400px;
+                text-align: center;
+                backdrop-filter: blur(12px);
+            `;
+            
+            insight.innerHTML = `
+                <h3 style="color: #8b5cf6; margin-bottom: 12px;">${insightText}</h3>
+                <p style="margin-bottom: 16px; line-height: 1.5;">This Butler insight provides contextual understanding to help you grasp the concept more effectively.</p>
+                <button onclick="this.parentElement.remove()" style="background: #8b5cf6; border: none; color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer;">Got it!</button>
+            `;
+            
+            document.body.appendChild(insight);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (insight.parentElement) {
+                    insight.remove();
+                }
+            }, 5000);
+        }
+
+        function showQuizModal() {
+            const quiz = document.createElement('div');
+            quiz.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(30, 30, 45, 0.98);
+                border: 1px solid rgba(16, 185, 129, 0.5);
+                border-radius: 12px;
+                padding: 24px;
+                color: white;
+                z-index: 100;
+                max-width: 500px;
+                backdrop-filter: blur(12px);
+            `;
+            
+            quiz.innerHTML = `
+                <h3 style="color: #10b981; margin-bottom: 16px;">🧠 Knowledge Check</h3>
+                <p style="margin-bottom: 16px; line-height: 1.5;">What is the primary function of backpropagation in neural networks?</p>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin: 8px 0; cursor: pointer;">
+                        <input type="radio" name="quiz" value="a" style="margin-right: 8px;">
+                        Forward data through the network
+                    </label>
+                    <label style="display: block; margin: 8px 0; cursor: pointer;">
+                        <input type="radio" name="quiz" value="b" style="margin-right: 8px;">
+                        Adjust weights based on errors
+                    </label>
+                    <label style="display: block; margin: 8px 0; cursor: pointer;">
+                        <input type="radio" name="quiz" value="c" style="margin-right: 8px;">
+                        Initialize network parameters
+                    </label>
+                </div>
+                <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                    <button onclick="this.parentElement.parentElement.remove(); if (autoAdvance && isReadlessActive) scheduleAutoAdvance();" style="background: #6b7280; border: none; color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer;">Skip</button>
+                    <button onclick="checkQuizAnswer(this.parentElement.parentElement)" style="background: #10b981; border: none; color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer;">Submit</button>
+                </div>
+            `;
+            
+            document.body.appendChild(quiz);
+        }
+
+        function checkQuizAnswer(quiz) {
+            const selectedAnswer = quiz.querySelector('input[name="quiz"]:checked');
+            const isCorrect = selectedAnswer && selectedAnswer.value === 'b';
+            
+            const feedback = document.createElement('div');
+            feedback.style.cssText = `
+                margin-top: 16px;
+                padding: 12px;
+                border-radius: 6px;
+                ${isCorrect 
+                    ? 'background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.3);'
+                    : 'background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.3);'}
+            `;
+            
+            feedback.innerHTML = `
+                <p style="margin: 0;">
+                    ${isCorrect 
+                        ? '✅ Correct! Backpropagation adjusts network weights based on prediction errors.'
+                        : '❌ Not quite. Backpropagation adjusts weights based on errors to improve performance.'}
+                </p>
+            `;
+            
+            quiz.appendChild(feedback);
+            
+            // Auto-close and continue
+            setTimeout(() => {
+                quiz.remove();
+                if (autoAdvance && isReadlessActive) {
+                    scheduleAutoAdvance();
+                }
+            }, 3000);
+        }
+
+        function showCompletionMessage() {
+            const completion = document.createElement('div');
+            completion.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(30, 30, 45, 0.98);
+                border: 1px solid rgba(16, 185, 129, 0.5);
+                border-radius: 12px;
+                padding: 32px;
+                color: white;
+                z-index: 100;
+                max-width: 500px;
+                text-align: center;
+                backdrop-filter: blur(12px);
+            `;
+            
+            completion.innerHTML = `
+                <h2 style="color: #10b981; margin-bottom: 16px;">🎉 Readless Navigation Complete!</h2>
+                <p style="margin-bottom: 24px; line-height: 1.5;">You've successfully navigated through all concepts using Smart TOC and Butler insights. You now understand the key concepts without having to read the entire book manually!</p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; font-size: 0.9rem;">
+                    <div style="background: rgba(139, 92, 246, 0.1); padding: 12px; border-radius: 6px;">
+                        <div style="color: #8b5cf6; font-weight: 600;">Concepts Learned</div>
+                        <div style="font-size: 1.5rem;">${totalConcepts}</div>
+                    </div>
+                    <div style="background: rgba(6, 182, 212, 0.1); padding: 12px; border-radius: 6px;">
+                        <div style="color: #06b6d4; font-weight: 600;">Time Saved</div>
+                        <div style="font-size: 1.5rem;">~3 hours</div>
+                    </div>
+                </div>
+                <button onclick="this.parentElement.remove(); resetDemo();" style="background: #8b5cf6; border: none; color: white; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-size: 1rem;">Start Over</button>
+            `;
+            
+            document.body.appendChild(completion);
+        }
+
+        function resetDemo() {
+            currentConcept = 1;
+            isReadlessActive = false;
+            autoAdvance = false;
+            clearAutoAdvance();
+            updateProgress();
+            
+            // Reset UI
+            readlessToggle.textContent = '🧠 Start Readless';
+            readlessToggle.style.background = 'rgba(139, 92, 246, 0.8)';
+            autoBtn.textContent = '🤖 Auto: OFF';
+            autoBtn.style.background = 'rgba(139, 92, 246, 0.8)';
+            readlessStatus.textContent = 'Ready';
+            readlessStatus.style.color = '#06b6d4';
+            
+            console.log('🔄 Demo reset');
+        }
+
+        function animateChapterTransition() {
+            const pdfPage = document.getElementById('page-1');
+            pdfPage.style.opacity = '0.7';
+            pdfPage.style.transform = 'scale(0.98)';
+            
+            setTimeout(() => {
+                pdfPage.style.opacity = '1';
+                pdfPage.style.transform = 'scale(1)';
+                pdfPage.style.transition = 'all 0.3s ease';
+            }, 200);
+        }
+
+        function simulateProcessing() {
+            // Simulate PDRM processing of Chapter 2
+            setTimeout(() => {
+                const chapter2 = document.querySelector('[data-chapter="chapter-2"]');
+                const status = chapter2.querySelector('.processing-status');
+                status.classList.remove('status-processing');
+                status.classList.add('status-complete');
+                
+                // Add more PDRM sections
+                const pdrmSections = chapter2.querySelector('.pdrm-sections');
+                pdrmSections.innerHTML += `
+                    <div class="pdrm-section" data-section="decision">
+                        <span class="section-name">Decision Trees</span>
+                        <span class="section-confidence">88%</span>
+                    </div>
+                    <div class="pdrm-section" data-section="application">
+                        <span class="section-name">Real Applications</span>
+                        <span class="section-confidence">93%</span>
+                    </div>
+                `;
+                
+                // Re-bind event listeners for new sections
+                pdrmSections.querySelectorAll('.pdrm-section').forEach(section => {
+                    section.addEventListener('click', () => {
+                        if (section.dataset.section !== 'pending') {
+                            showSectionContent(section.dataset.section);
+                        }
+                    });
+                });
+                
+                console.log('📊 Chapter 2 PDRM processing complete');
+            }, 3000);
+
+            // Start processing Chapter 3
+            setTimeout(() => {
+                const chapter3 = document.querySelector('[data-chapter="chapter-3"]');
+                const status = chapter3.querySelector('.processing-status');
+                status.classList.remove('status-pending');
+                status.classList.add('status-processing');
+                
+                console.log('⚙️ Started processing Chapter 3');
+            }, 5000);
+        }
+
+        function togglePin(button) {
+            const isPinned = button.textContent.includes('📌');
+            button.textContent = isPinned ? '📍' : '📌';
+            button.title = isPinned ? 'Pin overlay' : 'Unpin overlay';
+            
+            console.log(`📌 Overlay ${isPinned ? 'unpinned' : 'pinned'}`);
+        }
+
+        function closeOverlay(button) {
+            const overlay = button.closest('.butler-overlay');
+            overlay.classList.remove('visible');
+            
+            console.log('✕ Overlay closed');
+        }
+
+        function handleKeyboard(event) {
+            if (!isReadlessActive) return;
+            
+            // Only handle if no input elements are focused
+            const activeElement = document.activeElement;
+            if (activeElement && (
+                activeElement.tagName === 'INPUT' ||
+                activeElement.tagName === 'TEXTAREA' ||
+                activeElement.contentEditable === 'true'
+            )) {
+                return;
+            }
+            
+            switch (event.key) {
+                case 'ArrowRight':
+                case ' ': // Spacebar
+                    event.preventDefault();
+                    if (!nextBtn.disabled) nextConcept();
+                    break;
+                case 'ArrowLeft':
+                    event.preventDefault();
+                    if (!prevBtn.disabled) previousConcept();
+                    break;
+                case 'a':
+                case 'A':
+                    event.preventDefault();
+                    toggleAutoAdvance();
+                    break;
+                case 'Escape':
+                    event.preventDefault();
+                    if (isReadlessActive) stopReadlessMode();
+                    break;
+            }
+        }
+    </script>
+</body>
+</html>

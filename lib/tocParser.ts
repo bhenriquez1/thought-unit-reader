@@ -10,6 +10,47 @@ export interface TOCEntry {
   confidence?: number;       // 0-1, how confident we are this is a real heading
 }
 
+// Smart TOC Entry extends regular TOC with PDRM integration
+export interface SmartTOCEntry extends TOCEntry {
+  id: string;                // Unique identifier for chapter/section
+  chapterText?: string;      // Extracted chapter content
+  pdrmSections: {
+    pattern?: PDRMSectionData;
+    decision?: PDRMSectionData;
+    mechanism?: PDRMSectionData;
+    application?: PDRMSectionData;
+    wrongAnswers?: PDRMSectionData;
+    visualAnchor?: PDRMSectionData;
+    crossLinks?: PDRMSectionData;
+    reflection?: PDRMSectionData;
+  };
+  butlerInsights: ButlerInsightSummary[];
+  isProcessed: boolean;      // Has PDRM analysis been completed
+  processingStatus: 'pending' | 'processing' | 'complete' | 'error';
+  subChapters?: SmartTOCEntry[];  // Override to use Smart entries
+}
+
+export interface PDRMSectionData {
+  content: string;
+  confidence: number;
+  insights: ButlerInsightSummary[];
+  processingTime: number;
+}
+
+export interface ButlerInsightSummary {
+  id: string;
+  type: 'explain' | 'compare' | 'quiz' | 'mnemonic' | 'timeline' | 'diagram';
+  title: string;
+  content: string;
+  confidence: number;
+  anchors: {
+    page: number;
+    textRange?: { start: number; end: number };
+    sectionType: string;
+  };
+  icon: string;
+}
+
 /** Enhanced outline node shape (handles multiple PDF formats). */
 export type PdfOutlineNode = {
   title?: string;
@@ -284,4 +325,271 @@ export function validateAndCleanTOC(toc: TOCEntry[], maxPages: number): TOCEntry
     .map(cleanEntry)
     .filter(entry => entry.title !== 'Untitled' && entry.pageNumber <= maxPages)
     .sort((a, b) => a.pageNumber - b.pageNumber);
+}
+
+/** ---------- Smart TOC Generation Functions ---------- */
+
+/**
+ * Convert regular TOC entries to Smart TOC entries with PDRM placeholder structure
+ */
+export function convertToSmartTOC(regularTOC: TOCEntry[]): SmartTOCEntry[] {
+  console.log('🧠 Converting regular TOC to Smart TOC:', regularTOC.length, 'entries');
+  
+  const convertEntry = (entry: TOCEntry, index: number): SmartTOCEntry => {
+    const smartEntry: SmartTOCEntry = {
+      ...entry,
+      id: generateChapterId(entry.title, entry.pageNumber),
+      pdrmSections: {}, // Will be populated by PDRM analysis
+      butlerInsights: [],
+      isProcessed: false,
+      processingStatus: 'pending',
+      subChapters: entry.subChapters?.map((sub, i) => convertEntry(sub, i))
+    };
+    
+    return smartEntry;
+  };
+  
+  return regularTOC.map(convertEntry);
+}
+
+/**
+ * Generate a stable chapter ID from title and page number
+ */
+export function generateChapterId(title: string, pageNumber: number): string {
+  const cleanTitle = title.toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, '-')
+    .slice(0, 50);
+  return `chapter-${pageNumber}-${cleanTitle}`;
+}
+
+/**
+ * Initialize Smart TOC entry with empty PDRM sections
+ */
+export function initializeSmartTOCEntry(entry: TOCEntry): SmartTOCEntry {
+  return {
+    ...entry,
+    id: generateChapterId(entry.title, entry.pageNumber),
+    pdrmSections: {
+      pattern: undefined,
+      decision: undefined,
+      mechanism: undefined,
+      application: undefined,
+      wrongAnswers: undefined,
+      visualAnchor: undefined,
+      crossLinks: undefined,
+      reflection: undefined
+    },
+    butlerInsights: [],
+    isProcessed: false,
+    processingStatus: 'pending',
+    subChapters: entry.subChapters?.map(initializeSmartTOCEntry)
+  };
+}
+
+/**
+ * Update Smart TOC entry with PDRM analysis results
+ */
+export function updateSmartTOCWithPDRM(
+  smartEntry: SmartTOCEntry, 
+  pdrmResult: any, 
+  chapterText: string
+): SmartTOCEntry {
+  console.log('🧠 Updating Smart TOC entry with PDRM:', smartEntry.id);
+  
+  // Extract Butler insights from PDRM result
+  const insights: ButlerInsightSummary[] = [];
+  
+  if (pdrmResult.actions) {
+    pdrmResult.actions.forEach((action: any, index: number) => {
+      const insight: ButlerInsightSummary = {
+        id: `insight-${smartEntry.id}-${index}`,
+        type: action.type,
+        title: getInsightTitle(action.type),
+        content: action.payload?.prompt || action.reasoning || '',
+        confidence: action.confidence || 0.7,
+        anchors: {
+          page: smartEntry.pageNumber,
+          sectionType: 'auto-generated'
+        },
+        icon: getInsightIcon(action.type)
+      };
+      insights.push(insight);
+    });
+  }
+  
+  // Build PDRM sections from analysis
+  const pdrmSections: SmartTOCEntry['pdrmSections'] = {};
+  
+  if (pdrmResult.units) {
+    pdrmResult.units.forEach((unit: any) => {
+      const sectionType = mapUnitToPDRMSection(unit.pdrm);
+      if (sectionType) {
+        pdrmSections[sectionType] = {
+          content: unit.text || '',
+          confidence: unit.evidence_score || 0.7,
+          insights: insights.filter(insight => 
+            insight.type === getInsightTypeForSection(sectionType)
+          ),
+          processingTime: Date.now() - (pdrmResult.processingStartTime || Date.now())
+        };
+      }
+    });
+  }
+  
+  return {
+    ...smartEntry,
+    chapterText,
+    pdrmSections,
+    butlerInsights: insights,
+    isProcessed: true,
+    processingStatus: 'complete'
+  };
+}
+
+/**
+ * Map PDRM unit type to section key
+ */
+function mapUnitToPDRMSection(pdrmType: string): keyof SmartTOCEntry['pdrmSections'] | null {
+  const mapping: Record<string, keyof SmartTOCEntry['pdrmSections']> = {
+    'P': 'pattern',
+    'D': 'decision',
+    'R': 'mechanism',
+    'M': 'application'
+  };
+  return mapping[pdrmType] || null;
+}
+
+/**
+ * Get Butler insight title for action type
+ */
+function getInsightTitle(actionType: string): string {
+  const titles: Record<string, string> = {
+    'explain': 'Butler Explanation',
+    'compare': 'Comparative Analysis',
+    'quiz': 'Knowledge Check',
+    'mnemonic': 'Memory Aid',
+    'timeline': 'Process Timeline',
+    'diagram': 'Visual Diagram'
+  };
+  return titles[actionType] || 'Butler Insight';
+}
+
+/**
+ * Get icon for Butler insight type
+ */
+function getInsightIcon(actionType: string): string {
+  const icons: Record<string, string> = {
+    'explain': '🧠',
+    'compare': '⚖️',
+    'quiz': '❓',
+    'mnemonic': '🎯',
+    'timeline': '⏱️',
+    'diagram': '📊'
+  };
+  return icons[actionType] || '💡';
+}
+
+/**
+ * Get insight type for PDRM section
+ */
+function getInsightTypeForSection(sectionType: string): string {
+  const mapping: Record<string, string> = {
+    'pattern': 'explain',
+    'decision': 'quiz',
+    'mechanism': 'explain',
+    'application': 'compare',
+    'wrongAnswers': 'quiz',
+    'visualAnchor': 'mnemonic',
+    'crossLinks': 'compare',
+    'reflection': 'quiz'
+  };
+  return mapping[sectionType] || 'explain';
+}
+
+/**
+ * Find Smart TOC entry by ID
+ */
+export function findSmartTOCEntry(smartTOC: SmartTOCEntry[], id: string): SmartTOCEntry | null {
+  for (const entry of smartTOC) {
+    if (entry.id === id) {
+      return entry;
+    }
+    if (entry.subChapters) {
+      const found = findSmartTOCEntry(entry.subChapters, id);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * Get all Butler insights from Smart TOC
+ */
+export function getAllButlerInsights(smartTOC: SmartTOCEntry[]): ButlerInsightSummary[] {
+  const allInsights: ButlerInsightSummary[] = [];
+  
+  const collectInsights = (entries: SmartTOCEntry[]) => {
+    entries.forEach(entry => {
+      allInsights.push(...entry.butlerInsights);
+      if (entry.subChapters) {
+        collectInsights(entry.subChapters);
+      }
+    });
+  };
+  
+  collectInsights(smartTOC);
+  return allInsights;
+}
+
+/**
+ * Get processing statistics for Smart TOC
+ */
+export function getSmartTOCStats(smartTOC: SmartTOCEntry[]): {
+  total: number;
+  processed: number;
+  pending: number;
+  failed: number;
+  avgProcessingTime: number;
+} {
+  let total = 0;
+  let processed = 0;
+  let pending = 0;
+  let failed = 0;
+  let totalProcessingTime = 0;
+  
+  const collectStats = (entries: SmartTOCEntry[]) => {
+    entries.forEach(entry => {
+      total++;
+      switch (entry.processingStatus) {
+        case 'complete':
+          processed++;
+          // Sum processing times from PDRM sections
+          Object.values(entry.pdrmSections).forEach(section => {
+            if (section) totalProcessingTime += section.processingTime;
+          });
+          break;
+        case 'pending':
+        case 'processing':
+          pending++;
+          break;
+        case 'error':
+          failed++;
+          break;
+      }
+      if (entry.subChapters) {
+        collectStats(entry.subChapters);
+      }
+    });
+  };
+  
+  collectStats(smartTOC);
+  
+  return {
+    total,
+    processed,
+    pending,
+    failed,
+    avgProcessingTime: processed > 0 ? totalProcessingTime / processed : 0
+  };
 }
