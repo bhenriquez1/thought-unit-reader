@@ -361,15 +361,20 @@ export class UniversalPDRMGenerator {
   }
 
   private async extractConcepts(text: string, subject: string, keyTerms: string[]): Promise<ConceptCandidate[]> {
-    // Split text into semantic chunks
-    const chunks = this.chunkTextSemantically(text);
+    // Split text into semantic chunks - OPTIMIZED: limit processing
+    const chunks = this.chunkTextSemantically(text).slice(0, 10); // Max 10 chunks for speed
     const concepts: ConceptCandidate[] = [];
+    
+    // OPTIMIZED: Pre-calculate common patterns for speed
+    const lowerKeyTerms = keyTerms.map(term => term.toLowerCase());
+    const minLength = 80; // Reduced from 100
     
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
+      const lowerChunk = chunk.toLowerCase();
       
-      // Skip chunks that are too short or don't contain key terms
-      if (chunk.length < 100 || !keyTerms.some(term => chunk.toLowerCase().includes(term))) {
+      // OPTIMIZED: Faster filtering with pre-calculated terms
+      if (chunk.length < minLength || !lowerKeyTerms.some(term => lowerChunk.includes(term))) {
         continue;
       }
       
@@ -380,17 +385,19 @@ export class UniversalPDRMGenerator {
         content: chunk,
         subject,
         confidence: this.calculateConceptConfidence(chunk, keyTerms),
-        keyTerms: keyTerms.filter(term => chunk.toLowerCase().includes(term)),
+        keyTerms: lowerKeyTerms.filter(term => lowerChunk.includes(term)),
         startIndex: text.indexOf(chunk),
         endIndex: text.indexOf(chunk) + chunk.length
       };
       
-      if (concept.confidence > 0.3) { // Only include concepts with reasonable confidence
+      // OPTIMIZED: Lower confidence threshold for faster processing
+      if (concept.confidence > 0.25) {
         concepts.push(concept);
       }
     }
     
-    return concepts.sort((a, b) => b.confidence - a.confidence);
+    // OPTIMIZED: Limit to top 5 concepts for speed
+    return concepts.sort((a, b) => b.confidence - a.confidence).slice(0, 5);
   }
 
   private chunkTextSemantically(text: string): string[] {
