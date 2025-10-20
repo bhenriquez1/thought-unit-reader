@@ -12,7 +12,7 @@ import {
   updateSmartTOCWithPDRM,
   findSmartTOCEntry
 } from './tocParser';
-import { surgeonPdrmEngine } from './surgeonPdrmEngine';
+import { surgeonPdrmEngine, type FusedAnalysisResult } from './surgeonPdrmEngine';
 
 export interface ChapterAbsorptionConfig {
   maxConcurrentProcessing: number;
@@ -234,7 +234,7 @@ export class ChapterAbsorptionPipeline {
       this.notifyProgressCallbacks(progress);
       
       // Step 3: Generate Butler insights (if enabled)
-      let surgeonAnalysis = null;
+      let surgeonAnalysis: FusedAnalysisResult | null = null;
       if (this.config.enableButlerGeneration) {
         console.log('🧠 Generating Butler insights for chapter:', chapter.title);
         
