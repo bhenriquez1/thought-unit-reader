@@ -50,6 +50,15 @@ import { usePdfSelection } from "@/hooks/usePdfSelection";
 import summarizeText from "@/lib/aiSummary";
 import { generateMnemonic } from "@/lib/mnemonicAI";
 import { noteLabButlerIntegration, type PDRMButlerNote } from "@/lib/noteLabButlerIntegration";
+import { 
+  ChapterAbsorptionPipeline, 
+  createChapterAbsorptionPipeline,
+  extractChapterTextFromPDFPages,
+  type ProcessingProgress,
+  type AbsorptionResult,
+  type ChapterAbsorptionConfig
+} from "@/lib/chapterAbsorptionPipeline";
+import { type SmartTOCEntry } from "@/lib/tocParser";
 
 // Lazy-load to keep SSR clean with performance optimizations
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
@@ -313,6 +322,23 @@ export default function ThoughtUnitReader() {
     progress: "",
   });
 
+  // 🧠 Chapter Absorption Pipeline State
+  const [chapterPipeline, setChapterPipeline] = useState<ChapterAbsorptionPipeline | null>(null);
+  const [absorptionState, setAbsorptionState] = useState<{
+    isRunning: boolean;
+    progress: { processed: number; total: number; currentChapter: string } | null;
+    processingQueue: ProcessingProgress[];
+    results: AbsorptionResult[];
+    showPanel: boolean;
+  }>({
+    isRunning: false,
+    progress: null,
+    processingQueue: [],
+    results: [],
+    showPanel: false,
+  });
+  const [smartTOC, setSmartTOC] = useState<SmartTOCEntry[]>([]);
+
   /* =========================================================================
      🔹 Auth Listener + complete redirect
   ========================================================================= */
@@ -320,6 +346,64 @@ export default function ThoughtUnitReader() {
     handleRedirectResult().catch(() => {});
     return listenForAuthChanges((u) => setUser(u));
   }, []);
+
+  /* =========================================================================
+     🔹 Initialize Chapter Absorption Pipeline
+  ========================================================================= */
+  useEffect(() => {
+    if (thoughtUnits.length > 0 && tableOfContents.length > 0) {
+      console.log('🧠 Initializing Chapter Absorption Pipeline');
+      
+      const pipeline = createChapterAbsorptionPipeline({
+        maxConcurrentProcessing: 2,
+        chunkSize: 5000,
+        overlapSize: 500,
+        cacheResults: true,
+        enableButlerGeneration: true,
+        pdrmSections: {
+          pattern: true,
+          decision: true,
+          mechanism: true,
+          application: true,
+          wrongAnswers: true,
+          visualAnchor: true,
+          crossLinks: false,
+          reflection: false
+        }
+      });
+
+      // Set up progress tracking
+      pipeline.onProgress((progress: ProcessingProgress) => {
+        setAbsorptionState(prev => ({
+          ...prev,
+          processingQueue: prev.processingQueue.map(p => 
+            p.chapterId === progress.chapterId ? progress : p
+          ).concat(
+            prev.processingQueue.find(p => p.chapterId === progress.chapterId) 
+              ? [] 
+              : [progress]
+          )
+        }));
+      });
+
+      setChapterPipeline(pipeline);
+
+      // Convert TOC to Smart TOC format
+      const convertedSmartTOC: SmartTOCEntry[] = tableOfContents.map((entry, index) => ({
+        id: `toc-${index}`,
+        title: (entry as any).title || `Chapter ${index + 1}`,
+        pageNumber: getTocPage(entry) || 1,
+        level: (entry as any).level || 1,
+        isProcessed: false,
+        processingStatus: 'pending' as const,
+        chapterText: '',
+        pdrmSections: {},
+        butlerInsights: []
+      }));
+      
+      setSmartTOC(convertedSmartTOC);
+    }
+  }, [thoughtUnits.length, tableOfContents.length]);
 
   /* =========================================================================
      🔹 Load PDF Library (Firebase) or keep session list (guest)
@@ -333,7 +417,101 @@ export default function ThoughtUnitReader() {
   }, [user, showLibrary]);
 
   /* =========================================================================
-     🔹 Unified selection hook
+     🔹 Chapter Absorption Pipeline Functions
+  ========================================================================= */
+  const startChapterAbsorption = async () => {
+    if (!chapterPipeline || !smartTOC.length) {
+      alert('Chapter absorption pipeline not ready. Please ensure a PDF is loaded with a table of contents.');
+      return;
+    }
+
+    console.log('🧠 Starting chapter absorption process for', smartTOC.length, 'chapters');
+    
+    setAbsorptionState(prev => ({
+      ...prev,
+      isRunning: true,
+      progress: { processed: 0, total: smartTOC.length, currentChapter: smartTOC[0]?.title || 'Starting...' },
+      showPanel: true
+    }));
+
+    try {
+      // Create function to extract chapter text from PDF pages
+      const extractChapterText = async (chapter: SmartTOCEntry): Promise<string> => {
+        return await extractChapterTextFromPDFPages(chapter, async (pageNum: number) => {
+          // This is a simplified implementation - in a real scenario, 
+          // you'd need to extract text from the actual PDF pages
+          const pageUnit = pageToUnit(pageNum, pdfPageCount, thoughtUnits.length);
+          return thoughtUnits[pageUnit - 1]?.text || '';
+        });
+      };
+
+      // Run the absorption pipeline
+      const processedSmartTOC = await chapterPipeline.processSmartTOC(
+        smartTOC,
+        extractChapterText,
+        (progress) => {
+          setAbsorptionState(prev => ({
+            ...prev,
+            progress
+          }));
+        }
+      );
+
+      // Update the Smart TOC with processed results
+      setSmartTOC(processedSmartTOC);
+      
+      // Get processing statistics
+      const stats = chapterPipeline.getProcessingStats();
+      const results = chapterPipeline.getCachedResults();
+      
+      setAbsorptionState(prev => ({
+        ...prev,
+        isRunning: false,
+        results,
+        progress: { 
+          processed: stats.totalProcessed, 
+          total: smartTOC.length, 
+          currentChapter: 'Complete!' 
+        }
+      }));
+
+      console.log('🧠 Chapter absorption complete:', stats);
+      alert(`Chapter absorption complete! Processed ${stats.totalProcessed} chapters with ${Math.round(stats.successRate * 100)}% success rate.`);
+
+    } catch (error) {
+      console.error('🧠 Chapter absorption failed:', error);
+      setAbsorptionState(prev => ({
+        ...prev,
+        isRunning: false
+      }));
+      alert(`Chapter absorption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const stopChapterAbsorption = () => {
+    if (chapterPipeline) {
+      chapterPipeline.abort();
+      setAbsorptionState(prev => ({
+        ...prev,
+        isRunning: false
+      }));
+      console.log('🧠 Chapter absorption stopped by user');
+    }
+  };
+
+  const clearAbsorptionCache = () => {
+    if (chapterPipeline) {
+      chapterPipeline.clearCache();
+      setAbsorptionState(prev => ({
+        ...prev,
+        results: []
+      }));
+      console.log('🧠 Chapter absorption cache cleared');
+    }
+  };
+
+  /* =========================================================================
+     🔹 Enhanced Page/TOC sync with chapter-aware navigation + global sync
   ========================================================================= */
   const sel = usePdfSelection({
     minChars: 2,
@@ -2007,6 +2185,40 @@ export default function ThoughtUnitReader() {
           📚 Library
         </button>
 
+        {/* Chapter Absorption Pipeline Control */}
+        {smartTOC.length > 0 && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setAbsorptionState(prev => ({ ...prev, showPanel: !prev.showPanel }))}
+              className={`text-xs px-3 py-1 rounded transition-all ${
+                absorptionState.showPanel 
+                  ? "bg-purple-500 text-white" 
+                  : "bg-gray-700 hover:bg-gray-600"
+              }`}
+            >
+              🧠 Chapter Absorption
+            </button>
+            
+            {!absorptionState.isRunning ? (
+              <button
+                onClick={startChapterAbsorption}
+                className="text-xs px-3 py-1 rounded bg-gradient-to-r from-purple-500 to-blue-500 text-white hover:from-purple-400 hover:to-blue-400"
+                title="Start processing all chapters for PDRM insights"
+              >
+                ▶️ Start
+              </button>
+            ) : (
+              <button
+                onClick={stopChapterAbsorption}
+                className="text-xs px-3 py-1 rounded bg-red-500 hover:bg-red-400 text-white"
+                title="Stop chapter processing"
+              >
+                ⏹️ Stop
+              </button>
+            )}
+          </div>
+        )}
+
       </div>
 
       {/* Main Content Area - New Layout: [TOC | PDF | Right Pane] */}
@@ -2042,6 +2254,26 @@ export default function ThoughtUnitReader() {
 
         {/* Floating Action Buttons - Bottom Right Stack */}
         <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-3">
+          {/* Chapter Absorption FAB */}
+          {smartTOC.length > 0 && !absorptionState.showPanel && (
+            <button
+              onClick={() => setAbsorptionState(prev => ({ ...prev, showPanel: true }))}
+              className={`p-3 rounded-full shadow-lg backdrop-blur-sm border transition-all transform hover:scale-105 ${
+                absorptionState.isRunning 
+                  ? "bg-gradient-to-r from-orange-600 to-red-600 border-orange-400 animate-pulse" 
+                  : "bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 border-purple-400"
+              } text-white`}
+              title="Chapter Absorption Pipeline"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🧠</span>
+                <span className="text-sm font-medium hidden sm:block">
+                  {absorptionState.isRunning ? 'Processing...' : 'Absorption'}
+                </span>
+              </div>
+            </button>
+          )}
+
           {/* Thought Detection FAB */}
           {!showThoughtPanel && (
             <button
@@ -2163,6 +2395,183 @@ export default function ThoughtUnitReader() {
                           ))}
                         </div>
                       )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Chapter Absorption Pipeline Panel */}
+      {absorptionState.showPanel && (
+        <div className="fixed top-0 right-0 w-full sm:w-[520px] h-full bg-gray-900/95 backdrop-blur-md text-white z-50 flex flex-col shadow-2xl border-l border-gray-700">
+          <div className="flex justify-between items-center p-4 border-b border-gray-700">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🧠</span>
+              <div>
+                <h3 className="text-lg font-semibold">Chapter Absorption Pipeline</h3>
+                <p className="text-sm text-gray-400">AI-powered PDRM generation for entire books</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setAbsorptionState(prev => ({ ...prev, showPanel: false }))}
+              className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-800"
+            >
+              ✕
+            </button>
+          </div>
+          
+          <div className="flex-1 overflow-auto p-4 space-y-4">
+            {/* Pipeline Status */}
+            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-medium text-gray-300">Processing Status</h4>
+                <div className={`text-xs px-2 py-1 rounded ${
+                  absorptionState.isRunning 
+                    ? "bg-orange-600/30 text-orange-300" 
+                    : "bg-green-600/30 text-green-300"
+                }`}>
+                  {absorptionState.isRunning ? 'Running' : 'Idle'}
+                </div>
+              </div>
+              
+              {absorptionState.progress && (
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Progress:</span>
+                    <span className="text-white">
+                      {absorptionState.progress.processed} / {absorptionState.progress.total}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-700 rounded-full h-2">
+                    <div 
+                      className="bg-gradient-to-r from-purple-500 to-blue-500 h-2 rounded-full transition-all"
+                      style={{ 
+                        width: `${(absorptionState.progress.processed / absorptionState.progress.total) * 100}%` 
+                      }}
+                    />
+                  </div>
+                  <div className="text-sm text-gray-400">
+                    Current: {absorptionState.progress.currentChapter}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Control Buttons */}
+            <div className="flex gap-3">
+              {!absorptionState.isRunning ? (
+                <button
+                  onClick={startChapterAbsorption}
+                  className="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white px-4 py-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2"
+                >
+                  <span>▶️</span>
+                  <span>Start Absorption</span>
+                </button>
+              ) : (
+                <button
+                  onClick={stopChapterAbsorption}
+                  className="flex-1 bg-red-600 hover:bg-red-500 text-white px-4 py-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2"
+                >
+                  <span>⏹️</span>
+                  <span>Stop Processing</span>
+                </button>
+              )}
+              
+              <button
+                onClick={clearAbsorptionCache}
+                className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-3 rounded-lg font-medium transition-all"
+                title="Clear cached results"
+              >
+                🗑️
+              </button>
+            </div>
+
+            {/* Processing Queue */}
+            {absorptionState.processingQueue.length > 0 && (
+              <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
+                <h4 className="text-sm font-medium text-gray-300 mb-3">Processing Queue</h4>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {absorptionState.processingQueue.map((progress, index) => (
+                    <div key={progress.chapterId} className="flex items-center justify-between text-sm">
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate text-white">{progress.title}</div>
+                        <div className="text-xs text-gray-400">{progress.currentStep}</div>
+                      </div>
+                      <div className="flex items-center gap-2 ml-2">
+                        <div className="w-16 bg-gray-700 rounded-full h-1.5">
+                          <div 
+                            className={`h-1.5 rounded-full transition-all ${
+                              progress.status === 'complete' ? 'bg-green-500' :
+                              progress.status === 'error' ? 'bg-red-500' :
+                              'bg-blue-500'
+                            }`}
+                            style={{ width: `${progress.progress * 100}%` }}
+                          />
+                        </div>
+                        <span className="text-xs w-8 text-right">
+                          {Math.round(progress.progress * 100)}%
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Results Summary */}
+            {absorptionState.results.length > 0 && (
+              <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
+                <h4 className="text-sm font-medium text-gray-300 mb-3">Results Summary</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Total Processed:</span>
+                    <span className="text-white">{absorptionState.results.length}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Successful:</span>
+                    <span className="text-green-400">
+                      {absorptionState.results.filter(r => r.success).length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Failed:</span>
+                    <span className="text-red-400">
+                      {absorptionState.results.filter(r => !r.success).length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Avg Processing Time:</span>
+                    <span className="text-white">
+                      {absorptionState.results.length > 0 
+                        ? Math.round(absorptionState.results.reduce((sum, r) => sum + r.processingTime, 0) / absorptionState.results.length)
+                        : 0}ms
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Smart TOC Preview */}
+            {smartTOC.length > 0 && (
+              <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
+                <h4 className="text-sm font-medium text-gray-300 mb-3">Chapters ({smartTOC.length})</h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {smartTOC.map((chapter, index) => (
+                    <div key={chapter.id} className="flex items-center justify-between text-sm">
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate text-white">{chapter.title}</div>
+                        <div className="text-xs text-gray-400">Page {chapter.pageNumber}</div>
+                      </div>
+                      <div className={`text-xs px-2 py-1 rounded ${
+                        chapter.isProcessed 
+                          ? "bg-green-600/30 text-green-300" 
+                          : "bg-gray-600/30 text-gray-400"
+                      }`}>
+                        {chapter.isProcessed ? 'Processed' : 'Pending'}
+                      </div>
                     </div>
                   ))}
                 </div>
