@@ -322,6 +322,10 @@ export default function ThoughtUnitReader() {
     progress: "",
   });
 
+  // ✅ Readless Mode and PDRM Layout State
+  const [readlessMode, setReadlessMode] = useState<boolean>(false);
+  const [pdrmLayout, setPdrmLayout] = useState<'side' | 'under'>('side');
+
   // 🧠 Chapter Absorption Pipeline State
   const [chapterPipeline, setChapterPipeline] = useState<ChapterAbsorptionPipeline | null>(null);
   const [absorptionState, setAbsorptionState] = useState<{
@@ -2097,7 +2101,7 @@ export default function ThoughtUnitReader() {
       <header className="bg-gradient-to-r from-purple-600 via-pink-500 to-yellow-400 text-white shadow-md">
         <div className="py-4 flex flex-col items-center justify-center text-center">
           <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide drop-shadow-lg">
-            Avrrio Reader
+            Surgeon-View PDRM
           </h1>
           <p className="text-sm md:text-lg italic opacity-90">Study smarter, learn faster.</p>
         </div>
@@ -2122,6 +2126,27 @@ export default function ThoughtUnitReader() {
             }`}
           >
             📝 NoteLab Prototype
+          </button>
+        </div>
+
+        {/* Readless Mode Toggle */}
+        <label className="inline-flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={readlessMode}
+            onChange={(e) => setReadlessMode(e.target.checked)}
+          />
+          <span>Readless Mode</span>
+        </label>
+
+        {/* PDRM Layout Toggle */}
+        <div className="flex items-center gap-2 text-sm">
+          <span className="opacity-80">Layout:</span>
+          <button
+            onClick={() => setPdrmLayout(pdrmLayout === 'side' ? 'under' : 'side')}
+            className="px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-xs"
+          >
+            {pdrmLayout === 'side' ? 'Side ▸' : 'Under ▾'}
           </button>
         </div>
 
