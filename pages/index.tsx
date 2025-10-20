@@ -49,6 +49,7 @@ import {
 import { usePdfSelection } from "@/hooks/usePdfSelection";
 import summarizeText from "@/lib/aiSummary";
 import { generateMnemonic } from "@/lib/mnemonicAI";
+import { noteLabButlerIntegration, type PDRMButlerNote } from "@/lib/noteLabButlerIntegration";
 
 // Lazy-load to keep SSR clean with performance optimizations
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
