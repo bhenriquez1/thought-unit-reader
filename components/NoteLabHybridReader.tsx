@@ -20,6 +20,11 @@ import {
   getReadableContent,
   type ButlerAnalysisResult 
 } from "@/lib/butlerThoughtUnits";
+import { 
+  noteLabButlerIntegration, 
+  type PDRMButlerNote, 
+  type NoteLab_PDRM_Butler_State 
+} from "@/lib/noteLabButlerIntegration";
 
 type HRUnit = BaseThoughtUnit | string | string[] | { text?: string };
 
@@ -183,6 +188,11 @@ export default function NoteLabHybridReader({
   const [butlerHighlights, setButlerHighlights] = useState<ButlerHighlight[]>([]);
   const [speechMode, setSpeechMode] = useState<SpeechMode>('smart');
   const [butlerSpeechOptions, setButlerSpeechOptions] = useState<ButlerSpeechOptions>(DEFAULT_BUTLER_SPEECH);
+  
+  // PDRM Butler Integration State
+  const [pdrmButlerNotes, setPdrmButlerNotes] = useState<PDRMButlerNote[]>([]);
+  const [butlerState, setButlerState] = useState<NoteLab_PDRM_Butler_State | null>(null);
+  const [isGeneratingPDRMNote, setIsGeneratingPDRMNote] = useState(false);
   
   // Note-Taking State
   const [quickNotes, setQuickNotes] = useState<Record<number, string>>({});
@@ -624,6 +634,49 @@ export default function NoteLabHybridReader({
                     className="px-2 py-1 bg-green-600 hover:bg-green-500 text-white rounded text-xs"
                   >
                     🔊 Read
+                  </button>
+                  
+                  {/* PDRM Butler Note Generation */}
+                  <button
+                    onClick={async () => {
+                      if (!effectiveSelection) return;
+                      
+                      setIsGeneratingPDRMNote(true);
+                      try {
+                        console.log('📝🔬 Generating PDRM Butler Note...');
+                        const pdrmNote = await noteLabButlerIntegration.generatePDRMButlerNote(
+                          effectiveSelection,
+                          {
+                            pageNumber: currentPage,
+                            chapterTitle: `Page ${currentPage}`,
+                            bookId,
+                            userId
+                          }
+                        );
+                        
+                        // Add to local state
+                        setPdrmButlerNotes(prev => [...prev, pdrmNote]);
+                        
+                        // Format as markdown and pass to parent
+                        const formattedNote = noteLabButlerIntegration.formatNoteAsMarkdown(pdrmNote);
+                        onGenerateNote?.(formattedNote, undefined, "highYield");
+                        
+                        console.log('✅ PDRM Butler Note generated:', pdrmNote.title);
+                      } catch (error) {
+                        console.error('❌ PDRM Butler Note generation failed:', error);
+                        alert('Failed to generate PDRM Butler note. Please try again.');
+                      } finally {
+                        setIsGeneratingPDRMNote(false);
+                      }
+                    }}
+                    disabled={isGeneratingPDRMNote}
+                    className={`px-2 py-1 rounded text-xs ${
+                      isGeneratingPDRMNote
+                        ? 'bg-purple-400 cursor-not-allowed text-white'
+                        : 'bg-purple-600 hover:bg-purple-500 text-white'
+                    }`}
+                  >
+                    {isGeneratingPDRMNote ? '🔄 Processing...' : '🔬 PDRM Butler'}
                   </button>
                 </div>
               </div>

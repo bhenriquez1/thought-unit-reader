@@ -19,6 +19,7 @@ import LinkVideoModal from "@/components/LinkVideoModal";
 import UniversalPatternButlerReader from "@/components/UniversalPatternButlerReader";
 import SurgeonViewPdrmReader from "@/components/SurgeonViewPdrmReader";
 import UniversalPDRMReader from "@/components/UniversalPDRMReader";
+import LivingButlerPDFReader from "@/components/LivingButlerPDFReader";
 
 import {
   firebaseConnected,
@@ -1841,44 +1842,25 @@ export default function ThoughtUnitReader() {
     }
 
 
-        // 🔬 UNIVERSAL PDRM BUTLER READER - Embedded Butler + PDRM Analysis
+        // 🔬 LIVING BUTLER PDF READER - Dynamic Analysis + In-PDF Butler Annotations
         return fileUrl ? (
-          <div className="h-full flex flex-col">
-            {/* Universal PDRM Butler Reader Header */}
-            <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-600 text-white p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">🔬</span>
-                <div>
-                  <h3 className="text-lg font-bold">Universal PDRM Butler Reader</h3>
-                  <p className="text-sm opacity-90">Embedded Butler insights + Universal PDRM analysis + PDF navigation</p>
-                </div>
-              </div>
-              <div className="text-sm bg-white/20 backdrop-blur rounded-lg px-3 py-1">
-                Version 2.1
-              </div>
-            </div>
-            
-            {/* Universal PDRM Reader with Embedded Butler System */}
-            <div className="flex-1 overflow-hidden">
-            <UniversalPDRMReader
-              bookId={bookId}
-              userId={USER_ID}
-              pdfUrl={fileUrl}
-              currentPage={currentPage}
-              pdfPageCount={pdfPageCount}
-              onPageChange={(p) => syncToPage(p)}
-              onPageCount={(count) => setPdfPageCount(count)}
-              onTextSelect={(t) => sel.setSelectionText(t)}
-              onGenerateNote={handleOpenRightBrainNote}
-              fontSize={fontSize}
-              fontFamily={fontFamily}
-              lineSpacing={lineSpacing}
-              selectedVoice={selectedVoice || undefined}
-              speechRate={speechRate}
-              tableOfContents={tableOfContents}
-            />
-            </div>
-          </div>
+          <LivingButlerPDFReader
+            bookId={bookId}
+            userId={USER_ID}
+            pdfUrl={fileUrl}
+            currentPage={currentPage}
+            pdfPageCount={pdfPageCount}
+            onPageChange={(p) => syncToPage(p)}
+            onPageCount={(count) => setPdfPageCount(count)}
+            onTextSelect={(t) => sel.setSelectionText(t)}
+            onGenerateNote={handleOpenRightBrainNote}
+            fontSize={fontSize}
+            fontFamily={fontFamily}
+            lineSpacing={lineSpacing}
+            selectedVoice={selectedVoice || undefined}
+            speechRate={speechRate}
+            tableOfContents={tableOfContents}
+          />
         ) : (
       <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
         <div className="text-center max-w-3xl">

@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔬 Living Butler PDF Reader Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(45deg, #667eea, #764ba2, #f093fb);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            margin-bottom: 2rem;
+        }
+
+        .status {
+            display: inline-block;
+            background: rgba(46, 204, 113, 0.2);
+            color: #2ecc71;
+            padding: 0.5rem 1rem;
+            border-radius: 25px;
+            font-weight: 600;
+            border: 2px solid #2ecc71;
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        .feature {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 2rem;
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        .feature:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .feature-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            display: block;
+        }
+
+        .feature h3 {
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+            color: #f093fb;
+        }
+
+        .workflow {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 2rem;
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-bottom: 3rem;
+        }
+
+        .workflow h2 {
+            text-align: center;
+            margin-bottom: 2rem;
+            font-size: 2rem;
+            color: #f093fb;
+        }
+
+        .workflow-steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+        }
+
+        .step {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 1.5rem;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+            position: relative;
+        }
+
+        .step-number {
+            position: absolute;
+            top: -10px;
+            left: 10px;
+            background: #667eea;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .demo-section {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 2rem;
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-bottom: 2rem;
+        }
+
+        .demo-section h2 {
+            margin-bottom: 1.5rem;
+            color: #f093fb;
+        }
+
+        .mock-pdf {
+            background: white;
+            color: #333;
+            border-radius: 10px;
+            padding: 2rem;
+            margin: 1rem 0;
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .mock-toc {
+            background: #2c3e50;
+            color: white;
+            padding: 1.5rem;
+            border-radius: 10px 0 0 10px;
+            width: 300px;
+            float: left;
+            margin-right: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .toc-item {
+            padding: 0.5rem;
+            margin: 0.5rem 0;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            position: relative;
+        }
+
+        .butler-indicators {
+            float: right;
+            font-size: 0.8rem;
+        }
+
+        .butler-annotation {
+            position: absolute;
+            background: #3498db;
+            color: white;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+
+        .butler-annotation:hover {
+            transform: scale(1.2);
+            background: #2980b9;
+        }
+
+        .tooltip {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #2c3e50;
+            color: white;
+            padding: 1rem;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            width: 250px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 20;
+        }
+
+        .butler-annotation:hover .tooltip {
+            opacity: 1;
+        }
+
+        .pdf-content {
+            margin-left: 320px;
+            background: #f8f9fa;
+            padding: 2rem;
+            border-radius: 0 10px 10px 0;
+            min-height: 400px;
+            position: relative;
+        }
+
+        .pdf-text {
+            line-height: 1.8;
+            color: #2c3e50;
+        }
+
+        .btn {
+            display: inline-block;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 25px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            margin: 0.5rem;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+
+        .old-way, .new-way {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 1.5rem;
+            border-radius: 10px;
+        }
+
+        .old-way {
+            border: 2px solid #e74c3c;
+        }
+
+        .new-way {
+            border: 2px solid #2ecc71;
+        }
+
+        .old-way h3 {
+            color: #e74c3c;
+        }
+
+        .new-way h3 {
+            color: #2ecc71;
+        }
+
+        @media (max-width: 768px) {
+            .mock-toc {
+                float: none;
+                width: 100%;
+                margin-right: 0;
+                border-radius: 10px 10px 0 0;
+            }
+
+            .pdf-content {
+                margin-left: 0;
+                border-radius: 0 0 10px 10px;
+            }
+
+            .comparison {
+                grid-template-columns: 1fr;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔬 Living Butler PDF Reader</h1>
+            <p>Dynamic Butler insights embedded directly into your PDF reading experience</p>
+            <div class="status">✅ Fully Integrated & Ready</div>
+        </div>
+
+        <div class="features">
+            <div class="feature">
+                <span class="feature-icon">🔍</span>
+                <h3>Dynamic Analysis</h3>
+                <p>Any PDF uploaded gets real-time Universal PDRM + Butler analysis. No pre-processing required - works with any subject.</p>
+            </div>
+
+            <div class="feature">
+                <span class="feature-icon">🔬</span>
+                <h3>In-PDF Butler Annotations</h3>
+                <p>Butler insights appear as clickable markers directly on PDF text. Hover to see insights, click to hear them spoken.</p>
+            </div>
+
+            <div class="feature">
+                <span class="feature-icon">📚</span>
+                <h3>Smart Chapter TOC</h3>
+                <p>Table of contents shows Butler coverage per chapter with visual indicators and concept previews.</p>
+            </div>
+
+            <div class="feature">
+                <span class="feature-icon">🧠</span>
+                <h3>Persistent Butler Memory</h3>
+                <p>Critical Butler insights persist across pages while contextual ones fade appropriately.</p>
+            </div>
+
+            <div class="feature">
+                <span class="feature-icon">🎯</span>
+                <h3>Universal Subject Support</h3>
+                <p>Works across Biology, Chemistry, Physics, Math, Business, History, Literature - any academic subject.</p>
+            </div>
+
+            <div class="feature">
+                <span class="feature-icon">⚡</span>
+                <h3>Progressive Processing</h3>
+                <p>Visual progress indicators during PDF analysis with detailed status updates and error handling.</p>
+            </div>
+        </div>
+
+        <div class="workflow">
+            <h2>🚀 How It Works</h2>
+            <div class="workflow-steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h4>Upload Any PDF</h4>
+                    <p>Upload any PDF file - Biology textbook, Chemistry notes, Physics problems, Business cases, etc.</p>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h4>Dynamic Analysis</h4>
+                    <p>System automatically extracts text and generates Universal PDRM + Butler insights in real-time.</p>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h4>Smart TOC Creation</h4>
+                    <p>Detects chapters and maps Butler insights to create an intelligent table of contents.</p>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <h4>Living Butler Experience</h4>
+                    <p>Butler insights appear as interactive annotations directly on your PDF pages.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>📖 Live Demo Preview</h2>
+            <p>Here's what the Living Butler PDF Reader looks like in action:</p>
+
+            <div class="mock-pdf">
+                <div class="mock-toc">
+                    <h4>📚 Smart Table of Contents</h4>
+                    
+                    <div class="toc-item">
+                        <strong>Chapter 1: Cell Biology</strong>
+                        <div class="butler-indicators">🔬🔬🔬 (3 insights)</div>
+                        <small style="color: #bdc3c7; display: block; margin-top: 0.5rem;">
+                            Concepts: membrane transport, organelles, signaling
+                        </small>
+                    </div>
+
+                    <div class="toc-item">
+                        <strong>Chapter 2: Metabolism</strong>
+                        <div class="butler-indicators">🔬🔬 (2 insights)</div>
+                        <small style="color: #bdc3c7; display: block; margin-top: 0.5rem;">
+                            Concepts: glycolysis, electron transport
+                        </small>
+                    </div>
+
+                    <div class="toc-item">
+                        <strong>Chapter 3: Genetics</strong>
+                        <div class="butler-indicators">🔬🔬🔬🔬 (4 insights)</div>
+                        <small style="color: #bdc3c7; display: block; margin-top: 0.5rem;">
+                            Concepts: DNA replication, gene expression
+                        </small>
+                    </div>
+
+                    <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.2);">
+                        <small>
+                            <strong>📊 Butler Stats:</strong><br>
+                            Total Insights: 9<br>
+                            Persistent: 4<br>
+                            Subject: Biology
+                        </small>
+                    </div>
+                </div>
+
+                <div class="pdf-content">
+                    <h3>Chapter 1: Cell Biology</h3>
+                    
+                    <div class="pdf-text">
+                        <p>The cell membrane is a <span style="background-color: #e3f2fd; position: relative;">selective barrier
+                            <div class="butler-annotation" style="top: -5px; right: -15px;">
+                                🔬
+                                <div class="tooltip">
+                                    <strong>Butler Insight:</strong><br>
+                                    Think of the cell membrane like a nightclub bouncer - it decides who gets in and who stays out. Some molecules get VIP access while others need special transport proteins.
+                                </div>
+                            </div>
+                        </span> that controls what enters and exits the cell.</p>
+
+                        <p>Mitochondria are often called the <span style="background-color: #fff3e0; position: relative;">powerhouse of the cell
+                            <div class="butler-annotation" style="top: -5px; right: -15px;">
+                                🔬
+                                <div class="tooltip">
+                                    <strong>Butler Warning:</strong><br>
+                                    Don't just memorize "powerhouse" - understand it's like a specialized factory that converts glucose into ATP currency that the cell can actually spend.
+                                </div>
+                            </div>
+                        </span> because they produce most of the cell's ATP through cellular respiration.</p>
+
+                        <p>The endoplasmic reticulum (ER) consists of two types: rough ER, which has ribosomes attached and synthesizes proteins, and smooth ER, which lacks ribosomes and <span style="background-color: #f3e5f5; position: relative;">synthesizes lipids
+                            <div class="butler-annotation" style="top: -5px; right: -15px;">
+                                🔬
+                                <div class="tooltip">
+                                    <strong>Butler Connection:</strong><br>
+                                    Rough = Protein factory (ribosomes = protein machines)<br>
+                                    Smooth = Lipid factory (no ribosomes needed)<br>
+                                    Like two different assembly lines in the same building.
+                                </div>
+                            </div>
+                        </span>.</p>
+                    </div>
+
+                    <div style="margin-top: 2rem; padding: 1rem; background: rgba(52, 152, 219, 0.1); border-left: 4px solid #3498db; border-radius: 5px;">
+                        <small><strong>📱 Mobile Support:</strong> On mobile devices, Butler insights appear in a bottom panel for easy access.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>🆚 Before vs. After</h2>
+            
+            <div class="comparison">
+                <div class="old-way">
+                    <h3>❌ Old Separate Sections</h3>
+                    <ul>
+                        <li>Butler insights in separate panels</li>
+                        <li>Had to switch between PDF and analysis</li>
+                        <li>Insights disconnected from content</li>
+                        <li>Static, pre-generated sections</li>
+                        <li>No chapter detection</li>
+                    </ul>
+                </div>
+
+                <div class="new-way">
+                    <h3>✅ New Living Butler Integration</h3>
+                    <ul>
+                        <li>Butler insights embedded in PDF text</li>
+                        <li>Insights appear exactly where relevant</li>
+                        <li>Seamless reading experience</li>
+                        <li>Dynamic analysis of any PDF</li>
+                        <li>Smart chapter detection & TOC</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>🎯 Key Innovations</h2>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+                <div style="background: rgba(46, 204, 113, 0.1); padding: 1rem; border-radius: 8px; border: 1px solid #2ecc71;">
+                    <h4 style="color: #2ecc71;">🔄 Dynamic Processing</h4>
+                    <p>No pre-made content - generates insights for ANY PDF in real-time</p>
+                </div>
+
+                <div style="background: rgba(52, 152, 219, 0.1); padding: 1rem; border-radius: 8px; border: 1px solid #3498db;">
+                    <h4 style="color: #3498db;">🎯 In-Content Integration</h4>
+                    <p>Butler insights appear directly on relevant PDF text, not in separate panels</p>
+                </div>
+
+                <div style="background: rgba(155, 89, 182, 0.1); padding: 1rem; border-radius: 8px; border: 1px solid #9b59b6;">
+                    <h4 style="color: #9b59b6;">📚 Smart TOC</h4>
+                    <p>Detects chapters and shows Butler coverage with concept previews</p>
+                </div>
+
+                <div style="background: rgba(241, 196, 15, 0.1); padding: 1rem; border-radius: 8px; border: 1px solid #f1c40f;">
+                    <h4 style="color: #f39c12;">🧠 Persistent Memory</h4>
+                    <p>Critical insights persist across pages while contextual ones fade appropriately</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="demo-section" style="text-align: center;">
+            <h2>🚀 Ready to Experience Living Butler?</h2>
+            <p style="margin-bottom: 2rem;">Upload any PDF and watch Butler insights come alive within your reading experience!</p>
+            
+            <a href="/" class="btn" style="font-size: 1.2rem; padding: 1.2rem 2.5rem;">
+                📂 Launch Living Butler PDF Reader
+            </a>
+
+            <div style="margin-top: 2rem; opacity: 0.8;">
+                <small>
+                    ✅ Works with any subject • ✅ Real-time analysis • ✅ Mobile responsive<br>
+                    ✅ Chapter detection • ✅ Butler integration • ✅ Progressive processing
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Add some interactive elements
+        document.querySelectorAll('.butler-annotation').forEach(annotation => {
+            annotation.addEventListener('click', () => {
+                annotation.style.background = '#2ecc71';
+                annotation.innerHTML = '✓';
+                setTimeout(() => {
+                    annotation.style.background = '#3498db';
+                    annotation.innerHTML = '🔬';
+                }, 1000);
+            });
+        });
+
+        // Add loading animation to buttons
+        document.querySelectorAll('.btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                if (this.href === '/') {
+                    e.preventDefault();
+                    this.innerHTML = '🔄 Loading Living Butler...';
+                    this.style.background = 'linear-gradient(45deg, #2ecc71, #27ae60)';
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1500);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
