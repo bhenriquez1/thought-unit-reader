@@ -347,8 +347,23 @@ export default function ThoughtUnitReader() {
      🔹 Auth Listener + complete redirect
   ========================================================================= */
   useEffect(() => {
-    handleRedirectResult().catch(() => {});
-    return listenForAuthChanges((u) => setUser(u));
+    // Check if bypass mode is enabled
+    const isBypassMode = process.env.NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN === "1";
+    
+    if (isBypassMode) {
+      // Create a mock user for guest mode
+      const mockUser = {
+        uid: "guest-user-" + Date.now(),
+        displayName: "Guest User",
+        email: "guest@local",
+        photoURL: null,
+      };
+      console.log("✅ Bypass mode enabled - using mock user");
+      setUser(mockUser as any);
+    } else {
+      handleRedirectResult().catch(() => {});
+      return listenForAuthChanges((u) => setUser(u));
+    }
   }, []);
 
   /* =========================================================================
