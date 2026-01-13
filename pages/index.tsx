@@ -279,6 +279,84 @@ export default function ThoughtUnitReader() {
   const [tableOfContents, setTableOfContents] = useState<TOCEntry[]>([]);
   const [showTOC] = useState(true);
 
+  /* =========================================================================
+     🔹 Local Storage Persistence for Guest Mode
+  ========================================================================= */
+  // Save session state to localStorage
+  const saveSessionState = () => {
+    if (typeof window === 'undefined') return;
+    
+    try {
+      const sessionState = {
+        viewMode,
+        currentPage,
+        currentThoughtUnit,
+        pdfPageCount,
+        darkMode,
+        fontFamily,
+        fontSize,
+        lineSpacing,
+        fileUrl,
+        thoughtUnitsCount: thoughtUnits.length,
+        bookId,
+        timestamp: Date.now(),
+      };
+      
+      localStorage.setItem('thoughtUnitReader_session', JSON.stringify(sessionState));
+      console.log('💾 Session state saved to localStorage');
+    } catch (error) {
+      console.warn('Failed to save session state:', error);
+    }
+  };
+
+  // Restore session state from localStorage
+  const restoreSessionState = () => {
+    if (typeof window === 'undefined') return null;
+    
+    try {
+      const saved = localStorage.getItem('thoughtUnitReader_session');
+      if (!saved) return null;
+      
+      const sessionState = JSON.parse(saved);
+      
+      // Check if session is recent (within 24 hours)
+      const age = Date.now() - (sessionState.timestamp || 0);
+      if (age > 24 * 60 * 60 * 1000) {
+        console.log('⏰ Session expired, clearing...');
+        localStorage.removeItem('thoughtUnitReader_session');
+        return null;
+      }
+      
+      console.log('📂 Session state restored from localStorage');
+      return sessionState;
+    } catch (error) {
+      console.warn('Failed to restore session state:', error);
+      return null;
+    }
+  };
+
+  // Auto-save on important state changes
+  useEffect(() => {
+    if (fileUrl && thoughtUnits.length > 0) {
+      saveSessionState();
+    }
+  }, [viewMode, currentPage, darkMode, fontFamily, fileUrl, thoughtUnits.length]);
+
+  // Restore session on mount
+  useEffect(() => {
+    const restored = restoreSessionState();
+    if (restored) {
+      setViewMode(restored.viewMode || "original");
+      setCurrentPage(restored.currentPage || 1);
+      setCurrentThoughtUnit(restored.currentThoughtUnit || 1);
+      setDarkMode(restored.darkMode !== undefined ? restored.darkMode : true);
+      setFontFamily(restored.fontFamily || "sans-serif");
+      setFontSize(restored.fontSize || 16);
+      setLineSpacing(restored.lineSpacing || 1.5);
+      // Note: fileUrl and thoughtUnits will need to be re-uploaded as we can't store large data
+    }
+  }, []);
+
   const [showLibrary, setShowLibrary] = useState(false);
   const [pdfLibrary, setPdfLibrary] = useState<
     { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean }[]
