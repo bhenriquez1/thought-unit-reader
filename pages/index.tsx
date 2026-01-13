@@ -408,6 +408,21 @@ export default function ThoughtUnitReader() {
   const [pdfParsingState, setPdfParsingState] = useState<{
     isLoading: boolean;
     error: string | null;
+
+  /* =========================================================================
+     🔹 Surgeon View: Text Selection Handler
+  ========================================================================= */
+  useEffect(() => {
+    const handleMouseUp = () => {
+      // Only trigger in Surgeon View or when PDF is loaded
+      if (fileUrl) {
+        setTimeout(handleTextSelection, 100);
+      }
+    };
+
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => document.removeEventListener('mouseup', handleMouseUp);
+  }, [fileUrl, bookId, currentPage, currentThoughtUnit, tableOfContents]);
     progress: string;
   }>({
     isLoading: false,
