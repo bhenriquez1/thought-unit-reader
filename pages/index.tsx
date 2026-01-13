@@ -3050,6 +3050,18 @@ export default function ThoughtUnitReader() {
         />
       )}
 
+      {/* Surgeon View: Highlight Action Menu */}
+      <HighlightActionMenu
+        selectedText={currentSelection?.text || ''}
+        position={highlightMenuPosition}
+        onAction={handleHighlightAction}
+        onClose={() => {
+          setShowHighlightMenu(false);
+          setCurrentSelection(null);
+        }}
+        visible={showHighlightMenu}
+      />
+
     </div>
   );
 }
