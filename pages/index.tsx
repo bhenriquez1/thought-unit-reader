@@ -2182,6 +2182,15 @@ export default function ThoughtUnitReader() {
           )}
         </label>
 
+        {/* Dyslexia Font Toggle */}
+        <button
+          onClick={() => setFontFamily((f) => f === "sans-serif" ? "Comic Sans MS, cursive" : "sans-serif")}
+          className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
+          title="Toggle Dyslexia-friendly font"
+        >
+          {fontFamily === "sans-serif" ? "🔤 Normal" : "🔤 Dyslexia"}
+        </button>
+
         {/* Dark mode */}
         <button
           onClick={() => setDarkMode((d) => !d)}
