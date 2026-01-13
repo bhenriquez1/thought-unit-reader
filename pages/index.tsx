@@ -1746,53 +1746,72 @@ export default function ThoughtUnitReader() {
       }
 
       return fileUrl && thoughtUnits.length > 0 ? (
-        <div className="h-full flex flex-col">
-          {/* NoteLab Prototype Header */}
-          <div className="bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 text-white p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">📝</span>
-              <div>
-                <h3 className="text-lg font-bold">NoteLab - Advanced Study Notes</h3>
-                <p className="text-sm opacity-90">Pattern-tagged notes with study levels and flashcard export</p>
+        <div className="h-full flex">
+          {/* PDF Viewer - Left Panel */}
+          <div className="w-1/2 border-r border-gray-700 flex flex-col">
+            <div className="bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 text-white p-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">📄</span>
+                <div className="text-sm">
+                  <div className="font-semibold">PDF View</div>
+                  <div className="opacity-90">Page {currentPage} of {pdfPageCount}</div>
+                </div>
               </div>
+            </div>
+            <div className="flex-1 overflow-auto bg-gray-900 flex items-center justify-center">
+              <SmartPDFViewer
+                url={fileUrl}
+                currentPage={currentPage}
+                onPageChange={(p) => syncToPage(p)}
+                onPageCount={(c) => setPdfPageCount(c)}
+                onLoadSuccess={() => console.log('PDF loaded in NoteLab')}
+              />
             </div>
           </div>
           
-          {/* NoteLab Hybrid Reader Component */}
-          <div className="flex-1 overflow-hidden">
-            <NoteLabHybridReader
-              bookId={bookId}
-              userId={USER_ID}
-              pdfUrl={fileUrl}
-              currentPage={currentPage}
-              pdfPageCount={pdfPageCount}
-              onPageChange={(p) => syncToPage(p)}
-              thoughtUnits={thoughtUnits}
-              currentThoughtUnit={currentThoughtUnit}
-              setCurrentThoughtUnit={setCurrentThoughtUnit}
-              highlightedWord={highlightedWord}
-              setHighlightedWord={setHighlightedWord}
-              onWordClick={(w) => {
-                setHighlightedWord(w);
-                if (autoWhiteboard && w.trim()) {
-                  setWbConcept(truncate(w, 600));
-                  setWbContext(`p.${currentPage}`);
-                  setShowWhiteboardPanel(true);
-                }
-              }}
-              onTextSelect={(t) => sel.setSelectionText(t)}
-              onGenerateNote={handleOpenRightBrainNote}
-              selBind={sel.bind}
-              externalSelectionText={sel.selectionText}
-              fontSize={fontSize}
-              fontFamily={fontFamily}
-              lineSpacing={lineSpacing}
-              selectedVoice={selectedVoice || undefined}
-              onVoiceChange={setSelectedVoice}
-              speechRate={speechRate}
-              onSpeechRateChange={setSpeechRate}
-              tableOfContents={tableOfContents}
-            />
+          {/* Notes Panel - Right Panel */}
+          <div className="w-1/2 flex flex-col">
+            <div className="bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 text-white p-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">📝</span>
+                <div className="text-sm">
+                  <div className="font-semibold">NoteLab - Your Notes</div>
+                  <div className="opacity-90">Surgeon View highlights & annotations</div>
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <NotesList
+                bookId={bookId}
+                notes={notes}
+                onEdit={(noteId, content) => {
+                  setNotes((prev) =>
+                    prev.map((n) =>
+                      n.id === noteId
+                        ? { ...n, content, updatedAt: Date.now() }
+                        : n
+                    )
+                  );
+                }}
+                onDelete={(noteId) => {
+                  if (confirm('Delete this note?')) {
+                    setNotes((prev) => prev.filter((n) => n.id !== noteId));
+                    setHighlights((prev) => prev.filter((h) => h.noteId !== noteId));
+                  }
+                }}
+                onTagToggle={(noteId, tag) => {
+                  setNotes((prev) =>
+                    prev.map((n) => {
+                      if (n.id !== noteId) return n;
+                      const tags = n.tags.includes(tag)
+                        ? n.tags.filter((t) => t !== tag)
+                        : [...n.tags, tag];
+                      return { ...n, tags, updatedAt: Date.now() };
+                    })
+                  );
+                }}
+              />
+            </div>
           </div>
         </div>
       ) : (
