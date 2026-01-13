@@ -182,18 +182,49 @@ export async function parseBookWithChapters(
       console.log("📚 Fallback parsing - Total sentences:", allSentences.length);
       
       if (allSentences.length > 0) {
-        // Group sentences into reasonable chunks (5-10 sentences per unit)
-        const chunkSize = 7;
         parsedUnits.length = 0; // Clear existing units
         
-        for (let i = 0; i < allSentences.length; i += chunkSize) {
+        // ✅ IMPROVED: Balanced chunking algorithm to prevent tiny fragments
+        // Target: 5-8 sentences per chunk, with minimum 3 sentences
+        const minChunkSize = 3;
+        const targetChunkSize = 6;
+        const maxChunkSize = 9;
+        
+        let i = 0;
+        while (i < allSentences.length) {
+          const remaining = allSentences.length - i;
+          
+          // If very few sentences remain, merge with previous chunk or create final chunk
+          if (remaining <= minChunkSize && parsedUnits.length > 0) {
+            // Merge with previous chunk instead of creating tiny fragment
+            const lastChunk = parsedUnits[parsedUnits.length - 1];
+            const remainingSentences = allSentences.slice(i).filter(s => s.trim().length > 5);
+            lastChunk.push(...remainingSentences);
+            console.log(`📚 Merged ${remainingSentences.length} remaining sentences with last chunk`);
+            break;
+          }
+          
+          // Determine chunk size adaptively
+          let chunkSize = targetChunkSize;
+          if (remaining < targetChunkSize + minChunkSize) {
+            // If near the end, take all remaining to avoid small fragment
+            chunkSize = remaining;
+          } else if (remaining <= maxChunkSize) {
+            // Split remaining evenly if possible
+            chunkSize = Math.ceil(remaining / 2);
+          }
+          
           const chunk = allSentences.slice(i, i + chunkSize).filter(s => s.trim().length > 5);
           if (chunk.length > 0) {
             parsedUnits.push(chunk);
+            console.log(`📚 Created chunk ${parsedUnits.length} with ${chunk.length} sentences`);
           }
+          
+          i += chunkSize;
         }
         
         totalValidUnits = parsedUnits.length;
+        console.log(`📚 Fallback chunking complete: ${totalValidUnits} balanced chunks created`);
       }
     }
     
