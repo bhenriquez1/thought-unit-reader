@@ -280,6 +280,20 @@ export default function ThoughtUnitReader() {
   const [showTOC] = useState(true);
 
   /* =========================================================================
+     🔹 Surgeon View PDRM State
+  ========================================================================= */
+  const [notes, setNotes] = useState<any[]>([]);
+  const [flashcards, setFlashcards] = useState<any[]>([]);
+  const [hyperChunks, setHyperChunks] = useState<any[]>([]);
+  const [highlights, setHighlights] = useState<any[]>([]);
+  const [showHighlightMenu, setShowHighlightMenu] = useState(false);
+  const [highlightMenuPosition, setHighlightMenuPosition] = useState({ x: 0, y: 0 });
+  const [currentSelection, setCurrentSelection] = useState<{
+    text: string;
+    context: any;
+  } | null>(null);
+
+  /* =========================================================================
      🔹 Local Storage Persistence for Guest Mode
   ========================================================================= */
   // Save session state to localStorage
