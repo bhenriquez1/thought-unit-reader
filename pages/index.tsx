@@ -408,6 +408,16 @@ export default function ThoughtUnitReader() {
   const [pdfParsingState, setPdfParsingState] = useState<{
     isLoading: boolean;
     error: string | null;
+    progress: string;
+  }>({
+    isLoading: false,
+    error: null,
+    progress: "",
+  });
+
+  // ✅ Readless Mode and PDRM Layout State
+  const [readlessMode, setReadlessMode] = useState<boolean>(false);
+  const [pdrmLayout, setPdrmLayout] = useState<'side' | 'under'>('side');
 
   /* =========================================================================
      🔹 Surgeon View: Text Selection Handler
@@ -423,16 +433,6 @@ export default function ThoughtUnitReader() {
     document.addEventListener('mouseup', handleMouseUp);
     return () => document.removeEventListener('mouseup', handleMouseUp);
   }, [fileUrl, bookId, currentPage, currentThoughtUnit, tableOfContents]);
-    progress: string;
-  }>({
-    isLoading: false,
-    error: null,
-    progress: "",
-  });
-
-  // ✅ Readless Mode and PDRM Layout State
-  const [readlessMode, setReadlessMode] = useState<boolean>(false);
-  const [pdrmLayout, setPdrmLayout] = useState<'side' | 'under'>('side');
 
   // 🧠 Chapter Absorption Pipeline State
   const [chapterPipeline, setChapterPipeline] = useState<ChapterAbsorptionPipeline | null>(null);
