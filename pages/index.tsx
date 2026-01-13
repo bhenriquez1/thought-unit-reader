@@ -14,6 +14,7 @@ import NoteLabView from "@/components/NoteLabView";
 import CleanHybridReader from "@/components/CleanHybridReader";
 import HighlightPopup from "@/components/HighlightPopup";
 import LinkVideoModal from "@/components/LinkVideoModal";
+import HighlightActionMenu from "@/components/HighlightActionMenu";
 
 // Prototype component import
 import UniversalPatternButlerReader from "@/components/UniversalPatternButlerReader";
