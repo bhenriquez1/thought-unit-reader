@@ -970,6 +970,209 @@ export default function ThoughtUnitReader() {
   };
 
   /* =========================================================================
+     🔹 Surgeon View PDRM: Highlight → Action Handlers
+  ========================================================================= */
+  
+  // Handle text selection and show action menu
+  const handleTextSelection = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.toString().trim().length === 0) {
+      setShowHighlightMenu(false);
+      return;
+    }
+
+    const selectedText = selection.toString().trim();
+    if (selectedText.length < 3) return; // Ignore very short selections
+
+    // Get selection position for menu placement
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    
+    setHighlightMenuPosition({
+      x: rect.left + rect.width / 2,
+      y: rect.bottom,
+    });
+
+    setCurrentSelection({
+      text: selectedText,
+      context: {
+        bookId,
+        chapterId: tableOfContents[0]?.title || 'Unknown',
+        thoughtUnitIndex: currentThoughtUnit,
+        pageNumber: currentPage,
+      },
+    });
+
+    setShowHighlightMenu(true);
+  };
+
+  // Handle highlight action menu actions
+  const handleHighlightAction = (action: any) => {
+    if (!currentSelection) return;
+
+    const timestamp = Date.now();
+    const sourceRef = {
+      bookId,
+      selectedText: currentSelection.text,
+      pageNumber: currentPage,
+      thoughtUnitIndex: currentThoughtUnit,
+      chapterId: currentSelection.context.chapterId,
+    };
+
+    switch (action.type) {
+      case 'note': {
+        const newNote = {
+          id: `note_${timestamp}`,
+          content: '', // Will be filled by user in NoteLab
+          source: sourceRef,
+          tags: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          archived: false,
+        };
+        setNotes((prev) => [...prev, newNote]);
+        
+        // Create highlight
+        const highlight = {
+          id: `hl_${timestamp}`,
+          source: sourceRef,
+          tags: [],
+          noteId: newNote.id,
+          color: '#3b82f6',
+          createdAt: timestamp,
+        };
+        setHighlights((prev) => [...prev, highlight]);
+        
+        console.log('📝 Note created:', newNote.id);
+        // TODO: Show note editor modal or switch to NoteLab
+        break;
+      }
+
+      case 'flashcard': {
+        const newFlashcard = {
+          id: `card_${timestamp}`,
+          front: currentSelection.text,
+          back: '', // Will be filled by user
+          source: sourceRef,
+          tags: [],
+          confidence: 0,
+          reviewCount: 0,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+        setFlashcards((prev) => [...prev, newFlashcard]);
+        
+        // Create highlight
+        const highlight = {
+          id: `hl_${timestamp}`,
+          source: sourceRef,
+          tags: [],
+          flashcardId: newFlashcard.id,
+          color: '#10b981',
+          createdAt: timestamp,
+        };
+        setHighlights((prev) => [...prev, highlight]);
+        
+        console.log('🎴 Flashcard created:', newFlashcard.id);
+        break;
+      }
+
+      case 'tag': {
+        // Create or update highlight with PDRM tag
+        const tagColor = {
+          P: '#a855f7', // Purple
+          D: '#3b82f6', // Blue
+          R: '#ef4444', // Red
+          M: '#f59e0b', // Yellow
+        }[action.tagType] || '#6b7280';
+
+        const highlight = {
+          id: `hl_${timestamp}`,
+          source: sourceRef,
+          tags: [action.tagType],
+          color: tagColor,
+          createdAt: timestamp,
+        };
+        setHighlights((prev) => [...prev, highlight]);
+        
+        console.log(`🏷️ PDRM tag applied: ${action.tagType}`);
+        break;
+      }
+
+      case 'hyperchunk': {
+        // Add to existing or create new hyper-chunk
+        // For now, create a new one - can be merged later in NoteLab
+        const newChunk = {
+          id: `chunk_${timestamp}`,
+          title: `Chunk: ${currentSelection.text.substring(0, 30)}...`,
+          description: '',
+          noteIds: [],
+          flashcardIds: [],
+          tags: [],
+          ruleState: 'draft',
+          crossDomainTags: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+        setHyperChunks((prev) => [...prev, newChunk]);
+        
+        // Create highlight linked to chunk
+        const highlight = {
+          id: `hl_${timestamp}`,
+          source: sourceRef,
+          tags: [],
+          hyperChunkId: newChunk.id,
+          color: '#f97316', // Orange
+          createdAt: timestamp,
+        };
+        setHighlights((prev) => [...prev, highlight]);
+        
+        console.log('🔗 Hyper-chunk created:', newChunk.id);
+        break;
+      }
+    }
+
+    setShowHighlightMenu(false);
+    setCurrentSelection(null);
+  };
+
+  // Persist Surgeon View data to localStorage
+  useEffect(() => {
+    if (bookId && (notes.length > 0 || flashcards.length > 0 || highlights.length > 0 || hyperChunks.length > 0)) {
+      try {
+        localStorage.setItem(`surgeonView_notes_${bookId}`, JSON.stringify(notes));
+        localStorage.setItem(`surgeonView_flashcards_${bookId}`, JSON.stringify(flashcards));
+        localStorage.setItem(`surgeonView_highlights_${bookId}`, JSON.stringify(highlights));
+        localStorage.setItem(`surgeonView_hyperchunks_${bookId}`, JSON.stringify(hyperChunks));
+        console.log('💾 Surgeon View data saved to localStorage');
+      } catch (error) {
+        console.warn('Failed to save Surgeon View data:', error);
+      }
+    }
+  }, [notes, flashcards, highlights, hyperChunks, bookId]);
+
+  // Load Surgeon View data from localStorage
+  useEffect(() => {
+    if (bookId) {
+      try {
+        const savedNotes = localStorage.getItem(`surgeonView_notes_${bookId}`);
+        const savedFlashcards = localStorage.getItem(`surgeonView_flashcards_${bookId}`);
+        const savedHighlights = localStorage.getItem(`surgeonView_highlights_${bookId}`);
+        const savedChunks = localStorage.getItem(`surgeonView_hyperchunks_${bookId}`);
+        
+        if (savedNotes) setNotes(JSON.parse(savedNotes));
+        if (savedFlashcards) setFlashcards(JSON.parse(savedFlashcards));
+        if (savedHighlights) setHighlights(JSON.parse(savedHighlights));
+        if (savedChunks) setHyperChunks(JSON.parse(savedChunks));
+        
+        console.log('📂 Surgeon View data loaded from localStorage');
+      } catch (error) {
+        console.warn('Failed to load Surgeon View data:', error);
+      }
+    }
+  }, [bookId]);
+
+  /* =========================================================================
      🔹 Enhanced High-Yield & Sketch note helpers - Top Student Quality
   ========================================================================= */
   
