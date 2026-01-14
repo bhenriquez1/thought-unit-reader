@@ -142,29 +142,49 @@ export async function parseBookWithChapters(
       
       console.log(`📚 Chapter ${index + 1} - Sentences: ${sentences.length}, Content length: ${chapter.content.length}`);
 
-      const paragraphs: string[][] = [];
-      let currentParagraph: string[] = [];
-
-      sentences.forEach((sentence) => {
-        if (sentence.trim().length > 0) { // ✅ Only add non-empty sentences
-          currentParagraph.push(sentence);
-          if (sentence.endsWith("\n\n")) {
-            paragraphs.push([...currentParagraph]);
-            currentParagraph = [];
-          }
-        }
-      });
-
-      if (currentParagraph.length > 0) paragraphs.push(currentParagraph);
+      // ✅ IMPROVED: Balanced chunking within chapters
+      const chapterChunks: string[][] = [];
+      const minChunkSize = 3;
+      const targetChunkSize = 6;
+      const maxChunkSize = 9;
       
-      // ✅ Only add paragraphs with actual content
-      const validParagraphs = paragraphs.filter(p => 
+      let i = 0;
+      while (i < sentences.length) {
+        const remaining = sentences.length - i;
+        
+        // If very few sentences remain, merge with previous chunk
+        if (remaining <= minChunkSize && chapterChunks.length > 0) {
+          const lastChunk = chapterChunks[chapterChunks.length - 1];
+          const remainingSentences = sentences.slice(i).filter(s => s.trim().length > 5);
+          lastChunk.push(...remainingSentences);
+          break;
+        }
+        
+        // Determine chunk size adaptively
+        let chunkSize = targetChunkSize;
+        if (remaining < targetChunkSize + minChunkSize) {
+          chunkSize = remaining;
+        } else if (remaining <= maxChunkSize) {
+          chunkSize = Math.ceil(remaining / 2);
+        }
+        
+        const chunk = sentences.slice(i, i + chunkSize).filter(s => s.trim().length > 5);
+        if (chunk.length > 0) {
+          chapterChunks.push(chunk);
+        }
+        
+        i += chunkSize;
+      }
+      
+      // Add valid chunks to parsedUnits
+      const validChunks = chapterChunks.filter(p => 
         p.length > 0 && p.some(sentence => sentence.trim().length > 5)
       );
       
-      if (validParagraphs.length > 0) {
-        parsedUnits.push(...validParagraphs);
-        totalValidUnits += validParagraphs.length;
+      if (validChunks.length > 0) {
+        parsedUnits.push(...validChunks);
+        totalValidUnits += validChunks.length;
+        console.log(`📚 Chapter ${index + 1} created ${validChunks.length} balanced chunks`);
       }
     });
 
@@ -182,18 +202,49 @@ export async function parseBookWithChapters(
       console.log("📚 Fallback parsing - Total sentences:", allSentences.length);
       
       if (allSentences.length > 0) {
-        // Group sentences into reasonable chunks (5-10 sentences per unit)
-        const chunkSize = 7;
         parsedUnits.length = 0; // Clear existing units
         
-        for (let i = 0; i < allSentences.length; i += chunkSize) {
+        // ✅ IMPROVED: Balanced chunking algorithm to prevent tiny fragments
+        // Target: 5-8 sentences per chunk, with minimum 3 sentences
+        const minChunkSize = 3;
+        const targetChunkSize = 6;
+        const maxChunkSize = 9;
+        
+        let i = 0;
+        while (i < allSentences.length) {
+          const remaining = allSentences.length - i;
+          
+          // If very few sentences remain, merge with previous chunk or create final chunk
+          if (remaining <= minChunkSize && parsedUnits.length > 0) {
+            // Merge with previous chunk instead of creating tiny fragment
+            const lastChunk = parsedUnits[parsedUnits.length - 1];
+            const remainingSentences = allSentences.slice(i).filter(s => s.trim().length > 5);
+            lastChunk.push(...remainingSentences);
+            console.log(`📚 Merged ${remainingSentences.length} remaining sentences with last chunk`);
+            break;
+          }
+          
+          // Determine chunk size adaptively
+          let chunkSize = targetChunkSize;
+          if (remaining < targetChunkSize + minChunkSize) {
+            // If near the end, take all remaining to avoid small fragment
+            chunkSize = remaining;
+          } else if (remaining <= maxChunkSize) {
+            // Split remaining evenly if possible
+            chunkSize = Math.ceil(remaining / 2);
+          }
+          
           const chunk = allSentences.slice(i, i + chunkSize).filter(s => s.trim().length > 5);
           if (chunk.length > 0) {
             parsedUnits.push(chunk);
+            console.log(`📚 Created chunk ${parsedUnits.length} with ${chunk.length} sentences`);
           }
+          
+          i += chunkSize;
         }
         
         totalValidUnits = parsedUnits.length;
+        console.log(`📚 Fallback chunking complete: ${totalValidUnits} balanced chunks created`);
       }
     }
     

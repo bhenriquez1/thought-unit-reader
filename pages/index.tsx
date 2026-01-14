@@ -14,6 +14,13 @@ import NoteLabView from "@/components/NoteLabView";
 import CleanHybridReader from "@/components/CleanHybridReader";
 import HighlightPopup from "@/components/HighlightPopup";
 import LinkVideoModal from "@/components/LinkVideoModal";
+import HighlightActionMenu from "@/components/HighlightActionMenu";
+import NotesList from "@/components/NotesList";
+
+// PDF Viewer
+const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), {
+  ssr: false,
+});
 
 // Prototype component import
 import UniversalPatternButlerReader from "@/components/UniversalPatternButlerReader";
@@ -279,6 +286,98 @@ export default function ThoughtUnitReader() {
   const [tableOfContents, setTableOfContents] = useState<TOCEntry[]>([]);
   const [showTOC] = useState(true);
 
+  /* =========================================================================
+     🔹 Surgeon View PDRM State
+  ========================================================================= */
+  const [notes, setNotes] = useState<any[]>([]);
+  const [flashcards, setFlashcards] = useState<any[]>([]);
+  const [hyperChunks, setHyperChunks] = useState<any[]>([]);
+  const [highlights, setHighlights] = useState<any[]>([]);
+  const [showHighlightMenu, setShowHighlightMenu] = useState(false);
+  const [highlightMenuPosition, setHighlightMenuPosition] = useState({ x: 0, y: 0 });
+  const [currentSelection, setCurrentSelection] = useState<{
+    text: string;
+    context: any;
+  } | null>(null);
+
+  /* =========================================================================
+     🔹 Local Storage Persistence for Guest Mode
+  ========================================================================= */
+  // Save session state to localStorage
+  const saveSessionState = () => {
+    if (typeof window === 'undefined') return;
+    
+    try {
+      const sessionState = {
+        viewMode,
+        currentPage,
+        currentThoughtUnit,
+        pdfPageCount,
+        darkMode,
+        fontFamily,
+        fontSize,
+        lineSpacing,
+        fileUrl,
+        thoughtUnitsCount: thoughtUnits.length,
+        bookId,
+        timestamp: Date.now(),
+      };
+      
+      localStorage.setItem('thoughtUnitReader_session', JSON.stringify(sessionState));
+      console.log('💾 Session state saved to localStorage');
+    } catch (error) {
+      console.warn('Failed to save session state:', error);
+    }
+  };
+
+  // Restore session state from localStorage
+  const restoreSessionState = () => {
+    if (typeof window === 'undefined') return null;
+    
+    try {
+      const saved = localStorage.getItem('thoughtUnitReader_session');
+      if (!saved) return null;
+      
+      const sessionState = JSON.parse(saved);
+      
+      // Check if session is recent (within 24 hours)
+      const age = Date.now() - (sessionState.timestamp || 0);
+      if (age > 24 * 60 * 60 * 1000) {
+        console.log('⏰ Session expired, clearing...');
+        localStorage.removeItem('thoughtUnitReader_session');
+        return null;
+      }
+      
+      console.log('📂 Session state restored from localStorage');
+      return sessionState;
+    } catch (error) {
+      console.warn('Failed to restore session state:', error);
+      return null;
+    }
+  };
+
+  // Auto-save on important state changes
+  useEffect(() => {
+    if (fileUrl && thoughtUnits.length > 0) {
+      saveSessionState();
+    }
+  }, [viewMode, currentPage, darkMode, fontFamily, fileUrl, thoughtUnits.length]);
+
+  // Restore session on mount
+  useEffect(() => {
+    const restored = restoreSessionState();
+    if (restored) {
+      setViewMode(restored.viewMode || "original");
+      setCurrentPage(restored.currentPage || 1);
+      setCurrentThoughtUnit(restored.currentThoughtUnit || 1);
+      setDarkMode(restored.darkMode !== undefined ? restored.darkMode : true);
+      setFontFamily(restored.fontFamily || "sans-serif");
+      setFontSize(restored.fontSize || 16);
+      setLineSpacing(restored.lineSpacing || 1.5);
+      // Note: fileUrl and thoughtUnits will need to be re-uploaded as we can't store large data
+    }
+  }, []);
+
   const [showLibrary, setShowLibrary] = useState(false);
   const [pdfLibrary, setPdfLibrary] = useState<
     { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean }[]
@@ -326,6 +425,21 @@ export default function ThoughtUnitReader() {
   const [readlessMode, setReadlessMode] = useState<boolean>(false);
   const [pdrmLayout, setPdrmLayout] = useState<'side' | 'under'>('side');
 
+  /* =========================================================================
+     🔹 Surgeon View: Text Selection Handler
+  ========================================================================= */
+  useEffect(() => {
+    const handleMouseUp = () => {
+      // Only trigger in Surgeon View or when PDF is loaded
+      if (fileUrl) {
+        setTimeout(handleTextSelection, 100);
+      }
+    };
+
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => document.removeEventListener('mouseup', handleMouseUp);
+  }, [fileUrl, bookId, currentPage, currentThoughtUnit, tableOfContents]);
+
   // 🧠 Chapter Absorption Pipeline State
   const [chapterPipeline, setChapterPipeline] = useState<ChapterAbsorptionPipeline | null>(null);
   const [absorptionState, setAbsorptionState] = useState<{
@@ -347,8 +461,23 @@ export default function ThoughtUnitReader() {
      🔹 Auth Listener + complete redirect
   ========================================================================= */
   useEffect(() => {
-    handleRedirectResult().catch(() => {});
-    return listenForAuthChanges((u) => setUser(u));
+    // Check if bypass mode is enabled
+    const isBypassMode = process.env.NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN === "1";
+    
+    if (isBypassMode) {
+      // Create a mock user for guest mode
+      const mockUser = {
+        uid: "guest-user-" + Date.now(),
+        displayName: "Guest User",
+        email: "guest@local",
+        photoURL: null,
+      };
+      console.log("✅ Bypass mode enabled - using mock user");
+      setUser(mockUser as any);
+    } else {
+      handleRedirectResult().catch(() => {});
+      return listenForAuthChanges((u) => setUser(u));
+    }
   }, []);
 
   /* =========================================================================
@@ -861,6 +990,209 @@ export default function ThoughtUnitReader() {
       setPdfLibrary((prev) => prev.filter((p) => p.id !== id));
     }
   };
+
+  /* =========================================================================
+     🔹 Surgeon View PDRM: Highlight → Action Handlers
+  ========================================================================= */
+  
+  // Handle text selection and show action menu
+  const handleTextSelection = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.toString().trim().length === 0) {
+      setShowHighlightMenu(false);
+      return;
+    }
+
+    const selectedText = selection.toString().trim();
+    if (selectedText.length < 3) return; // Ignore very short selections
+
+    // Get selection position for menu placement
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    
+    setHighlightMenuPosition({
+      x: rect.left + rect.width / 2,
+      y: rect.bottom,
+    });
+
+    setCurrentSelection({
+      text: selectedText,
+      context: {
+        bookId,
+        chapterId: tableOfContents[0]?.title || 'Unknown',
+        thoughtUnitIndex: currentThoughtUnit,
+        pageNumber: currentPage,
+      },
+    });
+
+    setShowHighlightMenu(true);
+  };
+
+  // Handle highlight action menu actions
+  const handleHighlightAction = (action: any) => {
+    if (!currentSelection) return;
+
+    const timestamp = Date.now();
+    const sourceRef = {
+      bookId,
+      selectedText: currentSelection.text,
+      pageNumber: currentPage,
+      thoughtUnitIndex: currentThoughtUnit,
+      chapterId: currentSelection.context.chapterId,
+    };
+
+    switch (action.type) {
+      case 'note': {
+        const newNote = {
+          id: `note_${timestamp}`,
+          content: '', // Will be filled by user in NoteLab
+          source: sourceRef,
+          tags: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          archived: false,
+        };
+        setNotes((prev) => [...prev, newNote]);
+        
+        // Create highlight
+        const highlight = {
+          id: `hl_${timestamp}`,
+          source: sourceRef,
+          tags: [],
+          noteId: newNote.id,
+          color: '#3b82f6',
+          createdAt: timestamp,
+        };
+        setHighlights((prev) => [...prev, highlight]);
+        
+        console.log('📝 Note created:', newNote.id);
+        // TODO: Show note editor modal or switch to NoteLab
+        break;
+      }
+
+      case 'flashcard': {
+        const newFlashcard = {
+          id: `card_${timestamp}`,
+          front: currentSelection.text,
+          back: '', // Will be filled by user
+          source: sourceRef,
+          tags: [],
+          confidence: 0,
+          reviewCount: 0,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+        setFlashcards((prev) => [...prev, newFlashcard]);
+        
+        // Create highlight
+        const highlight = {
+          id: `hl_${timestamp}`,
+          source: sourceRef,
+          tags: [],
+          flashcardId: newFlashcard.id,
+          color: '#10b981',
+          createdAt: timestamp,
+        };
+        setHighlights((prev) => [...prev, highlight]);
+        
+        console.log('🎴 Flashcard created:', newFlashcard.id);
+        break;
+      }
+
+      case 'tag': {
+        // Create or update highlight with PDRM tag
+        const tagColor = {
+          P: '#a855f7', // Purple
+          D: '#3b82f6', // Blue
+          R: '#ef4444', // Red
+          M: '#f59e0b', // Yellow
+        }[action.tagType] || '#6b7280';
+
+        const highlight = {
+          id: `hl_${timestamp}`,
+          source: sourceRef,
+          tags: [action.tagType],
+          color: tagColor,
+          createdAt: timestamp,
+        };
+        setHighlights((prev) => [...prev, highlight]);
+        
+        console.log(`🏷️ PDRM tag applied: ${action.tagType}`);
+        break;
+      }
+
+      case 'hyperchunk': {
+        // Add to existing or create new hyper-chunk
+        // For now, create a new one - can be merged later in NoteLab
+        const newChunk = {
+          id: `chunk_${timestamp}`,
+          title: `Chunk: ${currentSelection.text.substring(0, 30)}...`,
+          description: '',
+          noteIds: [],
+          flashcardIds: [],
+          tags: [],
+          ruleState: 'draft',
+          crossDomainTags: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+        setHyperChunks((prev) => [...prev, newChunk]);
+        
+        // Create highlight linked to chunk
+        const highlight = {
+          id: `hl_${timestamp}`,
+          source: sourceRef,
+          tags: [],
+          hyperChunkId: newChunk.id,
+          color: '#f97316', // Orange
+          createdAt: timestamp,
+        };
+        setHighlights((prev) => [...prev, highlight]);
+        
+        console.log('🔗 Hyper-chunk created:', newChunk.id);
+        break;
+      }
+    }
+
+    setShowHighlightMenu(false);
+    setCurrentSelection(null);
+  };
+
+  // Persist Surgeon View data to localStorage
+  useEffect(() => {
+    if (bookId && (notes.length > 0 || flashcards.length > 0 || highlights.length > 0 || hyperChunks.length > 0)) {
+      try {
+        localStorage.setItem(`surgeonView_notes_${bookId}`, JSON.stringify(notes));
+        localStorage.setItem(`surgeonView_flashcards_${bookId}`, JSON.stringify(flashcards));
+        localStorage.setItem(`surgeonView_highlights_${bookId}`, JSON.stringify(highlights));
+        localStorage.setItem(`surgeonView_hyperchunks_${bookId}`, JSON.stringify(hyperChunks));
+        console.log('💾 Surgeon View data saved to localStorage');
+      } catch (error) {
+        console.warn('Failed to save Surgeon View data:', error);
+      }
+    }
+  }, [notes, flashcards, highlights, hyperChunks, bookId]);
+
+  // Load Surgeon View data from localStorage
+  useEffect(() => {
+    if (bookId) {
+      try {
+        const savedNotes = localStorage.getItem(`surgeonView_notes_${bookId}`);
+        const savedFlashcards = localStorage.getItem(`surgeonView_flashcards_${bookId}`);
+        const savedHighlights = localStorage.getItem(`surgeonView_highlights_${bookId}`);
+        const savedChunks = localStorage.getItem(`surgeonView_hyperchunks_${bookId}`);
+        
+        if (savedNotes) setNotes(JSON.parse(savedNotes));
+        if (savedFlashcards) setFlashcards(JSON.parse(savedFlashcards));
+        if (savedHighlights) setHighlights(JSON.parse(savedHighlights));
+        if (savedChunks) setHyperChunks(JSON.parse(savedChunks));
+        
+        console.log('📂 Surgeon View data loaded from localStorage');
+      } catch (error) {
+        console.warn('Failed to load Surgeon View data:', error);
+      }
+    }
+  }, [bookId]);
 
   /* =========================================================================
      🔹 Enhanced High-Yield & Sketch note helpers - Top Student Quality
@@ -1420,53 +1752,72 @@ export default function ThoughtUnitReader() {
       }
 
       return fileUrl && thoughtUnits.length > 0 ? (
-        <div className="h-full flex flex-col">
-          {/* NoteLab Prototype Header */}
-          <div className="bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 text-white p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">📝</span>
-              <div>
-                <h3 className="text-lg font-bold">NoteLab - Advanced Study Notes</h3>
-                <p className="text-sm opacity-90">Pattern-tagged notes with study levels and flashcard export</p>
+        <div className="h-full flex">
+          {/* PDF Viewer - Left Panel */}
+          <div className="w-1/2 border-r border-gray-700 flex flex-col">
+            <div className="bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 text-white p-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">📄</span>
+                <div className="text-sm">
+                  <div className="font-semibold">PDF View</div>
+                  <div className="opacity-90">Page {currentPage} of {pdfPageCount}</div>
+                </div>
               </div>
+            </div>
+            <div className="flex-1 overflow-auto bg-gray-900 flex items-center justify-center">
+              <SmartPDFViewer
+                url={fileUrl}
+                currentPage={currentPage}
+                onPageChange={(p) => syncToPage(p)}
+                onPageCount={(c) => setPdfPageCount(c)}
+                onLoadSuccess={() => console.log('PDF loaded in NoteLab')}
+              />
             </div>
           </div>
           
-          {/* NoteLab Hybrid Reader Component */}
-          <div className="flex-1 overflow-hidden">
-            <NoteLabHybridReader
-              bookId={bookId}
-              userId={USER_ID}
-              pdfUrl={fileUrl}
-              currentPage={currentPage}
-              pdfPageCount={pdfPageCount}
-              onPageChange={(p) => syncToPage(p)}
-              thoughtUnits={thoughtUnits}
-              currentThoughtUnit={currentThoughtUnit}
-              setCurrentThoughtUnit={setCurrentThoughtUnit}
-              highlightedWord={highlightedWord}
-              setHighlightedWord={setHighlightedWord}
-              onWordClick={(w) => {
-                setHighlightedWord(w);
-                if (autoWhiteboard && w.trim()) {
-                  setWbConcept(truncate(w, 600));
-                  setWbContext(`p.${currentPage}`);
-                  setShowWhiteboardPanel(true);
-                }
-              }}
-              onTextSelect={(t) => sel.setSelectionText(t)}
-              onGenerateNote={handleOpenRightBrainNote}
-              selBind={sel.bind}
-              externalSelectionText={sel.selectionText}
-              fontSize={fontSize}
-              fontFamily={fontFamily}
-              lineSpacing={lineSpacing}
-              selectedVoice={selectedVoice || undefined}
-              onVoiceChange={setSelectedVoice}
-              speechRate={speechRate}
-              onSpeechRateChange={setSpeechRate}
-              tableOfContents={tableOfContents}
-            />
+          {/* Notes Panel - Right Panel */}
+          <div className="w-1/2 flex flex-col">
+            <div className="bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 text-white p-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">📝</span>
+                <div className="text-sm">
+                  <div className="font-semibold">NoteLab - Your Notes</div>
+                  <div className="opacity-90">Surgeon View highlights & annotations</div>
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <NotesList
+                bookId={bookId}
+                notes={notes}
+                onEdit={(noteId, content) => {
+                  setNotes((prev) =>
+                    prev.map((n) =>
+                      n.id === noteId
+                        ? { ...n, content, updatedAt: Date.now() }
+                        : n
+                    )
+                  );
+                }}
+                onDelete={(noteId) => {
+                  if (confirm('Delete this note?')) {
+                    setNotes((prev) => prev.filter((n) => n.id !== noteId));
+                    setHighlights((prev) => prev.filter((h) => h.noteId !== noteId));
+                  }
+                }}
+                onTagToggle={(noteId, tag) => {
+                  setNotes((prev) =>
+                    prev.map((n) => {
+                      if (n.id !== noteId) return n;
+                      const tags = n.tags.includes(tag)
+                        ? n.tags.filter((t) => t !== tag)
+                        : [...n.tags, tag];
+                      return { ...n, tags, updatedAt: Date.now() };
+                    })
+                  );
+                }}
+              />
+            </div>
           </div>
         </div>
       ) : (
@@ -2167,6 +2518,15 @@ export default function ThoughtUnitReader() {
           )}
         </label>
 
+        {/* Dyslexia Font Toggle */}
+        <button
+          onClick={() => setFontFamily((f) => f === "sans-serif" ? "Comic Sans MS, cursive" : "sans-serif")}
+          className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
+          title="Toggle Dyslexia-friendly font"
+        >
+          {fontFamily === "sans-serif" ? "🔤 Normal" : "🔤 Dyslexia"}
+        </button>
+
         {/* Dark mode */}
         <button
           onClick={() => setDarkMode((d) => !d)}
@@ -2729,6 +3089,18 @@ export default function ThoughtUnitReader() {
           }}
         />
       )}
+
+      {/* Surgeon View: Highlight Action Menu */}
+      <HighlightActionMenu
+        selectedText={currentSelection?.text || ''}
+        position={highlightMenuPosition}
+        onAction={handleHighlightAction}
+        onClose={() => {
+          setShowHighlightMenu(false);
+          setCurrentSelection(null);
+        }}
+        visible={showHighlightMenu}
+      />
 
     </div>
   );
