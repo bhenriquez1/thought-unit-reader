@@ -1761,11 +1761,10 @@ export default function ThoughtUnitReader() {
             </div>
             <div className="flex-1 overflow-auto bg-gray-900 flex items-center justify-center">
               <SmartPDFViewer
-                url={fileUrl}
+                fileUrl={fileUrl}
                 currentPage={currentPage}
                 onPageChange={(p) => syncToPage(p)}
                 onPageCount={(c) => setPdfPageCount(c)}
-                onLoadSuccess={() => console.log('PDF loaded in NoteLab')}
               />
             </div>
           </div>
