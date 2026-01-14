@@ -17,11 +17,6 @@ import LinkVideoModal from "@/components/LinkVideoModal";
 import HighlightActionMenu from "@/components/HighlightActionMenu";
 import NotesList from "@/components/NotesList";
 
-// PDF Viewer
-const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), {
-  ssr: false,
-});
-
 // Prototype component import
 import UniversalPatternButlerReader from "@/components/UniversalPatternButlerReader";
 import SurgeonViewPdrmReader from "@/components/SurgeonViewPdrmReader";
