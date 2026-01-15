@@ -17,11 +17,6 @@ import LinkVideoModal from "@/components/LinkVideoModal";
 import HighlightActionMenu from "@/components/HighlightActionMenu";
 import NotesList from "@/components/NotesList";
 
-// PDF Viewer
-const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), {
-  ssr: false,
-});
-
 // Prototype component import
 import UniversalPatternButlerReader from "@/components/UniversalPatternButlerReader";
 import SurgeonViewPdrmReader from "@/components/SurgeonViewPdrmReader";
@@ -1766,11 +1761,10 @@ export default function ThoughtUnitReader() {
             </div>
             <div className="flex-1 overflow-auto bg-gray-900 flex items-center justify-center">
               <SmartPDFViewer
-                url={fileUrl}
+                fileUrl={fileUrl}
                 currentPage={currentPage}
                 onPageChange={(p) => syncToPage(p)}
                 onPageCount={(c) => setPdfPageCount(c)}
-                onLoadSuccess={() => console.log('PDF loaded in NoteLab')}
               />
             </div>
           </div>
