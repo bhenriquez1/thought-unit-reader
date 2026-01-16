@@ -1,6 +1,74 @@
 // lib/tocParser.ts
 // Enhanced TOC utilities with universal PDF compatibility
 // Handles multiple PDF outline formats and robust fallback generation
+//
+// TOC v2 Feature Flag: Set TOC_V2=true in environment or use useTocV2() to enable
+// v2 provides: single TOC tree, PageBlocks, tocAnchors, structured warnings
+
+// ============================================================================
+// TOC v2 Re-exports (when enabled via feature flag)
+// ============================================================================
+import * as TocV2 from './tocParserV2';
+import * as TocTypes from './tocTypes';
+
+// Re-export v2 types and functions
+export {
+  // Types
+  type TocNode,
+  type PageBlock,
+  type ParseResult,
+  type ParseOptions,
+  type Warning,
+  type WarningCode,
+  type TocAnchors,
+  type ConfidenceScore,
+  type ContentBlock,
+  type ParseProgress,
+  
+  // Functions
+  parseDocument,
+  updateResultWithPdfPages,
+  convertPdfOutlineToToc,
+  createPageBlock,
+  isFileTypeSupported,
+  flattenToc,
+  findTocNodeById,
+  findTocNodeForPage,
+  
+  // Type utilities
+  tocNodeToLegacy,
+  legacyToTocNode,
+  normalizeHeadingText,
+  generateTocId,
+  createWarning,
+  PARSER_VERSION
+} from './tocParserV2';
+
+export {
+  // Scoring utilities
+  calculateTitleConfidence as calculateTitleConfidenceV2,
+  detectHeadingType,
+  calculateNodeConfidence,
+  detectScannedPage,
+  generatePageWarnings,
+  generateTocWarnings,
+  mergeTocTrees,
+  calculateDocumentConfidence,
+  extractContentBlocks
+} from './tocScoring';
+
+// Feature flag check for v2
+const TOC_V2_ENABLED = typeof process !== 'undefined' && 
+  (process.env?.NEXT_PUBLIC_TOC_V2 === 'true' || process.env?.TOC_V2 === 'true');
+
+/** Check if TOC v2 is enabled */
+export function useTocV2(): boolean {
+  return TOC_V2_ENABLED;
+}
+
+// ============================================================================
+// Legacy TOC Types and Functions (v1 - for backward compatibility)
+// ============================================================================
 
 export interface TOCEntry {
   title: string;
