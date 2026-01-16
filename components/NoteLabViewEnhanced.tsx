@@ -107,6 +107,14 @@ export default function NoteLabView({
       case 'notes':
         result = getAllAnnotationsArray().filter(a => a.noteContent);
         break;
+      case 'weak':
+        // Show all items tagged as weak, miss, or quiz-miss
+        result = getAllAnnotationsArray().filter(a => 
+          a.tags.some(t => ['weak', 'miss', 'quiz-generated', 'quiz-miss'].includes(t)) ||
+          a.pdrm?.weakAreaTags?.length > 0 ||
+          a.pdrm?.isMistake
+        );
+        break;
       default:
         result = getAllAnnotationsArray();
     }
