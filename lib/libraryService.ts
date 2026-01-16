@@ -12,7 +12,7 @@ import {
   limit,
   Timestamp 
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { getDbInstance } from "./firebase";
 
 export interface LibraryItem {
   id: string;
@@ -66,6 +66,8 @@ export interface TopStudentNote extends LibraryItem {
 
 class LibraryService {
   private getCollectionRef(userId: string) {
+    const db = getDbInstance();
+    if (!db) throw new Error("Firebase DB not initialized");
     return collection(db, `users/${userId}/library`);
   }
 
