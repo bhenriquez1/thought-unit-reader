@@ -109,6 +109,7 @@ class PDRMFirestoreService {
    */
   async updatePDRMEntry(entryId: string, updates: Partial<PDRMEntry>): Promise<void> {
     try {
+      const db = getDb();
       const updateData = {
         ...updates,
         updatedAt: serverTimestamp(),
@@ -128,6 +129,7 @@ class PDRMFirestoreService {
    */
   async deletePDRMEntry(entryId: string): Promise<void> {
     try {
+      const db = getDb();
       await deleteDoc(doc(db, 'pdrmEntries', entryId));
       console.log('✅ PDRM entry deleted from Firestore:', entryId);
     } catch (error) {
@@ -141,6 +143,7 @@ class PDRMFirestoreService {
    */
   async saveSmartHourSession(session: SmartHourSession): Promise<void> {
     try {
+      const db = getDb();
       const firestoreSession: FirestoreSmartHourSession = {
         ...session,
         startTime: new Date(session.startTime),
@@ -160,6 +163,7 @@ class PDRMFirestoreService {
    */
   async getSmartHourSessions(userId: string, limitCount: number = 50): Promise<SmartHourSession[]> {
     try {
+      const db = getDb();
       const q = query(
         collection(db, 'smartHourSessions'),
         where('userId', '==', userId),
@@ -199,6 +203,7 @@ class PDRMFirestoreService {
     topPatterns: { pattern: string; count: number }[];
   }> {
     try {
+      const db = getDb();
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - days);
 
