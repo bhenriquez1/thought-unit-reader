@@ -344,7 +344,9 @@ function readableAuthError(err: any): string {
 
 async function ensureUserProfile(u: User) {
   try {
-    const uref = doc(db, "users", u.uid);
+    const dbInstance = getDbInstance();
+    if (!dbInstance) return; // Skip on server or if DB not initialized
+    const uref = doc(dbInstance, "users", u.uid);
     await setDoc(
       uref,
       {
