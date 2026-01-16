@@ -94,6 +94,9 @@ export async function markUnderstood(
     return;
   }
 
+  const db = getDbInstance();
+  if (!db) return;
+
   // Firestore path
   try {
     const ref = doc(db, "users", uid, "books", bookId, "understood", chunkId);
