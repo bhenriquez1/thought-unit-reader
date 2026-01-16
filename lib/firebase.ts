@@ -435,7 +435,9 @@ export async function signInWithGoogle(): Promise<User | null> {
 
   if (typeof window !== "undefined" && shouldUseRedirect()) {
     try {
-      await signInWithRedirect(auth, provider);
+      const authInstance = getAuthInstance();
+      if (!authInstance) throw new Error('Auth not initialized');
+      await signInWithRedirect(authInstance, provider);
       return null; // Result after redirect; see handleRedirectResult()
     } catch (err) {
       console.error("❌ Google Sign-In Redirect Error:", err);
@@ -445,7 +447,9 @@ export async function signInWithGoogle(): Promise<User | null> {
   }
 
   try {
-    const result = await signInWithPopup(auth, provider);
+    const authInstance = getAuthInstance();
+    if (!authInstance) throw new Error('Auth not initialized');
+    const result = await signInWithPopup(authInstance, provider);
     if (result?.user) {
       await ensureUserProfile(result.user);
       return result.user;
@@ -454,7 +458,9 @@ export async function signInWithGoogle(): Promise<User | null> {
   } catch (err) {
     if (popupLikelyBlocked(err)) {
       try {
-        await signInWithRedirect(auth, provider);
+        const authInstance = getAuthInstance();
+        if (!authInstance) throw new Error('Auth not initialized');
+        await signInWithRedirect(authInstance, provider);
         return null;
       } catch (redirectErr) {
         console.error("❌ Google Sign-In Redirect Fallback Error:", redirectErr);
