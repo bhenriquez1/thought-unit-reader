@@ -609,32 +609,3 @@ function EditAnnotationModal({ annotation, onSave, onClose }: EditAnnotationModa
     </div>
   );
 }
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function getTypeConfig(type: AnnotationType) {
-  const configs: Record<AnnotationType, { label: string; icon: string; bgColor: string; textColor: string }> = {
-    highlight: { label: 'Highlight', icon: '🔆', bgColor: 'bg-yellow-500/20', textColor: 'text-yellow-400' },
-    note: { label: 'Note', icon: '📝', bgColor: 'bg-green-500/20', textColor: 'text-green-400' },
-    flashcard: { label: 'Flashcard', icon: '📇', bgColor: 'bg-purple-500/20', textColor: 'text-purple-400' },
-    mnemonic: { label: 'Mnemonic', icon: '🧠', bgColor: 'bg-orange-500/20', textColor: 'text-orange-400' },
-    mistake: { label: 'Mistake', icon: '❌', bgColor: 'bg-red-500/20', textColor: 'text-red-400' },
-    pattern: { label: 'Pattern', icon: '🎯', bgColor: 'bg-purple-500/20', textColor: 'text-purple-400' },
-    decision: { label: 'Decision', icon: '⚖️', bgColor: 'bg-blue-500/20', textColor: 'text-blue-400' },
-    risk: { label: 'Risk', icon: '⚠️', bgColor: 'bg-red-500/20', textColor: 'text-red-400' },
-    mechanism: { label: 'Mechanism', icon: '⚙️', bgColor: 'bg-cyan-500/20', textColor: 'text-cyan-400' }
-  };
-  return configs[type] || configs.highlight;
-}
-
-function getPDRMColor(type: 'P' | 'D' | 'R' | 'M'): string {
-  const colors = {
-    P: 'bg-purple-500 text-white',
-    D: 'bg-blue-500 text-white',
-    R: 'bg-red-500 text-white',
-    M: 'bg-yellow-500 text-black'
-  };
-  return colors[type];
-}
