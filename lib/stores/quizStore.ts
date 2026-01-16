@@ -297,8 +297,9 @@ export const useQuizStore = create<QuizState>()(
         if (!question) return;
         
         // Check if answer is correct (case-insensitive, trimmed)
-        const isCorrect = answer.toLowerCase().trim() === question.correctAnswer.toLowerCase().trim() ||
-          (question.options && answer === question.correctAnswer);
+        const isCorrect: boolean = 
+          answer.toLowerCase().trim() === question.correctAnswer.toLowerCase().trim() ||
+          (question.options !== undefined && answer === question.correctAnswer);
         
         const quizAnswer: QuizAnswer = {
           questionId,
