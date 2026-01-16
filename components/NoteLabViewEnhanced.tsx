@@ -275,15 +275,17 @@ export default function NoteLabView({
             { key: 'highlights', label: '🔆 Highlights', count: stats.highlights },
             { key: 'notes', label: '📝 Notes', count: stats.notes },
             { key: 'flashcards', label: '📇 Flashcards', count: stats.flashcards },
+            { key: 'weak', label: '⚠️ Missed/Weak', count: stats.weak },
             { key: 'mnemonics', label: '🧠 Mnemonics', count: stats.mnemonics },
             { key: 'mistakes', label: '❌ Mistakes', count: stats.mistakes }
           ] as const).map(filter => (
             <button
               key={filter.key}
               onClick={() => setActiveFilter(filter.key)}
+              data-testid={`filter-${filter.key}`}
               className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
                 activeFilter === filter.key
-                  ? 'bg-green-600 text-white'
+                  ? filter.key === 'weak' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'
                   : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
               }`}
             >
