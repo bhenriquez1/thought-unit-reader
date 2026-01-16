@@ -901,7 +901,9 @@ export async function loadBootcampProgress(userId: string): Promise<any[]> {
   }
 
   try {
-    const docRef = doc(db, "users", uid, "bootcamp", "progress");
+    const dbInstance = getDbInstance();
+    if (!dbInstance) return [];
+    const docRef = doc(dbInstance, "users", uid, "bootcamp", "progress");
     const docSnap = await getDoc(docRef);
     return docSnap.exists() ? docSnap.data().sessions || [] : [];
   } catch (error) {
