@@ -243,29 +243,43 @@ function generateId(): string {
   return `ann_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
-function createAnnotationIndex(annotations: Map<string, Annotation>): {
-  byPage: Map<number, string[]>;
-  byChapter: Map<string, string[]>;
+function createAnnotationIndex(annotations: Record<string, Annotation>): {
+  byPage: Record<number, string[]>;
+  byChapter: Record<string, string[]>;
 } {
-  const byPage = new Map<number, string[]>();
-  const byChapter = new Map<string, string[]>();
+  const byPage: Record<number, string[]> = {};
+  const byChapter: Record<string, string[]> = {};
   
-  annotations.forEach((ann, id) => {
+  Object.entries(annotations).forEach(([id, ann]) => {
     // Index by page
-    const pageAnns = byPage.get(ann.pageIndex) || [];
-    pageAnns.push(id);
-    byPage.set(ann.pageIndex, pageAnns);
+    if (!byPage[ann.pageIndex]) {
+      byPage[ann.pageIndex] = [];
+    }
+    byPage[ann.pageIndex].push(id);
     
     // Index by chapter
     if (ann.chapterId) {
-      const chapterAnns = byChapter.get(ann.chapterId) || [];
-      chapterAnns.push(id);
-      byChapter.set(ann.chapterId, chapterAnns);
+      if (!byChapter[ann.chapterId]) {
+        byChapter[ann.chapterId] = [];
+      }
+      byChapter[ann.chapterId].push(id);
     }
   });
   
   return { byPage, byChapter };
 }
+
+// Color mapping for PDRM types
+function getColorForPDRM(hasPDRM: PDRMMetadata): string {
+  if (hasPDRM.pattern) return '#9333EA';      // Purple for Pattern
+  if (hasPDRM.decisionRule) return '#3B82F6'; // Blue for Decision
+  if (hasPDRM.isMistake) return '#EF4444';    // Red for Mistake/Risk
+  if (hasPDRM.mnemonic) return '#F59E0B';     // Orange/Yellow for Mnemonic
+  return '#FFEB3B'; // Default yellow highlight
+}
+
+// Default highlight color
+const DEFAULT_HIGHLIGHT_COLOR = '#FFEB3B';
 
 // ============================================================================
 // Store Implementation
