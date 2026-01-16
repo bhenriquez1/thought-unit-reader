@@ -512,7 +512,8 @@ export async function signOutUser(): Promise<void> {
   }
   
   try {
-    await signOut(auth);
+    const authInstance = getAuthInstance();
+    if (authInstance) await signOut(authInstance);
   } catch (err) {
     console.error("❌ Sign-Out Error:", err);
   }
