@@ -140,6 +140,12 @@ export interface ViewMode {
   contextSentences: number; // Number of surrounding sentences in context mode
 }
 
+// Input type for creating new annotations (omits auto-generated fields)
+export type CreateAnnotationInput = Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>;
+
+// Input for updating annotation (partial update)
+export type UpdateAnnotationInput = Partial<Omit<Annotation, 'id' | 'documentId' | 'userId' | 'createdAt'>>;
+
 // ============================================================================
 // Store State Interface
 // ============================================================================
