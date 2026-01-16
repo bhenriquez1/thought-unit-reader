@@ -721,7 +721,9 @@ export async function loadPatternAttempts(userId: string): Promise<PatternAttemp
   }
 
   try {
-    const querySnapshot = await getDocs(collection(db, "users", uid, "patternAttempts"));
+    const dbInstance = getDbInstance();
+    if (!dbInstance) return [];
+    const querySnapshot = await getDocs(collection(dbInstance, "users", uid, "patternAttempts"));
     const attempts: PatternAttempt[] = [];
     querySnapshot.forEach((docSnap) => {
       attempts.push(docSnap.data() as PatternAttempt);
