@@ -817,7 +817,9 @@ export async function savePatternMasteryCache(
   }
 
   try {
-    const docRef = doc(db, "users", uid, "patterns", "mastery");
+    const dbInstance = getDbInstance();
+    if (!dbInstance) throw new Error('Firebase DB not initialized');
+    const docRef = doc(dbInstance, "users", uid, "patterns", "mastery");
     await setDoc(docRef, {
       mastery,
       updatedAt: new Date().toISOString()
