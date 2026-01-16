@@ -18,7 +18,7 @@ import {
   onSnapshot,
   type Unsubscribe
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { getDbInstance } from './firebase';
 import type { PDRMEntry } from './pdrmEngine';
 import type { SmartHourSession } from '../components/SmartHourWidget';
 
@@ -32,6 +32,13 @@ export interface FirestoreSmartHourSession extends Omit<SmartHourSession, 'start
   endTime?: any; // Firestore timestamp
 }
 
+// Helper to get db instance and throw if not available
+function getDb() {
+  const db = getDbInstance();
+  if (!db) throw new Error('Firebase DB not initialized');
+  return db;
+}
+
 class PDRMFirestoreService {
   
   /**
@@ -39,6 +46,7 @@ class PDRMFirestoreService {
    */
   async savePDRMEntry(entry: PDRMEntry): Promise<void> {
     try {
+      const db = getDb();
       const firestoreEntry: FirestorePDRMEntry = {
         ...entry,
         createdAt: entry.createdAt ? new Date(entry.createdAt) : serverTimestamp(),
@@ -58,6 +66,7 @@ class PDRMFirestoreService {
    */
   async getPDRMEntries(userId: string, bookId?: string): Promise<PDRMEntry[]> {
     try {
+      const db = getDb();
       let q = query(
         collection(db, 'pdrmEntries'),
         where('userId', '==', userId),
