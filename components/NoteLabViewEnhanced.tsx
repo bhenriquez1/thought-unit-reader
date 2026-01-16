@@ -65,7 +65,12 @@ export default function NoteLabView({
   // Auth listener
   useEffect(() => {
     const auth = getAuthInstance();
-    const unsub = auth?.onAuthStateChanged((u) => setUser(u));
+    if (!auth) {
+      // Firebase not configured - use guest mode
+      setUser(null);
+      return;
+    }
+    const unsub = auth.onAuthStateChanged((u) => setUser(u));
     return () => unsub?.();
   }, []);
 
