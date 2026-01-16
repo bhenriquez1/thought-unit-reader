@@ -143,19 +143,25 @@ const firebaseConnected = isValidConfig &&
 
 
 /* =========================================================================
-   🔹 Auth persistence (handles Private Browsing)
+   🔹 Auth persistence (handles Private Browsing) - Deferred to client
    ========================================================================= */
 if (typeof window !== "undefined") {
-  setPersistence(auth, browserLocalPersistence).catch(() =>
-    setPersistence(auth, inMemoryPersistence).catch(() => {
-      /* ignore */
-    })
-  );
-  try {
-    auth.languageCode = navigator.language || "en";
-  } catch {
-    /* ignore */
-  }
+  // Defer auth persistence setup
+  setTimeout(() => {
+    const authInstance = getAuthInstance();
+    if (authInstance) {
+      setPersistence(authInstance, browserLocalPersistence).catch(() =>
+        setPersistence(authInstance, inMemoryPersistence).catch(() => {
+          /* ignore */
+        })
+      );
+      try {
+        authInstance.languageCode = navigator.language || "en";
+      } catch {
+        /* ignore */
+      }
+    }
+  }, 0);
 }
 
 /* =========================================================================
@@ -167,14 +173,20 @@ declare global {
   }
 }
 if (useEmulators && typeof window !== "undefined" && !window.__FIREBASE_EMU_CONNECTED__) {
-  try {
-    connectAuthEmulator(auth, "http://127.0.0.1:9099");
-    connectFirestoreEmulator(db, "127.0.0.1", 8080);
-    connectStorageEmulator(storage, "127.0.0.1", 9199);
-    window.__FIREBASE_EMU_CONNECTED__ = true;
-  } catch {
-    /* ignore */
-  }
+  setTimeout(() => {
+    try {
+      const authInstance = getAuthInstance();
+      const dbInstance = getDbInstance();
+      const storageInstance = getStorageInstance();
+      
+      if (authInstance) connectAuthEmulator(authInstance, "http://127.0.0.1:9099");
+      if (dbInstance) connectFirestoreEmulator(dbInstance, "127.0.0.1", 8080);
+      if (storageInstance) connectStorageEmulator(storageInstance, "127.0.0.1", 9199);
+      window.__FIREBASE_EMU_CONNECTED__ = true;
+    } catch {
+      /* ignore */
+    }
+  }, 0);
 }
 
 /* =========================================================================
