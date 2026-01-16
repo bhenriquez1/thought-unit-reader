@@ -1,5 +1,5 @@
 // lib/reviewTools.ts
-import { db } from "@/lib/firebase";
+import { getDbInstance } from "@/lib/firebase";
 import {
   collection,
   getDocs,
@@ -14,6 +14,9 @@ import {
  * Returns all flashcards due for review today for a given user.
  */
 export async function startReviewSession(userId: string) {
+  const db = getDbInstance();
+  if (!db) return [];
+  
   const today = new Date().toISOString();
 
   const q = query(
@@ -39,6 +42,9 @@ export async function autoGradeFlashcard(
   front: string,
   back: string
 ) {
+  const db = getDbInstance();
+  if (!db) throw new Error("Firebase DB not initialized");
+
   const nextReviewDate = new Date();
   nextReviewDate.setDate(nextReviewDate.getDate() + 2); // Simple 2-day interval
 
