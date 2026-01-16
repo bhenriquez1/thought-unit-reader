@@ -477,7 +477,9 @@ export async function signInWithGoogle(): Promise<User | null> {
 /** Call once on app load to complete redirect sign-ins. Safe to call even if no redirect happened. */
 export async function handleRedirectResult(): Promise<User | null> {
   try {
-    const res = await getRedirectResult(auth);
+    const authInstance = getAuthInstance();
+    if (!authInstance) return null; // Auth not ready yet
+    const res = await getRedirectResult(authInstance);
     if (res?.user) {
       await ensureUserProfile(res.user);
       return res.user;
