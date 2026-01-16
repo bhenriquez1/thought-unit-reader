@@ -445,6 +445,7 @@ export default function SurgeonView({
               chapterId={chapterId}
               documentId={documentId}
               userId={userId}
+              headings={headings}
               isGenerating={isGeneratingQuiz}
               onGenerate={() => setIsGeneratingQuiz(true)}
             />
