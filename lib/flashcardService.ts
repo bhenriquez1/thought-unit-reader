@@ -1,5 +1,5 @@
 // lib/flashcardService.ts
-import { db } from "@/lib/firebase";
+import { getDbInstance } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { getAIFlashcardGrade } from "@/lib/spacedRepetitionAI";
 
@@ -17,6 +17,9 @@ export async function createFlashcardFromSelection(
 ) {
   const trimmed = (text || "").trim();
   if (!trimmed) throw new Error("Cannot create flashcard from empty text");
+
+  const db = getDbInstance();
+  if (!db) throw new Error("Firebase DB not initialized");
 
   const aiGrade = await getAIFlashcardGrade(trimmed);
 
