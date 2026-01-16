@@ -1,5 +1,5 @@
 // lib/noteService.ts
-import { db } from "@/lib/firebase";
+import { getDbInstance } from "@/lib/firebase";
 import {
   collection,
   addDoc,
@@ -52,6 +52,8 @@ export async function saveNote(
   userId: string,
   note: Omit<RightBrainNote, "id" | "createdAt" | "updatedAt">
 ) {
+  const db = getDbInstance();
+  if (!db) throw new Error("Firebase DB not initialized");
   const notesRef = collection(db, "users", userId, "notes");
   const docRef = await addDoc(notesRef, {
     ...note,
@@ -66,6 +68,8 @@ export async function updateNote(
   noteId: string,
   note: Partial<RightBrainNote>
 ) {
+  const db = getDbInstance();
+  if (!db) throw new Error("Firebase DB not initialized");
   const noteRef = doc(db, "users", userId, "notes", noteId);
   await updateDoc(noteRef, {
     ...note,
@@ -77,6 +81,8 @@ export async function getNotesForBook(
   userId: string,
   bookId: string
 ): Promise<RightBrainNote[]> {
+  const db = getDbInstance();
+  if (!db) return [];
   const notesRef = collection(db, "users", userId, "notes");
   const q = query(notesRef, where("bookId", "==", bookId));
   const snapshot = await getDocs(q);
@@ -90,6 +96,8 @@ export async function getNotesForBook(
    🔹 Flashcards
    ========================================================================= */
 export async function saveFlashcard(userId: string, flashcard: Flashcard) {
+  const db = getDbInstance();
+  if (!db) throw new Error("Firebase DB not initialized");
   const flashcardRef = collection(db, "users", userId, "flashcards");
   await addDoc(flashcardRef, {
     ...flashcard,
@@ -102,6 +110,8 @@ export async function saveFlashcard(userId: string, flashcard: Flashcard) {
    🔹 Mind Map Nodes
    ========================================================================= */
 export async function saveMindMapNode(userId: string, node: MindMapNode) {
+  const db = getDbInstance();
+  if (!db) throw new Error("Firebase DB not initialized");
   const mindMapRef = collection(db, "users", userId, "mindMap");
   await addDoc(mindMapRef, {
     ...node,
