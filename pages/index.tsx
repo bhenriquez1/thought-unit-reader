@@ -7,6 +7,9 @@ import TOCSidebar from "@/components/TOCSidebar";
 import type { ThoughtUnit, ReadingStats } from "@/types/reading";
 import { useFeatureFlags } from "@/lib/features/featureFlags";
 
+// Unified Annotation Store
+import { useAnnotationStore, type Annotation, type CreateAnnotationInput } from "@/lib/stores/annotationStore";
+
 // Feature flag controlled imports
 import EnhancedHybridReader from "@/components/EnhancedHybridReader";
 import PatternView from "@/components/PatternView";
