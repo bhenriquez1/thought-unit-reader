@@ -13,18 +13,6 @@ import * as TocTypes from './tocTypes';
 
 // Re-export v2 types and functions
 export {
-  // Types
-  type TocNode,
-  type PageBlock,
-  type ParseResult,
-  type ParseOptions,
-  type Warning,
-  type WarningCode,
-  type TocAnchors,
-  type ConfidenceScore,
-  type ContentBlock,
-  type ParseProgress,
-  
   // Functions
   parseDocument,
   updateResultWithPdfPages,
@@ -36,8 +24,18 @@ export {
   findTocNodeForPage,
 } from './tocParserV2';
 
-// Re-export from tocTypes
+// Re-export types from tocTypes
 export {
+  type TocNode,
+  type PageBlock,
+  type ParseResult,
+  type ParseOptions,
+  type Warning,
+  type WarningCode,
+  type TocAnchors,
+  type ConfidenceScore,
+  type ContentBlock,
+  type ParseProgress,
   // Type utilities
   tocNodeToLegacy,
   legacyToTocNode,
