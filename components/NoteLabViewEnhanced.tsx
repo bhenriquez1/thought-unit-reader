@@ -535,15 +535,15 @@ interface EditAnnotationModalProps {
 }
 
 function EditAnnotationModal({ annotation, onSave, onClose }: EditAnnotationModalProps) {
-  const [title, setTitle] = useState(annotation.title || '');
-  const [content, setContent] = useState(annotation.content || annotation.text);
+  const [title, setTitle] = useState(annotation.noteTitle || '');
+  const [content, setContent] = useState(annotation.noteContent || annotation.selectedText);
   const [tags, setTags] = useState(annotation.tags.join(', '));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave({
-      title: title.trim() || undefined,
-      content: content.trim(),
+      noteTitle: title.trim() || undefined,
+      noteContent: content.trim(),
       tags: tags.split(',').map(t => t.trim()).filter(Boolean)
     });
   };
