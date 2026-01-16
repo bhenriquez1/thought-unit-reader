@@ -3,7 +3,7 @@
 // 🔐 MemoryPalaceService handles visual/mnemonic-based memory anchors
 // for long-term recall. This can serve both Elena Mode and adult readers.
 
-import { db } from "@/lib/firebase";
+import { db, getDbInstance } from "@/lib/firebase";
 import {
   collection,
   doc,
@@ -27,8 +27,11 @@ export interface MemoryAnchor {
   createdAt: Timestamp;
 }
 
-const getAnchorCollection = (userId: string, fileId: string) =>
-  collection(db, "users", userId, "files", fileId, "memoryAnchors");
+const getAnchorCollection = (userId: string, fileId: string) => {
+  const dbInstance = getDbInstance();
+  if (!dbInstance) throw new Error('Firebase DB not initialized');
+  return collection(dbInstance, "users", userId, "files", fileId, "memoryAnchors");
+};
 
 export async function saveMemoryAnchor(
   userId: string,
