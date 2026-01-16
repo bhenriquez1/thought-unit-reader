@@ -774,25 +774,6 @@ export const useAnnotationStore = create<AnnotationState>()(
 );
 
 // ============================================================================
-// Helper: Color mapping for annotation types
-// ============================================================================
-
-function getColorForType(type: AnnotationType): string {
-  const colors: Record<AnnotationType, string> = {
-    highlight: '#FFEB3B',
-    note: '#4CAF50',
-    flashcard: '#9C27B0',
-    mnemonic: '#FF9800',
-    mistake: '#F44336',
-    pattern: '#673AB7',
-    decision: '#2196F3',
-    risk: '#E91E63',
-    mechanism: '#00BCD4'
-  };
-  return colors[type] || '#FFEB3B';
-}
-
-// ============================================================================
 // Selectors for optimized re-renders
 // ============================================================================
 
@@ -806,5 +787,36 @@ export const selectViewMode = (state: AnnotationState) => state.viewMode;
 export const selectPendingHighlight = (state: AnnotationState) => state.pendingHighlight;
 
 export const selectIsLoading = (state: AnnotationState) => state.isLoading;
+
+export const selectMistakes = (state: AnnotationState) => state.getMistakes();
+
+export const selectFlashcards = (state: AnnotationState) => state.getFlashcards();
+
+export const selectPDRMByType = (type: 'P' | 'D' | 'R' | 'M') => 
+  (state: AnnotationState) => state.getPDRMAnnotations(type);
+
+// ============================================================================
+// Helper exports for color mapping
+// ============================================================================
+
+export function getPDRMColorForType(type: 'P' | 'D' | 'R' | 'M'): string {
+  const colors = {
+    P: '#9333EA',  // Purple for Pattern
+    D: '#3B82F6',  // Blue for Decision
+    R: '#EF4444',  // Red for Risk/Mistake
+    M: '#F59E0B'   // Orange for Mnemonic
+  };
+  return colors[type];
+}
+
+export function getPDRMBgColorForType(type: 'P' | 'D' | 'R' | 'M'): string {
+  const colors = {
+    P: 'bg-purple-600/20',
+    D: 'bg-blue-600/20',
+    R: 'bg-red-600/20',
+    M: 'bg-yellow-600/20'
+  };
+  return colors[type];
+}
 
 export default useAnnotationStore;
