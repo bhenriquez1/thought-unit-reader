@@ -689,7 +689,9 @@ export async function savePatternAttempt(
   }
 
   try {
-    const docRef = doc(db, "users", uid, "patternAttempts", attempt.id);
+    const dbInstance = getDbInstance();
+    if (!dbInstance) throw new Error('Firebase DB not initialized');
+    const docRef = doc(dbInstance, "users", uid, "patternAttempts", attempt.id);
     await setDoc(docRef, attempt);
   } catch (error) {
     console.warn("⚠️ Firebase pattern attempt save failed, falling back to localStorage:", error);
