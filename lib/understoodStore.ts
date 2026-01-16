@@ -1,7 +1,7 @@
 // lib/understoodStore.ts
 // Persists “Got it” by user/book/chunk in Firestore, with guest fallback.
 
-import { db, firebaseConnected } from "@/lib/firebase";
+import { getDbInstance, firebaseConnected } from "@/lib/firebase";
 import {
   collection,
   getDocs,
