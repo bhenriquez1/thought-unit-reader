@@ -288,11 +288,11 @@ const DEFAULT_HIGHLIGHT_COLOR = '#FFEB3B';
 export const useAnnotationStore = create<AnnotationState>()(
   persist(
     (set, get) => ({
-      // Initial state
-      annotations: new Map(),
-      annotationsByPage: new Map(),
-      annotationsByChapter: new Map(),
-      quizResults: new Map(),
+      // Initial state - use Records for JSON serialization
+      annotations: {},
+      annotationsByPage: {},
+      annotationsByChapter: {},
+      quizResults: {},
       
       viewMode: {
         mode: 'full',
@@ -314,7 +314,10 @@ export const useAnnotationStore = create<AnnotationState>()(
       lastSyncTimestamp: 0,
       firestoreUnsubscribe: null,
       
-      // Actions
+      // =====================
+      // Document/Chapter/Page Actions
+      // =====================
+      
       setActiveDocument: async (documentId: string, userId: string) => {
         const { cleanup, loadFromFirestore } = get();
         
@@ -339,22 +342,23 @@ export const useAnnotationStore = create<AnnotationState>()(
         set({ activePageIndex: pageIndex });
       },
       
+      // =====================
       // Annotation CRUD
-      addAnnotation: async (annotationData) => {
+      // =====================
+      
+      addAnnotation: async (input: CreateAnnotationInput) => {
         const id = generateId();
         const now = new Date().toISOString();
         
         const annotation: Annotation = {
-          ...annotationData,
+          ...input,
           id,
           createdAt: now,
           updatedAt: now
         };
         
         set((state) => {
-          const newAnnotations = new Map(state.annotations);
-          newAnnotations.set(id, annotation);
-          
+          const newAnnotations = { ...state.annotations, [id]: annotation };
           const { byPage, byChapter } = createAnnotationIndex(newAnnotations);
           
           return {
@@ -367,7 +371,7 @@ export const useAnnotationStore = create<AnnotationState>()(
         // Sync to Firestore
         try {
           const db = getDbInstance();
-          if (db && annotation.userId) {
+          if (db && annotation.userId && annotation.userId !== 'guest') {
             const docRef = doc(db, 'users', annotation.userId, 'annotations', id);
             await setDoc(docRef, {
               ...annotation,
@@ -382,8 +386,8 @@ export const useAnnotationStore = create<AnnotationState>()(
         return id;
       },
       
-      updateAnnotation: async (id: string, updates: Partial<Annotation>) => {
-        const annotation = get().annotations.get(id);
+      updateAnnotation: async (id: string, updates: UpdateAnnotationInput) => {
+        const annotation = get().annotations[id];
         if (!annotation) return;
         
         const updatedAnnotation: Annotation = {
@@ -393,9 +397,7 @@ export const useAnnotationStore = create<AnnotationState>()(
         };
         
         set((state) => {
-          const newAnnotations = new Map(state.annotations);
-          newAnnotations.set(id, updatedAnnotation);
-          
+          const newAnnotations = { ...state.annotations, [id]: updatedAnnotation };
           const { byPage, byChapter } = createAnnotationIndex(newAnnotations);
           
           return {
@@ -408,7 +410,7 @@ export const useAnnotationStore = create<AnnotationState>()(
         // Sync to Firestore
         try {
           const db = getDbInstance();
-          if (db && annotation.userId) {
+          if (db && annotation.userId && annotation.userId !== 'guest') {
             const docRef = doc(db, 'users', annotation.userId, 'annotations', id);
             await setDoc(docRef, {
               ...updatedAnnotation,
@@ -421,13 +423,11 @@ export const useAnnotationStore = create<AnnotationState>()(
       },
       
       deleteAnnotation: async (id: string) => {
-        const annotation = get().annotations.get(id);
+        const annotation = get().annotations[id];
         if (!annotation) return;
         
         set((state) => {
-          const newAnnotations = new Map(state.annotations);
-          newAnnotations.delete(id);
-          
+          const { [id]: removed, ...newAnnotations } = state.annotations;
           const { byPage, byChapter } = createAnnotationIndex(newAnnotations);
           
           return {
@@ -441,7 +441,7 @@ export const useAnnotationStore = create<AnnotationState>()(
         // Delete from Firestore
         try {
           const db = getDbInstance();
-          if (db && annotation.userId) {
+          if (db && annotation.userId && annotation.userId !== 'guest') {
             await deleteDoc(doc(db, 'users', annotation.userId, 'annotations', id));
           }
         } catch (error) {
@@ -449,31 +449,34 @@ export const useAnnotationStore = create<AnnotationState>()(
         }
       },
       
-      // Highlight creation
+      // =====================
+      // Highlight Creation Workflow
+      // =====================
+      
       setPendingHighlight: (highlight) => {
         set({ pendingHighlight: highlight });
       },
       
-      confirmHighlight: async (type: AnnotationType, options?: Partial<Annotation>) => {
+      confirmHighlight: async (options?: Partial<CreateAnnotationInput>) => {
         const { pendingHighlight, activeDocumentId, activeChapterId } = get();
         if (!pendingHighlight || !activeDocumentId) return null;
         
-        const annotationData: Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'> = {
+        const annotationInput: CreateAnnotationInput = {
           documentId: activeDocumentId,
-          chapterId: activeChapterId || undefined,
+          chapterId: pendingHighlight.chapterId || activeChapterId || 'unknown',
           pageIndex: pendingHighlight.pageIndex,
-          type,
-          text: pendingHighlight.text,
-          textRange: pendingHighlight.textRange,
-          boundingBoxes: pendingHighlight.boundingBoxes,
-          importance: options?.importance || 'important',
+          thoughtUnitId: pendingHighlight.thoughtUnitId,
+          anchor: pendingHighlight.anchor,
+          selectedText: pendingHighlight.selectedText,
+          modeContext: options?.modeContext,
+          pdrm: options?.pdrm || {},
+          color: options?.color || DEFAULT_HIGHLIGHT_COLOR,
           tags: options?.tags || [],
-          color: options?.color || getColorForType(type),
           userId: options?.userId || 'guest',
           ...options
         };
         
-        const id = await get().addAnnotation(annotationData);
+        const id = await get().addAnnotation(annotationInput);
         set({ pendingHighlight: null });
         
         return id;
@@ -483,7 +486,58 @@ export const useAnnotationStore = create<AnnotationState>()(
         set({ pendingHighlight: null });
       },
       
-      // View mode
+      // =====================
+      // PDRM Tagging
+      // =====================
+      
+      addPDRMTag: async (annotationId: string, pdrmType: 'P' | 'D' | 'R' | 'M', value: string) => {
+        const annotation = get().annotations[annotationId];
+        if (!annotation) return;
+        
+        const updatedPDRM = { ...annotation.pdrm };
+        switch (pdrmType) {
+          case 'P': updatedPDRM.pattern = value; break;
+          case 'D': updatedPDRM.decisionRule = value; break;
+          case 'M': updatedPDRM.mnemonic = value; break;
+          case 'R': 
+            // R maps to isMistake (risk/mistake flag)
+            updatedPDRM.isMistake = true;
+            if (value) {
+              updatedPDRM.weakAreaTags = [...(updatedPDRM.weakAreaTags || []), value];
+            }
+            break;
+        }
+        
+        await get().updateAnnotation(annotationId, {
+          pdrm: updatedPDRM,
+          color: getColorForPDRM(updatedPDRM)
+        });
+      },
+      
+      removePDRMTag: async (annotationId: string, pdrmType: 'P' | 'D' | 'R' | 'M') => {
+        const annotation = get().annotations[annotationId];
+        if (!annotation) return;
+        
+        const updatedPDRM = { ...annotation.pdrm };
+        switch (pdrmType) {
+          case 'P': delete updatedPDRM.pattern; break;
+          case 'D': delete updatedPDRM.decisionRule; break;
+          case 'M': delete updatedPDRM.mnemonic; break;
+          case 'R': 
+            delete updatedPDRM.isMistake;
+            break;
+        }
+        
+        await get().updateAnnotation(annotationId, {
+          pdrm: updatedPDRM,
+          color: getColorForPDRM(updatedPDRM)
+        });
+      },
+      
+      // =====================
+      // View Mode
+      // =====================
+      
       setViewMode: (mode: Partial<ViewMode>) => {
         set((state) => ({
           viewMode: { ...state.viewMode, ...mode }
@@ -500,12 +554,18 @@ export const useAnnotationStore = create<AnnotationState>()(
         }));
       },
       
+      // =====================
       // Selection
+      // =====================
+      
       selectAnnotation: (id: string | null) => {
         set({ selectedAnnotationId: id });
       },
       
+      // =====================
       // Quiz
+      // =====================
+      
       saveQuizResult: async (result) => {
         const id = `quiz_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const quizResult: ChapterQuizResult = {
@@ -514,11 +574,9 @@ export const useAnnotationStore = create<AnnotationState>()(
           completedAt: new Date().toISOString()
         };
         
-        set((state) => {
-          const newResults = new Map(state.quizResults);
-          newResults.set(id, quizResult);
-          return { quizResults: newResults };
-        });
+        set((state) => ({
+          quizResults: { ...state.quizResults, [id]: quizResult }
+        }));
         
         // Mark mistakes
         for (const mistakeId of result.mistakes) {
@@ -528,7 +586,7 @@ export const useAnnotationStore = create<AnnotationState>()(
         // Sync to Firestore
         try {
           const db = getDbInstance();
-          if (db && result.userId) {
+          if (db && result.userId && result.userId !== 'guest') {
             const docRef = doc(db, 'users', result.userId, 'quizResults', id);
             await setDoc(docRef, quizResult);
           }
@@ -539,7 +597,7 @@ export const useAnnotationStore = create<AnnotationState>()(
       
       getChapterQuizResults: (chapterId: string) => {
         const results: ChapterQuizResult[] = [];
-        get().quizResults.forEach((result) => {
+        Object.values(get().quizResults).forEach((result) => {
           if (result.chapterId === chapterId) {
             results.push(result);
           }
@@ -550,65 +608,62 @@ export const useAnnotationStore = create<AnnotationState>()(
       },
       
       markAsMistake: async (annotationId: string) => {
-        await get().updateAnnotation(annotationId, { isMistake: true });
+        await get().updateAnnotation(annotationId, { 
+          pdrm: { 
+            ...get().annotations[annotationId]?.pdrm,
+            isMistake: true 
+          }
+        });
       },
       
+      // =====================
       // Getters
+      // =====================
+      
       getAnnotationsForPage: (pageIndex: number) => {
         const { annotations, annotationsByPage } = get();
-        const ids = annotationsByPage.get(pageIndex) || [];
-        return ids.map(id => annotations.get(id)).filter(Boolean) as Annotation[];
+        const ids = annotationsByPage[pageIndex] || [];
+        return ids.map(id => annotations[id]).filter(Boolean);
       },
       
       getAnnotationsForChapter: (chapterId: string) => {
         const { annotations, annotationsByChapter } = get();
-        const ids = annotationsByChapter.get(chapterId) || [];
-        return ids.map(id => annotations.get(id)).filter(Boolean) as Annotation[];
+        const ids = annotationsByChapter[chapterId] || [];
+        return ids.map(id => annotations[id]).filter(Boolean);
       },
       
       getHighlightsOnly: () => {
-        const highlights: Annotation[] = [];
-        get().annotations.forEach((ann) => {
-          if (ann.type === 'highlight' || ann.importance === 'critical' || ann.importance === 'important') {
-            highlights.push(ann);
-          }
-        });
-        return highlights;
+        return Object.values(get().annotations);
       },
       
       getMistakes: () => {
-        const mistakes: Annotation[] = [];
-        get().annotations.forEach((ann) => {
-          if (ann.isMistake || ann.type === 'mistake') {
-            mistakes.push(ann);
-          }
-        });
-        return mistakes;
+        return Object.values(get().annotations).filter(ann => ann.pdrm?.isMistake);
       },
       
       getFlashcards: () => {
-        const flashcards: Annotation[] = [];
-        get().annotations.forEach((ann) => {
-          if (ann.type === 'flashcard') {
-            flashcards.push(ann);
-          }
-        });
-        return flashcards;
+        return Object.values(get().annotations).filter(ann => ann.flashcardFront || ann.flashcardBack);
       },
       
-      getMnemonics: () => {
-        const mnemonics: Annotation[] = [];
-        get().annotations.forEach((ann) => {
-          if (ann.type === 'mnemonic') {
-            mnemonics.push(ann);
-          }
-        });
-        return mnemonics;
+      getPDRMAnnotations: (type: 'P' | 'D' | 'R' | 'M') => {
+        const annotations = Object.values(get().annotations);
+        switch (type) {
+          case 'P': return annotations.filter(a => a.pdrm?.pattern);
+          case 'D': return annotations.filter(a => a.pdrm?.decisionRule);
+          case 'M': return annotations.filter(a => a.pdrm?.mnemonic);
+          case 'R': return annotations.filter(a => a.pdrm?.isMistake);
+          default: return [];
+        }
       },
       
+      getAllAnnotationsArray: () => {
+        return Object.values(get().annotations);
+      },
+      
+      // =====================
       // Sync
+      // =====================
+      
       syncToFirestore: async () => {
-        // Batch sync all annotations
         const { annotations } = get();
         set({ isSaving: true });
         
@@ -617,7 +672,7 @@ export const useAnnotationStore = create<AnnotationState>()(
           if (!db) return;
           
           const promises: Promise<void>[] = [];
-          annotations.forEach((ann) => {
+          Object.values(annotations).forEach((ann) => {
             if (ann.userId && ann.userId !== 'guest') {
               const docRef = doc(db, 'users', ann.userId, 'annotations', ann.id);
               promises.push(setDoc(docRef, ann, { merge: true }));
@@ -645,16 +700,16 @@ export const useAnnotationStore = create<AnnotationState>()(
           );
           
           const snapshot = await getDocs(q);
-          const newAnnotations = new Map<string, Annotation>();
+          const newAnnotations: Record<string, Annotation> = {};
           
           snapshot.forEach((docSnap) => {
             const data = docSnap.data() as Annotation;
-            newAnnotations.set(docSnap.id, {
+            newAnnotations[docSnap.id] = {
               ...data,
               id: docSnap.id,
               createdAt: data.createdAt || new Date().toISOString(),
               updatedAt: data.updatedAt || new Date().toISOString()
-            });
+            };
           });
           
           const { byPage, byChapter } = createAnnotationIndex(newAnnotations);
@@ -668,13 +723,13 @@ export const useAnnotationStore = create<AnnotationState>()(
           
           // Set up real-time listener
           const unsubscribe = onSnapshot(q, (snapshot) => {
-            const updatedAnnotations = new Map<string, Annotation>();
+            const updatedAnnotations: Record<string, Annotation> = {};
             snapshot.forEach((docSnap) => {
               const data = docSnap.data() as Annotation;
-              updatedAnnotations.set(docSnap.id, {
+              updatedAnnotations[docSnap.id] = {
                 ...data,
                 id: docSnap.id
-              });
+              };
             });
             
             const indices = createAnnotationIndex(updatedAnnotations);
@@ -692,7 +747,10 @@ export const useAnnotationStore = create<AnnotationState>()(
         }
       },
       
+      // =====================
       // Cleanup
+      // =====================
+      
       cleanup: () => {
         const { firestoreUnsubscribe } = get();
         if (firestoreUnsubscribe) {
@@ -705,7 +763,8 @@ export const useAnnotationStore = create<AnnotationState>()(
       name: 'annotation-store',
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
-        // Only persist view settings, not annotations (those sync with Firestore)
+        // Persist annotations and view settings
+        annotations: state.annotations,
         viewMode: state.viewMode,
         activeDocumentId: state.activeDocumentId,
         activeChapterId: state.activeChapterId
