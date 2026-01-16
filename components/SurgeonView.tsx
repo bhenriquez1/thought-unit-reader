@@ -769,7 +769,7 @@ function QuizPanel({ highlights, mistakes, chapterId, documentId, userId, isGene
           <div className="space-y-2 max-h-40 overflow-auto">
             {mistakes.map(mistake => (
               <div key={mistake.id} className="p-2 bg-red-900/20 border border-red-900/50 rounded">
-                <p className="text-xs text-gray-300 line-clamp-2">{mistake.text}</p>
+                <p className="text-xs text-gray-300 line-clamp-2">{mistake.selectedText}</p>
               </div>
             ))}
           </div>
@@ -777,28 +777,4 @@ function QuizPanel({ highlights, mistakes, chapterId, documentId, userId, isGene
       )}
     </div>
   );
-}
-
-// ============================================================================
-// Helper functions
-// ============================================================================
-
-function getPDRMColor(type: 'P' | 'D' | 'R' | 'M'): string {
-  const colors = {
-    P: 'bg-purple-500 text-white',
-    D: 'bg-blue-500 text-white',
-    R: 'bg-red-500 text-white',
-    M: 'bg-yellow-500 text-black'
-  };
-  return colors[type];
-}
-
-function getPDRMBgColor(type: 'P' | 'D' | 'R' | 'M'): string {
-  const colors = {
-    P: 'bg-purple-900/50',
-    D: 'bg-blue-900/50',
-    R: 'bg-red-900/50',
-    M: 'bg-yellow-900/50'
-  };
-  return colors[type];
 }
