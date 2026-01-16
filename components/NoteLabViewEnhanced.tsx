@@ -1,12 +1,17 @@
 "use client";
 
-// components/NoteLabView.tsx
+// components/NoteLabViewEnhanced.tsx
 // NoteLab - Organized study notebook that reads from unified AnnotationStore
 // Structure: Document → Chapter → Section → Thought-Unit → Notes
+// Uses same IDs as Surgeon View (documentId/chapterId/pageIndex/thoughtUnitId)
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useAnnotationStore, type Annotation, type AnnotationType } from '@/lib/stores/annotationStore';
-import { auth } from '@/lib/firebase';
+import { 
+  useAnnotationStore, 
+  type Annotation,
+  getPDRMColorForType 
+} from '@/lib/stores/annotationStore';
+import { getAuthInstance } from '@/lib/firebase';
 import type { User } from 'firebase/auth';
 
 interface NoteLabViewProps {
@@ -17,7 +22,7 @@ interface NoteLabViewProps {
   onNavigateToSurgeonView: (pageIndex: number, annotationId?: string) => void;
 }
 
-type FilterType = 'all' | 'notes' | 'flashcards' | 'mnemonics' | 'mistakes' | 'highlights';
+type FilterType = 'all' | 'notes' | 'flashcards' | 'mnemonics' | 'mistakes' | 'highlights' | 'patterns' | 'decisions';
 
 interface GroupedAnnotations {
   [chapterId: string]: {
@@ -37,15 +42,16 @@ export default function NoteLabView({
   // Auth state
   const [user, setUser] = useState<User | null>(null);
   
-  // Store state
+  // Store state - use the updated API
   const {
     annotations,
     isLoading,
     setActiveDocument,
     getHighlightsOnly,
     getFlashcards,
-    getMnemonics,
     getMistakes,
+    getPDRMAnnotations,
+    getAllAnnotationsArray,
     updateAnnotation,
     deleteAnnotation
   } = useAnnotationStore();
@@ -58,6 +64,7 @@ export default function NoteLabView({
 
   // Auth listener
   useEffect(() => {
+    const auth = getAuthInstance();
     const unsub = auth?.onAuthStateChanged((u) => setUser(u));
     return () => unsub?.();
   }, []);
@@ -69,7 +76,7 @@ export default function NoteLabView({
     }
   }, [documentId, userId, setActiveDocument]);
 
-  // Get filtered annotations
+  // Get filtered annotations using new API
   const filteredAnnotations = useMemo(() => {
     let result: Annotation[] = [];
     
@@ -81,23 +88,29 @@ export default function NoteLabView({
         result = getFlashcards();
         break;
       case 'mnemonics':
-        result = getMnemonics();
+        result = getPDRMAnnotations('M');
         break;
       case 'mistakes':
         result = getMistakes();
         break;
+      case 'patterns':
+        result = getPDRMAnnotations('P');
+        break;
+      case 'decisions':
+        result = getPDRMAnnotations('D');
+        break;
       case 'notes':
-        result = Array.from(annotations.values()).filter(a => a.type === 'note');
+        result = getAllAnnotationsArray().filter(a => a.noteContent);
         break;
       default:
-        result = Array.from(annotations.values());
+        result = getAllAnnotationsArray();
     }
     
     // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       result = result.filter(ann => 
-        ann.text.toLowerCase().includes(query) ||
+        ann.selectedText.toLowerCase().includes(query) ||
         ann.title?.toLowerCase().includes(query) ||
         ann.content?.toLowerCase().includes(query) ||
         ann.tags.some(tag => tag.toLowerCase().includes(query))
