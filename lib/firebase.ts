@@ -647,7 +647,9 @@ export async function loadReadingProgress(
   }
 
   try {
-    const docRef = doc(db, "users", uid, "books", bookId, "progress");
+    const dbInstance = getDbInstance();
+    if (!dbInstance) throw new Error('Firebase DB not initialized');
+    const docRef = doc(dbInstance, "users", uid, "books", bookId, "progress");
     const snap = await getDoc(docRef);
     return snap.exists() ? (snap.data() as ProgressPatch) : null;
   } catch (error) {
