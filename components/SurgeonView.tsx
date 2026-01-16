@@ -14,6 +14,7 @@ import {
   getPDRMColorForType,
   getPDRMBgColorForType
 } from '@/lib/stores/annotationStore';
+import { useQuizStore } from '@/lib/stores/quizStore';
 
 interface SurgeonViewProps {
   documentId: string;
