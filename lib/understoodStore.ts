@@ -51,6 +51,9 @@ export async function loadUnderstood(
   // Guest/session fallback
   if (isGuest(uid)) return loadFromLS(uid, bookId);
 
+  const db = getDbInstance();
+  if (!db) return loadFromLS(uid, bookId);
+
   try {
     const col = collection(db, "users", uid, "books", bookId, "understood");
     const snap = await getDocs(col);
