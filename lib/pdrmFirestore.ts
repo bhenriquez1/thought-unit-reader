@@ -298,6 +298,7 @@ class PDRMFirestoreService {
     callback: (entries: PDRMEntry[]) => void
   ): Unsubscribe {
     try {
+      const db = getDb();
       let q = query(
         collection(db, 'pdrmEntries'),
         where('userId', '==', userId),
@@ -344,6 +345,7 @@ class PDRMFirestoreService {
     callback: (sessions: SmartHourSession[]) => void
   ): Unsubscribe {
     try {
+      const db = getDb();
       const q = query(
         collection(db, 'smartHourSessions'),
         where('userId', '==', userId),
