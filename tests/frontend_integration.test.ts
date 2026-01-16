@@ -17,9 +17,9 @@ import {
 let passCount = 0;
 let failCount = 0;
 
-function describe(name: string, fn: () => void | Promise<void>) {
+async function describe(name: string, fn: () => void | Promise<void>) {
   console.log(`\n📦 ${name}`);
-  fn();
+  await fn();
 }
 
 async function test(name: string, fn: () => void | Promise<void>) {
