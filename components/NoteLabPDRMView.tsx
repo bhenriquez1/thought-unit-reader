@@ -54,8 +54,8 @@ export default function NoteLabPDRMView({
 
   // Auth
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((u) => setUser(u));
-    return () => unsubscribe();
+    const unsubscribe = auth?.onAuthStateChanged((u) => setUser(u));
+    return () => unsubscribe?.();
   }, []);
 
   // Load PDRM entries and sessions with Firestore integration
