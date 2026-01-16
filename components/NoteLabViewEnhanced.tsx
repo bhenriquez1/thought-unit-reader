@@ -203,16 +203,26 @@ export default function NoteLabView({
   }, [deleteAnnotation]);
 
   // Stats - use Object.keys for Record instead of .size for Map
-  const stats = useMemo(() => ({
-    total: Object.keys(annotations).length,
-    highlights: getHighlightsOnly().length,
-    flashcards: getFlashcards().length,
-    patterns: getPDRMAnnotations('P').length,
-    decisions: getPDRMAnnotations('D').length,
-    mnemonics: getPDRMAnnotations('M').length,
-    mistakes: getMistakes().length,
-    notes: getAllAnnotationsArray().filter(a => a.noteContent).length
-  }), [annotations, getHighlightsOnly, getFlashcards, getPDRMAnnotations, getMistakes, getAllAnnotationsArray]);
+  const stats = useMemo(() => {
+    const allAnns = getAllAnnotationsArray();
+    const weakCount = allAnns.filter(a => 
+      a.tags.some(t => ['weak', 'miss', 'quiz-generated', 'quiz-miss'].includes(t)) ||
+      a.pdrm?.weakAreaTags?.length > 0 ||
+      a.pdrm?.isMistake
+    ).length;
+    
+    return {
+      total: Object.keys(annotations).length,
+      highlights: getHighlightsOnly().length,
+      flashcards: getFlashcards().length,
+      patterns: getPDRMAnnotations('P').length,
+      decisions: getPDRMAnnotations('D').length,
+      mnemonics: getPDRMAnnotations('M').length,
+      mistakes: getMistakes().length,
+      notes: allAnns.filter(a => a.noteContent).length,
+      weak: weakCount
+    };
+  }, [annotations, getHighlightsOnly, getFlashcards, getPDRMAnnotations, getMistakes, getAllAnnotationsArray]);
 
   if (isLoading) {
     return (
