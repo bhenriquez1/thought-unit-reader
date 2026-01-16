@@ -323,14 +323,14 @@ export default function SurgeonView({
   }
 
   return (
-    <div className="flex h-full bg-gray-900 text-white">
+    <div className="flex h-full bg-gray-900 text-white" data-testid="surgeon-view">
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-700 bg-gray-800">
           <div className="flex items-center gap-4">
             <h2 className="text-xl font-bold text-yellow-400">🔬 Surgeon View</h2>
-            <span className="text-sm text-gray-400">Page {pageIndex + 1}</span>
+            <span className="text-sm text-gray-400" data-testid="current-page">Page {pageIndex + 1}</span>
             {chapterId && (
               <span className="text-sm text-gray-500">• Chapter: {chapterId}</span>
             )}
@@ -340,6 +340,7 @@ export default function SurgeonView({
             {/* View Mode Toggle */}
             <button
               onClick={toggleCleanMode}
+              data-testid="toggle-clean-mode"
               className={`px-3 py-1.5 rounded text-sm transition-colors ${
                 viewMode.mode === 'clean' 
                   ? 'bg-yellow-500 text-black' 
@@ -356,6 +357,7 @@ export default function SurgeonView({
                   mode: viewMode.mode === 'clean' ? 'context' : 'clean' 
                 })}
                 className="px-3 py-1.5 rounded text-sm bg-gray-700 hover:bg-gray-600"
+                data-testid="toggle-context-mode"
               >
                 + Context
               </button>
@@ -365,6 +367,7 @@ export default function SurgeonView({
               <button
                 onClick={onClose}
                 className="px-3 py-1.5 rounded text-sm bg-gray-700 hover:bg-gray-600"
+                data-testid="close-surgeon-view"
               >
                 ✕ Close
               </button>
@@ -373,17 +376,18 @@ export default function SurgeonView({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 overflow-auto p-6" data-testid="surgeon-view-content-area">
           {renderContent}
         </div>
       </div>
 
       {/* Right Panel */}
-      <div className="w-80 bg-gray-800 border-l border-gray-700 flex flex-col">
+      <div className="w-80 bg-gray-800 border-l border-gray-700 flex flex-col" data-testid="surgeon-view-panel">
         {/* Panel Tabs */}
         <div className="flex border-b border-gray-700">
           <button
             onClick={() => setActivePanel('highlights')}
+            data-testid="tab-highlights"
             className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
               activePanel === 'highlights' 
                 ? 'bg-gray-700 text-yellow-400' 
@@ -394,6 +398,7 @@ export default function SurgeonView({
           </button>
           <button
             onClick={() => setActivePanel('pdrm')}
+            data-testid="tab-pdrm"
             className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
               activePanel === 'pdrm' 
                 ? 'bg-gray-700 text-purple-400' 
