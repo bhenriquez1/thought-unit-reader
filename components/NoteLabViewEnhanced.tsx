@@ -401,12 +401,24 @@ interface AnnotationCardProps {
 }
 
 function AnnotationCard({ annotation, onClick, onEdit, onDelete }: AnnotationCardProps) {
-  const typeConfig = getTypeConfig(annotation.type);
+  // Determine type based on content/PDRM tags
+  const getTypeLabel = () => {
+    if (annotation.flashcardFront || annotation.flashcardBack) return { label: 'Flashcard', icon: '📇', bgColor: 'bg-purple-500/20', textColor: 'text-purple-400' };
+    if (annotation.noteContent) return { label: 'Note', icon: '📝', bgColor: 'bg-green-500/20', textColor: 'text-green-400' };
+    if (annotation.pdrm?.pattern) return { label: 'Pattern', icon: '🎯', bgColor: 'bg-purple-500/20', textColor: 'text-purple-400' };
+    if (annotation.pdrm?.decisionRule) return { label: 'Decision', icon: '⚖️', bgColor: 'bg-blue-500/20', textColor: 'text-blue-400' };
+    if (annotation.pdrm?.mnemonic) return { label: 'Mnemonic', icon: '🧠', bgColor: 'bg-orange-500/20', textColor: 'text-orange-400' };
+    if (annotation.pdrm?.isMistake) return { label: 'Mistake', icon: '❌', bgColor: 'bg-red-500/20', textColor: 'text-red-400' };
+    return { label: 'Highlight', icon: '🔆', bgColor: 'bg-yellow-500/20', textColor: 'text-yellow-400' };
+  };
+  
+  const typeConfig = getTypeLabel();
   
   return (
     <div
       className="p-4 bg-gray-800 rounded-lg border border-gray-700 hover:border-gray-600 cursor-pointer transition-all group"
       onClick={onClick}
+      data-testid={`annotation-card-${annotation.id}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
@@ -415,12 +427,17 @@ function AnnotationCard({ annotation, onClick, onEdit, onDelete }: AnnotationCar
             <span className={`px-2 py-0.5 rounded text-xs font-medium ${typeConfig.bgColor} ${typeConfig.textColor}`}>
               {typeConfig.icon} {typeConfig.label}
             </span>
-            {annotation.pdrmType && (
-              <span className={`px-2 py-0.5 rounded text-xs font-bold ${getPDRMColor(annotation.pdrmType)}`}>
-                {annotation.pdrmType}
-              </span>
+            {/* Show PDRM tags */}
+            {annotation.pdrm?.pattern && (
+              <span className="px-2 py-0.5 rounded text-xs font-bold bg-purple-600 text-white">P</span>
             )}
-            {annotation.isMistake && (
+            {annotation.pdrm?.decisionRule && (
+              <span className="px-2 py-0.5 rounded text-xs font-bold bg-blue-600 text-white">D</span>
+            )}
+            {annotation.pdrm?.mnemonic && (
+              <span className="px-2 py-0.5 rounded text-xs font-bold bg-yellow-600 text-black">M</span>
+            )}
+            {annotation.pdrm?.isMistake && (
               <span className="px-2 py-0.5 rounded text-xs bg-red-500 text-white">
                 Mistake
               </span>
@@ -428,15 +445,15 @@ function AnnotationCard({ annotation, onClick, onEdit, onDelete }: AnnotationCar
           </div>
           
           {/* Title */}
-          {annotation.title && (
+          {annotation.noteTitle && (
             <h4 className="font-medium text-white mb-1 truncate">
-              {annotation.title}
+              {annotation.noteTitle}
             </h4>
           )}
           
           {/* Text/Content */}
           <p className="text-sm text-gray-300 line-clamp-2">
-            {annotation.content || annotation.text}
+            {annotation.noteContent || annotation.selectedText}
           </p>
           
           {/* Tags */}
