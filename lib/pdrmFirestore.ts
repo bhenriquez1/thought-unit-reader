@@ -379,6 +379,7 @@ class PDRMFirestoreService {
    */
   async syncLocalDataToFirestore(userId: string): Promise<void> {
     try {
+      const db = getDb();
       // Sync PDRM entries
       const localPDRMData = localStorage.getItem(`pdrm-entries-${userId}`);
       if (localPDRMData) {
