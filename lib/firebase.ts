@@ -922,5 +922,16 @@ export async function loadBootcampProgress(userId: string): Promise<any[]> {
 /* =========================================================================
    🔹 Exports
    ========================================================================= */
-export { app, auth, db, storage, firebaseConnected, useEmulators };
+// Export lazy getter functions instead of direct instances for SSR safety
+export { 
+  app, 
+  firebaseConnected, 
+  useEmulators,
+  getAuthInstance,
+  getDbInstance,
+  getStorageInstance
+};
+
+// Legacy exports for backward compatibility (may be null on server)
+export { auth, db, storage };
 export type { User };
