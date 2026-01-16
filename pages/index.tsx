@@ -285,6 +285,27 @@ export default function ThoughtUnitReader() {
   const [showTOC] = useState(true);
 
   /* =========================================================================
+     🔹 Unified Annotation Store (P0.1) - Shared between Surgeon View + NoteLab
+  ========================================================================= */
+  const {
+    annotations: storeAnnotations,
+    viewMode: annotationViewMode,
+    pendingHighlight,
+    setActiveDocument,
+    setActivePage,
+    addAnnotation,
+    updateAnnotation: updateStoreAnnotation,
+    deleteAnnotation: deleteStoreAnnotation,
+    setPendingHighlight,
+    confirmHighlight,
+    cancelHighlight,
+    toggleCleanMode,
+    getAnnotationsForPage,
+    getHighlightsOnly,
+    getMistakes
+  } = useAnnotationStore();
+
+  /* =========================================================================
      🔹 Surgeon View PDRM State
   ========================================================================= */
   const [notes, setNotes] = useState<any[]>([]);
