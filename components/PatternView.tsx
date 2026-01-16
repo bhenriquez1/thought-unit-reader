@@ -131,8 +131,8 @@ export default function PatternView({
 
   // Auth
   useEffect(() => {
-    const unsub = auth.onAuthStateChanged((u) => setUser(u));
-    return () => unsub();
+    const unsub = auth?.onAuthStateChanged((u) => setUser(u));
+    return () => unsub?.();
   }, []);
 
   // Load pattern mastery

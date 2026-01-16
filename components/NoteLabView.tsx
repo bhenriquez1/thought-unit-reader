@@ -98,8 +98,8 @@ export default function NoteLabView({
 
   // Auth
   useEffect(() => {
-    const unsub = auth.onAuthStateChanged((u) => setUser(u));
-    return () => unsub();
+    const unsub = auth?.onAuthStateChanged((u) => setUser(u));
+    return () => unsub?.();
   }, []);
 
   // Load notes

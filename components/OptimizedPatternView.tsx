@@ -228,8 +228,8 @@ export default React.memo(function OptimizedPatternView({
 
   // Auth
   useEffect(() => {
-    const unsub = auth.onAuthStateChanged((u) => setUser(u));
-    return () => unsub();
+    const unsub = auth?.onAuthStateChanged((u) => setUser(u));
+    return () => unsub?.();
   }, []);
 
   // Load pattern mastery

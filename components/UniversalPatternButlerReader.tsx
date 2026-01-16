@@ -518,8 +518,8 @@ export default function UniversalPatternButlerReader({
 
   // Authentication
   useEffect(() => {
-    const unsub = auth.onAuthStateChanged((u) => setUser(u));
-    return () => unsub();
+    const unsub = auth?.onAuthStateChanged((u) => setUser(u));
+    return () => unsub?.();
   }, []);
 
   // Load voices

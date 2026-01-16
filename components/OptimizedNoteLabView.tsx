@@ -284,8 +284,8 @@ export default React.memo(function OptimizedNoteLabView({
 
   // Auth
   useEffect(() => {
-    const unsub = auth.onAuthStateChanged((u) => setUser(u));
-    return () => unsub();
+    const unsub = auth?.onAuthStateChanged((u) => setUser(u));
+    return () => unsub?.();
   }, []);
 
   // Simulate loading notes with progress

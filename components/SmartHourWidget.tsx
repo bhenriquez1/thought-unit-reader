@@ -48,8 +48,8 @@ export default function SmartHourWidget({ onSessionComplete, className = "" }: S
 
   // Auth
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((u) => setUser(u));
-    return () => unsubscribe();
+    const unsubscribe = auth?.onAuthStateChanged((u) => setUser(u));
+    return () => unsubscribe?.();
   }, []);
 
   // Load session data from localStorage
