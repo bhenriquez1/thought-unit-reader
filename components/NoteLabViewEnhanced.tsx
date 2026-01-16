@@ -207,7 +207,7 @@ export default function NoteLabView({
     const allAnns = getAllAnnotationsArray();
     const weakCount = allAnns.filter(a => 
       a.tags.some(t => ['weak', 'miss', 'quiz-generated', 'quiz-miss'].includes(t)) ||
-      a.pdrm?.weakAreaTags?.length > 0 ||
+      (a.pdrm?.weakAreaTags && a.pdrm.weakAreaTags.length > 0) ||
       a.pdrm?.isMistake
     ).length;
     
