@@ -861,7 +861,9 @@ export async function saveBootcampProgress(
   }
 
   try {
-    const docRef = doc(db, "users", uid, "bootcamp", "progress");
+    const dbInstance = getDbInstance();
+    if (!dbInstance) throw new Error('Firebase DB not initialized');
+    const docRef = doc(dbInstance, "users", uid, "bootcamp", "progress");
     const existingDoc = await getDoc(docRef);
     const existing = existingDoc.exists() ? existingDoc.data().sessions || [] : [];
     existing.push(data);
