@@ -296,7 +296,12 @@ export function listenForAuthChanges(callback: (user: User | null) => void) {
     };
   }
   
-  return onAuthStateChanged(getAuthInstance()!, callback);
+  const authInstance = getAuthInstance();
+  if (!authInstance) {
+    // Firebase not configured - return a no-op cleanup function
+    return () => {};
+  }
+  return onAuthStateChanged(authInstance, callback);
 }
 
 function popupLikelyBlocked(err: unknown) {
