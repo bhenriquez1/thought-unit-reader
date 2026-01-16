@@ -191,6 +191,7 @@ export default function SurgeonView({
             pageAnnotations.map((ann) => (
               <div
                 key={ann.id}
+                data-testid={`highlight-card-${ann.id}`}
                 className={`p-3 rounded-lg border-l-4 cursor-pointer transition-all ${
                   selectedAnnotationId === ann.id ? 'bg-gray-700' : 'bg-gray-800 hover:bg-gray-750'
                 }`}
@@ -199,11 +200,19 @@ export default function SurgeonView({
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1">
-                    <span className="text-sm text-gray-300">{ann.text}</span>
-                    {ann.pdrmType && (
-                      <span className={`ml-2 px-2 py-0.5 rounded text-xs font-bold ${getPDRMColor(ann.pdrmType)}`}>
-                        {ann.pdrmType}
-                      </span>
+                    <span className="text-sm text-gray-300">{ann.selectedText}</span>
+                    {/* PDRM tags as labels */}
+                    {ann.pdrm?.pattern && (
+                      <span className="ml-2 px-2 py-0.5 rounded text-xs font-bold bg-purple-600 text-white">P</span>
+                    )}
+                    {ann.pdrm?.decisionRule && (
+                      <span className="ml-2 px-2 py-0.5 rounded text-xs font-bold bg-blue-600 text-white">D</span>
+                    )}
+                    {ann.pdrm?.isMistake && (
+                      <span className="ml-2 px-2 py-0.5 rounded text-xs font-bold bg-red-600 text-white">R</span>
+                    )}
+                    {ann.pdrm?.mnemonic && (
+                      <span className="ml-2 px-2 py-0.5 rounded text-xs font-bold bg-yellow-600 text-black">M</span>
                     )}
                   </div>
                   <span className="text-xs text-gray-500">p.{ann.pageIndex + 1}</span>
@@ -225,6 +234,7 @@ export default function SurgeonView({
       <div 
         className="prose prose-invert max-w-none"
         onMouseUp={handleTextSelect}
+        data-testid="surgeon-view-content"
       >
         {/* Headings */}
         {headings.map((heading, idx) => (
@@ -241,14 +251,14 @@ export default function SurgeonView({
     );
   }, [viewMode, headings, pageContent, pageAnnotations, selectedAnnotationId, handleTextSelect, selectAnnotation]);
 
-  // Render highlighted content
-  function renderHighlightedContent(content: string, annotations: Annotation[]) {
-    if (annotations.length === 0) return content;
+  // Render highlighted content - overlays highlights on text
+  function renderHighlightedContent(content: string, annotationsList: Annotation[]) {
+    if (annotationsList.length === 0) return content;
 
-    // Sort annotations by position
-    const sortedAnnotations = [...annotations].sort((a, b) => {
-      const aStart = a.textRange?.startOffset || 0;
-      const bStart = b.textRange?.startOffset || 0;
+    // Sort annotations by anchor position
+    const sortedAnnotations = [...annotationsList].sort((a, b) => {
+      const aStart = a.anchor.type === 'textRange' ? a.anchor.start : 0;
+      const bStart = b.anchor.type === 'textRange' ? b.anchor.start : 0;
       return aStart - bStart;
     });
 
@@ -256,11 +266,11 @@ export default function SurgeonView({
     let lastEnd = 0;
 
     sortedAnnotations.forEach((ann, idx) => {
-      const textToFind = ann.text;
+      const textToFind = ann.selectedText;
       const startIdx = content.indexOf(textToFind, lastEnd);
       
       if (startIdx === -1) {
-        return; // Text not found
+        return; // Text not found - fallback behavior
       }
 
       // Add text before highlight
@@ -270,10 +280,18 @@ export default function SurgeonView({
         );
       }
 
+      // Determine PDRM label to show
+      let pdrmLabel: string | null = null;
+      if (ann.pdrm?.pattern) pdrmLabel = 'P';
+      else if (ann.pdrm?.decisionRule) pdrmLabel = 'D';
+      else if (ann.pdrm?.isMistake) pdrmLabel = 'R';
+      else if (ann.pdrm?.mnemonic) pdrmLabel = 'M';
+
       // Add highlighted text
       segments.push(
         <mark
           key={`highlight-${ann.id}`}
+          data-testid={`highlight-mark-${ann.id}`}
           className={`cursor-pointer rounded px-0.5 ${
             selectedAnnotationId === ann.id ? 'ring-2 ring-white' : ''
           }`}
@@ -282,11 +300,11 @@ export default function SurgeonView({
             color: '#000'
           }}
           onClick={() => selectAnnotation(ann.id)}
-          title={ann.type}
+          title={pdrmLabel ? `PDRM: ${pdrmLabel}` : 'Highlight'}
         >
           {textToFind}
-          {ann.pdrmType && (
-            <sup className="ml-0.5 text-xs font-bold">{ann.pdrmType}</sup>
+          {pdrmLabel && (
+            <sup className="ml-0.5 text-xs font-bold">{pdrmLabel}</sup>
           )}
         </mark>
       );
