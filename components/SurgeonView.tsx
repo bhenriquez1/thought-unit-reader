@@ -178,10 +178,10 @@ export default function SurgeonView({
     if (viewMode.mode === 'clean' && viewMode.showOnlyHighlights) {
       // Clean mode: show only highlights and headings
       return (
-        <div className="space-y-4">
+        <div className="space-y-4" data-testid="clean-mode-content">
           {/* Headings */}
           {viewMode.showHeadings && headings.map((heading, idx) => (
-            <h3 key={idx} className="text-lg font-semibold text-white border-b border-gray-700 pb-2">
+            <h3 key={idx} className="text-lg font-semibold text-white border-b border-gray-700 pb-2" data-testid={`clean-mode-heading-${idx}`}>
               {heading}
             </h3>
           ))}
@@ -203,16 +203,16 @@ export default function SurgeonView({
                     <span className="text-sm text-gray-300">{ann.selectedText}</span>
                     {/* PDRM tags as labels */}
                     {ann.pdrm?.pattern && (
-                      <span className="ml-2 px-2 py-0.5 rounded text-xs font-bold bg-purple-600 text-white">P</span>
+                      <span className="ml-2 px-2 py-0.5 rounded text-xs font-bold bg-purple-600 text-white" data-testid={`pdrm-tag-P-${ann.id}`}>P</span>
                     )}
                     {ann.pdrm?.decisionRule && (
-                      <span className="ml-2 px-2 py-0.5 rounded text-xs font-bold bg-blue-600 text-white">D</span>
+                      <span className="ml-2 px-2 py-0.5 rounded text-xs font-bold bg-blue-600 text-white" data-testid={`pdrm-tag-D-${ann.id}`}>D</span>
                     )}
                     {ann.pdrm?.isMistake && (
-                      <span className="ml-2 px-2 py-0.5 rounded text-xs font-bold bg-red-600 text-white">R</span>
+                      <span className="ml-2 px-2 py-0.5 rounded text-xs font-bold bg-red-600 text-white" data-testid={`pdrm-tag-R-${ann.id}`}>R</span>
                     )}
                     {ann.pdrm?.mnemonic && (
-                      <span className="ml-2 px-2 py-0.5 rounded text-xs font-bold bg-yellow-600 text-black">M</span>
+                      <span className="ml-2 px-2 py-0.5 rounded text-xs font-bold bg-yellow-600 text-black" data-testid={`pdrm-tag-M-${ann.id}`}>M</span>
                     )}
                   </div>
                   <span className="text-xs text-gray-500">p.{ann.pageIndex + 1}</span>
@@ -220,7 +220,7 @@ export default function SurgeonView({
               </div>
             ))
           ) : (
-            <div className="text-center text-gray-500 py-8">
+            <div className="text-center text-gray-500 py-8" data-testid="clean-mode-empty">
               <p>No highlights on this page yet.</p>
               <p className="text-sm mt-2">Select text to create highlights.</p>
             </div>
