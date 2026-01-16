@@ -151,13 +151,13 @@ export type UpdateAnnotationInput = Partial<Omit<Annotation, 'id' | 'documentId'
 // ============================================================================
 
 interface AnnotationState {
-  // Annotations data
-  annotations: Map<string, Annotation>;
-  annotationsByPage: Map<number, string[]>; // pageIndex -> annotation IDs
-  annotationsByChapter: Map<string, string[]>; // chapterId -> annotation IDs
+  // Annotations data - stored as Record for JSON serialization
+  annotations: Record<string, Annotation>;
+  annotationsByPage: Record<number, string[]>; // pageIndex -> annotation IDs
+  annotationsByChapter: Record<string, string[]>; // chapterId -> annotation IDs
   
   // Quiz results
-  quizResults: Map<string, ChapterQuizResult>;
+  quizResults: Record<string, ChapterQuizResult>;
   
   // View state
   viewMode: ViewMode;
@@ -165,13 +165,14 @@ interface AnnotationState {
   activeChapterId: string | null;
   activePageIndex: number;
   
-  // Selection state
+  // Selection state for pending highlight creation
   selectedAnnotationId: string | null;
   pendingHighlight: {
-    text: string;
+    selectedText: string;
     pageIndex: number;
-    textRange?: TextRange;
-    boundingBoxes?: BoundingBox[];
+    anchor: HighlightAnchor;
+    chapterId?: string;
+    thoughtUnitId?: string;
   } | null;
   
   // UI state
@@ -182,20 +183,28 @@ interface AnnotationState {
   // Firestore subscription
   firestoreUnsubscribe: Unsubscribe | null;
   
+  // =====================
   // Actions
+  // =====================
+  
+  // Document/Chapter/Page setters
   setActiveDocument: (documentId: string, userId: string) => Promise<void>;
   setActiveChapter: (chapterId: string | null) => void;
   setActivePage: (pageIndex: number) => void;
   
   // Annotation CRUD
-  addAnnotation: (annotation: Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>) => Promise<string>;
-  updateAnnotation: (id: string, updates: Partial<Annotation>) => Promise<void>;
+  addAnnotation: (input: CreateAnnotationInput) => Promise<string>;
+  updateAnnotation: (id: string, updates: UpdateAnnotationInput) => Promise<void>;
   deleteAnnotation: (id: string) => Promise<void>;
   
-  // Highlight creation
+  // Highlight creation workflow
   setPendingHighlight: (highlight: AnnotationState['pendingHighlight']) => void;
-  confirmHighlight: (type: AnnotationType, options?: Partial<Annotation>) => Promise<string | null>;
+  confirmHighlight: (options?: Partial<CreateAnnotationInput>) => Promise<string | null>;
   cancelHighlight: () => void;
+  
+  // PDRM tagging (updates highlight with PDRM metadata)
+  addPDRMTag: (annotationId: string, pdrmType: 'P' | 'D' | 'R' | 'M', value: string) => Promise<void>;
+  removePDRMTag: (annotationId: string, pdrmType: 'P' | 'D' | 'R' | 'M') => Promise<void>;
   
   // View mode
   setViewMode: (mode: Partial<ViewMode>) => void;
@@ -215,7 +224,8 @@ interface AnnotationState {
   getHighlightsOnly: () => Annotation[];
   getMistakes: () => Annotation[];
   getFlashcards: () => Annotation[];
-  getMnemonics: () => Annotation[];
+  getPDRMAnnotations: (type: 'P' | 'D' | 'R' | 'M') => Annotation[];
+  getAllAnnotationsArray: () => Annotation[];
   
   // Sync
   syncToFirestore: () => Promise<void>;
