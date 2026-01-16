@@ -523,11 +523,15 @@ export async function signOutUser(): Promise<void> {
    🔹 PDF Library Functions
    ========================================================================= */
 export async function uploadPDF(file: File, userId: string): Promise<string> {
-  const fileRef = ref(storage, `pdfs/${userId}/${file.name}`);
+  const storageInstance = getStorageInstance();
+  const dbInstance = getDbInstance();
+  if (!storageInstance || !dbInstance) throw new Error('Firebase services not initialized');
+  
+  const fileRef = ref(storageInstance, `pdfs/${userId}/${file.name}`);
   await uploadBytes(fileRef, file);
   const downloadURL = await getDownloadURL(fileRef);
 
-  const libraryRef = doc(collection(db, "users", userId, "pdfLibrary"));
+  const libraryRef = doc(collection(dbInstance, "users", userId, "pdfLibrary"));
   await setDoc(libraryRef, {
     name: file.name,
     url: downloadURL,
@@ -540,7 +544,10 @@ export async function uploadPDF(file: File, userId: string): Promise<string> {
 export async function getPDFLibrary(
   userId: string
 ): Promise<{ id: string; name: string; url: string; uploadedAt: string }[]> {
-  const querySnapshot = await getDocs(collection(db, "users", userId, "pdfLibrary"));
+  const dbInstance = getDbInstance();
+  if (!dbInstance) return [];
+  
+  const querySnapshot = await getDocs(collection(dbInstance, "users", userId, "pdfLibrary"));
   const library: { id: string; name: string; url: string; uploadedAt: string }[] = [];
 
   querySnapshot.forEach((docSnap) => {
@@ -559,8 +566,12 @@ export async function getPDFLibrary(
 }
 
 export async function deletePDF(userId: string, pdfId: string, pdfName: string) {
-  await deleteDoc(doc(db, "users", userId, "pdfLibrary", pdfId));
-  const fileRef = ref(storage, `pdfs/${userId}/${pdfName}`);
+  const storageInstance = getStorageInstance();
+  const dbInstance = getDbInstance();
+  if (!storageInstance || !dbInstance) throw new Error('Firebase services not initialized');
+  
+  await deleteDoc(doc(dbInstance, "users", userId, "pdfLibrary", pdfId));
+  const fileRef = ref(storageInstance, `pdfs/${userId}/${pdfName}`);
   await deleteObject(fileRef);
 }
 
