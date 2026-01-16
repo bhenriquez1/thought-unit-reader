@@ -456,14 +456,105 @@ export default function SurgeonView({
         </div>
       </div>
 
-      {/* Highlight Action Menu */}
-      <HighlightActionMenu
-        selectedText={pendingHighlight?.text || ''}
-        position={menuPosition}
-        onAction={handleAction}
-        onClose={handleCloseMenu}
-        visible={showActionMenu}
-      />
+      {/* Highlight Action Menu - inline implementation */}
+      {showActionMenu && pendingHighlight && (
+        <div
+          className="fixed z-50 bg-gray-800 border border-gray-600 rounded-lg shadow-2xl p-2 min-w-[200px]"
+          style={{
+            left: `${menuPosition.x}px`,
+            top: `${menuPosition.y}px`,
+            transform: 'translate(-50%, 8px)',
+          }}
+          data-testid="highlight-action-menu"
+        >
+          {/* Selected text preview */}
+          <div className="px-2 py-1 text-xs text-gray-400 border-b border-gray-700 mb-2 max-w-[300px] truncate">
+            "{pendingHighlight.selectedText.substring(0, 60)}{pendingHighlight.selectedText.length > 60 ? '...' : ''}"
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex flex-col gap-1">
+            {/* Simple Highlight */}
+            <button
+              onClick={() => handleAction('highlight')}
+              className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-700 text-left text-sm transition-colors"
+              data-testid="action-highlight"
+            >
+              <span className="text-yellow-400">🔆</span>
+              <span>Highlight</span>
+            </button>
+
+            {/* Add Note */}
+            <button
+              onClick={() => handleAction('note')}
+              className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-700 text-left text-sm transition-colors"
+              data-testid="action-note"
+            >
+              <span className="text-green-400">📝</span>
+              <span>Add Note</span>
+            </button>
+
+            {/* Create Flashcard */}
+            <button
+              onClick={() => handleAction('flashcard')}
+              className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-700 text-left text-sm transition-colors"
+              data-testid="action-flashcard"
+            >
+              <span className="text-purple-400">🎴</span>
+              <span>Create Flashcard</span>
+            </button>
+
+            {/* PDRM Tags */}
+            <div className="border-t border-gray-700 mt-1 pt-1">
+              <div className="px-3 py-1 text-xs text-gray-500 uppercase">PDRM Tags</div>
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  onClick={() => handleAction('tag', 'P')}
+                  className="flex items-center gap-1 px-2 py-1.5 rounded hover:bg-purple-900/30 text-left text-sm transition-colors"
+                  data-testid="pdrm-tag-P"
+                >
+                  <span className="font-bold text-purple-400">P</span>
+                  <span className="text-xs">Pattern</span>
+                </button>
+                <button
+                  onClick={() => handleAction('tag', 'D')}
+                  className="flex items-center gap-1 px-2 py-1.5 rounded hover:bg-blue-900/30 text-left text-sm transition-colors"
+                  data-testid="pdrm-tag-D"
+                >
+                  <span className="font-bold text-blue-400">D</span>
+                  <span className="text-xs">Decision</span>
+                </button>
+                <button
+                  onClick={() => handleAction('tag', 'R')}
+                  className="flex items-center gap-1 px-2 py-1.5 rounded hover:bg-red-900/30 text-left text-sm transition-colors"
+                  data-testid="pdrm-tag-R"
+                >
+                  <span className="font-bold text-red-400">R</span>
+                  <span className="text-xs">Risk</span>
+                </button>
+                <button
+                  onClick={() => handleAction('tag', 'M')}
+                  className="flex items-center gap-1 px-2 py-1.5 rounded hover:bg-yellow-900/30 text-left text-sm transition-colors"
+                  data-testid="pdrm-tag-M"
+                >
+                  <span className="font-bold text-yellow-400">M</span>
+                  <span className="text-xs">Mnemonic</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Cancel */}
+            <button
+              onClick={handleCloseMenu}
+              className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-700 text-left text-sm transition-colors border-t border-gray-700 mt-1 pt-2 text-gray-400"
+              data-testid="action-cancel"
+            >
+              <span>✕</span>
+              <span>Cancel</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
