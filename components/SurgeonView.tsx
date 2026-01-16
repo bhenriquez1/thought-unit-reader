@@ -427,7 +427,7 @@ export default function SurgeonView({
           
           {activePanel === 'pdrm' && (
             <PDRMPanel
-              annotations={Array.from(annotations.values()).filter(a => a.pdrmType)}
+              annotations={annotations}
               onSelect={handleAnnotationClick}
             />
           )}
