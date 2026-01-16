@@ -111,14 +111,14 @@ export default function NoteLabView({
       const query = searchQuery.toLowerCase();
       result = result.filter(ann => 
         ann.selectedText.toLowerCase().includes(query) ||
-        ann.title?.toLowerCase().includes(query) ||
-        ann.content?.toLowerCase().includes(query) ||
+        ann.noteTitle?.toLowerCase().includes(query) ||
+        ann.noteContent?.toLowerCase().includes(query) ||
         ann.tags.some(tag => tag.toLowerCase().includes(query))
       );
     }
     
     return result;
-  }, [annotations, activeFilter, searchQuery, getHighlightsOnly, getFlashcards, getMnemonics, getMistakes]);
+  }, [annotations, activeFilter, searchQuery, getHighlightsOnly, getFlashcards, getPDRMAnnotations, getMistakes, getAllAnnotationsArray]);
 
   // Group annotations by chapter
   const groupedAnnotations = useMemo(() => {
@@ -189,15 +189,17 @@ export default function NoteLabView({
     }
   }, [deleteAnnotation]);
 
-  // Stats
+  // Stats - use Object.keys for Record instead of .size for Map
   const stats = useMemo(() => ({
-    total: annotations.size,
+    total: Object.keys(annotations).length,
     highlights: getHighlightsOnly().length,
     flashcards: getFlashcards().length,
-    mnemonics: getMnemonics().length,
+    patterns: getPDRMAnnotations('P').length,
+    decisions: getPDRMAnnotations('D').length,
+    mnemonics: getPDRMAnnotations('M').length,
     mistakes: getMistakes().length,
-    notes: Array.from(annotations.values()).filter(a => a.type === 'note').length
-  }), [annotations, getHighlightsOnly, getFlashcards, getMnemonics, getMistakes]);
+    notes: getAllAnnotationsArray().filter(a => a.noteContent).length
+  }), [annotations, getHighlightsOnly, getFlashcards, getPDRMAnnotations, getMistakes, getAllAnnotationsArray]);
 
   if (isLoading) {
     return (
