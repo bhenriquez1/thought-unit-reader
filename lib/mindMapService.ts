@@ -1,5 +1,5 @@
 // lib/mindMapService.ts
-import { db } from "@/lib/firebase";
+import { getDbInstance } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 /**
@@ -9,6 +9,9 @@ import { collection, addDoc, serverTimestamp } from "firebase/firestore";
  */
 export async function addMindMapNode(text: string, page?: number) {
   if (!text.trim()) throw new Error("❌ Cannot add empty mind map node");
+
+  const db = getDbInstance();
+  if (!db) throw new Error("Firebase DB not initialized");
 
   const node = {
     label: text,
