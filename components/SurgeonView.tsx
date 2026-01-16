@@ -573,7 +573,7 @@ interface HighlightsPanelProps {
 function HighlightsPanel({ highlights, selectedId, onSelect, onDelete }: HighlightsPanelProps) {
   if (highlights.length === 0) {
     return (
-      <div className="text-center text-gray-500 py-8">
+      <div className="text-center text-gray-500 py-8" data-testid="highlights-empty">
         <p className="text-4xl mb-4">🔆</p>
         <p>No highlights yet</p>
         <p className="text-sm mt-2">Select text in the document to create highlights</p>
@@ -582,13 +582,14 @@ function HighlightsPanel({ highlights, selectedId, onSelect, onDelete }: Highlig
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-testid="highlights-panel">
       <div className="text-sm text-gray-400 mb-2">
         {highlights.length} highlight{highlights.length !== 1 ? 's' : ''}
       </div>
       {highlights.map((highlight) => (
         <div
           key={highlight.id}
+          data-testid={`highlight-item-${highlight.id}`}
           className={`p-3 rounded-lg border cursor-pointer transition-all ${
             selectedId === highlight.id 
               ? 'border-yellow-500 bg-yellow-500/10' 
@@ -597,23 +598,32 @@ function HighlightsPanel({ highlights, selectedId, onSelect, onDelete }: Highlig
           onClick={() => onSelect(highlight)}
         >
           <div className="flex items-start justify-between gap-2">
-            <p className="text-sm text-gray-300 line-clamp-2">{highlight.text}</p>
+            <p className="text-sm text-gray-300 line-clamp-2">{highlight.selectedText}</p>
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete(highlight.id);
               }}
               className="text-gray-500 hover:text-red-400 text-xs"
+              data-testid={`delete-highlight-${highlight.id}`}
             >
               ✕
             </button>
           </div>
           <div className="flex items-center gap-2 mt-2">
             <span className="text-xs text-gray-500">p.{highlight.pageIndex + 1}</span>
-            {highlight.pdrmType && (
-              <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${getPDRMColor(highlight.pdrmType)}`}>
-                {highlight.pdrmType}
-              </span>
+            {/* Show PDRM tags */}
+            {highlight.pdrm?.pattern && (
+              <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-purple-600 text-white">P</span>
+            )}
+            {highlight.pdrm?.decisionRule && (
+              <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-blue-600 text-white">D</span>
+            )}
+            {highlight.pdrm?.isMistake && (
+              <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-red-600 text-white">R</span>
+            )}
+            {highlight.pdrm?.mnemonic && (
+              <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-yellow-600 text-black">M</span>
             )}
           </div>
         </div>
@@ -623,33 +633,35 @@ function HighlightsPanel({ highlights, selectedId, onSelect, onDelete }: Highlig
 }
 
 interface PDRMPanelProps {
-  annotations: Annotation[];
+  annotations: Record<string, Annotation>;
   onSelect: (annotation: Annotation) => void;
 }
 
 function PDRMPanel({ annotations, onSelect }: PDRMPanelProps) {
+  // Group annotations by PDRM type
   const grouped = useMemo(() => {
     const groups: Record<string, Annotation[]> = { P: [], D: [], R: [], M: [] };
-    annotations.forEach(ann => {
-      if (ann.pdrmType && groups[ann.pdrmType]) {
-        groups[ann.pdrmType].push(ann);
-      }
+    Object.values(annotations).forEach(ann => {
+      if (ann.pdrm?.pattern) groups.P.push(ann);
+      if (ann.pdrm?.decisionRule) groups.D.push(ann);
+      if (ann.pdrm?.isMistake) groups.R.push(ann);
+      if (ann.pdrm?.mnemonic) groups.M.push(ann);
     });
     return groups;
   }, [annotations]);
 
-  const pdrmLabels: Record<string, { name: string; icon: string; description: string }> = {
-    P: { name: 'Pattern', icon: '🎯', description: 'Core principles & patterns' },
-    D: { name: 'Decision', icon: '⚖️', description: 'Critical decision points' },
-    R: { name: 'Risk', icon: '⚠️', description: 'Warnings & contraindications' },
-    M: { name: 'Mechanism', icon: '⚙️', description: 'How it works (MOA)' }
+  const pdrmLabels: Record<string, { name: string; icon: string; description: string; bgColor: string }> = {
+    P: { name: 'Pattern', icon: '🎯', description: 'Core principles & patterns', bgColor: 'bg-purple-600/20' },
+    D: { name: 'Decision', icon: '⚖️', description: 'Critical decision points', bgColor: 'bg-blue-600/20' },
+    R: { name: 'Risk/Mistake', icon: '⚠️', description: 'Warnings & weak areas', bgColor: 'bg-red-600/20' },
+    M: { name: 'Mnemonic', icon: '🧠', description: 'Memory aids', bgColor: 'bg-yellow-600/20' }
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="pdrm-panel">
       {(['P', 'D', 'R', 'M'] as const).map(type => (
-        <div key={type} className="border border-gray-700 rounded-lg overflow-hidden">
-          <div className={`px-3 py-2 ${getPDRMBgColor(type)}`}>
+        <div key={type} className="border border-gray-700 rounded-lg overflow-hidden" data-testid={`pdrm-section-${type}`}>
+          <div className={`px-3 py-2 ${pdrmLabels[type].bgColor}`}>
             <div className="flex items-center gap-2">
               <span>{pdrmLabels[type].icon}</span>
               <span className="font-medium">{pdrmLabels[type].name}</span>
@@ -665,8 +677,9 @@ function PDRMPanel({ annotations, onSelect }: PDRMPanelProps) {
                   key={ann.id}
                   className="p-2 bg-gray-800 rounded cursor-pointer hover:bg-gray-750"
                   onClick={() => onSelect(ann)}
+                  data-testid={`pdrm-item-${ann.id}`}
                 >
-                  <p className="text-xs text-gray-300 line-clamp-2">{ann.text}</p>
+                  <p className="text-xs text-gray-300 line-clamp-2">{ann.selectedText}</p>
                   <span className="text-xs text-gray-500">p.{ann.pageIndex + 1}</span>
                 </div>
               ))}
