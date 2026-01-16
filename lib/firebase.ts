@@ -610,7 +610,9 @@ export async function saveReadingProgress(
   }
 
   try {
-    const docRef = doc(db, "users", uid, "books", bookId, "progress");
+    const dbInstance = getDbInstance();
+    if (!dbInstance) throw new Error('Firebase DB not initialized');
+    const docRef = doc(dbInstance, "users", uid, "books", bookId, "progress");
     await setDoc(docRef, { ...progress, updatedAt: new Date().toISOString() }, { merge: true });
   } catch (error) {
     console.warn("⚠️ Firebase write failed, falling back to localStorage:", error);
