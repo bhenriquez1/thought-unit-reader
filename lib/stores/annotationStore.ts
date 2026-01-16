@@ -1,6 +1,9 @@
 // lib/stores/annotationStore.ts
 // Unified Annotation Store for Surgeon View + NoteLab
 // Uses Zustand for state management with persistence
+// 
+// IMPORTANT: This store is the SINGLE SOURCE OF TRUTH for both Surgeon View and NoteLab.
+// Both views must use the same IDs: documentId/chapterId/pageIndex/thoughtUnitId
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
@@ -21,70 +24,76 @@ import {
 } from 'firebase/firestore';
 
 // ============================================================================
-// Types
+// Types - Matches user-specified schema exactly
 // ============================================================================
 
-export type AnnotationType = 
-  | 'highlight'
-  | 'note'
-  | 'flashcard'
-  | 'mnemonic'
-  | 'mistake'
-  | 'pattern'
-  | 'decision'
-  | 'risk'
-  | 'mechanism';
+export type AnnotationType = 'highlight';  // Highlight is the "container" per user spec
 
-export type ImportanceLevel = 'critical' | 'important' | 'normal' | 'reference';
+export type ModeContext = 'clean' | 'context';
 
-export interface TextRange {
-  startOffset: number;
-  endOffset: number;
-  text: string;
+// Anchor: text-selection based (primary) with bbox fallback
+export interface TextRangeAnchor {
+  type: 'textRange';
+  start: number;
+  end: number;
 }
 
-export interface BoundingBox {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  pageIndex: number;
+export interface BBoxAnchor {
+  type: 'bbox';
+  boxes: Array<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }>;
 }
 
+export type HighlightAnchor = TextRangeAnchor | BBoxAnchor;
+
+// PDRM metadata attached to highlights (per user spec: tags/labels, not separate types)
+export interface PDRMMetadata {
+  pattern?: string;           // P: Core principles & patterns
+  decisionRule?: string;      // D: Critical decision points
+  mnemonic?: string;          // M: Memory aids
+  isMistake?: boolean;        // Mistake flag for quiz tracking
+  weakAreaTags?: string[];    // Tags for weak areas
+}
+
+// Main Annotation/Highlight interface - matches user spec exactly
 export interface Annotation {
   id: string;
+  
+  // Required location fields (per user spec)
   documentId: string;
-  chapterId?: string;
+  chapterId: string;
   pageIndex: number;
   thoughtUnitId?: string;
   
-  // Annotation type and content
-  type: AnnotationType;
-  text: string;
+  // Anchor data (per user spec)
+  anchor: HighlightAnchor;
   
-  // Location data
-  textRange?: TextRange;
-  boundingBoxes?: BoundingBox[];
+  // Selected text content
+  selectedText: string;
   
-  // Metadata
-  importance: ImportanceLevel;
+  // View mode context (optional per user spec)
+  modeContext?: ModeContext;
+  
+  // PDRM metadata attached to highlight (per user spec: tags as metadata)
+  pdrm: PDRMMetadata;
+  
+  // UI presentation
+  color: string;
+  
+  // For notes attached to highlights
+  noteContent?: string;
+  noteTitle?: string;
+  
+  // For flashcards from highlights
+  flashcardFront?: string;
+  flashcardBack?: string;
+  
+  // General tags
   tags: string[];
-  color?: string;
-  
-  // For notes/flashcards
-  title?: string;
-  content?: string;
-  answer?: string; // For flashcards
-  
-  // For PDRM
-  pdrmType?: 'P' | 'D' | 'R' | 'M';
-  
-  // Quiz/Review tracking
-  isReviewed?: boolean;
-  reviewCount?: number;
-  lastReviewDate?: string;
-  nextReviewDate?: string;
-  isMistake?: boolean;
   
   // Timestamps
   createdAt: string;
@@ -92,6 +101,21 @@ export interface Annotation {
   
   // User
   userId: string;
+}
+
+// Legacy support - keep for backward compatibility
+export type ImportanceLevel = 'critical' | 'important' | 'normal' | 'reference';
+export interface TextRange {
+  startOffset: number;
+  endOffset: number;
+  text: string;
+}
+export interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  pageIndex: number;
 }
 
 export interface ChapterQuizResult {
