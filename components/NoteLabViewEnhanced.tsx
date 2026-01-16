@@ -22,7 +22,7 @@ interface NoteLabViewProps {
   onNavigateToSurgeonView: (pageIndex: number, annotationId?: string) => void;
 }
 
-type FilterType = 'all' | 'notes' | 'flashcards' | 'mnemonics' | 'mistakes' | 'highlights' | 'patterns' | 'decisions';
+type FilterType = 'all' | 'notes' | 'flashcards' | 'mnemonics' | 'mistakes' | 'highlights' | 'patterns' | 'decisions' | 'weak';
 
 interface GroupedAnnotations {
   [chapterId: string]: {
