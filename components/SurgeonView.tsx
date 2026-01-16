@@ -706,15 +706,253 @@ interface QuizPanelProps {
   chapterId?: string;
   documentId: string;
   userId: string;
+  headings: string[];
   isGenerating: boolean;
   onGenerate: () => void;
 }
 
-function QuizPanel({ highlights, mistakes, chapterId, documentId, userId, isGenerating, onGenerate }: QuizPanelProps) {
-  const [quizMode, setQuizMode] = useState<'recall' | 'application' | 'teachback'>('recall');
+function QuizPanel({ highlights, mistakes, chapterId, documentId, userId, headings, isGenerating, onGenerate }: QuizPanelProps) {
+  // Quiz store
+  const {
+    currentQuiz,
+    isGenerating: storeIsGenerating,
+    isSubmitting,
+    generateQuiz,
+    submitAnswer,
+    nextQuestion,
+    prevQuestion,
+    finishQuiz,
+    clearCurrentQuiz,
+    getLastAttempt,
+    getBestScore
+  } = useQuizStore();
   
+  // Local state
+  const [selectedOption, setSelectedOption] = useState<string>('');
+  const [showResults, setShowResults] = useState(false);
+  const [lastResult, setLastResult] = useState<{ score: number; total: number } | null>(null);
+  
+  // Get previous attempts info
+  const lastAttempt = getLastAttempt(documentId, chapterId || 'all');
+  const bestScore = getBestScore(documentId, chapterId || 'all');
+  
+  // Current question
+  const currentQuestion = currentQuiz?.questions[currentQuiz.currentIndex];
+  const currentAnswer = currentQuiz?.answers.find(a => a.questionId === currentQuestion?.id);
+  
+  // Handle starting quiz
+  const handleStartQuiz = async () => {
+    setShowResults(false);
+    setLastResult(null);
+    await generateQuiz(documentId, chapterId || 'all', highlights, headings);
+  };
+  
+  // Handle answer submission
+  const handleSubmitAnswer = () => {
+    if (!currentQuestion || !selectedOption) return;
+    submitAnswer(currentQuestion.id, selectedOption);
+    setSelectedOption('');
+  };
+  
+  // Handle finish quiz
+  const handleFinishQuiz = async () => {
+    const attempt = await finishQuiz();
+    if (attempt) {
+      setLastResult({ score: attempt.score, total: attempt.totalQuestions });
+      setShowResults(true);
+    }
+  };
+  
+  // Handle retake
+  const handleRetake = () => {
+    clearCurrentQuiz();
+    setShowResults(false);
+    setLastResult(null);
+  };
+  
+  // Render quiz results
+  if (showResults && lastResult) {
+    const wrongCount = currentQuiz ? currentQuiz.answers.filter(a => !a.isCorrect).length : 0;
+    
+    return (
+      <div className="space-y-4" data-testid="quiz-results">
+        <div className="text-center py-6">
+          <div className={`text-6xl mb-4 ${lastResult.score >= 80 ? '🎉' : lastResult.score >= 60 ? '👍' : '📚'}`}>
+            {lastResult.score >= 80 ? '🎉' : lastResult.score >= 60 ? '👍' : '📚'}
+          </div>
+          <div className="text-3xl font-bold text-white mb-2">{lastResult.score}%</div>
+          <div className="text-gray-400">
+            {currentQuiz?.answers.filter(a => a.isCorrect).length} / {lastResult.total} correct
+          </div>
+        </div>
+        
+        {wrongCount > 0 && (
+          <div className="p-4 bg-red-900/20 border border-red-900/50 rounded-lg">
+            <p className="text-sm text-red-400 font-medium mb-2">
+              📇 {wrongCount} flashcard{wrongCount > 1 ? 's' : ''} created for missed questions
+            </p>
+            <p className="text-xs text-gray-400">
+              Review them in NoteLab under "Missed / Weak" filter
+            </p>
+          </div>
+        )}
+        
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={handleRetake}
+            className="px-4 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium transition-colors"
+            data-testid="quiz-retake-btn"
+          >
+            🔄 Retake
+          </button>
+          <button
+            onClick={() => { clearCurrentQuiz(); setShowResults(false); }}
+            className="px-4 py-3 bg-green-600 hover:bg-green-500 rounded-lg font-medium transition-colors"
+            data-testid="quiz-done-btn"
+          >
+            ✓ Done
+          </button>
+        </div>
+      </div>
+    );
+  }
+  
+  // Render active quiz
+  if (currentQuiz && currentQuestion) {
+    const progress = ((currentQuiz.currentIndex + 1) / currentQuiz.questions.length) * 100;
+    const isAnswered = !!currentAnswer;
+    const isLastQuestion = currentQuiz.currentIndex === currentQuiz.questions.length - 1;
+    
+    return (
+      <div className="space-y-4" data-testid="quiz-active">
+        {/* Progress */}
+        <div className="space-y-1">
+          <div className="flex justify-between text-xs text-gray-400">
+            <span>Question {currentQuiz.currentIndex + 1} of {currentQuiz.questions.length}</span>
+            <span className={`px-2 py-0.5 rounded ${currentQuestion.type === 'recall' ? 'bg-blue-600' : 'bg-purple-600'}`}>
+              {currentQuestion.type === 'recall' ? '📝 Recall' : '🎯 Application'}
+            </span>
+          </div>
+          <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-green-500 transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+        
+        {/* Question */}
+        <div className="p-4 bg-gray-800 rounded-lg">
+          <p className="text-sm text-white whitespace-pre-wrap">{currentQuestion.question}</p>
+        </div>
+        
+        {/* Options (MCQ) */}
+        {currentQuestion.options ? (
+          <div className="space-y-2">
+            {currentQuestion.options.map((option, idx) => {
+              const isSelected = selectedOption === option;
+              const wasSelected = currentAnswer?.userAnswer === option;
+              const isCorrect = option === currentQuestion.correctAnswer;
+              
+              let optionStyle = 'bg-gray-700 hover:bg-gray-600 border-gray-600';
+              if (isAnswered) {
+                if (isCorrect) optionStyle = 'bg-green-900/50 border-green-500';
+                else if (wasSelected && !currentAnswer?.isCorrect) optionStyle = 'bg-red-900/50 border-red-500';
+              } else if (isSelected) {
+                optionStyle = 'bg-blue-900/50 border-blue-500';
+              }
+              
+              return (
+                <button
+                  key={idx}
+                  onClick={() => !isAnswered && setSelectedOption(option)}
+                  disabled={isAnswered}
+                  className={`w-full p-3 text-left rounded-lg border transition-colors ${optionStyle}`}
+                  data-testid={`quiz-option-${idx}`}
+                >
+                  <span className="text-sm">{String.fromCharCode(65 + idx)}. {option}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          /* Short answer */
+          <div className="space-y-2">
+            <textarea
+              value={selectedOption}
+              onChange={(e) => setSelectedOption(e.target.value)}
+              disabled={isAnswered}
+              placeholder="Type your answer..."
+              className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-green-500 resize-none"
+              rows={3}
+              data-testid="quiz-answer-input"
+            />
+          </div>
+        )}
+        
+        {/* Feedback after answer */}
+        {isAnswered && (
+          <div className={`p-3 rounded-lg ${currentAnswer?.isCorrect ? 'bg-green-900/30 border border-green-700' : 'bg-red-900/30 border border-red-700'}`}>
+            <p className={`text-sm font-medium ${currentAnswer?.isCorrect ? 'text-green-400' : 'text-red-400'}`}>
+              {currentAnswer?.isCorrect ? '✓ Correct!' : '✗ Incorrect'}
+            </p>
+            {!currentAnswer?.isCorrect && (
+              <p className="text-xs text-gray-400 mt-1">
+                Correct answer: {currentQuestion.correctAnswer}
+              </p>
+            )}
+            {currentQuestion.explanation && (
+              <p className="text-xs text-gray-400 mt-2">{currentQuestion.explanation}</p>
+            )}
+          </div>
+        )}
+        
+        {/* Navigation */}
+        <div className="flex gap-2">
+          <button
+            onClick={prevQuestion}
+            disabled={currentQuiz.currentIndex === 0}
+            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+            data-testid="quiz-prev-btn"
+          >
+            ← Prev
+          </button>
+          
+          {!isAnswered ? (
+            <button
+              onClick={handleSubmitAnswer}
+              disabled={!selectedOption}
+              className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg font-medium transition-colors"
+              data-testid="quiz-submit-btn"
+            >
+              Submit
+            </button>
+          ) : isLastQuestion ? (
+            <button
+              onClick={handleFinishQuiz}
+              disabled={isSubmitting}
+              className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg font-medium transition-colors"
+              data-testid="quiz-finish-btn"
+            >
+              {isSubmitting ? 'Saving...' : 'Finish Quiz'}
+            </button>
+          ) : (
+            <button
+              onClick={nextQuestion}
+              className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg font-medium transition-colors"
+              data-testid="quiz-next-btn"
+            >
+              Next →
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+  
+  // Render quiz start screen
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="quiz-panel">
       {/* Quiz Stats */}
       <div className="grid grid-cols-2 gap-3">
         <div className="p-3 bg-gray-700 rounded-lg text-center">
@@ -726,42 +964,49 @@ function QuizPanel({ highlights, mistakes, chapterId, documentId, userId, isGene
           <div className="text-xs text-gray-400">Mistakes</div>
         </div>
       </div>
-
-      {/* Quiz Mode Selection */}
-      <div className="space-y-2">
-        <label className="text-sm text-gray-400">Quiz Type</label>
-        <div className="grid grid-cols-3 gap-2">
-          {(['recall', 'application', 'teachback'] as const).map(mode => (
-            <button
-              key={mode}
-              onClick={() => setQuizMode(mode)}
-              className={`px-2 py-2 rounded text-xs transition-colors ${
-                quizMode === mode 
-                  ? 'bg-green-600 text-white' 
-                  : 'bg-gray-700 hover:bg-gray-600'
-              }`}
-            >
-              {mode === 'recall' && '📝 Recall'}
-              {mode === 'application' && '🎯 Apply'}
-              {mode === 'teachback' && '🗣️ Teach'}
-            </button>
-          ))}
+      
+      {/* Previous Scores */}
+      {lastAttempt && (
+        <div className="p-3 bg-gray-800 rounded-lg">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm text-gray-400">Last Score</span>
+            <span className="text-lg font-bold text-white">{lastAttempt.score}%</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-gray-400">Best Score</span>
+            <span className="text-lg font-bold text-green-400">{bestScore}%</span>
+          </div>
         </div>
+      )}
+      
+      {/* Quiz Info */}
+      <div className="p-3 bg-gray-800 rounded-lg text-sm text-gray-400">
+        <p className="mb-2">📝 Quiz will generate:</p>
+        <ul className="list-disc list-inside space-y-1 text-xs">
+          <li>3 recall questions (MCQ/fill-blank)</li>
+          <li>2 application questions (scenarios)</li>
+        </ul>
+        <p className="mt-2 text-xs text-gray-500">
+          Wrong answers auto-create flashcards for review
+        </p>
       </div>
 
       {/* Generate Quiz Button */}
       <button
-        onClick={onGenerate}
-        disabled={highlights.length === 0 || isGenerating}
+        onClick={handleStartQuiz}
+        disabled={highlights.length === 0 || storeIsGenerating}
         className="w-full px-4 py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg font-medium transition-colors"
+        data-testid="quiz-start-btn"
       >
-        {isGenerating ? (
+        {storeIsGenerating ? (
           <span className="flex items-center justify-center gap-2">
             <span className="animate-spin">⏳</span>
             Generating Quiz...
           </span>
+        ) : lastAttempt ? (
+          '🔄 Retake Quiz'
         ) : (
-          `Generate ${quizMode.charAt(0).toUpperCase() + quizMode.slice(1)} Quiz`
+          '📝 Start Chapter Quiz'
         )}
       </button>
 
@@ -783,3 +1028,4 @@ function QuizPanel({ highlights, mistakes, chapterId, documentId, userId, isGene
     </div>
   );
 }
+
