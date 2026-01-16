@@ -296,7 +296,7 @@ export function listenForAuthChanges(callback: (user: User | null) => void) {
     };
   }
   
-  return onAuthStateChanged(auth, callback);
+  return onAuthStateChanged(getAuthInstance()!, callback);
 }
 
 function popupLikelyBlocked(err: unknown) {
