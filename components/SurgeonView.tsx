@@ -1,12 +1,19 @@
 "use client";
 
 // components/SurgeonView.tsx
-// Surgeon View - Important-Only view mode with highlighting and PDRM tools
-// Uses unified AnnotationStore for data management
+// Surgeon View - In-reader view mode with direct highlighting and PDRM tools
+// Uses unified AnnotationStore (single source of truth for annotations)
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useAnnotationStore, type Annotation, type AnnotationType, type ViewMode } from '@/lib/stores/annotationStore';
-import HighlightActionMenu, { type HighlightAction, type PDRMTag } from './HighlightActionMenu';
+import { 
+  useAnnotationStore, 
+  type Annotation, 
+  type ViewMode,
+  type HighlightAnchor,
+  type PDRMMetadata,
+  getPDRMColorForType,
+  getPDRMBgColorForType
+} from '@/lib/stores/annotationStore';
 
 interface SurgeonViewProps {
   documentId: string;
@@ -17,16 +24,6 @@ interface SurgeonViewProps {
   headings: string[];
   onNavigateToPage: (pageIndex: number) => void;
   onClose?: () => void;
-}
-
-interface HighlightedBlock {
-  id: string;
-  text: string;
-  type: AnnotationType;
-  color: string;
-  importance: string;
-  pageIndex: number;
-  annotation: Annotation;
 }
 
 export default function SurgeonView({
@@ -57,6 +54,8 @@ export default function SurgeonView({
     getAnnotationsForPage,
     getHighlightsOnly,
     getMistakes,
+    getPDRMAnnotations,
+    addPDRMTag,
     updateAnnotation,
     deleteAnnotation
   } = useAnnotationStore();
@@ -95,7 +94,7 @@ export default function SurgeonView({
     return getMistakes();
   }, [getMistakes, annotations]);
 
-  // Handle text selection
+  // Handle text selection - creates pending highlight with proper anchor
   const handleTextSelect = useCallback(() => {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed) return;
@@ -106,14 +105,18 @@ export default function SurgeonView({
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
 
+    // Create anchor based on text selection (primary method per user spec)
+    const anchor: HighlightAnchor = {
+      type: 'textRange',
+      start: range.startOffset,
+      end: range.endOffset
+    };
+
     setPendingHighlight({
-      text,
+      selectedText: text,
       pageIndex,
-      textRange: {
-        startOffset: range.startOffset,
-        endOffset: range.endOffset,
-        text
-      }
+      anchor,
+      chapterId: chapterId
     });
 
     setMenuPosition({
@@ -121,43 +124,42 @@ export default function SurgeonView({
       y: rect.bottom + window.scrollY
     });
     setShowActionMenu(true);
-  }, [pageIndex, setPendingHighlight]);
+  }, [pageIndex, chapterId, setPendingHighlight]);
 
-  // Handle action from menu
-  const handleAction = useCallback(async (action: HighlightAction) => {
+  // Handle action from menu - creates highlight with optional PDRM tags
+  const handleAction = useCallback(async (actionType: string, tagType?: 'P' | 'D' | 'R' | 'M') => {
     if (!pendingHighlight) return;
 
-    let type: AnnotationType = 'highlight';
-    let options: Partial<Annotation> = { userId };
-
-    switch (action.type) {
-      case 'note':
-        type = 'note';
-        break;
-      case 'flashcard':
-        type = 'flashcard';
-        break;
-      case 'tag':
-        if (action.tagType) {
-          const pdrmTypes: Record<PDRMTag, AnnotationType> = {
-            'P': 'pattern',
-            'D': 'decision',
-            'R': 'risk',
-            'M': 'mechanism'
-          };
-          type = pdrmTypes[action.tagType];
-          options.pdrmType = action.tagType;
-        }
-        break;
-      case 'hyperchunk':
-        type = 'highlight';
-        options.tags = ['hyperchunk'];
-        break;
+    // Build PDRM metadata based on action
+    const pdrm: PDRMMetadata = {};
+    if (tagType) {
+      switch (tagType) {
+        case 'P': pdrm.pattern = pendingHighlight.selectedText; break;
+        case 'D': pdrm.decisionRule = pendingHighlight.selectedText; break;
+        case 'M': pdrm.mnemonic = pendingHighlight.selectedText; break;
+        case 'R': pdrm.isMistake = true; break;
+      }
     }
 
-    await confirmHighlight(type, options);
+    // Determine color based on action
+    let color = '#FFEB3B'; // Default yellow
+    if (tagType) {
+      color = getPDRMColorForType(tagType);
+    } else if (actionType === 'note') {
+      color = '#4CAF50'; // Green for notes
+    } else if (actionType === 'flashcard') {
+      color = '#9C27B0'; // Purple for flashcards
+    }
+
+    await confirmHighlight({
+      userId,
+      pdrm,
+      color,
+      modeContext: viewMode.mode === 'clean' ? 'clean' : 'context'
+    });
+    
     setShowActionMenu(false);
-  }, [pendingHighlight, userId, confirmHighlight]);
+  }, [pendingHighlight, userId, viewMode.mode, confirmHighlight]);
 
   // Close action menu
   const handleCloseMenu = useCallback(() => {
