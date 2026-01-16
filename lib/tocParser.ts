@@ -34,7 +34,10 @@ export {
   flattenToc,
   findTocNodeById,
   findTocNodeForPage,
-  
+} from './tocParserV2';
+
+// Re-export from tocTypes
+export {
   // Type utilities
   tocNodeToLegacy,
   legacyToTocNode,
@@ -42,7 +45,7 @@ export {
   generateTocId,
   createWarning,
   PARSER_VERSION
-} from './tocParserV2';
+} from './tocTypes';
 
 export {
   // Scoring utilities
