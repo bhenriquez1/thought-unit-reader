@@ -78,18 +78,61 @@ const useEmulators =
       .toLowerCase() === "true");
 
 /* =========================================================================
-   🔹 Initialize Firebase (singleton)
+   🔹 Initialize Firebase (singleton) - SSR-safe with deferred auth
    ========================================================================= */
 let app: FirebaseApp;
+let auth: ReturnType<typeof getAuth> | null = null;
+let db: ReturnType<typeof getFirestore> | null = null;
+let storage: ReturnType<typeof getStorage> | null = null;
+
+// Initialize app (safe on both client and server)
 if (!getApps().length) {
   app = initializeApp(firebaseConfig);
 } else {
   app = getApp();
 }
 
-const auth = getAuth(app);
-const db = getFirestore(app);
-const storage = getStorage(app);
+// Defer Firebase services initialization to avoid SSR issues
+// Only initialize on client-side when config is valid
+const initializeFirebaseServices = () => {
+  if (typeof window === 'undefined') return; // Skip on server
+  if (!isValidConfig) return; // Skip if config is invalid
+  
+  try {
+    if (!auth) auth = getAuth(app);
+    if (!db) db = getFirestore(app);
+    if (!storage) storage = getStorage(app);
+  } catch (error) {
+    console.warn('⚠️ Firebase services initialization deferred:', error);
+  }
+};
+
+// Initialize services on client
+if (typeof window !== 'undefined' && isValidConfig) {
+  initializeFirebaseServices();
+}
+
+// Lazy getters for Firebase services (SSR-safe)
+const getAuthInstance = () => {
+  if (!auth && typeof window !== 'undefined' && isValidConfig) {
+    initializeFirebaseServices();
+  }
+  return auth;
+};
+
+const getDbInstance = () => {
+  if (!db && typeof window !== 'undefined' && isValidConfig) {
+    initializeFirebaseServices();
+  }
+  return db;
+};
+
+const getStorageInstance = () => {
+  if (!storage && typeof window !== 'undefined' && isValidConfig) {
+    initializeFirebaseServices();
+  }
+  return storage;
+};
 
 /** True when the config looks usable — used by the app to gate features. */
 const firebaseConnected = isValidConfig &&
@@ -97,6 +140,7 @@ const firebaseConnected = isValidConfig &&
   !!firebaseConfig.projectId &&
   !!firebaseConfig.appId &&
   !!firebaseConfig.storageBucket;
+
 
 /* =========================================================================
    🔹 Auth persistence (handles Private Browsing)
