@@ -103,8 +103,9 @@ console.log('Testing P0.2: Highlight creation workflow\n');
 // P0.1: Unified AnnotationStore Tests
 // ============================================================================
 
-describe('P0.1: Annotation Store - Type Definitions', () => {
-  test('should have correct Annotation type structure', async () => {
+async function runTests() {
+  await describe('P0.1: Annotation Store - Type Definitions', async () => {
+    await test('should have correct Annotation type structure', async () => {
     const annotation: Partial<Annotation> = {
       id: 'test-id',
       documentId: 'doc1',
