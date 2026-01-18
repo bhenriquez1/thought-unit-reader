@@ -1898,175 +1898,99 @@ export default function ThoughtUnitReader() {
     if (fileUrl && thoughtUnits.length > 0) {
       // Return the appropriate view based on viewMode
       if (viewMode === "hybrid") {
+        // Get current page content and headings for Surgeon View
+        const currentPageContent = thoughtUnits
+          .filter(tu => tu.pageIndex === currentPage - 1)
+          .map(tu => tu.text)
+          .join('\n\n');
+        
+        const currentHeadings = tableOfContents
+          .filter(entry => entry.pageNumber === currentPage)
+          .map(entry => entry.title);
+        
+        // Find current chapter
+        const currentChapter = tableOfContents.find((entry, idx) => {
+          const nextEntry = tableOfContents[idx + 1];
+          return entry.pageNumber <= currentPage && 
+            (!nextEntry || nextEntry.pageNumber > currentPage);
+        });
+        
         return fileUrl ? (
-            <div className="h-full flex flex-col">
-              {/* Enhanced Hybrid Reader Controls */}
-              <div className="bg-gray-800 border-b border-gray-700 p-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <h3 className="text-lg font-semibold text-green-400">🧠 Enhanced Hybrid Reader</h3>
-                  <span className="text-sm text-gray-400">
-                    Page {currentPage} of {pdfPageCount} • Unit {currentThoughtUnit} of {thoughtUnits.length}
-                  </span>
-                </div>
-                
-                {/* Unified Enhanced Thought Unit Button */}
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={async () => {
-                      try {
-                        // Get current text - either selection or current thought unit
-                        const selectedText = sel.selectionText?.trim();
-                        const currentUnitText = thoughtUnits[currentThoughtUnit - 1]?.text?.trim();
-                        const textToAnalyze = selectedText || currentUnitText || "";
-                        
-                        if (!textToAnalyze) {
-                          alert("No text available for analysis. Please select text or ensure a thought unit is loaded.");
-                          return;
-                        }
-                        
-                        console.log("🧠 Enhanced TU Analysis starting for:", textToAnalyze.slice(0, 50) + "...");
-                        
-                        // Create comprehensive enhanced note combining idea extraction and thought units
-                        const enhancedNote = await buildTopStudentNote(textToAnalyze, "highYield");
-                        
-                        // Log the note since right-brain view is removed
-                        console.log("📝 Enhanced note generated:", enhancedNote);
-                        alert("Enhanced note generated! (Note logged to console)");
-                        
-                        console.log("✅ Enhanced TU Analysis complete, switching to right-brain view");
-                      } catch (error) {
-                        console.error("❌ Enhanced TU Analysis failed:", error);
-                        alert("Analysis failed. Please try again.");
-                      }
-                    }}
-                    className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white px-4 py-2 rounded-lg font-medium shadow-lg transition-all transform hover:scale-105 flex items-center gap-2"
-                    title="Generate Enhanced Thought Unit Analysis"
-                  >
-                    <span className="text-lg">🧠✨</span>
-                    <span>Enhanced TU Analysis</span>
-                  </button>
-                  
-                  {/* Quick Visual Note Button */}
-                  <button
-                    onClick={async () => {
-                      const selectedText = sel.selectionText?.trim();
-                      const currentUnitText = thoughtUnits[currentThoughtUnit - 1]?.text?.trim();
-                      const textToAnalyze = selectedText || currentUnitText || "";
-                      
-                      if (!textToAnalyze) {
-                        alert("No text available. Please select text or ensure a thought unit is loaded.");
-                        return;
-                      }
-                      
-                      try {
-                        const visualNote = await buildTopStudentNote(textToAnalyze, "sketch");
-                        console.log("🎨 Visual note generated:", visualNote);
-                        alert("Visual note generated! (Note logged to console)");
-                      } catch (error) {
-                        console.error("Visual note creation failed:", error);
-                        alert("Visual note creation failed. Please try again.");
-                      }
-                    }}
-                    className="bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-400 hover:to-pink-400 text-white px-3 py-2 rounded-lg font-medium transition-all flex items-center gap-2"
-                    title="Create David Butler-Style Visual Note"
-                  >
-                    <span>🎨</span>
-                    <span>Visual Note</span>
-                  </button>
-                </div>
-              </div>
+          <div className="h-full flex" data-testid="surgeon-view-container">
+            {/* Left: PDF Viewer */}
+            <div className="w-1/2 border-r border-gray-700 overflow-auto">
+              <SmartPDFViewer
+                fileUrl={fileUrl}
+                currentPage={currentPage}
+                pdfPageCount={pdfPageCount}
+                onPageChange={(p) => syncToPage(p)}
+                onDocumentLoad={(numPages) => {
+                  setPdfPageCount(numPages);
+                  setPdfLoadingState('loaded');
+                }}
+                onTextSelect={(text) => {
+                  if (text && text.length > 3) {
+                    sel.setSelectionText(text);
+                  }
+                }}
+              />
+            </div>
+            
+            {/* Right: Surgeon View with Annotations */}
+            <div className="w-1/2 h-full">
+              <SurgeonView
+                documentId={bookId}
+                userId={USER_ID}
+                chapterId={currentChapter?.title || `chapter-${currentPage}`}
+                pageIndex={currentPage - 1}
+                pageContent={currentPageContent || `Page ${currentPage} content loading...`}
+                headings={currentHeadings}
+                onNavigateToPage={(pageIdx) => syncToPage(pageIdx + 1)}
+                onClose={() => setViewMode("original")}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-purple-900 to-indigo-900">
+            <div className="text-center max-w-2xl">
+              <div className="text-6xl mb-4">🔬</div>
+              <h3 className="text-3xl font-bold mb-4 text-white">Surgeon View</h3>
+              <p className="text-lg opacity-90 mb-6 text-gray-200">
+                Highlight important text, tag with PDRM (Pattern, Decision, Risk, Mnemonic), and take chapter quizzes
+              </p>
               
-              {/* Main Reader Component */}
-              <div className="flex-1 overflow-hidden">
-                <CleanHybridReader
-                  bookId={bookId}
-                  userId={USER_ID}
-                  thoughtUnits={thoughtUnits}
-                  currentThoughtUnit={currentThoughtUnit}
-                  pdfUrl={fileUrl}
-                  currentPage={currentPage}
-                  pdfPageCount={pdfPageCount}
-                  sampleText={sampleText}
-                  setCurrentThoughtUnit={setCurrentThoughtUnit}
-                  highlightedWord={highlightedWord}
-                  setHighlightedWord={setHighlightedWord}
-                  onPageChange={(p) => syncToPage(p)}
-                  fontSize={fontSize}
-                  fontFamily={fontFamily}
-                  lineSpacing={lineSpacing}
-                  onWordClick={(w) => {
-                    setHighlightedWord(w);
-                    if (autoWhiteboard && w.trim()) {
-                      setWbConcept(truncate(w, 600));
-                      setWbContext(`p.${currentPage}`);
-                      setShowWhiteboardPanel(true);
-                    }
-                  }}
-                  onTextSelect={(t) => sel.setSelectionText(t)}
-                  onGenerateNote={handleOpenRightBrainNote}
-                  selBind={sel.bind}
-                  tableOfContents={tableOfContents}
-                  selectedVoice={selectedVoice || undefined}
-                  onVoiceChange={setSelectedVoice}
-                  speechRate={speechRate}
-                  onSpeechRateChange={setSpeechRate}
-                />
-              </div>
-              
-              {/* Bottom Status Bar */}
-              <div className="bg-gray-800 border-t border-gray-700 px-4 py-2 flex items-center justify-between text-sm">
-                <div className="flex items-center gap-4">
-                  <span className="text-green-400">
-                    ✅ Enhanced Mode Active
-                  </span>
-                  <span className="text-gray-400">
-                    {sel.selectionText ? `Selected: "${sel.selectionText.slice(0, 30)}..."` : "No selection"}
-                  </span>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 text-sm">
+                <div className="bg-black/20 rounded-lg p-4 border border-purple-500/30">
+                  <div className="text-2xl mb-2">🎯</div>
+                  <h4 className="font-semibold text-purple-400">Pattern (P)</h4>
+                  <p className="text-gray-300">Core principles</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-400">Current Unit:</span>
-                  <span className="text-white font-medium">
-                    {thoughtUnits[currentThoughtUnit - 1]?.text?.slice(0, 50) || "Loading..."}...
-                  </span>
+                <div className="bg-black/20 rounded-lg p-4 border border-blue-500/30">
+                  <div className="text-2xl mb-2">⚖️</div>
+                  <h4 className="font-semibold text-blue-400">Decision (D)</h4>
+                  <p className="text-gray-300">Critical points</p>
+                </div>
+                <div className="bg-black/20 rounded-lg p-4 border border-red-500/30">
+                  <div className="text-2xl mb-2">⚠️</div>
+                  <h4 className="font-semibold text-red-400">Risk (R)</h4>
+                  <p className="text-gray-300">Warnings</p>
+                </div>
+                <div className="bg-black/20 rounded-lg p-4 border border-yellow-500/30">
+                  <div className="text-2xl mb-2">🧠</div>
+                  <h4 className="font-semibold text-yellow-400">Mnemonic (M)</h4>
+                  <p className="text-gray-300">Memory aids</p>
                 </div>
               </div>
             </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-green-900 to-teal-900">
-              <div className="text-center max-w-2xl">
-                <div className="text-6xl mb-4">🧠✨</div>
-                <h3 className="text-3xl font-bold mb-4 text-white">Enhanced Hybrid Reading</h3>
-                <p className="text-lg opacity-90 mb-6 text-gray-200">
-                  Advanced AI-powered reading with David Butler metaphors, thought unit analysis, and enhanced learning
-                </p>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 text-sm">
-                  <div className="bg-black/20 rounded-lg p-4 border border-green-500/30">
-                    <div className="text-2xl mb-2">🧠</div>
-                    <h4 className="font-semibold text-green-400">Thought Unit Detection</h4>
-                    <p className="text-gray-300">Smart concept recognition and analysis</p>
-                  </div>
-                  <div className="bg-black/20 rounded-lg p-4 border border-blue-500/30">
-                    <div className="text-2xl mb-2">🎭</div>
-                    <h4 className="font-semibold text-blue-400">Butler Metaphors</h4>
-                    <p className="text-gray-300">Medical/educational analogies for understanding</p>
-                  </div>
-                  <div className="bg-black/20 rounded-lg p-4 border border-purple-500/30">
-                    <div className="text-2xl mb-2">✨</div>
-                    <h4 className="font-semibold text-purple-400">Enhanced Analysis</h4>
-                    <p className="text-gray-300">AI-powered idea extraction and learning</p>
-                  </div>
-                </div>
-              </div>
-              
-              <label className="bg-gradient-to-r from-green-500 to-teal-500 hover:from-green-400 hover:to-teal-400 text-white px-8 py-4 rounded-xl cursor-pointer font-semibold text-lg transition-all transform hover:scale-105 shadow-xl">
-                📂 Upload PDF to Begin Enhanced Reading
-                <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-              </label>
-            </div>
-          );
-        }
+            
+            <label className="bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-400 hover:to-indigo-400 text-white px-8 py-4 rounded-xl cursor-pointer font-semibold text-lg transition-all transform hover:scale-105 shadow-xl">
+              📂 Upload PDF to Start Surgeon View
+              <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
+            </label>
+          </div>
+        );
       }
+    }
 
     // ✅ Show loading state during PDF parsing for Pattern view
     if (viewMode === "pattern") {
