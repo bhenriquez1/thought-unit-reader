@@ -1898,11 +1898,12 @@ export default function ThoughtUnitReader() {
     if (fileUrl && thoughtUnits.length > 0) {
       // Return the appropriate view based on viewMode
       if (viewMode === "hybrid") {
-        // Get current page content and headings for Surgeon View
+        // Get current page content for Surgeon View
+        // Use current thought unit text since ThoughtUnit doesn't have pageIndex
         const currentPageContent = thoughtUnits
-          .filter(tu => tu.pageIndex === currentPage - 1)
+          .slice(Math.max(0, currentThoughtUnit - 3), currentThoughtUnit + 2)
           .map(tu => tu.text)
-          .join('\n\n');
+          .join('\n\n') || `Page ${currentPage} content`;
         
         const currentHeadings = tableOfContents
           .filter(entry => entry.pageNumber === currentPage)
