@@ -122,19 +122,39 @@ describe('Quiz Store Tests', () => {
       console.log('✅ Quiz generation test passed');
     });
 
-    it('should not generate quiz without highlights', async () => {
+    it('should generate quiz from headings when no highlights available', async () => {
       const { useQuizStore } = require('../lib/stores/quizStore');
       const store = useQuizStore.getState();
       
-      // Try to generate quiz with empty highlights
+      // Try to generate quiz with empty highlights but with headings
       await store.generateQuiz('doc_1', 'chapter_1', [], mockHeadings);
+      
+      const { currentQuiz } = useQuizStore.getState();
+      
+      // Quiz should be created from headings as fallback
+      expect(currentQuiz).not.toBeNull();
+      expect(currentQuiz?.questions.length).toBeGreaterThan(0);
+      
+      // All questions should be recall type (from headings)
+      const allRecall = currentQuiz?.questions.every((q: any) => q.type === 'recall');
+      expect(allRecall).toBe(true);
+      
+      console.log('✅ Headings fallback test passed');
+    });
+    
+    it('should not generate quiz without highlights AND headings', async () => {
+      const { useQuizStore } = require('../lib/stores/quizStore');
+      const store = useQuizStore.getState();
+      
+      // Try to generate quiz with empty highlights and empty headings
+      await store.generateQuiz('doc_1', 'chapter_1', [], []);
       
       const { currentQuiz } = useQuizStore.getState();
       
       // Quiz should not be created
       expect(currentQuiz).toBeNull();
       
-      console.log('✅ Empty highlights test passed');
+      console.log('✅ Empty highlights and headings test passed');
     });
   });
 
