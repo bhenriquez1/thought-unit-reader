@@ -1,14 +1,15 @@
 // pages/index.tsx
 import dynamic from "next/dynamic";
-import React, { useState, useEffect, useRef, useMemo, ChangeEvent } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback, ChangeEvent } from "react";
 
 import { generateTOC, type TOCEntry, outlineToTOC } from "@/lib/tocParser";
 import TOCSidebar from "@/components/TOCSidebar";
 import type { ThoughtUnit, ReadingStats } from "@/types/reading";
 import { useFeatureFlags } from "@/lib/features/featureFlags";
 
-// Unified Annotation Store
+// Unified Stores
 import { useAnnotationStore, type Annotation, type CreateAnnotationInput } from "@/lib/stores/annotationStore";
+import { useQuizStore } from "@/lib/stores/quizStore";
 
 // Feature flag controlled imports
 import EnhancedHybridReader from "@/components/EnhancedHybridReader";
@@ -19,6 +20,10 @@ import HighlightPopup from "@/components/HighlightPopup";
 import LinkVideoModal from "@/components/LinkVideoModal";
 import HighlightActionMenu from "@/components/HighlightActionMenu";
 import NotesList from "@/components/NotesList";
+
+// Integrated components
+import SurgeonView from "@/components/SurgeonView";
+import NoteLabViewEnhanced from "@/components/NoteLabViewEnhanced";
 
 // Prototype component import
 import UniversalPatternButlerReader from "@/components/UniversalPatternButlerReader";
