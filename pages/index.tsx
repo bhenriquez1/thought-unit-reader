@@ -1923,9 +1923,8 @@ export default function ThoughtUnitReader() {
               <SmartPDFViewer
                 fileUrl={fileUrl}
                 currentPage={currentPage}
-                pdfPageCount={pdfPageCount}
                 onPageChange={(p) => syncToPage(p)}
-                onDocumentLoad={(numPages) => {
+                onPageCount={(numPages) => {
                   setPdfPageCount(numPages);
                   setPdfLoadingState('loaded');
                 }}
