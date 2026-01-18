@@ -7,21 +7,6 @@
  * - localStorage persistence
  */
 
-// Mock localStorage before imports
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: (key: string) => store[key] || null,
-    setItem: (key: string, value: string) => { store[key] = value; },
-    removeItem: (key: string) => { delete store[key]; },
-    clear: () => { store = {}; },
-    get length() { return Object.keys(store).length; },
-    key: (index: number) => Object.keys(store)[index] || null
-  };
-})();
-
-Object.defineProperty(global, 'localStorage', { value: localStorageMock });
-
 // Test data
 const mockHighlights = [
   {
@@ -100,12 +85,12 @@ const mockHeadings = ['Chapter 1: Cell Biology', 'Section 1.1: Mitochondria', 'S
 
 describe('Quiz Store Tests', () => {
   beforeEach(() => {
-    localStorageMock.clear();
+    localStorage.clear();
     jest.resetModules();
   });
 
   afterEach(() => {
-    localStorageMock.clear();
+    localStorage.clear();
   });
 
   describe('Quiz Generation', () => {
@@ -296,7 +281,7 @@ describe('Quiz Store Tests', () => {
       }
       
       // Check localStorage
-      const storedData = localStorageMock.getItem('quiz-store');
+      const storedData = localStorage.getItem('quiz-store');
       expect(storedData).not.toBeNull();
       
       if (storedData) {
