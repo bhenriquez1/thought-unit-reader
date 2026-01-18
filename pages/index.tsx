@@ -2201,73 +2201,44 @@ export default function ThoughtUnitReader() {
       }
 
       return fileUrl && thoughtUnits.length > 0 ? (
-        <div className="h-full flex flex-col">
-          {/* NoteLab Butler Header */}
-          <div className="bg-gray-800 border-b border-gray-700 p-3 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <h3 className="text-lg font-semibold text-green-400">📝 NoteLab Butler</h3>
-              <span className="text-sm text-gray-400">
-                Page {currentPage} of {pdfPageCount} • Unit {currentThoughtUnit} of {thoughtUnits.length}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={async () => {
-                  const selectedText = sel.selectionText?.trim();
-                  const currentUnitText = thoughtUnits[currentThoughtUnit - 1]?.text?.trim();
-                  const textToAnalyze = selectedText || currentUnitText || "";
-                  
-                  if (textToAnalyze) {
-                    try {
-                      const noteNote = await buildTopStudentNote(textToAnalyze, "highYield");
-                      console.log("📝 Study note generated:", noteNote);
-                      alert("Study note generated! (Note logged to console)");
-                    } catch (error) {
-                      console.error("Note creation failed:", error);
-                    }
-                  }
-                }}
-                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white px-3 py-2 rounded-lg font-medium"
-              >
-                📝 Study Note
-              </button>
-            </div>
-          </div>
-          
-          {/* Integrated NoteLab Hybrid Reader */}
-          <div className="flex-1 overflow-hidden">
-            <NoteLabHybridReader
-              bookId={bookId}
-              userId={USER_ID}
-              pdfUrl={fileUrl}
+        <div className="h-full flex" data-testid="notelab-view-container">
+          {/* Left: PDF Viewer */}
+          <div className="w-1/2 border-r border-gray-700 overflow-auto">
+            <SmartPDFViewer
+              fileUrl={fileUrl}
               currentPage={currentPage}
               pdfPageCount={pdfPageCount}
               onPageChange={(p) => syncToPage(p)}
-              thoughtUnits={thoughtUnits}
-              currentThoughtUnit={currentThoughtUnit}
-              setCurrentThoughtUnit={setCurrentThoughtUnit}
-              highlightedWord={highlightedWord}
-              setHighlightedWord={setHighlightedWord}
-              onWordClick={(w) => {
-                setHighlightedWord(w);
-                if (autoWhiteboard && w.trim()) {
-                  setWbConcept(truncate(w, 600));
-                  setWbContext(`p.${currentPage}`);
-                  setShowWhiteboardPanel(true);
+              onDocumentLoad={(numPages) => {
+                setPdfPageCount(numPages);
+                setPdfLoadingState('loaded');
+              }}
+              onTextSelect={(text) => {
+                if (text && text.length > 3) {
+                  sel.setSelectionText(text);
                 }
               }}
-              onTextSelect={(t) => sel.setSelectionText(t)}
-              onGenerateNote={handleOpenRightBrainNote}
-              selBind={sel.bind}
-              externalSelectionText={sel.selectionText}
-              fontSize={fontSize}
-              fontFamily={fontFamily}
-              lineSpacing={lineSpacing}
-              selectedVoice={selectedVoice || undefined}
-              onVoiceChange={setSelectedVoice}
-              speechRate={speechRate}
-              onSpeechRateChange={setSpeechRate}
-              tableOfContents={tableOfContents}
+            />
+          </div>
+          
+          {/* Right: NoteLab Enhanced */}
+          <div className="w-1/2 h-full">
+            <NoteLabViewEnhanced
+              documentId={bookId}
+              userId={USER_ID}
+              documentTitle={tableOfContents[0]?.title || "Document"}
+              chapters={tableOfContents.map((entry) => ({
+                id: entry.title,
+                title: entry.title,
+                pageIndex: entry.pageNumber - 1
+              }))}
+              onNavigateToSurgeonView={(pageIdx, annotationId) => {
+                syncToPage(pageIdx + 1);
+                if (annotationId) {
+                  // Switch to surgeon view and highlight the annotation
+                  setViewMode("hybrid");
+                }
+              }}
             />
           </div>
         </div>
