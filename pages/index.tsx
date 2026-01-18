@@ -2478,23 +2478,40 @@ export default function ThoughtUnitReader() {
 
       {/* Quick controls */}
       <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-gray-800">
-        <div className="flex items-center gap-2">
-          <span className="text-sm opacity-80 mr-1">Reader:</span>
+        {/* Main Navigation Tabs */}
+        <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1" data-testid="main-nav">
           <button
             onClick={() => setViewMode("original")}
-            className={`text-xs px-3 py-1 rounded ${
-              viewMode === "original" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+            data-testid="nav-reader"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              viewMode === "original" 
+                ? "bg-yellow-500 text-black shadow-lg" 
+                : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
           >
-            🎯 Surgeon-View PDRM
+            📖 Reader
+          </button>
+          <button
+            onClick={() => setViewMode("hybrid")}
+            data-testid="nav-surgeon"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              viewMode === "hybrid" 
+                ? "bg-purple-500 text-white shadow-lg" 
+                : "text-gray-300 hover:text-white hover:bg-gray-700"
+            }`}
+          >
+            🔬 Surgeon View
           </button>
           <button
             onClick={() => setViewMode("notelab")}
-            className={`text-xs px-3 py-1 rounded ${
-              viewMode === "notelab" ? "bg-yellow-500 text-black" : "bg-gray-700 hover:bg-gray-600"
+            data-testid="nav-notelab"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              viewMode === "notelab" 
+                ? "bg-green-500 text-white shadow-lg" 
+                : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
           >
-            📝 NoteLab Prototype
+            📝 NoteLab
           </button>
         </div>
 
