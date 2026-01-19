@@ -6,18 +6,7 @@
 import { useStudySessionStore, type StudyCard, type CardGrade } from '../lib/stores/studySessionStore';
 import { useAnnotationStore } from '../lib/stores/annotationStore';
 
-// Mock localStorage
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: (key: string) => store[key] || null,
-    setItem: (key: string, value: string) => { store[key] = value; },
-    removeItem: (key: string) => { delete store[key]; },
-    clear: () => { store = {}; },
-  };
-})();
-
-Object.defineProperty(global, 'localStorage', { value: localStorageMock });
+// localStorage is mocked in setup.ts
 
 describe('StudySessionStore - P2 Implementation', () => {
   const TEST_DOC_ID = 'test-doc-123';
