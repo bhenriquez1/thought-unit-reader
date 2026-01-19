@@ -37,6 +37,7 @@ export interface PDFLoadOptions {
 export class PDFLoadingManager {
   private loadingTasks = new Map<string, Promise<PDFLoadResult>>();
   private loadingStates = new Map<string, PDFLoadState>();
+  private stateCallbacks = new Map<string, ((state: PDFLoadState) => void)[]>();
 
   private getInitialState(): PDFLoadState {
     return {
@@ -53,10 +54,23 @@ export class PDFLoadingManager {
     const newState = { ...currentState, ...updates };
     this.loadingStates.set(url, newState);
     
-    // Call state change callback if provided
-    const onStateChange = (currentState as any).onStateChange;
-    if (onStateChange) {
-      onStateChange(newState);
+    // Call all state change callbacks for this URL
+    const callbacks = this.stateCallbacks.get(url) || [];
+    callbacks.forEach(cb => cb(newState));
+  }
+  
+  public addStateChangeCallback(url: string, callback: (state: PDFLoadState) => void): void {
+    const callbacks = this.stateCallbacks.get(url) || [];
+    callbacks.push(callback);
+    this.stateCallbacks.set(url, callbacks);
+  }
+  
+  public removeStateChangeCallback(url: string, callback: (state: PDFLoadState) => void): void {
+    const callbacks = this.stateCallbacks.get(url) || [];
+    const index = callbacks.indexOf(callback);
+    if (index > -1) {
+      callbacks.splice(index, 1);
+      this.stateCallbacks.set(url, callbacks);
     }
   }
 
