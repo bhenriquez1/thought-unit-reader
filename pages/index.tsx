@@ -2295,6 +2295,121 @@ export default function ThoughtUnitReader() {
       );
     }
 
+    // ✅ TOC View - Clickable Table of Contents
+    if (viewMode === "toc") {
+      // Convert legacy TOC to TocNode format
+      const tocNodes = convertLegacyTocToNodes(tableOfContents);
+      const tocAnchorsMap = buildTocAnchors(tocNodes);
+      
+      return fileUrl && pdfPageCount > 0 ? (
+        <div className="h-full flex" data-testid="toc-view-container">
+          {/* Left: TOC Tree */}
+          <div className="w-1/3 min-w-80 border-r border-gray-700">
+            <TocTreeSidebar
+              toc={tocNodes}
+              tocAnchors={tocAnchorsMap}
+              warnings={[]}
+              currentPage={currentPage}
+              onJumpToPage={(p) => syncToPage(p)}
+            />
+          </div>
+          
+          {/* Right: PDF Viewer */}
+          <div className="flex-1 overflow-auto">
+            <SmartPDFViewer
+              fileUrl={fileUrl}
+              currentPage={currentPage}
+              onPageChange={(p) => syncToPage(p)}
+              onPageCount={(numPages) => {
+                setPdfPageCount(numPages);
+                setPdfLoadingState('loaded');
+              }}
+              onTextSelect={(text) => {
+                if (text && text.length > 3) {
+                  sel.setSelectionText(text);
+                }
+              }}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-orange-900 to-amber-900">
+          <div className="text-center max-w-2xl">
+            <div className="text-6xl mb-6">📑</div>
+            <h2 className="text-3xl font-bold mb-4 text-white">Table of Contents</h2>
+            <p className="text-lg opacity-90 mb-8 text-gray-200">
+              View and navigate your document structure. Click any chapter to jump directly to that page.
+            </p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 text-sm">
+              <div className="bg-black/20 rounded-lg p-4 border border-orange-500/30">
+                <div className="text-2xl mb-2">🌳</div>
+                <h4 className="font-semibold text-orange-400">Tree View</h4>
+                <p className="text-gray-300">Expandable chapters and sections</p>
+              </div>
+              <div className="bg-black/20 rounded-lg p-4 border border-yellow-500/30">
+                <div className="text-2xl mb-2">🔍</div>
+                <h4 className="font-semibold text-yellow-400">Search</h4>
+                <p className="text-gray-300">Find chapters instantly</p>
+              </div>
+              <div className="bg-black/20 rounded-lg p-4 border border-amber-500/30">
+                <div className="text-2xl mb-2">📍</div>
+                <h4 className="font-semibold text-amber-400">Navigate</h4>
+                <p className="text-gray-300">Click to jump to any page</p>
+              </div>
+            </div>
+          </div>
+          
+          <label className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white px-8 py-4 rounded-xl cursor-pointer font-semibold text-lg transition-all transform hover:scale-105 shadow-xl">
+            📂 Upload PDF to View TOC
+            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
+          </label>
+        </div>
+      );
+    }
+
+    // ✅ Study Session View - Flashcard loop with grading
+    if (viewMode === "study") {
+      return (
+        <div className="h-full flex" data-testid="study-view-container">
+          {/* Left: Study Session Panel */}
+          <div className="w-1/2 border-r border-gray-700">
+            <StudySessionPanel
+              documentId={bookId}
+              documentTitle={tableOfContents[0]?.title || "Document"}
+              onNavigateToPage={(pageIdx) => syncToPage(pageIdx + 1)}
+              onClose={() => setViewMode("original")}
+            />
+          </div>
+          
+          {/* Right: PDF Viewer (context) */}
+          <div className="w-1/2 overflow-auto">
+            {fileUrl ? (
+              <SmartPDFViewer
+                fileUrl={fileUrl}
+                currentPage={currentPage}
+                onPageChange={(p) => syncToPage(p)}
+                onPageCount={(numPages) => {
+                  setPdfPageCount(numPages);
+                  setPdfLoadingState('loaded');
+                }}
+                onTextSelect={(text) => {
+                  if (text && text.length > 3) {
+                    sel.setSelectionText(text);
+                  }
+                }}
+              />
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center bg-gray-900 text-gray-400">
+                <div className="text-4xl mb-4">📄</div>
+                <p>Upload a PDF to see context while studying</p>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
 
         // 🔬 LIVING BUTLER PDF READER - Dynamic Analysis + In-PDF Butler Annotations
         return fileUrl ? (
