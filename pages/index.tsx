@@ -10,6 +10,7 @@ import { useFeatureFlags } from "@/lib/features/featureFlags";
 // Unified Stores
 import { useAnnotationStore, type Annotation, type CreateAnnotationInput } from "@/lib/stores/annotationStore";
 import { useQuizStore } from "@/lib/stores/quizStore";
+import { useStudySessionStore } from "@/lib/stores/studySessionStore";
 
 // Feature flag controlled imports
 import EnhancedHybridReader from "@/components/EnhancedHybridReader";
@@ -24,6 +25,8 @@ import NotesList from "@/components/NotesList";
 // Integrated components
 import SurgeonView from "@/components/SurgeonView";
 import NoteLabViewEnhanced from "@/components/NoteLabViewEnhanced";
+import StudySessionPanel from "@/components/StudySessionPanel";
+import TocTreeSidebar, { convertLegacyTocToNodes, buildTocAnchors } from "@/components/TocTreeSidebar";
 
 // Prototype component import
 import UniversalPatternButlerReader from "@/components/UniversalPatternButlerReader";
