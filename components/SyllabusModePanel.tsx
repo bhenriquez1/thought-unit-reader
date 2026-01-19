@@ -61,19 +61,58 @@ export default function SyllabusModePanel({
   const [uploadedSyllabusText, setUploadedSyllabusText] = useState('');
   const [isParsingFile, setIsParsingFile] = useState(false);
   
+  // Error state for file parsing
+  const [parseError, setParseError] = useState<string | null>(null);
+  
   // Handle syllabus file upload (PDF/TXT/DOCX)
   const handleSyllabusFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
     setIsParsingFile(true);
+    setParseError(null);
     
     try {
-      const text = await file.text();
+      let text = '';
+      const extension = file.name.split('.').pop()?.toLowerCase();
+      
+      // Handle different file types
+      if (extension === 'pdf') {
+        // Use PDF.js to extract text from PDF
+        console.log(`📄 Parsing PDF syllabus: ${file.name}`);
+        text = await extractTextFromPdf(file);
+        
+        if (!text || text.length < 10) {
+          throw new Error('Could not extract text from PDF. The file may be scanned or image-based.');
+        }
+      } else if (extension === 'txt' || extension === 'md') {
+        // Plain text files
+        text = await file.text();
+      } else if (extension === 'docx' || extension === 'doc') {
+        // DOCX not fully supported - show warning
+        setParseError('DOCX support is limited. For best results, convert to PDF or TXT.');
+        // Try to extract as text (may work for some DOCX files)
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const decoder = new TextDecoder('utf-8');
+          text = decoder.decode(arrayBuffer);
+          // Try to clean XML tags if present
+          text = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        } catch {
+          throw new Error('DOCX parsing failed. Please convert to PDF or TXT format.');
+        }
+      } else {
+        throw new Error(`Unsupported file type: .${extension}. Use PDF, TXT, or MD files.`);
+      }
+      
       setUploadedSyllabusText(text);
       
       // Parse topics from text
       const topics = parseSyllabusText(text);
+      
+      if (topics.length === 0) {
+        throw new Error('No topics found in the file. Please check the format.');
+      }
       
       // Create syllabus if not exists
       if (!syllabus) {
@@ -92,7 +131,9 @@ export default function SyllabusModePanel({
       
       console.log(`📋 Imported ${topics.length} topics from ${file.name}`);
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to parse syllabus file';
       console.error('Failed to parse syllabus file:', err);
+      setParseError(errorMessage);
     } finally {
       setIsParsingFile(false);
     }
