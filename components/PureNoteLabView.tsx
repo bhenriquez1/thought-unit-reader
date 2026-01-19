@@ -276,6 +276,7 @@ export default function PureNoteLabView({
           {([
             { key: 'all', label: 'All Items', icon: '📚', count: stats.total },
             { key: 'weak', label: 'Weak/Mistakes', icon: '⚠️', count: stats.weak },
+            { key: 'absorption', label: 'Absorption Highlights', icon: '📋', count: stats.absorption },
             { key: 'pattern', label: 'Patterns', icon: '🎯', count: stats.patterns },
             { key: 'decision', label: 'Decisions', icon: '⚖️', count: stats.decisions },
             { key: 'mnemonic', label: 'Mnemonics', icon: '🧠', count: stats.mnemonics },
