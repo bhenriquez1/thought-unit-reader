@@ -8,7 +8,7 @@
 // ❌ No Thought Units (those belong in Surgeon View)
 
 import React, { useState, useCallback } from 'react';
-import SmartPDFViewer from './SmartPDFViewer';
+import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 
 interface PureReaderViewProps {
   fileUrl: string | null;
@@ -17,6 +17,7 @@ interface PureReaderViewProps {
   onPageChange: (page: number) => void;
   onPageCount: (count: number) => void;
   onTextSelect?: (text: string) => void;
+  onOutline?: (items: TocItem[]) => void;
   fontSize?: number;
   fontFamily?: string;
 }
@@ -28,6 +29,7 @@ export default function PureReaderView({
   onPageChange,
   onPageCount,
   onTextSelect,
+  onOutline,
   fontSize = 16,
   fontFamily = 'Georgia'
 }: PureReaderViewProps) {
