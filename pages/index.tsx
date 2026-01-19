@@ -1896,7 +1896,7 @@ export default function ThoughtUnitReader() {
 
     // ✅ READER View - PURE: PDF ONLY (no thought units, no TOC, no annotations)
     // This is the DEFAULT view and handles viewMode === "original"
-    if (viewMode === "original" || viewMode === "pattern") {
+    if (viewMode === "original") {
       return fileUrl ? (
         <div className="h-full" data-testid="reader-view-container">
           <PureReaderView
