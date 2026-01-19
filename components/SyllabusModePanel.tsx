@@ -144,43 +144,121 @@ export default function SyllabusModePanel({
     const topics: Array<{ title: string; pageRange?: { start: number; end: number } }> = [];
     const lines = text.split('\n').filter(l => l.trim());
     
-    // Common patterns for topic/chapter lines
+    // Enhanced patterns for topic/chapter lines
     const patterns = [
-      /^(Chapter|Section|Unit|Topic|Module|Lecture|Week)\s*(\d+)[:\.\s-]+(.+)/i,
-      /^(\d+)[\.)\s]+(.+)/,
-      /^[-•*]\s*(.+)/,
+      // "Chapter 1: Introduction" or "Chapter 1 - Introduction"
+      /^(Chapter|Section|Unit|Topic|Module|Lecture|Week|Part)\s*(\d+)[:\.\s-]+\s*(.+)/i,
+      // "1. Introduction" or "1) Introduction"
+      /^(\d+)[\.)\s]+\s*(.+)/,
+      // "I. Introduction" (Roman numerals)
+      /^([IVXLCDM]+)[\.)\s]+\s*(.+)/i,
+      // "• Introduction" or "- Introduction" or "* Introduction"
+      /^[-•*]\s+(.+)/,
+      // "Introduction............12" (TOC format with page numbers)
+      /^(.+?)\s*\.{2,}\s*(\d+)\s*$/,
+      // "Introduction    12" (TOC with spaces and page number)
+      /^([A-Z][^0-9]{3,}?)\s{3,}(\d+)\s*$/,
     ];
+    
+    // Pattern for detecting page numbers at end of line
+    const pageNumberPattern = /\s+(\d{1,4})\s*$/;
     
     lines.forEach(line => {
       const trimmed = line.trim();
       if (trimmed.length < 3) return;
       
+      let matched = false;
+      
       for (const pattern of patterns) {
         const match = trimmed.match(pattern);
         if (match) {
-          let title = match.length === 4 
-            ? `${match[1]} ${match[2]}: ${match[3].trim()}`
-            : match.length === 3 
-              ? `${match[1]}. ${match[2].trim()}`
-              : match[1].trim();
+          let title = '';
+          let pageNum: number | undefined;
+          
+          if (match.length === 4) {
+            // Chapter X: Title format
+            title = `${match[1]} ${match[2]}: ${match[3].trim()}`;
+          } else if (match.length === 3) {
+            // Check if second group is a page number (TOC format)
+            const possiblePage = parseInt(match[2]);
+            if (possiblePage > 0 && possiblePage < 2000 && match[1].length > 3) {
+              title = match[1].trim();
+              pageNum = possiblePage;
+            } else {
+              // "1. Title" format
+              title = `${match[1]}. ${match[2].trim()}`;
+            }
+          } else if (match.length === 2) {
+            // Bullet point format
+            title = match[1].trim();
+          }
           
           // Clean up title
           title = title.replace(/\.{2,}\s*\d+$/, '').trim();
           
+          // Extract page number if present at end
+          if (!pageNum) {
+            const pageMatch = title.match(pageNumberPattern);
+            if (pageMatch) {
+              pageNum = parseInt(pageMatch[1]);
+              title = title.replace(pageNumberPattern, '').trim();
+            }
+          }
+          
           if (title.length > 2 && !topics.find(t => t.title === title)) {
-            topics.push({ title });
+            topics.push({ 
+              title,
+              pageRange: pageNum ? { start: pageNum - 1, end: pageNum + 9 } : undefined
+            });
+            matched = true;
           }
           break;
         }
       }
+      
+      // If no pattern matched, check if line looks like a heading
+      if (!matched && trimmed.length >= 5 && trimmed.length < 150) {
+        // Skip common non-topic lines
+        const skipPatterns = [
+          /^(page|copyright|isbn|printed|all rights|author|edition|table of contents|index|bibliography|references|appendix)/i,
+          /^\d+$/, // Just a number
+          /^[a-z]/, // Starts with lowercase (likely continuation)
+        ];
+        
+        const shouldSkip = skipPatterns.some(p => p.test(trimmed));
+        
+        if (!shouldSkip) {
+          // Check if it starts with a capital letter and looks like a title
+          if (/^[A-Z]/.test(trimmed) && !topics.find(t => t.title === trimmed)) {
+            // Extract page number if present
+            let title = trimmed;
+            let pageNum: number | undefined;
+            const pageMatch = trimmed.match(pageNumberPattern);
+            if (pageMatch) {
+              pageNum = parseInt(pageMatch[1]);
+              title = trimmed.replace(pageNumberPattern, '').trim();
+            }
+            
+            if (title.length >= 5) {
+              topics.push({ 
+                title,
+                pageRange: pageNum ? { start: pageNum - 1, end: pageNum + 9 } : undefined
+              });
+            }
+          }
+        }
+      }
     });
     
-    // If no patterns matched, treat each non-empty line as a topic
-    if (topics.length === 0) {
-      lines.slice(0, 50).forEach(line => {
+    // If still no topics and we have content, try a more aggressive approach
+    if (topics.length === 0 && lines.length > 0) {
+      console.log('📋 Using fallback topic extraction...');
+      lines.slice(0, 30).forEach(line => {
         const trimmed = line.trim();
-        if (trimmed.length >= 3 && trimmed.length < 200) {
-          topics.push({ title: trimmed });
+        if (trimmed.length >= 5 && trimmed.length < 150 && /^[A-Z0-9]/.test(trimmed)) {
+          if (!topics.find(t => t.title === trimmed)) {
+            topics.push({ title: trimmed });
+          }
         }
       });
     }
