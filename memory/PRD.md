@@ -1,81 +1,77 @@
 # Surgeon-View PDRM - Product Requirements Document
 
 ## Original Problem Statement
-Build a robust book processing and studying application with:
-1. **TOC + Page Generation v2** - Complete hierarchical TOC parsing with confidence scores
-2. **Surgeon View + NoteLab + Chapter Quiz** - Unified annotation system with PDRM tagging
-3. **Study Session Mode** - Flashcard loop with spaced repetition
+Build a sophisticated study application for processing books and documents with:
+1. **Strict Separation of Modes** - Reader, TOC, Surgeon View, NoteLab as independent views
+2. **Auto-PDRM** - Automatic classification of highlights as Pattern, Decision, Risk/Mistake, or Mnemonic
+3. **Auto-NoteLab** - Silent capture of highlights and quiz misses without interruption
+4. **Recommended Next Action Engine** - Post-quiz recommendations based on weak areas
+5. **Syllabus Mode** - Course-structured study system with topic tracking
 
 ## Target Users
-- Medical students preparing for exams
+- Medical students preparing for exams (DAT, MCAT, USMLE)
 - Professionals studying dense technical material
 - Anyone who needs to extract and organize key information from PDFs/documents
 
-## Core Features - All Complete ✅
+## Application Navigation (6 Tabs)
+1. **📖 Reader** - Pure reading experience (PDF + thought-unit view)
+2. **📑 TOC** - Dedicated Table of Contents tree (searchable, clickable)
+3. **🔬 Surgeon View** - Active learning (highlighting, PDRM tagging, quizzes)
+4. **📝 NoteLab** - Review workspace (notes, highlights, quiz misses)
+5. **🧠 Study** - Flashcard study session with spaced repetition
+6. **📋 Syllabus** - Course-structured study planning with topic tracking
 
-### Priority 1: TOC + Page Generation v2 ✅
-- Generate single hierarchical Table of Contents per book
-- Process every page without skipping/repeating
-- Support digital PDFs (text layer)
-- Detect scanned PDFs with warnings
-- Output: `toc`, `pages`, `tocAnchors`, `warnings`, `confidence` scores
+## Core Features Status
 
-### Priority 2: Surgeon View + NoteLab + Quiz ✅
-- **P0.1 Unified AnnotationStore** ✅
-- **P0.2 Highlight creation + rendering** ✅
-- **P0.3 Clean Mode / Context Mode** ✅
-- **P0.4 NoteLab grouping + back-links** ✅
-- **P1 Chapter Quiz** ✅
+### ✅ COMPLETED - January 2026
 
-### Priority 3: P2 Polish ✅
-- **React-PDF fix** - No more annotation loading errors
-- **Study Session Mode** - Flashcard loop with SM-2 spaced repetition
-- **Clickable TOC** - Single tree with navigation
+#### P0: React-PDF Runtime Error Fix
+- Enhanced defensive guards in `SmartPDFViewer.tsx`
+- Page component only renders when ALL conditions are met:
+  - Document is fully loaded (`isLoaded` state)
+  - Valid `pdfDocument` object exists
+  - Valid `pageCount` (> 0)
+  - Current page within bounds (1 to pageCount)
+- Added error/loading states for each guard failure
+- Key change: Uses IIFE pattern for comprehensive validation before rendering
 
-## Application Navigation (5 Tabs)
-1. **📖 Reader** - Main PDF reading view
-2. **📑 TOC** - Clickable Table of Contents tree
-3. **🔬 Surgeon View** - Highlighting + PDRM tagging + Quiz
-4. **📝 NoteLab** - Organized notes with filters
-5. **🧠 Study** - Flashcard study session
+#### P0: Auto-PDRM Classification (`/app/lib/autoPDRM.ts`)
+- Keyword-based classification system:
+  - **Pattern**: concept, principle, theory, mechanism, etc.
+  - **Decision**: treatment, approach, if...then, should, etc.
+  - **Risk**: warning, danger, avoid, mistake, etc.
+  - **Mnemonic**: remember, acronym, steps, etc.
+- Context-aware bonuses from headings and chapter titles
+- Confidence scoring (0.3 - 0.95)
+- Integrated into highlight creation workflow
 
-## What's Been Implemented
+#### P0: Pure View Components (Strict Mode Separation)
+- **PureReaderView.tsx**: PDF + thought units only, minimal toolbar
+- **PureTocView.tsx**: TOC sidebar + PDF preview
+- **PureSurgeonView.tsx**: Highlighting tools, quiz, review tabs
+- **PureNoteLabView.tsx**: Filter/search/group notes, full review workspace
 
-### January 2026 - Session 4: P2 Polish
+#### P0: Recommended Next Action Engine
+- Implemented in PureSurgeonView quiz tab
+- After quiz completion:
+  - Score < 60%: "Start Study Session" button with weak item count
+  - Score >= 60%: "Proceed to Next Chapter" button
+  - Score >= 80%: Excellent message with next chapter prompt
 
-#### React-PDF Fix
-- Set `renderAnnotationLayer={false}` in SmartPDFViewer
-- Added guards for when PDF not loaded (`pageCount > 0 && currentPage >= 1`)
+#### P1: Syllabus Mode (`/app/components/SyllabusModePanel.tsx`)
+- Create syllabus from scratch or import from TOC
+- Topic management: add, edit, delete, reorder
+- Status tracking: Not Started, In Progress, Needs Review, Mastered
+- Progress visualization per topic and overall
+- Recommended next topic based on status
+- CSV import/export support
+- Integration with Study Sessions
 
-#### Study Session Mode (`studySessionStore.ts`)
-- `getStudyDeck()`: Builds deck from annotations with priority ordering
-  - Priority 100: Weak/miss items (from quiz mistakes)
-  - Priority 50: Explicit flashcards
-  - Priority 10: Highlights (limited to 20)
-- `startSession()`, `endSession()`: Session lifecycle
-- `revealCard()`, `gradeCard()`: Card interaction with SM-2 algorithm
-- `generateQuickQuestion()`: Auto-generates question every 5 cards
-- localStorage persistence via Zustand persist middleware
-
-#### StudySessionPanel Component
-- Start screen with card counts
-- Active session: Card display → Reveal → Grade (Again/Hard/Easy)
-- Quick question popup every 5 cards
-- Session complete screen with stats
-- Full keyboard support
-
-#### TocTreeSidebar Component
-- Recursive tree rendering with expand/collapse
-- Search filtering
-- Current page highlighting
-- Page jump on click
-- Confidence indicators for low-quality entries
-- `convertLegacyTocToNodes()` helper for existing TOC format
-
-### Previous Sessions
-- Session 3: P1 Chapter Quiz + Index integration
-- Session 2: Surgeon View + NoteLab P0
-- Session 1: Build fix + TOC v2
+### Previous Completions
+- P0.1-P0.4 Surgeon View + NoteLab unified annotation system
+- P1 Chapter Quiz with automatic flashcard generation
+- P2 Study Session with SM-2 spaced repetition
+- P2 Clickable TOC tree with search and navigation
 
 ## Technical Architecture
 
@@ -83,71 +79,90 @@ Build a robust book processing and studying application with:
 - **Framework**: Next.js 14 (pages router)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
-- **State**: Zustand (3 stores)
+- **State**: Zustand (4 stores)
 - **Backend**: Firebase (MOCKED - localStorage only)
 - **PDF**: react-pdf with pdfjs-dist
 
 ### Key Files
 ```
 /app/lib/stores/
-├── annotationStore.ts    # Highlights, PDRM tags
-├── quizStore.ts          # Chapter quiz, attempts
-└── studySessionStore.ts  # Flashcard study session
+├── annotationStore.ts    # Highlights, PDRM tags, unified annotations
+├── quizStore.ts          # Chapter quiz, attempts, flashcard generation
+├── studySessionStore.ts  # Flashcard study with SM-2
+└── syllabusStore.ts      # Course topics, progress tracking
+
+/app/lib/
+└── autoPDRM.ts           # Automatic PDRM classification
 
 /app/components/
-├── SmartPDFViewer.tsx    # PDF rendering (fixed)
-├── SurgeonView.tsx       # Highlighting + Quiz panel
-├── NoteLabViewEnhanced.tsx # Notes + filters
+├── SmartPDFViewer.tsx    # PDF rendering (with defensive guards)
+├── PureReaderView.tsx    # Pure reading mode
+├── PureTocView.tsx       # Pure TOC mode
+├── PureSurgeonView.tsx   # Pure surgeon mode (highlighting + quiz)
+├── PureNoteLabView.tsx   # Pure notelab mode (review workspace)
+├── SyllabusModePanel.tsx # Syllabus/course planning
+├── StudySessionPanel.tsx # Flashcard study UI
 ├── TocTreeSidebar.tsx    # Clickable TOC tree
-└── StudySessionPanel.tsx # Flashcard study UI
+└── SurgeonView.tsx       # Legacy surgeon view (still used)
 
 /app/pages/
-└── index.tsx             # Main app with 5 tabs
+└── index.tsx             # Main app with 6 tabs
 ```
 
 ### Data Models
 
-#### StudyCard
+#### Annotation (PDRM-enabled)
 ```typescript
 {
   id: string;
-  annotationId: string;
-  front: string;
-  back: string;
-  source: 'flashcard' | 'highlight' | 'quiz-miss';
-  priority: number;
-  easeFactor: number;  // SM-2
-  interval: number;    // Days until next review
-  dueDate?: string;
+  documentId: string;
+  chapterId: string;
+  pageIndex: number;
+  selectedText: string;
+  anchor: TextRangeAnchor | BBoxAnchor;
+  pdrm: {
+    pattern?: string;      // P: Core concepts
+    decisionRule?: string; // D: Clinical decisions
+    isMistake?: boolean;   // R: Risk/weak area
+    mnemonic?: string;     // M: Memory aids
+    weakAreaTags?: string[];
+  };
+  color: string;
+  tags: string[];
+  flashcardFront?: string;
+  flashcardBack?: string;
 }
 ```
 
-#### TocNode
+#### SyllabusTopic
 ```typescript
 {
   id: string;
   title: string;
-  pageIndex: number;
-  level: number;
-  confidence: { overall, titleMatch, hierarchyValid, pageReliable };
-  children: TocNode[];
+  order: number;
+  chapterIds: string[];
+  pageRanges: Array<{ start: number; end: number }>;
+  status: 'not_started' | 'in_progress' | 'needs_review' | 'mastered';
+  completionPercentage: number;
+  highlightCount: number;
+  quizScore?: number;
+  lastStudied?: string;
 }
 ```
 
 ## Testing Status
-- Unit tests: 42 passed (20 annotationStore + 8 quizStore + 14 studySessionStore)
-- UI tests: All 5 tabs verified, tab switching works
-- React-PDF: No annotation errors in console
+- Build: ✅ Passes with no errors
+- Unit tests: 42 passed (annotation + quiz + study session)
+- UI tests: All 6 tabs verified, tab switching works
+- React-PDF: Defensive guards prevent annotation errors
 - Firebase: MOCKED (localStorage only)
 
 ## Prioritized Backlog
 
-### ✅ COMPLETED
-- [x] P0.1-P0.4 Surgeon View + NoteLab
-- [x] P1 Chapter Quiz with flashcard generation
-- [x] P2 React-PDF fix
-- [x] P2 Study Session Mode
-- [x] P2 Clickable TOC
+### P2 - Polish (Current)
+- [ ] Integrate pure view components into main routing
+- [ ] Test PDF upload with new surgeon view
+- [ ] Verify auto-PDRM classification in real usage
 
 ### P3 - Future Enhancements
 - [ ] Firebase integration (when config provided)
@@ -155,8 +170,9 @@ Build a robust book processing and studying application with:
 - [ ] OCR for scanned PDFs
 - [ ] Export notes to markdown/PDF
 - [ ] Cloud sync across devices
+- [ ] AI-powered PDRM classification (upgrade from keyword-based)
 
 ## Environment Notes
 - Firebase: MOCKED - using localStorage for persistence
-- Preview lock: disabled (NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN=1)
+- Guest mode: enabled (NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN=1)
 - Build: Passes with no errors
