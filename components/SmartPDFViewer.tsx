@@ -347,31 +347,71 @@ export default function SmartPDFViewer({
         ref={pageContainerRef}
         className="relative flex justify-center items-start h-full overflow-auto p-4 transition-all duration-300"
       >
-        {isLoaded && pdfDocument && pageCount && pageCount > 0 && currentPage >= 1 && currentPage <= pageCount ? (
-          <div className="relative">
-            <Page
-              key={`${fileUrl}-${currentPage}`}
-              pdf={pdfDocument}
-              pageNumber={currentPage}
-              scale={zoom}
-              renderTextLayer
-              renderAnnotationLayer={false}
-            />
-
-            {/* Highlight pulse animation overlay */}
-            {highlightPulse && (
-              <div 
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  background: 'radial-gradient(circle, rgba(255, 255, 0, 0.2) 0%, rgba(255, 255, 0, 0.1) 50%, transparent 100%)',
-                  animation: 'pulse 1s ease-out',
+        {/* Defensive rendering: Only render Page when ALL conditions are met */}
+        {(() => {
+          // Guard 1: Must be loaded
+          if (!isLoaded) {
+            return !isLoading && !hasError ? (
+              <p className="text-gray-400">📂 No PDF loaded.</p>
+            ) : null;
+          }
+          
+          // Guard 2: Document must exist
+          if (!pdfDocument) {
+            console.warn('SmartPDFViewer: isLoaded but no pdfDocument');
+            return <p className="text-gray-400">⚠️ Document not available.</p>;
+          }
+          
+          // Guard 3: Page count must be valid
+          if (typeof pageCount !== 'number' || pageCount <= 0) {
+            console.warn('SmartPDFViewer: Invalid pageCount:', pageCount);
+            return <p className="text-gray-400">⚠️ Document has no pages.</p>;
+          }
+          
+          // Guard 4: Current page must be within bounds
+          if (currentPage < 1 || currentPage > pageCount) {
+            console.warn('SmartPDFViewer: currentPage out of bounds:', currentPage, '/', pageCount);
+            return <p className="text-gray-400">⚠️ Invalid page number.</p>;
+          }
+          
+          // All guards passed - safe to render Page
+          return (
+            <div className="relative">
+              <Page
+                key={`${fileUrl}-${currentPage}-${pageCount}`}
+                pdf={pdfDocument}
+                pageNumber={currentPage}
+                scale={zoom}
+                renderTextLayer
+                renderAnnotationLayer={false}
+                loading={
+                  <div className="flex items-center justify-center p-8">
+                    <div className="text-gray-400">Loading page {currentPage}...</div>
+                  </div>
+                }
+                error={
+                  <div className="flex items-center justify-center p-8">
+                    <div className="text-red-400">Failed to render page {currentPage}</div>
+                  </div>
+                }
+                onRenderError={(error) => {
+                  console.error(`SmartPDFViewer: Page ${currentPage} render error:`, error);
                 }}
               />
-            )}
-          </div>
-        ) : !isLoading && !hasError ? (
-          <p className="text-gray-400">📂 No PDF loaded.</p>
-        ) : null}
+
+              {/* Highlight pulse animation overlay */}
+              {highlightPulse && (
+                <div 
+                  className="absolute inset-0 pointer-events-none"
+                  style={{
+                    background: 'radial-gradient(circle, rgba(255, 255, 0, 0.2) 0%, rgba(255, 255, 0, 0.1) 50%, transparent 100%)',
+                    animation: 'pulse 1s ease-out',
+                  }}
+                />
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Error State */}
