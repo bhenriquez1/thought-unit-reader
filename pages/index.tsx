@@ -2394,6 +2394,17 @@ export default function ThoughtUnitReader() {
             📖 Reader
           </button>
           <button
+            onClick={() => setViewMode("toc")}
+            data-testid="nav-toc"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              viewMode === "toc" 
+                ? "bg-orange-500 text-white shadow-lg" 
+                : "text-gray-300 hover:text-white hover:bg-gray-700"
+            }`}
+          >
+            📑 TOC
+          </button>
+          <button
             onClick={() => setViewMode("hybrid")}
             data-testid="nav-surgeon"
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -2414,6 +2425,17 @@ export default function ThoughtUnitReader() {
             }`}
           >
             📝 NoteLab
+          </button>
+          <button
+            onClick={() => setViewMode("study")}
+            data-testid="nav-study"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              viewMode === "study" 
+                ? "bg-blue-500 text-white shadow-lg" 
+                : "text-gray-300 hover:text-white hover:bg-gray-700"
+            }`}
+          >
+            🧠 Study
           </button>
         </div>
 
