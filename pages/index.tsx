@@ -2051,7 +2051,6 @@ export default function ThoughtUnitReader() {
             chapters={chaptersForSyllabus}
             onJumpToPage={(pageIndex) => {
               syncToPage(pageIndex);
-              // Navigate to Reader to see the page
               setViewMode("original");
             }}
             onStartStudySession={() => setViewMode("study")}
@@ -2060,9 +2059,11 @@ export default function ThoughtUnitReader() {
       );
     }
 
-
-        // 📖 PURE READER - PDF ONLY (no thought units, no TOC, no annotations)
-        return fileUrl ? (
+    // ✅ READER View - PURE: PDF ONLY (no thought units, no TOC, no annotations)
+    // This is the DEFAULT view and handles viewMode === "original"
+    if (viewMode === "original" || viewMode === "pattern") {
+      return fileUrl ? (
+        <div className="h-full" data-testid="reader-view-container">
           <PureReaderView
             fileUrl={fileUrl}
             currentPage={currentPage}
@@ -2073,47 +2074,29 @@ export default function ThoughtUnitReader() {
             fontSize={fontSize}
             fontFamily={fontFamily}
           />
-        ) : (
-      <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
-        <div className="text-center max-w-3xl">
-          <div className="text-8xl mb-6">🎯</div>
-          <h3 className="text-4xl font-bold mb-4 text-white">Universal Pattern Butler Reader</h3>
-          <p className="text-xl opacity-90 mb-8 text-gray-200">
-            Unified reader with pattern detection, hybrid analysis, PDF viewing, and reader-type selector
-          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
+          <div className="text-center max-w-3xl">
+            <div className="text-8xl mb-6">📖</div>
+            <h3 className="text-4xl font-bold mb-4 text-white">Pure Reader Mode</h3>
+            <p className="text-xl opacity-90 mb-8 text-gray-200">
+              Distraction-free PDF reading. Use Surgeon View for highlighting and notes.
+            </p>
+          </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 text-base">
-            <div className="bg-black/30 rounded-xl p-6 border border-green-500/40">
-              <div className="text-4xl mb-4">📖</div>
-              <h4 className="font-bold text-green-400 mb-2">Universal Reader</h4>
-              <p className="text-gray-300">Pattern exploration with PDF viewing and navigation</p>
-            </div>
-            <div className="bg-black/30 rounded-xl p-6 border border-blue-500/40">
-              <div className="text-4xl mb-4">🎯</div>
-              <h4 className="font-bold text-blue-400 mb-2">Pattern Training</h4>
-              <p className="text-gray-300">Step-by-step pattern application with self-assessment</p>
-            </div>
-            <div className="bg-black/30 rounded-xl p-6 border border-purple-500/40">
-              <div className="text-4xl mb-4">🧠</div>
-              <h4 className="font-bold text-purple-400 mb-2">Butler Analysis</h4>
-              <p className="text-gray-300">Advanced thought unit detection with metaphors</p>
-            </div>
-          </div>
+          <label className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-400 hover:via-purple-400 hover:to-pink-400 text-white px-10 py-5 rounded-2xl cursor-pointer font-bold text-xl transition-all transform hover:scale-105 shadow-2xl">
+            📂 Upload PDF to Start Reading
+            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
+          </label>
         </div>
-        
-        <label className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-400 hover:via-purple-400 hover:to-pink-400 text-white px-10 py-5 rounded-2xl cursor-pointer font-bold text-xl transition-all transform hover:scale-105 shadow-2xl">
-          📂 Upload PDF to Access Unified Reader
-          <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-        </label>
-        
-        <div className="mt-6 text-center">
-          <p className="text-sm text-gray-400 mb-2">Includes all features from:</p>
-          <div className="flex gap-4 text-xs">
-            <span className="bg-green-600/20 text-green-300 px-2 py-1 rounded">Hybrid Reader</span>
-            <span className="bg-blue-600/20 text-blue-300 px-2 py-1 rounded">Pattern Training</span>
-            <span className="bg-purple-600/20 text-purple-300 px-2 py-1 rounded">Original PDF View</span>
-          </div>
-        </div>
+      );
+    }
+
+    // Fallback - should never reach here if all viewModes are handled
+    return (
+      <div className="h-full flex items-center justify-center bg-gray-900 text-white">
+        <p>Unknown view mode: {viewMode}</p>
       </div>
     );
   };
