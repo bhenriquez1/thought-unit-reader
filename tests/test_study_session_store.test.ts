@@ -235,7 +235,7 @@ describe('StudySessionStore - SM-2 Algorithm', () => {
   const TEST_DOC_ID = 'test-doc-sm2';
   
   beforeEach(() => {
-    localStorageMock.clear();
+    localStorage.clear();
     useStudySessionStore.setState({
       currentSession: null,
       deck: [],
