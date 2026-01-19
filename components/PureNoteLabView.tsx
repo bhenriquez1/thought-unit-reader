@@ -89,6 +89,11 @@ export default function PureNoteLabView({
       case 'mnemonic':
         result = getPDRMAnnotations('M');
         break;
+      case 'absorption':
+        result = getAllAnnotationsArray().filter(a => 
+          a.tags.includes('absorption_highlight') || a.tags.includes('absorption-highlight')
+        );
+        break;
       default:
         result = getAllAnnotationsArray();
     }
