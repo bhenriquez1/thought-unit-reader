@@ -251,8 +251,8 @@ export default function SmartPDFViewer({
     };
   }, [fileUrl, startVisibleTextObserver, stopVisibleTextObserver, syncPDFToChunk]);
 
-  const handleZoomIn = () => setZoom((z) => Math.min(z + 0.25, 3));
-  const handleZoomOut = () => setZoom((z) => Math.max(z - 0.25, 0.5));
+  const handleZoomIn = () => setInternalZoom((z) => Math.min(z + 0.25, 2.5));
+  const handleZoomOut = () => setInternalZoom((z) => Math.max(z - 0.25, 0.6));
 
   const handlePrevPage = () => {
     if (currentPage > 1) {
