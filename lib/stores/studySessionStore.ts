@@ -504,13 +504,129 @@ export const useStudySessionStore = create<StudySessionState>()(
           if (!card.dueDate) return true;
           return new Date(card.dueDate) <= now;
         });
+      },
+      
+      // Get topic-filtered deck (Syllabus integration)
+      getTopicDeck: (documentId: string, chapterIds: string[], pageRanges: Array<{ start: number; end: number }>) => {
+        const annotationStore = useAnnotationStore.getState();
+        const allAnnotations = annotationStore.getAllAnnotationsArray()
+          .filter(a => a.documentId === documentId);
+        
+        // Filter by chapter or page range
+        const filteredAnnotations = allAnnotations.filter(a => {
+          // Check chapter match
+          if (chapterIds.length > 0 && chapterIds.includes(a.chapterId)) {
+            return true;
+          }
+          // Check page range match
+          for (const range of pageRanges) {
+            if (a.pageIndex >= range.start && a.pageIndex <= range.end) {
+              return true;
+            }
+          }
+          return chapterIds.length === 0 && pageRanges.length === 0;
+        });
+        
+        const cards: StudyCard[] = [];
+        
+        // Priority 1: Weak/miss items first
+        filteredAnnotations
+          .filter(a => 
+            a.tags.some(t => ['weak', 'miss', 'quiz-generated', 'quiz-miss', 'notelab-weak'].includes(t)) ||
+            a.pdrm?.isMistake
+          )
+          .forEach(ann => {
+            cards.push(annotationToCard(ann, 100));
+          });
+        
+        // Priority 2: Flashcards
+        filteredAnnotations
+          .filter(a => a.flashcardFront && a.flashcardBack && !cards.find(c => c.annotationId === a.id))
+          .forEach(ann => {
+            cards.push(annotationToCard(ann, 50));
+          });
+        
+        // Priority 3: Highlights
+        filteredAnnotations
+          .filter(a => a.selectedText.length > 20 && !cards.find(c => c.annotationId === a.id))
+          .slice(0, 20)
+          .forEach(ann => {
+            cards.push(annotationToCard(ann, 10));
+          });
+        
+        return cards.sort((a, b) => b.priority - a.priority);
+      },
+      
+      // Get weak items only (for Quick Study)
+      getWeakDeck: (documentId: string, maxCards: number = 15) => {
+        const annotationStore = useAnnotationStore.getState();
+        const annotations = annotationStore.getAllAnnotationsArray()
+          .filter(a => a.documentId === documentId);
+        
+        const cards: StudyCard[] = [];
+        
+        // Get weak/miss items
+        const weakAnnotations = annotations.filter(a =>
+          a.tags.some(t => ['weak', 'miss', 'quiz-generated', 'quiz-miss', 'notelab-weak'].includes(t)) ||
+          a.pdrm?.isMistake
+        );
+        
+        // Sort by how "weak" they are (miss > weak > quiz-miss)
+        weakAnnotations.sort((a, b) => {
+          const getPriority = (ann: typeof a) => {
+            if (ann.tags.includes('miss')) return 3;
+            if (ann.pdrm?.isMistake) return 2;
+            if (ann.tags.includes('quiz-miss')) return 2;
+            if (ann.tags.includes('weak')) return 1;
+            return 0;
+          };
+          return getPriority(b) - getPriority(a);
+        });
+        
+        // Take top maxCards
+        weakAnnotations.slice(0, maxCards).forEach(ann => {
+          cards.push(annotationToCard(ann, 100));
+        });
+        
+        // If not enough weak items, add recent highlights
+        if (cards.length < maxCards) {
+          const remaining = maxCards - cards.length;
+          annotations
+            .filter(a => a.selectedText.length > 20 && !cards.find(c => c.annotationId === a.id))
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+            .slice(0, remaining)
+            .forEach(ann => {
+              cards.push(annotationToCard(ann, 10));
+            });
+        }
+        
+        return cards;
+      },
+      
+      // Get count of weak items
+      getWeakItemsCount: (documentId: string) => {
+        const annotationStore = useAnnotationStore.getState();
+        return annotationStore.getAllAnnotationsArray()
+          .filter(a => a.documentId === documentId)
+          .filter(a =>
+            a.tags.some(t => ['weak', 'miss', 'quiz-generated', 'quiz-miss', 'notelab-weak'].includes(t)) ||
+            a.pdrm?.isMistake
+          ).length;
+      },
+      
+      // Check if there's a last session to resume
+      hasLastSession: () => {
+        const { lastSessionDocId } = get();
+        return !!lastSessionDocId;
       }
     }),
     {
       name: 'study-session-store',
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
-        sessions: state.sessions
+        sessions: state.sessions,
+        lastSessionDocId: state.lastSessionDocId,
+        lastSessionCardIndex: state.lastSessionCardIndex
       })
     }
   )
