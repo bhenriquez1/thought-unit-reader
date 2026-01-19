@@ -1786,9 +1786,6 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Enhanced View System - Optimized for Performance (Pattern mode)
-    if (fileUrl && thoughtUnits.length > 0) {
-
     // ✅ Show loading state during PDF parsing for Pattern view
     if (viewMode === "pattern") {
       // Show loading state during parsing
