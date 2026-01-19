@@ -1,8 +1,11 @@
 "use client";
 
 // components/PureSurgeonView.tsx
-// PURE SURGEON VIEW MODE - Highlighting tools, chapter review, quizzes ONLY
-// ❌ No Reader overlay, No NoteLab, No TOC
+// PURE SURGEON VIEW MODE - Thought-Unit View + Highlighting + Clean/Full Mode + Quiz
+// ❌ No TOC UI inside
+// ❌ No NoteLab panel
+// ✅ Thought Units live HERE (not in Reader)
+// ✅ Clean Mode / Full Mode toggle
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { 
@@ -11,7 +14,7 @@ import {
   type PDRMMetadata,
   getPDRMColorForType
 } from '@/lib/stores/annotationStore';
-import { useQuizStore, type QuizQuestion } from '@/lib/stores/quizStore';
+import { useQuizStore } from '@/lib/stores/quizStore';
 import classifyHighlight, { getPDRMTypeLabel, getPDRMTypeColor } from '@/lib/autoPDRM';
 import SmartPDFViewer from './SmartPDFViewer';
 
@@ -21,14 +24,17 @@ interface PureSurgeonViewProps {
   userId: string;
   currentPage: number;
   pdfPageCount: number;
-  thoughtUnits: Array<{ text: string }>;
+  thoughtUnits: Array<{ text: string; id?: string }>;
   currentThoughtUnit: number;
   chapterId?: string;
   headings: string[];
   onPageChange: (page: number) => void;
   onPageCount: (count: number) => void;
+  onThoughtUnitChange?: (index: number) => void;
   onRecommendedAction?: (action: 'study' | 'next_chapter') => void;
 }
+
+type ViewMode = 'full' | 'clean' | 'pdf-only';
 
 export default function PureSurgeonView({
   fileUrl,
@@ -42,19 +48,18 @@ export default function PureSurgeonView({
   headings,
   onPageChange,
   onPageCount,
+  onThoughtUnitChange,
   onRecommendedAction
 }: PureSurgeonViewProps) {
   // Stores
   const {
     annotations,
-    viewMode,
     setActiveDocument,
     setActivePage,
     addAnnotation,
     getAnnotationsForPage,
     getHighlightsOnly,
-    getMistakes,
-    toggleCleanMode
+    getMistakes
   } = useAnnotationStore();
 
   const {
@@ -66,14 +71,13 @@ export default function PureSurgeonView({
     finishQuiz,
     clearCurrentQuiz,
     isGenerating,
-    getLastAttempt,
     getBestScore
   } = useQuizStore();
 
-  // Local state
+  // View mode state - Clean/Full/PDF-only
+  const [viewMode, setViewMode] = useState<ViewMode>('full');
   const [activeTab, setActiveTab] = useState<'highlights' | 'quiz' | 'review'>('highlights');
   const [showHighlightMenu, setShowHighlightMenu] = useState(false);
-  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const [selectedText, setSelectedText] = useState('');
   const [quizAnswer, setQuizAnswer] = useState('');
   const [showQuizResult, setShowQuizResult] = useState(false);
@@ -85,10 +89,10 @@ export default function PureSurgeonView({
   }, [documentId, userId, setActiveDocument]);
 
   useEffect(() => {
-    setActivePage(currentPage - 1); // 0-indexed
+    setActivePage(currentPage - 1);
   }, [currentPage, setActivePage]);
 
-  // Get annotations for display
+  // Get annotations
   const pageAnnotations = useMemo(() => {
     return getAnnotationsForPage(currentPage - 1);
   }, [currentPage, getAnnotationsForPage, annotations]);
@@ -104,11 +108,7 @@ export default function PureSurgeonView({
   // Handle text selection with Auto-PDRM
   const handleTextSelect = useCallback((text: string) => {
     if (!text || text.length < 3) return;
-    
     setSelectedText(text);
-    
-    // Position menu (simplified for now)
-    setMenuPosition({ x: window.innerWidth / 2, y: 200 });
     setShowHighlightMenu(true);
   }, []);
 
@@ -116,19 +116,16 @@ export default function PureSurgeonView({
   const handleCreateHighlight = useCallback(async (overridePDRM?: 'P' | 'D' | 'R' | 'M') => {
     if (!selectedText) return;
 
-    // Auto-classify if no override
     const classification = classifyHighlight(selectedText, {
       headingText: headings[0],
       chapterTitle: chapterId,
       pageIndex: currentPage - 1
     });
 
-    // Build PDRM metadata
     let pdrm: PDRMMetadata = {};
-    let color = '#FFEB3B'; // Default yellow
+    let color = '#FFEB3B';
 
     if (overridePDRM) {
-      // User explicitly chose a type
       switch (overridePDRM) {
         case 'P': pdrm.pattern = selectedText; break;
         case 'D': pdrm.decisionRule = selectedText; break;
@@ -137,12 +134,10 @@ export default function PureSurgeonView({
       }
       color = getPDRMColorForType(overridePDRM);
     } else {
-      // Use auto-classification
       pdrm = classification.pdrm;
       color = getPDRMTypeColor(classification.type);
     }
 
-    // Create annotation
     await addAnnotation({
       documentId,
       chapterId,
@@ -158,41 +153,33 @@ export default function PureSurgeonView({
 
     setShowHighlightMenu(false);
     setSelectedText('');
-    console.log(`✅ Highlight created with ${overridePDRM || 'auto'} classification: ${classification.type}`);
+    console.log(`✅ Highlight auto-classified as: ${overridePDRM || classification.type}`);
   }, [selectedText, documentId, chapterId, currentPage, currentThoughtUnit, headings, userId, addAnnotation]);
 
-  // Start chapter quiz
+  // Quiz handlers
   const handleStartQuiz = useCallback(async () => {
     await generateQuiz(documentId, chapterId, allHighlights, headings);
     setActiveTab('quiz');
   }, [documentId, chapterId, allHighlights, headings, generateQuiz]);
 
-  // Submit quiz answer
   const handleSubmitAnswer = useCallback((answer: string) => {
     if (!currentQuiz) return;
     const question = currentQuiz.questions[currentQuiz.currentIndex];
     submitAnswer(question.id, answer);
     setQuizAnswer('');
-    
-    // Move to next or finish
     if (currentQuiz.currentIndex < currentQuiz.questions.length - 1) {
       nextQuestion();
     }
   }, [currentQuiz, submitAnswer, nextQuestion]);
 
-  // Finish quiz
   const handleFinishQuiz = useCallback(async () => {
     const attempt = await finishQuiz();
     if (attempt) {
       setLastQuizScore(attempt.score);
       setShowQuizResult(true);
-      
-      // Recommend next action based on score
       if (attempt.score < 60 && mistakes.length > 0) {
-        // Recommend study session
         onRecommendedAction?.('study');
       } else if (attempt.score >= 80) {
-        // Recommend next chapter
         onRecommendedAction?.('next_chapter');
       }
     }
@@ -205,435 +192,422 @@ export default function PureSurgeonView({
         <div className="text-center">
           <div className="text-6xl mb-4">🔬</div>
           <h2 className="text-2xl font-bold mb-2">Surgeon View</h2>
-          <p className="text-gray-400">Upload a PDF to start highlighting and learning</p>
+          <p className="text-gray-400 mb-4">Upload a PDF to start highlighting and learning</p>
+          <div className="text-sm text-gray-500 space-y-1">
+            <p>• Thought-Unit reading mode</p>
+            <p>• Auto-PDRM classification (Pattern/Decision/Risk/Mnemonic)</p>
+            <p>• Chapter quizzes and review</p>
+          </div>
         </div>
       </div>
     );
   }
 
+  // Get layout classes based on view mode
+  const getLayoutClasses = () => {
+    switch (viewMode) {
+      case 'clean':
+        // Clean mode: Only thought units, no PDF
+        return { showPdf: false, showThoughts: true, showSidebar: false };
+      case 'pdf-only':
+        // PDF only mode
+        return { showPdf: true, showThoughts: false, showSidebar: false };
+      case 'full':
+      default:
+        // Full mode: PDF + Thoughts + Sidebar
+        return { showPdf: true, showThoughts: true, showSidebar: true };
+    }
+  };
+
+  const layout = getLayoutClasses();
+
   return (
-    <div className="h-full flex bg-gray-900" data-testid="pure-surgeon-view">
-      {/* PDF Panel */}
-      <div className="flex-1 flex flex-col">
-        {/* Toolbar */}
-        <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-400">Page {currentPage} / {pdfPageCount}</span>
+    <div className="h-full flex flex-col bg-gray-900" data-testid="pure-surgeon-view" data-view-mode={viewMode}>
+      {/* Toolbar */}
+      <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-gray-400">Page {currentPage} / {pdfPageCount}</span>
+          
+          {/* View Mode Toggle - Clean/Full/PDF */}
+          <div className="flex items-center bg-gray-700 rounded-lg p-0.5" data-testid="view-mode-toggle">
             <button
-              onClick={toggleCleanMode}
-              className={`px-3 py-1 rounded text-sm transition-colors ${
-                viewMode.mode === 'clean' 
-                  ? 'bg-purple-600 text-white' 
-                  : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+              onClick={() => setViewMode('clean')}
+              className={`px-3 py-1 rounded text-xs font-medium transition-all ${
+                viewMode === 'clean' 
+                  ? 'bg-purple-600 text-white shadow' 
+                  : 'text-gray-400 hover:text-white'
               }`}
-              data-testid="clean-mode-toggle"
+              data-testid="clean-mode-btn"
             >
-              {viewMode.mode === 'clean' ? '🧹 Clean Mode' : '📖 Full View'}
+              🧹 Clean
+            </button>
+            <button
+              onClick={() => setViewMode('full')}
+              className={`px-3 py-1 rounded text-xs font-medium transition-all ${
+                viewMode === 'full' 
+                  ? 'bg-purple-600 text-white shadow' 
+                  : 'text-gray-400 hover:text-white'
+              }`}
+              data-testid="full-mode-btn"
+            >
+              📖 Full
+            </button>
+            <button
+              onClick={() => setViewMode('pdf-only')}
+              className={`px-3 py-1 rounded text-xs font-medium transition-all ${
+                viewMode === 'pdf-only' 
+                  ? 'bg-purple-600 text-white shadow' 
+                  : 'text-gray-400 hover:text-white'
+              }`}
+              data-testid="pdf-only-btn"
+            >
+              📄 PDF
             </button>
           </div>
-          
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">
-              {pageAnnotations.length} highlight{pageAnnotations.length !== 1 ? 's' : ''} on page
-            </span>
-          </div>
         </div>
-
-        {/* PDF Viewer */}
-        <div className="flex-1 overflow-auto">
-          <SmartPDFViewer
-            fileUrl={fileUrl}
-            currentPage={currentPage}
-            onPageChange={onPageChange}
-            onPageCount={onPageCount}
-            onTextSelect={handleTextSelect}
-          />
+        
+        <div className="flex items-center gap-2 text-xs text-gray-500">
+          <span>{pageAnnotations.length} highlights on page</span>
+          <span>•</span>
+          <span>{allHighlights.length} total</span>
         </div>
       </div>
 
-      {/* Sidebar Panel */}
-      <div className="w-96 border-l border-gray-700 flex flex-col bg-gray-900">
-        {/* Tabs */}
-        <div className="flex border-b border-gray-700">
-          {(['highlights', 'quiz', 'review'] as const).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                activeTab === tab
-                  ? 'text-purple-400 border-b-2 border-purple-400 bg-gray-800'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-              data-testid={`tab-${tab}`}
-            >
-              {tab === 'highlights' && '✨ Highlights'}
-              {tab === 'quiz' && '📝 Quiz'}
-              {tab === 'review' && '⚠️ Review'}
-            </button>
-          ))}
-        </div>
+      {/* Main Content Area */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* PDF Panel */}
+        {layout.showPdf && (
+          <div className={`${layout.showThoughts ? 'w-1/2' : 'flex-1'} overflow-auto border-r border-gray-700`}>
+            <SmartPDFViewer
+              fileUrl={fileUrl}
+              currentPage={currentPage}
+              onPageChange={onPageChange}
+              onPageCount={onPageCount}
+              onTextSelect={handleTextSelect}
+            />
+          </div>
+        )}
 
-        {/* Tab Content */}
-        <div className="flex-1 overflow-auto">
-          {/* Highlights Tab */}
-          {activeTab === 'highlights' && (
-            <div className="p-4 space-y-3">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="font-semibold text-white">Chapter Highlights</h3>
-                <span className="text-xs bg-gray-700 px-2 py-1 rounded text-gray-400">
-                  {allHighlights.length} total
-                </span>
-              </div>
-
-              {allHighlights.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <p>No highlights yet</p>
-                  <p className="text-sm mt-2">Select text in the PDF to create highlights</p>
-                </div>
-              ) : (
-                allHighlights.slice().reverse().map(ann => {
-                  const label = ann.pdrm?.pattern ? getPDRMTypeLabel('pattern') :
-                               ann.pdrm?.decisionRule ? getPDRMTypeLabel('decision') :
-                               ann.pdrm?.mnemonic ? getPDRMTypeLabel('mnemonic') :
-                               ann.pdrm?.isMistake ? getPDRMTypeLabel('risk') :
-                               getPDRMTypeLabel('general');
-                  
-                  return (
-                    <div
-                      key={ann.id}
-                      className="p-3 rounded-lg border border-gray-700 hover:border-gray-600 cursor-pointer transition-colors"
-                      style={{ borderLeftColor: ann.color, borderLeftWidth: 4 }}
-                      onClick={() => onPageChange(ann.pageIndex + 1)}
-                    >
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <span className="text-xs px-2 py-0.5 rounded bg-gray-800" style={{ color: ann.color }}>
-                          {label.icon} {label.short}
-                        </span>
-                        <span className="text-xs text-gray-500">p.{ann.pageIndex + 1}</span>
-                      </div>
-                      <p className="text-sm text-gray-300 line-clamp-3">{ann.selectedText}</p>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
-
-          {/* Quiz Tab */}
-          {activeTab === 'quiz' && (
-            <div className="p-4">
-              {!currentQuiz && !showQuizResult ? (
-                <div className="text-center py-8">
-                  <div className="text-4xl mb-4">📝</div>
-                  <h3 className="text-lg font-semibold text-white mb-2">Chapter Quiz</h3>
-                  <p className="text-gray-400 text-sm mb-6">
-                    Test your understanding with questions from your highlights
-                  </p>
-                  
-                  {allHighlights.length < 3 ? (
-                    <p className="text-yellow-500 text-sm">
-                      Create at least 3 highlights to generate a quiz
-                    </p>
-                  ) : (
-                    <button
-                      onClick={handleStartQuiz}
-                      disabled={isGenerating}
-                      className="px-6 py-3 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded-lg font-medium transition-colors"
-                      data-testid="start-quiz-btn"
-                    >
-                      {isGenerating ? 'Generating...' : 'Start Quiz'}
-                    </button>
-                  )}
-
-                  {/* Previous attempt info */}
-                  {getBestScore(documentId, chapterId) > 0 && (
-                    <p className="mt-4 text-sm text-gray-500">
-                      Best score: {getBestScore(documentId, chapterId)}%
-                    </p>
-                  )}
-                </div>
-              ) : showQuizResult ? (
-                <div className="text-center py-8">
-                  <div className="text-5xl mb-4">
-                    {lastQuizScore !== null && lastQuizScore >= 80 ? '🎉' : lastQuizScore !== null && lastQuizScore >= 60 ? '👍' : '📚'}
-                  </div>
-                  <h3 className="text-2xl font-bold text-white mb-2">
-                    {lastQuizScore}%
-                  </h3>
-                  <p className="text-gray-400 mb-6">
-                    {lastQuizScore !== null && lastQuizScore >= 80 
-                      ? 'Excellent! Ready for the next chapter?' 
-                      : lastQuizScore !== null && lastQuizScore >= 60 
-                        ? 'Good job! Review weak areas to improve.'
-                        : 'Keep studying! Flashcards created for missed items.'}
-                  </p>
-
-                  {/* Recommended Actions */}
-                  <div className="space-y-2">
-                    {lastQuizScore !== null && lastQuizScore < 80 && mistakes.length > 0 && (
-                      <button
-                        onClick={() => onRecommendedAction?.('study')}
-                        className="w-full px-4 py-2 bg-yellow-600 hover:bg-yellow-500 rounded-lg font-medium transition-colors"
-                        data-testid="recommend-study-btn"
-                      >
-                        🧠 Start Study Session ({mistakes.length} weak items)
-                      </button>
-                    )}
-                    {lastQuizScore !== null && lastQuizScore >= 60 && (
-                      <button
-                        onClick={() => onRecommendedAction?.('next_chapter')}
-                        className="w-full px-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg font-medium transition-colors"
-                        data-testid="recommend-next-btn"
-                      >
-                        ➡️ Proceed to Next Chapter
-                      </button>
-                    )}
-                    <button
-                      onClick={() => {
-                        setShowQuizResult(false);
-                        clearCurrentQuiz();
-                      }}
-                      className="w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-                    >
-                      Try Again
-                    </button>
-                  </div>
-                </div>
-              ) : currentQuiz && (
-                <div>
-                  {/* Quiz Progress */}
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="text-sm text-gray-400">
-                      Question {currentQuiz.currentIndex + 1} of {currentQuiz.questions.length}
-                    </span>
-                    <span className="text-sm text-gray-400">
-                      {currentQuiz.answers.filter(a => a.isCorrect).length} / {currentQuiz.answers.length} correct
-                    </span>
-                  </div>
-                  
-                  <div className="h-1 bg-gray-700 rounded-full mb-6">
-                    <div 
-                      className="h-full bg-purple-500 rounded-full transition-all"
-                      style={{ width: `${((currentQuiz.currentIndex + 1) / currentQuiz.questions.length) * 100}%` }}
-                    />
-                  </div>
-
-                  {/* Current Question */}
-                  {(() => {
-                    const question = currentQuiz.questions[currentQuiz.currentIndex];
-                    const existingAnswer = currentQuiz.answers.find(a => a.questionId === question.id);
+        {/* Thought Units Panel */}
+        {layout.showThoughts && (
+          <div className={`${layout.showPdf ? 'w-1/2' : 'flex-1'} ${layout.showSidebar ? 'flex' : ''} overflow-hidden`}>
+            {/* Thought Units */}
+            <div className={`${layout.showSidebar ? 'flex-1' : 'w-full'} overflow-auto p-4 bg-gray-900`}>
+              <div className="space-y-4">
+                {thoughtUnits.length > 0 ? (
+                  thoughtUnits.map((unit, idx) => {
+                    const isCurrent = idx === currentThoughtUnit - 1;
+                    const unitAnnotations = pageAnnotations.filter(a => 
+                      a.thoughtUnitId === `tu_${idx + 1}` || a.thoughtUnitId === unit.id
+                    );
                     
                     return (
-                      <div className="space-y-4">
-                        <p className="text-white font-medium">{question.question}</p>
-                        
-                        {question.options ? (
-                          <div className="space-y-2">
-                            {question.options.map((opt, idx) => (
-                              <button
-                                key={idx}
-                                onClick={() => handleSubmitAnswer(opt)}
-                                disabled={!!existingAnswer}
-                                className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
-                                  existingAnswer?.userAnswer === opt
-                                    ? existingAnswer.isCorrect
-                                      ? 'border-green-500 bg-green-900/30'
-                                      : 'border-red-500 bg-red-900/30'
-                                    : 'border-gray-700 hover:border-gray-600 bg-gray-800'
-                                }`}
-                              >
-                                {opt}
-                              </button>
-                            ))}
-                          </div>
-                        ) : (
-                          <div>
-                            <textarea
-                              value={quizAnswer}
-                              onChange={(e) => setQuizAnswer(e.target.value)}
-                              placeholder="Type your answer..."
-                              className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-purple-500"
-                              rows={3}
-                              disabled={!!existingAnswer}
-                            />
-                            {!existingAnswer && (
-                              <button
-                                onClick={() => handleSubmitAnswer(quizAnswer)}
-                                disabled={!quizAnswer.trim()}
-                                className="mt-2 w-full px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded-lg font-medium transition-colors"
-                              >
-                                Submit
-                              </button>
+                      <div
+                        key={unit.id || idx}
+                        onClick={() => onThoughtUnitChange?.(idx + 1)}
+                        className={`p-4 rounded-lg cursor-pointer transition-all border-l-4 ${
+                          isCurrent
+                            ? 'bg-purple-900/30 border-purple-500'
+                            : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
+                        }`}
+                        data-testid={`thought-unit-${idx}`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className={`text-xs font-mono px-2 py-0.5 rounded ${
+                            isCurrent ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400'
+                          }`}>
+                            {idx + 1}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm leading-relaxed ${isCurrent ? 'text-white' : 'text-gray-300'}`}>
+                              {unit.text}
+                            </p>
+                            {unitAnnotations.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {unitAnnotations.map(ann => {
+                                  const label = ann.pdrm?.pattern ? 'P' :
+                                               ann.pdrm?.decisionRule ? 'D' :
+                                               ann.pdrm?.mnemonic ? 'M' :
+                                               ann.pdrm?.isMistake ? 'R' : '✓';
+                                  return (
+                                    <span
+                                      key={ann.id}
+                                      className="text-xs px-1.5 py-0.5 rounded"
+                                      style={{ backgroundColor: ann.color + '40', color: ann.color }}
+                                    >
+                                      {label}
+                                    </span>
+                                  );
+                                })}
+                              </div>
                             )}
                           </div>
-                        )}
-
-                        {/* Show correct answer after answering */}
-                        {existingAnswer && !existingAnswer.isCorrect && (
-                          <div className="p-3 bg-gray-800 rounded-lg border border-gray-700">
-                            <p className="text-sm text-gray-400">Correct answer:</p>
-                            <p className="text-green-400">{question.correctAnswer}</p>
-                          </div>
-                        )}
-
-                        {/* Navigation */}
-                        <div className="flex justify-between pt-4">
-                          <button
-                            onClick={prevQuestion}
-                            disabled={currentQuiz.currentIndex === 0}
-                            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 rounded-lg transition-colors"
-                          >
-                            ← Previous
-                          </button>
-                          
-                          {currentQuiz.currentIndex < currentQuiz.questions.length - 1 ? (
-                            <button
-                              onClick={nextQuestion}
-                              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg transition-colors"
-                            >
-                              Next →
-                            </button>
-                          ) : (
-                            <button
-                              onClick={handleFinishQuiz}
-                              className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg font-medium transition-colors"
-                              data-testid="finish-quiz-btn"
-                            >
-                              Finish Quiz
-                            </button>
-                          )}
                         </div>
                       </div>
                     );
-                  })()}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Review Tab (Weak Items) */}
-          {activeTab === 'review' && (
-            <div className="p-4 space-y-3">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="font-semibold text-white">Items to Review</h3>
-                <span className="text-xs bg-red-900/30 text-red-400 px-2 py-1 rounded">
-                  {mistakes.length} weak
-                </span>
-              </div>
-
-              {mistakes.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <div className="text-4xl mb-4">✨</div>
-                  <p>No weak items!</p>
-                  <p className="text-sm mt-2">Complete a quiz to identify areas for review</p>
-                </div>
-              ) : (
-                mistakes.map(ann => (
-                  <div
-                    key={ann.id}
-                    className="p-3 rounded-lg border border-red-900/50 bg-red-900/10 cursor-pointer hover:bg-red-900/20 transition-colors"
-                    onClick={() => onPageChange(ann.pageIndex + 1)}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-red-400">⚠️ Needs Review</span>
-                      <span className="text-xs text-gray-500">p.{ann.pageIndex + 1}</span>
-                    </div>
-                    <p className="text-sm text-gray-300">{ann.selectedText}</p>
-                    {ann.flashcardFront && (
-                      <div className="mt-2 p-2 bg-gray-800 rounded text-xs">
-                        <p className="text-purple-400">{ann.flashcardFront}</p>
-                      </div>
-                    )}
+                  })
+                ) : (
+                  <div className="text-center py-12 text-gray-500">
+                    <div className="text-4xl mb-4">📝</div>
+                    <p>No thought units extracted yet</p>
+                    <p className="text-sm mt-2">Processing document...</p>
                   </div>
-                ))
-              )}
-
-              {mistakes.length > 0 && (
-                <button
-                  onClick={() => onRecommendedAction?.('study')}
-                  className="w-full mt-4 px-4 py-3 bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 rounded-lg font-medium transition-colors"
-                  data-testid="start-review-study-btn"
-                >
-                  🧠 Study Weak Items ({mistakes.length})
-                </button>
-              )}
+                )}
+              </div>
             </div>
-          )}
-        </div>
+
+            {/* Sidebar Panel - Highlights/Quiz/Review */}
+            {layout.showSidebar && (
+              <div className="w-80 border-l border-gray-700 flex flex-col bg-gray-850">
+                {/* Tabs */}
+                <div className="flex border-b border-gray-700">
+                  {(['highlights', 'quiz', 'review'] as const).map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveTab(tab)}
+                      className={`flex-1 px-3 py-2.5 text-xs font-medium transition-colors ${
+                        activeTab === tab
+                          ? 'text-purple-400 border-b-2 border-purple-400 bg-gray-800'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                      data-testid={`tab-${tab}`}
+                    >
+                      {tab === 'highlights' && '✨ Highlights'}
+                      {tab === 'quiz' && '📝 Quiz'}
+                      {tab === 'review' && `⚠️ Review (${mistakes.length})`}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Tab Content */}
+                <div className="flex-1 overflow-auto p-3">
+                  {activeTab === 'highlights' && (
+                    <div className="space-y-2">
+                      {allHighlights.length === 0 ? (
+                        <div className="text-center py-6 text-gray-500 text-sm">
+                          <p>No highlights yet</p>
+                          <p className="mt-1 text-xs">Select text to create highlights</p>
+                        </div>
+                      ) : (
+                        allHighlights.slice().reverse().slice(0, 20).map(ann => {
+                          const label = getPDRMTypeLabel(
+                            ann.pdrm?.pattern ? 'pattern' :
+                            ann.pdrm?.decisionRule ? 'decision' :
+                            ann.pdrm?.mnemonic ? 'mnemonic' :
+                            ann.pdrm?.isMistake ? 'risk' : 'general'
+                          );
+                          return (
+                            <div
+                              key={ann.id}
+                              className="p-2 rounded border border-gray-700 hover:border-gray-600 cursor-pointer text-xs"
+                              style={{ borderLeftColor: ann.color, borderLeftWidth: 3 }}
+                              onClick={() => onPageChange(ann.pageIndex + 1)}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <span style={{ color: ann.color }}>{label.icon} {label.short}</span>
+                                <span className="text-gray-500">p.{ann.pageIndex + 1}</span>
+                              </div>
+                              <p className="text-gray-300 line-clamp-2">{ann.selectedText}</p>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+
+                  {activeTab === 'quiz' && (
+                    <div>
+                      {!currentQuiz && !showQuizResult ? (
+                        <div className="text-center py-6">
+                          <div className="text-3xl mb-3">📝</div>
+                          <h4 className="font-medium text-white mb-2">Chapter Quiz</h4>
+                          <p className="text-gray-400 text-xs mb-4">
+                            Test yourself with questions from your highlights
+                          </p>
+                          {allHighlights.length < 3 ? (
+                            <p className="text-yellow-500 text-xs">Need 3+ highlights</p>
+                          ) : (
+                            <button
+                              onClick={handleStartQuiz}
+                              disabled={isGenerating}
+                              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded text-sm font-medium"
+                              data-testid="start-quiz-btn"
+                            >
+                              {isGenerating ? 'Generating...' : 'Start Quiz'}
+                            </button>
+                          )}
+                        </div>
+                      ) : showQuizResult ? (
+                        <div className="text-center py-6">
+                          <div className="text-4xl mb-2">
+                            {lastQuizScore !== null && lastQuizScore >= 80 ? '🎉' : '📚'}
+                          </div>
+                          <h4 className="text-2xl font-bold text-white mb-2">{lastQuizScore}%</h4>
+                          <p className="text-gray-400 text-sm mb-4">
+                            {lastQuizScore !== null && lastQuizScore >= 80 
+                              ? 'Ready for next chapter!' 
+                              : 'Review weak items'}
+                          </p>
+                          <div className="space-y-2">
+                            {lastQuizScore !== null && lastQuizScore < 80 && (
+                              <button
+                                onClick={() => onRecommendedAction?.('study')}
+                                className="w-full px-3 py-2 bg-yellow-600 hover:bg-yellow-500 rounded text-sm font-medium"
+                                data-testid="recommend-study-btn"
+                              >
+                                🧠 Study Weak Items
+                              </button>
+                            )}
+                            <button
+                              onClick={() => { setShowQuizResult(false); clearCurrentQuiz(); }}
+                              className="w-full px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm"
+                            >
+                              Try Again
+                            </button>
+                          </div>
+                        </div>
+                      ) : currentQuiz && (
+                        <div className="space-y-3">
+                          <div className="flex justify-between text-xs text-gray-400">
+                            <span>Q{currentQuiz.currentIndex + 1}/{currentQuiz.questions.length}</span>
+                            <span>{currentQuiz.answers.filter(a => a.isCorrect).length} correct</span>
+                          </div>
+                          <div className="h-1 bg-gray-700 rounded">
+                            <div 
+                              className="h-full bg-purple-500 rounded"
+                              style={{ width: `${((currentQuiz.currentIndex + 1) / currentQuiz.questions.length) * 100}%` }}
+                            />
+                          </div>
+                          {(() => {
+                            const q = currentQuiz.questions[currentQuiz.currentIndex];
+                            const answered = currentQuiz.answers.find(a => a.questionId === q.id);
+                            return (
+                              <div>
+                                <p className="text-white text-sm mb-3">{q.question}</p>
+                                {q.options ? (
+                                  <div className="space-y-2">
+                                    {q.options.map((opt, i) => (
+                                      <button
+                                        key={i}
+                                        onClick={() => handleSubmitAnswer(opt)}
+                                        disabled={!!answered}
+                                        className={`w-full text-left px-3 py-2 rounded text-sm border ${
+                                          answered?.userAnswer === opt
+                                            ? answered.isCorrect ? 'border-green-500 bg-green-900/30' : 'border-red-500 bg-red-900/30'
+                                            : 'border-gray-700 hover:border-gray-600'
+                                        }`}
+                                      >
+                                        {opt}
+                                      </button>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <textarea
+                                      value={quizAnswer}
+                                      onChange={(e) => setQuizAnswer(e.target.value)}
+                                      placeholder="Your answer..."
+                                      className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
+                                      rows={2}
+                                      disabled={!!answered}
+                                    />
+                                    {!answered && (
+                                      <button
+                                        onClick={() => handleSubmitAnswer(quizAnswer)}
+                                        className="mt-2 w-full px-3 py-2 bg-purple-600 hover:bg-purple-500 rounded text-sm"
+                                      >
+                                        Submit
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                                <div className="flex justify-between mt-3">
+                                  <button onClick={prevQuestion} disabled={currentQuiz.currentIndex === 0} className="px-3 py-1 bg-gray-700 rounded text-xs disabled:opacity-50">←</button>
+                                  {currentQuiz.currentIndex < currentQuiz.questions.length - 1 ? (
+                                    <button onClick={nextQuestion} className="px-3 py-1 bg-purple-600 rounded text-xs">→</button>
+                                  ) : (
+                                    <button onClick={handleFinishQuiz} className="px-3 py-1 bg-green-600 rounded text-xs" data-testid="finish-quiz-btn">Finish</button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {activeTab === 'review' && (
+                    <div className="space-y-2">
+                      {mistakes.length === 0 ? (
+                        <div className="text-center py-6 text-gray-500 text-sm">
+                          <div className="text-3xl mb-2">✨</div>
+                          <p>No weak items!</p>
+                        </div>
+                      ) : (
+                        <>
+                          {mistakes.map(ann => (
+                            <div
+                              key={ann.id}
+                              className="p-2 rounded border border-red-900/50 bg-red-900/10 cursor-pointer text-xs"
+                              onClick={() => onPageChange(ann.pageIndex + 1)}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-red-400">⚠️ Needs Review</span>
+                                <span className="text-gray-500">p.{ann.pageIndex + 1}</span>
+                              </div>
+                              <p className="text-gray-300 line-clamp-2">{ann.selectedText}</p>
+                            </div>
+                          ))}
+                          <button
+                            onClick={() => onRecommendedAction?.('study')}
+                            className="w-full mt-3 px-3 py-2 bg-yellow-600 hover:bg-yellow-500 rounded text-sm font-medium"
+                          >
+                            🧠 Study All ({mistakes.length})
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Highlight Menu Modal */}
       {showHighlightMenu && selectedText && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-gray-800 rounded-xl p-4 shadow-xl border border-gray-700 max-w-md w-full mx-4">
-            <div className="mb-4">
-              <p className="text-sm text-gray-400 mb-2">Selected text:</p>
-              <p className="text-white line-clamp-3">{selectedText}</p>
+            <div className="mb-3">
+              <p className="text-xs text-gray-400 mb-1">Selected:</p>
+              <p className="text-white text-sm line-clamp-3">"{selectedText}"</p>
             </div>
-
+            
             {/* Auto-classification preview */}
             {(() => {
-              const classification = classifyHighlight(selectedText);
-              const label = getPDRMTypeLabel(classification.type);
-              
+              const c = classifyHighlight(selectedText);
+              const l = getPDRMTypeLabel(c.type);
               return (
-                <div className="mb-4 p-3 rounded-lg bg-gray-900 border border-gray-700">
-                  <p className="text-xs text-gray-500 mb-1">Auto-detected:</p>
-                  <div className="flex items-center gap-2">
-                    <span style={{ color: getPDRMTypeColor(classification.type) }}>
-                      {label.icon} {label.full}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      ({Math.round(classification.confidence * 100)}% confident)
-                    </span>
-                  </div>
+                <div className="mb-3 p-2 rounded bg-gray-900 border border-gray-700">
+                  <p className="text-xs text-gray-500">Auto-detected:</p>
+                  <span style={{ color: getPDRMTypeColor(c.type) }}>
+                    {l.icon} {l.full} ({Math.round(c.confidence * 100)}%)
+                  </span>
                 </div>
               );
             })()}
 
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              <button
-                onClick={() => handleCreateHighlight()}
-                className="px-4 py-3 bg-yellow-600 hover:bg-yellow-500 rounded-lg font-medium transition-colors"
-                data-testid="highlight-auto-btn"
-              >
-                ✨ Auto Classify
-              </button>
-              <button
-                onClick={() => handleCreateHighlight('P')}
-                className="px-4 py-3 bg-purple-600 hover:bg-purple-500 rounded-lg font-medium transition-colors"
-              >
-                🎯 Pattern
-              </button>
-              <button
-                onClick={() => handleCreateHighlight('D')}
-                className="px-4 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-medium transition-colors"
-              >
-                ⚖️ Decision
-              </button>
-              <button
-                onClick={() => handleCreateHighlight('M')}
-                className="px-4 py-3 bg-orange-600 hover:bg-orange-500 rounded-lg font-medium transition-colors"
-              >
-                🧠 Mnemonic
-              </button>
-              <button
-                onClick={() => handleCreateHighlight('R')}
-                className="px-4 py-3 bg-red-600 hover:bg-red-500 rounded-lg font-medium transition-colors col-span-2"
-              >
-                ⚠️ Mark as Weak/Risk
-              </button>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <button onClick={() => handleCreateHighlight()} className="px-3 py-2 bg-yellow-600 hover:bg-yellow-500 rounded text-sm font-medium" data-testid="highlight-auto-btn">✨ Auto</button>
+              <button onClick={() => handleCreateHighlight('P')} className="px-3 py-2 bg-purple-600 hover:bg-purple-500 rounded text-sm font-medium">🎯 Pattern</button>
+              <button onClick={() => handleCreateHighlight('D')} className="px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium">⚖️ Decision</button>
+              <button onClick={() => handleCreateHighlight('M')} className="px-3 py-2 bg-orange-600 hover:bg-orange-500 rounded text-sm font-medium">🧠 Mnemonic</button>
+              <button onClick={() => handleCreateHighlight('R')} className="px-3 py-2 bg-red-600 hover:bg-red-500 rounded text-sm font-medium col-span-2">⚠️ Risk/Weak</button>
             </div>
-
-            <button
-              onClick={() => {
-                setShowHighlightMenu(false);
-                setSelectedText('');
-              }}
-              className="w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
+            
+            <button onClick={() => { setShowHighlightMenu(false); setSelectedText(''); }} className="w-full px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm">Cancel</button>
           </div>
         </div>
       )}
