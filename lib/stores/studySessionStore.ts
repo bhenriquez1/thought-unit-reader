@@ -60,8 +60,15 @@ export interface StudySessionState {
   // History
   sessions: Record<string, StudySession>;
   
+  // Last session for resume
+  lastSessionDocId: string | null;
+  lastSessionCardIndex: number;
+  
   // Actions
   startSession: (documentId: string) => void;
+  startTopicSession: (documentId: string, topicId: string, chapterIds: string[], pageRanges: Array<{ start: number; end: number }>) => void;
+  startQuickStudy: (documentId: string, maxCards?: number, topicId?: string) => void;
+  resumeLastSession: () => boolean;
   endSession: () => void;
   
   // Card actions
@@ -76,11 +83,15 @@ export interface StudySessionState {
   
   // Deck management
   getStudyDeck: (documentId: string) => StudyCard[];
+  getTopicDeck: (documentId: string, chapterIds: string[], pageRanges: Array<{ start: number; end: number }>) => StudyCard[];
+  getWeakDeck: (documentId: string, maxCards?: number) => StudyCard[];
   refreshDeck: (documentId: string) => void;
   
   // Stats
   getSessionStats: () => { reviewed: number; correct: number; remaining: number };
   getDueCards: (documentId: string) => StudyCard[];
+  getWeakItemsCount: (documentId: string) => number;
+  hasLastSession: () => boolean;
 }
 
 // ============================================================================
@@ -163,6 +174,8 @@ export const useStudySessionStore = create<StudySessionState>()(
       showQuickQuestion: false,
       cardsSinceLastQuestion: 0,
       sessions: {},
+      lastSessionDocId: null,
+      lastSessionCardIndex: 0,
       
       // Start a new study session
       startSession: (documentId: string) => {
@@ -185,10 +198,104 @@ export const useStudySessionStore = create<StudySessionState>()(
           isRevealed: false,
           cardsSinceLastQuestion: 0,
           showQuickQuestion: false,
-          quickQuestion: null
+          quickQuestion: null,
+          lastSessionDocId: documentId,
+          lastSessionCardIndex: 0
         });
         
         console.log(`📚 Study session started with ${deck.length} cards`);
+      },
+      
+      // Start a topic-filtered study session (Syllabus integration)
+      startTopicSession: (documentId: string, topicId: string, chapterIds: string[], pageRanges: Array<{ start: number; end: number }>) => {
+        const deck = get().getTopicDeck(documentId, chapterIds, pageRanges);
+        
+        const session: StudySession = {
+          id: generateId(),
+          documentId,
+          startedAt: new Date().toISOString(),
+          cardsReviewed: 0,
+          correctCount: 0,
+          attempts: [],
+          quickQuestions: 0
+        };
+        
+        set({
+          currentSession: session,
+          deck,
+          currentCardIndex: 0,
+          isRevealed: false,
+          cardsSinceLastQuestion: 0,
+          showQuickQuestion: false,
+          quickQuestion: null,
+          lastSessionDocId: documentId,
+          lastSessionCardIndex: 0
+        });
+        
+        console.log(`📚 Topic session started for ${topicId} with ${deck.length} cards`);
+      },
+      
+      // Start Quick Study - automatically finds weakest items
+      startQuickStudy: (documentId: string, maxCards: number = 15, topicId?: string) => {
+        const deck = get().getWeakDeck(documentId, maxCards);
+        
+        const session: StudySession = {
+          id: generateId(),
+          documentId,
+          startedAt: new Date().toISOString(),
+          cardsReviewed: 0,
+          correctCount: 0,
+          attempts: [],
+          quickQuestions: 0
+        };
+        
+        set({
+          currentSession: session,
+          deck,
+          currentCardIndex: 0,
+          isRevealed: false,
+          cardsSinceLastQuestion: 0,
+          showQuickQuestion: false,
+          quickQuestion: null,
+          lastSessionDocId: documentId,
+          lastSessionCardIndex: 0
+        });
+        
+        console.log(`⚡ Quick Study started with ${deck.length} weak items`);
+      },
+      
+      // Resume last session
+      resumeLastSession: () => {
+        const { lastSessionDocId, lastSessionCardIndex, sessions } = get();
+        if (!lastSessionDocId) return false;
+        
+        const deck = get().getStudyDeck(lastSessionDocId);
+        if (deck.length === 0) return false;
+        
+        const resumeIndex = Math.min(lastSessionCardIndex, deck.length - 1);
+        
+        const session: StudySession = {
+          id: generateId(),
+          documentId: lastSessionDocId,
+          startedAt: new Date().toISOString(),
+          cardsReviewed: 0,
+          correctCount: 0,
+          attempts: [],
+          quickQuestions: 0
+        };
+        
+        set({
+          currentSession: session,
+          deck,
+          currentCardIndex: resumeIndex,
+          isRevealed: false,
+          cardsSinceLastQuestion: 0,
+          showQuickQuestion: false,
+          quickQuestion: null
+        });
+        
+        console.log(`📚 Resumed session at card ${resumeIndex + 1}/${deck.length}`);
+        return true;
       },
       
       // End current session
