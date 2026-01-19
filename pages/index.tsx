@@ -2410,6 +2410,55 @@ export default function ThoughtUnitReader() {
       );
     }
 
+    // ✅ Syllabus Mode View - Course-structured study system
+    if (viewMode === "syllabus") {
+      const chaptersForSyllabus = tableOfContents.map((toc, idx) => ({
+        id: `chapter_${idx}`,
+        title: (toc as any).title || `Chapter ${idx + 1}`,
+        pageNumber: (toc as any).pageNumber || (toc as any).page || idx + 1
+      }));
+      
+      return (
+        <div className="h-full flex" data-testid="syllabus-view-container">
+          {/* Left: Syllabus Panel */}
+          <div className="w-1/2 border-r border-gray-700">
+            <SyllabusModePanel
+              documentId={bookId}
+              documentTitle={tableOfContents[0]?.title || uploadedFile?.name || "Document"}
+              chapters={chaptersForSyllabus}
+              onJumpToPage={(pageIndex) => syncToPage(pageIndex)}
+              onStartStudySession={() => setViewMode("study")}
+            />
+          </div>
+          
+          {/* Right: PDF Viewer (context) */}
+          <div className="w-1/2 overflow-auto">
+            {fileUrl ? (
+              <SmartPDFViewer
+                fileUrl={fileUrl}
+                currentPage={currentPage}
+                onPageChange={(p) => syncToPage(p)}
+                onPageCount={(numPages) => {
+                  setPdfPageCount(numPages);
+                  setPdfLoadingState('loaded');
+                }}
+                onTextSelect={(text) => {
+                  if (text && text.length > 3) {
+                    sel.setSelectionText(text);
+                  }
+                }}
+              />
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center bg-gray-900 text-gray-400">
+                <div className="text-4xl mb-4">📄</div>
+                <p>Upload a PDF to create your syllabus</p>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
 
         // 🔬 LIVING BUTLER PDF READER - Dynamic Analysis + In-PDF Butler Annotations
         return fileUrl ? (
