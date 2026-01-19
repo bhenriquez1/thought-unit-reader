@@ -899,6 +899,69 @@ export default function ThoughtUnitReader() {
 
       setPdfParsingState(prev => ({ ...prev, progress: "Setting up learning features..." }));
 
+      // =========================================================================
+      // REQUIREMENT D: Ensure TOC is ALWAYS generated (fallback if no outline)
+      // =========================================================================
+      // Check if TOC was generated from outline - if not, create fallback
+      setTimeout(() => {
+        const currentToc = useTocStore.getState().getToc(documentId);
+        if (!currentToc || currentToc.items.length === 0) {
+          console.log('📑 No TOC from outline - generating fallback from parsed content');
+          
+          // Use chapters from parser if available
+          let fallbackToc: TOCEntry[] = [];
+          
+          if (chapters && chapters.length > 0) {
+            fallbackToc = chapters.map((ch: any, idx: number) => ({
+              title: ch.title || `Chapter ${idx + 1}`,
+              pageNumber: ch.page || idx + 1,
+              level: 0,
+              confidence: 0.6
+            }));
+          } else {
+            // Create basic section-based TOC
+            const estimatedPages = Math.max(10, Math.ceil(normalized.length / 5));
+            const sectionsCount = Math.min(10, Math.max(3, Math.floor(estimatedPages / 5)));
+            const pagesPerSection = Math.ceil(estimatedPages / sectionsCount);
+            
+            for (let i = 0; i < sectionsCount; i++) {
+              const startPage = i * pagesPerSection + 1;
+              fallbackToc.push({
+                title: `Section ${i + 1}`,
+                pageNumber: startPage,
+                level: 0,
+                confidence: 0.3
+              });
+            }
+          }
+          
+          if (fallbackToc.length > 0) {
+            setTableOfContents(fallbackToc);
+            
+            const tocItems = fallbackToc.map((entry: TOCEntry, idx: number) => ({
+              id: `toc_${idx}_${Date.now()}`,
+              title: entry.title,
+              pageNumber: entry.pageNumber,
+              level: entry.level || 0
+            }));
+            
+            const tocStore = useTocStore.getState();
+            tocStore.saveToc(documentId, file.name, tocItems, 'heuristic');
+            console.log(`📑 Fallback TOC generated: ${tocItems.length} entries`);
+          }
+        } else {
+          // Update tableOfContents state from store
+          const storeItems = currentToc.items.map((item: any) => ({
+            title: item.title,
+            pageNumber: item.pageNumber,
+            level: item.level || 0
+          }));
+          setTableOfContents(storeItems);
+        }
+      }, 500); // Wait for outline extraction to complete first
+
+      setPdfParsingState(prev => ({ ...prev, progress: "Setting up learning features..." }));
+
       // Whiteboard auto-detect
       const matches = detectWhiteboardSections(parsedUnits);
       if (autoWhiteboard && matches.length > 0) {
