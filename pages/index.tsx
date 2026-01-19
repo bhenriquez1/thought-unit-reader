@@ -2054,24 +2054,20 @@ export default function ThoughtUnitReader() {
     }
 
 
-        // 🔬 LIVING BUTLER PDF READER - Dynamic Analysis + In-PDF Butler Annotations
+        // 📖 PURE READER - PDF + Thought Units only (no TOC/Surgeon/NoteLab)
         return fileUrl ? (
-          <LivingButlerPDFReader
-            bookId={bookId}
-            userId={USER_ID}
-            pdfUrl={fileUrl}
+          <PureReaderView
+            fileUrl={fileUrl}
             currentPage={currentPage}
             pdfPageCount={pdfPageCount}
+            thoughtUnits={thoughtUnits}
+            currentThoughtUnit={currentThoughtUnit}
             onPageChange={(p) => syncToPage(p)}
             onPageCount={(count) => setPdfPageCount(count)}
             onTextSelect={(t) => sel.setSelectionText(t)}
-            onGenerateNote={handleOpenRightBrainNote}
+            onThoughtUnitChange={(idx) => setCurrentThoughtUnit(idx)}
             fontSize={fontSize}
             fontFamily={fontFamily}
-            lineSpacing={lineSpacing}
-            selectedVoice={selectedVoice || undefined}
-            speechRate={speechRate}
-            tableOfContents={tableOfContents}
           />
         ) : (
       <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
