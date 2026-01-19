@@ -122,9 +122,26 @@ export default function SyllabusModePanel({
   const handleStartStudy = (topicId?: string) => {
     if (topicId) {
       setActiveTopic(topicId);
+      // Find the topic and start a filtered session
+      const topic = syllabus?.topics.find(t => t.id === topicId);
+      if (topic) {
+        startTopicSession(documentId, topicId, topic.chapterIds, topic.pageRanges);
+      }
     }
     onStartStudySession(topicId);
   };
+  
+  // Quick study from syllabus
+  const handleQuickStudy = () => {
+    const weakCount = getWeakItemsCount(documentId);
+    if (weakCount > 0) {
+      startQuickStudy(documentId, 15);
+      onStartStudySession();
+    }
+  };
+  
+  // Get weak items count for Quick Study button
+  const weakItemsCount = getWeakItemsCount(documentId);
   
   // Render empty state (no syllabus)
   if (!syllabus) {
