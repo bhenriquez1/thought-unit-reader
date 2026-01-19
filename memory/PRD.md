@@ -123,7 +123,7 @@ Build a sophisticated study application for processing books and documents with:
 
 ## Testing Status
 - **Build**: ✅ Passes
-- **Frontend Tests**: 100% pass rate (iteration_7)
+- **Frontend Tests**: 100% pass rate (iteration_8)
 - **All 6 tabs**: Verified working with pure view separation
 - **PDF Upload**: ✅ Working
 - **TOC Extraction**: ✅ Working (outline or fallback)
@@ -131,6 +131,31 @@ Build a sophisticated study application for processing books and documents with:
 - **Firebase**: MOCKED (localStorage only)
 
 ## Prioritized Backlog
+
+### ✅ COMPLETED - January 19, 2026 (V2.1 - Absorption Panel Enhanced)
+
+#### P0: Absorption Panel Regenerates on Page Change (COMPLETED)
+- Regenerates automatically when `currentPage` changes
+- 400ms debounce to avoid spam while paging quickly
+- Caching per `{pdfId, pageNumber}` - going back is instant
+- Loading indicator shown during generation
+
+#### P0: Auto-Highlight High-Yield Phrases (COMPLETED)
+- High-yield spans detected using keyword patterns (PDRM)
+- Colored highlighting using `<mark>` tags with border styling
+- High-importance items auto-saved to NoteLab
+- Deduplication by hash `{pdfId, page, textHash}` - no re-saves on refresh
+- Tags: `['absorption_highlight', 'high-yield', 'auto', ...pdrm_tags]`
+
+#### P0: Manual Highlighting in Absorption Panel (COMPLETED)
+- Text selection triggers highlight menu with PDRM classification
+- Saves to NoteLab + Study queue
+- Auto-tag with PDRM classifier
+
+#### P0: TOC Generation for Every Uploaded Book (COMPLETED)
+- Native PDF outline/bookmarks first
+- Fallback heuristic generator if no outline
+- TOC links to pages in both Reader and Surgeon View
 
 ### ✅ COMPLETED - January 19, 2026 (V2 Features)
 
