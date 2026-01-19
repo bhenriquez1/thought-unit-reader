@@ -137,6 +137,9 @@ export default function StudySessionPanel({
   
   // Render session start screen
   if (!currentSession) {
+    const weakItemsCount = getWeakItemsCount(documentId);
+    const canResume = hasLastSession();
+    
     return (
       <div className="h-full flex flex-col bg-gray-900 text-white" data-testid="study-start-screen">
         <div className="flex items-center justify-between p-4 border-b border-gray-700 bg-gray-800">
@@ -149,31 +152,58 @@ export default function StudySessionPanel({
         </div>
         
         <div className="flex-1 flex flex-col items-center justify-center p-6">
-          <div className="text-center max-w-md">
+          <div className="text-center max-w-md w-full">
             <div className="text-6xl mb-6">🧠</div>
             <h2 className="text-2xl font-bold mb-4">Ready to Study?</h2>
-            <p className="text-gray-400 mb-8">
+            <p className="text-gray-400 mb-6">
               Review your highlights and flashcards. Cards marked as weak or missed will appear first.
             </p>
             
-            <div className="grid grid-cols-2 gap-4 mb-8">
-              <div className="p-4 bg-gray-800 rounded-lg">
-                <div className="text-2xl font-bold text-yellow-400">{totalCardsAvailable}</div>
-                <div className="text-xs text-gray-400">Total Annotations</div>
+            <div className="grid grid-cols-3 gap-3 mb-6">
+              <div className="p-3 bg-gray-800 rounded-lg">
+                <div className="text-xl font-bold text-yellow-400">{totalCardsAvailable}</div>
+                <div className="text-xs text-gray-400">Total</div>
               </div>
-              <div className="p-4 bg-gray-800 rounded-lg">
-                <div className="text-2xl font-bold text-red-400">{dueCardsCount}</div>
-                <div className="text-xs text-gray-400">Due for Review</div>
+              <div className="p-3 bg-gray-800 rounded-lg">
+                <div className="text-xl font-bold text-red-400">{weakItemsCount}</div>
+                <div className="text-xs text-gray-400">Weak</div>
+              </div>
+              <div className="p-3 bg-gray-800 rounded-lg">
+                <div className="text-xl font-bold text-blue-400">{dueCardsCount}</div>
+                <div className="text-xs text-gray-400">Due</div>
               </div>
             </div>
             
+            {/* Quick Study Button - if weak items exist */}
+            {weakItemsCount > 0 && (
+              <button
+                onClick={() => startQuickStudy(documentId, 15)}
+                className="w-full px-6 py-4 mb-3 bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 rounded-xl font-semibold text-lg transition-all shadow-lg"
+                data-testid="quick-study-btn"
+              >
+                ⚡ Quick Study ({Math.min(weakItemsCount, 15)} weak items)
+              </button>
+            )}
+            
+            {/* Resume Button - if there's a previous session */}
+            {canResume && (
+              <button
+                onClick={() => resumeLastSession()}
+                className="w-full px-6 py-3 mb-3 bg-purple-600 hover:bg-purple-500 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+                data-testid="resume-session-btn"
+              >
+                ⏯️ Resume Last Session
+              </button>
+            )}
+            
+            {/* Full Study Session */}
             <button
               onClick={handleStartSession}
               disabled={totalCardsAvailable === 0}
               className="w-full px-6 py-4 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-xl font-semibold text-lg transition-colors"
               data-testid="study-start-btn"
             >
-              {totalCardsAvailable === 0 ? 'No Cards Available' : '▶ Start Study Session'}
+              {totalCardsAvailable === 0 ? 'No Cards Available' : '▶ Start Full Session'}
             </button>
             
             {totalCardsAvailable === 0 && (
