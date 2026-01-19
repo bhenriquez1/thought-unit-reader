@@ -13,7 +13,7 @@ describe('StudySessionStore - P2 Implementation', () => {
   
   beforeEach(() => {
     // Reset stores before each test
-    localStorageMock.clear();
+    localStorage.clear();
     useStudySessionStore.setState({
       currentSession: null,
       deck: [],
