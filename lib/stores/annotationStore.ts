@@ -350,9 +350,22 @@ export const useAnnotationStore = create<AnnotationState>()(
         const id = generateId();
         const now = new Date().toISOString();
         
+        // Auto-add 'highlight' tag for silent NoteLab capture
+        const tags = input.tags ? [...input.tags] : [];
+        if (!tags.includes('highlight')) {
+          tags.push('highlight');
+        }
+        
+        // Auto-tag based on PDRM classification
+        if (input.pdrm?.pattern && !tags.includes('pattern')) tags.push('pattern');
+        if (input.pdrm?.decisionRule && !tags.includes('decision')) tags.push('decision');
+        if (input.pdrm?.mnemonic && !tags.includes('mnemonic')) tags.push('mnemonic');
+        if (input.pdrm?.isMistake && !tags.includes('weak')) tags.push('weak');
+        
         const annotation: Annotation = {
           ...input,
           id,
+          tags,
           createdAt: now,
           updatedAt: now
         };
@@ -367,6 +380,9 @@ export const useAnnotationStore = create<AnnotationState>()(
             annotationsByChapter: byChapter
           };
         });
+        
+        // Log for silent NoteLab capture
+        console.log(`📝 Highlight created (auto-captured): ${id} with tags: [${tags.join(', ')}]`);
         
         // Sync to Firestore
         try {
