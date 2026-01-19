@@ -265,6 +265,22 @@ export default function SyllabusModePanel({
                   📑 Import from Table of Contents ({chapters.length} chapters)
                 </button>
               )}
+              
+              {/* Syllabus File Upload */}
+              <label className="w-full block">
+                <div className="px-6 py-3 bg-purple-700 hover:bg-purple-600 rounded-lg font-medium transition-colors cursor-pointer text-center">
+                  {isParsingFile ? '⏳ Parsing...' : '📤 Upload Syllabus File'}
+                </div>
+                <input
+                  type="file"
+                  accept=".txt,.pdf,.docx,.doc"
+                  onChange={handleSyllabusFileUpload}
+                  className="hidden"
+                  disabled={isParsingFile}
+                  data-testid="syllabus-file-input"
+                />
+              </label>
+              <p className="text-xs text-gray-500">Supports TXT, PDF, DOCX files</p>
             </div>
           </div>
         </div>
