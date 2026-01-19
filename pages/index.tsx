@@ -26,20 +26,16 @@ import NotesList from "@/components/NotesList";
 import SurgeonView from "@/components/SurgeonView";
 import NoteLabViewEnhanced from "@/components/NoteLabViewEnhanced";
 import StudySessionPanel from "@/components/StudySessionPanel";
-import TocTreeSidebar, { convertLegacyTocToNodes, buildTocAnchors } from "@/components/TocTreeSidebar";
 import SyllabusModePanel from "@/components/SyllabusModePanel";
 
-// Pure View components (Strict Mode Separation)
+// Pure View components (Strict Mode Separation - V1)
 import PureReaderView from "@/components/PureReaderView";
 import PureTocView from "@/components/PureTocView";
 import PureSurgeonView from "@/components/PureSurgeonView";
 import PureNoteLabView from "@/components/PureNoteLabView";
 
-// Prototype component import
-import UniversalPatternButlerReader from "@/components/UniversalPatternButlerReader";
-import SurgeonViewPdrmReader from "@/components/SurgeonViewPdrmReader";
-import UniversalPDRMReader from "@/components/UniversalPDRMReader";
-import LivingButlerPDFReader from "@/components/LivingButlerPDFReader";
+// Store imports
+import { useTocStore } from "@/lib/stores/tocStore";
 
 import {
   firebaseConnected,
