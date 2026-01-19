@@ -57,6 +57,94 @@ export default function SyllabusModePanel({
   const [newTopicTitle, setNewTopicTitle] = useState('');
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
   const [showImportOptions, setShowImportOptions] = useState(false);
+  const [uploadedSyllabusText, setUploadedSyllabusText] = useState('');
+  const [isParsingFile, setIsParsingFile] = useState(false);
+  
+  // Handle syllabus file upload (PDF/TXT/DOCX)
+  const handleSyllabusFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setIsParsingFile(true);
+    
+    try {
+      const text = await file.text();
+      setUploadedSyllabusText(text);
+      
+      // Parse topics from text
+      const topics = parseSyllabusText(text);
+      
+      // Create syllabus if not exists
+      if (!syllabus) {
+        createSyllabus(documentId, documentTitle);
+      }
+      
+      // Add parsed topics
+      topics.forEach((topic, idx) => {
+        addTopic({
+          title: topic.title,
+          order: idx,
+          chapterIds: [],
+          pageRanges: topic.pageRange ? [topic.pageRange] : []
+        });
+      });
+      
+      console.log(`📋 Imported ${topics.length} topics from ${file.name}`);
+    } catch (err) {
+      console.error('Failed to parse syllabus file:', err);
+    } finally {
+      setIsParsingFile(false);
+    }
+  };
+  
+  // Parse syllabus text into topics
+  const parseSyllabusText = (text: string): Array<{ title: string; pageRange?: { start: number; end: number } }> => {
+    const topics: Array<{ title: string; pageRange?: { start: number; end: number } }> = [];
+    const lines = text.split('\n').filter(l => l.trim());
+    
+    // Common patterns for topic/chapter lines
+    const patterns = [
+      /^(Chapter|Section|Unit|Topic|Module|Lecture|Week)\s*(\d+)[:\.\s-]+(.+)/i,
+      /^(\d+)[\.)\s]+(.+)/,
+      /^[-•*]\s*(.+)/,
+    ];
+    
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (trimmed.length < 3) return;
+      
+      for (const pattern of patterns) {
+        const match = trimmed.match(pattern);
+        if (match) {
+          let title = match.length === 4 
+            ? `${match[1]} ${match[2]}: ${match[3].trim()}`
+            : match.length === 3 
+              ? `${match[1]}. ${match[2].trim()}`
+              : match[1].trim();
+          
+          // Clean up title
+          title = title.replace(/\.{2,}\s*\d+$/, '').trim();
+          
+          if (title.length > 2 && !topics.find(t => t.title === title)) {
+            topics.push({ title });
+          }
+          break;
+        }
+      }
+    });
+    
+    // If no patterns matched, treat each non-empty line as a topic
+    if (topics.length === 0) {
+      lines.slice(0, 50).forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed.length >= 3 && trimmed.length < 200) {
+          topics.push({ title: trimmed });
+        }
+      });
+    }
+    
+    return topics;
+  };
   
   // Initialize syllabus if not exists
   const syllabus = syllabi[documentId] || currentSyllabus;
