@@ -1740,54 +1740,54 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Enhanced View System - Optimized for Performance
-    if (fileUrl && thoughtUnits.length > 0) {
-      // Return the appropriate view based on viewMode
-      if (viewMode === "hybrid") {
-        // Get current page headings for Surgeon View
-        const currentHeadings = tableOfContents
-          .filter(entry => entry.pageNumber === currentPage)
-          .map(entry => entry.title);
-        
-        // Find current chapter
-        const currentChapter = tableOfContents.find((entry, idx) => {
-          const nextEntry = tableOfContents[idx + 1];
-          return entry.pageNumber <= currentPage && 
-            (!nextEntry || nextEntry.pageNumber > currentPage);
-        });
-        
-        return (
-          <div className="h-full" data-testid="surgeon-view-container">
-            <PureSurgeonView
-              fileUrl={fileUrl}
-              documentId={bookId}
-              userId={USER_ID}
-              currentPage={currentPage}
-              pdfPageCount={pdfPageCount}
-              thoughtUnits={thoughtUnits}
-              currentThoughtUnit={currentThoughtUnit}
-              chapterId={currentChapter?.title || `chapter-${currentPage}`}
-              headings={currentHeadings}
-              onPageChange={(p) => syncToPage(p)}
-              onPageCount={(count) => setPdfPageCount(count)}
-              onRecommendedAction={(action) => {
-                if (action === 'study') {
-                  setViewMode("study");
-                } else if (action === 'next_chapter') {
-                  // Navigate to next chapter
-                  const nextChapter = tableOfContents.find(
-                    entry => entry.pageNumber > currentPage
-                  );
-                  if (nextChapter) {
-                    syncToPage(nextChapter.pageNumber);
-                  }
+    // ✅ Surgeon View - PURE: Highlighting + Quiz (no TOC panel)
+    if (viewMode === "hybrid") {
+      // Get current page headings for Surgeon View
+      const currentHeadings = tableOfContents
+        .filter(entry => entry.pageNumber === currentPage)
+        .map(entry => entry.title);
+      
+      // Find current chapter
+      const currentChapter = tableOfContents.find((entry, idx) => {
+        const nextEntry = tableOfContents[idx + 1];
+        return entry.pageNumber <= currentPage && 
+          (!nextEntry || nextEntry.pageNumber > currentPage);
+      });
+      
+      return (
+        <div className="h-full" data-testid="surgeon-view-container">
+          <PureSurgeonView
+            fileUrl={fileUrl}
+            documentId={bookId}
+            userId={USER_ID}
+            currentPage={currentPage}
+            pdfPageCount={pdfPageCount}
+            thoughtUnits={thoughtUnits}
+            currentThoughtUnit={currentThoughtUnit}
+            chapterId={currentChapter?.title || `chapter-${currentPage}`}
+            headings={currentHeadings}
+            onPageChange={(p) => syncToPage(p)}
+            onPageCount={(count) => setPdfPageCount(count)}
+            onRecommendedAction={(action) => {
+              if (action === 'study') {
+                setViewMode("study");
+              } else if (action === 'next_chapter') {
+                // Navigate to next chapter
+                const nextChapter = tableOfContents.find(
+                  entry => entry.pageNumber > currentPage
+                );
+                if (nextChapter) {
+                  syncToPage(nextChapter.pageNumber);
                 }
-              }}
-            />
-          </div>
-        );
-      }
+              }
+            }}
+          />
+        </div>
+      );
     }
+
+    // ✅ Enhanced View System - Optimized for Performance (Pattern mode)
+    if (fileUrl && thoughtUnits.length > 0) {
 
     // ✅ Show loading state during PDF parsing for Pattern view
     if (viewMode === "pattern") {
