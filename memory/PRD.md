@@ -123,7 +123,7 @@ Build a sophisticated study application for processing books and documents with:
 
 ## Testing Status
 - **Build**: ✅ Passes
-- **Frontend Tests**: 100% pass rate (iteration_6)
+- **Frontend Tests**: 100% pass rate (iteration_7)
 - **All 6 tabs**: Verified working with pure view separation
 - **PDF Upload**: ✅ Working
 - **TOC Extraction**: ✅ Working (outline or fallback)
@@ -132,16 +132,36 @@ Build a sophisticated study application for processing books and documents with:
 
 ## Prioritized Backlog
 
+### ✅ COMPLETED - January 19, 2026 (V2 Features)
+
+#### P0: Surgeon View Clean/Full Mode Toggle (COMPLETED)
+- **Clean Mode**: PDF only at full width (no absorption panel)
+- **Full Mode**: PDF on left + Absorption Panel with high-yield content on right
+- Mode state persists within Surgeon View session
+- Toggle buttons: "🧹 Clean" and "📖 Full"
+
+#### P0: Universal Zoom Behavior (COMPLETED)
+- Zoom controls work in both Reader View and Surgeon View
+- Zoom bounds clamped: 60% minimum, 250% maximum
+- Default zoom: 125%
+- Zoom buttons: "-" (decrease by 25%), "%" (reset to 125%), "+" (increase by 25%)
+
+#### P0: Syllabus File Upload Enhancement (COMPLETED)
+- PDF file parsing using pdfjs-dist
+- TXT and MD file support
+- Enhanced topic extraction with multiple patterns
+- Page number extraction from TOC-style formats
+- Error handling with user-friendly messages
+
 ### P2 - Polish (Next)
-- Implement Clean/Full Mode toggle in PureSurgeonView
 - Test full E2E: PDF upload → highlight → quiz → study flow
-- Implement syllabus file parsing (TXT, PDF, DOCX)
+- Add DOCX support (currently limited)
 
 ### P3 - Future Enhancements
 - Firebase integration (when config provided)
 - **Elena Mode** - Interactive speech learning
 - Whiteboard explanations
-- Full DOCX support
+- Full DOCX support with mammoth library
 - OCR for scanned PDFs
 - Cloud sync across devices
 
