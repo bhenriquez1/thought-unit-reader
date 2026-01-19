@@ -2147,17 +2147,13 @@ export default function ThoughtUnitReader() {
 
     // ✅ TOC View - PURE: Only TOC tree with optional PDF preview
     if (viewMode === "toc") {
-      const tocNodes = convertLegacyTocToNodes(tableOfContents);
-      const tocAnchorsMap = buildTocAnchors(tocNodes);
-      
       return fileUrl && pdfPageCount > 0 ? (
         <PureTocView
           fileUrl={fileUrl}
-          toc={tocNodes}
-          tocAnchors={tocAnchorsMap}
-          warnings={[]}
+          tableOfContents={tableOfContents}
           currentPage={currentPage}
-          onPageChange={(p) => syncToPage(p)}
+          pdfPageCount={pdfPageCount}
+          onJumpToPage={(p) => syncToPage(p)}
           onPageCount={(count) => setPdfPageCount(count)}
         />
       ) : (
