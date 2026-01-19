@@ -45,10 +45,12 @@ export default function SyllabusModePanel({
     importFromChapters,
     getStudyQueue,
     getNextRecommendedTopic,
-    calculateOverallProgress
+    calculateOverallProgress,
+    updateTopicAfterStudy
   } = useSyllabusStore();
   
   const { getAllAnnotationsArray } = useAnnotationStore();
+  const { startTopicSession, startQuickStudy, getWeakItemsCount } = useStudySessionStore();
   
   // Local state
   const [showAddTopic, setShowAddTopic] = useState(false);
