@@ -27,6 +27,13 @@ import SurgeonView from "@/components/SurgeonView";
 import NoteLabViewEnhanced from "@/components/NoteLabViewEnhanced";
 import StudySessionPanel from "@/components/StudySessionPanel";
 import TocTreeSidebar, { convertLegacyTocToNodes, buildTocAnchors } from "@/components/TocTreeSidebar";
+import SyllabusModePanel from "@/components/SyllabusModePanel";
+
+// Pure View components (Strict Mode Separation)
+import PureReaderView from "@/components/PureReaderView";
+import PureTocView from "@/components/PureTocView";
+import PureSurgeonView from "@/components/PureSurgeonView";
+import PureNoteLabView from "@/components/PureNoteLabView";
 
 // Prototype component import
 import UniversalPatternButlerReader from "@/components/UniversalPatternButlerReader";
