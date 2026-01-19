@@ -200,7 +200,11 @@ export default function PureNoteLabView({
     flashcards: getFlashcards().filter(a => a.documentId === documentId).length,
     patterns: getPDRMAnnotations('P').filter(a => a.documentId === documentId).length,
     decisions: getPDRMAnnotations('D').filter(a => a.documentId === documentId).length,
-    mnemonics: getPDRMAnnotations('M').filter(a => a.documentId === documentId).length
+    mnemonics: getPDRMAnnotations('M').filter(a => a.documentId === documentId).length,
+    absorption: getAllAnnotationsArray().filter(a => 
+      a.documentId === documentId && 
+      (a.tags.includes('absorption_highlight') || a.tags.includes('absorption-highlight'))
+    ).length
   }), [annotations, documentId, getAllAnnotationsArray, getMistakes, getFlashcards, getPDRMAnnotations]);
 
   // Handlers
