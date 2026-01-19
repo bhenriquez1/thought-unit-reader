@@ -2168,136 +2168,28 @@ export default function ThoughtUnitReader() {
     }
 
     // ✅ Show loading state during PDF parsing for NoteLab view
+    // ✅ NoteLab View - PURE: NoteLab workspace only (no shared PDF)
     if (viewMode === "notelab") {
-      // Show loading state during parsing
-      if (pdfParsingState.isLoading) {
-        return (
-          <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-green-900 to-emerald-900">
-            <div className="text-center max-w-2xl">
-              <div className="animate-spin text-6xl mb-4">📝</div>
-              <h3 className="text-3xl font-bold mb-4 text-white">Processing for NoteLab</h3>
-              <p className="text-lg opacity-90 mb-6 text-gray-200">
-                {pdfParsingState.progress}
-              </p>
-              <div className="flex items-center justify-center gap-2">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                <div className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-              </div>
-            </div>
-          </div>
-        );
-      }
-
-      // Show error state if parsing failed
-      if (pdfParsingState.error) {
-        return (
-          <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-red-900 to-emerald-900">
-            <div className="text-center max-w-2xl">
-              <div className="text-6xl mb-4">❌</div>
-              <h3 className="text-3xl font-bold mb-4 text-white">NoteLab Unavailable</h3>
-              <p className="text-lg mb-6 text-red-300">
-                {pdfParsingState.error}
-              </p>
-              <button
-                onClick={() => window.location.reload()}
-                className="px-6 py-3 bg-green-600 hover:bg-green-500 rounded-lg text-white font-medium"
-              >
-                🔄 Try Again
-              </button>
-            </div>
-          </div>
-        );
-      }
-
-      return fileUrl && thoughtUnits.length > 0 ? (
-        <div className="h-full flex" data-testid="notelab-view-container">
-          {/* Left: PDF Viewer */}
-          <div className="w-1/2 border-r border-gray-700 overflow-auto">
-            <SmartPDFViewer
-              fileUrl={fileUrl}
-              currentPage={currentPage}
-              onPageChange={(p) => syncToPage(p)}
-              onPageCount={(numPages) => {
-                setPdfPageCount(numPages);
-                setPdfLoadingState('loaded');
-              }}
-              onTextSelect={(text) => {
-                if (text && text.length > 3) {
-                  sel.setSelectionText(text);
-                }
-              }}
-            />
-          </div>
-          
-          {/* Right: NoteLab Enhanced */}
-          <div className="w-1/2 h-full">
-            <NoteLabViewEnhanced
-              documentId={bookId}
-              userId={USER_ID}
-              documentTitle={tableOfContents[0]?.title || "Document"}
-              chapters={tableOfContents.map((entry) => ({
-                id: entry.title,
-                title: entry.title,
-                pageIndex: entry.pageNumber - 1
-              }))}
-              onNavigateToSurgeonView={(pageIdx, annotationId) => {
-                syncToPage(pageIdx + 1);
-                if (annotationId) {
-                  // Switch to surgeon view and highlight the annotation
-                  setViewMode("hybrid");
-                }
-              }}
-            />
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-green-900 to-emerald-900">
-          <div className="text-center max-w-2xl">
-            <div className="text-6xl mb-4">📝</div>
-            <h3 className="text-3xl font-bold mb-4 text-white">NoteLab - Structured Study Notes</h3>
-            <p className="text-lg opacity-90 mb-6 text-gray-200">
-              Create organized, pattern-tagged notes with flashcard generation and study outline export
-            </p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8 text-sm">
-              <div className="bg-black/20 rounded-lg p-4 border border-green-500/30">
-                <div className="text-2xl mb-2">🏷️</div>
-                <h4 className="font-semibold text-green-400">Pattern Tagging</h4>
-                <p className="text-gray-300">Tag notes with DAT patterns for organization</p>
-              </div>
-              <div className="bg-black/20 rounded-lg p-4 border border-blue-500/30">
-                <div className="text-2xl mb-2">📇</div>
-                <h4 className="font-semibold text-blue-400">Flashcard Export</h4>
-                <p className="text-gray-300">Auto-generate flashcards from your notes</p>
-              </div>
-              <div className="bg-black/20 rounded-lg p-4 border border-purple-500/30">
-                <div className="text-2xl mb-2">📄</div>
-                <h4 className="font-semibold text-purple-400">Study Outlines</h4>
-                <p className="text-gray-300">Export organized study guides by pattern</p>
-              </div>
-              <div className="bg-black/20 rounded-lg p-4 border border-yellow-500/30">
-                <div className="text-2xl mb-2">🎯</div>
-                <h4 className="font-semibold text-yellow-400">Study Levels</h4>
-                <p className="text-gray-300">Basic, Intermediate, Advanced categorization</p>
-              </div>
-              <div className="bg-black/20 rounded-lg p-4 border border-pink-500/30">
-                <div className="text-2xl mb-2">🔗</div>
-                <h4 className="font-semibold text-pink-400">Thought Unit Links</h4>
-                <p className="text-gray-300">Notes linked to specific content sections</p>
-              </div>
-              <div className="bg-black/20 rounded-lg p-4 border border-orange-500/30">
-                <div className="text-2xl mb-2">🔍</div>
-                <h4 className="font-semibold text-orange-400">Smart Search</h4>
-                <p className="text-gray-300">Filter by pattern, level, and content</p>
-              </div>
-            </div>
-          </div>
-          
-          <label className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 text-white px-8 py-4 rounded-xl cursor-pointer font-semibold text-lg transition-all transform hover:scale-105 shadow-xl">
-            📂 Upload PDF to Start Note-Taking
-            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-          </label>
+      const chaptersForNotelab = tableOfContents.map((entry, idx) => ({
+        id: `chapter_${idx}`,
+        title: entry.title,
+        pageNumber: entry.pageNumber
+      }));
+      
+      return (
+        <div className="h-full" data-testid="notelab-view-container">
+          <PureNoteLabView
+            documentId={bookId}
+            userId={USER_ID}
+            documentTitle={tableOfContents[0]?.title || "Document"}
+            chapters={chaptersForNotelab}
+            onNavigateToPage={(pageIndex) => {
+              syncToPage(pageIndex);
+              // Navigate to Surgeon View to see context
+              setViewMode("hybrid");
+            }}
+            onStartStudy={() => setViewMode("study")}
+          />
         </div>
       );
     }
