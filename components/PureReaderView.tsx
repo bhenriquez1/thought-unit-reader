@@ -43,9 +43,9 @@ export default function PureReaderView({
     if (currentPage < pdfPageCount) onPageChange(currentPage + 1);
   }, [currentPage, pdfPageCount, onPageChange]);
   
-  const handleZoomIn = () => setZoom(z => Math.min(z + 0.25, 3));
-  const handleZoomOut = () => setZoom(z => Math.max(z - 0.25, 0.5));
-  const handleResetZoom = () => setZoom(1.25);
+  const handleZoomIn = useCallback(() => setZoom(z => Math.min(z + 0.25, 2.5)), []);
+  const handleZoomOut = useCallback(() => setZoom(z => Math.max(z - 0.25, 0.6)), []);
+  const handleResetZoom = useCallback(() => setZoom(1.25), []);
   
   // No file uploaded
   if (!fileUrl) {
