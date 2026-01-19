@@ -22,7 +22,7 @@ interface PureNoteLabViewProps {
   onStartStudy?: () => void;
 }
 
-type FilterType = 'all' | 'highlights' | 'notes' | 'flashcards' | 'weak' | 'pattern' | 'decision' | 'mnemonic';
+type FilterType = 'all' | 'highlights' | 'notes' | 'flashcards' | 'weak' | 'pattern' | 'decision' | 'mnemonic' | 'absorption';
 type SortType = 'recent' | 'page' | 'type';
 type GroupByType = 'none' | 'chapter' | 'type';
 
