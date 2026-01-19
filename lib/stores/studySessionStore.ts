@@ -300,7 +300,7 @@ export const useStudySessionStore = create<StudySessionState>()(
       
       // End current session
       endSession: () => {
-        const { currentSession, sessions } = get();
+        const { currentSession, sessions, currentCardIndex, deck } = get();
         if (!currentSession) return;
         
         const completedSession: StudySession = {
@@ -313,10 +313,21 @@ export const useStudySessionStore = create<StudySessionState>()(
           sessions: { ...sessions, [completedSession.id]: completedSession },
           deck: [],
           currentCardIndex: 0,
-          isRevealed: false
+          isRevealed: false,
+          // Save position for resume
+          lastSessionCardIndex: currentCardIndex
         });
         
         console.log(`📚 Study session ended: ${completedSession.cardsReviewed} cards reviewed`);
+        
+        // Return session stats for syllabus integration
+        return {
+          cardsReviewed: completedSession.cardsReviewed,
+          correctCount: completedSession.correctCount,
+          score: completedSession.cardsReviewed > 0 
+            ? Math.round((completedSession.correctCount / completedSession.cardsReviewed) * 100) 
+            : 0
+        };
       },
       
       // Reveal current card
