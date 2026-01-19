@@ -2152,34 +2152,11 @@ export default function ThoughtUnitReader() {
 
       </div>
 
-      {/* Main Content Area - New Layout: [TOC | PDF | Right Pane] */}
-      <div className="flex-1 overflow-hidden flex">
-        {/* Left TOC Sidebar - Show when content loaded and TOC available */}
-        {fileUrl && pdfPageCount > 0 && (
-          tableOfContents.length > 0 ? (
-            <TOCSidebar
-              toc={tableOfContents}
-              currentPage={currentPage}
-              onJumpToPage={(p) => syncToPage(p, { reason: 'TOC_JUMP' })}
-              userId={USER_ID}
-            />
-          ) : (
-            <div className="w-64 bg-gray-800 border-r border-gray-700 p-4 text-center">
-              <div className="text-gray-400 text-sm">
-                <div className="text-2xl mb-2">📖</div>
-                <p>No table of contents detected in this PDF</p>
-                <p className="text-xs mt-2 opacity-60">
-                  Navigation available via page numbers
-                </p>
-              </div>
-            </div>
-          )
-        )}
-
-
-        {/* Main Reader Content Area */}
-        <div className="flex-1 h-full">
-          <div className="w-full h-full bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
+      {/* Main Content Area - Pure Views: Each view manages its own layout */}
+      <div className="flex-1 overflow-hidden">
+        {/* Main Content - Pure View renders in full container */}
+        <div className="w-full h-full bg-gray-800 rounded-lg overflow-auto">
+          {renderContent()}
         </div>
       </div>
 
