@@ -261,7 +261,7 @@ export default function ThoughtUnitReader() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const [viewMode, setViewMode] =
-    useState<"original" | "hybrid" | "pattern" | "notelab">("original");
+    useState<"original" | "hybrid" | "pattern" | "notelab" | "toc" | "study">("original");
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(0); // Start with 0 to indicate not loaded
