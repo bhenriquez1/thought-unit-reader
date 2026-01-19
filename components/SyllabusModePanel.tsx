@@ -236,6 +236,19 @@ export default function SyllabusModePanel({
         </div>
       )}
       
+      {/* Quick Study Button - shown when weak items exist */}
+      {weakItemsCount > 0 && (
+        <div className="p-3 border-b border-gray-700">
+          <button
+            onClick={handleQuickStudy}
+            className="w-full px-4 py-3 bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 rounded-lg font-medium transition-all shadow-lg flex items-center justify-center gap-2"
+            data-testid="syllabus-quick-study-btn"
+          >
+            ⚡ Quick Study ({weakItemsCount} weak items)
+          </button>
+        </div>
+      )}
+      
       {/* Topics List */}
       <div className="flex-1 overflow-auto">
         <div className="p-3 space-y-2">
