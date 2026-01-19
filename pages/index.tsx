@@ -2552,6 +2552,17 @@ export default function ThoughtUnitReader() {
           >
             🧠 Study
           </button>
+          <button
+            onClick={() => setViewMode("syllabus")}
+            data-testid="nav-syllabus"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              viewMode === "syllabus" 
+                ? "bg-orange-500 text-white shadow-lg" 
+                : "text-gray-300 hover:text-white hover:bg-gray-700"
+            }`}
+          >
+            📋 Syllabus
+          </button>
         </div>
 
         {/* Readless Mode Toggle */}
