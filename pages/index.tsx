@@ -2040,18 +2040,15 @@ export default function ThoughtUnitReader() {
     }
 
 
-        // 📖 PURE READER - PDF + Thought Units only (no TOC/Surgeon/NoteLab)
+        // 📖 PURE READER - PDF ONLY (no thought units, no TOC, no annotations)
         return fileUrl ? (
           <PureReaderView
             fileUrl={fileUrl}
             currentPage={currentPage}
             pdfPageCount={pdfPageCount}
-            thoughtUnits={thoughtUnits}
-            currentThoughtUnit={currentThoughtUnit}
             onPageChange={(p) => syncToPage(p)}
             onPageCount={(count) => setPdfPageCount(count)}
             onTextSelect={(t) => sel.setSelectionText(t)}
-            onThoughtUnitChange={(idx) => setCurrentThoughtUnit(idx)}
             fontSize={fontSize}
             fontFamily={fontFamily}
           />
