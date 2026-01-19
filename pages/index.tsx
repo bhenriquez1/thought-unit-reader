@@ -2338,46 +2338,22 @@ export default function ThoughtUnitReader() {
     // ✅ Study Session View - PURE: Study panel only (no shared PDF)
     if (viewMode === "study") {
       return (
-        <div className="h-full flex" data-testid="study-view-container">
-          {/* Left: Study Session Panel */}
-          <div className="w-1/2 border-r border-gray-700">
-            <StudySessionPanel
-              documentId={bookId}
-              documentTitle={tableOfContents[0]?.title || "Document"}
-              onNavigateToPage={(pageIdx) => syncToPage(pageIdx + 1)}
-              onClose={() => setViewMode("original")}
-            />
-          </div>
-          
-          {/* Right: PDF Viewer (context) */}
-          <div className="w-1/2 overflow-auto">
-            {fileUrl ? (
-              <SmartPDFViewer
-                fileUrl={fileUrl}
-                currentPage={currentPage}
-                onPageChange={(p) => syncToPage(p)}
-                onPageCount={(numPages) => {
-                  setPdfPageCount(numPages);
-                  setPdfLoadingState('loaded');
-                }}
-                onTextSelect={(text) => {
-                  if (text && text.length > 3) {
-                    sel.setSelectionText(text);
-                  }
-                }}
-              />
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center bg-gray-900 text-gray-400">
-                <div className="text-4xl mb-4">📄</div>
-                <p>Upload a PDF to see context while studying</p>
-              </div>
-            )}
-          </div>
+        <div className="h-full" data-testid="study-view-container">
+          <StudySessionPanel
+            documentId={bookId}
+            documentTitle={tableOfContents[0]?.title || "Document"}
+            onNavigateToPage={(pageIdx) => {
+              syncToPage(pageIdx + 1);
+              // Navigate to Surgeon View to see context
+              setViewMode("hybrid");
+            }}
+            onClose={() => setViewMode("original")}
+          />
         </div>
       );
     }
 
-    // ✅ Syllabus Mode View - Course-structured study system
+    // ✅ Syllabus Mode View - PURE: Syllabus panel only (no shared PDF)
     if (viewMode === "syllabus") {
       const chaptersForSyllabus = tableOfContents.map((toc, idx) => ({
         id: `chapter_${idx}`,
@@ -2386,42 +2362,18 @@ export default function ThoughtUnitReader() {
       }));
       
       return (
-        <div className="h-full flex" data-testid="syllabus-view-container">
-          {/* Left: Syllabus Panel */}
-          <div className="w-1/2 border-r border-gray-700">
-            <SyllabusModePanel
-              documentId={bookId}
-              documentTitle={tableOfContents[0]?.title || uploadedFile?.name || "Document"}
-              chapters={chaptersForSyllabus}
-              onJumpToPage={(pageIndex) => syncToPage(pageIndex)}
-              onStartStudySession={() => setViewMode("study")}
-            />
-          </div>
-          
-          {/* Right: PDF Viewer (context) */}
-          <div className="w-1/2 overflow-auto">
-            {fileUrl ? (
-              <SmartPDFViewer
-                fileUrl={fileUrl}
-                currentPage={currentPage}
-                onPageChange={(p) => syncToPage(p)}
-                onPageCount={(numPages) => {
-                  setPdfPageCount(numPages);
-                  setPdfLoadingState('loaded');
-                }}
-                onTextSelect={(text) => {
-                  if (text && text.length > 3) {
-                    sel.setSelectionText(text);
-                  }
-                }}
-              />
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center bg-gray-900 text-gray-400">
-                <div className="text-4xl mb-4">📄</div>
-                <p>Upload a PDF to create your syllabus</p>
-              </div>
-            )}
-          </div>
+        <div className="h-full" data-testid="syllabus-view-container">
+          <SyllabusModePanel
+            documentId={bookId}
+            documentTitle={tableOfContents[0]?.title || uploadedFile?.name || "Document"}
+            chapters={chaptersForSyllabus}
+            onJumpToPage={(pageIndex) => {
+              syncToPage(pageIndex);
+              // Navigate to Reader to see the page
+              setViewMode("original");
+            }}
+            onStartStudySession={() => setViewMode("study")}
+          />
         </div>
       );
     }
