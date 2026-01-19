@@ -2,13 +2,14 @@
 
 ## Original Problem Statement
 Build a sophisticated study application for processing books and documents with:
-1. **Strict Separation of Modes** - Reader, TOC, Surgeon View, NoteLab as independent views
+1. **Strict Separation of Modes** - Reader, TOC, Surgeon View, NoteLab, Study, Syllabus as independent views
 2. **Auto-PDRM** - Automatic classification of highlights as Pattern, Decision, Risk/Mistake, or Mnemonic
 3. **Auto-NoteLab** - Silent capture of highlights and quiz misses without interruption
 4. **Recommended Next Action Engine** - Post-quiz recommendations based on weak areas
 5. **Syllabus Mode** - Course-structured study system with topic tracking
 6. **Quick Study** - Auto-find weakest items and create focused study sessions
 7. **Resume Last Session** - Quick return to previous study position
+8. **TOC Auto-Generation** - Extract table of contents from PDF outline or heuristic parsing
 
 ## Target Users
 - Medical students preparing for exams (DAT, MCAT, USMLE)
@@ -16,16 +17,29 @@ Build a sophisticated study application for processing books and documents with:
 - Anyone who needs to extract and organize key information from PDFs/documents
 
 ## Application Navigation (6 Tabs)
-1. **📖 Reader** - Pure reading experience (PDF + thought-unit view)
-2. **📑 TOC** - Dedicated Table of Contents tree (searchable, clickable)
-3. **🔬 Surgeon View** - Active learning (highlighting, PDRM tagging, quizzes)
-4. **📝 NoteLab** - Review workspace (notes, highlights, quiz misses)
-5. **🧠 Study** - Flashcard study session with spaced repetition
+1. **📖 Reader** - Pure distraction-free PDF reading (NO thought units, NO annotations)
+2. **📑 TOC** - Dedicated Table of Contents tree (searchable, clickable navigation)
+3. **🔬 Surgeon View** - Active learning with thought units, highlighting, PDRM tagging, quizzes
+4. **📝 NoteLab** - Review workspace (notes, highlights, quiz misses) with filter sidebar
+5. **🧠 Study** - Flashcard study session with spaced repetition, Quick Study, Resume
 6. **📋 Syllabus** - Course-structured study planning with topic tracking
 
 ## Core Features Status
 
-### ✅ COMPLETED - January 2026
+### ✅ COMPLETED - January 19, 2026
+
+#### P0: Strict Mode Separation (COMPLETED)
+- **Completed refactoring of `/app/pages/index.tsx`**
+- Removed legacy "Pattern" view code that caused UI bleed
+- Removed legacy TOCSidebar from main layout
+- Each tab now renders ONLY its designated pure component
+- No UI elements leak between modes
+
+#### P0: TOC Auto-Generation (COMPLETED)
+- **`/app/lib/stores/tocStore.ts`**: Persists TOC per document in localStorage
+- **PDF Outline extraction**: `SmartPDFViewer.onOutline` → `handleOutlineExtraction` → `tocStore.saveToc`
+- **Fallback heuristic**: `generateTOC()` from `/app/lib/tocParser.ts`
+- **Navigation**: "Open in Reader" / "Open in Surgeon View" buttons in TOC
 
 #### P0: React-PDF Runtime Error Fix
 - Enhanced defensive guards in `SmartPDFViewer.tsx`
@@ -45,10 +59,10 @@ Build a sophisticated study application for processing books and documents with:
 - Quiz misses auto-create flashcards with ['flashcard', 'miss', 'weak', 'quiz-generated'] tags
 - NoteLab receives all items without user interruption
 
-#### P0: Pure View Components (Strict Mode Separation)
-- **PureReaderView.tsx**: PDF + thought units only
-- **PureTocView.tsx**: TOC sidebar + PDF preview
-- **PureSurgeonView.tsx**: Highlighting tools, quiz, review tabs
+#### P0: Pure View Components
+- **PureReaderView.tsx**: PDF ONLY (no thought units, no TOC, no annotations)
+- **PureTocView.tsx**: TOC tree with navigation buttons
+- **PureSurgeonView.tsx**: Thought units + highlighting tools + quiz + review tabs
 - **PureNoteLabView.tsx**: Filter/search/group notes workspace
 
 #### P0: Recommended Next Action Engine
@@ -64,40 +78,16 @@ Build a sophisticated study application for processing books and documents with:
 - Progress visualization per topic and overall
 - **Study this topic** button → filtered Study Session
 - **Quick Study** button in Syllabus tab
-- `updateTopicAfterStudy` updates status after study session
 
 #### P1: Quick Study Feature
 - ⚡ **Quick Study** button in Study tab and Syllabus tab
 - Auto-finds weakest items (quiz misses, 'Again/Hard' history)
 - Creates focused 10-20 card session
-- Shows weak item count
 
 #### P1: Resume Last Session
 - ⏯️ **Resume** button in Study tab
 - Returns to last card position
 - Persists across sessions via localStorage
-
-### Technical Implementation
-
-#### studySessionStore Methods (New)
-```typescript
-startTopicSession(documentId, topicId, chapterIds, pageRanges) // Filtered by topic
-startQuickStudy(documentId, maxCards, topicId?) // Weak items only
-resumeLastSession() // Resume at lastSessionCardIndex
-getTopicDeck(documentId, chapterIds, pageRanges) // Filtered deck
-getWeakDeck(documentId, maxCards) // Weak/miss items
-getWeakItemsCount(documentId) // Count weak items
-hasLastSession() // Check for resumable session
-```
-
-#### syllabusStore Methods (New)
-```typescript
-updateTopicAfterStudy(topicId, sessionScore) // Update status based on score
-linkHighlightToTopic(topicId, highlightId) // Track highlight counts
-```
-
-#### annotationStore Enhancement
-- `addAnnotation` auto-tags: 'highlight', 'pattern', 'decision', 'mnemonic', 'weak'
 
 ## Technical Architecture
 
@@ -105,46 +95,52 @@ linkHighlightToTopic(topicId, highlightId) // Track highlight counts
 - **Framework**: Next.js 14 (Pages Router)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
-- **State Management**: Zustand (4 stores with persist middleware)
+- **State Management**: Zustand (5 stores with persist middleware)
 - **Backend**: Firebase (MOCKED - localStorage only)
 - **PDF**: react-pdf with pdfjs-dist
 
 ### Key Files
 ```
+/app/pages/index.tsx           # Main routing - renderContent() handles 6 pure views
+
 /app/lib/stores/
-├── annotationStore.ts    # Highlights, PDRM tags (auto-tagging for silent capture)
-├── quizStore.ts          # Chapter quiz, auto-flashcard creation
-├── studySessionStore.ts  # Study sessions, Quick Study, Resume, topic filtering
-└── syllabusStore.ts      # Topics, progress tracking, study integration
+├── annotationStore.ts         # Highlights, PDRM tags (auto-tagging for silent capture)
+├── quizStore.ts               # Chapter quiz, auto-flashcard creation
+├── studySessionStore.ts       # Study sessions, Quick Study, Resume, topic filtering
+├── syllabusStore.ts           # Topics, progress tracking, study integration
+└── tocStore.ts                # TOC persistence per document (NEW)
 
 /app/components/
-├── SmartPDFViewer.tsx    # PDF rendering with defensive guards
-├── PureReaderView.tsx    # Pure reading mode
-├── PureTocView.tsx       # Pure TOC mode
-├── PureSurgeonView.tsx   # Pure surgeon mode
-├── PureNoteLabView.tsx   # Pure notelab mode
-├── SyllabusModePanel.tsx # Syllabus with Quick Study
-├── StudySessionPanel.tsx # Study with Quick Study + Resume
-└── TocTreeSidebar.tsx    # Clickable TOC tree
+├── SmartPDFViewer.tsx         # PDF rendering with onOutline callback
+├── PureReaderView.tsx         # Pure reading mode (PDF only)
+├── PureTocView.tsx            # Pure TOC mode with navigation
+├── PureSurgeonView.tsx        # Thought units + highlighting + quiz
+├── PureNoteLabView.tsx        # Notes workspace with filters
+├── SyllabusModePanel.tsx      # Syllabus with Quick Study
+├── StudySessionPanel.tsx      # Study with Quick Study + Resume
+└── TocTreeSidebar.tsx         # Clickable TOC tree
 ```
 
 ## Testing Status
 - **Build**: ✅ Passes
-- **Unit Tests**: 20/20 passed (100%)
-- **UI Tests**: All 6 tabs verified, all buttons functional
-- **React-PDF**: No annotation errors in console
+- **Frontend Tests**: 100% pass rate (iteration_6)
+- **All 6 tabs**: Verified working with pure view separation
+- **PDF Upload**: ✅ Working
+- **TOC Extraction**: ✅ Working (outline or fallback)
+- **React-PDF**: No annotation errors
 - **Firebase**: MOCKED (localStorage only)
 
 ## Prioritized Backlog
 
 ### P2 - Polish (Next)
-- Full E2E test with PDF upload → highlight → quiz → study flow
-- Test topic-filtered study sessions
+- Implement Clean/Full Mode toggle in PureSurgeonView
+- Test full E2E: PDF upload → highlight → quiz → study flow
+- Implement syllabus file parsing (TXT, PDF, DOCX)
 
 ### P3 - Future Enhancements
 - Firebase integration (when config provided)
-- **Elena Mode** - Interactive speech learning (next milestone per user roadmap)
-- Whiteboard (after speech foundation is solid)
+- **Elena Mode** - Interactive speech learning
+- Whiteboard explanations
 - Full DOCX support
 - OCR for scanned PDFs
 - Cloud sync across devices
