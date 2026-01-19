@@ -8,6 +8,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { useSyllabusStore, type SyllabusTopic, type TopicStatus } from '@/lib/stores/syllabusStore';
 import { useAnnotationStore } from '@/lib/stores/annotationStore';
 import { useStudySessionStore } from '@/lib/stores/studySessionStore';
+import { extractTextFromPdf } from '@/lib/pdfjs-handler';
 
 interface SyllabusModePanelProps {
   documentId: string;
