@@ -1908,13 +1908,7 @@ export default function ThoughtUnitReader() {
     if (fileUrl && thoughtUnits.length > 0) {
       // Return the appropriate view based on viewMode
       if (viewMode === "hybrid") {
-        // Get current page content for Surgeon View
-        // Use current thought unit text since ThoughtUnit doesn't have pageIndex
-        const currentPageContent = thoughtUnits
-          .slice(Math.max(0, currentThoughtUnit - 3), currentThoughtUnit + 2)
-          .map(tu => tu.text)
-          .join('\n\n') || `Page ${currentPage} content`;
-        
+        // Get current page headings for Surgeon View
         const currentHeadings = tableOfContents
           .filter(entry => entry.pageNumber === currentPage)
           .map(entry => entry.title);
@@ -1926,77 +1920,34 @@ export default function ThoughtUnitReader() {
             (!nextEntry || nextEntry.pageNumber > currentPage);
         });
         
-        return fileUrl ? (
-          <div className="h-full flex" data-testid="surgeon-view-container">
-            {/* Left: PDF Viewer */}
-            <div className="w-1/2 border-r border-gray-700 overflow-auto">
-              <SmartPDFViewer
-                fileUrl={fileUrl}
-                currentPage={currentPage}
-                onPageChange={(p) => syncToPage(p)}
-                onPageCount={(numPages) => {
-                  setPdfPageCount(numPages);
-                  setPdfLoadingState('loaded');
-                }}
-                onTextSelect={(text) => {
-                  if (text && text.length > 3) {
-                    sel.setSelectionText(text);
+        return (
+          <div className="h-full" data-testid="surgeon-view-container">
+            <PureSurgeonView
+              fileUrl={fileUrl}
+              documentId={bookId}
+              userId={USER_ID}
+              currentPage={currentPage}
+              pdfPageCount={pdfPageCount}
+              thoughtUnits={thoughtUnits}
+              currentThoughtUnit={currentThoughtUnit}
+              chapterId={currentChapter?.title || `chapter-${currentPage}`}
+              headings={currentHeadings}
+              onPageChange={(p) => syncToPage(p)}
+              onPageCount={(count) => setPdfPageCount(count)}
+              onRecommendedAction={(action) => {
+                if (action === 'study') {
+                  setViewMode("study");
+                } else if (action === 'next_chapter') {
+                  // Navigate to next chapter
+                  const nextChapter = tableOfContents.find(
+                    entry => entry.pageNumber > currentPage
+                  );
+                  if (nextChapter) {
+                    syncToPage(nextChapter.pageNumber);
                   }
-                }}
-              />
-            </div>
-            
-            {/* Right: Surgeon View with Annotations */}
-            <div className="w-1/2 h-full">
-              <SurgeonView
-                documentId={bookId}
-                userId={USER_ID}
-                chapterId={currentChapter?.title || `chapter-${currentPage}`}
-                pageIndex={currentPage - 1}
-                pageContent={currentPageContent || `Page ${currentPage} content loading...`}
-                headings={currentHeadings}
-                onNavigateToPage={(pageIdx) => syncToPage(pageIdx + 1)}
-                onClose={() => setViewMode("original")}
-              />
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-purple-900 to-indigo-900">
-            <div className="text-center max-w-2xl">
-              <div className="text-6xl mb-4">🔬</div>
-              <h3 className="text-3xl font-bold mb-4 text-white">Surgeon View</h3>
-              <p className="text-lg opacity-90 mb-6 text-gray-200">
-                Highlight important text, tag with PDRM (Pattern, Decision, Risk, Mnemonic), and take chapter quizzes
-              </p>
-              
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 text-sm">
-                <div className="bg-black/20 rounded-lg p-4 border border-purple-500/30">
-                  <div className="text-2xl mb-2">🎯</div>
-                  <h4 className="font-semibold text-purple-400">Pattern (P)</h4>
-                  <p className="text-gray-300">Core principles</p>
-                </div>
-                <div className="bg-black/20 rounded-lg p-4 border border-blue-500/30">
-                  <div className="text-2xl mb-2">⚖️</div>
-                  <h4 className="font-semibold text-blue-400">Decision (D)</h4>
-                  <p className="text-gray-300">Critical points</p>
-                </div>
-                <div className="bg-black/20 rounded-lg p-4 border border-red-500/30">
-                  <div className="text-2xl mb-2">⚠️</div>
-                  <h4 className="font-semibold text-red-400">Risk (R)</h4>
-                  <p className="text-gray-300">Warnings</p>
-                </div>
-                <div className="bg-black/20 rounded-lg p-4 border border-yellow-500/30">
-                  <div className="text-2xl mb-2">🧠</div>
-                  <h4 className="font-semibold text-yellow-400">Mnemonic (M)</h4>
-                  <p className="text-gray-300">Memory aids</p>
-                </div>
-              </div>
-            </div>
-            
-            <label className="bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-400 hover:to-indigo-400 text-white px-8 py-4 rounded-xl cursor-pointer font-semibold text-lg transition-all transform hover:scale-105 shadow-xl">
-              📂 Upload PDF to Start Surgeon View
-              <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-            </label>
+                }
+              }}
+            />
           </div>
         );
       }
