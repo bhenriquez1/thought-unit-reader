@@ -1947,43 +1947,7 @@ export default function ThoughtUnitReader() {
             onPageChange={(p) => syncToPage(p)}
             onPageCount={(count) => setPdfPageCount(count)}
             onTextSelect={(t) => sel.setSelectionText(t)}
-            onOutline={(tocItems) => {
-              // Save outline to tocStore when extracted from PDF
-              if (tocItems && tocItems.length > 0) {
-                const documentId = bookId || uploadedFile?.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book";
-                const documentName = uploadedFile?.name || "Document";
-                
-                // Convert TocItem to store format
-                const storeItems = tocItems.map((item, idx) => ({
-                  id: `toc_${idx}_${Date.now()}`,
-                  title: item.title || `Chapter ${idx + 1}`,
-                  pageNumber: item.pageNumber || 1,
-                  level: 0,
-                  children: item.items?.map((sub, subIdx) => ({
-                    id: `toc_${idx}_${subIdx}_${Date.now()}`,
-                    title: sub.title || `Section ${subIdx + 1}`,
-                    pageNumber: sub.pageNumber || 1,
-                    level: 1
-                  }))
-                }));
-                
-                const tocStore = useTocStore.getState();
-                tocStore.saveToc(documentId, documentName, storeItems, 'outline');
-                
-                // Also update tableOfContents for backward compatibility
-                const legacyToc = tocItems.map(item => ({
-                  title: item.title,
-                  pageNumber: item.pageNumber || 1,
-                  subChapters: item.items?.map(sub => ({
-                    title: sub.title,
-                    pageNumber: sub.pageNumber || 1
-                  }))
-                }));
-                setTableOfContents(legacyToc);
-                
-                console.log(`📑 TOC extracted from PDF outline: ${storeItems.length} chapters`);
-              }
-            }}
+            onOutline={handleOutlineExtraction}
             fontSize={fontSize}
             fontFamily={fontFamily}
           />
