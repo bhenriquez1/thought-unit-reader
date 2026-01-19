@@ -35,7 +35,11 @@ export default function StudySessionPanel({
     answerQuickQuestion,
     dismissQuickQuestion,
     getSessionStats,
-    getDueCards
+    getDueCards,
+    startQuickStudy,
+    resumeLastSession,
+    getWeakItemsCount,
+    hasLastSession
   } = useStudySessionStore();
   
   const { getAllAnnotationsArray } = useAnnotationStore();
