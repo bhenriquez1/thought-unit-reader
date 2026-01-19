@@ -92,7 +92,18 @@ export default function SmartPDFViewer({
   onPageCount,
   onOutline,
 }: SmartPDFViewerProps) {
-  const [zoom, setZoom] = useState<number>(scale);
+  // Use scale prop directly - parent controls zoom
+  // Only use internal zoom if no scale prop provided
+  const [internalZoom, setInternalZoom] = useState<number>(scale);
+  
+  // Sync internal zoom with scale prop changes
+  useEffect(() => {
+    setInternalZoom(scale);
+  }, [scale]);
+  
+  // Use the effective zoom (prop takes precedence)
+  const effectiveZoom = scale;
+  
   const [pageInput, setPageInput] = useState<string>(String(currentPage));
   const [showToolbar, setShowToolbar] = useState<boolean>(true);
   const [highlightPulse, setHighlightPulse] = useState<boolean>(false);
