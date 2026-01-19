@@ -347,7 +347,7 @@ export default function SmartPDFViewer({
         ref={pageContainerRef}
         className="relative flex justify-center items-start h-full overflow-auto p-4 transition-all duration-300"
       >
-        {isLoaded && pdfDocument ? (
+        {isLoaded && pdfDocument && pageCount && pageCount > 0 && currentPage >= 1 && currentPage <= pageCount ? (
           <div className="relative">
             <Page
               key={`${fileUrl}-${currentPage}`}
@@ -355,7 +355,7 @@ export default function SmartPDFViewer({
               pageNumber={currentPage}
               scale={zoom}
               renderTextLayer
-              renderAnnotationLayer
+              renderAnnotationLayer={false}
             />
 
             {/* Highlight pulse animation overlay */}
