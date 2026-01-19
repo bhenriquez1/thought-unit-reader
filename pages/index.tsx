@@ -2018,7 +2018,7 @@ export default function ThoughtUnitReader() {
             data-testid="nav-syllabus"
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               viewMode === "syllabus" 
-                ? "bg-orange-500 text-white shadow-lg" 
+                ? "bg-teal-500 text-white shadow-lg" 
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
           >
