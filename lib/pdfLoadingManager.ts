@@ -264,17 +264,21 @@ export function usePDFLoading(url: string, options: PDFLoadOptions = {}) {
       options.onStateChange?.(newState);
     };
 
+    // Register callback with the manager
+    pdfLoadingManager.addStateChangeCallback(url, onStateChange);
+
     // Start loading if not already loaded
     const currentState = pdfLoadingManager.getLoadState(url);
     if (currentState.status === 'idle') {
-      pdfLoadingManager.loadPDF(url, { ...options, onStateChange });
+      pdfLoadingManager.loadPDF(url, options);
     } else {
+      // If already loaded, immediately update state
       setState(currentState);
     }
 
-    // Cleanup
+    // Cleanup - remove callback on unmount
     return () => {
-      // Don't clear state on unmount as other components might be using the same PDF
+      pdfLoadingManager.removeStateChangeCallback(url, onStateChange);
     };
   }, [url]);
 
