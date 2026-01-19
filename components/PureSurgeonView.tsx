@@ -1,14 +1,15 @@
 "use client";
 
 // components/PureSurgeonView.tsx
-// PURE SURGEON VIEW MODE - V1 Final Behavior
+// PURE SURGEON VIEW MODE - V2 with Enhanced Absorption Panel
 // ✅ CLEAN MODE = PDF ONLY (full width, no absorption panel)
 // ✅ FULL MODE = PDF + Absorption Panel (high-yield content)
-// ✅ PDF MODE = Same as Clean (alias)
-// ✅ Zoom controls work in all modes
-// ✅ Highlighting works in PDF and Absorption panel
+// ✅ Absorption regenerates on EVERY page change (debounced)
+// ✅ Auto-highlights high-yield phrases with colored styling
+// ✅ Auto-saves high-importance items to NoteLab (deduplicated)
+// ✅ Manual highlighting in absorption panel saves to NoteLab
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { 
   useAnnotationStore, 
   type Annotation,
@@ -18,6 +19,14 @@ import {
 import { useQuizStore } from '@/lib/stores/quizStore';
 import classifyHighlight, { getPDRMTypeLabel, getPDRMTypeColor } from '@/lib/autoPDRM';
 import SmartPDFViewer from './SmartPDFViewer';
+import {
+  generateAbsorptionContent,
+  getAutoSaveBullets,
+  getBulletHash,
+  type AbsorptionBlock,
+  type AbsorptionBullet,
+  type SpanKind
+} from '@/lib/absorptionEngine';
 
 interface PureSurgeonViewProps {
   fileUrl: string | null;
@@ -35,8 +44,11 @@ interface PureSurgeonViewProps {
   onRecommendedAction?: (action: 'study' | 'next_chapter') => void;
 }
 
-// View modes: Clean = PDF only, Full = PDF + Absorption, PDF = alias for Clean
+// View modes
 type ViewMode = 'clean' | 'full' | 'pdf';
+
+// Track which bullets have been auto-saved (for deduplication)
+const autoSavedBullets = new Set<string>();
 
 // Helper to detect front matter pages
 function isFrontMatter(pageNumber: number, text: string): boolean {
@@ -51,68 +63,78 @@ function isFrontMatter(pageNumber: number, text: string): boolean {
   return frontMatterKeywords.some(kw => lowerText.includes(kw));
 }
 
-// Extract high-yield content from thought units
-function extractHighYieldContent(
-  thoughtUnits: Array<{ text: string; id?: string }>,
-  pageNumber: number,
-  headings: string[]
-): {
-  keyPoints: string[];
-  decisions: string[];
-  risks: string[];
-  mnemonics: string[];
-  isFrontMatter: boolean;
-} {
-  const result = {
-    keyPoints: [] as string[],
-    decisions: [] as string[],
-    risks: [] as string[],
-    mnemonics: [] as string[],
-    isFrontMatter: false
-  };
+// Get color for span kind
+function getSpanColor(kind: SpanKind): string {
+  switch (kind) {
+    case 'high-yield': return '#FFD700'; // Gold
+    case 'warning': return '#FF6B6B';    // Red
+    case 'pattern': return '#A78BFA';    // Purple
+    case 'decision': return '#60A5FA';   // Blue
+    case 'mnemonic': return '#FB923C';   // Orange
+    case 'term': return '#34D399';       // Green
+    default: return '#FFD700';
+  }
+}
 
-  if (!thoughtUnits.length) return result;
+// Get border color for importance
+function getImportanceBorderColor(importance: 'high' | 'med' | 'low'): string {
+  switch (importance) {
+    case 'high': return 'border-yellow-500';
+    case 'med': return 'border-blue-500';
+    case 'low': return 'border-gray-600';
+  }
+}
 
-  // Check if this is front matter
-  const combinedText = thoughtUnits.map(u => u.text).join(' ');
-  if (isFrontMatter(pageNumber, combinedText)) {
-    result.isFrontMatter = true;
-    return result;
+// Get background color for importance
+function getImportanceBgColor(importance: 'high' | 'med' | 'low'): string {
+  switch (importance) {
+    case 'high': return 'bg-yellow-900/20';
+    case 'med': return 'bg-blue-900/10';
+    case 'low': return 'bg-gray-800/30';
+  }
+}
+
+// Render text with highlighted spans
+function renderHighlightedText(text: string, spans: { start: number; end: number; kind: SpanKind }[]): React.ReactNode {
+  if (!spans || spans.length === 0) {
+    return text;
   }
 
-  // Classify each thought unit
-  thoughtUnits.forEach(unit => {
-    if (!unit.text || unit.text.length < 20) return;
-    
-    const classification = classifyHighlight(unit.text, {
-      headingText: headings[0],
-      pageIndex: pageNumber - 1
-    });
+  const result: React.ReactNode[] = [];
+  let lastIndex = 0;
 
-    // Extract high-yield content based on classification
-    const text = unit.text.trim();
-    const shortText = text.length > 200 ? text.slice(0, 200) + '...' : text;
+  // Sort spans by start position
+  const sortedSpans = [...spans].sort((a, b) => a.start - b.start);
 
-    switch (classification.type) {
-      case 'pattern':
-        if (result.keyPoints.length < 5) result.keyPoints.push(shortText);
-        break;
-      case 'decision':
-        if (result.decisions.length < 3) result.decisions.push(shortText);
-        break;
-      case 'risk':
-        if (result.risks.length < 3) result.risks.push(shortText);
-        break;
-      case 'mnemonic':
-        if (result.mnemonics.length < 2) result.mnemonics.push(shortText);
-        break;
-      default:
-        // General content - add to key points if high confidence
-        if (classification.confidence > 0.6 && result.keyPoints.length < 5) {
-          result.keyPoints.push(shortText);
-        }
+  sortedSpans.forEach((span, idx) => {
+    // Add text before this span
+    if (span.start > lastIndex) {
+      result.push(text.slice(lastIndex, span.start));
     }
+
+    // Add the highlighted span
+    const highlightedText = text.slice(span.start, span.end);
+    result.push(
+      <mark
+        key={`span-${idx}`}
+        className="px-0.5 rounded font-medium"
+        style={{
+          backgroundColor: `${getSpanColor(span.kind)}30`,
+          color: getSpanColor(span.kind),
+          borderBottom: `2px solid ${getSpanColor(span.kind)}`
+        }}
+      >
+        {highlightedText}
+      </mark>
+    );
+
+    lastIndex = span.end;
   });
+
+  // Add remaining text
+  if (lastIndex < text.length) {
+    result.push(text.slice(lastIndex));
+  }
 
   return result;
 }
@@ -160,11 +182,15 @@ export default function PureSurgeonView({
   // Zoom state - independent for Surgeon View
   const [zoom, setZoom] = useState(1.25);
   
-  // Absorption panel selection
+  // Absorption panel state
+  const [absorptionBlock, setAbsorptionBlock] = useState<AbsorptionBlock | null>(null);
+  const [isAbsorptionLoading, setIsAbsorptionLoading] = useState(false);
+  const absorptionDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const lastPageRef = useRef<number>(currentPage);
+  
+  // Selection states
   const [absorptionSelectedText, setAbsorptionSelectedText] = useState('');
   const [showAbsorptionHighlightMenu, setShowAbsorptionHighlightMenu] = useState(false);
-  
-  // PDF selection
   const [pdfSelectedText, setPdfSelectedText] = useState('');
   const [showPdfHighlightMenu, setShowPdfHighlightMenu] = useState(false);
   
@@ -182,6 +208,87 @@ export default function PureSurgeonView({
     setActivePage(currentPage - 1);
   }, [currentPage, setActivePage]);
 
+  // =========================================================================
+  // ABSORPTION PANEL REGENERATION ON PAGE CHANGE (Requirement A)
+  // =========================================================================
+  useEffect(() => {
+    // Skip if no file or in clean mode
+    if (!fileUrl || viewMode === 'clean' || viewMode === 'pdf') {
+      return;
+    }
+
+    // Debounce absorption generation (400ms)
+    if (absorptionDebounceRef.current) {
+      clearTimeout(absorptionDebounceRef.current);
+    }
+
+    setIsAbsorptionLoading(true);
+
+    absorptionDebounceRef.current = setTimeout(() => {
+      console.log(`📋 Regenerating absorption for page ${currentPage}`);
+      
+      const block = generateAbsorptionContent(
+        documentId,
+        currentPage,
+        thoughtUnits,
+        chapterId,
+        headings[0],
+        pdfPageCount
+      );
+      
+      setAbsorptionBlock(block);
+      setIsAbsorptionLoading(false);
+      lastPageRef.current = currentPage;
+
+      // Auto-save high-importance bullets to NoteLab (Requirement B)
+      const highYieldBullets = getAutoSaveBullets(block);
+      autoSaveHighYieldToNoteLab(highYieldBullets, block);
+      
+    }, 400); // 400ms debounce
+
+    return () => {
+      if (absorptionDebounceRef.current) {
+        clearTimeout(absorptionDebounceRef.current);
+      }
+    };
+  }, [currentPage, documentId, chapterId, headings, thoughtUnits, pdfPageCount, fileUrl, viewMode]);
+
+  // Auto-save high-yield bullets to NoteLab (deduplicated)
+  const autoSaveHighYieldToNoteLab = useCallback(async (bullets: AbsorptionBullet[], block: AbsorptionBlock) => {
+    for (const bullet of bullets) {
+      const hash = getBulletHash(documentId, block.page, bullet.text);
+      
+      // Skip if already saved
+      if (autoSavedBullets.has(hash)) {
+        continue;
+      }
+
+      // Create annotation for NoteLab
+      const pdrm: PDRMMetadata = {};
+      if (bullet.tags.includes('pattern')) pdrm.pattern = bullet.text;
+      if (bullet.tags.includes('decision')) pdrm.decisionRule = bullet.text;
+      if (bullet.tags.includes('mnemonic')) pdrm.mnemonic = bullet.text;
+      if (bullet.tags.includes('risk')) pdrm.isMistake = true;
+
+      await addAnnotation({
+        documentId,
+        chapterId: block.chapterId || chapterId,
+        pageIndex: block.page - 1,
+        thoughtUnitId: bullet.id,
+        selectedText: bullet.text,
+        anchor: { type: 'textRange', start: 0, end: bullet.text.length },
+        pdrm,
+        color: bullet.tags.includes('risk') ? '#FF6B6B' : '#FFD700',
+        tags: ['absorption_highlight', 'high-yield', 'auto', ...bullet.tags],
+        userId
+      });
+
+      // Mark as saved
+      autoSavedBullets.add(hash);
+      console.log(`✅ Auto-saved high-yield bullet to NoteLab: ${bullet.text.slice(0, 50)}...`);
+    }
+  }, [documentId, chapterId, userId, addAnnotation]);
+
   // Get annotations
   const pageAnnotations = useMemo(() => {
     return getAnnotationsForPage(currentPage - 1);
@@ -195,11 +302,6 @@ export default function PureSurgeonView({
     return getMistakes().filter(a => a.documentId === documentId);
   }, [getMistakes, annotations, documentId]);
 
-  // Extract high-yield content for current page
-  const highYieldContent = useMemo(() => {
-    return extractHighYieldContent(thoughtUnits, currentPage, headings);
-  }, [thoughtUnits, currentPage, headings]);
-
   // Zoom handlers
   const handleZoomIn = useCallback(() => setZoom(z => Math.min(z + 0.25, 2.5)), []);
   const handleZoomOut = useCallback(() => setZoom(z => Math.max(z - 0.25, 0.6)), []);
@@ -212,7 +314,7 @@ export default function PureSurgeonView({
     setShowPdfHighlightMenu(true);
   }, []);
 
-  // Handle absorption panel text selection
+  // Handle absorption panel text selection (Requirement C)
   const handleAbsorptionTextSelect = useCallback(() => {
     const selection = window.getSelection()?.toString().trim();
     if (selection && selection.length > 3) {
@@ -251,7 +353,7 @@ export default function PureSurgeonView({
       color = getPDRMTypeColor(classification.type);
     }
 
-    // Add tag for absorption highlights
+    // Add tags
     const tags = classification.type !== 'general' 
       ? [`auto-${classification.type}`] 
       : [];
@@ -312,6 +414,29 @@ export default function PureSurgeonView({
     }
   }, [finishQuiz, mistakes.length, onRecommendedAction]);
 
+  // Group bullets by tag for display
+  const groupedBullets = useMemo(() => {
+    if (!absorptionBlock) return { patterns: [], decisions: [], risks: [], mnemonics: [], general: [] };
+    
+    const groups = {
+      patterns: [] as AbsorptionBullet[],
+      decisions: [] as AbsorptionBullet[],
+      risks: [] as AbsorptionBullet[],
+      mnemonics: [] as AbsorptionBullet[],
+      general: [] as AbsorptionBullet[]
+    };
+
+    for (const bullet of absorptionBlock.bullets) {
+      if (bullet.tags.includes('pattern')) groups.patterns.push(bullet);
+      else if (bullet.tags.includes('decision')) groups.decisions.push(bullet);
+      else if (bullet.tags.includes('risk')) groups.risks.push(bullet);
+      else if (bullet.tags.includes('mnemonic')) groups.mnemonics.push(bullet);
+      else groups.general.push(bullet);
+    }
+
+    return groups;
+  }, [absorptionBlock]);
+
   // No file uploaded
   if (!fileUrl) {
     return (
@@ -331,8 +456,6 @@ export default function PureSurgeonView({
   }
 
   // Determine layout based on view mode
-  // CLEAN/PDF = PDF full width, no absorption panel
-  // FULL = PDF left + Absorption panel right
   const showAbsorptionPanel = viewMode === 'full';
 
   return (
@@ -438,37 +561,46 @@ export default function PureSurgeonView({
             onMouseUp={handleAbsorptionTextSelect}
             data-testid="absorption-panel"
           >
-            {highYieldContent.isFrontMatter ? (
+            {isAbsorptionLoading ? (
               <div className="h-full flex items-center justify-center text-gray-500">
                 <div className="text-center">
-                  <div className="text-4xl mb-3">📄</div>
-                  <p className="text-sm">No high-yield content on this page</p>
-                  <p className="text-xs mt-1 opacity-60">Front matter detected</p>
+                  <div className="text-4xl mb-3 animate-pulse">📋</div>
+                  <p className="text-sm">Generating high-yield content...</p>
+                  <p className="text-xs mt-1 opacity-60">Page {currentPage}</p>
                 </div>
               </div>
-            ) : (
+            ) : absorptionBlock && absorptionBlock.bullets.length > 0 ? (
               <div className="space-y-6">
-                {/* Chapter heading */}
-                {headings[0] && (
-                  <div className="pb-3 border-b border-gray-700">
-                    <h2 className="text-lg font-semibold text-white">{headings[0]}</h2>
-                    <p className="text-xs text-gray-500 mt-1">Page {currentPage}</p>
+                {/* Header */}
+                <div className="pb-3 border-b border-gray-700">
+                  <h2 className="text-lg font-semibold text-white">
+                    {absorptionBlock.chapterTitle || headings[0] || 'High-Yield Notes'}
+                  </h2>
+                  <div className="flex items-center gap-3 mt-1">
+                    <p className="text-xs text-gray-500">Page {currentPage}</p>
+                    <span className="text-xs text-yellow-500">
+                      {absorptionBlock.bullets.filter(b => b.importance === 'high').length} high-yield items
+                    </span>
                   </div>
-                )}
+                </div>
 
-                {/* Key Points */}
-                {highYieldContent.keyPoints.length > 0 && (
+                {/* Key Points / Patterns */}
+                {(groupedBullets.patterns.length > 0 || groupedBullets.general.length > 0) && (
                   <div>
                     <h3 className="text-sm font-semibold text-purple-400 mb-2 flex items-center gap-2">
                       <span>🎯</span> Key Points
                     </h3>
                     <ul className="space-y-2">
-                      {highYieldContent.keyPoints.map((point, i) => (
+                      {[...groupedBullets.patterns, ...groupedBullets.general].slice(0, 8).map((bullet) => (
                         <li 
-                          key={i} 
-                          className="text-sm text-gray-300 pl-4 border-l-2 border-purple-600/50 hover:bg-gray-800/50 py-1 cursor-text select-text"
+                          key={bullet.id}
+                          className={`text-sm text-gray-300 pl-4 border-l-2 ${getImportanceBorderColor(bullet.importance)} ${getImportanceBgColor(bullet.importance)} py-2 px-2 rounded-r cursor-text select-text transition-all hover:bg-gray-800/70`}
+                          data-importance={bullet.importance}
                         >
-                          {point}
+                          {renderHighlightedText(bullet.text, bullet.spans)}
+                          {bullet.importance === 'high' && (
+                            <span className="ml-2 text-xs text-yellow-500">★</span>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -476,37 +608,45 @@ export default function PureSurgeonView({
                 )}
 
                 {/* Decision Rules */}
-                {highYieldContent.decisions.length > 0 && (
+                {groupedBullets.decisions.length > 0 && (
                   <div>
                     <h3 className="text-sm font-semibold text-blue-400 mb-2 flex items-center gap-2">
                       <span>⚖️</span> Decision Rules
                     </h3>
                     <ul className="space-y-2">
-                      {highYieldContent.decisions.map((rule, i) => (
+                      {groupedBullets.decisions.map((bullet) => (
                         <li 
-                          key={i} 
-                          className="text-sm text-gray-300 pl-4 border-l-2 border-blue-600/50 hover:bg-gray-800/50 py-1 cursor-text select-text"
+                          key={bullet.id}
+                          className={`text-sm text-gray-300 pl-4 border-l-2 ${getImportanceBorderColor(bullet.importance)} ${getImportanceBgColor(bullet.importance)} py-2 px-2 rounded-r cursor-text select-text transition-all hover:bg-gray-800/70`}
+                          data-importance={bullet.importance}
                         >
-                          {rule}
+                          {renderHighlightedText(bullet.text, bullet.spans)}
+                          {bullet.importance === 'high' && (
+                            <span className="ml-2 text-xs text-yellow-500">★</span>
+                          )}
                         </li>
                       ))}
                     </ul>
                   </div>
                 )}
 
-                {/* Risks/Mistakes */}
-                {highYieldContent.risks.length > 0 && (
+                {/* Risks / Warnings */}
+                {groupedBullets.risks.length > 0 && (
                   <div>
                     <h3 className="text-sm font-semibold text-red-400 mb-2 flex items-center gap-2">
                       <span>⚠️</span> Risks / Common Mistakes
                     </h3>
                     <ul className="space-y-2">
-                      {highYieldContent.risks.map((risk, i) => (
+                      {groupedBullets.risks.map((bullet) => (
                         <li 
-                          key={i} 
-                          className="text-sm text-gray-300 pl-4 border-l-2 border-red-600/50 hover:bg-gray-800/50 py-1 cursor-text select-text"
+                          key={bullet.id}
+                          className={`text-sm text-gray-300 pl-4 border-l-2 border-red-500 bg-red-900/20 py-2 px-2 rounded-r cursor-text select-text transition-all hover:bg-red-900/30`}
+                          data-importance={bullet.importance}
                         >
-                          {risk}
+                          {renderHighlightedText(bullet.text, bullet.spans)}
+                          {bullet.importance === 'high' && (
+                            <span className="ml-2 text-xs text-yellow-500">★</span>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -514,39 +654,26 @@ export default function PureSurgeonView({
                 )}
 
                 {/* Mnemonics */}
-                {highYieldContent.mnemonics.length > 0 && (
+                {groupedBullets.mnemonics.length > 0 && (
                   <div>
                     <h3 className="text-sm font-semibold text-orange-400 mb-2 flex items-center gap-2">
                       <span>🧠</span> Mnemonics
                     </h3>
                     <ul className="space-y-2">
-                      {highYieldContent.mnemonics.map((mnem, i) => (
+                      {groupedBullets.mnemonics.map((bullet) => (
                         <li 
-                          key={i} 
-                          className="text-sm text-gray-300 pl-4 border-l-2 border-orange-600/50 hover:bg-gray-800/50 py-1 cursor-text select-text"
+                          key={bullet.id}
+                          className={`text-sm text-gray-300 pl-4 border-l-2 border-orange-500 bg-orange-900/20 py-2 px-2 rounded-r cursor-text select-text transition-all hover:bg-orange-900/30`}
+                          data-importance={bullet.importance}
                         >
-                          {mnem}
+                          {renderHighlightedText(bullet.text, bullet.spans)}
                         </li>
                       ))}
                     </ul>
                   </div>
                 )}
 
-                {/* No content fallback */}
-                {highYieldContent.keyPoints.length === 0 && 
-                 highYieldContent.decisions.length === 0 &&
-                 highYieldContent.risks.length === 0 &&
-                 highYieldContent.mnemonics.length === 0 && (
-                  <div className="h-full flex items-center justify-center text-gray-500 py-12">
-                    <div className="text-center">
-                      <div className="text-4xl mb-3">📝</div>
-                      <p className="text-sm">Processing content...</p>
-                      <p className="text-xs mt-1 opacity-60">High-yield extraction in progress</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Highlights on this page */}
+                {/* Your Highlights on this page */}
                 {pageAnnotations.length > 0 && (
                   <div className="pt-4 border-t border-gray-700">
                     <h3 className="text-sm font-semibold text-gray-400 mb-2">
@@ -574,6 +701,19 @@ export default function PureSurgeonView({
                     </div>
                   </div>
                 )}
+
+                {/* Tip for manual highlighting */}
+                <div className="text-xs text-gray-600 pt-2">
+                  💡 Select any text above to highlight and save to NoteLab
+                </div>
+              </div>
+            ) : (
+              <div className="h-full flex items-center justify-center text-gray-500">
+                <div className="text-center">
+                  <div className="text-4xl mb-3">📝</div>
+                  <p className="text-sm">No high-yield content detected</p>
+                  <p className="text-xs mt-1 opacity-60">Try navigating to content pages</p>
+                </div>
               </div>
             )}
           </div>
