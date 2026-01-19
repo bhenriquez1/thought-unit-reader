@@ -304,6 +304,51 @@ export const useSyllabusStore = create<SyllabusState>()(
         get().updateTopic(topicId, { lastStudied: new Date().toISOString() });
       },
       
+      // Update topic after study session (auto-calculate status)
+      updateTopicAfterStudy: (topicId: string, sessionScore: number) => {
+        const topic = get().getTopicById(topicId);
+        if (!topic) return;
+        
+        let newStatus: TopicStatus = topic.status;
+        
+        // Calculate new status based on score
+        if (sessionScore >= 80) {
+          newStatus = 'mastered';
+        } else if (sessionScore >= 60) {
+          newStatus = 'in_progress';
+        } else {
+          newStatus = 'needs_review';
+        }
+        
+        // Calculate completion percentage
+        let completionPercentage = topic.completionPercentage;
+        if (sessionScore >= 80) {
+          completionPercentage = Math.min(100, completionPercentage + 25);
+        } else if (sessionScore >= 60) {
+          completionPercentage = Math.min(100, completionPercentage + 10);
+        }
+        
+        get().updateTopic(topicId, {
+          status: newStatus,
+          quizScore: sessionScore,
+          completionPercentage,
+          lastStudied: new Date().toISOString()
+        });
+        
+        console.log(`📊 Topic ${topicId} updated: score=${sessionScore}%, status=${newStatus}`);
+      },
+      
+      // Link a highlight to a topic (for tracking)
+      linkHighlightToTopic: (topicId: string, highlightId: string) => {
+        const topic = get().getTopicById(topicId);
+        if (!topic) return;
+        
+        // Update highlight count
+        get().updateTopic(topicId, {
+          highlightCount: topic.highlightCount + 1
+        });
+      },
+      
       // Set active topic
       setActiveTopic: (topicId: string | null) => {
         set({ activeTopicId: topicId });
