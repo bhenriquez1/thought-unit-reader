@@ -388,19 +388,30 @@ export default function SyllabusModePanel({
               
               {/* Syllabus File Upload */}
               <label className="w-full block">
-                <div className="px-6 py-3 bg-purple-700 hover:bg-purple-600 rounded-lg font-medium transition-colors cursor-pointer text-center">
-                  {isParsingFile ? '⏳ Parsing...' : '📤 Upload Syllabus File'}
+                <div className={`px-6 py-3 ${isParsingFile ? 'bg-purple-900' : 'bg-purple-700 hover:bg-purple-600'} rounded-lg font-medium transition-colors cursor-pointer text-center`}>
+                  {isParsingFile ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="animate-spin">⏳</span> Parsing file...
+                    </span>
+                  ) : '📤 Upload Syllabus File'}
                 </div>
                 <input
                   type="file"
-                  accept=".txt,.pdf,.docx,.doc"
+                  accept=".txt,.pdf,.md"
                   onChange={handleSyllabusFileUpload}
                   className="hidden"
                   disabled={isParsingFile}
                   data-testid="syllabus-file-input"
                 />
               </label>
-              <p className="text-xs text-gray-500">Supports TXT, PDF, DOCX files</p>
+              <p className="text-xs text-gray-500">Supports PDF, TXT, MD files</p>
+              
+              {/* Error display */}
+              {parseError && (
+                <div className="p-3 bg-red-900/30 border border-red-700 rounded-lg">
+                  <p className="text-sm text-red-400">{parseError}</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
