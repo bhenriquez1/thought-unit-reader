@@ -811,8 +811,29 @@ export default function ThoughtUnitReader() {
 
       setPdfParsingState(prev => ({ ...prev, progress: "Generating table of contents..." }));
 
+      // Generate and store TOC
+      const documentId = file.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book";
+      
       // Heuristic TOC (viewer outline will override later)
-      generateTOC(url).then(setTableOfContents).catch(() => {});
+      generateTOC(url).then((tocEntries) => {
+        setTableOfContents(tocEntries);
+        
+        // Save to tocStore for persistence
+        if (tocEntries && tocEntries.length > 0) {
+          const tocItems = tocEntries.map((entry: any, idx: number) => ({
+            id: `toc_${idx}_${Date.now()}`,
+            title: entry.title || `Chapter ${idx + 1}`,
+            pageNumber: entry.pageNumber || entry.page || idx + 1,
+            level: entry.level || 0
+          }));
+          
+          const tocStore = useTocStore.getState();
+          tocStore.saveToc(documentId, file.name, tocItems, 'outline');
+          console.log(`📑 TOC auto-generated: ${tocItems.length} chapters`);
+        }
+      }).catch((err) => {
+        console.log('📑 No PDF outline found, will try heuristic extraction');
+      });
 
       setPdfParsingState(prev => ({ ...prev, progress: "Extracting and analyzing content..." }));
 
