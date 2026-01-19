@@ -709,6 +709,47 @@ export default function ThoughtUnitReader() {
   };
 
   /* =========================================================================
+     🔹 Handle PDF Outline Extraction (memoized to prevent excessive re-renders)
+  ========================================================================= */
+  const handleOutlineExtraction = useCallback((tocItems: any[]) => {
+    // Save outline to tocStore when extracted from PDF
+    if (tocItems && tocItems.length > 0) {
+      const documentId = bookId || uploadedFile?.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book";
+      const documentName = uploadedFile?.name || "Document";
+      
+      // Convert TocItem to store format
+      const storeItems = tocItems.map((item: any, idx: number) => ({
+        id: `toc_${idx}_${Date.now()}`,
+        title: item.title || `Chapter ${idx + 1}`,
+        pageNumber: item.pageNumber || 1,
+        level: 0,
+        children: item.items?.map((sub: any, subIdx: number) => ({
+          id: `toc_${idx}_${subIdx}_${Date.now()}`,
+          title: sub.title || `Section ${subIdx + 1}`,
+          pageNumber: sub.pageNumber || 1,
+          level: 1
+        }))
+      }));
+      
+      const tocStore = useTocStore.getState();
+      tocStore.saveToc(documentId, documentName, storeItems, 'outline');
+      
+      // Also update tableOfContents for backward compatibility
+      const legacyToc = tocItems.map((item: any) => ({
+        title: item.title,
+        pageNumber: item.pageNumber || 1,
+        subChapters: item.items?.map((sub: any) => ({
+          title: sub.title,
+          pageNumber: sub.pageNumber || 1
+        }))
+      }));
+      setTableOfContents(legacyToc);
+      
+      console.log(`📑 TOC extracted from PDF outline: ${storeItems.length} chapters`);
+    }
+  }, [bookId, uploadedFile?.name, setTableOfContents]);
+
+  /* =========================================================================
      🔹 Upload PDF — parse + detect diagrams
   ========================================================================= */
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
