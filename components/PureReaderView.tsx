@@ -132,6 +132,7 @@ export default function PureReaderView({
           onPageChange={onPageChange}
           onPageCount={onPageCount}
           onTextSelect={onTextSelect}
+          onOutline={onOutline}
         />
       </div>
     </div>
