@@ -74,6 +74,10 @@ export interface SyllabusState {
   updateTopicProgress: (topicId: string, highlightCount: number, quizScore?: number) => void;
   markTopicStudied: (topicId: string) => void;
   
+  // Study Session Integration
+  updateTopicAfterStudy: (topicId: string, sessionScore: number) => void;
+  linkHighlightToTopic: (topicId: string, highlightId: string) => void;
+  
   // Navigation
   setActiveTopic: (topicId: string | null) => void;
   getTopicForChapter: (chapterId: string) => SyllabusTopic | null;
