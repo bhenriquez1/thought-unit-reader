@@ -1974,31 +1974,24 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ TOC View - PURE: Only TOC tree with optional PDF preview
+    // ✅ TOC View - PURE: Only TOC tree (NO PDF panel)
     if (viewMode === "toc") {
-      return fileUrl && pdfPageCount > 0 ? (
-        <PureTocView
-          fileUrl={fileUrl}
-          tableOfContents={tableOfContents}
-          currentPage={currentPage}
-          pdfPageCount={pdfPageCount}
-          onJumpToPage={(p) => syncToPage(p)}
-          onPageCount={(count) => setPdfPageCount(count)}
-        />
-      ) : (
-        <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-orange-900 to-amber-900">
-          <div className="text-center max-w-2xl">
-            <div className="text-6xl mb-6">📑</div>
-            <h2 className="text-3xl font-bold mb-4 text-white">Table of Contents</h2>
-            <p className="text-lg opacity-90 mb-8 text-gray-200">
-              View and navigate your document structure. Click any chapter to jump directly to that page.
-            </p>
-          </div>
-          
-          <label className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white px-8 py-4 rounded-xl cursor-pointer font-semibold text-lg transition-all transform hover:scale-105 shadow-xl">
-            📂 Upload PDF to View TOC
-            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-          </label>
+      return (
+        <div className="h-full" data-testid="toc-view-container">
+          <PureTocView
+            documentId={bookId}
+            documentName={tableOfContents[0]?.title || uploadedFile?.name || "Document"}
+            currentPage={currentPage}
+            pdfPageCount={pdfPageCount}
+            onOpenInReader={(pageNumber) => {
+              syncToPage(pageNumber);
+              setViewMode("original");
+            }}
+            onOpenInSurgeon={(pageNumber) => {
+              syncToPage(pageNumber);
+              setViewMode("hybrid");
+            }}
+          />
         </div>
       );
     }
