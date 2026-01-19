@@ -392,7 +392,7 @@ export default function SmartPDFViewer({
                 key={`${fileUrl}-${currentPage}-${pageCount}`}
                 pdf={pdfDocument}
                 pageNumber={currentPage}
-                scale={zoom}
+                scale={effectiveZoom}
                 renderTextLayer
                 renderAnnotationLayer={false}
                 loading={
