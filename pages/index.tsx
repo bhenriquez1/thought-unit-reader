@@ -960,8 +960,6 @@ export default function ThoughtUnitReader() {
         }
       }, 500); // Wait for outline extraction to complete first
 
-      setPdfParsingState(prev => ({ ...prev, progress: "Setting up learning features..." }));
-
       // Whiteboard auto-detect
       const matches = detectWhiteboardSections(parsedUnits);
       if (autoWhiteboard && matches.length > 0) {
