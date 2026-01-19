@@ -855,12 +855,16 @@ export default function ThoughtUnitReader() {
       // Generate and store TOC
       const documentId = file.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book";
       
-      // Heuristic TOC (viewer outline will override later)
+      // TOC generation will be done in two phases:
+      // 1. Heuristic TOC from URL (deferred to SmartPDFViewer.onOutline for native outline)
+      // 2. Fallback TOC from parsed content (handled after parsing)
+      
+      // Try initial TOC generation (may be empty - outline extraction handled by SmartPDFViewer)
       generateTOC(url).then((tocEntries) => {
-        setTableOfContents(tocEntries);
-        
-        // Save to tocStore for persistence
         if (tocEntries && tocEntries.length > 0) {
+          setTableOfContents(tocEntries);
+          
+          // Save to tocStore for persistence
           const tocItems = tocEntries.map((entry: any, idx: number) => ({
             id: `toc_${idx}_${Date.now()}`,
             title: entry.title || `Chapter ${idx + 1}`,
@@ -873,7 +877,7 @@ export default function ThoughtUnitReader() {
           console.log(`📑 TOC auto-generated: ${tocItems.length} chapters`);
         }
       }).catch((err) => {
-        console.log('📑 No PDF outline found, will try heuristic extraction');
+        console.log('📑 Initial TOC generation deferred to outline extraction or fallback');
       });
 
       setPdfParsingState(prev => ({ ...prev, progress: "Extracting and analyzing content..." }));
