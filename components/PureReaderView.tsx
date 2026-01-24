@@ -92,22 +92,24 @@ export default function PureReaderView({
         {/* Zoom Controls */}
         <div className="flex items-center gap-2">
           <button
-            onClick={handleZoomOut}
-            className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm"
+            onClick={zoomOut}
+            disabled={!canZoomOut()}
+            className="px-2 py-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm"
             title="Zoom out"
           >
             −
           </button>
           <button
-            onClick={handleResetZoom}
+            onClick={resetZoom}
             className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm min-w-[60px]"
             title="Reset zoom"
           >
-            {Math.round(zoom * 100)}%
+            {getZoomPercent()}%
           </button>
           <button
-            onClick={handleZoomIn}
-            className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm"
+            onClick={zoomIn}
+            disabled={!canZoomIn()}
+            className="px-2 py-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm"
             title="Zoom in"
           >
             +
