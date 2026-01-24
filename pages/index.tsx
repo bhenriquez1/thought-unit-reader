@@ -33,9 +33,12 @@ import PureReaderView from "@/components/PureReaderView";
 import PureTocView from "@/components/PureTocView";
 import PureSurgeonView from "@/components/PureSurgeonView";
 import PureNoteLabView from "@/components/PureNoteLabView";
+import PurePdrmView from "@/components/PurePdrmView";
 
 // Store imports
 import { useTocStore } from "@/lib/stores/tocStore";
+import { useZoomStore } from "@/lib/stores/zoomStore";
+import { usePdrmStore } from "@/lib/stores/pdrmStore";
 
 import {
   firebaseConnected,
