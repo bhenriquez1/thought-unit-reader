@@ -1789,6 +1789,7 @@ export default function ThoughtUnitReader() {
             currentThoughtUnit={currentThoughtUnit}
             chapterId={currentChapter?.title || `chapter-${currentPage}`}
             headings={currentHeadings}
+            pageText={thoughtUnits[currentThoughtUnit - 1]?.text || ''}
             onPageChange={(p) => syncToPage(p)}
             onPageCount={(count) => setPdfPageCount(count)}
             onRecommendedAction={(action) => {
