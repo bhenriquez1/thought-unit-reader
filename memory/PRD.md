@@ -76,14 +76,24 @@ Build a sophisticated study application for processing books and documents with:
 - Jump to page + highlight flash (navigation buttons)
 - "Open in Reader" / "Open in Surgeon" buttons on each entry
 
-#### P0: Enhanced PDRM Generation ✅ January 2026
-- "Important-only" heuristics (`isHighlightImportant` function):
-  - Skips very short text (<15 chars)
-  - Detects high-signal indicators (key, important, treatment, etc.)
-  - Generates compact summary (max 200 chars)
-  - Extracts 1-3 key points
-- Source tracking: { docId, pageNumber, chapterTitle, highlightId, quote }
-- Stored in pdrmStore with document grouping
+#### P0: PDRM V2 Workflow (Structured Extraction System) ✅ January 2026
+**Surgeon View + PDRM are ONE workflow**
+- PDRM is NOT a summary feature - it's Pattern/Decision/Risk/Mnemonic extraction
+- Auto mode: highlight → instant PDRM card; page change → incremental page PDRM (cached)
+- Manual mode: highlight → Draft PDRM (empty fields); page change → NO auto-fill
+- Toggle visibly changes behavior on next action (green=AUTO, yellow=MANUAL)
+- PDRM sidebar in Surgeon View shows current page entries
+
+**Implementation Files:**
+- `/app/components/PureSurgeonView.tsx` - Line 92 (autoMode), Line 177-215 (handleCreateHighlight), Line 115-155 (page effect)
+- `/app/lib/pdrmAIExtractor.ts` - Line 43-91 (prompts), Line 97-160 (heuristic extraction)
+- `/app/lib/stores/pdrmStore.ts` - Line 53-57 (pageCache), Line 128-150 (cache functions)
+
+**Debounce/Cache Strategy:**
+- `DEBOUNCE_MS = 500` for page extraction
+- `MIN_REQUEST_INTERVAL_MS = 1000` rate limit
+- Page cache: `${docId}_${pageNumber}` → prevents re-extraction
+- Heuristic extraction (no LLM API calls currently)
 
 #### P0: Recommended Next Action Engine
 - After quiz completion in Surgeon View:
