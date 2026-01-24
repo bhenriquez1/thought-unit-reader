@@ -84,6 +84,12 @@ export default function PureSurgeonView({
     getBestScore
   } = useQuizStore();
 
+  // Global zoom store
+  const { zoom } = useZoomStore();
+
+  // PDRM store for auto-generation
+  const { autoMode, setAutoMode, addEntry: addPdrmEntry } = usePdrmStore();
+
   // View mode state - Clean/Full/PDF-only
   const [viewMode, setViewMode] = useState<ViewMode>('full');
   const [activeTab, setActiveTab] = useState<'highlights' | 'quiz' | 'review'>('highlights');
@@ -92,6 +98,8 @@ export default function PureSurgeonView({
   const [quizAnswer, setQuizAnswer] = useState('');
   const [showQuizResult, setShowQuizResult] = useState(false);
   const [lastQuizScore, setLastQuizScore] = useState<number | null>(null);
+  const [showManualClassify, setShowManualClassify] = useState(false);
+  const [pendingHighlightText, setPendingHighlightText] = useState('');
 
   // Initialize store
   useEffect(() => {
