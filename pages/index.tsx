@@ -2195,7 +2195,47 @@ export default function ThoughtUnitReader() {
           >
             📋 Syllabus
           </button>
+          <button
+            onClick={() => setViewMode("pdrm")}
+            data-testid="nav-pdrm"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              viewMode === "pdrm" 
+                ? "bg-indigo-500 text-white shadow-lg" 
+                : "text-gray-300 hover:text-white hover:bg-gray-700"
+            }`}
+          >
+            📊 PDRM
+          </button>
         </div>
+
+        {/* Global Zoom Controls - Show when PDF is loaded */}
+        {fileUrl && pdfPageCount > 0 && (viewMode === "original" || viewMode === "hybrid") && (
+          <div className="flex items-center gap-1 bg-gray-900 rounded-lg px-2 py-1" data-testid="global-zoom">
+            <button
+              onClick={zoomOut}
+              disabled={!canZoomOut()}
+              className="px-2 py-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs"
+              title="Zoom out"
+            >
+              −
+            </button>
+            <button
+              onClick={resetZoom}
+              className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs min-w-[50px] text-center"
+              title="Reset zoom"
+            >
+              {getZoomPercent()}%
+            </button>
+            <button
+              onClick={zoomIn}
+              disabled={!canZoomIn()}
+              className="px-2 py-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs"
+              title="Zoom in"
+            >
+              +
+            </button>
+          </div>
+        )}
 
         {/* Readless Mode Toggle */}
         <label className="inline-flex items-center gap-2 text-sm">
