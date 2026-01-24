@@ -135,6 +135,8 @@ linkHighlightToTopic(topicId, highlightId) // Track highlight counts
 - **Build**: ✅ Passes
 - **Unit Tests**: 20/20 passed (100%)
 - **UI Tests**: All 6 tabs verified, all buttons functional
+- **V1 Stabilization**: ✅ Complete - Strict mode separation verified via screenshots
+- **Clean/Full Mode Toggle**: ✅ Working - visibly changes DOM layout
 - **React-PDF**: No annotation errors in console
 - **Firebase**: MOCKED (localStorage only)
 
