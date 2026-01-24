@@ -149,13 +149,17 @@ linkHighlightToTopic(topicId, highlightId) // Track highlight counts
 ├── annotationStore.ts    # Highlights, PDRM tags (auto-tagging for silent capture)
 ├── quizStore.ts          # Chapter quiz, auto-flashcard creation
 ├── studySessionStore.ts  # Study sessions, Quick Study, Resume, topic filtering
-└── syllabusStore.ts      # Topics, progress tracking, study integration
+├── syllabusStore.ts      # Topics, progress tracking, study integration
+├── tocStore.ts           # Table of Contents with document grouping
+├── zoomStore.ts          # Global zoom state with persistence
+└── pdrmStore.ts          # PDRM entries with grouping and "important-only" filtering
 
 /app/components/
 ├── SmartPDFViewer.tsx    # PDF rendering with defensive guards
-├── PureReaderView.tsx    # Pure reading mode
-├── PureTocView.tsx       # Pure TOC mode
-├── PureSurgeonView.tsx   # Pure surgeon mode
+├── PureReaderView.tsx    # Pure reading mode (uses global zoom)
+├── PureTocView.tsx       # Pure TOC mode with navigation buttons
+├── PureSurgeonView.tsx   # Pure surgeon mode with Auto/Manual PDRM
+├── PurePdrmView.tsx      # PDRM entries view with grouping
 ├── PureNoteLabView.tsx   # Pure notelab mode
 ├── SyllabusModePanel.tsx # Syllabus with Quick Study
 ├── StudySessionPanel.tsx # Study with Quick Study + Resume
@@ -165,9 +169,12 @@ linkHighlightToTopic(topicId, highlightId) // Track highlight counts
 ## Testing Status
 - **Build**: ✅ Passes
 - **Unit Tests**: 20/20 passed (100%)
-- **UI Tests**: All 6 tabs verified, all buttons functional
+- **UI Tests**: All 7 tabs verified, all buttons functional
 - **V1 Stabilization**: ✅ Complete - Strict mode separation verified via screenshots
 - **Clean/Full Mode Toggle**: ✅ Working - visibly changes DOM layout
+- **Auto/Manual PDRM Toggle**: ✅ Working - persists preference
+- **Global Zoom Controls**: ✅ Working - syncs between views, persists
+- **PDRM Tab**: ✅ Working - grouping and navigation verified
 - **React-PDF**: No annotation errors in console
 - **Firebase**: MOCKED (localStorage only)
 
