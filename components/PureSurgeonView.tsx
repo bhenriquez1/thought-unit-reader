@@ -330,6 +330,23 @@ export default function PureSurgeonView({
               📄 PDF
             </button>
           </div>
+
+          {/* Auto/Manual PDRM Toggle */}
+          <div className="flex items-center gap-2 bg-gray-700 rounded-lg px-2 py-1" data-testid="pdrm-mode-toggle">
+            <span className="text-xs text-gray-400">PDRM:</span>
+            <button
+              onClick={() => setAutoMode(!autoMode)}
+              className={`px-2 py-0.5 rounded text-xs font-medium transition-all ${
+                autoMode 
+                  ? 'bg-green-600 text-white' 
+                  : 'bg-yellow-600 text-white'
+              }`}
+              data-testid="pdrm-auto-toggle"
+              title={autoMode ? 'Auto-classify highlights' : 'Manual classification'}
+            >
+              {autoMode ? '⚡ Auto' : '✋ Manual'}
+            </button>
+          </div>
         </div>
         
         <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -338,6 +355,78 @@ export default function PureSurgeonView({
           <span>{allHighlights.length} total</span>
         </div>
       </div>
+
+      {/* Manual Classification Dialog */}
+      {showManualClassify && pendingHighlightText && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50" data-testid="manual-classify-dialog">
+          <div className="bg-gray-800 rounded-lg p-4 max-w-md w-full mx-4 shadow-xl border border-gray-700">
+            <h3 className="text-lg font-semibold text-white mb-3">Classify Highlight</h3>
+            <p className="text-sm text-gray-400 mb-4 line-clamp-3">
+              "{pendingHighlightText.length > 100 ? pendingHighlightText.substring(0, 100) + '...' : pendingHighlightText}"
+            </p>
+            
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <button
+                onClick={() => {
+                  setSelectedText(pendingHighlightText);
+                  handleCreateHighlight('P');
+                }}
+                className="px-3 py-2 bg-purple-600 hover:bg-purple-500 rounded text-sm font-medium"
+              >
+                🔷 Pattern
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedText(pendingHighlightText);
+                  handleCreateHighlight('D');
+                }}
+                className="px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium"
+              >
+                ⚖️ Decision
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedText(pendingHighlightText);
+                  handleCreateHighlight('R');
+                }}
+                className="px-3 py-2 bg-red-600 hover:bg-red-500 rounded text-sm font-medium"
+              >
+                ⚠️ Risk
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedText(pendingHighlightText);
+                  handleCreateHighlight('M');
+                }}
+                className="px-3 py-2 bg-yellow-600 hover:bg-yellow-500 rounded text-sm font-medium"
+              >
+                💡 Mnemonic
+              </button>
+            </div>
+            
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setSelectedText(pendingHighlightText);
+                  handleCreateHighlight();
+                }}
+                className="flex-1 px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm"
+              >
+                📝 General
+              </button>
+              <button
+                onClick={() => {
+                  setShowManualClassify(false);
+                  setPendingHighlightText('');
+                }}
+                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
