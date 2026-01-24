@@ -2065,6 +2065,33 @@ export default function ThoughtUnitReader() {
       );
     }
 
+    // ✅ PDRM View - PURE: PDRM entries grouped by doc/chapter/page
+    if (viewMode === "pdrm") {
+      return (
+        <div className="h-full" data-testid="pdrm-view-container">
+          <PurePdrmView
+            documentId={bookId}
+            documentName={uploadedFile?.name || tableOfContents[0]?.title || "Document"}
+            currentPage={currentPage}
+            pdfPageCount={pdfPageCount}
+            onJumpToPage={(pageNumber, highlightId) => {
+              syncToPage(pageNumber);
+              // TODO: Flash highlight if highlightId provided
+            }}
+            onOpenInReader={(pageNumber) => {
+              syncToPage(pageNumber);
+              setViewMode("original");
+            }}
+            onOpenInSurgeon={(pageNumber, highlightId) => {
+              syncToPage(pageNumber);
+              setViewMode("hybrid");
+              // TODO: Flash highlight if highlightId provided
+            }}
+          />
+        </div>
+      );
+    }
+
     // ✅ READER View - PURE: PDF ONLY (no thought units, no TOC, no annotations)
     // This is the DEFAULT view and handles viewMode === "original"
     if (viewMode === "original" || viewMode === "pattern") {
