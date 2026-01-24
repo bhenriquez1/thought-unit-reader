@@ -6,6 +6,8 @@
 // ❌ No NoteLab panel
 // ✅ Thought Units live HERE (not in Reader)
 // ✅ Clean Mode / Full Mode toggle
+// ✅ Auto/Manual PDRM classification toggle
+// ✅ Uses global zoom store for shared zoom across views
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { 
@@ -15,6 +17,14 @@ import {
   getPDRMColorForType
 } from '@/lib/stores/annotationStore';
 import { useQuizStore } from '@/lib/stores/quizStore';
+import { useZoomStore } from '@/lib/stores/zoomStore';
+import { 
+  usePdrmStore, 
+  isHighlightImportant, 
+  generateCompactSummary, 
+  extractKeyPoints,
+  type PDRMClassification 
+} from '@/lib/stores/pdrmStore';
 import classifyHighlight, { getPDRMTypeLabel, getPDRMTypeColor } from '@/lib/autoPDRM';
 import SmartPDFViewer from './SmartPDFViewer';
 
