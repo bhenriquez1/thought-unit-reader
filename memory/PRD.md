@@ -47,13 +47,43 @@ Build a sophisticated study application for processing books and documents with:
 - NoteLab receives all items without user interruption
 
 #### P0: Pure View Components (Strict Mode Separation) ✅ VERIFIED January 2026
-- **PureReaderView.tsx**: PDF only (distraction-free reading)
-- **PureTocView.tsx**: TOC tree only (no PDF panel)
-- **PureSurgeonView.tsx**: PDF + Thought Units + Highlighting tools + Clean/Full/PDF toggle
+- **PureReaderView.tsx**: PDF only (distraction-free reading), uses global zoom store
+- **PureTocView.tsx**: TOC tree only (no PDF panel), with "Open in Reader/Surgeon" buttons
+- **PureSurgeonView.tsx**: PDF + Thought Units + Highlighting tools + Clean/Full/PDF toggle + Auto/Manual PDRM toggle
 - **PureNoteLabView.tsx**: Notes workspace only (no PDF)
 - **StudySessionPanel.tsx**: Flashcard study only (no PDF)
 - **SyllabusModePanel.tsx**: Syllabus workspace only (no PDF)
+- **PurePdrmView.tsx**: PDRM entries grouped by doc/chapter/page with jump-to-page
 - **V1 Stabilization Complete**: Removed shared TOC sidebar from all views, each tab now renders ONLY its pure component with no UI leakage
+
+#### P0: Global Zoom Controls ✅ January 2026
+- Global zoom store (`/app/lib/stores/zoomStore.ts`) with localStorage persistence
+- Zoom controls in top app bar (visible in Reader and Surgeon View)
+- Zoom In (+25%), Zoom Out (-25%), Reset (125%), shows current %
+- Guards against crash when PDF not loaded
+- Syncs between Reader and Surgeon View
+
+#### P0: Auto/Manual PDRM Toggle ✅ January 2026
+- Toggle in Surgeon View toolbar (Auto/Manual mode)
+- Auto mode: Highlights auto-classified as Pattern/Decision/Risk/Mnemonic/General
+- Manual mode: Opens classification dialog for user selection
+- Preference persisted in pdrmStore
+
+#### P0: PDRM Tab ✅ January 2026
+- New 7th tab for viewing all PDRM entries
+- Grouped by page, chapter, or type (user selectable)
+- Search and filter functionality
+- Jump to page + highlight flash (navigation buttons)
+- "Open in Reader" / "Open in Surgeon" buttons on each entry
+
+#### P0: Enhanced PDRM Generation ✅ January 2026
+- "Important-only" heuristics (`isHighlightImportant` function):
+  - Skips very short text (<15 chars)
+  - Detects high-signal indicators (key, important, treatment, etc.)
+  - Generates compact summary (max 200 chars)
+  - Extracts 1-3 key points
+- Source tracking: { docId, pageNumber, chapterTitle, highlightId, quote }
+- Stored in pdrmStore with document grouping
 
 #### P0: Recommended Next Action Engine
 - After quiz completion in Surgeon View:
