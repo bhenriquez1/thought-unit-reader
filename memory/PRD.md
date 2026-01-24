@@ -162,14 +162,17 @@ linkHighlightToTopic(topicId, highlightId) // Track highlight counts
 ├── syllabusStore.ts      # Topics, progress tracking, study integration
 ├── tocStore.ts           # Table of Contents with document grouping
 ├── zoomStore.ts          # Global zoom state with persistence
-└── pdrmStore.ts          # PDRM entries with grouping and "important-only" filtering
+└── pdrmStore.ts          # PDRM V2: structured P/D/R/M fields, draft support, page cache
+
+/app/lib/
+└── pdrmAIExtractor.ts    # AI extraction service: prompts, heuristics, debounce, cache
 
 /app/components/
 ├── SmartPDFViewer.tsx    # PDF rendering with defensive guards
 ├── PureReaderView.tsx    # Pure reading mode (uses global zoom)
 ├── PureTocView.tsx       # Pure TOC mode with navigation buttons
-├── PureSurgeonView.tsx   # Pure surgeon mode with Auto/Manual PDRM
-├── PurePdrmView.tsx      # PDRM entries view with grouping
+├── PureSurgeonView.tsx   # PDRM workflow: Auto/Manual toggle, sidebar, page extraction
+├── PurePdrmView.tsx      # PDRM browse/search view
 ├── PureNoteLabView.tsx   # Pure notelab mode
 ├── SyllabusModePanel.tsx # Syllabus with Quick Study
 ├── StudySessionPanel.tsx # Study with Quick Study + Resume
