@@ -267,7 +267,10 @@ export default function ThoughtUnitReader() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const [viewMode, setViewMode] =
-    useState<"original" | "hybrid" | "pattern" | "notelab" | "toc" | "study" | "syllabus">("original");
+    useState<"original" | "hybrid" | "pattern" | "notelab" | "toc" | "study" | "syllabus" | "pdrm">("original");
+
+  // Global Zoom Store
+  const { zoom, zoomIn, zoomOut, resetZoom, getZoomPercent, canZoomIn, canZoomOut } = useZoomStore();
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(0); // Start with 0 to indicate not loaded
