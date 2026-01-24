@@ -45,11 +45,14 @@ Build a sophisticated study application for processing books and documents with:
 - Quiz misses auto-create flashcards with ['flashcard', 'miss', 'weak', 'quiz-generated'] tags
 - NoteLab receives all items without user interruption
 
-#### P0: Pure View Components (Strict Mode Separation)
-- **PureReaderView.tsx**: PDF + thought units only
-- **PureTocView.tsx**: TOC sidebar + PDF preview
-- **PureSurgeonView.tsx**: Highlighting tools, quiz, review tabs
-- **PureNoteLabView.tsx**: Filter/search/group notes workspace
+#### P0: Pure View Components (Strict Mode Separation) ✅ VERIFIED January 2026
+- **PureReaderView.tsx**: PDF only (distraction-free reading)
+- **PureTocView.tsx**: TOC tree only (no PDF panel)
+- **PureSurgeonView.tsx**: PDF + Thought Units + Highlighting tools + Clean/Full/PDF toggle
+- **PureNoteLabView.tsx**: Notes workspace only (no PDF)
+- **StudySessionPanel.tsx**: Flashcard study only (no PDF)
+- **SyllabusModePanel.tsx**: Syllabus workspace only (no PDF)
+- **V1 Stabilization Complete**: Removed shared TOC sidebar from all views, each tab now renders ONLY its pure component with no UI leakage
 
 #### P0: Recommended Next Action Engine
 - After quiz completion in Surgeon View:
