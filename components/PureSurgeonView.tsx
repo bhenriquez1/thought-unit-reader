@@ -1,15 +1,16 @@
 "use client";
 
 // components/PureSurgeonView.tsx
-// PURE SURGEON VIEW MODE - Thought-Unit View + Highlighting + Clean/Full Mode + Quiz
-// ❌ No TOC UI inside
-// ❌ No NoteLab panel
-// ✅ Thought Units live HERE (not in Reader)
-// ✅ Clean Mode / Full Mode toggle
-// ✅ Auto/Manual PDRM classification toggle
-// ✅ Uses global zoom store for shared zoom across views
+// PURE SURGEON VIEW MODE - Highlighting + PDRM Workflow + Quiz
+// 
+// PDRM WORKFLOW (V2):
+// - Surgeon View + PDRM are ONE workflow
+// - Auto mode: highlight → instant PDRM card; page change → incremental page PDRM
+// - Manual mode: highlight → Draft PDRM (empty fields); page change → NO auto-fill
+// - Toggle visibly changes behavior on next action
+// - PDRM entries shown inline for current page
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { 
   useAnnotationStore, 
   type Annotation,
@@ -20,13 +21,26 @@ import { useQuizStore } from '@/lib/stores/quizStore';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 import { 
   usePdrmStore, 
-  isHighlightImportant, 
-  generateCompactSummary, 
-  extractKeyPoints,
-  type PDRMClassification 
+  type PDRMEntry,
+  type PDRMFields,
+  type PDRMType,
+  getPdrmTypeColor,
+  getPdrmTypeIcon,
+  getPdrmTypeLabel,
+  determinePrimaryType
 } from '@/lib/stores/pdrmStore';
-import classifyHighlight, { getPDRMTypeLabel, getPDRMTypeColor } from '@/lib/autoPDRM';
+import {
+  createAutoHighlightPDRM,
+  createManualHighlightPDRM,
+  processPageForAutoPDRM,
+  cancelPendingExtraction
+} from '@/lib/pdrmAIExtractor';
+import classifyHighlight, { getPDRMTypeColor as getLegacyColor } from '@/lib/autoPDRM';
 import SmartPDFViewer from './SmartPDFViewer';
+
+// ============================================================================
+// Types
+// ============================================================================
 
 interface PureSurgeonViewProps {
   fileUrl: string | null;
@@ -38,6 +52,7 @@ interface PureSurgeonViewProps {
   currentThoughtUnit: number;
   chapterId?: string;
   headings: string[];
+  pageText?: string;  // Current page text for PDRM extraction
   onPageChange: (page: number) => void;
   onPageCount: (count: number) => void;
   onThoughtUnitChange?: (index: number) => void;
@@ -45,6 +60,11 @@ interface PureSurgeonViewProps {
 }
 
 type ViewMode = 'full' | 'clean' | 'pdf-only';
+type SidebarTab = 'pdrm' | 'highlights' | 'quiz' | 'review';
+
+// ============================================================================
+// Component
+// ============================================================================
 
 export default function PureSurgeonView({
   fileUrl,
@@ -56,12 +76,14 @@ export default function PureSurgeonView({
   currentThoughtUnit,
   chapterId = 'default',
   headings,
+  pageText = '',
   onPageChange,
   onPageCount,
   onThoughtUnitChange,
   onRecommendedAction
 }: PureSurgeonViewProps) {
-  // Stores
+  
+  // ---- Stores ----
   const {
     annotations,
     setActiveDocument,
@@ -77,31 +99,51 @@ export default function PureSurgeonView({
     generateQuiz,
     submitAnswer,
     nextQuestion,
-    prevQuestion,
     finishQuiz,
     clearCurrentQuiz,
-    isGenerating,
+    isGenerating: isQuizGenerating,
     getBestScore
   } = useQuizStore();
 
-  // Global zoom store
   const { zoom } = useZoomStore();
 
-  // PDRM store for auto-generation
-  const { autoMode, setAutoMode, addEntry: addPdrmEntry } = usePdrmStore();
+  const {
+    autoMode,
+    setAutoMode,
+    toggleAutoMode,
+    generatingFor,
+    getEntriesByPage,
+    getEntriesByHighlight,
+    getDraftEntries,
+    updateEntry,
+    deleteEntry,
+    completeDraft,
+    isPageProcessed
+  } = usePdrmStore();
 
-  // View mode state - Clean/Full/PDF-only
+  // ---- Local State ----
   const [viewMode, setViewMode] = useState<ViewMode>('full');
-  const [activeTab, setActiveTab] = useState<'highlights' | 'quiz' | 'review'>('highlights');
-  const [showHighlightMenu, setShowHighlightMenu] = useState(false);
+  const [activeTab, setActiveTab] = useState<SidebarTab>('pdrm');
   const [selectedText, setSelectedText] = useState('');
+  const [showHighlightMenu, setShowHighlightMenu] = useState(false);
   const [quizAnswer, setQuizAnswer] = useState('');
   const [showQuizResult, setShowQuizResult] = useState(false);
   const [lastQuizScore, setLastQuizScore] = useState<number | null>(null);
-  const [showManualClassify, setShowManualClassify] = useState(false);
-  const [pendingHighlightText, setPendingHighlightText] = useState('');
+  
+  // Manual mode: editing draft PDRM
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
+  const [draftFields, setDraftFields] = useState<PDRMFields>({
+    pattern: '', decisionRule: '', risk: '', mnemonic: ''
+  });
+  
+  // Page PDRM generation status
+  const [pagePdrmStatus, setPagePdrmStatus] = useState<'idle' | 'generating' | 'done'>('idle');
+  const [pagePdrmCount, setPagePdrmCount] = useState(0);
+  
+  // Ref for tracking page changes
+  const lastProcessedPage = useRef<number>(0);
 
-  // Initialize store
+  // ---- Initialize Stores ----
   useEffect(() => {
     setActiveDocument(documentId, userId);
   }, [documentId, userId, setActiveDocument]);
@@ -110,76 +152,96 @@ export default function PureSurgeonView({
     setActivePage(currentPage - 1);
   }, [currentPage, setActivePage]);
 
-  // Get annotations
+  // ---- Page Change: Auto PDRM Generation (incremental) ----
+  useEffect(() => {
+    // Only process if:
+    // 1. Auto mode is ON
+    // 2. Page actually changed
+    // 3. We have page text
+    // 4. File is loaded
+    if (!autoMode || !fileUrl || !pageText || pageText.length < 50) {
+      return;
+    }
+    
+    if (currentPage === lastProcessedPage.current) {
+      return; // Same page, don't re-process
+    }
+    
+    lastProcessedPage.current = currentPage;
+    
+    // Check if already processed (cached)
+    if (isPageProcessed(documentId, currentPage)) {
+      const existing = getEntriesByPage(documentId, currentPage);
+      setPagePdrmCount(existing.length);
+      setPagePdrmStatus('done');
+      console.log(`📄 Page ${currentPage} already cached (${existing.length} entries)`);
+      return;
+    }
+    
+    // Process page (async, debounced internally)
+    setPagePdrmStatus('generating');
+    
+    processPageForAutoPDRM(
+      documentId,
+      currentPage,
+      pageText,
+      (status, count) => {
+        if (status === 'complete') {
+          setPagePdrmCount(count || 0);
+          setPagePdrmStatus('done');
+        }
+      }
+    ).catch(err => {
+      console.error('Page PDRM extraction failed:', err);
+      setPagePdrmStatus('idle');
+    });
+    
+    // Cleanup: cancel pending if page changes quickly
+    return () => {
+      cancelPendingExtraction(`page_${documentId}_${currentPage}`);
+    };
+  }, [autoMode, fileUrl, documentId, currentPage, pageText, isPageProcessed, getEntriesByPage]);
+
+  // ---- Derived Data ----
   const pageAnnotations = useMemo(() => {
     return getAnnotationsForPage(currentPage - 1);
   }, [currentPage, getAnnotationsForPage, annotations]);
 
-  const allHighlights = useMemo(() => {
-    return getHighlightsOnly().filter(a => a.documentId === documentId);
-  }, [getHighlightsOnly, annotations, documentId]);
+  const allHighlights = useMemo(() => getHighlightsOnly(), [getHighlightsOnly, annotations]);
+  const mistakes = useMemo(() => getMistakes(), [getMistakes, annotations]);
+  
+  const currentPagePDRM = useMemo(() => {
+    return getEntriesByPage(documentId, currentPage);
+  }, [documentId, currentPage, getEntriesByPage]);
+  
+  const draftPDRMs = useMemo(() => {
+    return getDraftEntries(documentId);
+  }, [documentId, getDraftEntries]);
 
-  const mistakes = useMemo(() => {
-    return getMistakes().filter(a => a.documentId === documentId);
-  }, [getMistakes, annotations, documentId]);
-
-  // Handle text selection with Auto-PDRM
+  // ---- Handlers ----
+  
+  // Handle text selection
   const handleTextSelect = useCallback((text: string) => {
     if (!text || text.length < 3) return;
     setSelectedText(text);
-    
-    // In manual mode, show classification dialog
-    if (!autoMode) {
-      setPendingHighlightText(text);
-      setShowManualClassify(true);
-    } else {
-      setShowHighlightMenu(true);
-    }
-  }, [autoMode]);
+    setShowHighlightMenu(true);
+  }, []);
 
-  // Map PDRM letter to classification
-  const mapPdrmType = (type: 'P' | 'D' | 'R' | 'M' | 'general'): PDRMClassification => {
-    switch (type) {
-      case 'P': return 'pattern';
-      case 'D': return 'decision';
-      case 'R': return 'risk';
-      case 'M': return 'mnemonic';
-      default: return 'general';
-    }
-  };
-
-  // Create highlight with Auto-PDRM classification and PDRM entry generation
-  const handleCreateHighlight = useCallback(async (overridePDRM?: 'P' | 'D' | 'R' | 'M') => {
+  // Create highlight - MAIN ENTRY POINT for PDRM creation
+  const handleCreateHighlight = useCallback(async () => {
     if (!selectedText) return;
 
+    // Generate highlight ID
+    const highlightId = `highlight_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Legacy classification for annotation color
     const classification = classifyHighlight(selectedText, {
       headingText: headings[0],
       chapterTitle: chapterId,
       pageIndex: currentPage - 1
     });
 
-    let pdrm: PDRMMetadata = {};
-    let color = '#FFEB3B';
-    let pdrmType: 'P' | 'D' | 'R' | 'M' | 'general' = 'general';
-
-    if (overridePDRM) {
-      switch (overridePDRM) {
-        case 'P': pdrm.pattern = selectedText; break;
-        case 'D': pdrm.decisionRule = selectedText; break;
-        case 'M': pdrm.mnemonic = selectedText; break;
-        case 'R': pdrm.isMistake = true; break;
-      }
-      color = getPDRMColorForType(overridePDRM);
-      pdrmType = overridePDRM;
-    } else {
-      pdrm = classification.pdrm;
-      color = getPDRMTypeColor(classification.type);
-      pdrmType = classification.type as any;
-    }
-
-    // Create the annotation/highlight
-    const highlightId = `highlight_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+    // Create annotation (highlight)
     await addAnnotation({
       documentId,
       chapterId,
@@ -187,56 +249,68 @@ export default function PureSurgeonView({
       thoughtUnitId: `tu_${currentThoughtUnit}`,
       selectedText,
       anchor: { type: 'textRange', start: 0, end: selectedText.length },
-      pdrm,
-      color,
-      tags: classification.type !== 'general' ? [`auto-${classification.type}`] : [],
+      pdrm: classification.pdrm,
+      color: getLegacyColor(classification.type),
+      tags: [`highlight`, `pdrm-${autoMode ? 'auto' : 'manual'}`],
       userId
     });
 
-    // Create PDRM entry (important-only filtering)
-    const isImportant = isHighlightImportant(selectedText);
-    const summary = generateCompactSummary(selectedText, 200);
-    const keyPoints = extractKeyPoints(selectedText, 3);
+    // === PDRM CREATION (based on mode) ===
+    const evidence = {
+      quote: selectedText.length > 100 ? selectedText.substring(0, 97) + '...' : selectedText,
+      pageNumber: currentPage,
+      documentId,
+      highlightId
+    };
 
-    addPdrmEntry({
-      classification: mapPdrmType(pdrmType),
-      source: {
-        documentId,
-        documentName: undefined, // Will be filled from context
-        pageNumber: currentPage,
-        chapterTitle: chapterId !== 'default' ? chapterId : undefined,
-        highlightId,
-        quote: selectedText
-      },
-      summary,
-      keyPoints,
-      confidence: classification.confidence || 0.5,
-      isAutoGenerated: !overridePDRM,
-      isImportant
-    });
+    if (autoMode) {
+      // AUTO MODE: Immediate PDRM extraction and creation
+      await createAutoHighlightPDRM(evidence, selectedText);
+    } else {
+      // MANUAL MODE: Create draft with empty fields
+      const draftId = createManualHighlightPDRM(evidence);
+      // Open edit panel for the draft
+      setEditingDraftId(draftId);
+      setDraftFields({ pattern: '', decisionRule: '', risk: '', mnemonic: '' });
+      setActiveTab('pdrm');
+    }
 
     setShowHighlightMenu(false);
     setSelectedText('');
-    setShowManualClassify(false);
-    setPendingHighlightText('');
-    console.log(`✅ Highlight + PDRM created: ${overridePDRM || classification.type} (important: ${isImportant})`);
-  }, [selectedText, documentId, chapterId, currentPage, currentThoughtUnit, headings, userId, addAnnotation, addPdrmEntry]);
+    console.log(`✅ Highlight created (${autoMode ? 'Auto' : 'Manual'} mode)`);
+  }, [selectedText, documentId, chapterId, currentPage, currentThoughtUnit, headings, userId, autoMode, addAnnotation]);
+
+  // Save draft PDRM (Manual mode)
+  const handleSaveDraft = useCallback(() => {
+    if (!editingDraftId) return;
+    
+    const primaryType = determinePrimaryType(draftFields);
+    completeDraft(editingDraftId, draftFields, primaryType as PDRMType);
+    
+    setEditingDraftId(null);
+    setDraftFields({ pattern: '', decisionRule: '', risk: '', mnemonic: '' });
+    console.log(`✅ Draft PDRM completed as: ${primaryType}`);
+  }, [editingDraftId, draftFields, completeDraft]);
+
+  // Cancel draft editing
+  const handleCancelDraft = useCallback(() => {
+    setEditingDraftId(null);
+    setDraftFields({ pattern: '', decisionRule: '', risk: '', mnemonic: '' });
+  }, []);
+
+  // Jump to highlight (from PDRM entry)
+  const handleJumpToHighlight = useCallback((entry: PDRMEntry) => {
+    if (entry.evidence.pageNumber !== currentPage) {
+      onPageChange(entry.evidence.pageNumber);
+    }
+    // TODO: Flash/outline the highlight
+  }, [currentPage, onPageChange]);
 
   // Quiz handlers
   const handleStartQuiz = useCallback(async () => {
     await generateQuiz(documentId, chapterId, allHighlights, headings);
     setActiveTab('quiz');
   }, [documentId, chapterId, allHighlights, headings, generateQuiz]);
-
-  const handleSubmitAnswer = useCallback((answer: string) => {
-    if (!currentQuiz) return;
-    const question = currentQuiz.questions[currentQuiz.currentIndex];
-    submitAnswer(question.id, answer);
-    setQuizAnswer('');
-    if (currentQuiz.currentIndex < currentQuiz.questions.length - 1) {
-      nextQuestion();
-    }
-  }, [currentQuiz, submitAnswer, nextQuestion]);
 
   const handleFinishQuiz = useCallback(async () => {
     const attempt = await finishQuiz();
@@ -251,7 +325,7 @@ export default function PureSurgeonView({
     }
   }, [finishQuiz, mistakes.length, onRecommendedAction]);
 
-  // No file uploaded
+  // ---- Empty State ----
   if (!fileUrl) {
     return (
       <div className="h-full flex items-center justify-center bg-gray-900 text-white" data-testid="surgeon-view-empty">
@@ -260,33 +334,31 @@ export default function PureSurgeonView({
           <h2 className="text-2xl font-bold mb-2">Surgeon View</h2>
           <p className="text-gray-400 mb-4">Upload a PDF to start highlighting and learning</p>
           <div className="text-sm text-gray-500 space-y-1">
-            <p>• Thought-Unit reading mode</p>
-            <p>• Auto-PDRM classification (Pattern/Decision/Risk/Mnemonic)</p>
-            <p>• Chapter quizzes and review</p>
+            <p>• Highlight text to create PDRM entries</p>
+            <p>• Auto mode: instant Pattern/Decision/Risk/Mnemonic extraction</p>
+            <p>• Manual mode: draft entries for you to complete</p>
           </div>
         </div>
       </div>
     );
   }
 
-  // Get layout classes based on view mode
+  // ---- Layout Config ----
   const getLayoutClasses = () => {
     switch (viewMode) {
       case 'clean':
-        // Clean mode: Only thought units, no PDF
-        return { showPdf: false, showThoughts: true, showSidebar: false };
+        return { showPdf: false, showThoughts: true, showSidebar: true };
       case 'pdf-only':
-        // PDF only mode
         return { showPdf: true, showThoughts: false, showSidebar: false };
       case 'full':
       default:
-        // Full mode: PDF + Thoughts + Sidebar
         return { showPdf: true, showThoughts: true, showSidebar: true };
     }
   };
 
   const layout = getLayoutClasses();
 
+  // ---- Render ----
   return (
     <div className="h-full flex flex-col bg-gray-900" data-testid="pure-surgeon-view" data-view-mode={viewMode}>
       {/* Toolbar */}
@@ -294,14 +366,12 @@ export default function PureSurgeonView({
         <div className="flex items-center gap-4">
           <span className="text-sm text-gray-400">Page {currentPage} / {pdfPageCount}</span>
           
-          {/* View Mode Toggle - Clean/Full/PDF */}
+          {/* View Mode Toggle */}
           <div className="flex items-center bg-gray-700 rounded-lg p-0.5" data-testid="view-mode-toggle">
             <button
               onClick={() => setViewMode('clean')}
               className={`px-3 py-1 rounded text-xs font-medium transition-all ${
-                viewMode === 'clean' 
-                  ? 'bg-purple-600 text-white shadow' 
-                  : 'text-gray-400 hover:text-white'
+                viewMode === 'clean' ? 'bg-purple-600 text-white shadow' : 'text-gray-400 hover:text-white'
               }`}
               data-testid="clean-mode-btn"
             >
@@ -310,9 +380,7 @@ export default function PureSurgeonView({
             <button
               onClick={() => setViewMode('full')}
               className={`px-3 py-1 rounded text-xs font-medium transition-all ${
-                viewMode === 'full' 
-                  ? 'bg-purple-600 text-white shadow' 
-                  : 'text-gray-400 hover:text-white'
+                viewMode === 'full' ? 'bg-purple-600 text-white shadow' : 'text-gray-400 hover:text-white'
               }`}
               data-testid="full-mode-btn"
             >
@@ -321,9 +389,7 @@ export default function PureSurgeonView({
             <button
               onClick={() => setViewMode('pdf-only')}
               className={`px-3 py-1 rounded text-xs font-medium transition-all ${
-                viewMode === 'pdf-only' 
-                  ? 'bg-purple-600 text-white shadow' 
-                  : 'text-gray-400 hover:text-white'
+                viewMode === 'pdf-only' ? 'bg-purple-600 text-white shadow' : 'text-gray-400 hover:text-white'
               }`}
               data-testid="pdf-only-btn"
             >
@@ -331,99 +397,74 @@ export default function PureSurgeonView({
             </button>
           </div>
 
-          {/* Auto/Manual PDRM Toggle */}
-          <div className="flex items-center gap-2 bg-gray-700 rounded-lg px-2 py-1" data-testid="pdrm-mode-toggle">
+          {/* AUTO/MANUAL TOGGLE - Key behavior changer */}
+          <div className="flex items-center gap-2 bg-gray-700 rounded-lg px-3 py-1" data-testid="pdrm-mode-toggle">
             <span className="text-xs text-gray-400">PDRM:</span>
             <button
-              onClick={() => setAutoMode(!autoMode)}
-              className={`px-2 py-0.5 rounded text-xs font-medium transition-all ${
+              onClick={toggleAutoMode}
+              className={`px-3 py-1 rounded text-xs font-bold transition-all ${
                 autoMode 
-                  ? 'bg-green-600 text-white' 
-                  : 'bg-yellow-600 text-white'
+                  ? 'bg-green-600 text-white hover:bg-green-500' 
+                  : 'bg-yellow-600 text-black hover:bg-yellow-500'
               }`}
               data-testid="pdrm-auto-toggle"
-              title={autoMode ? 'Auto-classify highlights' : 'Manual classification'}
+              title={autoMode 
+                ? 'Auto: Highlights create PDRM instantly. Page change extracts key facts.' 
+                : 'Manual: Highlights create Draft PDRMs. You fill in the fields.'
+              }
             >
-              {autoMode ? '⚡ Auto' : '✋ Manual'}
+              {autoMode ? '⚡ AUTO' : '✋ MANUAL'}
             </button>
           </div>
+          
+          {/* Generation Indicator */}
+          {(generatingFor || pagePdrmStatus === 'generating') && (
+            <div className="flex items-center gap-2 text-xs text-blue-400 animate-pulse">
+              <span className="inline-block w-2 h-2 rounded-full bg-blue-400 animate-ping"></span>
+              Generating PDRM...
+            </div>
+          )}
         </div>
         
-        <div className="flex items-center gap-2 text-xs text-gray-500">
-          <span>{pageAnnotations.length} highlights on page</span>
+        <div className="flex items-center gap-3 text-xs text-gray-500">
+          <span>{currentPagePDRM.length} PDRM on page</span>
           <span>•</span>
-          <span>{allHighlights.length} total</span>
+          <span>{pageAnnotations.length} highlights</span>
+          {draftPDRMs.length > 0 && (
+            <>
+              <span>•</span>
+              <span className="text-yellow-500">{draftPDRMs.length} drafts</span>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Manual Classification Dialog */}
-      {showManualClassify && pendingHighlightText && (
-        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50" data-testid="manual-classify-dialog">
-          <div className="bg-gray-800 rounded-lg p-4 max-w-md w-full mx-4 shadow-xl border border-gray-700">
-            <h3 className="text-lg font-semibold text-white mb-3">Classify Highlight</h3>
-            <p className="text-sm text-gray-400 mb-4 line-clamp-3">
-              "{pendingHighlightText.length > 100 ? pendingHighlightText.substring(0, 100) + '...' : pendingHighlightText}"
-            </p>
-            
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              <button
-                onClick={() => {
-                  setSelectedText(pendingHighlightText);
-                  handleCreateHighlight('P');
-                }}
-                className="px-3 py-2 bg-purple-600 hover:bg-purple-500 rounded text-sm font-medium"
-              >
-                🔷 Pattern
-              </button>
-              <button
-                onClick={() => {
-                  setSelectedText(pendingHighlightText);
-                  handleCreateHighlight('D');
-                }}
-                className="px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium"
-              >
-                ⚖️ Decision
-              </button>
-              <button
-                onClick={() => {
-                  setSelectedText(pendingHighlightText);
-                  handleCreateHighlight('R');
-                }}
-                className="px-3 py-2 bg-red-600 hover:bg-red-500 rounded text-sm font-medium"
-              >
-                ⚠️ Risk
-              </button>
-              <button
-                onClick={() => {
-                  setSelectedText(pendingHighlightText);
-                  handleCreateHighlight('M');
-                }}
-                className="px-3 py-2 bg-yellow-600 hover:bg-yellow-500 rounded text-sm font-medium"
-              >
-                💡 Mnemonic
-              </button>
-            </div>
-            
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  setSelectedText(pendingHighlightText);
-                  handleCreateHighlight();
-                }}
-                className="flex-1 px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm"
-              >
-                📝 General
-              </button>
-              <button
-                onClick={() => {
-                  setShowManualClassify(false);
-                  setPendingHighlightText('');
-                }}
-                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm"
-              >
-                Cancel
-              </button>
-            </div>
+      {/* Highlight Menu Popup */}
+      {showHighlightMenu && selectedText && (
+        <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-50 bg-gray-800 rounded-lg shadow-xl border border-gray-700 p-3" data-testid="highlight-menu">
+          <p className="text-xs text-gray-400 mb-2 max-w-xs truncate">
+            "{selectedText.substring(0, 60)}..."
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={handleCreateHighlight}
+              className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                autoMode 
+                  ? 'bg-green-600 hover:bg-green-500 text-white' 
+                  : 'bg-yellow-600 hover:bg-yellow-500 text-black'
+              }`}
+            >
+              {autoMode ? '⚡ Create PDRM' : '📝 Create Draft'}
+            </button>
+            <button
+              onClick={() => {
+                setShowHighlightMenu(false);
+                setSelectedText('');
+              }}
+              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
@@ -452,7 +493,7 @@ export default function PureSurgeonView({
                 {thoughtUnits.length > 0 ? (
                   thoughtUnits.map((unit, idx) => {
                     const isCurrent = idx === currentThoughtUnit - 1;
-                    const unitAnnotations = pageAnnotations.filter(a => 
+                    const unitHighlights = pageAnnotations.filter(a => 
                       a.thoughtUnitId === `tu_${idx + 1}` || a.thoughtUnitId === unit.id
                     );
                     
@@ -477,23 +518,17 @@ export default function PureSurgeonView({
                             <p className={`text-sm leading-relaxed ${isCurrent ? 'text-white' : 'text-gray-300'}`}>
                               {unit.text}
                             </p>
-                            {unitAnnotations.length > 0 && (
+                            {unitHighlights.length > 0 && (
                               <div className="mt-2 flex flex-wrap gap-1">
-                                {unitAnnotations.map(ann => {
-                                  const label = ann.pdrm?.pattern ? 'P' :
-                                               ann.pdrm?.decisionRule ? 'D' :
-                                               ann.pdrm?.mnemonic ? 'M' :
-                                               ann.pdrm?.isMistake ? 'R' : '✓';
-                                  return (
-                                    <span
-                                      key={ann.id}
-                                      className="text-xs px-1.5 py-0.5 rounded"
-                                      style={{ backgroundColor: ann.color + '40', color: ann.color }}
-                                    >
-                                      {label}
-                                    </span>
-                                  );
-                                })}
+                                {unitHighlights.map(ann => (
+                                  <span
+                                    key={ann.id}
+                                    className="text-xs px-1.5 py-0.5 rounded"
+                                    style={{ backgroundColor: ann.color + '40', color: ann.color }}
+                                  >
+                                    ✓
+                                  </span>
+                                ))}
                               </div>
                             )}
                           </div>
@@ -505,222 +540,318 @@ export default function PureSurgeonView({
                   <div className="text-center py-12 text-gray-500">
                     <div className="text-4xl mb-4">📝</div>
                     <p>No thought units extracted yet</p>
-                    <p className="text-sm mt-2">Processing document...</p>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Sidebar Panel - Highlights/Quiz/Review */}
+            {/* Sidebar - PDRM/Highlights/Quiz/Review */}
             {layout.showSidebar && (
-              <div className="w-80 border-l border-gray-700 flex flex-col bg-gray-850">
+              <div className="w-96 border-l border-gray-700 flex flex-col bg-gray-850">
                 {/* Tabs */}
                 <div className="flex border-b border-gray-700">
-                  {(['highlights', 'quiz', 'review'] as const).map(tab => (
+                  {(['pdrm', 'highlights', 'quiz', 'review'] as const).map(tab => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
-                      className={`flex-1 px-3 py-2.5 text-xs font-medium transition-colors ${
+                      className={`flex-1 px-2 py-2 text-xs font-medium transition-colors ${
                         activeTab === tab
                           ? 'text-purple-400 border-b-2 border-purple-400 bg-gray-800'
                           : 'text-gray-400 hover:text-white'
                       }`}
                       data-testid={`tab-${tab}`}
                     >
-                      {tab === 'highlights' && '✨ Highlights'}
+                      {tab === 'pdrm' && `📊 PDRM (${currentPagePDRM.length})`}
+                      {tab === 'highlights' && `✨ (${pageAnnotations.length})`}
                       {tab === 'quiz' && '📝 Quiz'}
-                      {tab === 'review' && `⚠️ Review (${mistakes.length})`}
+                      {tab === 'review' && `⚠️ (${mistakes.length})`}
                     </button>
                   ))}
                 </div>
 
                 {/* Tab Content */}
                 <div className="flex-1 overflow-auto p-3">
-                  {activeTab === 'highlights' && (
-                    <div className="space-y-2">
-                      {allHighlights.length === 0 ? (
+                  {/* PDRM Tab - Primary workflow */}
+                  {activeTab === 'pdrm' && (
+                    <div className="space-y-3">
+                      {/* Draft Editor (Manual Mode) */}
+                      {editingDraftId && (
+                        <div className="p-3 bg-yellow-900/30 border border-yellow-600/50 rounded-lg" data-testid="draft-editor">
+                          <h4 className="text-sm font-semibold text-yellow-400 mb-2">
+                            ✏️ Complete Draft PDRM
+                          </h4>
+                          
+                          <div className="space-y-2">
+                            <div>
+                              <label className="text-xs text-gray-400">Pattern (recurring concept)</label>
+                              <input
+                                type="text"
+                                value={draftFields.pattern}
+                                onChange={(e) => setDraftFields(f => ({ ...f, pattern: e.target.value }))}
+                                className="w-full mt-1 px-2 py-1 bg-gray-800 border border-gray-700 rounded text-sm text-white"
+                                placeholder="What category/concept is this?"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-400">Decision Rule (if-then)</label>
+                              <input
+                                type="text"
+                                value={draftFields.decisionRule}
+                                onChange={(e) => setDraftFields(f => ({ ...f, decisionRule: e.target.value }))}
+                                className="w-full mt-1 px-2 py-1 bg-gray-800 border border-gray-700 rounded text-sm text-white"
+                                placeholder="What rule or criteria applies?"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-400">Risk/Trap (what to avoid)</label>
+                              <input
+                                type="text"
+                                value={draftFields.risk}
+                                onChange={(e) => setDraftFields(f => ({ ...f, risk: e.target.value }))}
+                                className="w-full mt-1 px-2 py-1 bg-gray-800 border border-gray-700 rounded text-sm text-white"
+                                placeholder="Common mistake or trap?"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-400">Mnemonic (memory anchor)</label>
+                              <input
+                                type="text"
+                                value={draftFields.mnemonic}
+                                onChange={(e) => setDraftFields(f => ({ ...f, mnemonic: e.target.value }))}
+                                className="w-full mt-1 px-2 py-1 bg-gray-800 border border-gray-700 rounded text-sm text-white"
+                                placeholder="2-5 word memory hook"
+                              />
+                            </div>
+                          </div>
+                          
+                          <div className="flex gap-2 mt-3">
+                            <button
+                              onClick={handleSaveDraft}
+                              className="flex-1 px-3 py-1.5 bg-green-600 hover:bg-green-500 rounded text-sm font-medium"
+                            >
+                              ✓ Save PDRM
+                            </button>
+                            <button
+                              onClick={handleCancelDraft}
+                              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Current Page PDRM Entries */}
+                      {currentPagePDRM.length === 0 && !editingDraftId ? (
                         <div className="text-center py-6 text-gray-500 text-sm">
-                          <p>No highlights yet</p>
-                          <p className="mt-1 text-xs">Select text to create highlights</p>
+                          <p>No PDRM entries on this page</p>
+                          <p className="mt-1 text-xs">
+                            {autoMode 
+                              ? 'Highlight text to auto-extract PDRM' 
+                              : 'Highlight text to create draft PDRM'
+                            }
+                          </p>
                         </div>
                       ) : (
-                        allHighlights.slice().reverse().slice(0, 20).map(ann => {
-                          const label = getPDRMTypeLabel(
-                            ann.pdrm?.pattern ? 'pattern' :
-                            ann.pdrm?.decisionRule ? 'decision' :
-                            ann.pdrm?.mnemonic ? 'mnemonic' :
-                            ann.pdrm?.isMistake ? 'risk' : 'general'
-                          );
-                          return (
-                            <div
-                              key={ann.id}
-                              className="p-2 rounded border border-gray-700 hover:border-gray-600 cursor-pointer text-xs"
-                              style={{ borderLeftColor: ann.color, borderLeftWidth: 3 }}
-                              onClick={() => onPageChange(ann.pageIndex + 1)}
-                            >
-                              <div className="flex items-center justify-between mb-1">
-                                <span style={{ color: ann.color }}>{label.icon} {label.short}</span>
-                                <span className="text-gray-500">p.{ann.pageIndex + 1}</span>
+                        currentPagePDRM.map(entry => (
+                          <div
+                            key={entry.id}
+                            className={`p-3 rounded-lg border transition-all ${
+                              entry.status === 'draft'
+                                ? 'bg-yellow-900/20 border-yellow-600/50'
+                                : 'bg-gray-800 border-gray-700'
+                            }`}
+                            style={{ borderLeftWidth: '3px', borderLeftColor: getPdrmTypeColor(entry.primaryType) }}
+                          >
+                            {/* Header */}
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <span>{getPdrmTypeIcon(entry.primaryType)}</span>
+                                <span 
+                                  className="text-xs font-medium px-1.5 py-0.5 rounded"
+                                  style={{ 
+                                    backgroundColor: getPdrmTypeColor(entry.primaryType) + '30', 
+                                    color: getPdrmTypeColor(entry.primaryType) 
+                                  }}
+                                >
+                                  {getPdrmTypeLabel(entry.primaryType)}
+                                </span>
+                                {entry.status === 'draft' && (
+                                  <span className="text-xs text-yellow-500">DRAFT</span>
+                                )}
+                                {entry.sourceType === 'page' && (
+                                  <span className="text-xs text-blue-400">page-gen</span>
+                                )}
                               </div>
-                              <p className="text-gray-300 line-clamp-2">{ann.selectedText}</p>
+                              <div className="flex items-center gap-1">
+                                {entry.status === 'draft' && (
+                                  <button
+                                    onClick={() => {
+                                      setEditingDraftId(entry.id);
+                                      setDraftFields(entry.fields);
+                                    }}
+                                    className="p-1 text-yellow-500 hover:text-yellow-400"
+                                    title="Edit draft"
+                                  >
+                                    ✏️
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleJumpToHighlight(entry)}
+                                  className="p-1 text-gray-500 hover:text-white"
+                                  title="Jump to source"
+                                >
+                                  ↗
+                                </button>
+                                <button
+                                  onClick={() => deleteEntry(entry.id)}
+                                  className="p-1 text-gray-500 hover:text-red-400"
+                                  title="Delete"
+                                >
+                                  ×
+                                </button>
+                              </div>
                             </div>
-                          );
-                        })
+                            
+                            {/* PDRM Fields (structured, not summary) */}
+                            <div className="space-y-1.5 text-xs">
+                              {entry.fields.pattern && (
+                                <div className="flex gap-2">
+                                  <span className="text-purple-400 font-medium shrink-0">P:</span>
+                                  <span className="text-gray-300">{entry.fields.pattern}</span>
+                                </div>
+                              )}
+                              {entry.fields.decisionRule && (
+                                <div className="flex gap-2">
+                                  <span className="text-blue-400 font-medium shrink-0">D:</span>
+                                  <span className="text-gray-300">{entry.fields.decisionRule}</span>
+                                </div>
+                              )}
+                              {entry.fields.risk && (
+                                <div className="flex gap-2">
+                                  <span className="text-red-400 font-medium shrink-0">R:</span>
+                                  <span className="text-gray-300">{entry.fields.risk}</span>
+                                </div>
+                              )}
+                              {entry.fields.mnemonic && (
+                                <div className="flex gap-2">
+                                  <span className="text-yellow-400 font-medium shrink-0">M:</span>
+                                  <span className="text-gray-300 font-medium">{entry.fields.mnemonic}</span>
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Evidence */}
+                            <div className="mt-2 text-xs text-gray-500 italic truncate">
+                              "{entry.evidence.quote}"
+                            </div>
+                          </div>
+                        ))
+                      )}
+                      
+                      {/* Page PDRM Generation Status */}
+                      {pagePdrmStatus === 'generating' && (
+                        <div className="text-center py-3 text-blue-400 text-xs animate-pulse">
+                          Extracting key facts from page {currentPage}...
+                        </div>
                       )}
                     </div>
                   )}
 
+                  {/* Highlights Tab */}
+                  {activeTab === 'highlights' && (
+                    <div className="space-y-2">
+                      {pageAnnotations.length === 0 ? (
+                        <div className="text-center py-6 text-gray-500 text-sm">
+                          <p>No highlights on this page</p>
+                        </div>
+                      ) : (
+                        pageAnnotations.map(ann => (
+                          <div
+                            key={ann.id}
+                            className="p-2 bg-gray-800 rounded border-l-2"
+                            style={{ borderLeftColor: ann.color }}
+                          >
+                            <p className="text-xs text-gray-300 line-clamp-2">{ann.selectedText}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {/* Quiz Tab */}
                   {activeTab === 'quiz' && (
-                    <div>
-                      {!currentQuiz && !showQuizResult ? (
+                    <div className="space-y-3">
+                      {!currentQuiz ? (
                         <div className="text-center py-6">
-                          <div className="text-3xl mb-3">📝</div>
-                          <h4 className="font-medium text-white mb-2">Chapter Quiz</h4>
-                          <p className="text-gray-400 text-xs mb-4">
-                            Test yourself with questions from your highlights
-                          </p>
-                          {allHighlights.length < 3 ? (
-                            <p className="text-yellow-500 text-xs">Need 3+ highlights</p>
-                          ) : (
-                            <button
-                              onClick={handleStartQuiz}
-                              disabled={isGenerating}
-                              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 rounded text-sm font-medium"
-                              data-testid="start-quiz-btn"
-                            >
-                              {isGenerating ? 'Generating...' : 'Start Quiz'}
-                            </button>
+                          <button
+                            onClick={handleStartQuiz}
+                            disabled={allHighlights.length < 3 || isQuizGenerating}
+                            className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium"
+                          >
+                            {isQuizGenerating ? 'Generating...' : `Start Quiz (${allHighlights.length} highlights)`}
+                          </button>
+                          {allHighlights.length < 3 && (
+                            <p className="text-xs text-gray-500 mt-2">Need at least 3 highlights</p>
                           )}
                         </div>
-                      ) : showQuizResult ? (
-                        <div className="text-center py-6">
-                          <div className="text-4xl mb-2">
-                            {lastQuizScore !== null && lastQuizScore >= 80 ? '🎉' : '📚'}
+                      ) : (
+                        <div className="space-y-3">
+                          <div className="text-xs text-gray-400">
+                            Question {currentQuiz.currentIndex + 1} of {currentQuiz.questions.length}
                           </div>
-                          <h4 className="text-2xl font-bold text-white mb-2">{lastQuizScore}%</h4>
-                          <p className="text-gray-400 text-sm mb-4">
-                            {lastQuizScore !== null && lastQuizScore >= 80 
-                              ? 'Ready for next chapter!' 
-                              : 'Review weak items'}
-                          </p>
-                          <div className="space-y-2">
-                            {lastQuizScore !== null && lastQuizScore < 80 && (
+                          <div className="p-3 bg-gray-800 rounded-lg">
+                            <p className="text-sm text-white">
+                              {currentQuiz.questions[currentQuiz.currentIndex]?.question}
+                            </p>
+                          </div>
+                          <input
+                            type="text"
+                            value={quizAnswer}
+                            onChange={(e) => setQuizAnswer(e.target.value)}
+                            className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm text-white"
+                            placeholder="Your answer..."
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                submitAnswer(currentQuiz.questions[currentQuiz.currentIndex].id, quizAnswer);
+                                setQuizAnswer('');
+                                if (currentQuiz.currentIndex < currentQuiz.questions.length - 1) {
+                                  nextQuestion();
+                                }
+                              }}
+                              className="flex-1 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 rounded text-sm"
+                            >
+                              Submit
+                            </button>
+                            {currentQuiz.currentIndex === currentQuiz.questions.length - 1 && (
                               <button
-                                onClick={() => onRecommendedAction?.('study')}
-                                className="w-full px-3 py-2 bg-yellow-600 hover:bg-yellow-500 rounded text-sm font-medium"
-                                data-testid="recommend-study-btn"
+                                onClick={handleFinishQuiz}
+                                className="px-3 py-1.5 bg-green-600 hover:bg-green-500 rounded text-sm"
                               >
-                                🧠 Study Weak Items
+                                Finish
                               </button>
                             )}
-                            <button
-                              onClick={() => { setShowQuizResult(false); clearCurrentQuiz(); }}
-                              className="w-full px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm"
-                            >
-                              Try Again
-                            </button>
                           </div>
-                        </div>
-                      ) : currentQuiz && (
-                        <div className="space-y-3">
-                          <div className="flex justify-between text-xs text-gray-400">
-                            <span>Q{currentQuiz.currentIndex + 1}/{currentQuiz.questions.length}</span>
-                            <span>{currentQuiz.answers.filter(a => a.isCorrect).length} correct</span>
-                          </div>
-                          <div className="h-1 bg-gray-700 rounded">
-                            <div 
-                              className="h-full bg-purple-500 rounded"
-                              style={{ width: `${((currentQuiz.currentIndex + 1) / currentQuiz.questions.length) * 100}%` }}
-                            />
-                          </div>
-                          {(() => {
-                            const q = currentQuiz.questions[currentQuiz.currentIndex];
-                            const answered = currentQuiz.answers.find(a => a.questionId === q.id);
-                            return (
-                              <div>
-                                <p className="text-white text-sm mb-3">{q.question}</p>
-                                {q.options ? (
-                                  <div className="space-y-2">
-                                    {q.options.map((opt, i) => (
-                                      <button
-                                        key={i}
-                                        onClick={() => handleSubmitAnswer(opt)}
-                                        disabled={!!answered}
-                                        className={`w-full text-left px-3 py-2 rounded text-sm border ${
-                                          answered?.userAnswer === opt
-                                            ? answered.isCorrect ? 'border-green-500 bg-green-900/30' : 'border-red-500 bg-red-900/30'
-                                            : 'border-gray-700 hover:border-gray-600'
-                                        }`}
-                                      >
-                                        {opt}
-                                      </button>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <div>
-                                    <textarea
-                                      value={quizAnswer}
-                                      onChange={(e) => setQuizAnswer(e.target.value)}
-                                      placeholder="Your answer..."
-                                      className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
-                                      rows={2}
-                                      disabled={!!answered}
-                                    />
-                                    {!answered && (
-                                      <button
-                                        onClick={() => handleSubmitAnswer(quizAnswer)}
-                                        className="mt-2 w-full px-3 py-2 bg-purple-600 hover:bg-purple-500 rounded text-sm"
-                                      >
-                                        Submit
-                                      </button>
-                                    )}
-                                  </div>
-                                )}
-                                <div className="flex justify-between mt-3">
-                                  <button onClick={prevQuestion} disabled={currentQuiz.currentIndex === 0} className="px-3 py-1 bg-gray-700 rounded text-xs disabled:opacity-50">←</button>
-                                  {currentQuiz.currentIndex < currentQuiz.questions.length - 1 ? (
-                                    <button onClick={nextQuestion} className="px-3 py-1 bg-purple-600 rounded text-xs">→</button>
-                                  ) : (
-                                    <button onClick={handleFinishQuiz} className="px-3 py-1 bg-green-600 rounded text-xs" data-testid="finish-quiz-btn">Finish</button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })()}
                         </div>
                       )}
                     </div>
                   )}
 
+                  {/* Review Tab */}
                   {activeTab === 'review' && (
                     <div className="space-y-2">
                       {mistakes.length === 0 ? (
                         <div className="text-center py-6 text-gray-500 text-sm">
-                          <div className="text-3xl mb-2">✨</div>
-                          <p>No weak items!</p>
+                          <p>No items to review</p>
                         </div>
                       ) : (
-                        <>
-                          {mistakes.map(ann => (
-                            <div
-                              key={ann.id}
-                              className="p-2 rounded border border-red-900/50 bg-red-900/10 cursor-pointer text-xs"
-                              onClick={() => onPageChange(ann.pageIndex + 1)}
-                            >
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-red-400">⚠️ Needs Review</span>
-                                <span className="text-gray-500">p.{ann.pageIndex + 1}</span>
-                              </div>
-                              <p className="text-gray-300 line-clamp-2">{ann.selectedText}</p>
-                            </div>
-                          ))}
-                          <button
-                            onClick={() => onRecommendedAction?.('study')}
-                            className="w-full mt-3 px-3 py-2 bg-yellow-600 hover:bg-yellow-500 rounded text-sm font-medium"
-                          >
-                            🧠 Study All ({mistakes.length})
-                          </button>
-                        </>
+                        mistakes.map(m => (
+                          <div key={m.id} className="p-2 bg-red-900/30 rounded border-l-2 border-red-500">
+                            <p className="text-xs text-gray-300 line-clamp-2">{m.selectedText}</p>
+                          </div>
+                        ))
                       )}
                     </div>
                   )}
@@ -730,42 +861,6 @@ export default function PureSurgeonView({
           </div>
         )}
       </div>
-
-      {/* Highlight Menu Modal */}
-      {showHighlightMenu && selectedText && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-gray-800 rounded-xl p-4 shadow-xl border border-gray-700 max-w-md w-full mx-4">
-            <div className="mb-3">
-              <p className="text-xs text-gray-400 mb-1">Selected:</p>
-              <p className="text-white text-sm line-clamp-3">"{selectedText}"</p>
-            </div>
-            
-            {/* Auto-classification preview */}
-            {(() => {
-              const c = classifyHighlight(selectedText);
-              const l = getPDRMTypeLabel(c.type);
-              return (
-                <div className="mb-3 p-2 rounded bg-gray-900 border border-gray-700">
-                  <p className="text-xs text-gray-500">Auto-detected:</p>
-                  <span style={{ color: getPDRMTypeColor(c.type) }}>
-                    {l.icon} {l.full} ({Math.round(c.confidence * 100)}%)
-                  </span>
-                </div>
-              );
-            })()}
-
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <button onClick={() => handleCreateHighlight()} className="px-3 py-2 bg-yellow-600 hover:bg-yellow-500 rounded text-sm font-medium" data-testid="highlight-auto-btn">✨ Auto</button>
-              <button onClick={() => handleCreateHighlight('P')} className="px-3 py-2 bg-purple-600 hover:bg-purple-500 rounded text-sm font-medium">🎯 Pattern</button>
-              <button onClick={() => handleCreateHighlight('D')} className="px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium">⚖️ Decision</button>
-              <button onClick={() => handleCreateHighlight('M')} className="px-3 py-2 bg-orange-600 hover:bg-orange-500 rounded text-sm font-medium">🧠 Mnemonic</button>
-              <button onClick={() => handleCreateHighlight('R')} className="px-3 py-2 bg-red-600 hover:bg-red-500 rounded text-sm font-medium col-span-2">⚠️ Risk/Weak</button>
-            </div>
-            
-            <button onClick={() => { setShowHighlightMenu(false); setSelectedText(''); }} className="w-full px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm">Cancel</button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
