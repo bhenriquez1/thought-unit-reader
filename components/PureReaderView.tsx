@@ -6,9 +6,11 @@
 // ❌ No TOC sidebar
 // ❌ No NoteLab
 // ❌ No Thought Units (those belong in Surgeon View)
+// ✅ Uses global zoom store for shared zoom across views
 
-import React, { useState, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import SmartPDFViewer from './SmartPDFViewer';
+import { useZoomStore } from '@/lib/stores/zoomStore';
 
 interface PureReaderViewProps {
   fileUrl: string | null;
@@ -31,7 +33,8 @@ export default function PureReaderView({
   fontSize = 16,
   fontFamily = 'Georgia'
 }: PureReaderViewProps) {
-  const [zoom, setZoom] = useState(1.25);
+  // Global zoom store
+  const { zoom, zoomIn, zoomOut, resetZoom, getZoomPercent, canZoomIn, canZoomOut } = useZoomStore();
   
   const handlePrevPage = useCallback(() => {
     if (currentPage > 1) onPageChange(currentPage - 1);
@@ -40,10 +43,6 @@ export default function PureReaderView({
   const handleNextPage = useCallback(() => {
     if (currentPage < pdfPageCount) onPageChange(currentPage + 1);
   }, [currentPage, pdfPageCount, onPageChange]);
-  
-  const handleZoomIn = () => setZoom(z => Math.min(z + 0.25, 3));
-  const handleZoomOut = () => setZoom(z => Math.max(z - 0.25, 0.5));
-  const handleResetZoom = () => setZoom(1.25);
   
   // No file uploaded
   if (!fileUrl) {
