@@ -142,9 +142,27 @@ linkHighlightToTopic(topicId, highlightId) // Track highlight counts
 
 ## Prioritized Backlog
 
+### P0 - Completed ✅
+- V1 Stabilization (Strict Mode Separation)
+- Clean/Full Mode Toggle in Surgeon View
+- React-PDF Runtime Error Fix
+- Auto-PDRM Classification
+- Silent NoteLab Capture
+- Recommended Next Action Engine
+
+### P1 - Completed ✅
+- Syllabus Mode
+- Quick Study Feature
+- Resume Last Session
+
+### P0/P1 - Upcoming
+- **Auto-TOC Generation & Navigation**: Verify `generateTOC` populates `tocStore`, implement "Open in Reader/Surgeon View" button handlers
+- **Auto/Manual PDRM Toggle**: Add UI toggle in `PureSurgeonView`, persist choice, implement auto-classify logic
+
 ### P2 - Polish (Next)
 - Full E2E test with PDF upload → highlight → quiz → study flow
 - Test topic-filtered study sessions
+- Syllabus File Upload parsing (PDF/DOCX/TXT)
 
 ### P3 - Future Enhancements
 - Firebase integration (when config provided)
