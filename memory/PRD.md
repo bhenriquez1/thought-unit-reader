@@ -172,7 +172,13 @@ linkHighlightToTopic(topicId, highlightId) // Track highlight counts
 - OCR for scanned PDFs
 - Cloud sync across devices
 
-## Environment Notes
+## Change Log
+
+### January 2026 - V1 Stabilization
+- **Fixed**: TOC sidebar leaking into Reader and Surgeon View tabs
+- **Verified**: All 6 tabs render only their pure components
+- **Verified**: Clean/Full/PDF toggle in Surgeon View changes DOM layout
+- **Updated**: `pages/index.tsx` - removed shared TOC sidebar from main layout
 - Firebase: MOCKED - using localStorage for persistence
 - Guest mode: enabled (NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN=1)
 - Build: Passes with no errors
