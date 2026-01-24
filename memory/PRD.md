@@ -15,13 +15,14 @@ Build a sophisticated study application for processing books and documents with:
 - Professionals studying dense technical material
 - Anyone who needs to extract and organize key information from PDFs/documents
 
-## Application Navigation (6 Tabs)
+## Application Navigation (7 Tabs)
 1. **📖 Reader** - Pure reading experience (PDF + thought-unit view)
 2. **📑 TOC** - Dedicated Table of Contents tree (searchable, clickable)
 3. **🔬 Surgeon View** - Active learning (highlighting, PDRM tagging, quizzes)
 4. **📝 NoteLab** - Review workspace (notes, highlights, quiz misses)
 5. **🧠 Study** - Flashcard study session with spaced repetition
 6. **📋 Syllabus** - Course-structured study planning with topic tracking
+7. **📊 PDRM** - PDRM entries grouped by document/chapter/page with navigation
 
 ## Core Features Status
 
