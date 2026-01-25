@@ -48,3 +48,11 @@ test_reports/
 
 # Misc
 *.backup
+-e 
+# Environment files
+*.env
+*.env.*
+-e 
+# Environment files
+*.env
+*.env.*
