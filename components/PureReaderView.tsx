@@ -8,9 +8,14 @@
 // ❌ No Thought Units (those belong in Surgeon View)
 // ✅ Uses global zoom store for shared zoom across views
 
+<<<<<<< HEAD
 import React, { useCallback } from 'react';
 import SmartPDFViewer from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
+=======
+import React, { useState, useCallback } from 'react';
+import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
+>>>>>>> origin/main
 
 interface PureReaderViewProps {
   fileUrl: string | null;
@@ -19,6 +24,7 @@ interface PureReaderViewProps {
   onPageChange: (page: number) => void;
   onPageCount: (count: number) => void;
   onTextSelect?: (text: string) => void;
+  onOutline?: (items: TocItem[]) => void;
   fontSize?: number;
   fontFamily?: string;
 }
@@ -30,6 +36,7 @@ export default function PureReaderView({
   onPageChange,
   onPageCount,
   onTextSelect,
+  onOutline,
   fontSize = 16,
   fontFamily = 'Georgia'
 }: PureReaderViewProps) {
@@ -44,6 +51,13 @@ export default function PureReaderView({
     if (currentPage < pdfPageCount) onPageChange(currentPage + 1);
   }, [currentPage, pdfPageCount, onPageChange]);
   
+<<<<<<< HEAD
+=======
+  const handleZoomIn = useCallback(() => setZoom(z => Math.min(z + 0.25, 2.5)), []);
+  const handleZoomOut = useCallback(() => setZoom(z => Math.max(z - 0.25, 0.6)), []);
+  const handleResetZoom = useCallback(() => setZoom(1.25), []);
+  
+>>>>>>> origin/main
   // No file uploaded
   if (!fileUrl) {
     return (
@@ -131,6 +145,7 @@ export default function PureReaderView({
           onPageChange={onPageChange}
           onPageCount={onPageCount}
           onTextSelect={onTextSelect}
+          onOutline={onOutline}
         />
       </div>
     </div>

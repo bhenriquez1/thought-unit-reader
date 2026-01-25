@@ -8,6 +8,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { useSyllabusStore, type SyllabusTopic, type TopicStatus } from '@/lib/stores/syllabusStore';
 import { useAnnotationStore } from '@/lib/stores/annotationStore';
 import { useStudySessionStore } from '@/lib/stores/studySessionStore';
+import { extractTextFromPdf } from '@/lib/pdfjs-handler';
 
 interface SyllabusModePanelProps {
   documentId: string;
@@ -60,19 +61,58 @@ export default function SyllabusModePanel({
   const [uploadedSyllabusText, setUploadedSyllabusText] = useState('');
   const [isParsingFile, setIsParsingFile] = useState(false);
   
+  // Error state for file parsing
+  const [parseError, setParseError] = useState<string | null>(null);
+  
   // Handle syllabus file upload (PDF/TXT/DOCX)
   const handleSyllabusFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
     setIsParsingFile(true);
+    setParseError(null);
     
     try {
-      const text = await file.text();
+      let text = '';
+      const extension = file.name.split('.').pop()?.toLowerCase();
+      
+      // Handle different file types
+      if (extension === 'pdf') {
+        // Use PDF.js to extract text from PDF
+        console.log(`📄 Parsing PDF syllabus: ${file.name}`);
+        text = await extractTextFromPdf(file);
+        
+        if (!text || text.length < 10) {
+          throw new Error('Could not extract text from PDF. The file may be scanned or image-based.');
+        }
+      } else if (extension === 'txt' || extension === 'md') {
+        // Plain text files
+        text = await file.text();
+      } else if (extension === 'docx' || extension === 'doc') {
+        // DOCX not fully supported - show warning
+        setParseError('DOCX support is limited. For best results, convert to PDF or TXT.');
+        // Try to extract as text (may work for some DOCX files)
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const decoder = new TextDecoder('utf-8');
+          text = decoder.decode(arrayBuffer);
+          // Try to clean XML tags if present
+          text = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        } catch {
+          throw new Error('DOCX parsing failed. Please convert to PDF or TXT format.');
+        }
+      } else {
+        throw new Error(`Unsupported file type: .${extension}. Use PDF, TXT, or MD files.`);
+      }
+      
       setUploadedSyllabusText(text);
       
       // Parse topics from text
       const topics = parseSyllabusText(text);
+      
+      if (topics.length === 0) {
+        throw new Error('No topics found in the file. Please check the format.');
+      }
       
       // Create syllabus if not exists
       if (!syllabus) {
@@ -91,7 +131,9 @@ export default function SyllabusModePanel({
       
       console.log(`📋 Imported ${topics.length} topics from ${file.name}`);
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to parse syllabus file';
       console.error('Failed to parse syllabus file:', err);
+      setParseError(errorMessage);
     } finally {
       setIsParsingFile(false);
     }
@@ -102,43 +144,121 @@ export default function SyllabusModePanel({
     const topics: Array<{ title: string; pageRange?: { start: number; end: number } }> = [];
     const lines = text.split('\n').filter(l => l.trim());
     
-    // Common patterns for topic/chapter lines
+    // Enhanced patterns for topic/chapter lines
     const patterns = [
-      /^(Chapter|Section|Unit|Topic|Module|Lecture|Week)\s*(\d+)[:\.\s-]+(.+)/i,
-      /^(\d+)[\.)\s]+(.+)/,
-      /^[-•*]\s*(.+)/,
+      // "Chapter 1: Introduction" or "Chapter 1 - Introduction"
+      /^(Chapter|Section|Unit|Topic|Module|Lecture|Week|Part)\s*(\d+)[:\.\s-]+\s*(.+)/i,
+      // "1. Introduction" or "1) Introduction"
+      /^(\d+)[\.)\s]+\s*(.+)/,
+      // "I. Introduction" (Roman numerals)
+      /^([IVXLCDM]+)[\.)\s]+\s*(.+)/i,
+      // "• Introduction" or "- Introduction" or "* Introduction"
+      /^[-•*]\s+(.+)/,
+      // "Introduction............12" (TOC format with page numbers)
+      /^(.+?)\s*\.{2,}\s*(\d+)\s*$/,
+      // "Introduction    12" (TOC with spaces and page number)
+      /^([A-Z][^0-9]{3,}?)\s{3,}(\d+)\s*$/,
     ];
+    
+    // Pattern for detecting page numbers at end of line
+    const pageNumberPattern = /\s+(\d{1,4})\s*$/;
     
     lines.forEach(line => {
       const trimmed = line.trim();
       if (trimmed.length < 3) return;
       
+      let matched = false;
+      
       for (const pattern of patterns) {
         const match = trimmed.match(pattern);
         if (match) {
-          let title = match.length === 4 
-            ? `${match[1]} ${match[2]}: ${match[3].trim()}`
-            : match.length === 3 
-              ? `${match[1]}. ${match[2].trim()}`
-              : match[1].trim();
+          let title = '';
+          let pageNum: number | undefined;
+          
+          if (match.length === 4) {
+            // Chapter X: Title format
+            title = `${match[1]} ${match[2]}: ${match[3].trim()}`;
+          } else if (match.length === 3) {
+            // Check if second group is a page number (TOC format)
+            const possiblePage = parseInt(match[2]);
+            if (possiblePage > 0 && possiblePage < 2000 && match[1].length > 3) {
+              title = match[1].trim();
+              pageNum = possiblePage;
+            } else {
+              // "1. Title" format
+              title = `${match[1]}. ${match[2].trim()}`;
+            }
+          } else if (match.length === 2) {
+            // Bullet point format
+            title = match[1].trim();
+          }
           
           // Clean up title
           title = title.replace(/\.{2,}\s*\d+$/, '').trim();
           
+          // Extract page number if present at end
+          if (!pageNum) {
+            const pageMatch = title.match(pageNumberPattern);
+            if (pageMatch) {
+              pageNum = parseInt(pageMatch[1]);
+              title = title.replace(pageNumberPattern, '').trim();
+            }
+          }
+          
           if (title.length > 2 && !topics.find(t => t.title === title)) {
-            topics.push({ title });
+            topics.push({ 
+              title,
+              pageRange: pageNum ? { start: pageNum - 1, end: pageNum + 9 } : undefined
+            });
+            matched = true;
           }
           break;
         }
       }
+      
+      // If no pattern matched, check if line looks like a heading
+      if (!matched && trimmed.length >= 5 && trimmed.length < 150) {
+        // Skip common non-topic lines
+        const skipPatterns = [
+          /^(page|copyright|isbn|printed|all rights|author|edition|table of contents|index|bibliography|references|appendix)/i,
+          /^\d+$/, // Just a number
+          /^[a-z]/, // Starts with lowercase (likely continuation)
+        ];
+        
+        const shouldSkip = skipPatterns.some(p => p.test(trimmed));
+        
+        if (!shouldSkip) {
+          // Check if it starts with a capital letter and looks like a title
+          if (/^[A-Z]/.test(trimmed) && !topics.find(t => t.title === trimmed)) {
+            // Extract page number if present
+            let title = trimmed;
+            let pageNum: number | undefined;
+            const pageMatch = trimmed.match(pageNumberPattern);
+            if (pageMatch) {
+              pageNum = parseInt(pageMatch[1]);
+              title = trimmed.replace(pageNumberPattern, '').trim();
+            }
+            
+            if (title.length >= 5) {
+              topics.push({ 
+                title,
+                pageRange: pageNum ? { start: pageNum - 1, end: pageNum + 9 } : undefined
+              });
+            }
+          }
+        }
+      }
     });
     
-    // If no patterns matched, treat each non-empty line as a topic
-    if (topics.length === 0) {
-      lines.slice(0, 50).forEach(line => {
+    // If still no topics and we have content, try a more aggressive approach
+    if (topics.length === 0 && lines.length > 0) {
+      console.log('📋 Using fallback topic extraction...');
+      lines.slice(0, 30).forEach(line => {
         const trimmed = line.trim();
-        if (trimmed.length >= 3 && trimmed.length < 200) {
-          topics.push({ title: trimmed });
+        if (trimmed.length >= 5 && trimmed.length < 150 && /^[A-Z0-9]/.test(trimmed)) {
+          if (!topics.find(t => t.title === trimmed)) {
+            topics.push({ title: trimmed });
+          }
         }
       });
     }
@@ -268,19 +388,30 @@ export default function SyllabusModePanel({
               
               {/* Syllabus File Upload */}
               <label className="w-full block">
-                <div className="px-6 py-3 bg-purple-700 hover:bg-purple-600 rounded-lg font-medium transition-colors cursor-pointer text-center">
-                  {isParsingFile ? '⏳ Parsing...' : '📤 Upload Syllabus File'}
+                <div className={`px-6 py-3 ${isParsingFile ? 'bg-purple-900' : 'bg-purple-700 hover:bg-purple-600'} rounded-lg font-medium transition-colors cursor-pointer text-center`}>
+                  {isParsingFile ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="animate-spin">⏳</span> Parsing file...
+                    </span>
+                  ) : '📤 Upload Syllabus File'}
                 </div>
                 <input
                   type="file"
-                  accept=".txt,.pdf,.docx,.doc"
+                  accept=".txt,.pdf,.md"
                   onChange={handleSyllabusFileUpload}
                   className="hidden"
                   disabled={isParsingFile}
                   data-testid="syllabus-file-input"
                 />
               </label>
-              <p className="text-xs text-gray-500">Supports TXT, PDF, DOCX files</p>
+              <p className="text-xs text-gray-500">Supports PDF, TXT, MD files</p>
+              
+              {/* Error display */}
+              {parseError && (
+                <div className="p-3 bg-red-900/30 border border-red-700 rounded-lg">
+                  <p className="text-sm text-red-400">{parseError}</p>
+                </div>
+              )}
             </div>
           </div>
         </div>

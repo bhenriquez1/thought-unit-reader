@@ -715,6 +715,47 @@ export default function ThoughtUnitReader() {
   };
 
   /* =========================================================================
+     🔹 Handle PDF Outline Extraction (memoized to prevent excessive re-renders)
+  ========================================================================= */
+  const handleOutlineExtraction = useCallback((tocItems: any[]) => {
+    // Save outline to tocStore when extracted from PDF
+    if (tocItems && tocItems.length > 0) {
+      const documentId = bookId || uploadedFile?.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book";
+      const documentName = uploadedFile?.name || "Document";
+      
+      // Convert TocItem to store format
+      const storeItems = tocItems.map((item: any, idx: number) => ({
+        id: `toc_${idx}_${Date.now()}`,
+        title: item.title || `Chapter ${idx + 1}`,
+        pageNumber: item.pageNumber || 1,
+        level: 0,
+        children: item.items?.map((sub: any, subIdx: number) => ({
+          id: `toc_${idx}_${subIdx}_${Date.now()}`,
+          title: sub.title || `Section ${subIdx + 1}`,
+          pageNumber: sub.pageNumber || 1,
+          level: 1
+        }))
+      }));
+      
+      const tocStore = useTocStore.getState();
+      tocStore.saveToc(documentId, documentName, storeItems, 'outline');
+      
+      // Also update tableOfContents for backward compatibility
+      const legacyToc = tocItems.map((item: any) => ({
+        title: item.title,
+        pageNumber: item.pageNumber || 1,
+        subChapters: item.items?.map((sub: any) => ({
+          title: sub.title,
+          pageNumber: sub.pageNumber || 1
+        }))
+      }));
+      setTableOfContents(legacyToc);
+      
+      console.log(`📑 TOC extracted from PDF outline: ${storeItems.length} chapters`);
+    }
+  }, [bookId, uploadedFile?.name, setTableOfContents]);
+
+  /* =========================================================================
      🔹 Upload PDF — parse + detect diagrams
   ========================================================================= */
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -820,12 +861,16 @@ export default function ThoughtUnitReader() {
       // Generate and store TOC
       const documentId = file.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book";
       
-      // Heuristic TOC (viewer outline will override later)
+      // TOC generation will be done in two phases:
+      // 1. Heuristic TOC from URL (deferred to SmartPDFViewer.onOutline for native outline)
+      // 2. Fallback TOC from parsed content (handled after parsing)
+      
+      // Try initial TOC generation (may be empty - outline extraction handled by SmartPDFViewer)
       generateTOC(url).then((tocEntries) => {
-        setTableOfContents(tocEntries);
-        
-        // Save to tocStore for persistence
         if (tocEntries && tocEntries.length > 0) {
+          setTableOfContents(tocEntries);
+          
+          // Save to tocStore for persistence
           const tocItems = tocEntries.map((entry: any, idx: number) => ({
             id: `toc_${idx}_${Date.now()}`,
             title: entry.title || `Chapter ${idx + 1}`,
@@ -838,7 +883,7 @@ export default function ThoughtUnitReader() {
           console.log(`📑 TOC auto-generated: ${tocItems.length} chapters`);
         }
       }).catch((err) => {
-        console.log('📑 No PDF outline found, will try heuristic extraction');
+        console.log('📑 Initial TOC generation deferred to outline extraction or fallback');
       });
 
       setPdfParsingState(prev => ({ ...prev, progress: "Extracting and analyzing content..." }));
@@ -859,6 +904,67 @@ export default function ThoughtUnitReader() {
       setSampleText(normalized[0]?.text ?? "");
 
       setPdfParsingState(prev => ({ ...prev, progress: "Setting up learning features..." }));
+
+      // =========================================================================
+      // REQUIREMENT D: Ensure TOC is ALWAYS generated (fallback if no outline)
+      // =========================================================================
+      // Check if TOC was generated from outline - if not, create fallback
+      setTimeout(() => {
+        const currentToc = useTocStore.getState().getToc(documentId);
+        if (!currentToc || currentToc.items.length === 0) {
+          console.log('📑 No TOC from outline - generating fallback from parsed content');
+          
+          // Use chapters from parser if available
+          let fallbackToc: TOCEntry[] = [];
+          
+          if (chapters && chapters.length > 0) {
+            fallbackToc = chapters.map((ch: any, idx: number) => ({
+              title: ch.title || `Chapter ${idx + 1}`,
+              pageNumber: ch.page || idx + 1,
+              level: 0,
+              confidence: 0.6
+            }));
+          } else {
+            // Create basic section-based TOC
+            const estimatedPages = Math.max(10, Math.ceil(normalized.length / 5));
+            const sectionsCount = Math.min(10, Math.max(3, Math.floor(estimatedPages / 5)));
+            const pagesPerSection = Math.ceil(estimatedPages / sectionsCount);
+            
+            for (let i = 0; i < sectionsCount; i++) {
+              const startPage = i * pagesPerSection + 1;
+              fallbackToc.push({
+                title: `Section ${i + 1}`,
+                pageNumber: startPage,
+                level: 0,
+                confidence: 0.3
+              });
+            }
+          }
+          
+          if (fallbackToc.length > 0) {
+            setTableOfContents(fallbackToc);
+            
+            const tocItems = fallbackToc.map((entry: TOCEntry, idx: number) => ({
+              id: `toc_${idx}_${Date.now()}`,
+              title: entry.title,
+              pageNumber: entry.pageNumber,
+              level: entry.level || 0
+            }));
+            
+            const tocStore = useTocStore.getState();
+            tocStore.saveToc(documentId, file.name, tocItems, 'heuristic');
+            console.log(`📑 Fallback TOC generated: ${tocItems.length} entries`);
+          }
+        } else {
+          // Update tableOfContents state from store
+          const storeItems = currentToc.items.map((item: any) => ({
+            title: item.title,
+            pageNumber: item.pageNumber,
+            level: item.level || 0
+          }));
+          setTableOfContents(storeItems);
+        }
+      }, 500); // Wait for outline extraction to complete first
 
       // Whiteboard auto-detect
       const matches = detectWhiteboardSections(parsedUnits);
@@ -1810,171 +1916,6 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Show loading state during PDF parsing for Pattern view
-    if (viewMode === "pattern") {
-      // Show loading state during parsing
-      if (pdfParsingState.isLoading) {
-        return (
-          <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900">
-            <div className="text-center max-w-2xl">
-              <div className="animate-spin text-6xl mb-4">🎯</div>
-              <h3 className="text-3xl font-bold mb-4 text-white">Processing for Pattern Training</h3>
-              <p className="text-lg opacity-90 mb-6 text-gray-200">
-                {pdfParsingState.progress}
-              </p>
-              <div className="flex items-center justify-center gap-2">
-                <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-              </div>
-            </div>
-          </div>
-        );
-      }
-
-      // Show error state if parsing failed
-      if (pdfParsingState.error) {
-        return (
-          <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-red-900 to-purple-900">
-            <div className="text-center max-w-2xl">
-              <div className="text-6xl mb-4">❌</div>
-              <h3 className="text-3xl font-bold mb-4 text-white">Pattern Training Unavailable</h3>
-              <p className="text-lg mb-6 text-red-300">
-                {pdfParsingState.error}
-              </p>
-              <button
-                onClick={() => window.location.reload()}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg text-white font-medium"
-              >
-                🔄 Try Again
-              </button>
-            </div>
-          </div>
-        );
-      }
-
-      return fileUrl && thoughtUnits.length > 0 ? (
-        <div className="h-full flex flex-col">
-          {/* Pattern Training Butler Header */}
-          <div className="bg-gray-800 border-b border-gray-700 p-3 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <h3 className="text-lg font-semibold text-blue-400">🎯 Pattern Training Butler</h3>
-              <span className="text-sm text-gray-400">
-                Page {currentPage} of {pdfPageCount} • Unit {currentThoughtUnit} of {thoughtUnits.length}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={async () => {
-                  const selectedText = sel.selectionText?.trim();
-                  const currentUnitText = thoughtUnits[currentThoughtUnit - 1]?.text?.trim();
-                  const textToAnalyze = selectedText || currentUnitText || "";
-                  
-                  if (textToAnalyze) {
-                    try {
-                      const patternNote = await buildTopStudentNote(textToAnalyze, "highYield");
-                      console.log("🎯 Pattern note generated:", patternNote);
-                      alert("Pattern note generated! (Note logged to console)");
-                    } catch (error) {
-                      console.error("Pattern note creation failed:", error);
-                    }
-                  }
-                }}
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white px-3 py-2 rounded-lg font-medium"
-              >
-                🎯 Pattern Note
-              </button>
-            </div>
-          </div>
-          
-          {/* Integrated Pattern Training Hybrid Reader */}
-          <div className="flex-1 overflow-hidden">
-            <PatternTrainingHybridReader
-              bookId={bookId}
-              userId={USER_ID}
-              pdfUrl={fileUrl}
-              currentPage={currentPage}
-              pdfPageCount={pdfPageCount}
-              onPageChange={(p) => syncToPage(p)}
-              thoughtUnits={thoughtUnits}
-              currentThoughtUnit={currentThoughtUnit}
-              setCurrentThoughtUnit={setCurrentThoughtUnit}
-              highlightedWord={highlightedWord}
-              setHighlightedWord={setHighlightedWord}
-              onWordClick={(w) => {
-                setHighlightedWord(w);
-                if (autoWhiteboard && w.trim()) {
-                  setWbConcept(truncate(w, 600));
-                  setWbContext(`p.${currentPage}`);
-                  setShowWhiteboardPanel(true);
-                }
-              }}
-              onTextSelect={(t) => sel.setSelectionText(t)}
-              onGenerateNote={handleOpenRightBrainNote}
-              selBind={sel.bind}
-              externalSelectionText={sel.selectionText}
-              fontSize={fontSize}
-              fontFamily={fontFamily}
-              lineSpacing={lineSpacing}
-              selectedVoice={selectedVoice || undefined}
-              onVoiceChange={setSelectedVoice}
-              speechRate={speechRate}
-              onSpeechRateChange={setSpeechRate}
-              tableOfContents={tableOfContents}
-            />
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900">
-          <div className="text-center max-w-2xl">
-            <div className="text-6xl mb-4">🎯</div>
-            <h3 className="text-3xl font-bold mb-4 text-white">DAT Pattern Recognition Training</h3>
-            <p className="text-lg opacity-90 mb-6 text-gray-200">
-              Master 14 high-yield patterns including CARDIO, 5Q Rule, SN/E Flow, and more for DAT success
-            </p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8 text-sm">
-              <div className="bg-black/20 rounded-lg p-4 border border-blue-500/30">
-                <div className="text-2xl mb-2">🧪</div>
-                <h4 className="font-semibold text-blue-400">Organic Chemistry</h4>
-                <p className="text-gray-300">CARDIO, 5Q Rule, SN/E Flow, EAS patterns</p>
-              </div>
-              <div className="bg-black/20 rounded-lg p-4 border border-green-500/30">
-                <div className="text-2xl mb-2">⚗️</div>
-                <h4 className="font-semibold text-green-400">General Chemistry</h4>
-                <p className="text-gray-300">Q vs K, ΔG signs, Gas Laws patterns</p>
-              </div>
-              <div className="bg-black/20 rounded-lg p-4 border border-purple-500/30">
-                <div className="text-2xl mb-2">🧬</div>
-                <h4 className="font-semibold text-purple-400">Biology</h4>
-                <p className="text-gray-300">Organelles, Hardy-Weinberg, Reading patterns</p>
-              </div>
-              <div className="bg-black/20 rounded-lg p-4 border border-yellow-500/30">
-                <div className="text-2xl mb-2">🦷</div>
-                <h4 className="font-semibold text-yellow-400">Dentistry</h4>
-                <p className="text-gray-300">Caries treatment, Endodontic diagnosis</p>
-              </div>
-              <div className="bg-black/20 rounded-lg p-4 border border-pink-500/30">
-                <div className="text-2xl mb-2">📖</div>
-                <h4 className="font-semibold text-pink-400">Reading Comprehension</h4>
-                <p className="text-gray-300">Cause-Effect, Compare-Contrast patterns</p>
-              </div>
-              <div className="bg-black/20 rounded-lg p-4 border border-orange-500/30">
-                <div className="text-2xl mb-2">📈</div>
-                <h4 className="font-semibold text-orange-400">Mastery Tracking</h4>
-                <p className="text-gray-300">Pattern progress and mistake analysis</p>
-              </div>
-            </div>
-          </div>
-          
-          <label className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-400 hover:to-purple-400 text-white px-8 py-4 rounded-xl cursor-pointer font-semibold text-lg transition-all transform hover:scale-105 shadow-xl">
-            📂 Upload PDF to Start Pattern Training
-            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-          </label>
-        </div>
-      );
-    }
-
     // ✅ Show loading state during PDF parsing for NoteLab view
     // ✅ NoteLab View - PURE: NoteLab workspace only (no shared PDF)
     if (viewMode === "notelab") {
@@ -2095,7 +2036,7 @@ export default function ThoughtUnitReader() {
 
     // ✅ READER View - PURE: PDF ONLY (no thought units, no TOC, no annotations)
     // This is the DEFAULT view and handles viewMode === "original"
-    if (viewMode === "original" || viewMode === "pattern") {
+    if (viewMode === "original") {
       return fileUrl ? (
         <div className="h-full" data-testid="reader-view-container">
           <PureReaderView
@@ -2105,6 +2046,7 @@ export default function ThoughtUnitReader() {
             onPageChange={(p) => syncToPage(p)}
             onPageCount={(count) => setPdfPageCount(count)}
             onTextSelect={(t) => sel.setSelectionText(t)}
+            onOutline={handleOutlineExtraction}
             fontSize={fontSize}
             fontFamily={fontFamily}
           />
@@ -2217,7 +2159,7 @@ export default function ThoughtUnitReader() {
             data-testid="nav-syllabus"
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               viewMode === "syllabus" 
-                ? "bg-orange-500 text-white shadow-lg" 
+                ? "bg-teal-500 text-white shadow-lg" 
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
           >
@@ -2391,11 +2333,19 @@ export default function ThoughtUnitReader() {
 
       </div>
 
+<<<<<<< HEAD
       {/* Main Content Area - Pure View Container (each view handles its own layout) */}
       <div className="flex-1 overflow-hidden flex">
         {/* Main Content Area - renders the active pure view */}
         <div className="flex-1 h-full">
           <div className="w-full h-full bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
+=======
+      {/* Main Content Area - Pure Views: Each view manages its own layout */}
+      <div className="flex-1 overflow-hidden">
+        {/* Main Content - Pure View renders in full container */}
+        <div className="w-full h-full bg-gray-800 rounded-lg overflow-auto">
+          {renderContent()}
+>>>>>>> origin/main
         </div>
       </div>
 
