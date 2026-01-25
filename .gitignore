@@ -92,3 +92,14 @@ Thumbs.db
 # Environment files
 *.env
 *.env.*
+<<<<<<< HEAD
+-e 
+# Environment files
+*.env
+*.env.*
+-e 
+# Environment files
+*.env
+*.env.*
+=======
+>>>>>>> origin/main
