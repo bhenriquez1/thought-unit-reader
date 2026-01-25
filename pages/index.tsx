@@ -33,9 +33,12 @@ import PureReaderView from "@/components/PureReaderView";
 import PureTocView from "@/components/PureTocView";
 import PureSurgeonView from "@/components/PureSurgeonView";
 import PureNoteLabView from "@/components/PureNoteLabView";
+import PurePdrmView from "@/components/PurePdrmView";
 
 // Store imports
 import { useTocStore } from "@/lib/stores/tocStore";
+import { useZoomStore } from "@/lib/stores/zoomStore";
+import { usePdrmStore } from "@/lib/stores/pdrmStore";
 
 import {
   firebaseConnected,
@@ -264,7 +267,10 @@ export default function ThoughtUnitReader() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const [viewMode, setViewMode] =
-    useState<"original" | "hybrid" | "pattern" | "notelab" | "toc" | "study" | "syllabus">("original");
+    useState<"original" | "hybrid" | "pattern" | "notelab" | "toc" | "study" | "syllabus" | "pdrm">("original");
+
+  // Global Zoom Store
+  const { zoom, zoomIn, zoomOut, resetZoom, getZoomPercent, canZoomIn, canZoomOut } = useZoomStore();
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(0); // Start with 0 to indicate not loaded
@@ -1889,6 +1895,7 @@ export default function ThoughtUnitReader() {
             currentThoughtUnit={currentThoughtUnit}
             chapterId={currentChapter?.title || `chapter-${currentPage}`}
             headings={currentHeadings}
+            pageText={thoughtUnits[currentThoughtUnit - 1]?.text || ''}
             onPageChange={(p) => syncToPage(p)}
             onPageCount={(count) => setPdfPageCount(count)}
             onRecommendedAction={(action) => {
@@ -1995,6 +2002,33 @@ export default function ThoughtUnitReader() {
               setViewMode("original");
             }}
             onStartStudySession={() => setViewMode("study")}
+          />
+        </div>
+      );
+    }
+
+    // ✅ PDRM View - PURE: PDRM entries grouped by doc/chapter/page
+    if (viewMode === "pdrm") {
+      return (
+        <div className="h-full" data-testid="pdrm-view-container">
+          <PurePdrmView
+            documentId={bookId}
+            documentName={uploadedFile?.name || tableOfContents[0]?.title || "Document"}
+            currentPage={currentPage}
+            pdfPageCount={pdfPageCount}
+            onJumpToPage={(pageNumber, highlightId) => {
+              syncToPage(pageNumber);
+              // TODO: Flash highlight if highlightId provided
+            }}
+            onOpenInReader={(pageNumber) => {
+              syncToPage(pageNumber);
+              setViewMode("original");
+            }}
+            onOpenInSurgeon={(pageNumber, highlightId) => {
+              syncToPage(pageNumber);
+              setViewMode("hybrid");
+              // TODO: Flash highlight if highlightId provided
+            }}
           />
         </div>
       );
@@ -2131,7 +2165,47 @@ export default function ThoughtUnitReader() {
           >
             📋 Syllabus
           </button>
+          <button
+            onClick={() => setViewMode("pdrm")}
+            data-testid="nav-pdrm"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              viewMode === "pdrm" 
+                ? "bg-indigo-500 text-white shadow-lg" 
+                : "text-gray-300 hover:text-white hover:bg-gray-700"
+            }`}
+          >
+            📊 PDRM
+          </button>
         </div>
+
+        {/* Global Zoom Controls - Show when PDF is loaded */}
+        {fileUrl && pdfPageCount > 0 && (viewMode === "original" || viewMode === "hybrid") && (
+          <div className="flex items-center gap-1 bg-gray-900 rounded-lg px-2 py-1" data-testid="global-zoom">
+            <button
+              onClick={zoomOut}
+              disabled={!canZoomOut()}
+              className="px-2 py-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs"
+              title="Zoom out"
+            >
+              −
+            </button>
+            <button
+              onClick={resetZoom}
+              className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs min-w-[50px] text-center"
+              title="Reset zoom"
+            >
+              {getZoomPercent()}%
+            </button>
+            <button
+              onClick={zoomIn}
+              disabled={!canZoomIn()}
+              className="px-2 py-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs"
+              title="Zoom in"
+            >
+              +
+            </button>
+          </div>
+        )}
 
         {/* Readless Mode Toggle */}
         <label className="inline-flex items-center gap-2 text-sm">
@@ -2259,11 +2333,19 @@ export default function ThoughtUnitReader() {
 
       </div>
 
+<<<<<<< HEAD
+      {/* Main Content Area - Pure View Container (each view handles its own layout) */}
+      <div className="flex-1 overflow-hidden flex">
+        {/* Main Content Area - renders the active pure view */}
+        <div className="flex-1 h-full">
+          <div className="w-full h-full bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
+=======
       {/* Main Content Area - Pure Views: Each view manages its own layout */}
       <div className="flex-1 overflow-hidden">
         {/* Main Content - Pure View renders in full container */}
         <div className="w-full h-full bg-gray-800 rounded-lg overflow-auto">
           {renderContent()}
+>>>>>>> origin/main
         </div>
       </div>
 

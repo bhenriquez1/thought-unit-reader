@@ -6,9 +6,16 @@
 // ❌ No TOC sidebar
 // ❌ No NoteLab
 // ❌ No Thought Units (those belong in Surgeon View)
+// ✅ Uses global zoom store for shared zoom across views
 
+<<<<<<< HEAD
+import React, { useCallback } from 'react';
+import SmartPDFViewer from './SmartPDFViewer';
+import { useZoomStore } from '@/lib/stores/zoomStore';
+=======
 import React, { useState, useCallback } from 'react';
 import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
+>>>>>>> origin/main
 
 interface PureReaderViewProps {
   fileUrl: string | null;
@@ -33,7 +40,8 @@ export default function PureReaderView({
   fontSize = 16,
   fontFamily = 'Georgia'
 }: PureReaderViewProps) {
-  const [zoom, setZoom] = useState(1.25);
+  // Global zoom store
+  const { zoom, zoomIn, zoomOut, resetZoom, getZoomPercent, canZoomIn, canZoomOut } = useZoomStore();
   
   const handlePrevPage = useCallback(() => {
     if (currentPage > 1) onPageChange(currentPage - 1);
@@ -43,10 +51,13 @@ export default function PureReaderView({
     if (currentPage < pdfPageCount) onPageChange(currentPage + 1);
   }, [currentPage, pdfPageCount, onPageChange]);
   
+<<<<<<< HEAD
+=======
   const handleZoomIn = useCallback(() => setZoom(z => Math.min(z + 0.25, 2.5)), []);
   const handleZoomOut = useCallback(() => setZoom(z => Math.max(z - 0.25, 0.6)), []);
   const handleResetZoom = useCallback(() => setZoom(1.25), []);
   
+>>>>>>> origin/main
   // No file uploaded
   if (!fileUrl) {
     return (
@@ -95,22 +106,24 @@ export default function PureReaderView({
         {/* Zoom Controls */}
         <div className="flex items-center gap-2">
           <button
-            onClick={handleZoomOut}
-            className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm"
+            onClick={zoomOut}
+            disabled={!canZoomOut()}
+            className="px-2 py-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm"
             title="Zoom out"
           >
             −
           </button>
           <button
-            onClick={handleResetZoom}
+            onClick={resetZoom}
             className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm min-w-[60px]"
             title="Reset zoom"
           >
-            {Math.round(zoom * 100)}%
+            {getZoomPercent()}%
           </button>
           <button
-            onClick={handleZoomIn}
-            className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm"
+            onClick={zoomIn}
+            disabled={!canZoomIn()}
+            className="px-2 py-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm"
             title="Zoom in"
           >
             +
