@@ -1,5 +1,9 @@
 {
+<<<<<<< HEAD
   "summary": "V1 Stabilization testing complete. All 7 tabs accessible (Reader, TOC, Surgeon View, NoteLab, Study, Syllabus, PDRM). Global zoom controls work and sync between Reader/Surgeon views. PDRM tab shows empty state with 'Open Surgeon View' button. TOC tab shows 'Add Chapter Manually' when no TOC detected. Surgeon View has Auto/Manual PDRM toggle and Clean/Full/PDF mode toggle. No UI leaking between tabs - strict mode separation verified.",
+=======
+  "summary": "Frontend-only testing completed for 6-tab navigation and pure view separation. All 6 tabs (Reader, TOC, Surgeon View, NoteLab, Study, Syllabus) render correctly with proper data-testid attributes. Each tab shows its pure view without UI bleed from other modes. PDF upload works in Reader view. TOC shows empty state with 'Add Chapter Manually' option. Surgeon View shows empty state with features list. NoteLab shows filters sidebar. Study tab shows 'Ready to Study?' with card stats. Syllabus tab shows 'Create Your Study Plan' with upload option.",
+>>>>>>> origin/main
   "backend_issues": {
     "critical": [],
     "minor": []
@@ -7,11 +11,21 @@
   "frontend_issues": {
     "ui_bugs": [],
     "integration_issues": [],
+<<<<<<< HEAD
     "design_issues": []
+=======
+    "design_issues": [
+      {
+        "screen": "PDF Viewer",
+        "issues": ["Excessive console logging - TOC extraction callback fires repeatedly (100+ times) after PDF load. This is a performance concern but doesn't affect functionality."]
+      }
+    ]
+>>>>>>> origin/main
   },
   "test_report_links": [
     "/app/test_reports/iteration_6.json"
   ],
+<<<<<<< HEAD
   "action_items": [],
   "critical_code_review_comments": [
     "Global zoom store (zoomStore.ts) correctly persists zoom level to localStorage",
@@ -85,4 +99,63 @@
     ".screenshots/tab_syllabus.png",
     ".screenshots/tab_pdrm.png"
   ]
+=======
+  "action_items": [
+    "MINOR: Fix excessive TOC extraction callback firing in SmartPDFViewer - the onOutline callback is being called repeatedly causing console spam"
+  ],
+  "critical_code_review_comments": [
+    "All 6 navigation tabs have proper data-testid attributes (nav-reader, nav-toc, nav-surgeon, nav-notelab, nav-study, nav-syllabus)",
+    "Pure view components (PureReaderView, PureTocView, PureSurgeonView, PureNoteLabView, StudySessionPanel, SyllabusModePanel) render correctly without UI bleed",
+    "Guest mode (NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN=1) works correctly - mock user created on load",
+    "localStorage persistence working for session state and Surgeon View data",
+    "PDF upload and viewing works correctly in Reader mode",
+    "TOC auto-generation from PDF outline works (1 chapter extracted from sample.pdf)",
+    "Empty states are properly displayed for all views when no data exists"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend-only app with localStorage)",
+    "frontend": "100%"
+  },
+  "test_credentials": "Guest mode enabled via NEXT_PUBLIC_DISABLE_GOOGLE_SIGNIN=1",
+  "seed_data_creation": "None required - testing empty states and tab navigation",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All 6 tabs are working correctly with pure view separation. The main refactoring to remove legacy Pattern view and TOCSidebar was successful. Firebase is MOCKED using localStorage. To test full functionality: (1) Upload a PDF in Reader, (2) Switch to Surgeon View to create highlights, (3) Check NoteLab for captured highlights, (4) Use Study tab to review, (5) Create syllabus in Syllabus tab. Minor issue: SmartPDFViewer onOutline callback fires excessively after PDF load.",
+  "tests_passed": {
+    "ui_tests": {
+      "main_page_loads": true,
+      "all_6_tabs_visible": true,
+      "reader_tab": true,
+      "toc_tab": true,
+      "surgeon_view_tab": true,
+      "notelab_tab": true,
+      "study_tab": true,
+      "syllabus_tab": true,
+      "pdf_upload_works": true,
+      "toc_empty_state_with_add_chapter": true,
+      "surgeon_view_empty_state_with_features": true,
+      "notelab_filters_sidebar": true,
+      "study_ready_to_study_with_stats": true,
+      "syllabus_create_study_plan_with_upload": true,
+      "no_ui_bleed_between_tabs": true,
+      "no_console_errors": true
+    }
+  },
+  "features_verified": {
+    "6_tabs_navigation": "✅ All 6 tabs visible: Reader, TOC, Surgeon View, NoteLab, Study, Syllabus",
+    "reader_tab": "✅ Shows Pure Reader Mode with PDF upload option",
+    "toc_tab": "✅ Shows 'No Table of Contents' with 'Add Chapter Manually' button",
+    "surgeon_view_tab": "✅ Shows empty state with features list (Thought-Unit, Auto-PDRM, Chapter quizzes)",
+    "notelab_tab": "✅ Shows filters sidebar (All Items, Weak/Mistakes, Patterns, Decisions, Mnemonics, Flashcards, Highlights)",
+    "study_tab": "✅ Shows 'Ready to Study?' with Total/Weak/Due stats grid",
+    "syllabus_tab": "✅ Shows 'Create Your Study Plan' with Create New Syllabus and Upload Syllabus File options",
+    "pdf_upload": "✅ PDF uploads and displays correctly in Reader view",
+    "pure_view_separation": "✅ Each tab renders its pure view without UI bleed from other modes"
+  },
+  "mocked_integrations": {
+    "firebase": "MOCKED - using localStorage for persistence via Zustand persist middleware",
+    "firestore": "MOCKED - all Firestore operations return null/empty"
+  }
+>>>>>>> origin/main
 }

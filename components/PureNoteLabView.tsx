@@ -22,7 +22,7 @@ interface PureNoteLabViewProps {
   onStartStudy?: () => void;
 }
 
-type FilterType = 'all' | 'highlights' | 'notes' | 'flashcards' | 'weak' | 'pattern' | 'decision' | 'mnemonic';
+type FilterType = 'all' | 'highlights' | 'notes' | 'flashcards' | 'weak' | 'pattern' | 'decision' | 'mnemonic' | 'absorption';
 type SortType = 'recent' | 'page' | 'type';
 type GroupByType = 'none' | 'chapter' | 'type';
 
@@ -88,6 +88,11 @@ export default function PureNoteLabView({
         break;
       case 'mnemonic':
         result = getPDRMAnnotations('M');
+        break;
+      case 'absorption':
+        result = getAllAnnotationsArray().filter(a => 
+          a.tags.includes('absorption_highlight') || a.tags.includes('absorption-highlight')
+        );
         break;
       default:
         result = getAllAnnotationsArray();
@@ -195,7 +200,11 @@ export default function PureNoteLabView({
     flashcards: getFlashcards().filter(a => a.documentId === documentId).length,
     patterns: getPDRMAnnotations('P').filter(a => a.documentId === documentId).length,
     decisions: getPDRMAnnotations('D').filter(a => a.documentId === documentId).length,
-    mnemonics: getPDRMAnnotations('M').filter(a => a.documentId === documentId).length
+    mnemonics: getPDRMAnnotations('M').filter(a => a.documentId === documentId).length,
+    absorption: getAllAnnotationsArray().filter(a => 
+      a.documentId === documentId && 
+      (a.tags.includes('absorption_highlight') || a.tags.includes('absorption-highlight'))
+    ).length
   }), [annotations, documentId, getAllAnnotationsArray, getMistakes, getFlashcards, getPDRMAnnotations]);
 
   // Handlers
@@ -267,6 +276,7 @@ export default function PureNoteLabView({
           {([
             { key: 'all', label: 'All Items', icon: '📚', count: stats.total },
             { key: 'weak', label: 'Weak/Mistakes', icon: '⚠️', count: stats.weak },
+            { key: 'absorption', label: 'Absorption Highlights', icon: '📋', count: stats.absorption },
             { key: 'pattern', label: 'Patterns', icon: '🎯', count: stats.patterns },
             { key: 'decision', label: 'Decisions', icon: '⚖️', count: stats.decisions },
             { key: 'mnemonic', label: 'Mnemonics', icon: '🧠', count: stats.mnemonics },

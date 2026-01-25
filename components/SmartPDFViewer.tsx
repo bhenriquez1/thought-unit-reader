@@ -92,7 +92,18 @@ export default function SmartPDFViewer({
   onPageCount,
   onOutline,
 }: SmartPDFViewerProps) {
-  const [zoom, setZoom] = useState<number>(scale);
+  // Use scale prop directly - parent controls zoom
+  // Only use internal zoom if no scale prop provided
+  const [internalZoom, setInternalZoom] = useState<number>(scale);
+  
+  // Sync internal zoom with scale prop changes
+  useEffect(() => {
+    setInternalZoom(scale);
+  }, [scale]);
+  
+  // Use the effective zoom (prop takes precedence)
+  const effectiveZoom = scale;
+  
   const [pageInput, setPageInput] = useState<string>(String(currentPage));
   const [showToolbar, setShowToolbar] = useState<boolean>(true);
   const [highlightPulse, setHighlightPulse] = useState<boolean>(false);
@@ -240,8 +251,8 @@ export default function SmartPDFViewer({
     };
   }, [fileUrl, startVisibleTextObserver, stopVisibleTextObserver, syncPDFToChunk]);
 
-  const handleZoomIn = () => setZoom((z) => Math.min(z + 0.25, 3));
-  const handleZoomOut = () => setZoom((z) => Math.max(z - 0.25, 0.5));
+  const handleZoomIn = () => setInternalZoom((z) => Math.min(z + 0.25, 2.5));
+  const handleZoomOut = () => setInternalZoom((z) => Math.max(z - 0.25, 0.6));
 
   const handlePrevPage = () => {
     if (currentPage > 1) {
@@ -381,7 +392,7 @@ export default function SmartPDFViewer({
                 key={`${fileUrl}-${currentPage}-${pageCount}`}
                 pdf={pdfDocument}
                 pageNumber={currentPage}
-                scale={zoom}
+                scale={effectiveZoom}
                 renderTextLayer
                 renderAnnotationLayer={false}
                 loading={
