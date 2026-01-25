@@ -217,12 +217,12 @@ const COMPREHENSION_PROMPTS = [
 
 export default function ThoughtUnitReader() {
   /* =========================================================================
-     🔹 Feature Flags for Prototype Testing
+     Feature Flags for Prototype Testing
   ========================================================================= */
   const { isEnabled: isFeatureEnabled } = useFeatureFlags();
 
   /* =========================================================================
-     🔹 Enhanced Global Reader Sync Store
+     Enhanced Global Reader Sync Store
   ========================================================================= */
   const { 
     page, 
@@ -256,7 +256,7 @@ export default function ThoughtUnitReader() {
   }, [page, unitIndex, activeChunkId]);
 
   /* =========================================================================
-     🔹 State
+     State
   ========================================================================= */
   const [user, setUser] = useState<any>(null);
   const USER_ID = user?.uid || "guest-user";
@@ -302,7 +302,7 @@ export default function ThoughtUnitReader() {
   const [showTOC] = useState(true);
 
   /* =========================================================================
-     🔹 Unified Annotation Store (P0.1) - Shared between Surgeon View + NoteLab
+     Unified Annotation Store (P0.1) - Shared between Surgeon View + NoteLab
   ========================================================================= */
   const {
     annotations: storeAnnotations,
@@ -323,7 +323,7 @@ export default function ThoughtUnitReader() {
   } = useAnnotationStore();
 
   /* =========================================================================
-     🔹 Surgeon View PDRM State
+     Surgeon View PDRM State
   ========================================================================= */
   const [notes, setNotes] = useState<any[]>([]);
   const [flashcards, setFlashcards] = useState<any[]>([]);
@@ -337,7 +337,7 @@ export default function ThoughtUnitReader() {
   } | null>(null);
 
   /* =========================================================================
-     🔹 Local Storage Persistence for Guest Mode
+     Local Storage Persistence for Guest Mode
   ========================================================================= */
   // Save session state to localStorage
   const saveSessionState = () => {
@@ -424,7 +424,7 @@ export default function ThoughtUnitReader() {
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [bookId, setBookId] = useState<string>("default-book");
 
-  // ✅ Auto-whiteboard control + data
+  // Auto-whiteboard control + data
   const [autoWhiteboard, setAutoWhiteboard] = useState<boolean>(false);
   const [showWhiteboardPanel, setShowWhiteboardPanel] = useState<boolean>(false);
   const [wbConcept, setWbConcept] = useState<string>("");
@@ -446,7 +446,7 @@ export default function ThoughtUnitReader() {
     page?: number;
   }>>([]);
 
-  // ✅ PDF Parsing State Management
+  // PDF Parsing State Management
   const [pdfParsingState, setPdfParsingState] = useState<{
     isLoading: boolean;
     error: string | null;
@@ -457,12 +457,12 @@ export default function ThoughtUnitReader() {
     progress: "",
   });
 
-  // ✅ Readless Mode and PDRM Layout State
+  // Readless Mode and PDRM Layout State
   const [readlessMode, setReadlessMode] = useState<boolean>(false);
   const [pdrmLayout, setPdrmLayout] = useState<'side' | 'under'>('side');
 
   /* =========================================================================
-     🔹 Surgeon View: Text Selection Handler
+     Surgeon View: Text Selection Handler
   ========================================================================= */
   useEffect(() => {
     const handleMouseUp = () => {
@@ -494,7 +494,7 @@ export default function ThoughtUnitReader() {
   const [smartTOC, setSmartTOC] = useState<SmartTOCEntry[]>([]);
 
   /* =========================================================================
-     🔹 Auth Listener + complete redirect
+     Auth Listener + complete redirect
   ========================================================================= */
   useEffect(() => {
     // Check if bypass mode is enabled
@@ -508,7 +508,7 @@ export default function ThoughtUnitReader() {
         email: "guest@local",
         photoURL: null,
       };
-      console.log("✅ Bypass mode enabled - using mock user");
+      console.log("Bypass mode enabled - using mock user");
       setUser(mockUser as any);
     } else {
       handleRedirectResult().catch(() => {});
@@ -517,7 +517,7 @@ export default function ThoughtUnitReader() {
   }, []);
 
   /* =========================================================================
-     🔹 Initialize Chapter Absorption Pipeline
+     Initialize Chapter Absorption Pipeline
   ========================================================================= */
   useEffect(() => {
     if (thoughtUnits.length > 0 && tableOfContents.length > 0) {
@@ -575,7 +575,7 @@ export default function ThoughtUnitReader() {
   }, [thoughtUnits.length, tableOfContents.length]);
 
   /* =========================================================================
-     🔹 Load PDF Library (Firebase) or keep session list (guest)
+     Load PDF Library (Firebase) or keep session list (guest)
   ========================================================================= */
   useEffect(() => {
     if (firebaseConnected && user) {
@@ -586,7 +586,7 @@ export default function ThoughtUnitReader() {
   }, [user, showLibrary]);
 
   /* =========================================================================
-     🔹 Chapter Absorption Pipeline Functions
+     Chapter Absorption Pipeline Functions
   ========================================================================= */
   const startChapterAbsorption = async () => {
     if (!chapterPipeline || !smartTOC.length) {
@@ -680,7 +680,7 @@ export default function ThoughtUnitReader() {
   };
 
   /* =========================================================================
-     🔹 Enhanced Page/TOC sync with chapter-aware navigation + global sync
+     Enhanced Page/TOC sync with chapter-aware navigation + global sync
   ========================================================================= */
   const sel = usePdfSelection({
     minChars: 2,
@@ -698,7 +698,7 @@ export default function ThoughtUnitReader() {
   });
 
   /* =========================================================================
-     🔹 Handle Thought Detection
+     Handle Thought Detection
   ========================================================================= */
   const handleThoughtDetected = (thoughtText: string, analysis: any) => {
     console.log('💭 New thought detected:', { thoughtText: thoughtText.slice(0, 50) + '...', analysis });
@@ -715,12 +715,12 @@ export default function ThoughtUnitReader() {
   };
 
   /* =========================================================================
-     🔹 Upload PDF — parse + detect diagrams
+     Upload PDF — parse + detect diagrams
   ========================================================================= */
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     
-    // ✅ Enhanced PDF validation
+    // Enhanced PDF validation
     if (!file) {
       alert("Please select a file.");
       return;
@@ -752,7 +752,7 @@ export default function ThoughtUnitReader() {
       return;
     }
 
-    // ✅ Initialize parsing state with better messaging
+    // Initialize parsing state with better messaging
     setPdfParsingState({
       isLoading: true,
       error: null,
@@ -850,7 +850,7 @@ export default function ThoughtUnitReader() {
 
       const normalized = normalizeParsedUnits(parsedUnits);
       
-      // ✅ Validate parsed content before setting
+      // Validate parsed content before setting
       if (!normalized || normalized.length === 0) {
         throw new Error("No readable content found in PDF");
       }
@@ -883,14 +883,14 @@ export default function ThoughtUnitReader() {
         setShowWhiteboardPanel(false);
       }
 
-      // ✅ Success - clear loading state
+      // Success - clear loading state
       setPdfParsingState({
         isLoading: false,
         error: null,
         progress: "Complete"
       });
 
-      console.log("✅ PDF processing complete:", {
+      console.log("PDF processing complete:", {
         thoughtUnits: normalized.length,
         chapters: chapters.length,
         fileName: file.name
@@ -898,9 +898,9 @@ export default function ThoughtUnitReader() {
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Failed to process PDF";
-      console.error("❌ PDF processing failed:", errorMessage);
+      console.error("PDF processing failed:", errorMessage);
 
-      // ✅ Enhanced error handling with specific messages
+      // Enhanced error handling with specific messages
       let userFriendlyMessage = errorMessage;
       
       if (errorMessage.includes("password") || errorMessage.includes("encrypted")) {
@@ -915,7 +915,7 @@ export default function ThoughtUnitReader() {
         userFriendlyMessage = "Not enough memory to process this PDF. Try a smaller file or refresh the page and try again.";
       }
 
-      // ✅ Set error state with user-friendly message
+      // Set error state with user-friendly message
       setPdfParsingState({
         isLoading: false,
         error: userFriendlyMessage,
@@ -1025,7 +1025,7 @@ export default function ThoughtUnitReader() {
   }, [viewMode, currentPage, pdfPageCount, thoughtUnits.length, updateSync, currentThoughtUnit]);
 
   /* =========================================================================
-     🔹 Load PDF from Library
+     Load PDF from Library
   ========================================================================= */
   const handleLoadPDF = (url: string) => {
     setFileUrl(url);
@@ -1035,7 +1035,7 @@ export default function ThoughtUnitReader() {
   };
 
   /* =========================================================================
-     🔹 Delete PDF
+     Delete PDF
   ========================================================================= */
   const handleDeletePDF = async (id: string, name: string, isLocal?: boolean) => {
     if (!confirm(`Delete ${name}?`)) return;
@@ -1049,7 +1049,7 @@ export default function ThoughtUnitReader() {
   };
 
   /* =========================================================================
-     🔹 Surgeon View PDRM: Highlight → Action Handlers
+     Surgeon View PDRM: Highlight → Action Handlers
   ========================================================================= */
   
   // Handle text selection and show action menu
@@ -1252,7 +1252,7 @@ export default function ThoughtUnitReader() {
   }, [bookId]);
 
   /* =========================================================================
-     🔹 Enhanced High-Yield & Sketch note helpers - Top Student Quality
+     Enhanced High-Yield & Sketch note helpers - Top Student Quality
   ========================================================================= */
   
   // Helper functions for enhanced note generation
@@ -1561,7 +1561,7 @@ export default function ThoughtUnitReader() {
         `- What keeps it going? ___________`,
         `- What stops it? ___________`,
         ``,
-        `## ✅ Understanding Check`,
+        `## Understanding Check`,
         `- Can I tell the story without looking? Yes/No`,
         `- Can I draw the main idea? Yes/No`,
         `- Do I see how it all fits together? Yes/No`,
@@ -1672,7 +1672,7 @@ export default function ThoughtUnitReader() {
 
 
   /* =========================================================================
-     🔹 Enhanced Page/TOC sync with chapter-aware navigation + global sync
+     Enhanced Page/TOC sync with chapter-aware navigation + global sync
   ========================================================================= */
   // Simplified navigation function - single source of truth
   const syncToPage = (page: number, opts?: { reason?: 'SCROLL' | 'TOC_JUMP' | 'PROGRAMMATIC' }) => {
@@ -1731,7 +1731,7 @@ export default function ThoughtUnitReader() {
   };
 
   /* =========================================================================
-     🔹 Render Reader Content with Persistent Views (Performance Optimized)
+     Render Reader Content with Persistent Views (Performance Optimized)
   ========================================================================= */
   const renderContent = () => {
     // 🔐 Gate the app: must be signed in before doing anything
@@ -1748,10 +1748,10 @@ export default function ThoughtUnitReader() {
                 try {
                   const user = await signInWithGoogle();
                   if (user) {
-                    console.log("✅ Signed in:", user.displayName || user.email);
+                    console.log("Signed in:", user.displayName || user.email);
                   }
                 } catch (error) {
-                  console.error("❌ Sign-in error:", error);
+                  console.error("Sign-in error:", error);
                 }
               }}
               className="px-4 py-2 rounded bg-blue-500 hover:bg-blue-600"
@@ -1763,7 +1763,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Surgeon View - PURE: Highlighting + Quiz (no TOC panel)
+    // Surgeon View - PURE: Highlighting + Quiz (no TOC panel)
     if (viewMode === "hybrid") {
       // Get current page headings for Surgeon View
       const currentHeadings = tableOfContents
@@ -1810,7 +1810,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Show loading state during PDF parsing for Pattern view
+    // Show loading state during PDF parsing for Pattern view
     if (viewMode === "pattern") {
       // Show loading state during parsing
       if (pdfParsingState.isLoading) {
@@ -1975,8 +1975,8 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Show loading state during PDF parsing for NoteLab view
-    // ✅ NoteLab View - PURE: NoteLab workspace only (no shared PDF)
+    // Show loading state during PDF parsing for NoteLab view
+    // NoteLab View - PURE: NoteLab workspace only (no shared PDF)
     if (viewMode === "notelab") {
       const chaptersForNotelab = tableOfContents.map((entry, idx) => ({
         id: `chapter_${idx}`,
@@ -2002,7 +2002,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ TOC View - PURE: Only TOC tree (NO PDF panel)
+    // TOC View - PURE: Only TOC tree (NO PDF panel)
     if (viewMode === "toc") {
       return (
         <div className="h-full" data-testid="toc-view-container">
@@ -2024,7 +2024,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Study Session View - PURE: Study panel only (no shared PDF)
+    // Study Session View - PURE: Study panel only (no shared PDF)
     if (viewMode === "study") {
       return (
         <div className="h-full" data-testid="study-view-container">
@@ -2042,7 +2042,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Syllabus Mode View - PURE: Syllabus panel only (no shared PDF)
+    // Syllabus Mode View - PURE: Syllabus panel only (no shared PDF)
     if (viewMode === "syllabus") {
       const chaptersForSyllabus = tableOfContents.map((toc, idx) => ({
         id: `chapter_${idx}`,
@@ -2066,7 +2066,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ PDRM View - PURE: PDRM entries grouped by doc/chapter/page
+    // PDRM View - PURE: PDRM entries grouped by doc/chapter/page
     if (viewMode === "pdrm") {
       return (
         <div className="h-full" data-testid="pdrm-view-container">
@@ -2093,7 +2093,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ READER View - PURE: PDF ONLY (no thought units, no TOC, no annotations)
+    // READER View - PURE: PDF ONLY (no thought units, no TOC, no annotations)
     // This is the DEFAULT view and handles viewMode === "original"
     if (viewMode === "original" || viewMode === "pattern") {
       return fileUrl ? (
