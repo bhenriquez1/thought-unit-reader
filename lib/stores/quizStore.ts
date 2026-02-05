@@ -451,10 +451,20 @@ export const useQuizStore = create<QuizState>()(
     }),
     {
       name: 'quiz-store',
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => {
+        if (typeof window === 'undefined') {
+          return {
+            getItem: () => null,
+            setItem: () => {},
+            removeItem: () => {},
+          };
+        }
+        return localStorage;
+      }),
       partialize: (state) => ({
         attempts: state.attempts
-      })
+      }),
+      skipHydration: typeof window === 'undefined',
     }
   )
 );

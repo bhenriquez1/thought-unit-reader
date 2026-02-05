@@ -347,12 +347,22 @@ export const usePdrmStore = create<PDRMState>()(
     }),
     {
       name: 'pdrm-storage-v2',
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => {
+        if (typeof window === 'undefined') {
+          return {
+            getItem: () => null,
+            setItem: () => {},
+            removeItem: () => {},
+          };
+        }
+        return localStorage;
+      }),
       partialize: (state) => ({
         entries: state.entries,
         autoMode: state.autoMode,
         pageCache: state.pageCache
-      })
+      }),
+      skipHydration: typeof window === 'undefined',
     }
   )
 );

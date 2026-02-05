@@ -69,8 +69,18 @@ export const useZoomStore = create<ZoomState>()(
     }),
     {
       name: 'zoom-storage',
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ zoom: state.zoom })
+      storage: createJSONStorage(() => {
+        if (typeof window === 'undefined') {
+          return {
+            getItem: () => null,
+            setItem: () => {},
+            removeItem: () => {},
+          };
+        }
+        return localStorage;
+      }),
+      partialize: (state) => ({ zoom: state.zoom }),
+      skipHydration: typeof window === 'undefined',
     }
   )
 );

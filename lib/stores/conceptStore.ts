@@ -217,36 +217,54 @@ export const useConceptStore = create<ConceptStoreState>()(
     }),
     {
       name: 'concept-store',
-      // Custom serializer for Map and Set
+      // Custom serializer for Map and Set with SSR safety
       storage: {
         getItem: (name) => {
-          const str = localStorage.getItem(name);
-          if (!str) return null;
-          const data = JSON.parse(str);
-          // Restore Map from array
-          if (data.state?.conceptsByPage) {
-            data.state.conceptsByPage = new Map(data.state.conceptsByPage);
+          if (typeof window === 'undefined') return null;
+          try {
+            const str = localStorage.getItem(name);
+            if (!str) return null;
+            const data = JSON.parse(str);
+            // Restore Map from array
+            if (data.state?.conceptsByPage) {
+              data.state.conceptsByPage = new Map(data.state.conceptsByPage);
+            }
+            // Restore Set from array
+            if (data.state?.expandedExceptions) {
+              data.state.expandedExceptions = new Set(data.state.expandedExceptions);
+            }
+            return data;
+          } catch {
+            return null;
           }
-          // Restore Set from array
-          if (data.state?.expandedExceptions) {
-            data.state.expandedExceptions = new Set(data.state.expandedExceptions);
-          }
-          return data;
         },
         setItem: (name, value) => {
-          // Convert Map to array for serialization
-          const toStore = {
-            ...value,
-            state: {
-              ...value.state,
-              conceptsByPage: Array.from(value.state.conceptsByPage.entries()),
-              expandedExceptions: Array.from(value.state.expandedExceptions),
-            },
-          };
-          localStorage.setItem(name, JSON.stringify(toStore));
+          if (typeof window === 'undefined') return;
+          try {
+            // Convert Map to array for serialization
+            const toStore = {
+              ...value,
+              state: {
+                ...value.state,
+                conceptsByPage: Array.from(value.state.conceptsByPage?.entries?.() ?? []),
+                expandedExceptions: Array.from(value.state.expandedExceptions ?? []),
+              },
+            };
+            localStorage.setItem(name, JSON.stringify(toStore));
+          } catch {
+            // Ignore storage errors
+          }
         },
-        removeItem: (name) => localStorage.removeItem(name),
+        removeItem: (name) => {
+          if (typeof window === 'undefined') return;
+          try {
+            localStorage.removeItem(name);
+          } catch {
+            // Ignore storage errors
+          }
+        },
       },
+      skipHydration: typeof window === 'undefined',
     }
   )
 );
