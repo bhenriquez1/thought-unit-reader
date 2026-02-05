@@ -2333,19 +2333,11 @@ export default function ThoughtUnitReader() {
 
       </div>
 
-<<<<<<< HEAD
-      {/* Main Content Area - Pure View Container (each view handles its own layout) */}
-      <div className="flex-1 overflow-hidden flex">
-        {/* Main Content Area - renders the active pure view */}
-        <div className="flex-1 h-full">
-          <div className="w-full h-full bg-gray-800 rounded-lg overflow-auto">{renderContent()}</div>
-=======
       {/* Main Content Area - Pure Views: Each view manages its own layout */}
       <div className="flex-1 overflow-hidden">
         {/* Main Content - Pure View renders in full container */}
         <div className="w-full h-full bg-gray-800 rounded-lg overflow-auto">
           {renderContent()}
->>>>>>> origin/main
         </div>
       </div>
 
