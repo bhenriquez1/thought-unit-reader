@@ -2165,17 +2165,7 @@ export default function ThoughtUnitReader() {
           >
             📋 Syllabus
           </button>
-          <button
-            onClick={() => setViewMode("pdrm")}
-            data-testid="nav-pdrm"
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              viewMode === "pdrm" 
-                ? "bg-indigo-500 text-white shadow-lg" 
-                : "text-gray-300 hover:text-white hover:bg-gray-700"
-            }`}
-          >
-            📊 PDRM
-          </button>
+          {/* PDRM tab removed - functionality is now in Surgeon View's PDRM tab */}
         </div>
 
         {/* Global Zoom Controls - Show when PDF is loaded */}
