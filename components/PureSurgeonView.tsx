@@ -37,6 +37,7 @@ import {
 } from '@/lib/pdrmAIExtractor';
 import classifyHighlight, { getPDRMTypeColor as getLegacyColor } from '@/lib/autoPDRM';
 import SmartPDFViewer from './SmartPDFViewer';
+import UniversalConceptPanel from './UniversalConceptPanel';
 
 // ============================================================================
 // Types
@@ -60,7 +61,7 @@ interface PureSurgeonViewProps {
 }
 
 type ViewMode = 'full' | 'clean' | 'pdf-only';
-type SidebarTab = 'pdrm' | 'highlights' | 'quiz' | 'review';
+type SidebarTab = 'pdrm' | 'highlights' | 'quiz' | 'review' | 'concepts';
 
 // ============================================================================
 // Component
@@ -123,7 +124,7 @@ export default function PureSurgeonView({
 
   // ---- Local State ----
   const [viewMode, setViewMode] = useState<ViewMode>('full');
-  const [activeTab, setActiveTab] = useState<SidebarTab>('pdrm');
+  const [activeTab, setActiveTab] = useState<SidebarTab>('concepts');
   const [selectedText, setSelectedText] = useState('');
   const [showHighlightMenu, setShowHighlightMenu] = useState(false);
   const [quizAnswer, setQuizAnswer] = useState('');
@@ -550,7 +551,7 @@ export default function PureSurgeonView({
               <div className="w-96 border-l border-gray-700 flex flex-col bg-gray-850">
                 {/* Tabs */}
                 <div className="flex border-b border-gray-700">
-                  {(['pdrm', 'highlights', 'quiz', 'review'] as const).map(tab => (
+                  {(['concepts', 'pdrm', 'highlights', 'quiz', 'review'] as const).map(tab => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
@@ -561,6 +562,7 @@ export default function PureSurgeonView({
                       }`}
                       data-testid={`tab-${tab}`}
                     >
+                      {tab === 'concepts' && '🧠 Concepts'}
                       {tab === 'pdrm' && `📊 PDRM (${currentPagePDRM.length})`}
                       {tab === 'highlights' && `✨ (${pageAnnotations.length})`}
                       {tab === 'quiz' && '📝 Quiz'}
@@ -570,10 +572,24 @@ export default function PureSurgeonView({
                 </div>
 
                 {/* Tab Content */}
-                <div className="flex-1 overflow-auto p-3">
+                <div className="flex-1 overflow-auto">
+                  {/* Concepts Tab - Universal Thought-Unit Reader */}
+                  {activeTab === 'concepts' && (
+                    <UniversalConceptPanel
+                      documentId={documentId}
+                      pageNumber={currentPage}
+                      pageText={pageText}
+                      onHighlightSelect={(text) => {
+                        setSelectedText(text);
+                        setShowHighlightMenu(true);
+                      }}
+                      onJumpToFigure={(page) => onPageChange(page)}
+                    />
+                  )}
+
                   {/* PDRM Tab - Primary workflow */}
                   {activeTab === 'pdrm' && (
-                    <div className="space-y-3">
+                    <div className="space-y-3 p-3">
                       {/* Draft Editor (Manual Mode) */}
                       {editingDraftId && (
                         <div className="p-3 bg-yellow-900/30 border border-yellow-600/50 rounded-lg" data-testid="draft-editor">
@@ -760,7 +776,7 @@ export default function PureSurgeonView({
 
                   {/* Highlights Tab */}
                   {activeTab === 'highlights' && (
-                    <div className="space-y-2">
+                    <div className="space-y-2 p-3">
                       {pageAnnotations.length === 0 ? (
                         <div className="text-center py-6 text-gray-500 text-sm">
                           <p>No highlights on this page</p>
@@ -781,7 +797,7 @@ export default function PureSurgeonView({
 
                   {/* Quiz Tab */}
                   {activeTab === 'quiz' && (
-                    <div className="space-y-3">
+                    <div className="space-y-3 p-3">
                       {!currentQuiz ? (
                         <div className="text-center py-6">
                           <button
@@ -841,7 +857,7 @@ export default function PureSurgeonView({
 
                   {/* Review Tab */}
                   {activeTab === 'review' && (
-                    <div className="space-y-2">
+                    <div className="space-y-2 p-3">
                       {mistakes.length === 0 ? (
                         <div className="text-center py-6 text-gray-500 text-sm">
                           <p>No items to review</p>
