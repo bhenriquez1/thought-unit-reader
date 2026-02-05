@@ -124,18 +124,18 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
         return fallback;
       }
 
-      // Default error UI
+      // Default error UI (dark theme)
       return (
-        <div className="min-h-[200px] flex flex-col items-center justify-center p-8 bg-red-50 border-2 border-red-200 rounded-lg">
-          <div className="text-center space-y-4">
-            <div className="text-6xl">🚨</div>
-            <h2 className="text-xl font-bold text-red-800">Something went wrong</h2>
-            <p className="text-sm text-red-600 max-w-md">
-              {error?.message || 'An unexpected error occurred while rendering this component.'}
+        <div className="h-full min-h-[200px] flex flex-col items-center justify-center p-8 bg-gray-900 text-white">
+          <div className="text-center space-y-4 max-w-md">
+            <div className="text-6xl">⚠️</div>
+            <h2 className="text-xl font-bold text-white">Something went wrong</h2>
+            <p className="text-sm text-gray-400">
+              {error?.message || 'An unexpected error occurred while loading this view.'}
             </p>
-            
+
             {retryCount > 0 && (
-              <p className="text-xs text-red-500">
+              <p className="text-xs text-gray-500">
                 Retry attempt: {retryCount}/{maxRetries}
               </p>
             )}
@@ -144,34 +144,38 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
               <button
                 onClick={this.handleRetry}
                 disabled={retryCount >= maxRetries}
-                className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:bg-red-300 text-white rounded transition-colors"
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
               >
-                {retryCount >= maxRetries ? 'Max Retries Reached' : 'Try Again'}
+                {retryCount >= maxRetries ? 'Max Retries' : 'Try Again'}
               </button>
-              
+
               <button
                 onClick={() => window.location.reload()}
-                className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded transition-colors"
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors"
               >
                 Reload Page
               </button>
             </div>
 
-            {/* Development error details */}
-            {process.env.NODE_ENV === 'development' && (
-              <details className="mt-4 text-left">
-                <summary className="cursor-pointer text-sm text-red-700 hover:text-red-800">
-                  Show Error Details (Development)
-                </summary>
-                <div className="mt-2 p-3 bg-red-100 rounded text-xs font-mono text-red-800 whitespace-pre-wrap">
-                  <strong>Error:</strong> {error?.name}: {error?.message}
-                  {'\n\n'}
-                  <strong>Stack:</strong> {error?.stack}
-                  {'\n\n'}
-                  <strong>Component Stack:</strong> {errorInfo?.componentStack}
-                </div>
-              </details>
-            )}
+            {/* Error details (always shown, collapsed) */}
+            <details className="mt-4 text-left bg-gray-800 rounded-lg p-3">
+              <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-300">
+                Show Error Details
+              </summary>
+              <div className="mt-2 text-xs font-mono text-red-400 whitespace-pre-wrap overflow-auto max-h-48">
+                <strong>Error:</strong> {error?.name}: {error?.message}
+                {'\n\n'}
+                <strong className="text-gray-500">Stack:</strong>
+                <pre className="text-gray-500 mt-1">{error?.stack}</pre>
+                {errorInfo?.componentStack && (
+                  <>
+                    {'\n'}
+                    <strong className="text-gray-500">Component Stack:</strong>
+                    <pre className="text-gray-500 mt-1">{errorInfo.componentStack}</pre>
+                  </>
+                )}
+              </div>
+            </details>
           </div>
         </div>
       );

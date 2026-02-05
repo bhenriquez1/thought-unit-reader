@@ -36,6 +36,7 @@ import PureTocView from "@/components/PureTocView";
 import PureSurgeonView from "@/components/PureSurgeonView";
 import PureNoteLabView from "@/components/PureNoteLabView";
 import PurePdrmView from "@/components/PurePdrmView";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 // Store imports
 import { useTocStore } from "@/lib/stores/tocStore";
@@ -1887,33 +1888,51 @@ export default function ThoughtUnitReader() {
       
       return (
         <div className="h-full" data-testid="surgeon-view-container">
-          <PureSurgeonView
-            fileUrl={fileUrl}
-            documentId={bookId}
-            userId={USER_ID}
-            currentPage={currentPage}
-            pdfPageCount={pdfPageCount}
-            thoughtUnits={thoughtUnits}
-            currentThoughtUnit={currentThoughtUnit}
-            chapterId={currentChapter?.title || `chapter-${currentPage}`}
-            headings={currentHeadings}
-            pageText={thoughtUnits[currentThoughtUnit - 1]?.text || ''}
-            onPageChange={(p) => syncToPage(p)}
-            onPageCount={(count) => setPdfPageCount(count)}
-            onRecommendedAction={(action) => {
-              if (action === 'study') {
-                setViewMode("study");
-              } else if (action === 'next_chapter') {
-                // Navigate to next chapter
-                const nextChapter = tableOfContents.find(
-                  entry => entry.pageNumber > currentPage
-                );
-                if (nextChapter) {
-                  syncToPage(nextChapter.pageNumber);
+          <ErrorBoundary
+            fallback={
+              <div className="h-full flex items-center justify-center bg-gray-900 text-white">
+                <div className="text-center p-6">
+                  <div className="text-6xl mb-4">⚠️</div>
+                  <h2 className="text-xl font-bold mb-2">Surgeon View Error</h2>
+                  <p className="text-gray-400 mb-4">Something went wrong loading this view.</p>
+                  <button
+                    onClick={() => setViewMode("original")}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg"
+                  >
+                    Return to Reader
+                  </button>
+                </div>
+              </div>
+            }
+          >
+            <PureSurgeonView
+              fileUrl={fileUrl}
+              documentId={bookId}
+              userId={USER_ID}
+              currentPage={currentPage}
+              pdfPageCount={pdfPageCount}
+              thoughtUnits={thoughtUnits ?? []}
+              currentThoughtUnit={currentThoughtUnit}
+              chapterId={currentChapter?.title || `chapter-${currentPage}`}
+              headings={currentHeadings ?? []}
+              pageText={thoughtUnits?.[currentThoughtUnit - 1]?.text || ''}
+              onPageChange={(p) => syncToPage(p)}
+              onPageCount={(count) => setPdfPageCount(count)}
+              onRecommendedAction={(action) => {
+                if (action === 'study') {
+                  setViewMode("study");
+                } else if (action === 'next_chapter') {
+                  // Navigate to next chapter
+                  const nextChapter = tableOfContents.find(
+                    entry => entry.pageNumber > currentPage
+                  );
+                  if (nextChapter) {
+                    syncToPage(nextChapter.pageNumber);
+                  }
                 }
-              }
-            }}
-          />
+              }}
+            />
+          </ErrorBoundary>
         </div>
       );
     }

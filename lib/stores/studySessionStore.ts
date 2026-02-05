@@ -633,12 +633,22 @@ export const useStudySessionStore = create<StudySessionState>()(
     }),
     {
       name: 'study-session-store',
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => {
+        if (typeof window === 'undefined') {
+          return {
+            getItem: () => null,
+            setItem: () => {},
+            removeItem: () => {},
+          };
+        }
+        return localStorage;
+      }),
       partialize: (state) => ({
         sessions: state.sessions,
         lastSessionDocId: state.lastSessionDocId,
         lastSessionCardIndex: state.lastSessionCardIndex
-      })
+      }),
+      skipHydration: typeof window === 'undefined',
     }
   )
 );

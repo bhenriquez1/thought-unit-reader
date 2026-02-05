@@ -508,11 +508,21 @@ export const useSyllabusStore = create<SyllabusState>()(
     }),
     {
       name: 'syllabus-store',
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => {
+        if (typeof window === 'undefined') {
+          return {
+            getItem: () => null,
+            setItem: () => {},
+            removeItem: () => {},
+          };
+        }
+        return localStorage;
+      }),
       partialize: (state) => ({
         syllabi: state.syllabi,
         currentSyllabus: state.currentSyllabus
-      })
+      }),
+      skipHydration: typeof window === 'undefined',
     }
   )
 );

@@ -777,14 +777,24 @@ export const useAnnotationStore = create<AnnotationState>()(
     }),
     {
       name: 'annotation-store',
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => {
+        if (typeof window === 'undefined') {
+          return {
+            getItem: () => null,
+            setItem: () => {},
+            removeItem: () => {},
+          };
+        }
+        return localStorage;
+      }),
       partialize: (state) => ({
         // Persist annotations and view settings
         annotations: state.annotations,
         viewMode: state.viewMode,
         activeDocumentId: state.activeDocumentId,
         activeChapterId: state.activeChapterId
-      })
+      }),
+      skipHydration: typeof window === 'undefined',
     }
   )
 );
