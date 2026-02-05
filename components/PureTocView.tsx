@@ -6,9 +6,10 @@
 // ❌ No Surgeon View elements
 // ❌ No NoteLab
 // ✅ Clickable chapters with "Open in Reader" / "Open in Surgeon View"
+// ✅ SSR-safe with defensive guards
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { useTocStore, type TocItem } from '@/lib/stores/tocStore';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useTocStore, type TocItem, type DocumentToc } from '@/lib/stores/tocStore';
 
 interface PureTocViewProps {
   documentId: string;
@@ -27,9 +28,28 @@ export default function PureTocView({
   onOpenInReader,
   onOpenInSurgeon
 }: PureTocViewProps) {
-  // Store
-  const { getToc, setActiveToc, addTocItem, deleteTocItem } = useTocStore();
-  const toc = getToc(documentId);
+  // SSR guard - ensure we're on client before accessing store
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // Store - with defensive access
+  const store = useTocStore();
+  const getToc = store?.getToc ?? (() => null);
+  const setActiveToc = store?.setActiveToc ?? (() => {});
+  const addTocItem = store?.addTocItem ?? (() => {});
+  const deleteTocItem = store?.deleteTocItem ?? (() => {});
+
+  // Safely get TOC with try-catch
+  let toc: DocumentToc | null = null;
+  try {
+    toc = isClient && documentId ? getToc(documentId) : null;
+  } catch (error) {
+    console.error('Error loading TOC:', error);
+    toc = null;
+  }
   
   // Local state
   const [searchQuery, setSearchQuery] = useState('');
@@ -38,12 +58,16 @@ export default function PureTocView({
   const [newTitle, setNewTitle] = useState('');
   const [newPage, setNewPage] = useState('');
   
-  // Initialize
+  // Initialize - with SSR guard
   useEffect(() => {
-    if (documentId) {
-      setActiveToc(documentId);
+    if (isClient && documentId) {
+      try {
+        setActiveToc(documentId);
+      } catch (error) {
+        console.error('Error setting active TOC:', error);
+      }
     }
-  }, [documentId, setActiveToc]);
+  }, [isClient, documentId, setActiveToc]);
   
   // Filter items by search
   const filteredItems = useMemo(() => {
@@ -168,8 +192,24 @@ export default function PureTocView({
     );
   };
   
+  // Loading state for SSR hydration
+  if (!isClient) {
+    return (
+      <div className="h-full flex flex-col bg-gray-900" data-testid="pure-toc-loading">
+        <div className="flex items-center justify-between px-4 py-3 bg-gray-800 border-b border-gray-700">
+          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+            📑 Table of Contents
+          </h2>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-gray-400">Loading...</div>
+        </div>
+      </div>
+    );
+  }
+
   // No TOC available
-  if (!toc || !toc.items.length) {
+  if (!toc || !toc.items || toc.items.length === 0) {
     return (
       <div className="h-full flex flex-col bg-gray-900" data-testid="pure-toc-empty">
         <div className="flex items-center justify-between px-4 py-3 bg-gray-800 border-b border-gray-700">
@@ -177,12 +217,12 @@ export default function PureTocView({
             📑 Table of Contents
           </h2>
         </div>
-        
+
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
           <div className="text-5xl mb-4">📑</div>
           <h3 className="text-xl font-semibold text-white mb-2">No Table of Contents</h3>
           <p className="text-gray-400 mb-6 max-w-md">
-            {documentId 
+            {documentId
               ? "This document doesn't have a table of contents, or it couldn't be extracted."
               : "Upload a PDF to see its table of contents."
             }

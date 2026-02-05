@@ -273,10 +273,21 @@ export const useTocStore = create<TocState>()(
     }),
     {
       name: 'toc-store',
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => {
+        // SSR-safe localStorage access
+        if (typeof window === 'undefined') {
+          return {
+            getItem: () => null,
+            setItem: () => {},
+            removeItem: () => {},
+          };
+        }
+        return localStorage;
+      }),
       partialize: (state) => ({
         tocs: state.tocs
-      })
+      }),
+      skipHydration: typeof window === 'undefined',
     }
   )
 );
