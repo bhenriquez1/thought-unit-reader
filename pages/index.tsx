@@ -27,6 +27,8 @@ import SurgeonView from "@/components/SurgeonView";
 import NoteLabViewEnhanced from "@/components/NoteLabViewEnhanced";
 import StudySessionPanel from "@/components/StudySessionPanel";
 import SyllabusModePanel from "@/components/SyllabusModePanel";
+import MemoCardsStudyPanel from "@/components/MemoCardsStudyPanel";
+import SyllabusUploadPanel from "@/components/SyllabusUploadPanel";
 
 // Pure View components (Strict Mode Separation - V1)
 import PureReaderView from "@/components/PureReaderView";
@@ -1965,13 +1967,13 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Study Session View - PURE: Study panel only (no shared PDF)
+    // ✅ Study Session View - PURE: Memo.cards-style flashcard study
     if (viewMode === "study") {
       return (
         <div className="h-full" data-testid="study-view-container">
-          <StudySessionPanel
+          <MemoCardsStudyPanel
             documentId={bookId}
-            documentTitle={tableOfContents[0]?.title || "Document"}
+            documentTitle={tableOfContents[0]?.title || uploadedFile?.name || "Document"}
             onNavigateToPage={(pageIdx) => {
               syncToPage(pageIdx + 1);
               // Navigate to Surgeon View to see context
@@ -1983,20 +1985,24 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Syllabus Mode View - PURE: Syllabus panel only (no shared PDF)
+    // ✅ Syllabus Mode View - Upload syllabus to identify important sections
     if (viewMode === "syllabus") {
       const chaptersForSyllabus = tableOfContents.map((toc, idx) => ({
         id: `chapter_${idx}`,
         title: (toc as any).title || `Chapter ${idx + 1}`,
-        pageNumber: (toc as any).pageNumber || (toc as any).page || idx + 1
+        pageNumber: (toc as any).pageNumber || (toc as any).page || idx + 1,
+        endPage: tableOfContents[idx + 1]
+          ? ((tableOfContents[idx + 1] as any).pageNumber || (tableOfContents[idx + 1] as any).page || idx + 2) - 1
+          : pdfPageCount
       }));
-      
+
       return (
         <div className="h-full" data-testid="syllabus-view-container">
-          <SyllabusModePanel
+          <SyllabusUploadPanel
             documentId={bookId}
             documentTitle={tableOfContents[0]?.title || uploadedFile?.name || "Document"}
             chapters={chaptersForSyllabus}
+            pdfPageCount={pdfPageCount}
             onJumpToPage={(pageIndex) => {
               syncToPage(pageIndex);
               setViewMode("original");
