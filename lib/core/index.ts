@@ -90,3 +90,40 @@ export {
   type AutoNotesResult,
   type OrganizedNotes,
 } from './autoNotes';
+
+// Pipeline (Two-Tier Extraction)
+export {
+  PIPELINE_LIMITS,
+  runPipeline,
+  tierAExtract,
+  createStreamController,
+  extractVisibleText,
+  buildMicroChunks,
+  findCenterChunk,
+  truncateInput,
+  clearPipelineCache,
+  type ExtractionTier,
+  type ExtractionSource,
+  type PipelineRequest,
+  type PipelineResult,
+  type TextItem,
+  type ViewportWindow,
+  type MicroChunk,
+} from './pipeline';
+
+// Autopilot
+export {
+  generateDailyQueue,
+  startSession,
+  getCurrentItem,
+  recordResult,
+  getProgress,
+  getSessionStats,
+  getTodaySummary,
+  type SessionPhase,
+  type DailyQueueItem,
+  type DailyQueue,
+  type AutopilotSession,
+  type SessionResult,
+  type AutopilotConfig,
+} from './autopilot';
