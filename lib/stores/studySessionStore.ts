@@ -1,11 +1,14 @@
 // lib/stores/studySessionStore.ts
 // Study Session Store - Flashcard loop with spaced repetition
-// Uses existing annotationStore for cards, extends quizStore for quick questions
+// PRIORITY ORDER: Core-derived → saved/edited → legacy highlight-based
+// Uses learningStore for Core items, annotationStore for legacy
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { useAnnotationStore, type Annotation } from './annotationStore';
 import { useQuizStore, type QuizQuestion } from './quizStore';
+import { useLearningStore } from './learningStore';
+import { getCoreFlashcardsByPriority, getDueCoreFlashcards, type CoreFlashcard } from '../core/coreFlashcards';
 
 // ============================================================================
 // Types
@@ -15,16 +18,18 @@ export type CardGrade = 'again' | 'hard' | 'easy';
 
 export interface StudyCard {
   id: string;
-  annotationId: string;
+  annotationId: string;      // For legacy cards; 'core_xxx' for Core cards
+  coreItemId?: string;       // For Core-derived cards
   front: string;
   back: string;
-  source: 'flashcard' | 'highlight' | 'quiz-miss';
+  source: 'core' | 'flashcard' | 'highlight' | 'quiz-miss';  // Core first priority
   priority: number;  // Higher = more urgent (weak/miss items get higher priority)
   lastReviewed?: string;
   reviewCount: number;
   easeFactor: number;  // SM-2 ease factor (default 2.5)
   interval: number;    // Days until next review
   dueDate?: string;
+  pageNumber?: number; // For Core cards to show location
 }
 
 export interface StudyAttempt {
@@ -100,6 +105,24 @@ export interface StudySessionState {
 
 function generateId(): string {
   return `study_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+// Convert Core flashcard to study card (highest priority source)
+function coreFlashcardToStudyCard(fc: CoreFlashcard): StudyCard {
+  return {
+    id: `card_${fc.id}`,
+    annotationId: `core_${fc.coreItemId}`,  // Marker for Core source
+    coreItemId: fc.coreItemId,
+    front: fc.front,
+    back: fc.back,
+    source: 'core',
+    priority: fc.priority + 200,  // Boost Core cards above all others
+    reviewCount: 0,
+    easeFactor: 2.5,
+    interval: 1,
+    pageNumber: fc.pageNumber ?? undefined,
+    dueDate: fc.dueAt ? new Date(fc.dueAt).toISOString() : undefined,
+  };
 }
 
 // Convert annotation to study card
@@ -454,39 +477,64 @@ export const useStudySessionStore = create<StudySessionState>()(
         });
       },
       
-      // Build study deck from annotations
+      // Build study deck from Core items + annotations
+      // PRIORITY: Core-derived → saved/edited flashcards → legacy highlights
       getStudyDeck: (documentId: string) => {
+        const cards: StudyCard[] = [];
+
+        // ========================================
+        // PRIORITY 1: Core-derived flashcards (automatic from ⚡ Core extraction)
+        // ========================================
+        try {
+          const learningStore = useLearningStore.getState();
+          const coreItems = learningStore.getItemsForDocument(documentId);
+
+          if (coreItems.length > 0) {
+            const coreFlashcards = getCoreFlashcardsByPriority(coreItems);
+            for (const fc of coreFlashcards) {
+              cards.push(coreFlashcardToStudyCard(fc));
+            }
+            console.log(`⚡ Study: Added ${coreFlashcards.length} Core flashcards`);
+          }
+        } catch (err) {
+          console.warn('Could not load Core flashcards:', err);
+        }
+
+        // ========================================
+        // PRIORITY 2-4: Annotation-based cards (legacy)
+        // ========================================
         const annotationStore = useAnnotationStore.getState();
         const annotations = annotationStore.getAllAnnotationsArray()
           .filter(a => a.documentId === documentId);
-        
-        const cards: StudyCard[] = [];
-        
-        // Priority 1: Weak/miss items (highest priority)
+
+        // Priority 2: Weak/miss items
         annotations
-          .filter(a => 
+          .filter(a =>
             a.tags.some(t => ['weak', 'miss', 'quiz-generated', 'quiz-miss'].includes(t)) ||
             a.pdrm?.isMistake
           )
           .forEach(ann => {
-            cards.push(annotationToCard(ann, 100));
+            // Skip if already have a Core card for this
+            if (!cards.find(c => c.annotationId === ann.id || c.annotationId === `core_${ann.id}`)) {
+              cards.push(annotationToCard(ann, 100));
+            }
           });
-        
-        // Priority 2: Explicit flashcards
+
+        // Priority 3: Explicit saved/edited flashcards
         annotations
           .filter(a => a.flashcardFront && a.flashcardBack && !cards.find(c => c.annotationId === a.id))
           .forEach(ann => {
             cards.push(annotationToCard(ann, 50));
           });
-        
-        // Priority 3: Highlights (lower priority)
+
+        // Priority 4: Highlights (lower priority, fallback)
         annotations
           .filter(a => a.selectedText.length > 20 && !cards.find(c => c.annotationId === a.id))
           .slice(0, 20)  // Limit to prevent too many cards
           .forEach(ann => {
             cards.push(annotationToCard(ann, 10));
           });
-        
+
         // Sort by priority (highest first)
         return cards.sort((a, b) => b.priority - a.priority);
       },
@@ -568,20 +616,45 @@ export const useStudySessionStore = create<StudySessionState>()(
         return cards.sort((a, b) => b.priority - a.priority);
       },
       
-      // Get weak items only (for Quick Study)
+      // Get weak items only (for Quick Study) - Core items first
       getWeakDeck: (documentId: string, maxCards: number = 15) => {
+        const cards: StudyCard[] = [];
+
+        // ========================================
+        // PRIORITY 1: Weak Core items
+        // ========================================
+        try {
+          const learningStore = useLearningStore.getState();
+          const coreItems = learningStore.getItemsForDocument(documentId);
+          const weakCoreItems = coreItems.filter(item => item.learning.state === 'weak');
+
+          if (weakCoreItems.length > 0) {
+            const coreFlashcards = getCoreFlashcardsByPriority(weakCoreItems);
+            for (const fc of coreFlashcards.slice(0, maxCards)) {
+              cards.push(coreFlashcardToStudyCard(fc));
+            }
+          }
+        } catch (err) {
+          console.warn('Could not load weak Core items:', err);
+        }
+
+        if (cards.length >= maxCards) {
+          return cards.slice(0, maxCards);
+        }
+
+        // ========================================
+        // PRIORITY 2: Weak annotations
+        // ========================================
         const annotationStore = useAnnotationStore.getState();
         const annotations = annotationStore.getAllAnnotationsArray()
           .filter(a => a.documentId === documentId);
-        
-        const cards: StudyCard[] = [];
-        
+
         // Get weak/miss items
         const weakAnnotations = annotations.filter(a =>
           a.tags.some(t => ['weak', 'miss', 'quiz-generated', 'quiz-miss', 'notelab-weak'].includes(t)) ||
           a.pdrm?.isMistake
         );
-        
+
         // Sort by how "weak" they are (miss > weak > quiz-miss)
         weakAnnotations.sort((a, b) => {
           const getPriority = (ann: typeof a) => {
@@ -593,36 +666,53 @@ export const useStudySessionStore = create<StudySessionState>()(
           };
           return getPriority(b) - getPriority(a);
         });
-        
-        // Take top maxCards
-        weakAnnotations.slice(0, maxCards).forEach(ann => {
-          cards.push(annotationToCard(ann, 100));
+
+        // Add weak annotations up to maxCards
+        const remaining1 = maxCards - cards.length;
+        weakAnnotations.slice(0, remaining1).forEach(ann => {
+          if (!cards.find(c => c.annotationId === ann.id)) {
+            cards.push(annotationToCard(ann, 100));
+          }
         });
-        
+
         // If not enough weak items, add recent highlights
         if (cards.length < maxCards) {
-          const remaining = maxCards - cards.length;
+          const remaining2 = maxCards - cards.length;
           annotations
             .filter(a => a.selectedText.length > 20 && !cards.find(c => c.annotationId === a.id))
             .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-            .slice(0, remaining)
+            .slice(0, remaining2)
             .forEach(ann => {
               cards.push(annotationToCard(ann, 10));
             });
         }
-        
+
         return cards;
       },
       
-      // Get count of weak items
+      // Get count of weak items (Core + annotations)
       getWeakItemsCount: (documentId: string) => {
+        let count = 0;
+
+        // Count weak Core items
+        try {
+          const learningStore = useLearningStore.getState();
+          const coreItems = learningStore.getItemsForDocument(documentId);
+          count += coreItems.filter(item => item.learning.state === 'weak').length;
+        } catch (err) {
+          // Ignore
+        }
+
+        // Count weak annotations
         const annotationStore = useAnnotationStore.getState();
-        return annotationStore.getAllAnnotationsArray()
+        count += annotationStore.getAllAnnotationsArray()
           .filter(a => a.documentId === documentId)
           .filter(a =>
             a.tags.some(t => ['weak', 'miss', 'quiz-generated', 'quiz-miss', 'notelab-weak'].includes(t)) ||
             a.pdrm?.isMistake
           ).length;
+
+        return count;
       },
       
       // Check if there's a last session to resume

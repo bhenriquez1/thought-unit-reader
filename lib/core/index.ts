@@ -127,3 +127,14 @@ export {
   type SessionResult,
   type AutopilotConfig,
 } from './autopilot';
+
+// Core Flashcards
+export {
+  coreItemToFlashcard,
+  generateCoreFlashcards,
+  getCoreFlashcardsByPriority,
+  getDueCoreFlashcards,
+  getWeakCoreFlashcards,
+  getCoreFlashcardStats,
+  type CoreFlashcard,
+} from './coreFlashcards';

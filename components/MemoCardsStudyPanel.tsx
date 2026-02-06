@@ -15,6 +15,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useStudySessionStore, type StudyCard, type CardGrade } from '@/lib/stores/studySessionStore';
 import { useAnnotationStore } from '@/lib/stores/annotationStore';
+import { useLearningStore } from '@/lib/stores/learningStore';
 
 interface MemoCardsStudyPanelProps {
   documentId: string;
@@ -67,11 +68,21 @@ export default function MemoCardsStudyPanel({
   const stats = getSessionStats();
   const dueCardsCount = getDueCards(documentId).length;
 
-  // Total cards available
+  // Get Core items count
+  const { getItemsForDocument } = useLearningStore();
+  const coreItemsCount = useMemo(() => {
+    try {
+      return getItemsForDocument(documentId).length;
+    } catch {
+      return 0;
+    }
+  }, [getItemsForDocument, documentId]);
+
+  // Total cards available (Core + annotations)
   const totalCardsAvailable = useMemo(() => {
     const annotations = getAllAnnotationsArray().filter(a => a.documentId === documentId);
-    return annotations.length;
-  }, [getAllAnnotationsArray, documentId]);
+    return coreItemsCount + annotations.length;
+  }, [getAllAnnotationsArray, documentId, coreItemsCount]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -202,11 +213,15 @@ export default function MemoCardsStudyPanel({
             <p className="text-gray-400 mb-6">
               {totalCardsAvailable > 0
                 ? 'Review your flashcards with spaced repetition'
-                : 'Create highlights in Surgeon View to build your deck'}
+                : 'No cards yet. Scroll or select text to generate ⚡ Core.'}
             </p>
 
             {/* Stats grid */}
-            <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="grid grid-cols-4 gap-2 mb-6">
+              <div className="p-3 bg-gray-800/50 rounded-xl backdrop-blur">
+                <div className="text-2xl font-bold text-blue-400">{coreItemsCount}</div>
+                <div className="text-xs text-gray-400">⚡ Core</div>
+              </div>
               <div className="p-3 bg-gray-800/50 rounded-xl backdrop-blur">
                 <div className="text-2xl font-bold text-purple-400">{totalCardsAvailable}</div>
                 <div className="text-xs text-gray-400">Total</div>
@@ -216,7 +231,7 @@ export default function MemoCardsStudyPanel({
                 <div className="text-xs text-gray-400">Weak</div>
               </div>
               <div className="p-3 bg-gray-800/50 rounded-xl backdrop-blur">
-                <div className="text-2xl font-bold text-blue-400">{dueCardsCount}</div>
+                <div className="text-2xl font-bold text-green-400">{dueCardsCount}</div>
                 <div className="text-xs text-gray-400">Due</div>
               </div>
             </div>
@@ -352,14 +367,19 @@ export default function MemoCardsStudyPanel({
         {/* Card type badge */}
         <div className="flex items-center justify-center gap-2 mb-4">
           <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+            currentCard.source === 'core' ? 'bg-blue-500/20 text-blue-400' :
             currentCard.source === 'quiz-miss' ? 'bg-red-500/20 text-red-400' :
             currentCard.source === 'flashcard' ? 'bg-purple-500/20 text-purple-400' :
             'bg-yellow-500/20 text-yellow-400'
           }`}>
-            {currentCard.source === 'quiz-miss' ? '⚠️ Weak Item' :
+            {currentCard.source === 'core' ? '⚡ Core' :
+             currentCard.source === 'quiz-miss' ? '⚠️ Weak Item' :
              currentCard.source === 'flashcard' ? '📇 Flashcard' :
              '🔆 Highlight'}
           </span>
+          {currentCard.pageNumber && (
+            <span className="text-xs text-gray-500">p.{currentCard.pageNumber}</span>
+          )}
         </div>
 
         {/* Flashcard */}
