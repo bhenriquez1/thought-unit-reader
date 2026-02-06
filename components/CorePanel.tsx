@@ -1,13 +1,18 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import { CoreCardList, CoreStats } from './CoreCard';
 import {
   extractFromPage,
   createScrollDebouncer,
+  extractParagraphs,
+  buildParagraphMeta,
+  findParagraphAtScroll,
+  getParagraphWindow,
   type CoreItem,
   type CoreResponse,
   type ExtractionResult,
+  type ParagraphMeta,
   CORE_LIMITS,
 } from '../lib/core';
 
@@ -20,6 +25,7 @@ interface CorePanelProps {
   pageNumber: number;
   pageText: string;
   chapter?: string;
+  /** Reader scroll position - Core follows the reader */
   scrollY?: number;
   viewportHeight?: number;
   onItemSelect?: (item: CoreItem) => void;
@@ -27,6 +33,7 @@ interface CorePanelProps {
 }
 
 type ExtractionStatus = 'idle' | 'extracting' | 'success' | 'error';
+type DisplayMode = 'collapsed' | 'expanded';
 
 // ============================================================================
 // Core Panel Component
@@ -47,18 +54,43 @@ export const CorePanel = memo(function CorePanel({
   const [result, setResult] = useState<ExtractionResult | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [autoExtract, setAutoExtract] = useState(true);
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('collapsed');
 
   // Refs
   const lastExtractionKey = useRef<string>('');
+  const lastScrollY = useRef<number>(0);
 
-  // Debounced scroll handler
+  // Parse paragraphs from page text
+  const paragraphMeta = useMemo(() => {
+    if (!pageText) return [];
+    const rawParagraphs = extractParagraphs(pageText);
+    return buildParagraphMeta(rawParagraphs, viewportHeight);
+  }, [pageText, viewportHeight]);
+
+  // Current paragraph window based on scroll
+  const currentWindow = useMemo(() => {
+    if (paragraphMeta.length === 0) return { start: 0, end: 0, center: 0 };
+    const centerIndex = findParagraphAtScroll(scrollY, viewportHeight, paragraphMeta);
+    const [start, end] = getParagraphWindow(centerIndex, paragraphMeta.length);
+    return { start, end, center: centerIndex };
+  }, [scrollY, viewportHeight, paragraphMeta]);
+
+  // Check if scroll has changed significantly (new paragraph window)
+  const hasSignificantScrollChange = useCallback((newScrollY: number) => {
+    const oldCenter = findParagraphAtScroll(lastScrollY.current, viewportHeight, paragraphMeta);
+    const newCenter = findParagraphAtScroll(newScrollY, viewportHeight, paragraphMeta);
+    return oldCenter !== newCenter;
+  }, [viewportHeight, paragraphMeta]);
+
+  // Debounced scroll handler - only extract when paragraph window changes
   const handleScrollChange = useCallback(
     createScrollDebouncer((newScrollY: number) => {
-      if (autoExtract && pageText) {
+      if (autoExtract && pageText && hasSignificantScrollChange(newScrollY)) {
+        lastScrollY.current = newScrollY;
         performExtraction(newScrollY);
       }
-    }, 300),
-    [documentId, pageNumber, pageText, autoExtract]
+    }, 200), // Faster response for scroll
+    [documentId, pageNumber, pageText, autoExtract, hasSignificantScrollChange]
   );
 
   // Extraction function
@@ -69,10 +101,13 @@ export const CorePanel = memo(function CorePanel({
       return;
     }
 
-    // Generate key to check if we already extracted this
-    const extractionKey = `${documentId}:${pageNumber}:${Math.floor(currentScrollY / 100)}`;
+    // Generate key based on paragraph window, not raw scroll
+    const centerParagraph = findParagraphAtScroll(currentScrollY, viewportHeight, paragraphMeta);
+    const [windowStart, windowEnd] = getParagraphWindow(centerParagraph, paragraphMeta.length);
+    const extractionKey = `${documentId}:${pageNumber}:p${windowStart}-${windowEnd}`;
+
     if (extractionKey === lastExtractionKey.current && result?.success) {
-      return; // Already extracted this view
+      return; // Already extracted this paragraph window
     }
 
     setStatus('extracting');
@@ -101,7 +136,7 @@ export const CorePanel = memo(function CorePanel({
         extractionTimeMs: 0,
       });
     }
-  }, [documentId, pageNumber, pageText, scrollY, viewportHeight, chapter, result]);
+  }, [documentId, pageNumber, pageText, scrollY, viewportHeight, chapter, result, paragraphMeta]);
 
   // Handle scroll changes
   useEffect(() => {
@@ -210,17 +245,45 @@ export const CorePanel = memo(function CorePanel({
         )}
 
         {status !== 'extracting' && status !== 'error' && (
-          <CoreCardList
-            items={items}
-            highlightedId={highlightedId}
-            onSelectItem={handleItemSelect}
-            onRequestAttachment={handleAttachmentRequest}
-            emptyMessage={
-              pageText
-                ? 'No core concepts found in current view.'
-                : 'Load a document to extract concepts.'
-            }
-          />
+          <>
+            {/* Paragraph Window Indicator */}
+            {paragraphMeta.length > 0 && items.length === 0 && (
+              <div className="mb-3 p-3 bg-gray-800/50 rounded-lg border border-gray-700/50">
+                <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
+                  <span>Reading paragraphs {currentWindow.start + 1}-{currentWindow.end}</span>
+                  <span>{paragraphMeta.length} total</span>
+                </div>
+                <div className="flex gap-0.5">
+                  {paragraphMeta.slice(0, 20).map((_, i) => (
+                    <div
+                      key={i}
+                      className={`h-1.5 flex-1 rounded-full ${
+                        i >= currentWindow.start && i < currentWindow.end
+                          ? 'bg-purple-500'
+                          : 'bg-gray-700'
+                      }`}
+                    />
+                  ))}
+                  {paragraphMeta.length > 20 && (
+                    <span className="text-[10px] text-gray-500 ml-1">+{paragraphMeta.length - 20}</span>
+                  )}
+                </div>
+              </div>
+            )}
+            <CoreCardList
+              items={items}
+              highlightedId={highlightedId}
+              onSelectItem={handleItemSelect}
+              onRequestAttachment={handleAttachmentRequest}
+              emptyMessage={
+                !pageText
+                  ? 'Load a document to extract concepts.'
+                  : paragraphMeta.length === 0
+                  ? 'Scroll through the document to extract Core concepts.'
+                  : 'No core concepts in current view. Keep scrolling to discover more.'
+              }
+            />
+          </>
         )}
       </div>
 
