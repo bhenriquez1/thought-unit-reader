@@ -61,3 +61,32 @@ export {
   type ReviewGrade,
   type ReviewResult,
 } from './learningEngine';
+
+// Analytics
+export {
+  calculateKnowledgeDebt,
+  calculateExamReadiness,
+  calculateTimeToExam,
+  calculatePassFailMeter,
+  type KnowledgeDebt,
+  type ExamReadiness,
+  type TimeToExamForecast,
+  type ExamConfig,
+  type RecallAttempt,
+  type PassFailMeter,
+} from './analytics';
+
+// Auto-Notes
+export {
+  generateAutoNotes,
+  filterNotesByType,
+  filterNotesByTrigger,
+  filterNotesByPriority,
+  getHighPriorityNotes,
+  getAttentionNotes,
+  organizeNotes,
+  type AutoNote,
+  type NoteType,
+  type AutoNotesResult,
+  type OrganizedNotes,
+} from './autoNotes';
