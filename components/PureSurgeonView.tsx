@@ -37,7 +37,7 @@ import {
 } from '@/lib/pdrmAIExtractor';
 import classifyHighlight, { getPDRMTypeColor as getLegacyColor } from '@/lib/autoPDRM';
 import SmartPDFViewer from './SmartPDFViewer';
-import UniversalConceptPanel from './UniversalConceptPanel';
+import CorePanel from './CorePanel';
 
 // ============================================================================
 // Types
@@ -61,7 +61,7 @@ interface PureSurgeonViewProps {
 }
 
 type ViewMode = 'full' | 'clean' | 'pdf-only';
-type SidebarTab = 'pdrm' | 'highlights' | 'quiz' | 'review' | 'concepts';
+type SidebarTab = 'pdrm' | 'highlights' | 'quiz' | 'review' | 'core';
 
 // ============================================================================
 // Component
@@ -124,7 +124,7 @@ export default function PureSurgeonView({
 
   // ---- Local State ----
   const [viewMode, setViewMode] = useState<ViewMode>('full');
-  const [activeTab, setActiveTab] = useState<SidebarTab>('concepts');
+  const [activeTab, setActiveTab] = useState<SidebarTab>('core');
   const [selectedText, setSelectedText] = useState('');
   const [showHighlightMenu, setShowHighlightMenu] = useState(false);
   const [quizAnswer, setQuizAnswer] = useState('');
@@ -551,7 +551,7 @@ export default function PureSurgeonView({
               <div className="w-96 border-l border-gray-700 flex flex-col bg-gray-850">
                 {/* Tabs */}
                 <div className="flex border-b border-gray-700">
-                  {(['concepts', 'pdrm', 'highlights', 'quiz', 'review'] as const).map(tab => (
+                  {(['core', 'pdrm', 'highlights', 'quiz', 'review'] as const).map(tab => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
@@ -562,7 +562,7 @@ export default function PureSurgeonView({
                       }`}
                       data-testid={`tab-${tab}`}
                     >
-                      {tab === 'concepts' && '🧠 Concepts'}
+                      {tab === 'core' && '⚡ Core'}
                       {tab === 'pdrm' && `📊 PDRM (${currentPagePDRM.length})`}
                       {tab === 'highlights' && `✨ (${pageAnnotations.length})`}
                       {tab === 'quiz' && '📝 Quiz'}
@@ -573,17 +573,20 @@ export default function PureSurgeonView({
 
                 {/* Tab Content */}
                 <div className="flex-1 overflow-auto">
-                  {/* Concepts Tab - Universal Thought-Unit Reader */}
-                  {activeTab === 'concepts' && (
-                    <UniversalConceptPanel
+                  {/* ⚡ Core Tab - Ultra-fast paragraph-aware extraction */}
+                  {activeTab === 'core' && (
+                    <CorePanel
                       documentId={documentId}
                       pageNumber={currentPage}
-                      pageText={pageText}
-                      onHighlightSelect={(text) => {
-                        setSelectedText(text);
+                      pageText={pageText || ''}
+                      onItemSelect={(item) => {
+                        setSelectedText(item.core_sentence);
                         setShowHighlightMenu(true);
                       }}
-                      onJumpToFigure={(page) => onPageChange(page)}
+                      onItemHighlight={(charRange) => {
+                        // TODO: Highlight text in PDF viewer
+                        console.log('Highlight range:', charRange);
+                      }}
                     />
                   )}
 
