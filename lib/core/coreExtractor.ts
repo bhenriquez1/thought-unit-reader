@@ -23,6 +23,7 @@ import {
   getCombinedText,
   generateWindowCacheKey,
 } from './paragraphExtractor';
+import { isBoilerplate } from './boilerplateFilter';
 
 // ============================================================================
 // Types
@@ -373,11 +374,14 @@ export async function extractFromPage(
   const paragraphMeta = buildParagraphMeta(rawParagraphs, viewportHeight);
 
   // Get window around scroll position
-  const { paragraphs, range } = extractViewportParagraphs(
+  const { paragraphs: rawWindowParagraphs, range } = extractViewportParagraphs(
     paragraphMeta,
     scrollY,
     viewportHeight
   );
+
+  // Filter out boilerplate paragraphs from the window
+  const paragraphs = rawWindowParagraphs.filter(p => !isBoilerplate(p.text));
 
   if (paragraphs.length === 0) {
     return {

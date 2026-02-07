@@ -61,7 +61,7 @@ interface PureSurgeonViewProps {
 }
 
 type ViewMode = 'full' | 'clean' | 'pdf-only';
-type SidebarTab = 'pdrm' | 'highlights' | 'quiz' | 'review' | 'core';
+type SidebarTab = 'highlights' | 'quiz' | 'review';
 
 // ============================================================================
 // Component
@@ -124,7 +124,7 @@ export default function PureSurgeonView({
 
   // ---- Local State ----
   const [viewMode, setViewMode] = useState<ViewMode>('full');
-  const [activeTab, setActiveTab] = useState<SidebarTab>('core');
+  const [activeTab, setActiveTab] = useState<SidebarTab>('highlights');
   const [selectedText, setSelectedText] = useState('');
   const [showHighlightMenu, setShowHighlightMenu] = useState(false);
   const [quizAnswer, setQuizAnswer] = useState('');
@@ -273,7 +273,7 @@ export default function PureSurgeonView({
       // Open edit panel for the draft
       setEditingDraftId(draftId);
       setDraftFields({ pattern: '', decisionRule: '', risk: '', mnemonic: '' });
-      setActiveTab('pdrm');
+      setActiveTab('highlights');
     }
 
     setShowHighlightMenu(false);
@@ -485,65 +485,24 @@ export default function PureSurgeonView({
           </div>
         )}
 
-        {/* Thought Units Panel */}
+        {/* Core Stream Panel (replaces raw thought units) */}
         {layout.showThoughts && (
           <div className={`${layout.showPdf ? 'w-1/2' : 'flex-1'} ${layout.showSidebar ? 'flex' : ''} overflow-hidden`}>
-            {/* Thought Units */}
-            <div className={`${layout.showSidebar ? 'flex-1' : 'w-full'} overflow-auto p-4 bg-gray-900`}>
-              <div className="space-y-4">
-                {thoughtUnits.length > 0 ? (
-                  thoughtUnits.map((unit, idx) => {
-                    const isCurrent = idx === currentThoughtUnit - 1;
-                    const unitHighlights = pageAnnotations.filter(a => 
-                      a.thoughtUnitId === `tu_${idx + 1}` || a.thoughtUnitId === unit.id
-                    );
-                    
-                    return (
-                      <div
-                        key={unit.id || idx}
-                        onClick={() => onThoughtUnitChange?.(idx + 1)}
-                        className={`p-4 rounded-lg cursor-pointer transition-all border-l-4 ${
-                          isCurrent
-                            ? 'bg-purple-900/30 border-purple-500'
-                            : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
-                        }`}
-                        data-testid={`thought-unit-${idx}`}
-                      >
-                        <div className="flex items-start gap-3">
-                          <span className={`text-xs font-mono px-2 py-0.5 rounded ${
-                            isCurrent ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400'
-                          }`}>
-                            {idx + 1}
-                          </span>
-                          <div className="flex-1 min-w-0">
-                            <p className={`text-sm leading-relaxed ${isCurrent ? 'text-white' : 'text-gray-300'}`}>
-                              {unit.text}
-                            </p>
-                            {unitHighlights.length > 0 && (
-                              <div className="mt-2 flex flex-wrap gap-1">
-                                {unitHighlights.map(ann => (
-                                  <span
-                                    key={ann.id}
-                                    className="text-xs px-1.5 py-0.5 rounded"
-                                    style={{ backgroundColor: ann.color + '40', color: ann.color }}
-                                  >
-                                    ✓
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="text-center py-12 text-gray-500">
-                    <div className="text-4xl mb-4">📝</div>
-                    <p>No thought units extracted yet</p>
-                  </div>
-                )}
-              </div>
+            {/* Core Stream - main content area */}
+            <div className={`${layout.showSidebar ? 'flex-1' : 'w-full'} overflow-auto bg-gray-900`}>
+              <CorePanel
+                documentId={documentId}
+                pageNumber={currentPage}
+                pageText={pageText || ''}
+                chapter={chapterId}
+                onItemSelect={(item) => {
+                  setSelectedText(item.core_sentence);
+                  setShowHighlightMenu(true);
+                }}
+                onItemHighlight={(charRange) => {
+                  console.log('Highlight range:', charRange);
+                }}
+              />
             </div>
 
             {/* Sidebar - PDRM/Highlights/Quiz/Review */}
@@ -551,7 +510,7 @@ export default function PureSurgeonView({
               <div className="w-96 border-l border-gray-700 flex flex-col bg-gray-850">
                 {/* Tabs */}
                 <div className="flex border-b border-gray-700">
-                  {(['core', 'pdrm', 'highlights', 'quiz', 'review'] as const).map(tab => (
+                  {(['highlights', 'quiz', 'review'] as const).map(tab => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
@@ -562,221 +521,15 @@ export default function PureSurgeonView({
                       }`}
                       data-testid={`tab-${tab}`}
                     >
-                      {tab === 'core' && '⚡ Core'}
-                      {tab === 'pdrm' && `📊 PDRM (${currentPagePDRM.length})`}
-                      {tab === 'highlights' && `✨ (${pageAnnotations.length})`}
-                      {tab === 'quiz' && '📝 Quiz'}
-                      {tab === 'review' && `⚠️ (${mistakes.length})`}
+                      {tab === 'highlights' && `Highlights (${pageAnnotations.length})`}
+                      {tab === 'quiz' && 'Quiz'}
+                      {tab === 'review' && `Review (${mistakes.length})`}
                     </button>
                   ))}
                 </div>
 
                 {/* Tab Content */}
                 <div className="flex-1 overflow-auto">
-                  {/* ⚡ Core Tab - Ultra-fast paragraph-aware extraction */}
-                  {activeTab === 'core' && (
-                    <CorePanel
-                      documentId={documentId}
-                      pageNumber={currentPage}
-                      pageText={pageText || ''}
-                      onItemSelect={(item) => {
-                        setSelectedText(item.core_sentence);
-                        setShowHighlightMenu(true);
-                      }}
-                      onItemHighlight={(charRange) => {
-                        // TODO: Highlight text in PDF viewer
-                        console.log('Highlight range:', charRange);
-                      }}
-                    />
-                  )}
-
-                  {/* PDRM Tab - Primary workflow */}
-                  {activeTab === 'pdrm' && (
-                    <div className="space-y-3 p-3">
-                      {/* Draft Editor (Manual Mode) */}
-                      {editingDraftId && (
-                        <div className="p-3 bg-yellow-900/30 border border-yellow-600/50 rounded-lg" data-testid="draft-editor">
-                          <h4 className="text-sm font-semibold text-yellow-400 mb-2">
-                            ✏️ Complete Draft PDRM
-                          </h4>
-                          
-                          <div className="space-y-2">
-                            <div>
-                              <label className="text-xs text-gray-400">Pattern (recurring concept)</label>
-                              <input
-                                type="text"
-                                value={draftFields.pattern}
-                                onChange={(e) => setDraftFields(f => ({ ...f, pattern: e.target.value }))}
-                                className="w-full mt-1 px-2 py-1 bg-gray-800 border border-gray-700 rounded text-sm text-white"
-                                placeholder="What category/concept is this?"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-xs text-gray-400">Decision Rule (if-then)</label>
-                              <input
-                                type="text"
-                                value={draftFields.decisionRule}
-                                onChange={(e) => setDraftFields(f => ({ ...f, decisionRule: e.target.value }))}
-                                className="w-full mt-1 px-2 py-1 bg-gray-800 border border-gray-700 rounded text-sm text-white"
-                                placeholder="What rule or criteria applies?"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-xs text-gray-400">Risk/Trap (what to avoid)</label>
-                              <input
-                                type="text"
-                                value={draftFields.risk}
-                                onChange={(e) => setDraftFields(f => ({ ...f, risk: e.target.value }))}
-                                className="w-full mt-1 px-2 py-1 bg-gray-800 border border-gray-700 rounded text-sm text-white"
-                                placeholder="Common mistake or trap?"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-xs text-gray-400">Mnemonic (memory anchor)</label>
-                              <input
-                                type="text"
-                                value={draftFields.mnemonic}
-                                onChange={(e) => setDraftFields(f => ({ ...f, mnemonic: e.target.value }))}
-                                className="w-full mt-1 px-2 py-1 bg-gray-800 border border-gray-700 rounded text-sm text-white"
-                                placeholder="2-5 word memory hook"
-                              />
-                            </div>
-                          </div>
-                          
-                          <div className="flex gap-2 mt-3">
-                            <button
-                              onClick={handleSaveDraft}
-                              className="flex-1 px-3 py-1.5 bg-green-600 hover:bg-green-500 rounded text-sm font-medium"
-                            >
-                              ✓ Save PDRM
-                            </button>
-                            <button
-                              onClick={handleCancelDraft}
-                              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      
-                      {/* Current Page PDRM Entries */}
-                      {currentPagePDRM.length === 0 && !editingDraftId ? (
-                        <div className="text-center py-6 text-gray-500 text-sm">
-                          <p>No PDRM entries on this page</p>
-                          <p className="mt-1 text-xs">
-                            {autoMode 
-                              ? 'Highlight text to auto-extract PDRM' 
-                              : 'Highlight text to create draft PDRM'
-                            }
-                          </p>
-                        </div>
-                      ) : (
-                        currentPagePDRM.map(entry => (
-                          <div
-                            key={entry.id}
-                            className={`p-3 rounded-lg border transition-all ${
-                              entry.status === 'draft'
-                                ? 'bg-yellow-900/20 border-yellow-600/50'
-                                : 'bg-gray-800 border-gray-700'
-                            }`}
-                            style={{ borderLeftWidth: '3px', borderLeftColor: getPdrmTypeColor(entry.primaryType) }}
-                          >
-                            {/* Header */}
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="flex items-center gap-2">
-                                <span>{getPdrmTypeIcon(entry.primaryType)}</span>
-                                <span 
-                                  className="text-xs font-medium px-1.5 py-0.5 rounded"
-                                  style={{ 
-                                    backgroundColor: getPdrmTypeColor(entry.primaryType) + '30', 
-                                    color: getPdrmTypeColor(entry.primaryType) 
-                                  }}
-                                >
-                                  {getPdrmTypeLabel(entry.primaryType)}
-                                </span>
-                                {entry.status === 'draft' && (
-                                  <span className="text-xs text-yellow-500">DRAFT</span>
-                                )}
-                                {entry.sourceType === 'page' && (
-                                  <span className="text-xs text-blue-400">page-gen</span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1">
-                                {entry.status === 'draft' && (
-                                  <button
-                                    onClick={() => {
-                                      setEditingDraftId(entry.id);
-                                      setDraftFields(entry.fields);
-                                    }}
-                                    className="p-1 text-yellow-500 hover:text-yellow-400"
-                                    title="Edit draft"
-                                  >
-                                    ✏️
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => handleJumpToHighlight(entry)}
-                                  className="p-1 text-gray-500 hover:text-white"
-                                  title="Jump to source"
-                                >
-                                  ↗
-                                </button>
-                                <button
-                                  onClick={() => deleteEntry(entry.id)}
-                                  className="p-1 text-gray-500 hover:text-red-400"
-                                  title="Delete"
-                                >
-                                  ×
-                                </button>
-                              </div>
-                            </div>
-                            
-                            {/* PDRM Fields (structured, not summary) */}
-                            <div className="space-y-1.5 text-xs">
-                              {entry.fields.pattern && (
-                                <div className="flex gap-2">
-                                  <span className="text-purple-400 font-medium shrink-0">P:</span>
-                                  <span className="text-gray-300">{entry.fields.pattern}</span>
-                                </div>
-                              )}
-                              {entry.fields.decisionRule && (
-                                <div className="flex gap-2">
-                                  <span className="text-blue-400 font-medium shrink-0">D:</span>
-                                  <span className="text-gray-300">{entry.fields.decisionRule}</span>
-                                </div>
-                              )}
-                              {entry.fields.risk && (
-                                <div className="flex gap-2">
-                                  <span className="text-red-400 font-medium shrink-0">R:</span>
-                                  <span className="text-gray-300">{entry.fields.risk}</span>
-                                </div>
-                              )}
-                              {entry.fields.mnemonic && (
-                                <div className="flex gap-2">
-                                  <span className="text-yellow-400 font-medium shrink-0">M:</span>
-                                  <span className="text-gray-300 font-medium">{entry.fields.mnemonic}</span>
-                                </div>
-                              )}
-                            </div>
-                            
-                            {/* Evidence */}
-                            <div className="mt-2 text-xs text-gray-500 italic truncate">
-                              "{entry.evidence.quote}"
-                            </div>
-                          </div>
-                        ))
-                      )}
-                      
-                      {/* Page PDRM Generation Status */}
-                      {pagePdrmStatus === 'generating' && (
-                        <div className="text-center py-3 text-blue-400 text-xs animate-pulse">
-                          Extracting key facts from page {currentPage}...
-                        </div>
-                      )}
-                    </div>
-                  )}
-
                   {/* Highlights Tab */}
                   {activeTab === 'highlights' && (
                     <div className="space-y-2 p-3">

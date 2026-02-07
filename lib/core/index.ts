@@ -111,6 +111,13 @@ export {
   type MicroChunk,
 } from './pipeline';
 
+// Boilerplate Filter
+export {
+  isBoilerplate,
+  filterBoilerplate,
+  filterBoilerplateText,
+} from './boilerplateFilter';
+
 // Autopilot
 export {
   generateDailyQueue,
