@@ -35,7 +35,6 @@ import PureReaderView from "@/components/PureReaderView";
 import PureTocView from "@/components/PureTocView";
 import PureSurgeonView from "@/components/PureSurgeonView";
 import PureNoteLabView from "@/components/PureNoteLabView";
-// PurePdrmView removed - PDRM functionality merged into Surgeon View
 import ErrorBoundary from "@/components/ErrorBoundary";
 
 // Store imports
@@ -2031,8 +2030,6 @@ export default function ThoughtUnitReader() {
         </div>
       );
     }
-
-    // PDRM View removed - all PDRM functionality merged into Surgeon View
 
     // ✅ READER View - PURE: PDF ONLY (no thought units, no TOC, no annotations)
     // This is the DEFAULT view and handles viewMode === "original"
