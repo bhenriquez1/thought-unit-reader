@@ -35,7 +35,7 @@ import PureReaderView from "@/components/PureReaderView";
 import PureTocView from "@/components/PureTocView";
 import PureSurgeonView from "@/components/PureSurgeonView";
 import PureNoteLabView from "@/components/PureNoteLabView";
-import PurePdrmView from "@/components/PurePdrmView";
+// PurePdrmView removed - PDRM functionality merged into Surgeon View
 import ErrorBoundary from "@/components/ErrorBoundary";
 
 // Store imports
@@ -270,7 +270,7 @@ export default function ThoughtUnitReader() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const [viewMode, setViewMode] =
-    useState<"original" | "hybrid" | "pattern" | "notelab" | "toc" | "study" | "syllabus" | "pdrm">("original");
+    useState<"original" | "hybrid" | "pattern" | "notelab" | "toc" | "study" | "syllabus">("original");
 
   // Global Zoom Store
   const { zoom, zoomIn, zoomOut, resetZoom, getZoomPercent, canZoomIn, canZoomOut } = useZoomStore();
@@ -2032,32 +2032,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ PDRM View - PURE: PDRM entries grouped by doc/chapter/page
-    if (viewMode === "pdrm") {
-      return (
-        <div className="h-full" data-testid="pdrm-view-container">
-          <PurePdrmView
-            documentId={bookId}
-            documentName={uploadedFile?.name || tableOfContents[0]?.title || "Document"}
-            currentPage={currentPage}
-            pdfPageCount={pdfPageCount}
-            onJumpToPage={(pageNumber, highlightId) => {
-              syncToPage(pageNumber);
-              // TODO: Flash highlight if highlightId provided
-            }}
-            onOpenInReader={(pageNumber) => {
-              syncToPage(pageNumber);
-              setViewMode("original");
-            }}
-            onOpenInSurgeon={(pageNumber, highlightId) => {
-              syncToPage(pageNumber);
-              setViewMode("hybrid");
-              // TODO: Flash highlight if highlightId provided
-            }}
-          />
-        </div>
-      );
-    }
+    // PDRM View removed - all PDRM functionality merged into Surgeon View
 
     // ✅ READER View - PURE: PDF ONLY (no thought units, no TOC, no annotations)
     // This is the DEFAULT view and handles viewMode === "original"

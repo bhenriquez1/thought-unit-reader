@@ -331,6 +331,99 @@ function buildHeadingHierarchy(entries: SmartTOCEntry[]): SmartTOCEntry[] {
 }
 
 // ============================================================================
+// Strategy 2b: TOC Recovery Scan (pages 1-25 for "Contents" page)
+// ============================================================================
+
+/**
+ * TOC Recovery Scan: looks for a "Contents" or "Table of Contents" page
+ * in pages 1-25 and parses chapter/section entries from it.
+ */
+export async function tocRecoveryScan(
+  pdfDocument: any,
+  maxPages: number = 25
+): Promise<SmartTOCEntry[]> {
+  const entries: SmartTOCEntry[] = [];
+  const numPages = Math.min(pdfDocument.numPages, maxPages);
+
+  // Patterns that indicate a TOC page
+  const TOC_PAGE_MARKERS = [
+    /table\s+of\s+contents/i,
+    /\bcontents\b/i,
+  ];
+
+  // Patterns for TOC entries: "Chapter 1 ... 15" or "1. Introduction ... 3"
+  const TOC_ENTRY_PATTERNS = [
+    // "Chapter 1: Title ........ 15" or "Chapter I Title 15"
+    /^(Chapter\s+(?:\d+|[IVXLCDM]+)[:\.\s]+.+?)\s+(\d+)\s*$/im,
+    // "1. Title ........ 15" or "1 Title 15"
+    /^(\d+[\.\)]\s*.+?)\s+(\d+)\s*$/m,
+    // "Section 1.2 Title ... 45"
+    /^((?:Section|Part)\s+[\d\.]+.+?)\s+(\d+)\s*$/im,
+    // "Introduction ........ 1" (structural with dots/spaces + page num)
+    /^([A-Z][a-zA-Z\s]+?)\s*[\.·…\s]{3,}\s*(\d+)\s*$/m,
+    // Numbered section: "1.2 Title .... 23"
+    /^((?:\d+\.)+\d*\s+[A-Z].+?)\s+(\d+)\s*$/m,
+  ];
+
+  for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+    try {
+      const page = await pdfDocument.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const lines = groupItemsByLine(textContent.items || []);
+      const fullText = lines.map((line: any[]) => line.map((item: any) => item.str).join('')).join('\n');
+
+      // Check if this looks like a TOC page
+      const isTocPage = TOC_PAGE_MARKERS.some(p => p.test(fullText));
+      if (!isTocPage) continue;
+
+      // Parse each line for TOC entries
+      const textLines = fullText.split('\n').map((l: string) => l.replace(/[\.·…]{3,}/g, '   ').trim()).filter(Boolean);
+
+      for (const line of textLines) {
+        // Skip the "Contents" header itself
+        if (/^(table\s+of\s+)?contents$/i.test(line.trim())) continue;
+
+        for (const pattern of TOC_ENTRY_PATTERNS) {
+          const match = line.match(pattern);
+          if (match) {
+            const title = match[1].replace(/\s+/g, ' ').trim();
+            const targetPage = parseInt(match[2], 10);
+            if (targetPage > 0 && targetPage <= pdfDocument.numPages && title.length > 2) {
+              const level = /^Chapter\s/i.test(title) ? 0
+                : /^(?:Section|Part)\s/i.test(title) ? 0
+                : /^\d+\.\d+/.test(title) ? 1
+                : 0;
+              entries.push({
+                title: cleanHeadingTitle(title),
+                pageNumber: targetPage,
+                level,
+                source: 'heading',
+                confidence: 0.8,
+              });
+            }
+            break; // matched, move to next line
+          }
+        }
+      }
+
+      // If we found entries on a TOC page, don't scan more pages
+      if (entries.length > 0) break;
+    } catch (error) {
+      console.warn(`TOC recovery scan failed on page ${pageNum}:`, error);
+    }
+  }
+
+  // Deduplicate
+  const seen = new Set<string>();
+  return entries.filter(e => {
+    const key = `${e.title}|${e.pageNumber}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+// ============================================================================
 // Strategy 3: OCR Fallback (stub - requires Tesseract.js)
 // ============================================================================
 
@@ -392,8 +485,10 @@ export async function generateSmartTOC(
   try {
     // Strategy 1: Try PDF outline first (fastest)
     entries = await extractFromOutline(pdfDocument);
-    if (entries.length > 0) {
+    if (entries.length >= 3) {
       source = 'outline';
+    } else {
+      entries = []; // Discard weak outline results
     }
 
     // Strategy 2: If no outline, try heading detection
@@ -402,9 +497,20 @@ export async function generateSmartTOC(
 
       if (hasText) {
         entries = await extractFromHeadings(pdfDocument);
-        if (entries.length > 0) {
+        if (entries.length >= 3) {
           source = 'heading';
+        } else {
+          entries = []; // Discard weak results
         }
+      }
+    }
+
+    // Strategy 2b: If <3 results or only generic stubs, run TOC Recovery Scan
+    if (entries.length < 3) {
+      const recovered = await tocRecoveryScan(pdfDocument);
+      if (recovered.length >= 1) {
+        entries = recovered;
+        source = 'heading';
       }
     }
 
@@ -416,9 +522,8 @@ export async function generateSmartTOC(
       }
     }
 
-    // If still no entries, create basic page-based TOC
+    // If still no entries, return explicit "not detected" state (no fake stubs)
     if (entries.length === 0) {
-      entries = createBasicTOC(pdfDocument.numPages);
       source = 'none';
     }
 
@@ -432,7 +537,7 @@ export async function generateSmartTOC(
   } catch (error) {
     console.error('TOC generation failed:', error);
     return {
-      entries: createBasicTOC(pdfDocument?.numPages || 0),
+      entries: [],
       source: 'none',
       pageCount: pdfDocument?.numPages || 0,
       processingTimeMs: performance.now() - startTime,

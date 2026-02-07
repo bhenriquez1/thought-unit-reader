@@ -14,6 +14,7 @@ import {
   truncateToLimits,
   CORE_LIMITS,
 } from './schema';
+import { isBoilerplate } from './boilerplateFilter';
 
 // ============================================================================
 // Constants
@@ -284,21 +285,46 @@ export async function tierAExtract(request: PipelineRequest): Promise<PipelineRe
     sourceText = request.selection.text;
     source = 'selection';
   }
-  // Priority 2: Viewport text (from PDF.js items)
+  // Priority 2: Viewport text (from PDF.js items) - also filter boilerplate
   else if (request.textItems && request.viewport) {
     const { text } = extractVisibleText(request.textItems, request.viewport);
-    if (text.length > 50) {
+    if (text.length > 50 && !isBoilerplate(text)) {
       sourceText = text;
       source = 'viewport';
     } else {
-      // Fallback to page text
+      // Fallback to page text (paragraph windowing handles boilerplate below)
       sourceText = request.pageText || '';
       source = 'paragraph-window';
     }
   }
-  // Priority 3: Page text with micro-chunking
+  // Priority 3: Page text with paragraph windowing (max 4 paragraphs)
   else if (request.pageText) {
-    sourceText = request.pageText;
+    // Split into paragraphs and apply 4-paragraph window
+    const rawParagraphs = request.pageText
+      .split(/\n\s*\n/)
+      .map(p => p.trim())
+      .filter(p => p.length > 0);
+
+    // Filter out boilerplate paragraphs
+    const contentParagraphs = rawParagraphs.filter(p => !isBoilerplate(p));
+
+    if (contentParagraphs.length > 0) {
+      // Use scroll position to pick the active window (max 4 paragraphs)
+      const windowSize = Math.min(4, contentParagraphs.length);
+      const scrollRatio = request.scrollY
+        ? Math.min(1, Math.max(0, request.scrollY / (request.viewport?.pageHeight || 1000)))
+        : 0;
+      const centerIdx = Math.floor(scrollRatio * contentParagraphs.length);
+      const halfWin = Math.floor(windowSize / 2);
+      let start = Math.max(0, centerIdx - halfWin);
+      let end = Math.min(contentParagraphs.length, start + windowSize);
+      if (end === contentParagraphs.length && end - start < windowSize) {
+        start = Math.max(0, end - windowSize);
+      }
+      sourceText = contentParagraphs.slice(start, end).join('\n\n');
+    } else {
+      sourceText = '';
+    }
     source = 'paragraph-window';
   } else {
     return {

@@ -347,11 +347,13 @@ export default function TOCSidebar({
               <div className="flex-1 flex items-center justify-center">
                 <div className="text-center">
                   <p className="text-sm text-gray-400 mb-2">
-                    {flat.length === 0 ? "No table of contents available" : "No matching headings found"}
+                    {flat.length === 0
+                      ? (q.trim() ? "No matching headings found" : "TOC not detected")
+                      : "No matching headings found"}
                   </p>
-                  {flat.length === 0 && (
+                  {flat.length === 0 && !q.trim() && (
                     <p className="text-xs text-gray-500">
-                      The PDF may not have embedded bookmarks. Try uploading a different PDF or use page navigation.
+                      No chapters or sections were found in this PDF. The document may not contain a standard table of contents.
                     </p>
                   )}
                 </div>
