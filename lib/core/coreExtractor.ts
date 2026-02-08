@@ -22,6 +22,8 @@ import {
   extractViewportParagraphs,
   getCombinedText,
   generateWindowCacheKey,
+  splitIntoClauses,
+  selectTopClauses,
 } from './paragraphExtractor';
 import { isBoilerplate } from './boilerplateFilter';
 
@@ -153,21 +155,28 @@ Return ONLY valid JSON matching the specified format. No explanations.`;
 // ============================================================================
 
 function mockExtract(request: CoreExtractionRequest, paragraphText: string): CoreResponse {
-  const sentences = paragraphText.split(/[.!?]+/).filter(s => s.trim().length > 10);
+  // Sub-paragraph precision: split into clauses and pick top candidates
+  const rawParagraphs = request.paragraphs.map((text, i) => ({
+    text,
+    charStart: 0,
+    charEnd: text.length,
+  }));
+  const clauses = splitIntoClauses(rawParagraphs);
+  const topClauses = selectTopClauses(clauses, 4); // Hard cap: max 4 concepts
 
-  const items: CoreItem[] = sentences.slice(0, Math.min(CORE_LIMITS.MAX_ITEMS, 3)).map((sentence, i) => {
-    const trimmed = sentence.trim().slice(0, CORE_LIMITS.MAX_SENTENCE_LENGTH);
+  const items: CoreItem[] = topClauses.map((clause, i) => {
+    const trimmed = clause.text.slice(0, CORE_LIMITS.MAX_SENTENCE_LENGTH);
     const triggers = detectTriggers(trimmed);
 
     return {
-      id: `${request.bookId}-p${request.page}-${i}`,
+      id: `${request.bookId}-p${request.page}-${clause.paragraphIndex}-${clause.clauseIndex}`,
       core_sentence: trimmed,
       triggers: triggers.slice(0, CORE_LIMITS.MAX_TRIGGERS_PER_ITEM),
       exceptions: [],
-      confidence: 0.7 + Math.random() * 0.3,
+      confidence: Math.min(1, 0.6 + clause.density * 0.06),
       source: {
         page: request.page,
-        paragraph_index: request.paragraphRange[0] + i,
+        paragraph_index: request.paragraphRange[0] + clause.paragraphIndex,
         char_range: [0, trimmed.length] as [number, number],
       },
       attachments_available: {
@@ -194,7 +203,7 @@ function mockExtract(request: CoreExtractionRequest, paragraphText: string): Cor
       items_returned: items.length,
       sentences_total: totalSentences,
     },
-    stop_reason: items.length >= CORE_LIMITS.MAX_ITEMS ? 'cap_reached' : 'clarity_reached',
+    stop_reason: items.length >= 4 ? 'cap_reached' : 'clarity_reached',
   };
 }
 

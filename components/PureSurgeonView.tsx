@@ -83,7 +83,12 @@ export default function PureSurgeonView({
   onThoughtUnitChange,
   onRecommendedAction
 }: PureSurgeonViewProps) {
-  
+
+  // SSR guard — prevent crash on server-side render
+  const [isClient, setIsClient] = useState(false);
+  React.useEffect(() => { setIsClient(true); }, []);
+  if (!isClient) return null;
+
   // ---- Stores ----
   const {
     annotations,

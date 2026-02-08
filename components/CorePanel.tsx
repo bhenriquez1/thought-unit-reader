@@ -179,7 +179,7 @@ export const CorePanel = memo(function CorePanel({
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700/50">
         <div className="flex items-center gap-2">
           <span className="text-lg">⚡</span>
-          <h2 className="text-sm font-semibold text-white">Core</h2>
+          <h2 className="text-sm font-semibold text-white">Core Concepts</h2>
           {result?.cached && (
             <span className="px-1.5 py-0.5 text-xs bg-green-600/20 text-green-400 rounded">
               cached
@@ -277,10 +277,10 @@ export const CorePanel = memo(function CorePanel({
               onRequestAttachment={handleAttachmentRequest}
               emptyMessage={
                 !pageText
-                  ? 'Load a document to extract concepts.'
+                  ? 'Select text or change page to extract concepts.'
                   : paragraphMeta.length === 0
-                  ? 'Scroll through the document to extract Core concepts.'
-                  : 'No core concepts in current view. Keep scrolling to discover more.'
+                  ? 'No text layer detected. Try OCR mode or another PDF.'
+                  : 'Select text or change page to extract concepts.'
               }
             />
           </>
