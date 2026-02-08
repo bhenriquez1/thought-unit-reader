@@ -802,9 +802,10 @@ export default function ThoughtUnitReader() {
       progress: `Preparing ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)}MB)...`
     });
 
-    // Reset thought units immediately to prevent race conditions
+    // Reset state — always start at page 1 on new upload
     setThoughtUnits([]);
     setCurrentThoughtUnit(1);
+    setCurrentPage(1);
 
     setUploadedFile(file);
     setViewMode("original");
@@ -2003,7 +2004,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Syllabus Mode View - Upload syllabus to identify important sections
+    // ✅ Course Intelligence View - Upload syllabus to identify exam-weighted sections
     if (viewMode === "syllabus") {
       const chaptersForSyllabus = tableOfContents.map((toc, idx) => ({
         id: `chapter_${idx}`,
@@ -2160,7 +2161,7 @@ export default function ThoughtUnitReader() {
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
           >
-            📋 Syllabus
+            🎯 Course Intelligence
           </button>
           {/* PDRM tab removed - functionality is now in Surgeon View's PDRM tab */}
         </div>

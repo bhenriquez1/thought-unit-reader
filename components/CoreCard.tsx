@@ -263,9 +263,6 @@ export const CoreCardList = memo(function CoreCardList({
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <div className="text-4xl mb-3">⚡</div>
         <p className="text-sm text-gray-400">{emptyMessage}</p>
-        <p className="text-xs text-gray-500 mt-1">
-          Scroll through the document to extract core concepts
-        </p>
       </div>
     );
   }

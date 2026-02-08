@@ -52,6 +52,82 @@ export function extractParagraphs(text: string): Array<{ text: string; charStart
   return paragraphs;
 }
 
+// ============================================================================
+// Clause Splitting (sub-paragraph precision)
+// ============================================================================
+
+export interface Clause {
+  text: string;
+  paragraphIndex: number;
+  clauseIndex: number;
+  /** Higher = more likely testable (definitions, rules, cause-effect) */
+  density: number;
+}
+
+/**
+ * Split paragraphs into clauses for sub-paragraph extraction.
+ * Clauses are split on sentence boundaries while preserving meaning.
+ */
+export function splitIntoClauses(
+  paragraphs: Array<{ text: string; charStart: number; charEnd: number }>
+): Clause[] {
+  const clauses: Clause[] = [];
+
+  for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
+    const p = paragraphs[pIdx];
+    // Split on sentence-ending punctuation followed by space/end
+    const sentences = p.text
+      .split(/(?<=[.!?])\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length >= 10);
+
+    for (let cIdx = 0; cIdx < sentences.length; cIdx++) {
+      clauses.push({
+        text: sentences[cIdx],
+        paragraphIndex: pIdx,
+        clauseIndex: cIdx,
+        density: scoreClauseDensity(sentences[cIdx]),
+      });
+    }
+  }
+
+  return clauses;
+}
+
+/**
+ * Score a clause for testable content density.
+ * Higher = more likely to be a core concept.
+ */
+function scoreClauseDensity(text: string): number {
+  let score = 0;
+  // Definitions
+  if (/\bis\s+(defined\s+as|a|an|the)\b|\bmeans\b|\brefers\s+to\b/i.test(text)) score += 3;
+  // Rules / conditionals
+  if (/\bif\b.*\bthen\b|\bwhen\b.*\b(must|should|will)\b/i.test(text)) score += 3;
+  // Cause-effect
+  if (/\bbecause\b|\btherefore\b|\bthus\b|\bconsequently\b/i.test(text)) score += 2;
+  // Contrast / exceptions
+  if (/\bhowever\b|\bbut\b|\bexcept\b|\bunless\b/i.test(text)) score += 2;
+  // Enumerations
+  if (/\bfirst\b|\bsecond\b|\bsteps?\b|\btypes?\s+(?:of|include)\b/i.test(text)) score += 1;
+  // Formulas / calculations
+  if (/[=+\-*/]|\bformula\b|\bcalculate\b|\bequation\b/i.test(text)) score += 2;
+  // Contains numbers (specificity marker)
+  if (/\d/.test(text)) score += 1;
+  // Headings / bold-like (ALL CAPS words)
+  if (/\b[A-Z]{3,}\b/.test(text)) score += 1;
+  return score;
+}
+
+/**
+ * Select the top N candidate clauses by density.
+ */
+export function selectTopClauses(clauses: Clause[], max: number = 4): Clause[] {
+  return [...clauses]
+    .sort((a, b) => b.density - a.density)
+    .slice(0, max);
+}
+
 /**
  * Build paragraph metadata with pixel positions
  * Used for scroll → paragraph mapping

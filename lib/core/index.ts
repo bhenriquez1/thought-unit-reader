@@ -37,6 +37,9 @@ export {
   toLocalCharRange,
   createScrollDebouncer,
   generateWindowCacheKey,
+  splitIntoClauses,
+  selectTopClauses,
+  type Clause,
 } from './paragraphExtractor';
 
 // Core Extraction
