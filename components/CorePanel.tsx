@@ -2,16 +2,14 @@
 
 import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import { CoreCardList, CoreStats } from './CoreCard';
+import type { CoreConcept, CoreExtractResponse } from '@/lib/coreConceptSchema';
 import {
-  extractFromPage,
   createScrollDebouncer,
   extractParagraphs,
   buildParagraphMeta,
   findParagraphAtScroll,
   getParagraphWindow,
-  type CoreItem,
-  type CoreResponse,
-  type ExtractionResult,
+  getCombinedText,
   type ParagraphMeta,
   CORE_LIMITS,
 } from '../lib/core';
@@ -25,15 +23,12 @@ interface CorePanelProps {
   pageNumber: number;
   pageText: string;
   chapter?: string;
-  /** Reader scroll position - Core follows the reader */
   scrollY?: number;
   viewportHeight?: number;
-  onItemSelect?: (item: CoreItem) => void;
-  onItemHighlight?: (charRange: [number, number] | null) => void;
+  onConceptSelect?: (concept: CoreConcept) => void;
 }
 
 type ExtractionStatus = 'idle' | 'extracting' | 'success' | 'error';
-type DisplayMode = 'collapsed' | 'expanded';
 
 // ============================================================================
 // Core Panel Component
@@ -46,15 +41,16 @@ export const CorePanel = memo(function CorePanel({
   chapter,
   scrollY = 0,
   viewportHeight = 800,
-  onItemSelect,
-  onItemHighlight,
+  onConceptSelect,
 }: CorePanelProps) {
   // State
   const [status, setStatus] = useState<ExtractionStatus>('idle');
-  const [result, setResult] = useState<ExtractionResult | null>(null);
+  const [concepts, setConcepts] = useState<CoreConcept[]>([]);
+  const [extractionTimeMs, setExtractionTimeMs] = useState<number | undefined>(undefined);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [autoExtract, setAutoExtract] = useState(true);
-  const [displayMode, setDisplayMode] = useState<DisplayMode>('collapsed');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [windowText, setWindowText] = useState('');
 
   // Refs
   const lastExtractionKey = useRef<string>('');
@@ -82,61 +78,72 @@ export const CorePanel = memo(function CorePanel({
     return oldCenter !== newCenter;
   }, [viewportHeight, paragraphMeta]);
 
-  // Debounced scroll handler - only extract when paragraph window changes
+  // Debounced scroll handler
   const handleScrollChange = useCallback(
     createScrollDebouncer((newScrollY: number) => {
       if (autoExtract && pageText && hasSignificantScrollChange(newScrollY)) {
         lastScrollY.current = newScrollY;
         performExtraction(newScrollY);
       }
-    }, 200), // Faster response for scroll
+    }, 200),
     [documentId, pageNumber, pageText, autoExtract, hasSignificantScrollChange]
   );
 
-  // Extraction function
+  // Extraction function — calls /api/core/extract
   const performExtraction = useCallback(async (currentScrollY: number = scrollY) => {
     if (!pageText || pageText.trim().length === 0) {
       setStatus('idle');
-      setResult(null);
+      setConcepts([]);
       return;
     }
 
-    // Generate key based on paragraph window, not raw scroll
+    // Generate key based on paragraph window
     const centerParagraph = findParagraphAtScroll(currentScrollY, viewportHeight, paragraphMeta);
     const [windowStart, windowEnd] = getParagraphWindow(centerParagraph, paragraphMeta.length);
     const extractionKey = `${documentId}:${pageNumber}:p${windowStart}-${windowEnd}`;
 
-    if (extractionKey === lastExtractionKey.current && result?.success) {
+    if (extractionKey === lastExtractionKey.current && concepts.length > 0) {
       return; // Already extracted this paragraph window
     }
 
     setStatus('extracting');
+    setErrorMessage(null);
 
     try {
-      const extractionResult = await extractFromPage(
-        documentId,
-        pageNumber,
-        pageText,
-        currentScrollY,
-        viewportHeight,
-        chapter
-      );
+      // Build window text from paragraphs
+      const windowParagraphs = paragraphMeta.slice(windowStart, windowEnd);
+      const combinedText = getCombinedText(windowParagraphs);
+      setWindowText(combinedText);
 
-      setResult(extractionResult);
-      setStatus(extractionResult.success ? 'success' : 'error');
+      const res = await fetch('/api/core/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          docId: documentId,
+          chapterId: chapter,
+          page: pageNumber,
+          windowIndex: windowStart,
+          windowText: combinedText,
+          context: { sectionHint: chapter },
+          mode: 'page_window' as const,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const data: CoreExtractResponse = await res.json();
+      setConcepts(data.concepts);
+      setExtractionTimeMs(data.meta.ms);
+      setStatus('success');
       lastExtractionKey.current = extractionKey;
     } catch (error) {
-      console.error('⚡ Core extraction error:', error);
+      console.error('Core extraction error:', error);
       setStatus('error');
-      setResult({
-        success: false,
-        data: null,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        cached: false,
-        extractionTimeMs: 0,
-      });
+      setErrorMessage(error instanceof Error ? error.message : 'Unknown error');
     }
-  }, [documentId, pageNumber, pageText, scrollY, viewportHeight, chapter, result, paragraphMeta]);
+  }, [documentId, pageNumber, pageText, scrollY, viewportHeight, chapter, concepts.length, paragraphMeta]);
 
   // Handle scroll changes
   useEffect(() => {
@@ -150,28 +157,11 @@ export const CorePanel = memo(function CorePanel({
     }
   }, [documentId, pageNumber, pageText, autoExtract]);
 
-  // Handle item selection
-  const handleItemSelect = useCallback((item: CoreItem) => {
-    setHighlightedId(item.id);
-    onItemSelect?.(item);
-    onItemHighlight?.(item.source.char_range);
-  }, [onItemSelect, onItemHighlight]);
-
-  // Handle attachment request
-  const handleAttachmentRequest = useCallback((item: CoreItem, type: 'procedure' | 'example' | 'visual') => {
-    console.log('⚡ Attachment requested:', type, 'for item:', item.id);
-    // TODO: Implement lazy attachment loading
-  }, []);
-
-  // Clear highlight
-  const handleClearHighlight = useCallback(() => {
-    setHighlightedId(null);
-    onItemHighlight?.(null);
-  }, [onItemHighlight]);
-
-  // Get items from result
-  const items = result?.data?.items ?? [];
-  const stats = result?.data?.stats;
+  // Handle concept selection
+  const handleConceptSelect = useCallback((concept: CoreConcept) => {
+    setHighlightedId(concept.id);
+    onConceptSelect?.(concept);
+  }, [onConceptSelect]);
 
   return (
     <div className="flex flex-col h-full bg-gray-900">
@@ -180,11 +170,6 @@ export const CorePanel = memo(function CorePanel({
         <div className="flex items-center gap-2">
           <span className="text-lg">⚡</span>
           <h2 className="text-sm font-semibold text-white">Core Concepts</h2>
-          {result?.cached && (
-            <span className="px-1.5 py-0.5 text-xs bg-green-600/20 text-green-400 rounded">
-              cached
-            </span>
-          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -198,7 +183,7 @@ export const CorePanel = memo(function CorePanel({
             }`}
             title={autoExtract ? 'Auto-extract on scroll' : 'Manual extraction'}
           >
-            {autoExtract ? '🔄 Auto' : '⏸️ Manual'}
+            {autoExtract ? 'Auto' : 'Manual'}
           </button>
 
           {/* Manual extract button */}
@@ -215,15 +200,19 @@ export const CorePanel = memo(function CorePanel({
       </div>
 
       {/* Stats Bar */}
-      {stats && (
+      {concepts.length > 0 && (
         <div className="px-4 py-2 border-b border-gray-700/30">
-          <CoreStats stats={stats} extractionTimeMs={result?.extractionTimeMs} />
+          <CoreStats
+            conceptCount={concepts.length}
+            maxConcepts={8}
+            extractionTimeMs={extractionTimeMs}
+          />
         </div>
       )}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-4 py-3">
-        {status === 'extracting' && items.length === 0 && (
+        {status === 'extracting' && concepts.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12">
             <div className="animate-pulse text-4xl mb-3">⚡</div>
             <p className="text-sm text-gray-400">Extracting core concepts...</p>
@@ -234,7 +223,7 @@ export const CorePanel = memo(function CorePanel({
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <div className="text-4xl mb-3">⚠️</div>
             <p className="text-sm text-red-400">Extraction failed</p>
-            <p className="text-xs text-gray-500 mt-1">{result?.error}</p>
+            <p className="text-xs text-gray-500 mt-1">{errorMessage}</p>
             <button
               onClick={() => performExtraction()}
               className="mt-3 px-3 py-1.5 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
@@ -247,7 +236,7 @@ export const CorePanel = memo(function CorePanel({
         {status !== 'extracting' && status !== 'error' && (
           <>
             {/* Paragraph Window Indicator */}
-            {paragraphMeta.length > 0 && items.length === 0 && (
+            {paragraphMeta.length > 0 && concepts.length === 0 && (
               <div className="mb-3 p-3 bg-gray-800/50 rounded-lg border border-gray-700/50">
                 <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
                   <span>Reading paragraphs {currentWindow.start + 1}-{currentWindow.end}</span>
@@ -271,10 +260,11 @@ export const CorePanel = memo(function CorePanel({
               </div>
             )}
             <CoreCardList
-              items={items}
+              concepts={concepts}
+              docId={documentId}
+              windowText={windowText}
               highlightedId={highlightedId}
-              onSelectItem={handleItemSelect}
-              onRequestAttachment={handleAttachmentRequest}
+              onSelectConcept={handleConceptSelect}
               emptyMessage={
                 !pageText
                   ? 'Select text or change page to extract concepts.'
@@ -287,11 +277,11 @@ export const CorePanel = memo(function CorePanel({
         )}
       </div>
 
-      {/* Footer - Paragraph Window Info */}
-      {result?.data && (
+      {/* Footer */}
+      {concepts.length > 0 && (
         <div className="px-4 py-2 border-t border-gray-700/30 text-xs text-gray-500">
           <span>
-            Paragraphs {result.data.scope.paragraph_range[0] + 1}-{result.data.scope.paragraph_range[1]}
+            Paragraphs {currentWindow.start + 1}-{currentWindow.end}
           </span>
           <span className="mx-2">·</span>
           <span>
@@ -301,7 +291,7 @@ export const CorePanel = memo(function CorePanel({
             <>
               <span className="mx-2">·</span>
               <button
-                onClick={handleClearHighlight}
+                onClick={() => setHighlightedId(null)}
                 className="text-purple-400 hover:text-purple-300"
               >
                 Clear highlight

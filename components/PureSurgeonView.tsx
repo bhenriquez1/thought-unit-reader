@@ -331,7 +331,7 @@ export default function PureSurgeonView({
     }
   }, [finishQuiz, mistakes.length, onRecommendedAction]);
 
-  // ---- Empty State ----
+  // ---- Safe Boot: Empty State ----
   if (!fileUrl) {
     return (
       <div className="h-full flex items-center justify-center bg-gray-900 text-white" data-testid="surgeon-view-empty">
@@ -344,6 +344,18 @@ export default function PureSurgeonView({
             <p>• Auto mode: instant Pattern/Decision/Risk/Mnemonic extraction</p>
             <p>• Manual mode: draft entries for you to complete</p>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Safe Boot: Skeleton while page loads ----
+  if (currentPage < 1 || pdfPageCount < 1) {
+    return (
+      <div className="h-full flex items-center justify-center bg-gray-900 text-white" data-testid="surgeon-view-skeleton">
+        <div className="text-center animate-pulse">
+          <div className="text-4xl mb-3">⚡</div>
+          <p className="text-sm text-gray-400">Loading document...</p>
         </div>
       </div>
     );
@@ -500,12 +512,9 @@ export default function PureSurgeonView({
                 pageNumber={currentPage}
                 pageText={pageText || ''}
                 chapter={chapterId}
-                onItemSelect={(item) => {
-                  setSelectedText(item.core_sentence);
+                onConceptSelect={(concept) => {
+                  setSelectedText(concept.oneLiner);
                   setShowHighlightMenu(true);
-                }}
-                onItemHighlight={(charRange) => {
-                  console.log('Highlight range:', charRange);
                 }}
               />
             </div>
