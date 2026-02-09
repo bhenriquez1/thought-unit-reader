@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
-import { CoreCard } from './CoreCard';
 import type { CoreItem, Trigger } from '../lib/core/types';
 import { TRIGGER_LABELS } from '../lib/core/types';
 import {

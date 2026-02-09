@@ -1,128 +1,160 @@
 "use client";
 
-import React, { useState, memo } from 'react';
-import type { CoreItem, Trigger, LearningState } from '../lib/core/types';
-import { TRIGGER_LABELS, CORE_LIMITS } from '../lib/core';
+import React, { useState, useCallback, memo } from 'react';
+import type { CoreConcept, CoreExpandResponse } from '@/lib/coreConceptSchema';
 
 // ============================================================================
 // Types
 // ============================================================================
 
+type Tag = CoreConcept['tags'][number];
+
 interface CoreCardProps {
-  item: CoreItem;
-  learningState?: LearningState;
-  confidence?: number;
+  concept: CoreConcept;
+  docId: string;
+  windowText: string;
   isHighlighted?: boolean;
-  onSelect?: (item: CoreItem) => void;
-  onRequestAttachment?: (item: CoreItem, type: 'procedure' | 'example' | 'visual') => void;
+  onSelect?: (concept: CoreConcept) => void;
 }
 
 // ============================================================================
-// Trigger Badge Component
+// Tag Pill Component
 // ============================================================================
 
-const TRIGGER_COLORS: Record<Trigger, string> = {
-  A: 'bg-blue-600/30 text-blue-300 border-blue-500/50',      // Conditional
-  B: 'bg-orange-600/30 text-orange-300 border-orange-500/50', // Contrast
-  C: 'bg-green-600/30 text-green-300 border-green-500/50',    // Causation
-  D: 'bg-purple-600/30 text-purple-300 border-purple-500/50', // Definition
-  E: 'bg-cyan-600/30 text-cyan-300 border-cyan-500/50',       // Enumeration
-  F: 'bg-red-600/30 text-red-300 border-red-500/50',          // Formula
-  G: 'bg-yellow-600/30 text-yellow-300 border-yellow-500/50', // Gradation
-  H: 'bg-pink-600/30 text-pink-300 border-pink-500/50',       // Hierarchy
+const TAG_COLORS: Record<Tag, string> = {
+  definition: 'bg-blue-600/30 text-blue-300 border-blue-500/40',
+  process:    'bg-green-600/30 text-green-300 border-green-500/40',
+  rule:       'bg-orange-600/30 text-orange-300 border-orange-500/40',
+  example:    'bg-cyan-600/30 text-cyan-300 border-cyan-500/40',
+  pitfall:    'bg-red-600/30 text-red-300 border-red-500/40',
 };
 
-const TriggerBadge = memo(function TriggerBadge({ trigger }: { trigger: Trigger }) {
+const TagPill = memo(function TagPill({ tag }: { tag: Tag }) {
   return (
-    <span
-      className={`inline-flex items-center px-1.5 py-0.5 text-xs font-mono border rounded ${TRIGGER_COLORS[trigger]}`}
-      title={TRIGGER_LABELS[trigger]}
-    >
-      {trigger}
+    <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium border rounded ${TAG_COLORS[tag]}`}>
+      {tag}
     </span>
   );
 });
 
 // ============================================================================
-// Learning State Badge
+// Exam Weight Meter
 // ============================================================================
 
-const LEARNING_STATE_STYLES: Record<LearningState, { bg: string; label: string }> = {
-  new: { bg: 'bg-gray-600/50 text-gray-300', label: 'New' },
-  learning: { bg: 'bg-blue-600/50 text-blue-300', label: 'Learning' },
-  review: { bg: 'bg-yellow-600/50 text-yellow-300', label: 'Review' },
-  weak: { bg: 'bg-red-600/50 text-red-300', label: 'Weak' },
-  mastered: { bg: 'bg-green-600/50 text-green-300', label: 'Mastered' },
+const ExamWeightMeter = memo(function ExamWeightMeter({ weight }: { weight: 1 | 2 | 3 | 4 | 5 }) {
+  const blocks = Array.from({ length: 5 }, (_, i) => i < weight);
+  return (
+    <div className="flex items-center gap-0.5" title={`Exam weight: ${weight}/5`}>
+      {blocks.map((filled, i) => (
+        <div
+          key={i}
+          className={`w-2 h-3 rounded-sm ${filled ? 'bg-purple-500' : 'bg-gray-700'}`}
+        />
+      ))}
+      <span className="text-[10px] text-gray-500 ml-1">{weight}/5</span>
+    </div>
+  );
+});
+
+// ============================================================================
+// Confidence Badge
+// ============================================================================
+
+const CONFIDENCE_STYLES: Record<0 | 1 | 2 | 3, { bg: string; label: string }> = {
+  0: { bg: 'bg-gray-600/40 text-gray-400', label: 'Low' },
+  1: { bg: 'bg-yellow-600/30 text-yellow-400', label: 'Fair' },
+  2: { bg: 'bg-blue-600/30 text-blue-300', label: 'Good' },
+  3: { bg: 'bg-green-600/30 text-green-300', label: 'High' },
 };
 
-const LearningBadge = memo(function LearningBadge({ state }: { state: LearningState }) {
-  const style = LEARNING_STATE_STYLES[state];
+const ConfidenceBadge = memo(function ConfidenceBadge({ level }: { level: 0 | 1 | 2 | 3 }) {
+  const style = CONFIDENCE_STYLES[level];
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 text-xs rounded-full ${style.bg}`}>
+    <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded ${style.bg}`}>
       {style.label}
     </span>
   );
 });
 
 // ============================================================================
-// Confidence Bar
+// Expansion Content (lazy-loaded)
 // ============================================================================
 
-const ConfidenceBar = memo(function ConfidenceBar({ value }: { value: number }) {
-  const percentage = Math.round(value * 100);
-  const color =
-    value >= 0.8 ? 'bg-green-500' :
-    value >= 0.6 ? 'bg-yellow-500' :
-    value >= 0.4 ? 'bg-orange-500' : 'bg-red-500';
-
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-        <div
-          className={`h-full ${color} transition-all duration-300`}
-          style={{ width: `${percentage}%` }}
-        />
-      </div>
-      <span className="text-xs text-gray-500 tabular-nums">{percentage}%</span>
-    </div>
-  );
-});
-
-// ============================================================================
-// Attachment Buttons
-// ============================================================================
-
-interface AttachmentButtonsProps {
-  available: CoreItem['attachments_available'];
-  onRequest: (type: 'procedure' | 'example' | 'visual') => void;
+interface ExpansionContentProps {
+  data: CoreExpandResponse | null;
+  loading: boolean;
+  error: string | null;
 }
 
-const AttachmentButtons = memo(function AttachmentButtons({ available, onRequest }: AttachmentButtonsProps) {
-  const buttons = [
-    { type: 'procedure' as const, icon: '📋', label: 'Steps', enabled: available.procedure },
-    { type: 'example' as const, icon: '💡', label: 'Example', enabled: available.example },
-    { type: 'visual' as const, icon: '🖼️', label: 'Visual', enabled: available.visual },
-  ];
+const ExpansionContent = memo(function ExpansionContent({ data, loading, error }: ExpansionContentProps) {
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-3 text-xs text-gray-400 animate-pulse">
+        <span>Loading details...</span>
+      </div>
+    );
+  }
 
-  const enabledButtons = buttons.filter(b => b.enabled);
+  if (error) {
+    return (
+      <div className="py-2 text-xs text-red-400">Failed to load: {error}</div>
+    );
+  }
 
-  if (enabledButtons.length === 0) return null;
+  if (!data) return null;
+
+  const { expansions, flashcards } = data;
 
   return (
-    <div className="flex gap-1.5 mt-2">
-      {enabledButtons.map(({ type, icon, label }) => (
-        <button
-          key={type}
-          onClick={(e) => {
-            e.stopPropagation();
-            onRequest(type);
-          }}
-          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 rounded transition-colors"
-        >
-          <span>{icon}</span>
-          <span>{label}</span>
-        </button>
-      ))}
+    <div className="space-y-3">
+      {/* Procedure Steps */}
+      {expansions.procedure && expansions.procedure.length > 0 && (
+        <div>
+          <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Procedure</div>
+          <ol className="list-decimal list-inside space-y-1">
+            {expansions.procedure.map((step, i) => (
+              <li key={i} className="text-xs text-gray-300 leading-relaxed">{step}</li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      {/* Examples */}
+      {expansions.examples && expansions.examples.length > 0 && (
+        <div>
+          <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Examples</div>
+          {expansions.examples.map((ex, i) => (
+            <div key={i} className="text-xs text-cyan-300/80 pl-2 border-l-2 border-cyan-500/30 mb-1">
+              {ex}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Pitfalls */}
+      {expansions.pitfalls && expansions.pitfalls.length > 0 && (
+        <div>
+          <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Pitfalls</div>
+          {expansions.pitfalls.map((pit, i) => (
+            <div key={i} className="text-xs text-red-300/80 pl-2 border-l-2 border-red-500/30 mb-1">
+              {pit}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Flashcards */}
+      {flashcards.length > 0 && (
+        <div>
+          <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Flashcards</div>
+          {flashcards.map((fc, i) => (
+            <div key={i} className="p-2 bg-gray-800/80 rounded border border-gray-700/50 mb-1">
+              <div className="text-xs text-purple-300 font-medium">Q: {fc.q}</div>
+              <div className="text-xs text-gray-300 mt-1">A: {fc.a}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 });
@@ -132,23 +164,51 @@ const AttachmentButtons = memo(function AttachmentButtons({ available, onRequest
 // ============================================================================
 
 export const CoreCard = memo(function CoreCard({
-  item,
-  learningState,
-  confidence,
+  concept,
+  docId,
+  windowText,
   isHighlighted = false,
   onSelect,
-  onRequestAttachment,
 }: CoreCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const hasExceptions = item.exceptions.length > 0;
-  const hasAttachments = Object.values(item.attachments_available).some(Boolean);
+  const [expansion, setExpansion] = useState<CoreExpandResponse | null>(null);
+  const [expandLoading, setExpandLoading] = useState(false);
+  const [expandError, setExpandError] = useState<string | null>(null);
 
-  const handleClick = () => {
-    if (hasExceptions || hasAttachments) {
-      setIsExpanded(!isExpanded);
+  const handleClick = useCallback(() => {
+    onSelect?.(concept);
+  }, [concept, onSelect]);
+
+  const handleExpand = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const willExpand = !isExpanded;
+    setIsExpanded(willExpand);
+
+    // Lazy-load expansion data on first expand
+    if (willExpand && !expansion && !expandLoading) {
+      setExpandLoading(true);
+      setExpandError(null);
+      try {
+        const res = await fetch('/api/core/expand', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            docId,
+            conceptId: concept.id,
+            conceptLabel: concept.label,
+            windowText,
+          }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: CoreExpandResponse = await res.json();
+        setExpansion(data);
+      } catch (err) {
+        setExpandError(err instanceof Error ? err.message : 'Unknown error');
+      } finally {
+        setExpandLoading(false);
+      }
     }
-    onSelect?.(item);
-  };
+  }, [isExpanded, expansion, expandLoading, docId, concept.id, concept.label, windowText]);
 
   return (
     <div
@@ -161,76 +221,55 @@ export const CoreCard = memo(function CoreCard({
       `}
       onClick={handleClick}
     >
-      {/* Header: Triggers + Learning State */}
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-1.5">
-          {item.triggers.map((trigger, i) => (
-            <TriggerBadge key={`${trigger}-${i}`} trigger={trigger} />
+      {/* Header: Tags + Confidence + ExamWeight */}
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <div className="flex items-center gap-1">
+          {concept.tags.map((tag) => (
+            <TagPill key={tag} tag={tag} />
           ))}
         </div>
         <div className="flex items-center gap-2">
-          {learningState && <LearningBadge state={learningState} />}
-          {hasExceptions && (
-            <span className="text-xs text-gray-500">
-              {item.exceptions.length} exception{item.exceptions.length > 1 ? 's' : ''}
-            </span>
-          )}
+          <ConfidenceBadge level={concept.confidence} />
+          <ExamWeightMeter weight={concept.examWeight} />
         </div>
       </div>
 
-      {/* Core Sentence */}
-      <p className="text-sm text-gray-200 leading-relaxed">
-        {item.core_sentence}
-      </p>
+      {/* Label */}
+      <h3 className="text-sm font-semibold text-white mb-1">{concept.label}</h3>
 
-      {/* Confidence Bar */}
-      <div className="mt-2">
-        <ConfidenceBar value={confidence ?? item.confidence} />
+      {/* One-liner */}
+      <p className="text-xs text-gray-300 leading-relaxed">{concept.oneLiner}</p>
+
+      {/* Expand/Collapse toggle */}
+      <div className="mt-2 flex items-center justify-between">
+        <button
+          onClick={handleExpand}
+          className="text-[10px] text-purple-400 hover:text-purple-300 transition-colors"
+        >
+          {isExpanded ? 'Collapse' : 'Expand details'}
+        </button>
       </div>
 
       {/* Expanded Content */}
       {isExpanded && (
         <div className="mt-3 pt-3 border-t border-gray-700/50 space-y-3">
-          {/* Exceptions */}
-          {hasExceptions && (
-            <div className="space-y-2">
-              <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-                Exceptions
-              </div>
-              {item.exceptions.map((exc, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-2 pl-2 border-l-2 border-orange-500/50"
-                >
-                  <TriggerBadge trigger={exc.trigger} />
-                  <p className="text-sm text-gray-300">{exc.sentence}</p>
+          {/* Anchor Quotes */}
+          {concept.anchors.length > 0 && (
+            <div>
+              <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Source</div>
+              {concept.anchors.map((anchor, i) => (
+                <div key={i} className="text-xs text-gray-400 italic pl-2 border-l-2 border-gray-600/50 mb-1">
+                  "{anchor.quote}"
+                  <span className="text-[10px] text-gray-600 ml-1 not-italic">
+                    p.{anchor.locator.page}
+                  </span>
                 </div>
               ))}
             </div>
           )}
 
-          {/* Source Info */}
-          <div className="text-xs text-gray-500">
-            <span>Page {item.source.page}</span>
-            {item.source.paragraph_index !== null && (
-              <span> · Paragraph {item.source.paragraph_index + 1}</span>
-            )}
-          </div>
-
-          {/* Attachment Buttons */}
-          {hasAttachments && onRequestAttachment && (
-            <AttachmentButtons
-              available={item.attachments_available}
-              onRequest={(type) => onRequestAttachment(item, type)}
-            />
-          )}
-        </div>
-      )}
-
-      {/* Expand Indicator */}
-      {(hasExceptions || hasAttachments) && !isExpanded && (
-        <div className="absolute bottom-1 right-2 text-xs text-gray-500">
-          ▼
+          {/* Lazy-loaded expansions */}
+          <ExpansionContent data={expansion} loading={expandLoading} error={expandError} />
         </div>
       )}
     </div>
@@ -242,23 +281,23 @@ export const CoreCard = memo(function CoreCard({
 // ============================================================================
 
 interface CoreCardListProps {
-  items: CoreItem[];
-  learningStates?: Record<string, LearningState>;
+  concepts: CoreConcept[];
+  docId: string;
+  windowText: string;
   highlightedId?: string | null;
-  onSelectItem?: (item: CoreItem) => void;
-  onRequestAttachment?: (item: CoreItem, type: 'procedure' | 'example' | 'visual') => void;
+  onSelectConcept?: (concept: CoreConcept) => void;
   emptyMessage?: string;
 }
 
 export const CoreCardList = memo(function CoreCardList({
-  items,
-  learningStates = {},
+  concepts,
+  docId,
+  windowText,
   highlightedId,
-  onSelectItem,
-  onRequestAttachment,
+  onSelectConcept,
   emptyMessage = 'No concepts extracted for this view.',
 }: CoreCardListProps) {
-  if (items.length === 0) {
+  if (concepts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <div className="text-4xl mb-3">⚡</div>
@@ -269,14 +308,14 @@ export const CoreCardList = memo(function CoreCardList({
 
   return (
     <div className="space-y-2">
-      {items.map((item) => (
+      {concepts.map((concept) => (
         <CoreCard
-          key={item.id}
-          item={item}
-          learningState={learningStates[item.id]}
-          isHighlighted={item.id === highlightedId}
-          onSelect={onSelectItem}
-          onRequestAttachment={onRequestAttachment}
+          key={concept.id}
+          concept={concept}
+          docId={docId}
+          windowText={windowText}
+          isHighlighted={concept.id === highlightedId}
+          onSelect={onSelectConcept}
         />
       ))}
     </div>
@@ -288,25 +327,16 @@ export const CoreCardList = memo(function CoreCardList({
 // ============================================================================
 
 interface CoreStatsProps {
-  stats: {
-    input_paragraphs: number;
-    items_returned: number;
-    sentences_total: number;
-  };
+  conceptCount: number;
+  maxConcepts: number;
   extractionTimeMs?: number;
 }
 
-export const CoreStats = memo(function CoreStats({ stats, extractionTimeMs }: CoreStatsProps) {
+export const CoreStats = memo(function CoreStats({ conceptCount, maxConcepts, extractionTimeMs }: CoreStatsProps) {
   return (
     <div className="flex items-center gap-4 px-3 py-2 bg-gray-800/30 rounded-lg text-xs text-gray-400">
       <span>
-        <strong className="text-gray-300">{stats.items_returned}</strong>/{CORE_LIMITS.MAX_ITEMS} items
-      </span>
-      <span>
-        <strong className="text-gray-300">{stats.sentences_total}</strong>/{CORE_LIMITS.MAX_SENTENCES_TOTAL} sentences
-      </span>
-      <span>
-        <strong className="text-gray-300">{stats.input_paragraphs}</strong> paragraphs
+        <strong className="text-gray-300">{conceptCount}</strong>/{maxConcepts} concepts
       </span>
       {extractionTimeMs !== undefined && (
         <span className="ml-auto text-gray-500">

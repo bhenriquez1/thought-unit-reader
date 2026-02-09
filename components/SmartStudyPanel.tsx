@@ -3,7 +3,8 @@
 import React, { useState, useMemo, useCallback, memo } from 'react';
 import type { CoreItemWithLearning, Trigger, LearningState } from '../lib/core/types';
 import { TRIGGER_LABELS } from '../lib/core/types';
-import { CoreCard, CoreCardList } from './CoreCard';
+// CoreCard has been updated to use new CoreConcept schema;
+// SmartStudyPanel uses legacy CoreItemWithLearning — render inline cards instead
 import ExamMode, { ExamResultsPanel } from './ExamMode';
 import AnalyticsDashboard from './AnalyticsDashboard';
 import {
@@ -137,13 +138,17 @@ const StudyQueueDisplay = memo(function StudyQueueDisplay({
         ) : (
           <div className="space-y-2">
             {sortedItems.map((item) => (
-              <CoreCard
+              <div
                 key={item.id}
-                item={item}
-                learningState={item.learning.state}
-                confidence={item.learning.combinedConfidence}
-                onSelect={() => onItemSelect?.(item)}
-              />
+                className="p-3 bg-gray-800/50 border border-gray-700/50 rounded-lg cursor-pointer hover:bg-gray-800/70"
+                onClick={() => onItemSelect?.(item)}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] text-gray-400 uppercase">{item.learning.state}</span>
+                  <span className="text-[10px] text-gray-500">{Math.round(item.learning.combinedConfidence * 100)}%</span>
+                </div>
+                <p className="text-sm text-gray-200">{item.core_sentence}</p>
+              </div>
             ))}
           </div>
         )}
