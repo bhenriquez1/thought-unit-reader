@@ -288,15 +288,15 @@ export async function parseBookWithChapters(
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error("📚 Critical parsing error:", errorMessage, "File:", file.name);
     
-    // ✅ Enhanced error response with more context
+    // ✅ Enhanced error response - use neutral title to avoid "Parsing Error" propagation
     return {
-      parsedUnits: [["Error: " + errorMessage]],
-      chapters: [{ 
-        title: "Parsing Error", 
-        content: `Failed to parse ${file.name}: ${errorMessage}`, 
-        page: 1 
+      parsedUnits: [["Unable to extract text from this document."]],
+      chapters: [{
+        title: file.name.replace(/\.pdf$/i, '') || "Document",
+        content: `Text extraction incomplete. This may be a scanned PDF or protected document.`,
+        page: 1
       }],
-      original: `Error parsing ${file.name}: ${errorMessage}`,
+      original: `Document loaded. Some features may be limited.`,
     };
   }
 }

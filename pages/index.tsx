@@ -95,6 +95,15 @@ function truncate(s: string, n: number) {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
+/** Sanitize document title - filter out error-like titles */
+function sanitizeDocTitle(title: string | undefined, fallback: string = "Document"): string {
+  if (!title) return fallback;
+  // Filter out error-related titles
+  const errorPatterns = /parsing error|error:|failed to|unable to|exception/i;
+  if (errorPatterns.test(title)) return fallback;
+  return title;
+}
+
 /** Convert whatever the parser returns → { text: string }[] */
 function normalizeParsedUnits(raw: unknown): ThoughtUnit[] {
   if (!Array.isArray(raw)) return [];
@@ -1951,7 +1960,7 @@ export default function ThoughtUnitReader() {
           <PureNoteLabView
             documentId={bookId}
             userId={USER_ID}
-            documentTitle={tableOfContents[0]?.title || "Document"}
+            documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
             chapters={chaptersForNotelab}
             onNavigateToPage={(pageIndex) => {
               syncToPage(pageIndex);
@@ -1970,7 +1979,7 @@ export default function ThoughtUnitReader() {
         <div className="h-full" data-testid="toc-view-container">
           <PureTocView
             documentId={bookId}
-            documentName={tableOfContents[0]?.title || uploadedFile?.name || "Document"}
+            documentName={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
             currentPage={currentPage}
             pdfPageCount={pdfPageCount}
             onOpenInReader={(pageNumber) => {
@@ -1992,7 +2001,7 @@ export default function ThoughtUnitReader() {
         <div className="h-full" data-testid="study-view-container">
           <MemoCardsStudyPanel
             documentId={bookId}
-            documentTitle={tableOfContents[0]?.title || uploadedFile?.name || "Document"}
+            documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
             onNavigateToPage={(pageIdx) => {
               syncToPage(pageIdx + 1);
               // Navigate to Surgeon View to see context
@@ -2019,7 +2028,7 @@ export default function ThoughtUnitReader() {
         <div className="h-full" data-testid="syllabus-view-container">
           <SyllabusUploadPanel
             documentId={bookId}
-            documentTitle={tableOfContents[0]?.title || uploadedFile?.name || "Document"}
+            documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
             chapters={chaptersForSyllabus}
             pdfPageCount={pdfPageCount}
             onJumpToPage={(pageIndex) => {

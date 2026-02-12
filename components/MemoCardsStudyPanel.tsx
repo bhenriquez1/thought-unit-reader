@@ -202,7 +202,7 @@ export default function MemoCardsStudyPanel({
             <p className="text-gray-400 mb-6">
               {totalCardsAvailable > 0
                 ? 'Review your flashcards with spaced repetition'
-                : 'Create highlights in Surgeon View to build your deck'}
+                : 'No cards yet. Scroll or select text to generate flashcards.'}
             </p>
 
             {/* Stats grid */}
