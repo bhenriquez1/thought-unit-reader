@@ -1887,32 +1887,25 @@ export default function ThoughtUnitReader() {
       const currentHeadings = tableOfContents
         .filter(entry => entry.pageNumber === currentPage)
         .map(entry => entry.title);
-      
+
       // Find current chapter
       const currentChapter = tableOfContents.find((entry, idx) => {
         const nextEntry = tableOfContents[idx + 1];
-        return entry.pageNumber <= currentPage && 
+        return entry.pageNumber <= currentPage &&
           (!nextEntry || nextEntry.pageNumber > currentPage);
       });
-      
+
       return (
         <div className="h-full" data-testid="surgeon-view-container">
           <ErrorBoundary
-            fallback={
-              <div className="h-full flex items-center justify-center bg-gray-900 text-white">
-                <div className="text-center p-6">
-                  <div className="text-6xl mb-4">⚠️</div>
-                  <h2 className="text-xl font-bold mb-2">Surgeon View Error</h2>
-                  <p className="text-gray-400 mb-4">Something went wrong loading this view.</p>
-                  <button
-                    onClick={() => setViewMode("original")}
-                    className="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg"
-                  >
-                    Return to Reader
-                  </button>
-                </div>
-              </div>
-            }
+            onError={(error, errorInfo) => {
+              console.error('🔬 Surgeon View Error:', {
+                message: error.message,
+                stack: error.stack,
+                componentStack: errorInfo.componentStack,
+                props: { documentId: bookId, currentPage, pdfPageCount, hasFileUrl: !!fileUrl }
+              });
+            }}
           >
             <PureSurgeonView
               fileUrl={fileUrl}
@@ -1922,7 +1915,7 @@ export default function ThoughtUnitReader() {
               pdfPageCount={pdfPageCount}
               thoughtUnits={thoughtUnits ?? []}
               currentThoughtUnit={currentThoughtUnit}
-              chapterId={currentChapter?.title || `chapter-${currentPage}`}
+              chapterId={sanitizeDocTitle(currentChapter?.title, `chapter-${currentPage}`)}
               headings={currentHeadings ?? []}
               pageText={thoughtUnits?.[currentThoughtUnit - 1]?.text || ''}
               onPageChange={(p) => syncToPage(p)}
@@ -1946,29 +1939,33 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Show loading state during PDF parsing for NoteLab view
     // ✅ NoteLab View - PURE: NoteLab workspace only (no shared PDF)
     if (viewMode === "notelab") {
       const chaptersForNotelab = tableOfContents.map((entry, idx) => ({
         id: `chapter_${idx}`,
-        title: entry.title,
+        title: sanitizeDocTitle(entry.title, `Chapter ${idx + 1}`),
         pageNumber: entry.pageNumber
       }));
-      
+
       return (
         <div className="h-full" data-testid="notelab-view-container">
-          <PureNoteLabView
-            documentId={bookId}
-            userId={USER_ID}
-            documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
-            chapters={chaptersForNotelab}
-            onNavigateToPage={(pageIndex) => {
-              syncToPage(pageIndex);
-              // Navigate to Surgeon View to see context
-              setViewMode("hybrid");
+          <ErrorBoundary
+            onError={(error, errorInfo) => {
+              console.error('📝 NoteLab Error:', { message: error.message, stack: error.stack });
             }}
-            onStartStudy={() => setViewMode("study")}
-          />
+          >
+            <PureNoteLabView
+              documentId={bookId}
+              userId={USER_ID}
+              documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
+              chapters={chaptersForNotelab}
+              onNavigateToPage={(pageIndex) => {
+                syncToPage(pageIndex);
+                setViewMode("hybrid");
+              }}
+              onStartStudy={() => setViewMode("study")}
+            />
+          </ErrorBoundary>
         </div>
       );
     }
@@ -1977,20 +1974,26 @@ export default function ThoughtUnitReader() {
     if (viewMode === "toc") {
       return (
         <div className="h-full" data-testid="toc-view-container">
-          <PureTocView
-            documentId={bookId}
-            documentName={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
-            currentPage={currentPage}
-            pdfPageCount={pdfPageCount}
-            onOpenInReader={(pageNumber) => {
-              syncToPage(pageNumber);
-              setViewMode("original");
+          <ErrorBoundary
+            onError={(error, errorInfo) => {
+              console.error('📑 TOC Error:', { message: error.message, stack: error.stack });
             }}
-            onOpenInSurgeon={(pageNumber) => {
-              syncToPage(pageNumber);
-              setViewMode("hybrid");
-            }}
-          />
+          >
+            <PureTocView
+              documentId={bookId}
+              documentName={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
+              currentPage={currentPage}
+              pdfPageCount={pdfPageCount}
+              onOpenInReader={(pageNumber) => {
+                syncToPage(pageNumber);
+                setViewMode("original");
+              }}
+              onOpenInSurgeon={(pageNumber) => {
+                syncToPage(pageNumber);
+                setViewMode("hybrid");
+              }}
+            />
+          </ErrorBoundary>
         </div>
       );
     }
@@ -1999,16 +2002,21 @@ export default function ThoughtUnitReader() {
     if (viewMode === "study") {
       return (
         <div className="h-full" data-testid="study-view-container">
-          <MemoCardsStudyPanel
-            documentId={bookId}
-            documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
-            onNavigateToPage={(pageIdx) => {
-              syncToPage(pageIdx + 1);
-              // Navigate to Surgeon View to see context
-              setViewMode("hybrid");
+          <ErrorBoundary
+            onError={(error, errorInfo) => {
+              console.error('🧠 Study Error:', { message: error.message, stack: error.stack });
             }}
-            onClose={() => setViewMode("original")}
-          />
+          >
+            <MemoCardsStudyPanel
+              documentId={bookId}
+              documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
+              onNavigateToPage={(pageIdx) => {
+                syncToPage(pageIdx + 1);
+                setViewMode("hybrid");
+              }}
+              onClose={() => setViewMode("original")}
+            />
+          </ErrorBoundary>
         </div>
       );
     }
@@ -2017,7 +2025,7 @@ export default function ThoughtUnitReader() {
     if (viewMode === "syllabus") {
       const chaptersForSyllabus = tableOfContents.map((toc, idx) => ({
         id: `chapter_${idx}`,
-        title: (toc as any).title || `Chapter ${idx + 1}`,
+        title: sanitizeDocTitle((toc as any).title, `Chapter ${idx + 1}`),
         pageNumber: (toc as any).pageNumber || (toc as any).page || idx + 1,
         endPage: tableOfContents[idx + 1]
           ? ((tableOfContents[idx + 1] as any).pageNumber || (tableOfContents[idx + 1] as any).page || idx + 2) - 1
@@ -2026,17 +2034,23 @@ export default function ThoughtUnitReader() {
 
       return (
         <div className="h-full" data-testid="syllabus-view-container">
-          <SyllabusUploadPanel
-            documentId={bookId}
-            documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
-            chapters={chaptersForSyllabus}
-            pdfPageCount={pdfPageCount}
-            onJumpToPage={(pageIndex) => {
-              syncToPage(pageIndex);
-              setViewMode("original");
+          <ErrorBoundary
+            onError={(error, errorInfo) => {
+              console.error('🎯 Course Intelligence Error:', { message: error.message, stack: error.stack });
             }}
-            onStartStudySession={() => setViewMode("study")}
-          />
+          >
+            <SyllabusUploadPanel
+              documentId={bookId}
+              documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
+              chapters={chaptersForSyllabus}
+              pdfPageCount={pdfPageCount}
+              onJumpToPage={(pageIndex) => {
+                syncToPage(pageIndex);
+                setViewMode("original");
+              }}
+              onStartStudySession={() => setViewMode("study")}
+            />
+          </ErrorBoundary>
         </div>
       );
     }
