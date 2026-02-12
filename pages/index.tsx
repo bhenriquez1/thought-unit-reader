@@ -1886,14 +1886,25 @@ export default function ThoughtUnitReader() {
       // Get current page headings for Surgeon View
       const currentHeadings = tableOfContents
         .filter(entry => entry.pageNumber === currentPage)
-        .map(entry => entry.title);
+        .map(entry => sanitizeDocTitle(entry.title, ''));
 
-      // Find current chapter
+      // Find current chapter - with fallback to page range if no TOC
       const currentChapter = tableOfContents.find((entry, idx) => {
         const nextEntry = tableOfContents[idx + 1];
         return entry.pageNumber <= currentPage &&
           (!nextEntry || nextEntry.pageNumber > currentPage);
       });
+
+      // Generate chapter ID: use TOC title, or fallback to page range
+      const getChapterIdForPage = (page: number): string => {
+        if (currentChapter?.title) {
+          return sanitizeDocTitle(currentChapter.title, `Page ${page}`);
+        }
+        // Fallback: page range (every 10 pages)
+        const rangeStart = Math.floor((page - 1) / 10) * 10 + 1;
+        const rangeEnd = Math.min(rangeStart + 9, pdfPageCount || page);
+        return `Pages ${rangeStart}–${rangeEnd}`;
+      };
 
       return (
         <div className="h-full" data-testid="surgeon-view-container">
@@ -1915,8 +1926,8 @@ export default function ThoughtUnitReader() {
               pdfPageCount={pdfPageCount}
               thoughtUnits={thoughtUnits ?? []}
               currentThoughtUnit={currentThoughtUnit}
-              chapterId={sanitizeDocTitle(currentChapter?.title, `chapter-${currentPage}`)}
-              headings={currentHeadings ?? []}
+              chapterId={getChapterIdForPage(currentPage)}
+              headings={currentHeadings.filter(Boolean)}
               pageText={thoughtUnits?.[currentThoughtUnit - 1]?.text || ''}
               onPageChange={(p) => syncToPage(p)}
               onPageCount={(count) => setPdfPageCount(count)}
@@ -1941,11 +1952,29 @@ export default function ThoughtUnitReader() {
 
     // ✅ NoteLab View - PURE: NoteLab workspace only (no shared PDF)
     if (viewMode === "notelab") {
-      const chaptersForNotelab = tableOfContents.map((entry, idx) => ({
-        id: `chapter_${idx}`,
-        title: sanitizeDocTitle(entry.title, `Chapter ${idx + 1}`),
-        pageNumber: entry.pageNumber
-      }));
+      // Generate chapters from TOC, or fallback to page ranges if TOC is empty
+      let chaptersForNotelab: Array<{ id: string; title: string; pageNumber: number }> = [];
+
+      if (tableOfContents.length > 0) {
+        chaptersForNotelab = tableOfContents.map((entry, idx) => ({
+          id: `chapter_${idx}`,
+          title: sanitizeDocTitle(entry.title, `Chapter ${idx + 1}`),
+          pageNumber: entry.pageNumber
+        }));
+      } else if (pdfPageCount > 0) {
+        // Fallback: create page-range chapters (every 10 pages)
+        const rangeSize = 10;
+        const numRanges = Math.ceil(pdfPageCount / rangeSize);
+        for (let i = 0; i < numRanges; i++) {
+          const startPage = i * rangeSize + 1;
+          const endPage = Math.min((i + 1) * rangeSize, pdfPageCount);
+          chaptersForNotelab.push({
+            id: `pages_${startPage}_${endPage}`,
+            title: `Pages ${startPage}–${endPage}`,
+            pageNumber: startPage
+          });
+        }
+      }
 
       return (
         <div className="h-full" data-testid="notelab-view-container">

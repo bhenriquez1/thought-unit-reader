@@ -89,16 +89,34 @@ export default function PureSurgeonView({
   React.useEffect(() => { setIsClient(true); }, []);
   if (!isClient) return null;
 
-  // ---- Stores ----
+  // ---- Sanitize inputs to prevent "Parsing Error" propagation ----
+  const safeChapterId = useMemo(() => {
+    if (!chapterId) return `page-${currentPage}`;
+    if (/parsing error|error:/i.test(chapterId)) return `page-${currentPage}`;
+    return chapterId;
+  }, [chapterId, currentPage]);
+
+  const safeDocumentId = documentId || 'unknown-doc';
+  const safeUserId = userId || 'guest';
+
+  // ---- Stores (with defensive access) ----
+  let annotationStore;
+  try {
+    annotationStore = useAnnotationStore();
+  } catch (e) {
+    console.error('Failed to access annotation store:', e);
+    annotationStore = null;
+  }
+
   const {
-    annotations,
-    setActiveDocument,
-    setActivePage,
-    addAnnotation,
-    getAnnotationsForPage,
-    getHighlightsOnly,
-    getMistakes
-  } = useAnnotationStore();
+    annotations = {},
+    setActiveDocument = () => {},
+    setActivePage = () => {},
+    addAnnotation = async () => '',
+    getAnnotationsForPage = () => [],
+    getHighlightsOnly = () => [],
+    getMistakes = () => []
+  } = annotationStore || {};
 
   const {
     currentQuiz,
@@ -151,11 +169,21 @@ export default function PureSurgeonView({
 
   // ---- Initialize Stores ----
   useEffect(() => {
-    setActiveDocument(documentId, userId);
-  }, [documentId, userId, setActiveDocument]);
+    if (safeDocumentId && safeUserId) {
+      try {
+        setActiveDocument(safeDocumentId, safeUserId);
+      } catch (e) {
+        console.error('Failed to set active document:', e);
+      }
+    }
+  }, [safeDocumentId, safeUserId, setActiveDocument]);
 
   useEffect(() => {
-    setActivePage(currentPage - 1);
+    try {
+      setActivePage(Math.max(0, currentPage - 1));
+    } catch (e) {
+      console.error('Failed to set active page:', e);
+    }
   }, [currentPage, setActivePage]);
 
   // ---- Page Change: Auto PDRM Generation (incremental) ----
@@ -237,54 +265,61 @@ export default function PureSurgeonView({
   const handleCreateHighlight = useCallback(async () => {
     if (!selectedText) return;
 
-    // Generate highlight ID
-    const highlightId = `highlight_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    // Legacy classification for annotation color
-    const classification = classifyHighlight(selectedText, {
-      headingText: headings[0],
-      chapterTitle: chapterId,
-      pageIndex: currentPage - 1
-    });
+    try {
+      // Generate highlight ID
+      const highlightId = `highlight_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // Create annotation (highlight)
-    await addAnnotation({
-      documentId,
-      chapterId,
-      pageIndex: currentPage - 1,
-      thoughtUnitId: `tu_${currentThoughtUnit}`,
-      selectedText,
-      anchor: { type: 'textRange', start: 0, end: selectedText.length },
-      pdrm: classification.pdrm,
-      color: getLegacyColor(classification.type),
-      tags: [`highlight`, `pdrm-${autoMode ? 'auto' : 'manual'}`],
-      userId
-    });
+      // Legacy classification for annotation color
+      const classification = classifyHighlight(selectedText, {
+        headingText: headings?.[0] || '',
+        chapterTitle: safeChapterId,
+        pageIndex: currentPage - 1
+      });
 
-    // === PDRM CREATION (based on mode) ===
-    const evidence = {
-      quote: selectedText.length > 100 ? selectedText.substring(0, 97) + '...' : selectedText,
-      pageNumber: currentPage,
-      documentId,
-      highlightId
-    };
+      // Create annotation (highlight) - persists to store immediately
+      await addAnnotation({
+        documentId: safeDocumentId,
+        chapterId: safeChapterId,
+        pageIndex: currentPage - 1,
+        thoughtUnitId: `tu_${currentThoughtUnit}`,
+        selectedText,
+        anchor: { type: 'textRange', start: 0, end: selectedText.length },
+        pdrm: classification.pdrm || {},
+        color: getLegacyColor(classification.type),
+        tags: ['highlight', `pdrm-${autoMode ? 'auto' : 'manual'}`],
+        userId: safeUserId
+      });
 
-    if (autoMode) {
-      // AUTO MODE: Immediate PDRM extraction and creation
-      await createAutoHighlightPDRM(evidence, selectedText);
-    } else {
-      // MANUAL MODE: Create draft with empty fields
-      const draftId = createManualHighlightPDRM(evidence);
-      // Open edit panel for the draft
-      setEditingDraftId(draftId);
-      setDraftFields({ pattern: '', decisionRule: '', risk: '', mnemonic: '' });
-      setActiveTab('highlights');
+      // === PDRM CREATION (based on mode) ===
+      const evidence = {
+        quote: selectedText.length > 100 ? selectedText.substring(0, 97) + '...' : selectedText,
+        pageNumber: currentPage,
+        documentId: safeDocumentId,
+        highlightId
+      };
+
+      if (autoMode) {
+        // AUTO MODE: Immediate PDRM extraction and creation
+        await createAutoHighlightPDRM(evidence, selectedText);
+      } else {
+        // MANUAL MODE: Create draft with empty fields
+        const draftId = createManualHighlightPDRM(evidence);
+        // Open edit panel for the draft
+        setEditingDraftId(draftId);
+        setDraftFields({ pattern: '', decisionRule: '', risk: '', mnemonic: '' });
+        setActiveTab('highlights');
+      }
+
+      setShowHighlightMenu(false);
+      setSelectedText('');
+      console.log(`✅ Highlight created (${autoMode ? 'Auto' : 'Manual'} mode) in chapter: ${safeChapterId}`);
+    } catch (error) {
+      console.error('❌ Failed to create highlight:', error);
+      // Show error but don't crash
+      setShowHighlightMenu(false);
+      setSelectedText('');
     }
-
-    setShowHighlightMenu(false);
-    setSelectedText('');
-    console.log(`✅ Highlight created (${autoMode ? 'Auto' : 'Manual'} mode)`);
-  }, [selectedText, documentId, chapterId, currentPage, currentThoughtUnit, headings, userId, autoMode, addAnnotation]);
+  }, [selectedText, safeDocumentId, safeChapterId, currentPage, currentThoughtUnit, headings, safeUserId, autoMode, addAnnotation]);
 
   // Save draft PDRM (Manual mode)
   const handleSaveDraft = useCallback(() => {
@@ -508,13 +543,15 @@ export default function PureSurgeonView({
             {/* Core Stream - main content area */}
             <div className={`${layout.showSidebar ? 'flex-1' : 'w-full'} overflow-auto bg-gray-900`}>
               <CorePanel
-                documentId={documentId}
+                documentId={safeDocumentId}
                 pageNumber={currentPage}
                 pageText={pageText || ''}
-                chapter={chapterId}
+                chapter={safeChapterId}
                 onConceptSelect={(concept) => {
-                  setSelectedText(concept.oneLiner);
-                  setShowHighlightMenu(true);
+                  if (concept?.oneLiner) {
+                    setSelectedText(concept.oneLiner);
+                    setShowHighlightMenu(true);
+                  }
                 }}
               />
             </div>

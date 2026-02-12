@@ -430,11 +430,11 @@ export default function PureNoteLabView({
           {filteredAnnotations.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-500">
               <div className="text-6xl mb-4">📭</div>
-              <p>No items found</p>
-              <p className="text-sm mt-2">
-                {activeFilter === 'all' 
-                  ? 'Start highlighting text in Surgeon View to build your NoteLab'
-                  : `No ${activeFilter} items yet`
+              <p className="text-lg font-medium">No items yet</p>
+              <p className="text-sm mt-2 text-center max-w-xs">
+                {activeFilter === 'all'
+                  ? 'Highlight text in Surgeon View to build your NoteLab automatically.'
+                  : `No ${activeFilter} items yet. Create them in Surgeon View.`
                 }
               </p>
             </div>
