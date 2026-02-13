@@ -37,6 +37,15 @@ import PureSurgeonView from "@/components/PureSurgeonView";
 import PureNoteLabView from "@/components/PureNoteLabView";
 import ErrorBoundary from "@/components/ErrorBoundary";
 
+// Cognitive Engine Components (Surgeon View 2.0)
+import {
+  ClinicalInsightPanel,
+  ClinicalIQDashboard,
+  ExpertModePanel,
+  CognitiveTrainingEngine,
+  useCognitiveEngineStore,
+} from "@/components/cognitiveEngine";
+
 // Store imports
 import { useTocStore } from "@/lib/stores/tocStore";
 import { useZoomStore } from "@/lib/stores/zoomStore";
@@ -278,7 +287,7 @@ export default function ThoughtUnitReader() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const [viewMode, setViewMode] =
-    useState<"original" | "hybrid" | "pattern" | "notelab" | "toc" | "study" | "syllabus">("original");
+    useState<"original" | "hybrid" | "pattern" | "notelab" | "toc" | "study" | "syllabus" | "expert">("original");
 
   // Global Zoom Store
   const { zoom, zoomIn, zoomOut, resetZoom, getZoomPercent, canZoomIn, canZoomOut } = useZoomStore();
@@ -332,6 +341,27 @@ export default function ThoughtUnitReader() {
     getHighlightsOnly,
     getMistakes
   } = useAnnotationStore();
+
+  /* =========================================================================
+     🔹 Cognitive Engine Store (Surgeon View 2.0)
+  ========================================================================= */
+  const {
+    insights,
+    decisionRules,
+    clinicalIQ,
+    expertMode,
+    datMode,
+    insightPanel,
+    openInsightPanel,
+    closeInsightPanel,
+    toggleExpertMode,
+    toggleDATMode,
+    setExpertMode,
+    getActiveRules,
+  } = useCognitiveEngineStore();
+
+  // State for insight panel
+  const [selectedInsight, setSelectedInsight] = useState<any>(null);
 
   /* =========================================================================
      🔹 Surgeon View PDRM State
@@ -2090,6 +2120,90 @@ export default function ThoughtUnitReader() {
       );
     }
 
+    // ✅ EXPERT Mode - Pattern Recognition Training (Cognitive Engine)
+    if (viewMode === "expert") {
+      // Convert insights to array for ExpertModePanel
+      const insightsList = Object.values(insights);
+      const rulesList = Object.values(decisionRules);
+
+      return (
+        <div className="h-full flex" data-testid="expert-view-container">
+          <ErrorBoundary
+            onError={(error, errorInfo) => {
+              console.error('🎯 Expert Mode Error:', { message: error.message, stack: error.stack });
+            }}
+          >
+            {/* Left side: PDF (if loaded) */}
+            {fileUrl && (
+              <div className="flex-1 h-full">
+                <PureReaderView
+                  fileUrl={fileUrl}
+                  currentPage={currentPage}
+                  pdfPageCount={pdfPageCount}
+                  onPageChange={(p) => syncToPage(p)}
+                  onPageCount={(count) => setPdfPageCount(count)}
+                  onTextSelect={(t) => sel.setSelectionText(t)}
+                  onOutline={handleOutlineExtraction}
+                  fontSize={fontSize}
+                  fontFamily={fontFamily}
+                />
+              </div>
+            )}
+
+            {/* Right side: Expert Mode Panel */}
+            <div className="w-96 h-full border-l border-gray-700">
+              <ExpertModePanel
+                config={expertMode}
+                clusters={[]}
+                pearls={[]}
+                insights={insightsList}
+                decisionRules={rulesList}
+                onInsightClick={(insight) => {
+                  setSelectedInsight(insight);
+                  openInsightPanel(insight);
+                }}
+                onRuleClick={(rule) => {
+                  console.log('Rule clicked:', rule);
+                }}
+                onConfigChange={(config) => setExpertMode(config)}
+              />
+            </div>
+
+            {/* Clinical IQ Dashboard (floating) */}
+            <div className="fixed bottom-4 left-4 w-80 z-40">
+              <ClinicalIQDashboard
+                profile={clinicalIQ}
+                onWeakClusterClick={(cluster) => {
+                  console.log('Weak cluster clicked:', cluster);
+                }}
+              />
+            </div>
+
+            {/* Insight Panel (when selected) */}
+            {insightPanel.isOpen && insightPanel.selectedInsight && (
+              <ClinicalInsightPanel
+                insight={insightPanel.selectedInsight}
+                onClose={closeInsightPanel}
+                onSendToNoteLab={(insight) => {
+                  console.log('Send to NoteLab:', insight);
+                  closeInsightPanel();
+                }}
+                onTrainInStudyMode={(insight) => {
+                  console.log('Train in Study Mode:', insight);
+                  setViewMode("study");
+                }}
+                onJumpToSource={() => {
+                  if (insightPanel.selectedInsight?.sourceAnchor) {
+                    syncToPage(insightPanel.selectedInsight.sourceAnchor.pageIndex + 1);
+                  }
+                }}
+              />
+            )}
+          </ErrorBoundary>
+        </div>
+      );
+    }
+
     // ✅ READER View - PURE: PDF ONLY (no thought units, no TOC, no annotations)
     // This is the DEFAULT view and handles viewMode === "original"
     if (viewMode === "original") {
@@ -2214,12 +2328,23 @@ export default function ThoughtUnitReader() {
             onClick={() => setViewMode("syllabus")}
             data-testid="nav-syllabus"
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              viewMode === "syllabus" 
-                ? "bg-teal-500 text-white shadow-lg" 
+              viewMode === "syllabus"
+                ? "bg-teal-500 text-white shadow-lg"
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
           >
             🎯 Course Intelligence
+          </button>
+          <button
+            onClick={() => setViewMode("expert")}
+            data-testid="nav-expert"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              viewMode === "expert"
+                ? "bg-gray-900 text-purple-400 shadow-lg ring-2 ring-purple-500"
+                : "text-gray-300 hover:text-white hover:bg-gray-700"
+            }`}
+          >
+            🎯 Expert
           </button>
           {/* PDRM tab removed - functionality is now in Surgeon View's PDRM tab */}
         </div>
