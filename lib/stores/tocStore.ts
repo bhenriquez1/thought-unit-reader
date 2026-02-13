@@ -40,7 +40,7 @@ interface TocState {
   
   // TOC Generation helpers
   generateFromOutline: (documentId: string, documentName: string, outline: any[]) => TocItem[];
-  generateFromHeuristic: (documentId: string, documentName: string, pages: string[]) => TocItem[];
+  generateFromHeuristic: (documentId: string, documentName: string, pages: string[], pageCount?: number) => TocItem[];
 }
 
 // Helper to generate unique IDs

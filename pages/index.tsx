@@ -1988,11 +1988,17 @@ export default function ThoughtUnitReader() {
               userId={USER_ID}
               documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
               chapters={chaptersForNotelab}
+              currentPage={currentPage}
               onNavigateToPage={(pageIndex) => {
                 syncToPage(pageIndex);
                 setViewMode("hybrid");
               }}
               onStartStudy={() => setViewMode("study")}
+              getPageText={async (pageNumber: number) => {
+                // Find the thought unit for this page
+                const unitIndex = pageToUnit(pageNumber, pdfPageCount, thoughtUnits.length);
+                return thoughtUnits?.[unitIndex - 1]?.text || '';
+              }}
             />
           </ErrorBoundary>
         </div>
