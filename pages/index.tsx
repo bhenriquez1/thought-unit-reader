@@ -2484,20 +2484,20 @@ export default function ThoughtUnitReader() {
           📚 Library
         </button>
 
-        {/* Chapter Absorption Pipeline Control */}
-        {smartTOC.length > 0 && (
+        {/* Chapter Absorption Pipeline Control (feature-flagged) */}
+        {isFeatureEnabled('ENABLE_CHAPTER_ABSORPTION') && smartTOC.length > 0 && (
           <div className="flex items-center gap-2">
             <button
               onClick={() => setAbsorptionState(prev => ({ ...prev, showPanel: !prev.showPanel }))}
               className={`text-xs px-3 py-1 rounded transition-all ${
-                absorptionState.showPanel 
-                  ? "bg-purple-500 text-white" 
+                absorptionState.showPanel
+                  ? "bg-purple-500 text-white"
                   : "bg-gray-700 hover:bg-gray-600"
               }`}
             >
               🧠 Chapter Absorption
             </button>
-            
+
             {!absorptionState.isRunning ? (
               <button
                 onClick={startChapterAbsorption}
@@ -2530,13 +2530,13 @@ export default function ThoughtUnitReader() {
 
         {/* Floating Action Buttons - Bottom Right Stack */}
         <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-3">
-          {/* Chapter Absorption FAB */}
-          {smartTOC.length > 0 && !absorptionState.showPanel && (
+          {/* Chapter Absorption FAB (feature-flagged) */}
+          {isFeatureEnabled('ENABLE_CHAPTER_ABSORPTION') && smartTOC.length > 0 && !absorptionState.showPanel && (
             <button
               onClick={() => setAbsorptionState(prev => ({ ...prev, showPanel: true }))}
               className={`p-3 rounded-full shadow-lg backdrop-blur-sm border transition-all transform hover:scale-105 ${
-                absorptionState.isRunning 
-                  ? "bg-gradient-to-r from-orange-600 to-red-600 border-orange-400 animate-pulse" 
+                absorptionState.isRunning
+                  ? "bg-gradient-to-r from-orange-600 to-red-600 border-orange-400 animate-pulse"
                   : "bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 border-purple-400"
               } text-white`}
               title="Chapter Absorption Pipeline"
@@ -2680,8 +2680,8 @@ export default function ThoughtUnitReader() {
         </div>
       )}
 
-      {/* Chapter Absorption Pipeline Panel */}
-      {absorptionState.showPanel && (
+      {/* Chapter Absorption Pipeline Panel (feature-flagged) */}
+      {isFeatureEnabled('ENABLE_CHAPTER_ABSORPTION') && absorptionState.showPanel && (
         <div className="fixed top-0 right-0 w-full sm:w-[520px] h-full bg-gray-900/95 backdrop-blur-md text-white z-50 flex flex-col shadow-2xl border-l border-gray-700">
           <div className="flex justify-between items-center p-4 border-b border-gray-700">
             <div className="flex items-center gap-3">

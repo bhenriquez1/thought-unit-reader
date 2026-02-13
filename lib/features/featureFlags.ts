@@ -47,6 +47,9 @@ interface FeatureFlags {
   ENABLE_READER_TYPE_SELECTOR: FeatureConfig;
   DISABLE_ORIGINAL_PDF_VIEW: FeatureConfig;
   ENABLE_NOTELAB_PROTOTYPE_MODE: FeatureConfig;
+
+  // Paused features
+  ENABLE_CHAPTER_ABSORPTION: FeatureConfig;
 }
 
 // Default feature configuration
@@ -196,6 +199,12 @@ const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   DISABLE_ORIGINAL_PDF_VIEW: {
     enabled: true,
     description: 'Temporarily disable original PDF view due to loading issues - routes users to working readers'
+  },
+
+  // Paused features
+  ENABLE_CHAPTER_ABSORPTION: {
+    enabled: false,
+    description: 'Enable Chapter Absorption pipeline (paused for stabilization)'
   }
 };
 
