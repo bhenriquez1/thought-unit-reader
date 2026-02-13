@@ -19,7 +19,11 @@ export { InsightOverlay } from './InsightOverlay';
 // Re-export relationship store
 export { useRelationshipStore } from '../../lib/relationshipSchema/store';
 
-// Re-export types for convenience (original)
+// Speech + Whiteboard integration
+export { SpeechExplainActions, PauseActionPanel } from './SpeechExplainActions';
+export { WhiteboardOverlay } from './WhiteboardOverlay';
+
+// Re-export types for convenience (original concept-based)
 export type {
   CoreConceptV2,
   ConceptCluster,
