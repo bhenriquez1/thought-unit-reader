@@ -529,16 +529,43 @@ export const useCourseIntelligenceStore = create<CourseIntelligenceStore>()(
         if (typeof window === 'undefined') {
           return { getItem: () => null, setItem: () => {}, removeItem: () => {} };
         }
-        return localStorage;
+        // Custom storage with size guard
+        return {
+          getItem: (name: string) => localStorage.getItem(name),
+          setItem: (name: string, value: string) => {
+            // Size guard: don't write if payload > 50KB
+            if (value.length > 50 * 1024) {
+              console.warn('Course Intelligence: Skipping localStorage write (payload too large:', Math.round(value.length / 1024), 'KB)');
+              return;
+            }
+            try {
+              localStorage.setItem(name, value);
+            } catch (e) {
+              console.warn('Course Intelligence: localStorage write failed:', e);
+              // Clear old data and retry with minimal state
+              try {
+                localStorage.removeItem(name);
+              } catch {}
+            }
+          },
+          removeItem: (name: string) => localStorage.removeItem(name),
+        };
       }),
+      // Only persist essential small pointers - NOT large data arrays
       partialize: (state) => ({
         documentId: state.documentId,
-        syllabusBlocks: state.syllabusBlocks,
-        objectiveMappings: state.objectiveMappings,
-        exams: state.exams,
-        studyPlan: state.studyPlan,
+        documentTitle: state.documentTitle,
+        syllabusStatus: state.syllabusStatus,
+        // Store only IDs, not full objects
+        examIds: state.exams.map(e => e.id),
+        selectedExamId: state.selectedExamId,
+        selectedTimelineItemId: state.selectedTimelineItemId,
+        // UI preferences only
         examModeEnabled: state.examModeEnabled,
         highYieldOnly: state.highYieldOnly,
+        explainerModeEnabled: state.explainerModeEnabled,
+        // Plan locked status only (not full plan)
+        planLocked: state.studyPlan?.planLocked || false,
       }),
       skipHydration: typeof window === 'undefined',
     }
