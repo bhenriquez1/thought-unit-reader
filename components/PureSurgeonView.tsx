@@ -84,30 +84,53 @@ export default function PureSurgeonView({
   onRecommendedAction
 }: PureSurgeonViewProps) {
 
-  // SSR guard — prevent crash on server-side render
-  const [isClient, setIsClient] = useState(false);
-  React.useEffect(() => { setIsClient(true); }, []);
-  if (!isClient) return null;
+  // ============================================================================
+  // ALL HOOKS MUST BE DECLARED FIRST - BEFORE ANY CONDITIONAL RETURNS
+  // React Error #310 fix: hooks must run in the same order every render
+  // ============================================================================
 
-  // ---- Sanitize inputs to prevent "Parsing Error" propagation ----
+  // ---- SSR Guard State (hook runs every render, return happens later) ----
+  const [isClient, setIsClient] = useState(false);
+
+  // ---- Local State (all useState FIRST) ----
+  const [viewMode, setViewMode] = useState<ViewMode>('full');
+  const [activeTab, setActiveTab] = useState<SidebarTab>('highlights');
+  const [selectedText, setSelectedText] = useState('');
+  const [showHighlightMenu, setShowHighlightMenu] = useState(false);
+  const [quizAnswer, setQuizAnswer] = useState('');
+  const [showQuizResult, setShowQuizResult] = useState(false);
+  const [lastQuizScore, setLastQuizScore] = useState<number | null>(null);
+
+  // Manual mode: editing draft PDRM
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
+  const [draftFields, setDraftFields] = useState<PDRMFields>({
+    pattern: '', decisionRule: '', risk: '', mnemonic: ''
+  });
+
+  // Page PDRM generation status
+  const [pagePdrmStatus, setPagePdrmStatus] = useState<'idle' | 'generating' | 'done'>('idle');
+  const [pagePdrmCount, setPagePdrmCount] = useState(0);
+
+  // ---- Refs ----
+  const lastProcessedPage = useRef<number>(0);
+
+  // ---- Sanitize inputs (useMemo - must run every render) ----
   const safeChapterId = useMemo(() => {
     if (!chapterId) return `page-${currentPage}`;
     if (/parsing error|error:/i.test(chapterId)) return `page-${currentPage}`;
     return chapterId;
   }, [chapterId, currentPage]);
 
-  const safeDocumentId = documentId || 'unknown-doc';
-  const safeUserId = userId || 'guest';
+  const safeDocumentId = useMemo(() => documentId || 'unknown-doc', [documentId]);
+  const safeUserId = useMemo(() => userId || 'guest', [userId]);
 
-  // ---- Stores (with defensive access) ----
-  let annotationStore;
-  try {
-    annotationStore = useAnnotationStore();
-  } catch (e) {
-    console.error('Failed to access annotation store:', e);
-    annotationStore = null;
-  }
+  // ---- Store Hooks (must run every render) ----
+  const annotationStore = useAnnotationStore();
+  const quizStore = useQuizStore();
+  const zoomStore = useZoomStore();
+  const pdrmStore = usePdrmStore();
 
+  // Destructure with defaults (after hooks are called)
   const {
     annotations = {},
     setActiveDocument = () => {},
@@ -127,9 +150,9 @@ export default function PureSurgeonView({
     clearCurrentQuiz,
     isGenerating: isQuizGenerating,
     getBestScore
-  } = useQuizStore();
+  } = quizStore;
 
-  const { zoom } = useZoomStore();
+  const { zoom } = zoomStore;
 
   const {
     autoMode,
@@ -143,32 +166,44 @@ export default function PureSurgeonView({
     deleteEntry,
     completeDraft,
     isPageProcessed
-  } = usePdrmStore();
+  } = pdrmStore;
 
-  // ---- Local State ----
-  const [viewMode, setViewMode] = useState<ViewMode>('full');
-  const [activeTab, setActiveTab] = useState<SidebarTab>('highlights');
-  const [selectedText, setSelectedText] = useState('');
-  const [showHighlightMenu, setShowHighlightMenu] = useState(false);
-  const [quizAnswer, setQuizAnswer] = useState('');
-  const [showQuizResult, setShowQuizResult] = useState(false);
-  const [lastQuizScore, setLastQuizScore] = useState<number | null>(null);
-  
-  // Manual mode: editing draft PDRM
-  const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
-  const [draftFields, setDraftFields] = useState<PDRMFields>({
-    pattern: '', decisionRule: '', risk: '', mnemonic: ''
-  });
-  
-  // Page PDRM generation status
-  const [pagePdrmStatus, setPagePdrmStatus] = useState<'idle' | 'generating' | 'done'>('idle');
-  const [pagePdrmCount, setPagePdrmCount] = useState(0);
-  
-  // Ref for tracking page changes
-  const lastProcessedPage = useRef<number>(0);
+  // ---- Derived Data (useMemo - must run every render) ----
+  const pageAnnotations = useMemo(() => {
+    if (!isClient) return [];
+    return getAnnotationsForPage(currentPage - 1);
+  }, [isClient, currentPage, getAnnotationsForPage, annotations]);
 
-  // ---- Initialize Stores ----
+  const allHighlights = useMemo(() => {
+    if (!isClient) return [];
+    return getHighlightsOnly();
+  }, [isClient, getHighlightsOnly, annotations]);
+
+  const mistakes = useMemo(() => {
+    if (!isClient) return [];
+    return getMistakes();
+  }, [isClient, getMistakes, annotations]);
+
+  const currentPagePDRM = useMemo(() => {
+    if (!isClient) return [];
+    return getEntriesByPage(documentId, currentPage);
+  }, [isClient, documentId, currentPage, getEntriesByPage]);
+
+  const draftPDRMs = useMemo(() => {
+    if (!isClient) return [];
+    return getDraftEntries(documentId);
+  }, [isClient, documentId, getDraftEntries]);
+
+  // ---- Effects (useEffect - must run every render) ----
+
+  // SSR guard effect
   useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // Initialize stores
+  useEffect(() => {
+    if (!isClient) return;
     if (safeDocumentId && safeUserId) {
       try {
         setActiveDocument(safeDocumentId, safeUserId);
@@ -176,18 +211,21 @@ export default function PureSurgeonView({
         console.error('Failed to set active document:', e);
       }
     }
-  }, [safeDocumentId, safeUserId, setActiveDocument]);
+  }, [isClient, safeDocumentId, safeUserId, setActiveDocument]);
 
   useEffect(() => {
+    if (!isClient) return;
     try {
       setActivePage(Math.max(0, currentPage - 1));
     } catch (e) {
       console.error('Failed to set active page:', e);
     }
-  }, [currentPage, setActivePage]);
+  }, [isClient, currentPage, setActivePage]);
 
-  // ---- Page Change: Auto PDRM Generation (incremental) ----
+  // Page Change: Auto PDRM Generation (incremental)
   useEffect(() => {
+    if (!isClient) return;
+
     // Only process if:
     // 1. Auto mode is ON
     // 2. Page actually changed
@@ -196,13 +234,13 @@ export default function PureSurgeonView({
     if (!autoMode || !fileUrl || !pageText || pageText.length < 50) {
       return;
     }
-    
+
     if (currentPage === lastProcessedPage.current) {
       return; // Same page, don't re-process
     }
-    
+
     lastProcessedPage.current = currentPage;
-    
+
     // Check if already processed (cached)
     if (isPageProcessed(documentId, currentPage)) {
       const existing = getEntriesByPage(documentId, currentPage);
@@ -211,10 +249,10 @@ export default function PureSurgeonView({
       console.log(`📄 Page ${currentPage} already cached (${existing.length} entries)`);
       return;
     }
-    
+
     // Process page (async, debounced internally)
     setPagePdrmStatus('generating');
-    
+
     processPageForAutoPDRM(
       documentId,
       currentPage,
@@ -229,31 +267,15 @@ export default function PureSurgeonView({
       console.error('Page PDRM extraction failed:', err);
       setPagePdrmStatus('idle');
     });
-    
+
     // Cleanup: cancel pending if page changes quickly
     return () => {
       cancelPendingExtraction(`page_${documentId}_${currentPage}`);
     };
-  }, [autoMode, fileUrl, documentId, currentPage, pageText, isPageProcessed, getEntriesByPage]);
+  }, [isClient, autoMode, fileUrl, documentId, currentPage, pageText, isPageProcessed, getEntriesByPage]);
 
-  // ---- Derived Data ----
-  const pageAnnotations = useMemo(() => {
-    return getAnnotationsForPage(currentPage - 1);
-  }, [currentPage, getAnnotationsForPage, annotations]);
+  // ---- Handlers (useCallback - must run every render) ----
 
-  const allHighlights = useMemo(() => getHighlightsOnly(), [getHighlightsOnly, annotations]);
-  const mistakes = useMemo(() => getMistakes(), [getMistakes, annotations]);
-  
-  const currentPagePDRM = useMemo(() => {
-    return getEntriesByPage(documentId, currentPage);
-  }, [documentId, currentPage, getEntriesByPage]);
-  
-  const draftPDRMs = useMemo(() => {
-    return getDraftEntries(documentId);
-  }, [documentId, getDraftEntries]);
-
-  // ---- Handlers ----
-  
   // Handle text selection
   const handleTextSelect = useCallback((text: string) => {
     if (!text || text.length < 3) return;
@@ -324,10 +346,10 @@ export default function PureSurgeonView({
   // Save draft PDRM (Manual mode)
   const handleSaveDraft = useCallback(() => {
     if (!editingDraftId) return;
-    
+
     const primaryType = determinePrimaryType(draftFields);
     completeDraft(editingDraftId, draftFields, primaryType as PDRMType);
-    
+
     setEditingDraftId(null);
     setDraftFields({ pattern: '', decisionRule: '', risk: '', mnemonic: '' });
     console.log(`✅ Draft PDRM completed as: ${primaryType}`);
@@ -366,7 +388,23 @@ export default function PureSurgeonView({
     }
   }, [finishQuiz, mistakes.length, onRecommendedAction]);
 
-  // ---- Safe Boot: Empty State ----
+  // ============================================================================
+  // CONDITIONAL RETURNS - ONLY AFTER ALL HOOKS
+  // ============================================================================
+
+  // SSR guard - prevent hydration mismatch
+  if (!isClient) {
+    return (
+      <div className="h-full flex items-center justify-center bg-gray-900 text-white" data-testid="surgeon-view-ssr">
+        <div className="text-center animate-pulse">
+          <div className="text-4xl mb-3">⚡</div>
+          <p className="text-sm text-gray-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Empty State - no file loaded
   if (!fileUrl) {
     return (
       <div className="h-full flex items-center justify-center bg-gray-900 text-white" data-testid="surgeon-view-empty">
