@@ -52,6 +52,13 @@ import {
   useCourseIntelligenceStore,
 } from "@/components/courseIntelligence";
 
+// Surgeon View 2.0 - Relationship-first Cockpit
+import {
+  SurgeonCockpit,
+  WhiteboardOverlay,
+  useRelationshipStore,
+} from "@/components/surgeonView2";
+
 // Store imports
 import { useTocStore } from "@/lib/stores/tocStore";
 import { useZoomStore } from "@/lib/stores/zoomStore";
@@ -293,7 +300,7 @@ export default function ThoughtUnitReader() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const [viewMode, setViewMode] =
-    useState<"original" | "hybrid" | "pattern" | "notelab" | "toc" | "study" | "syllabus" | "expert">("original");
+    useState<"original" | "hybrid" | "pattern" | "notelab" | "toc" | "study" | "syllabus">("original");
 
   // Global Zoom Store
   const { zoom, zoomIn, zoomOut, resetZoom, getZoomPercent, canZoomIn, canZoomOut } = useZoomStore();
@@ -1917,36 +1924,35 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Surgeon View - PURE: Highlighting + Quiz (no TOC panel)
+    // ✅ Expert View - Relationship-First Cognitive Cockpit
+    // Merged: Surgeon View + Expert Mode into single Expert View
+    // Architecture: Relations → Clusters → Decision Rules (not concepts)
     if (viewMode === "hybrid") {
-      // Get current page headings for Surgeon View
-      const currentHeadings = tableOfContents
-        .filter(entry => entry.pageNumber === currentPage)
-        .map(entry => sanitizeDocTitle(entry.title, ''));
+      // Get current page text for extraction
+      const currentPageText = thoughtUnits?.[currentThoughtUnit - 1]?.text || '';
 
-      // Find current chapter - with fallback to page range if no TOC
+      // Find current chapter for context
       const currentChapter = tableOfContents.find((entry, idx) => {
         const nextEntry = tableOfContents[idx + 1];
         return entry.pageNumber <= currentPage &&
           (!nextEntry || nextEntry.pageNumber > currentPage);
       });
 
-      // Generate chapter ID: use TOC title, or fallback to page range
+      // Generate chapter ID
       const getChapterIdForPage = (page: number): string => {
         if (currentChapter?.title) {
           return sanitizeDocTitle(currentChapter.title, `Page ${page}`);
         }
-        // Fallback: page range (every 10 pages)
         const rangeStart = Math.floor((page - 1) / 10) * 10 + 1;
         const rangeEnd = Math.min(rangeStart + 9, pdfPageCount || page);
         return `Pages ${rangeStart}–${rangeEnd}`;
       };
 
       return (
-        <div className="h-full" data-testid="surgeon-view-container">
+        <div className="h-full flex" data-testid="expert-view-container">
           <ErrorBoundary
             onError={(error, errorInfo) => {
-              console.error('🔬 Surgeon View Error:', {
+              console.error('🎯 Expert View Error:', {
                 message: error.message,
                 stack: error.stack,
                 componentStack: errorInfo.componentStack,
@@ -1954,31 +1960,40 @@ export default function ThoughtUnitReader() {
               });
             }}
           >
-            <PureSurgeonView
-              fileUrl={fileUrl}
-              documentId={bookId}
-              userId={USER_ID}
-              currentPage={currentPage}
-              pdfPageCount={pdfPageCount}
-              thoughtUnits={thoughtUnits ?? []}
-              currentThoughtUnit={currentThoughtUnit}
-              chapterId={getChapterIdForPage(currentPage)}
-              headings={currentHeadings.filter(Boolean)}
-              pageText={thoughtUnits?.[currentThoughtUnit - 1]?.text || ''}
-              onPageChange={(p) => syncToPage(p)}
-              onPageCount={(count) => setPdfPageCount(count)}
-              onRecommendedAction={(action) => {
-                if (action === 'study') {
-                  setViewMode("study");
-                } else if (action === 'next_chapter') {
-                  // Navigate to next chapter
-                  const nextChapter = tableOfContents.find(
-                    entry => entry.pageNumber > currentPage
-                  );
-                  if (nextChapter) {
-                    syncToPage(nextChapter.pageNumber);
-                  }
-                }
+            {/* Left: PDF Reader */}
+            {fileUrl && (
+              <div className="flex-1 h-full border-r border-gray-700">
+                <PureReaderView
+                  fileUrl={fileUrl}
+                  currentPage={currentPage}
+                  pdfPageCount={pdfPageCount}
+                  onPageChange={(p) => syncToPage(p)}
+                  onPageCount={(count) => setPdfPageCount(count)}
+                  onTextSelect={(t) => sel.setSelectionText(t)}
+                  onOutline={handleOutlineExtraction}
+                  fontSize={fontSize}
+                  fontFamily={fontFamily}
+                />
+              </div>
+            )}
+
+            {/* Right: Relationship-First Cockpit */}
+            <div className={fileUrl ? "w-[600px] h-full" : "flex-1 h-full"}>
+              <SurgeonCockpit
+                documentId={bookId}
+                documentTitle={sanitizeDocTitle(currentChapter?.title, uploadedFile?.name || "Document")}
+                onJumpToPage={(page) => syncToPage(page)}
+                pageTexts={new Map([[currentPage, currentPageText]])}
+              />
+            </div>
+
+            {/* Whiteboard Overlay (for explanations) */}
+            <WhiteboardOverlay
+              onSaveToNoteLab={() => {
+                console.log('Whiteboard: Save to NoteLab');
+              }}
+              onAddToStudy={() => {
+                setViewMode("study");
               }}
             />
           </ErrorBoundary>
@@ -2136,89 +2151,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ EXPERT Mode - Pattern Recognition Training (Cognitive Engine)
-    if (viewMode === "expert") {
-      // Convert insights to array for ExpertModePanel
-      const insightsList = Object.values(insights);
-      const rulesList = Object.values(decisionRules);
-
-      return (
-        <div className="h-full flex" data-testid="expert-view-container">
-          <ErrorBoundary
-            onError={(error, errorInfo) => {
-              console.error('🎯 Expert Mode Error:', { message: error.message, stack: error.stack });
-            }}
-          >
-            {/* Left side: PDF (if loaded) */}
-            {fileUrl && (
-              <div className="flex-1 h-full">
-                <PureReaderView
-                  fileUrl={fileUrl}
-                  currentPage={currentPage}
-                  pdfPageCount={pdfPageCount}
-                  onPageChange={(p) => syncToPage(p)}
-                  onPageCount={(count) => setPdfPageCount(count)}
-                  onTextSelect={(t) => sel.setSelectionText(t)}
-                  onOutline={handleOutlineExtraction}
-                  fontSize={fontSize}
-                  fontFamily={fontFamily}
-                />
-              </div>
-            )}
-
-            {/* Right side: Expert Mode Panel */}
-            <div className="w-96 h-full border-l border-gray-700">
-              <ExpertModePanel
-                config={expertMode}
-                clusters={[]}
-                pearls={[]}
-                insights={insightsList}
-                decisionRules={rulesList}
-                onInsightClick={(insight) => {
-                  setSelectedInsight(insight);
-                  openInsightPanel(insight);
-                }}
-                onRuleClick={(rule) => {
-                  console.log('Rule clicked:', rule);
-                }}
-                onConfigChange={(config) => setExpertMode(config)}
-              />
-            </div>
-
-            {/* Clinical IQ Dashboard (floating) */}
-            <div className="fixed bottom-4 left-4 w-80 z-40">
-              <ClinicalIQDashboard
-                profile={clinicalIQ}
-                onWeakClusterClick={(cluster) => {
-                  console.log('Weak cluster clicked:', cluster);
-                }}
-              />
-            </div>
-
-            {/* Insight Panel (when selected) */}
-            {insightPanel.isOpen && insightPanel.selectedInsight && (
-              <ClinicalInsightPanel
-                insight={insightPanel.selectedInsight}
-                onClose={closeInsightPanel}
-                onSendToNoteLab={(insight) => {
-                  console.log('Send to NoteLab:', insight);
-                  closeInsightPanel();
-                }}
-                onTrainInStudyMode={(insight) => {
-                  console.log('Train in Study Mode:', insight);
-                  setViewMode("study");
-                }}
-                onJumpToSource={() => {
-                  if (insightPanel.selectedInsight?.sourceAnchor) {
-                    syncToPage(insightPanel.selectedInsight.sourceAnchor.pageIndex + 1);
-                  }
-                }}
-              />
-            )}
-          </ErrorBoundary>
-        </div>
-      );
-    }
+    // ✅ Expert Mode merged into Expert View (hybrid) - see above
 
     // ✅ READER View - PURE: PDF ONLY (no thought units, no TOC, no annotations)
     // This is the DEFAULT view and handles viewMode === "original"
@@ -2309,14 +2242,14 @@ export default function ThoughtUnitReader() {
           </button>
           <button
             onClick={() => setViewMode("hybrid")}
-            data-testid="nav-surgeon"
+            data-testid="nav-expert"
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              viewMode === "hybrid" 
-                ? "bg-purple-500 text-white shadow-lg" 
+              viewMode === "hybrid"
+                ? "bg-purple-500 text-white shadow-lg"
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
           >
-            🔬 Surgeon View
+            🎯 Expert View
           </button>
           <button
             onClick={() => setViewMode("notelab")}
@@ -2351,18 +2284,7 @@ export default function ThoughtUnitReader() {
           >
             🎯 Course Intelligence
           </button>
-          <button
-            onClick={() => setViewMode("expert")}
-            data-testid="nav-expert"
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              viewMode === "expert"
-                ? "bg-gray-900 text-purple-400 shadow-lg ring-2 ring-purple-500"
-                : "text-gray-300 hover:text-white hover:bg-gray-700"
-            }`}
-          >
-            🎯 Expert
-          </button>
-          {/* PDRM tab removed - functionality is now in Surgeon View's PDRM tab */}
+          {/* Expert Mode merged into Expert View (was separate tab) */}
         </div>
 
         {/* Global Zoom Controls - Show when PDF is loaded */}

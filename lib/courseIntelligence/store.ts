@@ -13,6 +13,7 @@ import type {
   StudyPlan,
   PlanBlock,
   TimelineItem,
+  TimelineItemType,
   Exam,
   TimeBudget,
   WeakCluster,
@@ -117,12 +118,24 @@ export const useCourseIntelligenceStore = create<CourseIntelligenceStore>()(
       // ========================================
 
       uploadSyllabus: async (rawText: string) => {
-        set({ syllabusStatus: 'parsing', isLoading: true });
+        console.log('📚 Course Intelligence: Starting syllabus upload...');
+        set({ syllabusStatus: 'parsing', isLoading: true, error: undefined });
 
         try {
           // Parse syllabus (using the parser from syllabusParser module)
           const { parseSyllabus } = await import('../syllabusParser/parser');
           const parsed = parseSyllabus(rawText);
+          console.log('📚 Course Intelligence: Parsed', parsed.blocks.length, 'blocks');
+
+          if (parsed.blocks.length === 0) {
+            console.warn('📚 Course Intelligence: No blocks found in syllabus');
+            set({
+              syllabusStatus: 'none',
+              isLoading: false,
+              error: 'No content blocks found in syllabus. Try a different format.',
+            });
+            return;
+          }
 
           // Convert to SyllabusBlocks
           const blocks: SyllabusBlock[] = parsed.blocks.map((block) => ({
@@ -165,19 +178,47 @@ export const useCourseIntelligenceStore = create<CourseIntelligenceStore>()(
                 : 999,
             }));
 
+          // Generate timeline from blocks
+          const today = new Date();
+          const timeline: TimelineItem[] = blocks.map((block, idx) => {
+            const startDate = block.dateRange?.start ? new Date(block.dateRange.start) : null;
+            const daysUntil = startDate
+              ? Math.ceil((startDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+              : undefined;
+
+            return {
+              id: `timeline_${block.id}`,
+              type: (block.type === 'exam' ? 'exam' : block.type === 'week' ? 'week' : 'deliverable') as TimelineItemType,
+              title: block.title,
+              dateRange: block.dateRange,
+              objectives: [block.id],
+              mappedTocSections: [],
+              mappedClusters: [],
+              isOverdue: daysUntil !== undefined && daysUntil < 0,
+              isCurrent: daysUntil !== undefined && daysUntil >= 0 && daysUntil <= 7,
+              isUpcoming: daysUntil !== undefined && daysUntil > 7,
+              daysUntil,
+              progressPercent: 0,
+              masteryAvg: 0,
+            };
+          });
+
+          console.log('📚 Course Intelligence: Generated timeline with', timeline.length, 'items');
+
           set({
             syllabusBlocks: blocks,
             exams,
+            timeline,
             syllabusStatus: 'parsed',
             isLoading: false,
             lastSyncAt: Date.now(),
           });
         } catch (error) {
-          console.error('Syllabus parsing error:', error);
+          console.error('📚 Course Intelligence: Syllabus parsing error:', error);
           set({
             syllabusStatus: 'none',
             isLoading: false,
-            error: 'Failed to parse syllabus',
+            error: `Failed to parse syllabus: ${error instanceof Error ? error.message : 'Unknown error'}`,
           });
         }
       },
