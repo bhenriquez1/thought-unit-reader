@@ -46,6 +46,12 @@ import {
   useCognitiveEngineStore,
 } from "@/components/cognitiveEngine";
 
+// Course Intelligence Components (Syllabus → TOC → Exam targeting)
+import {
+  CourseIntelligenceLayout,
+  useCourseIntelligenceStore,
+} from "@/components/courseIntelligence";
+
 // Store imports
 import { useTocStore } from "@/lib/stores/tocStore";
 import { useZoomStore } from "@/lib/stores/zoomStore";
@@ -2086,34 +2092,44 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Course Intelligence View - Upload syllabus to identify exam-weighted sections
+    // ✅ Course Intelligence View - Syllabus → TOC → Cluster mapping + Exam targeting
     if (viewMode === "syllabus") {
-      const chaptersForSyllabus = tableOfContents.map((toc, idx) => ({
-        id: `chapter_${idx}`,
-        title: sanitizeDocTitle((toc as any).title, `Chapter ${idx + 1}`),
-        pageNumber: (toc as any).pageNumber || (toc as any).page || idx + 1,
-        endPage: tableOfContents[idx + 1]
-          ? ((tableOfContents[idx + 1] as any).pageNumber || (tableOfContents[idx + 1] as any).page || idx + 2) - 1
-          : pdfPageCount
+      // Convert TOC entries to Course Intelligence format
+      const tocEntriesForCI = tableOfContents.map((toc, idx) => ({
+        id: `toc_${idx}`,
+        title: sanitizeDocTitle((toc as any).title, `Section ${idx + 1}`),
+        level: (toc as any).level || 1,
+        pageRange: {
+          start: (toc as any).pageNumber || (toc as any).page || idx + 1,
+          end: tableOfContents[idx + 1]
+            ? ((tableOfContents[idx + 1] as any).pageNumber || (tableOfContents[idx + 1] as any).page || idx + 2) - 1
+            : pdfPageCount,
+        },
+        chapterTitle: (toc as any).chapterTitle,
+        keywords: [],
       }));
 
       return (
-        <div className="h-full" data-testid="syllabus-view-container">
+        <div className="h-full" data-testid="course-intelligence-view-container">
           <ErrorBoundary
             onError={(error, errorInfo) => {
               console.error('🎯 Course Intelligence Error:', { message: error.message, stack: error.stack });
             }}
           >
-            <SyllabusUploadPanel
+            <CourseIntelligenceLayout
               documentId={bookId}
               documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
-              chapters={chaptersForSyllabus}
-              pdfPageCount={pdfPageCount}
-              onJumpToPage={(pageIndex) => {
-                syncToPage(pageIndex);
-                setViewMode("original");
+              tocEntries={tocEntriesForCI}
+              onJumpToPage={(pageNumber) => {
+                syncToPage(pageNumber);
+                setViewMode("hybrid");
               }}
               onStartStudySession={() => setViewMode("study")}
+              onStartExplainer={(clusterId) => {
+                // Open whiteboard with cluster content for explaining
+                setShowWhiteboardPanel(true);
+                setWbConcept(`Explain cluster: ${clusterId}`);
+              }}
             />
           </ErrorBoundary>
         </div>
