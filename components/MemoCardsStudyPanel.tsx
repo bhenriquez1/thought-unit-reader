@@ -23,11 +23,12 @@ interface MemoCardsStudyPanelProps {
   onClose?: () => void;
 }
 
-// Card grade colors and keyboard shortcuts (matches CardGrade type: 'again' | 'hard' | 'easy')
+// Card grade colors and keyboard shortcuts (matches CardGrade type: 'again' | 'hard' | 'good' | 'easy')
 const GRADE_CONFIG: Record<CardGrade, { key: string; color: string; bgColor: string; hoverBg: string; label: string; emoji: string; interval: string }> = {
   again: { key: '1', color: 'text-red-400', bgColor: 'bg-red-600', hoverBg: 'hover:bg-red-500', label: 'Again', emoji: '🔄', interval: '<1m' },
-  hard: { key: '2', color: 'text-yellow-400', bgColor: 'bg-yellow-600', hoverBg: 'hover:bg-yellow-500', label: 'Hard', emoji: '😓', interval: '~1d' },
-  easy: { key: '3', color: 'text-green-400', bgColor: 'bg-green-600', hoverBg: 'hover:bg-green-500', label: 'Easy', emoji: '✅', interval: '~3d' }
+  hard: { key: '2', color: 'text-orange-400', bgColor: 'bg-orange-600', hoverBg: 'hover:bg-orange-500', label: 'Hard', emoji: '😓', interval: '~1d' },
+  good: { key: '3', color: 'text-blue-400', bgColor: 'bg-blue-600', hoverBg: 'hover:bg-blue-500', label: 'Good', emoji: '👍', interval: '~2d' },
+  easy: { key: '4', color: 'text-green-400', bgColor: 'bg-green-600', hoverBg: 'hover:bg-green-500', label: 'Easy', emoji: '✅', interval: '~4d' }
 };
 
 export default function MemoCardsStudyPanel({

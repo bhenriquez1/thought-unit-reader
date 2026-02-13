@@ -11,7 +11,7 @@ import { useQuizStore, type QuizQuestion } from './quizStore';
 // Types
 // ============================================================================
 
-export type CardGrade = 'again' | 'hard' | 'easy';
+export type CardGrade = 'again' | 'hard' | 'good' | 'easy';
 
 export interface StudyCard {
   id: string;
@@ -124,22 +124,30 @@ function annotationToCard(ann: Annotation, priority: number): StudyCard {
 // Calculate next interval based on SM-2 algorithm (simplified)
 function calculateNextInterval(card: StudyCard, grade: CardGrade): { interval: number; easeFactor: number } {
   let { easeFactor, interval } = card;
-  
+
   switch (grade) {
     case 'again':
+      // Completely reset - show again soon
       interval = 1;
       easeFactor = Math.max(1.3, easeFactor - 0.2);
       break;
     case 'hard':
+      // Slight increase, reduce ease
       interval = Math.max(1, Math.round(interval * 1.2));
       easeFactor = Math.max(1.3, easeFactor - 0.15);
       break;
-    case 'easy':
+    case 'good':
+      // Normal progression
       interval = Math.round(interval * easeFactor);
-      easeFactor = Math.min(3.0, easeFactor + 0.1);
+      // Keep ease factor the same
+      break;
+    case 'easy':
+      // Faster progression, increase ease
+      interval = Math.round(interval * easeFactor * 1.3);
+      easeFactor = Math.min(3.0, easeFactor + 0.15);
       break;
   }
-  
+
   return { interval, easeFactor };
 }
 
@@ -363,7 +371,7 @@ export const useStudySessionStore = create<StudySessionState>()(
         };
         
         const newCardsSinceQuestion = cardsSinceLastQuestion + 1;
-        const shouldShowQuestion = newCardsSinceQuestion >= 5 && grade !== 'easy';
+        const shouldShowQuestion = newCardsSinceQuestion >= 5 && grade === 'again';
         
         // Update deck and session
         const newDeck = [...deck];

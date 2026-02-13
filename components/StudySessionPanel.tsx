@@ -361,24 +361,31 @@ export default function StudySessionPanel({
           ) : (
             <div className="space-y-3">
               <p className="text-center text-sm text-gray-400 mb-2">How well did you know this?</p>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-4 gap-2">
                 <button
                   onClick={() => handleGrade('again')}
-                  className="px-4 py-3 bg-red-600 hover:bg-red-500 rounded-lg font-medium transition-colors"
+                  className="px-3 py-3 bg-red-600 hover:bg-red-500 rounded-lg font-medium transition-colors text-sm"
                   data-testid="grade-again-btn"
                 >
                   🔄 Again
                 </button>
                 <button
                   onClick={() => handleGrade('hard')}
-                  className="px-4 py-3 bg-yellow-600 hover:bg-yellow-500 text-black rounded-lg font-medium transition-colors"
+                  className="px-3 py-3 bg-orange-600 hover:bg-orange-500 rounded-lg font-medium transition-colors text-sm"
                   data-testid="grade-hard-btn"
                 >
                   😓 Hard
                 </button>
                 <button
+                  onClick={() => handleGrade('good')}
+                  className="px-3 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-medium transition-colors text-sm"
+                  data-testid="grade-good-btn"
+                >
+                  👍 Good
+                </button>
+                <button
                   onClick={() => handleGrade('easy')}
-                  className="px-4 py-3 bg-green-600 hover:bg-green-500 rounded-lg font-medium transition-colors"
+                  className="px-3 py-3 bg-green-600 hover:bg-green-500 rounded-lg font-medium transition-colors text-sm"
                   data-testid="grade-easy-btn"
                 >
                   ✅ Easy
