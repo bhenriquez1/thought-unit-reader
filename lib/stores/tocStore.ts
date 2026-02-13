@@ -66,62 +66,116 @@ function parseOutlineToToc(outline: any[], level: number = 0): TocItem[] {
   });
 }
 
+// Clean and truncate TOC title - ensures short, readable titles
+function cleanTocTitle(title: string): string {
+  // Remove excessive dots, tabs, spaces
+  let cleaned = title.replace(/\.{2,}/g, '').replace(/\t+/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Remove trailing page numbers
+  cleaned = cleaned.replace(/\s+\d+\s*$/, '').trim();
+
+  // Truncate to max 80 chars with ellipsis
+  if (cleaned.length > 80) {
+    cleaned = cleaned.substring(0, 77).trim() + '...';
+  }
+
+  return cleaned;
+}
+
+// Check if text looks like a paragraph (not a heading)
+function isParagraphText(text: string): boolean {
+  // Paragraphs tend to:
+  // - Be longer than 100 chars
+  // - Have multiple sentences (periods followed by capital letters)
+  // - Start with lowercase or articles
+  // - Have many commas
+  if (text.length > 120) return true;
+  if ((text.match(/\. [A-Z]/g) || []).length >= 2) return true;
+  if ((text.match(/,/g) || []).length >= 3) return true;
+  if (/^(the|a|an|this|that|it|in|on|at|for|with|to)\s/i.test(text)) return true;
+
+  return false;
+}
+
 // Heuristic TOC extraction from page text
 function extractTocFromPages(pages: string[]): TocItem[] {
   const items: TocItem[] = [];
-  
-  // Common TOC patterns
+
+  // Common TOC patterns (ordered by specificity)
   const patterns = [
     // "Chapter 1: Title .............. 15"
     /^(Chapter|Section|Part|Unit)\s*(\d+)[:\.\s]+(.+?)\s*\.{2,}\s*(\d+)/i,
+    // "Chapter 1: Title" without page number
+    /^(Chapter|Section|Part|Unit)\s*(\d+)[:\.\s]+(.+)/i,
     // "1. Title ........... 15"
-    /^(\d+)[\.)\s]+(.+?)\s*\.{2,}\s*(\d+)/,
-    // "Title ... 15" (simpler)
-    /^([A-Z][^\.]+?)\s*\.{2,}\s*(\d+)$/,
-    // "INTRODUCTION 1"
-    /^([A-Z][A-Z\s]+)\s+(\d+)$/,
+    /^(\d+)[\.)\s]+(.{3,60}?)\s*\.{2,}\s*(\d+)/,
+    // "Title ... 15" (TOC format)
+    /^([A-Z][^\.]{3,60}?)\s*\.{2,}\s*(\d+)$/,
+    // "INTRODUCTION 1" or "PREFACE 5"
+    /^([A-Z][A-Z\s]{2,40})\s+(\d+)$/,
+    // "I. Title" or "IV. Title" (Roman numerals)
+    /^([IVXLC]+)\.\s+(.{3,60})/,
   ];
-  
+
   // Only scan first 30 pages for TOC
   const scanPages = pages.slice(0, 30);
-  
+
   scanPages.forEach((pageText, pageIdx) => {
     const lines = pageText.split('\n').filter(l => l.trim());
-    
+
     lines.forEach(line => {
       const trimmed = line.trim();
-      
+
+      // Skip empty or very short lines
+      if (trimmed.length < 3) return;
+
+      // Skip paragraph-like text
+      if (isParagraphText(trimmed)) return;
+
       for (const pattern of patterns) {
         const match = trimmed.match(pattern);
         if (match) {
           let title: string;
           let pageNumber: number;
-          
+
           if (match.length === 5) {
-            // Chapter pattern
+            // Chapter pattern with page number
             title = `${match[1]} ${match[2]}: ${match[3].trim()}`;
             pageNumber = parseInt(match[4], 10);
           } else if (match.length === 4) {
-            // Numbered pattern
-            title = `${match[1]}. ${match[2].trim()}`;
-            pageNumber = parseInt(match[3], 10);
+            // Chapter pattern without page number OR numbered pattern with page
+            if (/chapter|section|part|unit/i.test(match[1])) {
+              title = `${match[1]} ${match[2]}: ${match[3].trim()}`;
+              pageNumber = pageIdx + 1; // Use current page as estimate
+            } else {
+              title = `${match[1]}. ${match[2].trim()}`;
+              pageNumber = parseInt(match[3], 10);
+            }
           } else if (match.length === 3) {
-            // Simple pattern
-            title = match[1].trim();
-            pageNumber = parseInt(match[2], 10);
+            // Simple pattern or Roman numerals
+            if (/^[IVXLC]+$/.test(match[1])) {
+              title = `${match[1]}. ${match[2].trim()}`;
+              pageNumber = pageIdx + 1;
+            } else {
+              title = match[1].trim();
+              pageNumber = parseInt(match[2], 10);
+            }
           } else {
             continue;
           }
-          
-          // Validate page number
-          if (pageNumber > 0 && pageNumber < 9999 && title.length > 2) {
+
+          // Clean and validate title
+          title = cleanTocTitle(title);
+
+          // Validate
+          if (pageNumber > 0 && pageNumber < 9999 && title.length >= 3 && title.length <= 100) {
             // Check for duplicates
-            if (!items.find(i => i.title === title && i.pageNumber === pageNumber)) {
+            if (!items.find(i => i.title === title)) {
               items.push({
                 id: generateId(),
                 title,
                 pageNumber,
-                level: title.toLowerCase().includes('chapter') ? 0 : 1
+                level: /chapter|part/i.test(title) ? 0 : 1
               });
             }
           }
@@ -130,10 +184,32 @@ function extractTocFromPages(pages: string[]): TocItem[] {
       }
     });
   });
-  
+
   // Sort by page number
   items.sort((a, b) => a.pageNumber - b.pageNumber);
-  
+
+  return items;
+}
+
+// Generate fallback page-range TOC when no structure is detected
+function generatePageRangeToc(pageCount: number, chunkSize: number = 10): TocItem[] {
+  if (!pageCount || pageCount < 1) return [];
+
+  const items: TocItem[] = [];
+  const numRanges = Math.ceil(pageCount / chunkSize);
+
+  for (let i = 0; i < numRanges; i++) {
+    const startPage = i * chunkSize + 1;
+    const endPage = Math.min((i + 1) * chunkSize, pageCount);
+
+    items.push({
+      id: generateId(),
+      title: `Pages ${startPage}–${endPage}`,
+      pageNumber: startPage,
+      level: 0
+    });
+  }
+
   return items;
 }
 
@@ -261,13 +337,19 @@ export const useTocStore = create<TocState>()(
       },
       
       // Generate TOC from heuristic page scanning
-      generateFromHeuristic: (documentId: string, documentName: string, pages: string[]) => {
-        const items = extractTocFromPages(pages);
-        
+      generateFromHeuristic: (documentId: string, documentName: string, pages: string[], pageCount?: number) => {
+        let items = extractTocFromPages(pages);
+
+        // If no items found, generate fallback page-range TOC
+        if (items.length === 0 && pageCount && pageCount > 0) {
+          console.log(`📑 No TOC detected, generating page-range fallback for ${pageCount} pages`);
+          items = generatePageRangeToc(pageCount);
+        }
+
         if (items.length > 0) {
           get().saveToc(documentId, documentName, items, 'heuristic');
         }
-        
+
         return items;
       }
     }),

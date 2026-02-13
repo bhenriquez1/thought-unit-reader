@@ -31,6 +31,78 @@ interface CorePanelProps {
 type ExtractionStatus = 'idle' | 'extracting' | 'success' | 'error';
 
 // ============================================================================
+// Front Matter Detection - Filter non-study content
+// ============================================================================
+
+const FRONT_MATTER_KEYWORDS = [
+  'acknowledgements', 'acknowledgments', 'contributors', 'preface',
+  'copyright', 'front matter', 'table of contents', 'dedication',
+  'foreword', 'about the author', 'author bio', 'about the authors',
+  'publisher', 'isbn', 'edition', 'all rights reserved',
+  'printed in', 'library of congress', 'cataloging'
+];
+
+function isFrontMatterPage(pageText: string, chapter?: string): boolean {
+  const textLower = (pageText || '').toLowerCase();
+  const chapterLower = (chapter || '').toLowerCase();
+
+  // Check chapter title
+  for (const keyword of FRONT_MATTER_KEYWORDS) {
+    if (chapterLower.includes(keyword)) return true;
+  }
+
+  // Check page content (first 500 chars for efficiency)
+  const contentSample = textLower.slice(0, 500);
+  let matchCount = 0;
+  for (const keyword of FRONT_MATTER_KEYWORDS) {
+    if (contentSample.includes(keyword)) matchCount++;
+  }
+
+  // If 2+ front matter keywords found, it's likely front matter
+  return matchCount >= 2;
+}
+
+// ============================================================================
+// Per-Page Concept Cache
+// ============================================================================
+
+interface PageConceptCache {
+  concepts: CoreConcept[];
+  extractionTimeMs?: number;
+  timestamp: number;
+}
+
+const conceptCache = new Map<string, PageConceptCache>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function getCacheKey(docId: string, page: number): string {
+  return `${docId}:${page}`;
+}
+
+function getCachedConcepts(docId: string, page: number): PageConceptCache | null {
+  const key = getCacheKey(docId, page);
+  const cached = conceptCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.timestamp > CACHE_TTL_MS) {
+    conceptCache.delete(key);
+    return null;
+  }
+  return cached;
+}
+
+function setCachedConcepts(docId: string, page: number, concepts: CoreConcept[], extractionTimeMs?: number): void {
+  const key = getCacheKey(docId, page);
+  conceptCache.set(key, { concepts, extractionTimeMs, timestamp: Date.now() });
+
+  // LRU cleanup - keep max 50 pages cached
+  if (conceptCache.size > 50) {
+    const oldest = Array.from(conceptCache.entries())
+      .sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
+    if (oldest) conceptCache.delete(oldest[0]);
+  }
+}
+
+// ============================================================================
 // Core Panel Component
 // ============================================================================
 
@@ -51,10 +123,45 @@ export const CorePanel = memo(function CorePanel({
   const [autoExtract, setAutoExtract] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [windowText, setWindowText] = useState('');
+  const [isFrontMatter, setIsFrontMatter] = useState(false);
 
   // Refs
   const lastExtractionKey = useRef<string>('');
   const lastScrollY = useRef<number>(0);
+  const lastPageNumber = useRef<number>(pageNumber);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Clear concepts and cancel in-flight requests when page changes
+  useEffect(() => {
+    if (pageNumber !== lastPageNumber.current) {
+      // Cancel any in-flight request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+
+      // Check cache first
+      const cached = getCachedConcepts(documentId, pageNumber);
+      if (cached) {
+        setConcepts(cached.concepts);
+        setExtractionTimeMs(cached.extractionTimeMs);
+        setStatus('success');
+        console.log(`📦 Page ${pageNumber} loaded from cache (${cached.concepts.length} concepts)`);
+      } else {
+        // Clear state for new page
+        setConcepts([]);
+        setExtractionTimeMs(undefined);
+        setStatus('idle');
+      }
+
+      // Check if front matter
+      setIsFrontMatter(isFrontMatterPage(pageText, chapter));
+
+      lastExtractionKey.current = '';
+      lastScrollY.current = 0;
+      lastPageNumber.current = pageNumber;
+    }
+  }, [pageNumber, documentId, pageText, chapter]);
 
   // Parse paragraphs from page text
   const paragraphMeta = useMemo(() => {
@@ -97,6 +204,25 @@ export const CorePanel = memo(function CorePanel({
       return;
     }
 
+    // Skip extraction for front matter pages
+    if (isFrontMatterPage(pageText, chapter)) {
+      setIsFrontMatter(true);
+      setStatus('idle');
+      setConcepts([]);
+      console.log(`⏭️ Skipping front matter page ${pageNumber}`);
+      return;
+    }
+
+    // Check cache first
+    const cached = getCachedConcepts(documentId, pageNumber);
+    if (cached && cached.concepts.length > 0) {
+      setConcepts(cached.concepts);
+      setExtractionTimeMs(cached.extractionTimeMs);
+      setStatus('success');
+      console.log(`📦 Page ${pageNumber} served from cache`);
+      return;
+    }
+
     // Generate key based on paragraph window
     const centerParagraph = findParagraphAtScroll(currentScrollY, viewportHeight, paragraphMeta);
     const [windowStart, windowEnd] = getParagraphWindow(centerParagraph, paragraphMeta.length);
@@ -105,6 +231,12 @@ export const CorePanel = memo(function CorePanel({
     if (extractionKey === lastExtractionKey.current && concepts.length > 0) {
       return; // Already extracted this paragraph window
     }
+
+    // Cancel any in-flight request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
 
     setStatus('extracting');
     setErrorMessage(null);
@@ -127,6 +259,7 @@ export const CorePanel = memo(function CorePanel({
           context: { sectionHint: chapter },
           mode: 'page_window' as const,
         }),
+        signal: abortControllerRef.current.signal,
       });
 
       if (!res.ok) {
@@ -134,11 +267,21 @@ export const CorePanel = memo(function CorePanel({
       }
 
       const data: CoreExtractResponse = await res.json();
+
+      // Cache the results
+      setCachedConcepts(documentId, pageNumber, data.concepts, data.meta.ms);
+
       setConcepts(data.concepts);
       setExtractionTimeMs(data.meta.ms);
       setStatus('success');
       lastExtractionKey.current = extractionKey;
+      console.log(`✅ Page ${pageNumber} extracted (${data.concepts.length} concepts in ${data.meta.ms}ms)`);
     } catch (error) {
+      // Ignore abort errors
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log(`🚫 Extraction cancelled for page ${pageNumber}`);
+        return;
+      }
       console.error('Core extraction error:', error);
       setStatus('error');
       setErrorMessage(error instanceof Error ? error.message : 'Unknown error');
@@ -152,10 +295,19 @@ export const CorePanel = memo(function CorePanel({
 
   // Initial extraction on mount/page change
   useEffect(() => {
-    if (autoExtract && pageText) {
+    if (autoExtract && pageText && !isFrontMatter) {
       performExtraction();
     }
-  }, [documentId, pageNumber, pageText, autoExtract]);
+  }, [documentId, pageNumber, pageText, autoExtract, isFrontMatter]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   // Handle concept selection
   const handleConceptSelect = useCallback((concept: CoreConcept) => {
@@ -212,7 +364,27 @@ export const CorePanel = memo(function CorePanel({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-4 py-3">
-        {status === 'extracting' && concepts.length === 0 && (
+        {/* Front Matter Detection */}
+        {isFrontMatter && concepts.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="text-4xl mb-3">📄</div>
+            <p className="text-sm text-gray-400">Front matter detected</p>
+            <p className="text-xs text-gray-500 mt-1">
+              This page appears to be acknowledgements, preface, or copyright info.
+            </p>
+            <button
+              onClick={() => {
+                setIsFrontMatter(false);
+                performExtraction();
+              }}
+              className="mt-3 px-3 py-1.5 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
+            >
+              Extract anyway
+            </button>
+          </div>
+        )}
+
+        {status === 'extracting' && concepts.length === 0 && !isFrontMatter && (
           <div className="flex flex-col items-center justify-center py-12">
             <div className="animate-pulse text-4xl mb-3">⚡</div>
             <p className="text-sm text-gray-400">Extracting core concepts...</p>

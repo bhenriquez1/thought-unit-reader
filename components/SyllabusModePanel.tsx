@@ -119,13 +119,30 @@ export default function SyllabusModePanel({
         createSyllabus(documentId, documentTitle);
       }
       
-      // Add parsed topics
+      // Add parsed topics with chapter matching
       topics.forEach((topic, idx) => {
+        // Try to match topic to book chapters
+        const matchedChapterIds: string[] = [];
+        const matchedPageRanges: Array<{ start: number; end: number }> = [];
+
+        // Simple fuzzy matching: find chapters with similar keywords
+        const topicWords = topic.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+
+        chapters.forEach(chapter => {
+          const chapterWords = chapter.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+          const overlap = topicWords.filter(w => chapterWords.some(cw => cw.includes(w) || w.includes(cw)));
+
+          if (overlap.length >= 1) {
+            matchedChapterIds.push(chapter.id);
+            matchedPageRanges.push({ start: chapter.pageNumber - 1, end: chapter.pageNumber + 9 });
+          }
+        });
+
         addTopic({
           title: topic.title,
           order: idx,
-          chapterIds: [],
-          pageRanges: topic.pageRange ? [topic.pageRange] : []
+          chapterIds: matchedChapterIds,
+          pageRanges: topic.pageRange ? [topic.pageRange] : matchedPageRanges
         });
       });
       
