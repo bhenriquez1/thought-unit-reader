@@ -34,6 +34,7 @@ interface RelationshipStoreState {
   extractedPages: Set<number>;
   isExtracting: boolean;
   extractionProgress: number;
+  extractionError?: string;
 
   // UI state
   selectedClusterId?: string;
@@ -102,6 +103,7 @@ const defaultState: RelationshipStoreState = {
   extractedPages: new Set(),
   isExtracting: false,
   extractionProgress: 0,
+  extractionError: undefined,
   expandedClusterIds: new Set(),
   expertModeEnabled: false,
   filterByConfidence: 0,
@@ -183,51 +185,84 @@ export const useRelationshipStore = create<RelationshipStore>()(
       },
 
       extractFromMultiplePages: async (pages) => {
-        set({ isExtracting: true, extractionProgress: 0 });
+        console.log('🔬 Store: Starting extraction for', pages.length, 'pages');
+        set({ isExtracting: true, extractionProgress: 0, extractionError: undefined });
 
-        const { docId, extractedPages, concepts, relations, clusters, rules } = get();
+        try {
+          const { docId, extractedPages, concepts, relations, clusters, rules } = get();
 
-        const newConcepts = { ...concepts };
-        const newRelations = { ...relations };
-        const newClusters = { ...clusters };
-        const newRules = { ...rules };
-        const newExtractedPages = new Set(extractedPages);
+          const newConcepts = { ...concepts };
+          const newRelations = { ...relations };
+          const newClusters = { ...clusters };
+          const newRules = { ...rules };
+          const newExtractedPages = new Set(extractedPages);
 
-        for (let i = 0; i < pages.length; i++) {
-          const { text, pageIndex } = pages[i];
+          let totalExtracted = { concepts: 0, relations: 0, clusters: 0, rules: 0 };
 
-          if (newExtractedPages.has(pageIndex)) continue;
+          for (let i = 0; i < pages.length; i++) {
+            const { text, pageIndex } = pages[i];
 
-          const result = runRelationshipExtraction(text, docId, pageIndex);
+            if (newExtractedPages.has(pageIndex)) {
+              console.log('🔬 Store: Skipping already extracted page', pageIndex);
+              continue;
+            }
 
-          for (const c of result.concepts) {
-            newConcepts[c.id] = c;
+            console.log('🔬 Store: Extracting page', pageIndex, '- text length:', text.length);
+
+            const result = runRelationshipExtraction(text, docId || 'default', pageIndex);
+            console.log('🔬 Store: Page', pageIndex, 'results:', {
+              concepts: result.concepts.length,
+              relations: result.relations.length,
+              clusters: result.clusters.length,
+              rules: result.rules.length,
+            });
+
+            for (const c of result.concepts) {
+              newConcepts[c.id] = c;
+              totalExtracted.concepts++;
+            }
+            for (const r of result.relations) {
+              newRelations[r.id] = r;
+              totalExtracted.relations++;
+            }
+            for (const cl of result.clusters) {
+              newClusters[cl.id] = cl;
+              totalExtracted.clusters++;
+            }
+            for (const r of result.rules) {
+              newRules[r.id] = r;
+              totalExtracted.rules++;
+            }
+
+            newExtractedPages.add(pageIndex);
+
+            // Update progress incrementally
+            set({
+              concepts: newConcepts,
+              relations: newRelations,
+              clusters: newClusters,
+              rules: newRules,
+              extractionProgress: (i + 1) / pages.length,
+            });
           }
-          for (const r of result.relations) {
-            newRelations[r.id] = r;
-          }
-          for (const cl of result.clusters) {
-            newClusters[cl.id] = cl;
-          }
-          for (const r of result.rules) {
-            newRules[r.id] = r;
-          }
 
-          newExtractedPages.add(pageIndex);
+          console.log('🔬 Store: Extraction complete. Total extracted:', totalExtracted);
 
-          // Update progress
-          set({ extractionProgress: (i + 1) / pages.length });
+          set({
+            extractedPages: newExtractedPages,
+            isExtracting: false,
+            extractionProgress: 1,
+            extractionError: undefined,
+          });
+        } catch (error) {
+          console.error('🔬 Store: Extraction failed:', error);
+          set({
+            isExtracting: false,
+            extractionProgress: 0,
+            extractionError: error instanceof Error ? error.message : 'Extraction failed',
+          });
+          throw error;
         }
-
-        set({
-          concepts: newConcepts,
-          relations: newRelations,
-          clusters: newClusters,
-          rules: newRules,
-          extractedPages: newExtractedPages,
-          isExtracting: false,
-          extractionProgress: 1,
-        });
       },
 
       // ========================================

@@ -21,6 +21,12 @@ import type {
 } from './types';
 import { runMatchingPipeline, applyGoldMapping } from './matcher';
 import type { TocItem } from '../stores/tocStore';
+import {
+  saveSyllabusBlocks,
+  saveTimeline,
+  saveMappings,
+  loadAllDocumentData,
+} from './indexedDBStorage';
 
 // ============================================================================
 // Store Interface
@@ -110,7 +116,33 @@ export const useCourseIntelligenceStore = create<CourseIntelligenceStore>()(
       // ========================================
 
       setDocument: (documentId, documentTitle) => {
+        const currentDocId = get().documentId;
         set({ documentId, documentTitle });
+
+        // Hydrate from IndexedDB if document changed
+        if (documentId && documentId !== currentDocId) {
+          console.log('📚 Course Intelligence: Hydrating from IndexedDB for', documentId);
+          loadAllDocumentData(documentId).then((data) => {
+            if (data) {
+              console.log('📚 Course Intelligence: Loaded from IndexedDB:', {
+                syllabusBlocks: data.syllabusBlocks.length,
+                timeline: data.timeline.length,
+                mappings: data.objectiveMappings.length,
+              });
+              set({
+                syllabusBlocks: data.syllabusBlocks,
+                timeline: data.timeline,
+                objectiveMappings: data.objectiveMappings,
+                lowConfidenceMappings: data.lowConfidenceMappings,
+                coverageGraph: data.coverageGraph,
+                studyPlan: data.studyPlan,
+                syllabusStatus: data.syllabusBlocks.length > 0 ? 'parsed' : 'none',
+              });
+            }
+          }).catch((err) => {
+            console.warn('📚 Course Intelligence: IndexedDB hydration failed:', err);
+          });
+        }
       },
 
       // ========================================
@@ -205,6 +237,7 @@ export const useCourseIntelligenceStore = create<CourseIntelligenceStore>()(
 
           console.log('📚 Course Intelligence: Generated timeline with', timeline.length, 'items');
 
+          // Update store state
           set({
             syllabusBlocks: blocks,
             exams,
@@ -213,6 +246,20 @@ export const useCourseIntelligenceStore = create<CourseIntelligenceStore>()(
             isLoading: false,
             lastSyncAt: Date.now(),
           });
+
+          // Save large data to IndexedDB (async, non-blocking)
+          const { documentId } = get();
+          if (documentId) {
+            console.log('📚 Course Intelligence: Saving to IndexedDB...');
+            Promise.all([
+              saveSyllabusBlocks(documentId, blocks, rawText),
+              saveTimeline(documentId, timeline),
+            ]).then(() => {
+              console.log('📚 Course Intelligence: Saved to IndexedDB successfully');
+            }).catch((err) => {
+              console.warn('📚 Course Intelligence: IndexedDB save failed:', err);
+            });
+          }
         } catch (error) {
           console.error('📚 Course Intelligence: Syllabus parsing error:', error);
           set({
@@ -236,7 +283,7 @@ export const useCourseIntelligenceStore = create<CourseIntelligenceStore>()(
       // ========================================
 
       runMapping: (tocItems) => {
-        const { syllabusBlocks } = get();
+        const { syllabusBlocks, documentId } = get();
         if (syllabusBlocks.length === 0) return;
 
         set({ syllabusStatus: 'mapping', isLoading: true });
@@ -250,6 +297,13 @@ export const useCourseIntelligenceStore = create<CourseIntelligenceStore>()(
             syllabusStatus: lowConfidence.length > 0 ? 'needs_review' : 'mapped',
             isLoading: false,
           });
+
+          // Save mappings to IndexedDB
+          if (documentId) {
+            saveMappings(documentId, mappings, lowConfidence).catch((err) => {
+              console.warn('📚 Course Intelligence: Failed to save mappings to IndexedDB:', err);
+            });
+          }
 
           // Build coverage graph after mapping
           get().buildCoverageGraph(tocItems);
