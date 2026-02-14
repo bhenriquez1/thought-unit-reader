@@ -34,53 +34,79 @@ interface RelationPattern {
 }
 
 const RELATION_PATTERNS: RelationPattern[] = [
-  // Causal patterns
+  // ============================================================================
+  // Causal patterns (cause → effect)
+  // ============================================================================
   {
     predicate: 'causes',
     patterns: [
-      /(\w+(?:\s+\w+)?)\s+(?:causes?|leads?\s+to|results?\s+in|produces?)\s+(\w+(?:\s+\w+)?)/gi,
-      /(\w+(?:\s+\w+)?)\s+→\s+(\w+(?:\s+\w+)?)/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:causes?|leads?\s+to|results?\s+in|produces?|induces?)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3})\s+→\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:is\s+responsible\s+for|contributes?\s+to)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(?:due\s+to|because\s+of)\s+(\w+(?:\s+\w+){0,3}).*?(\w+(?:\s+\w+){0,3})\s+(?:occurs?|happens?|develops?)/gi,
     ],
     confidence: 0.85,
   },
   {
     predicate: 'prevents',
     patterns: [
-      /(\w+(?:\s+\w+)?)\s+(?:prevents?|inhibits?|blocks?|stops?)\s+(\w+(?:\s+\w+)?)/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:prevents?|inhibits?|blocks?|stops?|reduces?)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:protects?\s+against|guards?\s+against)\s+(\w+(?:\s+\w+){0,3})/gi,
     ],
     confidence: 0.85,
   },
   {
     predicate: 'triggers',
     patterns: [
-      /(\w+(?:\s+\w+)?)\s+(?:triggers?|initiates?|starts?|activates?)\s+(\w+(?:\s+\w+)?)/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:triggers?|initiates?|starts?|activates?|stimulates?)\s+(\w+(?:\s+\w+){0,3})/gi,
     ],
     confidence: 0.80,
   },
 
-  // Transformational patterns
+  // ============================================================================
+  // Process patterns (step → outcome)
+  // ============================================================================
   {
     predicate: 'differentiate_into',
     patterns: [
-      /(\w+(?:\s+\w+)?)\s+(?:differentiate(?:s)?|transform(?:s)?|develop(?:s)?|mature(?:s)?)\s+into\s+(\w+(?:\s+\w+)?)/gi,
-      /(\w+(?:\s+\w+)?)\s+(?:become(?:s)?|turn(?:s)?)\s+(?:into\s+)?(\w+(?:\s+\w+)?)/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:differentiate(?:s)?|transform(?:s)?|develop(?:s)?|mature(?:s)?|evolve(?:s)?)\s+into\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:become(?:s)?|turn(?:s)?|convert(?:s)?)\s+(?:into\s+)?(\w+(?:\s+\w+){0,3})/gi,
     ],
     confidence: 0.90,
   },
   {
     predicate: 'produces',
     patterns: [
-      /(\w+(?:\s+\w+)?)\s+(?:produces?|generates?|creates?|synthesizes?|secretes?)\s+(\w+(?:\s+\w+)?)/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:produces?|generates?|creates?|synthesizes?|secretes?|releases?|forms?)\s+(\w+(?:\s+\w+){0,3})/gi,
     ],
     confidence: 0.85,
   },
+  {
+    predicate: 'precedes',
+    patterns: [
+      /(\w+(?:\s+\w+){0,3})\s+(?:precedes?|comes?\s+before|occurs?\s+before|leads?\s+to)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(?:first|initially)\s+(\w+(?:\s+\w+){0,3}).*?(?:then|followed\s+by)\s+(\w+(?:\s+\w+){0,3})/gi,
+    ],
+    confidence: 0.80,
+  },
+  {
+    predicate: 'follows',
+    patterns: [
+      /(\w+(?:\s+\w+){0,3})\s+(?:follows?|comes?\s+after|occurs?\s+after)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(?:after|following)\s+(\w+(?:\s+\w+){0,3}).*?(\w+(?:\s+\w+){0,3})\s+(?:occurs?|happens?|begins?)/gi,
+    ],
+    confidence: 0.80,
+  },
 
-  // Diagnostic patterns
+  // ============================================================================
+  // Diagnostic patterns (finding → diagnosis)
+  // ============================================================================
   {
     predicate: 'suggests',
     patterns: [
-      /(\w+(?:\s+\w+)?)\s+(?:suggests?|indicates?|implies?|points?\s+to)\s+(\w+(?:\s+\w+)?)/gi,
-      /presence\s+of\s+(\w+(?:\s+\w+)?)\s+(?:suggests?|indicates?)\s+(\w+(?:\s+\w+)?)/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:suggests?|indicates?|implies?|points?\s+to|is\s+characteristic\s+of)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /presence\s+of\s+(\w+(?:\s+\w+){0,3})\s+(?:suggests?|indicates?|is\s+seen\s+in)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:is\s+)?(?:a\s+)?(?:sign|symptom|feature|marker)\s+of\s+(\w+(?:\s+\w+){0,3})/gi,
     ],
     subjType: ['finding'],
     confidence: 0.80,
@@ -88,41 +114,68 @@ const RELATION_PATTERNS: RelationPattern[] = [
   {
     predicate: 'rules_out',
     patterns: [
-      /(\w+(?:\s+\w+)?)\s+(?:rules?\s+out|excludes?|eliminates?)\s+(\w+(?:\s+\w+)?)/gi,
-      /absence\s+of\s+(\w+(?:\s+\w+)?)\s+(?:rules?\s+out|excludes?)\s+(\w+(?:\s+\w+)?)/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:rules?\s+out|excludes?|eliminates?|makes?\s+unlikely)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /absence\s+of\s+(\w+(?:\s+\w+){0,3})\s+(?:rules?\s+out|excludes?|argues?\s+against)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(?:negative|normal)\s+(\w+(?:\s+\w+){0,3})\s+(?:rules?\s+out|excludes?)\s+(\w+(?:\s+\w+){0,3})/gi,
     ],
     confidence: 0.85,
   },
   {
     predicate: 'confirms',
     patterns: [
-      /(\w+(?:\s+\w+)?)\s+(?:confirms?|verifies?|establishes?)\s+(?:the\s+)?(?:diagnosis\s+of\s+)?(\w+(?:\s+\w+)?)/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:confirms?|verifies?|establishes?|proves?)\s+(?:the\s+)?(?:diagnosis\s+of\s+)?(\w+(?:\s+\w+){0,3})/gi,
+      /(?:positive|abnormal)\s+(\w+(?:\s+\w+){0,3})\s+(?:confirms?|indicates?)\s+(\w+(?:\s+\w+){0,3})/gi,
     ],
     confidence: 0.85,
   },
+  {
+    predicate: 'associated_with',
+    patterns: [
+      /(\w+(?:\s+\w+){0,3})\s+(?:is\s+)?associated\s+with\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:is\s+)?(?:commonly\s+)?(?:seen|found|observed)\s+(?:in|with)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:is\s+)?linked\s+to\s+(\w+(?:\s+\w+){0,3})/gi,
+    ],
+    confidence: 0.75,
+  },
 
-  // Structural patterns
+  // ============================================================================
+  // Structural patterns (part → whole)
+  // ============================================================================
   {
     predicate: 'part_of',
     patterns: [
-      /(\w+(?:\s+\w+)?)\s+(?:is\s+)?(?:a\s+)?part\s+of\s+(\w+(?:\s+\w+)?)/gi,
-      /(\w+(?:\s+\w+)?)\s+(?:is\s+)?(?:a\s+)?component\s+of\s+(\w+(?:\s+\w+)?)/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:is\s+)?(?:a\s+)?part\s+of\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:is\s+)?(?:a\s+)?component\s+of\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:belongs?\s+to|is\s+included\s+in)\s+(\w+(?:\s+\w+){0,3})/gi,
     ],
     confidence: 0.90,
   },
   {
+    predicate: 'contains',
+    patterns: [
+      /(\w+(?:\s+\w+){0,3})\s+(?:contains?|includes?|comprises?|consists?\s+of)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:is\s+)?(?:made\s+up\s+of|composed\s+of)\s+(\w+(?:\s+\w+){0,3})/gi,
+    ],
+    confidence: 0.85,
+  },
+  {
     predicate: 'located_in',
     patterns: [
-      /(\w+(?:\s+\w+)?)\s+(?:is\s+)?(?:located|found|present)\s+in\s+(\w+(?:\s+\w+)?)/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:is\s+)?(?:located|found|present|situated)\s+in\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:resides?|exists?|occurs?)\s+in\s+(\w+(?:\s+\w+){0,3})/gi,
     ],
     confidence: 0.85,
   },
 
-  // Clinical patterns
+  // ============================================================================
+  // Clinical patterns (treatment → condition)
+  // ============================================================================
   {
     predicate: 'treats',
     patterns: [
-      /(\w+(?:\s+\w+)?)\s+(?:treats?|is\s+used\s+(?:to\s+)?treat|manages?)\s+(\w+(?:\s+\w+)?)/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:treats?|is\s+used\s+(?:to\s+)?treat|manages?|alleviates?)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:is\s+)?(?:effective|indicated)\s+(?:for|in)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(?:treatment\s+(?:of|for)|therapy\s+for)\s+(\w+(?:\s+\w+){0,3})\s+(?:includes?|involves?)\s+(\w+(?:\s+\w+){0,3})/gi,
     ],
     subjType: ['tool'],
     objType: ['finding', 'process'],
@@ -131,10 +184,74 @@ const RELATION_PATTERNS: RelationPattern[] = [
   {
     predicate: 'contraindicates',
     patterns: [
-      /(\w+(?:\s+\w+)?)\s+(?:is\s+)?contraindicated\s+(?:in|for|with)\s+(\w+(?:\s+\w+)?)/gi,
-      /(?:do\s+not|avoid)\s+(\w+(?:\s+\w+)?)\s+(?:in|with)\s+(\w+(?:\s+\w+)?)/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:is\s+)?contraindicated\s+(?:in|for|with)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(?:do\s+not|avoid|never)\s+(?:use\s+)?(\w+(?:\s+\w+){0,3})\s+(?:in|with|for)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:should\s+be\s+avoided|is\s+dangerous)\s+(?:in|with)\s+(\w+(?:\s+\w+){0,3})/gi,
     ],
     confidence: 0.90,
+  },
+
+  // ============================================================================
+  // Functional patterns (structure → function)
+  // ============================================================================
+  {
+    predicate: 'functions_as',
+    patterns: [
+      /(\w+(?:\s+\w+){0,3})\s+(?:functions?\s+as|acts?\s+as|serves?\s+as|works?\s+as)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:is\s+responsible\s+for|plays?\s+(?:a\s+)?role\s+in)\s+(\w+(?:\s+\w+){0,3})/gi,
+    ],
+    confidence: 0.80,
+  },
+  {
+    predicate: 'regulates',
+    patterns: [
+      /(\w+(?:\s+\w+){0,3})\s+(?:regulates?|controls?|modulates?|influences?)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:affects?|impacts?|alters?)\s+(\w+(?:\s+\w+){0,3})/gi,
+    ],
+    confidence: 0.80,
+  },
+
+  // ============================================================================
+  // Comparison patterns (A vs B)
+  // ============================================================================
+  {
+    predicate: 'differs_from',
+    patterns: [
+      /(\w+(?:\s+\w+){0,3})\s+(?:differs?\s+from|is\s+different\s+from|unlike)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:vs\.?|versus|compared\s+to)\s+(\w+(?:\s+\w+){0,3})/gi,
+    ],
+    confidence: 0.75,
+  },
+  {
+    predicate: 'similar_to',
+    patterns: [
+      /(\w+(?:\s+\w+){0,3})\s+(?:is\s+similar\s+to|resembles?|is\s+like)\s+(\w+(?:\s+\w+){0,3})/gi,
+    ],
+    confidence: 0.75,
+  },
+
+  // ============================================================================
+  // Definition patterns (term = meaning)
+  // ============================================================================
+  {
+    predicate: 'defined_as',
+    patterns: [
+      /(\w+(?:\s+\w+){0,3})\s+(?:is\s+defined\s+as|refers?\s+to|means?)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3}):\s+(\w+(?:\s+\w+){0,3})/gi,
+    ],
+    confidence: 0.85,
+  },
+
+  // ============================================================================
+  // Requirement patterns (condition → necessity)
+  // ============================================================================
+  {
+    predicate: 'requires',
+    patterns: [
+      /(\w+(?:\s+\w+){0,3})\s+(?:requires?|needs?|depends?\s+on|necessitates?)\s+(\w+(?:\s+\w+){0,3})/gi,
+      /(\w+(?:\s+\w+){0,3})\s+(?:is\s+)?(?:essential|necessary|required)\s+for\s+(\w+(?:\s+\w+){0,3})/gi,
+    ],
+    confidence: 0.80,
   },
 ];
 
@@ -183,27 +300,33 @@ interface ClusterPattern {
 const CLUSTER_PATTERNS: ClusterPattern[] = [
   {
     kind: 'process',
-    predicates: ['differentiate_into', 'transforms_into', 'produces', 'precedes', 'follows'],
-    minRelations: 2,
+    predicates: ['differentiate_into', 'transforms_into', 'produces', 'precedes', 'follows', 'regulates', 'functions_as'],
+    minRelations: 1, // Lower threshold for better detection
     titleTemplate: (concepts) => `${concepts[0]} process pathway`,
   },
   {
     kind: 'causal',
-    predicates: ['causes', 'triggers', 'activates', 'inhibits', 'prevents'],
-    minRelations: 2,
+    predicates: ['causes', 'triggers', 'activates', 'inhibits', 'prevents', 'requires'],
+    minRelations: 1, // Lower threshold for better detection
     titleTemplate: (concepts) => `${concepts[0]} causal chain`,
   },
   {
     kind: 'diagnostic',
-    predicates: ['suggests', 'indicates', 'rules_out', 'confirms', 'associated_with'],
-    minRelations: 2,
+    predicates: ['suggests', 'indicates', 'rules_out', 'confirms', 'associated_with', 'defined_as'],
+    minRelations: 1, // Lower threshold for better detection
     titleTemplate: (concepts) => `${concepts[0]} diagnostic pathway`,
   },
   {
     kind: 'risk',
-    predicates: ['contraindicates', 'complicates', 'causes'],
+    predicates: ['contraindicates', 'complicates', 'causes', 'prevents'],
     minRelations: 1,
     titleTemplate: (concepts) => `${concepts[0]} risk pattern`,
+  },
+  {
+    kind: 'exception',
+    predicates: ['differs_from', 'contraindicates', 'rules_out'],
+    minRelations: 1,
+    titleTemplate: (concepts) => `${concepts[0]} exception`,
   },
 ];
 
