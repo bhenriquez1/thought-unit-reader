@@ -71,12 +71,15 @@ export type RelationPredicate =
   | 'adjacent_to'
   // Functional
   | 'function_of'
+  | 'functions_as'
   | 'requires'
   | 'enables'
   | 'used_for'
+  | 'regulates'
   // Comparative
   | 'similar_to'
   | 'different_from'
+  | 'differs_from'
   | 'more_than'
   | 'less_than'
   // Clinical
@@ -84,7 +87,9 @@ export type RelationPredicate =
   | 'contraindicates'
   | 'complicates'
   | 'precedes'
-  | 'follows';
+  | 'follows'
+  // Definition
+  | 'defined_as';
 
 export interface Relation {
   id: string;              // "r:monocyte-diff-macrophage"
