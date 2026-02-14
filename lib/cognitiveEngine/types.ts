@@ -426,3 +426,162 @@ export interface InsightPanelState {
   // Actions pending
   pendingAction: 'send_to_notelab' | 'train_in_study' | null;
 }
+
+// ============================================================================
+// NoteLab 2.0 - Enhanced Types for 3-Lane Kanban
+// ============================================================================
+
+/**
+ * Note types for categorization
+ */
+export type NoteLabNoteType =
+  | 'INSIGHT'       // Auto-imported from Priority Feed + highlights
+  | 'DIFFERENTIAL'  // Compare/contrast patterns
+  | 'DECISION_RULE' // IF → THEN → CONFIRM
+  | 'PATHWAY'       // Process/causal chains
+  | 'TRAP'          // Common mistakes, exam traps
+  | 'MNEMONIC'      // Memory aids
+  | 'QUESTION';     // Questions to investigate
+
+/**
+ * Lane types for 3-lane Kanban
+ */
+export type NoteLabLane =
+  | 'insights'   // Auto-imported insights + highlights
+  | 'reasoning'  // Differentials, decision rules, pathways
+  | 'memory';    // Flashcards, mnemonics, traps
+
+/**
+ * Miss Detector - Why I might miss this + how to catch it
+ */
+export interface MissDetector {
+  whyIMightMiss: string;       // Common reasons for missing
+  howToDetectNextTime: string; // Detection strategy
+  closestLookAlike: string;    // Most commonly confused with
+}
+
+/**
+ * NoteLab 2.0 Note structure
+ */
+export interface NoteLabNote {
+  id: string;
+
+  // Core content
+  title: string;
+  content: string;
+  noteType: NoteLabNoteType;
+  lane: NoteLabLane;
+
+  // Miss Detector (optional but encouraged)
+  missDetector?: MissDetector;
+
+  // Source tracking
+  sourceType?: 'insight' | 'relation' | 'cluster' | 'rule' | 'manual';
+  sourceId?: string;
+
+  // Page context
+  pageIndex?: number;
+  quote?: string;
+
+  // Tags for filtering
+  tags: string[];
+
+  // Importance bucket from source (if from insight)
+  importanceBucket?: 'CRITICAL' | 'HIGH_YIELD' | 'IMPORTANT' | 'CONTEXT';
+
+  // User state
+  isConfusing: boolean;
+  isMastered: boolean;
+  reviewCount: number;
+
+  // Timestamps
+  createdAt: number;
+  updatedAt: number;
+  lastReviewedAt?: number;
+}
+
+/**
+ * Quick capture button types
+ */
+export type QuickCaptureType =
+  | 'insight'    // 💡 → insights lane
+  | 'confusing'  // ⚠️ → reasoning lane
+  | 'review'     // 🔁 → memory lane
+  | 'high_yield' // 🔥 → insights lane
+  | 'question';  // ❓ → reasoning lane
+
+/**
+ * NoteLab store state
+ */
+export interface NoteLabStoreState {
+  // Notes by ID
+  notes: Record<string, NoteLabNote>;
+
+  // Quick access indexes
+  notesByLane: Record<NoteLabLane, string[]>;
+  notesByType: Record<NoteLabNoteType, string[]>;
+  notesByPage: Record<number, string[]>;
+
+  // UI state
+  selectedNoteId?: string;
+  activeLane: NoteLabLane;
+  filterByType?: NoteLabNoteType;
+  showMasteredNotes: boolean;
+
+  // Search
+  searchQuery: string;
+}
+
+/**
+ * NoteLab store actions
+ */
+export interface NoteLabStoreActions {
+  // CRUD
+  addNote: (note: Omit<NoteLabNote, 'id' | 'createdAt' | 'updatedAt' | 'reviewCount'>) => string;
+  updateNote: (noteId: string, updates: Partial<NoteLabNote>) => void;
+  deleteNote: (noteId: string) => void;
+
+  // Quick capture
+  quickCapture: (
+    type: QuickCaptureType,
+    content: string,
+    sourceId?: string,
+    pageIndex?: number
+  ) => string;
+
+  // Import from insights
+  importFromInsight: (insight: {
+    id: string;
+    title: string;
+    claim: string;
+    whyItMatters: string;
+    bucket: string;
+    sourceId: string;
+    sourceType: string;
+    evidence: { page: number; text: string }[];
+    tags: string[];
+  }) => string;
+
+  // Miss Detector
+  updateMissDetector: (noteId: string, missDetector: MissDetector) => void;
+
+  // State changes
+  markConfusing: (noteId: string) => void;
+  markMastered: (noteId: string) => void;
+  moveToLane: (noteId: string, lane: NoteLabLane) => void;
+
+  // Review
+  recordReview: (noteId: string) => void;
+
+  // UI
+  selectNote: (noteId: string | undefined) => void;
+  setActiveLane: (lane: NoteLabLane) => void;
+  setFilterByType: (type: NoteLabNoteType | undefined) => void;
+  toggleShowMastered: () => void;
+  setSearchQuery: (query: string) => void;
+
+  // Getters
+  getNotesForLane: (lane: NoteLabLane) => NoteLabNote[];
+  getConfusingNotes: () => NoteLabNote[];
+  getNotesForReview: () => NoteLabNote[];
+}
