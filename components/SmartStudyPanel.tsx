@@ -7,6 +7,7 @@ import { TRIGGER_LABELS } from '../lib/core/types';
 // SmartStudyPanel uses legacy CoreItemWithLearning — render inline cards instead
 import ExamMode, { ExamResultsPanel } from './ExamMode';
 import AnalyticsDashboard from './AnalyticsDashboard';
+import RelationDrillPanel from './surgeonView2/RelationDrillPanel';
 import {
   sortByPriority,
   getDueItems,
@@ -18,6 +19,7 @@ import {
   type ExamConfig,
 } from '../lib/core/analytics';
 import { useLearningStore } from '../lib/stores/learningStore';
+import { useRelationshipStore } from '../lib/relationshipSchema/store';
 
 // ============================================================================
 // Types
@@ -28,9 +30,10 @@ interface SmartStudyPanelProps {
   items: CoreItemWithLearning[];
   onItemReview: (itemId: string, grade: ReviewGrade) => void;
   onItemSelect?: (item: CoreItemWithLearning) => void;
+  onJumpToPage?: (page: number) => void;
 }
 
-type StudyView = 'queue' | 'analytics' | 'exam' | 'results';
+type StudyView = 'relations' | 'queue' | 'analytics' | 'exam' | 'results';
 type FilterMode = 'all' | 'due' | 'weak' | 'new' | 'mastered';
 
 // ============================================================================
@@ -297,9 +300,14 @@ export const SmartStudyPanel = memo(function SmartStudyPanel({
   items,
   onItemReview,
   onItemSelect,
+  onJumpToPage,
 }: SmartStudyPanelProps) {
-  // State
-  const [view, setView] = useState<StudyView>('queue');
+  // Check if we have relations to drill
+  const { relations } = useRelationshipStore();
+  const hasRelations = Object.keys(relations).length > 0;
+
+  // State - default to relations if available
+  const [view, setView] = useState<StudyView>(hasRelations ? 'relations' : 'queue');
   const [filterMode, setFilterMode] = useState<FilterMode>('due');
   const [examResults, setExamResults] = useState<any>(null);
   const [recallHistory, setRecallHistory] = useState<RecallAttempt[]>([]);
@@ -332,13 +340,20 @@ export const SmartStudyPanel = memo(function SmartStudyPanel({
   // Render based on view
   const renderContent = () => {
     switch (view) {
+      case 'relations':
+        return (
+          <RelationDrillPanel
+            onJumpToPage={onJumpToPage}
+          />
+        );
+
       case 'exam':
         return (
           <ExamMode
             items={items}
             onRecallAttempt={handleRecallAttempt}
             onComplete={handleExamComplete}
-            onExit={() => setView('queue')}
+            onExit={() => setView('relations')}
           />
         );
 
@@ -353,7 +368,7 @@ export const SmartStudyPanel = memo(function SmartStudyPanel({
             }}
             onClose={() => {
               setExamResults(null);
-              setView('queue');
+              setView('relations');
             }}
           />
         ) : null;
@@ -407,6 +422,16 @@ export const SmartStudyPanel = memo(function SmartStudyPanel({
         {/* View Toggle */}
         <div className="flex items-center gap-1">
           <button
+            onClick={() => setView('relations')}
+            className={`px-3 py-1 text-xs rounded transition-colors ${
+              view === 'relations'
+                ? 'bg-purple-600 text-white'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            Relations
+          </button>
+          <button
             onClick={() => setView('queue')}
             className={`px-3 py-1 text-xs rounded transition-colors ${
               view === 'queue' || view === 'results'
@@ -414,7 +439,7 @@ export const SmartStudyPanel = memo(function SmartStudyPanel({
                 : 'text-gray-400 hover:text-white'
             }`}
           >
-            Queue
+            Cards
           </button>
           <button
             onClick={() => setView('analytics')}
@@ -424,7 +449,7 @@ export const SmartStudyPanel = memo(function SmartStudyPanel({
                 : 'text-gray-400 hover:text-white'
             }`}
           >
-            Analytics
+            Stats
           </button>
           <button
             onClick={() => setView('exam')}

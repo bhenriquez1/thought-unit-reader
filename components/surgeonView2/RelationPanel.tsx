@@ -182,23 +182,29 @@ const RelationCard: React.FC<{
         </p>
       )}
 
-      {/* Footer: Page link */}
-      {page && (
-        <div className="flex items-center gap-2 mt-2 text-xs">
+      {/* Footer: Page anchor & modality */}
+      <div className="flex items-center gap-2 mt-2 text-xs">
+        {page !== undefined && (
           <button
             onClick={(e) => {
               e.stopPropagation();
               onJumpToPage(page);
             }}
-            className="text-teal-400 hover:text-teal-300"
+            className="px-2 py-0.5 bg-teal-900/40 text-teal-400 hover:text-teal-300 hover:bg-teal-900/60 rounded transition-colors flex items-center gap-1"
           >
-            p.{page}
+            <span>📄</span>
+            <span>p.{page}</span>
           </button>
-          {relation.modality && (
-            <span className="text-gray-500">({relation.modality})</span>
-          )}
-        </div>
-      )}
+        )}
+        {relation.modality && (
+          <span className="text-gray-500 italic">{relation.modality}</span>
+        )}
+        {relation.evidence[0]?.spanHash && (
+          <span className="text-gray-600 text-[10px] font-mono">
+            #{relation.evidence[0].spanHash.slice(-6)}
+          </span>
+        )}
+      </div>
     </div>
   );
 };

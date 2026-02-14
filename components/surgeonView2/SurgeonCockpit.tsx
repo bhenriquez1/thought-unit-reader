@@ -2,7 +2,7 @@
 // Surgeon View 2.0 - Relationship-First Cockpit
 // Layout: Left rail (clusters) | Main (relations) | Right overlay (insights)
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useRelationshipStore } from '@/lib/relationshipSchema/store';
 import type { PatternCluster, Relation, PatternClusterKind, DecisionRule } from '@/lib/relationshipSchema/types';
 import ClusterRail from './ClusterRail';
@@ -35,6 +35,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     filterByConfidence,
     isExtracting,
     extractionProgress,
+    extractionError,
     extractFromMultiplePages,
     selectCluster,
     selectRelation,
@@ -44,6 +45,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     getCockpitViewData,
     getRelationsForCluster,
     getChainsFromCluster,
+    setDocId,
   } = useRelationshipStore();
 
   const [showInsightOverlay, setShowInsightOverlay] = useState(false);
@@ -51,6 +53,30 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     type: 'relation' | 'cluster' | 'rule';
     id: string;
   } | null>(null);
+  const [extractionStatus, setExtractionStatus] = useState<string>('');
+  const hasAutoExtracted = useRef(false);
+
+  // Set document ID on mount
+  useEffect(() => {
+    if (documentId) {
+      setDocId(documentId);
+    }
+  }, [documentId, setDocId]);
+
+  // Auto-extract on first load if we have pages and no relations yet
+  useEffect(() => {
+    if (
+      pageTexts &&
+      pageTexts.size > 0 &&
+      Object.keys(relations).length === 0 &&
+      !isExtracting &&
+      !hasAutoExtracted.current
+    ) {
+      hasAutoExtracted.current = true;
+      console.log('🔬 Cockpit: Auto-extracting from', pageTexts.size, 'pages');
+      handleExtract();
+    }
+  }, [pageTexts, relations, isExtracting]);
 
   // Computed data
   const cockpitData = getCockpitViewData();
@@ -67,16 +93,42 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     ? getChainsFromCluster(selectedClusterId)
     : [];
 
-  // Handle extraction
+  // Handle extraction with detailed logging
   const handleExtract = useCallback(async () => {
-    if (!pageTexts || pageTexts.size === 0) return;
+    if (!pageTexts || pageTexts.size === 0) {
+      console.warn('🔬 Cockpit: No pageTexts available for extraction');
+      setExtractionStatus('No page text available');
+      return;
+    }
 
+    // Log what we're extracting
     const pages = Array.from(pageTexts.entries()).map(([pageIndex, text]) => ({
       pageIndex,
       text,
     }));
 
-    await extractFromMultiplePages(pages);
+    console.log('🔬 Cockpit: Starting extraction');
+    console.log('🔬 Cockpit: Pages to extract:', pages.length);
+    console.log('🔬 Cockpit: Text lengths:', pages.map(p => `p${p.pageIndex}:${p.text.length}chars`).join(', '));
+
+    // Check if any page has actual text
+    const pagesWithText = pages.filter(p => p.text.trim().length > 50);
+    if (pagesWithText.length === 0) {
+      console.warn('🔬 Cockpit: All pages have insufficient text');
+      setExtractionStatus('Pages have no extractable text');
+      return;
+    }
+
+    setExtractionStatus(`Extracting from ${pagesWithText.length} pages...`);
+
+    try {
+      await extractFromMultiplePages(pagesWithText);
+      setExtractionStatus('');
+      console.log('🔬 Cockpit: Extraction complete');
+    } catch (error) {
+      console.error('🔬 Cockpit: Extraction failed:', error);
+      setExtractionStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }, [pageTexts, extractFromMultiplePages]);
 
   // Handle relation click - open insight overlay
@@ -120,6 +172,23 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         onExtract={handleExtract}
         canExtract={!!pageTexts && pageTexts.size > 0}
       />
+
+      {/* Status/Error Banner */}
+      {(extractionStatus || extractionError) && (
+        <div className={`px-4 py-2 text-sm ${extractionError ? 'bg-red-900/50 text-red-300' : 'bg-blue-900/50 text-blue-300'}`}>
+          {extractionError || extractionStatus}
+        </div>
+      )}
+
+      {/* Debug info (dev mode) */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="px-4 py-1 bg-gray-800 text-xs text-gray-500 flex gap-4">
+          <span>Pages: {pageTexts?.size || 0}</span>
+          <span>Relations: {Object.keys(relations).length}</span>
+          <span>Clusters: {Object.keys(clusters).length}</span>
+          <span>Extracting: {isExtracting ? 'Yes' : 'No'}</span>
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
