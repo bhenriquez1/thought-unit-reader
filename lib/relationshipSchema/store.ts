@@ -12,8 +12,12 @@ import type {
   Insight,
   CockpitViewData,
   ExtractionResult,
+  RankedInsight,
+  ImportanceBucket,
+  InsightType,
 } from './types';
 import { runRelationshipExtraction } from './extractor';
+import { generateAllRankedInsights, filterRankedInsights } from './importanceEngine';
 
 // ============================================================================
 // Store State
@@ -85,6 +89,14 @@ interface RelationshipStoreActions {
     relations: Relation[];
     concepts: Concept[];
   }[];
+
+  // Importance Engine
+  getRankedInsights: (options?: {
+    minBucket?: ImportanceBucket;
+    types?: InsightType[];
+    pageFilter?: number;
+    limit?: number;
+  }) => RankedInsight[];
 }
 
 type RelationshipStore = RelationshipStoreState & RelationshipStoreActions;
@@ -486,6 +498,29 @@ export const useRelationshipStore = create<RelationshipStore>()(
         }
 
         return chains;
+      },
+
+      // ========================================
+      // Importance Engine
+      // ========================================
+
+      getRankedInsights: (options) => {
+        const { relations, clusters, rules, concepts } = get();
+
+        // Generate all insights
+        const allInsights = generateAllRankedInsights(
+          relations,
+          clusters,
+          rules,
+          concepts
+        );
+
+        // Apply filters if provided
+        if (options) {
+          return filterRankedInsights(allInsights, options);
+        }
+
+        return allInsights;
       },
     }),
     {

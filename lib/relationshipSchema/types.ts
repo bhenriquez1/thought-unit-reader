@@ -204,6 +204,99 @@ export interface ExtractionResult {
 }
 
 // ============================================================================
+// IMPORTANCE ENGINE - Scoring System
+// ============================================================================
+
+export type EvidenceSpan = {
+  page: number;
+  text: string;
+  bbox?: { x: number; y: number; w: number; h: number };
+  sectionHint?: string;
+};
+
+export type InsightType =
+  | 'DIAGNOSTIC_SIGNAL'
+  | 'HIGH_YIELD_ASSOCIATION'
+  | 'RED_FLAG'
+  | 'CLINICAL_PEARL'
+  | 'EXAM_TRAP'
+  | 'DECISION_RULE'
+  | 'DIFFERENTIAL';
+
+export type DomainTag = 'DENTAL' | 'MEDICAL' | 'BOTH' | 'GENERAL';
+
+export type ImportanceBucket = 'CRITICAL' | 'HIGH_YIELD' | 'IMPORTANT' | 'CONTEXT';
+
+export interface ImportanceFactors {
+  diagnosticWeight: number;      // 0-1: diagnostic cue phrases
+  examFrequency: number;         // 0-1: DAT/exam keyword matches
+  decisionImpact: number;        // 0-1: action/treatment implications
+  redFlagWeight: number;         // 0-1: danger/emergency signals
+  systemicSignificance: number;  // 0-1: multi-organ relevance
+  exceptionValue: number;        // 0-1: except/distinguish patterns
+  evidenceStrength: number;      // 0-1: evidence quality
+  rarityPenalty: number;         // 0-1: rare/obscure (subtracted)
+  ambiguityPenalty: number;      // 0-1: hedgy language (subtracted)
+}
+
+export interface RankedInsight {
+  id: string;
+  type: InsightType;
+  title: string;
+  claim: string;
+  whyItMatters: string;
+  tags: string[];
+  domain: DomainTag;
+  evidence: EvidenceSpan[];
+  factors: ImportanceFactors;
+  score: number;                 // 0-100
+  bucket: ImportanceBucket;
+  confidence: number;            // 0-1 extraction confidence
+
+  // Source tracking
+  sourceId: string;              // relation.id, cluster.id, or rule.id
+  sourceType: 'relation' | 'cluster' | 'rule';
+
+  // Optional enrichments
+  keyCue?: string;               // Memory trigger phrase
+  trap?: string;                 // Common mistake
+  clinicalPearl?: string;
+
+  // DAT Apex integration
+  apexPatternId?: string;
+  apexBadge?: {
+    patternName: string;
+    whatTheyTest: string;
+    commonTrap: string;
+    decisionRule: string;
+    quickMnemonic?: string;
+  };
+
+  // Timestamps
+  computedAt: number;
+}
+
+// Scoring formula weights
+export const IMPORTANCE_WEIGHTS = {
+  diagnosticWeight: 22,
+  examFrequency: 18,
+  decisionImpact: 18,
+  redFlagWeight: 16,
+  systemicSignificance: 12,
+  exceptionValue: 8,
+  evidenceStrength: 10,
+  rarityPenalty: -8,
+  ambiguityPenalty: -6,
+} as const;
+
+// Bucket thresholds
+export const IMPORTANCE_THRESHOLDS = {
+  CRITICAL: 85,
+  HIGH_YIELD: 70,
+  IMPORTANT: 50,
+} as const;
+
+// ============================================================================
 // Store State
 // ============================================================================
 
