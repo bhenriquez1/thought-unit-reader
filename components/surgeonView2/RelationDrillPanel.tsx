@@ -71,7 +71,7 @@ function generateObjectDrill(
     hints: object.aliases?.slice(0, 2) || [],
     attempts: 0,
     correctCount: 0,
-    pageIndex: relation.pageIndex,
+    pageIndex: relation.evidence?.[0]?.page,
   };
 }
 
@@ -95,7 +95,7 @@ function generatePredicateDrill(
     hints: [],
     attempts: 0,
     correctCount: 0,
-    pageIndex: relation.pageIndex,
+    pageIndex: relation.evidence?.[0]?.page,
   };
 }
 
