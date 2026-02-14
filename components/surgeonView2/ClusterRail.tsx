@@ -156,17 +156,15 @@ const ClusterCard: React.FC<{
       {/* Stats row */}
       <div className="flex items-center gap-2 mt-2 text-xs">
         <span className="text-gray-400">
-          {cluster.relationIds.length} relations
+          {cluster.relationIds.length} rel
         </span>
-        <span className="text-gray-600">•</span>
         <ConfidenceMini value={cluster.confidence} />
         {cluster.refs.length > 0 && (
-          <>
-            <span className="text-gray-600">•</span>
-            <span className="text-gray-400">
-              p.{cluster.refs[0].page}
-            </span>
-          </>
+          <span className="px-1.5 py-0.5 bg-gray-700 rounded text-gray-300 flex items-center gap-1">
+            <span>📄</span>
+            <span>p.{cluster.refs[0].page}</span>
+            {cluster.refs.length > 1 && <span className="text-gray-500">+{cluster.refs.length - 1}</span>}
+          </span>
         )}
       </div>
     </div>
