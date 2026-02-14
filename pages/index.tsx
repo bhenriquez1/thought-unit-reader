@@ -1928,15 +1928,35 @@ export default function ThoughtUnitReader() {
     // Merged: Surgeon View + Expert Mode into single Expert View
     // Architecture: Relations → Clusters → Decision Rules (not concepts)
     if (viewMode === "hybrid") {
-      // Get current page text for extraction
-      const currentPageText = thoughtUnits?.[currentThoughtUnit - 1]?.text || '';
-
       // Find current chapter for context
       const currentChapter = tableOfContents.find((entry, idx) => {
         const nextEntry = tableOfContents[idx + 1];
         return entry.pageNumber <= currentPage &&
           (!nextEntry || nextEntry.pageNumber > currentPage);
       });
+
+      // Get next chapter start page (or end of document)
+      const currentChapterIdx = currentChapter ? tableOfContents.indexOf(currentChapter) : -1;
+      const nextChapter = currentChapterIdx >= 0 ? tableOfContents[currentChapterIdx + 1] : undefined;
+      const chapterStartPage = currentChapter?.pageNumber || 1;
+      const chapterEndPage = nextChapter?.pageNumber ? nextChapter.pageNumber - 1 : (pdfPageCount || currentPage);
+
+      // Build pageTexts Map for ALL pages in current chapter (for extraction)
+      const pageTexts = new Map<number, string>();
+      for (let page = chapterStartPage; page <= chapterEndPage; page++) {
+        const unitIndex = pageToUnit(page, pdfPageCount || page, thoughtUnits?.length || 1);
+        const text = thoughtUnits?.[unitIndex - 1]?.text || '';
+        if (text.trim()) {
+          pageTexts.set(page, text);
+        }
+      }
+      // Ensure current page is included
+      if (!pageTexts.has(currentPage)) {
+        const currentPageText = thoughtUnits?.[currentThoughtUnit - 1]?.text || '';
+        if (currentPageText.trim()) {
+          pageTexts.set(currentPage, currentPageText);
+        }
+      }
 
       // Generate chapter ID
       const getChapterIdForPage = (page: number): string => {
@@ -1983,7 +2003,7 @@ export default function ThoughtUnitReader() {
                 documentId={bookId}
                 documentTitle={sanitizeDocTitle(currentChapter?.title, uploadedFile?.name || "Document")}
                 onJumpToPage={(page) => syncToPage(page)}
-                pageTexts={new Map([[currentPage, currentPageText]])}
+                pageTexts={pageTexts}
               />
             </div>
 

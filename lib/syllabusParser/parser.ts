@@ -160,8 +160,11 @@ export function parseSyllabus(text: string): ParsedSyllabus {
   const blocks: SyllabusBlock[] = [];
   const metadata = extractMetadata(text);
 
+  console.log('📚 Syllabus Parser: Input text length:', text.length);
+
   // Split into potential blocks
   const rawBlocks = splitIntoBlocks(text);
+  console.log('📚 Syllabus Parser: Found', rawBlocks.length, 'raw blocks');
 
   rawBlocks.forEach((rawBlock, idx) => {
     const block = parseBlock(rawBlock, idx);
@@ -169,6 +172,54 @@ export function parseSyllabus(text: string): ParsedSyllabus {
       blocks.push(block);
     }
   });
+
+  // If no blocks detected, try fallback parsing strategies
+  if (blocks.length === 0) {
+    console.log('📚 Syllabus Parser: No blocks detected, trying fallback strategies...');
+
+    // Strategy 1: Parse as table-like structure (rows with dates)
+    const tableBlocks = parseAsTable(text);
+    if (tableBlocks.length > 0) {
+      console.log('📚 Syllabus Parser: Found', tableBlocks.length, 'table blocks');
+      blocks.push(...tableBlocks);
+    }
+
+    // Strategy 2: Parse numbered items as topics
+    if (blocks.length === 0) {
+      const numberedBlocks = parseNumberedItems(text);
+      if (numberedBlocks.length > 0) {
+        console.log('📚 Syllabus Parser: Found', numberedBlocks.length, 'numbered blocks');
+        blocks.push(...numberedBlocks);
+      }
+    }
+
+    // Strategy 3: Extract major sections by headers
+    if (blocks.length === 0) {
+      const headerBlocks = parseByHeaders(text);
+      if (headerBlocks.length > 0) {
+        console.log('📚 Syllabus Parser: Found', headerBlocks.length, 'header blocks');
+        blocks.push(...headerBlocks);
+      }
+    }
+
+    // Strategy 4: Create a single content block with extracted topics
+    if (blocks.length === 0) {
+      const topics = extractAllTopics(text);
+      if (topics.length > 0) {
+        console.log('📚 Syllabus Parser: Creating fallback block with', topics.length, 'topics');
+        blocks.push({
+          id: `block_module_0_${Date.now()}`,
+          type: 'MODULE',
+          label: metadata.courseTitle || 'Course Content',
+          dateRange: undefined,
+          topics,
+          readings: extractReadings(text),
+          deliverables: [],
+          rawText: text.substring(0, 2000),
+        });
+      }
+    }
+  }
 
   // Sort blocks by type priority and label
   blocks.sort((a, b) => {
@@ -185,7 +236,175 @@ export function parseSyllabus(text: string): ParsedSyllabus {
     return aNum - bNum;
   });
 
+  console.log('📚 Syllabus Parser: Final output:', blocks.length, 'blocks');
   return { blocks, metadata };
+}
+
+/**
+ * Parse text as a table-like structure (common in academic syllabi)
+ */
+function parseAsTable(text: string): SyllabusBlock[] {
+  const blocks: SyllabusBlock[] = [];
+
+  // Look for lines with dates followed by content
+  const lines = text.split('\n');
+  let currentBlock: { date: string; content: string[] } | null = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Check if line starts with a date
+    const dateMatch = trimmed.match(/^(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2})/i);
+
+    if (dateMatch) {
+      // Save previous block
+      if (currentBlock && currentBlock.content.length > 0) {
+        const topics = currentBlock.content.filter(c => c.length > 5 && !isDateLike(c));
+        if (topics.length > 0) {
+          blocks.push({
+            id: `block_week_${blocks.length}_${Date.now()}`,
+            type: 'WEEK',
+            label: `Session ${blocks.length + 1}`,
+            dateRange: { start: currentBlock.date },
+            topics,
+            readings: extractReadings(currentBlock.content.join(' ')),
+            deliverables: [],
+            rawText: currentBlock.content.join('\n'),
+          });
+        }
+      }
+      // Start new block
+      currentBlock = { date: dateMatch[1], content: [trimmed.substring(dateMatch[0].length).trim()] };
+    } else if (currentBlock) {
+      currentBlock.content.push(trimmed);
+    }
+  }
+
+  // Save last block
+  if (currentBlock && currentBlock.content.length > 0) {
+    const topics = currentBlock.content.filter(c => c.length > 5 && !isDateLike(c));
+    if (topics.length > 0) {
+      blocks.push({
+        id: `block_week_${blocks.length}_${Date.now()}`,
+        type: 'WEEK',
+        label: `Session ${blocks.length + 1}`,
+        dateRange: { start: currentBlock.date },
+        topics,
+        readings: extractReadings(currentBlock.content.join(' ')),
+        deliverables: [],
+        rawText: currentBlock.content.join('\n'),
+      });
+    }
+  }
+
+  return blocks;
+}
+
+/**
+ * Parse numbered items as individual topics/modules
+ */
+function parseNumberedItems(text: string): SyllabusBlock[] {
+  const blocks: SyllabusBlock[] = [];
+
+  // Match numbered patterns like "1.", "1)", "I.", "Chapter 1", etc.
+  const patterns = [
+    /^(\d+)\.\s+(.+)$/gm,
+    /^(\d+)\)\s+(.+)$/gm,
+    /^([IVXLC]+)\.\s+(.+)$/gm,
+    /^(Chapter|Unit|Section)\s+(\d+)[:.\s]+(.+)$/gim,
+  ];
+
+  for (const pattern of patterns) {
+    const matches = [...text.matchAll(pattern)];
+    if (matches.length >= 3) { // At least 3 items to consider it structured
+      for (const match of matches) {
+        const label = match[3] ? `${match[1]} ${match[2]}` : `Item ${match[1]}`;
+        const content = match[3] || match[2];
+
+        blocks.push({
+          id: `block_module_${blocks.length}_${Date.now()}`,
+          type: 'MODULE',
+          label: label.substring(0, 50),
+          dateRange: undefined,
+          topics: [content.trim()],
+          readings: extractReadings(content),
+          deliverables: [],
+          rawText: match[0],
+        });
+      }
+      break; // Use first matching pattern
+    }
+  }
+
+  return blocks;
+}
+
+/**
+ * Parse by looking for major section headers
+ */
+function parseByHeaders(text: string): SyllabusBlock[] {
+  const blocks: SyllabusBlock[] = [];
+
+  // Look for capitalized headers or lines ending with colons
+  const headerPattern = /^([A-Z][A-Z\s]{5,50})[:.]?\s*$/gm;
+  const headers = [...text.matchAll(headerPattern)];
+
+  if (headers.length >= 2) {
+    for (let i = 0; i < headers.length; i++) {
+      const start = headers[i].index! + headers[i][0].length;
+      const end = headers[i + 1]?.index ?? text.length;
+      const content = text.substring(start, end).trim();
+
+      if (content.length > 20) {
+        const topics = extractTopics(content);
+        blocks.push({
+          id: `block_module_${i}_${Date.now()}`,
+          type: 'MODULE',
+          label: headers[i][1].trim(),
+          dateRange: extractDateRange(content),
+          topics: topics.length > 0 ? topics : [content.substring(0, 100)],
+          readings: extractReadings(content),
+          deliverables: [],
+          rawText: content.substring(0, 500),
+        });
+      }
+    }
+  }
+
+  return blocks;
+}
+
+/**
+ * Extract all potential topics from text (aggressive extraction)
+ */
+function extractAllTopics(text: string): string[] {
+  const topics: string[] = [];
+  const seen = new Set<string>();
+
+  // Split by newlines and filter meaningful lines
+  const lines = text.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Skip short lines, dates, and metadata
+    if (trimmed.length < 10 || trimmed.length > 150) continue;
+    if (isDateLike(trimmed)) continue;
+    if (/^(instructor|professor|office|email|phone|prerequisite|textbook)/i.test(trimmed)) continue;
+    if (/^[\d\s\-\/\.\:]+$/.test(trimmed)) continue; // Skip pure numbers/dates
+
+    // Likely a topic if it has words and isn't a sentence fragment
+    const wordCount = trimmed.split(/\s+/).length;
+    if (wordCount >= 2 && wordCount <= 15) {
+      const normalized = trimmed.toLowerCase();
+      if (!seen.has(normalized)) {
+        seen.add(normalized);
+        topics.push(trimmed);
+      }
+    }
+  }
+
+  return topics.slice(0, 50); // Limit to 50 topics
 }
 
 /**
