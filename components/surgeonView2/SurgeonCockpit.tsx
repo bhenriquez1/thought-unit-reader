@@ -1,10 +1,11 @@
 // components/surgeonView2/SurgeonCockpit.tsx
-// Surgeon View 2.0 - Relationship-First Cockpit
-// Layout: Left rail (clusters) | Main 2-col (relations + comprehension tabs)
+// Surgeon View 2.0 - Relationship-First Cockpit + Surgeon Engine Integration
+// Layout: Left rail (clusters + chunks) | Main 2-col (relations + comprehension tabs)
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useRelationshipStore } from '@/lib/relationshipSchema/store';
 import { useNoteLabStore } from '@/lib/cognitiveEngine/noteLabStore';
+import { useSurgeonEngineStore } from '@/lib/surgeonEngine/store';
 import type { PatternCluster, Relation, PatternClusterKind, DecisionRule, RankedInsight } from '@/lib/relationshipSchema/types';
 import ClusterRail from './ClusterRail';
 import RelationPanel from './RelationPanel';
@@ -13,6 +14,10 @@ import InsightOverlay from './InsightOverlay';
 import CockpitHeader from './CockpitHeader';
 import SmartSpeechControls from './SmartSpeechControls';
 import DATDrillMode from '../apex/DATDrillMode';
+import ClinicalChunksPanel from './ClinicalChunksPanel';
+import ClinicalScaffoldPanel from './ClinicalScaffoldPanel';
+import SyllabusMatchingPanel from './SyllabusMatchingPanel';
+import { TrapIcon, TrapTooltip } from './TrapIndicator';
 import {
   isWebSpeechAvailable,
   generateInsightScript,
@@ -23,7 +28,7 @@ import {
 import { enrichInsightsWithApex } from '@/lib/apex/patternLibrary';
 
 // Comprehension tab types
-type ComprehensionTab = 'priority' | 'explain' | 'compare' | 'traps';
+type ComprehensionTab = 'priority' | 'chunks' | 'scaffold' | 'traps' | 'syllabus';
 
 interface SurgeonCockpitProps {
   documentId: string;
@@ -64,6 +69,9 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     setDocId,
   } = useRelationshipStore();
 
+  // Surgeon Engine Store
+  const surgeonEngine = useSurgeonEngineStore();
+
   const [activeTab, setActiveTab] = useState<ComprehensionTab>('priority');
   const [selectedInsightId, setSelectedInsightId] = useState<string | undefined>();
   const [showInsightOverlay, setShowInsightOverlay] = useState(false);
@@ -74,13 +82,42 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   } | null>(null);
   const [extractionStatus, setExtractionStatus] = useState<string>('');
   const hasAutoExtracted = useRef(false);
+  const hasRunSurgeonEngines = useRef(false);
 
   // Set document ID on mount
   useEffect(() => {
     if (documentId) {
       setDocId(documentId);
+      surgeonEngine.setBook(documentId, surgeonEngine.domain);
     }
   }, [documentId, setDocId]);
+
+  // Run surgeon engines after extraction completes
+  useEffect(() => {
+    const relationCount = Object.keys(relations).length;
+    if (relationCount > 0 && !isExtracting && !hasRunSurgeonEngines.current && pageTexts && pageTexts.size > 0) {
+      hasRunSurgeonEngines.current = true;
+      // Build ExtractedUnits from page texts for surgeon engines
+      const units = Array.from(pageTexts.entries()).flatMap(([page, text]) => {
+        // Split page text into paragraph-level units
+        const paragraphs = text.split(/\n\n+/).filter(p => p.trim().length > 20);
+        return paragraphs.map((para, idx) => ({
+          unitId: `u_${page}_${idx}`,
+          bookId: documentId,
+          page,
+          text: para.trim(),
+          cleanText: para.trim().toLowerCase(),
+          source: 'viewport' as const,
+          createdAt: new Date().toISOString(),
+        }));
+      });
+
+      if (units.length > 0) {
+        surgeonEngine.addUnits(units);
+        surgeonEngine.runAllEngines();
+      }
+    }
+  }, [relations, isExtracting, pageTexts, documentId]);
 
   // Auto-extract on first load if we have pages and no relations yet
   useEffect(() => {
@@ -341,23 +378,30 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               badge={rankedInsights.filter(i => i.bucket === 'CRITICAL').length || undefined}
             />
             <TabButton
-              label="Explain"
-              icon="📝"
-              active={activeTab === 'explain'}
-              onClick={() => setActiveTab('explain')}
+              label="Chunks"
+              icon="🧩"
+              active={activeTab === 'chunks'}
+              onClick={() => setActiveTab('chunks')}
+              badge={Object.keys(surgeonEngine.patternClusters).length || undefined}
             />
             <TabButton
-              label="Compare"
-              icon="⚖️"
-              active={activeTab === 'compare'}
-              onClick={() => setActiveTab('compare')}
+              label="Surgeon"
+              icon="🔬"
+              active={activeTab === 'scaffold'}
+              onClick={() => setActiveTab('scaffold')}
             />
             <TabButton
               label="Traps"
               icon="⚠️"
               active={activeTab === 'traps'}
               onClick={() => setActiveTab('traps')}
-              badge={trapInsights.length || undefined}
+              badge={Object.keys(surgeonEngine.trapTags).length || undefined}
+            />
+            <TabButton
+              label="Syllabus"
+              icon="📋"
+              active={activeTab === 'syllabus'}
+              onClick={() => setActiveTab('syllabus')}
             />
           </div>
 
@@ -376,30 +420,93 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
                 onJumpToPage={onJumpToPage}
               />
             )}
-            {activeTab === 'explain' && (
-              <div className="p-4 text-center text-gray-400">
-                <span className="text-4xl block mb-2">📝</span>
-                <p>Explain tab coming soon</p>
-                <p className="text-xs mt-1">Whiteboard-ready prompts</p>
-              </div>
+            {activeTab === 'chunks' && (
+              <ClinicalChunksPanel
+                clusters={Object.values(surgeonEngine.patternClusters)}
+                patterns={Object.fromEntries(
+                  Object.values(surgeonEngine.patternClusters).map(c => [
+                    c.clusterId,
+                    c.patternIds.map(id => surgeonEngine.patterns[id]).filter(Boolean),
+                  ])
+                )}
+                selectedClusterId={surgeonEngine.selectedClusterId}
+                onSelectCluster={(clusterId) => surgeonEngine.selectCluster(clusterId)}
+                onJumpToPage={onJumpToPage}
+              />
             )}
-            {activeTab === 'compare' && (
-              <div className="p-4 text-center text-gray-400">
-                <span className="text-4xl block mb-2">⚖️</span>
-                <p>Compare tab coming soon</p>
-                <p className="text-xs mt-1">Differential tables</p>
-              </div>
+            {activeTab === 'scaffold' && (
+              surgeonEngine.activeScaffoldId && surgeonEngine.scaffolds[surgeonEngine.activeScaffoldId] ? (
+                <div className="p-3">
+                  <ClinicalScaffoldPanel
+                    scaffold={surgeonEngine.scaffolds[surgeonEngine.activeScaffoldId]}
+                    onJumpToPage={onJumpToPage}
+                    onClose={() => surgeonEngine.selectCluster(undefined)}
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <span className="text-4xl block mb-2">🔬</span>
+                  <p className="text-sm text-gray-400">Surgeon Mode</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Select a Clinical Chunk to generate<br />
+                    Observe → Hypothesize → Test → Decide → Act → Verify
+                  </p>
+                </div>
+              )
             )}
             {activeTab === 'traps' && (
-              <PriorityFeedPanel
-                insights={trapInsights}
-                selectedInsightId={selectedInsightId}
-                onInsightClick={handleInsightClick}
-                onSaveToNoteLab={handleSaveToNoteLab}
-                onMarkConfusing={handleMarkConfusing}
-                onMarkMastered={handleMarkMastered}
-                onExplainOnWhiteboard={handleExplainOnWhiteboard}
-                onReadThisCard={handleReadThisCard}
+              <>
+                {/* Trap tags from Surgeon Engine */}
+                {Object.keys(surgeonEngine.trapTags).length > 0 ? (
+                  <div className="p-3 space-y-2">
+                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                      DAT Trap Detection
+                    </h3>
+                    {Object.entries(surgeonEngine.trapTags).map(([unitId, traps]) => {
+                      const unit = surgeonEngine.units[unitId];
+                      return (
+                        <div key={unitId} className="bg-gray-800/50 rounded-lg border border-gray-700 p-2.5">
+                          <div className="flex items-start gap-2 mb-1.5">
+                            <TrapIcon traps={traps} size="md" />
+                            <p className="text-xs text-gray-300 line-clamp-2 flex-1">
+                              {unit?.text.slice(0, 120) || unitId}
+                            </p>
+                            {unit && (
+                              <button
+                                onClick={() => onJumpToPage(unit.page)}
+                                className="text-[10px] text-teal-400 hover:text-teal-300 flex-shrink-0"
+                              >
+                                p.{unit.page}
+                              </button>
+                            )}
+                          </div>
+                          <TrapTooltip traps={traps} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <PriorityFeedPanel
+                    insights={trapInsights}
+                    selectedInsightId={selectedInsightId}
+                    onInsightClick={handleInsightClick}
+                    onSaveToNoteLab={handleSaveToNoteLab}
+                    onMarkConfusing={handleMarkConfusing}
+                    onMarkMastered={handleMarkMastered}
+                    onExplainOnWhiteboard={handleExplainOnWhiteboard}
+                    onReadThisCard={handleReadThisCard}
+                    onJumpToPage={onJumpToPage}
+                  />
+                )}
+              </>
+            )}
+            {activeTab === 'syllabus' && (
+              <SyllabusMatchingPanel
+                syllabusItems={surgeonEngine.syllabusItems}
+                results={surgeonEngine.syllabusResults}
+                onAccept={(sid, idx) => surgeonEngine.acceptMapping(sid, idx)}
+                onReject={(sid, idx) => surgeonEngine.rejectMapping(sid, idx)}
+                onTeach={(sid, idx, notes) => surgeonEngine.teachMapping(sid, idx, notes)}
                 onJumpToPage={onJumpToPage}
               />
             )}
