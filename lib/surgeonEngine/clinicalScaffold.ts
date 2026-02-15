@@ -307,6 +307,15 @@ export function buildScaffold(
     quote: (u.cleanText || u.text).slice(0, 100),
   }));
 
+  // Build evidence spine for navigation
+  const evidence = units.map(u => ({
+    docId: bookId,
+    pageIndex: u.page,
+    quote: (u.cleanText || u.text).slice(0, 100),
+    source: 'body' as const,
+    confidence: 0.8,
+  }));
+
   return {
     scaffoldId: `scaffold_${source.clusterId || source.unitId || 'page'}_${Date.now().toString(36)}`,
     bookId,
@@ -318,6 +327,7 @@ export function buildScaffold(
     act: act.slice(0, 4),
     verify: verify.slice(0, 4),
     references,
+    evidence,
     createdAt: new Date().toISOString(),
   };
 }

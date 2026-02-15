@@ -1,6 +1,7 @@
 // components/surgeonView2/SurgeonCockpit.tsx
-// Surgeon View 2.0 - Relationship-First Cockpit + Surgeon Engine Integration
-// Layout: Left rail (clusters + chunks) | Main 2-col (relations + comprehension tabs)
+// Expert View 2.1 - Minimal Layout with Evidence Spine
+// Tabs: Priority | Explain | Compare | Insights (compact mode chips)
+// Layout: Left rail (clusters) | Main (relations) | Right (comprehension tabs)
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useRelationshipStore } from '@/lib/relationshipSchema/store';
@@ -14,10 +15,6 @@ import InsightOverlay from './InsightOverlay';
 import CockpitHeader from './CockpitHeader';
 import SmartSpeechControls from './SmartSpeechControls';
 import DATDrillMode from '../apex/DATDrillMode';
-import ClinicalChunksPanel from './ClinicalChunksPanel';
-import ClinicalScaffoldPanel from './ClinicalScaffoldPanel';
-import SyllabusMatchingPanel from './SyllabusMatchingPanel';
-import { TrapIcon, TrapTooltip } from './TrapIndicator';
 import {
   isWebSpeechAvailable,
   generateInsightScript,
@@ -27,8 +24,8 @@ import {
 } from '@/lib/speechWhiteboard/smartSpeech';
 import { enrichInsightsWithApex } from '@/lib/apex/patternLibrary';
 
-// Comprehension tab types
-type ComprehensionTab = 'priority' | 'chunks' | 'scaffold' | 'traps' | 'syllabus';
+// Expert View 2.1 tabs: minimal mode chips
+type ComprehensionTab = 'priority' | 'explain' | 'compare' | 'insights';
 
 interface SurgeonCockpitProps {
   documentId: string;
@@ -368,44 +365,37 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             />
           )}
 
-          {/* Tab Bar */}
-          <div className="flex border-b border-gray-700 bg-gray-800/50">
-            <TabButton
+          {/* Tab Bar - Expert View 2.1 Minimal Mode Chips */}
+          <div className="flex border-b border-gray-700 bg-gray-800/50 px-2 py-1 gap-1">
+            <ModeChip
               label="Priority"
               icon="📊"
               active={activeTab === 'priority'}
               onClick={() => setActiveTab('priority')}
               badge={rankedInsights.filter(i => i.bucket === 'CRITICAL').length || undefined}
             />
-            <TabButton
-              label="Chunks"
-              icon="🧩"
-              active={activeTab === 'chunks'}
-              onClick={() => setActiveTab('chunks')}
-              badge={Object.keys(surgeonEngine.patternClusters).length || undefined}
+            <ModeChip
+              label="Explain"
+              icon="📝"
+              active={activeTab === 'explain'}
+              onClick={() => setActiveTab('explain')}
             />
-            <TabButton
-              label="Surgeon"
-              icon="🔬"
-              active={activeTab === 'scaffold'}
-              onClick={() => setActiveTab('scaffold')}
+            <ModeChip
+              label="Compare"
+              icon="⚖️"
+              active={activeTab === 'compare'}
+              onClick={() => setActiveTab('compare')}
             />
-            <TabButton
-              label="Traps"
-              icon="⚠️"
-              active={activeTab === 'traps'}
-              onClick={() => setActiveTab('traps')}
+            <ModeChip
+              label="Insights"
+              icon="💡"
+              active={activeTab === 'insights'}
+              onClick={() => setActiveTab('insights')}
               badge={Object.keys(surgeonEngine.trapTags).length || undefined}
-            />
-            <TabButton
-              label="Syllabus"
-              icon="📋"
-              active={activeTab === 'syllabus'}
-              onClick={() => setActiveTab('syllabus')}
             />
           </div>
 
-          {/* Tab Content */}
+          {/* Tab Content - Expert View 2.1: ONE primary list per mode */}
           <div className="flex-1 overflow-y-auto">
             {activeTab === 'priority' && (
               <PriorityFeedPanel
@@ -420,93 +410,24 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
                 onJumpToPage={onJumpToPage}
               />
             )}
-            {activeTab === 'chunks' && (
-              <ClinicalChunksPanel
-                clusters={Object.values(surgeonEngine.patternClusters)}
-                patterns={Object.fromEntries(
-                  Object.values(surgeonEngine.patternClusters).map(c => [
-                    c.clusterId,
-                    c.patternIds.map(id => surgeonEngine.patterns[id]).filter(Boolean),
-                  ])
-                )}
-                selectedClusterId={surgeonEngine.selectedClusterId}
-                onSelectCluster={(clusterId) => surgeonEngine.selectCluster(clusterId)}
-                onJumpToPage={onJumpToPage}
+            {activeTab === 'explain' && (
+              <ExplainPlaceholder
+                selectedInsightId={selectedInsightId}
+                onSelectCard={() => setActiveTab('priority')}
               />
             )}
-            {activeTab === 'scaffold' && (
-              surgeonEngine.activeScaffoldId && surgeonEngine.scaffolds[surgeonEngine.activeScaffoldId] ? (
-                <div className="p-3">
-                  <ClinicalScaffoldPanel
-                    scaffold={surgeonEngine.scaffolds[surgeonEngine.activeScaffoldId]}
-                    onJumpToPage={onJumpToPage}
-                    onClose={() => surgeonEngine.selectCluster(undefined)}
-                  />
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <span className="text-4xl block mb-2">🔬</span>
-                  <p className="text-sm text-gray-400">Surgeon Mode</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Select a Clinical Chunk to generate<br />
-                    Observe → Hypothesize → Test → Decide → Act → Verify
-                  </p>
-                </div>
-              )
+            {activeTab === 'compare' && (
+              <ComparePlaceholder
+                selectedInsightId={selectedInsightId}
+                onSelectCard={() => setActiveTab('priority')}
+              />
             )}
-            {activeTab === 'traps' && (
-              <>
-                {/* Trap tags from Surgeon Engine */}
-                {Object.keys(surgeonEngine.trapTags).length > 0 ? (
-                  <div className="p-3 space-y-2">
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
-                      DAT Trap Detection
-                    </h3>
-                    {Object.entries(surgeonEngine.trapTags).map(([unitId, traps]) => {
-                      const unit = surgeonEngine.units[unitId];
-                      return (
-                        <div key={unitId} className="bg-gray-800/50 rounded-lg border border-gray-700 p-2.5">
-                          <div className="flex items-start gap-2 mb-1.5">
-                            <TrapIcon traps={traps} size="md" />
-                            <p className="text-xs text-gray-300 line-clamp-2 flex-1">
-                              {unit?.text.slice(0, 120) || unitId}
-                            </p>
-                            {unit && (
-                              <button
-                                onClick={() => onJumpToPage(unit.page)}
-                                className="text-[10px] text-teal-400 hover:text-teal-300 flex-shrink-0"
-                              >
-                                p.{unit.page}
-                              </button>
-                            )}
-                          </div>
-                          <TrapTooltip traps={traps} />
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <PriorityFeedPanel
-                    insights={trapInsights}
-                    selectedInsightId={selectedInsightId}
-                    onInsightClick={handleInsightClick}
-                    onSaveToNoteLab={handleSaveToNoteLab}
-                    onMarkConfusing={handleMarkConfusing}
-                    onMarkMastered={handleMarkMastered}
-                    onExplainOnWhiteboard={handleExplainOnWhiteboard}
-                    onReadThisCard={handleReadThisCard}
-                    onJumpToPage={onJumpToPage}
-                  />
-                )}
-              </>
-            )}
-            {activeTab === 'syllabus' && (
-              <SyllabusMatchingPanel
-                syllabusItems={surgeonEngine.syllabusItems}
-                results={surgeonEngine.syllabusResults}
-                onAccept={(sid, idx) => surgeonEngine.acceptMapping(sid, idx)}
-                onReject={(sid, idx) => surgeonEngine.rejectMapping(sid, idx)}
-                onTeach={(sid, idx, notes) => surgeonEngine.teachMapping(sid, idx, notes)}
+            {activeTab === 'insights' && (
+              <InsightsPanel
+                insights={rankedInsights}
+                trapInsights={trapInsights}
+                selectedInsightId={selectedInsightId}
+                onInsightClick={handleInsightClick}
                 onJumpToPage={onJumpToPage}
               />
             )}
@@ -559,8 +480,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   );
 };
 
-// Tab Button Component
-const TabButton: React.FC<{
+// Mode Chip Component - Expert View 2.1 minimal compact mode selector
+const ModeChip: React.FC<{
   label: string;
   icon: string;
   active: boolean;
@@ -570,21 +491,150 @@ const TabButton: React.FC<{
   <button
     onClick={onClick}
     className={`
-      flex-1 px-3 py-2 text-xs font-medium transition-colors relative
+      px-2.5 py-1 text-xs font-medium rounded-full transition-all relative
+      flex items-center gap-1
       ${active
-        ? 'text-teal-400 border-b-2 border-teal-400 bg-gray-800'
-        : 'text-gray-400 hover:text-gray-300 hover:bg-gray-800/50'
+        ? 'bg-teal-500/20 text-teal-400 border border-teal-500/40'
+        : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/50 border border-transparent'
       }
     `}
   >
-    <span className="mr-1">{icon}</span>
-    {label}
+    <span>{icon}</span>
+    <span>{label}</span>
     {badge !== undefined && badge > 0 && (
-      <span className="absolute -top-1 -right-1 px-1.5 py-0.5 text-[10px] font-bold bg-red-600 text-white rounded-full">
+      <span className="ml-0.5 px-1 py-0 text-[9px] font-bold bg-red-500 text-white rounded-full min-w-[14px] text-center">
         {badge}
       </span>
     )}
   </button>
 );
+
+// Explain Placeholder - shows CTA when no card selected
+const ExplainPlaceholder: React.FC<{
+  selectedInsightId?: string;
+  onSelectCard: () => void;
+}> = ({ selectedInsightId, onSelectCard }) => (
+  <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+    <span className="text-4xl mb-3">📝</span>
+    <h3 className="text-sm font-medium text-gray-300 mb-1">Explain Mode</h3>
+    <p className="text-xs text-gray-500 mb-4 max-w-[200px]">
+      Generates whiteboard-ready micro-lessons from selected cards.
+    </p>
+    {!selectedInsightId && (
+      <button
+        onClick={onSelectCard}
+        className="px-3 py-1.5 text-xs bg-teal-600 hover:bg-teal-500 text-white rounded-lg transition-colors"
+      >
+        Select a card to generate Explain
+      </button>
+    )}
+  </div>
+);
+
+// Compare Placeholder - shows differential tables for selected cards
+const ComparePlaceholder: React.FC<{
+  selectedInsightId?: string;
+  onSelectCard: () => void;
+}> = ({ selectedInsightId, onSelectCard }) => (
+  <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+    <span className="text-4xl mb-3">⚖️</span>
+    <h3 className="text-sm font-medium text-gray-300 mb-1">Compare Mode</h3>
+    <p className="text-xs text-gray-500 mb-4 max-w-[200px]">
+      Shows differential tables: gingivitis vs periodontitis, pulpitis vs apical periodontitis, etc.
+    </p>
+    {!selectedInsightId && (
+      <button
+        onClick={onSelectCard}
+        className="px-3 py-1.5 text-xs bg-teal-600 hover:bg-teal-500 text-white rounded-lg transition-colors"
+      >
+        Select a card to generate Compare
+      </button>
+    )}
+  </div>
+);
+
+// Insights Panel - "what matters + what you're missing"
+const InsightsPanel: React.FC<{
+  insights: RankedInsight[];
+  trapInsights: RankedInsight[];
+  selectedInsightId?: string;
+  onInsightClick: (insight: RankedInsight) => void;
+  onJumpToPage: (page: number) => void;
+}> = ({ insights, trapInsights, selectedInsightId, onInsightClick, onJumpToPage }) => {
+  const highYield = insights.filter(i => i.bucket === 'CRITICAL' || i.bucket === 'HIGH_YIELD');
+  const traps = trapInsights.slice(0, 5);
+
+  return (
+    <div className="p-3 space-y-4">
+      {/* High-Yield List */}
+      <section>
+        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+          <span>💎</span> What Matters
+        </h3>
+        {highYield.length > 0 ? (
+          <div className="space-y-1.5">
+            {highYield.slice(0, 8).map(insight => (
+              <button
+                key={insight.id}
+                onClick={() => onInsightClick(insight)}
+                className={`
+                  w-full text-left px-2.5 py-2 rounded-lg border transition-colors text-xs
+                  ${selectedInsightId === insight.id
+                    ? 'bg-teal-500/20 border-teal-500/40 text-teal-300'
+                    : 'bg-gray-800/50 border-gray-700 text-gray-300 hover:border-gray-600'
+                  }
+                `}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className="line-clamp-2">{insight.title}</span>
+                  {insight.evidence?.[0]?.page !== undefined && (
+                    <span
+                      onClick={(e) => { e.stopPropagation(); onJumpToPage(insight.evidence![0].page); }}
+                      className="text-[10px] text-teal-400 hover:text-teal-300 flex-shrink-0"
+                    >
+                      p.{insight.evidence[0].page}
+                    </span>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500 italic">Extract content to see high-yield items</p>
+        )}
+      </section>
+
+      {/* Traps */}
+      {traps.length > 0 && (
+        <section>
+          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+            <span>⚠️</span> Watch Out
+          </h3>
+          <div className="space-y-1.5">
+            {traps.map(trap => (
+              <button
+                key={trap.id}
+                onClick={() => onInsightClick(trap)}
+                className="w-full text-left px-2.5 py-2 rounded-lg border border-amber-700/40 bg-amber-900/20 text-amber-200 text-xs hover:border-amber-600/40 transition-colors"
+              >
+                <span className="line-clamp-2">{trap.title}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Missing nodes hint */}
+      <section>
+        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+          <span>🔍</span> What You May Be Missing
+        </h3>
+        <p className="text-xs text-gray-500 italic">
+          Clinical flow analysis coming soon: shows missing nodes in your reasoning chain.
+        </p>
+      </section>
+    </div>
+  );
+};
 
 export default SurgeonCockpit;
