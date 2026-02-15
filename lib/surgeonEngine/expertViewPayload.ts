@@ -72,7 +72,9 @@ export function buildExpertViewPayload(
     page,
     units: pageUnits,
     importance,
+    importanceItems: [],     // TODO: Build from importance scores
     traps,
+    trapSignals: [],         // TODO: Build from trap tags
     clusters: pageClusters,
     patterns: clusterPatterns,
     scaffold,

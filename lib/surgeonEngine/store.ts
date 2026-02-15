@@ -8,17 +8,25 @@ import type {
   SurgeonEngineState,
   ExtractedUnit,
   ImportanceScore,
+  ImportanceItem,
   TrapTag,
+  TrapSignal,
   Pattern,
   PatternCluster,
   ClinicalScaffold,
+  ClinicalFlow,
   SyllabusItem,
+  SyllabusUnit,
   SyllabusMappingResult,
+  MatchResult,
   UserTrainingSignal,
   TocNode,
   ExpertViewPayload,
+  ExplainPlan,
   ExamDomain,
   ID,
+  PageIndex,
+  ChapterId,
 } from './types';
 import { scoreAllUnits, rankUnits } from './importanceEngine';
 import { detectAllTraps } from './trapDetector';
@@ -36,6 +44,9 @@ interface SurgeonEngineActions {
   setBook: (bookId: ID, domain: ExamDomain) => void;
   setTocNodes: (nodes: TocNode[]) => void;
 
+  // Page context - single source of truth
+  setPageContext: (pageIndex: PageIndex, chapterId?: ChapterId, selection?: string) => void;
+
   // Unit management
   addUnits: (units: ExtractedUnit[]) => void;
   clearUnits: () => void;
@@ -52,6 +63,7 @@ interface SurgeonEngineActions {
 
   // Syllabus
   setSyllabusItems: (items: SyllabusItem[]) => void;
+  setSyllabusUnits: (units: SyllabusUnit[]) => void;
   runSyllabusMatching: () => void;
   acceptMapping: (syllabusId: ID, candidateIndex: number) => void;
   rejectMapping: (syllabusId: ID, candidateIndex: number) => void;
@@ -60,10 +72,12 @@ interface SurgeonEngineActions {
   // UI
   selectCluster: (clusterId: ID | undefined) => void;
   selectUnit: (unitId: ID | undefined) => void;
+  setActiveMode: (mode: 'priority' | 'explain' | 'compare' | 'insights') => void;
 
   // Payload
   getExpertViewPayload: (page: number) => ExpertViewPayload;
   getRankedUnits: () => ImportanceScore[];
+  getImportanceItems: () => ImportanceItem[];
 
   // Reset
   reset: () => void;
@@ -78,17 +92,48 @@ type SurgeonEngineStore = SurgeonEngineState & SurgeonEngineActions;
 const defaultState: SurgeonEngineState = {
   bookId: '',
   domain: 'DENTAL',
+
+  // Page context - single source of truth
+  currentPageIndex: 0,
+  currentChapterId: undefined,
+  currentSelection: undefined,
+
+  // Units
   units: {},
+
+  // Engine outputs
   importanceScores: {},
+  importanceItems: [],
   trapTags: {},
+  trapSignals: [],
   patterns: {},
   patternClusters: {},
   scaffolds: {},
+  clinicalFlows: {},
+
+  // Syllabus
   syllabusItems: [],
+  syllabusUnits: [],
   syllabusResults: {},
+  matchResults: [],
   trainingSignals: [],
+
+  // TOC
   tocNodes: [],
+
+  // Explain/Whiteboard
+  explainPlans: {},
+  activeExplainPlanId: undefined,
+
+  // UI state
+  selectedClusterId: undefined,
+  selectedUnitId: undefined,
+  activeScaffoldId: undefined,
+  activeMode: 'priority',
+
+  // Processing
   isProcessing: false,
+  processingStep: undefined,
 };
 
 // ============================================================================
@@ -115,6 +160,18 @@ export const useSurgeonEngineStore = create<SurgeonEngineStore>()(
 
       setTocNodes: (nodes) => {
         set({ tocNodes: nodes });
+      },
+
+      // ============================
+      // Page Context - Single Source of Truth
+      // ============================
+
+      setPageContext: (pageIndex, chapterId, selection) => {
+        set({
+          currentPageIndex: pageIndex,
+          currentChapterId: chapterId,
+          currentSelection: selection,
+        });
       },
 
       // ============================
@@ -251,6 +308,10 @@ export const useSurgeonEngineStore = create<SurgeonEngineStore>()(
         set({ syllabusItems: items });
       },
 
+      setSyllabusUnits: (units) => {
+        set({ syllabusUnits: units });
+      },
+
       runSyllabusMatching: () => {
         const { syllabusItems, tocNodes, units, bookId, trainingSignals } = get();
         if (syllabusItems.length === 0 || tocNodes.length === 0) return;
@@ -363,6 +424,10 @@ export const useSurgeonEngineStore = create<SurgeonEngineStore>()(
         set({ selectedUnitId: unitId });
       },
 
+      setActiveMode: (mode) => {
+        set({ activeMode: mode });
+      },
+
       // ============================
       // Payload
       // ============================
@@ -393,6 +458,10 @@ export const useSurgeonEngineStore = create<SurgeonEngineStore>()(
 
       getRankedUnits: () => {
         return rankUnits(get().importanceScores);
+      },
+
+      getImportanceItems: () => {
+        return get().importanceItems;
       },
 
       // ============================
@@ -432,6 +501,7 @@ export const useSurgeonEngineStore = create<SurgeonEngineStore>()(
         domain: state.domain,
         selectedClusterId: state.selectedClusterId,
         selectedUnitId: state.selectedUnitId,
+        activeMode: state.activeMode,
         trainingSignals: state.trainingSignals,
       }),
     }
