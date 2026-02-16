@@ -18,6 +18,7 @@ import type {
 } from './types';
 import { runRelationshipExtraction } from './extractor';
 import { generateAllRankedInsights, filterRankedInsights } from './importanceEngine';
+import { createSafeStorage } from '../storage';
 
 // ============================================================================
 // Store State
@@ -525,20 +526,20 @@ export const useRelationshipStore = create<RelationshipStore>()(
     }),
     {
       name: 'relationship-store',
-      storage: createJSONStorage(() => {
-        if (typeof window === 'undefined') {
-          return { getItem: () => null, setItem: () => {}, removeItem: () => {} };
-        }
-        return localStorage;
-      }),
+      storage: createJSONStorage(() => createSafeStorage({
+        maxSize: 50 * 1024, // 50KB limit
+        onQuotaExceeded: (error, key) => {
+          console.warn(`[RelationshipStore] Storage quota exceeded for ${key}:`, error.message);
+        },
+      })),
       // Only persist UI state, NOT data (too large)
       partialize: (state) => ({
         docId: state.docId,
         expertModeEnabled: state.expertModeEnabled,
         filterByKind: state.filterByKind,
         filterByConfidence: state.filterByConfidence,
-        // Convert Set to Array for JSON
-        extractedPages: Array.from(state.extractedPages),
+        // Convert Set to Array for JSON - limit to prevent unbounded growth
+        extractedPages: Array.from(state.extractedPages).slice(-500),
       }),
       // Hydrate Sets
       onRehydrateStorage: () => (state) => {

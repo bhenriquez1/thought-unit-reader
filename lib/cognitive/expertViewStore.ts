@@ -28,6 +28,7 @@ import { datApexEngine } from './datApexEngine';
 import { clinicalReasoningEngine } from './clinicalReasoningEngine';
 import { matchSyllabusToToc, getSyllabusMatchForPage } from './syllabusMatchingEngine';
 import { smartSpeechEngine } from './smartSpeechEngine';
+import { createSafeStorage } from '../storage';
 
 // ============================================================================
 // State Interface
@@ -485,17 +486,37 @@ export const useExpertViewStore = create<ExpertViewStore>()(
     }),
     {
       name: 'expert-view-store',
-      storage: createJSONStorage(() => {
-        if (typeof window === 'undefined') {
-          return { getItem: () => null, setItem: () => {}, removeItem: () => {} };
-        }
-        return localStorage;
-      }),
+      storage: createJSONStorage(() => createSafeStorage({
+        maxSize: 50 * 1024, // 50KB limit for UI state
+        onQuotaExceeded: (error, key) => {
+          console.warn(`[ExpertView] Storage quota exceeded for ${key}:`, error.message);
+        },
+        onStateTooLarge: (size, key) => {
+          console.warn(`[ExpertView] State too large for ${key}: ${Math.round(size / 1024)}KB`);
+        },
+        // Extract minimal state if full state is too large
+        getMinimalState: (state: unknown) => {
+          const s = state as Partial<ExpertViewState>;
+          return {
+            examType: s.examType,
+            filters: s.filters,
+            datApexEnabled: s.datApexEnabled,
+            // Limit userWeakness to most recent 100 entries
+            userWeakness: Object.fromEntries(
+              Object.entries(s.userWeakness || {}).slice(-100)
+            ),
+          };
+        },
+      })),
+      // Only persist minimal UI state - NOT large data collections
       partialize: (state) => ({
         examType: state.examType,
         filters: state.filters,
         datApexEnabled: state.datApexEnabled,
-        userWeakness: state.userWeakness,
+        // Limit userWeakness to prevent unbounded growth
+        userWeakness: Object.fromEntries(
+          Object.entries(state.userWeakness).slice(-100)
+        ),
       }),
     }
   )

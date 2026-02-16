@@ -21,33 +21,43 @@ import type {
   MasteryLevel,
   WeakCluster,
 } from './types';
+import {
+  createSafeStorage,
+  putInsights,
+  getInsights,
+  putDecisionRules,
+  getDecisionRules,
+} from '../storage';
 
 // ============================================================================
 // Store State Interface
 // ============================================================================
 
 interface CognitiveEngineState {
-  // Insights
+  // Document context for IndexedDB storage
+  currentDocId: string;
+
+  // Insights (in-memory, persisted to IndexedDB)
   insights: Record<string, ClinicalInsight>;
 
-  // Decision Rules
+  // Decision Rules (in-memory, persisted to IndexedDB)
   decisionRules: Record<string, DecisionRule>;
 
-  // Active Reasoning Loops
+  // Active Reasoning Loops (in-memory only, not persisted)
   activeReasoningLoops: Record<string, ReasoningLoop>;
   completedReasoningLoops: string[];
 
-  // Clinical IQ Profile
+  // Clinical IQ Profile (persisted to localStorage - limited fields)
   clinicalIQ: ClinicalIQProfile;
 
-  // Mode Configs
+  // Mode Configs (persisted to localStorage)
   expertMode: ExpertModeConfig;
   datMode: DATModeConfig;
 
-  // Insight Panel State
+  // Insight Panel State (not persisted)
   insightPanel: InsightPanelState;
 
-  // Training Sessions
+  // Training Sessions (not persisted - session data only)
   currentTrainingSession: CognitiveTrainingSession | null;
   trainingHistory: string[]; // Session IDs
 
@@ -101,6 +111,11 @@ interface CognitiveEngineState {
   advanceTraining: () => void;
   completeTrainingSession: () => void;
   getMistakeReplayItems: () => TrainingItem[];
+
+  // Actions: Document Context & IndexedDB
+  setDocumentId: (docId: string) => void;
+  hydrateFromIndexedDB: () => Promise<void>;
+  persistToIndexedDB: () => Promise<void>;
 }
 
 // ============================================================================
@@ -193,6 +208,7 @@ export const useCognitiveEngineStore = create<CognitiveEngineState>()(
   persist(
     (set, get) => ({
       // Initial state
+      currentDocId: '',
       insights: {},
       decisionRules: {},
       activeReasoningLoops: {},
@@ -723,23 +739,99 @@ export const useCognitiveEngineStore = create<CognitiveEngineState>()(
           session.mistakeReplayItems.includes(item.id)
         );
       },
+
+      // ========================================
+      // Document Context & IndexedDB Actions
+      // ========================================
+
+      setDocumentId: (docId: string) => {
+        const current = get().currentDocId;
+        if (current !== docId) {
+          // Persist current data before switching
+          if (current) {
+            get().persistToIndexedDB().catch(console.warn);
+          }
+          // Clear in-memory data and set new doc
+          set({
+            currentDocId: docId,
+            insights: {},
+            decisionRules: {},
+            activeReasoningLoops: {},
+          });
+          // Hydrate from IndexedDB for new doc
+          if (docId) {
+            get().hydrateFromIndexedDB().catch(console.warn);
+          }
+        }
+      },
+
+      hydrateFromIndexedDB: async () => {
+        const docId = get().currentDocId;
+        if (!docId) return;
+
+        try {
+          const [insights, rules] = await Promise.all([
+            getInsights<ClinicalInsight>(docId),
+            getDecisionRules<DecisionRule>(docId),
+          ]);
+
+          if (insights || rules) {
+            set({
+              insights: insights || {},
+              decisionRules: rules || {},
+            });
+            console.log('[CognitiveEngine] Hydrated from IndexedDB for', docId);
+          }
+        } catch (error) {
+          console.warn('[CognitiveEngine] IndexedDB hydration failed:', error);
+        }
+      },
+
+      persistToIndexedDB: async () => {
+        const { currentDocId, insights, decisionRules } = get();
+        if (!currentDocId) return;
+
+        try {
+          await Promise.all([
+            Object.keys(insights).length > 0 && putInsights(currentDocId, insights),
+            Object.keys(decisionRules).length > 0 && putDecisionRules(currentDocId, decisionRules),
+          ]);
+          console.log('[CognitiveEngine] Persisted to IndexedDB for', currentDocId);
+        } catch (error) {
+          console.warn('[CognitiveEngine] IndexedDB persist failed:', error);
+        }
+      },
     }),
     {
       name: 'cognitive-engine-store',
-      storage: createJSONStorage(() => {
-        if (typeof window === 'undefined') {
-          return { getItem: () => null, setItem: () => {}, removeItem: () => {} };
-        }
-        return localStorage;
-      }),
+      storage: createJSONStorage(() => createSafeStorage({
+        maxSize: 100 * 1024, // 100KB limit
+        onQuotaExceeded: (error, key) => {
+          console.warn(`[CognitiveEngine] Storage quota exceeded for ${key}:`, error.message);
+        },
+        onStateTooLarge: (size, key) => {
+          console.warn(`[CognitiveEngine] State too large for ${key}: ${Math.round(size / 1024)}KB`);
+        },
+      })),
+      // Only persist minimal UI state and scores - NOT large data collections
       partialize: (state) => ({
-        insights: state.insights,
-        decisionRules: state.decisionRules,
-        clinicalIQ: state.clinicalIQ,
+        currentDocId: state.currentDocId,
+        // Clinical IQ - but limit progressHistory to last 50 entries
+        clinicalIQ: {
+          ...state.clinicalIQ,
+          progressHistory: state.clinicalIQ.progressHistory.slice(-50),
+          weakClusters: state.clinicalIQ.weakClusters.slice(-20),
+        },
+        // Mode configs (small)
         expertMode: state.expertMode,
-        datMode: state.datMode,
-        completedReasoningLoops: state.completedReasoningLoops,
-        trainingHistory: state.trainingHistory,
+        datMode: {
+          ...state.datMode,
+          alerts: state.datMode.alerts.slice(-10), // Limit alerts
+        },
+        // Only persist counts, not full loops
+        completedReasoningLoopsCount: state.completedReasoningLoops.length,
+        // Only persist IDs, not full session data
+        trainingHistoryCount: state.trainingHistory.length,
       }),
       skipHydration: typeof window === 'undefined',
     }
