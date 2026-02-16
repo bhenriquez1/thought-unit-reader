@@ -2002,6 +2002,8 @@ export default function ThoughtUnitReader() {
               <SurgeonCockpit
                 documentId={bookId}
                 documentTitle={sanitizeDocTitle(currentChapter?.title, uploadedFile?.name || "Document")}
+                totalPages={pdfPageCount || 0}
+                currentPage={currentPage}
                 onJumpToPage={(page) => syncToPage(page)}
                 pageTexts={pageTexts}
               />
@@ -2104,7 +2106,7 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Study Session View - PURE: Memo.cards-style flashcard study
+    // ✅ Study Session View - PURE: Memo.cards-style flashcard study with Dashboard
     if (viewMode === "study") {
       return (
         <div className="h-full" data-testid="study-view-container">
@@ -2113,15 +2115,37 @@ export default function ThoughtUnitReader() {
               console.error('🧠 Study Error:', { message: error.message, stack: error.stack });
             }}
           >
-            <MemoCardsStudyPanel
-              documentId={bookId}
-              documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
-              onNavigateToPage={(pageIdx) => {
-                syncToPage(pageIdx + 1);
-                setViewMode("hybrid");
-              }}
-              onClose={() => setViewMode("original")}
-            />
+            <div className="h-full flex flex-col">
+              {/* Study Dashboard Header */}
+              <div className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🧠</span>
+                  <h2 className="text-lg font-semibold text-white">Study Dashboard</h2>
+                  <span className="text-sm text-gray-400">
+                    {sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setViewMode("original")}
+                  className="text-gray-400 hover:text-gray-200 px-3 py-1 rounded hover:bg-gray-700"
+                >
+                  Close
+                </button>
+              </div>
+
+              {/* Main Study Panel */}
+              <div className="flex-1 overflow-hidden">
+                <MemoCardsStudyPanel
+                  documentId={bookId}
+                  documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
+                  onNavigateToPage={(pageIdx) => {
+                    syncToPage(pageIdx + 1);
+                    setViewMode("hybrid");
+                  }}
+                  onClose={() => setViewMode("original")}
+                />
+              </div>
+            </div>
           </ErrorBoundary>
         </div>
       );
