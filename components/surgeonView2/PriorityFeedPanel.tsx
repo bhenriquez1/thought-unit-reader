@@ -80,13 +80,17 @@ export const PriorityFeedPanel: React.FC<PriorityFeedPanelProps> = ({
   onReadThisCard,
   onJumpToPage,
 }) => {
+  // Show minimal prompt when no content - not a developer error state
   if (insights.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center p-8">
-        <span className="text-5xl mb-4">📊</span>
-        <h3 className="text-lg font-medium text-white mb-2">No Insights Yet</h3>
-        <p className="text-sm text-gray-400">
-          Extract relations from the document to generate ranked insights.
+      <div className="p-4 h-full">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
+            Priority Feed
+          </h2>
+        </div>
+        <p className="text-xs text-gray-500 italic">
+          Extract a page to see ranked insights.
         </p>
       </div>
     );

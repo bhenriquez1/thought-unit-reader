@@ -13,7 +13,7 @@ import { usePageContextStore } from '@/lib/cognitive/pageContextStore';
 import type {
   ReasoningChain,
 } from '@/lib/cognitive/types';
-import type { PatternCluster, Relation, DecisionRule, RankedInsight } from '@/lib/relationshipSchema/types';
+import type { PatternCluster, Relation, DecisionRule, RankedInsight, Concept } from '@/lib/relationshipSchema/types';
 import {
   extractPage,
   generateInsights,
@@ -35,6 +35,7 @@ import {
 import ClusterRail from './ClusterRail';
 import RelationPanel from './RelationPanel';
 import PriorityFeedPanel from './PriorityFeedPanel';
+import PriorityComprehensionPanel from './PriorityComprehensionPanel';
 import InsightOverlay from './InsightOverlay';
 import SmartSpeechControls from './SmartSpeechControls';
 import DATDrillMode from '../apex/DATDrillMode';
@@ -47,8 +48,8 @@ import {
 } from '@/lib/speechWhiteboard/smartSpeech';
 import { enrichInsightsWithApex } from '@/lib/apex/patternLibrary';
 
-// Expert View 2.1 tabs
-type ComprehensionTab = 'priority' | 'explain' | 'compare' | 'insights';
+// Expert View 2.1 tabs - Simplified for cognitive flow
+type ComprehensionTab = 'priority' | 'explain' | 'relations' | 'compare';
 
 interface SurgeonCockpitProps {
   documentId: string;
@@ -618,13 +619,13 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             />
           )}
 
-          {/* Tab Bar - Expert View 2.1 Mode Chips */}
+          {/* Tab Bar - Priority Comprehension Mode */}
           <div className="flex border-b border-gray-700 bg-gray-800/50 px-2 py-1 gap-1">
             <ModeChip
               label="Priority"
               active={activeTab === 'priority'}
               onClick={() => setActiveTab('priority')}
-              badge={rankedInsights.filter(i => i.bucket === 'CRITICAL').length || undefined}
+              badge={rankedInsights.filter(i => i.bucket === 'CRITICAL' || i.bucket === 'HIGH_YIELD').length || undefined}
             />
             <ModeChip
               label="Explain"
@@ -632,31 +633,31 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               onClick={() => setActiveTab('explain')}
             />
             <ModeChip
+              label="Relations"
+              active={activeTab === 'relations'}
+              onClick={() => setActiveTab('relations')}
+              badge={Object.keys(relations).length || undefined}
+            />
+            <ModeChip
               label="Compare"
               active={activeTab === 'compare'}
               onClick={() => setActiveTab('compare')}
             />
-            <ModeChip
-              label="Insights"
-              active={activeTab === 'insights'}
-              onClick={() => setActiveTab('insights')}
-              badge={Object.keys(surgeonEngine.trapTags).length || undefined}
-            />
           </div>
 
-          {/* Tab Content - Expert View 2.1: ONE primary list per mode */}
+          {/* Tab Content - Priority Comprehension Mode */}
           <div className="flex-1 overflow-y-auto">
             {activeTab === 'priority' && (
-              <PriorityFeedPanel
-                insights={rankedInsights}
-                selectedInsightId={selectedCardId}
+              <PriorityComprehensionPanel
+                rankedInsights={rankedInsights}
+                pageIntelligence={pageIntelligence}
+                pageInsights={pageInsights}
+                pageReasoning={pageReasoning}
+                pageExtraction={pageExtraction}
                 onInsightClick={handleCardClick}
+                onJumpToPage={onJumpToPage}
                 onSaveToNoteLab={handleSaveToNoteLab}
                 onMarkConfusing={handleMarkConfusing}
-                onMarkMastered={() => {}}
-                onExplainOnWhiteboard={() => setActiveTab('explain')}
-                onReadThisCard={handleReadCard}
-                onJumpToPage={onJumpToPage}
               />
             )}
             {activeTab === 'explain' && (
@@ -671,26 +672,27 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
                 pageIntelligence={pageIntelligence}
               />
             )}
+            {activeTab === 'relations' && (
+              <RelationsTab
+                relations={activeRelations}
+                clusters={Object.values(clusters)}
+                concepts={concepts}
+                chains={chains}
+                selectedCluster={selectedCluster}
+                onSelectCluster={selectCluster}
+                onRelationClick={(relation) => {
+                  selectRelation(relation.id);
+                  setSelectedInsightTarget({ type: 'relation', id: relation.id });
+                  setShowInsightOverlay(true);
+                }}
+                onJumpToPage={onJumpToPage}
+              />
+            )}
             {activeTab === 'compare' && (
               <CompareTab
                 selectedCardId={selectedCardId}
                 insights={rankedInsights}
                 onSelectCard={() => setActiveTab('priority')}
-              />
-            )}
-            {activeTab === 'insights' && (
-              <InsightsTab
-                insights={rankedInsights}
-                trapInsights={trapInsights}
-                selectedCardId={selectedCardId}
-                onCardClick={handleCardClick}
-                onJumpToPage={onJumpToPage}
-                reasoningChain={expertView.getReasoningChain()}
-                pageInsights={pageInsights}
-                pageReasoning={pageReasoning}
-                onGenerateStudyCards={handleGenerateStudyCards}
-                generatedStudyCards={generatedStudyCards}
-                pageIntelligence={pageIntelligence}
               />
             )}
           </div>
@@ -1369,6 +1371,178 @@ const InsightsTab: React.FC<{
           </p>
         )}
       </section>
+    </div>
+  );
+};
+
+// Relations Tab - Shows clusters and relations in a compact view
+const RelationsTab: React.FC<{
+  relations: Relation[];
+  clusters: PatternCluster[];
+  concepts: Record<string, any>;
+  chains: Array<{ id: string; title: string; relations: Relation[]; concepts?: Concept[] }>;
+  selectedCluster?: PatternCluster | null;
+  onSelectCluster: (clusterId: string) => void;
+  onRelationClick: (relation: Relation) => void;
+  onJumpToPage?: (page: number) => void;
+}> = ({
+  relations,
+  clusters,
+  concepts,
+  chains,
+  selectedCluster,
+  onSelectCluster,
+  onRelationClick,
+  onJumpToPage,
+}) => {
+  const hasContent = relations.length > 0 || clusters.length > 0;
+
+  if (!hasContent) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full p-6 text-center">
+        <span className="text-3xl mb-3">🔗</span>
+        <h3 className="text-sm font-medium text-gray-300 mb-1">Relations View</h3>
+        <p className="text-xs text-gray-500 max-w-[200px]">
+          Extract a page to see concept relationships and pattern clusters.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-3 overflow-y-auto h-full">
+      {/* Clusters Section */}
+      {clusters.length > 0 && (
+        <section className="mb-4">
+          <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+            <span>📊</span> Pattern Clusters
+            <span className="text-gray-500">({clusters.length})</span>
+          </h3>
+          <div className="space-y-1.5">
+            {clusters.slice(0, 8).map(cluster => (
+              <button
+                key={cluster.id}
+                onClick={() => onSelectCluster(cluster.id)}
+                className={`
+                  w-full text-left px-2.5 py-2 rounded-lg border text-xs transition-all
+                  ${selectedCluster?.id === cluster.id
+                    ? 'bg-teal-500/20 border-teal-500/40 text-teal-300'
+                    : 'bg-gray-800/50 border-gray-700 text-gray-300 hover:border-gray-600'
+                  }
+                `}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-medium truncate">{cluster.title}</span>
+                  <span className="text-[10px] text-gray-500">{cluster.relationIds.length} rel</span>
+                </div>
+                {cluster.summary && (
+                  <p className="text-[10px] text-gray-500 mt-0.5 line-clamp-1">{cluster.summary}</p>
+                )}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Relations Section */}
+      {relations.length > 0 && (
+        <section className="mb-4">
+          <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+            <span>🔗</span> Relations
+            <span className="text-gray-500">({relations.length})</span>
+          </h3>
+          <div className="space-y-1.5">
+            {relations.slice(0, 12).map(relation => {
+              const subject = concepts[relation.subjId];
+              const object = concepts[relation.objId];
+              const page = relation.evidence?.[0]?.page;
+
+              return (
+                <div
+                  key={relation.id}
+                  onClick={() => onRelationClick(relation)}
+                  className="px-2.5 py-2 rounded-lg bg-gray-800/50 border border-gray-700 hover:border-gray-600 cursor-pointer transition-all"
+                >
+                  <div className="flex items-center gap-1 text-[11px]">
+                    <span className="text-teal-300 font-medium truncate max-w-[80px]">
+                      {subject?.label || relation.subjId}
+                    </span>
+                    <span className="text-gray-500">→</span>
+                    <span className="text-purple-300 text-[10px]">
+                      {relation.predicate.replace(/_/g, ' ')}
+                    </span>
+                    <span className="text-gray-500">→</span>
+                    <span className="text-amber-300 font-medium truncate max-w-[80px]">
+                      {object?.label || relation.objId}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 mt-1">
+                    <ConfidenceDot confidence={relation.confidence} />
+                    {page !== undefined && onJumpToPage && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onJumpToPage(page);
+                        }}
+                        className="text-[9px] text-teal-400 hover:text-teal-300"
+                      >
+                        p.{page + 1}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Chains Section */}
+      {chains.length > 0 && (
+        <section>
+          <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+            <span>⛓️</span> Reasoning Chains
+            <span className="text-gray-500">({chains.length})</span>
+          </h3>
+          <div className="space-y-1.5">
+            {chains.slice(0, 5).map(chain => {
+              // Chain is complete if it has 3+ relations or concepts
+              const isComplete = chain.relations.length >= 3 || (chain.concepts?.length || 0) >= 3;
+              return (
+                <div
+                  key={chain.id}
+                  className="px-2.5 py-2 rounded-lg bg-gray-800/50 border border-gray-700"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-300 font-medium">{chain.title}</span>
+                    {isComplete ? (
+                      <span className="text-[9px] text-green-400">Complete</span>
+                    ) : (
+                      <span className="text-[9px] text-amber-400">Partial</span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-gray-500 mt-0.5">
+                    {chain.relations.length} steps
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+};
+
+// Confidence Dot Component
+const ConfidenceDot: React.FC<{ confidence: number }> = ({ confidence }) => {
+  const percent = Math.round(confidence * 100);
+  const color = percent >= 80 ? 'bg-green-500' : percent >= 60 ? 'bg-amber-500' : 'bg-red-500';
+  return (
+    <div className="flex items-center gap-1">
+      <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
+      <span className="text-[9px] text-gray-500">{percent}%</span>
     </div>
   );
 };

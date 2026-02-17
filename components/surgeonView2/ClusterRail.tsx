@@ -33,13 +33,15 @@ export const ClusterRail: React.FC<ClusterRailProps> = ({
   onSelectCluster,
   onClusterInsightClick,
 }) => {
+  // Don't show empty developer artifacts - just render minimal header
   if (clusterGroups.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center p-8">
-        <span className="text-5xl mb-4">📊</span>
-        <h3 className="text-lg font-medium text-white mb-2">No Clusters Yet</h3>
-        <p className="text-sm text-gray-400">
-          Click &quot;Extract Relations&quot; to detect patterns in the document.
+      <div className="p-4">
+        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-4">
+          Pattern Clusters
+        </h2>
+        <p className="text-xs text-gray-500 italic">
+          Extract a page to discover patterns.
         </p>
       </div>
     );
