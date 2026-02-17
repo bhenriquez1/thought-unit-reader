@@ -32,15 +32,17 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
   onRelationClick,
   onJumpToPage,
 }) => {
+  // Minimal empty state - not a developer error message
   if (relations.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center p-8">
-        <span className="text-5xl mb-4">🔗</span>
-        <h3 className="text-lg font-medium text-white mb-2">No Relations</h3>
-        <p className="text-sm text-gray-400">
+      <div className="p-4">
+        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">
+          {selectedCluster ? selectedCluster.title : 'Relations'}
+        </h2>
+        <p className="text-xs text-gray-500 italic">
           {selectedCluster
-            ? 'This cluster has no relations yet.'
-            : 'Select a cluster to view its relations, or extract relations from the document.'
+            ? 'Select another cluster or extract more content.'
+            : 'Extract a page to discover concept relationships.'
           }
         </p>
       </div>
