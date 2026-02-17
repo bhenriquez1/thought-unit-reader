@@ -230,17 +230,33 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         getNativeText: async () => nativeText,
         getPageImageDataUrl: async () => {
           // Render the PDF page to an image for OCR
-          // This requires access to the PDF document - for now return empty
-          // In production, this would render the page canvas
-          const canvas = document.querySelector(`canvas[data-page="${currentPage}"]`) as HTMLCanvasElement;
-          if (canvas) {
-            return canvas.toDataURL('image/png');
+          // Try multiple canvas selectors in order of preference
+          const selectors = [
+            // react-pdf canvas (most common)
+            '.react-pdf__Page__canvas',
+            // Custom data attribute
+            `canvas[data-page="${currentPage}"]`,
+            // pdfjs-dist direct canvas
+            '.pdfViewer canvas',
+            // Any canvas in PDF container
+            '[data-testid="pure-reader-view"] canvas',
+            '[data-testid="expert-view-container"] canvas',
+            // Last resort: any canvas on page
+            'canvas'
+          ];
+
+          for (const selector of selectors) {
+            const canvas = document.querySelector(selector) as HTMLCanvasElement;
+            if (canvas && canvas.width > 0 && canvas.height > 0) {
+              try {
+                return canvas.toDataURL('image/png');
+              } catch (error) {
+                console.warn(`[SurgeonCockpit] Failed to get dataURL from canvas (${selector}):`, error);
+              }
+            }
           }
-          // Fallback: try to find any visible PDF canvas
-          const anyCanvas = document.querySelector('.react-pdf__Page__canvas') as HTMLCanvasElement;
-          if (anyCanvas) {
-            return anyCanvas.toDataURL('image/png');
-          }
+
+          console.warn('[SurgeonCockpit] No valid PDF canvas found for OCR');
           return '';
         },
         options: {
@@ -464,6 +480,16 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         {ocrStatus === 'running' && (
           <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-blue-500/20 text-blue-400 animate-pulse">
             OCR running...
+          </span>
+        )}
+
+        {/* Build Indicator */}
+        {process.env.NEXT_PUBLIC_BUILD_SHA && (
+          <span
+            className="px-1.5 py-0.5 text-[9px] font-mono text-gray-500 bg-gray-800 rounded"
+            title={`Build: ${process.env.NEXT_PUBLIC_BUILD_SHA} at ${process.env.NEXT_PUBLIC_BUILD_TIME || 'unknown'}`}
+          >
+            {process.env.NEXT_PUBLIC_BUILD_SHA}
           </span>
         )}
 
