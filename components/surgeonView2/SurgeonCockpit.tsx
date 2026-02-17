@@ -26,6 +26,12 @@ import {
   type StudyCard,
   type ReasoningFlow,
 } from '@/lib/engines';
+// Page Intelligence module with OCR support
+import {
+  buildPageIntelligence,
+  type PageIntelligence,
+  type PageSource,
+} from '@/lib/page-intelligence';
 import ClusterRail from './ClusterRail';
 import RelationPanel from './RelationPanel';
 import PriorityFeedPanel from './PriorityFeedPanel';
@@ -118,6 +124,12 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   const [pageReasoning, setPageReasoning] = useState<ReasoningFlow | null>(null);
   const [generatedStudyCards, setGeneratedStudyCards] = useState<StudyCard[]>([]);
 
+  // Page Intelligence state (OCR-enabled pipeline)
+  const [pageIntelligence, setPageIntelligence] = useState<PageIntelligence | null>(null);
+  const [ocrEnabled, setOcrEnabled] = useState(true);
+  const [ocrStatus, setOcrStatus] = useState<'idle' | 'running' | 'done'>('idle');
+  const [autoExtract, setAutoExtract] = useState(false);
+
   // Sync document context on mount
   useEffect(() => {
     if (documentId) {
@@ -136,6 +148,17 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       surgeonEngine.setPageContext(currentPage);
     }
   }, [currentPage]);
+
+  // Auto-extract when page changes (if enabled)
+  useEffect(() => {
+    if (autoExtract && currentPage !== undefined && !isRelationExtracting) {
+      // Small delay to allow page to render
+      const timer = setTimeout(() => {
+        handleExtractCurrentPage();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [currentPage, autoExtract, isRelationExtracting]);
 
   // Run surgeon engines after extraction completes
   useEffect(() => {
@@ -182,48 +205,93 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   const chapterTitle = pageCtx.tocPath?.title || 'Unknown Chapter';
   const confidencePercent = Math.round(pageCtx.confidence * 100);
 
-  // Handle extract current page - uses new extraction engine with IndexedDB storage
+  // Handle extract current page - uses new Page Intelligence pipeline with OCR fallback
   const handleExtractCurrentPage = useCallback(async () => {
-    if (!pageTexts || !pageTexts.has(currentPage)) {
-      setExtractionStatus('No text available for current page');
+    const nativeText = pageTexts?.get(currentPage) || '';
+    const hasNativeText = nativeText.trim().length >= 40;
+
+    // If no native text and OCR is disabled, show message
+    if (!hasNativeText && !ocrEnabled) {
+      setExtractionStatus('No text available for current page. Enable OCR for scanned PDFs.');
       return;
     }
 
-    const text = pageTexts.get(currentPage);
-    if (!text || text.trim().length < 50) {
-      setExtractionStatus('Page has insufficient text');
-      return;
+    setExtractionStatus(hasNativeText ? 'Extracting page...' : 'Running OCR on page...');
+    if (!hasNativeText && ocrEnabled) {
+      setOcrStatus('running');
     }
-
-    setExtractionStatus('Extracting page...');
 
     try {
-      // Step 1: Extract page using new engine (stores in IndexedDB)
-      const extraction = await extractPage({
+      // Use Page Intelligence pipeline (handles OCR fallback internally)
+      const result = await buildPageIntelligence({
+        pageNumber: currentPage,
         docId: documentId,
-        pageIndex: currentPage,
-        text,
+        getNativeText: async () => nativeText,
+        getPageImageDataUrl: async () => {
+          // Render the PDF page to an image for OCR
+          // This requires access to the PDF document - for now return empty
+          // In production, this would render the page canvas
+          const canvas = document.querySelector(`canvas[data-page="${currentPage}"]`) as HTMLCanvasElement;
+          if (canvas) {
+            return canvas.toDataURL('image/png');
+          }
+          // Fallback: try to find any visible PDF canvas
+          const anyCanvas = document.querySelector('.react-pdf__Page__canvas') as HTMLCanvasElement;
+          if (anyCanvas) {
+            return anyCanvas.toDataURL('image/png');
+          }
+          return '';
+        },
+        options: {
+          ocrEnabled,
+          datScoring: true,
+          minTextLength: 40,
+        },
       });
-      setPageExtraction(extraction);
-      setExtractionStatus('Generating insights...');
 
-      // Step 2: Generate insights from extraction
-      const insights = await generateInsights(extraction);
-      setPageInsights(insights);
-      setExtractionStatus('Building reasoning flow...');
+      // Store Page Intelligence result
+      setPageIntelligence(result.intelligence);
+      setOcrStatus(result.intelligence.source === 'ocr' ? 'done' : 'idle');
 
-      // Step 3: Build reasoning flow (clinical reasoning chain)
-      const reasoning = await buildReasoningFlow(extraction);
-      setPageReasoning(reasoning);
+      // If we have text, also run through legacy extraction
+      const text = result.intelligence.segments.map(s => s.text).join('\n\n');
+      if (text.trim().length > 50) {
+        setExtractionStatus('Generating insights...');
 
-      // Step 4: Also run legacy extraction for relationship store
-      await extractFromMultiplePages([{ pageIndex: currentPage, text }]);
+        // Step 1: Extract page using new engine (stores in IndexedDB)
+        const extraction = await extractPage({
+          docId: documentId,
+          pageIndex: currentPage,
+          text,
+        });
+        setPageExtraction(extraction);
 
-      setExtractionStatus('');
+        // Step 2: Generate insights from extraction
+        const insights = await generateInsights(extraction);
+        setPageInsights(insights);
+        setExtractionStatus('Building reasoning flow...');
+
+        // Step 3: Build reasoning flow (clinical reasoning chain)
+        const reasoning = await buildReasoningFlow(extraction);
+        setPageReasoning(reasoning);
+
+        // Step 4: Also run legacy extraction for relationship store
+        await extractFromMultiplePages([{ pageIndex: currentPage, text }]);
+      }
+
+      setExtractionStatus(
+        result.fromCache
+          ? 'Loaded from cache'
+          : `Extracted in ${result.processingTimeMs}ms${result.intelligence.source === 'ocr' ? ' (OCR)' : ''}`
+      );
+
+      // Clear status after delay
+      setTimeout(() => setExtractionStatus(''), 3000);
     } catch (error) {
       setExtractionStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setOcrStatus('idle');
     }
-  }, [pageTexts, currentPage, documentId, extractFromMultiplePages]);
+  }, [pageTexts, currentPage, documentId, extractFromMultiplePages, ocrEnabled]);
 
   // Handle extract chapter
   const handleExtractChapter = useCallback(async () => {
@@ -374,6 +442,30 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
           {confidencePercent}%
         </span>
 
+        {/* Page Intelligence Source Badge */}
+        {pageIntelligence && (
+          <span
+            className={`
+              px-2 py-0.5 text-[10px] font-medium rounded-full
+              ${pageIntelligence.source === 'native'
+                ? 'bg-green-500/20 text-green-400'
+                : 'bg-amber-500/20 text-amber-400'}
+            `}
+            title={pageIntelligence.source === 'ocr'
+              ? `OCR confidence: ${pageIntelligence.confidence || 0}%`
+              : 'Native PDF text'}
+          >
+            {pageIntelligence.source === 'native' ? 'Native' : 'OCR'}
+          </span>
+        )}
+
+        {/* OCR Status */}
+        {ocrStatus === 'running' && (
+          <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-blue-500/20 text-blue-400 animate-pulse">
+            OCR running...
+          </span>
+        )}
+
         {/* Spacer */}
         <div className="flex-1" />
 
@@ -463,6 +555,20 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             className={`text-[10px] px-2 py-0.5 rounded ${expertModeEnabled ? 'bg-teal-500/20 text-teal-400' : 'bg-gray-700 text-gray-400'}`}
           >
             Expert Mode
+          </button>
+          <button
+            onClick={() => setOcrEnabled(!ocrEnabled)}
+            className={`text-[10px] px-2 py-0.5 rounded ${ocrEnabled ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-700 text-gray-400'}`}
+            title="Enable OCR for scanned PDFs"
+          >
+            OCR {ocrEnabled ? 'ON' : 'OFF'}
+          </button>
+          <button
+            onClick={() => setAutoExtract(!autoExtract)}
+            className={`text-[10px] px-2 py-0.5 rounded ${autoExtract ? 'bg-purple-500/20 text-purple-400' : 'bg-gray-700 text-gray-400'}`}
+            title="Auto-extract on page change"
+          >
+            Auto-extract {autoExtract ? 'ON' : 'OFF'}
           </button>
         </div>
       )}
@@ -562,6 +668,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
                 pageInsights={pageInsights}
                 pageExplain={pageExplain}
                 onGenerateExplain={handleGenerateExplain}
+                pageIntelligence={pageIntelligence}
               />
             )}
             {activeTab === 'compare' && (
@@ -583,6 +690,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
                 pageReasoning={pageReasoning}
                 onGenerateStudyCards={handleGenerateStudyCards}
                 generatedStudyCards={generatedStudyCards}
+                pageIntelligence={pageIntelligence}
               />
             )}
           </div>
@@ -666,7 +774,8 @@ const ExplainTab: React.FC<{
   pageInsights?: InsightsResult | null;
   pageExplain?: ExplainPayload | null;
   onGenerateExplain?: () => Promise<void>;
-}> = ({ selectedCardId, insights, onSelectCard, pageExtraction, pageInsights, pageExplain, onGenerateExplain }) => {
+  pageIntelligence?: PageIntelligence | null;
+}> = ({ selectedCardId, insights, onSelectCard, pageExtraction, pageInsights, pageExplain, onGenerateExplain, pageIntelligence }) => {
   const selected = insights.find(i => i.id === selectedCardId);
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -679,6 +788,86 @@ const ExplainTab: React.FC<{
       setIsGenerating(false);
     }
   }, [onGenerateExplain]);
+
+  // Use Page Intelligence explain if available
+  const piExplain = pageIntelligence?.explain;
+
+  // Page-aware explain from Page Intelligence
+  if (piExplain && piExplain.summary !== 'No text available for this page.') {
+    return (
+      <div className="p-3 space-y-4 overflow-y-auto">
+        <div className="bg-gray-800 rounded-lg p-3 border border-teal-500/40">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-semibold text-teal-400">Page Explanation</h3>
+            {pageIntelligence?.source === 'ocr' && (
+              <span className="px-1.5 py-0.5 text-[9px] bg-amber-500/20 text-amber-400 rounded">
+                via OCR
+              </span>
+            )}
+          </div>
+
+          {/* Summary */}
+          <div className="space-y-2 mb-4">
+            <h4 className="text-[10px] font-semibold text-gray-400 uppercase">Summary</h4>
+            <p className="text-xs text-gray-300">{piExplain.summary}</p>
+          </div>
+
+          {/* Key Points */}
+          {piExplain.bullets.length > 0 && (
+            <div className="space-y-2 mb-4">
+              <h4 className="text-[10px] font-semibold text-gray-400 uppercase">Key Points</h4>
+              <div className="space-y-1.5">
+                {piExplain.bullets.map((bullet, idx) => (
+                  <div key={idx} className="flex gap-2 text-xs">
+                    <span className="text-teal-500">•</span>
+                    <span className="text-gray-300">{bullet}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pitfalls / Exam Traps */}
+          {piExplain.pitfalls.length > 0 && (
+            <div className="space-y-2 mb-4">
+              <h4 className="text-[10px] font-semibold text-gray-400 uppercase flex items-center gap-1">
+                <span>⚠️</span> Exam Pitfalls
+              </h4>
+              <div className="space-y-1.5">
+                {piExplain.pitfalls.map((pitfall, idx) => (
+                  <div key={idx} className="bg-amber-900/20 border border-amber-700/40 rounded p-2 text-xs text-amber-200">
+                    {pitfall}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Mnemonics */}
+          {piExplain.mnemonics && piExplain.mnemonics.length > 0 && (
+            <div className="space-y-2 mb-4">
+              <h4 className="text-[10px] font-semibold text-gray-400 uppercase flex items-center gap-1">
+                <span>💡</span> Memory Aids
+              </h4>
+              <div className="space-y-1.5">
+                {piExplain.mnemonics.map((mnemonic, idx) => (
+                  <div key={idx} className="bg-purple-900/20 border border-purple-700/40 rounded p-2 text-xs text-purple-300">
+                    {mnemonic}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button className="flex-1 px-2 py-1.5 text-[10px] bg-teal-600 hover:bg-teal-500 text-white rounded">
+              Copy to Clipboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Page-aware explain: show "Explain this page" when extraction exists
   if (pageExplain) {
@@ -923,6 +1112,7 @@ const InsightsTab: React.FC<{
   pageReasoning?: ReasoningFlow | null;
   onGenerateStudyCards?: () => Promise<void>;
   generatedStudyCards?: StudyCard[];
+  pageIntelligence?: PageIntelligence | null;
 }> = ({
   insights,
   trapInsights,
@@ -934,6 +1124,7 @@ const InsightsTab: React.FC<{
   pageReasoning,
   onGenerateStudyCards,
   generatedStudyCards,
+  pageIntelligence,
 }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const highYield = insights.filter(i => i.bucket === 'CRITICAL' || i.bucket === 'HIGH_YIELD');
@@ -949,19 +1140,71 @@ const InsightsTab: React.FC<{
     }
   }, [onGenerateStudyCards]);
 
-  // Use page insights if available, otherwise fall back to ranked insights
+  // Use page intelligence insights if available, otherwise fall back to other sources
+  const piInsights = pageIntelligence?.insights || [];
+  const piRelations = pageIntelligence?.relations || [];
+  const piClusters = pageIntelligence?.clusters || [];
+  const piCards = pageIntelligence?.cards || [];
   const whatMattersItems = pageInsights?.whatMatters || [];
   const whatMissingItems = pageInsights?.whatMissing || [];
   const missingFromReasoning = pageReasoning?.missingNodeSuggestions || reasoningChain?.missing?.map(m => m.detail) || [];
 
   return (
     <div className="p-3 space-y-4 overflow-y-auto">
-      {/* What Matters - from new insights engine */}
+      {/* What Matters - from Page Intelligence with DAT scoring */}
       <section>
         <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
           <span>💎</span> What Matters
+          {piInsights.length > 0 && (
+            <span className="ml-1 px-1.5 py-0.5 text-[9px] bg-teal-500/20 text-teal-400 rounded">
+              {piInsights.length}
+            </span>
+          )}
         </h3>
-        {whatMattersItems.length > 0 ? (
+        {piInsights.length > 0 ? (
+          <div className="space-y-1.5">
+            {piInsights.slice(0, 10).map(insight => (
+              <div
+                key={insight.id}
+                className="bg-gray-800/50 border border-gray-700 rounded-lg p-2.5 text-xs hover:border-teal-500/40 cursor-pointer transition-colors"
+              >
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <span className="font-medium text-teal-300">{insight.title}</span>
+                  <div className="flex gap-1 flex-shrink-0">
+                    {/* DAT Scoring Badge */}
+                    <span
+                      className={`
+                        px-1.5 py-0.5 text-[9px] font-semibold rounded
+                        ${insight.badge === 'DAT MUST KNOW'
+                          ? 'bg-red-500/20 text-red-400'
+                          : insight.badge === 'High yield'
+                            ? 'bg-amber-500/20 text-amber-400'
+                            : insight.badge === 'Worth learning'
+                              ? 'bg-blue-500/20 text-blue-400'
+                              : 'bg-gray-500/20 text-gray-400'
+                        }
+                      `}
+                      title={`Score: ${insight.score}/100`}
+                    >
+                      {insight.badge === 'DAT MUST KNOW' ? '🔥 MUST KNOW' : insight.badge}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-gray-400 line-clamp-3">{insight.body}</p>
+                <div className="flex gap-1 mt-1.5 flex-wrap">
+                  {insight.tags.slice(0, 3).map(tag => (
+                    <span key={tag} className="px-1 py-0.5 text-[9px] bg-gray-700 text-gray-400 rounded">
+                      {tag}
+                    </span>
+                  ))}
+                  <span className="px-1 py-0.5 text-[9px] text-gray-500">
+                    Score: {insight.score}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : whatMattersItems.length > 0 ? (
           <div className="space-y-1.5">
             {whatMattersItems.slice(0, 8).map(item => (
               <div
@@ -1015,8 +1258,42 @@ const InsightsTab: React.FC<{
           <p className="text-xs text-gray-500 italic">Extract content to see high-yield items</p>
         )}
 
+        {/* Page Intelligence Relations */}
+        {piRelations.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-gray-700">
+            <h4 className="text-[9px] font-semibold text-gray-500 uppercase mb-2">Relations ({piRelations.length})</h4>
+            <div className="space-y-1">
+              {piRelations.slice(0, 5).map(rel => (
+                <div key={rel.id} className="text-[10px] text-gray-400">
+                  <span className="text-teal-300">{rel.from}</span>
+                  <span className="text-gray-500 mx-1">→</span>
+                  <span className="text-purple-300">{rel.to}</span>
+                  <span className="text-gray-600 ml-1">({rel.type})</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Page Intelligence Study Cards */}
+        {piCards.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-gray-700">
+            <h4 className="text-[9px] font-semibold text-gray-500 uppercase mb-2">
+              Auto-generated Study Cards ({piCards.length})
+            </h4>
+            <div className="space-y-1.5">
+              {piCards.slice(0, 5).map(card => (
+                <div key={card.id} className="bg-purple-900/20 border border-purple-700/40 rounded p-2 text-xs">
+                  <p className="text-purple-300 font-medium mb-1">{card.front}</p>
+                  <p className="text-gray-400 text-[10px] line-clamp-2">{card.back}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Generate Study Cards button */}
-        {(whatMattersItems.length > 0 || highYield.length > 0) && onGenerateStudyCards && (
+        {(piInsights.length > 0 || whatMattersItems.length > 0 || highYield.length > 0) && onGenerateStudyCards && (
           <button
             onClick={handleGenerateCards}
             disabled={isGenerating}
