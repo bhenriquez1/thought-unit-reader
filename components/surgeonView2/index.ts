@@ -16,6 +16,10 @@ export { ClusterRail } from './ClusterRail';
 export { RelationPanel } from './RelationPanel';
 export { InsightOverlay } from './InsightOverlay';
 
+// Priority Comprehension Panel (cognitive-first UX)
+export { PriorityComprehensionPanel } from './PriorityComprehensionPanel';
+export { PriorityFeedPanel } from './PriorityFeedPanel';
+
 // Re-export relationship store
 export { useRelationshipStore } from '../../lib/relationshipSchema/store';
 
