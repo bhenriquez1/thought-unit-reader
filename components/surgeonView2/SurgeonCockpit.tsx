@@ -50,7 +50,7 @@ import { enrichInsightsWithApex } from '@/lib/apex/patternLibrary';
 import { useCourseContextStore } from '@/lib/stores/courseContextStore';
 
 // Expert View 2.1 tabs - Simplified for cognitive flow
-type ComprehensionTab = 'priority' | 'explain' | 'relations' | 'compare';
+type ComprehensionTab = 'priority' | 'explain' | 'relations' | 'compare' | 'insights';
 
 interface SurgeonCockpitProps {
   documentId: string;
@@ -702,6 +702,12 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               active={activeTab === 'compare'}
               onClick={() => setActiveTab('compare')}
             />
+            <ModeChip
+              label="Insights"
+              active={activeTab === 'insights'}
+              onClick={() => setActiveTab('insights')}
+              badge={pageInsights?.whatMatters?.length || pageIntelligence?.insights?.length || undefined}
+            />
           </div>
 
           {/* Tab Content - Priority Comprehension Mode */}
@@ -752,6 +758,21 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
                 selectedCardId={selectedCardId}
                 insights={rankedInsights}
                 onSelectCard={() => setActiveTab('priority')}
+              />
+            )}
+            {activeTab === 'insights' && (
+              <InsightsTab
+                insights={rankedInsights}
+                trapInsights={trapInsights}
+                selectedCardId={selectedCardId}
+                onCardClick={handleCardClick}
+                onJumpToPage={onJumpToPage}
+                reasoningChain={expertView.getReasoningChain()}
+                pageInsights={pageInsights}
+                pageReasoning={pageReasoning}
+                onGenerateStudyCards={handleGenerateStudyCards}
+                generatedStudyCards={generatedStudyCards}
+                pageIntelligence={pageIntelligence}
               />
             )}
           </div>
