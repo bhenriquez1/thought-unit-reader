@@ -6,6 +6,8 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { useAnnotationStore, type Annotation } from './annotationStore';
 import { useQuizStore, type QuizQuestion } from './quizStore';
+import { useCourseContextStore } from './courseContextStore';
+import type { StudyCard as PageIntelStudyCard } from '../page-intelligence/types';
 
 // ============================================================================
 // Types
@@ -465,28 +467,29 @@ export const useStudySessionStore = create<StudySessionState>()(
       // Build study deck from annotations
       getStudyDeck: (documentId: string) => {
         const annotationStore = useAnnotationStore.getState();
+        const courseContext = useCourseContextStore.getState();
         const annotations = annotationStore.getAllAnnotationsArray()
           .filter(a => a.documentId === documentId);
-        
+
         const cards: StudyCard[] = [];
-        
+
         // Priority 1: Weak/miss items (highest priority)
         annotations
-          .filter(a => 
+          .filter(a =>
             a.tags.some(t => ['weak', 'miss', 'quiz-generated', 'quiz-miss'].includes(t)) ||
             a.pdrm?.isMistake
           )
           .forEach(ann => {
             cards.push(annotationToCard(ann, 100));
           });
-        
+
         // Priority 2: Explicit flashcards
         annotations
           .filter(a => a.flashcardFront && a.flashcardBack && !cards.find(c => c.annotationId === a.id))
           .forEach(ann => {
             cards.push(annotationToCard(ann, 50));
           });
-        
+
         // Priority 3: Highlights (lower priority)
         annotations
           .filter(a => a.selectedText.length > 20 && !cards.find(c => c.annotationId === a.id))
@@ -494,7 +497,41 @@ export const useStudySessionStore = create<StudySessionState>()(
           .forEach(ann => {
             cards.push(annotationToCard(ann, 10));
           });
-        
+
+        // Priority 4: Auto-generated cards from Page Intelligence (CourseContext integration)
+        // These are DAT-scored cards extracted from page content
+        try {
+          const pageIntelCards = courseContext.getAllStudyCards();
+          const docPrefix = `${documentId}:`;
+          pageIntelCards
+            .filter(c => c.deck.startsWith(docPrefix))
+            .forEach(piCard => {
+              // Skip if we already have a similar card (basic dedup by front text)
+              const isDuplicate = cards.some(c =>
+                c.front.substring(0, 50) === piCard.front.substring(0, 50)
+              );
+
+              if (!isDuplicate) {
+                // Convert PageIntelStudyCard to StudyCard format
+                const isDATCard = piCard.tags.includes('DAT') || piCard.tags.includes('high-yield');
+                cards.push({
+                  id: `pageIntel_${piCard.id}`,
+                  annotationId: '',  // No annotation backing
+                  front: piCard.front,
+                  back: piCard.back,
+                  source: 'highlight',  // Treat as highlight-style
+                  priority: isDATCard ? 75 : 25,  // DAT cards get higher priority
+                  reviewCount: 0,
+                  easeFactor: 2.5,
+                  interval: 1
+                });
+              }
+            });
+        } catch (e) {
+          // CourseContext not available, skip page intel cards
+          console.log('📚 StudySession: CourseContext not available for page intel cards');
+        }
+
         // Sort by priority (highest first)
         return cards.sort((a, b) => b.priority - a.priority);
       },
@@ -528,9 +565,10 @@ export const useStudySessionStore = create<StudySessionState>()(
       // Get topic-filtered deck (Syllabus integration)
       getTopicDeck: (documentId: string, chapterIds: string[], pageRanges: Array<{ start: number; end: number }>) => {
         const annotationStore = useAnnotationStore.getState();
+        const courseContext = useCourseContextStore.getState();
         const allAnnotations = annotationStore.getAllAnnotationsArray()
           .filter(a => a.documentId === documentId);
-        
+
         // Filter by chapter or page range
         const filteredAnnotations = allAnnotations.filter(a => {
           // Check chapter match
@@ -545,26 +583,26 @@ export const useStudySessionStore = create<StudySessionState>()(
           }
           return chapterIds.length === 0 && pageRanges.length === 0;
         });
-        
+
         const cards: StudyCard[] = [];
-        
+
         // Priority 1: Weak/miss items first
         filteredAnnotations
-          .filter(a => 
+          .filter(a =>
             a.tags.some(t => ['weak', 'miss', 'quiz-generated', 'quiz-miss', 'notelab-weak'].includes(t)) ||
             a.pdrm?.isMistake
           )
           .forEach(ann => {
             cards.push(annotationToCard(ann, 100));
           });
-        
+
         // Priority 2: Flashcards
         filteredAnnotations
           .filter(a => a.flashcardFront && a.flashcardBack && !cards.find(c => c.annotationId === a.id))
           .forEach(ann => {
             cards.push(annotationToCard(ann, 50));
           });
-        
+
         // Priority 3: Highlights
         filteredAnnotations
           .filter(a => a.selectedText.length > 20 && !cards.find(c => c.annotationId === a.id))
@@ -572,7 +610,43 @@ export const useStudySessionStore = create<StudySessionState>()(
           .forEach(ann => {
             cards.push(annotationToCard(ann, 10));
           });
-        
+
+        // Priority 4: Page Intelligence cards from pages within the topic range
+        try {
+          const pageIntelCards = courseContext.getAllStudyCards();
+          pageIntelCards.forEach(piCard => {
+            // Extract page number from deck (format: docId:page:pageNumber)
+            const match = piCard.deck.match(/:page:(\d+)$/);
+            if (!match) return;
+            const cardPage = parseInt(match[1], 10);
+
+            // Check if card is within topic's page ranges
+            const inRange = pageRanges.some(r => cardPage >= r.start && cardPage <= r.end);
+            if (!inRange) return;
+
+            // Skip duplicates
+            const isDuplicate = cards.some(c =>
+              c.front.substring(0, 50) === piCard.front.substring(0, 50)
+            );
+            if (isDuplicate) return;
+
+            const isDATCard = piCard.tags.includes('DAT') || piCard.tags.includes('high-yield');
+            cards.push({
+              id: `pageIntel_${piCard.id}`,
+              annotationId: '',
+              front: piCard.front,
+              back: piCard.back,
+              source: 'highlight',
+              priority: isDATCard ? 75 : 25,
+              reviewCount: 0,
+              easeFactor: 2.5,
+              interval: 1
+            });
+          });
+        } catch (e) {
+          // CourseContext not available
+        }
+
         return cards.sort((a, b) => b.priority - a.priority);
       },
       

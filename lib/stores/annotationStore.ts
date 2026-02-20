@@ -8,6 +8,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { getDbInstance } from '@/lib/firebase';
+import { useCourseContextStore } from './courseContextStore';
 import { 
   collection, 
   doc, 
@@ -94,11 +95,15 @@ export interface Annotation {
   
   // General tags
   tags: string[];
-  
+
+  // Course context links (optional - auto-populated when available)
+  topicId?: string;           // Link to syllabus topic
+  evidenceSegmentId?: string; // Link to page intelligence segment
+
   // Timestamps
   createdAt: string;
   updatedAt: string;
-  
+
   // User
   userId: string;
 }
@@ -349,23 +354,41 @@ export const useAnnotationStore = create<AnnotationState>()(
       addAnnotation: async (input: CreateAnnotationInput) => {
         const id = generateId();
         const now = new Date().toISOString();
-        
+
         // Auto-add 'highlight' tag for silent NoteLab capture
         const tags = input.tags ? [...input.tags] : [];
         if (!tags.includes('highlight')) {
           tags.push('highlight');
         }
-        
+
         // Auto-tag based on PDRM classification
         if (input.pdrm?.pattern && !tags.includes('pattern')) tags.push('pattern');
         if (input.pdrm?.decisionRule && !tags.includes('decision')) tags.push('decision');
         if (input.pdrm?.mnemonic && !tags.includes('mnemonic')) tags.push('mnemonic');
         if (input.pdrm?.isMistake && !tags.includes('weak')) tags.push('weak');
-        
+
+        // Auto-populate topicId from CourseContext if not provided
+        let topicId = input.topicId;
+        let evidenceSegmentId = input.evidenceSegmentId;
+        if (!topicId) {
+          try {
+            const courseContext = useCourseContextStore.getState();
+            const topic = courseContext.getTopicForPage(input.pageIndex);
+            if (topic) {
+              topicId = topic.id;
+              console.log(`📝 Auto-linked annotation to topic: ${topic.title}`);
+            }
+          } catch (e) {
+            // CourseContext not available, skip topic linking
+          }
+        }
+
         const annotation: Annotation = {
           ...input,
           id,
           tags,
+          topicId,
+          evidenceSegmentId,
           createdAt: now,
           updatedAt: now
         };
@@ -383,6 +406,21 @@ export const useAnnotationStore = create<AnnotationState>()(
         
         // Log for silent NoteLab capture
         console.log(`📝 Highlight created (auto-captured): ${id} with tags: [${tags.join(', ')}]`);
+
+        // Link to CourseContext for topic/evidence tracking
+        if (topicId || evidenceSegmentId) {
+          try {
+            const courseContext = useCourseContextStore.getState();
+            if (topicId) {
+              courseContext.linkNoteToTopic(id, topicId);
+            }
+            if (evidenceSegmentId) {
+              courseContext.linkNoteToEvidence(id, evidenceSegmentId);
+            }
+          } catch (e) {
+            // CourseContext not available, skip linking
+          }
+        }
         
         // Sync to Firestore
         try {

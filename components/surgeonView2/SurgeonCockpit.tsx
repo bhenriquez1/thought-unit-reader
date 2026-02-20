@@ -47,6 +47,7 @@ import {
   stopSpeech,
 } from '@/lib/speechWhiteboard/smartSpeech';
 import { enrichInsightsWithApex } from '@/lib/apex/patternLibrary';
+import { useCourseContextStore } from '@/lib/stores/courseContextStore';
 
 // Expert View 2.1 tabs - Simplified for cognitive flow
 type ComprehensionTab = 'priority' | 'explain' | 'relations' | 'compare';
@@ -101,6 +102,9 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   const expertView = useExpertViewStore();
   const pageContext = usePageContextStore();
 
+  // Course Context Store - central hub for syllabus, page intel, study
+  const courseContext = useCourseContextStore();
+
   // Surgeon Engine Store
   const surgeonEngine = useSurgeonEngineStore();
 
@@ -138,6 +142,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       surgeonEngine.setBook(documentId, surgeonEngine.domain);
       expertView.setDocument(documentId, documentTitle, totalPages);
       pageContext.setDocument(documentId, totalPages);
+      // Initialize CourseContext with document info
+      courseContext.setDocument(documentId, totalPages);
     }
   }, [documentId, documentTitle, totalPages]);
 
@@ -147,6 +153,17 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       pageContext.setPage(currentPage);
       expertView.setPage(currentPage);
       surgeonEngine.setPageContext(currentPage);
+      courseContext.setPage(currentPage);
+
+      // Try to load existing page intelligence from CourseContext
+      const loadExistingIntel = async () => {
+        const existingIntel = await courseContext.getPageIntelligence(currentPage);
+        if (existingIntel) {
+          setPageIntelligence(existingIntel);
+          console.log(`📚 Loaded existing page intelligence for page ${currentPage}`);
+        }
+      };
+      loadExistingIntel();
     }
   }, [currentPage]);
 
@@ -266,9 +283,13 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         },
       });
 
-      // Store Page Intelligence result
+      // Store Page Intelligence result (local state)
       setPageIntelligence(result.intelligence);
       setOcrStatus(result.intelligence.source === 'ocr' ? 'done' : 'idle');
+
+      // Persist to CourseContext (IndexedDB) for cross-component access
+      await courseContext.storePageIntelligence(currentPage, result.intelligence);
+      console.log(`📚 Stored page intelligence to CourseContext for page ${currentPage}`);
 
       // If we have text, also run through legacy extraction
       const text = result.intelligence.segments.map(s => s.text).join('\n\n');
@@ -310,11 +331,22 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     }
   }, [pageTexts, currentPage, documentId, extractFromMultiplePages, ocrEnabled]);
 
+  // Check if chapter extraction is available
+  const chapterRangeAvailable = useMemo(() => {
+    // Check pageContext first, then courseContext
+    const pcRange = pageContext.getChapterRange(currentPage);
+    const ccRange = courseContext.getChapterRangeForPage(currentPage);
+    return pcRange || ccRange;
+  }, [currentPage, pageContext, courseContext.syllabusTopics]);
+
   // Handle extract chapter
   const handleExtractChapter = useCallback(async () => {
-    const chapterRange = pageContext.getChapterRange(currentPage);
+    // Try pageContext first, then courseContext for chapter range
+    const chapterRange = pageContext.getChapterRange(currentPage) ||
+                         courseContext.getChapterRangeForPage(currentPage);
+
     if (!chapterRange || !pageTexts) {
-      setExtractionStatus('No chapter range available');
+      setExtractionStatus('No chapter range available. Upload a syllabus with page ranges first.');
       return;
     }
 
@@ -520,7 +552,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
           </button>
           <button
             onClick={handleExtractChapter}
-            disabled={isRelationExtracting}
+            disabled={isRelationExtracting || !chapterRangeAvailable}
+            title={!chapterRangeAvailable ? 'No chapter range available. Upload a syllabus with page ranges.' : 'Extract all pages in current chapter'}
             className="px-2.5 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Extract Chapter
