@@ -2063,6 +2063,7 @@ export default function ThoughtUnitReader() {
               <div className="flex-1 h-full border-r border-gray-700">
                 <PureReaderView
                   fileUrl={fileUrl}
+                  docId={bookId}
                   currentPage={currentPage}
                   pdfPageCount={pdfPageCount}
                   onPageChange={(p) => syncToPage(p)}
@@ -2283,6 +2284,7 @@ export default function ThoughtUnitReader() {
         <div className="h-full" data-testid="reader-view-container">
           <PureReaderView
             fileUrl={fileUrl}
+            docId={bookId}
             currentPage={currentPage}
             pdfPageCount={pdfPageCount}
             onPageChange={(p) => syncToPage(p)}

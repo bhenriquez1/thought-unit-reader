@@ -14,6 +14,8 @@ import { useZoomStore } from '@/lib/stores/zoomStore';
 
 interface PureReaderViewProps {
   fileUrl: string | null;
+  /** Stable document ID forwarded to SmartPDFViewer for reliable Page keying */
+  docId?: string;
   currentPage: number;
   pdfPageCount: number;
   onPageChange: (page: number) => void;
@@ -26,6 +28,7 @@ interface PureReaderViewProps {
 
 export default function PureReaderView({
   fileUrl,
+  docId,
   currentPage,
   pdfPageCount,
   onPageChange,
@@ -128,6 +131,7 @@ export default function PureReaderView({
       <div className="flex-1 overflow-auto bg-gray-950">
         <SmartPDFViewer
           fileUrl={fileUrl}
+          docId={docId}
           currentPage={currentPage}
           scale={zoom}
           onPageChange={onPageChange}
