@@ -64,6 +64,8 @@ import {
 import { useTocStore } from "@/lib/stores/tocStore";
 import { useZoomStore } from "@/lib/stores/zoomStore";
 import { usePdrmStore } from "@/lib/stores/pdrmStore";
+import { useInsightsPanelStore } from "@/lib/stores/insightsPanelStore";
+import { extractParagraphBlocks, findBestMatchingBlock } from "@/lib/paragraphMap";
 
 import {
   firebaseConnected,
@@ -816,6 +818,14 @@ export default function ThoughtUnitReader() {
      Searches spans in the rendered react-pdf text layer, scrolls to the
      first match, and applies a teal glow animation for 2.5 s.
   ========================================================================= */
+  // Stable ref to avoid re-creating the callback when store state changes
+  const insightsPanelStoreRef = useRef(useInsightsPanelStore.getState());
+  useEffect(() => {
+    return useInsightsPanelStore.subscribe(
+      (state) => { insightsPanelStoreRef.current = state; }
+    );
+  }, []);
+
   const handleHighlightParagraph = useCallback((searchText: string) => {
     if (!searchText || searchText.trim().length < 10) return;
 
@@ -886,6 +896,28 @@ export default function ThoughtUnitReader() {
       document.querySelectorAll(`.${GLOW_CLASS}`).forEach(el => el.classList.remove(GLOW_CLASS));
     }, 2500);
   }, []);
+
+  /* =========================================================================
+     🔹 PDF scroll → active paragraph → insights panel sync
+     Called by SmartPDFViewer when the most-visible paragraph text changes.
+     We try to find the best matching insight item and drive the sync store.
+  ========================================================================= */
+  const handleActiveParagraphChange = useCallback((snippet: string | null) => {
+    const store = insightsPanelStoreRef.current;
+    store.setActiveVisibleText(snippet);
+
+    if (!snippet || !store.syncInsightsToPdf) return;
+
+    // Build paragraph blocks from current page text and try to find matching block
+    const pageText = thoughtUnits?.[currentThoughtUnit - 1]?.text || '';
+    if (!pageText.trim()) return;
+
+    const blocks = extractParagraphBlocks(pageText, currentPage, bookId);
+    const matched = findBestMatchingBlock(snippet, blocks);
+    if (matched) {
+      store.setActiveParagraphId(matched.id);
+    }
+  }, [thoughtUnits, currentThoughtUnit, currentPage, bookId]);
 
   /* =========================================================================
      🔹 Upload PDF — parse + detect diagrams
@@ -2072,6 +2104,7 @@ export default function ThoughtUnitReader() {
                   onOutline={handleOutlineExtraction}
                   fontSize={fontSize}
                   fontFamily={fontFamily}
+                  onActiveParagraphChange={handleActiveParagraphChange}
                 />
               </div>
             )}
@@ -2293,6 +2326,7 @@ export default function ThoughtUnitReader() {
             onOutline={handleOutlineExtraction}
             fontSize={fontSize}
             fontFamily={fontFamily}
+            onActiveParagraphChange={handleActiveParagraphChange}
           />
         </div>
       ) : (

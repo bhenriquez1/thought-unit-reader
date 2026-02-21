@@ -24,6 +24,8 @@ interface PureReaderViewProps {
   onOutline?: (items: TocItem[]) => void;
   fontSize?: number;
   fontFamily?: string;
+  /** Forwarded to SmartPDFViewer for scroll → active paragraph detection */
+  onActiveParagraphChange?: (snippet: string | null) => void;
 }
 
 export default function PureReaderView({
@@ -36,7 +38,8 @@ export default function PureReaderView({
   onTextSelect,
   onOutline,
   fontSize = 16,
-  fontFamily = 'Georgia'
+  fontFamily = 'Georgia',
+  onActiveParagraphChange,
 }: PureReaderViewProps) {
   // Global zoom store
   const { zoom, zoomIn, zoomOut, resetZoom, getZoomPercent, canZoomIn, canZoomOut } = useZoomStore();
@@ -138,6 +141,7 @@ export default function PureReaderView({
           onPageCount={onPageCount}
           onTextSelect={onTextSelect}
           onOutline={onOutline}
+          onActiveParagraphChange={onActiveParagraphChange}
         />
       </div>
     </div>

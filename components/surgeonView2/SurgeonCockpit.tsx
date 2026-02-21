@@ -137,10 +137,12 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   // Surgeon Engine Store
   const surgeonEngine = useSurgeonEngineStore();
 
-  // Insights Panel Store — zoom + sync toggle
+  // Insights Panel Store — zoom + sync toggle + paragraph tracking
   const {
     insightScale,
     syncInsightsToPdf,
+    activeParagraphId,
+    activeVisibleText,
     scaleUp,
     scaleDown,
     canScaleUp,
@@ -223,6 +225,37 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       }
     }).catch(() => {});
   }, [currentPage]);
+
+  // PDF scroll → insight card sync:
+  // When the active visible paragraph text changes and Sync is ON,
+  // find the ranked insight whose claim/title best overlaps the snippet and activate it.
+  useEffect(() => {
+    if (!syncInsightsToPdf || !activeVisibleText || !rankedInsights.length) return;
+
+    const needle = activeVisibleText.toLowerCase();
+    const needleWords = new Set(needle.split(/\s+/).filter(w => w.length > 4));
+    if (needleWords.size < 2) return;
+
+    let bestId: string | undefined;
+    let bestScore = 0;
+
+    for (const insight of rankedInsights) {
+      const haystack = `${insight.title} ${insight.claim || ''} ${insight.whyItMatters || ''}`.toLowerCase();
+      let score = 0;
+      for (const word of needleWords) {
+        if (haystack.includes(word)) score++;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestId = insight.id;
+      }
+    }
+
+    // Only update if we matched at least 2 words (avoid spurious matches)
+    if (bestScore >= 2 && bestId && bestId !== selectedCardId) {
+      setSelectedCardId(bestId);
+    }
+  }, [activeVisibleText, syncInsightsToPdf]);
 
   // Auto-extract with debounce (800–1000 ms) when page changes and auto-extract is on
   useEffect(() => {
