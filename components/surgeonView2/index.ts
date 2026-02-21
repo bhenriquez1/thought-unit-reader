@@ -20,6 +20,12 @@ export { InsightOverlay } from './InsightOverlay';
 export { PriorityComprehensionPanel } from './PriorityComprehensionPanel';
 export { PriorityFeedPanel } from './PriorityFeedPanel';
 
+// Unified Priority Workspace (Expert View 2.1 redesign)
+export { PriorityWorkspacePanel } from './PriorityWorkspacePanel';
+export { UnifiedInsightCard } from './UnifiedInsightCard';
+export { SmartExtractControl } from './SmartExtractControl';
+export type { ExtractScope } from './SmartExtractControl';
+
 // Re-export relationship store
 export { useRelationshipStore } from '../../lib/relationshipSchema/store';
 
