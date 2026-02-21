@@ -20,6 +20,7 @@ interface PriorityWorkspacePanelProps {
   onMakeCard?: (insight: RankedInsight) => void;
   onSendToNoteLab?: (insight: RankedInsight) => void;
   isExtracting?: boolean;
+  onHighlightParagraph?: (text: string) => void;
 }
 
 export const PriorityWorkspacePanel: React.FC<PriorityWorkspacePanelProps> = ({
@@ -32,6 +33,7 @@ export const PriorityWorkspacePanel: React.FC<PriorityWorkspacePanelProps> = ({
   onExplain,
   onMakeCard,
   onSendToNoteLab,
+  onHighlightParagraph,
 }) => {
   return (
     <PriorityComprehensionPanel
@@ -43,6 +45,7 @@ export const PriorityWorkspacePanel: React.FC<PriorityWorkspacePanelProps> = ({
       onInsightClick={onExplain}
       onJumpToPage={onJumpToPage}
       onSaveToNoteLab={onSendToNoteLab}
+      onHighlightParagraph={onHighlightParagraph}
     />
   );
 };

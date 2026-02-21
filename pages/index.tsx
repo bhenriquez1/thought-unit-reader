@@ -811,6 +811,83 @@ export default function ThoughtUnitReader() {
   }, [bookId, uploadedFile?.name, setTableOfContents]);
 
   /* =========================================================================
+     🔹 Highlight Paragraph — zoom to matching text in the PDF text layer
+     Called when user clicks a priority item in SurgeonCockpit.
+     Searches spans in the rendered react-pdf text layer, scrolls to the
+     first match, and applies a teal glow animation for 2.5 s.
+  ========================================================================= */
+  const handleHighlightParagraph = useCallback((searchText: string) => {
+    if (!searchText || searchText.trim().length < 10) return;
+
+    // Take the first 80 chars for matching to avoid over-specificity
+    const needle = searchText.trim().slice(0, 80).toLowerCase();
+
+    // Locate the rendered text layer
+    const layerSelectors = [
+      '.react-pdf__Page__textContent',
+      '.textLayer',
+      '[data-testid="pure-reader-view"] .react-pdf__Page__textContent',
+      '[data-testid="expert-view-container"] .react-pdf__Page__textContent',
+    ];
+
+    let textLayer: Element | null = null;
+    for (const sel of layerSelectors) {
+      textLayer = document.querySelector(sel);
+      if (textLayer) break;
+    }
+    if (!textLayer) return;
+
+    const spans = Array.from(textLayer.querySelectorAll('span'));
+    if (spans.length === 0) return;
+
+    // Sliding window: accumulate consecutive span text until the needle prefix is found
+    let matchStart = -1;
+    let matchEnd = -1;
+
+    for (let i = 0; i < spans.length && matchStart === -1; i++) {
+      let accumulated = '';
+      for (let j = i; j < Math.min(i + 20, spans.length); j++) {
+        accumulated += (spans[j].textContent || '').toLowerCase();
+        if (accumulated.includes(needle.slice(0, 40))) {
+          matchStart = i;
+          matchEnd = j;
+          break;
+        }
+      }
+    }
+
+    // Fuzzy fallback: match the first 6 words of the needle in a single span
+    if (matchStart === -1) {
+      const segment = needle.split(/\s+/).filter(Boolean).slice(0, 6).join(' ');
+      for (let i = 0; i < spans.length; i++) {
+        if ((spans[i].textContent || '').toLowerCase().includes(segment)) {
+          matchStart = i;
+          matchEnd = i;
+          break;
+        }
+      }
+    }
+
+    if (matchStart === -1) return;
+
+    // Scroll to matched span
+    spans[matchStart].scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Remove any stale glow before applying new one
+    const GLOW_CLASS = 'priority-paragraph-glow';
+    document.querySelectorAll(`.${GLOW_CLASS}`).forEach(el => el.classList.remove(GLOW_CLASS));
+
+    for (let k = matchStart; k <= matchEnd && k < spans.length; k++) {
+      spans[k].classList.add(GLOW_CLASS);
+    }
+
+    // Auto-remove glow after 2.5 s
+    setTimeout(() => {
+      document.querySelectorAll(`.${GLOW_CLASS}`).forEach(el => el.classList.remove(GLOW_CLASS));
+    }, 2500);
+  }, []);
+
+  /* =========================================================================
      🔹 Upload PDF — parse + detect diagrams
   ========================================================================= */
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -2007,6 +2084,7 @@ export default function ThoughtUnitReader() {
                 currentPage={currentPage}
                 onJumpToPage={(page) => syncToPage(page)}
                 pageTexts={pageTexts}
+                onHighlightParagraph={handleHighlightParagraph}
               />
             </div>
 
