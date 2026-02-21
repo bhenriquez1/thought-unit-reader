@@ -92,7 +92,8 @@ export type InsightTag =
   | "anatomy"
   | "physiology"
   | "pathology"
-  | "pharmacology";
+  | "pharmacology"
+  | "threshold";
 
 export type InsightBadge = "DAT MUST KNOW" | "High yield" | "Worth learning" | "Low yield";
 
