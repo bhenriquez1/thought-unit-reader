@@ -612,6 +612,25 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
           DAT Apex
         </button>
 
+        {/* Extract Buttons */}
+        <div className="flex gap-1">
+          <button
+            onClick={handleExtractCurrentPage}
+            disabled={isRelationExtracting}
+            className="px-2.5 py-1 text-xs bg-teal-600 hover:bg-teal-500 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Extract Page
+          </button>
+          <button
+            onClick={handleExtractChapter}
+            disabled={isRelationExtracting || !chapterRangeAvailable}
+            title={!chapterRangeAvailable ? 'No chapter range available. Upload a syllabus with page ranges.' : 'Extract all pages in current chapter'}
+            className="px-2.5 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Extract Chapter
+          </button>
+        </div>
+
         {/* Advanced Filters Toggle */}
         <button
           onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
@@ -755,6 +774,14 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               pageExplain={pageExplain}
               onGenerateExplain={handleGenerateExplain}
               pageIntelligence={pageIntelligence}
+
+          {/* Tab Bar - Priority Comprehension Mode */}
+          <div className="flex border-b border-gray-700 bg-gray-800/50 px-2 py-1 gap-1">
+            <ModeChip
+              label="Priority"
+              active={activeTab === 'priority'}
+              onClick={() => setActiveTab('priority')}
+              badge={rankedInsights.filter(i => i.bucket === 'CRITICAL' || i.bucket === 'HIGH_YIELD').length || undefined}
             />
           )}
           {activeTab === 'relations' && (
@@ -795,6 +822,91 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               pageIntelligence={pageIntelligence}
             />
           )}
+            <ModeChip
+              label="Relations"
+              active={activeTab === 'relations'}
+              onClick={() => setActiveTab('relations')}
+              badge={Object.keys(relations).length || undefined}
+            />
+            <ModeChip
+              label="Compare"
+              active={activeTab === 'compare'}
+              onClick={() => setActiveTab('compare')}
+            />
+            <ModeChip
+              label="Insights"
+              active={activeTab === 'insights'}
+              onClick={() => setActiveTab('insights')}
+              badge={pageInsights?.whatMatters?.length || pageIntelligence?.insights?.length || undefined}
+            />
+          </div>
+
+          {/* Tab Content - Priority Comprehension Mode */}
+          <div className="flex-1 overflow-y-auto">
+            {activeTab === 'priority' && (
+              <PriorityComprehensionPanel
+                rankedInsights={rankedInsights}
+                pageIntelligence={pageIntelligence}
+                pageInsights={pageInsights}
+                pageReasoning={pageReasoning}
+                pageExtraction={pageExtraction}
+                onInsightClick={handleCardClick}
+                onJumpToPage={onJumpToPage}
+                onSaveToNoteLab={handleSaveToNoteLab}
+                onMarkConfusing={handleMarkConfusing}
+              />
+            )}
+            {activeTab === 'explain' && (
+              <ExplainTab
+                selectedCardId={selectedCardId}
+                insights={rankedInsights}
+                onSelectCard={() => setActiveTab('priority')}
+                pageExtraction={pageExtraction}
+                pageInsights={pageInsights}
+                pageExplain={pageExplain}
+                onGenerateExplain={handleGenerateExplain}
+                pageIntelligence={pageIntelligence}
+              />
+            )}
+            {activeTab === 'relations' && (
+              <RelationsTab
+                relations={activeRelations}
+                clusters={Object.values(clusters)}
+                concepts={concepts}
+                chains={chains}
+                selectedCluster={selectedCluster}
+                onSelectCluster={selectCluster}
+                onRelationClick={(relation) => {
+                  selectRelation(relation.id);
+                  setSelectedInsightTarget({ type: 'relation', id: relation.id });
+                  setShowInsightOverlay(true);
+                }}
+                onJumpToPage={onJumpToPage}
+              />
+            )}
+            {activeTab === 'compare' && (
+              <CompareTab
+                selectedCardId={selectedCardId}
+                insights={rankedInsights}
+                onSelectCard={() => setActiveTab('priority')}
+              />
+            )}
+            {activeTab === 'insights' && (
+              <InsightsTab
+                insights={rankedInsights}
+                trapInsights={trapInsights}
+                selectedCardId={selectedCardId}
+                onCardClick={handleCardClick}
+                onJumpToPage={onJumpToPage}
+                reasoningChain={expertView.getReasoningChain()}
+                pageInsights={pageInsights}
+                pageReasoning={pageReasoning}
+                onGenerateStudyCards={handleGenerateStudyCards}
+                generatedStudyCards={generatedStudyCards}
+                pageIntelligence={pageIntelligence}
+              />
+            )}
+          </div>
         </div>
       </div>
 
