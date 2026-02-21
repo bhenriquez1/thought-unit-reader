@@ -351,6 +351,28 @@ export function generateInsights(options: GenerateInsightsOptions): Insight[] {
     }
   }
 
+  // Process math segments into formula insights (kind === 'math' or high density)
+  for (const seg of segments) {
+    if (processedSegmentIds.has(seg.id)) continue;
+    if (seg.kind !== 'math' && (seg.mathDensity ?? 0) < 0.4) continue;
+
+    const score = Math.max(
+      calculateDATScore({ text: seg.text, isUnderHeading: false, conceptRepetitions, ocrConfidence }),
+      40, // floor: formulas are always at least "Worth learning"
+    );
+
+    insights.push({
+      id: generateId('ins'),
+      title: seg.isDisplayMath ? 'Display Formula' : 'Key Formula',
+      body: seg.mathRaw ?? seg.text,
+      score,
+      badge: getInsightBadge(score),
+      tags: ['threshold', 'math'],
+      evidenceSegmentIds: [seg.id],
+    });
+    processedSegmentIds.add(seg.id);
+  }
+
   // Sort by score descending and limit
   insights.sort((a, b) => b.score - a.score);
   return insights.slice(0, maxInsights);

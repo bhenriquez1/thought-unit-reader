@@ -19,7 +19,7 @@ export interface PageText {
 // Segment Types - Paragraph/Heading/List detection
 // ============================================================================
 
-export type SegmentKind = "heading" | "paragraph" | "list" | "caption" | "tableHint";
+export type SegmentKind = "heading" | "paragraph" | "list" | "caption" | "tableHint" | "math";
 
 export interface Segment {
   id: string;
@@ -27,6 +27,12 @@ export interface Segment {
   kind: SegmentKind;
   text: string;
   bbox?: { x: number; y: number; w: number; h: number }; // optional bounding box
+  /** 0–1 math density score; set by segmenter for math/mixed segments */
+  mathDensity?: number;
+  /** Pre-normalisation raw text for math segments */
+  mathRaw?: string;
+  /** True if the segment is a standalone display equation */
+  isDisplayMath?: boolean;
 }
 
 // ============================================================================
@@ -93,7 +99,8 @@ export type InsightTag =
   | "physiology"
   | "pathology"
   | "pharmacology"
-  | "threshold";
+  | "threshold"
+  | "math";
 
 export type InsightBadge = "DAT MUST KNOW" | "High yield" | "Worth learning" | "Low yield";
 
