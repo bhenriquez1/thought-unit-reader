@@ -39,6 +39,15 @@ interface InsightsPanelState {
    */
   activeParagraphId: string | null;
   setActiveParagraphId: (id: string | null) => void;
+
+  // ── Selection (set on insight card click) ────────────────────────────────
+  /** ID of the last insight card the user clicked. */
+  selectedInsightId: string | null;
+  setSelectedInsightId: (id: string | null) => void;
+
+  /** Raw text snippet of the paragraph currently visible in the PDF (from scroll detection). */
+  activeVisibleText: string | null;
+  setActiveVisibleText: (text: string | null) => void;
 }
 
 export const useInsightsPanelStore = create<InsightsPanelState>()(
@@ -83,6 +92,13 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
       // ── Active anchor ──
       activeParagraphId: null,
       setActiveParagraphId: (id) => set({ activeParagraphId: id }),
+
+      // ── Selection ──
+      selectedInsightId: null,
+      setSelectedInsightId: (id) => set({ selectedInsightId: id }),
+
+      activeVisibleText: null,
+      setActiveVisibleText: (text) => set({ activeVisibleText: text }),
     }),
     {
       name: 'insights-panel-storage',

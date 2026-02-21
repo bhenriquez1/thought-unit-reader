@@ -34,6 +34,13 @@ export interface SmartPDFViewerProps {
   onPageCount?: (n: number) => void;
   /** Emit PDF outline/bookmarks with resolved page numbers */
   onOutline?: (items: TocItem[]) => void;
+  /**
+   * Called (debounced, ~200 ms) whenever the most-visible paragraph in the
+   * rendered text layer changes. The argument is a ~60-char text snippet from
+   * that paragraph, or null when no paragraph is visible.
+   * Use this to drive PDF scroll → insights-panel sync without DOM overlays.
+   */
+  onActiveParagraphChange?: (snippet: string | null) => void;
 }
 
 /** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
@@ -94,6 +101,7 @@ export default function SmartPDFViewer({
   onTextSelect,
   onPageCount,
   onOutline,
+  onActiveParagraphChange,
 }: SmartPDFViewerProps) {
   // Stable key root: prefer explicit docId, fall back to fileUrl
   const pageKeyRoot = docId ?? fileUrl;
@@ -115,6 +123,79 @@ export default function SmartPDFViewer({
   const viewerRef = useRef<HTMLDivElement>(null);
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const paragraphScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Scroll → active paragraph detection (no DOM overlays, no IntersectionObserver overhead)
+  // Attaches once to the PDF scroll container; debounces at 200 ms.
+  useEffect(() => {
+    if (!onActiveParagraphChange) return;
+    const container = viewerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      if (paragraphScrollTimerRef.current) {
+        clearTimeout(paragraphScrollTimerRef.current);
+      }
+      paragraphScrollTimerRef.current = setTimeout(() => {
+        // Find text layer spans in the rendered page
+        const textLayer = container.querySelector(
+          '.react-pdf__Page__textContent, .textLayer'
+        );
+        if (!textLayer) {
+          onActiveParagraphChange(null);
+          return;
+        }
+
+        const spans = Array.from(textLayer.querySelectorAll('span')) as HTMLElement[];
+        if (!spans.length) {
+          onActiveParagraphChange(null);
+          return;
+        }
+
+        // Find the span closest to the vertical centre of the viewport
+        const vpMid = window.scrollY + window.innerHeight / 2;
+        let bestSpan: HTMLElement | null = null;
+        let bestDist = Infinity;
+
+        for (const span of spans) {
+          const rect = span.getBoundingClientRect();
+          const spanMid = window.scrollY + rect.top + rect.height / 2;
+          const dist = Math.abs(spanMid - vpMid);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestSpan = span;
+          }
+        }
+
+        if (!bestSpan) {
+          onActiveParagraphChange(null);
+          return;
+        }
+
+        // Collect text from nearby spans (within ±30 px vertically) to form a paragraph snippet
+        const bestRect = bestSpan.getBoundingClientRect();
+        const bestTop = window.scrollY + bestRect.top;
+        const rangeY = 30;
+        let snippet = '';
+        for (const span of spans) {
+          const r = span.getBoundingClientRect();
+          const top = window.scrollY + r.top;
+          if (Math.abs(top - bestTop) <= rangeY) {
+            snippet += (span.textContent || '') + ' ';
+            if (snippet.length > 120) break;
+          }
+        }
+        snippet = snippet.trim().slice(0, 80);
+        onActiveParagraphChange(snippet || null);
+      }, 200);
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      if (paragraphScrollTimerRef.current) clearTimeout(paragraphScrollTimerRef.current);
+    };
+  }, [onActiveParagraphChange]);
 
   // Enhanced PDF loading with robust error handling
   const {
