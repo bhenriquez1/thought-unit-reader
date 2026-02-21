@@ -29,6 +29,7 @@ import {
 // Page Intelligence module with OCR support
 import {
   buildPageIntelligence,
+  buildChapterIntelligence,
   type PageIntelligence,
   type PageSource,
 } from '@/lib/page-intelligence';
@@ -50,9 +51,32 @@ import {
 } from '@/lib/speechWhiteboard/smartSpeech';
 import { enrichInsightsWithApex } from '@/lib/apex/patternLibrary';
 import { useCourseContextStore } from '@/lib/stores/courseContextStore';
+import { useStudySessionStore } from '@/lib/stores/studySessionStore';
 
 // Expert View 2.1 tabs - Simplified for cognitive flow
 type ComprehensionTab = 'priority' | 'explain' | 'relations' | 'compare' | 'insights';
+
+// ============================================================================
+// DOM Text Layer Scraping
+// Reads the visible page text from react-pdf's rendered text layer.
+// Primary fallback when pageTexts Map has no entry for the current page.
+// ============================================================================
+function getDOMPageText(): string {
+  const selectors = [
+    '.react-pdf__Page__textContent',
+    '[data-testid="pure-reader-view"] .react-pdf__Page__textContent',
+    '.textLayer',
+    '[data-testid="expert-view-container"] .textLayer',
+  ];
+  for (const selector of selectors) {
+    const el = document.querySelector(selector);
+    if (el) {
+      const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (text.length >= 40) return text;
+    }
+  }
+  return '';
+}
 
 interface SurgeonCockpitProps {
   documentId: string;
@@ -151,36 +175,40 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     }
   }, [documentId, documentTitle, totalPages]);
 
-  // Update page context when page changes
+  // Update page context when page changes — also reset stale state and load cache
   useEffect(() => {
-    if (currentPage !== undefined) {
-      pageContext.setPage(currentPage);
-      expertView.setPage(currentPage);
-      surgeonEngine.setPageContext(currentPage);
-      courseContext.setPage(currentPage);
+    if (currentPage === undefined) return;
 
-      // Try to load existing page intelligence from CourseContext
-      const loadExistingIntel = async () => {
-        const existingIntel = await courseContext.getPageIntelligence(currentPage);
-        if (existingIntel) {
-          setPageIntelligence(existingIntel);
-          console.log(`📚 Loaded existing page intelligence for page ${currentPage}`);
-        }
-      };
-      loadExistingIntel();
-    }
+    pageContext.setPage(currentPage);
+    expertView.setPage(currentPage);
+    surgeonEngine.setPageContext(currentPage);
+    courseContext.setPage(currentPage);
+
+    // Reset per-page extraction state so the UI doesn't show stale data
+    setPageIntelligence(null);
+    setPageExtraction(null);
+    setPageInsights(null);
+    setPageExplain(null);
+    setPageReasoning(null);
+    setExtractionStatus('');
+    setOcrStatus('idle');
+
+    // Load cached intelligence for this page (IndexedDB, no-op if missing)
+    courseContext.getPageIntelligence(currentPage).then((cached) => {
+      if (cached) {
+        setPageIntelligence(cached);
+      }
+    }).catch(() => {});
   }, [currentPage]);
 
-  // Auto-extract when page changes (if enabled)
+  // Auto-extract with debounce (800–1000 ms) when page changes and auto-extract is on
   useEffect(() => {
-    if (autoExtract && currentPage !== undefined && !isRelationExtracting) {
-      // Small delay to allow page to render
-      const timer = setTimeout(() => {
-        handleExtractCurrentPage();
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [currentPage, autoExtract, isRelationExtracting]);
+    if (!autoExtract || currentPage === undefined || isRelationExtracting) return;
+    const timer = setTimeout(() => {
+      handleExtractCurrentPage();
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [currentPage, autoExtract]);
 
   // Run surgeon engines after extraction completes
   useEffect(() => {
@@ -227,113 +255,105 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   const chapterTitle = pageCtx.tocPath?.title || 'Unknown Chapter';
   const confidencePercent = Math.round(pageCtx.confidence * 100);
 
+  // ============================================================================
+  // getPageText — resolve text for current page with 3-tier fallback:
+  //   1. pageTexts Map (populated by parseBookWithChapters)
+  //   2. DOM text layer scraping (.react-pdf__Page__textContent)
+  //   3. Empty string → will trigger OCR if enabled
+  // ============================================================================
+  const getPageText = useCallback((page: number): string => {
+    // Tier 1: pre-extracted Map
+    const mapped = pageTexts?.get(page);
+    if (mapped && mapped.trim().length >= 40) return mapped.trim();
+
+    // Tier 2: live DOM text layer (react-pdf renders this as selectable text)
+    const domText = getDOMPageText();
+    if (domText.length >= 40) return domText;
+
+    return '';
+  }, [pageTexts]);
+
   // Handle extract current page - uses new Page Intelligence pipeline with OCR fallback
   const handleExtractCurrentPage = useCallback(async () => {
-    const nativeText = pageTexts?.get(currentPage) || '';
-    const hasNativeText = nativeText.trim().length >= 40;
+    const nativeText = getPageText(currentPage);
+    const hasNativeText = nativeText.length >= 40;
 
-    // If no native text and OCR is disabled, show message
     if (!hasNativeText && !ocrEnabled) {
-      setExtractionStatus('No text available for current page. Enable OCR for scanned PDFs.');
+      setExtractionStatus('No text found. Enable OCR for scanned PDFs or wait for the page to fully render.');
       return;
     }
 
-    setExtractionStatus(hasNativeText ? 'Extracting page...' : 'Running OCR on page...');
-    if (!hasNativeText && ocrEnabled) {
-      setOcrStatus('running');
-    }
+    setExtractionStatus(hasNativeText ? 'Extracting page…' : 'Running OCR on page…');
+    if (!hasNativeText && ocrEnabled) setOcrStatus('running');
 
     try {
-      // Use Page Intelligence pipeline (handles OCR fallback internally)
       const result = await buildPageIntelligence({
         pageNumber: currentPage,
         docId: documentId,
         getNativeText: async () => nativeText,
         getPageImageDataUrl: async () => {
-          // Render the PDF page to an image for OCR
-          // Try multiple canvas selectors in order of preference
+          // Find the visible PDF canvas for OCR rendering
           const selectors = [
-            // react-pdf canvas (most common)
             '.react-pdf__Page__canvas',
-            // Custom data attribute
             `canvas[data-page="${currentPage}"]`,
-            // pdfjs-dist direct canvas
             '.pdfViewer canvas',
-            // Any canvas in PDF container
             '[data-testid="pure-reader-view"] canvas',
             '[data-testid="expert-view-container"] canvas',
-            // Last resort: any canvas on page
-            'canvas'
+            'canvas',
           ];
-
           for (const selector of selectors) {
             const canvas = document.querySelector(selector) as HTMLCanvasElement;
             if (canvas && canvas.width > 0 && canvas.height > 0) {
-              try {
-                return canvas.toDataURL('image/png');
-              } catch (error) {
-                console.warn(`[SurgeonCockpit] Failed to get dataURL from canvas (${selector}):`, error);
-              }
+              try { return canvas.toDataURL('image/png'); } catch {}
             }
           }
-
-          console.warn('[SurgeonCockpit] No valid PDF canvas found for OCR');
           return '';
         },
-        options: {
-          ocrEnabled,
-          datScoring: true,
-          minTextLength: 40,
-        },
+        options: { ocrEnabled, datScoring: true, minTextLength: 40 },
       });
 
-      // Store Page Intelligence result (local state)
       setPageIntelligence(result.intelligence);
       setOcrStatus(result.intelligence.source === 'ocr' ? 'done' : 'idle');
 
-      // Persist to CourseContext (IndexedDB) for cross-component access
+      // Persist to CourseContext (IndexedDB) → Study + NoteLab will read from here
       await courseContext.storePageIntelligence(currentPage, result.intelligence);
-      console.log(`📚 Stored page intelligence to CourseContext for page ${currentPage}`);
 
-      // If we have text, also run through legacy extraction
+      // If text is available, run the legacy engine pipeline too
       const text = result.intelligence.segments.map(s => s.text).join('\n\n');
       if (text.trim().length > 50) {
-        setExtractionStatus('Generating insights...');
-
-        // Step 1: Extract page using new engine (stores in IndexedDB)
-        const extraction = await extractPage({
-          docId: documentId,
-          pageIndex: currentPage,
-          text,
-        });
+        setExtractionStatus('Generating insights…');
+        const extraction = await extractPage({ docId: documentId, pageIndex: currentPage, text });
         setPageExtraction(extraction);
 
-        // Step 2: Generate insights from extraction
         const insights = await generateInsights(extraction);
         setPageInsights(insights);
-        setExtractionStatus('Building reasoning flow...');
 
-        // Step 3: Build reasoning flow (clinical reasoning chain)
+        setExtractionStatus('Building reasoning flow…');
         const reasoning = await buildReasoningFlow(extraction);
         setPageReasoning(reasoning);
 
-        // Step 4: Also run legacy extraction for relationship store
+        // Run relationship store extraction (Relations/Compare tabs)
         await extractFromMultiplePages([{ pageIndex: currentPage, text }]);
+
+        // Push auto-generated study cards to the Study session store
+        if (result.intelligence.cards.length > 0) {
+          const studyStore = useStudySessionStore.getState();
+          if (studyStore.addCardsFromPageIntel) {
+            studyStore.addCardsFromPageIntel(documentId, currentPage, result.intelligence.cards);
+          }
+        }
       }
 
-      setExtractionStatus(
-        result.fromCache
-          ? 'Loaded from cache'
-          : `Extracted in ${result.processingTimeMs}ms${result.intelligence.source === 'ocr' ? ' (OCR)' : ''}`
-      );
-
-      // Clear status after delay
+      const statusText = result.fromCache
+        ? 'Loaded from cache'
+        : `Done in ${result.processingTimeMs}ms${result.intelligence.source === 'ocr' ? ' (OCR)' : ''}`;
+      setExtractionStatus(statusText);
       setTimeout(() => setExtractionStatus(''), 3000);
     } catch (error) {
       setExtractionStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setOcrStatus('idle');
     }
-  }, [pageTexts, currentPage, documentId, extractFromMultiplePages, ocrEnabled]);
+  }, [getPageText, currentPage, documentId, extractFromMultiplePages, ocrEnabled, courseContext]);
 
   // Check if chapter extraction is available
   const chapterRangeAvailable = useMemo(() => {
@@ -343,39 +363,64 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     return pcRange || ccRange;
   }, [currentPage, pageContext, courseContext.syllabusTopics]);
 
-  // Handle extract chapter
+  // Handle extract chapter — uses Page Intelligence pipeline for each page in chapter
   const handleExtractChapter = useCallback(async () => {
-    // Try pageContext first, then courseContext for chapter range
     const chapterRange = pageContext.getChapterRange(currentPage) ||
                          courseContext.getChapterRangeForPage(currentPage);
 
-    if (!chapterRange || !pageTexts) {
+    if (!chapterRange) {
       setExtractionStatus('No chapter range available. Upload a syllabus with page ranges first.');
       return;
     }
 
-    const pages: Array<{ pageIndex: number; text: string }> = [];
-    for (let p = chapterRange.start; p <= chapterRange.end; p++) {
-      const text = pageTexts.get(p);
-      if (text && text.trim().length > 50) {
-        pages.push({ pageIndex: p, text });
-      }
-    }
-
-    if (pages.length === 0) {
-      setExtractionStatus('No extractable pages in chapter');
-      return;
-    }
-
-    setExtractionStatus(`Extracting ${pages.length} pages...`);
+    const total = chapterRange.end - chapterRange.start + 1;
+    setExtractionStatus(`Extracting chapter (${total} pages)…`);
 
     try {
-      await extractFromMultiplePages(pages);
-      setExtractionStatus('');
+      const results = await buildChapterIntelligence({
+        docId: documentId,
+        startPage: chapterRange.start,
+        endPage: chapterRange.end,
+        getPageText: async (pageNumber: number) => getPageText(pageNumber),
+        getPageImageDataUrl: async (_pageNumber: number) => '',
+        options: { ocrEnabled, datScoring: true, minTextLength: 40 },
+        onProgress: (current, total, pageNumber) => {
+          setExtractionStatus(`Processing page ${pageNumber} (${current}/${total})…`);
+        },
+      });
+
+      // Store each page in CourseContext (IndexedDB) → Study + NoteLab will read from here
+      const legacyPages: Array<{ pageIndex: number; text: string }> = [];
+      let totalCards = 0;
+      for (const intel of results) {
+        await courseContext.storePageIntelligence(intel.pageNumber, intel);
+        totalCards += intel.cards.length;
+        const text = intel.segments.map(s => s.text).join('\n\n');
+        if (text.trim().length > 50) {
+          legacyPages.push({ pageIndex: intel.pageNumber, text });
+        }
+      }
+
+      // Run legacy relationship extraction so Relations/Compare tabs populate
+      if (legacyPages.length > 0) {
+        await extractFromMultiplePages(legacyPages);
+      }
+
+      setExtractionStatus(`Chapter done: ${results.length} pages, ${totalCards} cards generated`);
+      setTimeout(() => setExtractionStatus(''), 4000);
     } catch (error) {
       setExtractionStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }, [pageTexts, currentPage, pageContext, extractFromMultiplePages]);
+  }, [currentPage, documentId, pageContext, courseContext, extractFromMultiplePages, getPageText, ocrEnabled]);
+
+  // Unified extract handler for SmartExtractControl
+  const handleUnifiedExtract = useCallback(async () => {
+    if (extractScope === 'chapter' && chapterRangeAvailable) {
+      await handleExtractChapter();
+    } else {
+      await handleExtractCurrentPage();
+    }
+  }, [extractScope, chapterRangeAvailable, handleExtractChapter, handleExtractCurrentPage]);
 
   // Unified extract handler for SmartExtractControl
   const handleUnifiedExtract = useCallback(async () => {
@@ -612,25 +657,6 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
           DAT Apex
         </button>
 
-        {/* Extract Buttons */}
-        <div className="flex gap-1">
-          <button
-            onClick={handleExtractCurrentPage}
-            disabled={isRelationExtracting}
-            className="px-2.5 py-1 text-xs bg-teal-600 hover:bg-teal-500 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Extract Page
-          </button>
-          <button
-            onClick={handleExtractChapter}
-            disabled={isRelationExtracting || !chapterRangeAvailable}
-            title={!chapterRangeAvailable ? 'No chapter range available. Upload a syllabus with page ranges.' : 'Extract all pages in current chapter'}
-            className="px-2.5 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Extract Chapter
-          </button>
-        </div>
-
         {/* Advanced Filters Toggle */}
         <button
           onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
@@ -828,85 +854,45 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               onClick={() => setActiveTab('relations')}
               badge={Object.keys(relations).length || undefined}
             />
-            <ModeChip
-              label="Compare"
-              active={activeTab === 'compare'}
-              onClick={() => setActiveTab('compare')}
+          )}
+          {activeTab === 'relations' && (
+            <RelationsTab
+              relations={activeRelations}
+              clusters={Object.values(clusters)}
+              concepts={concepts}
+              chains={chains}
+              selectedCluster={selectedCluster}
+              onSelectCluster={selectCluster}
+              onRelationClick={(relation) => {
+                selectRelation(relation.id);
+                setSelectedInsightTarget({ type: 'relation', id: relation.id });
+                setShowInsightOverlay(true);
+              }}
+              onJumpToPage={onJumpToPage}
             />
-            <ModeChip
-              label="Insights"
-              active={activeTab === 'insights'}
-              onClick={() => setActiveTab('insights')}
-              badge={pageInsights?.whatMatters?.length || pageIntelligence?.insights?.length || undefined}
+          )}
+          {activeTab === 'compare' && (
+            <CompareTab
+              selectedCardId={selectedCardId}
+              insights={rankedInsights}
+              onSelectCard={() => setActiveTab('priority')}
             />
-          </div>
-
-          {/* Tab Content - Priority Comprehension Mode */}
-          <div className="flex-1 overflow-y-auto">
-            {activeTab === 'priority' && (
-              <PriorityComprehensionPanel
-                rankedInsights={rankedInsights}
-                pageIntelligence={pageIntelligence}
-                pageInsights={pageInsights}
-                pageReasoning={pageReasoning}
-                pageExtraction={pageExtraction}
-                onInsightClick={handleCardClick}
-                onJumpToPage={onJumpToPage}
-                onSaveToNoteLab={handleSaveToNoteLab}
-                onMarkConfusing={handleMarkConfusing}
-              />
-            )}
-            {activeTab === 'explain' && (
-              <ExplainTab
-                selectedCardId={selectedCardId}
-                insights={rankedInsights}
-                onSelectCard={() => setActiveTab('priority')}
-                pageExtraction={pageExtraction}
-                pageInsights={pageInsights}
-                pageExplain={pageExplain}
-                onGenerateExplain={handleGenerateExplain}
-                pageIntelligence={pageIntelligence}
-              />
-            )}
-            {activeTab === 'relations' && (
-              <RelationsTab
-                relations={activeRelations}
-                clusters={Object.values(clusters)}
-                concepts={concepts}
-                chains={chains}
-                selectedCluster={selectedCluster}
-                onSelectCluster={selectCluster}
-                onRelationClick={(relation) => {
-                  selectRelation(relation.id);
-                  setSelectedInsightTarget({ type: 'relation', id: relation.id });
-                  setShowInsightOverlay(true);
-                }}
-                onJumpToPage={onJumpToPage}
-              />
-            )}
-            {activeTab === 'compare' && (
-              <CompareTab
-                selectedCardId={selectedCardId}
-                insights={rankedInsights}
-                onSelectCard={() => setActiveTab('priority')}
-              />
-            )}
-            {activeTab === 'insights' && (
-              <InsightsTab
-                insights={rankedInsights}
-                trapInsights={trapInsights}
-                selectedCardId={selectedCardId}
-                onCardClick={handleCardClick}
-                onJumpToPage={onJumpToPage}
-                reasoningChain={expertView.getReasoningChain()}
-                pageInsights={pageInsights}
-                pageReasoning={pageReasoning}
-                onGenerateStudyCards={handleGenerateStudyCards}
-                generatedStudyCards={generatedStudyCards}
-                pageIntelligence={pageIntelligence}
-              />
-            )}
-          </div>
+          )}
+          {activeTab === 'insights' && (
+            <InsightsTab
+              insights={rankedInsights}
+              trapInsights={trapInsights}
+              selectedCardId={selectedCardId}
+              onCardClick={handleCardClick}
+              onJumpToPage={onJumpToPage}
+              reasoningChain={expertView.getReasoningChain()}
+              pageInsights={pageInsights}
+              pageReasoning={pageReasoning}
+              onGenerateStudyCards={handleGenerateStudyCards}
+              generatedStudyCards={generatedStudyCards}
+              pageIntelligence={pageIntelligence}
+            />
+          )}
         </div>
       </div>
 

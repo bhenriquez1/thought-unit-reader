@@ -20,48 +20,57 @@ import { groupSegmentsByHeading } from './segmenter';
 // ============================================================================
 
 const WEIGHTS = {
-  examKeywords: {
-    weight: 12,
-    maxPoints: 24,
-    patterns: [
-      /\b(most common|primary|key|important|high-yield|classic|hallmark)\b/i,
-      /\b(remember|note|major|main|first-line|gold standard)\b/i,
-    ]
-  },
+  // +25 definition ("is/are defined as")
   definitions: {
-    weight: 18,
+    weight: 25,
     patterns: [
-      /\b(defined as|refers to|is termed|is called|means)\b/i,
+      /\b(is defined as|are defined as|defined as|refers to|is termed|is called|means that)\b/i,
     ]
   },
+  // +20 enumerations/lists (bullets, 1/2/3, includes/consists of)
   lists: {
-    weight: 12,
+    weight: 20,
     patterns: [
-      /\b(includes|consists of|characterized by)\b/i,
+      /\b(includes|consists of|characterized by|classified as|composed of|types of)\b/i,
     ]
   },
-  causeEffect: {
-    weight: 16,
-    patterns: [
-      /\b(leads to|results in|causes|due to|because of|resulting from)\b/i,
-    ]
-  },
-  clinicalAction: {
-    weight: 14,
-    patterns: [
-      /\b(diagnos|treatment|management|therap|prescribe|administer)\b/i,
-    ]
-  },
-  numbers: {
-    weight: 10,
-    patterns: [
-      /\d+\s*(mg|ml|mm|cm|%|days|hours|weeks|months|years)/i,
-    ]
-  },
+  // +20 contrast/comparison (vs, whereas, distinguished from)
   contrast: {
+    weight: 20,
+    patterns: [
+      /\b(vs\.?|versus|whereas|distinguished from|in contrast|unlike|compared to|as opposed to)\b/i,
+    ]
+  },
+  // +15 numbers/thresholds (mm, %, ranges)
+  numbers: {
+    weight: 15,
+    patterns: [
+      /\d+\.?\d*\s*(mg|ml|mm|cm|%|days|hours|weeks|months|years|mmHg|kg|g|L|dL|μg|mcg|mEq|IU)/i,
+      /\d+[-–]\d+/, // numeric ranges
+    ]
+  },
+  // +15 "most common/primary/key/critical"
+  examKeywords: {
+    weight: 15,
+    maxPoints: 30,
+    patterns: [
+      /\b(most common|primary|key|important|high-yield|classic|hallmark|critical|gold standard|drug of choice|first-line)\b/i,
+      /\b(remember|note|major|main|always|never|must know)\b/i,
+    ]
+  },
+  // +15 clinical consequence (leads to, results in, associated with)
+  causeEffect: {
+    weight: 15,
+    patterns: [
+      /\b(leads to|results in|causes|due to|because of|resulting from|associated with|increases risk of|predisposes to)\b/i,
+    ]
+  },
+  // +10 test-trap language (except, NOT, best, hallmark)
+  testTrap: {
     weight: 10,
     patterns: [
-      /\b(however|except|contraindicated|unlike|in contrast)\b/i,
+      /\bexcept\b|\bNOT\b|\bnot used\b|\bnot indicated\b|\bdoes not\b/,
+      /\b(best initial|most appropriate|most likely|least likely|hallmark)\b/i,
     ]
   },
   headingProximity: {
@@ -69,6 +78,14 @@ const WEIGHTS = {
   },
   repetition: {
     maxWeight: 10,
+  },
+  // -15 low-signal narrative filler
+  filler: {
+    weight: -15,
+    patterns: [
+      /\b(as we (have |)seen|in this chapter|it is important to note|as mentioned|in summary|to summarize)\b/i,
+      /\b(the purpose of this|this section discusses|in the following section|the goal of this)\b/i,
+    ]
   },
   lowOCRPenalty: {
     weight: -10,
@@ -89,66 +106,69 @@ interface ScoreContext {
 
 /**
  * Calculate DAT relevance score for a piece of text (0-100)
+ * Weights per spec:
+ *   +25 definition, +20 lists, +20 contrast, +15 numbers, +15 exam keywords,
+ *   +15 cause/effect, +10 test-trap, +8 heading, +0–10 repetition
+ *   -15 filler, -10 low OCR confidence
  */
 export function calculateDATScore(context: ScoreContext): number {
   const { text, isUnderHeading, conceptRepetitions, ocrConfidence } = context;
   let score = 0;
-  const lower = text.toLowerCase();
 
-  // Exam keywords (+12 each, max 24)
+  // Definitions (+25)
+  for (const pattern of WEIGHTS.definitions.patterns) {
+    if (pattern.test(text)) {
+      score += WEIGHTS.definitions.weight;
+      break;
+    }
+  }
+
+  // Lists/Enumerations (+20)
+  for (const pattern of WEIGHTS.lists.patterns) {
+    if (pattern.test(text)) {
+      score += WEIGHTS.lists.weight;
+      break;
+    }
+  }
+
+  // Contrast/Comparison (+20)
+  for (const pattern of WEIGHTS.contrast.patterns) {
+    if (pattern.test(text)) {
+      score += WEIGHTS.contrast.weight;
+      break;
+    }
+  }
+
+  // Numbers/Thresholds (+15)
+  for (const pattern of WEIGHTS.numbers.patterns) {
+    if (pattern.test(text)) {
+      score += WEIGHTS.numbers.weight;
+      break;
+    }
+  }
+
+  // Exam keywords: "most common/primary/key/critical" (+15 each, max 30)
   let examKeywordPoints = 0;
   for (const pattern of WEIGHTS.examKeywords.patterns) {
-    const matches = lower.match(new RegExp(pattern, 'gi'));
+    const matches = text.match(new RegExp(pattern.source, 'gi'));
     if (matches) {
       examKeywordPoints += matches.length * WEIGHTS.examKeywords.weight;
     }
   }
   score += Math.min(examKeywordPoints, WEIGHTS.examKeywords.maxPoints);
 
-  // Definitions (+18)
-  for (const pattern of WEIGHTS.definitions.patterns) {
-    if (pattern.test(lower)) {
-      score += WEIGHTS.definitions.weight;
-      break;
-    }
-  }
-
-  // Lists (+12)
-  for (const pattern of WEIGHTS.lists.patterns) {
-    if (pattern.test(lower)) {
-      score += WEIGHTS.lists.weight;
-      break;
-    }
-  }
-
-  // Cause→Effect (+16)
+  // Cause→Effect / Clinical Consequence (+15)
   for (const pattern of WEIGHTS.causeEffect.patterns) {
-    if (pattern.test(lower)) {
+    if (pattern.test(text)) {
       score += WEIGHTS.causeEffect.weight;
       break;
     }
   }
 
-  // Clinical actionability (+14)
-  for (const pattern of WEIGHTS.clinicalAction.patterns) {
-    if (pattern.test(lower)) {
-      score += WEIGHTS.clinicalAction.weight;
-      break;
-    }
-  }
-
-  // Numbers/thresholds (+10)
-  for (const pattern of WEIGHTS.numbers.patterns) {
-    if (pattern.test(lower)) {
-      score += WEIGHTS.numbers.weight;
-      break;
-    }
-  }
-
-  // Contrast/Exceptions (+10)
-  for (const pattern of WEIGHTS.contrast.patterns) {
-    if (pattern.test(lower)) {
-      score += WEIGHTS.contrast.weight;
+  // Test-trap language (+10)
+  for (const pattern of WEIGHTS.testTrap.patterns) {
+    if (pattern.test(text)) {
+      score += WEIGHTS.testTrap.weight;
       break;
     }
   }
@@ -163,6 +183,14 @@ export function calculateDATScore(context: ScoreContext): number {
     const avgRepetition = Array.from(conceptRepetitions.values())
       .reduce((a, b) => a + b, 0) / conceptRepetitions.size;
     score += Math.min(avgRepetition * 2, WEIGHTS.repetition.maxWeight);
+  }
+
+  // Filler penalty (-15)
+  for (const pattern of WEIGHTS.filler.patterns) {
+    if (pattern.test(text)) {
+      score += WEIGHTS.filler.weight;
+      break;
+    }
   }
 
   // OCR low confidence penalty (-10)
@@ -419,10 +447,16 @@ function generateInsightTags(signal: Signal, score: number): InsightTag[] {
     case 'contrast':
       tags.push('contrast');
       break;
+    case 'exception':
+      tags.push('contrast');
+      break;
     case 'diagnostic':
     case 'treatment':
     case 'risk_factor':
       tags.push('clinical');
+      break;
+    case 'numbers_thresholds':
+      tags.push('threshold');
       break;
   }
 
