@@ -3,6 +3,7 @@
 
 import type { Segment, SegmentKind } from './types';
 import { generateId } from './types';
+import { computeMathDensity, isDisplayMathBlock } from '../mathExtractor';
 
 // ============================================================================
 // Configuration
@@ -94,12 +95,35 @@ function isTableHint(text: string): boolean {
   return TABLE_HINT_PATTERNS.some(pattern => pattern.test(text));
 }
 
-function detectKind(text: string): SegmentKind {
+function detectKind(text: string, mathDensity = 0): SegmentKind {
   if (isCaption(text)) return 'caption';
   if (isTableHint(text)) return 'tableHint';
   if (isList(text)) return 'list';
   if (isHeading(text)) return 'heading';
+  if (mathDensity >= 0.4) return 'math';
   return 'paragraph';
+}
+
+/**
+ * Build a Segment from text, computing math density and annotating optional
+ * mathDensity / mathRaw / isDisplayMath fields when relevant (density >= 0.15).
+ */
+function buildSegment(pageNumber: number, text: string): Segment {
+  const density = computeMathDensity(text);
+  const seg: Segment = {
+    id: generateId('seg'),
+    pageNumber,
+    kind: detectKind(text, density),
+    text,
+  };
+  if (density >= 0.15) {
+    seg.mathDensity = density;
+    seg.mathRaw = text;
+    if (density >= 0.4) {
+      seg.isDisplayMath = isDisplayMathBlock(text);
+    }
+  }
+  return seg;
 }
 
 // ============================================================================
@@ -151,12 +175,7 @@ export function segmentText(text: string, options: SegmentOptions): Segment[] {
       if (currentParagraph.length > 0 && !isList(line)) {
         const paragraphText = currentParagraph.join(' ');
         if (paragraphText.length >= MIN_PARAGRAPH_LENGTH) {
-          segments.push({
-            id: generateId('seg'),
-            pageNumber,
-            kind: detectKind(paragraphText),
-            text: paragraphText
-          });
+          segments.push(buildSegment(pageNumber, paragraphText));
         }
         currentParagraph = [];
       }
@@ -165,21 +184,9 @@ export function segmentText(text: string, options: SegmentOptions): Segment[] {
       const kind = detectKind(line);
 
       if (kind === 'list') {
-        // Lists are kept as individual items
-        segments.push({
-          id: generateId('seg'),
-          pageNumber,
-          kind: 'list',
-          text: line
-        });
+        segments.push(buildSegment(pageNumber, line));
       } else if (kind === 'heading' || kind === 'caption' || kind === 'tableHint') {
-        // These are kept as separate segments
-        segments.push({
-          id: generateId('seg'),
-          pageNumber,
-          kind,
-          text: line
-        });
+        segments.push(buildSegment(pageNumber, line));
       } else {
         // Regular paragraph content
         currentParagraph.push(line);
@@ -190,12 +197,7 @@ export function segmentText(text: string, options: SegmentOptions): Segment[] {
     if (currentParagraph.length > 0) {
       const paragraphText = currentParagraph.join(' ');
       if (paragraphText.length >= MIN_PARAGRAPH_LENGTH) {
-        segments.push({
-          id: generateId('seg'),
-          pageNumber,
-          kind: detectKind(paragraphText),
-          text: paragraphText
-        });
+        segments.push(buildSegment(pageNumber, paragraphText));
       }
     }
   }

@@ -94,8 +94,8 @@ const CATEGORY_HEADERS: Record<PriorityItem['category'], { icon: string; label: 
   },
   threshold: {
     icon: '📊',
-    label: 'Numbers & Thresholds',
-    description: 'Critical values and cutoffs',
+    label: 'Numbers, Formulas & Thresholds',
+    description: 'Critical values, equations, and cutoffs',
   },
   clinical: {
     icon: '🧬',
@@ -579,10 +579,19 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
         )}
       </div>
 
-      {/* Content */}
-      <p className="text-gray-300 line-clamp-2 pl-5" style={bodyStyle}>
-        {item.content}
-      </p>
+      {/* Content — monospace for math items, prose otherwise */}
+      {item.tags?.includes('math') ? (
+        <code
+          className="block text-teal-300 bg-gray-900/60 rounded px-2 py-1 pl-5 overflow-x-auto whitespace-pre-wrap line-clamp-3 font-mono"
+          style={bodyStyle}
+        >
+          {item.content}
+        </code>
+      ) : (
+        <p className="text-gray-300 line-clamp-2 pl-5" style={bodyStyle}>
+          {item.content}
+        </p>
+      )}
 
       {/* Tags */}
       {item.tags && item.tags.length > 0 && (
