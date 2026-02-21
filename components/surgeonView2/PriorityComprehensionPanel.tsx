@@ -37,6 +37,7 @@ interface PriorityComprehensionPanelProps {
   onJumpToPage?: (page: number) => void;
   onSaveToNoteLab?: (insight: RankedInsight) => void;
   onMarkConfusing?: (insight: RankedInsight) => void;
+  onHighlightParagraph?: (text: string) => void;
 }
 
 // ============================================================================
@@ -281,6 +282,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
   onJumpToPage,
   onSaveToNoteLab,
   onMarkConfusing,
+  onHighlightParagraph,
 }) => {
   // Categorize all priority items
   const categorizedItems = useMemo(() => {
@@ -378,6 +380,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
             onJumpToPage={onJumpToPage}
             onSaveToNoteLab={onSaveToNoteLab}
             onMarkConfusing={onMarkConfusing}
+            onHighlightParagraph={onHighlightParagraph}
           />
         ))}
       </div>
@@ -397,6 +400,7 @@ interface CategorySectionProps {
   onJumpToPage?: (page: number) => void;
   onSaveToNoteLab?: (insight: RankedInsight) => void;
   onMarkConfusing?: (insight: RankedInsight) => void;
+  onHighlightParagraph?: (text: string) => void;
 }
 
 const CategorySection: React.FC<CategorySectionProps> = ({
@@ -407,6 +411,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   onJumpToPage,
   onSaveToNoteLab,
   onMarkConfusing,
+  onHighlightParagraph,
 }) => {
   const header = CATEGORY_HEADERS[category];
 
@@ -434,6 +439,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
             onJumpToPage={onJumpToPage}
             onSaveToNoteLab={onSaveToNoteLab}
             onMarkConfusing={onMarkConfusing}
+            onHighlightParagraph={onHighlightParagraph}
           />
         ))}
 
@@ -459,6 +465,7 @@ interface PriorityItemCardProps {
   onJumpToPage?: (page: number) => void;
   onSaveToNoteLab?: (insight: RankedInsight) => void;
   onMarkConfusing?: (insight: RankedInsight) => void;
+  onHighlightParagraph?: (text: string) => void;
 }
 
 const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
@@ -468,12 +475,17 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
   onJumpToPage,
   onSaveToNoteLab,
   onMarkConfusing,
+  onHighlightParagraph,
 }) => {
   const style = PRIORITY_STYLES[item.priority];
   const linkedInsight = rankedInsights.find(r => r.id === item.id);
   const page = item.evidence?.[0]?.page;
 
   const handleClick = () => {
+    // Zoom to paragraph in the PDF viewer
+    if (onHighlightParagraph && item.content) {
+      onHighlightParagraph(item.content);
+    }
     if (linkedInsight && onInsightClick) {
       onInsightClick(linkedInsight);
     }

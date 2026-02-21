@@ -86,6 +86,7 @@ interface SurgeonCockpitProps {
   onJumpToPage: (page: number) => void;
   pageTexts?: Map<number, string>;
   onExtractPage?: (pageIndex: number) => Promise<void>;
+  onHighlightParagraph?: (text: string) => void;
 }
 
 export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
@@ -96,6 +97,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   onJumpToPage,
   pageTexts,
   onExtractPage,
+  onHighlightParagraph,
 }) => {
   // Relationship store
   const {
@@ -779,6 +781,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               onMakeCard={handleMakeCard}
               onSendToNoteLab={handleSendToNoteLab}
               isExtracting={isRelationExtracting}
+              onHighlightParagraph={onHighlightParagraph}
             />
           )}
           {activeTab === 'explain' && (
