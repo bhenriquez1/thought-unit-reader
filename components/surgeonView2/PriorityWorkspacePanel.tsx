@@ -21,6 +21,10 @@ interface PriorityWorkspacePanelProps {
   onSendToNoteLab?: (insight: RankedInsight) => void;
   isExtracting?: boolean;
   onHighlightParagraph?: (text: string) => void;
+  /** Font-size scale for insight cards (from insightsPanelStore) */
+  insightScale?: number;
+  /** Sync: scroll active card into view when this id changes */
+  syncEnabled?: boolean;
 }
 
 export const PriorityWorkspacePanel: React.FC<PriorityWorkspacePanelProps> = ({
@@ -29,11 +33,14 @@ export const PriorityWorkspacePanel: React.FC<PriorityWorkspacePanelProps> = ({
   pageInsights,
   pageReasoning,
   pageExtraction,
+  selectedCardId,
   onJumpToPage,
   onExplain,
   onMakeCard,
   onSendToNoteLab,
   onHighlightParagraph,
+  insightScale,
+  syncEnabled,
 }) => {
   return (
     <PriorityComprehensionPanel
@@ -46,6 +53,9 @@ export const PriorityWorkspacePanel: React.FC<PriorityWorkspacePanelProps> = ({
       onJumpToPage={onJumpToPage}
       onSaveToNoteLab={onSendToNoteLab}
       onHighlightParagraph={onHighlightParagraph}
+      insightScale={insightScale}
+      activeItemId={selectedCardId}
+      syncEnabled={syncEnabled}
     />
   );
 };

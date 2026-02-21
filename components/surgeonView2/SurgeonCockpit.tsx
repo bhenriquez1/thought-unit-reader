@@ -52,6 +52,7 @@ import {
 import { enrichInsightsWithApex } from '@/lib/apex/patternLibrary';
 import { useCourseContextStore } from '@/lib/stores/courseContextStore';
 import { useStudySessionStore } from '@/lib/stores/studySessionStore';
+import { useInsightsPanelStore } from '@/lib/stores/insightsPanelStore';
 
 // Expert View 2.1 tabs - Simplified for cognitive flow
 type ComprehensionTab = 'priority' | 'explain' | 'relations' | 'compare' | 'insights';
@@ -135,6 +136,17 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
   // Surgeon Engine Store
   const surgeonEngine = useSurgeonEngineStore();
+
+  // Insights Panel Store — zoom + sync toggle
+  const {
+    insightScale,
+    syncInsightsToPdf,
+    scaleUp,
+    scaleDown,
+    canScaleUp,
+    canScaleDown,
+    toggleSync,
+  } = useInsightsPanelStore();
 
   // Local state
   const [activeTab, setActiveTab] = useState<ComprehensionTab>('priority');
@@ -781,7 +793,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         )}
 
         {/* Tab Bar - Priority Comprehension Mode */}
-        <div className="flex border-b border-gray-700 bg-gray-800/50 px-3 py-1 gap-1">
+        <div className="flex items-center border-b border-gray-700 bg-gray-800/50 px-3 py-1 gap-1">
           <ModeChip
             label="Priority"
             active={activeTab === 'priority'}
@@ -810,6 +822,43 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             onClick={() => setActiveTab('insights')}
             badge={pageInsights?.whatMatters?.length || pageIntelligence?.insights?.length || undefined}
           />
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Insight panel zoom controls — font-size based, no transform */}
+          <div className="flex items-center gap-0.5" title="Insight text size">
+            <button
+              onClick={scaleDown}
+              disabled={!canScaleDown()}
+              className="px-1.5 py-0.5 text-[10px] text-gray-400 hover:text-white disabled:opacity-30 rounded hover:bg-gray-700"
+              aria-label="Decrease insight font size"
+            >
+              A−
+            </button>
+            <button
+              onClick={scaleUp}
+              disabled={!canScaleUp()}
+              className="px-1.5 py-0.5 text-[10px] text-gray-400 hover:text-white disabled:opacity-30 rounded hover:bg-gray-700"
+              aria-label="Increase insight font size"
+            >
+              A+
+            </button>
+          </div>
+
+          {/* Sync toggle — prevents right panel fighting PDF scroll */}
+          <button
+            onClick={toggleSync}
+            className={`ml-1 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
+              syncInsightsToPdf
+                ? 'bg-teal-600/80 text-white'
+                : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700'
+            }`}
+            title={syncInsightsToPdf ? 'Sync ON: panel scrolls to active insight' : 'Sync OFF: scroll freely'}
+            aria-label="Toggle insight sync"
+          >
+            {syncInsightsToPdf ? '⇄ Sync' : '⇄ Free'}
+          </button>
         </div>
 
         {/* Tab Content - Unified Panel */}
@@ -827,6 +876,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               onSendToNoteLab={handleSendToNoteLab}
               isExtracting={isRelationExtracting}
               onHighlightParagraph={onHighlightParagraph}
+              insightScale={insightScale}
+              syncEnabled={syncInsightsToPdf}
             />
           )}
           {activeTab === 'explain' && (

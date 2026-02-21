@@ -2,7 +2,7 @@
 // Priority Comprehension Panel - ONE intelligent panel that surfaces priority understanding
 // Shows what matters without reading the entire page - clinical cognition engine
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import type { RankedInsight, ImportanceBucket } from '@/lib/relationshipSchema/types';
 import type { InsightsResult, PageExtractionResult } from '@/lib/engines/types';
 import type { PageIntelligence } from '@/lib/page-intelligence';
@@ -38,6 +38,17 @@ interface PriorityComprehensionPanelProps {
   onSaveToNoteLab?: (insight: RankedInsight) => void;
   onMarkConfusing?: (insight: RankedInsight) => void;
   onHighlightParagraph?: (text: string) => void;
+
+  // Panel zoom & sync
+  /** CSS font-size multiplier (e.g. 0.9, 1.0, 1.25). Applied via --insightScale variable. */
+  insightScale?: number;
+  /**
+   * ID of the currently active insight item.
+   * When syncEnabled is true, the panel scrolls this item into view (block: nearest).
+   */
+  activeItemId?: string | null;
+  /** Whether sync-scroll is enabled. Default: true */
+  syncEnabled?: boolean;
 }
 
 // ============================================================================
@@ -283,7 +294,22 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
   onSaveToNoteLab,
   onMarkConfusing,
   onHighlightParagraph,
+  insightScale = 1.0,
+  activeItemId,
+  syncEnabled = true,
 }) => {
+  // Ref map: insight item ID → DOM element for scroll-into-view
+  const itemRefs = useRef<Map<string, HTMLElement>>(new Map());
+
+  // Scroll active item into view when sync is on and activeItemId changes
+  useEffect(() => {
+    if (!syncEnabled || !activeItemId) return;
+    const el = itemRefs.current.get(activeItemId);
+    if (el) {
+      el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [activeItemId, syncEnabled]);
+
   // Categorize all priority items
   const categorizedItems = useMemo(() => {
     return categorizePriorityItems(rankedInsights, pageIntelligence, pageInsights, pageReasoning);
@@ -330,8 +356,13 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
     );
   }
 
+  // CSS variable scale applied to root; child text elements use calc(… * var(--insightScale))
+  const panelStyle = {
+    '--insightScale': String(insightScale),
+  } as React.CSSProperties;
+
   return (
-    <div className="p-3 overflow-y-auto h-full">
+    <div className="p-3 overflow-y-auto h-full" style={panelStyle}>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
@@ -376,6 +407,8 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
             category={category}
             items={items}
             rankedInsights={rankedInsights}
+            activeItemId={activeItemId}
+            itemRefs={itemRefs.current}
             onInsightClick={onInsightClick}
             onJumpToPage={onJumpToPage}
             onSaveToNoteLab={onSaveToNoteLab}
@@ -396,6 +429,8 @@ interface CategorySectionProps {
   category: PriorityItem['category'];
   items: PriorityItem[];
   rankedInsights: RankedInsight[];
+  activeItemId?: string | null;
+  itemRefs: Map<string, HTMLElement>;
   onInsightClick?: (insight: RankedInsight) => void;
   onJumpToPage?: (page: number) => void;
   onSaveToNoteLab?: (insight: RankedInsight) => void;
@@ -407,6 +442,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   category,
   items,
   rankedInsights,
+  activeItemId,
+  itemRefs,
   onInsightClick,
   onJumpToPage,
   onSaveToNoteLab,
@@ -435,6 +472,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
             key={item.id}
             item={item}
             rankedInsights={rankedInsights}
+            isActive={activeItemId === item.id}
+            itemRefs={itemRefs}
             onInsightClick={onInsightClick}
             onJumpToPage={onJumpToPage}
             onSaveToNoteLab={onSaveToNoteLab}
@@ -461,6 +500,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
 interface PriorityItemCardProps {
   item: PriorityItem;
   rankedInsights: RankedInsight[];
+  isActive?: boolean;
+  itemRefs: Map<string, HTMLElement>;
   onInsightClick?: (insight: RankedInsight) => void;
   onJumpToPage?: (page: number) => void;
   onSaveToNoteLab?: (insight: RankedInsight) => void;
@@ -471,6 +512,8 @@ interface PriorityItemCardProps {
 const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
   item,
   rankedInsights,
+  isActive = false,
+  itemRefs,
   onInsightClick,
   onJumpToPage,
   onSaveToNoteLab,
@@ -491,19 +534,32 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
     }
   };
 
+  // Base font sizes scaled by --insightScale CSS variable (set by parent panel)
+  const titleStyle: React.CSSProperties = { fontSize: 'calc(0.75rem * var(--insightScale, 1))' };
+  const bodyStyle: React.CSSProperties = {
+    fontSize: 'calc(0.6875rem * var(--insightScale, 1))',
+    lineHeight: 'calc(1.4 * var(--insightScale, 1))',
+  };
+  const metaStyle: React.CSSProperties = { fontSize: 'calc(0.625rem * var(--insightScale, 1))' };
+
   return (
     <div
+      ref={(el) => {
+        if (el) itemRefs.set(item.id, el);
+        else itemRefs.delete(item.id);
+      }}
       onClick={handleClick}
       className={`
         p-2.5 rounded-lg border transition-all cursor-pointer
-        ${style.bg} border-gray-700 hover:border-gray-600
+        ${style.bg} hover:border-gray-600
+        ${isActive ? 'border-teal-500 ring-1 ring-teal-500/50' : 'border-gray-700'}
       `}
     >
       {/* Header Row */}
       <div className="flex items-start justify-between gap-2 mb-1">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-sm flex-shrink-0">{style.icon}</span>
-          <span className={`text-xs font-medium ${style.text} truncate`}>
+          <span className={`font-medium ${style.text} truncate`} style={titleStyle}>
             {item.title}
           </span>
         </div>
@@ -515,7 +571,8 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
               e.stopPropagation();
               onJumpToPage(page);
             }}
-            className="text-[10px] text-teal-400 hover:text-teal-300 flex-shrink-0"
+            className="text-teal-400 hover:text-teal-300 flex-shrink-0"
+            style={metaStyle}
           >
             p.{page + 1}
           </button>
@@ -523,7 +580,7 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
       </div>
 
       {/* Content */}
-      <p className="text-[11px] text-gray-300 line-clamp-2 pl-5">
+      <p className="text-gray-300 line-clamp-2 pl-5" style={bodyStyle}>
         {item.content}
       </p>
 
@@ -533,7 +590,8 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
           {item.tags.slice(0, 3).map(tag => (
             <span
               key={tag}
-              className="px-1 py-0.5 text-[9px] bg-gray-700/50 text-gray-400 rounded"
+              className="px-1 py-0.5 bg-gray-700/50 text-gray-400 rounded"
+              style={metaStyle}
             >
               {tag}
             </span>
@@ -550,7 +608,8 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
                 e.stopPropagation();
                 onSaveToNoteLab(linkedInsight);
               }}
-              className="px-1.5 py-0.5 text-[9px] bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+              className="px-1.5 py-0.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+              style={metaStyle}
             >
               💾 Save
             </button>
@@ -561,7 +620,8 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
                 e.stopPropagation();
                 onMarkConfusing(linkedInsight);
               }}
-              className="px-1.5 py-0.5 text-[9px] bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+              className="px-1.5 py-0.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+              style={metaStyle}
             >
               ❓ Confusing
             </button>
