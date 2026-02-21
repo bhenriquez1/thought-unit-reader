@@ -94,6 +94,10 @@ export interface StudySessionState {
   getDueCards: (documentId: string) => StudyCard[];
   getWeakItemsCount: (documentId: string) => number;
   hasLastSession: () => boolean;
+
+  // Push page intel cards into the live session deck immediately.
+  // Cards are persisted in CourseContext; this refreshes the deck to pick them up.
+  addCardsFromPageIntel: (documentId: string, pageNumber: number, cards: PageIntelStudyCard[]) => void;
 }
 
 // ============================================================================
@@ -711,7 +715,14 @@ export const useStudySessionStore = create<StudySessionState>()(
       hasLastSession: () => {
         const { lastSessionDocId } = get();
         return !!lastSessionDocId;
-      }
+      },
+
+      // Refresh deck to include newly stored page intel cards from CourseContext
+      addCardsFromPageIntel: (documentId: string, _pageNumber: number, _cards: PageIntelStudyCard[]) => {
+        // Cards are already persisted in CourseContext via storePageIntelligence.
+        // Refresh the live deck so MemoCardsStudyPanel picks them up immediately.
+        get().refreshDeck(documentId);
+      },
     }),
     {
       name: 'study-session-store',
