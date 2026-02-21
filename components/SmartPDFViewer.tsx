@@ -25,6 +25,8 @@ export type TocItem = {
 
 export interface SmartPDFViewerProps {
   fileUrl: string;
+  /** Stable document ID used to key the <Page> for reliable re-mounts. Falls back to fileUrl. */
+  docId?: string;
   currentPage: number;
   onPageChange: (page: number) => void;
   scale?: number;
@@ -85,6 +87,7 @@ async function resolveOutline(
 
 export default function SmartPDFViewer({
   fileUrl,
+  docId,
   currentPage,
   onPageChange,
   scale = 1.25,
@@ -92,6 +95,8 @@ export default function SmartPDFViewer({
   onPageCount,
   onOutline,
 }: SmartPDFViewerProps) {
+  // Stable key root: prefer explicit docId, fall back to fileUrl
+  const pageKeyRoot = docId ?? fileUrl;
   // Use scale prop directly - parent controls zoom
   // Only use internal zoom if no scale prop provided
   const [internalZoom, setInternalZoom] = useState<number>(scale);
@@ -386,10 +391,11 @@ export default function SmartPDFViewer({
           }
           
           // All guards passed - safe to render Page
+          const prefetchPage = currentPage < pageCount ? currentPage + 1 : null;
           return (
             <div className="relative">
               <Page
-                key={`${fileUrl}-${currentPage}-${pageCount}`}
+                key={`${pageKeyRoot}:${currentPage}`}
                 pdf={pdfDocument}
                 pageNumber={currentPage}
                 scale={effectiveZoom}
@@ -412,13 +418,33 @@ export default function SmartPDFViewer({
 
               {/* Highlight pulse animation overlay */}
               {highlightPulse && (
-                <div 
+                <div
                   className="absolute inset-0 pointer-events-none"
                   style={{
                     background: 'radial-gradient(circle, rgba(255, 255, 0, 0.2) 0%, rgba(255, 255, 0, 0.1) 50%, transparent 100%)',
                     animation: 'pulse 1s ease-out',
                   }}
                 />
+              )}
+
+              {/* Hidden prefetch: pre-warm react-pdf render cache for page N+1 */}
+              {prefetchPage !== null && (
+                <div
+                  aria-hidden="true"
+                  style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', top: 0, left: 0, width: 1, height: 1, overflow: 'hidden' }}
+                >
+                  <Page
+                    key={`${pageKeyRoot}:${prefetchPage}:prefetch`}
+                    pdf={pdfDocument}
+                    pageNumber={prefetchPage}
+                    scale={effectiveZoom}
+                    renderTextLayer={false}
+                    renderAnnotationLayer={false}
+                    loading={null}
+                    error={null}
+                    onRenderError={() => {/* silently ignore prefetch errors */}}
+                  />
+                </div>
               )}
             </div>
           );

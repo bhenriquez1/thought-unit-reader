@@ -186,7 +186,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     surgeonEngine.setPageContext(currentPage);
     courseContext.setPage(currentPage);
 
-    // Reset per-page extraction state so the UI doesn't show stale data
+    // Reset per-page extraction state so the UI doesn't show stale data from previous page
     setPageIntelligence(null);
     setPageExtraction(null);
     setPageInsights(null);
@@ -194,6 +194,15 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     setPageReasoning(null);
     setExtractionStatus('');
     setOcrStatus('idle');
+
+    // Reset UI selection state: don't carry previous-page selection into new page
+    setSelectedCardId(undefined);
+    setSelectedInsightTarget(null);
+    // Clear cluster/unit selection in both stores so insight cards reset cleanly
+    selectCluster(undefined);
+    selectRelation(undefined);
+    surgeonEngine.selectCluster(undefined);
+    surgeonEngine.selectUnit(undefined);
 
     // Load cached intelligence for this page (IndexedDB, no-op if missing)
     courseContext.getPageIntelligence(currentPage).then((cached) => {
@@ -211,6 +220,42 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     }, 800);
     return () => clearTimeout(timer);
   }, [currentPage, autoExtract]);
+
+  // Prefetch: background-load page N+1 intelligence so it's cached when user navigates forward.
+  // Runs after a longer delay (3 s) to avoid contending with the current-page extraction.
+  useEffect(() => {
+    if (currentPage === undefined || totalPages === 0) return;
+    const nextPage = currentPage + 1;
+    if (nextPage > totalPages) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        // Check if already cached — no-op if so
+        const cached = await courseContext.getPageIntelligence(nextPage).catch(() => null);
+        if (cached) return; // already warm
+
+        const nextText = pageTexts?.get(nextPage) ?? '';
+        if (nextText.trim().length < 40) return; // no text to prefetch with
+
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[SurgeonCockpit] Prefetching page ${nextPage} intelligence`);
+        }
+
+        const result = await buildPageIntelligence({
+          pageNumber: nextPage,
+          docId: documentId,
+          getNativeText: async () => nextText,
+          getPageImageDataUrl: async () => '', // no OCR for prefetch
+          options: { ocrEnabled: false, datScoring: false, minTextLength: 40 },
+        });
+        await courseContext.storePageIntelligence(nextPage, result.intelligence);
+      } catch {
+        // Prefetch failure is silent — user will trigger extraction on demand
+      }
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [currentPage, totalPages, documentId, pageTexts, courseContext]);
 
   // Run surgeon engines after extraction completes
   useEffect(() => {
