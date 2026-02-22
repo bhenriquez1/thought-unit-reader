@@ -59,6 +59,7 @@ import {
   WhiteboardOverlay,
   useRelationshipStore,
 } from "@/components/surgeonView2";
+import type { SourceRef } from "@/lib/page-intelligence";
 
 // Store imports
 import { useTocStore } from "@/lib/stores/tocStore";
@@ -896,6 +897,25 @@ export default function ThoughtUnitReader() {
       document.querySelectorAll(`.${GLOW_CLASS}`).forEach(el => el.classList.remove(GLOW_CLASS));
     }, 2500);
   }, []);
+
+  /* =========================================================================
+     🔹 Jump to source — called from SourceAnchor "Jump to source" button
+     Uses the SourceRef's quote to scroll the PDF text layer to the exact
+     paragraph. If the ref points to a different page, navigates there first
+     then highlights after a short render delay.
+  ========================================================================= */
+  const handleJumpToSource = useCallback((ref: SourceRef) => {
+    const targetPage = ref.pageIndex + 1; // SourceRef.pageIndex is 0-based
+    const searchText = ref.quote || '';
+
+    if (targetPage !== currentPage) {
+      // Navigate to target page, then highlight after render settles
+      syncToPage(targetPage);
+      setTimeout(() => handleHighlightParagraph(searchText), 450);
+    } else {
+      handleHighlightParagraph(searchText);
+    }
+  }, [currentPage, handleHighlightParagraph]);
 
   /* =========================================================================
      🔹 PDF scroll → active paragraph → insights panel sync
@@ -2119,6 +2139,7 @@ export default function ThoughtUnitReader() {
                 onJumpToPage={(page) => syncToPage(page)}
                 pageTexts={pageTexts}
                 onHighlightParagraph={handleHighlightParagraph}
+                onJumpToSource={handleJumpToSource}
               />
             </div>
 
