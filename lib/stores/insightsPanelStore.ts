@@ -48,6 +48,15 @@ interface InsightsPanelState {
   /** Raw text snippet of the paragraph currently visible in the PDF (from scroll detection). */
   activeVisibleText: string | null;
   setActiveVisibleText: (text: string | null) => void;
+
+  // ── Source focus (called when user clicks an insight card) ────────────────
+  /**
+   * Set both activeParagraphId and selectedInsightId in one call.
+   * SurgeonCockpit calls this on every insight click so PDF sync-scroll
+   * and panel highlight both fire from a single source of truth.
+   * Compatible with AnchoredItem.sourceRef.paragraphId or any stable insight id.
+   */
+  focusOnSource: (id: string) => void;
 }
 
 export const useInsightsPanelStore = create<InsightsPanelState>()(
@@ -99,6 +108,9 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
 
       activeVisibleText: null,
       setActiveVisibleText: (text) => set({ activeVisibleText: text }),
+
+      // ── Source focus ──
+      focusOnSource: (id) => set({ activeParagraphId: id, selectedInsightId: id }),
     }),
     {
       name: 'insights-panel-storage',
