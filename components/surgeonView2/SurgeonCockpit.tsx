@@ -5,6 +5,7 @@
 // Layout: Left rail (clusters) | Main (relations) | Right (comprehension tabs)
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { BlockMath, ImportanceBar, renderMath } from './MathDisplay';
 import { useRelationshipStore } from '@/lib/relationshipSchema/store';
 import { useNoteLabStore } from '@/lib/cognitiveEngine/noteLabStore';
 import { useSurgeonEngineStore } from '@/lib/surgeonEngine/store';
@@ -897,6 +898,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
                 setShowInsightOverlay(true);
               }}
               onJumpToPage={onJumpToPage}
+              pageIntelligence={pageIntelligence}
             />
           )}
           {activeTab === 'compare' && (
@@ -995,7 +997,31 @@ const ModeChip: React.FC<{
   </button>
 );
 
-// Explain Tab - Whiteboard-ready micro-lessons driven by Page Intelligence
+// ============================================================================
+// Ninja Nerd Section — one styled teaching block
+// ============================================================================
+const NinjaNerdSection: React.FC<{
+  icon: string;
+  label: string;
+  accent: string;       // Tailwind text-* colour class
+  border: string;       // Tailwind border-* colour class
+  bg: string;           // Tailwind bg-* colour class
+  children: React.ReactNode;
+}> = ({ icon, label, accent, border, bg, children }) => (
+  <div className={`rounded-xl border ${border} ${bg} overflow-hidden`}>
+    <div className={`px-3 py-1.5 border-b ${border} flex items-center gap-1.5`}>
+      <span className="text-sm">{icon}</span>
+      <span className={`text-[10px] font-bold uppercase tracking-widest ${accent}`}>{label}</span>
+    </div>
+    <div className="px-3 py-2.5 text-[12px] text-gray-200 leading-relaxed">
+      {children}
+    </div>
+  </div>
+);
+
+// ============================================================================
+// Explain Tab — Ninja Nerd conceptual teaching driven by Page Intelligence
+// ============================================================================
 const ExplainTab: React.FC<{
   selectedCardId?: string;
   insights: RankedInsight[];
@@ -1003,139 +1029,303 @@ const ExplainTab: React.FC<{
   pageIntelligence?: PageIntelligence | null;
 }> = ({ selectedCardId, insights, onSelectCard, pageIntelligence }) => {
   const selected = insights.find(i => i.id === selectedCardId);
-
-  // Page Intelligence explain is the sole source of truth
   const piExplain = pageIntelligence?.explain;
+  const continuity = pageIntelligence?.continuity;
+  const structureMap = pageIntelligence?.structureMap;
 
-  // Show Page Intelligence explain when available
-  if (piExplain && piExplain.summary !== 'No text available for this page.') {
-    return (
-      <div className="p-3 space-y-4 overflow-y-auto">
-        <div className="bg-gray-800 rounded-lg p-3 border border-teal-500/40">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs font-semibold text-teal-400">Page Explanation</h3>
-            {pageIntelligence?.source === 'ocr' && (
-              <span className="px-1.5 py-0.5 text-[9px] bg-amber-500/20 text-amber-400 rounded">
-                via OCR
-              </span>
-            )}
-          </div>
+  // --- Empty state ---
+  const hasContent =
+    (piExplain && piExplain.summary !== 'No text available for this page.') ||
+    selected ||
+    continuity;
 
-          {/* Summary */}
-          <div className="space-y-2 mb-4">
-            <h4 className="text-[10px] font-semibold text-gray-400 uppercase">Summary</h4>
-            <p className="text-xs text-gray-300">{piExplain.summary}</p>
-          </div>
-
-          {/* Key Points */}
-          {piExplain.bullets.length > 0 && (
-            <div className="space-y-2 mb-4">
-              <h4 className="text-[10px] font-semibold text-gray-400 uppercase">Key Points</h4>
-              <div className="space-y-1.5">
-                {piExplain.bullets.map((bullet, idx) => (
-                  <div key={idx} className="flex gap-2 text-xs">
-                    <span className="text-teal-500">•</span>
-                    <span className="text-gray-300">{bullet}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Pitfalls / Exam Traps */}
-          {piExplain.pitfalls.length > 0 && (
-            <div className="space-y-2 mb-4">
-              <h4 className="text-[10px] font-semibold text-gray-400 uppercase flex items-center gap-1">
-                <span>⚠️</span> Exam Pitfalls
-              </h4>
-              <div className="space-y-1.5">
-                {piExplain.pitfalls.map((pitfall, idx) => (
-                  <div key={idx} className="bg-amber-900/20 border border-amber-700/40 rounded p-2 text-xs text-amber-200">
-                    {pitfall}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Mnemonics */}
-          {piExplain.mnemonics && piExplain.mnemonics.length > 0 && (
-            <div className="space-y-2 mb-4">
-              <h4 className="text-[10px] font-semibold text-gray-400 uppercase flex items-center gap-1">
-                <span>💡</span> Memory Aids
-              </h4>
-              <div className="space-y-1.5">
-                {piExplain.mnemonics.map((mnemonic, idx) => (
-                  <div key={idx} className="bg-purple-900/20 border border-purple-700/40 rounded p-2 text-xs text-purple-300">
-                    {mnemonic}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex gap-2">
-            <button className="flex-1 px-2 py-1.5 text-[10px] bg-teal-600 hover:bg-teal-500 text-white rounded">
-              Copy to Clipboard
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Fall back to card-based explain
-  if (!selected) {
+  if (!hasContent) {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-        <span className="text-3xl mb-3">📝</span>
+        <span className="text-3xl mb-3">🧠</span>
         <h3 className="text-sm font-medium text-gray-300 mb-1">Explain Mode</h3>
-        <p className="text-xs text-gray-500 mb-4 max-w-[180px]">
-          Extract a page first, then generate whiteboard-ready micro-lessons.
+        <p className="text-xs text-gray-500 mb-4 max-w-[200px]">
+          Extract a page to generate Ninja Nerd–style conceptual teaching cards.
         </p>
         <button
           onClick={onSelectCard}
           className="px-3 py-1.5 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg"
         >
-          Or select a card
+          Or select an insight card
         </button>
       </div>
     );
   }
 
-  return (
-    <div className="p-3 space-y-4">
-      <div className="bg-gray-800 rounded-lg p-3 border border-gray-700">
-        <h3 className="text-xs font-semibold text-teal-400 mb-2">{selected.title}</h3>
-        <p className="text-xs text-gray-300 mb-3">{selected.claim}</p>
+  // --- Derive teaching content ---
+  // Priority: selected card → page intelligence → continuity scaffold
+  const topicTitle =
+    selected?.title ??
+    structureMap?.topic ??
+    piExplain?.summary?.slice(0, 60) ??
+    continuity?.corePattern.slice(0, 60) ??
+    'Page Content';
 
-        <div className="space-y-2">
-          <h4 className="text-[10px] font-semibold text-gray-400 uppercase">Whiteboard Prompt</h4>
-          <div className="bg-gray-900 rounded p-2 text-xs text-gray-200 font-mono">
-            Draw a diagram showing: {selected.title}
-            <br />
-            <br />
-            Key points to include:
-            <br />
-            • {selected.whyItMatters}
-            <br />
-            • Show relationships to related concepts
+  const whatThisMeans =
+    selected?.claim ??
+    piExplain?.summary ??
+    continuity?.corePattern ??
+    'See page for core definition.';
+
+  // Mechanism: use structure map mechanism node first
+  const mechNode = structureMap?.nodes.find(n => n.stage === 'mechanism');
+  const mechanism =
+    mechNode?.text ??
+    continuity?.conceptualBridge ??
+    (piExplain?.bullets?.[0] ? `Step 1: ${piExplain.bullets[0]}` : null);
+
+  // Key steps from explain bullets
+  const keySteps = piExplain?.bullets ?? [];
+
+  // Why it matters: clinical relevance stage or continuity
+  const clinNode = structureMap?.nodes.find(n => n.stage === 'clinical_relevance');
+  const whyItMatters =
+    clinNode?.text ??
+    continuity?.clinicalConnection ??
+    selected?.whyItMatters ??
+    'Foundational for board exam mastery.';
+
+  // How to think: use the corePattern + conceptualBridge as a mental model
+  const howToThink =
+    continuity
+      ? `Think of "${continuity.corePattern}" as the core idea. ${continuity.conceptualBridge}`
+      : selected
+        ? `Connect "${selected.title}" to the broader system — ask why, not just what.`
+        : null;
+
+  // Exam trap: pitfalls + continuity warning
+  const examTraps: string[] = [
+    ...(piExplain?.pitfalls ?? []),
+    ...(continuity?.commonMisunderstanding ? [continuity.commonMisunderstanding] : []),
+  ].filter((v, i, a) => a.indexOf(v) === i).slice(0, 3); // deduplicate, max 3
+
+  // Mnemonics
+  const mnemonics = piExplain?.mnemonics ?? [];
+
+  // Structure flow nodes (definition + application)
+  const defNode = structureMap?.nodes.find(n => n.stage === 'definition');
+  const appNode = structureMap?.nodes.find(n => n.stage === 'application');
+
+  // Math formulas on this page
+  const mathSegments = pageIntelligence?.segments.filter(
+    s => s.kind === 'math' || (s.mathDensity ?? 0) > 0.15
+  ) ?? [];
+
+  return (
+    <div className="p-3 space-y-3 overflow-y-auto insightPanelScroll">
+      {/* Topic header */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-teal-300 leading-tight max-w-[80%]">
+          {topicTitle}
+        </h3>
+        {pageIntelligence?.source === 'ocr' && (
+          <span className="px-1.5 py-0.5 text-[9px] bg-amber-500/20 text-amber-400 rounded flex-shrink-0">
+            OCR
+          </span>
+        )}
+      </div>
+
+      {/* 1. WHAT THIS MEANS */}
+      <NinjaNerdSection
+        icon="🧠"
+        label="What This Means"
+        accent="text-teal-300"
+        border="border-teal-700/50"
+        bg="bg-teal-900/10"
+      >
+        {whatThisMeans}
+      </NinjaNerdSection>
+
+      {/* 2. MECHANISM — with structure flow connector if available */}
+      {mechanism && (
+        <NinjaNerdSection
+          icon="⚙️"
+          label="Mechanism"
+          accent="text-purple-300"
+          border="border-purple-700/50"
+          bg="bg-purple-900/10"
+        >
+          <div className="space-y-1.5">
+            <p>{mechanism}</p>
+            {keySteps.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {keySteps.slice(0, 4).map((step, i) => (
+                  <div key={i} className="flex gap-2 items-start">
+                    <span className="text-purple-400 font-mono text-[10px] flex-shrink-0 mt-0.5">
+                      {i + 1}.
+                    </span>
+                    <span className="text-gray-300 text-[11px]">{step}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </NinjaNerdSection>
+      )}
+
+      {/* 3. STRUCTURE FLOW — visual scaffold when structure map present */}
+      {structureMap && structureMap.nodes.length >= 2 && (
+        <div className="rounded-xl border border-gray-700/50 bg-gray-800/30 overflow-hidden">
+          <div className="px-3 py-1.5 border-b border-gray-700/50 flex items-center gap-1.5">
+            <span className="text-sm">🗺️</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+              Structure Flow
+            </span>
+            <span className="ml-auto text-[9px] text-teal-600 italic">
+              {structureMap.topic.slice(0, 30)}
+            </span>
+          </div>
+          <div className="px-3 py-2.5">
+            {structureMap.nodes.map((node, idx) => {
+              const stageColors: Record<string, string> = {
+                definition: 'text-blue-300 border-blue-700/40 bg-blue-900/10',
+                mechanism: 'text-purple-300 border-purple-700/40 bg-purple-900/10',
+                application: 'text-amber-300 border-amber-700/40 bg-amber-900/10',
+                clinical_relevance: 'text-teal-300 border-teal-700/40 bg-teal-900/10',
+              };
+              const stageIcons: Record<string, string> = {
+                definition: '📖',
+                mechanism: '⚙️',
+                application: '🔧',
+                clinical_relevance: '🩺',
+              };
+              const colorClass = stageColors[node.stage] ?? 'text-gray-300 border-gray-700 bg-gray-800/30';
+              const icon = stageIcons[node.stage] ?? '→';
+
+              return (
+                <div key={node.id}>
+                  <div className={`rounded-lg border px-2.5 py-2 text-[11px] ${colorClass}`}>
+                    <div className="font-semibold uppercase tracking-wider text-[9px] mb-0.5 opacity-70">
+                      {icon} {node.label}
+                    </div>
+                    <div className="line-clamp-2 opacity-90">{node.text}</div>
+                  </div>
+                  {idx < structureMap.nodes.length - 1 && (
+                    <div className="flex justify-center my-0.5">
+                      <span className="text-gray-600 text-xs">↓</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
+      )}
 
-        <div className="mt-3 flex gap-2">
-          <button className="flex-1 px-2 py-1.5 text-[10px] bg-teal-600 hover:bg-teal-500 text-white rounded">
-            Copy Prompt
-          </button>
-          <button className="flex-1 px-2 py-1.5 text-[10px] bg-gray-700 hover:bg-gray-600 text-gray-300 rounded">
-            Generate Diagram
-          </button>
+      {/* 4. WHY IT MATTERS */}
+      <NinjaNerdSection
+        icon="🧬"
+        label="Why It Matters"
+        accent="text-green-300"
+        border="border-green-700/50"
+        bg="bg-green-900/10"
+      >
+        {whyItMatters}
+      </NinjaNerdSection>
+
+      {/* 5. HOW TO THINK ABOUT IT */}
+      {howToThink && (
+        <NinjaNerdSection
+          icon="💭"
+          label="How to Think About It"
+          accent="text-blue-300"
+          border="border-blue-700/50"
+          bg="bg-blue-900/10"
+        >
+          {howToThink}
+        </NinjaNerdSection>
+      )}
+
+      {/* 6. MATH FORMULAS — inline block math for any formula segments */}
+      {mathSegments.length > 0 && (
+        <div className="rounded-xl border border-teal-700/40 bg-gray-900/50 overflow-hidden">
+          <div className="px-3 py-1.5 border-b border-teal-800/30 flex items-center gap-1.5">
+            <span className="text-sm">📐</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-teal-500">
+              Formulas
+            </span>
+          </div>
+          <div className="px-3 py-2 space-y-1.5">
+            {mathSegments.slice(0, 3).map((seg, i) => (
+              <div key={i}>
+                <BlockMath expr={seg.mathRaw ?? seg.text} />
+                {seg.mathRaw && seg.mathRaw !== seg.text && (
+                  <p className="text-[10px] text-gray-500 text-center mt-0.5">{seg.text.slice(0, 60)}</p>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="text-[10px] text-gray-500 italic">
-        Pro tip: Use the prompt with Ninja Nerd-style whiteboard explanations
-      </div>
+      {/* 7. EXAM TRAPS */}
+      {examTraps.length > 0 && (
+        <NinjaNerdSection
+          icon="⚠️"
+          label="Exam Traps"
+          accent="text-amber-300"
+          border="border-amber-700/50"
+          bg="bg-amber-900/10"
+        >
+          <div className="space-y-2">
+            {examTraps.map((trap, i) => (
+              <div
+                key={i}
+                className="flex gap-2 items-start bg-amber-900/20 rounded-lg p-2 border border-amber-700/30"
+              >
+                <span className="text-amber-400 flex-shrink-0 mt-0.5">▲</span>
+                <span className="text-amber-200 text-[11px]">{trap}</span>
+              </div>
+            ))}
+          </div>
+        </NinjaNerdSection>
+      )}
+
+      {/* 8. MEMORY AIDS — mnemonics */}
+      {mnemonics.length > 0 && (
+        <NinjaNerdSection
+          icon="💡"
+          label="Memory Aids"
+          accent="text-violet-300"
+          border="border-violet-700/50"
+          bg="bg-violet-900/10"
+        >
+          <div className="space-y-1.5">
+            {mnemonics.map((m, i) => (
+              <div
+                key={i}
+                className="flex gap-2 items-start bg-violet-900/20 rounded-lg p-2 border border-violet-700/30"
+              >
+                <span className="text-violet-400 flex-shrink-0">🔑</span>
+                <span className="text-violet-200 text-[11px]">{m}</span>
+              </div>
+            ))}
+          </div>
+        </NinjaNerdSection>
+      )}
+
+      {/* Copy button */}
+      <button
+        onClick={() => {
+          const text = [
+            `TOPIC: ${topicTitle}`,
+            `WHAT: ${whatThisMeans}`,
+            mechanism ? `MECHANISM: ${mechanism}` : '',
+            `WHY: ${whyItMatters}`,
+            howToThink ? `MENTAL MODEL: ${howToThink}` : '',
+            examTraps.length ? `EXAM TRAPS:\n${examTraps.map(t => `• ${t}`).join('\n')}` : '',
+          ].filter(Boolean).join('\n\n');
+          navigator.clipboard?.writeText(text).catch(() => {});
+        }}
+        className="w-full px-2 py-1.5 text-[10px] bg-teal-700/40 hover:bg-teal-700/70 text-teal-300 rounded-lg border border-teal-700/40 transition-colors"
+      >
+        Copy Explanation
+      </button>
     </div>
   );
 };
@@ -1300,6 +1490,7 @@ const InsightsTab: React.FC<{
                     </span>
                   </div>
                 </div>
+                <ImportanceBar score={insight.score} className="my-1.5" />
                 <p className="text-gray-400 line-clamp-3">{insight.body}</p>
                 <div className="flex gap-1 mt-1.5 flex-wrap">
                   {insight.tags.slice(0, 3).map(tag => (
@@ -1434,6 +1625,47 @@ const InsightsTab: React.FC<{
   );
 };
 
+// ============================================================================
+// Clinical Reasoning Flow — causal chain from page intelligence relations
+// ============================================================================
+function buildClinicalFlow(
+  piRelations: import('@/lib/page-intelligence').Relation[],
+  piSegments: import('@/lib/page-intelligence').Segment[]
+): Array<{ from: string; to: string; predicate: string }> {
+  // Only use causal / sequential relations
+  const causal = piRelations.filter(r =>
+    r.type === 'causes' || r.type === 'leads_to' || r.type === 'indicates'
+  );
+  if (causal.length === 0) return [];
+
+  // Build an adjacency set: from → to
+  const edgeMap = new Map<string, { to: string; predicate: string }>();
+  for (const r of causal) {
+    if (!edgeMap.has(r.from)) {
+      edgeMap.set(r.from, { to: r.to, predicate: r.type.replace('_', ' ') });
+    }
+  }
+
+  // Find a root node (appears as 'from' but not as 'to' in any edge)
+  const allTos = new Set(causal.map(r => r.to));
+  const roots = causal.map(r => r.from).filter(f => !allTos.has(f));
+  const root = roots[0] ?? causal[0].from;
+
+  // Walk the chain up to 6 hops
+  const chain: Array<{ from: string; to: string; predicate: string }> = [];
+  let current = root;
+  const seen = new Set<string>();
+  while (chain.length < 6) {
+    const edge = edgeMap.get(current);
+    if (!edge || seen.has(current)) break;
+    seen.add(current);
+    chain.push({ from: current, to: edge.to, predicate: edge.predicate });
+    current = edge.to;
+  }
+
+  return chain;
+}
+
 // Relations Tab - Shows clusters and relations in a compact view
 const RelationsTab: React.FC<{
   relations: Relation[];
@@ -1444,6 +1676,7 @@ const RelationsTab: React.FC<{
   onSelectCluster: (clusterId: string) => void;
   onRelationClick: (relation: Relation) => void;
   onJumpToPage?: (page: number) => void;
+  pageIntelligence?: PageIntelligence | null;
 }> = ({
   relations,
   clusters,
@@ -1453,8 +1686,15 @@ const RelationsTab: React.FC<{
   onSelectCluster,
   onRelationClick,
   onJumpToPage,
+  pageIntelligence,
 }) => {
   const hasContent = relations.length > 0 || clusters.length > 0;
+
+  // Build clinical reasoning flow from page intelligence relations
+  const clinicalFlow = useMemo(() => {
+    if (!pageIntelligence?.relations?.length) return [];
+    return buildClinicalFlow(pageIntelligence.relations, pageIntelligence.segments);
+  }, [pageIntelligence]);
 
   if (!hasContent) {
     return (
@@ -1470,6 +1710,42 @@ const RelationsTab: React.FC<{
 
   return (
     <div className="p-3 overflow-y-auto h-full">
+      {/* Clinical Reasoning Flow — only when page intelligence relations detected */}
+      {clinicalFlow.length >= 2 && (
+        <section className="mb-4">
+          <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+            <span>⛓️</span> Clinical Reasoning Flow
+          </h3>
+          <div className="rounded-xl border border-teal-700/40 bg-gray-900/50 overflow-hidden">
+            <div className="px-3 py-2.5 space-y-0">
+              {clinicalFlow.map((edge, idx) => (
+                <div key={idx}>
+                  {/* From node (only on first) */}
+                  {idx === 0 && (
+                    <div className="px-2.5 py-1.5 rounded-lg bg-teal-900/30 border border-teal-700/40 text-[11px] text-teal-200 font-medium">
+                      {edge.from}
+                    </div>
+                  )}
+                  {/* Arrow + predicate */}
+                  <div className="flex items-center gap-1.5 my-0.5 pl-4">
+                    <div className="h-3 w-px bg-gray-600" />
+                    <span className="text-[9px] text-purple-400 italic">{edge.predicate}</span>
+                  </div>
+                  {/* To node */}
+                  <div className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border ${
+                    idx === clinicalFlow.length - 1
+                      ? 'bg-red-900/20 border-red-700/40 text-red-200'
+                      : 'bg-gray-800/50 border-gray-700/50 text-gray-200'
+                  }`}>
+                    {edge.to}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Clusters Section */}
       {clusters.length > 0 && (
         <section className="mb-4">
