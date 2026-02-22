@@ -141,15 +141,14 @@ function categorizePriorityItems(
     categories.get(category)?.push(item);
   }
 
-  // Add Page Intelligence insights
+  // Add Page Intelligence insights — attach page evidence so "p.xx" appears
   if (pageIntelligence?.insights) {
+    const piPage = pageIntelligence.pageNumber;
     for (const pi of pageIntelligence.insights) {
-      // Determine priority from PI score
       const priority: PriorityScore =
         pi.score >= 85 ? 'MUST_KNOW' :
         pi.score >= 70 ? 'HIGH_YIELD' : 'SUPPORTING';
 
-      // Determine category from tags
       const category = determineCategoryFromTags(pi.tags);
 
       const item: PriorityItem = {
@@ -159,9 +158,10 @@ function categorizePriorityItems(
         priority,
         category,
         tags: pi.tags,
+        // Attach page ref so jump-to-page button renders
+        evidence: [{ page: piPage, text: pi.body.slice(0, 100) }],
       };
 
-      // Avoid duplicates
       const existing = categories.get(category);
       if (existing && !existing.some(e => e.title === item.title)) {
         existing.push(item);

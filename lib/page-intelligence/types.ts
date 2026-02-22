@@ -152,6 +152,90 @@ export interface ExplainResult {
 }
 
 // ============================================================================
+// Paragraph Intelligence — role-classified units with source anchoring (PR3)
+// ============================================================================
+
+export type ParagraphRole =
+  | 'definition'
+  | 'mechanism'
+  | 'clinical'
+  | 'example'
+  | 'step'
+  | 'warning'
+  | 'exam_trap'
+  | 'formula'
+  | 'summary';
+
+export interface ParagraphSignals {
+  hasNumbers: boolean;
+  hasUnits: boolean;
+  hasNegation: boolean;
+  hasComparison: boolean;
+  hasCausal: boolean;
+  hasTemporal: boolean;
+  hasClinicalTerms: boolean;
+}
+
+/**
+ * A ranked, role-classified paragraph unit anchored to exact char positions.
+ * Used by all engine tabs for jump-to-source navigation.
+ */
+export interface ParagraphUnit {
+  id: string;
+  pageIndex: number;
+  text: string;
+  /** Character offset in page text where this paragraph starts */
+  startChar: number;
+  /** Character offset in page text where this paragraph ends */
+  endChar: number;
+  /** Optional bounding box if OCR provides coordinates */
+  bbox?: { x: number; y: number; w: number; h: number };
+  role: ParagraphRole;
+  /** Importance 0–100 scored by role + clinical signals */
+  importance: number;
+  keyTerms: string[];
+  signals: ParagraphSignals;
+}
+
+/**
+ * Source anchor for any output item — enables click-to-focus in PDF.
+ */
+export interface SourceRef {
+  pageIndex: number;
+  pageNumberLabel?: string;
+  paragraphId: string;
+  startChar: number;
+  endChar: number;
+  /** Short representative quote ≤ 180 chars */
+  quote: string;
+  bbox?: { x: number; y: number; w: number; h: number };
+  confidence: number; // 0..1
+}
+
+/**
+ * Generic output item from any engine, anchored to source material.
+ */
+export interface AnchoredItem<T = unknown> {
+  id: string;
+  kind:
+    | 'high_yield'
+    | 'mechanism'
+    | 'exam_trap'
+    | 'clinical_relevance'
+    | 'insight'
+    | 'relation'
+    | 'compare'
+    | 'explain'
+    | 'math'
+    | 'clinical_flow';
+  title?: string;
+  content: string;
+  tags?: string[];
+  source: SourceRef;
+  payload?: T;
+}
+
+// ============================================================================
 // Page Intelligence - Full pipeline result
 // ============================================================================
 
@@ -166,6 +250,8 @@ export interface PageIntelligence {
   insights: Insight[];
   explain: ExplainResult;
   cards: StudyCard[];
+  /** Ranked, role-classified paragraphs with source anchoring (PR3) */
+  paragraphUnits?: ParagraphUnit[];
   extractedAt: number;
 }
 

@@ -17,6 +17,7 @@ import { clusterSegments, mergeSimilarClusters } from './clusters';
 import { generateInsights } from './insights';
 import { generateExplain } from './explain';
 import { generateCards } from './cards';
+import { buildParagraphUnits } from './paragraphIntelligence';
 
 // ============================================================================
 // Export Types
@@ -93,6 +94,8 @@ export {
   getCardsForDeck,
   getDueCards,
 } from './cards';
+
+export { buildParagraphUnits } from './paragraphIntelligence';
 
 // ============================================================================
 // IndexedDB Cache for Page Intelligence Results
@@ -235,6 +238,9 @@ export async function buildPageIntelligence(
   // Step 2: Segment text
   const segments = segmentText(text, { pageNumber });
 
+  // Step 2b: Build ranked paragraph units (role-classified with char offsets)
+  const paragraphUnits = buildParagraphUnits(text, pageNumber, docId);
+
   // Step 3: Detect signals
   const signals = detectSignals({ segments });
 
@@ -281,6 +287,7 @@ export async function buildPageIntelligence(
     insights,
     explain,
     cards,
+    paragraphUnits,
     extractedAt: Date.now(),
   };
 
