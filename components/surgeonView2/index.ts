@@ -33,6 +33,11 @@ export { useRelationshipStore } from '../../lib/relationshipSchema/store';
 export { SpeechExplainActions, PauseActionPanel } from './SpeechExplainActions';
 export { WhiteboardOverlay } from './WhiteboardOverlay';
 
+// Ninja Nerd Narration System
+export { SpeechNarrationPanel } from './SpeechNarrationPanel';
+export { SourceAnchor as SourceAnchorCard, SourceBadge } from './SourceAnchor';
+export { ImportanceBar, BlockMath, InlineMath, MathSemanticCard } from './MathDisplay';
+
 // Re-export types for convenience (original concept-based)
 export type {
   CoreConceptV2,
