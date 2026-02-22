@@ -9,6 +9,7 @@ import type {
   ParagraphUnit,
   StructureMapStage,
 } from '@/lib/page-intelligence';
+import { ImportanceBar } from './MathDisplay';
 
 // ============================================================================
 // Types
@@ -394,33 +395,73 @@ const ContinuitySection: React.FC<{
 // Paragraph Unit tier card (Deep Analysis Mode)
 // ============================================================================
 
+const ROLE_COLORS: Record<string, string> = {
+  definition: 'bg-blue-900/40 text-blue-300 border-blue-700/40',
+  mechanism: 'bg-purple-900/40 text-purple-300 border-purple-700/40',
+  clinical: 'bg-teal-900/40 text-teal-300 border-teal-700/40',
+  example: 'bg-amber-900/30 text-amber-300 border-amber-700/40',
+  step: 'bg-indigo-900/30 text-indigo-300 border-indigo-700/40',
+  warning: 'bg-red-900/30 text-red-300 border-red-700/40',
+  exam_trap: 'bg-orange-900/30 text-orange-300 border-orange-700/40',
+  formula: 'bg-cyan-900/30 text-cyan-300 border-cyan-700/40',
+  summary: 'bg-gray-800/60 text-gray-300 border-gray-700/40',
+};
+
 const ParagraphUnitCard: React.FC<{
   unit: ParagraphUnit;
   tier: ParagraphTier;
   onHighlightParagraph?: (text: string) => void;
 }> = ({ unit, tier, onHighlightParagraph }) => {
   const meta = TIER_META[tier];
+  const roleColor = ROLE_COLORS[unit.role] ?? 'bg-gray-800/40 text-gray-400 border-gray-700/40';
 
   return (
     <div
-      className={`p-2 rounded-lg border border-gray-700/60 cursor-pointer hover:border-gray-600 ${meta.bg}`}
+      className={`p-2.5 rounded-lg border border-gray-700/60 cursor-pointer hover:border-gray-500/60 transition-all ${meta.bg}`}
       onClick={() => onHighlightParagraph?.(unit.text)}
     >
-      <div className="flex items-center gap-1.5 mb-0.5">
+      {/* Header: tier icon + role chip + score */}
+      <div className="flex items-center gap-1.5 mb-1.5">
         <span className="text-xs flex-shrink-0">{meta.icon}</span>
-        <span className={`text-[10px] font-semibold uppercase tracking-wide ${meta.text}`}>
+        <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${roleColor}`}>
           {unit.role.replace('_', ' ')}
         </span>
-        <span className="ml-auto text-[10px] text-gray-600">{unit.importance}</span>
+        <div className="flex-1" />
+        <span className="text-[10px] font-mono text-gray-500 flex-shrink-0">{unit.importance}</span>
       </div>
-      <p className="text-[11px] text-gray-300 line-clamp-3 pl-5">{unit.text}</p>
+
+      {/* Importance bar */}
+      <ImportanceBar score={unit.importance} className="mb-1.5 mx-0.5" />
+
+      {/* Text */}
+      <p className="text-[11px] text-gray-300 line-clamp-3">{unit.text}</p>
+
+      {/* Key terms */}
       {unit.keyTerms.length > 0 && (
-        <div className="flex gap-1 mt-1 pl-5 flex-wrap">
-          {unit.keyTerms.slice(0, 3).map(t => (
-            <span key={t} className="text-[9px] px-1 py-0.5 bg-gray-700/50 text-gray-400 rounded">{t}</span>
+        <div className="flex gap-1 mt-1.5 flex-wrap">
+          {unit.keyTerms.slice(0, 4).map(t => (
+            <span key={t} className="text-[9px] px-1 py-0.5 bg-gray-700/40 text-gray-400 rounded border border-gray-700/40">
+              {t}
+            </span>
           ))}
         </div>
       )}
+
+      {/* Signal indicators */}
+      <div className="flex gap-1 mt-1 flex-wrap">
+        {unit.signals.hasClinicalTerms && (
+          <span className="text-[8px] px-1 py-0.5 bg-teal-900/40 text-teal-500 rounded">clinical</span>
+        )}
+        {unit.signals.hasNumbers && (
+          <span className="text-[8px] px-1 py-0.5 bg-blue-900/40 text-blue-500 rounded">numbers</span>
+        )}
+        {unit.signals.hasCausal && (
+          <span className="text-[8px] px-1 py-0.5 bg-purple-900/40 text-purple-500 rounded">causal</span>
+        )}
+        {unit.signals.hasNegation && (
+          <span className="text-[8px] px-1 py-0.5 bg-red-900/30 text-red-400 rounded">negation</span>
+        )}
+      </div>
     </div>
   );
 };
