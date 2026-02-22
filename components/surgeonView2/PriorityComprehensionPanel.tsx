@@ -10,6 +10,7 @@ import type {
   StructureMapStage,
 } from '@/lib/page-intelligence';
 import { ImportanceBar } from './MathDisplay';
+import { SourceAnchor } from './SourceAnchor';
 
 // ============================================================================
 // Types
@@ -43,6 +44,8 @@ interface PriorityComprehensionPanelProps {
   onSaveToNoteLab?: (insight: RankedInsight) => void;
   onMarkConfusing?: (insight: RankedInsight) => void;
   onHighlightParagraph?: (text: string) => void;
+  /** Called when user clicks "Jump to source" on a SourceAnchor */
+  onJumpToSource?: (ref: SourceRef) => void;
 
   // Panel zoom & sync
   /** CSS font-size multiplier (e.g. 0.9, 1.0, 1.25). Applied via --insightScale variable. */
@@ -407,34 +410,113 @@ const ROLE_COLORS: Record<string, string> = {
   summary: 'bg-gray-800/60 text-gray-300 border-gray-700/40',
 };
 
+// Sub-score mini bar (0–100)
+const SubScoreBar: React.FC<{ label: string; score: number; color: string }> = ({ label, score, color }) => (
+  <div className="flex items-center gap-1">
+    <span className="text-[8px] text-gray-500 w-14 flex-shrink-0 truncate">{label}</span>
+    <div className="flex-1 h-1.5 bg-gray-700/60 rounded-full overflow-hidden">
+      <div
+        className={`h-full rounded-full ${color}`}
+        style={{ width: `${Math.round(score)}%` }}
+      />
+    </div>
+    <span className="text-[8px] font-mono text-gray-600 w-5 text-right">{Math.round(score)}</span>
+  </div>
+);
+
+const SubScorePanel: React.FC<{ subScores: NonNullable<ParagraphUnit['subScores']>; expanded: boolean }> = ({
+  subScores, expanded,
+}) => {
+  if (!expanded) return null;
+  return (
+    <div className="mt-2 p-1.5 bg-gray-900/50 rounded border border-gray-700/40 space-y-0.5">
+      <SubScoreBar label="Concept" score={subScores.conceptScore} color="bg-blue-500/70" />
+      <SubScoreBar label="Mechanism" score={subScores.mechanismScore} color="bg-purple-500/70" />
+      <SubScoreBar label="Decision" score={subScores.decisionScore} color="bg-amber-500/70" />
+      <SubScoreBar label="Exam Trap" score={subScores.examTrapScore} color="bg-red-500/70" />
+      <SubScoreBar label="Math" score={subScores.mathScore} color="bg-cyan-500/70" />
+      <SubScoreBar label="Clinical" score={subScores.clinicalScore} color="bg-teal-500/70" />
+      <SubScoreBar label="Structure" score={subScores.structureScore} color="bg-green-500/60" />
+    </div>
+  );
+};
+
 const ParagraphUnitCard: React.FC<{
   unit: ParagraphUnit;
   tier: ParagraphTier;
   onHighlightParagraph?: (text: string) => void;
-}> = ({ unit, tier, onHighlightParagraph }) => {
+  onJumpToSource?: (ref: SourceRef) => void;
+}> = ({ unit, tier, onHighlightParagraph, onJumpToSource }) => {
+  const [showSubScores, setShowSubScores] = useState(false);
   const meta = TIER_META[tier];
   const roleColor = ROLE_COLORS[unit.role] ?? 'bg-gray-800/40 text-gray-400 border-gray-700/40';
+
+  // Build a minimal SourceRef from the ParagraphUnit for the jump button
+  const unitSourceRef: SourceRef = {
+    pageIndex: unit.pageIndex,
+    paragraphId: unit.id,
+    startChar: unit.startChar,
+    endChar: unit.endChar,
+    quote: unit.text.slice(0, 180),
+    confidence: unit.importance / 100,
+  };
 
   return (
     <div
       className={`p-2.5 rounded-lg border border-gray-700/60 cursor-pointer hover:border-gray-500/60 transition-all ${meta.bg}`}
       onClick={() => onHighlightParagraph?.(unit.text)}
     >
-      {/* Header: tier icon + role chip + score */}
+      {/* Header: tier icon + role chip + score + sub-score toggle */}
       <div className="flex items-center gap-1.5 mb-1.5">
         <span className="text-xs flex-shrink-0">{meta.icon}</span>
         <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${roleColor}`}>
           {unit.role.replace('_', ' ')}
         </span>
         <div className="flex-1" />
+        {unit.subScores && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowSubScores(v => !v); }}
+            className="text-[8px] text-gray-500 hover:text-gray-300 px-1 py-0.5 rounded bg-gray-700/30 border border-gray-700/40"
+            title="Toggle sub-scores"
+          >
+            {showSubScores ? '▲ scores' : '▼ scores'}
+          </button>
+        )}
         <span className="text-[10px] font-mono text-gray-500 flex-shrink-0">{unit.importance}</span>
       </div>
 
       {/* Importance bar */}
       <ImportanceBar score={unit.importance} className="mb-1.5 mx-0.5" />
 
+      {/* Sub-score visualization (expandable) */}
+      {unit.subScores && (
+        <SubScorePanel subScores={unit.subScores} expanded={showSubScores} />
+      )}
+
+      {/* Why-scored signal labels */}
+      {unit.whyScoredSignals && unit.whyScoredSignals.length > 0 && (
+        <div className="flex gap-1 mt-1.5 flex-wrap">
+          {unit.whyScoredSignals.map(sig => (
+            <span key={sig} className="text-[8px] px-1 py-0.5 bg-teal-900/30 text-teal-500 rounded border border-teal-800/30">
+              {sig}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Trap type badges */}
+      {unit.trapTypes && unit.trapTypes.length > 0 && (
+        <div className="flex gap-1 mt-1 flex-wrap">
+          {unit.trapTypes.map(t => (
+            <span key={t} className="text-[8px] px-1 py-0.5 bg-amber-900/30 text-amber-400 rounded border border-amber-800/30">
+              ⚠️ {t.toLowerCase().replace('_', ' ')}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Text */}
-      <p className="text-[11px] text-gray-300 line-clamp-3">{unit.text}</p>
+      <p className="text-[11px] text-gray-300 line-clamp-3 mt-1.5">{unit.text}</p>
 
       {/* Key terms */}
       {unit.keyTerms.length > 0 && (
@@ -462,6 +544,18 @@ const ParagraphUnitCard: React.FC<{
           <span className="text-[8px] px-1 py-0.5 bg-red-900/30 text-red-400 rounded">negation</span>
         )}
       </div>
+
+      {/* Source anchor with jump-to-source */}
+      {onJumpToSource && (
+        <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+          <SourceAnchor
+            sourceRef={unitSourceRef}
+            paragraphText={unit.text}
+            onJump={onJumpToSource}
+            collapsed={true}
+          />
+        </div>
+      )}
     </div>
   );
 };
@@ -478,6 +572,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
   onSaveToNoteLab,
   onMarkConfusing,
   onHighlightParagraph,
+  onJumpToSource,
   insightScale = 1.0,
   activeItemId,
   syncEnabled = true,
@@ -644,6 +739,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                       unit={u}
                       tier={tier}
                       onHighlightParagraph={onHighlightParagraph}
+                      onJumpToSource={onJumpToSource}
                     />
                   ))}
                 </div>
@@ -670,6 +766,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                       unit={u}
                       tier="background"
                       onHighlightParagraph={onHighlightParagraph}
+                      onJumpToSource={onJumpToSource}
                     />
                   ))}
                 </div>
@@ -694,6 +791,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
             onSaveToNoteLab={onSaveToNoteLab}
             onMarkConfusing={onMarkConfusing}
             onHighlightParagraph={onHighlightParagraph}
+            onJumpToSource={onJumpToSource}
           />
         ))}
       </div>
@@ -716,6 +814,7 @@ interface CategorySectionProps {
   onSaveToNoteLab?: (insight: RankedInsight) => void;
   onMarkConfusing?: (insight: RankedInsight) => void;
   onHighlightParagraph?: (text: string) => void;
+  onJumpToSource?: (ref: SourceRef) => void;
 }
 
 const CategorySection: React.FC<CategorySectionProps> = ({
@@ -729,6 +828,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   onSaveToNoteLab,
   onMarkConfusing,
   onHighlightParagraph,
+  onJumpToSource,
 }) => {
   const header = CATEGORY_HEADERS[category];
   const [showAll, setShowAll] = useState(false);
@@ -759,6 +859,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
             onSaveToNoteLab={onSaveToNoteLab}
             onMarkConfusing={onMarkConfusing}
             onHighlightParagraph={onHighlightParagraph}
+            onJumpToSource={onJumpToSource}
           />
         ))}
 
@@ -790,6 +891,7 @@ interface PriorityItemCardProps {
   onSaveToNoteLab?: (insight: RankedInsight) => void;
   onMarkConfusing?: (insight: RankedInsight) => void;
   onHighlightParagraph?: (text: string) => void;
+  onJumpToSource?: (ref: SourceRef) => void;
 }
 
 const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
@@ -802,6 +904,7 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
   onSaveToNoteLab,
   onMarkConfusing,
   onHighlightParagraph,
+  onJumpToSource,
 }) => {
   const style = PRIORITY_STYLES[item.priority];
   const linkedInsight = rankedInsights.find(r => r.id === item.id);
@@ -889,6 +992,17 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
               {tag}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Source Anchor — only when we have a sourceRef */}
+      {item.sourceRef && (onJumpToSource || onJumpToPage) && (
+        <div className="mt-2 pl-1" onClick={(e) => e.stopPropagation()}>
+          <SourceAnchor
+            sourceRef={item.sourceRef}
+            onJump={onJumpToSource}
+            collapsed={true}
+          />
         </div>
       )}
 

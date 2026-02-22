@@ -17,7 +17,8 @@ import { clusterSegments, mergeSimilarClusters } from './clusters';
 import { generateInsights } from './insights';
 import { generateExplain } from './explain';
 import { generateCards } from './cards';
-import { buildParagraphUnits } from './paragraphIntelligence';
+import { buildParagraphUnits, buildQuoteHash } from './paragraphIntelligence';
+import { annotateTraps } from './trapDetector';
 import { buildStructureMap } from './structureMap';
 import { buildInsightContinuity } from './continuity';
 
@@ -97,7 +98,17 @@ export {
   getDueCards,
 } from './cards';
 
-export { buildParagraphUnits } from './paragraphIntelligence';
+export { buildParagraphUnits, buildQuoteHash } from './paragraphIntelligence';
+export { detectParagraphTraps, annotateTraps } from './trapDetector';
+export type { TrapHit, TrapKind } from './trapDetector';
+export {
+  buildPageTextIndex,
+  resolveHighlight,
+  getSpeechCursorY,
+  getSpeechCursorBbox,
+  TextLayerRegistry,
+} from './textLayerIndex';
+export type { TextToken, PageTextIndex, HighlightRegion } from './textLayerIndex';
 export { buildStructureMap } from './structureMap';
 export type { StructureMap, StructureMapNode, StructureMapStage } from './structureMap';
 export { buildInsightContinuity } from './continuity';
@@ -249,7 +260,8 @@ export async function buildPageIntelligence(
   const segments = segmentText(text, { pageNumber });
 
   // Step 2b: Build ranked paragraph units (role-classified with char offsets)
-  const paragraphUnits = buildParagraphUnits(text, pageNumber, docId);
+  //          then annotate each unit with trap detection results
+  const paragraphUnits = annotateTraps(buildParagraphUnits(text, pageNumber, docId));
 
   // Step 3: Detect signals
   const signals = detectSignals({ segments });
