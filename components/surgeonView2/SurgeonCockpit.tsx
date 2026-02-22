@@ -162,6 +162,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   const [autoExtract, setAutoExtract] = useState(true); // auto-fire on page load
   const [extractScope, setExtractScope] = useState<ExtractScope>('page');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  // Deep Analysis Mode — shows all paragraph units, structure map, mechanism chains
+  const [deepAnalysisMode, setDeepAnalysisMode] = useState(false);
 
   // Sync document context on mount
   useEffect(() => {
@@ -837,6 +839,22 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
           >
             {syncInsightsToPdf ? '⇄ Sync' : '⇄ Free'}
           </button>
+
+          {/* Deep Analysis Mode toggle */}
+          <button
+            onClick={() => setDeepAnalysisMode(m => !m)}
+            className={`ml-1 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
+              deepAnalysisMode
+                ? 'bg-purple-600/80 text-white border border-purple-500/60'
+                : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700'
+            }`}
+            title={deepAnalysisMode
+              ? 'Deep Analysis ON: all paragraph units + structure map visible'
+              : 'Deep Analysis OFF: click to enable full paragraph intelligence'}
+            aria-label="Toggle deep analysis mode"
+          >
+            🔬
+          </button>
         </div>
 
         {/* Tab Content - Unified Panel */}
@@ -854,6 +872,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               onHighlightParagraph={onHighlightParagraph}
               insightScale={insightScale}
               syncEnabled={syncInsightsToPdf}
+              deepAnalysisMode={deepAnalysisMode}
             />
           )}
           {activeTab === 'explain' && (

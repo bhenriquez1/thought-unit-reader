@@ -18,6 +18,8 @@ import { generateInsights } from './insights';
 import { generateExplain } from './explain';
 import { generateCards } from './cards';
 import { buildParagraphUnits } from './paragraphIntelligence';
+import { buildStructureMap } from './structureMap';
+import { buildInsightContinuity } from './continuity';
 
 // ============================================================================
 // Export Types
@@ -96,6 +98,10 @@ export {
 } from './cards';
 
 export { buildParagraphUnits } from './paragraphIntelligence';
+export { buildStructureMap } from './structureMap';
+export type { StructureMap, StructureMapNode, StructureMapStage } from './structureMap';
+export { buildInsightContinuity } from './continuity';
+export type { InsightContinuity } from './continuity';
 
 // ============================================================================
 // IndexedDB Cache for Page Intelligence Results
@@ -208,8 +214,9 @@ export async function buildPageIntelligence(
   const source: PageSource = pageText.source;
   const confidence = pageText.confidence;
 
-  // Handle empty text
+  // Handle empty text — return stub with always-populated continuity
   if (!text || text.trim().length < minTextLength) {
+    const emptyContinuity = buildInsightContinuity([], [], [], []);
     const emptyResult: PageIntelligence = {
       pageNumber,
       source,
@@ -225,6 +232,9 @@ export async function buildPageIntelligence(
         pitfalls: [],
       },
       cards: [],
+      paragraphUnits: [],
+      structureMap: { pageNumber, topic: `Page ${pageNumber}`, nodes: [], completeness: 0 },
+      continuity: emptyContinuity,
       extractedAt: Date.now(),
     };
 
@@ -275,6 +285,12 @@ export async function buildPageIntelligence(
     docId,
   });
 
+  // Step 9: Build structure map (Definition → Mechanism → Application → Clinical)
+  const structureMap = buildStructureMap(segments, signals, paragraphUnits, pageNumber);
+
+  // Step 10: Build insight continuity (always-populated — never empty)
+  const continuity = buildInsightContinuity(insights, segments, signals, paragraphUnits);
+
   // Build result
   const intelligence: PageIntelligence = {
     pageNumber,
@@ -288,6 +304,8 @@ export async function buildPageIntelligence(
     explain,
     cards,
     paragraphUnits,
+    structureMap,
+    continuity,
     extractedAt: Date.now(),
   };
 

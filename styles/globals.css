@@ -389,6 +389,42 @@
   display: none;
 }
 
+/* ===== PDF Canvas Zoom Architecture =====
+   Scale only the canvas element — never the parent container.
+   This prevents layout shifts and scroll container conflicts.
+   Use transform: scale() on .pdfPageCanvas with top-center origin.
+   The outer wrapper uses overflow:hidden; only the active scroll layer
+   uses overflow-y:auto so listeners don't compete. */
+.pdfPageCanvas {
+  transform-origin: top center;
+  transition: transform 0.15s ease-out;
+  /* Promote to its own compositing layer for GPU-accelerated scaling */
+  will-change: transform;
+}
+
+/* Outer PDF container — clips scaled canvas, no scroll here */
+.pdfScrollOuter {
+  overflow: hidden;
+  position: relative;
+}
+
+/* Inner scroll layer — the only layer with vertical scrolling */
+.pdfScrollInner {
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Prevent competing scroll listeners from reaching outer container */
+  overscroll-behavior: contain;
+}
+
+/* Right-panel scroll container — isolated from PDF scroll chain */
+.insightPanelScroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  /* Ensure scroll events stop here and don't propagate to PDF layer */
+  isolation: isolate;
+}
+
 /* ===== Priority Paragraph Glow — surgical focus highlight ===== */
 /* Applied to react-pdf text layer spans when a priority item is clicked */
 .priority-paragraph-glow {

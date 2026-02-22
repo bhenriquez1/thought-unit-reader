@@ -236,6 +236,50 @@ export interface AnchoredItem<T = unknown> {
 }
 
 // ============================================================================
+// Structure Map — 4-stage learning scaffold per page
+// ============================================================================
+
+export type StructureMapStage =
+  | 'definition'
+  | 'mechanism'
+  | 'application'
+  | 'clinical_relevance';
+
+export interface StructureMapNode {
+  id: string;
+  stage: StructureMapStage;
+  label: string;
+  text: string;
+  sourceIds: string[];
+  confidence: number;
+}
+
+export interface StructureMap {
+  pageNumber: number;
+  topic: string;
+  nodes: StructureMapNode[];
+  /** 0–1: fraction of the 4 stages detected */
+  completeness: number;
+}
+
+// ============================================================================
+// Insight Continuity — always-populated structured intelligence
+// ============================================================================
+
+export interface InsightContinuity {
+  /** Dominant concept/theme */
+  corePattern: string;
+  /** How this connects to adjacent content */
+  conceptualBridge: string;
+  /** Clinical downstream application */
+  clinicalConnection: string;
+  /** Most common student misunderstanding */
+  commonMisunderstanding: string;
+  /** Data richness indicator */
+  quality: 'rich' | 'minimal' | 'stub';
+}
+
+// ============================================================================
 // Page Intelligence - Full pipeline result
 // ============================================================================
 
@@ -252,6 +296,10 @@ export interface PageIntelligence {
   cards: StudyCard[];
   /** Ranked, role-classified paragraphs with source anchoring (PR3) */
   paragraphUnits?: ParagraphUnit[];
+  /** 4-stage learning scaffold: Definition → Mechanism → Application → Clinical */
+  structureMap?: StructureMap;
+  /** Always-populated structured intelligence (never empty) */
+  continuity?: InsightContinuity;
   extractedAt: number;
 }
 

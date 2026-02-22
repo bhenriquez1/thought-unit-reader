@@ -21,6 +21,8 @@ interface PriorityWorkspacePanelProps {
   insightScale?: number;
   /** Sync: scroll active card into view when this id changes */
   syncEnabled?: boolean;
+  /** Deep Analysis Mode: show all paragraph units + structure map */
+  deepAnalysisMode?: boolean;
 }
 
 export const PriorityWorkspacePanel: React.FC<PriorityWorkspacePanelProps> = ({
@@ -33,6 +35,7 @@ export const PriorityWorkspacePanel: React.FC<PriorityWorkspacePanelProps> = ({
   onHighlightParagraph,
   insightScale,
   syncEnabled,
+  deepAnalysisMode,
 }) => {
   return (
     <PriorityComprehensionPanel
@@ -45,6 +48,7 @@ export const PriorityWorkspacePanel: React.FC<PriorityWorkspacePanelProps> = ({
       insightScale={insightScale}
       activeItemId={selectedCardId}
       syncEnabled={syncEnabled}
+      deepAnalysisMode={deepAnalysisMode}
     />
   );
 };
