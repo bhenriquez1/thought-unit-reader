@@ -4,7 +4,7 @@
 
 import React, { useMemo, useRef, useEffect } from 'react';
 import type { RankedInsight, ImportanceBucket } from '@/lib/relationshipSchema/types';
-import type { PageIntelligence } from '@/lib/page-intelligence';
+import type { PageIntelligence, SourceRef } from '@/lib/page-intelligence';
 
 // ============================================================================
 // Types
@@ -20,6 +20,8 @@ interface PriorityItem {
   category: 'high_yield' | 'mechanism' | 'trap' | 'threshold' | 'clinical';
   evidence?: { page: number; text: string }[];
   tags?: string[];
+  /** Full source anchor — enables precise click-to-focus in the PDF viewer. */
+  sourceRef?: SourceRef;
 }
 
 interface PriorityComprehensionPanelProps {
@@ -134,9 +136,12 @@ function categorizePriorityItems(
     categories.get(category)?.push(item);
   }
 
-  // Add Page Intelligence insights — attach page evidence so "p.xx" appears
+  // Add Page Intelligence insights — attach sourceRef for precise click-to-focus
   if (pageIntelligence?.insights) {
     const piPage = pageIntelligence.pageNumber;
+    const piPageIndex = piPage - 1;
+    const paragraphUnits = pageIntelligence.paragraphUnits ?? [];
+
     for (const pi of pageIntelligence.insights) {
       const priority: PriorityScore =
         pi.score >= 85 ? 'MUST_KNOW' :
@@ -144,13 +149,31 @@ function categorizePriorityItems(
 
       const category = determineCategoryFromTags(pi.tags);
 
+      // Match to a ParagraphUnit via evidenceSegmentIds or direct id
+      const matchedUnit = paragraphUnits.find(u =>
+        pi.evidenceSegmentIds.includes(u.id)
+      );
+
+      const sourceRef: SourceRef | undefined = matchedUnit
+        ? {
+            pageIndex: piPageIndex,
+            paragraphId: matchedUnit.id,
+            startChar: matchedUnit.startChar,
+            endChar: matchedUnit.endChar,
+            quote: matchedUnit.text.slice(0, 180),
+            confidence: matchedUnit.importance / 100,
+          }
+        : undefined;
+
       const item: PriorityItem = {
         id: pi.id,
         title: pi.title,
-        content: pi.body,
+        // Prefer sourceRef.quote for highlight accuracy; fall back to body
+        content: sourceRef?.quote ?? pi.body,
         priority,
         category,
         tags: pi.tags,
+        sourceRef,
         // Attach page ref so jump-to-page button renders
         evidence: [{ page: piPage, text: pi.body.slice(0, 100) }],
       };
@@ -474,9 +497,10 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
   const page = item.evidence?.[0]?.page;
 
   const handleClick = () => {
-    // Zoom to paragraph in the PDF viewer
-    if (onHighlightParagraph && item.content) {
-      onHighlightParagraph(item.content);
+    // Use sourceRef.quote for precise paragraph focus; fall back to content text
+    const focusText = item.sourceRef?.quote ?? item.content;
+    if (onHighlightParagraph && focusText) {
+      onHighlightParagraph(focusText);
     }
     if (linkedInsight && onInsightClick) {
       onInsightClick(linkedInsight);
