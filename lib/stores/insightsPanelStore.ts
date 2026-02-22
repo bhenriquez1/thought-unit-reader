@@ -94,7 +94,7 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
       },
 
       // ── Sync toggle ──
-      syncInsightsToPdf: false, // OFF by default — no scroll coupling
+      syncInsightsToPdf: false, // OFF by default — user opts in; click-to-focus always works
       setSyncInsightsToPdf: (sync) => set({ syncInsightsToPdf: sync }),
       toggleSync: () => set((s) => ({ syncInsightsToPdf: !s.syncInsightsToPdf })),
 
