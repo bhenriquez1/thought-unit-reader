@@ -1,16 +1,23 @@
 // components/surgeonView2/PriorityComprehensionPanel.tsx
-// Priority Comprehension Panel - ONE intelligent panel that surfaces priority understanding
-// Shows what matters without reading the entire page - clinical cognition engine
+// Priority Comprehension Panel — full paragraph intelligence, structure map, Deep Analysis
 
-import React, { useMemo, useRef, useEffect } from 'react';
+import React, { useMemo, useRef, useEffect, useState } from 'react';
 import type { RankedInsight, ImportanceBucket } from '@/lib/relationshipSchema/types';
-import type { PageIntelligence, SourceRef } from '@/lib/page-intelligence';
+import type {
+  PageIntelligence,
+  SourceRef,
+  ParagraphUnit,
+  StructureMapStage,
+} from '@/lib/page-intelligence';
 
 // ============================================================================
 // Types
 // ============================================================================
 
 export type PriorityScore = 'MUST_KNOW' | 'HIGH_YIELD' | 'SUPPORTING';
+
+/** Tier grouping for raw paragraph units (no suppression) */
+type ParagraphTier = 'core' | 'important' | 'supporting' | 'background';
 
 interface PriorityItem {
   id: string;
@@ -46,6 +53,11 @@ interface PriorityComprehensionPanelProps {
   activeItemId?: string | null;
   /** Whether sync-scroll is enabled. Default: true */
   syncEnabled?: boolean;
+  /**
+   * Deep Analysis Mode — when true, shows ALL paragraph units, structure map,
+   * mechanism chains, and exam traps without filters.
+   */
+  deepAnalysisMode?: boolean;
 }
 
 // ============================================================================
@@ -101,6 +113,31 @@ const CATEGORY_HEADERS: Record<PriorityItem['category'], { icon: string; label: 
   },
 };
 
+const STAGE_META: Record<StructureMapStage, { icon: string; color: string }> = {
+  definition: { icon: '📖', color: 'text-blue-300' },
+  mechanism: { icon: '⚙️', color: 'text-purple-300' },
+  application: { icon: '🔧', color: 'text-amber-300' },
+  clinical_relevance: { icon: '🩺', color: 'text-teal-300' },
+};
+
+// ============================================================================
+// Tier helpers for paragraph units
+// ============================================================================
+
+function scoreToParagraphTier(importance: number): ParagraphTier {
+  if (importance >= 85) return 'core';
+  if (importance >= 60) return 'important';
+  if (importance >= 40) return 'supporting';
+  return 'background';
+}
+
+const TIER_META: Record<ParagraphTier, { label: string; icon: string; bg: string; text: string }> = {
+  core: { label: 'Core', icon: '🔥', bg: 'bg-red-900/25', text: 'text-red-300' },
+  important: { label: 'Important', icon: '⭐', bg: 'bg-amber-900/25', text: 'text-amber-300' },
+  supporting: { label: 'Supporting', icon: '◈', bg: 'bg-blue-900/20', text: 'text-blue-300' },
+  background: { label: 'Background', icon: '○', bg: 'bg-gray-800/40', text: 'text-gray-400' },
+};
+
 // ============================================================================
 // Categorization Logic
 // ============================================================================
@@ -145,7 +182,7 @@ function categorizePriorityItems(
     for (const pi of pageIntelligence.insights) {
       const priority: PriorityScore =
         pi.score >= 85 ? 'MUST_KNOW' :
-        pi.score >= 70 ? 'HIGH_YIELD' : 'SUPPORTING';
+        pi.score >= 60 ? 'HIGH_YIELD' : 'SUPPORTING';
 
       const category = determineCategoryFromTags(pi.tags);
 
@@ -205,54 +242,188 @@ function bucketToPriority(bucket: ImportanceBucket): PriorityScore {
 }
 
 function determineCategory(insight: RankedInsight): PriorityItem['category'] {
-  // Check for traps
-  if (insight.type === 'EXAM_TRAP' || insight.trap) {
-    return 'trap';
-  }
+  if (insight.type === 'EXAM_TRAP' || insight.trap) return 'trap';
+  if (insight.type === 'CLINICAL_PEARL' || insight.clinicalPearl) return 'clinical';
+  if (insight.type === 'DECISION_RULE' || insight.type === 'DIAGNOSTIC_SIGNAL') return 'mechanism';
 
-  // Check for clinical pearls
-  if (insight.type === 'CLINICAL_PEARL' || insight.clinicalPearl) {
-    return 'clinical';
-  }
-
-  // Check for diagnostic/decision rules
-  if (insight.type === 'DECISION_RULE' || insight.type === 'DIAGNOSTIC_SIGNAL') {
-    return 'mechanism';
-  }
-
-  // Check for numeric content (thresholds)
   const text = (insight.claim || '') + (insight.whyItMatters || '');
-  if (/\d+(?:\.\d+)?(?:\s*(?:mg|ml|mm|%|mmHg|mEq|IU|mcg|g\/dL))/i.test(text)) {
-    return 'threshold';
-  }
-
-  // Check for causal patterns (mechanisms)
-  if (/(?:causes?|leads? to|results? in|→|triggers?)/i.test(text)) {
-    return 'mechanism';
-  }
-
-  // Default to high-yield
+  if (/\d+(?:\.\d+)?(?:\s*(?:mg|ml|mm|%|mmHg|mEq|IU|mcg|g\/dL))/i.test(text)) return 'threshold';
+  if (/(?:causes?|leads? to|results? in|→|triggers?)/i.test(text)) return 'mechanism';
   return 'high_yield';
 }
 
 function determineCategoryFromTags(tags: string[]): PriorityItem['category'] {
   const tagStr = tags.join(' ').toLowerCase();
-
-  if (tagStr.includes('trap') || tagStr.includes('pitfall') || tagStr.includes('confusion')) {
-    return 'trap';
-  }
-  if (tagStr.includes('clinical') || tagStr.includes('practice') || tagStr.includes('treatment')) {
-    return 'clinical';
-  }
-  if (tagStr.includes('mechanism') || tagStr.includes('pathway') || tagStr.includes('process')) {
-    return 'mechanism';
-  }
-  if (tagStr.includes('threshold') || tagStr.includes('value') || tagStr.includes('number')) {
-    return 'threshold';
-  }
-
+  if (tagStr.includes('trap') || tagStr.includes('pitfall') || tagStr.includes('confusion')) return 'trap';
+  if (tagStr.includes('clinical') || tagStr.includes('practice') || tagStr.includes('treatment')) return 'clinical';
+  if (tagStr.includes('mechanism') || tagStr.includes('pathway') || tagStr.includes('process')) return 'mechanism';
+  if (tagStr.includes('threshold') || tagStr.includes('value') || tagStr.includes('number')) return 'threshold';
   return 'high_yield';
 }
+
+// ============================================================================
+// Paragraph Unit grouping (NO suppression — show all tiers)
+// ============================================================================
+
+function groupParagraphUnitsByTier(
+  units: ParagraphUnit[]
+): Map<ParagraphTier, ParagraphUnit[]> {
+  const map = new Map<ParagraphTier, ParagraphUnit[]>([
+    ['core', []],
+    ['important', []],
+    ['supporting', []],
+    ['background', []],
+  ]);
+  for (const u of units) {
+    map.get(scoreToParagraphTier(u.importance))!.push(u);
+  }
+  // Sort each tier descending by importance
+  for (const [tier, items] of map) {
+    map.set(tier, items.sort((a, b) => b.importance - a.importance));
+  }
+  return map;
+}
+
+// ============================================================================
+// Structure Map sub-component
+// ============================================================================
+
+const StructureMapSection: React.FC<{
+  structureMap: PageIntelligence['structureMap'];
+  onHighlightParagraph?: (text: string) => void;
+}> = ({ structureMap, onHighlightParagraph }) => {
+  if (!structureMap || structureMap.nodes.length === 0) return null;
+
+  return (
+    <section className="mb-5">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-sm">🗺️</span>
+        <h3 className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
+          Structure Map
+        </h3>
+        <span className="text-[10px] text-gray-500 italic">
+          {structureMap.topic.slice(0, 40)}
+        </span>
+        <span className="ml-auto text-[10px] text-teal-500">
+          {Math.round(structureMap.completeness * 100)}% complete
+        </span>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {structureMap.nodes.map((node, idx) => {
+          const meta = STAGE_META[node.stage];
+          return (
+            <div
+              key={node.id}
+              className="flex items-start gap-2 p-2 rounded-lg bg-gray-800/40 border border-gray-700/50 cursor-pointer hover:border-gray-600"
+              onClick={() => onHighlightParagraph?.(node.text)}
+            >
+              {/* Stage connector */}
+              <div className="flex flex-col items-center flex-shrink-0 mt-0.5">
+                <span className="text-xs">{meta.icon}</span>
+                {idx < structureMap.nodes.length - 1 && (
+                  <div className="w-px h-3 bg-gray-600 mt-0.5" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className={`text-[10px] font-semibold uppercase tracking-wide ${meta.color}`}>
+                  {node.label}
+                </div>
+                <p className="text-[11px] text-gray-300 line-clamp-2 mt-0.5">
+                  {node.text}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+};
+
+// ============================================================================
+// Continuity sub-component
+// ============================================================================
+
+const ContinuitySection: React.FC<{
+  continuity: PageIntelligence['continuity'];
+}> = ({ continuity }) => {
+  if (!continuity) return null;
+
+  const rows: Array<{ icon: string; label: string; text: string; color: string }> = [
+    { icon: '🎯', label: 'Core Pattern', text: continuity.corePattern, color: 'text-teal-300' },
+    { icon: '🔗', label: 'Conceptual Bridge', text: continuity.conceptualBridge, color: 'text-blue-300' },
+    { icon: '🩺', label: 'Clinical Connection', text: continuity.clinicalConnection, color: 'text-green-300' },
+    { icon: '⚠️', label: 'Watch For', text: continuity.commonMisunderstanding, color: 'text-amber-300' },
+  ];
+
+  return (
+    <section className="mb-5">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-sm">🧩</span>
+        <h3 className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
+          Insight Continuity
+        </h3>
+        <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded ${
+          continuity.quality === 'rich' ? 'bg-teal-500/20 text-teal-400' :
+          continuity.quality === 'minimal' ? 'bg-amber-500/20 text-amber-400' :
+          'bg-gray-700 text-gray-500'
+        }`}>
+          {continuity.quality}
+        </span>
+      </div>
+      <div className="space-y-1.5">
+        {rows.map(({ icon, label, text, color }) => (
+          <div key={label} className="p-2 rounded-lg bg-gray-800/40 border border-gray-700/50">
+            <div className="flex items-center gap-1 mb-0.5">
+              <span className="text-xs">{icon}</span>
+              <span className={`text-[10px] font-semibold uppercase tracking-wide ${color}`}>
+                {label}
+              </span>
+            </div>
+            <p className="text-[11px] text-gray-300 pl-4">
+              {text}
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+};
+
+// ============================================================================
+// Paragraph Unit tier card (Deep Analysis Mode)
+// ============================================================================
+
+const ParagraphUnitCard: React.FC<{
+  unit: ParagraphUnit;
+  tier: ParagraphTier;
+  onHighlightParagraph?: (text: string) => void;
+}> = ({ unit, tier, onHighlightParagraph }) => {
+  const meta = TIER_META[tier];
+
+  return (
+    <div
+      className={`p-2 rounded-lg border border-gray-700/60 cursor-pointer hover:border-gray-600 ${meta.bg}`}
+      onClick={() => onHighlightParagraph?.(unit.text)}
+    >
+      <div className="flex items-center gap-1.5 mb-0.5">
+        <span className="text-xs flex-shrink-0">{meta.icon}</span>
+        <span className={`text-[10px] font-semibold uppercase tracking-wide ${meta.text}`}>
+          {unit.role.replace('_', ' ')}
+        </span>
+        <span className="ml-auto text-[10px] text-gray-600">{unit.importance}</span>
+      </div>
+      <p className="text-[11px] text-gray-300 line-clamp-3 pl-5">{unit.text}</p>
+      {unit.keyTerms.length > 0 && (
+        <div className="flex gap-1 mt-1 pl-5 flex-wrap">
+          {unit.keyTerms.slice(0, 3).map(t => (
+            <span key={t} className="text-[9px] px-1 py-0.5 bg-gray-700/50 text-gray-400 rounded">{t}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ============================================================================
 // Main Component
@@ -269,9 +440,13 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
   insightScale = 1.0,
   activeItemId,
   syncEnabled = true,
+  deepAnalysisMode = false,
 }) => {
   // Ref map: insight item ID → DOM element for scroll-into-view
   const itemRefs = useRef<Map<string, HTMLElement>>(new Map());
+
+  // Collapse state for supporting/background tiers in deep analysis
+  const [showBackground, setShowBackground] = useState(false);
 
   // Scroll active item into view when sync is on and activeItemId changes
   useEffect(() => {
@@ -291,29 +466,47 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
   const activeCategories = useMemo(() => {
     const result: Array<{ category: PriorityItem['category']; items: PriorityItem[] }> = [];
     const order: PriorityItem['category'][] = ['high_yield', 'mechanism', 'trap', 'threshold', 'clinical'];
-
     for (const cat of order) {
       const items = categorizedItems.get(cat) || [];
-      if (items.length > 0) {
-        result.push({ category: cat, items });
-      }
+      if (items.length > 0) result.push({ category: cat, items });
     }
-
     return result;
   }, [categorizedItems]);
+
+  // Paragraph unit tiers (no suppression)
+  const paragraphTiers = useMemo(() => {
+    const units = pageIntelligence?.paragraphUnits ?? [];
+    return groupParagraphUnitsByTier(units);
+  }, [pageIntelligence]);
+
+  const totalParagraphUnits = (pageIntelligence?.paragraphUnits ?? []).length;
 
   // Total count for header
   const totalItems = activeCategories.reduce((sum, c) => sum + c.items.length, 0);
 
   // If no content at all, show a helpful prompt (not an empty state error)
-  if (totalItems === 0) {
+  if (totalItems === 0 && totalParagraphUnits === 0) {
+    // Show continuity scaffold even for empty pages
+    if (pageIntelligence?.continuity) {
+      const panelStyle = { '--insightScale': String(insightScale) } as React.CSSProperties;
+      return (
+        <div className="p-3 overflow-y-auto h-full" style={panelStyle}>
+          <ContinuitySection continuity={pageIntelligence.continuity} />
+          <div className="text-center py-6">
+            <div className="text-3xl mb-2">📖</div>
+            <p className="text-xs text-gray-500">
+              Extract the page to populate priority cards.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="p-4 h-full flex flex-col items-center justify-center">
         <div className="text-center max-w-[240px]">
           <div className="text-4xl mb-4">📖</div>
-          <h3 className="text-sm font-medium text-gray-300 mb-2">
-            Ready to Extract
-          </h3>
+          <h3 className="text-sm font-medium text-gray-300 mb-2">Ready to Extract</h3>
           <p className="text-xs text-gray-500 mb-4">
             Click "Extract Page" to discover what matters most on this page.
           </p>
@@ -328,15 +521,12 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
     );
   }
 
-  // CSS variable scale applied to root; child text elements use calc(… * var(--insightScale))
-  const panelStyle = {
-    '--insightScale': String(insightScale),
-  } as React.CSSProperties;
+  const panelStyle = { '--insightScale': String(insightScale) } as React.CSSProperties;
 
   return (
     <div className="p-3 overflow-y-auto h-full" style={panelStyle}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3">
         <div>
           <h2 className="text-sm font-semibold text-teal-400 flex items-center gap-2">
             <span>🎯</span>
@@ -352,24 +542,101 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
       </div>
 
       {/* Priority Score Legend */}
-      <div className="flex gap-2 mb-4 pb-3 border-b border-gray-700">
-        {(['MUST_KNOW', 'HIGH_YIELD', 'SUPPORTING'] as PriorityScore[]).map(priority => {
-          const style = PRIORITY_STYLES[priority];
-          const count = activeCategories.reduce((sum, c) =>
-            sum + c.items.filter(i => i.priority === priority).length, 0
-          );
-          if (count === 0) return null;
-          return (
-            <div key={priority} className="flex items-center gap-1 text-[10px]">
-              <span>{style.icon}</span>
-              <span className={style.text}>
-                {priority.replace('_', ' ')}
-              </span>
-              <span className="text-gray-500">({count})</span>
+      {totalItems > 0 && (
+        <div className="flex gap-2 mb-4 pb-3 border-b border-gray-700">
+          {(['MUST_KNOW', 'HIGH_YIELD', 'SUPPORTING'] as PriorityScore[]).map(priority => {
+            const style = PRIORITY_STYLES[priority];
+            const count = activeCategories.reduce((sum, c) =>
+              sum + c.items.filter(i => i.priority === priority).length, 0
+            );
+            if (count === 0) return null;
+            return (
+              <div key={priority} className="flex items-center gap-1 text-[10px]">
+                <span>{style.icon}</span>
+                <span className={style.text}>{priority.replace('_', ' ')}</span>
+                <span className="text-gray-500">({count})</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Structure Map — always shown when available */}
+      <StructureMapSection
+        structureMap={pageIntelligence?.structureMap}
+        onHighlightParagraph={onHighlightParagraph}
+      />
+
+      {/* Insight Continuity — always shown */}
+      {pageIntelligence?.continuity && (
+        <ContinuitySection continuity={pageIntelligence.continuity} />
+      )}
+
+      {/* Deep Analysis Mode: Paragraph Units (all tiers, no suppression) */}
+      {deepAnalysisMode && totalParagraphUnits > 0 && (
+        <section className="mb-5">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-sm">🔬</span>
+            <h3 className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
+              Full Paragraph Intelligence
+            </h3>
+            <span className="text-[10px] text-gray-500">({totalParagraphUnits})</span>
+          </div>
+
+          {(['core', 'important', 'supporting'] as ParagraphTier[]).map(tier => {
+            const units = paragraphTiers.get(tier) ?? [];
+            if (units.length === 0) return null;
+            const meta = TIER_META[tier];
+            return (
+              <div key={tier} className="mb-3">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <span className="text-xs">{meta.icon}</span>
+                  <span className={`text-[10px] font-semibold uppercase ${meta.text}`}>
+                    {meta.label}
+                  </span>
+                  <span className="text-[10px] text-gray-600">({units.length})</span>
+                </div>
+                <div className="space-y-1.5">
+                  {units.map(u => (
+                    <ParagraphUnitCard
+                      key={u.id}
+                      unit={u}
+                      tier={tier}
+                      onHighlightParagraph={onHighlightParagraph}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Background tier — collapsed by default */}
+          {(paragraphTiers.get('background') ?? []).length > 0 && (
+            <div className="mb-3">
+              <button
+                className="flex items-center gap-1.5 text-[10px] text-gray-500 hover:text-gray-400 mb-1"
+                onClick={() => setShowBackground(b => !b)}
+              >
+                <span>{showBackground ? '▼' : '▶'}</span>
+                <span className="uppercase tracking-wide">Background</span>
+                <span>({paragraphTiers.get('background')!.length})</span>
+              </button>
+              {showBackground && (
+                <div className="space-y-1.5">
+                  {(paragraphTiers.get('background') ?? []).map(u => (
+                    <ParagraphUnitCard
+                      key={u.id}
+                      unit={u}
+                      tier="background"
+                      onHighlightParagraph={onHighlightParagraph}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-          );
-        })}
-      </div>
+          )}
+        </section>
+      )}
 
       {/* Category Sections */}
       <div className="space-y-5">
@@ -423,6 +690,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   onHighlightParagraph,
 }) => {
   const header = CATEGORY_HEADERS[category];
+  const [showAll, setShowAll] = useState(false);
+  const visibleItems = showAll ? items : items.slice(0, 8);
 
   return (
     <section>
@@ -432,14 +701,12 @@ const CategorySection: React.FC<CategorySectionProps> = ({
         <h3 className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
           {header.label}
         </h3>
-        <span className="text-[10px] text-gray-500">
-          ({items.length})
-        </span>
+        <span className="text-[10px] text-gray-500">({items.length})</span>
       </div>
 
       {/* Items */}
       <div className="space-y-2">
-        {items.slice(0, 8).map(item => (
+        {visibleItems.map(item => (
           <PriorityItemCard
             key={item.id}
             item={item}
@@ -454,11 +721,14 @@ const CategorySection: React.FC<CategorySectionProps> = ({
           />
         ))}
 
-        {/* Show more indicator */}
+        {/* Expand / collapse control */}
         {items.length > 8 && (
-          <div className="text-[10px] text-gray-500 italic pl-2">
-            +{items.length - 8} more items
-          </div>
+          <button
+            className="text-[10px] text-teal-500 hover:text-teal-400 pl-2 italic"
+            onClick={() => setShowAll(s => !s)}
+          >
+            {showAll ? `▲ Show less` : `▼ +${items.length - 8} more items`}
+          </button>
         )}
       </div>
     </section>
