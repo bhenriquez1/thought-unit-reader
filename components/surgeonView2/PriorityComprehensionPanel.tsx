@@ -4,9 +4,7 @@
 
 import React, { useMemo, useRef, useEffect } from 'react';
 import type { RankedInsight, ImportanceBucket } from '@/lib/relationshipSchema/types';
-import type { InsightsResult, PageExtractionResult } from '@/lib/engines/types';
 import type { PageIntelligence } from '@/lib/page-intelligence';
-import type { ReasoningFlow } from '@/lib/engines';
 
 // ============================================================================
 // Types
@@ -28,9 +26,6 @@ interface PriorityComprehensionPanelProps {
   // Primary data sources
   rankedInsights: RankedInsight[];
   pageIntelligence?: PageIntelligence | null;
-  pageInsights?: InsightsResult | null;
-  pageReasoning?: ReasoningFlow | null;
-  pageExtraction?: PageExtractionResult | null;
 
   // Actions
   onInsightClick?: (insight: RankedInsight) => void;
@@ -121,9 +116,7 @@ const CATEGORY_HEADERS: Record<PriorityItem['category'], { icon: string; label: 
 
 function categorizePriorityItems(
   insights: RankedInsight[],
-  pageIntelligence?: PageIntelligence | null,
-  pageInsights?: InsightsResult | null,
-  pageReasoning?: ReasoningFlow | null
+  pageIntelligence?: PageIntelligence | null
 ): Map<PriorityItem['category'], PriorityItem[]> {
   const categories = new Map<PriorityItem['category'], PriorityItem[]>();
 
@@ -176,47 +169,6 @@ function categorizePriorityItems(
       const existing = categories.get(category);
       if (existing && !existing.some(e => e.title === item.title)) {
         existing.push(item);
-      }
-    }
-  }
-
-  // Add mechanisms from reasoning flow
-  if (pageReasoning?.edges) {
-    const mechanismItems = pageReasoning.edges
-      .filter(e => e.type === 'CAUSES' || e.type === 'LEADS_TO')
-      .slice(0, 5)
-      .map((edge, idx) => {
-        const fromNode = pageReasoning.nodes.find(n => n.id === edge.from);
-        const toNode = pageReasoning.nodes.find(n => n.id === edge.to);
-        return {
-          id: `mech_${idx}`,
-          title: `${fromNode?.label || 'Unknown'} → ${toNode?.label || 'Unknown'}`,
-          content: `${fromNode?.label} leads to ${toNode?.label}`,
-          priority: 'HIGH_YIELD' as PriorityScore,
-          category: 'mechanism' as const,
-        };
-      });
-
-    const existing = categories.get('mechanism') || [];
-    categories.set('mechanism', [...existing, ...mechanismItems]);
-  }
-
-  // Add thresholds from page insights
-  if (pageInsights?.whatMatters) {
-    for (const item of pageInsights.whatMatters) {
-      // Look for numeric patterns
-      if (/\d+(?:\.\d+)?(?:\s*(?:mg|ml|mm|%|mmHg|mEq|IU|mcg|g\/dL))/i.test(item.summary)) {
-        const thresholds = categories.get('threshold') || [];
-        if (!thresholds.some(t => t.title === item.title)) {
-          thresholds.push({
-            id: item.id,
-            title: item.title,
-            content: item.summary,
-            priority: 'HIGH_YIELD',
-            category: 'threshold',
-            tags: item.tags,
-          });
-        }
       }
     }
   }
@@ -297,9 +249,6 @@ function determineCategoryFromTags(tags: string[]): PriorityItem['category'] {
 export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProps> = ({
   rankedInsights,
   pageIntelligence,
-  pageInsights,
-  pageReasoning,
-  pageExtraction,
   onInsightClick,
   onJumpToPage,
   onSaveToNoteLab,
@@ -323,8 +272,8 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
 
   // Categorize all priority items
   const categorizedItems = useMemo(() => {
-    return categorizePriorityItems(rankedInsights, pageIntelligence, pageInsights, pageReasoning);
-  }, [rankedInsights, pageIntelligence, pageInsights, pageReasoning]);
+    return categorizePriorityItems(rankedInsights, pageIntelligence);
+  }, [rankedInsights, pageIntelligence]);
 
   // Filter to only non-empty categories
   const activeCategories = useMemo(() => {
