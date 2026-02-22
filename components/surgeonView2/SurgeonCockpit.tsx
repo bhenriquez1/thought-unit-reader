@@ -32,6 +32,7 @@ import PriorityWorkspacePanel from './PriorityWorkspacePanel';
 import SmartExtractControl, { type ExtractScope } from './SmartExtractControl';
 import InsightOverlay from './InsightOverlay';
 import SmartSpeechControls from './SmartSpeechControls';
+import { SpeechNarrationPanel } from './SpeechNarrationPanel';
 import DATDrillMode from '../apex/DATDrillMode';
 import {
   isWebSpeechAvailable,
@@ -46,7 +47,7 @@ import { useStudySessionStore } from '@/lib/stores/studySessionStore';
 import { useInsightsPanelStore } from '@/lib/stores/insightsPanelStore';
 
 // Expert View 2.1 tabs - Simplified for cognitive flow
-type ComprehensionTab = 'priority' | 'explain' | 'relations' | 'compare' | 'insights';
+type ComprehensionTab = 'priority' | 'explain' | 'relations' | 'compare' | 'insights' | 'narrate';
 
 // ============================================================================
 // DOM Text Layer Scraping
@@ -79,6 +80,12 @@ interface SurgeonCockpitProps {
   pageTexts?: Map<number, string>;
   onExtractPage?: (pageIndex: number) => Promise<void>;
   onHighlightParagraph?: (text: string) => void;
+  /** Called when user clicks "Jump to source" on any SourceAnchor — for PDF scroll+highlight */
+  onJumpToSource?: (ref: import('@/lib/page-intelligence').SourceRef) => void;
+  /** ElevenLabs config for Narrate tab (optional) */
+  elevenLabsConfig?: { apiKey: string; voiceId: string };
+  /** Azure TTS config for Narrate tab (optional) */
+  azureConfig?: { subscriptionKey: string; region: string; voiceName?: string };
 }
 
 export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
@@ -90,6 +97,9 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   pageTexts,
   onExtractPage,
   onHighlightParagraph,
+  onJumpToSource,
+  elevenLabsConfig,
+  azureConfig,
 }) => {
   // Relationship store
   const {
@@ -803,6 +813,12 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             onClick={() => setActiveTab('insights')}
             badge={pageIntelligence?.insights?.length || undefined}
           />
+          <ModeChip
+            label="🎙️"
+            active={activeTab === 'narrate'}
+            onClick={() => setActiveTab('narrate')}
+            title="Ninja Nerd Narration"
+          />
 
           {/* Spacer */}
           <div className="flex-1" />
@@ -871,6 +887,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               onSendToNoteLab={handleSendToNoteLab}
               isExtracting={isRelationExtracting}
               onHighlightParagraph={onHighlightParagraph}
+              onJumpToSource={onJumpToSource}
               insightScale={insightScale}
               syncEnabled={syncInsightsToPdf}
               deepAnalysisMode={deepAnalysisMode}
@@ -917,6 +934,25 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               onJumpToPage={onJumpToPage}
               reasoningChain={expertView.getReasoningChain()}
               pageIntelligence={pageIntelligence}
+            />
+          )}
+          {activeTab === 'narrate' && (
+            <SpeechNarrationPanel
+              pageIntelligence={pageIntelligence}
+              onActiveParagraph={(paragraphId) => {
+                // Highlight the active paragraph in the PDF
+                if (paragraphId && pageIntelligence?.paragraphUnits) {
+                  const unit = pageIntelligence.paragraphUnits.find(u => u.id === paragraphId);
+                  if (unit && onHighlightParagraph) {
+                    onHighlightParagraph(unit.text.slice(0, 120));
+                  }
+                }
+              }}
+              onActiveWord={(wb, charOffset, paragraphId) => {
+                // Optionally wire to PDF text layer for word-level highlight
+              }}
+              elevenLabsConfig={elevenLabsConfig}
+              azureConfig={azureConfig}
             />
           )}
         </div>
@@ -977,9 +1013,11 @@ const ModeChip: React.FC<{
   active: boolean;
   onClick: () => void;
   badge?: number;
-}> = ({ label, active, onClick, badge }) => (
+  title?: string;
+}> = ({ label, active, onClick, badge, title }) => (
   <button
     onClick={onClick}
+    title={title}
     className={`
       flex-1 px-2 py-1.5 text-[11px] font-medium rounded transition-all relative
       ${active

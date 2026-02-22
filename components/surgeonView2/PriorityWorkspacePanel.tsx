@@ -4,7 +4,7 @@
 
 import React from 'react';
 import type { RankedInsight } from '@/lib/relationshipSchema/types';
-import type { PageIntelligence } from '@/lib/page-intelligence';
+import type { PageIntelligence, SourceRef } from '@/lib/page-intelligence';
 import PriorityComprehensionPanel from './PriorityComprehensionPanel';
 
 interface PriorityWorkspacePanelProps {
@@ -17,6 +17,8 @@ interface PriorityWorkspacePanelProps {
   onSendToNoteLab?: (insight: RankedInsight) => void;
   isExtracting?: boolean;
   onHighlightParagraph?: (text: string) => void;
+  /** Jump to source in PDF — from SourceAnchor "Jump to source" button */
+  onJumpToSource?: (ref: SourceRef) => void;
   /** Font-size scale for insight cards (from insightsPanelStore) */
   insightScale?: number;
   /** Sync: scroll active card into view when this id changes */
@@ -33,6 +35,7 @@ export const PriorityWorkspacePanel: React.FC<PriorityWorkspacePanelProps> = ({
   onExplain,
   onSendToNoteLab,
   onHighlightParagraph,
+  onJumpToSource,
   insightScale,
   syncEnabled,
   deepAnalysisMode,
@@ -45,6 +48,7 @@ export const PriorityWorkspacePanel: React.FC<PriorityWorkspacePanelProps> = ({
       onJumpToPage={onJumpToPage}
       onSaveToNoteLab={onSendToNoteLab}
       onHighlightParagraph={onHighlightParagraph}
+      onJumpToSource={onJumpToSource}
       insightScale={insightScale}
       activeItemId={selectedCardId}
       syncEnabled={syncEnabled}
