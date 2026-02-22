@@ -23,10 +23,10 @@ interface InsightsPanelState {
 
   // ── Sync toggle ───────────────────────────────────────────────────────────
   /**
-   * When true (default), the insights panel scrolls its active item into view
-   * whenever the active insight changes (driven by PDF paragraph selection).
-   * When false, the user scrolls insights freely; clicking an insight still
-   * highlights the PDF region.
+   * When true, the insights panel scrolls its active item into view whenever
+   * the active insight changes (driven by PDF paragraph selection).
+   * Default OFF so the user can scroll both panels independently; clicking
+   * an insight still highlights the PDF region regardless of this toggle.
    */
   syncInsightsToPdf: boolean;
   setSyncInsightsToPdf: (sync: boolean) => void;
@@ -85,7 +85,7 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
       },
 
       // ── Sync toggle ──
-      syncInsightsToPdf: true,
+      syncInsightsToPdf: false, // OFF by default — no scroll coupling
       setSyncInsightsToPdf: (sync) => set({ syncInsightsToPdf: sync }),
       toggleSync: () => set((s) => ({ syncInsightsToPdf: !s.syncInsightsToPdf })),
 
