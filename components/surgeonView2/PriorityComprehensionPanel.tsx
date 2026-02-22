@@ -11,6 +11,7 @@ import type {
 } from '@/lib/page-intelligence';
 import { ImportanceBar } from './MathDisplay';
 import { SourceAnchor } from './SourceAnchor';
+import { buildQuoteHash } from '@/lib/page-intelligence';
 
 // ============================================================================
 // Types
@@ -195,13 +196,17 @@ function categorizePriorityItems(
         pi.evidenceSegmentIds.includes(u.id)
       );
 
+      const quoteText = matchedUnit?.text.slice(0, 180) ?? '';
       const sourceRef: SourceRef | undefined = matchedUnit
         ? {
             pageIndex: piPageIndex,
             paragraphId: matchedUnit.id,
             startChar: matchedUnit.startChar,
             endChar: matchedUnit.endChar,
-            quote: matchedUnit.text.slice(0, 180),
+            quote: quoteText,
+            quoteText,
+            quoteHash: buildQuoteHash(quoteText),
+            textOrigin: 'pdfText',
             confidence: matchedUnit.importance / 100,
           }
         : undefined;
@@ -294,9 +299,33 @@ function groupParagraphUnitsByTier(
 
 const StructureMapSection: React.FC<{
   structureMap: PageIntelligence['structureMap'];
+  paragraphUnits?: ParagraphUnit[];
   onHighlightParagraph?: (text: string) => void;
-}> = ({ structureMap, onHighlightParagraph }) => {
+  onJumpToSource?: (ref: SourceRef) => void;
+}> = ({ structureMap, paragraphUnits = [], onHighlightParagraph, onJumpToSource }) => {
   if (!structureMap || structureMap.nodes.length === 0) return null;
+
+  /** Build a SourceRef for a structure map node via its sourceIds. */
+  function nodeToSourceRef(node: { sourceIds: string[]; text: string }): SourceRef | null {
+    for (const id of node.sourceIds) {
+      const unit = paragraphUnits.find(u => u.id === id);
+      if (unit) {
+        const q = unit.text.slice(0, 180);
+        return {
+          pageIndex: unit.pageIndex,
+          paragraphId: unit.id,
+          startChar: unit.startChar,
+          endChar: unit.endChar,
+          quote: q,
+          quoteText: q,
+          quoteHash: buildQuoteHash(q),
+          textOrigin: 'pdfText',
+          confidence: unit.importance / 100,
+        };
+      }
+    }
+    return null;
+  }
 
   return (
     <section className="mb-5">
@@ -319,7 +348,11 @@ const StructureMapSection: React.FC<{
             <div
               key={node.id}
               className="flex items-start gap-2 p-2 rounded-lg bg-gray-800/40 border border-gray-700/50 cursor-pointer hover:border-gray-600"
-              onClick={() => onHighlightParagraph?.(node.text)}
+              onClick={() => {
+                onHighlightParagraph?.(node.text);
+                const ref = nodeToSourceRef(node);
+                if (ref) onJumpToSource?.(ref);
+              }}
             >
               {/* Stage connector */}
               <div className="flex flex-col items-center flex-shrink-0 mt-0.5">
@@ -441,23 +474,67 @@ const SubScorePanel: React.FC<{ subScores: NonNullable<ParagraphUnit['subScores'
   );
 };
 
+// ============================================================================
+// Intelligence Debug Panel — raw SourceRef + signal data for dev/audit mode
+// ============================================================================
+
+const DebugInfoPanel: React.FC<{
+  unit: ParagraphUnit;
+  sourceRef: SourceRef;
+  expanded: boolean;
+}> = ({ unit, sourceRef, expanded }) => {
+  if (!expanded) return null;
+  return (
+    <div className="mt-2 p-2 bg-black/60 border border-teal-900/50 rounded text-[9px] font-mono space-y-0.5">
+      <div className="text-teal-600 uppercase tracking-wide mb-1 text-[8px]">Intelligence Debug</div>
+      <div><span className="text-gray-600">id:</span> <span className="text-teal-400">{unit.id}</span></div>
+      <div><span className="text-gray-600">role:</span> <span className="text-amber-400">{unit.role}</span></div>
+      <div><span className="text-gray-600">importance:</span> <span className="text-white">{unit.importance}</span></div>
+      <div><span className="text-gray-600">startChar:</span> <span className="text-blue-400">{unit.startChar}</span> <span className="text-gray-600">endChar:</span> <span className="text-blue-400">{unit.endChar}</span></div>
+      <div><span className="text-gray-600">pageIndex:</span> <span className="text-white">{sourceRef.pageIndex}</span></div>
+      <div><span className="text-gray-600">quoteHash:</span> <span className="text-green-400">{sourceRef.quoteHash ?? '—'}</span></div>
+      <div><span className="text-gray-600">textOrigin:</span> <span className="text-purple-400">{sourceRef.textOrigin ?? '—'}</span></div>
+      <div><span className="text-gray-600">confidence:</span> <span className="text-white">{(sourceRef.confidence * 100).toFixed(0)}%</span></div>
+      {unit.trapTypes && unit.trapTypes.length > 0 && (
+        <div><span className="text-gray-600">trapTypes:</span> <span className="text-orange-400">{unit.trapTypes.join(', ')}</span></div>
+      )}
+      <div className="text-gray-600">signals: {[
+        unit.signals.hasNumbers && 'numbers',
+        unit.signals.hasUnits && 'units',
+        unit.signals.hasNegation && 'negation',
+        unit.signals.hasComparison && 'comparison',
+        unit.signals.hasCausal && 'causal',
+        unit.signals.hasTemporal && 'temporal',
+        unit.signals.hasClinicalTerms && 'clinical',
+      ].filter(Boolean).join(' · ')}</div>
+    </div>
+  );
+};
+
 const ParagraphUnitCard: React.FC<{
   unit: ParagraphUnit;
   tier: ParagraphTier;
   onHighlightParagraph?: (text: string) => void;
   onJumpToSource?: (ref: SourceRef) => void;
-}> = ({ unit, tier, onHighlightParagraph, onJumpToSource }) => {
+  /** When true, shows raw SourceRef + signal debug panel */
+  debugMode?: boolean;
+}> = ({ unit, tier, onHighlightParagraph, onJumpToSource, debugMode = false }) => {
   const [showSubScores, setShowSubScores] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
   const meta = TIER_META[tier];
   const roleColor = ROLE_COLORS[unit.role] ?? 'bg-gray-800/40 text-gray-400 border-gray-700/40';
 
-  // Build a minimal SourceRef from the ParagraphUnit for the jump button
+  // Build a complete SourceRef from the ParagraphUnit for jump + debug
+  const unitQuote = unit.text.slice(0, 180);
   const unitSourceRef: SourceRef = {
     pageIndex: unit.pageIndex,
     paragraphId: unit.id,
     startChar: unit.startChar,
     endChar: unit.endChar,
-    quote: unit.text.slice(0, 180),
+    quote: unitQuote,
+    quoteText: unitQuote,
+    quoteHash: buildQuoteHash(unitQuote),
+    textOrigin: 'pdfText',
     confidence: unit.importance / 100,
   };
 
@@ -480,6 +557,15 @@ const ParagraphUnitCard: React.FC<{
             title="Toggle sub-scores"
           >
             {showSubScores ? '▲ scores' : '▼ scores'}
+          </button>
+        )}
+        {debugMode && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowDebug(v => !v); }}
+            className="text-[8px] text-teal-700 hover:text-teal-400 px-1 py-0.5 rounded bg-teal-900/20 border border-teal-900/30"
+            title="Toggle debug info"
+          >
+            {showDebug ? '▲ dbg' : '▼ dbg'}
           </button>
         )}
         <span className="text-[10px] font-mono text-gray-500 flex-shrink-0">{unit.importance}</span>
@@ -556,6 +642,11 @@ const ParagraphUnitCard: React.FC<{
           />
         </div>
       )}
+
+      {/* Intelligence Debug Panel */}
+      <div onClick={(e) => e.stopPropagation()}>
+        <DebugInfoPanel unit={unit} sourceRef={unitSourceRef} expanded={showDebug} />
+      </div>
     </div>
   );
 };
@@ -700,7 +791,9 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
       {/* Structure Map — always shown when available */}
       <StructureMapSection
         structureMap={pageIntelligence?.structureMap}
+        paragraphUnits={pageIntelligence?.paragraphUnits}
         onHighlightParagraph={onHighlightParagraph}
+        onJumpToSource={onJumpToSource}
       />
 
       {/* Insight Continuity — always shown */}
@@ -740,6 +833,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                       tier={tier}
                       onHighlightParagraph={onHighlightParagraph}
                       onJumpToSource={onJumpToSource}
+                      debugMode={deepAnalysisMode}
                     />
                   ))}
                 </div>
@@ -767,6 +861,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                       tier="background"
                       onHighlightParagraph={onHighlightParagraph}
                       onJumpToSource={onJumpToSource}
+                      debugMode={deepAnalysisMode}
                     />
                   ))}
                 </div>
