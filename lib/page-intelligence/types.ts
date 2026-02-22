@@ -176,6 +176,24 @@ export interface ParagraphSignals {
   hasClinicalTerms: boolean;
 }
 
+/** Dimensional sub-scores (0–100) for a paragraph — shown as chips in the UI */
+export interface ParagraphSubScores {
+  /** Definitions, key terms, "is defined as" patterns */
+  conceptScore: number;
+  /** Cause→effect, pathway, process verbs */
+  mechanismScore: number;
+  /** If/then, staging criteria, classification thresholds */
+  decisionScore: number;
+  /** Exceptions, negations, confusables, "most likely" */
+  examTrapScore: number;
+  /** Formulas, variables, units, equations */
+  mathScore: number;
+  /** Symptom→diagnosis→test→treatment chains */
+  clinicalScore: number;
+  /** Heading proximity, bullet lists, figure/table refs */
+  structureScore: number;
+}
+
 /**
  * A ranked, role-classified paragraph unit anchored to exact char positions.
  * Used by all engine tabs for jump-to-source navigation.
@@ -191,10 +209,16 @@ export interface ParagraphUnit {
   /** Optional bounding box if OCR provides coordinates */
   bbox?: { x: number; y: number; w: number; h: number };
   role: ParagraphRole;
-  /** Importance 0–100 scored by role + clinical signals */
+  /** Importance 0–100 scored by role + clinical signals (weighted sub-score sum) */
   importance: number;
   keyTerms: string[];
   signals: ParagraphSignals;
+  /** Dimensional sub-scores for visualization */
+  subScores?: ParagraphSubScores;
+  /** 3–5 human-readable labels explaining why this paragraph scored as it did */
+  whyScoredSignals?: string[];
+  /** Detected DAT trap types in this paragraph */
+  trapTypes?: string[];
 }
 
 /**
@@ -206,10 +230,23 @@ export interface SourceRef {
   paragraphId: string;
   startChar: number;
   endChar: number;
+  /** Sentence-level character offsets (within paragraphText) for fine-grained highlight */
+  sentenceStartChar?: number;
+  sentenceEndChar?: number;
   /** Short representative quote ≤ 180 chars */
   quote: string;
+  /** Verbatim exact quote for strict comparison */
+  quoteText?: string;
+  /** Simple hash of normalized quote for deduplication */
+  quoteHash?: string;
   bbox?: { x: number; y: number; w: number; h: number };
   confidence: number; // 0..1
+  /** Origin of the text — native PDF text layer vs OCR */
+  textOrigin?: 'pdfText' | 'ocr';
+  /** Extraction run identifier */
+  runId?: string;
+  /** Engine version string */
+  engineVersion?: string;
 }
 
 /**
