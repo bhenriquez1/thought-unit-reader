@@ -137,12 +137,19 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   // Surgeon Engine Store
   const surgeonEngine = useSurgeonEngineStore();
 
+<<<<<<< HEAD
   // Insights Panel Store — zoom + sync toggle + paragraph tracking
   const {
     insightScale,
     syncInsightsToPdf,
     activeParagraphId,
     activeVisibleText,
+=======
+  // Insights Panel Store — zoom + sync toggle
+  const {
+    insightScale,
+    syncInsightsToPdf,
+>>>>>>> a0e16f5 (feat: insights panel zoom + sync toggle)
     scaleUp,
     scaleDown,
     canScaleUp,

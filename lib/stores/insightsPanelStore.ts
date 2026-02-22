@@ -39,6 +39,7 @@ interface InsightsPanelState {
    */
   activeParagraphId: string | null;
   setActiveParagraphId: (id: string | null) => void;
+<<<<<<< HEAD
 
   // ── Selection (set on insight card click) ────────────────────────────────
   /** ID of the last insight card the user clicked. */
@@ -48,6 +49,8 @@ interface InsightsPanelState {
   /** Raw text snippet of the paragraph currently visible in the PDF (from scroll detection). */
   activeVisibleText: string | null;
   setActiveVisibleText: (text: string | null) => void;
+=======
+>>>>>>> a0e16f5 (feat: insights panel zoom + sync toggle)
 }
 
 export const useInsightsPanelStore = create<InsightsPanelState>()(
@@ -92,6 +95,7 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
       // ── Active anchor ──
       activeParagraphId: null,
       setActiveParagraphId: (id) => set({ activeParagraphId: id }),
+<<<<<<< HEAD
 
       // ── Selection ──
       selectedInsightId: null,
@@ -99,6 +103,8 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
 
       activeVisibleText: null,
       setActiveVisibleText: (text) => set({ activeVisibleText: text }),
+=======
+>>>>>>> a0e16f5 (feat: insights panel zoom + sync toggle)
     }),
     {
       name: 'insights-panel-storage',
