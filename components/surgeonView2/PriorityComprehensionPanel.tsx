@@ -13,6 +13,8 @@ import { ImportanceBar } from './MathDisplay';
 import { SourceAnchor } from './SourceAnchor';
 import { buildQuoteHash, detectParagraphTraps } from '@/lib/page-intelligence';
 import type { TrapHit } from '@/lib/page-intelligence';
+import { scoreParagraph, detectClinicalReasoning } from '@/lib/intelligence';
+import type { ScoreResult, ClinicalReasoningResult } from '@/lib/intelligence';
 
 // ============================================================================
 // Types
@@ -518,6 +520,245 @@ const DebugInfoPanel: React.FC<{
   );
 };
 
+// ============================================================================
+// Score badge — "Score: 82 • High Yield" with click-expand for breakdown
+// ============================================================================
+
+function scoreLabel(total: number): string {
+  if (total >= 85) return 'Must Know';
+  if (total >= 65) return 'High Yield';
+  if (total >= 45) return 'Supporting';
+  return 'Background';
+}
+
+function scoreBadgeColor(total: number): string {
+  if (total >= 85) return 'bg-red-700/60 text-red-200 border-red-600/50';
+  if (total >= 65) return 'bg-amber-700/60 text-amber-200 border-amber-600/50';
+  if (total >= 45) return 'bg-blue-800/50 text-blue-300 border-blue-700/40';
+  return 'bg-gray-700/50 text-gray-400 border-gray-600/40';
+}
+
+const ScoreBadge: React.FC<{ score: ScoreResult }> = ({ score }) => {
+  const [open, setOpen] = useState(false);
+  const label = scoreLabel(score.total);
+  const color = scoreBadgeColor(score.total);
+
+  const SUB_ROWS: Array<{ key: keyof ScoreResult['subs']; label: string; color: string }> = [
+    { key: 'examYield',         label: 'Exam Yield',       color: 'bg-amber-500/70' },
+    { key: 'mechanismDensity',  label: 'Mechanism',        color: 'bg-purple-500/70' },
+    { key: 'numbersThresholds', label: 'Numbers',          color: 'bg-blue-500/70' },
+    { key: 'decisionRules',     label: 'Decision Rules',   color: 'bg-teal-500/70' },
+    { key: 'clinicalFlow',      label: 'Clinical Flow',    color: 'bg-green-500/70' },
+    { key: 'trapRisk',          label: 'Trap Risk',        color: 'bg-red-500/70' },
+  ];
+
+  return (
+    <div>
+      <button
+        onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}
+        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded border text-[10px] font-semibold ${color} hover:opacity-90`}
+        title="Click to see score breakdown"
+      >
+        <span>Score: {score.total}</span>
+        <span className="opacity-70">•</span>
+        <span>{label}</span>
+        <span className="opacity-50 text-[8px]">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="mt-1 p-2 bg-gray-900/60 border border-gray-700/50 rounded space-y-0.5">
+          {SUB_ROWS.map(({ key, label: lbl, color: c }) => {
+            const pct = Math.round(score.subs[key] * 100);
+            return (
+              <div key={key} className="flex items-center gap-1.5">
+                <span className="text-[8px] text-gray-500 w-20 flex-shrink-0 truncate">{lbl}</span>
+                <div className="flex-1 h-1.5 bg-gray-700/60 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${c}`} style={{ width: `${pct}%` }} />
+                </div>
+                <span className="text-[8px] font-mono text-gray-600 w-4 text-right">{pct}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================================================
+// Deep Mode stacked cards — spec Part C
+// ============================================================================
+
+const FLOW_NODE_ICONS: Record<string, string> = {
+  Presentation: '🗣️',
+  Findings:     '🔍',
+  Differential: '⚖️',
+  Decision:     '✅',
+  NextStep:     '➡️',
+};
+
+const DeepModeCards: React.FC<{
+  unit: ParagraphUnit;
+  score: ScoreResult;
+  reasoning: ClinicalReasoningResult;
+  onJumpToSource?: (ref: SourceRef) => void;
+  unitSourceRef: SourceRef;
+}> = ({ unit, score, reasoning, onJumpToSource, unitSourceRef }) => {
+  const [copiedSource, setCopiedSource] = useState(false);
+
+  const handleCopySource = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard?.writeText(unit.text).catch(() => {});
+    setCopiedSource(true);
+    setTimeout(() => setCopiedSource(false), 1500);
+  };
+
+  // Derive heuristic "what this means" from role + signals
+  const derivedMeaning = useMemo((): string => {
+    if (unit.role === 'definition')
+      return `This paragraph defines a key concept. The statement that follows "is" or "defined as" is the exam-critical information.`;
+    if (unit.role === 'mechanism')
+      return `This paragraph describes a causal chain or physiological pathway. Focus on the direction: what causes what.`;
+    if (unit.role === 'formula')
+      return `This paragraph contains a formula or quantitative relationship. Memorize the variables and their units.`;
+    if (unit.role === 'exam_trap')
+      return `This paragraph contains language patterns commonly exploited in exam distractors (exceptions, negations, absolute terms).`;
+    if (unit.role === 'clinical')
+      return `This paragraph has clinical relevance. Connect the mechanism to the patient presentation and management.`;
+    return `This paragraph provides supporting context. Its value is in framing adjacent high-yield content.`;
+  }, [unit.role]);
+
+  // Derive mechanism summary from matched causal signals
+  const derivedMechanism = useMemo((): string | null => {
+    if (!unit.signals.hasCausal) return null;
+    const markers = score.highlights.matchedRules.slice(0, 3);
+    if (markers.length === 0) return null;
+    return `Causal language detected: "${markers.join('", "')}". Trace the direction of each relationship to avoid reversal traps.`;
+  }, [unit.signals.hasCausal, score.highlights.matchedRules]);
+
+  // Extract numbers/thresholds
+  const numbersText = useMemo((): string | null => {
+    const nums = score.highlights.matchedNumbers;
+    if (nums.length === 0) return null;
+    return `Numeric values found: ${nums.join(', ')}. These are potential cutoffs, doses, or thresholds — memorize with their clinical context.`;
+  }, [score.highlights.matchedNumbers]);
+
+  // Generate check-yourself questions based on role
+  const checkQuestions = useMemo((): string[] => {
+    if (unit.role === 'definition')
+      return [`How is this term defined?`, `What distinguishes it from similar terms?`];
+    if (unit.role === 'mechanism')
+      return [`What initiates this pathway?`, `What is the downstream effect?`];
+    if (unit.role === 'formula')
+      return [`What does each variable represent?`, `When is this formula applied clinically?`];
+    if (unit.role === 'exam_trap')
+      return [`What exception or negation is present?`, `How might a distractor exploit this?`];
+    if (unit.role === 'clinical')
+      return [`What is the clinical presentation?`, `What is the first-line management?`];
+    return [`What is the key takeaway from this paragraph?`];
+  }, [unit.role]);
+
+  const trapHits = useMemo(() => {
+    if (score.subs.trapRisk <= 0.25) return [];
+    return detectParagraphTraps(unit);
+  }, [unit, score.subs.trapRisk]);
+
+  return (
+    <div className="mt-2 space-y-1.5 border-t border-gray-700/40 pt-2">
+
+      {/* 1. SOURCE — verbatim, always first, never truncated */}
+      <div className="rounded-lg border border-teal-700/30 bg-teal-900/10 overflow-hidden">
+        <div className="flex items-center justify-between px-2 py-1 border-b border-teal-800/30 bg-teal-900/20">
+          <span className="text-[9px] font-bold text-teal-400 uppercase tracking-widest">Source (verbatim)</span>
+          <div className="flex gap-1">
+            <button
+              onClick={handleCopySource}
+              className="text-[8px] text-teal-600 hover:text-teal-300 px-1 py-0.5 rounded border border-teal-800/30 bg-teal-900/20"
+            >
+              {copiedSource ? '✓ Copied' : '⎘ Copy'}
+            </button>
+            {onJumpToSource && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onJumpToSource(unitSourceRef); }}
+                className="text-[8px] text-teal-600 hover:text-teal-300 px-1 py-0.5 rounded border border-teal-800/30 bg-teal-900/20"
+              >
+                ↗ Jump
+              </button>
+            )}
+          </div>
+        </div>
+        <p className="px-2 py-1.5 text-[11px] text-gray-200 leading-relaxed whitespace-pre-wrap">
+          {unit.text}
+        </p>
+      </div>
+
+      {/* 2. WHAT THIS MEANS (derived — must not repeat source verbatim) */}
+      <div className="rounded-lg border border-blue-800/30 bg-blue-900/10 px-2 py-1.5">
+        <div className="text-[9px] font-bold text-blue-400 uppercase tracking-widest mb-0.5">What this means</div>
+        <p className="text-[10px] text-blue-200">{derivedMeaning}</p>
+      </div>
+
+      {/* 3. MECHANISM (only if causal signals present) */}
+      {derivedMechanism && (
+        <div className="rounded-lg border border-purple-800/30 bg-purple-900/10 px-2 py-1.5">
+          <div className="text-[9px] font-bold text-purple-400 uppercase tracking-widest mb-0.5">Mechanism</div>
+          <p className="text-[10px] text-purple-200">{derivedMechanism}</p>
+        </div>
+      )}
+
+      {/* 4. CLINICAL REASONING FLOW (only if detected) */}
+      {reasoning.isClinicalReasoning && reasoning.nodes.length > 0 && (
+        <div className="rounded-lg border border-green-800/30 bg-green-900/10 px-2 py-1.5">
+          <div className="text-[9px] font-bold text-green-400 uppercase tracking-widest mb-1">Clinical Reasoning Flow</div>
+          <div className="space-y-0.5">
+            {reasoning.nodes.map((node, i) => (
+              <div key={i} className="flex gap-1.5 items-start">
+                <span className="text-xs flex-shrink-0">{FLOW_NODE_ICONS[node.type] ?? '→'}</span>
+                <div>
+                  <span className="text-[8px] font-semibold text-green-500 uppercase">{node.type}: </span>
+                  <span className="text-[10px] text-green-200">{node.text}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 5. NUMBERS & THRESHOLDS */}
+      {numbersText && (
+        <div className="rounded-lg border border-cyan-800/30 bg-cyan-900/10 px-2 py-1.5">
+          <div className="text-[9px] font-bold text-cyan-400 uppercase tracking-widest mb-0.5">Numbers & Thresholds</div>
+          <p className="text-[10px] text-cyan-200">{numbersText}</p>
+        </div>
+      )}
+
+      {/* 6. EXAM TRAPS (only if trapRisk > 0.25) */}
+      {trapHits.length > 0 && (
+        <div className="rounded-lg border border-amber-800/30 bg-amber-900/10 px-2 py-1.5">
+          <div className="text-[9px] font-bold text-amber-400 uppercase tracking-widest mb-1">Exam Traps</div>
+          <div className="space-y-0.5">
+            {trapHits.map((hit, i) => (
+              <div key={i} className="text-[10px]">
+                <span className="text-amber-300 font-semibold">⚠ {hit.kind.toLowerCase().replace(/_/g, ' ')}: </span>
+                <span className="text-amber-200">{hit.prompt}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 7. CHECK YOURSELF */}
+      <div className="rounded-lg border border-gray-700/30 bg-gray-800/30 px-2 py-1.5">
+        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Check yourself</div>
+        <div className="space-y-0.5">
+          {checkQuestions.map((q, i) => (
+            <p key={i} className="text-[10px] text-gray-400">• {q}</p>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Inline trap badge using detectParagraphTraps for full prompt text
 const InlineTrapBadges: React.FC<{ unit: ParagraphUnit }> = ({ unit }) => {
   const [expanded, setExpanded] = useState(false);
@@ -563,12 +804,22 @@ const ParagraphUnitCard: React.FC<{
   onJumpToSource?: (ref: SourceRef) => void;
   /** When true, shows raw SourceRef + signal debug panel */
   debugMode?: boolean;
-  /** When true, always show full text without clamp */
+  /** When true, always show full text without clamp + stacked deep cards */
   deepMode?: boolean;
 }> = ({ unit, tier, onHighlightParagraph, onJumpToSource, debugMode = false, deepMode = false }) => {
   const [showSubScores, setShowSubScores] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [textExpanded, setTextExpanded] = useState(false);
+
+  // Compute scoring and clinical reasoning (memoized — only in deep mode to avoid perf hit)
+  const score = useMemo<ScoreResult | null>(
+    () => deepMode ? scoreParagraph(unit.text) : null,
+    [unit.text, deepMode],
+  );
+  const reasoning = useMemo<ClinicalReasoningResult | null>(
+    () => deepMode ? detectClinicalReasoning(unit.text) : null,
+    [unit.text, deepMode],
+  );
   const meta = TIER_META[tier];
   const roleColor = ROLE_COLORS[unit.role] ?? 'bg-gray-800/40 text-gray-400 border-gray-700/40';
 
@@ -616,7 +867,14 @@ const ParagraphUnitCard: React.FC<{
             {showDebug ? '▲ dbg' : '▼ dbg'}
           </button>
         )}
-        <span className="text-[10px] font-mono text-gray-500 flex-shrink-0">{unit.importance}</span>
+        {/* Score badge (deep mode) or plain number (quick mode) */}
+        {deepMode && score ? (
+          <div onClick={(e) => e.stopPropagation()}>
+            <ScoreBadge score={score} />
+          </div>
+        ) : (
+          <span className="text-[10px] font-mono text-gray-500 flex-shrink-0">{unit.importance}</span>
+        )}
       </div>
 
       {/* Importance bar */}
@@ -701,6 +959,19 @@ const ParagraphUnitCard: React.FC<{
       <div onClick={(e) => e.stopPropagation()}>
         <DebugInfoPanel unit={unit} sourceRef={unitSourceRef} expanded={showDebug} />
       </div>
+
+      {/* Deep Mode stacked cards — spec Part C */}
+      {deepMode && score && reasoning && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <DeepModeCards
+            unit={unit}
+            score={score}
+            reasoning={reasoning}
+            onJumpToSource={onJumpToSource}
+            unitSourceRef={unitSourceRef}
+          />
+        </div>
+      )}
     </div>
   );
 };
