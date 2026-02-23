@@ -78,6 +78,20 @@ export function renderMath(expr: string): string {
   return result.trim();
 }
 
+/**
+ * Heuristic: returns true if the rendered output still looks like raw LaTeX
+ * commands that weren't converted — indicating a formula we can't parse.
+ */
+function looksCorrupted(rendered: string, original: string): boolean {
+  // If >30% of non-whitespace chars are backslashes from LaTeX, it's likely corrupted
+  const backslashCount = (rendered.match(/\\/g) ?? []).length;
+  const nonSpace = rendered.replace(/\s/g, '').length;
+  if (nonSpace > 0 && backslashCount / nonSpace > 0.15) return true;
+  // If rendered is identical to original and it contains LaTeX commands, it's unprocessed
+  if (rendered === original && /\\[a-zA-Z]{3,}/.test(original)) return true;
+  return false;
+}
+
 // ============================================================================
 // Inline math span — renders a short expression inline with prose
 // ============================================================================
@@ -85,11 +99,21 @@ export function renderMath(expr: string): string {
 export const InlineMath: React.FC<{ expr: string; className?: string }> = ({
   expr,
   className = '',
-}) => (
-  <span className={`font-mono text-teal-300 ${className}`}>
-    {renderMath(expr)}
-  </span>
-);
+}) => {
+  const rendered = renderMath(expr);
+  if (looksCorrupted(rendered, expr)) {
+    return (
+      <span className={`font-mono text-gray-500 bg-gray-900/50 px-1 rounded ${className}`} title="Formula could not be rendered">
+        [{expr.slice(0, 60)}{expr.length > 60 ? '…' : ''}]
+      </span>
+    );
+  }
+  return (
+    <span className={`font-mono text-teal-300 ${className}`}>
+      {rendered}
+    </span>
+  );
+};
 
 // ============================================================================
 // Block math display — display-mode equation with visual boxing
@@ -97,20 +121,40 @@ export const InlineMath: React.FC<{ expr: string; className?: string }> = ({
 
 export const BlockMath: React.FC<{
   expr: string;
+  /** Original source text to show as fallback if formula cannot be parsed */
+  sourceSnippet?: string;
   className?: string;
-}> = ({ expr, className = '' }) => (
-  <div
-    className={`
-      my-1.5 px-3 py-2 rounded-lg
-      bg-gray-900/70 border border-teal-700/40
-      font-mono text-base text-teal-200
-      text-center tracking-wide
-      ${className}
-    `}
-  >
-    {renderMath(expr)}
-  </div>
-);
+}> = ({ expr, sourceSnippet, className = '' }) => {
+  const rendered = renderMath(expr);
+  const corrupted = looksCorrupted(rendered, expr);
+
+  if (corrupted) {
+    return (
+      <div className={`my-1.5 px-3 py-2 rounded-lg bg-gray-900/50 border border-gray-700/40 ${className}`}>
+        <div className="text-[9px] text-amber-500 uppercase tracking-wide mb-1">
+          ⚠ Formula — could not render
+        </div>
+        <code className="text-[11px] text-gray-400 font-mono whitespace-pre-wrap break-all">
+          {sourceSnippet ?? expr}
+        </code>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`
+        my-1.5 px-3 py-2 rounded-lg
+        bg-gray-900/70 border border-teal-700/40
+        font-mono text-base text-teal-200
+        text-center tracking-wide
+        ${className}
+      `}
+    >
+      {rendered}
+    </div>
+  );
+};
 
 // ============================================================================
 // Full Math Semantic Card — expression + variables + clinical + exam trap
@@ -121,6 +165,7 @@ export const MathSemanticCard: React.FC<{
   onHighlight?: (text: string) => void;
 }> = ({ payload, onHighlight }) => {
   const rendered = renderMath(payload.expression);
+  const corrupted = looksCorrupted(rendered, payload.expression);
 
   return (
     <div
@@ -137,9 +182,18 @@ export const MathSemanticCard: React.FC<{
             {payload.renderMode}
           </span>
         </div>
-        <div className="font-mono text-sm text-teal-200 text-center py-1 tracking-wide">
-          {rendered}
-        </div>
+        {corrupted ? (
+          <div>
+            <div className="text-[9px] text-amber-500 mb-0.5">⚠ Could not render — showing source</div>
+            <code className="text-[11px] text-gray-400 font-mono whitespace-pre-wrap break-all block">
+              {payload.raw ?? payload.expression}
+            </code>
+          </div>
+        ) : (
+          <div className="font-mono text-sm text-teal-200 text-center py-1 tracking-wide">
+            {rendered}
+          </div>
+        )}
       </div>
 
       {/* Meaning */}

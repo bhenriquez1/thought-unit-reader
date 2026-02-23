@@ -11,7 +11,8 @@ import type {
 } from '@/lib/page-intelligence';
 import { ImportanceBar } from './MathDisplay';
 import { SourceAnchor } from './SourceAnchor';
-import { buildQuoteHash } from '@/lib/page-intelligence';
+import { buildQuoteHash, detectParagraphTraps } from '@/lib/page-intelligence';
+import type { TrapHit } from '@/lib/page-intelligence';
 
 // ============================================================================
 // Types
@@ -300,9 +301,10 @@ function groupParagraphUnitsByTier(
 const StructureMapSection: React.FC<{
   structureMap: PageIntelligence['structureMap'];
   paragraphUnits?: ParagraphUnit[];
+  pageNumber?: number;
   onHighlightParagraph?: (text: string) => void;
   onJumpToSource?: (ref: SourceRef) => void;
-}> = ({ structureMap, paragraphUnits = [], onHighlightParagraph, onJumpToSource }) => {
+}> = ({ structureMap, paragraphUnits = [], pageNumber, onHighlightParagraph, onJumpToSource }) => {
   if (!structureMap || structureMap.nodes.length === 0) return null;
 
   /** Build a SourceRef for a structure map node via its sourceIds. */
@@ -361,11 +363,16 @@ const StructureMapSection: React.FC<{
                   <div className="w-px h-3 bg-gray-600 mt-0.5" />
                 )}
               </div>
-              <div className="min-w-0">
-                <div className={`text-[10px] font-semibold uppercase tracking-wide ${meta.color}`}>
-                  {node.label}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className={`text-[10px] font-semibold uppercase tracking-wide ${meta.color}`}>
+                    {node.label}
+                  </span>
+                  {pageNumber !== undefined && (
+                    <span className="text-[9px] text-gray-500 font-mono">PDF p.{pageNumber}</span>
+                  )}
                 </div>
-                <p className="text-[11px] text-gray-300 line-clamp-2 mt-0.5">
+                <p className="text-[11px] text-gray-300 mt-0.5">
                   {node.text}
                 </p>
               </div>
@@ -511,6 +518,44 @@ const DebugInfoPanel: React.FC<{
   );
 };
 
+// Inline trap badge using detectParagraphTraps for full prompt text
+const InlineTrapBadges: React.FC<{ unit: ParagraphUnit }> = ({ unit }) => {
+  const [expanded, setExpanded] = useState(false);
+  if (!unit.trapTypes || unit.trapTypes.length === 0) return null;
+
+  const hits = expanded
+    ? detectParagraphTraps(unit)
+    : undefined;
+
+  return (
+    <div className="mt-1">
+      <div className="flex gap-1 flex-wrap items-center">
+        {unit.trapTypes.map(t => (
+          <span key={t} className="text-[8px] px-1 py-0.5 bg-amber-900/30 text-amber-400 rounded border border-amber-800/30">
+            ⚠ {t.toLowerCase().replace(/_/g, ' ')}
+          </span>
+        ))}
+        <button
+          onClick={(e) => { e.stopPropagation(); setExpanded(v => !v); }}
+          className="text-[8px] text-amber-600 hover:text-amber-400 px-1 py-0.5 rounded border border-amber-900/30 bg-amber-900/10"
+        >
+          {expanded ? '▲' : '▼ what distractor?'}
+        </button>
+      </div>
+      {expanded && hits && hits.length > 0 && (
+        <div className="mt-1 space-y-1">
+          {hits.map((hit, i) => (
+            <div key={i} className="p-1.5 bg-amber-950/40 border border-amber-800/30 rounded text-[10px]">
+              <span className="text-amber-300 font-semibold">⚠ DAT Trap: </span>
+              <span className="text-amber-200">{hit.prompt}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const ParagraphUnitCard: React.FC<{
   unit: ParagraphUnit;
   tier: ParagraphTier;
@@ -518,9 +563,12 @@ const ParagraphUnitCard: React.FC<{
   onJumpToSource?: (ref: SourceRef) => void;
   /** When true, shows raw SourceRef + signal debug panel */
   debugMode?: boolean;
-}> = ({ unit, tier, onHighlightParagraph, onJumpToSource, debugMode = false }) => {
+  /** When true, always show full text without clamp */
+  deepMode?: boolean;
+}> = ({ unit, tier, onHighlightParagraph, onJumpToSource, debugMode = false, deepMode = false }) => {
   const [showSubScores, setShowSubScores] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  const [textExpanded, setTextExpanded] = useState(false);
   const meta = TIER_META[tier];
   const roleColor = ROLE_COLORS[unit.role] ?? 'bg-gray-800/40 text-gray-400 border-gray-700/40';
 
@@ -590,19 +638,25 @@ const ParagraphUnitCard: React.FC<{
         </div>
       )}
 
-      {/* Trap type badges */}
-      {unit.trapTypes && unit.trapTypes.length > 0 && (
-        <div className="flex gap-1 mt-1 flex-wrap">
-          {unit.trapTypes.map(t => (
-            <span key={t} className="text-[8px] px-1 py-0.5 bg-amber-900/30 text-amber-400 rounded border border-amber-800/30">
-              ⚠️ {t.toLowerCase().replace('_', ' ')}
-            </span>
-          ))}
-        </div>
-      )}
+      {/* Trap badges — inline with expandable DAT Trap prompt */}
+      <div onClick={(e) => e.stopPropagation()}>
+        <InlineTrapBadges unit={unit} />
+      </div>
 
-      {/* Text */}
-      <p className="text-[11px] text-gray-300 line-clamp-3 mt-1.5">{unit.text}</p>
+      {/* Source text — verbatim, expand/collapse in quick mode */}
+      <div className="mt-1.5">
+        <p className={`text-[11px] text-gray-300 ${deepMode || textExpanded ? '' : 'line-clamp-3'}`}>
+          {unit.text}
+        </p>
+        {!deepMode && unit.text.length > 200 && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setTextExpanded(v => !v); }}
+            className="mt-0.5 text-[9px] text-teal-600 hover:text-teal-400"
+          >
+            {textExpanded ? '▲ Collapse' : '▼ Expand source'}
+          </button>
+        )}
+      </div>
 
       {/* Key terms */}
       {unit.keyTerms.length > 0 && (
@@ -671,6 +725,10 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
 }) => {
   // Ref map: insight item ID → DOM element for scroll-into-view
   const itemRefs = useRef<Map<string, HTMLElement>>(new Map());
+
+  // Local Quick|Deep toggle — overrides external deepAnalysisMode when user switches
+  const [localDeepMode, setLocalDeepMode] = useState<boolean | null>(null);
+  const isDeepMode = localDeepMode !== null ? localDeepMode : deepAnalysisMode;
 
   // Collapse state for supporting/background tiers in deep analysis
   const [showBackground, setShowBackground] = useState(false);
@@ -763,9 +821,34 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
             What you must know from this page
           </p>
         </div>
-        <span className="px-2 py-0.5 text-[10px] bg-teal-500/20 text-teal-400 rounded">
-          {totalItems} items
-        </span>
+        <div className="flex items-center gap-2">
+          {/* Quick | Deep segmented toggle */}
+          <div className="flex rounded border border-gray-700 overflow-hidden">
+            <button
+              onClick={() => setLocalDeepMode(false)}
+              className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                !isDeepMode
+                  ? 'bg-teal-700/60 text-teal-200 border-r border-teal-600/50'
+                  : 'bg-gray-800/60 text-gray-500 hover:text-gray-300 border-r border-gray-700'
+              }`}
+            >
+              Quick
+            </button>
+            <button
+              onClick={() => setLocalDeepMode(true)}
+              className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                isDeepMode
+                  ? 'bg-teal-700/60 text-teal-200'
+                  : 'bg-gray-800/60 text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              Deep
+            </button>
+          </div>
+          <span className="px-2 py-0.5 text-[10px] bg-teal-500/20 text-teal-400 rounded">
+            {totalItems}
+          </span>
+        </div>
       </div>
 
       {/* Priority Score Legend */}
@@ -792,6 +875,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
       <StructureMapSection
         structureMap={pageIntelligence?.structureMap}
         paragraphUnits={pageIntelligence?.paragraphUnits}
+        pageNumber={pageIntelligence?.pageNumber}
         onHighlightParagraph={onHighlightParagraph}
         onJumpToSource={onJumpToSource}
       />
@@ -802,7 +886,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
       )}
 
       {/* Deep Analysis Mode: Paragraph Units (all tiers, no suppression) */}
-      {deepAnalysisMode && totalParagraphUnits > 0 && (
+      {isDeepMode && totalParagraphUnits > 0 && (
         <section className="mb-5">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-sm">🔬</span>
@@ -833,7 +917,8 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                       tier={tier}
                       onHighlightParagraph={onHighlightParagraph}
                       onJumpToSource={onJumpToSource}
-                      debugMode={deepAnalysisMode}
+                      debugMode={isDeepMode}
+                      deepMode={isDeepMode}
                     />
                   ))}
                 </div>
@@ -861,7 +946,8 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                       tier="background"
                       onHighlightParagraph={onHighlightParagraph}
                       onJumpToSource={onJumpToSource}
-                      debugMode={deepAnalysisMode}
+                      debugMode={isDeepMode}
+                      deepMode={isDeepMode}
                     />
                   ))}
                 </div>
@@ -1001,6 +1087,7 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
   onHighlightParagraph,
   onJumpToSource,
 }) => {
+  const [contentExpanded, setContentExpanded] = useState(false);
   const style = PRIORITY_STYLES[item.priority];
   const linkedInsight = rankedInsights.find(r => r.id === item.id);
   const page = item.evidence?.[0]?.page;
@@ -1061,18 +1148,38 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
         )}
       </div>
 
-      {/* Content — monospace for math items, prose otherwise */}
+      {/* Content — monospace for math items, prose otherwise. Expand/collapse for long text. */}
       {item.tags?.includes('math') ? (
-        <code
-          className="block text-teal-300 bg-gray-900/60 rounded px-2 py-1 pl-5 overflow-x-auto whitespace-pre-wrap line-clamp-3 font-mono"
-          style={bodyStyle}
-        >
-          {item.content}
-        </code>
+        <div>
+          <code
+            className={`block text-teal-300 bg-gray-900/60 rounded px-2 py-1 pl-5 overflow-x-auto whitespace-pre-wrap font-mono ${contentExpanded ? '' : 'line-clamp-3'}`}
+            style={bodyStyle}
+          >
+            {item.content}
+          </code>
+          {item.content.length > 180 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setContentExpanded(v => !v); }}
+              className="mt-0.5 pl-5 text-[9px] text-teal-600 hover:text-teal-400"
+            >
+              {contentExpanded ? '▲ Collapse' : '▼ Expand'}
+            </button>
+          )}
+        </div>
       ) : (
-        <p className="text-gray-300 line-clamp-2 pl-5" style={bodyStyle}>
-          {item.content}
-        </p>
+        <div>
+          <p className={`text-gray-300 pl-5 ${contentExpanded ? '' : 'line-clamp-2'}`} style={bodyStyle}>
+            {item.content}
+          </p>
+          {item.content.length > 160 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setContentExpanded(v => !v); }}
+              className="mt-0.5 pl-5 text-[9px] text-teal-600 hover:text-teal-400"
+            >
+              {contentExpanded ? '▲ Collapse' : '▼ Expand source'}
+            </button>
+          )}
+        </div>
       )}
 
       {/* Tags */}

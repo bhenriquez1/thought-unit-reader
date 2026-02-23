@@ -78,6 +78,23 @@ const NEGATION_PATTERNS: { pattern: RegExp; cue: string }[] = [
   { pattern: /\bno\s+(evidence|indication|benefit)\b/i, cue: 'no evidence/benefit' },
 ];
 
+// 6) ABSOLUTE_QUALIFIER: always/never/all/none — often wrong in MCQs
+const ABSOLUTE_PATTERNS: { pattern: RegExp; cue: string }[] = [
+  { pattern: /\balways\b/i, cue: 'always (absolute)' },
+  { pattern: /\bmust\s+always\b/i, cue: 'must always' },
+  { pattern: /\bin\s+all\s+cases\b/i, cue: 'in all cases' },
+  { pattern: /\bwithout\s+exception\b/i, cue: 'without exception' },
+  { pattern: /\babsolutely\s+(required|necessary|contraindicated)\b/i, cue: 'absolute requirement' },
+];
+
+// 7) CLASSIFICATION_BOUNDARY: staging/grading criteria that define stage boundaries
+const CLASSIFICATION_PATTERNS: { pattern: RegExp; cue: string }[] = [
+  { pattern: /\bstage\s+(I{1,3}V?|IV)\b.*\bcriteria\b/i, cue: 'staging criteria boundary' },
+  { pattern: /\bgrade\s+[1-4IVX]+\b.*\b(criteria|factor|modifier)\b/i, cue: 'grading criteria boundary' },
+  { pattern: /\bfurcation\s+(class|involvement)\b.*\b[123]\b/i, cue: 'furcation class boundary' },
+  { pattern: /\baggressive\b.*\bchronic\b|\bchronic\b.*\baggressive\b/i, cue: 'aggressive vs chronic (legacy)' },
+];
+
 // ============================================================================
 // Detection Engine
 // ============================================================================
@@ -191,6 +208,38 @@ function detectWordingTricks(text: string): TrapDetection[] {
 // Trap Prompt Generator
 // ============================================================================
 
+function detectAbsoluteQualifiers(text: string): TrapDetection[] {
+  const traps: TrapDetection[] = [];
+  for (const { pattern, cue } of ABSOLUTE_PATTERNS) {
+    const match = text.match(pattern);
+    if (match) {
+      traps.push({
+        type: 'ABSOLUTE_QUALIFIER',
+        confidence: 0.60,
+        cue,
+        matchedText: match[0].slice(0, 80),
+      });
+    }
+  }
+  return traps;
+}
+
+function detectClassificationBoundaries(text: string): TrapDetection[] {
+  const traps: TrapDetection[] = [];
+  for (const { pattern, cue } of CLASSIFICATION_PATTERNS) {
+    const match = text.match(pattern);
+    if (match) {
+      traps.push({
+        type: 'CLASSIFICATION_BOUNDARY',
+        confidence: 0.80,
+        cue,
+        matchedText: match[0].slice(0, 80),
+      });
+    }
+  }
+  return traps;
+}
+
 function generateTrapPrompt(detection: TrapDetection): string {
   switch (detection.type) {
     case 'LOOK_ALIKE':
@@ -205,6 +254,10 @@ function generateTrapPrompt(detection: TrapDetection): string {
       return `Negation trap: "${detection.cue}" — the question may test what NOT to do.`;
     case 'WORDING_TRICK':
       return `${detection.cue}. Slow down and parse each term carefully.`;
+    case 'ABSOLUTE_QUALIFIER':
+      return `Absolute qualifier: "${detection.cue}" — absolute statements are often incorrect in MCQs. Look for the exception.`;
+    case 'CLASSIFICATION_BOUNDARY':
+      return `Classification boundary: ${detection.cue}. Know exactly which criteria shift the stage/grade.`;
     default:
       return 'Potential confusion point detected.';
   }
@@ -222,6 +275,10 @@ function generateSeparatorHint(detection: TrapDetection): string | undefined {
       return `List the general rule first, then clearly identify what breaks it. Exceptions are high-yield test material.`;
     case 'NEGATION':
       return `Rephrase the statement positively to confirm your understanding. "Do not use X" = "Use everything except X."`;
+    case 'ABSOLUTE_QUALIFIER':
+      return `Find the counter-example. Absolute terms like "always" and "never" are usually false in medicine because exceptions exist.`;
+    case 'CLASSIFICATION_BOUNDARY':
+      return `Draw a table: stage/grade on one axis, criteria on the other. Focus on the threshold that separates each category.`;
     default:
       return undefined;
   }
@@ -243,6 +300,8 @@ export function detectTraps(unit: ExtractedUnit): TrapTag[] {
     ...detectExceptions(text),
     ...detectNegations(text),
     ...detectWordingTricks(text),
+    ...detectAbsoluteQualifiers(text),
+    ...detectClassificationBoundaries(text),
   ];
 
   // Deduplicate by type (keep highest confidence per type)

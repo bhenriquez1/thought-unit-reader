@@ -299,7 +299,9 @@ export type TrapType =
   | 'THRESHOLD'
   | 'EXCEPTION'
   | 'NEGATION'
-  | 'WORDING_TRICK';
+  | 'WORDING_TRICK'
+  | 'ABSOLUTE_QUALIFIER'
+  | 'CLASSIFICATION_BOUNDARY';
 
 /** Extended trap kinds per spec */
 export type TrapKind =
