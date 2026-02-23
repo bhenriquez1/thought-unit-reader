@@ -113,6 +113,11 @@ export function buildSpeakFromOffset(
 // The SDK is imported dynamically so the file compiles even without the
 // package installed; it only fails at runtime if Azure speech is invoked.
 // ============================================================================
+// Client-side-only SDK loader
+// The Azure Speech SDK uses browser APIs (AudioContext, WebSocket, etc.)
+// and MUST NOT be imported at module level or during SSR.
+// We gate on `typeof window !== "undefined"` before any import.
+// ============================================================================
 
 type AzureSynthesizer = {
   wordBoundary: ((sender: unknown, e: unknown) => void) | null;
@@ -126,28 +131,29 @@ type AzureSynthesizer = {
 
 let _sdkCache: typeof import('microsoft-cognitiveservices-speech-sdk') | null = null;
 
-async function getSDK(): Promise<typeof import('microsoft-cognitiveservices-speech-sdk')> {
+/**
+ * Lazily load the Azure Speech SDK — client side only.
+ * Returns null on the server (SSR/build time) so the module never breaks SSR.
+ */
+async function getSpeechSDK(): Promise<typeof import('microsoft-cognitiveservices-speech-sdk') | null> {
+  if (typeof window === 'undefined') return null; // SSR guard
   if (_sdkCache) return _sdkCache;
-  try {
-    _sdkCache = await import('microsoft-cognitiveservices-speech-sdk');
-    return _sdkCache;
-  } catch {
-    throw new Error(
-      'Azure Speech SDK not installed. Run: npm i microsoft-cognitiveservices-speech-sdk'
-    );
-  }
+  _sdkCache = await import('microsoft-cognitiveservices-speech-sdk');
+  return _sdkCache;
 }
 
 /**
  * Create an Azure Speech synthesizer using env-supplied credentials.
- * Returns a raw SpeechSynthesizer ready for wordBoundary subscription.
+ * Must only be called in a browser context.
+ * Throws if invoked during SSR or if credentials are missing.
  */
 export async function createAzureSynthesizer(overrides?: {
   voiceName?: string;
   subscriptionKey?: string;
   region?: string;
 }): Promise<AzureSynthesizer> {
-  const sdk = await getSDK();
+  const SDK = await getSpeechSDK();
+  if (!SDK) throw new Error('Azure Speech SDK unavailable on server');
 
   const key    = overrides?.subscriptionKey ?? process.env.NEXT_PUBLIC_AZURE_SPEECH_KEY ?? '';
   const region = overrides?.region          ?? process.env.NEXT_PUBLIC_AZURE_SPEECH_REGION ?? '';
@@ -159,13 +165,13 @@ export async function createAzureSynthesizer(overrides?: {
     );
   }
 
-  const speechConfig = sdk.SpeechConfig.fromSubscription(key, region);
+  const speechConfig = SDK.SpeechConfig.fromSubscription(key, region);
   speechConfig.speechSynthesisVoiceName = voice;
   speechConfig.speechSynthesisOutputFormat =
-    sdk.SpeechSynthesisOutputFormat.Audio24Khz48KBitRateMonoMp3;
+    SDK.SpeechSynthesisOutputFormat.Audio24Khz48KBitRateMonoMp3;
 
-  const audioConfig = sdk.AudioConfig.fromDefaultSpeakerOutput();
-  return new sdk.SpeechSynthesizer(speechConfig, audioConfig) as unknown as AzureSynthesizer;
+  const audioConfig = SDK.AudioConfig.fromDefaultSpeakerOutput();
+  return new SDK.SpeechSynthesizer(speechConfig, audioConfig) as unknown as AzureSynthesizer;
 }
 
 /**
