@@ -129,16 +129,24 @@ type AzureSynthesizer = {
   close: () => void;
 };
 
-let _sdkCache: typeof import('microsoft-cognitiveservices-speech-sdk') | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _sdkCache: any = null;
 
 /**
  * Lazily load the Azure Speech SDK — client side only.
  * Returns null on the server (SSR/build time) so the module never breaks SSR.
+ * Typed as `any` to avoid TS resolving the module path at build/SSR time.
  */
-async function getSpeechSDK(): Promise<typeof import('microsoft-cognitiveservices-speech-sdk') | null> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getSpeechSDK(): Promise<any> {
   if (typeof window === 'undefined') return null; // SSR guard
   if (_sdkCache) return _sdkCache;
-  _sdkCache = await import('microsoft-cognitiveservices-speech-sdk');
+  try {
+    _sdkCache = await import('microsoft-cognitiveservices-speech-sdk');
+  } catch (e) {
+    console.warn('[azureSpeech] SDK not available:', e);
+    return null;
+  }
   return _sdkCache;
 }
 
