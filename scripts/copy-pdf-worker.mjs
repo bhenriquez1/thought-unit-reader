@@ -6,9 +6,9 @@ const dest = "public/pdf.worker.min.mjs";
 mkdirSync("public", { recursive: true });
 
 const candidates = [
-  "node_modules/pdfjs-dist/build/pdf.worker.min.mjs",
   "node_modules/pdfjs-dist/build/pdf.worker.min.js",
   "node_modules/pdfjs-dist/build/pdf.worker.mjs",
+  "node_modules/pdfjs-dist/build/pdf.worker.js",
 ];
 
 const src = candidates.find((f) => existsSync(f));
