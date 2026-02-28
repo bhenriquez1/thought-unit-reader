@@ -473,6 +473,15 @@ const CATEGORY_LEFT_BORDER: Record<string, string> = {
   clinical:   'border-l-teal-500/80',
 };
 
+// Purpose-tag chip config for Quick-mode PriorityItemCard orientation header
+const CATEGORY_PURPOSE_TAG: Record<PriorityItem['category'], { label: string; icon: string; color: string; textColor: string }> = {
+  high_yield: { label: 'Exam Relevance',    icon: '⭐', color: 'bg-yellow-900/40', textColor: 'text-yellow-300' },
+  mechanism:  { label: 'Mechanism',          icon: '⚙️', color: 'bg-violet-900/40', textColor: 'text-violet-300' },
+  trap:       { label: 'Common Error',       icon: '⚠️', color: 'bg-red-900/40',    textColor: 'text-red-300'   },
+  threshold:  { label: 'Threshold',          icon: '📏', color: 'bg-cyan-900/40',   textColor: 'text-cyan-300'  },
+  clinical:   { label: 'Clinical Reasoning', icon: '🧠', color: 'bg-teal-900/40',   textColor: 'text-teal-300'  },
+};
+
 // Sub-score mini bar (0–100)
 const SubScoreBar: React.FC<{ label: string; score: number; color: string }> = ({ label, score, color }) => (
   <div className="flex items-center gap-1">
@@ -1538,6 +1547,8 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
     }
   };
 
+  const categoryTag = CATEGORY_PURPOSE_TAG[item.category];
+
   // Base font sizes scaled by --insightScale CSS variable (set by parent panel)
   const titleStyle: React.CSSProperties = { fontSize: 'calc(0.75rem * var(--insightScale, 1))' };
   const bodyStyle: React.CSSProperties = {
@@ -1560,6 +1571,17 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
         ${isActive ? 'border-teal-500 ring-1 ring-teal-500/50' : 'border-gray-700'}
       `}
     >
+      {/* Mini orientation chip — cognitive anchor visible in Quick mode */}
+      <div className="flex items-center gap-1.5 mb-1.5 pb-1 border-b border-gray-700/30">
+        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${categoryTag.color} ${categoryTag.textColor}`}>
+          {categoryTag.icon} {categoryTag.label}
+        </span>
+        <span className="flex-1" />
+        {page !== undefined && (
+          <span className="text-[8px] font-mono text-gray-700 flex-shrink-0">p.{page}</span>
+        )}
+      </div>
+
       {/* Header Row */}
       <div className="flex items-start justify-between gap-2 mb-1">
         <div className="flex items-center gap-1.5 min-w-0">
