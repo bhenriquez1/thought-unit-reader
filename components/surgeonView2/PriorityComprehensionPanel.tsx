@@ -13,8 +13,8 @@ import { ImportanceBar } from './MathDisplay';
 import { SourceAnchor } from './SourceAnchor';
 import { buildQuoteHash, detectParagraphTraps } from '@/lib/page-intelligence';
 import type { TrapHit } from '@/lib/page-intelligence';
-import { scoreParagraph, detectClinicalReasoning } from '@/lib/intelligence';
-import type { ScoreResult, ClinicalReasoningResult } from '@/lib/intelligence';
+import { scoreParagraph, detectClinicalReasoning, applyMicroPolish, orientParagraph, adaptTone, TONE_LABELS, PURPOSE_TAG_CONFIG } from '@/lib/intelligence';
+import type { ScoreResult, ClinicalReasoningResult, ToneLevel, OrientationHeader } from '@/lib/intelligence';
 
 // ============================================================================
 // Types
@@ -797,6 +797,47 @@ const InlineTrapBadges: React.FC<{ unit: ParagraphUnit }> = ({ unit }) => {
   );
 };
 
+// ============================================================================
+// Orientation Header Badge — cognitive anchor showing role + purpose
+// ============================================================================
+
+const OrientationHeaderBadge: React.FC<{ header: OrientationHeader }> = ({ header }) => {
+  const cfg = PURPOSE_TAG_CONFIG[header.purposeTag];
+  return (
+    <div className="mb-1.5 rounded border border-gray-700/40 bg-gray-800/30 overflow-hidden">
+      {/* Page • Section • Paragraph position */}
+      <div className="flex items-center gap-2 px-2 py-0.5 border-b border-gray-700/30 bg-gray-800/50">
+        {header.page !== null && (
+          <span className="text-[8px] font-mono text-gray-500">p.{header.page}</span>
+        )}
+        {header.paragraphIndex !== null && (
+          <span className="text-[8px] text-gray-600">¶{header.paragraphIndex}</span>
+        )}
+        <div className="flex-1" />
+        {/* Purpose tag chip */}
+        <span className={`text-[8px] font-semibold px-1.5 py-0.5 rounded ${cfg.color} ${cfg.textColor}`}>
+          {cfg.icon} {cfg.label}
+        </span>
+      </div>
+      {/* Role / Purpose / Function triplet */}
+      <div className="px-2 py-1 grid grid-cols-3 gap-1">
+        <div>
+          <div className="text-[7px] text-gray-600 uppercase tracking-wide">Role</div>
+          <div className="text-[9px] text-gray-400">{header.role}</div>
+        </div>
+        <div>
+          <div className="text-[7px] text-gray-600 uppercase tracking-wide">Purpose</div>
+          <div className="text-[9px] text-gray-400">{header.purpose}</div>
+        </div>
+        <div>
+          <div className="text-[7px] text-gray-600 uppercase tracking-wide">Function</div>
+          <div className="text-[9px] text-gray-400">{header.function}</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ParagraphUnitCard: React.FC<{
   unit: ParagraphUnit;
   tier: ParagraphTier;
@@ -806,7 +847,13 @@ const ParagraphUnitCard: React.FC<{
   debugMode?: boolean;
   /** When true, always show full text without clamp + stacked deep cards */
   deepMode?: boolean;
-}> = ({ unit, tier, onHighlightParagraph, onJumpToSource, debugMode = false, deepMode = false }) => {
+  /** Micro Polish — refine grammar/tone */
+  polishEnabled?: boolean;
+  /** Tone adaptation level */
+  toneLevel?: ToneLevel;
+  /** 0-based index within the page for orientation header */
+  unitIndex?: number;
+}> = ({ unit, tier, onHighlightParagraph, onJumpToSource, debugMode = false, deepMode = false, polishEnabled = false, toneLevel = 'clinical', unitIndex }) => {
   const [showSubScores, setShowSubScores] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [textExpanded, setTextExpanded] = useState(false);
@@ -820,6 +867,17 @@ const ParagraphUnitCard: React.FC<{
     () => deepMode ? detectClinicalReasoning(unit.text) : null,
     [unit.text, deepMode],
   );
+  // Orientation header — derived from unit role + text patterns (deep mode only)
+  const orientation = useMemo<OrientationHeader | null>(
+    () => deepMode ? orientParagraph(unit, unitIndex) : null,
+    [unit, deepMode, unitIndex],
+  );
+  // Polished + tone-adapted display text
+  const displayText = useMemo<string>(() => {
+    if (!polishEnabled && toneLevel === 'clinical') return unit.text;
+    const polished = polishEnabled ? applyMicroPolish(unit.text) : unit.text;
+    return adaptTone(polished, toneLevel);
+  }, [unit.text, polishEnabled, toneLevel]);
   const meta = TIER_META[tier];
   const roleColor = ROLE_COLORS[unit.role] ?? 'bg-gray-800/40 text-gray-400 border-gray-700/40';
 
@@ -901,10 +959,24 @@ const ParagraphUnitCard: React.FC<{
         <InlineTrapBadges unit={unit} />
       </div>
 
-      {/* Source text — verbatim, expand/collapse in quick mode */}
+      {/* Orientation header badge — cognitive anchor (deep mode only) */}
+      {deepMode && orientation && (
+        <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+          <OrientationHeaderBadge header={orientation} />
+        </div>
+      )}
+
+      {/* Source text — polished/adapted in deep mode, verbatim in quick mode */}
       <div className="mt-1.5">
+        {deepMode && displayText !== unit.text && (
+          <div className="text-[8px] text-teal-700 mb-0.5 flex items-center gap-1">
+            <span>✦ Polish</span>
+            {polishEnabled && <span className="text-teal-800">+ Grammar</span>}
+            <span className="text-gray-700">• Tone: {TONE_LABELS[toneLevel]}</span>
+          </div>
+        )}
         <p className={`text-[11px] text-gray-300 ${deepMode || textExpanded ? '' : 'line-clamp-3'}`}>
-          {unit.text}
+          {deepMode ? displayText : unit.text}
         </p>
         {!deepMode && unit.text.length > 200 && (
           <button
@@ -1001,6 +1073,12 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
   const [localDeepMode, setLocalDeepMode] = useState<boolean | null>(null);
   const isDeepMode = localDeepMode !== null ? localDeepMode : deepAnalysisMode;
 
+  // Micro Polish Mode (grammar + academic tone corrections)
+  const [polishEnabled, setPolishEnabled] = useState(false);
+
+  // Tone adaptation level — Student | Clinical | Expert
+  const [toneLevel, setToneLevel] = useState<ToneLevel>('clinical');
+
   // Collapse state for supporting/background tiers in deep analysis
   const [showBackground, setShowBackground] = useState(false);
 
@@ -1092,7 +1170,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
             What you must know from this page
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           {/* Quick | Deep segmented toggle */}
           <div className="flex rounded border border-gray-700 overflow-hidden">
             <button
@@ -1116,6 +1194,43 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
               Deep
             </button>
           </div>
+
+          {/* Micro Polish toggle — only meaningful in Deep mode */}
+          {isDeepMode && (
+            <button
+              onClick={() => setPolishEnabled(v => !v)}
+              title={polishEnabled ? 'Micro Polish ON — click to disable' : 'Micro Polish OFF — click to enable'}
+              className={`px-2 py-0.5 text-[10px] font-medium rounded border transition-colors ${
+                polishEnabled
+                  ? 'bg-teal-700/50 border-teal-500/60 text-teal-200'
+                  : 'bg-gray-800/40 border-gray-700/50 text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              {polishEnabled ? '🟢 Polish' : '🔵 Polish'}
+            </button>
+          )}
+
+          {/* Tone level — Student | Clinical | Expert (deep mode only) */}
+          {isDeepMode && (
+            <div className="flex rounded border border-gray-700 overflow-hidden">
+              {(['student', 'clinical', 'expert'] as ToneLevel[]).map((lvl, i) => (
+                <button
+                  key={lvl}
+                  onClick={() => setToneLevel(lvl)}
+                  className={`px-1.5 py-0.5 text-[9px] font-medium transition-colors capitalize ${
+                    i < 2 ? 'border-r border-gray-700' : ''
+                  } ${
+                    toneLevel === lvl
+                      ? 'bg-indigo-700/60 text-indigo-200'
+                      : 'bg-gray-800/60 text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  {lvl.charAt(0).toUpperCase() + lvl.slice(1)}
+                </button>
+              ))}
+            </div>
+          )}
+
           <span className="px-2 py-0.5 text-[10px] bg-teal-500/20 text-teal-400 rounded">
             {totalItems}
           </span>
@@ -1181,7 +1296,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                   <span className="text-[10px] text-gray-600">({units.length})</span>
                 </div>
                 <div className="space-y-1.5">
-                  {units.map(u => (
+                  {units.map((u, idx) => (
                     <ParagraphUnitCard
                       key={u.id}
                       unit={u}
@@ -1190,6 +1305,9 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                       onJumpToSource={onJumpToSource}
                       debugMode={isDeepMode}
                       deepMode={isDeepMode}
+                      polishEnabled={polishEnabled}
+                      toneLevel={toneLevel}
+                      unitIndex={idx}
                     />
                   ))}
                 </div>
@@ -1210,7 +1328,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
               </button>
               {showBackground && (
                 <div className="space-y-1.5">
-                  {(paragraphTiers.get('background') ?? []).map(u => (
+                  {(paragraphTiers.get('background') ?? []).map((u, idx) => (
                     <ParagraphUnitCard
                       key={u.id}
                       unit={u}
@@ -1219,6 +1337,9 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                       onJumpToSource={onJumpToSource}
                       debugMode={isDeepMode}
                       deepMode={isDeepMode}
+                      polishEnabled={polishEnabled}
+                      toneLevel={toneLevel}
+                      unitIndex={idx}
                     />
                   ))}
                 </div>
