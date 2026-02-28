@@ -452,6 +452,27 @@ const ROLE_COLORS: Record<string, string> = {
   summary: 'bg-gray-800/60 text-gray-300 border-gray-700/40',
 };
 
+// Semantic left-border accent — instant visual classification
+const ROLE_LEFT_BORDER: Record<string, string> = {
+  definition: 'border-l-blue-500/80',
+  mechanism:  'border-l-purple-500/80',
+  clinical:   'border-l-teal-500/80',
+  example:    'border-l-amber-500/70',
+  step:       'border-l-indigo-500/70',
+  warning:    'border-l-red-500/80',
+  exam_trap:  'border-l-orange-500/80',
+  formula:    'border-l-cyan-500/70',
+  summary:    'border-l-gray-600/40',
+};
+
+const CATEGORY_LEFT_BORDER: Record<string, string> = {
+  high_yield: 'border-l-green-500/80',
+  mechanism:  'border-l-purple-500/80',
+  trap:       'border-l-orange-500/80',
+  threshold:  'border-l-blue-500/80',
+  clinical:   'border-l-teal-500/80',
+};
+
 // Sub-score mini bar (0–100)
 const SubScoreBar: React.FC<{ label: string; score: number; color: string }> = ({ label, score, color }) => (
   <div className="flex items-center gap-1">
@@ -838,6 +859,28 @@ const OrientationHeaderBadge: React.FC<{ header: OrientationHeader }> = ({ heade
   );
 };
 
+/**
+ * Compact orientation bar shown at the TOP of every card in Quick mode.
+ * Gives the brain instant: purpose-tag chip • one-line purpose • page anchor.
+ * Zero cognitive cost — processed pre-attentively via color + position.
+ */
+const MiniOrientationHeader: React.FC<{ header: OrientationHeader }> = ({ header }) => {
+  const cfg = PURPOSE_TAG_CONFIG[header.purposeTag];
+  return (
+    <div className="flex items-center gap-1.5 mb-1.5 pb-1.5 border-b border-gray-700/30">
+      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${cfg.color} ${cfg.textColor}`}>
+        {cfg.icon} {cfg.label}
+      </span>
+      <span className="text-[9px] text-gray-500 truncate flex-1 leading-tight">{header.purpose}</span>
+      {header.page !== null && (
+        <span className="text-[8px] font-mono text-gray-700 flex-shrink-0 ml-auto">
+          p.{header.page}{header.paragraphIndex !== null ? ` ¶${header.paragraphIndex}` : ''}
+        </span>
+      )}
+    </div>
+  );
+};
+
 const ParagraphUnitCard: React.FC<{
   unit: ParagraphUnit;
   tier: ParagraphTier;
@@ -867,11 +910,12 @@ const ParagraphUnitCard: React.FC<{
     () => deepMode ? detectClinicalReasoning(unit.text) : null,
     [unit.text, deepMode],
   );
-  // Orientation header — derived from unit role + text patterns (deep mode only)
-  const orientation = useMemo<OrientationHeader | null>(
-    () => deepMode ? orientParagraph(unit, unitIndex) : null,
-    [unit, deepMode, unitIndex],
+  // Orientation header — always computed (pure regex, negligible cost)
+  const orientation = useMemo<OrientationHeader>(
+    () => orientParagraph(unit, unitIndex),
+    [unit, unitIndex],
   );
+  const roleLeftBorder = ROLE_LEFT_BORDER[unit.role] ?? 'border-l-gray-600/40';
   // Polished + tone-adapted display text
   const displayText = useMemo<string>(() => {
     if (!polishEnabled && toneLevel === 'clinical') return unit.text;
@@ -897,9 +941,15 @@ const ParagraphUnitCard: React.FC<{
 
   return (
     <div
-      className={`p-2.5 rounded-lg border border-gray-700/60 cursor-pointer hover:border-gray-500/60 transition-all ${meta.bg}`}
+      className={`p-2.5 rounded-lg border border-l-4 ${roleLeftBorder} border-gray-700/60 cursor-pointer hover:border-gray-500/60 hover:-translate-y-0.5 hover:shadow-lg transition-all ${meta.bg}`}
       onClick={() => onHighlightParagraph?.(unit.text)}
     >
+      {/* Cognitive anchor — orientation header at top of every card */}
+      {deepMode
+        ? <div className="mb-1.5" onClick={e => e.stopPropagation()}><OrientationHeaderBadge header={orientation} /></div>
+        : <MiniOrientationHeader header={orientation} />
+      }
+
       {/* Header: tier icon + role chip + score + sub-score toggle */}
       <div className="flex items-center gap-1.5 mb-1.5">
         <span className="text-xs flex-shrink-0">{meta.icon}</span>
@@ -958,13 +1008,6 @@ const ParagraphUnitCard: React.FC<{
       <div onClick={(e) => e.stopPropagation()}>
         <InlineTrapBadges unit={unit} />
       </div>
-
-      {/* Orientation header badge — cognitive anchor (deep mode only) */}
-      {deepMode && orientation && (
-        <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
-          <OrientationHeaderBadge header={orientation} />
-        </div>
-      )}
 
       {/* Source text — polished/adapted in deep mode, verbatim in quick mode */}
       <div className="mt-1.5">
@@ -1511,8 +1554,9 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
       }}
       onClick={handleClick}
       className={`
-        p-2.5 rounded-lg border transition-all cursor-pointer
-        ${style.bg} hover:border-gray-600
+        p-2.5 rounded-lg border border-l-4 transition-all cursor-pointer
+        ${CATEGORY_LEFT_BORDER[item.category] ?? 'border-l-gray-600/40'}
+        ${style.bg} hover:border-gray-600 hover:-translate-y-0.5 hover:shadow-lg
         ${isActive ? 'border-teal-500 ring-1 ring-teal-500/50' : 'border-gray-700'}
       `}
     >
