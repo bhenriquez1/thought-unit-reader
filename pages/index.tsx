@@ -892,6 +892,57 @@ export default function ThoughtUnitReader() {
       spans[k].classList.add(GLOW_CLASS);
     }
 
+    // ── Anchor Overlay ──────────────────────────────────────────────────────
+    // Draw a bounding-box rect on the PDF page so the user can instantly see
+    // which physical region on the page corresponds to the highlighted card.
+    // Positioning is relative to .react-pdf__Page (the positioned ancestor).
+    const spansToHighlight = spans.slice(matchStart, matchEnd + 1);
+    const pageEl = spansToHighlight[0]?.closest('.react-pdf__Page') as HTMLElement | null;
+    if (pageEl) {
+      pageEl.querySelectorAll('.para-anchor-overlay').forEach(el => el.remove());
+      const pageRect = pageEl.getBoundingClientRect();
+      let top = Infinity, bottom = -Infinity, left = Infinity, right = -Infinity;
+      for (const span of spansToHighlight) {
+        const r = span.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) continue;
+        top    = Math.min(top,    r.top    - pageRect.top);
+        bottom = Math.max(bottom, r.bottom - pageRect.top);
+        left   = Math.min(left,   r.left   - pageRect.left);
+        right  = Math.max(right,  r.right  - pageRect.left);
+      }
+      if (top < Infinity) {
+        const ol = document.createElement('div');
+        ol.className = 'para-anchor-overlay';
+        ol.style.cssText = [
+          'position:absolute',
+          `top:${Math.round(top) - 4}px`,
+          `left:${Math.round(left) - 6}px`,
+          `width:${Math.round(right - left) + 12}px`,
+          `height:${Math.round(bottom - top) + 8}px`,
+          'border:2px solid rgba(45,212,191,0.85)',
+          'border-radius:5px',
+          'background:rgba(45,212,191,0.07)',
+          'pointer-events:none',
+          'z-index:20',
+          'animation:anchorPulse 0.9s ease-out',
+          'transition:border-color 0.5s,background 0.5s,border-width 0.4s,opacity 0.4s',
+        ].join(';');
+        pageEl.appendChild(ol);
+        // After pulse: thin persistent outline
+        setTimeout(() => {
+          ol.style.background = 'transparent';
+          ol.style.borderColor = 'rgba(45,212,191,0.3)';
+          ol.style.borderWidth = '1.5px';
+        }, 900);
+        // Fade out when glow clears
+        setTimeout(() => {
+          ol.style.opacity = '0';
+          setTimeout(() => ol.remove(), 450);
+        }, 2500);
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     // Auto-remove glow after 2.5 s
     setTimeout(() => {
       document.querySelectorAll(`.${GLOW_CLASS}`).forEach(el => el.classList.remove(GLOW_CLASS));

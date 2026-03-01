@@ -200,6 +200,7 @@ const PURPOSE_RULES: PurposeRule[] = [
 export function orientParagraph(
   unit: ParagraphUnit,
   paragraphIndex?: number,
+  sectionHint?: string,
 ): OrientationHeader {
   const text = unit.text ?? '';
 
@@ -218,7 +219,7 @@ export function orientParagraph(
 
   return {
     page: unit.pageIndex != null ? unit.pageIndex + 1 : null,
-    section: null, // populated by caller if chapter data is available
+    section: sectionHint ?? null,
     paragraphIndex: paragraphIndex != null ? paragraphIndex + 1 : null,
     role: best.role,
     purposeTag: best.tag,

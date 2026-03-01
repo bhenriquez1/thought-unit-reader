@@ -438,3 +438,15 @@
   40%  { background: rgba(45, 212, 191, 0.28) !important; box-shadow: 0 0 0 6px rgba(45, 212, 191, 0.15); }
   100% { background: rgba(45, 212, 191, 0.00) !important; box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.00); }
 }
+
+/* ===== Paragraph Anchor Overlay — bounding-box pulse on the PDF page ===== */
+/* Keyframe referenced by .para-anchor-overlay (created imperatively in index.tsx) */
+@keyframes anchorPulse {
+  0%   { box-shadow: 0 0 0 0   rgba(45, 212, 191, 0.70); }
+  50%  { box-shadow: 0 0 0 8px rgba(45, 212, 191, 0.25); }
+  100% { box-shadow: 0 0 0 0   rgba(45, 212, 191, 0.00); }
+}
+/* Ensure .react-pdf__Page is a positioned container for the overlay */
+.react-pdf__Page {
+  position: relative !important;
+}
