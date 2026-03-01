@@ -880,12 +880,77 @@ const MiniOrientationHeader: React.FC<{ header: OrientationHeader }> = ({ header
       <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${cfg.color} ${cfg.textColor}`}>
         {cfg.icon} {cfg.label}
       </span>
+      {header.section && (
+        <span className="text-[8px] text-gray-600 truncate leading-tight max-w-[100px]">{header.section}</span>
+      )}
       <span className="text-[9px] text-gray-500 truncate flex-1 leading-tight">{header.purpose}</span>
       {header.page !== null && (
         <span className="text-[8px] font-mono text-gray-700 flex-shrink-0 ml-auto">
           p.{header.page}{header.paragraphIndex !== null ? ` ¶${header.paragraphIndex}` : ''}
         </span>
       )}
+    </div>
+  );
+};
+
+// ============================================================================
+// Page Minimap — horizontal paragraph-position strip
+// Colored ticks by importance; click any tick to jump to that paragraph.
+// Placed above the card list so both Quick and Deep modes benefit.
+// ============================================================================
+
+const IMPORTANCE_TICK_COLOR = (importance: number): string => {
+  if (importance >= 85) return 'bg-red-400/80';
+  if (importance >= 65) return 'bg-amber-400/70';
+  if (importance >= 45) return 'bg-blue-400/60';
+  return 'bg-gray-600/40';
+};
+
+const PageMinimap: React.FC<{
+  units: ParagraphUnit[];
+  onJumpToSource?: (ref: SourceRef) => void;
+}> = ({ units, onJumpToSource }) => {
+  if (units.length === 0) return null;
+  // Sort by startChar to approximate page reading order (top → bottom)
+  const sorted = [...units].sort((a, b) => a.startChar - b.startChar);
+  const maxChar = Math.max(1, sorted[sorted.length - 1]?.endChar ?? 1);
+
+  return (
+    <div
+      className="relative h-5 mb-3 rounded overflow-hidden bg-gray-800/50 border border-gray-700/40 flex-shrink-0"
+      title="Page map — click a segment to jump to that paragraph"
+    >
+      {sorted.map(u => {
+        const leftPct  = (u.startChar / maxChar) * 100;
+        const widthPct = Math.max(0.8, ((u.endChar - u.startChar) / maxChar) * 100);
+        return (
+          <button
+            key={u.id}
+            className={`absolute top-0 h-full ${IMPORTANCE_TICK_COLOR(u.importance)} hover:brightness-125 transition-all`}
+            style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+            title={`${u.role} · Score ${u.importance}`}
+            onClick={() => {
+              if (!onJumpToSource) return;
+              const q = u.text.slice(0, 180);
+              onJumpToSource({
+                pageIndex: u.pageIndex,
+                paragraphId: u.id,
+                startChar: u.startChar,
+                endChar: u.endChar,
+                quote: q,
+                quoteText: q,
+                quoteHash: buildQuoteHash(q),
+                textOrigin: 'pdfText',
+                confidence: u.importance / 100,
+              });
+            }}
+          />
+        );
+      })}
+      {/* Legend tick marks */}
+      <div className="absolute inset-0 flex items-center justify-end pr-1 pointer-events-none">
+        <span className="text-[7px] text-gray-700 font-mono">map</span>
+      </div>
     </div>
   );
 };
@@ -905,7 +970,9 @@ const ParagraphUnitCard: React.FC<{
   toneLevel?: ToneLevel;
   /** 0-based index within the page for orientation header */
   unitIndex?: number;
-}> = ({ unit, tier, onHighlightParagraph, onJumpToSource, debugMode = false, deepMode = false, polishEnabled = false, toneLevel = 'clinical', unitIndex }) => {
+  /** Section title from structureMap.topic — populates OrientationHeader.section */
+  sectionHint?: string;
+}> = ({ unit, tier, onHighlightParagraph, onJumpToSource, debugMode = false, deepMode = false, polishEnabled = false, toneLevel = 'clinical', unitIndex, sectionHint }) => {
   const [showSubScores, setShowSubScores] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [textExpanded, setTextExpanded] = useState(false);
@@ -921,8 +988,8 @@ const ParagraphUnitCard: React.FC<{
   );
   // Orientation header — always computed (pure regex, negligible cost)
   const orientation = useMemo<OrientationHeader>(
-    () => orientParagraph(unit, unitIndex),
-    [unit, unitIndex],
+    () => orientParagraph(unit, unitIndex, sectionHint),
+    [unit, unitIndex, sectionHint],
   );
   const roleLeftBorder = ROLE_LEFT_BORDER[unit.role] ?? 'border-l-gray-600/40';
   // Polished + tone-adapted display text
@@ -1167,6 +1234,32 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
 
   const totalParagraphUnits = (pageIntelligence?.paragraphUnits ?? []).length;
 
+  // Auto-select top paragraph unit once per page after extraction completes
+  const autoSelectedPageRef = useRef<number | null>(null);
+  useEffect(() => {
+    const units = pageIntelligence?.paragraphUnits ?? [];
+    const pageNum = pageIntelligence?.pageNumber ?? -1;
+    if (!units.length || !onJumpToSource || pageNum < 0) return;
+    if (autoSelectedPageRef.current === pageNum) return;
+    autoSelectedPageRef.current = pageNum;
+
+    const top = [...units].sort((a, b) => b.importance - a.importance)[0];
+    const q = top.text.slice(0, 180);
+    const timer = setTimeout(() => onJumpToSource({
+      pageIndex: top.pageIndex,
+      paragraphId: top.id,
+      startChar: top.startChar,
+      endChar: top.endChar,
+      quote: q,
+      quoteText: q,
+      quoteHash: buildQuoteHash(q),
+      textOrigin: 'pdfText',
+      confidence: top.importance / 100,
+    }), 500);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageIntelligence?.pageNumber, totalParagraphUnits]);
+
   // Total count for header
   const totalItems = activeCategories.reduce((sum, c) => sum + c.items.length, 0);
 
@@ -1309,6 +1402,14 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
         </div>
       )}
 
+      {/* Page Minimap — paragraph importance strip, always visible when we have units */}
+      {totalParagraphUnits > 0 && (
+        <PageMinimap
+          units={pageIntelligence?.paragraphUnits ?? []}
+          onJumpToSource={onJumpToSource}
+        />
+      )}
+
       {/* Structure Map — always shown when available */}
       <StructureMapSection
         structureMap={pageIntelligence?.structureMap}
@@ -1360,6 +1461,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                       polishEnabled={polishEnabled}
                       toneLevel={toneLevel}
                       unitIndex={idx}
+                      sectionHint={pageIntelligence?.structureMap?.topic}
                     />
                   ))}
                 </div>
@@ -1392,6 +1494,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                       polishEnabled={polishEnabled}
                       toneLevel={toneLevel}
                       unitIndex={idx}
+                      sectionHint={pageIntelligence?.structureMap?.topic}
                     />
                   ))}
                 </div>
