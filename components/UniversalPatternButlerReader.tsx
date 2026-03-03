@@ -512,6 +512,9 @@ export default function UniversalPatternButlerReader({
   }>>(new Map());
   
   const pdfContainerRef = useRef<HTMLDivElement>(null);
+  const programmaticScrollRef = useRef(false);
+  const programmaticScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipNextAutoScrollRef = useRef(false);
 
   // Get effective selection text (needs to be early for use in effects)
   const effectiveSelection = (externalSelectionText?.trim() || selectionText).trim();
@@ -548,7 +551,7 @@ export default function UniversalPatternButlerReader({
   const handleScroll = useCallback((e: Event) => {
     debugLog(`🔄 SCROLL EVENT FIRED! ${scrollingProgrammatically ? '(PROGRAMMATIC - IGNORING)' : '(USER SCROLL - PROCESSING)'}`);
 
-    if (scrollingProgrammatically) return; // Don't interfere with programmatic scrolling
+    if (programmaticScrollRef.current || scrollingProgrammatically) return; // Don't interfere with programmatic scrolling
 
     const target = e.target as HTMLElement;
     const scrollTop = target.scrollTop;
@@ -639,6 +642,8 @@ export default function UniversalPatternButlerReader({
       // Only update if we found a different page and there's significant visibility (at least 30% of viewport)
       if (bestPage !== currentPage && thresholdMet) {
         debugLog(`🎯 PAGE CHANGE TRIGGERED: ${currentPage} → ${bestPage}`);
+        // Prevent the follow-up currentPage effect from snapping the view again.
+        skipNextAutoScrollRef.current = true;
         onPageChange(bestPage);
       } else {
         debugLog(`⚪ NO PAGE CHANGE: ${
@@ -667,7 +672,12 @@ export default function UniversalPatternButlerReader({
       console.log(`🎯 Smooth scrolling to page ${targetPage}`);
       
       // Set programmatic scroll flag
+      programmaticScrollRef.current = true;
       setScrollingProgrammatically(true);
+
+      if (programmaticScrollTimerRef.current) {
+        clearTimeout(programmaticScrollTimerRef.current);
+      }
       
       // Smooth scroll to the target page
       pageElement.scrollIntoView({
@@ -677,7 +687,8 @@ export default function UniversalPatternButlerReader({
       });
       
       // Clear the flag after scroll completes
-      setTimeout(() => {
+      programmaticScrollTimerRef.current = setTimeout(() => {
+        programmaticScrollRef.current = false;
         setScrollingProgrammatically(false);
         console.log(`📍 Arrived at page ${targetPage}`);
       }, 800); // Allow time for smooth scroll animation
@@ -687,9 +698,21 @@ export default function UniversalPatternButlerReader({
   // Listen for page changes and scroll accordingly
   useEffect(() => {
     if (pdfPageCount && currentPage >= 1 && currentPage <= pdfPageCount) {
+      if (skipNextAutoScrollRef.current) {
+        skipNextAutoScrollRef.current = false;
+        return;
+      }
       scrollToPage(currentPage);
     }
   }, [currentPage, pdfPageCount, scrollToPage]);
+
+  useEffect(() => {
+    return () => {
+      if (programmaticScrollTimerRef.current) {
+        clearTimeout(programmaticScrollTimerRef.current);
+      }
+    };
+  }, []);
 
   // 🧠 ADAPTIVE LEARNING INITIALIZATION - INTELLIGENCE ACTIVATION
   useEffect(() => {
