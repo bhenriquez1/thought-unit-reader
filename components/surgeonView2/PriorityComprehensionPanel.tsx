@@ -66,6 +66,11 @@ interface PriorityComprehensionPanelProps {
    * mechanism chains, and exam traps without filters.
    */
   deepAnalysisMode?: boolean;
+  /**
+   * When true (extraction in flight), show "Scanning page…" skeleton instead of
+   * the generic "Ready to Extract" prompt.
+   */
+  isExtracting?: boolean;
 }
 
 // ============================================================================
@@ -1184,6 +1189,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
   activeItemId,
   syncEnabled = true,
   deepAnalysisMode = false,
+  isExtracting = false,
 }) => {
   // Ref map: insight item ID → DOM element for scroll-into-view
   const itemRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -1281,6 +1287,25 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
       );
     }
 
+    // Extraction in flight → "Scanning page…" skeleton
+    if (isExtracting) {
+      return (
+        <div className="p-4 h-full flex flex-col items-center justify-center">
+          <div className="text-center max-w-[240px]">
+            <div className="text-3xl mb-3 animate-pulse">🔍</div>
+            <h3 className="text-sm font-medium text-gray-300 mb-1">Scanning page…</h3>
+            <p className="text-[10px] text-gray-600">Identifying priority paragraphs</p>
+            <div className="mt-4 space-y-2">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-3 bg-gray-800/60 rounded animate-pulse" style={{ width: `${70 + i * 8}%` }} />
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Extraction complete but empty → clear "no anchors" state
     return (
       <div className="p-4 h-full flex flex-col items-center justify-center">
         <div className="text-center max-w-[240px]">

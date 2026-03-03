@@ -39,6 +39,7 @@ export const PriorityWorkspacePanel: React.FC<PriorityWorkspacePanelProps> = ({
   insightScale,
   syncEnabled,
   deepAnalysisMode,
+  isExtracting,
 }) => {
   return (
     <PriorityComprehensionPanel
@@ -53,6 +54,7 @@ export const PriorityWorkspacePanel: React.FC<PriorityWorkspacePanelProps> = ({
       activeItemId={selectedCardId}
       syncEnabled={syncEnabled}
       deepAnalysisMode={deepAnalysisMode}
+      isExtracting={isExtracting}
     />
   );
 };
