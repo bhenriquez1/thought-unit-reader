@@ -1250,6 +1250,13 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
     autoSelectedPageRef.current = pageNum;
 
     const top = [...units].sort((a, b) => b.importance - a.importance)[0];
+
+    // Guard: top.pageIndex must be 0-based and point to THIS page (pageNum - 1).
+    // If it equals pageNum (1-based / stale cache from the old off-by-one bug),
+    // calling onJumpToSource would advance to pageNum+1 — exactly the auto-flip loop.
+    // Skip navigation for any stale or out-of-range pageIndex.
+    if (top.pageIndex !== pageNum - 1) return;
+
     const q = top.text.slice(0, 180);
     const timer = setTimeout(() => onJumpToSource({
       pageIndex: top.pageIndex,

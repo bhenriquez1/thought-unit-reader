@@ -260,8 +260,11 @@ export async function buildPageIntelligence(
   const segments = segmentText(text, { pageNumber });
 
   // Step 2b: Build ranked paragraph units (role-classified with char offsets)
-  //          then annotate each unit with trap detection results
-  const paragraphUnits = annotateTraps(buildParagraphUnits(text, pageNumber, docId));
+  //          then annotate each unit with trap detection results.
+  // NOTE: buildParagraphUnits expects a 0-based pageIndex. pageNumber is 1-based,
+  //       so we pass (pageNumber - 1) to keep pageIndex consistent with SourceRef.pageIndex
+  //       which handleJumpToSource interprets as 0-based (targetPage = pageIndex + 1).
+  const paragraphUnits = annotateTraps(buildParagraphUnits(text, pageNumber - 1, docId));
 
   // Step 3: Detect signals
   const signals = detectSignals({ segments });
