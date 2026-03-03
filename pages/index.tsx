@@ -261,13 +261,14 @@ export default function ThoughtUnitReader() {
   /* =========================================================================
      🔹 Enhanced Global Reader Sync Store
   ========================================================================= */
-  const { 
-    page, 
-    unitIndex, 
-    activeChunkId, 
-    setPage, 
-    setUnitIndex, 
-    setActiveChunkId, 
+  const {
+    page,
+    unitIndex,
+    activeChunkId,
+    lastUpdateSource,
+    setPage,
+    setUnitIndex,
+    setActiveChunkId,
     updateSync,
     initializeContent,
     updateContentDensity
@@ -276,21 +277,46 @@ export default function ThoughtUnitReader() {
   // Unified navigation hook for consistent navigation across all components
   const { jumpToPage, jumpToChapter, navigateProgrammatically } = useUnifiedNavigation();
 
-  // Subscribe to global sync changes for cross-view synchronization
+  // Follow Scroll: when false, only explicit user navigation (Prev/Next, TOC, card clicks)
+  // changes the current page. Scroll-driven updates from observers are suppressed.
+  // Declared here (before the readerSync subscriber effect) to avoid TDZ in its dep array.
+  const [followScroll, setFollowScroll] = useState(false);
+
+  // Subscribe to global sync changes for cross-view synchronization.
+  // Gated by navLock + followScroll to prevent observer/scroll feedback loops.
   useEffect(() => {
-    console.log(`🔄 Global sync state changed: page=${page}, unit=${unitIndex}, chunk=${activeChunkId}`);
-    
-    // Update local state when global sync changes (but avoid loops)
+    console.log(`🔄 Global sync state changed: page=${page}, unit=${unitIndex}, chunk=${activeChunkId}, source=${lastUpdateSource}`);
+
+    // Hard gate: never process observer callbacks during page hydration
+    if (navLockRef.current) {
+      console.log(`🔒 navLock active – ignoring sync update from source=${lastUpdateSource}`);
+      return;
+    }
+
+    const isScrollDriven = lastUpdateSource === 'pdf' || lastUpdateSource === 'progressive' || lastUpdateSource === 'hybrid';
+
+    // When Follow Scroll is OFF, only manual/toc sources are allowed to drive page changes
+    if (isScrollDriven && !followScroll) {
+      console.log(`🚫 Follow Scroll OFF – suppressing scroll-driven page update (source=${lastUpdateSource})`);
+      return;
+    }
+
+    // Cooldown: ignore scroll-driven updates within 650 ms of the last user navigation
+    if (isScrollDriven && Date.now() - lastUserNavAtRef.current < 650) {
+      console.log(`⏳ User nav cooldown – suppressing scroll-driven update (${Date.now() - lastUserNavAtRef.current}ms < 650ms)`);
+      return;
+    }
+
     if (page !== currentPage) {
       console.log(`🔄 Syncing local page: ${currentPage} -> ${page}`);
       setCurrentPage(page);
     }
-    
+
     if (unitIndex !== currentThoughtUnit) {
       console.log(`🔄 Syncing local unit: ${currentThoughtUnit} -> ${unitIndex}`);
       setCurrentThoughtUnit(unitIndex);
     }
-  }, [page, unitIndex, activeChunkId]);
+  }, [page, unitIndex, activeChunkId, lastUpdateSource, followScroll]);
 
   /* =========================================================================
      🔹 State
@@ -832,6 +858,17 @@ export default function ThoughtUnitReader() {
   // for PDF render ≈200 ms + scroll debounce ≈200 ms, with 200 ms headroom).
   const syncFrozenRef = useRef(false);
   const syncFreezeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Navigation lock + intent model: prevents observer/scroll-sync feedback loops.
+  // navLockRef: true during page hydration and any programmatic scroll.
+  // navIntentRef: tracks whether the last navigation was user-driven or scroll-driven.
+  // lastUserNavAtRef: timestamp of the last user-initiated navigation.
+  // lastProgrammaticScrollAtRef: timestamp of the last programmatic scroll.
+  const navLockRef = useRef(false);
+  const navLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navIntentRef = useRef<'NONE' | 'USER' | 'SYNC'>('NONE');
+  const lastUserNavAtRef = useRef(0);
+  const lastProgrammaticScrollAtRef = useRef(0);
 
   const handleHighlightParagraph = useCallback((searchText: string) => {
     if (!searchText || searchText.trim().length < 10) return;
@@ -2047,6 +2084,18 @@ export default function ThoughtUnitReader() {
       // For user-initiated jumps: freeze scroll-sync and clean up previous-page DOM
       // so stale IntersectionObserver/scroll events can't flip activeAnchorId.
       if (reason !== 'SCROLL') {
+        // Mark intent as USER and record timestamp for cooldown gating
+        navIntentRef.current = 'USER';
+        lastUserNavAtRef.current = Date.now();
+
+        // Engage navigation lock: prevents observers from updating page during hydration
+        navLockRef.current = true;
+        if (navLockTimerRef.current) clearTimeout(navLockTimerRef.current);
+        navLockTimerRef.current = setTimeout(() => {
+          navLockRef.current = false;
+          navIntentRef.current = 'NONE';
+        }, 700); // slightly longer than PDF render + scroll debounce
+
         syncFrozenRef.current = true;
         if (syncFreezeTimerRef.current) clearTimeout(syncFreezeTimerRef.current);
 
@@ -2058,6 +2107,7 @@ export default function ThoughtUnitReader() {
 
         // Reset the right-panel scroll to top (user is on a new page)
         requestAnimationFrame(() => {
+          lastProgrammaticScrollAtRef.current = Date.now();
           (document.querySelector('.insightPanelScroll') as HTMLElement | null)
             ?.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
         });
@@ -2579,6 +2629,20 @@ export default function ThoughtUnitReader() {
               +
             </button>
           </div>
+        )}
+
+        {/* Follow Scroll Toggle — OFF by default to prevent observer feedback loops */}
+        {fileUrl && (viewMode === "original" || viewMode === "hybrid") && (
+          <label className="inline-flex items-center gap-2 text-sm" title="When off, only Prev/Next/TOC changes the page. When on, scrolling can also advance pages.">
+            <input
+              type="checkbox"
+              checked={followScroll}
+              onChange={(e) => setFollowScroll(e.target.checked)}
+            />
+            <span className={followScroll ? "text-blue-300" : "text-gray-400"}>
+              Follow Scroll
+            </span>
+          </label>
         )}
 
         {/* Readless Mode Toggle */}
