@@ -204,7 +204,7 @@ function categorizePriorityItems(
         pi.evidenceSegmentIds.includes(u.id)
       );
 
-      const quoteText = matchedUnit?.text.slice(0, 180) ?? '';
+      const quoteText = matchedUnit?.text ?? '';
       const sourceRef: SourceRef | undefined = matchedUnit
         ? {
             pageIndex: piPageIndex,
@@ -223,13 +223,13 @@ function categorizePriorityItems(
         id: pi.id,
         title: pi.title,
         // Prefer sourceRef.quote for highlight accuracy; fall back to body
-        content: sourceRef?.quote ?? pi.body,
+        content: sourceRef?.quote || pi.body,
         priority,
         category,
         tags: pi.tags,
         sourceRef,
         // Attach page ref so jump-to-page button renders
-        evidence: [{ page: piPage, text: pi.body.slice(0, 100) }],
+        evidence: [{ page: piPage, text: pi.body }],
       };
 
       const existing = categories.get(category);
@@ -256,6 +256,59 @@ function bucketToPriority(bucket: ImportanceBucket): PriorityScore {
     case 'HIGH_YIELD': return 'HIGH_YIELD';
     default: return 'SUPPORTING';
   }
+}
+
+function splitSentences(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+function toneSafe(text: string, toneLevel: ToneLevel): string {
+  try {
+    return adaptTone(text, toneLevel) || text;
+  } catch {
+    return text;
+  }
+}
+
+function buildParagraphLayers(unit: ParagraphUnit, toneLevel: ToneLevel): {
+  coreMeaning: string;
+  structuredLogic: string[];
+  clinicalTranslation: string[];
+  examSignal: string[];
+} {
+  const text = unit.text?.trim() || '';
+  const sentences = splitSentences(text);
+  const coreSentence = sentences[0] || text || 'No paragraph content available.';
+  const coreMeaning = toneSafe(coreSentence, toneLevel);
+
+  const structuredLogic = (sentences.length > 0 ? sentences : [text])
+    .slice(0, 5)
+    .map(s => toneSafe(s, toneLevel));
+
+  const lower = text.toLowerCase();
+  const hasClinical = unit.role === 'clinical' || unit.signals.hasClinicalTerms || /\b(patient|diagnos|treat|management|therapy|clinical)\b/.test(lower);
+  const hasExam = /\bexam|test|trap|pitfall|confus|high-yield|yield|threshold|cutoff|value|formula\b/.test(lower)
+    || unit.signals.hasNumbers
+    || unit.signals.hasNegation;
+
+  const clinicalTranslation = hasClinical
+    ? [
+        'Translate this paragraph into bedside/actionable decisions.',
+        'Connect findings to diagnosis, management, and expected outcomes.',
+      ].map(s => toneSafe(s, toneLevel))
+    : [];
+
+  const examSignal = hasExam
+    ? [
+        'Likely tested as distinction points, thresholds, or common traps.',
+        'Focus on discriminators and when this concept changes decisions.',
+      ].map(s => toneSafe(s, toneLevel))
+    : [];
+
+  return { coreMeaning, structuredLogic, clinicalTranslation, examSignal };
 }
 
 function determineCategory(insight: RankedInsight): PriorityItem['category'] {
@@ -980,7 +1033,6 @@ const ParagraphUnitCard: React.FC<{
 }> = ({ unit, tier, onHighlightParagraph, onJumpToSource, debugMode = false, deepMode = false, polishEnabled = false, toneLevel = 'clinical', unitIndex, sectionHint }) => {
   const [showSubScores, setShowSubScores] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
-  const [textExpanded, setTextExpanded] = useState(false);
 
   // Compute scoring and clinical reasoning (memoized — only in deep mode to avoid perf hit)
   const score = useMemo<ScoreResult | null>(
@@ -999,10 +1051,13 @@ const ParagraphUnitCard: React.FC<{
   const roleLeftBorder = ROLE_LEFT_BORDER[unit.role] ?? 'border-l-gray-600/40';
   // Polished + tone-adapted display text
   const displayText = useMemo<string>(() => {
-    if (!polishEnabled && toneLevel === 'clinical') return unit.text;
     const polished = polishEnabled ? applyMicroPolish(unit.text) : unit.text;
-    return adaptTone(polished, toneLevel);
+    return toneSafe(polished, toneLevel);
   }, [unit.text, polishEnabled, toneLevel]);
+  const paragraphLayers = useMemo(
+    () => buildParagraphLayers({ ...unit, text: displayText }, toneLevel),
+    [unit, displayText, toneLevel],
+  );
   const meta = TIER_META[tier];
   const roleColor = ROLE_COLORS[unit.role] ?? 'bg-gray-800/40 text-gray-400 border-gray-700/40';
 
@@ -1090,25 +1145,51 @@ const ParagraphUnitCard: React.FC<{
         <InlineTrapBadges unit={unit} />
       </div>
 
-      {/* Source text — polished/adapted in deep mode, verbatim in quick mode */}
-      <div className="mt-1.5">
-        {deepMode && displayText !== unit.text && (
+      {/* Source text — full paragraph only, no truncation. */}
+      <div className="mt-1.5 space-y-1.5">
+        {deepMode && (
           <div className="text-[8px] text-teal-700 mb-0.5 flex items-center gap-1">
-            <span>✦ Polish</span>
-            {polishEnabled && <span className="text-teal-800">+ Grammar</span>}
-            <span className="text-gray-700">• Tone: {TONE_LABELS[toneLevel]}</span>
+            <span>✦ Tone: {TONE_LABELS[toneLevel]}</span>
+            {polishEnabled && <span className="text-teal-800">• Micro Polish ON</span>}
           </div>
         )}
-        <p className={`text-[11px] text-gray-300 ${deepMode || textExpanded ? '' : 'line-clamp-3'}`}>
-          {deepMode ? displayText : unit.text}
-        </p>
-        {!deepMode && unit.text.length > 200 && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setTextExpanded(v => !v); }}
-            className="mt-0.5 text-[9px] text-teal-600 hover:text-teal-400"
-          >
-            {textExpanded ? '▲ Collapse' : '▼ Expand source'}
-          </button>
+
+        {!deepMode && (
+          <p className="text-[11px] text-gray-300 whitespace-pre-wrap">{unit.text}</p>
+        )}
+
+        {deepMode && (
+          <div className="space-y-2 text-[11px] text-gray-300">
+            <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
+              <div className="text-[9px] font-bold text-blue-300 uppercase tracking-wide mb-1">Core Meaning</div>
+              <p>{paragraphLayers.coreMeaning}</p>
+            </section>
+
+            <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
+              <div className="text-[9px] font-bold text-purple-300 uppercase tracking-wide mb-1">Structured Logic</div>
+              <ul className="list-disc pl-4 space-y-1">
+                {paragraphLayers.structuredLogic.map((step, idx) => <li key={`${unit.id}_logic_${idx}`}>{step}</li>)}
+              </ul>
+            </section>
+
+            {paragraphLayers.clinicalTranslation.length > 0 && (
+              <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
+                <div className="text-[9px] font-bold text-green-300 uppercase tracking-wide mb-1">Clinical Translation</div>
+                <ul className="list-disc pl-4 space-y-1">
+                  {paragraphLayers.clinicalTranslation.map((step, idx) => <li key={`${unit.id}_clin_${idx}`}>{step}</li>)}
+                </ul>
+              </section>
+            )}
+
+            {paragraphLayers.examSignal.length > 0 && (
+              <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
+                <div className="text-[9px] font-bold text-amber-300 uppercase tracking-wide mb-1">Exam Signal</div>
+                <ul className="list-disc pl-4 space-y-1">
+                  {paragraphLayers.examSignal.map((step, idx) => <li key={`${unit.id}_exam_${idx}`}>{step}</li>)}
+                </ul>
+              </section>
+            )}
+          </div>
         )}
       </div>
 
@@ -1666,7 +1747,6 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
   onHighlightParagraph,
   onJumpToSource,
 }) => {
-  const [contentExpanded, setContentExpanded] = useState(false);
   const style = PRIORITY_STYLES[item.priority];
   const linkedInsight = rankedInsights.find(r => r.id === item.id);
   const page = item.evidence?.[0]?.page;
@@ -1745,33 +1825,17 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
       {item.tags?.includes('math') ? (
         <div>
           <code
-            className={`block text-teal-300 bg-gray-900/60 rounded px-2 py-1 pl-5 overflow-x-auto whitespace-pre-wrap font-mono ${contentExpanded ? '' : 'line-clamp-3'}`}
+            className="block text-teal-300 bg-gray-900/60 rounded px-2 py-1 pl-5 overflow-x-auto whitespace-pre-wrap font-mono"
             style={bodyStyle}
           >
             {item.content}
           </code>
-          {item.content.length > 180 && (
-            <button
-              onClick={(e) => { e.stopPropagation(); setContentExpanded(v => !v); }}
-              className="mt-0.5 pl-5 text-[9px] text-teal-600 hover:text-teal-400"
-            >
-              {contentExpanded ? '▲ Collapse' : '▼ Expand'}
-            </button>
-          )}
         </div>
       ) : (
         <div>
-          <p className={`text-gray-300 pl-5 ${contentExpanded ? '' : 'line-clamp-2'}`} style={bodyStyle}>
+          <p className="text-gray-300 pl-5 whitespace-pre-wrap" style={bodyStyle}>
             {item.content}
           </p>
-          {item.content.length > 160 && (
-            <button
-              onClick={(e) => { e.stopPropagation(); setContentExpanded(v => !v); }}
-              className="mt-0.5 pl-5 text-[9px] text-teal-600 hover:text-teal-400"
-            >
-              {contentExpanded ? '▲ Collapse' : '▼ Expand source'}
-            </button>
-          )}
         </div>
       )}
 
