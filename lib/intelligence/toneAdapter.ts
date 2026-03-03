@@ -1,5 +1,5 @@
 // lib/intelligence/toneAdapter.ts
-// Tone Adaptation — Student | Clinical | Expert
+// Tone Adaptation — Polish | Student | Clinical | Expert
 //
 // Transforms a clinical insight string to the target comprehension level
 // without altering factual content.
@@ -12,15 +12,17 @@
 // Types
 // ============================================================================
 
-export type ToneLevel = 'student' | 'clinical' | 'expert';
+export type ToneLevel = 'polish' | 'student' | 'clinical' | 'expert';
 
 export const TONE_LABELS: Record<ToneLevel, string> = {
+  polish:   'Polish',
   student:  'Student',
   clinical: 'Clinical',
   expert:   'Expert',
 };
 
 export const TONE_DESCRIPTIONS: Record<ToneLevel, string> = {
+  polish:   'Improves wording and flow without changing factual meaning',
   student:  'Simple wording, basic explanations, minimal jargon',
   clinical: 'Academic tone, precise terminology, structured reasoning',
   expert:   'Condensed professional language, assumes prior knowledge',
@@ -105,6 +107,13 @@ function condenseForExpert(text: string): string {
 // ============================================================================
 
 const SECTION_INTROS: Record<ToneLevel, Record<string, string>> = {
+  polish: {
+    corePrinciple:       'Core Principle',
+    mechanism:           'Mechanism',
+    clinicalSignificance: 'Clinical Significance',
+    whyItMatters:        'Why It Matters',
+    examRelevance:       'Exam Relevance',
+  },
   student: {
     corePrinciple:       'The main idea is:',
     mechanism:           'Here is how it works:',
@@ -145,6 +154,7 @@ export function adaptTone(text: string, tone: ToneLevel): string {
   switch (tone) {
     case 'student':  return simplifyForStudent(text);
     case 'expert':   return condenseForExpert(text);
+    case 'polish':
     case 'clinical':
     default:         return text;
   }
