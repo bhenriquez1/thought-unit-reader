@@ -24,6 +24,21 @@ export type PriorityScore = 'MUST_KNOW' | 'HIGH_YIELD' | 'SUPPORTING';
 
 /** Tier grouping for raw paragraph units (no suppression) */
 type ParagraphTier = 'core' | 'important' | 'supporting' | 'background';
+type DepthLevel = 'minimal' | 'standard' | 'deep';
+type Tone = 'polish' | 'student' | 'clinical' | 'expert';
+
+type InsightVariant = {
+  title?: string;
+  body: string;
+  bullets?: string[];
+};
+
+type ParagraphInsight = {
+  anchorId: string;
+  variants: Record<Tone, InsightVariant>;
+  updatedAt: number;
+  statusByTone: Record<Tone, 'idle' | 'loading' | 'ready' | 'error'>;
+};
 
 interface PriorityItem {
   id: string;
@@ -273,42 +288,58 @@ function toneSafe(text: string, toneLevel: ToneLevel): string {
   }
 }
 
-function buildParagraphLayers(unit: ParagraphUnit, toneLevel: ToneLevel): {
-  coreMeaning: string;
-  structuredLogic: string[];
-  clinicalTranslation: string[];
-  examSignal: string[];
-} {
-  const text = unit.text?.trim() || '';
+function buildExamSignalBullets(unit: ParagraphUnit, toneLevel: ToneLevel, depthLevel: DepthLevel): string[] {
+  const lower = unit.text.toLowerCase();
+  const hasIfThen = /\bif\b.+\bthen\b|\bwhen\b.+\b(consider|expect|suspect|do)\b/.test(lower);
+  const hasThreshold = /\b(threshold|cutoff|greater than|less than|\d+\s?(mg|%|mm|cm|mmhg|meq|iu))\b/.test(lower);
+  const hasConfuser = /\b(confus|similar|mimic|pitfall|except|not)\b/.test(lower) || unit.signals.hasNegation;
+
+  const bullets = [
+    toneSafe(hasIfThen
+      ? 'If this trigger appears, then use this paragraph to drive the next diagnostic or management step.'
+      : 'If this concept appears in a vignette, then link it to the most likely action or interpretation.'
+    , toneLevel),
+    toneSafe(hasThreshold
+      ? 'Decision cue: identify the threshold/cutoff and what changes once crossed.'
+      : 'Decision cue: identify what specific finding changes the correct answer choice.'
+    , toneLevel),
+  ];
+
+  if (depthLevel !== 'minimal') {
+    bullets.push(
+      toneSafe('Pitfall: avoid overgeneralizing this rule outside the context described in the paragraph.', toneLevel),
+      toneSafe(hasConfuser
+        ? 'Confuser: separate this concept from look-alikes by focusing on the discriminator stated here.'
+        : 'Exam pattern: this is often tested as a discriminator between two plausible choices.'
+      , toneLevel),
+    );
+  }
+
+  if (depthLevel === 'deep') {
+    bullets.push(toneSafe('Edge case: check exceptions, special populations, or severity shifts before finalizing the answer.', toneLevel));
+  }
+
+  return bullets;
+}
+
+function buildInsightVariant(unit: ParagraphUnit, orientation: OrientationHeader, toneLevel: ToneLevel, depthLevel: DepthLevel): InsightVariant {
+  const text = toneLevel === 'polish' ? applyMicroPolish(unit.text) : toneSafe(unit.text, toneLevel);
   const sentences = splitSentences(text);
-  const coreSentence = sentences[0] || text || 'No paragraph content available.';
-  const coreMeaning = toneSafe(coreSentence, toneLevel);
+  const snapshot = sentences[0] || text || 'No paragraph content available.';
+  const role = unit.role.replace('_', ' ');
+  const purpose = orientation.purpose;
+  const location = `Page ${unit.pageIndex + 1} · ${orientation.section || 'Section not tagged'} · Paragraph ${(orientation.paragraphIndex ?? 0) + 1}`;
+  const examSignal = buildExamSignalBullets(unit, toneLevel, depthLevel);
+  const memoryHook = toneSafe(`Sticky phrase: ${snapshot.split(/[,.]/)[0]}.`, toneLevel);
 
-  const structuredLogic = (sentences.length > 0 ? sentences : [text])
-    .slice(0, 5)
-    .map(s => toneSafe(s, toneLevel));
+  const body = [
+    `Layer 1 — Snapshot\n${snapshot}`,
+    `Layer 2 — Structure + Role\nRole: ${role}\nPurpose: ${purpose}\nLocation: ${location}`,
+    `Layer 3 — Clinical Reasoning / Exam Signal\n${examSignal.map((b, idx) => `${idx + 1}. ${b}`).join('\n')}`,
+    `Layer 4 — Memory Hook\n${memoryHook}\nRecall check: what is the single most testable claim in this paragraph?\nApplication check: in a case stem, when would this paragraph change your next step?`,
+  ].join('\n\n');
 
-  const lower = text.toLowerCase();
-  const hasClinical = unit.role === 'clinical' || unit.signals.hasClinicalTerms || /\b(patient|diagnos|treat|management|therapy|clinical)\b/.test(lower);
-  const hasExam = /\bexam|test|trap|pitfall|confus|high-yield|yield|threshold|cutoff|value|formula\b/.test(lower)
-    || unit.signals.hasNumbers
-    || unit.signals.hasNegation;
-
-  const clinicalTranslation = hasClinical
-    ? [
-        'Translate this paragraph into bedside/actionable decisions.',
-        'Connect findings to diagnosis, management, and expected outcomes.',
-      ].map(s => toneSafe(s, toneLevel))
-    : [];
-
-  const examSignal = hasExam
-    ? [
-        'Likely tested as distinction points, thresholds, or common traps.',
-        'Focus on discriminators and when this concept changes decisions.',
-      ].map(s => toneSafe(s, toneLevel))
-    : [];
-
-  return { coreMeaning, structuredLogic, clinicalTranslation, examSignal };
+  return { title: snapshot, body, bullets: examSignal };
 }
 
 function determineCategory(insight: RankedInsight): PriorityItem['category'] {
@@ -1026,11 +1057,13 @@ const ParagraphUnitCard: React.FC<{
   polishEnabled?: boolean;
   /** Tone adaptation level */
   toneLevel?: ToneLevel;
+  /** Detail density for exam signal */
+  depthLevel?: DepthLevel;
   /** 0-based index within the page for orientation header */
   unitIndex?: number;
   /** Section title from structureMap.topic — populates OrientationHeader.section */
   sectionHint?: string;
-}> = ({ unit, tier, onHighlightParagraph, onJumpToSource, debugMode = false, deepMode = false, polishEnabled = false, toneLevel = 'clinical', unitIndex, sectionHint }) => {
+}> = ({ unit, tier, onHighlightParagraph, onJumpToSource, debugMode = false, deepMode = false, polishEnabled = false, toneLevel = 'clinical', depthLevel = 'standard', unitIndex, sectionHint }) => {
   const [showSubScores, setShowSubScores] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
 
@@ -1049,15 +1082,42 @@ const ParagraphUnitCard: React.FC<{
     [unit, unitIndex, sectionHint],
   );
   const roleLeftBorder = ROLE_LEFT_BORDER[unit.role] ?? 'border-l-gray-600/40';
-  // Polished + tone-adapted display text
-  const displayText = useMemo<string>(() => {
-    const polished = polishEnabled ? applyMicroPolish(unit.text) : unit.text;
-    return toneSafe(polished, toneLevel);
-  }, [unit.text, polishEnabled, toneLevel]);
-  const paragraphLayers = useMemo(
-    () => buildParagraphLayers({ ...unit, text: displayText }, toneLevel),
-    [unit, displayText, toneLevel],
-  );
+  const [insightExpanded, setInsightExpanded] = useState(false);
+  const [paragraphInsight, setParagraphInsight] = useState<ParagraphInsight>(() => ({
+    anchorId: unit.id,
+    variants: { polish: { body: '' }, student: { body: '' }, clinical: { body: '' }, expert: { body: '' } },
+    updatedAt: Date.now(),
+    statusByTone: { polish: 'idle', student: 'idle', clinical: 'idle', expert: 'idle' },
+  }));
+  const latestRequestIdRef = useRef<Record<Tone, string>>({ polish: '', student: '', clinical: '', expert: '' });
+  const requestCounterRef = useRef(0);
+
+  useEffect(() => {
+    const tone = toneLevel as Tone;
+    const requestId = `${unit.id}_${tone}_${++requestCounterRef.current}`;
+    latestRequestIdRef.current[tone] = requestId;
+
+    setParagraphInsight(prev => ({ ...prev, anchorId: unit.id, statusByTone: { ...prev.statusByTone, [tone]: 'loading' } }));
+
+    Promise.resolve().then(() => {
+      const variant = buildInsightVariant(unit, orientation, toneLevel, depthLevel);
+      if (latestRequestIdRef.current[tone] !== requestId) return;
+      setParagraphInsight(prev => ({
+        ...prev,
+        anchorId: unit.id,
+        variants: { ...prev.variants, [tone]: variant },
+        updatedAt: Date.now(),
+        statusByTone: { ...prev.statusByTone, [tone]: 'ready' },
+      }));
+    }).catch(() => {
+      if (latestRequestIdRef.current[tone] !== requestId) return;
+      setParagraphInsight(prev => ({ ...prev, statusByTone: { ...prev.statusByTone, [tone]: 'error' } }));
+    });
+  }, [unit, orientation, toneLevel, depthLevel]);
+
+  const activeTone = toneLevel as Tone;
+  const activeVariant = paragraphInsight.variants[activeTone];
+  const activeStatus = paragraphInsight.statusByTone[activeTone];
   const meta = TIER_META[tier];
   const roleColor = ROLE_COLORS[unit.role] ?? 'bg-gray-800/40 text-gray-400 border-gray-700/40';
 
@@ -1161,34 +1221,48 @@ const ParagraphUnitCard: React.FC<{
         {deepMode && (
           <div className="space-y-2 text-[11px] text-gray-300">
             <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
-              <div className="text-[9px] font-bold text-blue-300 uppercase tracking-wide mb-1">Core Meaning</div>
-              <p>{paragraphLayers.coreMeaning}</p>
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="text-[9px] font-bold text-blue-300 uppercase tracking-wide">Snapshot</div>
+                <div className="text-[8px] text-gray-500">{activeStatus === 'loading' ? 'Updating…' : 'Ready'}</div>
+              </div>
+              <p>{activeVariant?.title || 'Generating insight snapshot…'}</p>
             </section>
 
             <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
-              <div className="text-[9px] font-bold text-purple-300 uppercase tracking-wide mb-1">Structured Logic</div>
+              <div className="text-[9px] font-bold text-purple-300 uppercase tracking-wide mb-1">Role + Purpose + Location</div>
+              <div className="flex gap-1 flex-wrap mb-1.5">
+                <span className="text-[9px] px-1.5 py-0.5 rounded border border-purple-700/40 bg-purple-900/20">{unit.role.replace('_', ' ')}</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded border border-teal-700/40 bg-teal-900/20">{orientation.purpose}</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded border border-gray-700/40 bg-gray-800/40">Pg {unit.pageIndex + 1} · ¶ {(orientation.paragraphIndex ?? 0) + 1}</span>
+              </div>
+              <p className="text-gray-400">Why this exists here: {orientation.purpose}</p>
+            </section>
+
+            <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
+              <div className="text-[9px] font-bold text-amber-300 uppercase tracking-wide mb-1">Exam Signal / Clinical Reasoning</div>
               <ul className="list-disc pl-4 space-y-1">
-                {paragraphLayers.structuredLogic.map((step, idx) => <li key={`${unit.id}_logic_${idx}`}>{step}</li>)}
+                {(activeVariant?.bullets || []).slice(0, insightExpanded ? undefined : 2).map((step, idx) => <li key={`${unit.id}_exam_${idx}`}>{step}</li>)}
               </ul>
             </section>
 
-            {paragraphLayers.clinicalTranslation.length > 0 && (
+            {insightExpanded && (
               <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
-                <div className="text-[9px] font-bold text-green-300 uppercase tracking-wide mb-1">Clinical Translation</div>
-                <ul className="list-disc pl-4 space-y-1">
-                  {paragraphLayers.clinicalTranslation.map((step, idx) => <li key={`${unit.id}_clin_${idx}`}>{step}</li>)}
-                </ul>
+                <div className="text-[9px] font-bold text-green-300 uppercase tracking-wide mb-1">Full 4-Layer Breakdown</div>
+                <p className="whitespace-pre-wrap">{activeVariant?.body || 'Generating full insight...'}</p>
               </section>
             )}
 
-            {paragraphLayers.examSignal.length > 0 && (
-              <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
-                <div className="text-[9px] font-bold text-amber-300 uppercase tracking-wide mb-1">Exam Signal</div>
-                <ul className="list-disc pl-4 space-y-1">
-                  {paragraphLayers.examSignal.map((step, idx) => <li key={`${unit.id}_exam_${idx}`}>{step}</li>)}
-                </ul>
-              </section>
-            )}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setInsightExpanded(v => !v); }}
+                className="text-[9px] px-2 py-1 rounded border border-gray-700/60 bg-gray-800/60 hover:bg-gray-700/60"
+              >
+                {insightExpanded ? 'Collapse' : 'Expand'}
+              </button>
+              <button type="button" className="text-[9px] px-2 py-1 rounded border border-gray-700/60 bg-gray-800/40">Save</button>
+              <button type="button" className="text-[9px] px-2 py-1 rounded border border-gray-700/60 bg-gray-800/40">Cards</button>
+            </div>
           </div>
         )}
       </div>
@@ -1279,11 +1353,9 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
   const [localDeepMode, setLocalDeepMode] = useState<boolean | null>(null);
   const isDeepMode = localDeepMode !== null ? localDeepMode : deepAnalysisMode;
 
-  // Micro Polish Mode (grammar + academic tone corrections)
-  const [polishEnabled, setPolishEnabled] = useState(false);
-
-  // Tone adaptation level — Student | Clinical | Expert
+  // Tone adaptation level — Polish | Student | Clinical | Expert
   const [toneLevel, setToneLevel] = useState<ToneLevel>('clinical');
+  const [depthLevel, setDepthLevel] = useState<DepthLevel>('standard');
 
   // Collapse state for supporting/background tiers in deep analysis
   const [showBackground, setShowBackground] = useState(false);
@@ -1453,30 +1525,33 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
             </button>
           </div>
 
-          {/* Micro Polish toggle — only meaningful in Deep mode */}
           {isDeepMode && (
-            <button
-              onClick={() => setPolishEnabled(v => !v)}
-              title={polishEnabled ? 'Micro Polish ON — click to disable' : 'Micro Polish OFF — click to enable'}
-              className={`px-2 py-0.5 text-[10px] font-medium rounded border transition-colors ${
-                polishEnabled
-                  ? 'bg-teal-700/50 border-teal-500/60 text-teal-200'
-                  : 'bg-gray-800/40 border-gray-700/50 text-gray-500 hover:text-gray-300'
-              }`}
-            >
-              {polishEnabled ? '🟢 Polish' : '🔵 Polish'}
-            </button>
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] text-gray-500">Depth</span>
+              <div className="flex rounded border border-gray-700 overflow-hidden">
+                {(['minimal', 'standard', 'deep'] as DepthLevel[]).map(level => (
+                  <button
+                    key={level}
+                    onClick={() => setDepthLevel(level)}
+                    className={`text-[9px] px-2 py-0.5 ${depthLevel === level ? 'bg-blue-600/40 text-blue-200' : 'bg-gray-800/40 text-gray-400 hover:text-gray-200'}`}
+                    title={`Set insight depth to ${level}`}
+                  >
+                    {level}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
 
-          {/* Tone level — Student | Clinical | Expert (deep mode only) */}
+          {/* Tone level — Polish | Student | Clinical | Expert (deep mode only) */}
           {isDeepMode && (
             <div className="flex rounded border border-gray-700 overflow-hidden">
-              {(['student', 'clinical', 'expert'] as ToneLevel[]).map((lvl, i) => (
+              {(['polish', 'student', 'clinical', 'expert'] as ToneLevel[]).map((lvl, i) => (
                 <button
                   key={lvl}
                   onClick={() => setToneLevel(lvl)}
                   className={`px-1.5 py-0.5 text-[9px] font-medium transition-colors capitalize ${
-                    i < 2 ? 'border-r border-gray-700' : ''
+                    i < 3 ? 'border-r border-gray-700' : ''
                   } ${
                     toneLevel === lvl
                       ? 'bg-indigo-700/60 text-indigo-200'
@@ -1571,8 +1646,9 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                       onJumpToSource={onJumpToSource}
                       debugMode={isDeepMode}
                       deepMode={isDeepMode}
-                      polishEnabled={polishEnabled}
+                      polishEnabled={toneLevel === 'polish'}
                       toneLevel={toneLevel}
+                      depthLevel={depthLevel}
                       unitIndex={idx}
                       sectionHint={pageIntelligence?.structureMap?.topic}
                     />
@@ -1604,8 +1680,9 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                       onJumpToSource={onJumpToSource}
                       debugMode={isDeepMode}
                       deepMode={isDeepMode}
-                      polishEnabled={polishEnabled}
+                      polishEnabled={toneLevel === 'polish'}
                       toneLevel={toneLevel}
+                      depthLevel={depthLevel}
                       unitIndex={idx}
                       sectionHint={pageIntelligence?.structureMap?.topic}
                     />
