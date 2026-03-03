@@ -827,6 +827,12 @@ export default function ThoughtUnitReader() {
     );
   }, []);
 
+  // Freeze flag: prevents stale scroll events from firing during page hydration.
+  // Set true on any user-initiated page jump; auto-cleared after 600 ms (enough
+  // for PDF render ≈200 ms + scroll debounce ≈200 ms, with 200 ms headroom).
+  const syncFrozenRef = useRef(false);
+  const syncFreezeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleHighlightParagraph = useCallback((searchText: string) => {
     if (!searchText || searchText.trim().length < 10) return;
 
@@ -974,6 +980,10 @@ export default function ThoughtUnitReader() {
      We try to find the best matching insight item and drive the sync store.
   ========================================================================= */
   const handleActiveParagraphChange = useCallback((snippet: string | null) => {
+    // Drop events that arrive during page hydration — the PDF is still rendering
+    // the new page so any viewport-center calculation would hit stale content.
+    if (syncFrozenRef.current) return;
+
     const store = insightsPanelStoreRef.current;
     store.setActiveVisibleText(snippet);
 
@@ -2034,6 +2044,30 @@ export default function ThoughtUnitReader() {
     }
     
     try {
+      // For user-initiated jumps: freeze scroll-sync and clean up previous-page DOM
+      // so stale IntersectionObserver/scroll events can't flip activeAnchorId.
+      if (reason !== 'SCROLL') {
+        syncFrozenRef.current = true;
+        if (syncFreezeTimerRef.current) clearTimeout(syncFreezeTimerRef.current);
+
+        // Remove spotlight overlays and glow spans left over from the previous page
+        document.querySelectorAll('.para-anchor-overlay').forEach(el => el.remove());
+        document.querySelectorAll('.priority-paragraph-glow').forEach(
+          el => el.classList.remove('priority-paragraph-glow'),
+        );
+
+        // Reset the right-panel scroll to top (user is on a new page)
+        requestAnimationFrame(() => {
+          (document.querySelector('.insightPanelScroll') as HTMLElement | null)
+            ?.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+        });
+
+        // Unfreeze after PDF render has settled
+        syncFreezeTimerRef.current = setTimeout(() => {
+          syncFrozenRef.current = false;
+        }, 600);
+      }
+
       // Update local state immediately for responsive UI
       setCurrentPage(page);
       const unit = pageToUnit(page, pdfPageCount, thoughtUnits.length);

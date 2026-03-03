@@ -150,6 +150,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     canScaleDown,
     toggleSync,
     focusOnSource,
+    setActiveParagraphId,
   } = useInsightsPanelStore();
 
   // Local state
@@ -205,6 +206,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     // Reset UI selection state: don't carry previous-page selection into new page
     setSelectedCardId(undefined);
     setSelectedInsightTarget(null);
+    setActiveParagraphId(null);  // prevent stale ID from lighting up a card on the new page
     // Clear cluster/unit selection in both stores so insight cards reset cleanly
     selectCluster(undefined);
     selectRelation(undefined);
