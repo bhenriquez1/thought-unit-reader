@@ -88,6 +88,7 @@ export const SourceAnchor: React.FC<SourceAnchorProps> = ({
   className = '',
 }) => {
   const [expanded, setExpanded] = useState(!collapsed);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const handleJump = useCallback(
     (e: React.MouseEvent) => {
@@ -108,6 +109,12 @@ export const SourceAnchor: React.FC<SourceAnchorProps> = ({
     : '';
 
   const confidencePct = Math.round(sourceRef.confidence * 100);
+  const locationMeta = [
+    sourceRef.yPct !== undefined ? `y=${Math.round(sourceRef.yPct)}%` : null,
+    sourceRef.column ? `col=${sourceRef.column}` : null,
+    sourceRef.block ? `block=${sourceRef.block}` : null,
+  ].filter(Boolean).join(' • ');
+
   const confidenceColor =
     confidencePct >= 80
       ? 'text-green-400'
@@ -129,6 +136,10 @@ export const SourceAnchor: React.FC<SourceAnchorProps> = ({
           </svg>
           {pageLabel}
         </span>
+
+        {locationMeta && (
+          <span className="text-[9px] px-1 py-0.5 rounded bg-gray-700/50 text-gray-300 border border-gray-600/40 select-none">{locationMeta}</span>
+        )}
 
         {/* Origin badge */}
         {sourceRef.textOrigin && (
@@ -181,12 +192,32 @@ export const SourceAnchor: React.FC<SourceAnchorProps> = ({
 
       {/* Expand / collapse toggle */}
       {(paragraphText || (sourceRef.quote && sourceRef.quote.length > PREVIEW_CHARS)) && (
-        <button
-          onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
-          className="w-full px-2.5 py-1 text-[10px] text-teal-400 hover:text-teal-300 hover:bg-teal-900/20 border-t border-gray-700/50 text-left transition-colors"
-        >
-          {expanded ? '▲ Collapse' : '▼ Expand full quote'}
-        </button>
+        <div className="border-t border-gray-700/50 flex">
+          <button
+            onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+            className="flex-1 px-2.5 py-1 text-[10px] text-teal-400 hover:text-teal-300 hover:bg-teal-900/20 text-left transition-colors"
+          >
+            {expanded ? '▲ Collapse' : '▼ Expand full quote'}
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setDrawerOpen(true); }}
+            className="px-2.5 py-1 text-[10px] text-indigo-300 hover:text-indigo-200 hover:bg-indigo-900/20 border-l border-gray-700/50 transition-colors"
+          >
+            Open drawer
+          </button>
+        </div>
+      )}
+
+      {drawerOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex justify-end" onClick={() => setDrawerOpen(false)}>
+          <div className="h-full w-full max-w-xl bg-gray-900 border-l border-gray-700 p-4 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold text-gray-100">Source Quote</h4>
+              <button className="text-xs text-gray-400 hover:text-white" onClick={() => setDrawerOpen(false)}>Close</button>
+            </div>
+            <p className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed">{paragraphText || sourceRef.quote}</p>
+          </div>
+        </div>
       )}
     </div>
   );

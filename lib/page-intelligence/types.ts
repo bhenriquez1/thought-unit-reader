@@ -228,6 +228,12 @@ export interface SourceRef {
   pageIndex: number;
   pageNumberLabel?: string;
   paragraphId: string;
+  /** Approximate vertical location within page (0–100) */
+  yPct?: number;
+  /** Logical PDF column */
+  column?: 'left' | 'right' | 'full';
+  /** Paragraph block index in reading order (1-based) */
+  block?: number;
   startChar: number;
   endChar: number;
   /** Sentence-level character offsets (within paragraphText) for fine-grained highlight */
