@@ -7,6 +7,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { strictLocalStorage } from '@/lib/storage/safePersist';
 
 export const INSIGHT_SCALES = [0.9, 1.0, 1.1, 1.25, 1.4] as const;
 export type InsightScale = typeof INSIGHT_SCALES[number];
@@ -91,10 +92,13 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
       focusOnSource: (id) => set({ activeParagraphId: id, selectedInsightId: id }),
     }),
     {
-      name: 'insights-panel-storage',
+      // Keep this key UI-only and intentionally small.
+      name: 'tur-ui',
       storage: createJSONStorage(() => {
-        if (typeof window === 'undefined') return { getItem: () => null, setItem: () => {}, removeItem: () => {} };
-        return localStorage;
+        if (typeof window === 'undefined') {
+          return { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+        }
+        return strictLocalStorage;
       }),
       partialize: (state) => ({
         insightScale: state.insightScale,
@@ -103,6 +107,11 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
         depth: state.depth,
         renderPolicy: state.renderPolicy,
       }),
+      onRehydrateStorage: () => {
+        if (typeof window === 'undefined') return;
+        // Cleanup old key that may contain oversized historical state.
+        localStorage.removeItem('insights-panel-storage');
+      },
     }
   )
 );
