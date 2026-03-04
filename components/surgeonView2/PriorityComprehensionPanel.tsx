@@ -32,6 +32,12 @@ type InsightVariant = {
   title?: string;
   body: string;
   bullets?: string[];
+  sectionContext?: {
+    sectionPurpose: string;
+    roleInChapter: string;
+    dependencyLinks: string;
+    nextConcept: string;
+  };
 };
 
 type ParagraphInsight = {
@@ -323,24 +329,95 @@ function buildExamSignalBullets(unit: ParagraphUnit, toneLevel: ToneLevel, depth
   return bullets;
 }
 
-function buildInsightVariant(unit: ParagraphUnit, orientation: OrientationHeader, toneLevel: ToneLevel, depthLevel: DepthLevel): InsightVariant {
-  const text = toneLevel === 'polish' ? applyMicroPolish(unit.text) : toneSafe(unit.text, toneLevel);
+function buildSectionContext(unit: ParagraphUnit, orientation: OrientationHeader, toneLevel: ToneLevel) {
+  const sectionPurpose = toneSafe(
+    `This paragraph anchors ${orientation.section || 'the current section'} by clarifying ${orientation.purpose.toLowerCase()}.`,
+    toneLevel,
+  );
+  const roleInChapter = toneSafe(
+    `Role in chapter: ${unit.role.replace('_', ' ')} bridge for paragraph ${(orientation.paragraphIndex ?? 0) + 1}.`,
+    toneLevel,
+  );
+  const dependencyLinks = toneSafe(
+    unit.keyTerms.length > 0
+      ? `Depends on: ${unit.keyTerms.slice(0, 3).join(', ')}.`
+      : 'Depends on preceding definitions and mechanism cues from this section.',
+    toneLevel,
+  );
+  const nextConcept = toneSafe(
+    unit.signals.hasClinicalTerms
+      ? 'Next concept: apply this to diagnosis/treatment decisions in subsequent paragraphs.'
+      : 'Next concept: expect a downstream mechanism or exam discriminator after this paragraph.',
+    toneLevel,
+  );
+
+  return { sectionPurpose, roleInChapter, dependencyLinks, nextConcept };
+}
+
+function generateParagraphIntelligence(
+  unit: ParagraphUnit,
+  orientation: OrientationHeader,
+  settings: { depth: DepthLevel; audience: ToneLevel; view: 'condensed' | 'expanded' },
+): InsightVariant {
+  const { depth, audience, view } = settings;
+  const text = audience === 'polish' ? applyMicroPolish(unit.text) : toneSafe(unit.text, audience);
   const sentences = splitSentences(text);
   const snapshot = sentences[0] || text || 'No paragraph content available.';
   const role = unit.role.replace('_', ' ');
   const purpose = orientation.purpose;
   const location = `Page ${unit.pageIndex + 1} · ${orientation.section || 'Section not tagged'} · Paragraph ${(orientation.paragraphIndex ?? 0) + 1}`;
-  const examSignal = buildExamSignalBullets(unit, toneLevel, depthLevel);
-  const memoryHook = toneSafe(`Sticky phrase: ${snapshot.split(/[,.]/)[0]}.`, toneLevel);
+  const examSignal = buildExamSignalBullets(unit, audience, depth);
+  const memoryHook = toneSafe(`Sticky phrase: ${snapshot.split(/[,.]/)[0]}.`, audience);
+  const sectionContext = buildSectionContext(unit, orientation, audience);
 
-  const body = [
-    `Layer 1 — Snapshot\n${snapshot}`,
-    `Layer 2 — Structure + Role\nRole: ${role}\nPurpose: ${purpose}\nLocation: ${location}`,
-    `Layer 3 — Clinical Reasoning / Exam Signal\n${examSignal.map((b, idx) => `${idx + 1}. ${b}`).join('\n')}`,
-    `Layer 4 — Memory Hook\n${memoryHook}\nRecall check: what is the single most testable claim in this paragraph?\nApplication check: in a case stem, when would this paragraph change your next step?`,
-  ].join('\n\n');
+  if (depth === 'minimal') {
+    const mechanism = toneSafe(`${role} paragraph clarifying: ${purpose}.`, audience);
+    return {
+      title: snapshot,
+      body: `Snapshot\n${snapshot}\n\nMechanism\n${mechanism}`,
+      bullets: examSignal.slice(0, 2),
+      sectionContext,
+    };
+  }
 
-  return { title: snapshot, body, bullets: examSignal };
+  const structureBlock = `Role: ${role}\nPurpose: ${purpose}\nLocation: ${location}`;
+  const viewAwareBody = view === 'condensed' ? text.slice(0, 220) : text;
+
+  if (depth === 'standard') {
+    return {
+      title: snapshot,
+      body: [
+        `Layer 1 — Snapshot\n${snapshot}`,
+        `Layer 2 — Structure\n${structureBlock}`,
+        `Layer 3 — Mechanism\n${viewAwareBody}`,
+        `Layer 4 — Importance\n${memoryHook}`,
+      ].join('\n\n'),
+      bullets: examSignal,
+      sectionContext,
+    };
+  }
+
+  return {
+    title: snapshot,
+    body: [
+      `Layer 1 — Snapshot\n${snapshot}`,
+      `Layer 2 — Structure\n${structureBlock}`,
+      `Layer 3 — Mechanism\n${viewAwareBody}`,
+      `Layer 4 — Reasoning Flow\n${examSignal.map((b, idx) => `${idx + 1}. ${b}`).join('\n')}`,
+      `Layer 5 — Exam Traps\n${toneSafe('Watch negations, exceptions, and look-alike distractors tied to this paragraph.', audience)}`,
+      `Layer 6 — Cross Links\n${sectionContext.dependencyLinks}\n${sectionContext.nextConcept}`,
+    ].join('\n\n'),
+    bullets: examSignal,
+    sectionContext,
+  };
+}
+
+function buildInsightVariant(unit: ParagraphUnit, orientation: OrientationHeader, toneLevel: ToneLevel, depthLevel: DepthLevel, view: 'condensed' | 'expanded'): InsightVariant {
+  return generateParagraphIntelligence(unit, orientation, {
+    depth: depthLevel,
+    audience: toneLevel,
+    view,
+  });
 }
 
 function buildLocationMeta(unit: ParagraphUnit, unitIndex = 0) {
@@ -1108,7 +1185,7 @@ const ParagraphUnitCard: React.FC<{
     setParagraphInsight(prev => ({ ...prev, anchorId: unit.id, statusByTone: { ...prev.statusByTone, [tone]: 'loading' } }));
 
     Promise.resolve().then(() => {
-      const variant = buildInsightVariant(unit, orientation, toneLevel, depthLevel);
+      const variant = buildInsightVariant(unit, orientation, toneLevel, depthLevel, renderPolicy);
       if (latestRequestIdRef.current[tone] !== requestId) return;
       setParagraphInsight(prev => ({
         ...prev,
@@ -1121,7 +1198,7 @@ const ParagraphUnitCard: React.FC<{
       if (latestRequestIdRef.current[tone] !== requestId) return;
       setParagraphInsight(prev => ({ ...prev, statusByTone: { ...prev.statusByTone, [tone]: 'error' } }));
     });
-  }, [unit, orientation, toneLevel, depthLevel]);
+  }, [unit, orientation, toneLevel, depthLevel, renderPolicy]);
 
   const activeTone = toneLevel as Tone;
   const activeVariant = paragraphInsight.variants[activeTone];
@@ -1268,6 +1345,18 @@ const ParagraphUnitCard: React.FC<{
               <p className="text-gray-400">p.{unit.pageIndex + 1} • y={locationMeta.yPct}% • col={locationMeta.column} • block={locationMeta.block}</p>
             </section>
 
+            {activeVariant?.sectionContext && (
+              <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
+                <div className="text-[9px] font-bold text-cyan-300 uppercase tracking-wide mb-1">Section Context Layer</div>
+                <ul className="space-y-1 text-gray-400">
+                  <li><span className="text-cyan-300">Section Purpose:</span> {activeVariant.sectionContext.sectionPurpose}</li>
+                  <li><span className="text-cyan-300">Role In Chapter:</span> {activeVariant.sectionContext.roleInChapter}</li>
+                  <li><span className="text-cyan-300">Dependency Links:</span> {activeVariant.sectionContext.dependencyLinks}</li>
+                  <li><span className="text-cyan-300">Next Concept:</span> {activeVariant.sectionContext.nextConcept}</li>
+                </ul>
+              </section>
+            )}
+
             {insightExpanded && (
               <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
                 <div className="text-[9px] font-bold text-green-300 uppercase tracking-wide mb-1">Full 4-Layer Breakdown</div>
@@ -1376,9 +1465,10 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
   const [localDeepMode, setLocalDeepMode] = useState<boolean | null>(null);
   const isDeepMode = localDeepMode !== null ? localDeepMode : deepAnalysisMode;
 
-  const { tone, setTone, depth, setDepth, renderPolicy, setRenderPolicy } = useInsightsPanelStore();
-  const toneLevel = tone as ToneLevel;
+  const { audience, setAudience, depth, setDepth, view, setView } = useInsightsPanelStore();
+  const toneLevel = audience as ToneLevel;
   const depthLevel = depth as DepthLevel;
+  const renderPolicy = view;
 
   // Collapse state for supporting/background tiers in deep analysis
   const [showBackground, setShowBackground] = useState(false);
@@ -1538,7 +1628,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
             <span className="text-[9px] text-gray-500">View</span>
             <div className="flex rounded border border-gray-700 overflow-hidden">
               {(['condensed', 'expanded'] as const).map(policy => (
-                <button key={policy} onClick={() => setRenderPolicy(policy)} className={`text-[9px] px-2 py-0.5 ${renderPolicy === policy ? 'bg-indigo-600/40 text-indigo-200' : 'bg-gray-800/40 text-gray-400 hover:text-gray-200'}`}>{policy}</button>
+                <button key={policy} onClick={() => setView(policy)} className={`text-[9px] px-2 py-0.5 ${renderPolicy === policy ? 'bg-indigo-600/40 text-indigo-200' : 'bg-gray-800/40 text-gray-400 hover:text-gray-200'}`}>{policy}</button>
               ))}
             </div>
           </div>
@@ -1548,7 +1638,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
               {(['polish', 'student', 'clinical', 'expert'] as ToneLevel[]).map((lvl, i) => (
                 <button
                   key={lvl}
-                  onClick={() => setTone(lvl as 'polish' | 'student' | 'clinical' | 'expert')}
+                  onClick={() => setAudience(lvl as 'polish' | 'student' | 'clinical' | 'expert')}
                   className={`px-1.5 py-0.5 text-[9px] font-medium transition-colors capitalize ${
                     i < 3 ? 'border-r border-gray-700' : ''
                   } ${

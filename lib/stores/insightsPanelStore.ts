@@ -26,6 +26,13 @@ interface InsightsPanelState {
   canScaleDown: () => boolean;
 
   // ── Orientation/tone/depth single-source state ───────────────────────────
+  // Canonical names used by the paragraph intelligence pipeline
+  audience: InsightTone;
+  setAudience: (audience: InsightTone) => void;
+  view: InsightRenderPolicy;
+  setView: (view: InsightRenderPolicy) => void;
+
+  // Backwards-compatible aliases used in existing components
   tone: InsightTone;
   setTone: (tone: InsightTone) => void;
   depth: InsightDepth;
@@ -69,12 +76,16 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
       canScaleUp: () => INSIGHT_SCALES.indexOf(get().insightScale) < INSIGHT_SCALES.length - 1,
       canScaleDown: () => INSIGHT_SCALES.indexOf(get().insightScale) > 0,
 
-      tone: 'clinical',
-      setTone: (tone) => set({ tone }),
+      audience: 'student',
+      setAudience: (audience) => set({ audience, tone: audience }),
+      tone: 'student',
+      setTone: (tone) => set({ tone, audience: tone }),
       depth: 'standard',
       setDepth: (depth) => set({ depth }),
+      view: 'condensed',
+      setView: (view) => set({ view, renderPolicy: view }),
       renderPolicy: 'condensed',
-      setRenderPolicy: (renderPolicy) => set({ renderPolicy }),
+      setRenderPolicy: (renderPolicy) => set({ renderPolicy, view: renderPolicy }),
 
       syncInsightsToPdf: false,
       setSyncInsightsToPdf: (sync) => set({ syncInsightsToPdf: sync }),
@@ -103,6 +114,8 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
       partialize: (state) => ({
         insightScale: state.insightScale,
         syncInsightsToPdf: state.syncInsightsToPdf,
+        audience: state.audience,
+        view: state.view,
         tone: state.tone,
         depth: state.depth,
         renderPolicy: state.renderPolicy,

@@ -301,9 +301,9 @@ export default function TUInteractionModal({
       <div
         className="fixed z-50 bg-white rounded-xl shadow-2xl border border-gray-200 transition-all duration-300 transform"
         style={{
-          left: Math.min(position.x, window.innerWidth - 400),
+          left: Math.min(position.x, window.innerWidth - 540),
           top: Math.min(position.y, window.innerHeight - 500),
-          width: "380px",
+          width: "520px",
           maxHeight: "480px"
         }}
         onClick={(e) => e.stopPropagation()}
