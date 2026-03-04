@@ -14,6 +14,7 @@ import { SourceAnchor } from './SourceAnchor';
 import { buildQuoteHash, detectParagraphTraps } from '@/lib/page-intelligence';
 import type { TrapHit } from '@/lib/page-intelligence';
 import { scoreParagraph, detectClinicalReasoning, applyMicroPolish, orientParagraph, adaptTone, TONE_LABELS, PURPOSE_TAG_CONFIG } from '@/lib/intelligence';
+import { useInsightsPanelStore } from '@/lib/stores/insightsPanelStore';
 import type { ScoreResult, ClinicalReasoningResult, ToneLevel, OrientationHeader } from '@/lib/intelligence';
 
 // ============================================================================
@@ -340,6 +341,12 @@ function buildInsightVariant(unit: ParagraphUnit, orientation: OrientationHeader
   ].join('\n\n');
 
   return { title: snapshot, body, bullets: examSignal };
+}
+
+function buildLocationMeta(unit: ParagraphUnit, unitIndex = 0) {
+  const yPct = unit.bbox ? Math.max(0, Math.min(100, Math.round((unit.bbox.y + unit.bbox.h / 2) * 100))) : Math.max(0, Math.min(100, Math.round(((unit.startChar + unit.endChar) / 2 / Math.max(unit.endChar + 1, 1)) * 100)));
+  const column: 'left' | 'right' | 'full' = !unit.bbox ? 'full' : (unit.bbox.w > 0.7 ? 'full' : unit.bbox.x < 0.45 ? 'left' : 'right');
+  return { yPct, column, block: unitIndex + 1 };
 }
 
 function determineCategory(insight: RankedInsight): PriorityItem['category'] {
@@ -1059,11 +1066,12 @@ const ParagraphUnitCard: React.FC<{
   toneLevel?: ToneLevel;
   /** Detail density for exam signal */
   depthLevel?: DepthLevel;
+  renderPolicy?: 'condensed' | 'expanded';
   /** 0-based index within the page for orientation header */
   unitIndex?: number;
   /** Section title from structureMap.topic — populates OrientationHeader.section */
   sectionHint?: string;
-}> = ({ unit, tier, onHighlightParagraph, onJumpToSource, debugMode = false, deepMode = false, polishEnabled = false, toneLevel = 'clinical', depthLevel = 'standard', unitIndex, sectionHint }) => {
+}> = ({ unit, tier, onHighlightParagraph, onJumpToSource, debugMode = false, deepMode = false, polishEnabled = false, toneLevel = 'clinical', depthLevel = 'standard', renderPolicy = 'condensed', unitIndex, sectionHint }) => {
   const [showSubScores, setShowSubScores] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
 
@@ -1123,9 +1131,13 @@ const ParagraphUnitCard: React.FC<{
 
   // Build a complete SourceRef from the ParagraphUnit for jump + debug
   const unitQuote = unit.text.slice(0, 180);
+  const locationMeta = buildLocationMeta(unit, unitIndex ?? 0);
   const unitSourceRef: SourceRef = {
     pageIndex: unit.pageIndex,
     paragraphId: unit.id,
+    yPct: locationMeta.yPct,
+    column: locationMeta.column,
+    block: locationMeta.block,
     startChar: unit.startChar,
     endChar: unit.endChar,
     quote: unitQuote,
@@ -1215,7 +1227,9 @@ const ParagraphUnitCard: React.FC<{
         )}
 
         {!deepMode && (
-          <p className="text-[11px] text-gray-300 whitespace-pre-wrap">{unit.text}</p>
+          <p className="text-[11px] text-gray-300 whitespace-pre-wrap">
+            {renderPolicy === 'condensed' ? splitSentences(unit.text)[0] || unit.text : unit.text}
+          </p>
         )}
 
         {deepMode && (
@@ -1228,8 +1242,9 @@ const ParagraphUnitCard: React.FC<{
               <p>{activeVariant?.title || 'Generating insight snapshot…'}</p>
             </section>
 
+            {depthLevel !== 'minimal' && (
             <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
-              <div className="text-[9px] font-bold text-purple-300 uppercase tracking-wide mb-1">Role + Purpose + Location</div>
+              <div className="text-[9px] font-bold text-purple-300 uppercase tracking-wide mb-1">Mechanism / Logic</div>
               <div className="flex gap-1 flex-wrap mb-1.5">
                 <span className="text-[9px] px-1.5 py-0.5 rounded border border-purple-700/40 bg-purple-900/20">{unit.role.replace('_', ' ')}</span>
                 <span className="text-[9px] px-1.5 py-0.5 rounded border border-teal-700/40 bg-teal-900/20">{orientation.purpose}</span>
@@ -1237,12 +1252,20 @@ const ParagraphUnitCard: React.FC<{
               </div>
               <p className="text-gray-400">Why this exists here: {orientation.purpose}</p>
             </section>
+            )}
 
+            {depthLevel === 'deep' && (
             <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
               <div className="text-[9px] font-bold text-amber-300 uppercase tracking-wide mb-1">Exam Signal / Clinical Reasoning</div>
               <ul className="list-disc pl-4 space-y-1">
                 {(activeVariant?.bullets || []).slice(0, insightExpanded ? undefined : 2).map((step, idx) => <li key={`${unit.id}_exam_${idx}`}>{step}</li>)}
               </ul>
+            </section>
+            )}
+
+            <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
+              <div className="text-[9px] font-bold text-green-300 uppercase tracking-wide mb-1">Location + Evidence</div>
+              <p className="text-gray-400">p.{unit.pageIndex + 1} • y={locationMeta.yPct}% • col={locationMeta.column} • block={locationMeta.block}</p>
             </section>
 
             {insightExpanded && (
@@ -1353,9 +1376,9 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
   const [localDeepMode, setLocalDeepMode] = useState<boolean | null>(null);
   const isDeepMode = localDeepMode !== null ? localDeepMode : deepAnalysisMode;
 
-  // Tone adaptation level — Polish | Student | Clinical | Expert
-  const [toneLevel, setToneLevel] = useState<ToneLevel>('clinical');
-  const [depthLevel, setDepthLevel] = useState<DepthLevel>('standard');
+  const { tone, setTone, depth, setDepth, renderPolicy, setRenderPolicy } = useInsightsPanelStore();
+  const toneLevel = tone as ToneLevel;
+  const depthLevel = depth as DepthLevel;
 
   // Collapse state for supporting/background tiers in deep analysis
   const [showBackground, setShowBackground] = useState(false);
@@ -1392,39 +1415,6 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
   }, [pageIntelligence]);
 
   const totalParagraphUnits = (pageIntelligence?.paragraphUnits ?? []).length;
-
-  // Auto-select top paragraph unit once per page after extraction completes
-  const autoSelectedPageRef = useRef<number | null>(null);
-  useEffect(() => {
-    const units = pageIntelligence?.paragraphUnits ?? [];
-    const pageNum = pageIntelligence?.pageNumber ?? -1;
-    if (!units.length || !onJumpToSource || pageNum < 0) return;
-    if (autoSelectedPageRef.current === pageNum) return;
-    autoSelectedPageRef.current = pageNum;
-
-    const top = [...units].sort((a, b) => b.importance - a.importance)[0];
-
-    // Guard: top.pageIndex must be 0-based and point to THIS page (pageNum - 1).
-    // If it equals pageNum (1-based / stale cache from the old off-by-one bug),
-    // calling onJumpToSource would advance to pageNum+1 — exactly the auto-flip loop.
-    // Skip navigation for any stale or out-of-range pageIndex.
-    if (top.pageIndex !== pageNum - 1) return;
-
-    const q = top.text.slice(0, 180);
-    const timer = setTimeout(() => onJumpToSource({
-      pageIndex: top.pageIndex,
-      paragraphId: top.id,
-      startChar: top.startChar,
-      endChar: top.endChar,
-      quote: q,
-      quoteText: q,
-      quoteHash: buildQuoteHash(q),
-      textOrigin: 'pdfText',
-      confidence: top.importance / 100,
-    }), 500);
-    return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageIntelligence?.pageNumber, totalParagraphUnits]);
 
   // Total count for header
   const totalItems = activeCategories.reduce((sum, c) => sum + c.items.length, 0);
@@ -1532,7 +1522,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                 {(['minimal', 'standard', 'deep'] as DepthLevel[]).map(level => (
                   <button
                     key={level}
-                    onClick={() => setDepthLevel(level)}
+                    onClick={() => setDepth(level)}
                     className={`text-[9px] px-2 py-0.5 ${depthLevel === level ? 'bg-blue-600/40 text-blue-200' : 'bg-gray-800/40 text-gray-400 hover:text-gray-200'}`}
                     title={`Set insight depth to ${level}`}
                   >
@@ -1544,12 +1534,21 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
           )}
 
           {/* Tone level — Polish | Student | Clinical | Expert (deep mode only) */}
+          <div className="flex items-center gap-1">
+            <span className="text-[9px] text-gray-500">View</span>
+            <div className="flex rounded border border-gray-700 overflow-hidden">
+              {(['condensed', 'expanded'] as const).map(policy => (
+                <button key={policy} onClick={() => setRenderPolicy(policy)} className={`text-[9px] px-2 py-0.5 ${renderPolicy === policy ? 'bg-indigo-600/40 text-indigo-200' : 'bg-gray-800/40 text-gray-400 hover:text-gray-200'}`}>{policy}</button>
+              ))}
+            </div>
+          </div>
+
           {isDeepMode && (
             <div className="flex rounded border border-gray-700 overflow-hidden">
               {(['polish', 'student', 'clinical', 'expert'] as ToneLevel[]).map((lvl, i) => (
                 <button
                   key={lvl}
-                  onClick={() => setToneLevel(lvl)}
+                  onClick={() => setTone(lvl as 'polish' | 'student' | 'clinical' | 'expert')}
                   className={`px-1.5 py-0.5 text-[9px] font-medium transition-colors capitalize ${
                     i < 3 ? 'border-r border-gray-700' : ''
                   } ${
@@ -1649,6 +1648,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                       polishEnabled={toneLevel === 'polish'}
                       toneLevel={toneLevel}
                       depthLevel={depthLevel}
+                      renderPolicy={renderPolicy}
                       unitIndex={idx}
                       sectionHint={pageIntelligence?.structureMap?.topic}
                     />
@@ -1683,6 +1683,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                       polishEnabled={toneLevel === 'polish'}
                       toneLevel={toneLevel}
                       depthLevel={depthLevel}
+                      renderPolicy={renderPolicy}
                       unitIndex={idx}
                       sectionHint={pageIntelligence?.structureMap?.topic}
                     />

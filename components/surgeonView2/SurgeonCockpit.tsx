@@ -151,6 +151,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     toggleSync,
     focusOnSource,
     setActiveParagraphId,
+    depth,
+    setDepth,
   } = useInsightsPanelStore();
 
   // Local state
@@ -166,6 +168,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   const [extractionStatus, setExtractionStatus] = useState<string>('');
   const hasAutoExtracted = useRef(false);
   const hasRunSurgeonEngines = useRef(false);
+  const extractionRequestIdRef = useRef(0);
+  const extractionAbortRef = useRef<AbortController | null>(null);
 
   // Page Intelligence state (OCR-enabled pipeline)
   const [pageIntelligence, setPageIntelligence] = useState<PageIntelligence | null>(null);
@@ -174,8 +178,6 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   const [autoExtract, setAutoExtract] = useState(true); // auto-fire on page load
   const [extractScope, setExtractScope] = useState<ExtractScope>('page');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  // Deep Analysis Mode — shows all paragraph units, structure map, mechanism chains
-  const [deepAnalysisMode, setDeepAnalysisMode] = useState(false);
 
   // Sync document context on mount
   useEffect(() => {
@@ -197,6 +199,10 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     expertView.setPage(currentPage);
     surgeonEngine.setPageContext(currentPage);
     courseContext.setPage(currentPage);
+
+    extractionRequestIdRef.current += 1;
+    extractionAbortRef.current?.abort();
+    extractionAbortRef.current = null;
 
     // Reset per-page extraction state so the UI doesn't show stale data from previous page
     setPageIntelligence(null);
@@ -368,6 +374,11 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
   // Handle extract current page - uses new Page Intelligence pipeline with OCR fallback
   const handleExtractCurrentPage = useCallback(async () => {
+    const requestId = ++extractionRequestIdRef.current;
+    extractionAbortRef.current?.abort();
+    const controller = new AbortController();
+    extractionAbortRef.current = controller;
+
     const nativeText = getPageText(currentPage);
     const hasNativeText = nativeText.length >= 40;
 
@@ -405,6 +416,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         options: { ocrEnabled, datScoring: true, minTextLength: 40 },
       });
 
+      if (controller.signal.aborted || requestId !== extractionRequestIdRef.current) return;
       setPageIntelligence(result.intelligence);
       setOcrStatus(result.intelligence.source === 'ocr' ? 'done' : 'idle');
 
@@ -431,6 +443,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       setExtractionStatus(statusText);
       setTimeout(() => setExtractionStatus(''), 3000);
     } catch (error) {
+      if (controller.signal.aborted) return;
       setExtractionStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setOcrStatus('idle');
     }
@@ -861,13 +874,13 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
           {/* Deep Analysis Mode toggle */}
           <button
-            onClick={() => setDeepAnalysisMode(m => !m)}
+            onClick={() => setDepth(depth === 'deep' ? 'standard' : 'deep')}
             className={`ml-1 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
-              deepAnalysisMode
+              depth === 'deep'
                 ? 'bg-purple-600/80 text-white border border-purple-500/60'
                 : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700'
             }`}
-            title={deepAnalysisMode
+            title={depth === 'deep'
               ? 'Deep Analysis ON: all paragraph units + structure map visible'
               : 'Deep Analysis OFF: click to enable full paragraph intelligence'}
             aria-label="Toggle deep analysis mode"
@@ -892,7 +905,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               onJumpToSource={onJumpToSource}
               insightScale={insightScale}
               syncEnabled={syncInsightsToPdf}
-              deepAnalysisMode={deepAnalysisMode}
+              deepAnalysisMode={depth === 'deep'}
             />
           )}
           {activeTab === 'explain' && (
