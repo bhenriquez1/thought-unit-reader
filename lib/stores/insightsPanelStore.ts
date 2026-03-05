@@ -15,6 +15,12 @@ export type InsightTone = 'polish' | 'student' | 'clinical' | 'expert';
 export type InsightDepth = 'minimal' | 'standard' | 'deep';
 export type InsightRenderPolicy = 'condensed' | 'expanded';
 
+export type InsightSettings = {
+  depth: InsightDepth;
+  tone: InsightTone;
+  view: InsightRenderPolicy;
+};
+
 interface InsightsPanelState {
   // ── Zoom ──────────────────────────────────────────────────────────────────
   insightScale: InsightScale;
@@ -63,7 +69,12 @@ interface InsightsPanelState {
   setActiveVisibleText: (text: string | null) => void;
 
   focusOnSource: (id: string) => void;
+
+  expandedCardIds: string[];
+  setExpandedCardIds: (ids: string[]) => void;
+  toggleExpandedCardId: (id: string) => void;
 }
+
 
 export const useInsightsPanelStore = create<InsightsPanelState>()(
   persist(
@@ -120,6 +131,14 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
       setActiveVisibleText: (text) => set({ activeVisibleText: text }),
 
       focusOnSource: (id) => set({ activeParagraphId: id, selectedInsightId: id }),
+
+      expandedCardIds: [],
+      setExpandedCardIds: (ids) => set({ expandedCardIds: ids.slice(0, 500) }),
+      toggleExpandedCardId: (id) => set((state) => ({
+        expandedCardIds: state.expandedCardIds.includes(id)
+          ? state.expandedCardIds.filter((x) => x !== id)
+          : [...state.expandedCardIds, id],
+      })),
     }),
     {
       // Keep this key UI-only and intentionally small.
@@ -144,7 +163,11 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
       onRehydrateStorage: () => {
         if (typeof window === 'undefined') return;
         // Cleanup old key that may contain oversized historical state.
-        localStorage.removeItem('insights-panel-storage');
+        try {
+          localStorage.removeItem('insights-panel-storage');
+        } catch (error) {
+          console.warn('[insights-panel-store] Unable to cleanup legacy storage key', error);
+        }
       },
     }
   )

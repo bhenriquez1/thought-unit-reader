@@ -2523,9 +2523,18 @@ export default function ThoughtUnitReader() {
   /* =========================================================================
      🔹 Main Layout
   ========================================================================= */
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, []);
+
   return (
     <div
-      className={`min-h-screen flex flex-col ${
+      className={`h-screen overflow-hidden flex flex-col ${
         darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"
       }`}
     >
@@ -2781,7 +2790,7 @@ export default function ThoughtUnitReader() {
       </div>
 
       {/* Main Content Area - Pure Views: Each view manages its own layout */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden min-h-0">
         {/* Main Content - Pure View renders in full container */}
         <div className="w-full h-full bg-gray-800 rounded-lg overflow-hidden">
           {renderContent()}
