@@ -41,6 +41,7 @@ export interface SmartPDFViewerProps {
    * Use this to drive PDF scroll → insights-panel sync without DOM overlays.
    */
   onActiveParagraphChange?: (snippet: string | null) => void;
+  onPageRenderComplete?: (page: number) => void;
 }
 
 /** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
@@ -102,6 +103,7 @@ export default function SmartPDFViewer({
   onPageCount,
   onOutline,
   onActiveParagraphChange,
+  onPageRenderComplete,
 }: SmartPDFViewerProps) {
   // Stable key root: prefer explicit docId, fall back to fileUrl
   const pageKeyRoot = docId ?? fileUrl;
@@ -492,6 +494,7 @@ export default function SmartPDFViewer({
                     <div className="text-red-400">Failed to render page {currentPage}</div>
                   </div>
                 }
+                onRenderSuccess={() => onPageRenderComplete?.(currentPage)}
                 onRenderError={(error) => {
                   console.error(`SmartPDFViewer: Page ${currentPage} render error:`, error);
                 }}

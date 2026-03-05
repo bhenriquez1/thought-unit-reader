@@ -233,30 +233,33 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   useEffect(() => {
     if (!syncInsightsToPdf || !activeVisibleText || !rankedInsights.length) return;
 
-    const needle = activeVisibleText.toLowerCase();
-    const needleWords = new Set(needle.split(/\s+/).filter(w => w.length > 4));
-    if (needleWords.size < 2) return;
+    const timer = setTimeout(() => {
+      const needle = activeVisibleText.toLowerCase();
+      const needleWords = new Set(needle.split(/\s+/).filter(w => w.length > 4));
+      if (needleWords.size < 2) return;
 
-    let bestId: string | undefined;
-    let bestScore = 0;
+      let bestId: string | undefined;
+      let bestScore = 0;
 
-    for (const insight of rankedInsights) {
-      const haystack = `${insight.title} ${insight.claim || ''} ${insight.whyItMatters || ''}`.toLowerCase();
-      let score = 0;
-      for (const word of needleWords) {
-        if (haystack.includes(word)) score++;
+      for (const insight of rankedInsights) {
+        const haystack = `${insight.title} ${insight.claim || ''} ${insight.whyItMatters || ''}`.toLowerCase();
+        let score = 0;
+        for (const word of needleWords) {
+          if (haystack.includes(word)) score++;
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          bestId = insight.id;
+        }
       }
-      if (score > bestScore) {
-        bestScore = score;
-        bestId = insight.id;
-      }
-    }
 
-    // Only update if we matched at least 2 words (avoid spurious matches)
-    if (bestScore >= 2 && bestId && bestId !== selectedCardId) {
-      setSelectedCardId(bestId);
-    }
-  }, [activeVisibleText, syncInsightsToPdf]);
+      if (bestScore >= 2 && bestId && bestId !== selectedCardId) {
+        setSelectedCardId(bestId);
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [activeVisibleText, syncInsightsToPdf, selectedCardId]);
 
   // Auto-extract with debounce (800–1000 ms) when page changes and auto-extract is on
   useEffect(() => {
