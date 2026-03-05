@@ -54,14 +54,12 @@ export default function PureReaderView({
   
 
   const [isPageChanging, setIsPageChanging] = useState(false);
-  const pendingPageRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    if (pendingPageRef.current === currentPage) {
-      const timer = setTimeout(() => setIsPageChanging(false), 150);
-      return () => clearTimeout(timer);
-    }
-  }, [currentPage]);
+  const navigateToPage = useCallback((page: number) => {
+    if (isPageChanging || page === currentPage) return;
+    setIsPageChanging(true);
+    onPageChange(page);
+  }, [currentPage, isPageChanging, onPageChange]);
 
   const handlePrevPage = useCallback(() => {
     if (currentPage > 1) navigateToPage(currentPage - 1);
@@ -79,16 +77,11 @@ export default function PureReaderView({
     }
   }, [currentPage, onPageChange, isPageChanging]);
   
+
   const handleNextPage = useCallback(() => {
-    if (isPageChanging) return;
-    if (currentPage < pdfPageCount) {
-      const targetPage = currentPage + 1;
-      pendingPageRef.current = targetPage;
-      setIsPageChanging(true);
-      onPageChange(targetPage);
-    }
-  }, [currentPage, pdfPageCount, onPageChange, isPageChanging]);
-  
+    if (currentPage < pdfPageCount) navigateToPage(currentPage + 1);
+  }, [currentPage, pdfPageCount, navigateToPage]);
+
   // No file uploaded
   if (!fileUrl) {
     return (
@@ -106,7 +99,7 @@ export default function PureReaderView({
       </div>
     );
   }
-  
+
   return (
     <div className="h-full flex flex-col bg-gray-900" data-testid="pure-reader-view">
       {/* Minimal Toolbar - Only essential reading controls */}
@@ -133,7 +126,7 @@ export default function PureReaderView({
             Next →
           </button>
         </div>
-        
+
         {/* Zoom Controls */}
         <div className="flex items-center gap-2">
           <button
@@ -160,13 +153,13 @@ export default function PureReaderView({
             +
           </button>
         </div>
-        
+
         {/* Mode indicator */}
         <div className="text-xs text-gray-500">
           📖 Reader Mode
         </div>
       </div>
-      
+
       {/* PDF Viewer - FULL WIDTH, no split */}
       <div className="flex-1 overflow-auto bg-gray-950">
         <SmartPDFViewer

@@ -94,7 +94,7 @@ describe('studySessionStore - P0/P1 Features', () => {
   });
   
   test('getWeakDeck prioritizes miss > weak > quiz-miss', () => {
-    const annotations = [
+    const annotations: Array<{ id: string; tags: string[]; pdrm?: { isMistake?: boolean } }> = [
       { id: '1', tags: ['weak'], pdrm: {} },
       { id: '2', tags: ['miss'], pdrm: {} },
       { id: '3', tags: ['quiz-miss'], pdrm: {} },
