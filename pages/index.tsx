@@ -2156,6 +2156,15 @@ export default function ThoughtUnitReader() {
     }
   };
 
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
   /* =========================================================================
      🔹 Render Reader Content with Persistent Views (Performance Optimized)
   ========================================================================= */
@@ -2234,7 +2243,7 @@ export default function ThoughtUnitReader() {
       };
 
       return (
-        <div className="h-full flex" data-testid="expert-view-container">
+        <div className="h-full flex overflow-hidden" data-testid="expert-view-container">
           <ErrorBoundary
             onError={(error, errorInfo) => {
               console.error('🎯 Expert View Error:', {

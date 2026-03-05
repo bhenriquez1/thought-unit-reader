@@ -501,6 +501,7 @@ export default function SmartPDFViewer({
                     <div className="text-red-400">Failed to render page {currentPage}</div>
                   </div>
                 }
+                onRenderSuccess={() => onPageRenderComplete?.(currentPage)}
                 onRenderError={(error) => {
                   console.error(`SmartPDFViewer: Page ${currentPage} render error:`, error);
                 }}

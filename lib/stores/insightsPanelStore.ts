@@ -59,6 +59,12 @@ interface InsightsPanelState {
   selectedInsightId: string | null;
   setSelectedInsightId: (id: string | null) => void;
 
+  expandedCardIds: string[];
+  toggleExpandedCard: (id: string) => void;
+
+  followScroll: boolean;
+  setFollowScroll: (follow: boolean) => void;
+
   activeVisibleText: string | null;
   setActiveVisibleText: (text: string | null) => void;
 
@@ -108,6 +114,19 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
       selectedInsightId: null,
       setSelectedInsightId: (id) => set({ selectedInsightId: id }),
 
+      expandedCardIds: [],
+      toggleExpandedCard: (id) => set((state) => {
+        const exists = state.expandedCardIds.includes(id);
+        return {
+          expandedCardIds: exists
+            ? state.expandedCardIds.filter((cardId) => cardId !== id)
+            : [...state.expandedCardIds, id],
+        };
+      }),
+
+      followScroll: false,
+      setFollowScroll: (follow) => set({ followScroll: follow }),
+
       activeVisibleText: null,
       setActiveVisibleText: (text) => set({ activeVisibleText: text }),
 
@@ -139,6 +158,7 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
         depth: state.depth,
         renderPolicy: state.renderPolicy,
         expandedCardIds: state.expandedCardIds,
+        followScroll: state.followScroll,
       }),
       onRehydrateStorage: () => {
         if (typeof window === 'undefined') return;

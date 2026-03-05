@@ -27,6 +27,13 @@ export type PriorityScore = 'MUST_KNOW' | 'HIGH_YIELD' | 'SUPPORTING';
 type ParagraphTier = 'core' | 'important' | 'supporting' | 'background';
 type DepthLevel = 'minimal' | 'standard' | 'deep';
 type Tone = 'polish' | 'student' | 'clinical' | 'expert';
+type InsightView = 'condensed' | 'expanded';
+
+type InsightSettings = {
+  depth: DepthLevel;
+  tone: Tone;
+  view: InsightView;
+};
 
 type InsightVariant = {
   title?: string;
@@ -57,6 +64,13 @@ interface PriorityItem {
   tags?: string[];
   /** Full source anchor — enables precise click-to-focus in the PDF viewer. */
   sourceRef?: SourceRef;
+}
+
+interface LayeredCardContent {
+  snapshot: string;
+  coreMeaning: string[];
+  structuredLogic: string[];
+  examClinical: string[];
 }
 
 interface PriorityComprehensionPanelProps {
@@ -285,6 +299,33 @@ function splitSentences(text: string): string[] {
     .split(/(?<=[.!?])\s+/)
     .map(s => s.trim())
     .filter(Boolean);
+}
+
+
+function firstSentence(text: string): string {
+  const [first] = splitSentences(text);
+  return (first || text || '').trim();
+}
+
+function buildLayeredCardContent(item: PriorityItem, settings: InsightSettings): LayeredCardContent {
+  const source = item.content || item.title;
+  const snapshot = toneSafe(firstSentence(source), settings.tone as ToneLevel);
+  const coreMeaning = splitSentences(source)
+    .filter(Boolean)
+    .slice(0, settings.depth === 'minimal' ? 1 : 3)
+    .map((sentence) => toneSafe(sentence, settings.tone as ToneLevel));
+
+  const structuredLogic = [
+    toneSafe(`Mechanism → ${item.title}`, settings.tone as ToneLevel),
+    toneSafe(`Application → prioritize this as ${item.priority.replace('_', ' ').toLowerCase()}.`, settings.tone as ToneLevel),
+  ];
+
+  const examClinical = [
+    toneSafe('Trap: look for look-alike distractors and negation wording around this concept.', settings.tone as ToneLevel),
+    toneSafe('Decision shift: apply this anchor when choosing diagnosis, threshold, or intervention.', settings.tone as ToneLevel),
+  ];
+
+  return { snapshot, coreMeaning, structuredLogic, examClinical };
 }
 
 function toneSafe(text: string, toneLevel: ToneLevel): string {
@@ -1482,7 +1523,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
   const [localDeepMode, setLocalDeepMode] = useState<boolean | null>(null);
   const isDeepMode = localDeepMode !== null ? localDeepMode : deepAnalysisMode;
 
-  const { audience, setAudience, depth, setDepth, view, setView } = useInsightsPanelStore();
+  const { audience, setAudience, depth, setDepth, view, setView, followScroll, setFollowScroll } = useInsightsPanelStore();
   const toneLevel = audience as ToneLevel;
   const depthLevel = depth as DepthLevel;
   const renderPolicy = view;
@@ -1492,12 +1533,12 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
 
   // Scroll active item into view when sync is on and activeItemId changes
   useEffect(() => {
-    if (!syncEnabled || !activeItemId) return;
+    if (!syncEnabled || !followScroll || !activeItemId) return;
     const el = itemRefs.current.get(activeItemId);
     if (el) {
       el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
-  }, [activeItemId, syncEnabled]);
+  }, [activeItemId, syncEnabled, followScroll]);
 
   // Categorize all priority items
   const categorizedItems = useMemo(() => {
@@ -1647,6 +1688,12 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                 <button key={policy} onClick={() => setView(policy)} className={`text-[9px] px-2 py-0.5 ${renderPolicy === policy ? 'bg-indigo-600/40 text-indigo-200' : 'bg-gray-800/40 text-gray-400 hover:text-gray-200'}`}>{policy}</button>
               ))}
             </div>
+            <button
+              onClick={() => setFollowScroll(!followScroll)}
+              className={`text-[9px] px-2 py-0.5 rounded border border-gray-700/60 ${followScroll ? 'bg-teal-600/40 text-teal-200' : 'bg-gray-800/40 text-gray-400 hover:text-gray-200'}`}
+            >
+              Follow scroll
+            </button>
           </div>
 
           <div className="flex rounded border border-gray-700 overflow-hidden">
@@ -1815,6 +1862,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
             onMarkConfusing={onMarkConfusing}
             onHighlightParagraph={onHighlightParagraph}
             onJumpToSource={onJumpToSource}
+            settings={{ depth: depthLevel, tone: toneLevel as Tone, view: renderPolicy }}
           />
         ))}
       </div>
@@ -1838,6 +1886,7 @@ interface CategorySectionProps {
   onMarkConfusing?: (insight: RankedInsight) => void;
   onHighlightParagraph?: (text: string) => void;
   onJumpToSource?: (ref: SourceRef) => void;
+  settings: InsightSettings;
 }
 
 const CategorySection: React.FC<CategorySectionProps> = ({
@@ -1852,6 +1901,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   onMarkConfusing,
   onHighlightParagraph,
   onJumpToSource,
+  settings,
 }) => {
   const header = CATEGORY_HEADERS[category];
   const [showAll, setShowAll] = useState(false);
@@ -1883,6 +1933,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
             onMarkConfusing={onMarkConfusing}
             onHighlightParagraph={onHighlightParagraph}
             onJumpToSource={onJumpToSource}
+            settings={settings}
           />
         ))}
 
@@ -1915,6 +1966,7 @@ interface PriorityItemCardProps {
   onMarkConfusing?: (insight: RankedInsight) => void;
   onHighlightParagraph?: (text: string) => void;
   onJumpToSource?: (ref: SourceRef) => void;
+  settings: InsightSettings;
 }
 
 const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
@@ -1928,13 +1980,17 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
   onMarkConfusing,
   onHighlightParagraph,
   onJumpToSource,
+  settings,
 }) => {
   const style = PRIORITY_STYLES[item.priority];
   const linkedInsight = rankedInsights.find(r => r.id === item.id);
   const page = item.evidence?.[0]?.page;
+  const resolvedPage = page ?? (item.sourceRef?.pageIndex !== undefined ? item.sourceRef.pageIndex + 1 : undefined);
+  const { expandedCardIds, toggleExpandedCard } = useInsightsPanelStore();
+  const layered = useMemo(() => buildLayeredCardContent(item, settings), [item, settings]);
+  const isExpanded = expandedCardIds.includes(item.id);
 
   const handleClick = () => {
-    // Use sourceRef.quote for precise paragraph focus; fall back to content text
     const focusText = item.sourceRef?.quote ?? item.content;
     if (onHighlightParagraph && focusText) {
       onHighlightParagraph(focusText);
@@ -1945,8 +2001,6 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
   };
 
   const categoryTag = CATEGORY_PURPOSE_TAG[item.category];
-
-  // Base font sizes scaled by --insightScale CSS variable (set by parent panel)
   const titleStyle: React.CSSProperties = { fontSize: 'calc(0.75rem * var(--insightScale, 1))' };
   const bodyStyle: React.CSSProperties = {
     fontSize: 'calc(0.6875rem * var(--insightScale, 1))',
@@ -1968,111 +2022,95 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
         ${isActive ? 'border-teal-500 ring-1 ring-teal-500/50' : 'border-gray-700'}
       `}
     >
-      {/* Mini orientation chip — cognitive anchor visible in Quick mode */}
-      <div className="flex items-center gap-1.5 mb-1.5 pb-1 border-b border-gray-700/30">
-        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${categoryTag.color} ${categoryTag.textColor}`}>
+      <div className="sticky top-0 z-10 -mx-2.5 px-2.5 py-1.5 mb-1.5 border-b border-gray-700/40 bg-gray-900/70 backdrop-blur-sm flex items-center gap-1.5">
+        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${categoryTag.color} ${categoryTag.textColor}`}>
           {categoryTag.icon} {categoryTag.label}
         </span>
+        <span className="text-[8px] font-mono text-gray-300 whitespace-nowrap">Pg {resolvedPage ?? '—'}</span>
+        <span className="text-[8px] font-mono text-gray-400 whitespace-nowrap">¶ {item.sourceRef?.paragraphId || 'n/a'}</span>
+        <span className="text-[8px] text-gray-500 whitespace-nowrap">match {(Math.round((item.sourceRef?.confidence ?? 0.7) * 100))}%</span>
         <span className="flex-1" />
-        {page !== undefined && (
-          <span className="text-[8px] font-mono text-gray-700 flex-shrink-0">p.{page}</span>
-        )}
-      </div>
-
-      {/* Header Row */}
-      <div className="flex items-start justify-between gap-2 mb-1">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-sm flex-shrink-0">{style.icon}</span>
-          <span className={`font-medium ${style.text} truncate`} style={titleStyle}>
-            {item.title}
-          </span>
-        </div>
-
-        {/* Page link */}
         {page !== undefined && onJumpToPage && (
           <button
             onClick={(e) => {
               e.stopPropagation();
               onJumpToPage(page);
             }}
-            className="text-teal-400 hover:text-teal-300 flex-shrink-0"
+            className="text-teal-400 hover:text-teal-300 flex-shrink-0 whitespace-nowrap"
             style={metaStyle}
           >
-            p.{page + 1}
+            Jump to source
           </button>
         )}
       </div>
 
-      {/* Content — monospace for math items, prose otherwise. Expand/collapse for long text. */}
-      {item.tags?.includes('math') ? (
-        <div>
-          <code
-            className="block text-teal-300 bg-gray-900/60 rounded px-2 py-1 pl-5 overflow-x-auto whitespace-pre-wrap font-mono"
-            style={bodyStyle}
-          >
-            {item.content}
-          </code>
+      <div className="flex items-start justify-between gap-2 mb-1">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-sm flex-shrink-0">{style.icon}</span>
+          <span className={`font-medium ${style.text} whitespace-nowrap overflow-hidden text-ellipsis`} style={titleStyle}>
+            {item.title}
+          </span>
         </div>
-      ) : (
-        <div>
-          <p className="text-gray-300 pl-5 whitespace-pre-wrap" style={bodyStyle}>
-            {item.content}
-          </p>
-        </div>
-      )}
+      </div>
 
-      {/* Tags */}
+      <div className="space-y-1.5 pl-1" style={bodyStyle}>
+        <p className={settings.view === 'condensed' && !isExpanded ? 'line-clamp-2 text-gray-300' : 'text-gray-300'}>{layered.snapshot}</p>
+
+        {(settings.view === 'expanded' || isExpanded) && settings.depth !== 'minimal' && (
+          <ul className="list-disc pl-4 text-gray-300">
+            {layered.coreMeaning.map((point, idx) => <li key={`${item.id}_core_${idx}`}>{point}</li>)}
+          </ul>
+        )}
+
+        {(settings.view === 'expanded' || isExpanded) && settings.depth !== 'minimal' && (
+          <div className="text-gray-400">
+            {layered.structuredLogic.map((line, idx) => <p key={`${item.id}_logic_${idx}`}>{line}</p>)}
+          </div>
+        )}
+
+        {(settings.view === 'expanded' || isExpanded) && settings.depth === 'deep' && (
+          <ul className="list-disc pl-4 text-amber-200">
+            {layered.examClinical.map((point, idx) => <li key={`${item.id}_exam_${idx}`}>{point}</li>)}
+          </ul>
+        )}
+      </div>
+
+      <div className="mt-2 pl-1">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleExpandedCard(item.id);
+          }}
+          className="text-[10px] px-2 py-1 rounded border border-gray-700/60 bg-gray-800/40 hover:bg-gray-700/50"
+        >
+          {isExpanded ? 'Collapse' : 'Expand'}
+        </button>
+      </div>
+
       {item.tags && item.tags.length > 0 && (
-        <div className="flex gap-1 mt-1.5 pl-5 flex-wrap">
+        <div className="flex gap-1 mt-1.5 pl-1 flex-wrap">
           {item.tags.slice(0, 3).map(tag => (
-            <span
-              key={tag}
-              className="px-1 py-0.5 bg-gray-700/50 text-gray-400 rounded"
-              style={metaStyle}
-            >
+            <span key={tag} className="px-1 py-0.5 bg-gray-700/50 text-gray-400 rounded" style={metaStyle}>
               {tag}
             </span>
           ))}
         </div>
       )}
 
-      {/* Source Anchor — only when we have a sourceRef */}
       {item.sourceRef && (onJumpToSource || onJumpToPage) && (
         <div className="mt-2 pl-1" onClick={(e) => e.stopPropagation()}>
-          <SourceAnchor
-            sourceRef={item.sourceRef}
-            onJump={onJumpToSource}
-            collapsed={true}
-          />
+          <SourceAnchor sourceRef={item.sourceRef} onJump={onJumpToSource} collapsed={settings.view === 'condensed' && !isExpanded} />
         </div>
       )}
 
-      {/* Actions (only if linked to an insight) */}
       {linkedInsight && (onSaveToNoteLab || onMarkConfusing) && (
-        <div className="flex gap-1 mt-2 pl-5">
+        <div className="flex gap-1 mt-2 pl-1">
           {onSaveToNoteLab && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onSaveToNoteLab(linkedInsight);
-              }}
-              className="px-1.5 py-0.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
-              style={metaStyle}
-            >
-              💾 Save
-            </button>
+            <button onClick={(e) => { e.stopPropagation(); onSaveToNoteLab(linkedInsight); }} className="px-1.5 py-0.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded" style={metaStyle}>💾 Save</button>
           )}
           {onMarkConfusing && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onMarkConfusing(linkedInsight);
-              }}
-              className="px-1.5 py-0.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
-              style={metaStyle}
-            >
-              ❓ Confusing
-            </button>
+            <button onClick={(e) => { e.stopPropagation(); onMarkConfusing(linkedInsight); }} className="px-1.5 py-0.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded" style={metaStyle}>❓ Confusing</button>
           )}
         </div>
       )}

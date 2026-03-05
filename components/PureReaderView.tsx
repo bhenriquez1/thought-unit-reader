@@ -9,6 +9,7 @@
 // ✅ Uses global zoom store for shared zoom across views
 
 import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 
@@ -51,6 +52,17 @@ export default function PureReaderView({
     onPageChange(page);
   }, [currentPage, isPageChanging, onPageChange]);
   
+
+  const [isPageChanging, setIsPageChanging] = useState(false);
+  const pendingPageRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (pendingPageRef.current === currentPage) {
+      const timer = setTimeout(() => setIsPageChanging(false), 150);
+      return () => clearTimeout(timer);
+    }
+  }, [currentPage]);
+
   const handlePrevPage = useCallback(() => {
     if (currentPage > 1) navigateToPage(currentPage - 1);
   }, [currentPage, navigateToPage]);
@@ -58,6 +70,24 @@ export default function PureReaderView({
   const handleNextPage = useCallback(() => {
     if (currentPage < pdfPageCount) navigateToPage(currentPage + 1);
   }, [currentPage, pdfPageCount, navigateToPage]);
+    if (isPageChanging) return;
+    if (currentPage > 1) {
+      const targetPage = currentPage - 1;
+      pendingPageRef.current = targetPage;
+      setIsPageChanging(true);
+      onPageChange(targetPage);
+    }
+  }, [currentPage, onPageChange, isPageChanging]);
+  
+  const handleNextPage = useCallback(() => {
+    if (isPageChanging) return;
+    if (currentPage < pdfPageCount) {
+      const targetPage = currentPage + 1;
+      pendingPageRef.current = targetPage;
+      setIsPageChanging(true);
+      onPageChange(targetPage);
+    }
+  }, [currentPage, pdfPageCount, onPageChange, isPageChanging]);
   
   // No file uploaded
   if (!fileUrl) {
@@ -92,7 +122,7 @@ export default function PureReaderView({
             ← Prev
           </button>
           <span className="text-sm text-gray-300 font-medium">
-            Page {currentPage} of {pdfPageCount || '...'}
+            Page {currentPage} of {pdfPageCount || '...'} {isPageChanging ? '• loading…' : ''}
           </span>
           <button
             onClick={handleNextPage}
@@ -151,6 +181,11 @@ export default function PureReaderView({
           onActiveParagraphChange={onActiveParagraphChange}
           isPageChanging={isPageChanging}
           onPageRenderComplete={() => setIsPageChanging(false)}
+          onPageRenderComplete={(page) => {
+            if (pendingPageRef.current === page) {
+              setIsPageChanging(false);
+            }
+          }}
         />
       </div>
     </div>
