@@ -61,6 +61,8 @@ interface InsightsPanelState {
 
   expandedCardIds: string[];
   toggleExpandedCard: (id: string) => void;
+  setExpandedCardIds: (ids: string[]) => void;
+  toggleExpandedCardId: (id: string) => void;
 
   followScroll: boolean;
   setFollowScroll: (follow: boolean) => void;
@@ -69,10 +71,6 @@ interface InsightsPanelState {
   setActiveVisibleText: (text: string | null) => void;
 
   focusOnSource: (id: string) => void;
-
-  expandedCardIds: string[];
-  setExpandedCardIds: (ids: string[]) => void;
-  toggleExpandedCardId: (id: string) => void;
 }
 
 
@@ -132,7 +130,6 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
 
       focusOnSource: (id) => set({ activeParagraphId: id, selectedInsightId: id }),
 
-      expandedCardIds: [],
       setExpandedCardIds: (ids) => set({ expandedCardIds: ids.slice(0, 500) }),
       toggleExpandedCardId: (id) => set((state) => ({
         expandedCardIds: state.expandedCardIds.includes(id)
