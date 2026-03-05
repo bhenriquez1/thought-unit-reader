@@ -41,6 +41,10 @@ export interface SmartPDFViewerProps {
    * Use this to drive PDF scroll → insights-panel sync without DOM overlays.
    */
   onActiveParagraphChange?: (snippet: string | null) => void;
+  /** External page change lock to prevent observer feedback loops while rendering */
+  isPageChanging?: boolean;
+  /** Fires when the currently requested page render completes */
+  onPageRenderComplete?: (page: number) => void;
 }
 
 /** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
@@ -102,6 +106,8 @@ export default function SmartPDFViewer({
   onPageCount,
   onOutline,
   onActiveParagraphChange,
+  isPageChanging = false,
+  onPageRenderComplete,
 }: SmartPDFViewerProps) {
   // Stable key root: prefer explicit docId, fall back to fileUrl
   const pageKeyRoot = docId ?? fileUrl;
@@ -133,6 +139,7 @@ export default function SmartPDFViewer({
     if (!container) return;
 
     const handleScroll = () => {
+      if (isPageChanging) return;
       if (paragraphScrollTimerRef.current) {
         clearTimeout(paragraphScrollTimerRef.current);
       }
@@ -195,7 +202,7 @@ export default function SmartPDFViewer({
       container.removeEventListener('scroll', handleScroll);
       if (paragraphScrollTimerRef.current) clearTimeout(paragraphScrollTimerRef.current);
     };
-  }, [onActiveParagraphChange]);
+  }, [isPageChanging, onActiveParagraphChange]);
 
   // Enhanced PDF loading with robust error handling
   const {
@@ -258,6 +265,7 @@ export default function SmartPDFViewer({
 
   // Enhanced page change handler with sync integration and fallback
   const handlePageChangeWithSync = (newPage: number, source: 'scroll' | 'navigation' | 'programmatic' = 'navigation') => {
+    if (isPageChanging) return;
     console.log(`📄 SmartPDFViewer: Page change ${currentPage} -> ${newPage} (${source})`);
     
     // Validate page bounds - only proceed if PDF is loaded and we have valid page count
@@ -300,6 +308,7 @@ export default function SmartPDFViewer({
     
     // Enhanced debounced callback with pulse animation
     const handleVisibleTextChange = (visibleText: string, topElement: HTMLElement | null) => {
+      if (isPageChanging) return;
       console.log(`👁️ SmartPDFViewer: Visible text changed (${visibleText.length} chars)`);
       
       // Clear any existing sync timeout
@@ -335,7 +344,7 @@ export default function SmartPDFViewer({
       }
       stopVisibleTextObserver();
     };
-  }, [fileUrl, startVisibleTextObserver, stopVisibleTextObserver, syncPDFToChunk]);
+  }, [fileUrl, isPageChanging, startVisibleTextObserver, stopVisibleTextObserver, syncPDFToChunk]);
 
   const handleZoomIn = () => setInternalZoom((z) => Math.min(z + 0.25, 2.5));
   const handleZoomOut = () => setInternalZoom((z) => Math.max(z - 0.25, 0.6));
@@ -494,6 +503,9 @@ export default function SmartPDFViewer({
                 }
                 onRenderError={(error) => {
                   console.error(`SmartPDFViewer: Page ${currentPage} render error:`, error);
+                }}
+                onRenderSuccess={() => {
+                  onPageRenderComplete?.(currentPage);
                 }}
               />
 

@@ -1054,9 +1054,9 @@ const MiniOrientationHeader: React.FC<{ header: OrientationHeader }> = ({ header
         {cfg.icon} {cfg.label}
       </span>
       {header.section && (
-        <span className="text-[8px] text-gray-600 truncate leading-tight max-w-[100px]">{header.section}</span>
+        <span className="text-[8px] text-gray-600 leading-tight break-words">{header.section}</span>
       )}
-      <span className="text-[9px] text-gray-500 truncate flex-1 leading-tight">{header.purpose}</span>
+      <span className="text-[9px] text-gray-500 flex-1 leading-tight break-words">{header.purpose}</span>
       {header.page !== null && (
         <span className="text-[8px] font-mono text-gray-700 flex-shrink-0 ml-auto">
           p.{header.page}{header.paragraphIndex !== null ? ` ¶${header.paragraphIndex}` : ''}
@@ -1167,7 +1167,8 @@ const ParagraphUnitCard: React.FC<{
     [unit, unitIndex, sectionHint],
   );
   const roleLeftBorder = ROLE_LEFT_BORDER[unit.role] ?? 'border-l-gray-600/40';
-  const [insightExpanded, setInsightExpanded] = useState(false);
+  const { expandedCardIds, toggleExpandedCardId } = useInsightsPanelStore();
+  const insightExpanded = expandedCardIds.includes(unit.id);
   const [paragraphInsight, setParagraphInsight] = useState<ParagraphInsight>(() => ({
     anchorId: unit.id,
     variants: { polish: { body: '' }, student: { body: '' }, clinical: { body: '' }, expert: { body: '' } },
@@ -1234,6 +1235,22 @@ const ParagraphUnitCard: React.FC<{
         ? <div className="mb-1.5" onClick={e => e.stopPropagation()}><OrientationHeaderBadge header={orientation} /></div>
         : <MiniOrientationHeader header={orientation} />
       }
+
+      <div className="sticky top-0 z-10 mb-1.5 flex items-center gap-1.5 rounded border border-gray-700/50 bg-gray-950/90 px-2 py-1 text-[9px]" onClick={(e) => e.stopPropagation()}>
+        <span className="font-mono text-gray-300 whitespace-nowrap">Pg {unit.pageIndex + 1}</span>
+        <span className="font-mono text-gray-400 whitespace-nowrap">¶ {unit.id}</span>
+        <span className="text-teal-400 whitespace-nowrap">{Math.round((unitSourceRef.confidence || 0) * 100)}% match</span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onJumpToSource?.(unitSourceRef);
+          }}
+          className="ml-auto rounded border border-teal-700/50 bg-teal-900/20 px-1.5 py-0.5 text-[8px] text-teal-300 hover:bg-teal-800/30 whitespace-nowrap"
+        >
+          Jump to source
+        </button>
+      </div>
 
       {/* Header: tier icon + role chip + score + sub-score toggle */}
       <div className="flex items-center gap-1.5 mb-1.5">
@@ -1367,7 +1384,7 @@ const ParagraphUnitCard: React.FC<{
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); setInsightExpanded(v => !v); }}
+                onClick={(e) => { e.stopPropagation(); toggleExpandedCardId(unit.id); }}
                 className="text-[9px] px-2 py-1 rounded border border-gray-700/60 bg-gray-800/60 hover:bg-gray-700/60"
               >
                 {insightExpanded ? 'Collapse' : 'Expand'}
@@ -1605,8 +1622,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
             </button>
           </div>
 
-          {isDeepMode && (
-            <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1">
               <span className="text-[9px] text-gray-500">Depth</span>
               <div className="flex rounded border border-gray-700 overflow-hidden">
                 {(['minimal', 'standard', 'deep'] as DepthLevel[]).map(level => (
@@ -1621,9 +1637,9 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                 ))}
               </div>
             </div>
-          )}
 
-          {/* Tone level — Polish | Student | Clinical | Expert (deep mode only) */}
+
+          {/* Tone level — Polish | Student | Clinical | Expert */}
           <div className="flex items-center gap-1">
             <span className="text-[9px] text-gray-500">View</span>
             <div className="flex rounded border border-gray-700 overflow-hidden">
@@ -1633,8 +1649,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
             </div>
           </div>
 
-          {isDeepMode && (
-            <div className="flex rounded border border-gray-700 overflow-hidden">
+          <div className="flex rounded border border-gray-700 overflow-hidden">
               {(['polish', 'student', 'clinical', 'expert'] as ToneLevel[]).map((lvl, i) => (
                 <button
                   key={lvl}
@@ -1651,7 +1666,6 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                 </button>
               ))}
             </div>
-          )}
 
           <span className="px-2 py-0.5 text-[10px] bg-teal-500/20 text-teal-400 rounded">
             {totalItems}
@@ -1702,7 +1716,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
       )}
 
       {/* Deep Analysis Mode: Paragraph Units (all tiers, no suppression) */}
-      {isDeepMode && totalParagraphUnits > 0 && (
+      {totalParagraphUnits > 0 && (
         <section className="mb-5">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-sm">🔬</span>

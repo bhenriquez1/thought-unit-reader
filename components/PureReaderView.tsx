@@ -8,7 +8,7 @@
 // ❌ No Thought Units (those belong in Surgeon View)
 // ✅ Uses global zoom store for shared zoom across views
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 
@@ -43,14 +43,21 @@ export default function PureReaderView({
 }: PureReaderViewProps) {
   // Global zoom store
   const { zoom, zoomIn, zoomOut, resetZoom, getZoomPercent, canZoomIn, canZoomOut } = useZoomStore();
+  const [isPageChanging, setIsPageChanging] = useState(false);
+
+  const navigateToPage = useCallback((page: number) => {
+    if (isPageChanging || page === currentPage) return;
+    setIsPageChanging(true);
+    onPageChange(page);
+  }, [currentPage, isPageChanging, onPageChange]);
   
   const handlePrevPage = useCallback(() => {
-    if (currentPage > 1) onPageChange(currentPage - 1);
-  }, [currentPage, onPageChange]);
+    if (currentPage > 1) navigateToPage(currentPage - 1);
+  }, [currentPage, navigateToPage]);
   
   const handleNextPage = useCallback(() => {
-    if (currentPage < pdfPageCount) onPageChange(currentPage + 1);
-  }, [currentPage, pdfPageCount, onPageChange]);
+    if (currentPage < pdfPageCount) navigateToPage(currentPage + 1);
+  }, [currentPage, pdfPageCount, navigateToPage]);
   
   // No file uploaded
   if (!fileUrl) {
@@ -78,7 +85,7 @@ export default function PureReaderView({
         <div className="flex items-center gap-3">
           <button
             onClick={handlePrevPage}
-            disabled={currentPage <= 1}
+            disabled={isPageChanging || currentPage <= 1}
             className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm transition-colors"
             data-testid="prev-page-btn"
           >
@@ -89,7 +96,7 @@ export default function PureReaderView({
           </span>
           <button
             onClick={handleNextPage}
-            disabled={currentPage >= pdfPageCount}
+            disabled={isPageChanging || currentPage >= pdfPageCount}
             className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm transition-colors"
             data-testid="next-page-btn"
           >
@@ -137,11 +144,13 @@ export default function PureReaderView({
           docId={docId}
           currentPage={currentPage}
           scale={zoom}
-          onPageChange={onPageChange}
+          onPageChange={navigateToPage}
           onPageCount={onPageCount}
           onTextSelect={onTextSelect}
           onOutline={onOutline}
           onActiveParagraphChange={onActiveParagraphChange}
+          isPageChanging={isPageChanging}
+          onPageRenderComplete={() => setIsPageChanging(false)}
         />
       </div>
     </div>
