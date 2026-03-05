@@ -505,9 +505,6 @@ export default function SmartPDFViewer({
                 onRenderError={(error) => {
                   console.error(`SmartPDFViewer: Page ${currentPage} render error:`, error);
                 }}
-                onRenderSuccess={() => {
-                  onPageRenderComplete?.(currentPage);
-                }}
               />
 
               {/* Highlight pulse animation overlay */}
