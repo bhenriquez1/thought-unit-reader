@@ -153,6 +153,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     setActiveParagraphId,
     depth,
     setDepth,
+    mode,
+    setMode,
   } = useInsightsPanelStore();
 
   // Local state
@@ -229,37 +231,54 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
   // PDF scroll → insight card sync:
   // When the active visible paragraph text changes and Sync is ON,
-  // find the ranked insight whose claim/title best overlaps the snippet and activate it.
+  // 1) find the ranked insight whose claim/title best overlaps the snippet and activate it
+  // 2) find the ParagraphUnit matching the snippet and set activeParagraphId in store
   useEffect(() => {
-    if (!syncInsightsToPdf || !activeVisibleText || !rankedInsights.length) return;
+    if (!activeVisibleText) return;
 
     const timer = setTimeout(() => {
       const needle = activeVisibleText.toLowerCase();
       const needleWords = new Set(needle.split(/\s+/).filter(w => w.length > 4));
       if (needleWords.size < 2) return;
 
-      let bestId: string | undefined;
-      let bestScore = 0;
-
-      for (const insight of rankedInsights) {
-        const haystack = `${insight.title} ${insight.claim || ''} ${insight.whyItMatters || ''}`.toLowerCase();
-        let score = 0;
-        for (const word of needleWords) {
-          if (haystack.includes(word)) score++;
+      // 1) Match ranked insight for right-panel card sync
+      if (syncInsightsToPdf && rankedInsights.length) {
+        let bestId: string | undefined;
+        let bestScore = 0;
+        for (const insight of rankedInsights) {
+          const haystack = `${insight.title} ${insight.claim || ''} ${insight.whyItMatters || ''}`.toLowerCase();
+          let score = 0;
+          for (const word of needleWords) {
+            if (haystack.includes(word)) score++;
+          }
+          if (score > bestScore) { bestScore = score; bestId = insight.id; }
         }
-        if (score > bestScore) {
-          bestScore = score;
-          bestId = insight.id;
+        if (bestScore >= 2 && bestId && bestId !== selectedCardId) {
+          setSelectedCardId(bestId);
         }
       }
 
-      if (bestScore >= 2 && bestId && bestId !== selectedCardId) {
-        setSelectedCardId(bestId);
+      // 2) Match ParagraphUnit for active-paragraph tracking (condensed panel focus)
+      const units = pageIntelligence?.paragraphUnits ?? [];
+      if (units.length) {
+        let bestUnit: typeof units[0] | null = null;
+        let bestUnitScore = 0;
+        for (const u of units) {
+          const hay = u.text.toLowerCase();
+          let score = 0;
+          for (const word of needleWords) {
+            if (hay.includes(word)) score++;
+          }
+          if (score > bestUnitScore) { bestUnitScore = score; bestUnit = u; }
+        }
+        if (bestUnit && bestUnitScore >= 2) {
+          setActiveParagraphId(bestUnit.id);
+        }
       }
     }, 200);
 
     return () => clearTimeout(timer);
-  }, [activeVisibleText, syncInsightsToPdf, selectedCardId]);
+  }, [activeVisibleText, syncInsightsToPdf, selectedCardId, pageIntelligence]);
 
   // Auto-extract with debounce (800–1000 ms) when page changes and auto-extract is on
   useEffect(() => {
@@ -875,17 +894,21 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             {syncInsightsToPdf ? '⇄ Sync' : '⇄ Free'}
           </button>
 
-          {/* Deep Analysis Mode toggle */}
+          {/* Deep Analysis Mode toggle — syncs mode + depth in store */}
           <button
-            onClick={() => setDepth(depth === 'deep' ? 'standard' : 'deep')}
+            onClick={() => {
+              const next = mode === 'deep' ? 'quick' : 'deep';
+              setMode(next);
+              setDepth(next === 'deep' ? 'deep' : depth === 'deep' ? 'standard' : depth);
+            }}
             className={`ml-1 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
-              depth === 'deep'
+              mode === 'deep'
                 ? 'bg-purple-600/80 text-white border border-purple-500/60'
                 : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700'
             }`}
-            title={depth === 'deep'
-              ? 'Deep Analysis ON: all paragraph units + structure map visible'
-              : 'Deep Analysis OFF: click to enable full paragraph intelligence'}
+            title={mode === 'deep'
+              ? 'Deep Mode ON: full paragraph intelligence + all tiers visible'
+              : 'Deep Mode OFF: click to enable full paragraph intelligence'}
             aria-label="Toggle deep analysis mode"
           >
             🔬
@@ -908,7 +931,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               onJumpToSource={onJumpToSource}
               insightScale={insightScale}
               syncEnabled={syncInsightsToPdf}
-              deepAnalysisMode={depth === 'deep'}
+              deepAnalysisMode={mode === 'deep'}
             />
           )}
           {activeTab === 'explain' && (

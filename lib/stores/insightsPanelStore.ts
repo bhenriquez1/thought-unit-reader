@@ -11,9 +11,20 @@ import { strictLocalStorage } from '@/lib/storage/safePersist';
 
 export const INSIGHT_SCALES = [0.9, 1.0, 1.1, 1.25, 1.4] as const;
 export type InsightScale = typeof INSIGHT_SCALES[number];
+export type InsightMode = 'quick' | 'deep';
 export type InsightTone = 'polish' | 'student' | 'clinical' | 'expert';
 export type InsightDepth = 'minimal' | 'standard' | 'deep';
 export type InsightRenderPolicy = 'condensed' | 'expanded';
+export type InsightPersona = 'student' | 'clinical' | 'expert';
+
+/** Single source of truth for all insight controls — included in every cache/query key */
+export type InsightControls = {
+  mode: InsightMode;
+  depth: InsightDepth;
+  view: InsightRenderPolicy;
+  persona: InsightPersona;
+  followScroll: boolean;
+};
 
 export type InsightSettings = {
   depth: InsightDepth;
@@ -22,6 +33,13 @@ export type InsightSettings = {
 };
 
 interface InsightsPanelState {
+  // ── Mode: quick (essential summary) | deep (full teaching scaffold) ───────
+  mode: InsightMode;
+  setMode: (mode: InsightMode) => void;
+
+  // ── Computed controls snapshot (for cache key composition) ───────────────
+  getControls: () => InsightControls;
+
   // ── Zoom ──────────────────────────────────────────────────────────────────
   insightScale: InsightScale;
   setInsightScale: (scale: InsightScale) => void;
@@ -84,6 +102,24 @@ interface InsightsPanelState {
 export const useInsightsPanelStore = create<InsightsPanelState>()(
   persist(
     (set, get) => ({
+      mode: 'quick',
+      setMode: (mode) => set({ mode }),
+      getControls: (): InsightControls => {
+        const s = get();
+        const rawPersona = s.audience as string;
+        const persona: InsightPersona =
+          rawPersona === 'clinical' ? 'clinical'
+          : rawPersona === 'expert' ? 'expert'
+          : 'student';
+        return {
+          mode: s.mode,
+          depth: s.depth,
+          view: s.view,
+          persona,
+          followScroll: s.followScroll,
+        };
+      },
+
       insightScale: 1.0,
       setInsightScale: (scale) => set({ insightScale: scale }),
       scaleUp: () => {
@@ -171,6 +207,7 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
         renderPolicy: state.renderPolicy,
         expandedCardIds: state.expandedCardIds,
         followScroll: state.followScroll,
+        mode: state.mode,
       }),
       onRehydrateStorage: () => {
         if (typeof window === 'undefined') return;
