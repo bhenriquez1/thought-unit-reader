@@ -155,6 +155,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     setDepth,
     mode,
     setMode,
+    followScroll,
   } = useInsightsPanelStore();
 
   // Local state
@@ -258,27 +259,31 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         }
       }
 
-      // 2) Match ParagraphUnit for active-paragraph tracking (condensed panel focus)
-      const units = pageIntelligence?.paragraphUnits ?? [];
-      if (units.length) {
-        let bestUnit: typeof units[0] | null = null;
-        let bestUnitScore = 0;
-        for (const u of units) {
-          const hay = u.text.toLowerCase();
-          let score = 0;
-          for (const word of needleWords) {
-            if (hay.includes(word)) score++;
+      // 2) Match ParagraphUnit for active-paragraph tracking (condensed panel focus).
+      // Only update when follow-scroll or insight sync is enabled, so the condensed
+      // panel doesn't jump while the user is manually scrolling with both off.
+      if (followScroll || syncInsightsToPdf) {
+        const units = pageIntelligence?.paragraphUnits ?? [];
+        if (units.length) {
+          let bestUnit: typeof units[0] | null = null;
+          let bestUnitScore = 0;
+          for (const u of units) {
+            const hay = u.text.toLowerCase();
+            let score = 0;
+            for (const word of needleWords) {
+              if (hay.includes(word)) score++;
+            }
+            if (score > bestUnitScore) { bestUnitScore = score; bestUnit = u; }
           }
-          if (score > bestUnitScore) { bestUnitScore = score; bestUnit = u; }
-        }
-        if (bestUnit && bestUnitScore >= 2) {
-          setActiveParagraphId(bestUnit.id);
+          if (bestUnit && bestUnitScore >= 2) {
+            setActiveParagraphId(bestUnit.id);
+          }
         }
       }
     }, 200);
 
     return () => clearTimeout(timer);
-  }, [activeVisibleText, syncInsightsToPdf, selectedCardId, pageIntelligence]);
+  }, [activeVisibleText, syncInsightsToPdf, followScroll, selectedCardId, pageIntelligence]);
 
   // Auto-extract with debounce (800–1000 ms) when page changes and auto-extract is on
   useEffect(() => {
