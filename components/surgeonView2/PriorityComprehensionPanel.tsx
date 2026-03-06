@@ -1268,7 +1268,10 @@ const ParagraphUnitCard: React.FC<{
       if (latestRequestIdRef.current[tone] !== requestId) return;
       setParagraphInsight(prev => ({ ...prev, statusByTone: { ...prev.statusByTone, [tone]: 'error' } }));
     });
-  }, [unit, orientation, toneLevel, depthLevel, renderPolicy]);
+  // renderPolicy is intentionally excluded: variant content doesn't change between
+  // condensed/expanded — the rendering layer handles what to show (bullets or not).
+  // Keeping it in deps caused a spurious "Adapting…" flash on every toggle.
+  }, [unit, orientation, toneLevel, depthLevel]);
 
   const activeTone = toneLevel as Tone;
   const activeVariant = paragraphInsight.variants[activeTone];
@@ -1395,11 +1398,17 @@ const ParagraphUnitCard: React.FC<{
               <p className="text-[11px] text-gray-500 italic">Adapting…</p>
             ) : (
               <>
-                <p className="text-[11px] text-gray-300 whitespace-pre-wrap leading-relaxed">
+                <p
+                  className="text-[11px] text-gray-300 whitespace-pre-wrap leading-relaxed"
+                  style={{ fontSize: 'calc(0.6875rem * var(--insightScale, 1))', lineHeight: 'calc(1.5 * var(--insightScale, 1))' }}
+                >
                   {activeVariant?.title || splitSentences(unit.text)[0] || unit.text}
                 </p>
                 {renderPolicy === 'expanded' && activeVariant?.bullets && activeVariant.bullets.length > 0 && (
-                  <ul className="list-disc pl-4 mt-1.5 space-y-0.5 text-[10px] text-gray-400">
+                  <ul
+                    className="list-disc pl-4 mt-1.5 space-y-0.5 text-[10px] text-gray-400"
+                    style={{ fontSize: 'calc(0.625rem * var(--insightScale, 1))' }}
+                  >
                     {activeVariant.bullets.slice(0, depthLevel === 'deep' ? undefined : 2).map((b, i) => (
                       <li key={i}>{b}</li>
                     ))}
@@ -1411,7 +1420,7 @@ const ParagraphUnitCard: React.FC<{
         )}
 
         {deepMode && (
-          <div className="space-y-2 text-[11px] text-gray-300">
+          <div className="space-y-2 text-[11px] text-gray-300" style={{ fontSize: 'calc(0.6875rem * var(--insightScale, 1))' }}>
             <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
               <div className="flex items-center justify-between gap-2 mb-1">
                 <div className="text-[9px] font-bold text-blue-300 uppercase tracking-wide">Snapshot</div>
@@ -1571,6 +1580,8 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
     view, setView,
     followScroll, setFollowScroll,
     activeParagraphId,
+    insightScale: storeInsightScale,
+    resetScale,
   } = useInsightsPanelStore();
 
   // Sync prop → store once on mount if store is still at default
@@ -1630,7 +1641,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
   if (totalItems === 0 && totalParagraphUnits === 0) {
     // Show continuity scaffold even for empty pages
     if (pageIntelligence?.continuity) {
-      const panelStyle = { '--insightScale': String(insightScale) } as React.CSSProperties;
+      const panelStyle = { '--insightScale': String(storeInsightScale ?? insightScale) } as React.CSSProperties;
       return (
         <div className="p-3 overflow-y-auto h-full" style={panelStyle}>
           <ContinuitySection continuity={pageIntelligence.continuity} />
@@ -1682,7 +1693,9 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
     );
   }
 
-  const panelStyle = { '--insightScale': String(insightScale) } as React.CSSProperties;
+  // Prefer store value; fall back to prop (e.g. when rendered without SurgeonCockpit)
+  const effectiveScale = storeInsightScale ?? insightScale;
+  const panelStyle = { '--insightScale': String(effectiveScale) } as React.CSSProperties;
 
   return (
     <div className="p-3 overflow-y-auto h-full" style={panelStyle}>
@@ -1772,6 +1785,20 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                 </button>
               ))}
             </div>
+
+          {/* Reset layout — fallback recovery if controls feel broken */}
+          <button
+            onClick={() => {
+              resetScale();
+              setMode('quick');
+              setView('condensed');
+              setFollowScroll(false);
+            }}
+            className="text-[9px] px-1.5 py-0.5 rounded border border-gray-700/60 bg-gray-800/30 text-gray-500 hover:text-gray-300 hover:bg-gray-700/40 transition-colors"
+            title="Reset insight layout to defaults (zoom, density, scroll sync)"
+          >
+            ↺
+          </button>
 
           <span className="px-2 py-0.5 text-[10px] bg-teal-500/20 text-teal-400 rounded">
             {totalItems}
