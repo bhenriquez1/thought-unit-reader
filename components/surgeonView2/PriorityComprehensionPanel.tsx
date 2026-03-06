@@ -395,60 +395,106 @@ function buildSectionContext(unit: ParagraphUnit, orientation: OrientationHeader
   return { sectionPurpose, roleInChapter, dependencyLinks, nextConcept };
 }
 
+/** Build a single check-yourself question from paragraph role */
+function buildCheckQuestion(unit: ParagraphUnit): string {
+  if (unit.role === 'definition') return 'Can you define this term without looking at the text?';
+  if (unit.role === 'mechanism') return 'What is the first step in this pathway?';
+  if (unit.role === 'exam_trap') return 'Which word in this paragraph would appear in a distractor answer choice?';
+  if (unit.role === 'clinical') return 'What would change in management if this finding were absent?';
+  if (unit.role === 'formula') return 'What does each variable represent and when is this applied clinically?';
+  return 'What is the single most important takeaway from this paragraph?';
+}
+
+/**
+ * Generate persona-branched paragraph intelligence.
+ * Each persona produces a structurally different body and bullet set.
+ *   student  → definition + why it matters + check question
+ *   clinical → decision points + threshold triggers + differentials
+ *   expert   → nuance/exceptions + discriminators + pitfalls
+ */
 function generateParagraphIntelligence(
   unit: ParagraphUnit,
   orientation: OrientationHeader,
   settings: { depth: DepthLevel; audience: ToneLevel; view: 'condensed' | 'expanded' },
 ): InsightVariant {
-  const { depth, audience, view } = settings;
+  const { depth, audience } = settings;
   const text = audience === 'polish' ? applyMicroPolish(unit.text) : toneSafe(unit.text, audience);
   const sentences = splitSentences(text);
   const snapshot = sentences[0] || text || 'No paragraph content available.';
   const role = unit.role.replace('_', ' ');
   const purpose = orientation.purpose;
-  const location = `Page ${unit.pageIndex + 1} · ${orientation.section || 'Section not tagged'} · Paragraph ${(orientation.paragraphIndex ?? 0) + 1}`;
-  const examSignal = buildExamSignalBullets(unit, audience, depth);
-  const memoryHook = toneSafe(`Sticky phrase: ${snapshot.split(/[,.]/)[0]}.`, audience);
   const sectionContext = buildSectionContext(unit, orientation, audience);
+  const examSignal = buildExamSignalBullets(unit, audience, depth);
+  const keyTermStr = unit.keyTerms.slice(0, 2).join(' and ') || 'this concept';
 
-  if (depth === 'minimal') {
-    const mechanism = toneSafe(`${role} paragraph clarifying: ${purpose}.`, audience);
+  // ── Student: definition → why it matters → check yourself ─────────────────
+  if (audience === 'student') {
+    const whyLine = toneSafe(
+      `Understanding this helps you answer exam questions about ${keyTermStr}.`,
+      audience,
+    );
+    const bodyParts = [
+      `What This Means\n${toneSafe(`This paragraph is a ${role} that ${purpose.toLowerCase()}.`, audience)}`,
+      depth !== 'minimal' ? `Why It Matters\n${whyLine}` : null,
+      depth === 'deep' ? `Check Yourself\n${buildCheckQuestion(unit)}` : null,
+    ];
     return {
       title: snapshot,
-      body: `Snapshot\n${snapshot}\n\nMechanism\n${mechanism}`,
-      bullets: examSignal.slice(0, 2),
+      body: bodyParts.filter(Boolean).join('\n\n'),
+      bullets: [
+        `Start here: ${snapshot.split(/[,.]/)[0].trim()}.`,
+        ...examSignal.slice(0, depth === 'minimal' ? 0 : depth === 'standard' ? 1 : 2),
+      ],
       sectionContext,
     };
   }
 
-  const structureBlock = `Role: ${role}\nPurpose: ${purpose}\nLocation: ${location}`;
-  const viewAwareBody = view === 'condensed' ? text.slice(0, 220) : text;
-
-  if (depth === 'standard') {
+  // ── Clinical: decision points → thresholds → differentials ────────────────
+  if (audience === 'clinical') {
+    const actionLine = unit.signals.hasClinicalTerms
+      ? toneSafe(`Clinical action hinge: ${purpose}.`, audience)
+      : toneSafe(`Apply when: ${purpose.toLowerCase()}.`, audience);
+    const bodyParts = [
+      `Decision Points\n${actionLine}`,
+      unit.signals.hasNumbers && depth !== 'minimal'
+        ? `Threshold / Cutoff\nNumeric values present — identify the cutoff direction before answering.`
+        : null,
+      depth === 'deep'
+        ? `Differential Considerations\nSeparate from look-alikes by the discriminator stated in this paragraph.`
+        : null,
+    ];
     return {
       title: snapshot,
-      body: [
-        `Layer 1 — Snapshot\n${snapshot}`,
-        `Layer 2 — Structure\n${structureBlock}`,
-        `Layer 3 — Mechanism\n${viewAwareBody}`,
-        `Layer 4 — Importance\n${memoryHook}`,
-      ].join('\n\n'),
-      bullets: examSignal,
+      body: bodyParts.filter(Boolean).join('\n\n'),
+      bullets: [
+        `Action trigger: if this concept appears in a vignette, confirm ${role} before deciding.`,
+        ...examSignal.slice(0, depth === 'minimal' ? 0 : 2),
+      ],
       sectionContext,
     };
   }
 
+  // ── Expert (including 'polish' fallback): nuance → discriminators → pitfalls
+  const bodyParts = [
+    `Nuance & Exceptions\n${
+      unit.signals.hasNegation
+        ? toneSafe('Negation or exception present — trace the specific condition that inverts the rule.', audience)
+        : toneSafe(`Edge case: check for population-specific modifications to the rule stated here.`, audience)
+    }`,
+    depth !== 'minimal'
+      ? `Discriminators\n${toneSafe(`Separate this ${role} from look-alikes by: ${purpose.toLowerCase()}.`, audience)}`
+      : null,
+    depth === 'deep'
+      ? `Pitfalls\n${examSignal.slice(-2).join(' ')}`
+      : null,
+  ];
   return {
     title: snapshot,
-    body: [
-      `Layer 1 — Snapshot\n${snapshot}`,
-      `Layer 2 — Structure\n${structureBlock}`,
-      `Layer 3 — Mechanism\n${viewAwareBody}`,
-      `Layer 4 — Reasoning Flow\n${examSignal.map((b, idx) => `${idx + 1}. ${b}`).join('\n')}`,
-      `Layer 5 — Exam Traps\n${toneSafe('Watch negations, exceptions, and look-alike distractors tied to this paragraph.', audience)}`,
-      `Layer 6 — Cross Links\n${sectionContext.dependencyLinks}\n${sectionContext.nextConcept}`,
-    ].join('\n\n'),
-    bullets: examSignal,
+    body: bodyParts.filter(Boolean).join('\n\n'),
+    bullets: [
+      `Discriminate by: ${purpose.toLowerCase()}.`,
+      ...examSignal.slice(0, depth === 'minimal' ? 0 : depth === 'standard' ? 1 : 3),
+    ],
     sectionContext,
   };
 }
@@ -1517,11 +1563,26 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
   // Ref map: insight item ID → DOM element for scroll-into-view
   const itemRefs = useRef<Map<string, HTMLElement>>(new Map());
 
-  // Local Quick|Deep toggle — overrides external deepAnalysisMode when user switches
-  const [localDeepMode, setLocalDeepMode] = useState<boolean | null>(null);
-  const isDeepMode = localDeepMode !== null ? localDeepMode : deepAnalysisMode;
+  // mode is now store-driven; deepAnalysisMode prop serves as initial default only
+  const {
+    mode, setMode,
+    audience, setAudience,
+    depth, setDepth,
+    view, setView,
+    followScroll, setFollowScroll,
+    activeParagraphId,
+  } = useInsightsPanelStore();
 
-  const { audience, setAudience, depth, setDepth, view, setView, followScroll, setFollowScroll } = useInsightsPanelStore();
+  // Sync prop → store once on mount if store is still at default
+  const [initializedMode, setInitializedMode] = useState(false);
+  useEffect(() => {
+    if (!initializedMode) {
+      if (deepAnalysisMode && mode === 'quick') setMode('deep');
+      setInitializedMode(true);
+    }
+  }, [deepAnalysisMode, mode, setMode, initializedMode]);
+
+  const isDeepMode = mode === 'deep';
   const toneLevel = audience as ToneLevel;
   const depthLevel = depth as DepthLevel;
   const renderPolicy = view;
@@ -1637,10 +1698,10 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          {/* Quick | Deep segmented toggle */}
+          {/* Quick | Deep segmented toggle — writes to store */}
           <div className="flex rounded border border-gray-700 overflow-hidden">
             <button
-              onClick={() => setLocalDeepMode(false)}
+              onClick={() => setMode('quick')}
               className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
                 !isDeepMode
                   ? 'bg-teal-700/60 text-teal-200 border-r border-teal-600/50'
@@ -1650,7 +1711,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
               Quick
             </button>
             <button
-              onClick={() => setLocalDeepMode(true)}
+              onClick={() => setMode('deep')}
               className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
                 isDeepMode
                   ? 'bg-teal-700/60 text-teal-200'
@@ -1760,86 +1821,123 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
         <ContinuitySection continuity={pageIntelligence.continuity} />
       )}
 
-      {/* Deep Analysis Mode: Paragraph Units (all tiers, no suppression) */}
+      {/* Full Paragraph Intelligence — view-aware rendering */}
       {totalParagraphUnits > 0 && (
         <section className="mb-5">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-sm">🔬</span>
+            <span className="text-sm">{isDeepMode ? '🔬' : '📌'}</span>
             <h3 className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
-              Full Paragraph Intelligence
+              {isDeepMode ? 'Full Paragraph Intelligence' : 'Active Paragraph Essentials'}
             </h3>
-            <span className="text-[10px] text-gray-500">({totalParagraphUnits})</span>
+            <span className="text-[10px] text-gray-500">
+              {isDeepMode ? `(${totalParagraphUnits})` : ''}
+            </span>
           </div>
 
-          {(['core', 'important', 'supporting'] as ParagraphTier[]).map(tier => {
-            const units = paragraphTiers.get(tier) ?? [];
-            if (units.length === 0) return null;
-            const meta = TIER_META[tier];
+          {/* CONDENSED (quick mode): show only the active / top paragraph essentials */}
+          {!isDeepMode && (() => {
+            const allUnits = pageIntelligence?.paragraphUnits ?? [];
+            // Prefer the activeParagraphId unit; fall back to highest-importance unit
+            const activeUnit =
+              (activeParagraphId ? allUnits.find(u => u.id === activeParagraphId) : null)
+              ?? allUnits.reduce<ParagraphUnit | null>(
+                (best, u) => (!best || u.importance > best.importance) ? u : best, null
+              );
+            if (!activeUnit) return null;
+            const tier = scoreToParagraphTier(activeUnit.importance);
             return (
-              <div key={tier} className="mb-3">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <span className="text-xs">{meta.icon}</span>
-                  <span className={`text-[10px] font-semibold uppercase ${meta.text}`}>
-                    {meta.label}
-                  </span>
-                  <span className="text-[10px] text-gray-600">({units.length})</span>
-                </div>
-                <div className="space-y-1.5">
-                  {units.map((u, idx) => (
-                    <ParagraphUnitCard
-                      key={u.id}
-                      unit={u}
-                      tier={tier}
-                      onHighlightParagraph={onHighlightParagraph}
-                      onJumpToSource={onJumpToSource}
-                      debugMode={isDeepMode}
-                      deepMode={isDeepMode}
-                      polishEnabled={toneLevel === 'polish'}
-                      toneLevel={toneLevel}
-                      depthLevel={depthLevel}
-                      renderPolicy={renderPolicy}
-                      unitIndex={idx}
-                      sectionHint={pageIntelligence?.structureMap?.topic}
-                    />
-                  ))}
-                </div>
-              </div>
+              <ParagraphUnitCard
+                key={activeUnit.id}
+                unit={activeUnit}
+                tier={tier}
+                onHighlightParagraph={onHighlightParagraph}
+                onJumpToSource={onJumpToSource}
+                debugMode={false}
+                deepMode={false}
+                polishEnabled={toneLevel === 'polish'}
+                toneLevel={toneLevel}
+                depthLevel={depthLevel}
+                renderPolicy={renderPolicy}
+                unitIndex={0}
+                sectionHint={pageIntelligence?.structureMap?.topic}
+              />
             );
-          })}
+          })()}
 
-          {/* Background tier — collapsed by default */}
-          {(paragraphTiers.get('background') ?? []).length > 0 && (
-            <div className="mb-3">
-              <button
-                className="flex items-center gap-1.5 text-[10px] text-gray-500 hover:text-gray-400 mb-1"
-                onClick={() => setShowBackground(b => !b)}
-              >
-                <span>{showBackground ? '▼' : '▶'}</span>
-                <span className="uppercase tracking-wide">Background</span>
-                <span>({paragraphTiers.get('background')!.length})</span>
-              </button>
-              {showBackground && (
-                <div className="space-y-1.5">
-                  {(paragraphTiers.get('background') ?? []).map((u, idx) => (
-                    <ParagraphUnitCard
-                      key={u.id}
-                      unit={u}
-                      tier="background"
-                      onHighlightParagraph={onHighlightParagraph}
-                      onJumpToSource={onJumpToSource}
-                      debugMode={isDeepMode}
-                      deepMode={isDeepMode}
-                      polishEnabled={toneLevel === 'polish'}
-                      toneLevel={toneLevel}
-                      depthLevel={depthLevel}
-                      renderPolicy={renderPolicy}
-                      unitIndex={idx}
-                      sectionHint={pageIntelligence?.structureMap?.topic}
-                    />
-                  ))}
+          {/* EXPANDED (deep mode): all tiers, full teaching scaffold */}
+          {isDeepMode && (
+            <>
+              {(['core', 'important', 'supporting'] as ParagraphTier[]).map(tier => {
+                const units = paragraphTiers.get(tier) ?? [];
+                if (units.length === 0) return null;
+                const meta = TIER_META[tier];
+                return (
+                  <div key={tier} className="mb-3">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <span className="text-xs">{meta.icon}</span>
+                      <span className={`text-[10px] font-semibold uppercase ${meta.text}`}>
+                        {meta.label}
+                      </span>
+                      <span className="text-[10px] text-gray-600">({units.length})</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {units.map((u, idx) => (
+                        <ParagraphUnitCard
+                          key={u.id}
+                          unit={u}
+                          tier={tier}
+                          onHighlightParagraph={onHighlightParagraph}
+                          onJumpToSource={onJumpToSource}
+                          debugMode={true}
+                          deepMode={true}
+                          polishEnabled={toneLevel === 'polish'}
+                          toneLevel={toneLevel}
+                          depthLevel={depthLevel}
+                          renderPolicy={renderPolicy}
+                          unitIndex={idx}
+                          sectionHint={pageIntelligence?.structureMap?.topic}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Background tier — collapsed by default */}
+              {(paragraphTiers.get('background') ?? []).length > 0 && (
+                <div className="mb-3">
+                  <button
+                    className="flex items-center gap-1.5 text-[10px] text-gray-500 hover:text-gray-400 mb-1"
+                    onClick={() => setShowBackground(b => !b)}
+                  >
+                    <span>{showBackground ? '▼' : '▶'}</span>
+                    <span className="uppercase tracking-wide">Background</span>
+                    <span>({paragraphTiers.get('background')!.length})</span>
+                  </button>
+                  {showBackground && (
+                    <div className="space-y-1.5">
+                      {(paragraphTiers.get('background') ?? []).map((u, idx) => (
+                        <ParagraphUnitCard
+                          key={u.id}
+                          unit={u}
+                          tier="background"
+                          onHighlightParagraph={onHighlightParagraph}
+                          onJumpToSource={onJumpToSource}
+                          debugMode={true}
+                          deepMode={true}
+                          polishEnabled={toneLevel === 'polish'}
+                          toneLevel={toneLevel}
+                          depthLevel={depthLevel}
+                          renderPolicy={renderPolicy}
+                          unitIndex={idx}
+                          sectionHint={pageIntelligence?.structureMap?.topic}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
+            </>
           )}
         </section>
       )}

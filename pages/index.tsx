@@ -66,6 +66,7 @@ import { useTocStore } from "@/lib/stores/tocStore";
 import { useZoomStore } from "@/lib/stores/zoomStore";
 import { usePdrmStore } from "@/lib/stores/pdrmStore";
 import { useInsightsPanelStore } from "@/lib/stores/insightsPanelStore";
+import { useHighlightStore } from "@/lib/stores/highlightStore";
 import { extractParagraphBlocks, findBestMatchingBlock } from "@/lib/paragraphMap";
 
 import {
@@ -874,11 +875,15 @@ export default function ThoughtUnitReader() {
     if (!searchText || searchText.trim().length < 10) return;
 
     const pinnedKey = searchText.trim().slice(0, 80);
-    const store = useInsightsPanelStore.getState();
+    const panelStore = useInsightsPanelStore.getState();
+    const hlStore = useHighlightStore.getState();
+    const docId = bookId || 'default-book';
+    const pageIndex = currentPage - 1;
 
     // Toggle: if already pinned, unpin and remove its overlay
-    if (store.isPinned(pinnedKey)) {
-      store.unpinText(pinnedKey);
+    if (panelStore.isPinned(pinnedKey)) {
+      panelStore.unpinText(pinnedKey);
+      hlStore.removeHighlight(docId, pageIndex, pinnedKey);
       // Remove the overlay tagged with this key
       document.querySelectorAll(`[data-pin-key]`).forEach((el) => {
         if ((el as HTMLElement).dataset.pinKey === pinnedKey) el.remove();
@@ -951,27 +956,30 @@ export default function ThoughtUnitReader() {
     // ── Anchor Overlay — persistent, tagged with pinnedKey for later removal ──
     const spansToHighlight = spans.slice(matchStart, matchEnd + 1);
     const pageEl = spansToHighlight[0]?.closest('.react-pdf__Page') as HTMLElement | null;
+
+    // Hoist bbox so we can store it after the DOM block
+    let bboxTop = Infinity, bboxBottom = -Infinity, bboxLeft = Infinity, bboxRight = -Infinity;
+
     if (pageEl) {
       const pageRect = pageEl.getBoundingClientRect();
-      let top = Infinity, bottom = -Infinity, left = Infinity, right = -Infinity;
       for (const span of spansToHighlight) {
         const r = span.getBoundingClientRect();
         if (r.width === 0 && r.height === 0) continue;
-        top    = Math.min(top,    r.top    - pageRect.top);
-        bottom = Math.max(bottom, r.bottom - pageRect.top);
-        left   = Math.min(left,   r.left   - pageRect.left);
-        right  = Math.max(right,  r.right  - pageRect.left);
+        bboxTop    = Math.min(bboxTop,    r.top    - pageRect.top);
+        bboxBottom = Math.max(bboxBottom, r.bottom - pageRect.top);
+        bboxLeft   = Math.min(bboxLeft,   r.left   - pageRect.left);
+        bboxRight  = Math.max(bboxRight,  r.right  - pageRect.left);
       }
-      if (top < Infinity) {
+      if (bboxTop < Infinity) {
         const ol = document.createElement('div');
         ol.className = 'para-anchor-overlay';
         ol.dataset.pinKey = pinnedKey;
         ol.style.cssText = [
           'position:absolute',
-          `top:${Math.round(top) - 4}px`,
-          `left:${Math.round(left) - 6}px`,
-          `width:${Math.round(right - left) + 12}px`,
-          `height:${Math.round(bottom - top) + 8}px`,
+          `top:${Math.round(bboxTop) - 4}px`,
+          `left:${Math.round(bboxLeft) - 6}px`,
+          `width:${Math.round(bboxRight - bboxLeft) + 12}px`,
+          `height:${Math.round(bboxBottom - bboxTop) + 8}px`,
           'border:1.5px solid rgba(45,212,191,0.45)',
           'border-radius:5px',
           'background:rgba(45,212,191,0.06)',
@@ -988,9 +996,17 @@ export default function ThoughtUnitReader() {
       }
     }
 
-    // Register as pinned in store so cards show indicator
-    store.pinText(pinnedKey);
-  }, []);
+    // Register as pinned in both stores so cards show indicator + overlay can be redrawn
+    panelStore.pinText(pinnedKey);
+    hlStore.setPinned(docId, pageIndex, pinnedKey, pinnedKey,
+      bboxTop < Infinity ? {
+        top: Math.round(bboxTop) - 4,
+        left: Math.round(bboxLeft) - 6,
+        width: Math.round(bboxRight - bboxLeft) + 12,
+        height: Math.round(bboxBottom - bboxTop) + 8,
+      } : undefined,
+    );
+  }, [bookId, currentPage]);
 
   /* =========================================================================
      🔹 Jump to source — called from SourceAnchor "Jump to source" button
@@ -2104,7 +2120,9 @@ export default function ThoughtUnitReader() {
         document.querySelectorAll('.priority-paragraph-glow').forEach(
           el => el.classList.remove('priority-paragraph-glow', 'priority-paragraph-pinned'),
         );
+        const prevPage = currentPage - 1;
         useInsightsPanelStore.getState().clearPinnedTexts();
+        useHighlightStore.getState().clearPage(bookId || 'default-book', prevPage);
 
         // Reset the right-panel scroll to top (user is on a new page)
         requestAnimationFrame(() => {
