@@ -439,6 +439,14 @@
   100% { background: rgba(45, 212, 191, 0.00) !important; box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.00); }
 }
 
+/* Persistent pinned state — added alongside priority-paragraph-glow when user pins a paragraph */
+.priority-paragraph-pinned {
+  background: rgba(45, 212, 191, 0.16) !important;
+  border-radius: 2px;
+  outline: 1px solid rgba(45, 212, 191, 0.35);
+  animation: none !important;
+}
+
 /* ===== Paragraph Anchor Overlay — bounding-box pulse on the PDF page ===== */
 /* Keyframe referenced by .para-anchor-overlay (created imperatively in index.tsx) */
 @keyframes anchorPulse {
