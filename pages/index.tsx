@@ -873,8 +873,24 @@ export default function ThoughtUnitReader() {
   const handleHighlightParagraph = useCallback((searchText: string) => {
     if (!searchText || searchText.trim().length < 10) return;
 
+    const pinnedKey = searchText.trim().slice(0, 80);
+    const store = useInsightsPanelStore.getState();
+
+    // Toggle: if already pinned, unpin and remove its overlay
+    if (store.isPinned(pinnedKey)) {
+      store.unpinText(pinnedKey);
+      // Remove the overlay tagged with this key
+      document.querySelectorAll(`[data-pin-key]`).forEach((el) => {
+        if ((el as HTMLElement).dataset.pinKey === pinnedKey) el.remove();
+      });
+      document.querySelectorAll('.priority-paragraph-pinned').forEach((el) => {
+        el.classList.remove('priority-paragraph-pinned');
+      });
+      return;
+    }
+
     // Take the first 80 chars for matching to avoid over-specificity
-    const needle = searchText.trim().slice(0, 80).toLowerCase();
+    const needle = pinnedKey.toLowerCase();
 
     // Locate the rendered text layer
     const layerSelectors = [
@@ -927,22 +943,15 @@ export default function ThoughtUnitReader() {
     // Scroll to matched span
     spans[matchStart].scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-    // Remove any stale glow before applying new one
-    const GLOW_CLASS = 'priority-paragraph-glow';
-    document.querySelectorAll(`.${GLOW_CLASS}`).forEach(el => el.classList.remove(GLOW_CLASS));
-
+    // Apply persistent pinned glow to matched spans
     for (let k = matchStart; k <= matchEnd && k < spans.length; k++) {
-      spans[k].classList.add(GLOW_CLASS);
+      spans[k].classList.add('priority-paragraph-glow', 'priority-paragraph-pinned');
     }
 
-    // ── Anchor Overlay ──────────────────────────────────────────────────────
-    // Draw a bounding-box rect on the PDF page so the user can instantly see
-    // which physical region on the page corresponds to the highlighted card.
-    // Positioning is relative to .react-pdf__Page (the positioned ancestor).
+    // ── Anchor Overlay — persistent, tagged with pinnedKey for later removal ──
     const spansToHighlight = spans.slice(matchStart, matchEnd + 1);
     const pageEl = spansToHighlight[0]?.closest('.react-pdf__Page') as HTMLElement | null;
     if (pageEl) {
-      pageEl.querySelectorAll('.para-anchor-overlay').forEach(el => el.remove());
       const pageRect = pageEl.getBoundingClientRect();
       let top = Infinity, bottom = -Infinity, left = Infinity, right = -Infinity;
       for (const span of spansToHighlight) {
@@ -956,40 +965,31 @@ export default function ThoughtUnitReader() {
       if (top < Infinity) {
         const ol = document.createElement('div');
         ol.className = 'para-anchor-overlay';
+        ol.dataset.pinKey = pinnedKey;
         ol.style.cssText = [
           'position:absolute',
           `top:${Math.round(top) - 4}px`,
           `left:${Math.round(left) - 6}px`,
           `width:${Math.round(right - left) + 12}px`,
           `height:${Math.round(bottom - top) + 8}px`,
-          'border:2px solid rgba(45,212,191,0.85)',
+          'border:1.5px solid rgba(45,212,191,0.45)',
           'border-radius:5px',
-          'background:rgba(45,212,191,0.07)',
+          'background:rgba(45,212,191,0.06)',
           'pointer-events:none',
           'z-index:20',
           'animation:anchorPulse 0.9s ease-out',
-          'transition:border-color 0.5s,background 0.5s,border-width 0.4s,opacity 0.4s',
+          'transition:border-color 0.3s',
         ].join(';');
         pageEl.appendChild(ol);
-        // After pulse: thin persistent outline
+        // After initial pulse, settle to a thin persistent outline — stays until page change
         setTimeout(() => {
-          ol.style.background = 'transparent';
-          ol.style.borderColor = 'rgba(45,212,191,0.3)';
-          ol.style.borderWidth = '1.5px';
+          ol.style.borderColor = 'rgba(45,212,191,0.35)';
         }, 900);
-        // Fade out when glow clears
-        setTimeout(() => {
-          ol.style.opacity = '0';
-          setTimeout(() => ol.remove(), 450);
-        }, 2500);
       }
     }
-    // ────────────────────────────────────────────────────────────────────────
 
-    // Auto-remove glow after 2.5 s
-    setTimeout(() => {
-      document.querySelectorAll(`.${GLOW_CLASS}`).forEach(el => el.classList.remove(GLOW_CLASS));
-    }, 2500);
+    // Register as pinned in store so cards show indicator
+    store.pinText(pinnedKey);
   }, []);
 
   /* =========================================================================
@@ -2102,8 +2102,9 @@ export default function ThoughtUnitReader() {
         // Remove spotlight overlays and glow spans left over from the previous page
         document.querySelectorAll('.para-anchor-overlay').forEach(el => el.remove());
         document.querySelectorAll('.priority-paragraph-glow').forEach(
-          el => el.classList.remove('priority-paragraph-glow'),
+          el => el.classList.remove('priority-paragraph-glow', 'priority-paragraph-pinned'),
         );
+        useInsightsPanelStore.getState().clearPinnedTexts();
 
         // Reset the right-panel scroll to top (user is on a new page)
         requestAnimationFrame(() => {

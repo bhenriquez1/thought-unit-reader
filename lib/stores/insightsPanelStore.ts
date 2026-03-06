@@ -71,6 +71,13 @@ interface InsightsPanelState {
   setActiveVisibleText: (text: string | null) => void;
 
   focusOnSource: (id: string) => void;
+
+  // ── Pinned highlights — text snippets the user has locked on the PDF ───────
+  pinnedTexts: string[];
+  pinText: (text: string) => void;
+  unpinText: (text: string) => void;
+  isPinned: (text: string) => boolean;
+  clearPinnedTexts: () => void;
 }
 
 
@@ -129,6 +136,14 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
       setActiveVisibleText: (text) => set({ activeVisibleText: text }),
 
       focusOnSource: (id) => set({ activeParagraphId: id, selectedInsightId: id }),
+
+      pinnedTexts: [],
+      pinText: (text) => set((s) => ({
+        pinnedTexts: s.pinnedTexts.includes(text) ? s.pinnedTexts : [...s.pinnedTexts, text],
+      })),
+      unpinText: (text) => set((s) => ({ pinnedTexts: s.pinnedTexts.filter((t) => t !== text) })),
+      isPinned: (text) => get().pinnedTexts.includes(text),
+      clearPinnedTexts: () => set({ pinnedTexts: [] }),
 
       setExpandedCardIds: (ids) => set({ expandedCardIds: ids.slice(0, 500) }),
       toggleExpandedCardId: (id) => set((state) => ({

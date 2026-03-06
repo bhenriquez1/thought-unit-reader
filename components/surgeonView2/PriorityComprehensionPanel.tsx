@@ -844,19 +844,11 @@ const DeepModeCards: React.FC<{
   unit: ParagraphUnit;
   score: ScoreResult;
   reasoning: ClinicalReasoningResult;
+  toneLevel?: ToneLevel;
   onJumpToSource?: (ref: SourceRef) => void;
   unitSourceRef: SourceRef;
-}> = ({ unit, score, reasoning, onJumpToSource, unitSourceRef }) => {
-  const [copiedSource, setCopiedSource] = useState(false);
-
-  const handleCopySource = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    navigator.clipboard?.writeText(unit.text).catch(() => {});
-    setCopiedSource(true);
-    setTimeout(() => setCopiedSource(false), 1500);
-  };
-
-  // Derive heuristic "what this means" from role + signals
+}> = ({ unit, score, reasoning, toneLevel = 'student', onJumpToSource, unitSourceRef }) => {
+  // Derive heuristic "core meaning" from role + signals
   const derivedMeaning = useMemo((): string => {
     if (unit.role === 'definition')
       return `This paragraph defines a key concept. The statement that follows "is" or "defined as" is the exam-critical information.`;
@@ -906,53 +898,68 @@ const DeepModeCards: React.FC<{
     return detectParagraphTraps(unit);
   }, [unit, score.subs.trapRisk]);
 
+  // "Why it matters" — derived from score subscores, max 2 bullets
+  const whyItMatters = [
+    score.subs.examYield > 0.5 ? 'High exam probability — this concept appears frequently on boards.' : null,
+    score.subs.clinicalFlow > 0.5 ? 'Clinical decision point — directly affects diagnosis or management.' : null,
+    score.subs.mechanismDensity > 0.5 ? 'Core mechanism — explains multiple downstream effects.' : null,
+    score.subs.decisionRules > 0.5 ? 'Decision rule present — contains a threshold that changes the answer.' : null,
+  ].filter(Boolean).slice(0, 2) as string[];
+
+  const showClinicalReasoning = (toneLevel === 'clinical' || toneLevel === 'expert') &&
+    reasoning.isClinicalReasoning && reasoning.nodes.length > 0;
+
   return (
     <div className="mt-2 space-y-1.5 border-t border-gray-700/40 pt-2">
 
-      {/* 1. SOURCE — verbatim, always first, never truncated */}
-      <div className="rounded-lg border border-teal-700/30 bg-teal-900/10 overflow-hidden">
-        <div className="flex items-center justify-between px-2 py-1 border-b border-teal-800/30 bg-teal-900/20">
-          <span className="text-[9px] font-bold text-teal-400 uppercase tracking-widest">Source (verbatim)</span>
-          <div className="flex gap-1">
-            <button
-              onClick={handleCopySource}
-              className="text-[8px] text-teal-600 hover:text-teal-300 px-1 py-0.5 rounded border border-teal-800/30 bg-teal-900/20"
-            >
-              {copiedSource ? '✓ Copied' : '⎘ Copy'}
-            </button>
-            {onJumpToSource && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onJumpToSource(unitSourceRef); }}
-                className="text-[8px] text-teal-600 hover:text-teal-300 px-1 py-0.5 rounded border border-teal-800/30 bg-teal-900/20"
-              >
-                ↗ Jump
-              </button>
-            )}
-          </div>
-        </div>
-        <p className="px-2 py-1.5 text-[11px] text-gray-200 leading-relaxed whitespace-pre-wrap">
-          {unit.text}
-        </p>
-      </div>
-
-      {/* 2. WHAT THIS MEANS (derived — must not repeat source verbatim) */}
+      {/* 1. CORE MEANING — derived from role, never verbatim */}
       <div className="rounded-lg border border-blue-800/30 bg-blue-900/10 px-2 py-1.5">
-        <div className="text-[9px] font-bold text-blue-400 uppercase tracking-widest mb-0.5">What this means</div>
+        <div className="text-[9px] font-bold text-blue-400 uppercase tracking-widest mb-0.5">Core Meaning</div>
         <p className="text-[10px] text-blue-200">{derivedMeaning}</p>
       </div>
 
-      {/* 3. MECHANISM (only if causal signals present) */}
+      {/* 2. MECHANISM / LOGIC (only if causal signals present) — 2–4 bullets */}
       {derivedMechanism && (
         <div className="rounded-lg border border-purple-800/30 bg-purple-900/10 px-2 py-1.5">
-          <div className="text-[9px] font-bold text-purple-400 uppercase tracking-widest mb-0.5">Mechanism</div>
+          <div className="text-[9px] font-bold text-purple-400 uppercase tracking-widest mb-0.5">Mechanism / Logic</div>
           <p className="text-[10px] text-purple-200">{derivedMechanism}</p>
+          {numbersText && (
+            <p className="text-[10px] text-cyan-300 mt-0.5">{numbersText}</p>
+          )}
         </div>
       )}
 
-      {/* 4. CLINICAL REASONING FLOW (only if detected) */}
-      {reasoning.isClinicalReasoning && reasoning.nodes.length > 0 && (
+      {/* 3. WHY IT MATTERS — max 2 bullets */}
+      {whyItMatters.length > 0 && (
+        <div className="rounded-lg border border-teal-800/30 bg-teal-900/10 px-2 py-1.5">
+          <div className="text-[9px] font-bold text-teal-400 uppercase tracking-widest mb-0.5">Why It Matters</div>
+          <ul className="space-y-0.5">
+            {whyItMatters.map((w, i) => (
+              <li key={i} className="text-[10px] text-teal-200">• {w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* 4. EXAM TRAPS — 0–2 bullets (only if trapRisk > 0.25) */}
+      {trapHits.length > 0 && (
+        <div className="rounded-lg border border-amber-800/30 bg-amber-900/10 px-2 py-1.5">
+          <div className="text-[9px] font-bold text-amber-400 uppercase tracking-widest mb-1">Exam Traps / Watch For</div>
+          <div className="space-y-0.5">
+            {trapHits.slice(0, 2).map((hit, i) => (
+              <div key={i} className="text-[10px]">
+                <span className="text-amber-300 font-semibold">⚠ {hit.kind.toLowerCase().replace(/_/g, ' ')}: </span>
+                <span className="text-amber-200">{hit.prompt}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 5. CLINICAL REASONING — only for clinical/expert tone */}
+      {showClinicalReasoning && (
         <div className="rounded-lg border border-green-800/30 bg-green-900/10 px-2 py-1.5">
-          <div className="text-[9px] font-bold text-green-400 uppercase tracking-widest mb-1">Clinical Reasoning Flow</div>
+          <div className="text-[9px] font-bold text-green-400 uppercase tracking-widest mb-1">Clinical Reasoning</div>
           <div className="space-y-0.5">
             {reasoning.nodes.map((node, i) => (
               <div key={i} className="flex gap-1.5 items-start">
@@ -967,38 +974,13 @@ const DeepModeCards: React.FC<{
         </div>
       )}
 
-      {/* 5. NUMBERS & THRESHOLDS */}
-      {numbersText && (
+      {/* Numbers inline if no mechanism section to attach to */}
+      {!derivedMechanism && numbersText && (
         <div className="rounded-lg border border-cyan-800/30 bg-cyan-900/10 px-2 py-1.5">
           <div className="text-[9px] font-bold text-cyan-400 uppercase tracking-widest mb-0.5">Numbers & Thresholds</div>
           <p className="text-[10px] text-cyan-200">{numbersText}</p>
         </div>
       )}
-
-      {/* 6. EXAM TRAPS (only if trapRisk > 0.25) */}
-      {trapHits.length > 0 && (
-        <div className="rounded-lg border border-amber-800/30 bg-amber-900/10 px-2 py-1.5">
-          <div className="text-[9px] font-bold text-amber-400 uppercase tracking-widest mb-1">Exam Traps</div>
-          <div className="space-y-0.5">
-            {trapHits.map((hit, i) => (
-              <div key={i} className="text-[10px]">
-                <span className="text-amber-300 font-semibold">⚠ {hit.kind.toLowerCase().replace(/_/g, ' ')}: </span>
-                <span className="text-amber-200">{hit.prompt}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 7. CHECK YOURSELF */}
-      <div className="rounded-lg border border-gray-700/30 bg-gray-800/30 px-2 py-1.5">
-        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Check yourself</div>
-        <div className="space-y-0.5">
-          {checkQuestions.map((q, i) => (
-            <p key={i} className="text-[10px] text-gray-400">• {q}</p>
-          ))}
-        </div>
-      </div>
     </div>
   );
 };
@@ -1362,9 +1344,24 @@ const ParagraphUnitCard: React.FC<{
         )}
 
         {!deepMode && (
-          <p className="text-[11px] text-gray-300 whitespace-pre-wrap">
-            {renderPolicy === 'condensed' ? splitSentences(unit.text)[0] || unit.text : unit.text}
-          </p>
+          <div className="mt-1">
+            {activeStatus === 'loading' ? (
+              <p className="text-[11px] text-gray-500 italic">Adapting…</p>
+            ) : (
+              <>
+                <p className="text-[11px] text-gray-300 whitespace-pre-wrap leading-relaxed">
+                  {activeVariant?.title || splitSentences(unit.text)[0] || unit.text}
+                </p>
+                {renderPolicy === 'expanded' && activeVariant?.bullets && activeVariant.bullets.length > 0 && (
+                  <ul className="list-disc pl-4 mt-1.5 space-y-0.5 text-[10px] text-gray-400">
+                    {activeVariant.bullets.slice(0, depthLevel === 'deep' ? undefined : 2).map((b, i) => (
+                      <li key={i}>{b}</li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </div>
         )}
 
         {deepMode && (
@@ -1488,6 +1485,7 @@ const ParagraphUnitCard: React.FC<{
             unit={unit}
             score={score}
             reasoning={reasoning}
+            toneLevel={toneLevel}
             onJumpToSource={onJumpToSource}
             unitSourceRef={unitSourceRef}
           />
@@ -1986,8 +1984,10 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
   const linkedInsight = rankedInsights.find(r => r.id === item.id);
   const page = item.evidence?.[0]?.page;
   const resolvedPage = page ?? (item.sourceRef?.pageIndex !== undefined ? item.sourceRef.pageIndex + 1 : undefined);
-  const { expandedCardIds, toggleExpandedCard } = useInsightsPanelStore();
+  const { expandedCardIds, toggleExpandedCard, pinnedTexts } = useInsightsPanelStore();
   const layered = useMemo(() => buildLayeredCardContent(item, settings), [item, settings]);
+  const pinnedKey = (item.sourceRef?.quote ?? item.content ?? '').slice(0, 80);
+  const isPinned = pinnedTexts.includes(pinnedKey);
   const isExpanded = expandedCardIds.includes(item.id);
 
   const handleClick = () => {
@@ -2019,7 +2019,7 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
         p-2.5 rounded-lg border border-l-4 transition-all cursor-pointer
         ${CATEGORY_LEFT_BORDER[item.category] ?? 'border-l-gray-600/40'}
         ${style.bg} hover:border-gray-600 hover:-translate-y-0.5 hover:shadow-lg
-        ${isActive ? 'border-teal-500 ring-1 ring-teal-500/50' : 'border-gray-700'}
+        ${isActive ? 'border-teal-500 ring-1 ring-teal-500/50' : isPinned ? 'border-teal-600/60 ring-1 ring-teal-700/40' : 'border-gray-700'}
       `}
     >
       <div className="sticky top-0 z-10 -mx-2.5 px-2.5 py-1.5 mb-1.5 border-b border-gray-700/40 bg-gray-900/70 backdrop-blur-sm flex items-center gap-1.5">
@@ -2030,6 +2030,7 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
         <span className="text-[8px] font-mono text-gray-400 whitespace-nowrap">¶ {item.sourceRef?.paragraphId || 'n/a'}</span>
         <span className="text-[8px] text-gray-500 whitespace-nowrap">match {(Math.round((item.sourceRef?.confidence ?? 0.7) * 100))}%</span>
         <span className="flex-1" />
+        {isPinned && <span className="text-[8px] text-teal-400" title="Pinned highlight">📍</span>}
         {page !== undefined && onJumpToPage && (
           <button
             onClick={(e) => {
