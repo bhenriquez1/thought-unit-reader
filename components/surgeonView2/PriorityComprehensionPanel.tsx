@@ -191,6 +191,37 @@ const TIER_META: Record<ParagraphTier, { label: string; icon: string; bg: string
 // Categorization Logic
 // ============================================================================
 
+
+const ESSENTIAL_CATEGORY_ORDER: PriorityItem['category'][] = ['high_yield', 'clinical', 'mechanism', 'threshold', 'trap'];
+const ESSENTIAL_CATEGORY_LIMITS: Partial<Record<PriorityItem['category'], number>> = {
+  high_yield: 2,
+  clinical: 1,
+};
+
+
+function pickEssentialItems(
+  categories: Map<PriorityItem['category'], PriorityItem[]>,
+  maxItems = 3,
+): Array<{ category: PriorityItem['category']; items: PriorityItem[] }> {
+  const picked: Array<{ category: PriorityItem['category']; items: PriorityItem[] }> = [];
+  let remaining = maxItems;
+
+  for (const category of ESSENTIAL_CATEGORY_ORDER) {
+    if (remaining <= 0) break;
+    const items = categories.get(category) ?? [];
+    if (items.length === 0) continue;
+
+    const categoryLimit = ESSENTIAL_CATEGORY_LIMITS[category] ?? 1;
+    const take = Math.min(items.length, categoryLimit, remaining);
+    if (take <= 0) continue;
+
+    picked.push({ category, items: items.slice(0, take) });
+    remaining -= take;
+  }
+
+  return picked;
+}
+
 function categorizePriorityItems(
   insights: RankedInsight[],
   pageIntelligence?: PageIntelligence | null
@@ -1582,6 +1613,9 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
     activeParagraphId,
     insightScale: storeInsightScale,
     resetScale,
+    essentialStudentMode,
+    setEssentialStudentMode,
+    resetInsightLayout,
   } = useInsightsPanelStore();
 
   // Sync prop → store once on mount if store is still at default
@@ -1600,6 +1634,17 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
 
   // Collapse state for supporting/background tiers in deep analysis
   const [showBackground, setShowBackground] = useState(false);
+  const [controlError, setControlError] = useState<string | null>(null);
+
+  const runSafeControlUpdate = (action: () => void) => {
+    try {
+      action();
+      setControlError(null);
+    } catch (error) {
+      console.error('[PriorityComprehensionPanel] control update failed', error);
+      setControlError('View didn’t update. Retry or reset?');
+    }
+  };
 
   // Scroll active item into view when sync is on and activeItemId changes
   useEffect(() => {
@@ -1617,6 +1662,10 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
 
   // Filter to only non-empty categories
   const activeCategories = useMemo(() => {
+    if (essentialStudentMode && !isDeepMode) {
+      return pickEssentialItems(categorizedItems, 3);
+    }
+
     const result: Array<{ category: PriorityItem['category']; items: PriorityItem[] }> = [];
     const order: PriorityItem['category'][] = ['high_yield', 'mechanism', 'trap', 'threshold', 'clinical'];
     for (const cat of order) {
@@ -1624,7 +1673,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
       if (items.length > 0) result.push({ category: cat, items });
     }
     return result;
-  }, [categorizedItems]);
+  }, [categorizedItems, essentialStudentMode, isDeepMode]);
 
   // Paragraph unit tiers (no suppression)
   const paragraphTiers = useMemo(() => {
@@ -1714,7 +1763,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
           {/* Quick | Deep segmented toggle — writes to store */}
           <div className="flex rounded border border-gray-700 overflow-hidden">
             <button
-              onClick={() => setMode('quick')}
+              onClick={() => runSafeControlUpdate(() => setMode('quick'))}
               className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
                 !isDeepMode
                   ? 'bg-teal-700/60 text-teal-200 border-r border-teal-600/50'
@@ -1724,7 +1773,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
               Quick
             </button>
             <button
-              onClick={() => setMode('deep')}
+              onClick={() => runSafeControlUpdate(() => setMode('deep'))}
               className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
                 isDeepMode
                   ? 'bg-teal-700/60 text-teal-200'
@@ -1741,7 +1790,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
                 {(['minimal', 'standard', 'deep'] as DepthLevel[]).map(level => (
                   <button
                     key={level}
-                    onClick={() => setDepth(level)}
+                    onClick={() => runSafeControlUpdate(() => setDepth(level))}
                     className={`text-[9px] px-2 py-0.5 ${depthLevel === level ? 'bg-blue-600/40 text-blue-200' : 'bg-gray-800/40 text-gray-400 hover:text-gray-200'}`}
                     title={`Set insight depth to ${level}`}
                   >
@@ -1757,22 +1806,38 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
             <span className="text-[9px] text-gray-500">View</span>
             <div className="flex rounded border border-gray-700 overflow-hidden">
               {(['condensed', 'expanded'] as const).map(policy => (
-                <button key={policy} onClick={() => setView(policy)} className={`text-[9px] px-2 py-0.5 ${renderPolicy === policy ? 'bg-indigo-600/40 text-indigo-200' : 'bg-gray-800/40 text-gray-400 hover:text-gray-200'}`}>{policy}</button>
+                <button key={policy} onClick={() => runSafeControlUpdate(() => setView(policy))} className={`text-[9px] px-2 py-0.5 ${renderPolicy === policy ? 'bg-indigo-600/40 text-indigo-200' : 'bg-gray-800/40 text-gray-400 hover:text-gray-200'}`}>{policy}</button>
               ))}
             </div>
             <button
-              onClick={() => setFollowScroll(!followScroll)}
+              onClick={() => runSafeControlUpdate(() => setFollowScroll(!followScroll))}
               className={`text-[9px] px-2 py-0.5 rounded border border-gray-700/60 ${followScroll ? 'bg-teal-600/40 text-teal-200' : 'bg-gray-800/40 text-gray-400 hover:text-gray-200'}`}
             >
               Follow scroll
             </button>
           </div>
 
+          <button
+            onClick={() => runSafeControlUpdate(() => setEssentialStudentMode(!essentialStudentMode))}
+            className={`text-[9px] px-2 py-0.5 rounded border border-gray-700/60 ${essentialStudentMode ? 'bg-emerald-600/40 text-emerald-200' : 'bg-gray-800/40 text-gray-400 hover:text-gray-200'}`}
+            title="Essential Student Mode limits default cards to the most important study points"
+          >
+            Essential
+          </button>
+
+          <button
+            onClick={() => runSafeControlUpdate(() => setMode('deep'))}
+            className="text-[9px] px-2 py-0.5 rounded border border-gray-700/60 bg-gray-800/40 text-gray-300 hover:bg-gray-700/60"
+            title="Show deeper reasoning"
+          >
+            Show deeper reasoning
+          </button>
+
           <div className="flex rounded border border-gray-700 overflow-hidden">
               {(['polish', 'student', 'clinical', 'expert'] as ToneLevel[]).map((lvl, i) => (
                 <button
                   key={lvl}
-                  onClick={() => setAudience(lvl as 'polish' | 'student' | 'clinical' | 'expert')}
+                  onClick={() => runSafeControlUpdate(() => setAudience(lvl as 'polish' | 'student' | 'clinical' | 'expert'))}
                   className={`px-1.5 py-0.5 text-[9px] font-medium transition-colors capitalize ${
                     i < 3 ? 'border-r border-gray-700' : ''
                   } ${
@@ -1786,18 +1851,16 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
               ))}
             </div>
 
-          {/* Reset layout — fallback recovery if controls feel broken */}
+          {/* Reset insight layout — fallback recovery if controls feel broken */}
           <button
-            onClick={() => {
+            onClick={() => runSafeControlUpdate(() => {
               resetScale();
-              setMode('quick');
-              setView('condensed');
-              setFollowScroll(false);
-            }}
+              resetInsightLayout();
+            })}
             className="text-[9px] px-1.5 py-0.5 rounded border border-gray-700/60 bg-gray-800/30 text-gray-500 hover:text-gray-300 hover:bg-gray-700/40 transition-colors"
             title="Reset insight layout to defaults (zoom, density, scroll sync)"
           >
-            ↺
+            Reset insight layout
           </button>
 
           <span className="px-2 py-0.5 text-[10px] bg-teal-500/20 text-teal-400 rounded">
@@ -1805,6 +1868,27 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
           </span>
         </div>
       </div>
+
+      {controlError && (
+        <div className="mb-3 px-2 py-1.5 rounded border border-amber-700/40 bg-amber-900/20 flex items-center gap-2 text-[10px] text-amber-200">
+          <span>{controlError}</span>
+          <button
+            onClick={() => setControlError(null)}
+            className="px-1.5 py-0.5 rounded border border-amber-700/60 hover:bg-amber-700/20"
+          >
+            Retry
+          </button>
+          <button
+            onClick={() => runSafeControlUpdate(() => {
+              resetScale();
+              resetInsightLayout();
+            })}
+            className="px-1.5 py-0.5 rounded border border-amber-700/60 hover:bg-amber-700/20"
+          >
+            Reset view
+          </button>
+        </div>
+      )}
 
       {/* Priority Score Legend */}
       {totalItems > 0 && (
@@ -1826,25 +1910,26 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
         </div>
       )}
 
-      {/* Page Minimap — paragraph importance strip, always visible when we have units */}
-      {totalParagraphUnits > 0 && (
+      {/* Page Minimap — paragraph importance strip */}
+      {totalParagraphUnits > 0 && (!essentialStudentMode || isDeepMode) && (
         <PageMinimap
           units={pageIntelligence?.paragraphUnits ?? []}
           onJumpToSource={onJumpToSource}
         />
       )}
 
-      {/* Structure Map — always shown when available */}
-      <StructureMapSection
+      {/* Structure Map — shown in deep mode or when essential mode is off */}
+      {(!essentialStudentMode || isDeepMode) && (<StructureMapSection
         structureMap={pageIntelligence?.structureMap}
         paragraphUnits={pageIntelligence?.paragraphUnits}
         pageNumber={pageIntelligence?.pageNumber}
         onHighlightParagraph={onHighlightParagraph}
         onJumpToSource={onJumpToSource}
       />
+      )}
 
-      {/* Insight Continuity — always shown */}
-      {pageIntelligence?.continuity && (
+      {/* Insight Continuity — shown in deep mode or when essential mode is off */}
+      {(!essentialStudentMode || isDeepMode) && pageIntelligence?.continuity && (
         <ContinuitySection continuity={pageIntelligence.continuity} />
       )}
 

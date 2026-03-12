@@ -33,6 +33,9 @@ export type InsightSettings = {
 };
 
 interface InsightsPanelState {
+  essentialStudentMode: boolean;
+  setEssentialStudentMode: (enabled: boolean) => void;
+
   // ── Mode: quick (essential summary) | deep (full teaching scaffold) ───────
   mode: InsightMode;
   setMode: (mode: InsightMode) => void;
@@ -89,6 +92,7 @@ interface InsightsPanelState {
   setActiveVisibleText: (text: string | null) => void;
 
   focusOnSource: (id: string) => void;
+  resetInsightLayout: () => void;
 
   // ── Pinned highlights — text snippets the user has locked on the PDF ───────
   pinnedTexts: string[];
@@ -103,6 +107,8 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
   persist(
     (set, get) => ({
       mode: 'quick',
+      essentialStudentMode: true,
+      setEssentialStudentMode: (essentialStudentMode) => set({ essentialStudentMode }),
       setMode: (mode) => set({ mode }),
       getControls: (): InsightControls => {
         const s = get();
@@ -172,6 +178,18 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
       setActiveVisibleText: (text) => set({ activeVisibleText: text }),
 
       focusOnSource: (id) => set({ activeParagraphId: id, selectedInsightId: id }),
+      resetInsightLayout: () => set({
+        insightScale: 1.0,
+        mode: 'quick',
+        depth: 'standard',
+        view: 'condensed',
+        renderPolicy: 'condensed',
+        audience: 'student',
+        tone: 'student',
+        followScroll: false,
+        syncInsightsToPdf: false,
+        essentialStudentMode: true,
+      }),
 
       pinnedTexts: [],
       pinText: (text) => set((s) => ({
@@ -208,6 +226,7 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
         expandedCardIds: state.expandedCardIds,
         followScroll: state.followScroll,
         mode: state.mode,
+        essentialStudentMode: state.essentialStudentMode,
       }),
       onRehydrateStorage: () => {
         if (typeof window === 'undefined') return;
