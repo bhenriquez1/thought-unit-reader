@@ -41,10 +41,11 @@ type ReadingMode = 'minimal' | 'standard' | 'deep' | 'condensed' | 'expanded';
 type SectionSynthesis = {
   title: string;
   overview: string;
-  plainLanguage: string;
-  structure: string[];
-  takeaways: string[];
+  mainIdeas: string[];
+  subsectionBreakdown: string[];
   whyItMatters: string;
+  whatToRemember: string;
+  keyExample?: string;
   anchor?: {
     quote: string;
     sourceRef?: SourceRef;
@@ -241,7 +242,15 @@ function pickEssentialItems(
 function toStudentSentence(text: string): string {
   const cleaned = text.replace(/\s+/g, ' ').trim();
   if (!cleaned) return '';
-  return cleaned.length > 200 ? `${cleaned.slice(0, 197).trimEnd()}…` : cleaned;
+  return cleaned.length > 220 ? `${cleaned.slice(0, 217).trimEnd()}…` : cleaned;
+}
+
+function firstCompleteSentence(text: string): string {
+  const cleaned = text.replace(/\s+/g, ' ').trim();
+  if (!cleaned) return '';
+  const match = cleaned.match(/^[^.!?]*[.!?]/);
+  const sentence = (match?.[0] || cleaned).trim();
+  return sentence.length > 220 ? `${sentence.slice(0, 217).trimEnd()}…` : sentence;
 }
 
 function buildSectionSynthesis(pageIntelligence?: PageIntelligence | null): SectionSynthesis | null {
@@ -254,49 +263,56 @@ function buildSectionSynthesis(pageIntelligence?: PageIntelligence | null): Sect
 
   if (!mainUnit) return null;
 
-  const overview = pageIntelligence.explain?.summary?.trim() || toStudentSentence(mainUnit.text);
-  const plainLanguage = toStudentSentence(
-    pageIntelligence.continuity?.corePattern
-      ? `This section teaches ${pageIntelligence.continuity.corePattern.toLowerCase()}.`
-      : `This section focuses on ${topic.toLowerCase()}.`
+  const overview = toStudentSentence(
+    pageIntelligence.explain?.summary?.trim() || firstCompleteSentence(mainUnit.text)
   );
 
-  const structureFromMap = (pageIntelligence.structureMap?.nodes ?? [])
-    .slice(0, 4)
-    .map((node, idx) => `Part ${idx + 1}: ${node.label.toLowerCase()} — ${toStudentSentence(node.text)}`);
-
-  const structure = structureFromMap.length > 0
-    ? structureFromMap
-    : sortedUnits.slice(0, 4).map((unit, idx) => `Part ${idx + 1}: ${unit.role.replace('_', ' ')} — ${toStudentSentence(firstSentence(unit.text))}`);
-
-  const takeawaysFromExplain = (pageIntelligence.explain?.bullets ?? []).map(toStudentSentence).filter(Boolean);
-  const takeaways = (takeawaysFromExplain.length > 0
-    ? takeawaysFromExplain
-    : sortedUnits.slice(0, 4).map((unit) => toStudentSentence(firstSentence(unit.text))))
+  const mainIdeas = (pageIntelligence.explain?.bullets ?? [])
+    .map((b) => toStudentSentence(b))
     .filter(Boolean)
     .slice(0, 5);
 
+  const fallbackMainIdeas = sortedUnits
+    .slice(0, 5)
+    .map((unit) => toStudentSentence(firstCompleteSentence(unit.text)))
+    .filter(Boolean);
+
+  const subsectionBreakdown = (pageIntelligence.structureMap?.nodes ?? [])
+    .slice(0, 5)
+    .map((node) => toStudentSentence(`${node.label}: ${firstCompleteSentence(node.text)}`));
+
   const whyItMatters = toStudentSentence(
-    pageIntelligence.continuity?.conceptualBridge
-      || pageIntelligence.continuity?.clinicalConnection
-      || `Understanding this section helps you connect the main idea to what comes next in the chapter.`
+    pageIntelligence.continuity?.clinicalConnection
+      || pageIntelligence.continuity?.conceptualBridge
+      || `It matters because this section explains how the core idea should be interpreted and applied as you move through the chapter.`
   );
+
+  const whatToRemember = toStudentSentence(
+    (mainIdeas[0] || fallbackMainIdeas[0] || `Remember the main principle on this page and how it guides the next step in reasoning.`)
+  );
+
+  const keyExample = sortedUnits
+    .map((unit) => firstCompleteSentence(unit.text))
+    .find((sentence) => /for example|e\.g\.|such as|for instance|clinical|case|patient/i.test(sentence));
+
+  const anchorQuote = firstCompleteSentence(mainUnit.text);
 
   return {
     title: topic,
-    overview: toStudentSentence(overview),
-    plainLanguage,
-    structure,
-    takeaways,
+    overview,
+    mainIdeas: (mainIdeas.length > 0 ? mainIdeas : fallbackMainIdeas).slice(0, 5),
+    subsectionBreakdown: subsectionBreakdown.filter(Boolean),
     whyItMatters,
+    whatToRemember,
+    keyExample: keyExample ? toStudentSentence(keyExample) : undefined,
     anchor: {
-      quote: toStudentSentence(mainUnit.text),
+      quote: anchorQuote,
       sourceRef: {
         pageIndex: mainUnit.pageIndex,
         paragraphId: mainUnit.id,
         startChar: mainUnit.startChar,
         endChar: mainUnit.endChar,
-        quote: toStudentSentence(mainUnit.text),
+        quote: anchorQuote,
         quoteText: mainUnit.text,
         quoteHash: buildQuoteHash(mainUnit.text),
         textOrigin: 'pdfText',
@@ -540,23 +556,23 @@ function buildExamSignalBullets(unit: ParagraphUnit, toneLevel: ToneLevel, depth
 
 function buildSectionContext(unit: ParagraphUnit, orientation: OrientationHeader, toneLevel: ToneLevel) {
   const sectionPurpose = toneSafe(
-    `This paragraph anchors ${orientation.section || 'the current section'} by clarifying ${orientation.purpose.toLowerCase()}.`,
+    `This part of the section explains ${orientation.purpose.toLowerCase()} in practical terms.`,
     toneLevel,
   );
   const roleInChapter = toneSafe(
-    `Role in chapter: ${unit.role.replace('_', ' ')} bridge for paragraph ${(orientation.paragraphIndex ?? 0) + 1}.`,
+    `Within the chapter flow, this paragraph works as a ${unit.role.replace('_', ' ')} step that supports the main thread.`,
     toneLevel,
   );
   const dependencyLinks = toneSafe(
     unit.keyTerms.length > 0
-      ? `Depends on: ${unit.keyTerms.slice(0, 3).join(', ')}.`
-      : 'Depends on preceding definitions and mechanism cues from this section.',
+      ? `It builds on ${unit.keyTerms.slice(0, 3).join(', ')}.`
+      : 'It builds on ideas introduced earlier in the section.',
     toneLevel,
   );
   const nextConcept = toneSafe(
     unit.signals.hasClinicalTerms
-      ? 'Next concept: apply this to diagnosis/treatment decisions in subsequent paragraphs.'
-      : 'Next concept: expect a downstream mechanism or exam discriminator after this paragraph.',
+      ? 'It then transitions into clinical interpretation and decision-making.'
+      : 'It sets up the next concept by preparing the mechanism or comparison that follows.',
     toneLevel,
   );
 
@@ -1135,7 +1151,7 @@ const DeepModeCards: React.FC<{
       {/* 2. MECHANISM / LOGIC (only if causal signals present) — 2–4 bullets */}
       {derivedMechanism && (
         <div className="rounded-lg border border-purple-800/30 bg-purple-900/10 px-2 py-1.5">
-          <div className="text-[9px] font-bold text-purple-400 uppercase tracking-widest mb-0.5">Mechanism / Logic</div>
+          <div className="text-[9px] font-bold text-purple-400 uppercase tracking-widest mb-0.5">Reasoning Flow</div>
           <p className="text-[10px] text-purple-200">{derivedMechanism}</p>
           {numbersText && (
             <p className="text-[10px] text-cyan-300 mt-0.5">{numbersText}</p>
@@ -1591,7 +1607,7 @@ const ParagraphUnitCard: React.FC<{
           <div className="space-y-2 text-[11px] text-gray-300" style={{ fontSize: 'calc(0.6875rem * var(--insightScale, 1))' }}>
             <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
               <div className="flex items-center justify-between gap-2 mb-1">
-                <div className="text-[9px] font-bold text-blue-300 uppercase tracking-wide">Snapshot</div>
+                <div className="text-[9px] font-bold text-blue-300 uppercase tracking-wide">Overview</div>
                 <div className="text-[8px] text-gray-500">{activeStatus === 'loading' ? 'Updating…' : 'Ready'}</div>
               </div>
               <p>{activeVariant?.title || 'Generating insight snapshot…'}</p>
@@ -1599,13 +1615,13 @@ const ParagraphUnitCard: React.FC<{
 
             {depthLevel !== 'minimal' && (
             <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
-              <div className="text-[9px] font-bold text-purple-300 uppercase tracking-wide mb-1">Mechanism / Logic</div>
+              <div className="text-[9px] font-bold text-purple-300 uppercase tracking-wide mb-1">Reasoning Flow</div>
               <div className="flex gap-1 flex-wrap mb-1.5">
                 <span className="text-[9px] px-1.5 py-0.5 rounded border border-purple-700/40 bg-purple-900/20">{unit.role.replace('_', ' ')}</span>
                 <span className="text-[9px] px-1.5 py-0.5 rounded border border-teal-700/40 bg-teal-900/20">{orientation.purpose}</span>
                 <span className="text-[9px] px-1.5 py-0.5 rounded border border-gray-700/40 bg-gray-800/40">Pg {unit.pageIndex + 1} · ¶ {(orientation.paragraphIndex ?? 0) + 1}</span>
               </div>
-              <p className="text-gray-400">Why this exists here: {orientation.purpose}</p>
+              <p className="text-gray-400">How it fits here: {orientation.purpose}</p>
             </section>
             )}
 
@@ -1619,17 +1635,17 @@ const ParagraphUnitCard: React.FC<{
             )}
 
             <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
-              <div className="text-[9px] font-bold text-green-300 uppercase tracking-wide mb-1">Location + Evidence</div>
+              <div className="text-[9px] font-bold text-green-300 uppercase tracking-wide mb-1">Source</div>
               <p className="text-gray-400">p.{unit.pageIndex + 1} • y={locationMeta.yPct}% • col={locationMeta.column} • block={locationMeta.block}</p>
             </section>
 
             {activeVariant?.sectionContext && (
               <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
-                <div className="text-[9px] font-bold text-cyan-300 uppercase tracking-wide mb-1">Section Context Layer</div>
+                <div className="text-[9px] font-bold text-cyan-300 uppercase tracking-wide mb-1">Section Context</div>
                 <ul className="space-y-1 text-gray-400">
                   <li><span className="text-cyan-300">Section Purpose:</span> {activeVariant.sectionContext.sectionPurpose}</li>
                   <li><span className="text-cyan-300">Role In Chapter:</span> {activeVariant.sectionContext.roleInChapter}</li>
-                  <li><span className="text-cyan-300">Dependency Links:</span> {activeVariant.sectionContext.dependencyLinks}</li>
+                  <li><span className="text-cyan-300">Builds On:</span> {activeVariant.sectionContext.dependencyLinks}</li>
                   <li><span className="text-cyan-300">Next Concept:</span> {activeVariant.sectionContext.nextConcept}</li>
                 </ul>
               </section>
@@ -1637,7 +1653,7 @@ const ParagraphUnitCard: React.FC<{
 
             {insightExpanded && (
               <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
-                <div className="text-[9px] font-bold text-green-300 uppercase tracking-wide mb-1">Full 4-Layer Breakdown</div>
+                <div className="text-[9px] font-bold text-green-300 uppercase tracking-wide mb-1">Full Explanation</div>
                 <p className="whitespace-pre-wrap">{activeVariant?.body || 'Generating full insight...'}</p>
               </section>
             )}
@@ -2055,46 +2071,53 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
         </div>
 
         <div className="p-3 rounded-lg border border-gray-700/70 bg-gray-900/50">
-          <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">1. Section Overview</h4>
+          <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">1. Page / Section Overview</h4>
           <p className="text-sm text-white mt-1">{sectionSynthesis?.title || `Page ${pageIntelligence?.pageNumber ?? ''}`}</p>
           <p className="text-xs text-gray-300 mt-1">{sectionSynthesis?.overview || 'Section summary unavailable; showing page essentials.'}</p>
-          {(readingMode === 'standard' || readingMode === 'deep' || readingMode === 'expanded') && (
-            <p className="text-xs text-gray-400 mt-1">{sectionSynthesis?.plainLanguage || 'This page introduces the core idea and how it connects to the surrounding chapter.'}</p>
-          )}
         </div>
 
-        {readingMode !== 'minimal' && readingMode !== 'condensed' && (
-          <div className="p-3 rounded-lg border border-gray-700/70 bg-gray-900/50">
-            <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">2. Section Breakdown</h4>
-            <ul className="list-disc pl-5 mt-1 text-xs text-gray-300 space-y-1">
-              {(sectionSynthesis?.structure?.length ? sectionSynthesis.structure : ['Part 1: framing', 'Part 2: core idea', 'Part 3: supporting examples', 'Part 4: implication']).slice(0, readingMode === 'deep' ? 6 : 4).map((entry, idx) => <li key={`section_part_${idx}`}>{entry}</li>)}
-            </ul>
-          </div>
-        )}
-
         <div className="p-3 rounded-lg border border-gray-700/70 bg-gray-900/50">
-          <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">3. Key Takeaways</h4>
+          <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">2. Main Ideas</h4>
           <ul className="list-disc pl-5 mt-1 text-xs text-gray-300 space-y-1">
-            {(sectionSynthesis?.takeaways?.length ? sectionSynthesis.takeaways : ['Top point from this page', 'Second key takeaway', 'Third key takeaway'])
-              .slice(0, readingMode === 'minimal' ? 3 : readingMode === 'condensed' ? 2 : 5)
-              .map((entry, idx) => <li key={`takeaway_${idx}`}>{entry}</li>)}
+            {(sectionSynthesis?.mainIdeas?.length ? sectionSynthesis.mainIdeas : ['Main idea 1', 'Main idea 2', 'Main idea 3'])
+              .slice(0, 5)
+              .map((entry, idx) => <li key={`main_idea_${idx}`}>{entry}</li>)}
           </ul>
         </div>
 
-        {(readingMode === 'standard' || readingMode === 'deep' || readingMode === 'expanded') && (
+        {(readingMode === 'standard' || readingMode === 'deep' || readingMode === 'expanded') && sectionSynthesis?.subsectionBreakdown?.length ? (
           <div className="p-3 rounded-lg border border-gray-700/70 bg-gray-900/50">
-            <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">4. Why It Matters</h4>
-            <p className="text-xs text-gray-300 mt-1">{sectionSynthesis?.whyItMatters || 'This section helps you understand the author’s main teaching goal and what to retain for exams.'}</p>
+            <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">3. Subsection Breakdown</h4>
+            <ul className="list-disc pl-5 mt-1 text-xs text-gray-300 space-y-1">
+              {sectionSynthesis.subsectionBreakdown.slice(0, readingMode === 'deep' ? 6 : 4).map((entry, idx) => <li key={`section_part_${idx}`}>{entry}</li>)}
+            </ul>
+          </div>
+        ) : null}
+
+        <div className="p-3 rounded-lg border border-gray-700/70 bg-gray-900/50">
+          <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">4. Why It Matters</h4>
+          <p className="text-xs text-gray-300 mt-1">{sectionSynthesis?.whyItMatters || 'This section helps you understand the author’s main teaching goal and what to retain for exams.'}</p>
+        </div>
+
+        <div className="p-3 rounded-lg border border-gray-700/70 bg-gray-900/50">
+          <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">5. What to Remember</h4>
+          <p className="text-xs text-gray-300 mt-1">{sectionSynthesis?.whatToRemember || 'Remember the page-level core idea and how to apply it.'}</p>
+        </div>
+
+        {(readingMode !== 'minimal' && readingMode !== 'condensed' && sectionSynthesis?.keyExample) && (
+          <div className="p-3 rounded-lg border border-gray-700/70 bg-gray-900/50">
+            <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">6. Key Example / Clinical Hook</h4>
+            <p className="text-xs text-gray-300 mt-1">{sectionSynthesis.keyExample}</p>
           </div>
         )}
 
-        {(readingMode === 'standard' || readingMode === 'deep' || readingMode === 'expanded') && sectionSynthesis?.anchor && (
+        {sectionSynthesis?.anchor && (
           <div className="p-3 rounded-lg border border-gray-700/70 bg-gray-900/50">
-            <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">5. Important Source Anchor</h4>
+            <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">7. Supporting Source</h4>
             <p className="text-xs text-gray-300 mt-1">“{sectionSynthesis.anchor.quote}”</p>
             {sectionSynthesis.anchor.sourceRef && (
               <div className="mt-2" onClick={(e) => e.stopPropagation()}>
-                <SourceAnchor sourceRef={sectionSynthesis.anchor.sourceRef} onJump={onJumpToSource} collapsed={false} />
+                <SourceAnchor sourceRef={sectionSynthesis.anchor.sourceRef} onJump={onJumpToSource} collapsed={false} showMetadata={isDeepMode || toneLevel === 'expert'} />
               </div>
             )}
           </div>
@@ -2431,6 +2454,7 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
   };
 
   const categoryTag = CATEGORY_PURPOSE_TAG[item.category];
+  const showExpertMeta = settings.depth === 'deep' || settings.tone === 'expert';
   const titleStyle: React.CSSProperties = { fontSize: 'calc(0.75rem * var(--insightScale, 1))' };
   const bodyStyle: React.CSSProperties = {
     fontSize: 'calc(0.6875rem * var(--insightScale, 1))',
@@ -2457,8 +2481,12 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
           {categoryTag.icon} {categoryTag.label}
         </span>
         <span className="text-[8px] font-mono text-gray-300 whitespace-nowrap">Pg {resolvedPage ?? '—'}</span>
-        <span className="text-[8px] font-mono text-gray-400 whitespace-nowrap">¶ {item.sourceRef?.paragraphId || 'n/a'}</span>
-        <span className="text-[8px] text-gray-500 whitespace-nowrap">match {(Math.round((item.sourceRef?.confidence ?? 0.7) * 100))}%</span>
+        {showExpertMeta && (
+          <>
+            <span className="text-[8px] font-mono text-gray-400 whitespace-nowrap">¶ {item.sourceRef?.paragraphId || 'n/a'}</span>
+            <span className="text-[8px] text-gray-500 whitespace-nowrap">match {(Math.round((item.sourceRef?.confidence ?? 0.7) * 100))}%</span>
+          </>
+        )}
         <span className="flex-1" />
         {isPinned && <span className="text-[8px] text-teal-400" title="Pinned highlight">📍</span>}
         {page !== undefined && onJumpToPage && (
@@ -2531,7 +2559,7 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
 
       {item.sourceRef && (onJumpToSource || onJumpToPage) && (
         <div className="mt-2 pl-1" onClick={(e) => e.stopPropagation()}>
-          <SourceAnchor sourceRef={item.sourceRef} onJump={onJumpToSource} collapsed={settings.view === 'condensed' && !isExpanded} />
+          <SourceAnchor sourceRef={item.sourceRef} onJump={onJumpToSource} collapsed={settings.view === 'condensed' && !isExpanded} showMetadata={showExpertMeta} />
         </div>
       )}
 
