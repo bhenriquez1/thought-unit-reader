@@ -18,6 +18,8 @@ interface SourceAnchorProps {
   onJump?: (ref: SourceRef) => void;
   /** If true, shows the excerpt collapsed (default) */
   collapsed?: boolean;
+  /** Show confidence/location metadata badges (for expert/debug views). */
+  showMetadata?: boolean;
   className?: string;
 }
 
@@ -85,6 +87,7 @@ export const SourceAnchor: React.FC<SourceAnchorProps> = ({
   paragraphText,
   onJump,
   collapsed = true,
+  showMetadata = false,
   className = '',
 }) => {
   const [expanded, setExpanded] = useState(!collapsed);
@@ -137,21 +140,25 @@ export const SourceAnchor: React.FC<SourceAnchorProps> = ({
           {pageLabel}
         </span>
 
-        {locationMeta && (
+        {showMetadata && locationMeta && (
           <span className="text-[9px] px-1 py-0.5 rounded bg-gray-700/50 text-gray-300 border border-gray-600/40 select-none">{locationMeta}</span>
         )}
 
         {/* Origin badge */}
-        {sourceRef.textOrigin && (
+        {showMetadata && sourceRef.textOrigin && (
           <span className="text-[9px] px-1 py-0.5 rounded bg-gray-700/50 text-gray-400 border border-gray-600/40 select-none">
             {sourceRef.textOrigin === 'pdfText' ? 'PDF text' : 'OCR'}
           </span>
         )}
 
         {/* Confidence */}
-        <span className={`text-[10px] ${confidenceColor} ml-auto select-none`}>
-          {confidencePct}% match
-        </span>
+        {showMetadata ? (
+          <span className={`text-[10px] ${confidenceColor} ml-auto select-none`}>
+            {confidencePct}% match
+          </span>
+        ) : (
+          <span className="ml-auto" />
+        )}
 
         {/* Jump button */}
         {onJump && (
