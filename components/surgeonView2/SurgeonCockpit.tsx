@@ -1115,7 +1115,6 @@ const ExplainTab: React.FC<{
   const selected = insights.find(i => i.id === selectedCardId);
   const piExplain = pageIntelligence?.explain;
   const continuity = pageIntelligence?.continuity;
-  const structureMap = pageIntelligence?.structureMap;
 
   // --- Empty state ---
   const hasContent =
@@ -1145,7 +1144,6 @@ const ExplainTab: React.FC<{
   // Priority: selected card → page intelligence → continuity scaffold
   const topicTitle =
     selected?.title ??
-    structureMap?.topic ??
     piExplain?.summary?.slice(0, 60) ??
     continuity?.corePattern.slice(0, 60) ??
     'Page Content';
@@ -1156,20 +1154,14 @@ const ExplainTab: React.FC<{
     continuity?.corePattern ??
     'See page for core definition.';
 
-  // Mechanism: use structure map mechanism node first
-  const mechNode = structureMap?.nodes.find(n => n.stage === 'mechanism');
   const mechanism =
-    mechNode?.text ??
     continuity?.conceptualBridge ??
-    (piExplain?.bullets?.[0] ? `Step 1: ${piExplain.bullets[0]}` : null);
+    (piExplain?.bullets?.[0] ? `First, ${piExplain.bullets[0]}` : null);
 
   // Key steps from explain bullets
   const keySteps = piExplain?.bullets ?? [];
 
-  // Why it matters: clinical relevance stage or continuity
-  const clinNode = structureMap?.nodes.find(n => n.stage === 'clinical_relevance');
   const whyItMatters =
-    clinNode?.text ??
     continuity?.clinicalConnection ??
     selected?.whyItMatters ??
     'Foundational for board exam mastery.';
@@ -1191,10 +1183,6 @@ const ExplainTab: React.FC<{
   // Mnemonics
   const mnemonics = piExplain?.mnemonics ?? [];
 
-  // Structure flow nodes (definition + application)
-  const defNode = structureMap?.nodes.find(n => n.stage === 'definition');
-  const appNode = structureMap?.nodes.find(n => n.stage === 'application');
-
   // Math formulas on this page
   const mathSegments = pageIntelligence?.segments.filter(
     s => s.kind === 'math' || (s.mathDensity ?? 0) > 0.15
@@ -1204,7 +1192,7 @@ const ExplainTab: React.FC<{
     <div className="p-3 space-y-3 overflow-y-auto insightPanelScroll">
       {/* Topic header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-teal-300 leading-tight max-w-[80%]">
+        <h3 className="text-sm font-semibold text-teal-300 leading-tight max-w-[80%] whitespace-normal">
           {topicTitle}
         </h3>
         {pageIntelligence?.source === 'ocr' && (
@@ -1238,7 +1226,7 @@ const ExplainTab: React.FC<{
             <p>{mechanism}</p>
             {keySteps.length > 0 && (
               <div className="mt-2 space-y-1">
-                {keySteps.slice(0, 4).map((step, i) => (
+                {keySteps.slice(0, 6).map((step, i) => (
                   <div key={i} className="flex gap-2 items-start">
                     <span className="text-purple-400 font-mono text-[10px] flex-shrink-0 mt-0.5">
                       {i + 1}.
@@ -1252,56 +1240,23 @@ const ExplainTab: React.FC<{
         </NinjaNerdSection>
       )}
 
-      {/* 3. STRUCTURE FLOW — visual scaffold when structure map present */}
-      {structureMap && structureMap.nodes.length >= 2 && (
-        <div className="rounded-xl border border-gray-700/50 bg-gray-800/30 overflow-hidden">
-          <div className="px-3 py-1.5 border-b border-gray-700/50 flex items-center gap-1.5">
-            <span className="text-sm">🗺️</span>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-              Structure Flow
-            </span>
-            <span className="ml-auto text-[9px] text-teal-600 italic">
-              {structureMap.topic.slice(0, 30)}
-            </span>
-          </div>
-          <div className="px-3 py-2.5">
-            {structureMap.nodes.map((node, idx) => {
-              const stageColors: Record<string, string> = {
-                definition: 'text-blue-300 border-blue-700/40 bg-blue-900/10',
-                mechanism: 'text-purple-300 border-purple-700/40 bg-purple-900/10',
-                application: 'text-amber-300 border-amber-700/40 bg-amber-900/10',
-                clinical_relevance: 'text-teal-300 border-teal-700/40 bg-teal-900/10',
-              };
-              const stageIcons: Record<string, string> = {
-                definition: '📖',
-                mechanism: '⚙️',
-                application: '🔧',
-                clinical_relevance: '🩺',
-              };
-              const colorClass = stageColors[node.stage] ?? 'text-gray-300 border-gray-700 bg-gray-800/30';
-              const icon = stageIcons[node.stage] ?? '→';
+      <NinjaNerdSection
+        icon="🪜"
+        label="Stepwise Breakdown"
+        accent="text-cyan-300"
+        border="border-cyan-700/50"
+        bg="bg-cyan-900/10"
+      >
+        <ol className="space-y-1.5 list-decimal ml-4">
+          <li>Start by defining the core claim in one sentence: {whatThisMeans}</li>
+          {mechanism && <li>Then ask what drives it biologically or conceptually: {mechanism}</li>}
+          <li>Next connect it to adjacent ideas so it is not memorized in isolation.</li>
+          <li>Finally test your understanding by predicting what changes if one step fails.</li>
+        </ol>
+      </NinjaNerdSection>
 
-              return (
-                <div key={node.id}>
-                  <div className={`rounded-lg border px-2.5 py-2 text-[11px] ${colorClass}`}>
-                    <div className="font-semibold uppercase tracking-wider text-[9px] mb-0.5 opacity-70">
-                      {icon} {node.label}
-                    </div>
-                    <div className="line-clamp-2 opacity-90">{node.text}</div>
-                  </div>
-                  {idx < structureMap.nodes.length - 1 && (
-                    <div className="flex justify-center my-0.5">
-                      <span className="text-gray-600 text-xs">↓</span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* 3. WHY IT MATTERS */}
 
-      {/* 4. WHY IT MATTERS */}
       <NinjaNerdSection
         icon="🧬"
         label="Why It Matters"
@@ -1457,29 +1412,29 @@ const CompareTab: React.FC<{
             Comparing: {selected.title}
           </h3>
 
-          <table className="w-full text-[10px] border-collapse">
+          <table className="w-full text-[11px] border-collapse">
             <thead>
               <tr className="text-left text-gray-400">
                 <th className="p-1.5 border-b border-gray-700">Feature</th>
                 <th className="p-1.5 border-b border-gray-700">{selected.title}</th>
-                <th className="p-1.5 border-b border-gray-700 text-gray-500">Similar</th>
+                <th className="p-1.5 border-b border-gray-700 text-gray-300">Analog / Contrast</th>
               </tr>
             </thead>
             <tbody className="text-gray-300">
               <tr>
                 <td className="p-1.5 border-b border-gray-700/50 text-gray-400">Definition</td>
-                <td className="p-1.5 border-b border-gray-700/50">{selected.claim?.slice(0, 40) || '-'}</td>
-                <td className="p-1.5 border-b border-gray-700/50 text-gray-500">-</td>
+                <td className="p-1.5 border-b border-gray-700/50">{selected.claim || '-'}</td>
+                <td className="p-1.5 border-b border-gray-700/50 text-gray-300">Like a neighboring concept that serves a similar role but with different trigger conditions.</td>
               </tr>
               <tr>
                 <td className="p-1.5 border-b border-gray-700/50 text-gray-400">Key Finding</td>
-                <td className="p-1.5 border-b border-gray-700/50">-</td>
-                <td className="p-1.5 border-b border-gray-700/50 text-gray-500">-</td>
+                <td className="p-1.5 border-b border-gray-700/50">{selected.whyItMatters || 'Key downstream effect in context.'}</td>
+                <td className="p-1.5 border-b border-gray-700/50 text-gray-300">Do not confuse with terms that look similar but point to a different mechanism.</td>
               </tr>
               <tr>
                 <td className="p-1.5 text-gray-400">Differentiator</td>
-                <td className="p-1.5">{selected.whyItMatters?.slice(0, 40) || '-'}</td>
-                <td className="p-1.5 text-gray-500">-</td>
+                <td className="p-1.5">{selected.whyItMatters || '-'}</td>
+                <td className="p-1.5 text-gray-300">Think: this is like a checkpoint, not a final endpoint.</td>
               </tr>
             </tbody>
           </table>
@@ -1532,6 +1487,12 @@ const InsightsTab: React.FC<{
   const piRelations = pageIntelligence?.relations || [];
   const piCards = pageIntelligence?.cards   || [];
   const missingFromReasoning = reasoningChain?.missing?.map(m => m.detail) || [];
+  const deepSignals = [
+    pageIntelligence?.continuity?.corePattern ? `Deeper pattern: ${pageIntelligence.continuity.corePattern}` : null,
+    pageIntelligence?.continuity?.conceptualBridge ? `Hidden bridge: ${pageIntelligence.continuity.conceptualBridge}` : null,
+    pageIntelligence?.continuity?.clinicalConnection ? `Why this section matters now: ${pageIntelligence.continuity.clinicalConnection}` : null,
+    pageIntelligence?.continuity?.commonMisunderstanding ? `Easy-to-miss pitfall: ${pageIntelligence.continuity.commonMisunderstanding}` : null,
+  ].filter(Boolean) as string[];
 
   return (
     <div className="p-3 space-y-4 overflow-y-auto">
@@ -1575,7 +1536,7 @@ const InsightsTab: React.FC<{
                   </div>
                 </div>
                 <ImportanceBar score={insight.score} className="my-1.5" />
-                <p className="text-gray-400 line-clamp-3">{insight.body}</p>
+                <p className="text-gray-400">{insight.body}</p>
                 <div className="flex gap-1 mt-1.5 flex-wrap">
                   {insight.tags.slice(0, 3).map(tag => (
                     <span key={tag} className="px-1 py-0.5 text-[9px] bg-gray-700 text-gray-400 rounded">
@@ -1604,7 +1565,7 @@ const InsightsTab: React.FC<{
                 `}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <span className="line-clamp-2">{insight.title}</span>
+                  <span className="whitespace-normal">{insight.title}</span>
                   {insight.evidence?.[0]?.page !== undefined && (
                     <span
                       onClick={(e) => { e.stopPropagation(); onJumpToPage(insight.evidence![0].page); }}
@@ -1648,13 +1609,30 @@ const InsightsTab: React.FC<{
               {piCards.slice(0, 5).map(card => (
                 <div key={card.id} className="bg-purple-900/20 border border-purple-700/40 rounded p-2 text-xs">
                   <p className="text-purple-300 font-medium mb-1">{card.front}</p>
-                  <p className="text-gray-400 text-[10px] line-clamp-2">{card.back}</p>
+                  <p className="text-gray-400 text-[10px]">{card.back}</p>
                 </div>
               ))}
             </div>
           </div>
         )}
 
+      </section>
+
+      <section>
+        <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+          <span>🧭</span> Deeper Insight
+        </h3>
+        {deepSignals.length > 0 ? (
+          <div className="space-y-1.5">
+            {deepSignals.map((signal, idx) => (
+              <div key={idx} className="bg-slate-900/60 border border-slate-700 rounded p-2 text-xs text-slate-200">
+                {signal}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500 italic">Extract content to reveal deeper logic and hidden structure.</p>
+        )}
       </section>
 
       {/* Traps / Watch Out */}
@@ -1670,7 +1648,7 @@ const InsightsTab: React.FC<{
                 onClick={() => onCardClick(trap)}
                 className="w-full text-left px-2.5 py-2 rounded-lg border border-amber-700/40 bg-amber-900/20 text-amber-200 text-xs hover:border-amber-600/40"
               >
-                <span className="line-clamp-2">{trap.title}</span>
+                <span>{trap.title}</span>
               </button>
             ))}
           </div>
@@ -1780,6 +1758,14 @@ const RelationsTab: React.FC<{
     return buildClinicalFlow(pageIntelligence.relations, pageIntelligence.segments);
   }, [pageIntelligence]);
 
+  const conceptualLinks = useMemo(() => {
+    const rels = pageIntelligence?.relations ?? [];
+    const prerequisites = rels.filter(r => ['requires', 'precedes', 'is_part_of', 'is_type_of'].includes(r.type)).slice(0, 5);
+    const downstream = rels.filter(r => ['leads_to', 'causes', 'indicates', 'results_in'].includes(r.type)).slice(0, 5);
+    const neighbors = rels.filter(r => !prerequisites.includes(r) && !downstream.includes(r)).slice(0, 5);
+    return { prerequisites, downstream, neighbors };
+  }, [pageIntelligence]);
+
   if (!hasContent) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-6 text-center">
@@ -1793,7 +1779,33 @@ const RelationsTab: React.FC<{
   }
 
   return (
-    <div className="p-3 overflow-y-auto h-full">
+    <div className="p-3 overflow-y-auto h-full space-y-4">
+      {(conceptualLinks.prerequisites.length > 0 || conceptualLinks.downstream.length > 0 || conceptualLinks.neighbors.length > 0) && (
+        <section className="rounded-xl border border-gray-700/60 bg-gray-900/40 p-3">
+          <h3 className="text-[10px] font-semibold text-gray-300 uppercase tracking-wide mb-2">Conceptual Links</h3>
+          <div className="space-y-2 text-[11px]">
+            {conceptualLinks.prerequisites.length > 0 && (
+              <div>
+                <p className="text-blue-300 mb-1">Builds on</p>
+                {conceptualLinks.prerequisites.map(rel => <p key={rel.id} className="text-gray-300">• {rel.from} → {rel.to}</p>)}
+              </div>
+            )}
+            {conceptualLinks.downstream.length > 0 && (
+              <div>
+                <p className="text-emerald-300 mb-1">Leads to</p>
+                {conceptualLinks.downstream.map(rel => <p key={rel.id} className="text-gray-300">• {rel.from} → {rel.to}</p>)}
+              </div>
+            )}
+            {conceptualLinks.neighbors.length > 0 && (
+              <div>
+                <p className="text-purple-300 mb-1">Conceptual neighbors</p>
+                {conceptualLinks.neighbors.map(rel => <p key={rel.id} className="text-gray-300">• {rel.from} ↔ {rel.to}</p>)}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
       {/* Clinical Reasoning Flow — only when page intelligence relations detected */}
       {clinicalFlow.length >= 2 && (
         <section className="mb-4">
@@ -1855,7 +1867,7 @@ const RelationsTab: React.FC<{
                   <span className="text-[10px] text-gray-500">{cluster.relationIds.length} rel</span>
                 </div>
                 {cluster.summary && (
-                  <p className="text-[10px] text-gray-500 mt-0.5 line-clamp-1">{cluster.summary}</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">{cluster.summary}</p>
                 )}
               </button>
             ))}

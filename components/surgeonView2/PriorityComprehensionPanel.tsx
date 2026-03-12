@@ -1766,6 +1766,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
     activeParagraphId,
     insightScale: storeInsightScale,
     resetScale,
+    setInsightScale,
     essentialStudentMode,
     setEssentialStudentMode,
     resetInsightLayout,
@@ -1789,6 +1790,15 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
   const [showBackground, setShowBackground] = useState(false);
   const [paragraphLayerOpen, setParagraphLayerOpen] = useState(false);
   const [controlError, setControlError] = useState<string | null>(null);
+  const lastKnownGoodState = useRef({
+    mode,
+    audience,
+    depth,
+    view,
+    followScroll,
+    essentialStudentMode,
+    insightScale: storeInsightScale ?? insightScale,
+  });
 
   const sectionSynthesis = useMemo(() => buildSectionSynthesis(pageIntelligence), [pageIntelligence]);
   const readingMode = inferReadingMode(mode, depthLevel, renderPolicy);
@@ -1800,13 +1810,43 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
     }
   }, [isDeepMode]);
 
-  const runSafeControlUpdate = (action: () => void) => {
+  useEffect(() => {
+    lastKnownGoodState.current = {
+      mode,
+      audience,
+      depth,
+      view,
+      followScroll,
+      essentialStudentMode,
+      insightScale: storeInsightScale ?? insightScale,
+    };
+  }, [mode, audience, depth, view, followScroll, essentialStudentMode, storeInsightScale, insightScale]);
+
+  const restoreLastKnownGoodState = () => {
+    const snapshot = lastKnownGoodState.current;
+    setMode(snapshot.mode);
+    setAudience(snapshot.audience);
+    setDepth(snapshot.depth);
+    setView(snapshot.view);
+    setFollowScroll(snapshot.followScroll);
+    setEssentialStudentMode(snapshot.essentialStudentMode);
+    setInsightScale(snapshot.insightScale);
+  };
+
+  const runSafeControlUpdate = (action: () => void, verify?: () => boolean) => {
     try {
       action();
+      if (verify && !verify()) {
+        console.warn('[PriorityComprehensionPanel] control update did not apply, restoring previous state');
+        restoreLastKnownGoodState();
+        setControlError('Control update did not apply. Restored the last stable view.');
+        return;
+      }
       setControlError(null);
     } catch (error) {
       console.error('[PriorityComprehensionPanel] control update failed', error);
-      setControlError('View didn’t update. Retry or reset?');
+      restoreLastKnownGoodState();
+      setControlError('View didn’t update. Restored the last stable view.');
     }
   };
 
@@ -2159,16 +2199,6 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
           units={pageIntelligence?.paragraphUnits ?? []}
           onJumpToSource={onJumpToSource}
         />
-      )}
-
-      {/* Structure Map — shown in deep mode or when essential mode is off */}
-      {shouldShowParagraphLayer && (!essentialStudentMode || isDeepMode) && (<StructureMapSection
-        structureMap={pageIntelligence?.structureMap}
-        paragraphUnits={pageIntelligence?.paragraphUnits}
-        pageNumber={pageIntelligence?.pageNumber}
-        onHighlightParagraph={onHighlightParagraph}
-        onJumpToSource={onJumpToSource}
-      />
       )}
 
       {/* Insight Continuity — shown in deep mode or when essential mode is off */}

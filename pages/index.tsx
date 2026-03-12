@@ -2816,13 +2816,13 @@ export default function ThoughtUnitReader() {
         </div>
       </div>
 
-        {/* Floating Action Buttons - Bottom Right Stack */}
-        <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-3">
+        {/* Floating Action Buttons - Bottom Left Stack */}
+        <div className="fixed bottom-[80px] left-6 z-40 flex flex-col gap-3 max-w-[160px] opacity-90">
           {/* Chapter Absorption FAB (feature-flagged) */}
           {isFeatureEnabled('ENABLE_CHAPTER_ABSORPTION') && smartTOC.length > 0 && !absorptionState.showPanel && (
             <button
               onClick={() => setAbsorptionState(prev => ({ ...prev, showPanel: true }))}
-              className={`p-3 rounded-full shadow-lg backdrop-blur-sm border transition-all transform hover:scale-105 ${
+              className={`p-3 rounded-2xl shadow-lg backdrop-blur-xl border transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 ${
                 absorptionState.isRunning
                   ? "bg-gradient-to-r from-orange-600 to-red-600 border-orange-400 animate-pulse"
                   : "bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 border-purple-400"
@@ -2842,7 +2842,7 @@ export default function ThoughtUnitReader() {
           {!showThoughtPanel && (
             <button
               onClick={() => setShowThoughtPanel(true)}
-              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white p-3 rounded-full shadow-lg backdrop-blur-sm border border-blue-400 transition-all transform hover:scale-105"
+              className="text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border border-white/20 transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)]"
               title="Open Thought Detection"
             >
               <div className="flex items-center gap-2">
@@ -2870,7 +2870,7 @@ export default function ThoughtUnitReader() {
                   }
                 }
               }}
-              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white p-3 rounded-full shadow-lg backdrop-blur-sm border border-purple-400 transition-all transform hover:scale-105"
+              className="text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border border-white/20 transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)]"
               title="Open Whiteboard Explanation"
             >
               <div className="flex items-center gap-2">
