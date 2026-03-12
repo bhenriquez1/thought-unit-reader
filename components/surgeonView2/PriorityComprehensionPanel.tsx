@@ -15,6 +15,7 @@ import { buildQuoteHash, detectParagraphTraps } from '@/lib/page-intelligence';
 import type { TrapHit } from '@/lib/page-intelligence';
 import { scoreParagraph, detectClinicalReasoning, applyMicroPolish, orientParagraph, adaptTone, TONE_LABELS, PURPOSE_TAG_CONFIG } from '@/lib/intelligence';
 import { useInsightsPanelStore } from '@/lib/stores/insightsPanelStore';
+import type { InsightMode } from '@/lib/stores/insightsPanelStore';
 import type { ScoreResult, ClinicalReasoningResult, ToneLevel, OrientationHeader } from '@/lib/intelligence';
 
 // ============================================================================
@@ -33,6 +34,21 @@ type InsightSettings = {
   depth: DepthLevel;
   tone: Tone;
   view: InsightView;
+};
+
+type ReadingMode = 'minimal' | 'standard' | 'deep' | 'condensed' | 'expanded';
+
+type SectionSynthesis = {
+  title: string;
+  overview: string;
+  plainLanguage: string;
+  structure: string[];
+  takeaways: string[];
+  whyItMatters: string;
+  anchor?: {
+    quote: string;
+    sourceRef?: SourceRef;
+  };
 };
 
 type InsightVariant = {
@@ -220,6 +236,127 @@ function pickEssentialItems(
   }
 
   return picked;
+}
+
+function toStudentSentence(text: string): string {
+  const cleaned = text.replace(/\s+/g, ' ').trim();
+  if (!cleaned) return '';
+  return cleaned.length > 200 ? `${cleaned.slice(0, 197).trimEnd()}…` : cleaned;
+}
+
+function buildSectionSynthesis(pageIntelligence?: PageIntelligence | null): SectionSynthesis | null {
+  if (!pageIntelligence) return null;
+
+  const units = (pageIntelligence.paragraphUnits ?? []).filter((u) => u.text.trim().length > 20);
+  const sortedUnits = [...units].sort((a, b) => b.importance - a.importance);
+  const topic = pageIntelligence.structureMap?.topic?.trim() || `Page ${pageIntelligence.pageNumber}`;
+  const mainUnit = sortedUnits[0];
+
+  if (!mainUnit) return null;
+
+  const overview = pageIntelligence.explain?.summary?.trim() || toStudentSentence(mainUnit.text);
+  const plainLanguage = toStudentSentence(
+    pageIntelligence.continuity?.corePattern
+      ? `This section teaches ${pageIntelligence.continuity.corePattern.toLowerCase()}.`
+      : `This section focuses on ${topic.toLowerCase()}.`
+  );
+
+  const structureFromMap = (pageIntelligence.structureMap?.nodes ?? [])
+    .slice(0, 4)
+    .map((node, idx) => `Part ${idx + 1}: ${node.label.toLowerCase()} — ${toStudentSentence(node.text)}`);
+
+  const structure = structureFromMap.length > 0
+    ? structureFromMap
+    : sortedUnits.slice(0, 4).map((unit, idx) => `Part ${idx + 1}: ${unit.role.replace('_', ' ')} — ${toStudentSentence(firstSentence(unit.text))}`);
+
+  const takeawaysFromExplain = (pageIntelligence.explain?.bullets ?? []).map(toStudentSentence).filter(Boolean);
+  const takeaways = (takeawaysFromExplain.length > 0
+    ? takeawaysFromExplain
+    : sortedUnits.slice(0, 4).map((unit) => toStudentSentence(firstSentence(unit.text))))
+    .filter(Boolean)
+    .slice(0, 5);
+
+  const whyItMatters = toStudentSentence(
+    pageIntelligence.continuity?.conceptualBridge
+      || pageIntelligence.continuity?.clinicalConnection
+      || `Understanding this section helps you connect the main idea to what comes next in the chapter.`
+  );
+
+  return {
+    title: topic,
+    overview: toStudentSentence(overview),
+    plainLanguage,
+    structure,
+    takeaways,
+    whyItMatters,
+    anchor: {
+      quote: toStudentSentence(mainUnit.text),
+      sourceRef: {
+        pageIndex: mainUnit.pageIndex,
+        paragraphId: mainUnit.id,
+        startChar: mainUnit.startChar,
+        endChar: mainUnit.endChar,
+        quote: toStudentSentence(mainUnit.text),
+        quoteText: mainUnit.text,
+        quoteHash: buildQuoteHash(mainUnit.text),
+        textOrigin: 'pdfText',
+        confidence: mainUnit.importance / 100,
+      },
+    },
+  };
+}
+
+
+
+function inferReadingMode(mode: InsightMode, depth: DepthLevel, view: InsightView): ReadingMode {
+  if (mode === 'deep' || depth === 'deep') return 'deep';
+  if (view === 'condensed' && depth === 'minimal') return 'minimal';
+  if (view === 'condensed') return 'condensed';
+  if (view === 'expanded' && depth !== 'minimal') return 'expanded';
+  return 'standard';
+}
+
+function applyReadingModeSettings(
+  nextMode: ReadingMode,
+  handlers: {
+    setMode: (mode: InsightMode) => void;
+    setDepth: (depth: DepthLevel) => void;
+    setView: (view: InsightView) => void;
+    setEssentialStudentMode: (enabled: boolean) => void;
+  }
+) {
+  if (nextMode === 'minimal') {
+    handlers.setMode('quick');
+    handlers.setDepth('minimal');
+    handlers.setView('condensed');
+    handlers.setEssentialStudentMode(true);
+    return;
+  }
+  if (nextMode === 'standard') {
+    handlers.setMode('quick');
+    handlers.setDepth('standard');
+    handlers.setView('expanded');
+    handlers.setEssentialStudentMode(true);
+    return;
+  }
+  if (nextMode === 'deep') {
+    handlers.setMode('deep');
+    handlers.setDepth('deep');
+    handlers.setView('expanded');
+    handlers.setEssentialStudentMode(false);
+    return;
+  }
+  if (nextMode === 'condensed') {
+    handlers.setMode('quick');
+    handlers.setDepth('minimal');
+    handlers.setView('condensed');
+    handlers.setEssentialStudentMode(true);
+    return;
+  }
+  handlers.setMode('quick');
+  handlers.setDepth('standard');
+  handlers.setView('expanded');
+  handlers.setEssentialStudentMode(false);
 }
 
 function categorizePriorityItems(
@@ -1634,7 +1771,18 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
 
   // Collapse state for supporting/background tiers in deep analysis
   const [showBackground, setShowBackground] = useState(false);
+  const [paragraphLayerOpen, setParagraphLayerOpen] = useState(false);
   const [controlError, setControlError] = useState<string | null>(null);
+
+  const sectionSynthesis = useMemo(() => buildSectionSynthesis(pageIntelligence), [pageIntelligence]);
+  const readingMode = inferReadingMode(mode, depthLevel, renderPolicy);
+  const shouldShowParagraphLayer = isDeepMode || paragraphLayerOpen;
+
+  useEffect(() => {
+    if (isDeepMode) {
+      setParagraphLayerOpen(true);
+    }
+  }, [isDeepMode]);
 
   const runSafeControlUpdate = (action: () => void) => {
     try {
@@ -1753,10 +1901,10 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
         <div>
           <h2 className="text-sm font-semibold text-teal-400 flex items-center gap-2">
             <span>🎯</span>
-            Priority Comprehension
+            Section Comprehension
           </h2>
           <p className="text-[10px] text-gray-500 mt-0.5">
-            What you must know from this page
+            Section-first explanation for any academic reading
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -1890,8 +2038,80 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
         </div>
       )}
 
+      <section className="mb-5 space-y-2">
+        <div className="p-3 rounded-lg border border-teal-700/40 bg-teal-900/10">
+          <h3 className="text-xs font-semibold text-teal-300 uppercase tracking-wide">Section-first mode</h3>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {(['minimal', 'standard', 'deep', 'condensed', 'expanded'] as ReadingMode[]).map((candidate) => (
+              <button
+                key={candidate}
+                onClick={() => runSafeControlUpdate(() => applyReadingModeSettings(candidate, { setMode, setDepth, setView, setEssentialStudentMode }))}
+                className={`text-[10px] px-2 py-1 rounded border ${readingMode === candidate ? 'bg-teal-700/60 text-teal-100 border-teal-500/70' : 'bg-gray-800/50 text-gray-300 border-gray-700/60 hover:bg-gray-700/60'}`}
+              >
+                {candidate}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="p-3 rounded-lg border border-gray-700/70 bg-gray-900/50">
+          <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">1. Section Overview</h4>
+          <p className="text-sm text-white mt-1">{sectionSynthesis?.title || `Page ${pageIntelligence?.pageNumber ?? ''}`}</p>
+          <p className="text-xs text-gray-300 mt-1">{sectionSynthesis?.overview || 'Section summary unavailable; showing page essentials.'}</p>
+          {(readingMode === 'standard' || readingMode === 'deep' || readingMode === 'expanded') && (
+            <p className="text-xs text-gray-400 mt-1">{sectionSynthesis?.plainLanguage || 'This page introduces the core idea and how it connects to the surrounding chapter.'}</p>
+          )}
+        </div>
+
+        {readingMode !== 'minimal' && readingMode !== 'condensed' && (
+          <div className="p-3 rounded-lg border border-gray-700/70 bg-gray-900/50">
+            <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">2. Section Breakdown</h4>
+            <ul className="list-disc pl-5 mt-1 text-xs text-gray-300 space-y-1">
+              {(sectionSynthesis?.structure?.length ? sectionSynthesis.structure : ['Part 1: framing', 'Part 2: core idea', 'Part 3: supporting examples', 'Part 4: implication']).slice(0, readingMode === 'deep' ? 6 : 4).map((entry, idx) => <li key={`section_part_${idx}`}>{entry}</li>)}
+            </ul>
+          </div>
+        )}
+
+        <div className="p-3 rounded-lg border border-gray-700/70 bg-gray-900/50">
+          <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">3. Key Takeaways</h4>
+          <ul className="list-disc pl-5 mt-1 text-xs text-gray-300 space-y-1">
+            {(sectionSynthesis?.takeaways?.length ? sectionSynthesis.takeaways : ['Top point from this page', 'Second key takeaway', 'Third key takeaway'])
+              .slice(0, readingMode === 'minimal' ? 3 : readingMode === 'condensed' ? 2 : 5)
+              .map((entry, idx) => <li key={`takeaway_${idx}`}>{entry}</li>)}
+          </ul>
+        </div>
+
+        {(readingMode === 'standard' || readingMode === 'deep' || readingMode === 'expanded') && (
+          <div className="p-3 rounded-lg border border-gray-700/70 bg-gray-900/50">
+            <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">4. Why It Matters</h4>
+            <p className="text-xs text-gray-300 mt-1">{sectionSynthesis?.whyItMatters || 'This section helps you understand the author’s main teaching goal and what to retain for exams.'}</p>
+          </div>
+        )}
+
+        {(readingMode === 'standard' || readingMode === 'deep' || readingMode === 'expanded') && sectionSynthesis?.anchor && (
+          <div className="p-3 rounded-lg border border-gray-700/70 bg-gray-900/50">
+            <h4 className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">5. Important Source Anchor</h4>
+            <p className="text-xs text-gray-300 mt-1">“{sectionSynthesis.anchor.quote}”</p>
+            {sectionSynthesis.anchor.sourceRef && (
+              <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                <SourceAnchor sourceRef={sectionSynthesis.anchor.sourceRef} onJump={onJumpToSource} collapsed={false} />
+              </div>
+            )}
+          </div>
+        )}
+
+        {!isDeepMode && (
+          <button
+            onClick={() => setParagraphLayerOpen((v) => !v)}
+            className="text-[10px] px-2 py-1 rounded border border-gray-700/70 bg-gray-800/50 text-gray-200 hover:bg-gray-700/60"
+          >
+            {paragraphLayerOpen ? 'Hide paragraph-level intelligence' : 'Show paragraph-level intelligence'}
+          </button>
+        )}
+      </section>
+
       {/* Priority Score Legend */}
-      {totalItems > 0 && (
+      {shouldShowParagraphLayer && totalItems > 0 && (
         <div className="flex gap-2 mb-4 pb-3 border-b border-gray-700">
           {(['MUST_KNOW', 'HIGH_YIELD', 'SUPPORTING'] as PriorityScore[]).map(priority => {
             const style = PRIORITY_STYLES[priority];
@@ -1911,7 +2131,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
       )}
 
       {/* Page Minimap — paragraph importance strip */}
-      {totalParagraphUnits > 0 && (!essentialStudentMode || isDeepMode) && (
+      {shouldShowParagraphLayer && totalParagraphUnits > 0 && (!essentialStudentMode || isDeepMode) && (
         <PageMinimap
           units={pageIntelligence?.paragraphUnits ?? []}
           onJumpToSource={onJumpToSource}
@@ -1919,7 +2139,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
       )}
 
       {/* Structure Map — shown in deep mode or when essential mode is off */}
-      {(!essentialStudentMode || isDeepMode) && (<StructureMapSection
+      {shouldShowParagraphLayer && (!essentialStudentMode || isDeepMode) && (<StructureMapSection
         structureMap={pageIntelligence?.structureMap}
         paragraphUnits={pageIntelligence?.paragraphUnits}
         pageNumber={pageIntelligence?.pageNumber}
@@ -1929,12 +2149,12 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
       )}
 
       {/* Insight Continuity — shown in deep mode or when essential mode is off */}
-      {(!essentialStudentMode || isDeepMode) && pageIntelligence?.continuity && (
+      {shouldShowParagraphLayer && (!essentialStudentMode || isDeepMode) && pageIntelligence?.continuity && (
         <ContinuitySection continuity={pageIntelligence.continuity} />
       )}
 
       {/* Full Paragraph Intelligence — view-aware rendering */}
-      {totalParagraphUnits > 0 && (
+      {shouldShowParagraphLayer && totalParagraphUnits > 0 && (
         <section className="mb-5">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-sm">{isDeepMode ? '🔬' : '📌'}</span>
@@ -2055,7 +2275,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
       )}
 
       {/* Category Sections */}
-      <div className="space-y-5">
+      {shouldShowParagraphLayer && <div className="space-y-5">
         {activeCategories.map(({ category, items }) => (
           <CategorySection
             key={category}
@@ -2073,7 +2293,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
             settings={{ depth: depthLevel, tone: toneLevel as Tone, view: renderPolicy }}
           />
         ))}
-      </div>
+      </div>}
     </div>
   );
 };
