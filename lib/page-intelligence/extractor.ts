@@ -151,6 +151,7 @@ export interface ExtractPageTextOptions {
   getPageImageDataUrl: () => Promise<string>;
   ocrEnabled?: boolean;
   minTextLength?: number;
+  mixedLengthRatio?: number;
   onOCRStart?: () => void;
   onOCRComplete?: (text: string, confidence: number) => void;
 }
@@ -172,19 +173,20 @@ export async function extractPageText(options: ExtractPageTextOptions): Promise<
     getPageImageDataUrl,
     ocrEnabled = true,
     minTextLength = MIN_TEXT_LENGTH,
+    mixedLengthRatio = 0.75,
     onOCRStart,
     onOCRComplete
   } = options;
 
   // Step 1: Try native text extraction
+  let nativeText = '';
   try {
-    const nativeText = await getNativeText();
-    const trimmedText = nativeText?.trim() || '';
+    nativeText = (await getNativeText())?.trim() || '';
 
-    if (trimmedText.length >= minTextLength) {
+    if (nativeText.length >= minTextLength) {
       return {
         pageNumber,
-        text: trimmedText,
+        text: nativeText,
         source: 'native' as PageSource,
         confidence: 100
       };
@@ -206,10 +208,18 @@ export async function extractPageText(options: ExtractPageTextOptions): Promise<
   // Step 3: Check OCR cache
   const cached = await getCachedOCR(docId, pageNumber);
   if (cached) {
+    const hasNativeFragment = nativeText.length > 0;
+    const shouldMergeNativeAndOCR = hasNativeFragment && nativeText.length < minTextLength;
+    const mergedText = shouldMergeNativeAndOCR
+      ? `${nativeText}
+
+${cached.text}`.trim()
+      : cached.text;
+
     return {
       pageNumber,
-      text: cached.text,
-      source: 'ocr' as PageSource,
+      text: mergedText,
+      source: shouldMergeNativeAndOCR ? 'mixed' as PageSource : 'ocr' as PageSource,
       confidence: cached.confidence
     };
   }
@@ -232,10 +242,20 @@ export async function extractPageText(options: ExtractPageTextOptions): Promise<
 
     onOCRComplete?.(ocrResult.text, ocrResult.confidence);
 
+    const hasNativeFragment = nativeText.length > 0;
+    const shouldMergeNativeAndOCR = hasNativeFragment && nativeText.length < minTextLength;
+    const nativeRatio = minTextLength > 0 ? nativeText.length / minTextLength : 0;
+    const isMixed = shouldMergeNativeAndOCR && nativeRatio >= mixedLengthRatio;
+    const mergedText = shouldMergeNativeAndOCR
+      ? `${nativeText}
+
+${ocrResult.text}`.trim()
+      : ocrResult.text;
+
     return {
       pageNumber,
-      text: ocrResult.text,
-      source: 'ocr' as PageSource,
+      text: mergedText,
+      source: isMixed ? 'mixed' as PageSource : 'ocr' as PageSource,
       confidence: ocrResult.confidence
     };
   } catch (error) {

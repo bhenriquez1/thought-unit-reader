@@ -445,7 +445,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
       if (controller.signal.aborted || requestId !== extractionRequestIdRef.current) return;
       setPageIntelligence(result.intelligence);
-      setOcrStatus(result.intelligence.source === 'ocr' ? 'done' : 'idle');
+      setOcrStatus(result.intelligence.source === 'native' ? 'idle' : 'done');
 
       // Persist to CourseContext (IndexedDB) → Study + NoteLab will read from here
       await courseContext.storePageIntelligence(currentPage, result.intelligence);
@@ -466,7 +466,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
       const statusText = result.fromCache
         ? 'Loaded from cache'
-        : `Done in ${result.processingTimeMs}ms${result.intelligence.source === 'ocr' ? ' (OCR)' : ''}`;
+        : `Done in ${result.processingTimeMs}ms${result.intelligence.source !== 'native' ? ` (${result.intelligence.source.toUpperCase()})` : ''}`;
       setExtractionStatus(statusText);
       setTimeout(() => setExtractionStatus(''), 3000);
     } catch (error) {
@@ -697,13 +697,17 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               px-2 py-0.5 text-[10px] font-medium rounded-full
               ${pageIntelligence.source === 'native'
                 ? 'bg-green-500/20 text-green-400'
-                : 'bg-amber-500/20 text-amber-400'}
+                : pageIntelligence.source === 'mixed'
+                  ? 'bg-blue-500/20 text-blue-400'
+                  : 'bg-amber-500/20 text-amber-400'}
             `}
-            title={pageIntelligence.source === 'ocr'
-              ? `OCR confidence: ${pageIntelligence.confidence || 0}%`
-              : 'Native PDF text'}
+            title={pageIntelligence.source === 'native'
+              ? 'Native PDF text'
+              : pageIntelligence.source === 'mixed'
+                ? `Mixed extraction (native + OCR), OCR confidence: ${pageIntelligence.confidence || 0}%`
+                : `OCR confidence: ${pageIntelligence.confidence || 0}%`}
           >
-            {pageIntelligence.source === 'native' ? 'Native' : 'OCR'}
+            {pageIntelligence.source === 'native' ? 'Native' : pageIntelligence.source === 'mixed' ? 'Mixed' : 'OCR'}
           </span>
         )}
 
@@ -1195,9 +1199,9 @@ const ExplainTab: React.FC<{
         <h3 className="text-sm font-semibold text-teal-300 leading-tight max-w-[80%] whitespace-normal">
           {topicTitle}
         </h3>
-        {pageIntelligence?.source === 'ocr' && (
+        {pageIntelligence?.source !== 'native' && (
           <span className="px-1.5 py-0.5 text-[9px] bg-amber-500/20 text-amber-400 rounded flex-shrink-0">
-            OCR
+            {pageIntelligence?.source === 'mixed' ? 'Mixed' : 'OCR'}
           </span>
         )}
       </div>
