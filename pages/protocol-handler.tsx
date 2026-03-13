@@ -313,7 +313,7 @@ export default function ProtocolHandlerPage() {
       }
 
       // Cross-platform learning insight
-      insights.push(`🔄 Learning integrated: DAT Bootcamp + Thought Unit Reader = Enhanced comprehension and retention`);
+      insights.push(`🔄 Learning integrated: DAT Bootcamp + Avrrio Reader = Enhanced comprehension and retention`);
 
       // Use AI learning engine for additional insights if available
       if (session && typeof aiLearningEngine.predictOptimalSettings === 'function') {
@@ -419,7 +419,7 @@ export default function ProtocolHandlerPage() {
           {/* Footer */}
           <div className="text-center mt-6">
             <p className="text-xs text-gray-500">
-              Thought Unit Reader × DAT Bootcamp Integration
+              Avrrio Reader × DAT Bootcamp Integration
             </p>
           </div>
         </div>
