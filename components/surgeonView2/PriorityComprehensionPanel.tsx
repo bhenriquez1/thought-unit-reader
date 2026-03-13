@@ -1486,16 +1486,11 @@ const ParagraphUnitCard: React.FC<{
       className={`p-2.5 rounded-lg border border-l-4 ${roleLeftBorder} border-gray-700/60 cursor-pointer hover:border-gray-500/60 hover:-translate-y-0.5 hover:shadow-lg transition-all ${meta.bg}`}
       onClick={() => onHighlightParagraph?.(unit.text)}
     >
-      {/* Cognitive anchor — orientation header at top of every card */}
-      {deepMode
-        ? <div className="mb-1.5" onClick={e => e.stopPropagation()}><OrientationHeaderBadge header={orientation} /></div>
-        : <MiniOrientationHeader header={orientation} />
-      }
+      <MiniOrientationHeader header={orientation} />
 
       <div className="sticky top-0 z-10 mb-1.5 flex items-center gap-1.5 rounded border border-gray-700/50 bg-gray-950/90 px-2 py-1 text-[9px]" onClick={(e) => e.stopPropagation()}>
         <span className="font-mono text-gray-300 whitespace-nowrap">Pg {unit.pageIndex + 1}</span>
-        <span className="font-mono text-gray-400 whitespace-nowrap">¶ {unit.id}</span>
-        <span className="text-teal-400 whitespace-nowrap">{Math.round((unitSourceRef.confidence || 0) * 100)}% match</span>
+        {sectionHint && <span className="text-gray-400 truncate">{sectionHint}</span>}
         <button
           type="button"
           onClick={(e) => {
@@ -1508,59 +1503,13 @@ const ParagraphUnitCard: React.FC<{
         </button>
       </div>
 
-      {/* Header: tier icon + role chip + score + sub-score toggle */}
+      {/* Header: tier icon + role chip */}
       <div className="flex items-center gap-1.5 mb-1.5">
         <span className="text-xs flex-shrink-0">{meta.icon}</span>
         <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${roleColor}`}>
           {unit.role.replace('_', ' ')}
         </span>
-        <div className="flex-1" />
-        {unit.subScores && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setShowSubScores(v => !v); }}
-            className="text-[8px] text-gray-500 hover:text-gray-300 px-1 py-0.5 rounded bg-gray-700/30 border border-gray-700/40"
-            title="Toggle sub-scores"
-          >
-            {showSubScores ? '▲ scores' : '▼ scores'}
-          </button>
-        )}
-        {debugMode && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setShowDebug(v => !v); }}
-            className="text-[8px] text-teal-700 hover:text-teal-400 px-1 py-0.5 rounded bg-teal-900/20 border border-teal-900/30"
-            title="Toggle debug info"
-          >
-            {showDebug ? '▲ dbg' : '▼ dbg'}
-          </button>
-        )}
-        {/* Score badge (deep mode) or plain number (quick mode) */}
-        {deepMode && score ? (
-          <div onClick={(e) => e.stopPropagation()}>
-            <ScoreBadge score={score} />
-          </div>
-        ) : (
-          <span className="text-[10px] font-mono text-gray-500 flex-shrink-0">{unit.importance}</span>
-        )}
       </div>
-
-      {/* Importance bar */}
-      <ImportanceBar score={unit.importance} className="mb-1.5 mx-0.5" />
-
-      {/* Sub-score visualization (expandable) */}
-      {unit.subScores && (
-        <SubScorePanel subScores={unit.subScores} expanded={showSubScores} />
-      )}
-
-      {/* Why-scored signal labels */}
-      {unit.whyScoredSignals && unit.whyScoredSignals.length > 0 && (
-        <div className="flex gap-1 mt-1.5 flex-wrap">
-          {unit.whyScoredSignals.map(sig => (
-            <span key={sig} className="text-[8px] px-1 py-0.5 bg-teal-900/30 text-teal-500 rounded border border-teal-800/30">
-              {sig}
-            </span>
-          ))}
-        </div>
-      )}
 
       {/* Trap badges — inline with expandable DAT Trap prompt */}
       <div onClick={(e) => e.stopPropagation()}>
@@ -1607,7 +1556,7 @@ const ParagraphUnitCard: React.FC<{
           <div className="space-y-2 text-[11px] text-gray-300" style={{ fontSize: 'calc(0.6875rem * var(--insightScale, 1))' }}>
             <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
               <div className="flex items-center justify-between gap-2 mb-1">
-                <div className="text-[9px] font-bold text-blue-300 uppercase tracking-wide">Overview</div>
+                <div className="text-[9px] font-bold text-blue-300 uppercase tracking-wide">Section Overview</div>
                 <div className="text-[8px] text-gray-500">{activeStatus === 'loading' ? 'Updating…' : 'Ready'}</div>
               </div>
               <p>{activeVariant?.title || 'Generating insight snapshot…'}</p>
@@ -1615,19 +1564,14 @@ const ParagraphUnitCard: React.FC<{
 
             {depthLevel !== 'minimal' && (
             <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
-              <div className="text-[9px] font-bold text-purple-300 uppercase tracking-wide mb-1">Reasoning Flow</div>
-              <div className="flex gap-1 flex-wrap mb-1.5">
-                <span className="text-[9px] px-1.5 py-0.5 rounded border border-purple-700/40 bg-purple-900/20">{unit.role.replace('_', ' ')}</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded border border-teal-700/40 bg-teal-900/20">{orientation.purpose}</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded border border-gray-700/40 bg-gray-800/40">Pg {unit.pageIndex + 1} · ¶ {(orientation.paragraphIndex ?? 0) + 1}</span>
-              </div>
-              <p className="text-gray-400">How it fits here: {orientation.purpose}</p>
+              <div className="text-[9px] font-bold text-purple-300 uppercase tracking-wide mb-1">Professional Reasoning</div>
+              <p className="text-gray-400">This passage builds reasoning by moving from concept to implication in a way that supports applied understanding.</p>
             </section>
             )}
 
             {depthLevel === 'deep' && (
             <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
-              <div className="text-[9px] font-bold text-amber-300 uppercase tracking-wide mb-1">Exam Signal / Clinical Reasoning</div>
+              <div className="text-[9px] font-bold text-amber-300 uppercase tracking-wide mb-1">Clinical / Practical Integration</div>
               <ul className="list-disc pl-4 space-y-1">
                 {(activeVariant?.bullets || []).slice(0, insightExpanded ? undefined : 2).map((step, idx) => <li key={`${unit.id}_exam_${idx}`}>{step}</li>)}
               </ul>
@@ -1636,17 +1580,17 @@ const ParagraphUnitCard: React.FC<{
 
             <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
               <div className="text-[9px] font-bold text-green-300 uppercase tracking-wide mb-1">Source</div>
-              <p className="text-gray-400">p.{unit.pageIndex + 1} • y={locationMeta.yPct}% • col={locationMeta.column} • block={locationMeta.block}</p>
+              <p className="text-gray-400">Page {unit.pageIndex + 1}</p>
             </section>
 
             {activeVariant?.sectionContext && (
               <section className="rounded border border-gray-700/40 bg-gray-900/30 p-2">
-                <div className="text-[9px] font-bold text-cyan-300 uppercase tracking-wide mb-1">Section Context</div>
+                <div className="text-[9px] font-bold text-cyan-300 uppercase tracking-wide mb-1">Hidden Implications</div>
                 <ul className="space-y-1 text-gray-400">
-                  <li><span className="text-cyan-300">Section Purpose:</span> {activeVariant.sectionContext.sectionPurpose}</li>
-                  <li><span className="text-cyan-300">Role In Chapter:</span> {activeVariant.sectionContext.roleInChapter}</li>
-                  <li><span className="text-cyan-300">Builds On:</span> {activeVariant.sectionContext.dependencyLinks}</li>
-                  <li><span className="text-cyan-300">Next Concept:</span> {activeVariant.sectionContext.nextConcept}</li>
+                  <li>{activeVariant.sectionContext.sectionPurpose}</li>
+                  <li>{activeVariant.sectionContext.roleInChapter}</li>
+                  <li>{activeVariant.sectionContext.dependencyLinks}</li>
+                  <li>{activeVariant.sectionContext.nextConcept}</li>
                 </ul>
               </section>
             )}
@@ -1684,22 +1628,6 @@ const ParagraphUnitCard: React.FC<{
         </div>
       )}
 
-      {/* Signal indicators */}
-      <div className="flex gap-1 mt-1 flex-wrap">
-        {unit.signals.hasClinicalTerms && (
-          <span className="text-[8px] px-1 py-0.5 bg-teal-900/40 text-teal-500 rounded">clinical</span>
-        )}
-        {unit.signals.hasNumbers && (
-          <span className="text-[8px] px-1 py-0.5 bg-blue-900/40 text-blue-500 rounded">numbers</span>
-        )}
-        {unit.signals.hasCausal && (
-          <span className="text-[8px] px-1 py-0.5 bg-purple-900/40 text-purple-500 rounded">causal</span>
-        )}
-        {unit.signals.hasNegation && (
-          <span className="text-[8px] px-1 py-0.5 bg-red-900/30 text-red-400 rounded">negation</span>
-        )}
-      </div>
-
       {/* Source anchor with jump-to-source */}
       {onJumpToSource && (
         <div className="mt-2" onClick={(e) => e.stopPropagation()}>
@@ -1707,29 +1635,12 @@ const ParagraphUnitCard: React.FC<{
             sourceRef={unitSourceRef}
             paragraphText={unit.text}
             onJump={onJumpToSource}
-            collapsed={true}
+            collapsed={true} showMetadata={false}
           />
         </div>
       )}
 
-      {/* Intelligence Debug Panel */}
-      <div onClick={(e) => e.stopPropagation()}>
-        <DebugInfoPanel unit={unit} sourceRef={unitSourceRef} expanded={showDebug} />
-      </div>
-
-      {/* Deep Mode stacked cards — spec Part C */}
-      {deepMode && score && reasoning && (
-        <div onClick={(e) => e.stopPropagation()}>
-          <DeepModeCards
-            unit={unit}
-            score={score}
-            reasoning={reasoning}
-            toneLevel={toneLevel}
-            onJumpToSource={onJumpToSource}
-            unitSourceRef={unitSourceRef}
-          />
-        </div>
-      )}
+      
     </div>
   );
 };
@@ -2157,7 +2068,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
             <p className="text-xs text-gray-300 mt-1">“{sectionSynthesis.anchor.quote}”</p>
             {sectionSynthesis.anchor.sourceRef && (
               <div className="mt-2" onClick={(e) => e.stopPropagation()}>
-                <SourceAnchor sourceRef={sectionSynthesis.anchor.sourceRef} onJump={onJumpToSource} collapsed={false} showMetadata={isDeepMode || toneLevel === 'expert'} />
+                <SourceAnchor sourceRef={sectionSynthesis.anchor.sourceRef} onJump={onJumpToSource} collapsed={false} showMetadata={false} />
               </div>
             )}
           </div>
@@ -2484,7 +2395,6 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
   };
 
   const categoryTag = CATEGORY_PURPOSE_TAG[item.category];
-  const showExpertMeta = settings.depth === 'deep' || settings.tone === 'expert';
   const titleStyle: React.CSSProperties = { fontSize: 'calc(0.75rem * var(--insightScale, 1))' };
   const bodyStyle: React.CSSProperties = {
     fontSize: 'calc(0.6875rem * var(--insightScale, 1))',
@@ -2511,12 +2421,6 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
           {categoryTag.icon} {categoryTag.label}
         </span>
         <span className="text-[8px] font-mono text-gray-300 whitespace-nowrap">Pg {resolvedPage ?? '—'}</span>
-        {showExpertMeta && (
-          <>
-            <span className="text-[8px] font-mono text-gray-400 whitespace-nowrap">¶ {item.sourceRef?.paragraphId || 'n/a'}</span>
-            <span className="text-[8px] text-gray-500 whitespace-nowrap">match {(Math.round((item.sourceRef?.confidence ?? 0.7) * 100))}%</span>
-          </>
-        )}
         <span className="flex-1" />
         {isPinned && <span className="text-[8px] text-teal-400" title="Pinned highlight">📍</span>}
         {page !== undefined && onJumpToPage && (
@@ -2589,7 +2493,7 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
 
       {item.sourceRef && (onJumpToSource || onJumpToPage) && (
         <div className="mt-2 pl-1" onClick={(e) => e.stopPropagation()}>
-          <SourceAnchor sourceRef={item.sourceRef} onJump={onJumpToSource} collapsed={settings.view === 'condensed' && !isExpanded} showMetadata={showExpertMeta} />
+          <SourceAnchor sourceRef={item.sourceRef} onJump={onJumpToSource} collapsed={settings.view === 'condensed' && !isExpanded} showMetadata={false} />
         </div>
       )}
 

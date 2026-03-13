@@ -6,7 +6,7 @@
 // Source and Text Types
 // ============================================================================
 
-export type PageSource = "native" | "ocr";
+export type PageSource = "native" | "ocr" | "mixed";
 
 export interface PageText {
   pageNumber: number;
