@@ -2,6 +2,7 @@
 // Generate page-aware explanations with summaries, bullets, pitfalls, and mnemonics
 
 import type { ExplainResult, Segment, Signal, Insight } from './types';
+import type { FigureContext, PageDomain } from './normalizer';
 
 // ============================================================================
 // Configuration
@@ -309,24 +310,44 @@ export interface GenerateExplainOptions {
   segments: Segment[];
   signals: Signal[];
   insights: Insight[];
+  domain?: PageDomain;
+  figureContext?: FigureContext;
 }
 
 /**
  * Generate a page-aware explanation
  */
-export function generateExplain(options: GenerateExplainOptions): ExplainResult {
-  const { segments, signals, insights } = options;
+function withDomainVoice(summary: string, domain: PageDomain): string {
+  if (domain === 'pharmacology') return `Pharmacology focus: ${summary}`;
+  if (domain === 'periodontology') return `Periodontology focus: ${summary}`;
+  if (domain === 'biology') return `Biology focus: ${summary}`;
+  if (domain === 'clinical') return `Clinical focus: ${summary}`;
+  return summary;
+}
 
-  const summary = generateSummary(segments, insights);
+export function generateExplain(options: GenerateExplainOptions): ExplainResult {
+  const { segments, signals, insights, domain = 'general', figureContext } = options;
+
+  let summary = generateSummary(segments, insights);
   const bullets = generateBullets(segments, signals, insights);
   const pitfalls = detectPitfalls(segments, signals);
   const mnemonics = generateMnemonics(segments, signals);
 
+  summary = withDomainVoice(summary, domain);
+
+  if (figureContext?.relevant && figureContext.captions.length > 0) {
+    const figureLine = `Figure support: ${figureContext.captions[0].replace(/^[^A-Za-z0-9]*/, '')}`;
+    if (!bullets.some((b) => b.toLowerCase().includes('figure support'))) {
+      bullets.unshift(figureLine);
+    }
+  }
+
   return {
     summary,
-    bullets,
+    bullets: bullets.slice(0, MAX_BULLETS),
     pitfalls,
     mnemonics: mnemonics.length > 0 ? mnemonics : undefined,
+    domainStyle: domain,
   };
 }
 
