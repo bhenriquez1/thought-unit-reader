@@ -11,6 +11,7 @@ import { useNoteLabStore } from '@/lib/cognitiveEngine/noteLabStore';
 import { useSurgeonEngineStore } from '@/lib/surgeonEngine/store';
 import { useExpertViewStore } from '@/lib/cognitive/expertViewStore';
 import { usePageContextStore } from '@/lib/cognitive/pageContextStore';
+import { useReaderState } from '@/lib/cognitive/useReaderState';
 import type {
   ReasoningChain,
 } from '@/lib/cognitive/types';
@@ -158,8 +159,27 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     followScroll,
   } = useInsightsPanelStore();
 
+  // Canonical ReaderState (single source of truth for page + panel state)
+  const {
+    pageIndex,
+    sectionId,
+    paragraphId,
+    activeTab,
+    insightDepth,
+    sectionMode,
+    setDocument: setReaderDocument,
+    setActiveTab,
+    setInsightDepth,
+    setSectionMode,
+    setSectionId,
+    setParagraphId,
+    onPageChange,
+    buildCacheKey,
+    getCachedInsight,
+    setCachedInsight,
+  } = useReaderState();
+
   // Local state
-  const [activeTab, setActiveTab] = useState<ComprehensionTab>('priority');
   const [selectedCardId, setSelectedCardId] = useState<string | undefined>();
   const [showInsightOverlay, setShowInsightOverlay] = useState(false);
   const [showDrillMode, setShowDrillMode] = useState(false);
@@ -182,17 +202,17 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   const [extractScope, setExtractScope] = useState<ExtractScope>('page');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const activeTabLabel = useMemo(() => {
+  const tabTitle = useMemo(() => {
     switch (activeTab) {
-      case 'priority': return 'Priority';
-      case 'explain': return 'Explain';
-      case 'relations': return 'Relations';
-      case 'compare': return 'Compare';
-      case 'insights': return 'Insights';
-      case 'narrate': return 'Narrate';
-      default: return 'Priority';
+      case 'priority': return 'Page Priorities';
+      case 'explain': return 'Professional Explanation';
+      case 'relations': return 'Concept Relationships';
+      case 'compare': return 'Concept Comparison';
+      case 'insights': return 'Insight Extraction';
+      case 'narrate': return 'Narrated Walkthrough';
+      default: return 'Page Priorities';
     }
-  }, [activeTab]);
+  }, [activeTab, currentPage]);
 
   const activeParagraphIndex = useMemo(() => {
     const units = pageIntelligence?.paragraphUnits;
@@ -213,6 +233,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   useEffect(() => {
     if (documentId) {
       setDocId(documentId);
+      setReaderDocument(documentId);
       surgeonEngine.setBook(documentId, surgeonEngine.domain);
       expertView.setDocument(documentId, documentTitle, totalPages);
       pageContext.setDocument(documentId, totalPages);
@@ -229,6 +250,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     expertView.setPage(currentPage);
     surgeonEngine.setPageContext(currentPage);
     courseContext.setPage(currentPage);
+    onPageChange(currentPage);
 
     extractionRequestIdRef.current += 1;
     extractionAbortRef.current?.abort();
@@ -243,6 +265,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     setSelectedCardId(undefined);
     setSelectedInsightTarget(null);
     setActiveParagraphId(null);  // prevent stale ID from lighting up a card on the new page
+    setSectionId(null);
+    setParagraphId(null);
     // Clear cluster/unit selection in both stores so insight cards reset cleanly
     selectCluster(undefined);
     selectRelation(undefined);
@@ -256,6 +280,21 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       }
     }).catch(() => {});
   }, [currentPage]);
+
+  useEffect(() => {
+    setInsightDepth(depth);
+  }, [depth, setInsightDepth]);
+
+  useEffect(() => {
+    setSectionMode(mode);
+  }, [mode, setSectionMode]);
+
+  useEffect(() => {
+    const activeParagraph = activeParagraphId || null;
+    if (activeParagraph !== paragraphId) {
+      setParagraphId(activeParagraph);
+    }
+  }, [activeParagraphId, paragraphId, setParagraphId]);
 
   // PDF scroll → insight card sync:
   // When the active visible paragraph text changes and Sync is ON,
@@ -402,6 +441,25 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   const trapInsights = useMemo(() => {
     return rankedInsights.filter(i => i.type === 'EXAM_TRAP' || i.trap);
   }, [rankedInsights]);
+
+  const pageScopedInsights = useMemo(() => {
+    const cacheKey = buildCacheKey(activeTab, depth, currentPage);
+    const cached = getCachedInsight<RankedInsight[]>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const filtered = rankedInsights.filter((insight) =>
+      insight.evidence.some((span) => span.page === currentPage),
+    );
+    setCachedInsight(cacheKey, filtered);
+    return filtered;
+  }, [activeTab, buildCacheKey, currentPage, depth, getCachedInsight, rankedInsights, setCachedInsight]);
+
+  const pageScopedTrapInsights = useMemo(
+    () => pageScopedInsights.filter((i) => i.type === 'EXAM_TRAP' || i.trap),
+    [pageScopedInsights],
+  );
 
   // Page context info
   const pageCtx = pageContext.getPageContext();
@@ -856,68 +914,89 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
           />
         )}
 
-        {/* Tab Bar - Priority Comprehension Mode */}
-        <div className="flex items-center border-b border-gray-700 bg-gray-800/50 px-3 py-1 gap-1">
-          <ModeChip
+        {/* Page Context Header */}
+        <div className="px-3 pt-2">
+          <div className="rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2">
+            <p className="text-xs text-gray-300">{chapterTitle}</p>
+            <p className="text-sm font-semibold text-gray-100 truncate">{contextTopic}</p>
+            <p className="text-[11px] text-gray-400">Page {currentPage + 1} of {totalPages}</p>
+          </div>
+        </div>
+
+        {/* Insight Card */}
+        <div className="mx-3 mt-2 mb-3 flex-1 min-h-0 rounded-xl border border-white/5 bg-[rgba(18,22,34,0.85)] p-3">
+          <div className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 mb-2">
+            <p className="text-sm text-gray-100 font-semibold tracking-wide">
+              Page {currentPage + 1} — {tabTitle}
+            </p>
+            <p className="mt-1 text-[11px] text-gray-300">
+              {activeParagraphIndex ? `Paragraph ${activeParagraphIndex} • ` : ''}
+              Insight Depth: <span className="text-violet-300 capitalize">{insightDepth}</span>
+            </p>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex items-center border border-white/5 rounded-lg bg-gray-900/40 px-2 py-1 gap-1 mb-2">
+            <ModeChip
             label="Priority"
             active={activeTab === 'priority'}
             onClick={() => setActiveTab('priority')}
-            badge={rankedInsights.filter(i => i.bucket === 'CRITICAL' || i.bucket === 'HIGH_YIELD').length || undefined}
-          />
-          <ModeChip
+            badge={pageScopedInsights.filter(i => i.bucket === 'CRITICAL' || i.bucket === 'HIGH_YIELD').length || undefined}
+            />
+            <ModeChip
             label="Explain"
             active={activeTab === 'explain'}
             onClick={() => setActiveTab('explain')}
-          />
-          <ModeChip
+            />
+            <ModeChip
             label="Relations"
             active={activeTab === 'relations'}
             onClick={() => setActiveTab('relations')}
             badge={Object.keys(relations).length || undefined}
-          />
-          <ModeChip
+            />
+            <ModeChip
             label="Compare"
             active={activeTab === 'compare'}
             onClick={() => setActiveTab('compare')}
-          />
-          <ModeChip
+            />
+            <ModeChip
             label="Insights"
             active={activeTab === 'insights'}
             onClick={() => setActiveTab('insights')}
-            badge={pageIntelligence?.insights?.length || undefined}
-          />
-          <ModeChip
+            badge={pageScopedInsights.length || undefined}
+            />
+            <ModeChip
             label="🎙️"
             active={activeTab === 'narrate'}
             onClick={() => setActiveTab('narrate')}
             title="Ninja Nerd Narration"
-          />
+            />
 
           {/* Spacer */}
-          <div className="flex-1" />
+            <div className="flex-1" />
 
           {/* Insight panel zoom controls — font-size based, no transform */}
-          <div className="flex items-center gap-0.5" title="Insight text size">
-            <button
+            <div className="flex items-center gap-0.5" title="Insight text size">
+              <button
               onClick={scaleDown}
               disabled={!canScaleDown()}
               className="px-1.5 py-0.5 text-[10px] text-gray-400 hover:text-white disabled:opacity-30 rounded hover:bg-gray-700"
               aria-label="Decrease insight font size"
             >
               A−
-            </button>
-            <button
+              </button>
+              <button
               onClick={scaleUp}
               disabled={!canScaleUp()}
               className="px-1.5 py-0.5 text-[10px] text-gray-400 hover:text-white disabled:opacity-30 rounded hover:bg-gray-700"
               aria-label="Increase insight font size"
             >
               A+
-            </button>
-          </div>
+              </button>
+            </div>
 
           {/* Sync toggle — prevents right panel fighting PDF scroll */}
-          <button
+            <button
             onClick={toggleSync}
             className={`ml-1 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
               syncInsightsToPdf
@@ -928,10 +1007,10 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             aria-label="Toggle insight sync"
           >
             {syncInsightsToPdf ? '⇄ Sync' : '⇄ Free'}
-          </button>
+            </button>
 
           {/* Deep Analysis Mode toggle — syncs mode + depth in store */}
-          <button
+            <button
             onClick={() => {
               const next = mode === 'deep' ? 'quick' : 'deep';
               setMode(next);
@@ -946,31 +1025,17 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               ? 'Deep Mode ON: full paragraph intelligence + all tiers visible'
               : 'Deep Mode OFF: click to enable full paragraph intelligence'}
             aria-label="Toggle deep analysis mode"
-          >
-            🔬
-          </button>
-        </div>
-
-        {/* Tab Content - Unified Panel */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="sticky top-0 z-20 border-b border-white/10 bg-slate-900/65 px-3 py-2 backdrop-blur-md shadow-[0_10px_30px_rgba(15,23,42,0.35)] transition-all duration-300">
-            <div className="rounded-lg border border-white/20 bg-white/5 px-3 py-2">
-              <p className="text-xs text-gray-100 font-medium tracking-wide transition-all duration-300">
-                Page {currentPage || 1}
-                {activeParagraphIndex ? ` • Paragraph ${activeParagraphIndex}` : ''}
-                {` • Topic: ${contextTopic}`}
-              </p>
-              <p className="mt-1 text-[11px] text-gray-300 transition-all duration-300">
-                Mode: <span className="text-cyan-300">{activeTabLabel}</span>
-                <span className="text-gray-500"> • </span>
-                Insight Depth: <span className="text-violet-300 capitalize">{depth}</span>
-              </p>
-            </div>
+            >
+              🔬
+            </button>
           </div>
+
+          {/* Tab Content - Unified Panel */}
+          <div className="flex-1 overflow-y-auto">
 
           {activeTab === 'priority' && (
             <PriorityWorkspacePanel
-              insights={rankedInsights}
+              insights={pageScopedInsights}
               pageIntelligence={pageIntelligence}
               selectedCardId={selectedCardId}
               onJumpToPage={onJumpToPage}
@@ -988,7 +1053,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
           {activeTab === 'explain' && (
             <ExplainTab
               selectedCardId={selectedCardId}
-              insights={rankedInsights}
+              insights={pageScopedInsights}
               onSelectCard={() => setActiveTab('priority')}
               pageIntelligence={pageIntelligence}
             />
@@ -1013,14 +1078,14 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
           {activeTab === 'compare' && (
             <CompareTab
               selectedCardId={selectedCardId}
-              insights={rankedInsights}
+              insights={pageScopedInsights}
               onSelectCard={() => setActiveTab('priority')}
             />
           )}
           {activeTab === 'insights' && (
             <InsightsTab
-              insights={rankedInsights}
-              trapInsights={trapInsights}
+              insights={pageScopedInsights}
+              trapInsights={pageScopedTrapInsights}
               selectedCardId={selectedCardId}
               onCardClick={handleCardClick}
               onJumpToPage={onJumpToPage}
@@ -1047,6 +1112,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               azureConfig={azureConfig}
             />
           )}
+          </div>
         </div>
       </div>
 

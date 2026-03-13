@@ -104,6 +104,8 @@ export const SourceAnchor: React.FC<SourceAnchorProps> = ({
   const pageLabel = sourceRef.pageNumberLabel
     ? `p. ${sourceRef.pageNumberLabel}`
     : `p. ${sourceRef.pageIndex + 1}`;
+  const paragraphNumberMatch = sourceRef.paragraphId.match(/(?:^|_)(\d+)$/);
+  const paragraphNumber = paragraphNumberMatch ? Number(paragraphNumberMatch[1]) + 1 : null;
 
   const previewText = sourceRef.quote
     ? truncateAtSentence(sourceRef.quote, PREVIEW_CHARS)
@@ -138,6 +140,10 @@ export const SourceAnchor: React.FC<SourceAnchorProps> = ({
             <path d="M4 5h4M4 7h2" />
           </svg>
           {pageLabel}
+        </span>
+
+        <span className="text-[10px] text-gray-400/80" title="Source paragraph">
+          {paragraphNumber ? `${pageLabel} • paragraph ${paragraphNumber}` : `${pageLabel} • source paragraph`}
         </span>
 
         {showMetadata && locationMeta && (
