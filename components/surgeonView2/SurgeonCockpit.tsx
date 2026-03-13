@@ -182,6 +182,33 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   const [extractScope, setExtractScope] = useState<ExtractScope>('page');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const activeTabLabel = useMemo(() => {
+    switch (activeTab) {
+      case 'priority': return 'Priority';
+      case 'explain': return 'Explain';
+      case 'relations': return 'Relations';
+      case 'compare': return 'Compare';
+      case 'insights': return 'Insights';
+      case 'narrate': return 'Narrate';
+      default: return 'Priority';
+    }
+  }, [activeTab]);
+
+  const activeParagraphIndex = useMemo(() => {
+    const units = pageIntelligence?.paragraphUnits;
+    if (!units?.length || !activeParagraphId) return undefined;
+    const idx = units.findIndex((unit) => unit.id === activeParagraphId);
+    return idx >= 0 ? idx + 1 : undefined;
+  }, [pageIntelligence?.paragraphUnits, activeParagraphId]);
+
+  const contextTopic = useMemo(() => {
+    const tocTitle = pageContext.context?.tocPath?.title;
+    if (tocTitle && tocTitle.trim()) return tocTitle;
+    if (pageIntelligence?.continuity?.corePattern?.trim()) return pageIntelligence.continuity.corePattern;
+    if (pageIntelligence?.insights?.[0]?.title?.trim()) return pageIntelligence.insights[0].title;
+    return 'Page Overview';
+  }, [pageContext.context?.tocPath?.title, pageIntelligence]);
+
   // Sync document context on mount
   useEffect(() => {
     if (documentId) {
@@ -926,6 +953,21 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
         {/* Tab Content - Unified Panel */}
         <div className="flex-1 overflow-y-auto">
+          <div className="sticky top-0 z-20 border-b border-white/10 bg-slate-900/65 px-3 py-2 backdrop-blur-md shadow-[0_10px_30px_rgba(15,23,42,0.35)] transition-all duration-300">
+            <div className="rounded-lg border border-white/20 bg-white/5 px-3 py-2">
+              <p className="text-xs text-gray-100 font-medium tracking-wide transition-all duration-300">
+                Page {currentPage || 1}
+                {activeParagraphIndex ? ` • Paragraph ${activeParagraphIndex}` : ''}
+                {` • Topic: ${contextTopic}`}
+              </p>
+              <p className="mt-1 text-[11px] text-gray-300 transition-all duration-300">
+                Mode: <span className="text-cyan-300">{activeTabLabel}</span>
+                <span className="text-gray-500"> • </span>
+                Insight Depth: <span className="text-violet-300 capitalize">{depth}</span>
+              </p>
+            </div>
+          </div>
+
           {activeTab === 'priority' && (
             <PriorityWorkspacePanel
               insights={rankedInsights}
