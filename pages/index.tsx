@@ -2193,7 +2193,7 @@ export default function ThoughtUnitReader() {
       return (
         <div className="flex items-center justify-center h-full">
           <div className="bg-gray-800 text-white rounded-xl p-6 shadow-xl text-center w-[380px]">
-            <h3 className="text-lg font-bold mb-2">Welcome to Thought Unit Reader</h3>
+            <h3 className="text-lg font-bold mb-2">Welcome to Avrrio Reader</h3>
             <p className="text-sm opacity-80 mb-4">
               Please sign in to upload PDFs and use the reader.
             </p>
@@ -2560,9 +2560,9 @@ export default function ThoughtUnitReader() {
       <header className="bg-gradient-to-r from-purple-600 via-pink-500 to-yellow-400 text-white shadow-md">
         <div className="py-4 flex flex-col items-center justify-center text-center">
           <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide drop-shadow-lg">
-            Surgeon-View PDRM
+            Avrrio Reader
           </h1>
-          <p className="text-sm md:text-lg italic opacity-90">Study smarter, learn faster.</p>
+          <p className="text-sm md:text-lg italic opacity-90">Read. Understand. Think clearly.</p>
         </div>
       </header>
 

@@ -419,7 +419,7 @@ export default function ProtocolHandlerPage() {
           {/* Footer */}
           <div className="text-center mt-6">
             <p className="text-xs text-gray-500">
-              Thought Unit Reader × DAT Bootcamp Integration
+              Avrrio Reader × DAT Bootcamp Integration
             </p>
           </div>
         </div>
