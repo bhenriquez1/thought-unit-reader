@@ -21,6 +21,7 @@ import { buildParagraphUnits, buildQuoteHash } from './paragraphIntelligence';
 import { annotateTraps } from './trapDetector';
 import { buildStructureMap } from './structureMap';
 import { buildInsightContinuity } from './continuity';
+import { normalizePageText, filterSegmentsByPageRelevance } from './normalizer';
 
 // ============================================================================
 // Export Types
@@ -113,6 +114,8 @@ export { buildStructureMap } from './structureMap';
 export type { StructureMap, StructureMapNode, StructureMapStage } from './structureMap';
 export { buildInsightContinuity } from './continuity';
 export type { InsightContinuity } from './continuity';
+export { normalizePageText, filterSegmentsByPageRelevance };
+export type { PageDomain, FigureContext, NormalizedPageText, NormalizationReport } from './normalizer';
 
 // ============================================================================
 // IndexedDB Cache for Page Intelligence Results
@@ -221,9 +224,11 @@ export async function buildPageIntelligence(
     minTextLength,
   });
 
-  const text = pageText.text;
   const source: PageSource = pageText.source;
   const confidence = pageText.confidence;
+
+  const normalized = normalizePageText(pageText.text);
+  const text = normalized.text;
 
   // Handle empty text — return stub with always-populated continuity
   if (!text || text.trim().length < minTextLength) {
@@ -246,6 +251,13 @@ export async function buildPageIntelligence(
       paragraphUnits: [],
       structureMap: { pageNumber, topic: `Page ${pageNumber}`, nodes: [], completeness: 0 },
       continuity: emptyContinuity,
+      domain: normalized.domain,
+      normalization: {
+        dehyphenatedWords: normalized.report.dehyphenatedWords,
+        repairedLineWraps: normalized.report.repairedLineWraps,
+        figureCaptionsDetected: normalized.report.figureCaptionsDetected,
+        lowQuality: normalized.report.lowQuality,
+      },
       extractedAt: Date.now(),
     };
 
@@ -257,7 +269,7 @@ export async function buildPageIntelligence(
   }
 
   // Step 2: Segment text
-  const segments = segmentText(text, { pageNumber });
+  const segments = filterSegmentsByPageRelevance(segmentText(text, { pageNumber }));
 
   // Step 2b: Build ranked paragraph units (role-classified with char offsets)
   //          then annotate each unit with trap detection results.
@@ -277,19 +289,24 @@ export async function buildPageIntelligence(
   clusters = mergeSimilarClusters(clusters);
 
   // Step 6: Generate insights with DAT scoring
-  const insights = generateInsights({
+  const rawInsights = generateInsights({
     segments,
     signals,
     relations,
     clusters,
     ocrConfidence: confidence,
   });
+  const insights = normalized.report.lowQuality
+    ? rawInsights.filter((insight) => insight.score >= 55).slice(0, 6)
+    : rawInsights;
 
   // Step 7: Generate explanation
   const explain = generateExplain({
     segments,
     signals,
     insights,
+    domain: normalized.domain,
+    figureContext: normalized.figureContext,
   });
 
   // Step 8: Generate study cards
@@ -321,6 +338,13 @@ export async function buildPageIntelligence(
     paragraphUnits,
     structureMap,
     continuity,
+    domain: normalized.domain,
+    normalization: {
+      dehyphenatedWords: normalized.report.dehyphenatedWords,
+      repairedLineWraps: normalized.report.repairedLineWraps,
+      figureCaptionsDetected: normalized.report.figureCaptionsDetected,
+      lowQuality: normalized.report.lowQuality,
+    },
     extractedAt: Date.now(),
   };
 

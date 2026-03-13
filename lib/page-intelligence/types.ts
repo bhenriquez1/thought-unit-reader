@@ -149,6 +149,7 @@ export interface ExplainResult {
   bullets: string[];
   pitfalls: string[];
   mnemonics?: string[];
+  domainStyle?: 'pharmacology' | 'periodontology' | 'biology' | 'clinical' | 'general';
 }
 
 // ============================================================================
@@ -343,6 +344,15 @@ export interface PageIntelligence {
   structureMap?: StructureMap;
   /** Always-populated structured intelligence (never empty) */
   continuity?: InsightContinuity;
+  /** Detected dominant domain on this page */
+  domain?: 'pharmacology' | 'periodontology' | 'biology' | 'clinical' | 'general';
+  /** Pre-synthesis cleanup diagnostics */
+  normalization?: {
+    dehyphenatedWords: number;
+    repairedLineWraps: number;
+    figureCaptionsDetected: number;
+    lowQuality: boolean;
+  };
   extractedAt: number;
 }
 
