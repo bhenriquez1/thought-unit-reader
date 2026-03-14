@@ -324,6 +324,96 @@ export interface InsightContinuity {
 }
 
 // ============================================================================
+// Persistent Concept Graph + Page Memory Engine
+// ============================================================================
+
+export type GraphNodeType =
+  | 'DocumentNode'
+  | 'ChapterNode'
+  | 'SectionNode'
+  | 'SubsectionNode'
+  | 'ParagraphNode'
+  | 'FigureNode'
+  | 'TableNode'
+  | 'TermNode'
+  | 'MechanismNode'
+  | 'ClinicalConceptNode'
+  | 'ComparisonNode'
+  | 'QuestionNode'
+  | 'UserNoteNode';
+
+export type GraphEdgeType =
+  | 'belongs_to'
+  | 'defines'
+  | 'explains'
+  | 'contrasts_with'
+  | 'depends_on'
+  | 'leads_to'
+  | 'illustrates'
+  | 'appears_with'
+  | 'summarized_by'
+  | 'anchored_to'
+  | 'mentioned_in';
+
+export interface ConceptGraphNode {
+  id: string;
+  type: GraphNodeType;
+  label: string;
+  pageIndex: number;
+  metadata?: Record<string, unknown>;
+  updatedAt: number;
+}
+
+export interface ConceptGraphEdge {
+  id: string;
+  type: GraphEdgeType;
+  fromId: string;
+  toId: string;
+  pageIndex: number;
+  score: number;
+  metadata?: Record<string, unknown>;
+  updatedAt: number;
+}
+
+export interface ConceptGraph {
+  docId: string;
+  version: string;
+  nodes: Record<string, ConceptGraphNode>;
+  edges: Record<string, ConceptGraphEdge>;
+  updatedAt: number;
+}
+
+export interface PageMemory {
+  docId: string;
+  pageIndex: number;
+  fingerprint: string;
+  headingCandidates: string[];
+  visibleParagraphIds: string[];
+  visibleFigureIds: string[];
+  sectionId?: string;
+  subsectionId?: string;
+  dominantConceptIds: string[];
+  updatedAt: number;
+}
+
+export type TabType = 'priority' | 'explain' | 'relations' | 'compare' | 'insights';
+
+export type SourceAnchor = SourceRef;
+
+export interface TabResponse {
+  pageIndex: number;
+  fingerprint: string;
+  tab: TabType;
+  title: string;
+  sections: Array<{
+    label: string;
+    content: string | string[];
+  }>;
+  sourceAnchors: SourceAnchor[];
+  relatedNodeIds: string[];
+}
+
+// ============================================================================
 // Page Intelligence - Full pipeline result
 // ============================================================================
 
@@ -344,6 +434,12 @@ export interface PageIntelligence {
   structureMap?: StructureMap;
   /** Always-populated structured intelligence (never empty) */
   continuity?: InsightContinuity;
+  /** Grounding snapshot for current page; required for mode-specific query outputs */
+  pageMemory?: PageMemory;
+  /** Persistent per-document graph snapshot after integrating this page */
+  conceptGraph?: ConceptGraph;
+  /** Mode-specific, page-grounded responses consumed by right-panel tabs */
+  tabResponses?: Record<TabType, TabResponse>;
   /** Detected dominant domain on this page */
   domain?: 'pharmacology' | 'periodontology' | 'biology' | 'clinical' | 'general';
   /** Pre-synthesis cleanup diagnostics */
