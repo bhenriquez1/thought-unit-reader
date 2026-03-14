@@ -24,6 +24,7 @@ import {
   buildPageIntelligence,
   buildChapterIntelligence,
   type PageIntelligence,
+  type TabResponse,
 } from '@/lib/page-intelligence';
 import ClusterRail from './ClusterRail';
 import RelationPanel from './RelationPanel';
@@ -1056,6 +1057,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               insights={pageScopedInsights}
               onSelectCard={() => setActiveTab('priority')}
               pageIntelligence={pageIntelligence}
+              tabResponse={pageIntelligence?.tabResponses?.explain}
             />
           )}
           {activeTab === 'relations' && (
@@ -1073,6 +1075,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               }}
               onJumpToPage={onJumpToPage}
               pageIntelligence={pageIntelligence}
+              tabResponse={pageIntelligence?.tabResponses?.relations}
             />
           )}
           {activeTab === 'compare' && (
@@ -1080,6 +1083,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               selectedCardId={selectedCardId}
               insights={pageScopedInsights}
               onSelectCard={() => setActiveTab('priority')}
+              pageIntelligence={pageIntelligence}
+              tabResponse={pageIntelligence?.tabResponses?.compare}
             />
           )}
           {activeTab === 'insights' && (
@@ -1091,6 +1096,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               onJumpToPage={onJumpToPage}
               reasoningChain={expertView.getReasoningChain()}
               pageIntelligence={pageIntelligence}
+              tabResponse={pageIntelligence?.tabResponses?.insights}
             />
           )}
           {activeTab === 'narrate' && (
@@ -1223,7 +1229,8 @@ const ExplainTab: React.FC<{
   insights: RankedInsight[];
   onSelectCard: () => void;
   pageIntelligence?: PageIntelligence | null;
-}> = ({ selectedCardId, insights, onSelectCard, pageIntelligence }) => {
+  tabResponse?: TabResponse;
+}> = ({ selectedCardId, insights, onSelectCard, pageIntelligence, tabResponse }) => {
   const selected = insights.find(i => i.id === selectedCardId);
   const piExplain = pageIntelligence?.explain;
   const continuity = pageIntelligence?.continuity;
@@ -1262,6 +1269,9 @@ const ExplainTab: React.FC<{
 
   const whatThisMeans =
     selected?.claim ??
+    (typeof tabResponse?.sections.find(s => s.label === 'Section explanation')?.content === 'string'
+      ? tabResponse?.sections.find(s => s.label === 'Section explanation')?.content
+      : undefined) ??
     piExplain?.summary ??
     continuity?.corePattern ??
     'See page for core definition.';
@@ -1271,7 +1281,8 @@ const ExplainTab: React.FC<{
     (piExplain?.bullets?.[0] ? `First, ${piExplain.bullets[0]}` : null);
 
   // Key steps from explain bullets
-  const keySteps = piExplain?.bullets ?? [];
+  const explainFlow = tabResponse?.sections.find(s => s.label === 'Subsection flow')?.content;
+  const keySteps = Array.isArray(explainFlow) ? explainFlow : (piExplain?.bullets ?? []);
 
   const whyItMatters =
     continuity?.clinicalConnection ??
@@ -1486,7 +1497,9 @@ const CompareTab: React.FC<{
   selectedCardId?: string;
   insights: RankedInsight[];
   onSelectCard: () => void;
-}> = ({ selectedCardId, insights, onSelectCard }) => {
+  pageIntelligence?: PageIntelligence | null;
+  tabResponse?: TabResponse;
+}> = ({ selectedCardId, insights, onSelectCard, pageIntelligence, tabResponse }) => {
   const selected = insights.find(i => i.id === selectedCardId);
 
   // Find confusable pairs
@@ -1515,6 +1528,9 @@ const CompareTab: React.FC<{
       </div>
     );
   }
+
+  const schemaVs = tabResponse?.sections.find(s => s.label === 'A vs B candidates')?.content;
+  const schemaConfusions = tabResponse?.sections.find(s => s.label === 'Commonly confused concepts')?.content;
 
   return (
     <div className="p-3 space-y-4">
@@ -1553,13 +1569,27 @@ const CompareTab: React.FC<{
         </div>
       )}
 
-      {confusables.length > 0 && (
+      {Array.isArray(schemaVs) && schemaVs.length > 0 && (
+        <div>
+          <h3 className="text-[10px] font-semibold text-gray-400 uppercase mb-2">A vs B (Graph Query)</h3>
+          <div className="space-y-1.5">
+            {schemaVs.map((line, idx) => (
+              <div key={idx} className="bg-blue-900/20 border border-blue-700/40 rounded p-2 text-xs text-blue-200">{line}</div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(confusables.length > 0 || (Array.isArray(schemaConfusions) && schemaConfusions.length > 0)) && (
         <div>
           <h3 className="text-[10px] font-semibold text-gray-400 uppercase mb-2">
             Common Confusions on This Page
           </h3>
           <div className="space-y-1.5">
-            {confusables.map(c => (
+            {(Array.isArray(schemaConfusions) && schemaConfusions.length > 0
+              ? schemaConfusions.map((c, idx) => ({ id: `schema-${idx}`, title: c as string }))
+              : confusables
+            ).map(c => (
               <div key={c.id} className="bg-amber-900/20 border border-amber-700/40 rounded p-2 text-xs text-amber-200">
                 {c.title}
               </div>
@@ -1582,6 +1612,7 @@ const InsightsTab: React.FC<{
   onJumpToPage: (page: number) => void;
   reasoningChain?: ReasoningChain;
   pageIntelligence?: PageIntelligence | null;
+  tabResponse?: TabResponse;
 }> = ({
   insights,
   trapInsights,
@@ -1590,6 +1621,7 @@ const InsightsTab: React.FC<{
   onJumpToPage,
   reasoningChain,
   pageIntelligence,
+  tabResponse,
 }) => {
   const highYield = insights.filter(i => i.bucket === 'CRITICAL' || i.bucket === 'HIGH_YIELD');
   const traps = trapInsights.slice(0, 5);
@@ -1599,8 +1631,11 @@ const InsightsTab: React.FC<{
   const piRelations = pageIntelligence?.relations || [];
   const piCards = pageIntelligence?.cards   || [];
   const missingFromReasoning = reasoningChain?.missing?.map(m => m.detail) || [];
+  const schemaHidden = tabResponse?.sections.find(s => s.label === 'Hidden implications')?.content;
+  const schemaTraps = tabResponse?.sections.find(s => s.label === 'Exam traps')?.content;
+
   const deepSignals = [
-    pageIntelligence?.continuity?.corePattern ? `Deeper pattern: ${pageIntelligence.continuity.corePattern}` : null,
+    (typeof schemaHidden === 'string' ? schemaHidden : null) ?? (pageIntelligence?.continuity?.corePattern ? `Deeper pattern: ${pageIntelligence.continuity.corePattern}` : null),
     pageIntelligence?.continuity?.conceptualBridge ? `Hidden bridge: ${pageIntelligence.continuity.conceptualBridge}` : null,
     pageIntelligence?.continuity?.clinicalConnection ? `Why this section matters now: ${pageIntelligence.continuity.clinicalConnection}` : null,
     pageIntelligence?.continuity?.commonMisunderstanding ? `Easy-to-miss pitfall: ${pageIntelligence.continuity.commonMisunderstanding}` : null,
@@ -1851,6 +1886,7 @@ const RelationsTab: React.FC<{
   onRelationClick: (relation: Relation) => void;
   onJumpToPage?: (page: number) => void;
   pageIntelligence?: PageIntelligence | null;
+  tabResponse?: TabResponse;
 }> = ({
   relations,
   clusters,
@@ -1861,6 +1897,7 @@ const RelationsTab: React.FC<{
   onRelationClick,
   onJumpToPage,
   pageIntelligence,
+  tabResponse,
 }) => {
   const hasContent = relations.length > 0 || clusters.length > 0;
 
@@ -1869,6 +1906,8 @@ const RelationsTab: React.FC<{
     if (!pageIntelligence?.relations?.length) return [];
     return buildClinicalFlow(pageIntelligence.relations, pageIntelligence.segments);
   }, [pageIntelligence]);
+
+  const schemaRelations = tabResponse?.sections.find(s => s.label === 'Concept relationships on this page')?.content;
 
   const conceptualLinks = useMemo(() => {
     const rels = pageIntelligence?.relations ?? [];
@@ -1892,6 +1931,15 @@ const RelationsTab: React.FC<{
 
   return (
     <div className="p-3 overflow-y-auto h-full space-y-4">
+      {Array.isArray(schemaRelations) && schemaRelations.length > 0 && (
+        <section className="rounded-xl border border-indigo-700/60 bg-indigo-900/20 p-3">
+          <h3 className="text-[10px] font-semibold text-indigo-200 uppercase tracking-wide mb-2">Page-grounded Relationships</h3>
+          <div className="space-y-1 text-[11px] text-indigo-100">
+            {schemaRelations.map((line, idx) => <p key={idx}>{line}</p>)}
+          </div>
+        </section>
+      )}
+
       {(conceptualLinks.prerequisites.length > 0 || conceptualLinks.downstream.length > 0 || conceptualLinks.neighbors.length > 0) && (
         <section className="rounded-xl border border-gray-700/60 bg-gray-900/40 p-3">
           <h3 className="text-[10px] font-semibold text-gray-300 uppercase tracking-wide mb-2">Conceptual Links</h3>

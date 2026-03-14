@@ -22,6 +22,11 @@ import { annotateTraps } from './trapDetector';
 import { buildStructureMap } from './structureMap';
 import { buildInsightContinuity } from './continuity';
 import { normalizePageText, filterSegmentsByPageRelevance } from './normalizer';
+import {
+  buildPageMemory,
+  upsertConceptGraph,
+  buildAllTabResponses,
+} from './conceptGraph';
 
 // ============================================================================
 // Export Types
@@ -115,6 +120,14 @@ export type { StructureMap, StructureMapNode, StructureMapStage } from './struct
 export { buildInsightContinuity } from './continuity';
 export type { InsightContinuity } from './continuity';
 export { normalizePageText, filterSegmentsByPageRelevance };
+export {
+  computePageFingerprint,
+  buildPageMemory,
+  upsertConceptGraph,
+  verifyGrounding,
+  buildTabResponse,
+  buildAllTabResponses,
+} from './conceptGraph';
 export type { PageDomain, FigureContext, NormalizedPageText, NormalizationReport } from './normalizer';
 
 // ============================================================================
@@ -323,6 +336,59 @@ export async function buildPageIntelligence(
   // Step 10: Build insight continuity (always-populated — never empty)
   const continuity = buildInsightContinuity(insights, segments, signals, paragraphUnits);
 
+  // Step 11: Build page memory + persistent concept graph + tab-specific responses
+  const pageMemory = buildPageMemory(docId, {
+    pageNumber,
+    source,
+    confidence,
+    segments,
+    signals,
+    relations,
+    clusters,
+    insights,
+    explain,
+    cards,
+    paragraphUnits,
+    structureMap,
+    continuity,
+    domain: normalized.domain,
+    extractedAt: Date.now(),
+  });
+  const conceptGraph = upsertConceptGraph(docId, {
+    pageNumber,
+    source,
+    confidence,
+    segments,
+    signals,
+    relations,
+    clusters,
+    insights,
+    explain,
+    cards,
+    paragraphUnits,
+    structureMap,
+    continuity,
+    domain: normalized.domain,
+    extractedAt: Date.now(),
+  });
+  const tabResponses = buildAllTabResponses(docId, {
+    pageNumber,
+    source,
+    confidence,
+    segments,
+    signals,
+    relations,
+    clusters,
+    insights,
+    explain,
+    cards,
+    paragraphUnits,
+    structureMap,
+    continuity,
+    domain: normalized.domain,
+    extractedAt: Date.now(),
+  }, pageMemory, conceptGraph);
+
   // Build result
   const intelligence: PageIntelligence = {
     pageNumber,
@@ -338,6 +404,9 @@ export async function buildPageIntelligence(
     paragraphUnits,
     structureMap,
     continuity,
+    pageMemory,
+    conceptGraph,
+    tabResponses,
     domain: normalized.domain,
     normalization: {
       dehyphenatedWords: normalized.report.dehyphenatedWords,
