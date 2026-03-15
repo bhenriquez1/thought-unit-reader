@@ -12,6 +12,7 @@ import type {
   ConceptGraphNode,
   ConceptGraphEdge,
   PageMemory,
+  TabPayloadContracts,
 } from './types';
 
 const GRAPH_VERSION = 'v1';
@@ -62,6 +63,56 @@ function paragraphSource(unit: ParagraphUnit): SourceRef {
 function relationToSentence(rel: Relation): string {
   const type = rel.type.replace(/_/g, ' ');
   return `${rel.from} ${type} ${rel.to}`;
+}
+
+function hasMeaningfulOverview(value: string): boolean {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length < 45) return false;
+  const firstToken = normalized.split(/\s+/)[0]?.toLowerCase() ?? '';
+  if (['an', 'a', 'the', 'this', 'that'].includes(firstToken) && normalized.split(/\s+/).length <= 3) {
+    return false;
+  }
+  return /[a-z]{3,}/i.test(normalized);
+}
+
+function fallbackOverview(pageIntelligence: PageIntelligence, memory: PageMemory): string {
+  const heading = memory.headingCandidates[0] || memory.sectionId || `Page ${pageIntelligence.pageNumber}`;
+  const paragraphCluster = (pageIntelligence.paragraphUnits ?? [])
+    .slice()
+    .sort((a, b) => b.importance - a.importance)
+    .slice(0, 2)
+    .map((u) => u.text.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join(' ')
+    .slice(0, 240);
+  const candidate = `${heading}: ${paragraphCluster}`.trim();
+  if (hasMeaningfulOverview(candidate)) return candidate;
+  const explainSummary = pageIntelligence.explain.summary.replace(/\s+/g, ' ').trim();
+  if (hasMeaningfulOverview(explainSummary)) return explainSummary;
+  return `${heading}: Core concepts are being introduced on this page with clinically relevant framing.`;
+}
+
+function resolveOverview(pageIntelligence: PageIntelligence, memory: PageMemory): string {
+  const summary = pageIntelligence.explain.summary.replace(/\s+/g, ' ').trim();
+  const hasHeadingAnchor = memory.headingCandidates.some((h) => h && summary.toLowerCase().includes(h.toLowerCase().split(/\s+/)[0] || ''));
+  if (hasMeaningfulOverview(summary) && (hasHeadingAnchor || memory.headingCandidates.length === 0)) {
+    return summary;
+  }
+  return fallbackOverview(pageIntelligence, memory);
+}
+
+function debugTabGeneration(tab: TabType, memory: PageMemory, pageIntelligence: PageIntelligence, anchors: SourceRef[]): void {
+  if (typeof console === 'undefined') return;
+  const sourceParagraphIds = anchors.map((anchor) => anchor.paragraphId).filter(Boolean);
+  console.debug('[TabDebug]', {
+    pageIndex: memory.pageIndex,
+    pageFingerprint: memory.fingerprint,
+    sourceParagraphIds,
+    tabMode: tab,
+    generatedAt: new Date().toISOString(),
+    heading: memory.headingCandidates[0] || null,
+    segmentCount: pageIntelligence.segments.length,
+  });
 }
 
 export function computePageFingerprint(docId: string, pageIndex: number, text: string, headings: string[]): string {
@@ -222,7 +273,7 @@ export function buildTabResponse(tab: TabType, docId: string, pageIntelligence: 
   if (tab === 'priority') {
     title = `Priority: ${memory.sectionId || `Page ${pageIntelligence.pageNumber}`}`;
     sections = [
-      { label: 'Page overview', content: pageIntelligence.explain.summary },
+      { label: 'Page overview', content: resolveOverview(pageIntelligence, memory) },
       { label: 'Main ideas', content: topInsights.slice(0, 4).map((i) => i.title) },
       { label: 'Highest salience concepts', content: memory.dominantConceptIds },
       { label: 'Strongest anchor', content: anchors[0]?.quote || 'No anchor available' },
@@ -238,7 +289,7 @@ export function buildTabResponse(tab: TabType, docId: string, pageIntelligence: 
   } else if (tab === 'relations') {
     title = `Relations: ${memory.sectionId || `Page ${pageIntelligence.pageNumber}`}`;
     sections = [
-      { label: 'Concept relationships on this page', content: relationLines.length ? relationLines : ['No explicit relations detected.'] },
+      { label: 'Concept relationships on this page', content: relationLines.length ? relationLines : ['No grounded relations found for this page yet.'] },
       { label: 'Section dependencies', content: Object.values(graph.edges).filter((e) => e.pageIndex === pageIndex && e.type === 'depends_on').map((e) => `${graph.nodes[e.fromId]?.label} → ${graph.nodes[e.toId]?.label}`) },
       { label: 'Term ↔ mechanism links', content: Object.values(graph.edges).filter((e) => e.pageIndex === pageIndex && (e.type === 'leads_to' || e.type === 'explains')).slice(0, 6).map((e) => `${graph.nodes[e.fromId]?.label} → ${graph.nodes[e.toId]?.label}`) },
     ];
@@ -246,7 +297,7 @@ export function buildTabResponse(tab: TabType, docId: string, pageIntelligence: 
     title = `Compare: ${memory.sectionId || 'Current topic'}`;
     const relContrasts = Object.values(graph.edges).filter((e) => e.pageIndex === pageIndex && e.type === 'contrasts_with');
     sections = [
-      { label: 'A vs B candidates', content: relContrasts.length ? relContrasts.map((e) => `${graph.nodes[e.fromId]?.label} vs ${graph.nodes[e.toId]?.label}`) : compareRows },
+      { label: 'A vs B candidates', content: relContrasts.length ? relContrasts.map((e) => `${graph.nodes[e.fromId]?.label} vs ${graph.nodes[e.toId]?.label}`) : (compareRows.length ? compareRows : ['No compare pair available from the current page cluster yet.']) },
       { label: 'Commonly confused concepts', content: pageIntelligence.explain.pitfalls.slice(0, 4) },
       { label: 'Definition contrasts', content: pageIntelligence.relations.filter((r) => r.type === 'is_a').slice(0, 4).map((r) => `${r.from} vs ${r.to}`) },
     ];
@@ -259,6 +310,8 @@ export function buildTabResponse(tab: TabType, docId: string, pageIntelligence: 
       { label: 'Cross-page bridges', content: Object.values(graph.edges).filter((e) => Math.abs(e.pageIndex - pageIndex) === 1 && e.type === 'appears_with').slice(0, 4).map((e) => `${graph.nodes[e.fromId]?.label} ↔ ${graph.nodes[e.toId]?.label}`) },
     ];
   }
+
+  debugTabGeneration(tab, memory, pageIntelligence, anchors);
 
   const response: TabResponse = {
     pageIndex,
@@ -278,12 +331,27 @@ export function buildTabResponse(tab: TabType, docId: string, pageIntelligence: 
       };
 }
 
-export function buildAllTabResponses(docId: string, pageIntelligence: PageIntelligence, memory: PageMemory, graph: ConceptGraph): Record<TabType, TabResponse> {
+export function buildAllTabResponses(docId: string, pageIntelligence: PageIntelligence, memory: PageMemory, graph: ConceptGraph): { tabResponses: Record<TabType, TabResponse>; tabPayloads: TabPayloadContracts } {
+  const priorityPayload = buildTabResponse('priority', docId, pageIntelligence, memory, graph);
+  const explainPayload = buildTabResponse('explain', docId, pageIntelligence, memory, graph);
+  const relationsPayload = buildTabResponse('relations', docId, pageIntelligence, memory, graph);
+  const comparePayload = buildTabResponse('compare', docId, pageIntelligence, memory, graph);
+  const insightsPayload = buildTabResponse('insights', docId, pageIntelligence, memory, graph);
+
   return {
-    priority: buildTabResponse('priority', docId, pageIntelligence, memory, graph),
-    explain: buildTabResponse('explain', docId, pageIntelligence, memory, graph),
-    relations: buildTabResponse('relations', docId, pageIntelligence, memory, graph),
-    compare: buildTabResponse('compare', docId, pageIntelligence, memory, graph),
-    insights: buildTabResponse('insights', docId, pageIntelligence, memory, graph),
+    tabResponses: {
+      priority: priorityPayload,
+      explain: explainPayload,
+      relations: relationsPayload,
+      compare: comparePayload,
+      insights: insightsPayload,
+    },
+    tabPayloads: {
+      priorityPayload,
+      explainPayload,
+      relationsPayload,
+      comparePayload,
+      insightsPayload,
+    },
   };
 }

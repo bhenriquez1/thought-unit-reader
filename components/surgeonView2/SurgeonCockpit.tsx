@@ -88,6 +88,8 @@ interface SurgeonCockpitProps {
   elevenLabsConfig?: { apiKey: string; voiceId: string };
   /** Azure TTS config for Narrate tab (optional) */
   azureConfig?: { subscriptionKey: string; region: string; voiceName?: string };
+  /** Keep right insight panel scroll position across page turns */
+  preservePanelScroll?: boolean;
 }
 
 export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
@@ -102,6 +104,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   onJumpToSource,
   elevenLabsConfig,
   azureConfig,
+  preservePanelScroll = false,
 }) => {
   // Relationship store
   const {
@@ -194,6 +197,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   const hasRunSurgeonEngines = useRef(false);
   const extractionRequestIdRef = useRef(0);
   const extractionAbortRef = useRef<AbortController | null>(null);
+  const rightPanelScrollRef = useRef<HTMLDivElement | null>(null);
+  const currentPageRef = useRef<number>(currentPage);
 
   // Page Intelligence state (OCR-enabled pipeline)
   const [pageIntelligence, setPageIntelligence] = useState<PageIntelligence | null>(null);
@@ -247,6 +252,13 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   useEffect(() => {
     if (currentPage === undefined) return;
 
+    const pageChanged = currentPageRef.current !== currentPage;
+    currentPageRef.current = currentPage;
+
+    if (pageChanged && !preservePanelScroll && rightPanelScrollRef.current) {
+      rightPanelScrollRef.current.scrollTop = 0;
+    }
+
     pageContext.setPage(currentPage);
     expertView.setPage(currentPage);
     surgeonEngine.setPageContext(currentPage);
@@ -280,7 +292,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         setPageIntelligence(cached);
       }
     }).catch(() => {});
-  }, [currentPage]);
+  }, [currentPage, preservePanelScroll]);
 
   useEffect(() => {
     setInsightDepth(depth);
@@ -925,8 +937,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         </div>
 
         {/* Insight Card */}
-        <div className="mx-3 mt-2 mb-3 flex-1 min-h-0 rounded-xl border border-white/5 bg-[rgba(18,22,34,0.85)] p-3">
-          <div className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 mb-2">
+        <div className="mx-3 mt-2 mb-3 flex-1 min-h-0 rounded-xl border border-white/5 bg-[rgba(18,22,34,0.85)] p-3 flex flex-col overflow-hidden">
+          <div className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 mb-2 sticky top-0 z-20">
             <p className="text-sm text-gray-100 font-semibold tracking-wide">
               Page {currentPage + 1} — {tabTitle}
             </p>
@@ -937,7 +949,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
           </div>
 
           {/* Tabs */}
-          <div className="flex items-center border border-white/5 rounded-lg bg-gray-900/40 px-2 py-1 gap-1 mb-2">
+          <div className="flex items-center border border-white/5 rounded-lg bg-gray-900/70 backdrop-blur-sm px-2 py-1 gap-1 mb-2 sticky top-[62px] z-20">
             <ModeChip
             label="Priority"
             active={activeTab === 'priority'}
@@ -1032,7 +1044,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
           </div>
 
           {/* Tab Content - Unified Panel */}
-          <div className="flex-1 overflow-y-auto">
+          <div ref={rightPanelScrollRef} className="flex-1 min-h-0 overflow-y-auto pr-1">
 
           {activeTab === 'priority' && (
             <PriorityWorkspacePanel
@@ -1057,7 +1069,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               insights={pageScopedInsights}
               onSelectCard={() => setActiveTab('priority')}
               pageIntelligence={pageIntelligence}
-              tabResponse={pageIntelligence?.tabResponses?.explain}
+              tabResponse={pageIntelligence?.tabPayloads?.explainPayload ?? pageIntelligence?.tabResponses?.explain}
             />
           )}
           {activeTab === 'relations' && (
@@ -1075,7 +1087,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               }}
               onJumpToPage={onJumpToPage}
               pageIntelligence={pageIntelligence}
-              tabResponse={pageIntelligence?.tabResponses?.relations}
+              tabResponse={pageIntelligence?.tabPayloads?.relationsPayload ?? pageIntelligence?.tabResponses?.relations}
             />
           )}
           {activeTab === 'compare' && (
@@ -1084,7 +1096,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               insights={pageScopedInsights}
               onSelectCard={() => setActiveTab('priority')}
               pageIntelligence={pageIntelligence}
-              tabResponse={pageIntelligence?.tabResponses?.compare}
+              tabResponse={pageIntelligence?.tabPayloads?.comparePayload ?? pageIntelligence?.tabResponses?.compare}
             />
           )}
           {activeTab === 'insights' && (
@@ -1096,7 +1108,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               onJumpToPage={onJumpToPage}
               reasoningChain={expertView.getReasoningChain()}
               pageIntelligence={pageIntelligence}
-              tabResponse={pageIntelligence?.tabResponses?.insights}
+              tabResponse={pageIntelligence?.tabPayloads?.insightsPayload ?? pageIntelligence?.tabResponses?.insights}
             />
           )}
           {activeTab === 'narrate' && (
@@ -1511,26 +1523,24 @@ const CompareTab: React.FC<{
     ).slice(0, 3);
   }, [insights]);
 
-  if (!selected && confusables.length === 0) {
+  const schemaVs = tabResponse?.sections.find(s => s.label === 'A vs B candidates')?.content;
+  const schemaConfusions = tabResponse?.sections.find(s => s.label === 'Commonly confused concepts')?.content;
+  const hasGroundedCompare = Array.isArray(schemaVs)
+    ? schemaVs.some((row) => typeof row === 'string' && !row.toLowerCase().includes('no compare pair available'))
+    : false;
+
+  if (!selected && confusables.length === 0 && !hasGroundedCompare) {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
         <span className="text-3xl mb-3">⚖️</span>
         <h3 className="text-sm font-medium text-gray-300 mb-1">Compare Mode</h3>
-        <p className="text-xs text-gray-500 mb-4 max-w-[180px]">
-          Shows differential tables: A vs B vs C with discriminating features.
+        <p className="text-xs text-gray-500 mb-2 max-w-[220px]">
+          No compare pair available from the current page cluster yet.
         </p>
-        <button
-          onClick={onSelectCard}
-          className="px-3 py-1.5 text-xs bg-teal-600 hover:bg-teal-500 text-white rounded-lg"
-        >
-          Select a card to compare
-        </button>
+        <p className="text-[11px] text-gray-600 max-w-[220px]">Extract more grounded page evidence, then reopen Compare.</p>
       </div>
     );
   }
-
-  const schemaVs = tabResponse?.sections.find(s => s.label === 'A vs B candidates')?.content;
-  const schemaConfusions = tabResponse?.sections.find(s => s.label === 'Commonly confused concepts')?.content;
 
   return (
     <div className="p-3 space-y-4">
@@ -1923,7 +1933,7 @@ const RelationsTab: React.FC<{
         <span className="text-3xl mb-3">🔗</span>
         <h3 className="text-sm font-medium text-gray-300 mb-1">Relations View</h3>
         <p className="text-xs text-gray-500 max-w-[200px]">
-          Extract a page to see concept relationships and pattern clusters.
+          No grounded relations found for this page yet.
         </p>
       </div>
     );
