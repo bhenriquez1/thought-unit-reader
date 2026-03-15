@@ -11,6 +11,9 @@ export type PageSource = "native" | "ocr" | "mixed";
 export interface PageText {
   pageNumber: number;
   text: string;
+  nativeText?: string;
+  ocrText?: string;
+  mergedText?: string;
   source: PageSource;
   confidence?: number; // OCR confidence avg if available (0-100)
 }
@@ -429,6 +432,16 @@ export interface PageIntelligence {
   pageNumber: number;
   source: PageSource;
   confidence?: number;
+  extractionMethod?: 'native' | 'ocr' | 'hybrid' | 'failed';
+  extractionVersion?: string;
+  nativeText?: string;
+  ocrText?: string;
+  mergedText?: string;
+  fallbackState?: {
+    canSynthesize: boolean;
+    reason?: string;
+    message?: string;
+  };
   segments: Segment[];
   signals: Signal[];
   relations: Relation[];

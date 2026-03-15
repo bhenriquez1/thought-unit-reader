@@ -72,6 +72,7 @@ function hasMeaningfulOverview(value: string): boolean {
   if (['an', 'a', 'the', 'this', 'that'].includes(firstToken) && normalized.split(/\s+/).length <= 3) {
     return false;
   }
+  if (/unable to extract text from this document|no text available for this page/i.test(normalized)) return false;
   return /[a-z]{3,}/i.test(normalized);
 }
 
@@ -297,7 +298,7 @@ export function buildTabResponse(tab: TabType, docId: string, pageIntelligence: 
     title = `Compare: ${memory.sectionId || 'Current topic'}`;
     const relContrasts = Object.values(graph.edges).filter((e) => e.pageIndex === pageIndex && e.type === 'contrasts_with');
     sections = [
-      { label: 'A vs B candidates', content: relContrasts.length ? relContrasts.map((e) => `${graph.nodes[e.fromId]?.label} vs ${graph.nodes[e.toId]?.label}`) : (compareRows.length ? compareRows : ['No compare pair available from the current page cluster yet.']) },
+      { label: 'A vs B candidates', content: relContrasts.length ? relContrasts.map((e) => `${graph.nodes[e.fromId]?.label} vs ${graph.nodes[e.toId]?.label}`) : (compareRows.length ? compareRows : ['No compare pair available for the current page cluster yet.']) },
       { label: 'Commonly confused concepts', content: pageIntelligence.explain.pitfalls.slice(0, 4) },
       { label: 'Definition contrasts', content: pageIntelligence.relations.filter((r) => r.type === 'is_a').slice(0, 4).map((r) => `${r.from} vs ${r.to}`) },
     ];

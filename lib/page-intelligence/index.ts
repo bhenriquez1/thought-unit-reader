@@ -22,6 +22,7 @@ import { annotateTraps } from './trapDetector';
 import { buildStructureMap } from './structureMap';
 import { buildInsightContinuity } from './continuity';
 import { normalizePageText, filterSegmentsByPageRelevance } from './normalizer';
+import { canSynthesizePage, getFallbackDisplayState } from '@/lib/synthesis/fallbackPolicy';
 import {
   buildPageMemory,
   upsertConceptGraph,
@@ -136,6 +137,7 @@ export type { PageDomain, FigureContext, NormalizedPageText, NormalizationReport
 
 const CACHE_PREFIX = 'pageint:';
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const EXTRACTION_VERSION = 'v2';
 
 interface CachedPageIntelligence {
   data: PageIntelligence;
@@ -147,7 +149,7 @@ async function getCachedPageIntelligence(
   pageNumber: number
 ): Promise<PageIntelligence | null> {
   try {
-    const key = `${CACHE_PREFIX}${docId}:${pageNumber}`;
+    const key = `${CACHE_PREFIX}${docId}:${pageNumber}:${EXTRACTION_VERSION}`;
     const cached = await get<CachedPageIntelligence>(key);
 
     if (cached && Date.now() - cached.cachedAt < CACHE_TTL) {
@@ -166,7 +168,7 @@ async function cachePageIntelligence(
   data: PageIntelligence
 ): Promise<void> {
   try {
-    const key = `${CACHE_PREFIX}${docId}:${pageNumber}`;
+    const key = `${CACHE_PREFIX}${docId}:${pageNumber}:${EXTRACTION_VERSION}`;
     await set(key, { data, cachedAt: Date.now() });
   } catch (error) {
     console.warn('[PageIntelligence] Cache write failed:', error);
@@ -238,9 +240,11 @@ export async function buildPageIntelligence(
   });
 
   const source: PageSource = pageText.source;
-  const confidence = pageText.confidence;
+  const confidence = pageText.confidence ?? 0;
+  const nativeText = pageText.nativeText || '';
+  const ocrText = pageText.ocrText || '';
 
-  const normalized = normalizePageText(pageText.text);
+  const normalized = normalizePageText(pageText.mergedText || pageText.text);
   const text = normalized.text;
 
   // Handle empty text — return stub with always-populated continuity
@@ -250,6 +254,11 @@ export async function buildPageIntelligence(
       pageNumber,
       source,
       confidence,
+      extractionMethod: 'failed',
+      extractionVersion: EXTRACTION_VERSION,
+      nativeText,
+      ocrText,
+      mergedText: text,
       segments: [],
       signals: [],
       relations: [],
@@ -271,6 +280,7 @@ export async function buildPageIntelligence(
         figureCaptionsDetected: normalized.report.figureCaptionsDetected,
         lowQuality: normalized.report.lowQuality,
       },
+      fallbackState: { canSynthesize: false, reason: 'low_confidence', message: getFallbackDisplayState().message },
       extractedAt: Date.now(),
     };
 
@@ -390,10 +400,17 @@ export async function buildPageIntelligence(
   }, pageMemory, conceptGraph);
 
   // Build result
+  const canSynthesize = canSynthesizePage(confidence, text);
+
   const intelligence: PageIntelligence = {
     pageNumber,
     source,
     confidence,
+    extractionMethod: source === 'mixed' ? 'hybrid' : source === 'native' ? 'native' : 'ocr',
+    extractionVersion: EXTRACTION_VERSION,
+    nativeText,
+    ocrText,
+    mergedText: text,
     segments,
     signals,
     relations,
@@ -409,6 +426,9 @@ export async function buildPageIntelligence(
     tabResponses,
     tabPayloads,
     domain: normalized.domain,
+    fallbackState: canSynthesize
+      ? { canSynthesize: true }
+      : { canSynthesize: false, reason: 'low_confidence', message: getFallbackDisplayState().message },
     normalization: {
       dehyphenatedWords: normalized.report.dehyphenatedWords,
       repairedLineWraps: normalized.report.repairedLineWraps,
@@ -502,7 +522,7 @@ export async function refreshPageIntelligence(
 ): Promise<BuildPageIntelligenceResult> {
   // Clear cache for this page first
   const { pageNumber, docId = 'default' } = args;
-  const key = `${CACHE_PREFIX}${docId}:${pageNumber}`;
+  const key = `${CACHE_PREFIX}${docId}:${pageNumber}:${EXTRACTION_VERSION}`;
   await set(key, undefined);
 
   // Rebuild
