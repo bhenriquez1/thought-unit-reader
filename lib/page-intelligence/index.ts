@@ -371,7 +371,7 @@ export async function buildPageIntelligence(
     domain: normalized.domain,
     extractedAt: Date.now(),
   });
-  const tabResponses = buildAllTabResponses(docId, {
+  const { tabResponses, tabPayloads } = buildAllTabResponses(docId, {
     pageNumber,
     source,
     confidence,
@@ -407,6 +407,7 @@ export async function buildPageIntelligence(
     pageMemory,
     conceptGraph,
     tabResponses,
+    tabPayloads,
     domain: normalized.domain,
     normalization: {
       dehyphenatedWords: normalized.report.dehyphenatedWords,

@@ -413,6 +413,14 @@ export interface TabResponse {
   relatedNodeIds: string[];
 }
 
+export interface TabPayloadContracts {
+  priorityPayload: TabResponse;
+  explainPayload: TabResponse;
+  relationsPayload: TabResponse;
+  comparePayload: TabResponse;
+  insightsPayload: TabResponse;
+}
+
 // ============================================================================
 // Page Intelligence - Full pipeline result
 // ============================================================================
@@ -440,6 +448,8 @@ export interface PageIntelligence {
   conceptGraph?: ConceptGraph;
   /** Mode-specific, page-grounded responses consumed by right-panel tabs */
   tabResponses?: Record<TabType, TabResponse>;
+  /** Strict mode payload contracts so each tab can render independent query output */
+  tabPayloads?: TabPayloadContracts;
   /** Detected dominant domain on this page */
   domain?: 'pharmacology' | 'periodontology' | 'biology' | 'clinical' | 'general';
   /** Pre-synthesis cleanup diagnostics */
