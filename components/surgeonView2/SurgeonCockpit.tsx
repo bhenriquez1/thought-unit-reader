@@ -47,6 +47,7 @@ import { enrichInsightsWithApex } from '@/lib/apex/patternLibrary';
 import { useCourseContextStore } from '@/lib/stores/courseContextStore';
 import { useStudySessionStore } from '@/lib/stores/studySessionStore';
 import { useInsightsPanelStore } from '@/lib/stores/insightsPanelStore';
+import { buildActivePageContext, type ActivePageContext } from '@/lib/reader/activePageContext';
 
 // Expert View 2.1 tabs - Simplified for cognitive flow
 type ComprehensionTab = 'priority' | 'explain' | 'relations' | 'compare' | 'insights' | 'narrate';
@@ -202,6 +203,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
   // Page Intelligence state (OCR-enabled pipeline)
   const [pageIntelligence, setPageIntelligence] = useState<PageIntelligence | null>(null);
+  const [activePageContext, setActivePageContext] = useState<ActivePageContext | null>(null);
   const [ocrEnabled, setOcrEnabled] = useState(true);
   const [ocrStatus, setOcrStatus] = useState<'idle' | 'running' | 'done'>('idle');
   const [autoExtract, setAutoExtract] = useState(true); // auto-fire on page load
@@ -228,12 +230,13 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   }, [pageIntelligence?.paragraphUnits, activeParagraphId]);
 
   const contextTopic = useMemo(() => {
+    if (activePageContext?.detectedSectionTitle?.trim()) return activePageContext.detectedSectionTitle;
     const tocTitle = pageContext.context?.tocPath?.title;
     if (tocTitle && tocTitle.trim()) return tocTitle;
     if (pageIntelligence?.continuity?.corePattern?.trim()) return pageIntelligence.continuity.corePattern;
     if (pageIntelligence?.insights?.[0]?.title?.trim()) return pageIntelligence.insights[0].title;
     return 'Page Overview';
-  }, [pageContext.context?.tocPath?.title, pageIntelligence]);
+  }, [activePageContext?.detectedSectionTitle, pageContext.context?.tocPath?.title, pageIntelligence]);
 
   // Sync document context on mount
   useEffect(() => {
@@ -259,6 +262,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       rightPanelScrollRef.current.scrollTop = 0;
     }
 
+    const activePageNumber = currentPage + 1;
+
     pageContext.setPage(currentPage);
     expertView.setPage(currentPage);
     surgeonEngine.setPageContext(currentPage);
@@ -271,6 +276,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
     // Reset per-page extraction state so the UI doesn't show stale data from previous page
     setPageIntelligence(null);
+    setActivePageContext(null);
     setExtractionStatus('');
     setOcrStatus('idle');
 
@@ -287,12 +293,13 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     surgeonEngine.selectUnit(undefined);
 
     // Load cached intelligence for this page (IndexedDB, no-op if missing)
-    courseContext.getPageIntelligence(currentPage).then((cached) => {
+    courseContext.getPageIntelligence(activePageNumber).then((cached) => {
       if (cached) {
         setPageIntelligence(cached);
+        setActivePageContext(buildActivePageContext(documentId, cached));
       }
     }).catch(() => {});
-  }, [currentPage, preservePanelScroll]);
+  }, [currentPage, preservePanelScroll, documentId]);
 
   useEffect(() => {
     setInsightDepth(depth);
@@ -379,8 +386,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     if (currentPage === undefined || totalPages === 0) return;
 
     const pagesToPrefetch = [
-      currentPage + 1,
-      currentPage - 1,
+      currentPage + 2,
+      currentPage,
     ].filter(p => p >= 1 && p <= totalPages);
 
     const prefetchPage = async (pageNum: number) => {
@@ -485,9 +492,9 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   //   2. DOM text layer scraping (.react-pdf__Page__textContent)
   //   3. Empty string → will trigger OCR if enabled
   // ============================================================================
-  const getPageText = useCallback((page: number): string => {
+  const getPageText = useCallback((pageNumber: number): string => {
     // Tier 1: pre-extracted Map
-    const mapped = pageTexts?.get(page);
+    const mapped = pageTexts?.get(pageNumber);
     if (mapped && mapped.trim().length >= 40) return mapped.trim();
 
     // Tier 2: live DOM text layer (react-pdf renders this as selectable text)
@@ -504,7 +511,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     const controller = new AbortController();
     extractionAbortRef.current = controller;
 
-    const nativeText = getPageText(currentPage);
+    const activePageNumber = currentPage + 1;
+    const nativeText = getPageText(activePageNumber);
     const hasNativeText = nativeText.length >= 40;
 
     if (!hasNativeText && !ocrEnabled) {
@@ -517,14 +525,14 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
     try {
       const result = await buildPageIntelligence({
-        pageNumber: currentPage,
+        pageNumber: activePageNumber,
         docId: documentId,
         getNativeText: async () => nativeText,
         getPageImageDataUrl: async () => {
           // Find the visible PDF canvas for OCR rendering
           const selectors = [
             '.react-pdf__Page__canvas',
-            `canvas[data-page="${currentPage}"]`,
+            `canvas[data-page="${activePageNumber}"]`,
             '.pdfViewer canvas',
             '[data-testid="pure-reader-view"] canvas',
             '[data-testid="expert-view-container"] canvas',
@@ -543,10 +551,11 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
       if (controller.signal.aborted || requestId !== extractionRequestIdRef.current) return;
       setPageIntelligence(result.intelligence);
+      setActivePageContext(buildActivePageContext(documentId, result.intelligence));
       setOcrStatus(result.intelligence.source === 'native' ? 'idle' : 'done');
 
       // Persist to CourseContext (IndexedDB) → Study + NoteLab will read from here
-      await courseContext.storePageIntelligence(currentPage, result.intelligence);
+      await courseContext.storePageIntelligence(activePageNumber, result.intelligence);
 
       // Run relationship store extraction (feeds Relations/Compare tabs)
       const text = result.intelligence.segments.map(s => s.text).join('\n\n');
@@ -558,7 +567,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       if (result.intelligence.cards.length > 0) {
         const studyStore = useStudySessionStore.getState();
         if (studyStore.addCardsFromPageIntel) {
-          studyStore.addCardsFromPageIntel(documentId, currentPage, result.intelligence.cards);
+          studyStore.addCardsFromPageIntel(documentId, activePageNumber, result.intelligence.cards);
         }
       }
 
@@ -1046,7 +1055,16 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
           {/* Tab Content - Unified Panel */}
           <div ref={rightPanelScrollRef} className="flex-1 min-h-0 overflow-y-auto pr-1">
 
-          {activeTab === 'priority' && (
+          {activePageContext?.fallbackState ? (
+            <div className="mx-2 my-3 rounded-lg border border-amber-600/40 bg-amber-950/20 p-3 text-xs text-amber-100 space-y-2">
+              <p>{activePageContext.fallbackState.message}</p>
+              <div className="flex flex-wrap gap-2">
+                {activePageContext.fallbackState.actions.map((action) => (
+                  <button key={action} className="px-2 py-1 rounded bg-gray-800 border border-gray-700 text-gray-200">{action}</button>
+                ))}
+              </div>
+            </div>
+          ) : activeTab === 'priority' && (
             <PriorityWorkspacePanel
               insights={pageScopedInsights}
               pageIntelligence={pageIntelligence}
@@ -1063,7 +1081,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               deepAnalysisMode={mode === 'deep'}
             />
           )}
-          {activeTab === 'explain' && (
+          {!activePageContext?.fallbackState && activeTab === 'explain' && (
             <ExplainTab
               selectedCardId={selectedCardId}
               insights={pageScopedInsights}
@@ -1072,7 +1090,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               tabResponse={pageIntelligence?.tabPayloads?.explainPayload ?? pageIntelligence?.tabResponses?.explain}
             />
           )}
-          {activeTab === 'relations' && (
+          {!activePageContext?.fallbackState && activeTab === 'relations' && (
             <RelationsTab
               relations={activeRelations}
               clusters={Object.values(clusters)}
@@ -1090,7 +1108,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               tabResponse={pageIntelligence?.tabPayloads?.relationsPayload ?? pageIntelligence?.tabResponses?.relations}
             />
           )}
-          {activeTab === 'compare' && (
+          {!activePageContext?.fallbackState && activeTab === 'compare' && (
             <CompareTab
               selectedCardId={selectedCardId}
               insights={pageScopedInsights}
@@ -1099,7 +1117,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               tabResponse={pageIntelligence?.tabPayloads?.comparePayload ?? pageIntelligence?.tabResponses?.compare}
             />
           )}
-          {activeTab === 'insights' && (
+          {!activePageContext?.fallbackState && activeTab === 'insights' && (
             <InsightsTab
               insights={pageScopedInsights}
               trapInsights={pageScopedTrapInsights}
@@ -1111,7 +1129,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               tabResponse={pageIntelligence?.tabPayloads?.insightsPayload ?? pageIntelligence?.tabResponses?.insights}
             />
           )}
-          {activeTab === 'narrate' && (
+          {!activePageContext?.fallbackState && activeTab === 'narrate' && (
             <SpeechNarrationPanel
               pageIntelligence={pageIntelligence}
               onActiveParagraph={(paragraphId) => {
