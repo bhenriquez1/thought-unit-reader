@@ -17,6 +17,7 @@ interface PriorityWorkspacePanelProps {
   onSendToNoteLab?: (insight: RankedInsight) => void;
   isExtracting?: boolean;
   onHighlightParagraph?: (text: string) => void;
+  onPreviewSource?: (text: string | null) => void;
   /** Jump to source in PDF — from SourceAnchor "Jump to source" button */
   onJumpToSource?: (ref: SourceRef) => void;
   /** Font-size scale for insight cards (from insightsPanelStore) */
@@ -35,6 +36,7 @@ export const PriorityWorkspacePanel: React.FC<PriorityWorkspacePanelProps> = ({
   onExplain,
   onSendToNoteLab,
   onHighlightParagraph,
+  onPreviewSource,
   onJumpToSource,
   insightScale,
   syncEnabled,
@@ -49,6 +51,7 @@ export const PriorityWorkspacePanel: React.FC<PriorityWorkspacePanelProps> = ({
       onJumpToPage={onJumpToPage}
       onSaveToNoteLab={onSendToNoteLab}
       onHighlightParagraph={onHighlightParagraph}
+      onPreviewSource={onPreviewSource}
       onJumpToSource={onJumpToSource}
       insightScale={insightScale}
       activeItemId={selectedCardId}

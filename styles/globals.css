@@ -439,6 +439,13 @@
   100% { background: rgba(45, 212, 191, 0.00) !important; box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.00); }
 }
 
+
+.priority-paragraph-preview {
+  background: rgba(59, 130, 246, 0.18) !important;
+  border-radius: 2px;
+  outline: 1px solid rgba(59, 130, 246, 0.55);
+}
+
 /* Persistent pinned state — added alongside priority-paragraph-glow when user pins a paragraph */
 .priority-paragraph-pinned {
   background: rgba(45, 212, 191, 0.16) !important;

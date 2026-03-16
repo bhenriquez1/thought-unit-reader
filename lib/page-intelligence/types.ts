@@ -470,6 +470,7 @@ export interface PageIntelligence {
     dehyphenatedWords: number;
     repairedLineWraps: number;
     figureCaptionsDetected: number;
+    removedCitationArtifacts?: number;
     lowQuality: boolean;
   };
   extractedAt: number;

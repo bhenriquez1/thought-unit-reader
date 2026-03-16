@@ -83,6 +83,7 @@ interface SurgeonCockpitProps {
   pageTexts?: Map<number, string>;
   onExtractPage?: (pageIndex: number) => Promise<void>;
   onHighlightParagraph?: (text: string) => void;
+  onPreviewSource?: (text: string | null) => void;
   /** Called when user clicks "Jump to source" on any SourceAnchor — for PDF scroll+highlight */
   onJumpToSource?: (ref: import('@/lib/page-intelligence').SourceRef) => void;
   /** ElevenLabs config for Narrate tab (optional) */
@@ -102,6 +103,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   pageTexts,
   onExtractPage,
   onHighlightParagraph,
+  onPreviewSource,
   onJumpToSource,
   elevenLabsConfig,
   azureConfig,
@@ -1075,6 +1077,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               onSendToNoteLab={handleSendToNoteLab}
               isExtracting={isRelationExtracting}
               onHighlightParagraph={onHighlightParagraph}
+              onPreviewSource={onPreviewSource}
               onJumpToSource={onJumpToSource}
               insightScale={insightScale}
               syncEnabled={syncInsightsToPdf}

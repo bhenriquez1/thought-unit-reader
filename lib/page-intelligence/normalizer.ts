@@ -16,6 +16,7 @@ export interface NormalizationReport {
   repairedLineWraps: number;
   dehyphenatedWords: number;
   removedMalformedLines: number;
+  removedCitationArtifacts: number;
   figureCaptionsDetected: number;
   lowQuality: boolean;
 }
@@ -72,6 +73,30 @@ function dehyphenateLineBreaks(text: string): { text: string; count: number } {
   return { text: merged, count };
 }
 
+function cleanupCitationArtifacts(text: string): { text: string; count: number } {
+  let count = 0;
+  const apply = (input: string, re: RegExp, replacement: string | ((...args: any[]) => string)) => {
+    return input.replace(re, (...args) => {
+      count += 1;
+      if (typeof replacement === 'function') return replacement(...args);
+      return replacement;
+    });
+  };
+
+  let cleaned = text;
+
+  // Drop flattened superscript-style refs: "trauma 3" or "torus 1."
+  cleaned = apply(cleaned, /(\b[A-Za-z][A-Za-z\-]{2,})\s+(\d{1,2})(?=(?:\s|$|[.,;:]))/g, '$1');
+  // Remove citation groups like [1], (2,3), ^4
+  cleaned = apply(cleaned, /\s*(?:\[(?:\d+[\s,;]*)+\]|\((?:\d+[\s,;]*)+\)|\^(?:\d+))/g, '');
+  // Remove citation residue at line ends but preserve decimal numbers
+  cleaned = apply(cleaned, /(?<!\d\.\d)\b\d{1,2}[.)]?\s*$/gm, '');
+  // Remove inline Figure/Table markers unless they look like true prose
+  cleaned = apply(cleaned, /\b(?:fig\.?|figure|table)\s*\d+[a-z]?\b[:\-]?\s*/gi, '');
+
+  return { text: cleaned, count };
+}
+
 function repairLineWraps(text: string): { text: string; count: number } {
   let count = 0;
   const repaired = text.replace(/([^\n\.!?:])\n(?=[a-z(])/g, (_m, left) => {
@@ -123,8 +148,9 @@ export function normalizePageText(rawText: string): NormalizedPageText {
   const lineText = cleanedLines.join('\n');
   const dehyphenated = dehyphenateLineBreaks(lineText);
   const lineWrapRepair = repairLineWraps(dehyphenated.text);
+  const citationCleanup = cleanupCitationArtifacts(lineWrapRepair.text);
 
-  const text = lineWrapRepair.text
+  const text = citationCleanup.text
     .replace(/\n{3,}/g, '\n\n')
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
@@ -146,6 +172,7 @@ export function normalizePageText(rawText: string): NormalizedPageText {
       repairedLineWraps: lineWrapRepair.count,
       dehyphenatedWords: dehyphenated.count,
       removedMalformedLines,
+      removedCitationArtifacts: citationCleanup.count,
       figureCaptionsDetected: figureContext.captions.length,
       lowQuality,
     },
