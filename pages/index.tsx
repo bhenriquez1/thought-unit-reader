@@ -871,6 +871,43 @@ export default function ThoughtUnitReader() {
   const lastUserNavAtRef = useRef(0);
   const lastProgrammaticScrollAtRef = useRef(0);
 
+
+  const clearTransientPriorityPreview = useCallback(() => {
+    document.querySelectorAll('.priority-paragraph-preview').forEach((el) => {
+      el.classList.remove('priority-paragraph-preview');
+    });
+  }, []);
+
+  const handlePreviewParagraph = useCallback((searchText: string | null) => {
+    clearTransientPriorityPreview();
+    if (!searchText || searchText.trim().length < 10) return;
+
+    const needle = searchText.trim().toLowerCase().slice(0, 80);
+    const textLayer = document.querySelector('.react-pdf__Page__textContent, .textLayer');
+    if (!textLayer) return;
+    const spans = Array.from(textLayer.querySelectorAll('span'));
+    if (!spans.length) return;
+
+    let matchStart = -1;
+    let matchEnd = -1;
+    for (let i = 0; i < spans.length && matchStart === -1; i++) {
+      let accumulated = '';
+      for (let j = i; j < Math.min(i + 20, spans.length); j++) {
+        accumulated += (spans[j].textContent || '').toLowerCase();
+        if (accumulated.includes(needle.slice(0, 40))) {
+          matchStart = i;
+          matchEnd = j;
+          break;
+        }
+      }
+    }
+
+    if (matchStart === -1) return;
+    for (let k = matchStart; k <= matchEnd && k < spans.length; k++) {
+      spans[k].classList.add('priority-paragraph-preview');
+    }
+  }, [clearTransientPriorityPreview]);
+
   const handleHighlightParagraph = useCallback((searchText: string) => {
     if (!searchText || searchText.trim().length < 10) return;
 
@@ -2120,6 +2157,7 @@ export default function ThoughtUnitReader() {
         document.querySelectorAll('.priority-paragraph-glow').forEach(
           el => el.classList.remove('priority-paragraph-glow', 'priority-paragraph-pinned'),
         );
+        clearTransientPriorityPreview();
         const prevPage = currentPage - 1;
         useInsightsPanelStore.getState().clearPinnedTexts();
         useHighlightStore.getState().clearPage(bookId || 'default-book', prevPage);
@@ -2302,6 +2340,7 @@ export default function ThoughtUnitReader() {
                 onJumpToPage={(page) => syncToPage(page)}
                 pageTexts={pageTexts}
                 onHighlightParagraph={handleHighlightParagraph}
+                onPreviewSource={handlePreviewParagraph}
                 onJumpToSource={handleJumpToSource}
               />
             </div>

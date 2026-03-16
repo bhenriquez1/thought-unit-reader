@@ -101,6 +101,7 @@ interface PriorityComprehensionPanelProps {
   onSaveToNoteLab?: (insight: RankedInsight) => void;
   onMarkConfusing?: (insight: RankedInsight) => void;
   onHighlightParagraph?: (text: string) => void;
+  onPreviewSource?: (text: string | null) => void;
   /** Called when user clicks "Jump to source" on a SourceAnchor */
   onJumpToSource?: (ref: SourceRef) => void;
 
@@ -239,17 +240,33 @@ function pickEssentialItems(
   return picked;
 }
 
+function stripCitationArtifacts(text: string): string {
+  return text
+    .replace(/\s*(?:\[(?:\d+[\s,;]*)+\]|\((?:\d+[\s,;]*)+\)|\^(?:\d+))/g, '')
+    .replace(/\b(?:fig\.?|figure|table)\s*\d+[a-z]?\b[:\-]?\s*/gi, '')
+    .replace(/(\b[A-Za-z][A-Za-z\-]{2,})\s+(\d{1,2})(?=(?:\s|$|[.,;:]))/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function hasCompleteSentenceBoundary(text: string): boolean {
+  return /[.!?](?:["')\]]+)?$/.test(text.trim());
+}
+
 function toStudentSentence(text: string): string {
-  const cleaned = text.replace(/\s+/g, ' ').trim();
+  const cleaned = stripCitationArtifacts(text);
   if (!cleaned) return '';
-  return cleaned.length > 220 ? `${cleaned.slice(0, 217).trimEnd()}…` : cleaned;
+  const sentenceSafe = hasCompleteSentenceBoundary(cleaned) ? cleaned : firstCompleteSentence(cleaned);
+  if (!sentenceSafe) return '';
+  return sentenceSafe.length > 220 ? `${sentenceSafe.slice(0, 217).trimEnd()}…` : sentenceSafe;
 }
 
 function firstCompleteSentence(text: string): string {
-  const cleaned = text.replace(/\s+/g, ' ').trim();
+  const cleaned = stripCitationArtifacts(text);
   if (!cleaned) return '';
-  const match = cleaned.match(/^[^.!?]*[.!?]/);
-  const sentence = (match?.[0] || cleaned).trim();
+  const match = cleaned.match(/^[^.!?]*[.!?](?:["')\]]+)?/);
+  const sentence = (match?.[0] || '').trim();
+  if (!sentence) return '';
   return sentence.length > 220 ? `${sentence.slice(0, 217).trimEnd()}…` : sentence;
 }
 
@@ -265,11 +282,11 @@ function buildSectionSynthesis(pageIntelligence?: PageIntelligence | null): Sect
 
   const overview = toStudentSentence(
     pageIntelligence.explain?.summary?.trim() || firstCompleteSentence(mainUnit.text)
-  );
+  ) || toStudentSentence(firstCompleteSentence(mainUnit.text));
 
   const mainIdeas = (pageIntelligence.explain?.bullets ?? [])
     .map((b) => toStudentSentence(b))
-    .filter(Boolean)
+    .filter((entry) => Boolean(entry) && hasCompleteSentenceBoundary(entry as string))
     .slice(0, 5);
 
   const fallbackMainIdeas = sortedUnits
@@ -749,6 +766,7 @@ const StructureMapSection: React.FC<{
   paragraphUnits?: ParagraphUnit[];
   pageNumber?: number;
   onHighlightParagraph?: (text: string) => void;
+  onPreviewSource?: (text: string | null) => void;
   onJumpToSource?: (ref: SourceRef) => void;
 }> = ({ structureMap, paragraphUnits = [], pageNumber, onHighlightParagraph, onJumpToSource }) => {
   if (!structureMap || structureMap.nodes.length === 0) return null;
@@ -1385,6 +1403,7 @@ const ParagraphUnitCard: React.FC<{
   unit: ParagraphUnit;
   tier: ParagraphTier;
   onHighlightParagraph?: (text: string) => void;
+  onPreviewSource?: (text: string | null) => void;
   onJumpToSource?: (ref: SourceRef) => void;
   /** When true, shows raw SourceRef + signal debug panel */
   debugMode?: boolean;
@@ -1657,6 +1676,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
   onSaveToNoteLab,
   onMarkConfusing,
   onHighlightParagraph,
+  onPreviewSource,
   onJumpToSource,
   insightScale = 1.0,
   activeItemId,
@@ -2253,6 +2273,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
             onSaveToNoteLab={onSaveToNoteLab}
             onMarkConfusing={onMarkConfusing}
             onHighlightParagraph={onHighlightParagraph}
+            onPreviewSource={onPreviewSource}
             onJumpToSource={onJumpToSource}
             settings={{ depth: depthLevel, tone: toneLevel as Tone, view: renderPolicy }}
           />
@@ -2277,6 +2298,7 @@ interface CategorySectionProps {
   onSaveToNoteLab?: (insight: RankedInsight) => void;
   onMarkConfusing?: (insight: RankedInsight) => void;
   onHighlightParagraph?: (text: string) => void;
+  onPreviewSource?: (text: string | null) => void;
   onJumpToSource?: (ref: SourceRef) => void;
   settings: InsightSettings;
 }
@@ -2292,6 +2314,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   onSaveToNoteLab,
   onMarkConfusing,
   onHighlightParagraph,
+  onPreviewSource,
   onJumpToSource,
   settings,
 }) => {
@@ -2324,6 +2347,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
             onSaveToNoteLab={onSaveToNoteLab}
             onMarkConfusing={onMarkConfusing}
             onHighlightParagraph={onHighlightParagraph}
+            onPreviewSource={onPreviewSource}
             onJumpToSource={onJumpToSource}
             settings={settings}
           />
@@ -2357,6 +2381,7 @@ interface PriorityItemCardProps {
   onSaveToNoteLab?: (insight: RankedInsight) => void;
   onMarkConfusing?: (insight: RankedInsight) => void;
   onHighlightParagraph?: (text: string) => void;
+  onPreviewSource?: (text: string | null) => void;
   onJumpToSource?: (ref: SourceRef) => void;
   settings: InsightSettings;
 }
@@ -2371,6 +2396,7 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
   onSaveToNoteLab,
   onMarkConfusing,
   onHighlightParagraph,
+  onPreviewSource,
   onJumpToSource,
   settings,
 }) => {
@@ -2386,7 +2412,9 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
 
   const handleClick = () => {
     const focusText = item.sourceRef?.quote ?? item.content;
-    if (onHighlightParagraph && focusText) {
+    if (item.sourceRef && onJumpToSource) {
+      onJumpToSource(item.sourceRef);
+    } else if (onHighlightParagraph && focusText) {
       onHighlightParagraph(focusText);
     }
     if (linkedInsight && onInsightClick) {
@@ -2409,6 +2437,8 @@ const PriorityItemCard: React.FC<PriorityItemCardProps> = ({
         else itemRefs.delete(item.id);
       }}
       onClick={handleClick}
+      onMouseEnter={() => onPreviewSource?.(item.sourceRef?.quote ?? item.content)}
+      onMouseLeave={() => onPreviewSource?.(null)}
       className={`
         p-2.5 rounded-lg border border-l-4 transition-all cursor-pointer
         ${CATEGORY_LEFT_BORDER[item.category] ?? 'border-l-gray-600/40'}
