@@ -47,7 +47,7 @@ import { enrichInsightsWithApex } from '@/lib/apex/patternLibrary';
 import { useCourseContextStore } from '@/lib/stores/courseContextStore';
 import { useStudySessionStore } from '@/lib/stores/studySessionStore';
 import { useInsightsPanelStore } from '@/lib/stores/insightsPanelStore';
-import { buildActivePageContext, type ActivePageContext } from '@/lib/reader/activePageContext';
+import { buildActivePageContext, getPageContextCacheKey, type ActivePageContext } from '@/lib/reader/activePageContext';
 
 // Expert View 2.1 tabs - Simplified for cognitive flow
 type ComprehensionTab = 'priority' | 'explain' | 'relations' | 'compare' | 'insights' | 'narrate';
@@ -181,7 +181,6 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     setSectionId,
     setParagraphId,
     onPageChange,
-    buildCacheKey,
     getCachedInsight,
     setCachedInsight,
   } = useReaderState();
@@ -224,6 +223,9 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     }
   }, [activeTab, currentPage]);
 
+  const activePageNumber = useMemo(() => Math.max(1, currentPage || 1), [currentPage]);
+  const activePageIndex = useMemo(() => activePageNumber - 1, [activePageNumber]);
+
   const activeParagraphIndex = useMemo(() => {
     const units = pageIntelligence?.paragraphUnits;
     if (!units?.length || !activeParagraphId) return undefined;
@@ -264,13 +266,11 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       rightPanelScrollRef.current.scrollTop = 0;
     }
 
-    const activePageNumber = currentPage + 1;
-
-    pageContext.setPage(currentPage);
-    expertView.setPage(currentPage);
-    surgeonEngine.setPageContext(currentPage);
-    courseContext.setPage(currentPage);
-    onPageChange(currentPage);
+    pageContext.setPage(activePageNumber);
+    expertView.setPage(activePageNumber);
+    surgeonEngine.setPageContext(activePageNumber);
+    courseContext.setPage(activePageNumber);
+    onPageChange(activePageNumber);
 
     extractionRequestIdRef.current += 1;
     extractionAbortRef.current?.abort();
@@ -297,11 +297,12 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     // Load cached intelligence for this page (IndexedDB, no-op if missing)
     courseContext.getPageIntelligence(activePageNumber).then((cached) => {
       if (cached) {
+        if (currentPageRef.current !== activePageNumber) return;
         setPageIntelligence(cached);
         setActivePageContext(buildActivePageContext(documentId, cached));
       }
     }).catch(() => {});
-  }, [currentPage, preservePanelScroll, documentId]);
+  }, [activePageNumber, currentPage, preservePanelScroll, documentId]);
 
   useEffect(() => {
     setInsightDepth(depth);
@@ -387,10 +388,9 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   useEffect(() => {
     if (currentPage === undefined || totalPages === 0) return;
 
-    const pagesToPrefetch = [
-      currentPage + 2,
-      currentPage,
-    ].filter(p => p >= 1 && p <= totalPages);
+    const pagesToPrefetch = [activePageNumber + 1, activePageNumber - 1].filter(
+      (p) => p >= 1 && p <= totalPages,
+    );
 
     const prefetchPage = async (pageNum: number) => {
       try {
@@ -465,18 +465,21 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   }, [rankedInsights]);
 
   const pageScopedInsights = useMemo(() => {
-    const cacheKey = buildCacheKey(activeTab, depth, currentPage);
+    const pageContextKey = activePageContext
+      ? getPageContextCacheKey(activePageContext.docId, activePageContext.pageNumber, activePageContext.extractionVersion)
+      : `${documentId}:${activePageNumber}:pending`;
+    const cacheKey = `${pageContextKey}:${activeTab}:${depth}`;
     const cached = getCachedInsight<RankedInsight[]>(cacheKey);
     if (cached) {
       return cached;
     }
 
     const filtered = rankedInsights.filter((insight) =>
-      insight.evidence.some((span) => span.page === currentPage),
+      insight.evidence.some((span) => span.page === activePageIndex),
     );
     setCachedInsight(cacheKey, filtered);
     return filtered;
-  }, [activeTab, buildCacheKey, currentPage, depth, getCachedInsight, rankedInsights, setCachedInsight]);
+  }, [activeTab, activePageContext, activePageIndex, activePageNumber, depth, documentId, getCachedInsight, rankedInsights, setCachedInsight]);
 
   const pageScopedTrapInsights = useMemo(
     () => pageScopedInsights.filter((i) => i.type === 'EXAM_TRAP' || i.trap),
@@ -485,7 +488,10 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
   // Page context info
   const pageCtx = pageContext.getPageContext();
-  const chapterTitle = pageCtx.tocPath?.title || 'Unknown Chapter';
+  const chapterTitle = pageCtx.tocPath?.title
+    || activePageContext?.detectedSectionTitle
+    || pageIntelligence?.structureMap?.topic
+    || `Page ${activePageNumber}`;
   const confidencePercent = Math.round(pageCtx.confidence * 100);
 
   // ============================================================================
@@ -513,7 +519,6 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     const controller = new AbortController();
     extractionAbortRef.current = controller;
 
-    const activePageNumber = currentPage + 1;
     const nativeText = getPageText(activePageNumber);
     const hasNativeText = nativeText.length >= 40;
 
@@ -562,7 +567,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       // Run relationship store extraction (feeds Relations/Compare tabs)
       const text = result.intelligence.segments.map(s => s.text).join('\n\n');
       if (text.trim().length > 50) {
-        await extractFromMultiplePages([{ pageIndex: currentPage, text }]);
+        await extractFromMultiplePages([{ pageIndex: activePageIndex, text }]);
       }
 
       // Push auto-generated study cards to the Study session store
@@ -583,20 +588,20 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       setExtractionStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setOcrStatus('idle');
     }
-  }, [getPageText, currentPage, documentId, extractFromMultiplePages, ocrEnabled, courseContext]);
+  }, [activePageIndex, activePageNumber, getPageText, currentPage, documentId, extractFromMultiplePages, ocrEnabled, courseContext]);
 
   // Check if chapter extraction is available
   const chapterRangeAvailable = useMemo(() => {
     // Check pageContext first, then courseContext
-    const pcRange = pageContext.getChapterRange(currentPage);
-    const ccRange = courseContext.getChapterRangeForPage(currentPage);
+    const pcRange = pageContext.getChapterRange(activePageNumber);
+    const ccRange = courseContext.getChapterRangeForPage(activePageNumber);
     return pcRange || ccRange;
-  }, [currentPage, pageContext, courseContext.syllabusTopics]);
+  }, [activePageNumber, currentPage, pageContext, courseContext.syllabusTopics]);
 
   // Handle extract chapter — uses Page Intelligence pipeline for each page in chapter
   const handleExtractChapter = useCallback(async () => {
-    const chapterRange = pageContext.getChapterRange(currentPage) ||
-                         courseContext.getChapterRangeForPage(currentPage);
+    const chapterRange = pageContext.getChapterRange(activePageNumber) ||
+                         courseContext.getChapterRangeForPage(activePageNumber);
 
     if (!chapterRange) {
       setExtractionStatus('No chapter range available. Upload a syllabus with page ranges first.');
@@ -627,7 +632,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         totalCards += intel.cards.length;
         const text = intel.segments.map(s => s.text).join('\n\n');
         if (text.trim().length > 50) {
-          legacyPages.push({ pageIndex: intel.pageNumber, text });
+          legacyPages.push({ pageIndex: intel.pageNumber - 1, text });
         }
       }
 
@@ -641,7 +646,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     } catch (error) {
       setExtractionStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }, [currentPage, documentId, pageContext, courseContext, extractFromMultiplePages, getPageText, ocrEnabled]);
+  }, [activePageNumber, currentPage, documentId, pageContext, courseContext, extractFromMultiplePages, getPageText, ocrEnabled]);
 
   // Unified extract handler for SmartExtractControl
   const handleUnifiedExtract = useCallback(async () => {
@@ -715,7 +720,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       const cards = await generateCardsFromInsights({
         insights: {
           docId: documentId,
-          scope: { mode: 'PAGE' as const, pageIndex: currentPage },
+          scope: { mode: 'PAGE' as const, pageIndex: activePageIndex },
           generatedAt: Date.now(),
           whatMatters: [{
             id: insight.id,
@@ -741,7 +746,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       setToastMessage('Failed to create card');
       setTimeout(() => setToastMessage(null), 3000);
     }
-  }, [documentId, currentPage]);
+  }, [activePageIndex, documentId, currentPage]);
 
   // Handle "Explain" action — also updates store so PDF sync fires on tab switch
   const handleExplainInsight = useCallback((insight: RankedInsight) => {
@@ -784,7 +789,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
         {/* Page Number */}
         <span className="text-xs text-gray-500">
-          p.{currentPage + 1}/{totalPages}
+          p.{activePageNumber}/{totalPages}
         </span>
 
         {/* Confidence Pill */}
@@ -943,7 +948,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
           <div className="rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2">
             <p className="text-xs text-gray-300">{chapterTitle}</p>
             <p className="text-sm font-semibold text-gray-100 truncate">{contextTopic}</p>
-            <p className="text-[11px] text-gray-400">Page {currentPage + 1} of {totalPages}</p>
+            <p className="text-[11px] text-gray-400">Page {activePageNumber} of {totalPages}</p>
           </div>
         </div>
 
@@ -951,7 +956,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         <div className="mx-3 mt-2 mb-3 flex-1 min-h-0 rounded-xl border border-white/5 bg-[rgba(18,22,34,0.85)] p-3 flex flex-col overflow-hidden">
           <div className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 mb-2 sticky top-0 z-20">
             <p className="text-sm text-gray-100 font-semibold tracking-wide">
-              Page {currentPage + 1} — {tabTitle}
+              Page {activePageNumber} — {tabTitle}
             </p>
             <p className="mt-1 text-[11px] text-gray-300">
               {activeParagraphIndex ? `Paragraph ${activeParagraphIndex} • ` : ''}
@@ -1746,7 +1751,7 @@ const InsightsTab: React.FC<{
                   <span className="whitespace-normal">{insight.title}</span>
                   {insight.evidence?.[0]?.page !== undefined && (
                     <span
-                      onClick={(e) => { e.stopPropagation(); onJumpToPage(insight.evidence![0].page); }}
+                      onClick={(e) => { e.stopPropagation(); onJumpToPage(insight.evidence![0].page + 1); }}
                       className="text-[10px] text-teal-400 hover:text-teal-300 flex-shrink-0"
                     >
                       p.{insight.evidence[0].page + 1}
@@ -2105,7 +2110,7 @@ const RelationsTab: React.FC<{
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          onJumpToPage(page);
+                          onJumpToPage(page + 1);
                         }}
                         className="text-[9px] text-teal-400 hover:text-teal-300"
                       >
