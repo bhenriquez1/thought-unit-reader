@@ -48,6 +48,8 @@ import { useCourseContextStore } from '@/lib/stores/courseContextStore';
 import { useStudySessionStore } from '@/lib/stores/studySessionStore';
 import { useInsightsPanelStore } from '@/lib/stores/insightsPanelStore';
 import { buildActivePageContext, getPageContextCacheKey, type ActivePageContext } from '@/lib/reader/activePageContext';
+import { resolvePageHeading, sanitizeTitle } from '@/lib/page-intelligence/titleResolution';
+import { sanitizeRenderList, sanitizeRenderText } from '@/lib/page-intelligence/outputSanitizer';
 
 // Expert View 2.1 tabs - Simplified for cognitive flow
 type ComprehensionTab = 'priority' | 'explain' | 'relations' | 'compare' | 'insights' | 'narrate';
@@ -164,6 +166,13 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     mode,
     setMode,
     followScroll,
+    audience,
+    view,
+    essentialStudentMode,
+    resetInsightLayout,
+    setSelectedInsightId,
+    setActiveVisibleText,
+    setExpandedCardIds,
   } = useInsightsPanelStore();
 
   // Canonical ReaderState (single source of truth for page + panel state)
@@ -201,6 +210,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   const extractionAbortRef = useRef<AbortController | null>(null);
   const rightPanelScrollRef = useRef<HTMLDivElement | null>(null);
   const currentPageRef = useRef<number>(currentPage);
+  const activeRequestKeyRef = useRef<string>('');
 
   // Page Intelligence state (OCR-enabled pipeline)
   const [pageIntelligence, setPageIntelligence] = useState<PageIntelligence | null>(null);
@@ -234,12 +244,12 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   }, [pageIntelligence?.paragraphUnits, activeParagraphId]);
 
   const contextTopic = useMemo(() => {
-    if (activePageContext?.detectedSectionTitle?.trim()) return activePageContext.detectedSectionTitle;
-    const tocTitle = pageContext.context?.tocPath?.title;
-    if (tocTitle && tocTitle.trim()) return tocTitle;
-    if (pageIntelligence?.continuity?.corePattern?.trim()) return pageIntelligence.continuity.corePattern;
-    if (pageIntelligence?.insights?.[0]?.title?.trim()) return pageIntelligence.insights[0].title;
-    return 'Page Overview';
+    return resolvePageHeading([
+      activePageContext?.detectedSectionTitle,
+      pageContext.context?.tocPath?.title,
+      pageIntelligence?.continuity?.corePattern,
+      pageIntelligence?.insights?.[0]?.title,
+    ], 'Current Page');
   }, [activePageContext?.detectedSectionTitle, pageContext.context?.tocPath?.title, pageIntelligence]);
 
   // Sync document context on mount
@@ -286,6 +296,9 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     setSelectedCardId(undefined);
     setSelectedInsightTarget(null);
     setActiveParagraphId(null);  // prevent stale ID from lighting up a card on the new page
+    setSelectedInsightId(null);
+    setActiveVisibleText(null);
+    setExpandedCardIds([]);
     setSectionId(null);
     setParagraphId(null);
     // Clear cluster/unit selection in both stores so insight cards reset cleanly
@@ -302,7 +315,13 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         setActivePageContext(buildActivePageContext(documentId, cached));
       }
     }).catch(() => {});
-  }, [activePageNumber, currentPage, preservePanelScroll, documentId]);
+  }, [activePageNumber, currentPage, preservePanelScroll, documentId, setSelectedInsightId, setActiveVisibleText, setExpandedCardIds]);
+
+  useEffect(() => {
+    if (rightPanelScrollRef.current) {
+      rightPanelScrollRef.current.scrollTop = 0;
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     setInsightDepth(depth);
@@ -481,17 +500,13 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     return filtered;
   }, [activeTab, activePageContext, activePageIndex, activePageNumber, depth, documentId, getCachedInsight, rankedInsights, setCachedInsight]);
 
-  const pageScopedTrapInsights = useMemo(
-    () => pageScopedInsights.filter((i) => i.type === 'EXAM_TRAP' || i.trap),
-    [pageScopedInsights],
-  );
-
   // Page context info
   const pageCtx = pageContext.getPageContext();
   const chapterTitle = pageCtx.tocPath?.title
     || activePageContext?.detectedSectionTitle
     || pageIntelligence?.structureMap?.topic
     || `Page ${activePageNumber}`;
+  const cleanedChapterTitle = sanitizeTitle(chapterTitle, 'Current Page');
   const confidencePercent = Math.round(pageCtx.confidence * 100);
 
   // ============================================================================
@@ -521,6 +536,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
     const nativeText = getPageText(activePageNumber);
     const hasNativeText = nativeText.length >= 40;
+    const requestKey = `${documentId}:${activePageNumber}:${activePageContext?.extractionVersion || 'v2'}:${mode}:${audience}:${view}`;
+    activeRequestKeyRef.current = requestKey;
 
     if (!hasNativeText && !ocrEnabled) {
       setExtractionStatus('No text found. Enable OCR for scanned PDFs or wait for the page to fully render.');
@@ -557,6 +574,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       });
 
       if (controller.signal.aborted || requestId !== extractionRequestIdRef.current) return;
+      if (activeRequestKeyRef.current !== requestKey) return;
       setPageIntelligence(result.intelligence);
       setActivePageContext(buildActivePageContext(documentId, result.intelligence));
       setOcrStatus(result.intelligence.source === 'native' ? 'idle' : 'done');
@@ -588,7 +606,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       setExtractionStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setOcrStatus('idle');
     }
-  }, [activePageIndex, activePageNumber, getPageText, currentPage, documentId, extractFromMultiplePages, ocrEnabled, courseContext]);
+  }, [activePageIndex, activePageNumber, getPageText, currentPage, documentId, extractFromMultiplePages, ocrEnabled, courseContext, mode, audience, view, activePageContext?.extractionVersion]);
 
   // Check if chapter extraction is available
   const chapterRangeAvailable = useMemo(() => {
@@ -783,8 +801,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         <span className="text-gray-600">|</span>
 
         {/* Current Chapter */}
-        <span className="text-xs text-gray-400 truncate max-w-[180px]" title={chapterTitle}>
-          {chapterTitle}
+        <span className="text-xs text-gray-400 truncate max-w-[180px]" title={cleanedChapterTitle}>
+          {cleanedChapterTitle}
         </span>
 
         {/* Page Number */}
@@ -946,7 +964,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         {/* Page Context Header */}
         <div className="px-3 pt-2">
           <div className="rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2">
-            <p className="text-xs text-gray-300">{chapterTitle}</p>
+            <p className="text-xs text-gray-300">{cleanedChapterTitle}</p>
             <p className="text-sm font-semibold text-gray-100 truncate">{contextTopic}</p>
             <p className="text-[11px] text-gray-400">Page {activePageNumber} of {totalPages}</p>
           </div>
@@ -987,12 +1005,6 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             label="Compare"
             active={activeTab === 'compare'}
             onClick={() => setActiveTab('compare')}
-            />
-            <ModeChip
-            label="Insights"
-            active={activeTab === 'insights'}
-            onClick={() => setActiveTab('insights')}
-            badge={pageScopedInsights.length || undefined}
             />
             <ModeChip
             label="🎙️"
@@ -1057,6 +1069,17 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             >
               🔬
             </button>
+            <button
+              onClick={() => {
+                resetInsightLayout();
+                setSelectedCardId(undefined);
+                setSelectedInsightTarget(null);
+              }}
+              className="ml-1 px-1.5 py-0.5 text-[10px] rounded text-gray-400 hover:text-gray-200 hover:bg-gray-700"
+              title="Reset insight layout and panel-local state"
+            >
+              Reset
+            </button>
           </div>
 
           {/* Tab Content - Unified Panel */}
@@ -1096,6 +1119,10 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               onSelectCard={() => setActiveTab('priority')}
               pageIntelligence={pageIntelligence}
               tabResponse={pageIntelligence?.tabPayloads?.explainPayload ?? pageIntelligence?.tabResponses?.explain}
+              tone={audience}
+              depth={depth}
+              density={view}
+              essential={essentialStudentMode}
             />
           )}
           {!activePageContext?.fallbackState && activeTab === 'relations' && (
@@ -1123,18 +1150,6 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               onSelectCard={() => setActiveTab('priority')}
               pageIntelligence={pageIntelligence}
               tabResponse={pageIntelligence?.tabPayloads?.comparePayload ?? pageIntelligence?.tabResponses?.compare}
-            />
-          )}
-          {!activePageContext?.fallbackState && activeTab === 'insights' && (
-            <InsightsTab
-              insights={pageScopedInsights}
-              trapInsights={pageScopedTrapInsights}
-              selectedCardId={selectedCardId}
-              onCardClick={handleCardClick}
-              onJumpToPage={onJumpToPage}
-              reasoningChain={expertView.getReasoningChain()}
-              pageIntelligence={pageIntelligence}
-              tabResponse={pageIntelligence?.tabPayloads?.insightsPayload ?? pageIntelligence?.tabResponses?.insights}
             />
           )}
           {!activePageContext?.fallbackState && activeTab === 'narrate' && (
@@ -1268,7 +1283,11 @@ const ExplainTab: React.FC<{
   onSelectCard: () => void;
   pageIntelligence?: PageIntelligence | null;
   tabResponse?: TabResponse;
-}> = ({ selectedCardId, insights, onSelectCard, pageIntelligence, tabResponse }) => {
+  tone?: 'polish' | 'student' | 'clinical' | 'expert';
+  depth?: 'minimal' | 'standard' | 'deep';
+  density?: 'condensed' | 'expanded';
+  essential?: boolean;
+}> = ({ selectedCardId, insights, onSelectCard, pageIntelligence, tabResponse, tone = 'student', depth = 'standard', density = 'condensed', essential = false }) => {
   const selected = insights.find(i => i.id === selectedCardId);
   const piExplain = pageIntelligence?.explain;
   const continuity = pageIntelligence?.continuity;
@@ -1299,50 +1318,63 @@ const ExplainTab: React.FC<{
 
   // --- Derive teaching content ---
   // Priority: selected card → page intelligence → continuity scaffold
-  const topicTitle =
+  const topicTitle = sanitizeTitle(
     selected?.title ??
     piExplain?.summary?.slice(0, 60) ??
     continuity?.corePattern.slice(0, 60) ??
-    'Page Content';
+    'Current Page',
+    'Current Page',
+  );
 
-  const whatThisMeans =
+  const whatThisMeans = sanitizeRenderText(
     selected?.claim ??
     (typeof tabResponse?.sections.find(s => s.label === 'Section explanation')?.content === 'string'
       ? tabResponse?.sections.find(s => s.label === 'Section explanation')?.content
       : undefined) ??
     piExplain?.summary ??
     continuity?.corePattern ??
-    'See page for core definition.';
+    'See page for core definition.',
+  );
 
-  const mechanism =
+  const mechanism = sanitizeRenderText(
     continuity?.conceptualBridge ??
-    (piExplain?.bullets?.[0] ? `First, ${piExplain.bullets[0]}` : null);
+    (piExplain?.bullets?.[0] ? `First, ${piExplain.bullets[0]}` : null),
+  );
 
   // Key steps from explain bullets
   const explainFlow = tabResponse?.sections.find(s => s.label === 'Subsection flow')?.content;
-  const keySteps = Array.isArray(explainFlow) ? explainFlow : (piExplain?.bullets ?? []);
+  const keySteps = sanitizeRenderList(Array.isArray(explainFlow) ? explainFlow : (piExplain?.bullets ?? []));
 
-  const whyItMatters =
+  const whyItMatters = sanitizeRenderText(
     continuity?.clinicalConnection ??
     selected?.whyItMatters ??
-    'Foundational for board exam mastery.';
+    'Foundational for board exam mastery.',
+  );
 
   // How to think: use the corePattern + conceptualBridge as a mental model
-  const howToThink =
+  const toneLead =
+    tone === 'expert' ? 'Mechanistically, ' :
+    tone === 'clinical' ? 'Clinically, ' :
+    tone === 'polish' ? 'In practical terms, ' :
+    '';
+
+  const howToThink = sanitizeRenderText(
     continuity
-      ? `Think of "${continuity.corePattern}" as the core idea. ${continuity.conceptualBridge}`
+      ? `${toneLead}think of "${continuity.corePattern}" as the core idea. ${continuity.conceptualBridge}`
       : selected
-        ? `Connect "${selected.title}" to the broader system — ask why, not just what.`
-        : null;
+        ? `${toneLead}connect "${selected.title}" to the broader system — ask why, not just what.`
+        : null,
+  );
 
   // Exam trap: pitfalls + continuity warning
-  const examTraps: string[] = [
+  const examTraps: string[] = sanitizeRenderList([
     ...(piExplain?.pitfalls ?? []),
     ...(continuity?.commonMisunderstanding ? [continuity.commonMisunderstanding] : []),
-  ].filter((v, i, a) => a.indexOf(v) === i).slice(0, 3); // deduplicate, max 3
+  ]).filter((v, i, a) => a.indexOf(v) === i).slice(0, depth === 'deep' ? 4 : 2); // deduplicate
 
   // Mnemonics
-  const mnemonics = piExplain?.mnemonics ?? [];
+  const mnemonics = sanitizeRenderList(piExplain?.mnemonics ?? []);
+  const compact = density === 'condensed';
 
   // Math formulas on this page
   const mathSegments = pageIntelligence?.segments.filter(
@@ -1350,7 +1382,7 @@ const ExplainTab: React.FC<{
   ) ?? [];
 
   return (
-    <div className="p-3 space-y-3 overflow-y-auto insightPanelScroll">
+    <div className={`p-3 ${compact ? 'space-y-2' : 'space-y-3'} overflow-y-auto insightPanelScroll`}>
       {/* Topic header */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-teal-300 leading-tight max-w-[80%] whitespace-normal">
@@ -1375,7 +1407,7 @@ const ExplainTab: React.FC<{
       </NinjaNerdSection>
 
       {/* 2. MECHANISM — with structure flow connector if available */}
-      {mechanism && (
+      {mechanism && depth !== 'minimal' && (
         <NinjaNerdSection
           icon="⚙️"
           label="Mechanism"
@@ -1385,7 +1417,7 @@ const ExplainTab: React.FC<{
         >
           <div className="space-y-1.5">
             <p>{mechanism}</p>
-            {keySteps.length > 0 && (
+            {keySteps.length > 0 && !essential && (
               <div className="mt-2 space-y-1">
                 {keySteps.slice(0, 6).map((step, i) => (
                   <div key={i} className="flex gap-2 items-start">
@@ -1401,6 +1433,7 @@ const ExplainTab: React.FC<{
         </NinjaNerdSection>
       )}
 
+      {depth !== 'minimal' && (
       <NinjaNerdSection
         icon="🪜"
         label="Stepwise Breakdown"
@@ -1415,6 +1448,7 @@ const ExplainTab: React.FC<{
           <li>Finally test your understanding by predicting what changes if one step fails.</li>
         </ol>
       </NinjaNerdSection>
+      )}
 
       {/* 3. WHY IT MATTERS */}
 
@@ -1429,7 +1463,7 @@ const ExplainTab: React.FC<{
       </NinjaNerdSection>
 
       {/* 5. HOW TO THINK ABOUT IT */}
-      {howToThink && (
+      {howToThink && (depth !== 'minimal' || tone !== 'student') && (
         <NinjaNerdSection
           icon="💭"
           label="How to Think About It"
@@ -1464,7 +1498,7 @@ const ExplainTab: React.FC<{
       )}
 
       {/* 7. EXAM TRAPS */}
-      {examTraps.length > 0 && (
+      {examTraps.length > 0 && depth !== 'minimal' && (
         <NinjaNerdSection
           icon="⚠️"
           label="Exam Traps"
@@ -1487,7 +1521,7 @@ const ExplainTab: React.FC<{
       )}
 
       {/* 8. MEMORY AIDS — mnemonics */}
-      {mnemonics.length > 0 && (
+      {mnemonics.length > 0 && depth === 'deep' && !essential && (
         <NinjaNerdSection
           icon="💡"
           label="Memory Aids"
@@ -1551,9 +1585,21 @@ const CompareTab: React.FC<{
 
   const schemaVs = tabResponse?.sections.find(s => s.label === 'A vs B candidates')?.content;
   const schemaConfusions = tabResponse?.sections.find(s => s.label === 'Commonly confused concepts')?.content;
+  const autoCompareCandidates = useMemo(() => {
+    const segments = pageIntelligence?.segments ?? [];
+    const fromContrast = segments
+      .filter((segment) => /\b(unlike|whereas|in contrast|versus|vs\.?)\b/i.test(segment.text))
+      .map((segment) => sanitizeRenderText(segment.text))
+      .filter(Boolean)
+      .slice(0, 4);
+    if (fromContrast.length) return fromContrast;
+
+    const rels = pageIntelligence?.relations ?? [];
+    return rels.slice(0, 4).map((rel) => `${sanitizeRenderText(rel.from)} vs ${sanitizeRenderText(rel.to)}`).filter(Boolean);
+  }, [pageIntelligence]);
   const hasGroundedCompare = Array.isArray(schemaVs)
     ? schemaVs.some((row) => typeof row === 'string' && !row.toLowerCase().includes('no compare pair available'))
-    : false;
+    : autoCompareCandidates.length > 0;
 
   if (!selected && confusables.length === 0 && !hasGroundedCompare) {
     return (
@@ -1605,15 +1651,17 @@ const CompareTab: React.FC<{
         </div>
       )}
 
-      {Array.isArray(schemaVs) && schemaVs.length > 0 && (
+      {(Array.isArray(schemaVs) && schemaVs.length > 0) || autoCompareCandidates.length > 0 ? (
         <div>
           <h3 className="text-[10px] font-semibold text-gray-400 uppercase mb-2">A vs B (Graph Query)</h3>
           <div className="space-y-1.5">
-            {schemaVs.map((line, idx) => (
+            {(Array.isArray(schemaVs) && schemaVs.length > 0 ? schemaVs : autoCompareCandidates).map((line, idx) => (
               <div key={idx} className="bg-blue-900/20 border border-blue-700/40 rounded p-2 text-xs text-blue-200">{line}</div>
             ))}
           </div>
         </div>
+      ) : (
+        <p className="text-xs text-gray-500">No compare pair available on this page yet.</p>
       )}
 
       {(confusables.length > 0 || (Array.isArray(schemaConfusions) && schemaConfusions.length > 0)) && (
@@ -1935,7 +1983,16 @@ const RelationsTab: React.FC<{
   pageIntelligence,
   tabResponse,
 }) => {
-  const hasContent = relations.length > 0 || clusters.length > 0;
+  const autoRelations = useMemo(() => {
+    const rels = pageIntelligence?.relations ?? [];
+    if (rels.length > 0) return rels.slice(0, 6).map((r) => `${sanitizeRenderText(r.from)} → ${sanitizeRenderText(r.to)}`);
+    const segments = pageIntelligence?.segments ?? [];
+    return segments
+      .filter((segment) => /\b(leads to|causes|results in|because|therefore|thus)\b/i.test(segment.text))
+      .map((segment) => sanitizeRenderText(segment.text))
+      .slice(0, 4);
+  }, [pageIntelligence]);
+  const hasContent = relations.length > 0 || clusters.length > 0 || autoRelations.length > 0;
 
   // Build clinical reasoning flow from page intelligence relations
   const clinicalFlow = useMemo(() => {
@@ -1967,13 +2024,15 @@ const RelationsTab: React.FC<{
 
   return (
     <div className="p-3 overflow-y-auto h-full space-y-4">
-      {Array.isArray(schemaRelations) && schemaRelations.length > 0 && (
+      {(Array.isArray(schemaRelations) && schemaRelations.length > 0) || autoRelations.length > 0 ? (
         <section className="rounded-xl border border-indigo-700/60 bg-indigo-900/20 p-3">
           <h3 className="text-[10px] font-semibold text-indigo-200 uppercase tracking-wide mb-2">Page-grounded Relationships</h3>
           <div className="space-y-1 text-[11px] text-indigo-100">
-            {schemaRelations.map((line, idx) => <p key={idx}>{line}</p>)}
+            {(Array.isArray(schemaRelations) && schemaRelations.length > 0 ? schemaRelations : autoRelations).map((line, idx) => <p key={idx}>{line}</p>)}
           </div>
         </section>
+      ) : (
+        <p className="text-xs text-gray-500">No grounded relations found on this page yet.</p>
       )}
 
       {(conceptualLinks.prerequisites.length > 0 || conceptualLinks.downstream.length > 0 || conceptualLinks.neighbors.length > 0) && (

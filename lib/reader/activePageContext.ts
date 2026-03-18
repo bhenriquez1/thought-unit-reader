@@ -5,6 +5,7 @@ import { buildRelations } from '@/lib/synthesis/buildRelations';
 import { buildCompare } from '@/lib/synthesis/buildCompare';
 import { buildInsights } from '@/lib/synthesis/buildInsights';
 import { canSynthesizePage, getFallbackDisplayState } from '@/lib/synthesis/fallbackPolicy';
+import { resolvePageHeading, sanitizeTitle } from '@/lib/page-intelligence/titleResolution';
 
 export type ActivePageContext = {
   docId: string;
@@ -39,7 +40,7 @@ export function getPageContextCacheKey(docId: string, pageNumber: number, extrac
 
 export function buildActivePageContext(docId: string, pageIntelligence: PageIntelligence): ActivePageContext {
   const pageNumber = pageIntelligence.pageNumber;
-  const headingBlocks = pageIntelligence.segments.filter((s) => s.kind === 'heading').map((s) => s.text);
+  const headingBlocks = pageIntelligence.segments.filter((s) => s.kind === 'heading').map((s) => sanitizeTitle(s.text, '')).filter(Boolean);
   const paragraphBlocks = pageIntelligence.segments.filter((s) => s.kind === 'paragraph' || s.kind === 'list').map((s) => s.text);
   const figureBlocks = pageIntelligence.segments.filter((s) => /figure|fig\.?\s*\d+/i.test(s.text)).map((s) => s.text);
   const captionBlocks = pageIntelligence.segments.filter((s) => s.kind === 'caption').map((s) => s.text);
@@ -49,12 +50,18 @@ export function buildActivePageContext(docId: string, pageIntelligence: PageInte
   const extractionMethod = pageIntelligence.extractionMethod || (pageIntelligence.source === 'mixed' ? 'hybrid' : pageIntelligence.source === 'native' ? 'native' : 'ocr');
   const shouldSynthesize = canSynthesizePage(confidence, mergedText);
 
+  const resolvedSectionTitle = resolvePageHeading([
+    headingBlocks[0],
+    pageIntelligence.pageMemory?.sectionId,
+    pageIntelligence.structureMap?.topic,
+  ], 'Current Page');
+
   return {
     docId,
     pageNumber,
     extractionVersion: pageIntelligence.extractionVersion || 'v2',
     pageLabel: `Page ${pageNumber}`,
-    detectedSectionTitle: headingBlocks[0] || pageIntelligence.pageMemory?.sectionId || null,
+    detectedSectionTitle: resolvedSectionTitle,
     detectedSubsectionTitles: headingBlocks.slice(1, 5),
     nativeText: (pageIntelligence as any).nativeText || nativeText,
     ocrText: (pageIntelligence as any).ocrText || '',

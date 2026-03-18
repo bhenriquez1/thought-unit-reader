@@ -87,12 +87,13 @@ export const useReaderState = create<ReaderStateStore>((set, get) => ({
     })),
 
   onPageChange: (newPage) => {
+    const nextPageIndex = Math.max(0, newPage - 1);
     get().setPageState({
-      pageIndex: newPage,
+      pageIndex: nextPageIndex,
       sectionId: null,
       paragraphId: null,
     });
     get().resetInsightState();
-    get().invalidateInsightCache(newPage);
+    get().invalidateInsightCache(nextPageIndex);
   },
 }));
