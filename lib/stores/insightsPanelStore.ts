@@ -189,6 +189,10 @@ export const useInsightsPanelStore = create<InsightsPanelState>()(
         followScroll: false,
         syncInsightsToPdf: false,
         essentialStudentMode: true,
+        expandedCardIds: [],
+        selectedInsightId: null,
+        activeParagraphId: null,
+        activeVisibleText: null,
       }),
 
       pinnedTexts: [],
