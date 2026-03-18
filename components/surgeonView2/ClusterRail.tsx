@@ -3,6 +3,7 @@
 
 import React from 'react';
 import type { PatternCluster, PatternClusterKind } from '@/lib/relationshipSchema/types';
+import { sanitizeRenderText } from '@/lib/page-intelligence/outputSanitizer';
 
 interface ClusterGroup {
   kind: PatternClusterKind;
@@ -119,6 +120,8 @@ const ClusterCard: React.FC<{
   onClick: () => void;
   onInsightClick: () => void;
 }> = ({ cluster, isSelected, expertMode, kindStyle, onClick, onInsightClick }) => {
+  const title = sanitizeRenderText(cluster.title);
+  const summary = sanitizeRenderText(cluster.summary);
   return (
     <div
       className={`
@@ -133,11 +136,11 @@ const ClusterCard: React.FC<{
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-white truncate">
-            {cluster.title}
+            {title}
           </p>
-          {!expertMode && cluster.summary && (
+          {!expertMode && summary && (
             <p className="text-xs text-gray-400 mt-1 line-clamp-2">
-              {cluster.summary}
+              {summary}
             </p>
           )}
         </div>
