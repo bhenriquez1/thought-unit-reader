@@ -49,7 +49,7 @@ import { useStudySessionStore } from '@/lib/stores/studySessionStore';
 import { useInsightsPanelStore } from '@/lib/stores/insightsPanelStore';
 import { buildActivePageContext, getPageContextCacheKey, type ActivePageContext } from '@/lib/reader/activePageContext';
 import { resolvePageHeading, sanitizeTitle } from '@/lib/page-intelligence/titleResolution';
-import { sanitizeRenderList, sanitizeRenderText } from '@/lib/page-intelligence/outputSanitizer';
+import { normalizeRenderableText, sanitizeRenderList, sanitizeRenderText } from '@/lib/page-intelligence/outputSanitizer';
 
 // Expert View 2.1 tabs - Simplified for cognitive flow
 type ComprehensionTab = 'priority' | 'explain' | 'relations' | 'compare' | 'insights' | 'narrate';
@@ -1326,14 +1326,15 @@ const ExplainTab: React.FC<{
     'Current Page',
   );
 
+  const sectionExplanation = tabResponse?.sections.find((s) => s.label === 'Section explanation')?.content;
   const whatThisMeans = sanitizeRenderText(
-    selected?.claim ??
-    (typeof tabResponse?.sections.find(s => s.label === 'Section explanation')?.content === 'string'
-      ? tabResponse?.sections.find(s => s.label === 'Section explanation')?.content
-      : undefined) ??
-    piExplain?.summary ??
-    continuity?.corePattern ??
-    'See page for core definition.',
+    normalizeRenderableText(
+      selected?.claim ??
+      sectionExplanation ??
+      piExplain?.summary ??
+      continuity?.corePattern ??
+      'See page for core definition.',
+    ),
   );
 
   const mechanism = sanitizeRenderText(
@@ -1343,7 +1344,7 @@ const ExplainTab: React.FC<{
 
   // Key steps from explain bullets
   const explainFlow = tabResponse?.sections.find(s => s.label === 'Subsection flow')?.content;
-  const keySteps = sanitizeRenderList(Array.isArray(explainFlow) ? explainFlow : (piExplain?.bullets ?? []));
+  const keySteps = sanitizeRenderList(Array.isArray(explainFlow) ? explainFlow : (explainFlow ? [explainFlow] : (piExplain?.bullets ?? [])));
 
   const whyItMatters = sanitizeRenderText(
     continuity?.clinicalConnection ??
@@ -1579,7 +1580,7 @@ const CompareTab: React.FC<{
     return insights.filter(i =>
       i.type === 'EXAM_TRAP' ||
       (i.trap && i.trap.toLowerCase().includes('look-alike')) ||
-      (i.claim || '').toLowerCase().includes(' vs ')
+      sanitizeRenderText(i.claim).toLowerCase().includes(' vs ')
     ).slice(0, 3);
   }, [insights]);
 
@@ -1633,7 +1634,7 @@ const CompareTab: React.FC<{
             <tbody className="text-gray-300">
               <tr>
                 <td className="p-1.5 border-b border-gray-700/50 text-gray-400">Definition</td>
-                <td className="p-1.5 border-b border-gray-700/50">{selected.claim || '-'}</td>
+                <td className="p-1.5 border-b border-gray-700/50">{sanitizeRenderText(selected.claim) || '-'}</td>
                 <td className="p-1.5 border-b border-gray-700/50 text-gray-300">Like a neighboring concept that serves a similar role but with different trigger conditions.</td>
               </tr>
               <tr>
@@ -1655,8 +1656,8 @@ const CompareTab: React.FC<{
         <div>
           <h3 className="text-[10px] font-semibold text-gray-400 uppercase mb-2">A vs B (Graph Query)</h3>
           <div className="space-y-1.5">
-            {(Array.isArray(schemaVs) && schemaVs.length > 0 ? schemaVs : autoCompareCandidates).map((line, idx) => (
-              <div key={idx} className="bg-blue-900/20 border border-blue-700/40 rounded p-2 text-xs text-blue-200">{line}</div>
+            {(Array.isArray(schemaVs) && schemaVs.length > 0 ? sanitizeRenderList(schemaVs) : autoCompareCandidates).map((line, idx) => (
+              <div key={idx} className="bg-blue-900/20 border border-blue-700/40 rounded p-2 text-xs text-blue-200">{sanitizeRenderText(line)}</div>
             ))}
           </div>
         </div>
@@ -1671,11 +1672,11 @@ const CompareTab: React.FC<{
           </h3>
           <div className="space-y-1.5">
             {(Array.isArray(schemaConfusions) && schemaConfusions.length > 0
-              ? schemaConfusions.map((c, idx) => ({ id: `schema-${idx}`, title: c as string }))
+              ? sanitizeRenderList(schemaConfusions).map((c, idx) => ({ id: `schema-${idx}`, title: c }))
               : confusables
             ).map(c => (
               <div key={c.id} className="bg-amber-900/20 border border-amber-700/40 rounded p-2 text-xs text-amber-200">
-                {c.title}
+                {sanitizeRenderText(c.title)}
               </div>
             ))}
           </div>
@@ -1719,11 +1720,11 @@ const InsightsTab: React.FC<{
   const schemaTraps = tabResponse?.sections.find(s => s.label === 'Exam traps')?.content;
 
   const deepSignals = [
-    (typeof schemaHidden === 'string' ? schemaHidden : null) ?? (pageIntelligence?.continuity?.corePattern ? `Deeper pattern: ${pageIntelligence.continuity.corePattern}` : null),
+    sanitizeRenderText(schemaHidden) || (pageIntelligence?.continuity?.corePattern ? `Deeper pattern: ${pageIntelligence.continuity.corePattern}` : null),
     pageIntelligence?.continuity?.conceptualBridge ? `Hidden bridge: ${pageIntelligence.continuity.conceptualBridge}` : null,
     pageIntelligence?.continuity?.clinicalConnection ? `Why this section matters now: ${pageIntelligence.continuity.clinicalConnection}` : null,
     pageIntelligence?.continuity?.commonMisunderstanding ? `Easy-to-miss pitfall: ${pageIntelligence.continuity.commonMisunderstanding}` : null,
-  ].filter(Boolean) as string[];
+  ].filter((value): value is string => Boolean(value));
 
   return (
     <div className="p-3 space-y-4 overflow-y-auto">
@@ -2028,7 +2029,8 @@ const RelationsTab: React.FC<{
         <section className="rounded-xl border border-indigo-700/60 bg-indigo-900/20 p-3">
           <h3 className="text-[10px] font-semibold text-indigo-200 uppercase tracking-wide mb-2">Page-grounded Relationships</h3>
           <div className="space-y-1 text-[11px] text-indigo-100">
-            {(Array.isArray(schemaRelations) && schemaRelations.length > 0 ? schemaRelations : autoRelations).map((line, idx) => <p key={idx}>{line}</p>)}
+            {(Array.isArray(schemaRelations) && schemaRelations.length > 0 ? sanitizeRenderList(schemaRelations) : autoRelations)
+              .map((line, idx) => <p key={idx}>{sanitizeRenderText(line)}</p>)}
           </div>
         </section>
       ) : (
@@ -2122,7 +2124,7 @@ const RelationsTab: React.FC<{
                   <span className="text-[10px] text-gray-500">{cluster.relationIds.length} rel</span>
                 </div>
                 {cluster.summary && (
-                  <p className="text-[10px] text-gray-500 mt-0.5">{cluster.summary}</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">{sanitizeRenderText(cluster.summary)}</p>
                 )}
               </button>
             ))}

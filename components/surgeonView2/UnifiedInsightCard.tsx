@@ -3,6 +3,7 @@
 
 import React from 'react';
 import type { RankedInsight, EvidenceSpan } from '@/lib/relationshipSchema/types';
+import { sanitizeRenderText } from '@/lib/page-intelligence/outputSanitizer';
 
 interface UnifiedInsightCardProps {
   insight: RankedInsight;
@@ -51,6 +52,10 @@ export const UnifiedInsightCard: React.FC<UnifiedInsightCardProps> = ({
   const anchor = formatAnchor(insight.evidence);
   const confidencePercent = Math.round(insight.confidence * 100);
   const bucketStyle = BUCKET_STYLES[insight.bucket] || BUCKET_STYLES.CONTEXT;
+  const title = sanitizeRenderText(insight.title);
+  const claim = sanitizeRenderText(insight.claim);
+  const whyItMatters = sanitizeRenderText(insight.whyItMatters);
+  const trap = sanitizeRenderText(insight.trap);
 
   return (
     <div
@@ -65,7 +70,7 @@ export const UnifiedInsightCard: React.FC<UnifiedInsightCardProps> = ({
       {/* Header: Title + Confidence + Anchor */}
       <div className="flex items-start justify-between gap-2 mb-2">
         <h4 className={`text-sm font-medium ${bucketStyle.text} flex-1`}>
-          {insight.title}
+          {title}
         </h4>
         <div className="flex items-center gap-2 flex-shrink-0">
           {/* Confidence Badge */}
@@ -87,21 +92,21 @@ export const UnifiedInsightCard: React.FC<UnifiedInsightCardProps> = ({
 
       {/* Claim/Body */}
       <p className="text-xs text-gray-300 mb-2 line-clamp-2">
-        {insight.claim}
+        {claim}
       </p>
 
       {/* Why It Matters (if available) */}
-      {insight.whyItMatters && (
+      {whyItMatters && (
         <p className="text-[11px] text-gray-500 mb-2 italic line-clamp-1">
-          {insight.whyItMatters}
+          {whyItMatters}
         </p>
       )}
 
       {/* Trap Warning (if available) */}
-      {insight.trap && (
+      {trap && (
         <div className="flex items-center gap-1 mb-2 px-2 py-1 bg-red-500/10 rounded text-[10px] text-red-300">
           <span>⚠️</span>
-          <span className="line-clamp-1">{insight.trap}</span>
+          <span className="line-clamp-1">{trap}</span>
         </div>
       )}
 

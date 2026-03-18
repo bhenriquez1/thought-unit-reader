@@ -4,6 +4,7 @@
 
 import React from 'react';
 import type { Concept, Relation, PatternCluster, DecisionRule } from '@/lib/relationshipSchema/types';
+import { sanitizeRenderText } from '@/lib/page-intelligence/outputSanitizer';
 
 interface InsightOverlayProps {
   targetType: 'relation' | 'cluster' | 'rule';
@@ -198,12 +199,14 @@ const ClusterInsight: React.FC<{
   const clusterRelations = cluster.relationIds
     .map(id => relations[id])
     .filter(Boolean);
+  const clusterTitle = sanitizeRenderText(cluster.title);
+  const clusterSummary = sanitizeRenderText(cluster.summary);
 
   return (
     <div className="space-y-6">
       {/* Cluster Header */}
       <div className="p-4 bg-gray-800 rounded-lg">
-        <h3 className="text-lg font-bold text-white">{cluster.title}</h3>
+        <h3 className="text-lg font-bold text-white">{clusterTitle}</h3>
         <div className="flex items-center gap-2 mt-2 text-xs">
           <span className="px-2 py-0.5 bg-purple-900/50 text-purple-300 rounded">
             {cluster.kind}
@@ -216,9 +219,9 @@ const ClusterInsight: React.FC<{
       </div>
 
       {/* Summary */}
-      {cluster.summary && (
+      {clusterSummary && (
         <InsightSection title="Summary" icon="📝" color="teal">
-          <p className="text-gray-300">{cluster.summary}</p>
+          <p className="text-gray-300">{clusterSummary}</p>
         </InsightSection>
       )}
 

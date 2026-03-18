@@ -7,6 +7,7 @@ import type {
   ImportanceBucket,
   InsightType,
 } from '@/lib/relationshipSchema/types';
+import { sanitizeRenderText } from '@/lib/page-intelligence/outputSanitizer';
 
 // ============================================================================
 // Types
@@ -185,6 +186,11 @@ const InsightCard: React.FC<InsightCardProps> = ({
   const style = BUCKET_STYLES[insight.bucket];
   const icon = TYPE_ICONS[insight.type];
   const page = insight.evidence[0]?.page;
+  const title = sanitizeRenderText(insight.title);
+  const claim = sanitizeRenderText(insight.claim);
+  const whyItMatters = sanitizeRenderText(insight.whyItMatters);
+  const keyCue = sanitizeRenderText(insight.keyCue);
+  const trap = sanitizeRenderText(insight.trap);
 
   return (
     <div
@@ -198,27 +204,27 @@ const InsightCard: React.FC<InsightCardProps> = ({
       <div className="flex items-start gap-2">
         <span className="text-lg">{icon}</span>
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-medium text-white truncate">{insight.title}</h3>
+          <h3 className="text-sm font-medium text-white truncate">{title}</h3>
           <p className="text-xs text-gray-400 mt-0.5">{insight.type.replace(/_/g, ' ')}</p>
         </div>
         <ScoreBadge score={insight.score} bucket={insight.bucket} />
       </div>
 
       {/* Claim */}
-      <p className="text-sm text-gray-200 mt-2 line-clamp-2">{insight.claim}</p>
+      <p className="text-sm text-gray-200 mt-2 line-clamp-2">{claim}</p>
 
       {/* Why It Matters */}
-      <p className="text-xs text-gray-400 mt-2 italic">{insight.whyItMatters}</p>
+      <p className="text-xs text-gray-400 mt-2 italic">{whyItMatters}</p>
 
       {/* Key Cue / Trap (if present) */}
-      {insight.keyCue && (
+      {keyCue && (
         <div className="mt-2 px-2 py-1 bg-teal-900/30 rounded text-xs text-teal-300">
-          <span className="font-semibold">Key Cue:</span> {insight.keyCue}
+          <span className="font-semibold">Key Cue:</span> {keyCue}
         </div>
       )}
-      {insight.trap && (
+      {trap && (
         <div className="mt-2 px-2 py-1 bg-red-900/30 rounded text-xs text-red-300">
-          <span className="font-semibold">Trap:</span> {insight.trap}
+          <span className="font-semibold">Trap:</span> {trap}
         </div>
       )}
 
