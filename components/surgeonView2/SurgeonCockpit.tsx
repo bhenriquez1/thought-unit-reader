@@ -51,6 +51,9 @@ import { buildActivePageContext, getActivePageContextKey, type ActivePageContext
 import { resolvePanelTitle } from '@/lib/surgeonEngine/panelResolver';
 import { sanitizeTitle } from '@/lib/page-intelligence/titleResolution';
 import { normalizeRenderableText, sanitizeRenderList, sanitizeRenderText } from '@/lib/page-intelligence/outputSanitizer';
+import type { RightPanelState, RightPanelTab } from '@/state/rightPanelState';
+import { buildCurrentPageVersion, DEFAULT_RIGHT_PANEL_STATE } from '@/state/rightPanelState';
+import { resolveRightPanelView } from '@/lib/comprehension/resolveRightPanelView';
 
 // Expert View 2.1 tabs - Simplified for cognitive flow
 type ComprehensionTab = 'priority' | 'explain' | 'relations' | 'compare' | 'insights';
@@ -95,6 +98,10 @@ interface SurgeonCockpitProps {
   azureConfig?: { subscriptionKey: string; region: string; voiceName?: string };
   /** Keep right insight panel scroll position across page turns */
   preservePanelScroll?: boolean;
+  rightPanelState?: RightPanelState;
+  onRightPanelStateChange?: (updater: RightPanelState | ((prev: RightPanelState) => RightPanelState)) => void;
+  onRightPanelTabChange?: (tab: RightPanelTab) => void;
+  onRightPanelCardChange?: (cardId: string | null) => void;
 }
 
 export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
@@ -111,6 +118,10 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   elevenLabsConfig,
   azureConfig,
   preservePanelScroll = false,
+  rightPanelState,
+  onRightPanelStateChange,
+  onRightPanelTabChange,
+  onRightPanelCardChange,
 }) => {
   // Relationship store
   const {
@@ -239,6 +250,35 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
   const activePageNumber = useMemo(() => Math.max(1, currentPage || 1), [currentPage]);
   const activePageIndex = useMemo(() => activePageNumber - 1, [activePageNumber]);
+  const effectiveRightPanelState = useMemo<RightPanelState>(() => {
+    if (rightPanelState) return rightPanelState;
+    return {
+      ...DEFAULT_RIGHT_PANEL_STATE,
+      activeDocumentId: documentId,
+      activePageNumber,
+      activeTab: activeTab as RightPanelTab,
+      audienceMode: audience,
+      depthMode: depth,
+      densityMode: view,
+      deeperReasoningEnabled: mode === 'deep',
+      syncHighlightsEnabled: syncInsightsToPdf,
+      activeCardId: selectedCardId ?? null,
+      currentPageVersion: buildCurrentPageVersion(documentId, activePageNumber, sectionId),
+      activeSectionId: sectionId ?? null,
+    };
+  }, [
+    rightPanelState,
+    documentId,
+    activePageNumber,
+    activeTab,
+    audience,
+    depth,
+    view,
+    mode,
+    syncInsightsToPdf,
+    selectedCardId,
+    sectionId,
+  ]);
 
   const activeParagraphIndex = useMemo(() => {
     const units = pageIntelligence?.paragraphUnits;
@@ -250,18 +290,31 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   const panelContext = useMemo(() => buildActivePageContext({
     documentId: documentId || null,
     pageNumber: activePageNumber,
-    sectionId,
-    tab: activeTab as ActivePageContext['tab'],
-    audienceMode: audience,
-    depthMode: depth,
-    densityMode: view,
-    essentialMode: essentialStudentMode,
-    deeperReasoning: mode === 'deep',
-  }), [documentId, activePageNumber, sectionId, activeTab, audience, depth, view, essentialStudentMode, mode]);
+    sectionId: effectiveRightPanelState.activeSectionId,
+    tab: effectiveRightPanelState.activeTab as ActivePageContext['tab'],
+    audienceMode: effectiveRightPanelState.audienceMode,
+    depthMode: effectiveRightPanelState.depthMode,
+    densityMode: effectiveRightPanelState.densityMode,
+    essentialMode: !effectiveRightPanelState.deeperReasoningEnabled,
+    deeperReasoning: effectiveRightPanelState.deeperReasoningEnabled,
+  }), [documentId, activePageNumber, effectiveRightPanelState]);
 
   useEffect(() => {
     setReaderActivePageContext(panelContext);
   }, [panelContext, setReaderActivePageContext]);
+
+  const updateRightPanelState = useCallback((updater: RightPanelState | ((prev: RightPanelState) => RightPanelState)) => {
+    if (!onRightPanelStateChange) return;
+    onRightPanelStateChange((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      return {
+        ...next,
+        activeDocumentId: documentId,
+        activePageNumber,
+        currentPageVersion: buildCurrentPageVersion(documentId, activePageNumber, next.activeSectionId),
+      };
+    });
+  }, [onRightPanelStateChange, documentId, activePageNumber]);
 
 
   const contextTopic = useMemo(() => {
@@ -271,6 +324,21 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   useEffect(() => {
     if (activeTab === 'narrate') setActiveTab('priority');
   }, [activeTab, setActiveTab]);
+
+  useEffect(() => {
+    if (!rightPanelState) return;
+    if (activeTab !== rightPanelState.activeTab) setActiveTab(rightPanelState.activeTab as any);
+    if (audience !== rightPanelState.audienceMode) setAudience(rightPanelState.audienceMode);
+    if (depth !== rightPanelState.depthMode) setDepth(rightPanelState.depthMode);
+    if (view !== rightPanelState.densityMode) setView(rightPanelState.densityMode);
+    if ((mode === 'deep') !== rightPanelState.deeperReasoningEnabled) {
+      setMode(rightPanelState.deeperReasoningEnabled ? 'deep' : 'quick');
+      setEssentialStudentMode(!rightPanelState.deeperReasoningEnabled);
+    }
+    if (syncInsightsToPdf !== rightPanelState.syncHighlightsEnabled) {
+      useInsightsPanelStore.getState().setSyncInsightsToPdf(rightPanelState.syncHighlightsEnabled);
+    }
+  }, [rightPanelState, activeTab, audience, depth, view, mode, syncInsightsToPdf, setActiveTab, setAudience, setDepth, setView, setMode, setEssentialStudentMode]);
 
   // Sync document context on mount
   useEffect(() => {
@@ -321,6 +389,14 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     setExpandedCardIds([]);
     setSectionId(null);
     setParagraphId(null);
+    onRightPanelCardChange?.(null);
+    updateRightPanelState((prev) => ({
+      ...prev,
+      activeDocumentId: documentId,
+      activePageNumber,
+      activeSectionId: null,
+      activeCardId: null,
+    }));
     // Clear cluster/unit selection in both stores so insight cards reset cleanly
     selectCluster(undefined);
     selectRelation(undefined);
@@ -335,7 +411,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         setReaderPageContext(buildReaderActivePageContext(documentId, cached));
       }
     }).catch(() => {});
-  }, [activePageNumber, currentPage, preservePanelScroll, documentId, setSelectedInsightId, setActiveVisibleText, setExpandedCardIds]);
+  }, [activePageNumber, currentPage, preservePanelScroll, documentId, setSelectedInsightId, setActiveVisibleText, setExpandedCardIds, activePageIndex, sectionId, updateRightPanelState, onRightPanelCardChange]);
 
   useEffect(() => {
     if (rightPanelScrollRef.current) {
@@ -384,6 +460,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         }
         if (bestScore >= 2 && bestId && bestId !== selectedCardId) {
           setSelectedCardId(bestId);
+          onRightPanelCardChange?.(bestId);
         }
       }
 
@@ -698,10 +775,11 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   // Handle card selection — also updates the store so sync-scroll + PDF focus fire
   const handleCardClick = useCallback((insight: RankedInsight) => {
     setSelectedCardId(insight.id);
+    onRightPanelCardChange?.(insight.id);
     focusOnSource(insight.id);
     setSelectedInsightTarget({ type: insight.sourceType, id: insight.sourceId });
     setShowInsightOverlay(true);
-  }, [focusOnSource]);
+  }, [focusOnSource, onRightPanelCardChange]);
 
   // NoteLab actions
   const { importFromInsight, markConfusing: noteLabMarkConfusing } = useNoteLabStore();
@@ -789,9 +867,10 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   // Handle "Explain" action — also updates store so PDF sync fires on tab switch
   const handleExplainInsight = useCallback((insight: RankedInsight) => {
     setSelectedCardId(insight.id);
+    onRightPanelCardChange?.(insight.id);
     focusOnSource(insight.id);
     setActiveTab('explain');
-  }, [focusOnSource]);
+  }, [focusOnSource, onRightPanelCardChange]);
 
   const handleReadCard = useCallback((insight: RankedInsight) => {
     if (!isWebSpeechAvailable()) return;
@@ -807,6 +886,40 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     : Object.values(relations).filter(r => r.confidence >= filterByConfidence);
 
   const chains = selectedClusterId ? getChainsFromCluster(selectedClusterId) : [];
+
+  const resolvedPanelView = useMemo(() => resolveRightPanelView({
+    state: effectiveRightPanelState,
+    groundedPagePayload: pageIntelligence ? {
+      pageNumber: activePageNumber,
+      header: contextTopic,
+      priority: {
+        overview: pageIntelligence.explain?.summary ?? contextTopic,
+        mainIdeas: pageScopedInsights.slice(0, 5).map((insight) => insight.claim || insight.title),
+        whyItMatters: pageScopedInsights[0]?.whyItMatters ?? '',
+        remember: pageScopedInsights.slice(0, 2).map((insight) => insight.title),
+      },
+      relations: {
+        edges: activeRelations.slice(0, 8).map((relation) => ({
+          from: concepts[relation.subjId]?.label ?? relation.subjId,
+          to: concepts[relation.objId]?.label ?? relation.objId,
+          why: relation.predicate,
+        })),
+      },
+      compare: {
+        contrasts: (((pageIntelligence.tabPayloads?.comparePayload as any)?.coreContrasts ?? []) as any[]).slice(0, 8).map((entry: any) => ({
+          a: entry.left || entry.a || '',
+          b: entry.right || entry.b || '',
+          confusion: entry.difference || entry.confusion || '',
+        })),
+      },
+      cards: pageScopedInsights.map((insight) => ({
+        id: insight.id,
+        title: insight.title,
+        claim: insight.claim,
+      })),
+      paragraphUnits: pageIntelligence.paragraphUnits?.map((unit) => ({ id: unit.id, text: unit.text })),
+    } : null,
+  }), [effectiveRightPanelState, pageIntelligence, activePageNumber, contextTopic, pageScopedInsights, activeRelations]);
 
   return (
     <div className="flex flex-col h-full bg-gray-900 text-white">
@@ -985,7 +1098,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         <div className="px-3 pt-2">
           <div className="rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2">
             <p className="text-xs text-gray-300">{cleanedChapterTitle}</p>
-            <p className="text-sm font-semibold text-gray-100 truncate">{contextTopic}</p>
+            <p className="text-sm font-semibold text-gray-100 truncate">{resolvedPanelView.header || contextTopic}</p>
             <p className="text-[11px] text-gray-400">Page {activePageNumber} of {totalPages}</p>
           </div>
         </div>
@@ -1006,30 +1119,50 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
           <div className="flex items-center border border-white/5 rounded-lg bg-gray-900/70 backdrop-blur-sm px-2 py-1 gap-1 mb-2 sticky top-[62px] z-20">
             <ModeChip
             label="Priority"
-            active={activeTab === 'priority'}
-            onClick={() => setActiveTab('priority')}
+            active={effectiveRightPanelState.activeTab === 'priority'}
+            onClick={() => {
+              setActiveTab('priority');
+              onRightPanelTabChange?.('priority');
+              updateRightPanelState((prev) => ({ ...prev, activeTab: 'priority' }));
+            }}
             badge={pageScopedInsights.filter(i => i.bucket === 'CRITICAL' || i.bucket === 'HIGH_YIELD').length || undefined}
             />
             <ModeChip
             label="Explain"
-            active={activeTab === 'explain'}
-            onClick={() => setActiveTab('explain')}
+            active={effectiveRightPanelState.activeTab === 'explain'}
+            onClick={() => {
+              setActiveTab('explain');
+              onRightPanelTabChange?.('explain');
+              updateRightPanelState((prev) => ({ ...prev, activeTab: 'explain' }));
+            }}
             />
             <ModeChip
             label="Relations"
-            active={activeTab === 'relations'}
-            onClick={() => setActiveTab('relations')}
+            active={effectiveRightPanelState.activeTab === 'relations'}
+            onClick={() => {
+              setActiveTab('relations');
+              onRightPanelTabChange?.('relations');
+              updateRightPanelState((prev) => ({ ...prev, activeTab: 'relations' }));
+            }}
             badge={Object.keys(relations).length || undefined}
             />
             <ModeChip
             label="Compare"
-            active={activeTab === 'compare'}
-            onClick={() => setActiveTab('compare')}
+            active={effectiveRightPanelState.activeTab === 'compare'}
+            onClick={() => {
+              setActiveTab('compare');
+              onRightPanelTabChange?.('compare');
+              updateRightPanelState((prev) => ({ ...prev, activeTab: 'compare' }));
+            }}
             />
             <ModeChip
             label="Insights"
-            active={activeTab === 'insights'}
-            onClick={() => setActiveTab('insights')}
+            active={effectiveRightPanelState.activeTab === 'insights'}
+            onClick={() => {
+              setActiveTab('insights');
+              onRightPanelTabChange?.('insights');
+              updateRightPanelState((prev) => ({ ...prev, activeTab: 'insights' }));
+            }}
             />
 
           {/* Spacer */}
@@ -1057,7 +1190,10 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
           {/* Sync toggle — prevents right panel fighting PDF scroll */}
             <button
-            onClick={toggleSync}
+            onClick={() => {
+              toggleSync();
+              updateRightPanelState((prev) => ({ ...prev, syncHighlightsEnabled: !syncInsightsToPdf }));
+            }}
             className={`ml-1 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
               syncInsightsToPdf
                 ? 'bg-teal-600/80 text-white'
@@ -1072,7 +1208,11 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
           <div className="ml-2 hidden md:flex items-center gap-1">
             <select
               value={audience}
-              onChange={(e) => setAudience(e.target.value as typeof audience)}
+              onChange={(e) => {
+                const next = e.target.value as typeof audience;
+                setAudience(next);
+                updateRightPanelState((prev) => ({ ...prev, audienceMode: next }));
+              }}
               className="bg-gray-800 text-[10px] text-gray-200 rounded px-1 py-0.5 border border-gray-600 min-h-[40px]"
               title="Audience mode"
             >
@@ -1083,7 +1223,11 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             </select>
             <select
               value={depth}
-              onChange={(e) => setDepth(e.target.value as typeof depth)}
+              onChange={(e) => {
+                const next = e.target.value as typeof depth;
+                setDepth(next);
+                updateRightPanelState((prev) => ({ ...prev, depthMode: next }));
+              }}
               className="bg-gray-800 text-[10px] text-gray-200 rounded px-1 py-0.5 border border-gray-600 min-h-[40px]"
               title="Depth mode"
             >
@@ -1093,7 +1237,11 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             </select>
             <select
               value={view}
-              onChange={(e) => setView(e.target.value as typeof view)}
+              onChange={(e) => {
+                const next = e.target.value as typeof view;
+                setView(next);
+                updateRightPanelState((prev) => ({ ...prev, densityMode: next }));
+              }}
               className="bg-gray-800 text-[10px] text-gray-200 rounded px-1 py-0.5 border border-gray-600 min-h-[40px]"
               title="Density mode"
             >
@@ -1101,13 +1249,22 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               <option value="expanded">Expanded</option>
             </select>
             <button
-              onClick={() => setEssentialStudentMode(!essentialStudentMode)}
+              onClick={() => {
+                setEssentialStudentMode(!essentialStudentMode);
+                const next = !essentialStudentMode;
+                updateRightPanelState((prev) => ({ ...prev, deeperReasoningEnabled: !next }));
+              }}
               className={`px-1.5 py-0.5 text-[10px] rounded min-h-[40px] ${essentialStudentMode ? 'bg-teal-700/70 text-teal-100' : 'bg-gray-700 text-gray-300'}`}
             >
               Essential
             </button>
             <button
-              onClick={() => setMode(mode === 'deep' ? 'quick' : 'deep')}
+              onClick={() => {
+                const nextMode = mode === 'deep' ? 'quick' : 'deep';
+                setMode(nextMode);
+                setEssentialStudentMode(nextMode !== 'deep');
+                updateRightPanelState((prev) => ({ ...prev, deeperReasoningEnabled: nextMode === 'deep' }));
+              }}
               className={`px-1.5 py-0.5 text-[10px] rounded min-h-[40px] ${mode === 'deep' ? 'bg-purple-600/80 text-white border border-purple-500/60' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700'}`}
               title="Toggle deeper reasoning"
             >
@@ -1119,16 +1276,27 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               onClick={() => {
                 resetInsightLayout();
                 setActiveTab('priority');
+                onRightPanelTabChange?.('priority');
                 setAudience('student');
                 setDepth('standard');
                 setView('condensed');
                 setEssentialStudentMode(true);
                 setMode('quick');
                 setSelectedCardId(undefined);
+                onRightPanelCardChange?.(null);
                 setSelectedInsightTarget(null);
                 selectRelation(undefined);
                 selectCluster(undefined);
                 setExpandedCardIds([]);
+                updateRightPanelState((prev) => ({
+                  ...prev,
+                  activeTab: 'priority',
+                  audienceMode: 'student',
+                  depthMode: 'standard',
+                  densityMode: 'condensed',
+                  deeperReasoningEnabled: false,
+                  activeCardId: null,
+                }));
                 if (rightPanelScrollRef.current) rightPanelScrollRef.current.scrollTop = 0;
               }}
               className="ml-1 px-1.5 py-0.5 text-[10px] rounded text-gray-400 hover:text-gray-200 hover:bg-gray-700"
@@ -1150,7 +1318,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
                 ))}
               </div>
             </div>
-          ) : activeTab === 'priority' && (
+          ) : effectiveRightPanelState.activeTab === 'priority' && (
             essentialStudentMode ? (
               <PriorityComprehensionPanel
                 rankedInsights={pageScopedInsights}
@@ -1182,7 +1350,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               />
             )
           )}
-          {!readerPageContext?.fallbackState && activeTab === 'explain' && (
+          {!readerPageContext?.fallbackState && effectiveRightPanelState.activeTab === 'explain' && (
             <ExplainTab
               selectedCardId={selectedCardId}
               insights={pageScopedInsights}
@@ -1195,40 +1363,49 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               essential={essentialStudentMode}
             />
           )}
-          {!readerPageContext?.fallbackState && activeTab === 'relations' && (
-            <RelationsTab
-              relations={activeRelations}
-              clusters={Object.values(clusters)}
-              concepts={concepts}
-              chains={chains}
-              selectedCluster={selectedCluster}
-              onSelectCluster={selectCluster}
-              onRelationClick={(relation) => {
-                selectRelation(relation.id);
-                setSelectedInsightTarget({ type: 'relation', id: relation.id });
-                setShowInsightOverlay(true);
-              }}
-              onJumpToPage={onJumpToPage}
-              pageIntelligence={pageIntelligence}
-              tabResponse={pageIntelligence?.tabPayloads?.relationsPayload ?? pageIntelligence?.tabResponses?.relations}
-            />
+          {!readerPageContext?.fallbackState && effectiveRightPanelState.activeTab === 'relations' && (
+            resolvedPanelView.emptyState && resolvedPanelView.sections.length === 0 ? (
+              <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3 text-xs text-slate-300">{resolvedPanelView.emptyState}</div>
+            ) : (
+              <RelationsTab
+                relations={activeRelations}
+                clusters={Object.values(clusters)}
+                concepts={concepts}
+                chains={chains}
+                selectedCluster={selectedCluster}
+                onSelectCluster={selectCluster}
+                onRelationClick={(relation) => {
+                  selectRelation(relation.id);
+                  setSelectedInsightTarget({ type: 'relation', id: relation.id });
+                  setShowInsightOverlay(true);
+                }}
+                onJumpToPage={onJumpToPage}
+                pageIntelligence={pageIntelligence}
+                tabResponse={pageIntelligence?.tabPayloads?.relationsPayload ?? pageIntelligence?.tabResponses?.relations}
+              />
+            )
           )}
-          {!readerPageContext?.fallbackState && activeTab === 'compare' && (
-            <CompareTab
-              selectedCardId={selectedCardId}
-              insights={pageScopedInsights}
-              onSelectCard={() => setActiveTab('priority')}
-              pageIntelligence={pageIntelligence}
-              tabResponse={pageIntelligence?.tabPayloads?.comparePayload ?? pageIntelligence?.tabResponses?.compare}
-            />
+          {!readerPageContext?.fallbackState && effectiveRightPanelState.activeTab === 'compare' && (
+            resolvedPanelView.emptyState && resolvedPanelView.sections.length === 0 ? (
+              <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3 text-xs text-slate-300">{resolvedPanelView.emptyState}</div>
+            ) : (
+              <CompareTab
+                selectedCardId={selectedCardId}
+                insights={pageScopedInsights}
+                onSelectCard={() => setActiveTab('priority')}
+                pageIntelligence={pageIntelligence}
+                tabResponse={pageIntelligence?.tabPayloads?.comparePayload ?? pageIntelligence?.tabResponses?.compare}
+              />
+            )
           )}
-          {!readerPageContext?.fallbackState && activeTab === 'insights' && (
+          {!readerPageContext?.fallbackState && effectiveRightPanelState.activeTab === 'insights' && (
             <InsightsTab
               insights={pageScopedInsights}
               trapInsights={trapInsights}
               selectedCardId={selectedCardId}
               onCardClick={(insight) => {
                 setSelectedCardId(insight.id);
+                onRightPanelCardChange?.(insight.id);
                 const anchor = pageIntelligence?.paragraphUnits?.find((unit) => unit.text.toLowerCase().includes((insight.claim || insight.title).slice(0, 32).toLowerCase()));
                 if (anchor?.text && onHighlightParagraph) {
                   onHighlightParagraph(anchor.text.slice(0, 120));
