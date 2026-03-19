@@ -6,6 +6,10 @@ import { buildCompare } from '@/lib/synthesis/buildCompare';
 import { buildInsights } from '@/lib/synthesis/buildInsights';
 import { canSynthesizePage, getFallbackDisplayState } from '@/lib/synthesis/fallbackPolicy';
 import { resolvePageHeading, sanitizeTitle } from '@/lib/page-intelligence/titleResolution';
+import { classifyDiscipline } from '@/lib/comprehension/classifyDiscipline';
+import { classifyPageType } from '@/lib/comprehension/classifyPageType';
+import { extractGroundedConcepts } from '@/lib/comprehension/extractGroundedConcepts';
+import type { DisciplineType, PageType, GroundedConcept } from '@/types/comprehension';
 
 export type ActivePageContext = {
   docId: string;
@@ -23,6 +27,9 @@ export type ActivePageContext = {
   paragraphBlocks: string[];
   figureBlocks: string[];
   captionBlocks: string[];
+  discipline: DisciplineType;
+  pageType: PageType;
+  groundedConcepts: GroundedConcept[];
   synthesis: {
     priority: ReturnType<typeof buildPriority> | null;
     explain: string | null;
@@ -48,6 +55,9 @@ export function buildActivePageContext(docId: string, pageIntelligence: PageInte
   const mergedText = (pageIntelligence as any).mergedText || nativeText;
   const confidence = pageIntelligence.confidence || 0;
   const extractionMethod = pageIntelligence.extractionMethod || (pageIntelligence.source === 'mixed' ? 'hybrid' : pageIntelligence.source === 'native' ? 'native' : 'ocr');
+  const discipline = classifyDiscipline({ headingBlocks, mergedText });
+  const pageType = classifyPageType({ mergedText, headings: headingBlocks });
+  const groundedConcepts = extractGroundedConcepts(pageIntelligence);
   const shouldSynthesize = canSynthesizePage(confidence, mergedText);
 
   const resolvedSectionTitle = resolvePageHeading([
@@ -72,10 +82,13 @@ export function buildActivePageContext(docId: string, pageIntelligence: PageInte
     paragraphBlocks,
     figureBlocks,
     captionBlocks,
+    discipline,
+    pageType,
+    groundedConcepts,
     synthesis: shouldSynthesize
       ? {
-          priority: buildPriority({ detectedSectionTitle: headingBlocks[0] || null, mergedText, headings: headingBlocks }),
-          explain: buildExplain({ mergedText }),
+          priority: buildPriority({ detectedSectionTitle: headingBlocks[0] || null, mergedText, headings: headingBlocks, discipline, pageType, groundedConcepts }),
+          explain: buildExplain({ mergedText, discipline, pageType }),
           relations: buildRelations(pageIntelligence.relations.map((r) => `${r.from} ${r.type.replace(/_/g, ' ')} ${r.to}`)),
           compare: buildCompare(pageIntelligence.signals.filter((s) => s.type === 'contrast' || s.type === 'exception').map((s) => s.label)),
           insights: buildInsights(pageIntelligence.insights.map((i) => i.body)),

@@ -1,3 +1,6 @@
 export function buildRelations(relations: string[]) {
-  return relations.length ? relations : ['No grounded relations found for this page yet.'];
+  if (!relations.length) {
+    return ['No strong same-page conceptual chain detected yet.'];
+  }
+  return relations.slice(0, 8);
 }
