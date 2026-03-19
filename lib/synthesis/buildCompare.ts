@@ -1,6 +1,6 @@
 export function buildCompare(compareCandidates: string[]) {
   if ((compareCandidates || []).length < 2) {
-    return ['No compare pair available for the current page cluster yet.'];
+    return ['This page is mainly explanatory rather than contrastive.'];
   }
-  return compareCandidates;
+  return compareCandidates.slice(0, 6);
 }
