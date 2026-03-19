@@ -34,7 +34,6 @@ import PriorityWorkspacePanel from './PriorityWorkspacePanel';
 import SmartExtractControl, { type ExtractScope } from './SmartExtractControl';
 import InsightOverlay from './InsightOverlay';
 import SmartSpeechControls from './SmartSpeechControls';
-import { SpeechNarrationPanel } from './SpeechNarrationPanel';
 import DATDrillMode from '../apex/DATDrillMode';
 import {
   isWebSpeechAvailable,
@@ -47,12 +46,14 @@ import { enrichInsightsWithApex } from '@/lib/apex/patternLibrary';
 import { useCourseContextStore } from '@/lib/stores/courseContextStore';
 import { useStudySessionStore } from '@/lib/stores/studySessionStore';
 import { useInsightsPanelStore } from '@/lib/stores/insightsPanelStore';
-import { buildActivePageContext, getPageContextCacheKey, type ActivePageContext } from '@/lib/reader/activePageContext';
-import { resolvePageHeading, sanitizeTitle } from '@/lib/page-intelligence/titleResolution';
+import { buildActivePageContext as buildReaderActivePageContext, getPageContextCacheKey, type ActivePageContext as ReaderActivePageContext } from '@/lib/reader/activePageContext';
+import { buildActivePageContext, getActivePageContextKey, type ActivePageContext } from '@/lib/surgeonEngine/activePageContext';
+import { resolvePanelTitle } from '@/lib/surgeonEngine/panelResolver';
+import { sanitizeTitle } from '@/lib/page-intelligence/titleResolution';
 import { normalizeRenderableText, sanitizeRenderList, sanitizeRenderText } from '@/lib/page-intelligence/outputSanitizer';
 
 // Expert View 2.1 tabs - Simplified for cognitive flow
-type ComprehensionTab = 'priority' | 'explain' | 'relations' | 'compare' | 'insights' | 'narrate';
+type ComprehensionTab = 'priority' | 'explain' | 'relations' | 'compare' | 'insights';
 
 // ============================================================================
 // DOM Text Layer Scraping
@@ -165,6 +166,9 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     setDepth,
     mode,
     setMode,
+    setAudience,
+    setView,
+    setEssentialStudentMode,
     followScroll,
     audience,
     view,
@@ -184,6 +188,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     insightDepth,
     sectionMode,
     setDocument: setReaderDocument,
+    setActivePageContext: setReaderActivePageContext,
     setActiveTab,
     setInsightDepth,
     setSectionMode,
@@ -214,7 +219,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
   // Page Intelligence state (OCR-enabled pipeline)
   const [pageIntelligence, setPageIntelligence] = useState<PageIntelligence | null>(null);
-  const [activePageContext, setActivePageContext] = useState<ActivePageContext | null>(null);
+  const [readerPageContext, setReaderPageContext] = useState<ReaderActivePageContext | null>(null);
   const [ocrEnabled, setOcrEnabled] = useState(true);
   const [ocrStatus, setOcrStatus] = useState<'idle' | 'running' | 'done'>('idle');
   const [autoExtract, setAutoExtract] = useState(true); // auto-fire on page load
@@ -228,7 +233,6 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       case 'relations': return 'Concept Relationships';
       case 'compare': return 'Concept Comparison';
       case 'insights': return 'Insight Extraction';
-      case 'narrate': return 'Narrated Walkthrough';
       default: return 'Page Priorities';
     }
   }, [activeTab, currentPage]);
@@ -243,14 +247,30 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     return idx >= 0 ? idx + 1 : undefined;
   }, [pageIntelligence?.paragraphUnits, activeParagraphId]);
 
+  const panelContext = useMemo(() => buildActivePageContext({
+    documentId: documentId || null,
+    pageNumber: activePageNumber,
+    sectionId,
+    tab: activeTab as ActivePageContext['tab'],
+    audienceMode: audience,
+    depthMode: depth,
+    densityMode: view,
+    essentialMode: essentialStudentMode,
+    deeperReasoning: mode === 'deep',
+  }), [documentId, activePageNumber, sectionId, activeTab, audience, depth, view, essentialStudentMode, mode]);
+
+  useEffect(() => {
+    setReaderActivePageContext(panelContext);
+  }, [panelContext, setReaderActivePageContext]);
+
+
   const contextTopic = useMemo(() => {
-    return resolvePageHeading([
-      activePageContext?.detectedSectionTitle,
-      pageContext.context?.tocPath?.title,
-      pageIntelligence?.continuity?.corePattern,
-      pageIntelligence?.insights?.[0]?.title,
-    ], 'Current Page');
-  }, [activePageContext?.detectedSectionTitle, pageContext.context?.tocPath?.title, pageIntelligence]);
+    return resolvePanelTitle(pageIntelligence, pageContext.context?.tocPath?.title || null);
+  }, [pageIntelligence, pageContext.context?.tocPath?.title]);
+
+  useEffect(() => {
+    if (activeTab === 'narrate') setActiveTab('priority');
+  }, [activeTab, setActiveTab]);
 
   // Sync document context on mount
   useEffect(() => {
@@ -288,7 +308,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
     // Reset per-page extraction state so the UI doesn't show stale data from previous page
     setPageIntelligence(null);
-    setActivePageContext(null);
+    setReaderPageContext(null);
     setExtractionStatus('');
     setOcrStatus('idle');
 
@@ -312,7 +332,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       if (cached) {
         if (currentPageRef.current !== activePageNumber) return;
         setPageIntelligence(cached);
-        setActivePageContext(buildActivePageContext(documentId, cached));
+        setReaderPageContext(buildReaderActivePageContext(documentId, cached));
       }
     }).catch(() => {});
   }, [activePageNumber, currentPage, preservePanelScroll, documentId, setSelectedInsightId, setActiveVisibleText, setExpandedCardIds]);
@@ -484,10 +504,10 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   }, [rankedInsights]);
 
   const pageScopedInsights = useMemo(() => {
-    const pageContextKey = activePageContext
-      ? getPageContextCacheKey(activePageContext.docId, activePageContext.pageNumber, activePageContext.extractionVersion)
+    const pageContextKey = readerPageContext
+      ? getPageContextCacheKey(readerPageContext.docId, readerPageContext.pageNumber, readerPageContext.extractionVersion)
       : `${documentId}:${activePageNumber}:pending`;
-    const cacheKey = `${pageContextKey}:${activeTab}:${depth}`;
+    const cacheKey = `${pageContextKey}:${getActivePageContextKey(panelContext)}`;
     const cached = getCachedInsight<RankedInsight[]>(cacheKey);
     if (cached) {
       return cached;
@@ -498,12 +518,12 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     );
     setCachedInsight(cacheKey, filtered);
     return filtered;
-  }, [activeTab, activePageContext, activePageIndex, activePageNumber, depth, documentId, getCachedInsight, rankedInsights, setCachedInsight]);
+  }, [panelContext, readerPageContext, activePageIndex, activePageNumber, documentId, getCachedInsight, rankedInsights, setCachedInsight]);
 
   // Page context info
   const pageCtx = pageContext.getPageContext();
   const chapterTitle = pageCtx.tocPath?.title
-    || activePageContext?.detectedSectionTitle
+    || readerPageContext?.detectedSectionTitle
     || pageIntelligence?.structureMap?.topic
     || `Page ${activePageNumber}`;
   const cleanedChapterTitle = sanitizeTitle(chapterTitle, 'Current Page');
@@ -536,7 +556,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
     const nativeText = getPageText(activePageNumber);
     const hasNativeText = nativeText.length >= 40;
-    const requestKey = `${documentId}:${activePageNumber}:${activePageContext?.extractionVersion || 'v2'}:${mode}:${audience}:${view}`;
+    const requestKey = `${documentId}:${activePageNumber}:${readerPageContext?.extractionVersion || 'v2'}:${mode}:${audience}:${view}`;
     activeRequestKeyRef.current = requestKey;
 
     if (!hasNativeText && !ocrEnabled) {
@@ -576,7 +596,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       if (controller.signal.aborted || requestId !== extractionRequestIdRef.current) return;
       if (activeRequestKeyRef.current !== requestKey) return;
       setPageIntelligence(result.intelligence);
-      setActivePageContext(buildActivePageContext(documentId, result.intelligence));
+      setReaderPageContext(buildReaderActivePageContext(documentId, result.intelligence));
       setOcrStatus(result.intelligence.source === 'native' ? 'idle' : 'done');
 
       // Persist to CourseContext (IndexedDB) → Study + NoteLab will read from here
@@ -606,7 +626,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       setExtractionStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setOcrStatus('idle');
     }
-  }, [activePageIndex, activePageNumber, getPageText, currentPage, documentId, extractFromMultiplePages, ocrEnabled, courseContext, mode, audience, view, activePageContext?.extractionVersion]);
+  }, [activePageIndex, activePageNumber, getPageText, currentPage, documentId, extractFromMultiplePages, ocrEnabled, courseContext, mode, audience, view, readerPageContext?.extractionVersion]);
 
   // Check if chapter extraction is available
   const chapterRangeAvailable = useMemo(() => {
@@ -1007,10 +1027,9 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             onClick={() => setActiveTab('compare')}
             />
             <ModeChip
-            label="🎙️"
-            active={activeTab === 'narrate'}
-            onClick={() => setActiveTab('narrate')}
-            title="Ninja Nerd Narration"
+            label="Insights"
+            active={activeTab === 'insights'}
+            onClick={() => setActiveTab('insights')}
             />
 
           {/* Spacer */}
@@ -1050,30 +1069,67 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             {syncInsightsToPdf ? '⇄ Sync' : '⇄ Free'}
             </button>
 
-          {/* Deep Analysis Mode toggle — syncs mode + depth in store */}
-            <button
-            onClick={() => {
-              const next = mode === 'deep' ? 'quick' : 'deep';
-              setMode(next);
-              setDepth(next === 'deep' ? 'deep' : depth === 'deep' ? 'standard' : depth);
-            }}
-            className={`ml-1 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
-              mode === 'deep'
-                ? 'bg-purple-600/80 text-white border border-purple-500/60'
-                : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700'
-            }`}
-            title={mode === 'deep'
-              ? 'Deep Mode ON: full paragraph intelligence + all tiers visible'
-              : 'Deep Mode OFF: click to enable full paragraph intelligence'}
-            aria-label="Toggle deep analysis mode"
+          <div className="ml-2 hidden md:flex items-center gap-1">
+            <select
+              value={audience}
+              onChange={(e) => setAudience(e.target.value as typeof audience)}
+              className="bg-gray-800 text-[10px] text-gray-200 rounded px-1 py-0.5 border border-gray-600 min-h-[40px]"
+              title="Audience mode"
             >
-              🔬
+              <option value="polish">Polish</option>
+              <option value="student">Student</option>
+              <option value="clinical">Clinical</option>
+              <option value="expert">Expert</option>
+            </select>
+            <select
+              value={depth}
+              onChange={(e) => setDepth(e.target.value as typeof depth)}
+              className="bg-gray-800 text-[10px] text-gray-200 rounded px-1 py-0.5 border border-gray-600 min-h-[40px]"
+              title="Depth mode"
+            >
+              <option value="minimal">Minimal</option>
+              <option value="standard">Standard</option>
+              <option value="deep">Deep</option>
+            </select>
+            <select
+              value={view}
+              onChange={(e) => setView(e.target.value as typeof view)}
+              className="bg-gray-800 text-[10px] text-gray-200 rounded px-1 py-0.5 border border-gray-600 min-h-[40px]"
+              title="Density mode"
+            >
+              <option value="condensed">Condensed</option>
+              <option value="expanded">Expanded</option>
+            </select>
+            <button
+              onClick={() => setEssentialStudentMode(!essentialStudentMode)}
+              className={`px-1.5 py-0.5 text-[10px] rounded min-h-[40px] ${essentialStudentMode ? 'bg-teal-700/70 text-teal-100' : 'bg-gray-700 text-gray-300'}`}
+            >
+              Essential
             </button>
+            <button
+              onClick={() => setMode(mode === 'deep' ? 'quick' : 'deep')}
+              className={`px-1.5 py-0.5 text-[10px] rounded min-h-[40px] ${mode === 'deep' ? 'bg-purple-600/80 text-white border border-purple-500/60' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700'}`}
+              title="Toggle deeper reasoning"
+            >
+              Reasoning
+            </button>
+          </div>
+
             <button
               onClick={() => {
                 resetInsightLayout();
+                setActiveTab('priority');
+                setAudience('student');
+                setDepth('standard');
+                setView('condensed');
+                setEssentialStudentMode(true);
+                setMode('quick');
                 setSelectedCardId(undefined);
                 setSelectedInsightTarget(null);
+                selectRelation(undefined);
+                selectCluster(undefined);
+                setExpandedCardIds([]);
+                if (rightPanelScrollRef.current) rightPanelScrollRef.current.scrollTop = 0;
               }}
               className="ml-1 px-1.5 py-0.5 text-[10px] rounded text-gray-400 hover:text-gray-200 hover:bg-gray-700"
               title="Reset insight layout and panel-local state"
@@ -1085,34 +1141,48 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
           {/* Tab Content - Unified Panel */}
           <div ref={rightPanelScrollRef} className="flex-1 min-h-0 overflow-y-auto pr-1">
 
-          {activePageContext?.fallbackState ? (
+          {readerPageContext?.fallbackState ? (
             <div className="mx-2 my-3 rounded-lg border border-amber-600/40 bg-amber-950/20 p-3 text-xs text-amber-100 space-y-2">
-              <p>{activePageContext.fallbackState.message}</p>
+              <p>{readerPageContext.fallbackState.message}</p>
               <div className="flex flex-wrap gap-2">
-                {activePageContext.fallbackState.actions.map((action) => (
+                {readerPageContext.fallbackState.actions.map((action) => (
                   <button key={action} className="px-2 py-1 rounded bg-gray-800 border border-gray-700 text-gray-200">{action}</button>
                 ))}
               </div>
             </div>
           ) : activeTab === 'priority' && (
-            <PriorityWorkspacePanel
-              insights={pageScopedInsights}
-              pageIntelligence={pageIntelligence}
-              selectedCardId={selectedCardId}
-              onJumpToPage={onJumpToPage}
-              onExplain={handleExplainInsight}
-              onMakeCard={handleMakeCard}
-              onSendToNoteLab={handleSendToNoteLab}
-              isExtracting={isRelationExtracting}
-              onHighlightParagraph={onHighlightParagraph}
-              onPreviewSource={onPreviewSource}
-              onJumpToSource={onJumpToSource}
-              insightScale={insightScale}
-              syncEnabled={syncInsightsToPdf}
-              deepAnalysisMode={mode === 'deep'}
-            />
+            essentialStudentMode ? (
+              <PriorityComprehensionPanel
+                rankedInsights={pageScopedInsights}
+                pageIntelligence={pageIntelligence}
+                onHighlightParagraph={onHighlightParagraph}
+                onPreviewSource={onPreviewSource}
+                onJumpToSource={onJumpToSource}
+                insightScale={insightScale}
+                syncEnabled={syncInsightsToPdf}
+                deepAnalysisMode={mode === 'deep'}
+                isExtracting={isRelationExtracting}
+              />
+            ) : (
+              <PriorityWorkspacePanel
+                insights={pageScopedInsights}
+                pageIntelligence={pageIntelligence}
+                selectedCardId={selectedCardId}
+                onJumpToPage={onJumpToPage}
+                onExplain={handleExplainInsight}
+                onMakeCard={handleMakeCard}
+                onSendToNoteLab={handleSendToNoteLab}
+                isExtracting={isRelationExtracting}
+                onHighlightParagraph={onHighlightParagraph}
+                onPreviewSource={onPreviewSource}
+                onJumpToSource={onJumpToSource}
+                insightScale={insightScale}
+                syncEnabled={syncInsightsToPdf}
+                deepAnalysisMode={mode === 'deep'}
+              />
+            )
           )}
-          {!activePageContext?.fallbackState && activeTab === 'explain' && (
+          {!readerPageContext?.fallbackState && activeTab === 'explain' && (
             <ExplainTab
               selectedCardId={selectedCardId}
               insights={pageScopedInsights}
@@ -1120,12 +1190,12 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               pageIntelligence={pageIntelligence}
               tabResponse={pageIntelligence?.tabPayloads?.explainPayload ?? pageIntelligence?.tabResponses?.explain}
               tone={audience}
-              depth={depth}
+              depth={panelContext.deeperReasoning ? 'deep' : depth}
               density={view}
               essential={essentialStudentMode}
             />
           )}
-          {!activePageContext?.fallbackState && activeTab === 'relations' && (
+          {!readerPageContext?.fallbackState && activeTab === 'relations' && (
             <RelationsTab
               relations={activeRelations}
               clusters={Object.values(clusters)}
@@ -1143,7 +1213,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               tabResponse={pageIntelligence?.tabPayloads?.relationsPayload ?? pageIntelligence?.tabResponses?.relations}
             />
           )}
-          {!activePageContext?.fallbackState && activeTab === 'compare' && (
+          {!readerPageContext?.fallbackState && activeTab === 'compare' && (
             <CompareTab
               selectedCardId={selectedCardId}
               insights={pageScopedInsights}
@@ -1152,23 +1222,22 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               tabResponse={pageIntelligence?.tabPayloads?.comparePayload ?? pageIntelligence?.tabResponses?.compare}
             />
           )}
-          {!activePageContext?.fallbackState && activeTab === 'narrate' && (
-            <SpeechNarrationPanel
-              pageIntelligence={pageIntelligence}
-              onActiveParagraph={(paragraphId) => {
-                // Highlight the active paragraph in the PDF
-                if (paragraphId && pageIntelligence?.paragraphUnits) {
-                  const unit = pageIntelligence.paragraphUnits.find(u => u.id === paragraphId);
-                  if (unit && onHighlightParagraph) {
-                    onHighlightParagraph(unit.text.slice(0, 120));
-                  }
+          {!readerPageContext?.fallbackState && activeTab === 'insights' && (
+            <InsightsTab
+              insights={pageScopedInsights}
+              trapInsights={trapInsights}
+              selectedCardId={selectedCardId}
+              onCardClick={(insight) => {
+                setSelectedCardId(insight.id);
+                const anchor = pageIntelligence?.paragraphUnits?.find((unit) => unit.text.toLowerCase().includes((insight.claim || insight.title).slice(0, 32).toLowerCase()));
+                if (anchor?.text && onHighlightParagraph) {
+                  onHighlightParagraph(anchor.text.slice(0, 120));
                 }
               }}
-              onActiveWord={(wb, charOffset, paragraphId) => {
-                // Optionally wire to PDF text layer for word-level highlight
-              }}
-              elevenLabsConfig={elevenLabsConfig}
-              azureConfig={azureConfig}
+              onJumpToPage={onJumpToPage}
+              reasoningChain={undefined}
+              pageIntelligence={pageIntelligence}
+              tabResponse={pageIntelligence?.tabPayloads?.insightsPayload ?? pageIntelligence?.tabResponses?.insights}
             />
           )}
           </div>

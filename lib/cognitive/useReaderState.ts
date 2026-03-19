@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { InsightDepth } from '@/lib/stores/insightsPanelStore';
+import { buildActivePageContext, type ActivePageContext } from '@/lib/surgeonEngine/activePageContext';
 
 export type ReaderTab = 'priority' | 'explain' | 'relations' | 'compare' | 'insights' | 'narrate';
 export type ReaderSectionMode = 'quick' | 'deep';
@@ -20,8 +21,10 @@ type InsightCacheValue<T = unknown> = {
 };
 
 interface ReaderStateStore extends ReaderState {
+  activePageContext: ActivePageContext;
   insightCache: Record<string, InsightCacheValue>;
   setDocument: (docId: string) => void;
+  setActivePageContext: (next: Partial<ActivePageContext>) => void;
   setPageState: (next: Pick<ReaderState, 'pageIndex' | 'sectionId' | 'paragraphId'>) => void;
   setActiveTab: (tab: ReaderTab) => void;
   setInsightDepth: (depth: InsightDepth) => void;
@@ -47,11 +50,13 @@ export const useReaderState = create<ReaderStateStore>((set, get) => ({
   activeTab: DEFAULT_TAB,
   insightDepth: DEFAULT_DEPTH,
   sectionMode: 'quick',
+  activePageContext: buildActivePageContext({}),
   insightCache: {},
 
-  setDocument: (docId) => set({ docId }),
+  setDocument: (docId) => set({ docId, activePageContext: buildActivePageContext({ documentId: docId }) }),
+  setActivePageContext: (next) => set((state) => ({ activePageContext: buildActivePageContext({ ...state.activePageContext, ...next }) })),
   setPageState: (next) => set(next),
-  setActiveTab: (activeTab) => set({ activeTab }),
+  setActiveTab: (activeTab) => set((state) => ({ activeTab, activePageContext: buildActivePageContext({ ...state.activePageContext, tab: activeTab === 'narrate' ? 'priority' : activeTab }) })),
   setInsightDepth: (insightDepth) => set({ insightDepth }),
   setSectionMode: (sectionMode) => set({ sectionMode }),
   setSectionId: (sectionId) => set({ sectionId }),
@@ -94,6 +99,7 @@ export const useReaderState = create<ReaderStateStore>((set, get) => ({
       paragraphId: null,
     });
     get().resetInsightState();
+    get().setActivePageContext({ pageNumber: newPage, sectionId: null });
     get().invalidateInsightCache(nextPageIndex);
   },
 }));
