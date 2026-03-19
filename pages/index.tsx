@@ -68,6 +68,12 @@ import { usePdrmStore } from "@/lib/stores/pdrmStore";
 import { useInsightsPanelStore } from "@/lib/stores/insightsPanelStore";
 import { useHighlightStore } from "@/lib/stores/highlightStore";
 import { extractParagraphBlocks, findBestMatchingBlock } from "@/lib/paragraphMap";
+import {
+  DEFAULT_RIGHT_PANEL_STATE,
+  buildCurrentPageVersion,
+  type RightPanelState,
+  type RightPanelTab,
+} from "@/state/rightPanelState";
 
 import {
   firebaseConnected,
@@ -508,6 +514,11 @@ export default function ThoughtUnitReader() {
   const [attachments, setAttachments] = useState<string[]>([]);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [bookId, setBookId] = useState<string>("default-book");
+  const [rightPanelState, setRightPanelState] = useState<RightPanelState>({
+    ...DEFAULT_RIGHT_PANEL_STATE,
+    activeDocumentId: "default-book",
+    currentPageVersion: buildCurrentPageVersion("default-book", 1, null),
+  });
 
   // ✅ Auto-whiteboard control + data
   const [autoWhiteboard, setAutoWhiteboard] = useState<boolean>(false);
@@ -1089,6 +1100,45 @@ export default function ThoughtUnitReader() {
       store.setActiveParagraphId(matched.id);
     }
   }, [thoughtUnits, currentThoughtUnit, currentPage, bookId]);
+
+  useEffect(() => {
+    setRightPanelState((prev) => {
+      const nextVersion = buildCurrentPageVersion(bookId, currentPage, prev.activeSectionId);
+      if (
+        prev.activeDocumentId === bookId &&
+        prev.activePageNumber === currentPage &&
+        prev.currentPageVersion === nextVersion
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        activeDocumentId: bookId,
+        activePageNumber: currentPage,
+        activeCardId: null,
+        currentPageVersion: nextVersion,
+      };
+    });
+  }, [bookId, currentPage]);
+
+  const handleRightPanelStateChange = useCallback((updater: RightPanelState | ((prev: RightPanelState) => RightPanelState)) => {
+    setRightPanelState((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      return {
+        ...next,
+        currentPageVersion: buildCurrentPageVersion(
+          next.activeDocumentId,
+          next.activePageNumber,
+          next.activeSectionId,
+        ),
+      };
+    });
+  }, []);
+
+  const handleRightPanelTabChange = useCallback((tab: RightPanelTab) => {
+    handleRightPanelStateChange((prev) => ({ ...prev, activeTab: tab }));
+  }, [handleRightPanelStateChange]);
 
   /* =========================================================================
      🔹 Upload PDF — parse + detect diagrams
@@ -2342,6 +2392,10 @@ export default function ThoughtUnitReader() {
                 onHighlightParagraph={handleHighlightParagraph}
                 onPreviewSource={handlePreviewParagraph}
                 onJumpToSource={handleJumpToSource}
+                rightPanelState={rightPanelState}
+                onRightPanelStateChange={handleRightPanelStateChange}
+                onRightPanelTabChange={handleRightPanelTabChange}
+                onRightPanelCardChange={(cardId) => handleRightPanelStateChange((prev) => ({ ...prev, activeCardId: cardId }))}
               />
             </div>
 
