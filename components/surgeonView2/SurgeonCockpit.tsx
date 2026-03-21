@@ -53,10 +53,16 @@ import { sanitizeTitle } from '@/lib/page-intelligence/titleResolution';
 import { normalizeRenderableText, sanitizeRenderList, sanitizeRenderText } from '@/lib/page-intelligence/outputSanitizer';
 import type { RightPanelState, RightPanelTab } from '@/state/rightPanelState';
 import { buildCurrentPageVersion, DEFAULT_RIGHT_PANEL_STATE } from '@/state/rightPanelState';
-import { resolveRightPanelView } from '@/lib/comprehension/resolveRightPanelView';
+import { resolveRightPanelView, type GroundedPayload } from '@/lib/comprehension/resolveRightPanelView';
 
 // Expert View 2.1 tabs - Simplified for cognitive flow
 type ComprehensionTab = 'priority' | 'explain' | 'relations' | 'compare' | 'insights';
+
+type PanelRenderState =
+  | { status: 'ready'; pageVersion: string; payload: GroundedPayload }
+  | { status: 'loading'; pageVersion: string; payload: GroundedPayload | null }
+  | { status: 'empty'; pageVersion: string; reason: 'not-extracted' | 'no-grounded-result' }
+  | { status: 'error'; pageVersion: string; message: string; payload: GroundedPayload | null };
 
 // ============================================================================
 // DOM Text Layer Scraping
@@ -236,6 +242,12 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   const [autoExtract, setAutoExtract] = useState(true); // auto-fire on page load
   const [extractScope, setExtractScope] = useState<ExtractScope>('page');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const payloadCacheRef = useRef<Map<string, GroundedPayload>>(new Map());
+  const [panelRenderState, setPanelRenderState] = useState<PanelRenderState>(() => ({
+    status: 'loading',
+    pageVersion: buildCurrentPageVersion(documentId, Math.max(1, currentPage || 1), sectionId ?? null),
+    payload: null,
+  }));
 
   const tabTitle = useMemo(() => {
     switch (activeTab) {
@@ -374,8 +386,15 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     extractionAbortRef.current?.abort();
     extractionAbortRef.current = null;
 
-    // Reset per-page extraction state so the UI doesn't show stale data from previous page
-    setPageIntelligence(null);
+    const nextPageVersion = buildCurrentPageVersion(documentId, activePageNumber, null);
+    const cachedPayloadForPage = payloadCacheRef.current.get(nextPageVersion) ?? null;
+    setPanelRenderState((prev) => ({
+      status: 'loading',
+      pageVersion: nextPageVersion,
+      payload: cachedPayloadForPage ?? (prev.status === 'ready' || prev.status === 'loading' || prev.status === 'error' ? prev.payload : null),
+    }));
+
+    // Reset per-page extraction status while preserving visible payload during transition
     setReaderPageContext(null);
     setExtractionStatus('');
     setOcrStatus('idle');
@@ -409,6 +428,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         if (currentPageRef.current !== activePageNumber) return;
         setPageIntelligence(cached);
         setReaderPageContext(buildReaderActivePageContext(documentId, cached));
+      } else {
+        setPageIntelligence(null);
       }
     }).catch(() => {});
   }, [activePageNumber, currentPage, preservePanelScroll, documentId, setSelectedInsightId, setActiveVisibleText, setExpandedCardIds, activePageIndex, sectionId, updateRightPanelState, onRightPanelCardChange]);
@@ -630,19 +651,30 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     extractionAbortRef.current?.abort();
     const controller = new AbortController();
     extractionAbortRef.current = controller;
+    const requestedPageVersion = buildCurrentPageVersion(documentId, activePageNumber, effectiveRightPanelState.activeSectionId);
 
     const nativeText = getPageText(activePageNumber);
     const hasNativeText = nativeText.length >= 40;
-    const requestKey = `${documentId}:${activePageNumber}:${readerPageContext?.extractionVersion || 'v2'}:${mode}:${audience}:${view}`;
+    const requestKey = `${requestedPageVersion}:${readerPageContext?.extractionVersion || 'v2'}:${mode}:${audience}:${view}`;
     activeRequestKeyRef.current = requestKey;
 
     if (!hasNativeText && !ocrEnabled) {
       setExtractionStatus('No text found. Enable OCR for scanned PDFs or wait for the page to fully render.');
+      setPanelRenderState({
+        status: 'empty',
+        pageVersion: requestedPageVersion,
+        reason: 'not-extracted',
+      });
       return;
     }
 
     setExtractionStatus(hasNativeText ? 'Extracting page…' : 'Running OCR on page…');
     if (!hasNativeText && ocrEnabled) setOcrStatus('running');
+    setPanelRenderState((prev) => ({
+      status: 'loading',
+      pageVersion: requestedPageVersion,
+      payload: payloadCacheRef.current.get(requestedPageVersion) ?? (prev.status === 'ready' || prev.status === 'loading' || prev.status === 'error' ? prev.payload : null),
+    }));
 
     try {
       const result = await buildPageIntelligence({
@@ -672,9 +704,47 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
       if (controller.signal.aborted || requestId !== extractionRequestIdRef.current) return;
       if (activeRequestKeyRef.current !== requestKey) return;
+      if (currentPageRef.current !== activePageNumber) return;
       setPageIntelligence(result.intelligence);
       setReaderPageContext(buildReaderActivePageContext(documentId, result.intelligence));
       setOcrStatus(result.intelligence.source === 'native' ? 'idle' : 'done');
+
+      const resolvedPayload: GroundedPayload = {
+        pageNumber: result.intelligence.pageNumber ?? activePageNumber,
+        header: contextTopic,
+        priority: {
+          overview: result.intelligence.explain?.summary ?? contextTopic,
+          mainIdeas: pageScopedInsights.slice(0, 5).map((insight) => insight.claim || insight.title),
+          whyItMatters: pageScopedInsights[0]?.whyItMatters ?? '',
+          remember: pageScopedInsights.slice(0, 2).map((insight) => insight.title),
+        },
+        relations: {
+          edges: (result.intelligence.relations ?? []).slice(0, 8).map((relation: any) => ({
+            from: relation.from ?? relation.subjId ?? '',
+            to: relation.to ?? relation.objId ?? '',
+            why: relation.why ?? relation.predicate ?? '',
+          })),
+        },
+        compare: {
+          contrasts: (((result.intelligence.tabPayloads?.comparePayload as any)?.coreContrasts ?? []) as any[]).slice(0, 8).map((entry: any) => ({
+            a: entry.left || entry.a || '',
+            b: entry.right || entry.b || '',
+            confusion: entry.difference || entry.confusion || '',
+          })),
+        },
+        cards: pageScopedInsights.map((insight) => ({
+          id: insight.id,
+          title: insight.title,
+          claim: insight.claim,
+        })),
+        paragraphUnits: result.intelligence.paragraphUnits?.map((unit) => ({ id: unit.id, text: unit.text })),
+      };
+      payloadCacheRef.current.set(requestedPageVersion, resolvedPayload);
+      setPanelRenderState({
+        status: 'ready',
+        pageVersion: requestedPageVersion,
+        payload: resolvedPayload,
+      });
 
       // Persist to CourseContext (IndexedDB) → Study + NoteLab will read from here
       await courseContext.storePageIntelligence(activePageNumber, result.intelligence);
@@ -702,8 +772,14 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       if (controller.signal.aborted) return;
       setExtractionStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setOcrStatus('idle');
+      setPanelRenderState((prev) => ({
+        status: 'error',
+        pageVersion: requestedPageVersion,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        payload: payloadCacheRef.current.get(requestedPageVersion) ?? (prev.status === 'ready' || prev.status === 'loading' || prev.status === 'error' ? prev.payload : null),
+      }));
     }
-  }, [activePageIndex, activePageNumber, getPageText, currentPage, documentId, extractFromMultiplePages, ocrEnabled, courseContext, mode, audience, view, readerPageContext?.extractionVersion]);
+  }, [activePageIndex, activePageNumber, getPageText, currentPage, documentId, extractFromMultiplePages, ocrEnabled, courseContext, mode, audience, view, readerPageContext?.extractionVersion, effectiveRightPanelState.activeSectionId, contextTopic, pageScopedInsights]);
 
   // Check if chapter extraction is available
   const chapterRangeAvailable = useMemo(() => {
@@ -887,13 +963,13 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
   const chains = selectedClusterId ? getChainsFromCluster(selectedClusterId) : [];
 
-  const resolvedPanelView = useMemo(() => resolveRightPanelView({
-    state: effectiveRightPanelState,
-    groundedPagePayload: pageIntelligence ? {
-      pageNumber: activePageNumber,
+  const buildGroundedPayload = useCallback((intelligence: PageIntelligence | null): GroundedPayload | null => {
+    if (!intelligence) return null;
+    return {
+      pageNumber: intelligence.pageNumber ?? activePageNumber,
       header: contextTopic,
       priority: {
-        overview: pageIntelligence.explain?.summary ?? contextTopic,
+        overview: intelligence.explain?.summary ?? contextTopic,
         mainIdeas: pageScopedInsights.slice(0, 5).map((insight) => insight.claim || insight.title),
         whyItMatters: pageScopedInsights[0]?.whyItMatters ?? '',
         remember: pageScopedInsights.slice(0, 2).map((insight) => insight.title),
@@ -906,7 +982,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         })),
       },
       compare: {
-        contrasts: (((pageIntelligence.tabPayloads?.comparePayload as any)?.coreContrasts ?? []) as any[]).slice(0, 8).map((entry: any) => ({
+        contrasts: (((intelligence.tabPayloads?.comparePayload as any)?.coreContrasts ?? []) as any[]).slice(0, 8).map((entry: any) => ({
           a: entry.left || entry.a || '',
           b: entry.right || entry.b || '',
           confusion: entry.difference || entry.confusion || '',
@@ -917,9 +993,60 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         title: insight.title,
         claim: insight.claim,
       })),
-      paragraphUnits: pageIntelligence.paragraphUnits?.map((unit) => ({ id: unit.id, text: unit.text })),
-    } : null,
-  }), [effectiveRightPanelState, pageIntelligence, activePageNumber, contextTopic, pageScopedInsights, activeRelations]);
+      paragraphUnits: intelligence.paragraphUnits?.map((unit) => ({ id: unit.id, text: unit.text })),
+    };
+  }, [activePageNumber, contextTopic, pageScopedInsights, activeRelations, concepts]);
+
+  const currentPageVersion = effectiveRightPanelState.currentPageVersion;
+
+  useEffect(() => {
+    const payloadFromIntel = buildGroundedPayload(pageIntelligence);
+    if (payloadFromIntel) {
+      payloadCacheRef.current.set(currentPageVersion, payloadFromIntel);
+      setPanelRenderState({
+        status: 'ready',
+        pageVersion: currentPageVersion,
+        payload: payloadFromIntel,
+      });
+      return;
+    }
+
+    const cachedPayload = payloadCacheRef.current.get(currentPageVersion) ?? null;
+    const isLoading = isRelationExtracting || ocrStatus === 'running';
+
+    if (isLoading) {
+        setPanelRenderState((prev) => ({
+          status: 'loading',
+          pageVersion: currentPageVersion,
+          payload: cachedPayload ?? (prev.status === 'ready' || prev.status === 'loading' || prev.status === 'error' ? prev.payload : null),
+        }));
+      return;
+    }
+
+    if (cachedPayload) {
+      setPanelRenderState({
+        status: 'ready',
+        pageVersion: currentPageVersion,
+        payload: cachedPayload,
+      });
+      return;
+    }
+
+    setPanelRenderState({
+      status: 'empty',
+      pageVersion: currentPageVersion,
+      reason: 'not-extracted',
+    });
+  }, [buildGroundedPayload, currentPageVersion, pageIntelligence, isRelationExtracting, ocrStatus]);
+
+  const visiblePanelPayload = panelRenderState.status === 'ready' || panelRenderState.status === 'loading' || panelRenderState.status === 'error'
+    ? panelRenderState.payload
+    : null;
+
+  const resolvedPanelView = useMemo(() => resolveRightPanelView({
+    state: effectiveRightPanelState,
+    groundedPagePayload: visiblePanelPayload,
+  }), [effectiveRightPanelState, visiblePanelPayload]);
 
   return (
     <div className="flex flex-col h-full bg-gray-900 text-white">
@@ -1112,6 +1239,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             <p className="mt-1 text-[11px] text-gray-300">
               {activeParagraphIndex ? `Paragraph ${activeParagraphIndex} • ` : ''}
               Insight Depth: <span className="text-violet-300 capitalize">{insightDepth}</span>
+              {panelRenderState.status === 'loading' ? <span className="ml-2 text-blue-300">• Updating…</span> : null}
             </p>
           </div>
 
@@ -1309,7 +1437,21 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
           {/* Tab Content - Unified Panel */}
           <div ref={rightPanelScrollRef} className="flex-1 min-h-0 overflow-y-auto pr-1">
 
-          {readerPageContext?.fallbackState ? (
+          {panelRenderState.status === 'error' && !panelRenderState.payload ? (
+            <div className="mx-2 my-3 rounded-lg border border-red-700/50 bg-red-950/30 p-3 text-xs text-red-200">
+              {panelRenderState.message}
+            </div>
+          ) : panelRenderState.status === 'empty' ? (
+            <div className="mx-2 my-3 rounded-lg border border-slate-700 bg-slate-900/60 p-3 text-xs text-slate-300">
+              {panelRenderState.reason === 'not-extracted' ? 'Ready to Extract' : 'No grounded result for this page yet.'}
+            </div>
+          ) : panelRenderState.status === 'loading' && !visiblePanelPayload ? (
+            <div className="mx-2 my-3 space-y-2 animate-pulse">
+              <div className="h-4 rounded bg-slate-700/60" />
+              <div className="h-4 rounded bg-slate-700/50" />
+              <div className="h-20 rounded bg-slate-800/60" />
+            </div>
+          ) : readerPageContext?.fallbackState ? (
             <div className="mx-2 my-3 rounded-lg border border-amber-600/40 bg-amber-950/20 p-3 text-xs text-amber-100 space-y-2">
               <p>{readerPageContext.fallbackState.message}</p>
               <div className="flex flex-wrap gap-2">
@@ -1364,9 +1506,6 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             />
           )}
           {!readerPageContext?.fallbackState && effectiveRightPanelState.activeTab === 'relations' && (
-            resolvedPanelView.emptyState && resolvedPanelView.sections.length === 0 ? (
-              <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3 text-xs text-slate-300">{resolvedPanelView.emptyState}</div>
-            ) : (
               <RelationsTab
                 relations={activeRelations}
                 clusters={Object.values(clusters)}
@@ -1383,12 +1522,8 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
                 pageIntelligence={pageIntelligence}
                 tabResponse={pageIntelligence?.tabPayloads?.relationsPayload ?? pageIntelligence?.tabResponses?.relations}
               />
-            )
           )}
           {!readerPageContext?.fallbackState && effectiveRightPanelState.activeTab === 'compare' && (
-            resolvedPanelView.emptyState && resolvedPanelView.sections.length === 0 ? (
-              <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3 text-xs text-slate-300">{resolvedPanelView.emptyState}</div>
-            ) : (
               <CompareTab
                 selectedCardId={selectedCardId}
                 insights={pageScopedInsights}
@@ -1396,7 +1531,6 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
                 pageIntelligence={pageIntelligence}
                 tabResponse={pageIntelligence?.tabPayloads?.comparePayload ?? pageIntelligence?.tabResponses?.compare}
               />
-            )
           )}
           {!readerPageContext?.fallbackState && effectiveRightPanelState.activeTab === 'insights' && (
             <InsightsTab
@@ -1416,6 +1550,16 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               pageIntelligence={pageIntelligence}
               tabResponse={pageIntelligence?.tabPayloads?.insightsPayload ?? pageIntelligence?.tabResponses?.insights}
             />
+          )}
+          {(panelRenderState.status === 'loading' && visiblePanelPayload) && (
+            <div className="mx-2 my-3 rounded border border-blue-800/40 bg-blue-950/20 px-2 py-1 text-[11px] text-blue-200">
+              Updating…
+            </div>
+          )}
+          {(panelRenderState.status === 'error' && visiblePanelPayload) && (
+            <div className="mx-2 my-3 rounded border border-red-700/40 bg-red-950/20 px-2 py-1 text-[11px] text-red-200">
+              {panelRenderState.message}
+            </div>
           )}
           </div>
         </div>

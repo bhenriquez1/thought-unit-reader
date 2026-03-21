@@ -2,7 +2,7 @@ import type { RightPanelState } from '@/state/rightPanelState';
 import { sanitizeRenderList, sanitizeRenderText } from './sanitizeRenderText';
 import { buildHighlightAnchors, type HighlightAnchor } from './buildHighlightAnchors';
 
-type GroundedPayload = {
+export type GroundedPayload = {
   pageNumber?: number;
   header?: string | null;
   priority?: {
@@ -37,7 +37,7 @@ export function resolveRightPanelView({
     cards: payload?.cards ?? [],
   });
 
-  if (!payload || payload.pageNumber !== state.activePageNumber) {
+  if (!payload) {
     return {
       header: pageHeader,
       sections: [],
