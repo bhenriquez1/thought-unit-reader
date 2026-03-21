@@ -25,9 +25,9 @@ export const DEFAULT_RIGHT_PANEL_STATE: RightPanelState = {
   deeperReasoningEnabled: false,
   syncHighlightsEnabled: false,
   activeCardId: null,
-  currentPageVersion: 'doc:none|page:1|section:none',
+  currentPageVersion: 'none:1:none',
 };
 
 export function buildCurrentPageVersion(documentId: string, pageNumber: number, sectionId: string | null): string {
-  return `doc:${documentId || 'none'}|page:${Math.max(1, pageNumber)}|section:${sectionId ?? 'none'}`;
+  return `${documentId || 'none'}:${Math.max(1, pageNumber)}:${sectionId ?? 'none'}`;
 }
