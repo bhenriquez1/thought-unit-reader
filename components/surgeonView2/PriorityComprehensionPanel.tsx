@@ -125,6 +125,8 @@ interface PriorityComprehensionPanelProps {
    * the generic "Ready to Extract" prompt.
    */
   isExtracting?: boolean;
+  /** Hide local mode controls when a parent provides the single global mode layer. */
+  hideModeControls?: boolean;
 }
 
 // ============================================================================
@@ -1683,6 +1685,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
   syncEnabled = true,
   deepAnalysisMode = false,
   isExtracting = false,
+  hideModeControls = false,
 }) => {
   // Ref map: insight item ID → DOM element for scroll-into-view
   const itemRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -1894,6 +1897,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
             Section-first explanation for any academic reading
           </p>
         </div>
+        {!hideModeControls && (
         <div className="flex items-center gap-2 flex-wrap justify-end">
           {/* Quick | Deep segmented toggle — writes to store */}
           <div className="flex rounded border border-gray-700 overflow-hidden">
@@ -2002,6 +2006,7 @@ export const PriorityComprehensionPanel: React.FC<PriorityComprehensionPanelProp
             {totalItems}
           </span>
         </div>
+        )}
       </div>
 
       {controlError && (

@@ -1,6 +1,7 @@
 import type { RightPanelState } from '@/state/rightPanelState';
 import { sanitizeRenderList, sanitizeRenderText } from './sanitizeRenderText';
 import { buildHighlightAnchors, type HighlightAnchor } from './buildHighlightAnchors';
+const MIN_VALID_LENGTH = 120;
 
 export type GroundedPayload = {
   pageNumber?: number;
@@ -51,6 +52,8 @@ export function resolveRightPanelView({
     const mainIdeas = sanitizeRenderList(payload.priority?.mainIdeas ?? []);
     const whyItMatters = sanitizeRenderText(payload.priority?.whyItMatters ?? '');
     const remember = sanitizeRenderText(payload.priority?.remember ?? '');
+    const resolvedText = [overview, ...mainIdeas, whyItMatters, remember].join(' ').trim();
+    const isIncomplete = resolvedText.length > 0 && resolvedText.length < MIN_VALID_LENGTH;
     return {
       header: pageHeader,
       sections: [
@@ -60,7 +63,9 @@ export function resolveRightPanelView({
         { id: 'remember', title: 'What To Remember', body: remember },
       ],
       highlightAnchors,
-      emptyState: overview || mainIdeas.length ? null : 'No grounded priority output is available for this page yet.',
+      emptyState: isIncomplete
+        ? 'Grounded output is incomplete for this page; triggering fallback synthesis from available page text.'
+        : (overview || mainIdeas.length ? null : 'No grounded priority output is available for this page yet.'),
     };
   }
 

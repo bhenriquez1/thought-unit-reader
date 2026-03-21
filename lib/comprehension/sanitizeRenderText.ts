@@ -1,4 +1,5 @@
 const ORPHAN_TOKEN = /^\d+$/;
+const MIN_COMPLETE_LENGTH = 40;
 
 function splitRenderableInput(input: string | string[] | null | undefined): string[] {
   if (!input) return [];
@@ -16,7 +17,7 @@ export function sanitizeRenderText(input: string | string[] | null | undefined):
 
   if (!normalized) return '';
 
-  return normalized
+  const cleaned = normalized
     .replace(/(\w+)-\s*\n\s*(\w+)/g, '$1$2')
     .replace(/-\s*\n\s*/g, '')
     .replace(/\s*\n\s*/g, ' ')
@@ -26,6 +27,10 @@ export function sanitizeRenderText(input: string | string[] | null | undefined):
     .join(' ')
     .replace(/\s+([,.;:])/g, '$1')
     .trim();
+
+  if (!cleaned) return '';
+  if (cleaned.length >= MIN_COMPLETE_LENGTH && !/[.!?]$/.test(cleaned)) return `${cleaned}...`;
+  return cleaned;
 }
 
 export function sanitizeRenderList(values: Array<string | string[] | null | undefined> | null | undefined): string[] {
