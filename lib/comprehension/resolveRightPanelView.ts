@@ -34,6 +34,7 @@ export function resolveRightPanelView({
   const payload = groundedPagePayload;
   const pageHeader = sanitizeRenderText(payload?.header ?? `Page ${state.activePageNumber}`);
   const highlightAnchors = buildHighlightAnchors({
+    pageNumber: payload?.pageNumber,
     paragraphUnits: payload?.paragraphUnits,
     cards: payload?.cards ?? [],
   });

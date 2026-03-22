@@ -5,6 +5,7 @@
 
 import React, { useState, useCallback } from 'react';
 import type { SourceRef } from '@/lib/page-intelligence';
+import { activateSourceAnchors, clearActiveHighlights, scrollSourceIntoView } from '@/lib/anchorSync';
 
 // ============================================================================
 // Props
@@ -96,6 +97,10 @@ export const SourceAnchor: React.FC<SourceAnchorProps> = ({
   const handleJump = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
+      const anchorId = `p${sourceRef.pageIndex + 1}:${sourceRef.paragraphId}`;
+      clearActiveHighlights();
+      activateSourceAnchors([anchorId]);
+      scrollSourceIntoView(anchorId);
       onJump?.(sourceRef);
     },
     [onJump, sourceRef],

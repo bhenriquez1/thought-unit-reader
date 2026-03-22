@@ -47,6 +47,7 @@ const DOMAIN_KEYWORDS: Record<PageDomain, RegExp[]> = {
 const HEADER_FOOTER_RE = /^\s*(chapter\s+\d+|page\s+\d+|\d+\s*\/\s*\d+|\d+)\s*$/i;
 const MALFORMED_RE = /([^\w\s.,;:()\-/%]|_){6,}/;
 const CAPTION_RE = /^\s*(figure|fig\.?|table|chart|diagram|graph|image)\s*\d*[\.:\-]?\s*/i;
+const PAGE_NOISE_RE = /^(copyright|all rights reserved|www\.|http[s]?:\/\/|electronic rights|permission notice|editorial notice|author affiliations?)/i;
 
 function scoreDomain(text: string): PageDomain {
   const domainScores: Array<[PageDomain, number]> = (Object.keys(DOMAIN_KEYWORDS) as PageDomain[])
@@ -130,7 +131,7 @@ export function normalizePageText(rawText: string): NormalizedPageText {
       return false;
     }
 
-    if (/^(copyright|all rights reserved|www\.|http[s]?:\/\/)/i.test(trimmed)) {
+    if (PAGE_NOISE_RE.test(trimmed)) {
       removedPageNoiseLines += 1;
       return false;
     }
