@@ -26,6 +26,7 @@ interface PureReaderViewProps {
   fontFamily?: string;
   /** Forwarded to SmartPDFViewer for scroll → active paragraph detection */
   onActiveParagraphChange?: (snippet: string | null) => void;
+  onOpenFocusCycle?: () => void;
 }
 
 export default function PureReaderView({
@@ -40,6 +41,7 @@ export default function PureReaderView({
   fontSize = 16,
   fontFamily = 'Georgia',
   onActiveParagraphChange,
+  onOpenFocusCycle,
 }: PureReaderViewProps) {
   // Global zoom store
   const { zoom, zoomIn, zoomOut, resetZoom, getZoomPercent, canZoomIn, canZoomOut } = useZoomStore();
@@ -104,8 +106,15 @@ export default function PureReaderView({
           </button>
         </div>
 
-        {/* Zoom Controls */}
+        {/* Zoom + Focus Cycle */}
         <div className="flex items-center gap-2">
+          <button
+            onClick={onOpenFocusCycle}
+            className="px-3 py-1 bg-purple-700 hover:bg-purple-600 rounded text-sm"
+            title="Open Focus Cycle"
+          >
+            ⏱ Focus Cycle
+          </button>
           <button
             onClick={zoomOut}
             disabled={!canZoomOut()}
