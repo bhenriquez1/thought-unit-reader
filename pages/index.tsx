@@ -47,12 +47,6 @@ import {
   useCognitiveEngineStore,
 } from "@/components/cognitiveEngine";
 
-// Course Intelligence Components (Syllabus → TOC → Exam targeting)
-import {
-  CourseIntelligenceLayout,
-  useCourseIntelligenceStore,
-} from "@/components/courseIntelligence";
-
 // Surgeon View 2.0 - Relationship-first Cockpit
 import {
   SurgeonCockpit,
@@ -74,6 +68,7 @@ import {
   type RightPanelState,
   type RightPanelTab,
 } from "@/state/rightPanelState";
+import type { WorkspaceMode } from "@/types/workspace";
 
 import {
   firebaseConnected,
@@ -336,8 +331,7 @@ export default function ThoughtUnitReader() {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
-  const [viewMode, setViewMode] =
-    useState<"original" | "hybrid" | "pattern" | "notelab" | "toc" | "study" | "syllabus">("original");
+  const [viewMode, setViewMode] = useState<WorkspaceMode>("reader");
 
   // Global Zoom Store
   const { zoom, zoomIn, zoomOut, resetZoom, getZoomPercent, canZoomIn, canZoomOut } = useZoomStore();
@@ -494,7 +488,11 @@ export default function ThoughtUnitReader() {
   useEffect(() => {
     const restored = restoreSessionState();
     if (restored) {
-      setViewMode(restored.viewMode || "original");
+      setViewMode(
+        ((restored.viewMode === "toc" || restored.viewMode === "notelab" || restored.viewMode === "study")
+          ? restored.viewMode
+          : "reader") as WorkspaceMode
+      );
       setCurrentPage(restored.currentPage || 1);
       setCurrentThoughtUnit(restored.currentThoughtUnit || 1);
       setDarkMode(restored.darkMode !== undefined ? restored.darkMode : true);
@@ -516,6 +514,8 @@ export default function ThoughtUnitReader() {
   const [bookId, setBookId] = useState<string>("default-book");
   const [rightPanelState, setRightPanelState] = useState<RightPanelState>({
     ...DEFAULT_RIGHT_PANEL_STATE,
+    workspaceMode: "reader",
+    documentId: "default-book",
     activeDocumentId: "default-book",
     currentPageVersion: buildCurrentPageVersion("default-book", 1, null),
   });
@@ -1103,7 +1103,7 @@ export default function ThoughtUnitReader() {
 
   useEffect(() => {
     setRightPanelState((prev) => {
-      const nextVersion = buildCurrentPageVersion(bookId, currentPage, prev.activeSectionId);
+      const nextVersion = buildCurrentPageVersion(bookId, currentPage, prev.activeSectionId ?? null);
       if (
         prev.activeDocumentId === bookId &&
         prev.activePageNumber === currentPage &&
@@ -1114,23 +1114,30 @@ export default function ThoughtUnitReader() {
 
       return {
         ...prev,
+        workspaceMode: viewMode,
+        documentId: bookId,
+        activePage: currentPage,
         activeDocumentId: bookId,
         activePageNumber: currentPage,
         activeCardId: null,
         currentPageVersion: nextVersion,
       };
     });
-  }, [bookId, currentPage]);
+  }, [bookId, currentPage, viewMode]);
 
   const handleRightPanelStateChange = useCallback((updater: RightPanelState | ((prev: RightPanelState) => RightPanelState)) => {
     setRightPanelState((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
       return {
         ...next,
+        documentId: next.activeDocumentId,
+        activePage: next.activePageNumber,
+        deeperReasoning: next.deeperReasoningEnabled,
+        syncHighlights: next.syncHighlightsEnabled,
         currentPageVersion: buildCurrentPageVersion(
           next.activeDocumentId,
           next.activePageNumber,
-          next.activeSectionId,
+          next.activeSectionId ?? null,
         ),
       };
     });
@@ -1191,7 +1198,7 @@ export default function ThoughtUnitReader() {
     setCurrentPage(1);
 
     setUploadedFile(file);
-    setViewMode("original");
+    setViewMode("reader");
     setBookId(file.name.replace(/\.[Pp][Dd][Ff]$/, "") || "book");
 
     try {
@@ -1448,7 +1455,7 @@ export default function ThoughtUnitReader() {
   // Tab sync effects: snap Hybrid to current chapter's first unit when switching tabs
   useEffect(() => {
     try {
-      if (viewMode === "hybrid") {
+      if (viewMode === "reader") {
         console.log(`🔄 Tab switch to ${viewMode}: syncing to current chapter`);
         
         // Safe chapter-aware navigation with proper error handling
@@ -1522,7 +1529,7 @@ export default function ThoughtUnitReader() {
   const handleLoadPDF = (url: string) => {
     setFileUrl(url);
     setShowLibrary(false);
-    setViewMode("original");
+    setViewMode("reader");
     generateTOC(url).then(setTableOfContents).catch(() => {});
   };
 
@@ -2308,7 +2315,7 @@ export default function ThoughtUnitReader() {
     // ✅ Expert View - Relationship-First Cognitive Cockpit
     // Merged: Surgeon View + Expert Mode into single Expert View
     // Architecture: Relations → Clusters → Decision Rules (not concepts)
-    if (viewMode === "hybrid") {
+    if (viewMode === "reader") {
       // Find current chapter for context
       const currentChapter = tableOfContents.find((entry, idx) => {
         const nextEntry = tableOfContents[idx + 1];
@@ -2454,7 +2461,7 @@ export default function ThoughtUnitReader() {
               currentPage={currentPage}
               onNavigateToPage={(pageIndex) => {
                 syncToPage(pageIndex);
-                setViewMode("hybrid");
+                setViewMode("reader");
               }}
               onStartStudy={() => setViewMode("study")}
               getPageText={async (pageNumber: number) => {
@@ -2484,11 +2491,11 @@ export default function ThoughtUnitReader() {
               pdfPageCount={pdfPageCount}
               onOpenInReader={(pageNumber) => {
                 syncToPage(pageNumber);
-                setViewMode("original");
+                setViewMode("reader");
               }}
               onOpenInSurgeon={(pageNumber) => {
                 syncToPage(pageNumber);
-                setViewMode("hybrid");
+                setViewMode("reader");
               }}
             />
           </ErrorBoundary>
@@ -2516,7 +2523,7 @@ export default function ThoughtUnitReader() {
                   </span>
                 </div>
                 <button
-                  onClick={() => setViewMode("original")}
+                  onClick={() => setViewMode("reader")}
                   className="text-gray-400 hover:text-gray-200 px-3 py-1 rounded hover:bg-gray-700"
                 >
                   Close
@@ -2530,96 +2537,13 @@ export default function ThoughtUnitReader() {
                   documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
                   onNavigateToPage={(pageIdx) => {
                     syncToPage(pageIdx + 1);
-                    setViewMode("hybrid");
+                    setViewMode("reader");
                   }}
-                  onClose={() => setViewMode("original")}
+                  onClose={() => setViewMode("reader")}
                 />
               </div>
             </div>
           </ErrorBoundary>
-        </div>
-      );
-    }
-
-    // ✅ Course Intelligence View - Syllabus → TOC → Cluster mapping + Exam targeting
-    if (viewMode === "syllabus") {
-      // Convert TOC entries to Course Intelligence format
-      const tocEntriesForCI = tableOfContents.map((toc, idx) => ({
-        id: `toc_${idx}`,
-        title: sanitizeDocTitle((toc as any).title, `Section ${idx + 1}`),
-        level: (toc as any).level || 1,
-        pageRange: {
-          start: (toc as any).pageNumber || (toc as any).page || idx + 1,
-          end: tableOfContents[idx + 1]
-            ? ((tableOfContents[idx + 1] as any).pageNumber || (tableOfContents[idx + 1] as any).page || idx + 2) - 1
-            : pdfPageCount,
-        },
-        chapterTitle: (toc as any).chapterTitle,
-        keywords: [],
-      }));
-
-      return (
-        <div className="h-full" data-testid="course-intelligence-view-container">
-          <ErrorBoundary
-            onError={(error, errorInfo) => {
-              console.error('🎯 Course Intelligence Error:', { message: error.message, stack: error.stack });
-            }}
-          >
-            <CourseIntelligenceLayout
-              documentId={bookId}
-              documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
-              tocEntries={tocEntriesForCI}
-              onJumpToPage={(pageNumber) => {
-                syncToPage(pageNumber);
-                setViewMode("hybrid");
-              }}
-              onStartStudySession={() => setViewMode("study")}
-              onStartExplainer={(clusterId) => {
-                // Open whiteboard with cluster content for explaining
-                setShowWhiteboardPanel(true);
-                setWbConcept(`Explain cluster: ${clusterId}`);
-              }}
-            />
-          </ErrorBoundary>
-        </div>
-      );
-    }
-
-    // ✅ Expert Mode merged into Expert View (hybrid) - see above
-
-    // ✅ READER View - PURE: PDF ONLY (no thought units, no TOC, no annotations)
-    // This is the DEFAULT view and handles viewMode === "original"
-    if (viewMode === "original") {
-      return fileUrl ? (
-        <div className="h-full" data-testid="reader-view-container">
-          <PureReaderView
-            fileUrl={fileUrl}
-            docId={bookId}
-            currentPage={currentPage}
-            pdfPageCount={pdfPageCount}
-            onPageChange={(p) => syncToPage(p)}
-            onPageCount={(count) => setPdfPageCount(count)}
-            onTextSelect={(t) => sel.setSelectionText(t)}
-            onOutline={handleOutlineExtraction}
-            fontSize={fontSize}
-            fontFamily={fontFamily}
-            onActiveParagraphChange={handleActiveParagraphChange}
-          />
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center h-full gap-6 bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
-          <div className="text-center max-w-3xl">
-            <div className="text-8xl mb-6">📖</div>
-            <h3 className="text-4xl font-bold mb-4 text-white">Pure Reader Mode</h3>
-            <p className="text-xl opacity-90 mb-8 text-gray-200">
-              Distraction-free PDF reading. Use Surgeon View for highlighting and notes.
-            </p>
-          </div>
-          
-          <label className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-400 hover:via-purple-400 hover:to-pink-400 text-white px-10 py-5 rounded-2xl cursor-pointer font-bold text-xl transition-all transform hover:scale-105 shadow-2xl">
-            📂 Upload PDF to Start Reading
-            <input type="file" accept="application/pdf" onChange={handleUpload} className="hidden" />
-          </label>
         </div>
       );
     }
@@ -2664,15 +2588,15 @@ export default function ThoughtUnitReader() {
         {/* Main Navigation Tabs */}
         <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1" data-testid="main-nav">
           <button
-            onClick={() => setViewMode("original")}
+            onClick={() => setViewMode("reader")}
             data-testid="nav-reader"
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              viewMode === "original" 
+              viewMode === "reader" 
                 ? "bg-yellow-500 text-black shadow-lg" 
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
           >
-            📖 Reader
+            📖 Reader + Panel
           </button>
           <button
             onClick={() => setViewMode("toc")}
@@ -2686,22 +2610,11 @@ export default function ThoughtUnitReader() {
             📑 TOC
           </button>
           <button
-            onClick={() => setViewMode("hybrid")}
-            data-testid="nav-expert"
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              viewMode === "hybrid"
-                ? "bg-purple-500 text-white shadow-lg"
-                : "text-gray-300 hover:text-white hover:bg-gray-700"
-            }`}
-          >
-            🎯 Expert View
-          </button>
-          <button
             onClick={() => setViewMode("notelab")}
             data-testid="nav-notelab"
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              viewMode === "notelab" 
-                ? "bg-green-500 text-white shadow-lg" 
+              viewMode === "notelab"
+                ? "bg-green-500 text-white shadow-lg"
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
           >
@@ -2711,29 +2624,17 @@ export default function ThoughtUnitReader() {
             onClick={() => setViewMode("study")}
             data-testid="nav-study"
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              viewMode === "study" 
-                ? "bg-blue-500 text-white shadow-lg" 
+              viewMode === "study"
+                ? "bg-blue-500 text-white shadow-lg"
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
           >
             🧠 Study
           </button>
-          <button
-            onClick={() => setViewMode("syllabus")}
-            data-testid="nav-syllabus"
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              viewMode === "syllabus"
-                ? "bg-teal-500 text-white shadow-lg"
-                : "text-gray-300 hover:text-white hover:bg-gray-700"
-            }`}
-          >
-            🎯 Course Intelligence
-          </button>
-          {/* Expert Mode merged into Expert View (was separate tab) */}
         </div>
 
         {/* Global Zoom Controls - Show when PDF is loaded */}
-        {fileUrl && pdfPageCount > 0 && (viewMode === "original" || viewMode === "hybrid") && (
+        {fileUrl && pdfPageCount > 0 && viewMode === "reader" && (
           <div className="flex items-center gap-1 bg-gray-900 rounded-lg px-2 py-1" data-testid="global-zoom">
             <button
               onClick={zoomOut}
@@ -2762,7 +2663,7 @@ export default function ThoughtUnitReader() {
         )}
 
         {/* Follow Scroll Toggle — OFF by default to prevent observer feedback loops */}
-        {fileUrl && (viewMode === "original" || viewMode === "hybrid") && (
+        {fileUrl && viewMode === "reader" && (
           <label className="inline-flex items-center gap-2 text-sm" title="When off, only Prev/Next/TOC changes the page. When on, scrolling can also advance pages.">
             <input
               type="checkbox"

@@ -58,6 +58,7 @@ export const PriorityWorkspacePanel: React.FC<PriorityWorkspacePanelProps> = ({
       syncEnabled={syncEnabled}
       deepAnalysisMode={deepAnalysisMode}
       isExtracting={isExtracting}
+      hideModeControls
     />
   );
 };
