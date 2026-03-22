@@ -475,3 +475,28 @@ export function getVisiblePageText(
     }
   };
 }
+
+const ACTIVE_ANCHOR_CLASS = 'avrrio-source-highlight-active';
+
+export function clearActiveHighlights(): void {
+  if (typeof document === 'undefined') return;
+  document
+    .querySelectorAll(`.${ACTIVE_ANCHOR_CLASS}`)
+    .forEach((el) => el.classList.remove(ACTIVE_ANCHOR_CLASS));
+}
+
+export function activateSourceAnchors(anchorIds: string[]): void {
+  if (typeof document === 'undefined') return;
+  clearActiveHighlights();
+  anchorIds.forEach((anchorId) => {
+    const target = document.querySelector<HTMLElement>(`[data-source-anchor-id="${CSS.escape(anchorId)}"]`);
+    target?.classList.add(ACTIVE_ANCHOR_CLASS);
+  });
+}
+
+export function scrollSourceIntoView(anchorId: string): void {
+  if (typeof document === 'undefined') return;
+  const target = document.querySelector<HTMLElement>(`[data-source-anchor-id="${CSS.escape(anchorId)}"]`);
+  if (!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}

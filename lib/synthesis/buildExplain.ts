@@ -1,4 +1,5 @@
 import type { DisciplineType, PageType } from '@/types/comprehension';
+import type { TeachingBlock } from '@/lib/comprehension/teachingSignalRanker';
 
 function disciplineHint(discipline: DisciplineType): string {
   switch (discipline) {
@@ -12,12 +13,26 @@ function disciplineHint(discipline: DisciplineType): string {
   }
 }
 
-export function buildExplain(context: { mergedText: string; discipline?: DisciplineType; pageType?: PageType }) {
-  const text = (context.mergedText || '').trim();
+export function buildExplain(context: {
+  mergedText: string;
+  discipline?: DisciplineType;
+  pageType?: PageType;
+  teachingBlocks?: TeachingBlock[];
+}) {
+  const blockText = (context.teachingBlocks ?? []).map((block) => block.text).join(' ');
+  const text = (blockText || context.mergedText || '').trim();
   const lead = text.slice(0, 420);
+  const formulaLine = (context.teachingBlocks ?? []).find((block) => block.score.formulaBoost > 0)?.text ?? '';
+  const formulaHint = formulaLine
+    ? `Formula focus: ${formulaLine.slice(0, 160)}`
+    : 'Formula focus: Identify symbols, what they represent, and how changing one variable changes the output.';
+
   return [
     `What this means: ${lead}`,
-    `How to reason about it (${context.pageType ?? 'unknown'}): ${disciplineHint(context.discipline ?? 'unknown')}`,
+    `Mechanism / logic (${context.pageType ?? 'unknown'}): ${disciplineHint(context.discipline ?? 'unknown')}`,
+    'Stepwise: identify the main object, map relationships, then apply the decision rule or comparison.',
+    formulaHint,
+    'Why it matters: this page gives the conceptual model you need before problem-solving.',
     'Common mistake: memorizing fragments without linking them to mechanism or application.',
   ].join('\n\n');
 }

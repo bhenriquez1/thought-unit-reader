@@ -9,6 +9,7 @@ import { resolvePageHeading, sanitizeTitle } from '@/lib/page-intelligence/title
 import { classifyDiscipline } from '@/lib/comprehension/classifyDiscipline';
 import { classifyPageType } from '@/lib/comprehension/classifyPageType';
 import { extractGroundedConcepts } from '@/lib/comprehension/extractGroundedConcepts';
+import { rankTeachingBlocks, isGarbageTeachingText } from '@/lib/comprehension/teachingSignalRanker';
 import type { DisciplineType, PageType, GroundedConcept } from '@/types/comprehension';
 
 export type ActivePageContext = {
@@ -48,7 +49,8 @@ export function getPageContextCacheKey(docId: string, pageNumber: number, extrac
 export function buildActivePageContext(docId: string, pageIntelligence: PageIntelligence): ActivePageContext {
   const pageNumber = pageIntelligence.pageNumber;
   const headingBlocks = pageIntelligence.segments.filter((s) => s.kind === 'heading').map((s) => sanitizeTitle(s.text, '')).filter(Boolean);
-  const paragraphBlocks = pageIntelligence.segments.filter((s) => s.kind === 'paragraph' || s.kind === 'list').map((s) => s.text);
+  const paragraphSegments = pageIntelligence.segments.filter((s) => s.kind === 'paragraph' || s.kind === 'list');
+  const paragraphBlocks = paragraphSegments.map((s) => s.text).filter((text) => !isGarbageTeachingText(text));
   const figureBlocks = pageIntelligence.segments.filter((s) => /figure|fig\.?\s*\d+/i.test(s.text)).map((s) => s.text);
   const captionBlocks = pageIntelligence.segments.filter((s) => s.kind === 'caption').map((s) => s.text);
   const nativeText = pageIntelligence.segments.map((s) => s.text).join('\n\n');
@@ -58,6 +60,14 @@ export function buildActivePageContext(docId: string, pageIntelligence: PageInte
   const discipline = classifyDiscipline({ headingBlocks, mergedText });
   const pageType = classifyPageType({ mergedText, headings: headingBlocks });
   const groundedConcepts = extractGroundedConcepts(pageIntelligence);
+  const teachingBlocks = rankTeachingBlocks({
+    pageNumber,
+    paragraphs: paragraphSegments.map((segment) => ({ id: segment.id, text: segment.text })),
+    headings: headingBlocks,
+    discipline,
+    maxBlocks: 8,
+  });
+  const teachingText = teachingBlocks.map((block) => block.text).join('\n\n');
   const shouldSynthesize = canSynthesizePage(confidence, mergedText);
 
   const resolvedSectionTitle = resolvePageHeading([
@@ -87,8 +97,16 @@ export function buildActivePageContext(docId: string, pageIntelligence: PageInte
     groundedConcepts,
     synthesis: shouldSynthesize
       ? {
-          priority: buildPriority({ detectedSectionTitle: headingBlocks[0] || null, mergedText, headings: headingBlocks, discipline, pageType, groundedConcepts }),
-          explain: buildExplain({ mergedText, discipline, pageType }),
+          priority: buildPriority({
+            detectedSectionTitle: headingBlocks[0] || null,
+            mergedText: teachingText || mergedText,
+            headings: headingBlocks,
+            discipline,
+            pageType,
+            groundedConcepts,
+            teachingBlocks,
+          }),
+          explain: buildExplain({ mergedText: teachingText || mergedText, discipline, pageType, teachingBlocks }),
           relations: buildRelations(pageIntelligence.relations.map((r) => `${r.from} ${r.type.replace(/_/g, ' ')} ${r.to}`)),
           compare: buildCompare(pageIntelligence.signals.filter((s) => s.type === 'contrast' || s.type === 'exception').map((s) => s.label)),
           insights: buildInsights(pageIntelligence.insights.map((i) => i.body)),
