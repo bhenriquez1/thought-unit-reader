@@ -35,6 +35,7 @@ import PureReaderView from "@/components/PureReaderView";
 import PureTocView from "@/components/PureTocView";
 import PureSurgeonView from "@/components/PureSurgeonView";
 import PureNoteLabView from "@/components/PureNoteLabView";
+import FocusCycleCard from "@/components/FocusCycleCard";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import DebugStatusBar from "@/components/DebugStatusBar";
 
@@ -61,6 +62,7 @@ import { useZoomStore } from "@/lib/stores/zoomStore";
 import { usePdrmStore } from "@/lib/stores/pdrmStore";
 import { useInsightsPanelStore } from "@/lib/stores/insightsPanelStore";
 import { useHighlightStore } from "@/lib/stores/highlightStore";
+import { useFocusCycleStore } from "@/lib/stores/focusCycleStore";
 import { extractParagraphBlocks, findBestMatchingBlock } from "@/lib/paragraphMap";
 import {
   DEFAULT_RIGHT_PANEL_STATE,
@@ -489,7 +491,7 @@ export default function ThoughtUnitReader() {
     const restored = restoreSessionState();
     if (restored) {
       setViewMode(
-        ((restored.viewMode === "toc" || restored.viewMode === "notelab" || restored.viewMode === "study")
+        ((restored.viewMode === "toc" || restored.viewMode === "syllabus" || restored.viewMode === "notelab" || restored.viewMode === "study")
           ? restored.viewMode
           : "reader") as WorkspaceMode
       );
@@ -530,6 +532,8 @@ export default function ThoughtUnitReader() {
 
   // 📑 TOC Panel control (like whiteboard)
   const [showTOCPanel, setShowTOCPanel] = useState<boolean>(false);
+  const [showFocusCycleModal, setShowFocusCycleModal] = useState(false);
+  const bindFocusCycleContext = useFocusCycleStore((state) => state.bindContext);
 
 
   // 💭 Thought Detection Panel
@@ -2383,6 +2387,17 @@ export default function ThoughtUnitReader() {
                   fontSize={fontSize}
                   fontFamily={fontFamily}
                   onActiveParagraphChange={handleActiveParagraphChange}
+                  onOpenFocusCycle={() => {
+                    bindFocusCycleContext({
+                      documentId: bookId,
+                      page: currentPage,
+                      sectionId: tableOfContents.find((entry, idx) => {
+                        const nextEntry = tableOfContents[idx + 1];
+                        return entry.pageNumber <= currentPage && (!nextEntry || nextEntry.pageNumber > currentPage);
+                      })?.title || null,
+                    });
+                    setShowFocusCycleModal(true);
+                  }}
                 />
               </div>
             )}
@@ -2503,6 +2518,38 @@ export default function ThoughtUnitReader() {
       );
     }
 
+    // ✅ Syllabus View - Course map tied to current reading context
+    if (viewMode === "syllabus") {
+      const chaptersForSyllabus = tableOfContents.length > 0
+        ? tableOfContents.map((entry, idx) => ({
+            id: `chapter_${idx}`,
+            title: sanitizeDocTitle(entry.title, `Chapter ${idx + 1}`),
+            pageNumber: entry.pageNumber,
+          }))
+        : [{ id: 'chapter_0', title: 'Document Overview', pageNumber: Math.max(1, currentPage) }];
+
+      return (
+        <div className="h-full" data-testid="syllabus-view-container">
+          <ErrorBoundary
+            onError={(error) => {
+              console.error('📚 Syllabus Error:', { message: error.message, stack: error.stack });
+            }}
+          >
+            <SyllabusModePanel
+              documentId={bookId}
+              documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
+              chapters={chaptersForSyllabus}
+              onJumpToPage={(pageIndex) => {
+                syncToPage(pageIndex + 1);
+                setViewMode("reader");
+              }}
+              onStartStudySession={() => setViewMode("study")}
+            />
+          </ErrorBoundary>
+        </div>
+      );
+    }
+
     // ✅ Study Session View - PURE: Memo.cards-style flashcard study with Dashboard
     if (viewMode === "study") {
       return (
@@ -2531,16 +2578,21 @@ export default function ThoughtUnitReader() {
               </div>
 
               {/* Main Study Panel */}
-              <div className="flex-1 overflow-hidden">
-                <MemoCardsStudyPanel
-                  documentId={bookId}
-                  documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
-                  onNavigateToPage={(pageIdx) => {
-                    syncToPage(pageIdx + 1);
-                    setViewMode("reader");
-                  }}
-                  onClose={() => setViewMode("reader")}
-                />
+              <div className="flex-1 overflow-hidden flex flex-col">
+                <div className="p-4 border-b border-gray-700 bg-gray-900/50">
+                  <FocusCycleCard />
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <MemoCardsStudyPanel
+                    documentId={bookId}
+                    documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
+                    onNavigateToPage={(pageIdx) => {
+                      syncToPage(pageIdx + 1);
+                      setViewMode("reader");
+                    }}
+                    onClose={() => setViewMode("reader")}
+                  />
+                </div>
               </div>
             </div>
           </ErrorBoundary>
@@ -2608,6 +2660,17 @@ export default function ThoughtUnitReader() {
             }`}
           >
             📑 TOC
+          </button>
+          <button
+            onClick={() => setViewMode("syllabus")}
+            data-testid="nav-syllabus"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              viewMode === "syllabus"
+                ? "bg-indigo-500 text-white shadow-lg"
+                : "text-gray-300 hover:text-white hover:bg-gray-700"
+            }`}
+          >
+            📚 Syllabus
           </button>
           <button
             onClick={() => setViewMode("notelab")}
@@ -2809,6 +2872,26 @@ export default function ThoughtUnitReader() {
           {renderContent()}
         </div>
       </div>
+
+      {showFocusCycleModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl bg-gray-900 border border-gray-700 rounded-xl shadow-2xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-lg font-semibold text-white">Focus Cycle</h3>
+                <p className="text-sm text-gray-400">Comprehension → consolidation → recall workflow</p>
+              </div>
+              <button
+                onClick={() => setShowFocusCycleModal(false)}
+                className="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm text-white"
+              >
+                Close
+              </button>
+            </div>
+            <FocusCycleCard onClosePrompts={() => setShowFocusCycleModal(false)} />
+          </div>
+        </div>
+      )}
 
         {/* Floating Action Buttons - Bottom Left Stack */}
         <div className="fixed bottom-[80px] left-6 z-40 flex flex-col gap-3 max-w-[160px] opacity-90">
