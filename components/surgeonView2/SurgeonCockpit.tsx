@@ -53,6 +53,7 @@ import { sanitizeTitle } from '@/lib/page-intelligence/titleResolution';
 import { normalizeRenderableText, sanitizeRenderList, sanitizeRenderText, stripFluff } from '@/lib/page-intelligence/outputSanitizer';
 import type { RightPanelState, RightPanelTab } from '@/state/rightPanelState';
 import { buildCurrentPageVersion, DEFAULT_RIGHT_PANEL_STATE } from '@/state/rightPanelState';
+import { normalizePagePayload } from '@/lib/normalization/DocumentNormalizer';
 import { resolveRightPanelView, type GroundedPayload } from '@/lib/comprehension/resolveRightPanelView';
 
 // Expert View 2.1 tabs - Simplified for cognitive flow
@@ -323,7 +324,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         ...next,
         activeDocumentId: documentId,
         activePageNumber,
-        currentPageVersion: buildCurrentPageVersion(documentId, activePageNumber, next.activeSectionId),
+        currentPageVersion: buildCurrentPageVersion(documentId, activePageNumber, next.activeSectionId ?? null),
       };
     });
   }, [onRightPanelStateChange, documentId, activePageNumber]);
@@ -636,14 +637,18 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   const getPageText = useCallback((pageNumber: number): string => {
     // Tier 1: pre-extracted Map
     const mapped = pageTexts?.get(pageNumber);
-    if (mapped && mapped.trim().length >= 40) return mapped.trim();
+    if (mapped && mapped.trim().length >= 40) {
+      return normalizePagePayload({ documentId, page: pageNumber, text: mapped.trim() }).cleanedText;
+    }
 
     // Tier 2: live DOM text layer (react-pdf renders this as selectable text)
     const domText = getDOMPageText();
-    if (domText.length >= 40) return domText;
+    if (domText.length >= 40) {
+      return normalizePagePayload({ documentId, page: pageNumber, text: domText }).cleanedText;
+    }
 
     return '';
-  }, [pageTexts]);
+  }, [pageTexts, documentId]);
 
   // Handle extract current page - uses new Page Intelligence pipeline with OCR fallback
   const handleExtractCurrentPage = useCallback(async () => {
@@ -651,7 +656,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     extractionAbortRef.current?.abort();
     const controller = new AbortController();
     extractionAbortRef.current = controller;
-    const requestedPageVersion = buildCurrentPageVersion(documentId, activePageNumber, effectiveRightPanelState.activeSectionId);
+    const requestedPageVersion = buildCurrentPageVersion(documentId, activePageNumber, effectiveRightPanelState.activeSectionId ?? null);
 
     const nativeText = getPageText(activePageNumber);
     const hasNativeText = nativeText.length >= 40;
@@ -1443,7 +1448,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             </div>
           ) : panelRenderState.status === 'empty' ? (
             <div className="mx-2 my-3 rounded-lg border border-slate-700 bg-slate-900/60 p-3 text-xs text-slate-300">
-              {panelRenderState.reason === 'not-extracted' ? 'Ready to Extract' : 'No grounded result for this page yet.'}
+              {panelRenderState.reason === 'not-extracted' ? 'Extract this page to build grounded learning cards.' : 'No grounded result for this page yet.'}
             </div>
           ) : panelRenderState.status === 'loading' && !visiblePanelPayload ? (
             <div className="mx-2 my-3 space-y-2 animate-pulse">
