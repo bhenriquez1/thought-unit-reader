@@ -15,6 +15,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useStudySessionStore, type StudyCard, type CardGrade } from '@/lib/stores/studySessionStore';
 import { useAnnotationStore } from '@/lib/stores/annotationStore';
+import StudyLauncher, { type StudyMode, type StudyScope } from '@/components/study/StudyLauncher';
 
 interface MemoCardsStudyPanelProps {
   documentId: string;
@@ -91,7 +92,8 @@ export default function MemoCardsStudyPanel({
         const gradeKeys: Record<string, CardGrade> = {
           '1': 'again',
           '2': 'hard',
-          '3': 'easy'
+          '3': 'good',
+          '4': 'easy'
         };
 
         if (gradeKeys[e.key]) {
@@ -168,6 +170,22 @@ export default function MemoCardsStudyPanel({
     const weakItemsCount = getWeakItemsCount(documentId);
     const canResume = hasLastSession();
 
+    const handleLaunch = (mode: StudyMode, scope: StudyScope) => {
+      if (scope === 'weak') {
+        startQuickStudy(documentId, 15);
+        return;
+      }
+      if (mode === 'quick_recall') {
+        startSession(documentId);
+        return;
+      }
+      if (mode === 'connection_recall' || mode === 'compare_drill') {
+        startQuickStudy(documentId, 12);
+        return;
+      }
+      startSession(documentId);
+    };
+
     return (
       <div className="h-full flex flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white" data-testid="memo-cards-start">
         <div className="flex items-center justify-between p-4 border-b border-gray-700/50">
@@ -224,6 +242,18 @@ export default function MemoCardsStudyPanel({
 
             {/* Action buttons */}
             <div className="space-y-3">
+              <StudyLauncher
+                scope={{ documentId }}
+                availableCounts={{
+                  recall: totalCardsAvailable,
+                  relation: Math.floor(totalCardsAvailable * 0.5),
+                  compare: Math.floor(totalCardsAvailable * 0.3),
+                  application: Math.floor(totalCardsAvailable * 0.4),
+                  formula: Math.floor(totalCardsAvailable * 0.2),
+                }}
+                onLaunch={handleLaunch}
+              />
+
               {weakItemsCount > 0 && (
                 <button
                   onClick={() => startQuickStudy(documentId, 15)}
