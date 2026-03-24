@@ -2374,7 +2374,7 @@ export default function ThoughtUnitReader() {
           >
             {/* Left: PDF Reader */}
             {fileUrl && (
-              <div className="flex-1 h-full border-r border-gray-700">
+              <div className="h-full min-w-0 border-r border-gray-700 basis-[68%] xl:basis-[70%] lg:basis-[66%]">
                 <PureReaderView
                   fileUrl={fileUrl}
                   docId={bookId}
@@ -2403,7 +2403,7 @@ export default function ThoughtUnitReader() {
             )}
 
             {/* Right: Relationship-First Cockpit */}
-            <div className={fileUrl ? "w-[600px] h-full" : "flex-1 h-full"}>
+            <div className={fileUrl ? "h-full min-w-[340px] max-w-[520px] basis-[32%] xl:basis-[30%] lg:basis-[34%]" : "flex-1 h-full"}>
               <SurgeonCockpit
                 documentId={bookId}
                 documentTitle={sanitizeDocTitle(currentChapter?.title, uploadedFile?.name || "Document")}
@@ -2626,19 +2626,25 @@ export default function ThoughtUnitReader() {
         darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"
       }`}
     >
-      <header className="bg-gradient-to-r from-purple-600 via-pink-500 to-yellow-400 text-white shadow-md">
-        <div className="py-4 flex flex-col items-center justify-center text-center">
-          <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide drop-shadow-lg">
-            Avrrio Reader
-          </h1>
-          <p className="text-sm md:text-lg italic opacity-90">Read. Understand. Think clearly.</p>
+      <header className="border-b border-slate-700/80 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white shadow-md">
+        <div className="px-4 py-3 md:py-4 flex flex-col items-center justify-center text-center">
+          <div className="relative inline-flex items-center">
+            <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide text-blue-300 drop-shadow-[0_2px_10px_rgba(59,130,246,0.35)]">
+              Avrrio
+            </h1>
+            <span
+              aria-hidden
+              className="pointer-events-none absolute left-[-8%] top-1/2 h-[130%] w-[116%] -translate-y-1/2 rounded-full border border-amber-300/70"
+            />
+          </div>
+          <p className="mt-1 text-xs md:text-sm tracking-wide text-slate-300">Read. Understand. Think clearly.</p>
         </div>
       </header>
 
       {/* Quick controls */}
-      <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-gray-800">
+      <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-gray-800 overflow-x-auto">
         {/* Main Navigation Tabs */}
-        <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1" data-testid="main-nav">
+        <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 min-w-max" data-testid="main-nav">
           <button
             onClick={() => setViewMode("reader")}
             data-testid="nav-reader"
@@ -2693,6 +2699,20 @@ export default function ThoughtUnitReader() {
             }`}
           >
             🧠 Study
+          </button>
+          <button
+            onClick={() => setViewMode("reader")}
+            className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700"
+            title="DAT Apex is available as an intelligence layer inside Reader + Panel."
+          >
+            🎯 DAT Apex
+          </button>
+          <button
+            onClick={() => setViewMode("reader")}
+            className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700"
+            title="Elena Mode will run on the same shared reading context."
+          >
+            🌱 Elena
           </button>
         </div>
 
