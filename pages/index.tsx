@@ -2374,7 +2374,7 @@ export default function ThoughtUnitReader() {
           >
             {/* Left: PDF Reader */}
             {fileUrl && (
-              <div className="flex-1 h-full border-r border-gray-700">
+              <div className="h-full min-w-0 border-r border-gray-700 basis-[68%] max-[1280px]:basis-[65%]">
                 <PureReaderView
                   fileUrl={fileUrl}
                   docId={bookId}
@@ -2403,7 +2403,7 @@ export default function ThoughtUnitReader() {
             )}
 
             {/* Right: Relationship-First Cockpit */}
-            <div className={fileUrl ? "w-[600px] h-full" : "flex-1 h-full"}>
+            <div className={fileUrl ? "h-full basis-[32%] max-[1280px]:basis-[35%] min-w-[380px] max-w-[520px]" : "flex-1 h-full"}>
               <SurgeonCockpit
                 documentId={bookId}
                 documentTitle={sanitizeDocTitle(currentChapter?.title, uploadedFile?.name || "Document")}
@@ -2626,19 +2626,25 @@ export default function ThoughtUnitReader() {
         darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"
       }`}
     >
-      <header className="bg-gradient-to-r from-purple-600 via-pink-500 to-yellow-400 text-white shadow-md">
-        <div className="py-4 flex flex-col items-center justify-center text-center">
-          <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide drop-shadow-lg">
-            Avrrio Reader
-          </h1>
-          <p className="text-sm md:text-lg italic opacity-90">Read. Understand. Think clearly.</p>
+      <header className="border-b border-slate-700/70 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white shadow-md">
+        <div className="px-4 py-3 flex flex-col items-center justify-center text-center gap-1">
+          <div className="relative inline-flex items-center justify-center">
+            <span className="text-2xl md:text-3xl font-semibold tracking-wide text-sky-300 drop-shadow-[0_1px_10px_rgba(56,189,248,0.3)]">
+              Avrrio
+            </span>
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -inset-x-6 top-1/2 h-5 -translate-y-1/2 rounded-full border border-amber-300/80"
+            />
+          </div>
+          <p className="text-xs md:text-sm tracking-wide text-slate-300/95">Read. Understand. Think clearly.</p>
         </div>
       </header>
 
       {/* Quick controls */}
-      <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-gray-800">
+      <div className="flex items-center gap-3 px-4 py-2 bg-gray-800 overflow-x-auto overflow-y-hidden whitespace-nowrap">
         {/* Main Navigation Tabs */}
-        <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1" data-testid="main-nav">
+        <div className="shrink-0 flex items-center gap-1 bg-gray-900 rounded-lg p-1 overflow-x-auto" data-testid="main-nav">
           <button
             onClick={() => setViewMode("reader")}
             data-testid="nav-reader"
