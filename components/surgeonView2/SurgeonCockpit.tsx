@@ -1250,7 +1250,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
           {/* Tabs + control strip */}
           <div className="border border-white/5 rounded-lg bg-gray-900/70 backdrop-blur-sm px-2 py-2 gap-2 mb-2 sticky top-[62px] z-20 flex flex-col">
-            <div className="flex items-center gap-1 min-w-0 overflow-x-auto overflow-y-hidden whitespace-nowrap pb-1 [scrollbar-width:thin]">
+            <div className="flex items-center gap-1 min-w-0">
               <ModeChip
             label="Priority"
             active={effectiveRightPanelState.activeTab === 'priority'}
@@ -1300,65 +1300,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             />
             </div>
 
-            <div className="flex items-center gap-1 overflow-x-auto overflow-y-hidden whitespace-nowrap pb-1 [scrollbar-width:thin]">
-              <span className="text-[10px] text-gray-400">Audience</span>
-              <select
-              value={effectiveRightPanelState.audienceMode}
-              onChange={(e) => {
-                const next = e.target.value as typeof effectiveRightPanelState.audienceMode;
-                setAudience(next);
-                updateRightPanelState((prev) => ({ ...prev, audienceMode: next }));
-              }}
-              className="bg-gray-800 text-[10px] text-gray-200 rounded px-2 py-1 border border-gray-600 min-h-[30px] min-w-[110px]"
-              title="Audience mode"
-            >
-              <option value="polish">Polish</option>
-              <option value="student">Student</option>
-              <option value="clinical">Clinical</option>
-              <option value="expert">Expert</option>
-              </select>
-              <span className="text-[10px] text-gray-400">Depth</span>
-              <select
-              value={effectiveRightPanelState.depthMode}
-              onChange={(e) => {
-                const next = e.target.value as typeof effectiveRightPanelState.depthMode;
-                setDepth(next);
-                updateRightPanelState((prev) => ({ ...prev, depthMode: next }));
-              }}
-              className="bg-gray-800 text-[10px] text-gray-200 rounded px-2 py-1 border border-gray-600 min-h-[30px] min-w-[100px]"
-              title="Depth mode"
-            >
-              <option value="minimal">Minimal</option>
-              <option value="standard">Standard</option>
-              <option value="deep">Deep</option>
-              </select>
-              <span className="text-[10px] text-gray-400">Density</span>
-              <select
-              value={effectiveRightPanelState.densityMode}
-              onChange={(e) => {
-                const next = e.target.value as typeof effectiveRightPanelState.densityMode;
-                setView(next);
-                updateRightPanelState((prev) => ({ ...prev, densityMode: next }));
-              }}
-              className="bg-gray-800 text-[10px] text-gray-200 rounded px-2 py-1 border border-gray-600 min-h-[30px] min-w-[100px]"
-              title="Density mode"
-            >
-              <option value="condensed">Condensed</option>
-              <option value="expanded">Expanded</option>
-              </select>
-              <span className="text-[10px] text-gray-400">Reasoning</span>
-              <button
-              onClick={() => {
-                const nextMode = mode === 'deep' ? 'quick' : 'deep';
-                setMode(nextMode);
-                setEssentialStudentMode(nextMode !== 'deep');
-                updateRightPanelState((prev) => ({ ...prev, deeperReasoningEnabled: nextMode === 'deep' }));
-              }}
-              className={`px-2 py-1 text-[10px] rounded min-h-[30px] ${mode === 'deep' ? 'bg-purple-600/80 text-white border border-purple-500/60' : 'bg-gray-700 text-gray-300'}`}
-              title="Toggle deeper reasoning"
-            >
-              {mode === 'deep' ? 'Deeper' : 'Essential'}
-              </button>
+            <div className="flex flex-wrap items-center gap-1">
               {/* Insight panel zoom controls — font-size based, no transform */}
               <div className="flex items-center gap-0.5" title="Insight text size">
               <button
@@ -1396,7 +1338,72 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             {syncInsightsToPdf ? '⇄ Sync' : '⇄ Free'}
               </button>
 
-              <div className="ml-2" />
+              <select
+              value={effectiveRightPanelState.audienceMode}
+              onChange={(e) => {
+                const next = e.target.value as typeof effectiveRightPanelState.audienceMode;
+                setAudience(next);
+                updateRightPanelState((prev) => ({ ...prev, audienceMode: next }));
+              }}
+              className="bg-gray-800 text-[10px] text-gray-200 rounded px-2 py-1 border border-gray-600 min-h-[30px] min-w-[110px]"
+              title="Audience mode"
+            >
+              <option value="polish">Polish</option>
+              <option value="student">Student</option>
+              <option value="clinical">Clinical</option>
+              <option value="expert">Expert</option>
+              </select>
+              <select
+              value={effectiveRightPanelState.depthMode}
+              onChange={(e) => {
+                const next = e.target.value as typeof effectiveRightPanelState.depthMode;
+                setDepth(next);
+                updateRightPanelState((prev) => ({ ...prev, depthMode: next }));
+              }}
+              className="bg-gray-800 text-[10px] text-gray-200 rounded px-2 py-1 border border-gray-600 min-h-[30px] min-w-[100px]"
+              title="Depth mode"
+            >
+              <option value="minimal">Minimal</option>
+              <option value="standard">Standard</option>
+              <option value="deep">Deep</option>
+              </select>
+              <select
+              value={effectiveRightPanelState.densityMode}
+              onChange={(e) => {
+                const next = e.target.value as typeof effectiveRightPanelState.densityMode;
+                setView(next);
+                updateRightPanelState((prev) => ({ ...prev, densityMode: next }));
+              }}
+              className="bg-gray-800 text-[10px] text-gray-200 rounded px-2 py-1 border border-gray-600 min-h-[30px] min-w-[100px]"
+              title="Density mode"
+            >
+              <option value="condensed">Condensed</option>
+              <option value="expanded">Expanded</option>
+              </select>
+              <button
+              onClick={() => {
+                setEssentialStudentMode(!essentialStudentMode);
+                const next = !essentialStudentMode;
+                updateRightPanelState((prev) => ({ ...prev, deeperReasoningEnabled: !next }));
+              }}
+              className={`px-2 py-1 text-[10px] rounded min-h-[30px] ${essentialStudentMode ? 'bg-teal-700/70 text-teal-100' : 'bg-gray-700 text-gray-300'}`}
+            >
+              Essential
+              </button>
+              <button
+              onClick={() => {
+                const nextMode = mode === 'deep' ? 'quick' : 'deep';
+                setMode(nextMode);
+                setEssentialStudentMode(nextMode !== 'deep');
+                updateRightPanelState((prev) => ({ ...prev, deeperReasoningEnabled: nextMode === 'deep' }));
+              }}
+              className={`px-2 py-1 text-[10px] rounded min-h-[30px] ${mode === 'deep' ? 'bg-purple-600/80 text-white border border-purple-500/60' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700'}`}
+              title="Toggle deeper reasoning"
+            >
+              Reasoning
+              </button>
+
+              <div className="ml-auto" />
               <button
               onClick={() => {
                 resetInsightLayout();
@@ -1523,21 +1530,13 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               />
           )}
           {!readerPageContext?.fallbackState && effectiveRightPanelState.activeTab === 'compare' && (
-            ((pageIntelligence?.tabPayloads?.comparePayload?.sections?.length ?? 0) === 0
-              && (pageIntelligence?.tabResponses?.compare?.sections?.length ?? 0) === 0
-              && activeRelations.length < 2) ? (
-              <div className="mx-2 my-3 rounded-lg border border-slate-700 bg-slate-900/60 p-3 text-xs text-slate-300">
-                No grounded comparison pair detected on this page yet.
-              </div>
-            ) : (
-                <CompareTab
-                  selectedCardId={selectedCardId}
-                  insights={pageScopedInsights}
-                  onSelectCard={() => setActiveTab('priority')}
-                  pageIntelligence={pageIntelligence}
-                  tabResponse={pageIntelligence?.tabPayloads?.comparePayload ?? pageIntelligence?.tabResponses?.compare}
-                />
-              )
+              <CompareTab
+                selectedCardId={selectedCardId}
+                insights={pageScopedInsights}
+                onSelectCard={() => setActiveTab('priority')}
+                pageIntelligence={pageIntelligence}
+                tabResponse={pageIntelligence?.tabPayloads?.comparePayload ?? pageIntelligence?.tabResponses?.compare}
+              />
           )}
           {!readerPageContext?.fallbackState && effectiveRightPanelState.activeTab === 'insights' && (
             <InsightsTab
