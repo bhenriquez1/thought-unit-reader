@@ -1250,7 +1250,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
 
           {/* Tabs + control strip */}
           <div className="border border-white/5 rounded-lg bg-gray-900/70 backdrop-blur-sm px-2 py-2 gap-2 mb-2 sticky top-[62px] z-20 flex flex-col">
-            <div className="flex items-center gap-1 min-w-0">
+            <div className="flex items-center gap-1 min-w-0 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:thin]">
               <ModeChip
             label="Priority"
             active={effectiveRightPanelState.activeTab === 'priority'}
@@ -1300,7 +1300,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             />
             </div>
 
-            <div className="flex flex-wrap items-center gap-1">
+            <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:thin]">
               {/* Insight panel zoom controls — font-size based, no transform */}
               <div className="flex items-center gap-0.5" title="Insight text size">
               <button
@@ -1403,7 +1403,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               Reasoning
               </button>
 
-              <div className="ml-auto" />
+              <div className="ml-auto shrink-0" />
               <button
               onClick={() => {
                 resetInsightLayout();
