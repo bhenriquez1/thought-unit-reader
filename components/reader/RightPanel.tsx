@@ -96,11 +96,11 @@ export function RightPanel({
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         {state.activeTab === "priority" && (
           <div className={bodyClass}>
-            <Section title="Priority">
+            <Section title="What this page is doing">
               <p>{payload.priority.meaning}</p>
             </Section>
 
-            <Section title="Main Ideas">
+            <Section title="Main ideas">
               <ul className="list-disc space-y-1 pl-5">
                 {payload.priority.mainIdeas.map((item, i) => (
                   <li key={i}>{item}</li>
@@ -108,11 +108,11 @@ export function RightPanel({
               </ul>
             </Section>
 
-            <Section title="Why It Matters">
+            <Section title="Why it matters">
               <p>{payload.priority.whyItMatters}</p>
             </Section>
 
-            <Section title="What To Remember">
+            <Section title="What to remember">
               <ul className="list-disc space-y-1 pl-5">
                 {payload.priority.whatToRemember.map((item, i) => (
                   <li key={i}>{item}</li>

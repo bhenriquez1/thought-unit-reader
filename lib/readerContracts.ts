@@ -9,6 +9,9 @@ export interface ActivePageContext {
   documentTitle?: string;
   pageNumber: number;
   totalPages: number;
+  nearbyText?: string;
+  activeTopicTitle?: string;
+  activeTopicKind?: TocNode["kind"] | null;
   chapterTitle?: string | null;
   sectionTitle?: string | null;
   pageText: string;
