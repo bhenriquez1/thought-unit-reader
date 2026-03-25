@@ -1,6 +1,7 @@
 // pages/index.tsx
 import dynamic from "next/dynamic";
 import React, { useState, useEffect, useRef, useMemo, useCallback, ChangeEvent } from "react";
+import { useRouter } from "next/router";
 
 import { generateTOC, type TOCEntry, outlineToTOC } from "@/lib/tocParser";
 import TOCSidebar from "@/components/TOCSidebar";
@@ -36,6 +37,10 @@ import PureTocView from "@/components/PureTocView";
 import PureSurgeonView from "@/components/PureSurgeonView";
 import PureNoteLabView from "@/components/PureNoteLabView";
 import FocusCycleCard from "@/components/FocusCycleCard";
+import { RightPanel } from "@/components/reader/RightPanel";
+import type { ActivePageContext, RightPanelState as UnifiedRightPanelState } from "@/lib/readerContracts";
+import { splitParagraphs } from "@/lib/textNormalize";
+import { buildAutoToc } from "@/lib/autoToc";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import DebugStatusBar from "@/components/DebugStatusBar";
 
@@ -50,7 +55,6 @@ import {
 
 // Surgeon View 2.0 - Relationship-first Cockpit
 import {
-  SurgeonCockpit,
   WhiteboardOverlay,
   useRelationshipStore,
 } from "@/components/surgeonView2";
@@ -257,6 +261,7 @@ const COMPREHENSION_PROMPTS = [
 
 
 export default function ThoughtUnitReader() {
+  const router = useRouter();
   /* =========================================================================
      🔹 Feature Flags for Prototype Testing
   ========================================================================= */
@@ -505,6 +510,10 @@ export default function ThoughtUnitReader() {
     }
   }, []);
 
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", darkMode);
+  }, [darkMode]);
+
   const [showLibrary, setShowLibrary] = useState(false);
   const [pdfLibrary, setPdfLibrary] = useState<
     { id: string; name: string; url: string; uploadedAt: any; isLocal?: boolean }[]
@@ -521,6 +530,29 @@ export default function ThoughtUnitReader() {
     activeDocumentId: "default-book",
     currentPageVersion: buildCurrentPageVersion("default-book", 1, null),
   });
+  const [unifiedPanelState, setUnifiedPanelState] = useState<UnifiedRightPanelState>({
+    activeTab: "priority",
+    audience: "student",
+    depth: "standard",
+    density: "condensed",
+  });
+  const [focusState, setFocusState] = useState<{ mode: "focus" | "break"; time: number; running: boolean }>({
+    mode: "focus",
+    time: 1500,
+    running: false,
+  });
+
+  useEffect(() => {
+    if (!focusState.running) return;
+    const timer = window.setInterval(() => {
+      setFocusState((prev) => {
+        if (prev.time > 1) return { ...prev, time: prev.time - 1 };
+        if (prev.mode === "focus") return { mode: "break", time: 300, running: true };
+        return { mode: "focus", time: 1500, running: true };
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [focusState.running]);
 
   // ✅ Auto-whiteboard control + data
   const [autoWhiteboard, setAutoWhiteboard] = useState<boolean>(false);
@@ -556,10 +588,6 @@ export default function ThoughtUnitReader() {
     error: null,
     progress: "",
   });
-
-  // ✅ Readless Mode and PDRM Layout State
-  const [readlessMode, setReadlessMode] = useState<boolean>(false);
-  const [pdrmLayout, setPdrmLayout] = useState<'side' | 'under'>('side');
 
   /* =========================================================================
      🔹 Surgeon View: Text Selection Handler
@@ -854,6 +882,30 @@ export default function ThoughtUnitReader() {
       console.log(`📑 TOC extracted from PDF outline: ${storeItems.length} chapters`);
     }
   }, [bookId, uploadedFile?.name, setTableOfContents]);
+
+  useEffect(() => {
+    if (!pdfPageCount || !thoughtUnits.length) return;
+    if (tableOfContents.length > 0) return;
+
+    const bundles = Array.from({ length: pdfPageCount }, (_, idx) => {
+      const page = idx + 1;
+      const unitIndex = pageToUnit(page, pdfPageCount, thoughtUnits.length) - 1;
+      return { page, text: thoughtUnits[unitIndex]?.text || "" };
+    });
+    const autoToc = buildAutoToc(bundles);
+    if (!autoToc.length) return;
+
+    setTableOfContents(
+      autoToc.map((node) => ({
+        title: node.title,
+        pageNumber: node.page,
+        subChapters: node.children?.map((child) => ({
+          title: child.title,
+          pageNumber: child.page,
+        })),
+      })),
+    );
+  }, [pdfPageCount, thoughtUnits, tableOfContents.length]);
 
   /* =========================================================================
      🔹 Highlight Paragraph — zoom to matching text in the PDF text layer
@@ -2327,37 +2379,16 @@ export default function ThoughtUnitReader() {
           (!nextEntry || nextEntry.pageNumber > currentPage);
       });
 
-      // Get next chapter start page (or end of document)
-      const currentChapterIdx = currentChapter ? tableOfContents.indexOf(currentChapter) : -1;
-      const nextChapter = currentChapterIdx >= 0 ? tableOfContents[currentChapterIdx + 1] : undefined;
-      const chapterStartPage = currentChapter?.pageNumber || 1;
-      const chapterEndPage = nextChapter?.pageNumber ? nextChapter.pageNumber - 1 : (pdfPageCount || currentPage);
-
-      // Build pageTexts Map for ALL pages in current chapter (for extraction)
-      const pageTexts = new Map<number, string>();
-      for (let page = chapterStartPage; page <= chapterEndPage; page++) {
-        const unitIndex = pageToUnit(page, pdfPageCount || page, thoughtUnits?.length || 1);
-        const text = thoughtUnits?.[unitIndex - 1]?.text || '';
-        if (text.trim()) {
-          pageTexts.set(page, text);
-        }
-      }
-      // Ensure current page is included
-      if (!pageTexts.has(currentPage)) {
-        const currentPageText = thoughtUnits?.[currentThoughtUnit - 1]?.text || '';
-        if (currentPageText.trim()) {
-          pageTexts.set(currentPage, currentPageText);
-        }
-      }
-
-      // Generate chapter ID
-      const getChapterIdForPage = (page: number): string => {
-        if (currentChapter?.title) {
-          return sanitizeDocTitle(currentChapter.title, `Page ${page}`);
-        }
-        const rangeStart = Math.floor((page - 1) / 10) * 10 + 1;
-        const rangeEnd = Math.min(rangeStart + 9, pdfPageCount || page);
-        return `Pages ${rangeStart}–${rangeEnd}`;
+      const activePageText = thoughtUnits?.[currentThoughtUnit - 1]?.text || "";
+      const activePageContext: ActivePageContext = {
+        documentId: bookId,
+        documentTitle: sanitizeDocTitle(currentChapter?.title, uploadedFile?.name || "Document"),
+        pageNumber: currentPage,
+        totalPages: pdfPageCount || 1,
+        chapterTitle: currentChapter?.title || null,
+        sectionTitle: titleForPage(tableOfContents, currentPage),
+        pageText: activePageText,
+        paragraphTexts: splitParagraphs(activePageText),
       };
 
       return (
@@ -2374,7 +2405,7 @@ export default function ThoughtUnitReader() {
           >
             {/* Left: PDF Reader */}
             {fileUrl && (
-              <div className="h-full min-w-0 border-r border-gray-700 basis-[68%] xl:basis-[70%] lg:basis-[66%]">
+              <div className="h-full w-[68%] min-w-[600px] overflow-y-auto border-r border-gray-700">
                 <PureReaderView
                   fileUrl={fileUrl}
                   docId={bookId}
@@ -2402,22 +2433,15 @@ export default function ThoughtUnitReader() {
               </div>
             )}
 
-            {/* Right: Relationship-First Cockpit */}
-            <div className={fileUrl ? "h-full min-w-[340px] max-w-[520px] basis-[32%] xl:basis-[30%] lg:basis-[34%]" : "flex-1 h-full"}>
-              <SurgeonCockpit
-                documentId={bookId}
-                documentTitle={sanitizeDocTitle(currentChapter?.title, uploadedFile?.name || "Document")}
-                totalPages={pdfPageCount || 0}
-                currentPage={currentPage}
-                onJumpToPage={(page) => syncToPage(page)}
-                pageTexts={pageTexts}
-                onHighlightParagraph={handleHighlightParagraph}
-                onPreviewSource={handlePreviewParagraph}
-                onJumpToSource={handleJumpToSource}
-                rightPanelState={rightPanelState}
-                onRightPanelStateChange={handleRightPanelStateChange}
-                onRightPanelTabChange={handleRightPanelTabChange}
-                onRightPanelCardChange={(cardId) => handleRightPanelStateChange((prev) => ({ ...prev, activeCardId: cardId }))}
+            {/* Right: Unified Intelligence Panel */}
+            <div className={fileUrl ? "h-full w-[32%] min-w-[380px] max-w-[520px] overflow-y-auto border-l border-white/10" : "flex-1 h-full"}>
+              <RightPanel
+                ctx={activePageContext}
+                state={unifiedPanelState}
+                onTabChange={(activeTab) => setUnifiedPanelState((s) => ({ ...s, activeTab }))}
+                onAudienceChange={(audience) => setUnifiedPanelState((s) => ({ ...s, audience }))}
+                onDepthChange={(depth) => setUnifiedPanelState((s) => ({ ...s, depth }))}
+                onDensityChange={(density) => setUnifiedPanelState((s) => ({ ...s, density }))}
               />
             </div>
 
@@ -2621,11 +2645,7 @@ export default function ThoughtUnitReader() {
   }, []);
 
   return (
-    <div
-      className={`h-screen overflow-hidden flex flex-col ${
-        darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"
-      }`}
-    >
+    <div className="h-screen overflow-hidden flex flex-col bg-white text-slate-900 dark:bg-slate-900 dark:text-white">
       <header className="border-b border-slate-700/80 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white shadow-md">
         <div className="px-4 py-3 md:py-4 flex flex-col items-center justify-center text-center">
           <div className="relative inline-flex items-center">
@@ -2701,18 +2721,18 @@ export default function ThoughtUnitReader() {
             🧠 Study
           </button>
           <button
-            onClick={() => setViewMode("reader")}
+            onClick={() => router.push("/dat-apex")}
             className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700"
-            title="DAT Apex is available as an intelligence layer inside Reader + Panel."
+            title="Open DAT Apex"
           >
             🎯 DAT Apex
           </button>
           <button
             onClick={() => setViewMode("reader")}
             className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700"
-            title="Elena Mode will run on the same shared reading context."
+            title="Elena Mode is under construction."
           >
-            🌱 Elena
+            Elena Mode (Under Construction)
           </button>
         </div>
 
@@ -2758,29 +2778,23 @@ export default function ThoughtUnitReader() {
             </span>
           </label>
         )}
-
-        {/* Readless Mode Toggle */}
-        <label className="inline-flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={readlessMode}
-            onChange={(e) => setReadlessMode(e.target.checked)}
-          />
-          <span>Readless Mode</span>
-        </label>
-
-        {/* PDRM Layout Toggle */}
-        <div className="flex items-center gap-2 text-sm">
-          <span className="opacity-80">Layout:</span>
-          <button
-            onClick={() => setPdrmLayout(pdrmLayout === 'side' ? 'under' : 'side')}
-            className="px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-xs"
-          >
-            {pdrmLayout === 'side' ? 'Side ▸' : 'Under ▾'}
-          </button>
-        </div>
-
-
+        <button
+          onClick={() =>
+            setFocusState((prev) => ({
+              ...prev,
+              running: !prev.running,
+              mode: prev.running ? prev.mode : "focus",
+              time: prev.running ? prev.time : 1500,
+            }))
+          }
+          className="text-xs px-3 py-1 rounded bg-purple-700 hover:bg-purple-600"
+        >
+          {focusState.running ? "Pause Focus Cycle" : "Start Focus Cycle"}
+        </button>
+        <span className="text-xs text-purple-200">
+          🟣 Focus Cycle: {String(Math.floor(focusState.time / 60)).padStart(2, "0")}:
+          {String(focusState.time % 60).padStart(2, "0")} remaining
+        </span>
 
         <div className="flex-1" />
 
@@ -2808,7 +2822,10 @@ export default function ThoughtUnitReader() {
 
         {/* Dark mode */}
         <button
-          onClick={() => setDarkMode((d) => !d)}
+          onClick={() => {
+            document.documentElement.classList.toggle("dark");
+            setDarkMode((d) => !d);
+          }}
           className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
         >
           {darkMode ? "🌙 Dark" : "☀️ Light"}
@@ -2832,14 +2849,6 @@ export default function ThoughtUnitReader() {
             <span className="text-xs opacity-60">Not signed in</span>
           )}
         </div>
-
-        {/* DAT Apex */}
-        <button
-          onClick={() => window.location.href = '/apex'}
-          className="text-xs px-3 py-1 rounded bg-gradient-to-r from-blue-500 to-electric-blue-500 text-white shadow hover:from-blue-400 hover:to-blue-600 transition-all"
-        >
-          ⚡ DAT Apex
-        </button>
 
         {/* Library */}
         <button
