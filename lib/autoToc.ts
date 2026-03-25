@@ -35,7 +35,10 @@ function classifyLine(line: string): TocNode["kind"] | null {
   if (CHAPTER_RE.test(line)) return "chapter";
   if (WEEK_RE.test(line)) return "week";
   if (FRONTMATTER_RE.test(line)) return "frontmatter";
-  if (SECTION_RE.test(line)) return "section";
+  if (SECTION_RE.test(line)) {
+    if (/^\d+\.\d+\.\d+/.test(line) || /^\d+\.\d+\.\d+\.\d+/.test(line)) return "subsection";
+    return "section";
+  }
   if (ASSIGNMENT_RE.test(line)) return "assignment";
   return null;
 }
@@ -117,6 +120,19 @@ function nestToc(flat: TocNode[]): TocNode[] {
       } else {
         root.push({ ...item, children: [] });
         currentSection = root[root.length - 1];
+      }
+      continue;
+    }
+
+    if (item.kind === "subsection") {
+      if (currentSection) {
+        currentSection.children ||= [];
+        currentSection.children.push({ ...item, children: [] });
+      } else if (currentChapter) {
+        currentChapter.children ||= [];
+        currentChapter.children.push({ ...item, children: [] });
+      } else {
+        root.push({ ...item, children: [] });
       }
       continue;
     }

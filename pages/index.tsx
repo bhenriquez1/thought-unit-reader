@@ -27,9 +27,10 @@ import NotesList from "@/components/NotesList";
 import SurgeonView from "@/components/SurgeonView";
 import NoteLabViewEnhanced from "@/components/NoteLabViewEnhanced";
 import StudySessionPanel from "@/components/StudySessionPanel";
-import SyllabusModePanel from "@/components/SyllabusModePanel";
 import MemoCardsStudyPanel from "@/components/MemoCardsStudyPanel";
-import SyllabusUploadPanel from "@/components/SyllabusUploadPanel";
+import TocTree from "@/components/toc/TocTree";
+import SyllabusUploadPanel from "@/components/syllabus/SyllabusUploadPanel";
+import SyllabusStudyLauncher from "@/components/study/SyllabusStudyLauncher";
 
 // Pure View components (Strict Mode Separation - V1)
 import PureReaderView from "@/components/PureReaderView";
@@ -38,9 +39,9 @@ import PureSurgeonView from "@/components/PureSurgeonView";
 import PureNoteLabView from "@/components/PureNoteLabView";
 import FocusCycleCard from "@/components/FocusCycleCard";
 import { RightPanel } from "@/components/reader/RightPanel";
-import type { ActivePageContext, RightPanelState as UnifiedRightPanelState } from "@/lib/readerContracts";
+import type { ActivePageContext, RightPanelState as UnifiedRightPanelState, TocNode } from "@/lib/readerContracts";
 import { splitParagraphs } from "@/lib/textNormalize";
-import { buildAutoToc } from "@/lib/autoToc";
+import { buildAutoToc, type PageTextBundle } from "@/lib/autoToc";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import DebugStatusBar from "@/components/DebugStatusBar";
 
@@ -216,6 +217,10 @@ function titleForPage(toc: TOCEntry[], page: number): string {
   return bestTitle || `p.${page}`;
 }
 
+function flattenTocNodes(nodes: TocNode[]): TocNode[] {
+  return nodes.flatMap((node) => [node, ...flattenTocNodes(node.children || [])]);
+}
+
 /* ---------- highlight chosen chunk inside the PDF ---------- */
 function highlightChunkInPDF(pageNumber: number, text: string) {
   if (typeof window === "undefined") return;
@@ -371,6 +376,11 @@ export default function ThoughtUnitReader() {
 
   const [tableOfContents, setTableOfContents] = useState<TOCEntry[]>([]);
   const [showTOC] = useState(true);
+  const [syllabusFileName, setSyllabusFileName] = useState("");
+  const [syllabusPages, setSyllabusPages] = useState<PageTextBundle[]>([]);
+  const [syllabusToc, setSyllabusToc] = useState<TocNode[]>([]);
+  const [activeShellTab, setActiveShellTab] = useState<WorkspaceMode>("reader");
+  const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
 
   /* =========================================================================
      🔹 Unified Annotation Store (P0.1) - Shared between Surgeon View + NoteLab
@@ -513,6 +523,10 @@ export default function ThoughtUnitReader() {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
   }, [darkMode]);
+
+  useEffect(() => {
+    setActiveShellTab(viewMode);
+  }, [viewMode]);
 
   const [showLibrary, setShowLibrary] = useState(false);
   const [pdfLibrary, setPdfLibrary] = useState<
@@ -1511,7 +1525,7 @@ export default function ThoughtUnitReader() {
   // Tab sync effects: snap Hybrid to current chapter's first unit when switching tabs
   useEffect(() => {
     try {
-      if (viewMode === "reader") {
+      if (activeShellTab === "reader") {
         console.log(`🔄 Tab switch to ${viewMode}: syncing to current chapter`);
         
         // Safe chapter-aware navigation with proper error handling
@@ -2326,6 +2340,32 @@ export default function ThoughtUnitReader() {
     }
   };
 
+  const handleParsedSyllabus = useCallback((result: {
+    fileName: string;
+    pages: PageTextBundle[];
+    toc: TocNode[];
+  }) => {
+    setSyllabusFileName(result.fileName);
+    setSyllabusPages(result.pages);
+    setSyllabusToc(result.toc);
+  }, []);
+
+  const handleStudyTopic = useCallback((node: TocNode) => {
+    syncToPage(node.page, { reason: "TOC_JUMP" });
+    setRightPanelResetKey((k) => k + 1);
+    setUnifiedPanelState((prev) => ({ ...prev, activeTab: "priority" }));
+    setViewMode("study");
+    setActiveShellTab("study");
+  }, [syncToPage]);
+
+  const handleSyllabusNodeClick = useCallback((node: TocNode) => {
+    syncToPage(node.page, { reason: "TOC_JUMP" });
+    setRightPanelResetKey((k) => k + 1);
+    setUnifiedPanelState((prev) => ({ ...prev, activeTab: "priority" }));
+    setViewMode("reader");
+    setActiveShellTab("reader");
+  }, [syncToPage]);
+
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const previousOverflow = document.body.style.overflow;
@@ -2371,7 +2411,7 @@ export default function ThoughtUnitReader() {
     // ✅ Expert View - Relationship-First Cognitive Cockpit
     // Merged: Surgeon View + Expert Mode into single Expert View
     // Architecture: Relations → Clusters → Decision Rules (not concepts)
-    if (viewMode === "reader") {
+    if (activeShellTab === "reader") {
       // Find current chapter for context
       const currentChapter = tableOfContents.find((entry, idx) => {
         const nextEntry = tableOfContents[idx + 1];
@@ -2380,11 +2420,20 @@ export default function ThoughtUnitReader() {
       });
 
       const activePageText = thoughtUnits?.[currentThoughtUnit - 1]?.text || "";
+      const nearestSyllabusNode = flattenTocNodes(syllabusToc).find((node) => node.page === currentPage) || null;
       const activePageContext: ActivePageContext = {
         documentId: bookId,
         documentTitle: sanitizeDocTitle(currentChapter?.title, uploadedFile?.name || "Document"),
         pageNumber: currentPage,
         totalPages: pdfPageCount || 1,
+        nearbyText: [
+          thoughtUnits?.[Math.max(0, currentThoughtUnit - 2)]?.text || "",
+          thoughtUnits?.[Math.min(thoughtUnits.length - 1, currentThoughtUnit)]?.text || "",
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+        activeTopicTitle: nearestSyllabusNode?.title || undefined,
+        activeTopicKind: nearestSyllabusNode?.kind || null,
         chapterTitle: currentChapter?.title || null,
         sectionTitle: titleForPage(tableOfContents, currentPage),
         pageText: activePageText,
@@ -2436,6 +2485,7 @@ export default function ThoughtUnitReader() {
             {/* Right: Unified Intelligence Panel */}
             <div className={fileUrl ? "h-full w-[32%] min-w-[380px] max-w-[520px] overflow-y-auto border-l border-white/10" : "flex-1 h-full"}>
               <RightPanel
+                key={`${bookId}-${currentPage}-${rightPanelResetKey}`}
                 ctx={activePageContext}
                 state={unifiedPanelState}
                 onTabChange={(activeTab) => setUnifiedPanelState((s) => ({ ...s, activeTab }))}
@@ -2460,7 +2510,7 @@ export default function ThoughtUnitReader() {
     }
 
     // ✅ NoteLab View - PURE: NoteLab workspace only (no shared PDF)
-    if (viewMode === "notelab") {
+    if (activeShellTab === "notelab") {
       // Generate chapters from TOC, or fallback to page ranges if TOC is empty
       let chaptersForNotelab: Array<{ id: string; title: string; pageNumber: number }> = [];
 
@@ -2515,7 +2565,7 @@ export default function ThoughtUnitReader() {
     }
 
     // ✅ TOC View - PURE: Only TOC tree (NO PDF panel)
-    if (viewMode === "toc") {
+    if (activeShellTab === "toc") {
       return (
         <div className="h-full" data-testid="toc-view-container">
           <ErrorBoundary
@@ -2542,40 +2592,38 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Syllabus View - Course map tied to current reading context
-    if (viewMode === "syllabus") {
-      const chaptersForSyllabus = tableOfContents.length > 0
-        ? tableOfContents.map((entry, idx) => ({
-            id: `chapter_${idx}`,
-            title: sanitizeDocTitle(entry.title, `Chapter ${idx + 1}`),
-            pageNumber: entry.pageNumber,
-          }))
-        : [{ id: 'chapter_0', title: 'Document Overview', pageNumber: Math.max(1, currentPage) }];
-
+    // ✅ Syllabus View - upload → parse → auto-TOC → jump/study
+    if (activeShellTab === "syllabus") {
       return (
-        <div className="h-full" data-testid="syllabus-view-container">
+        <div className="h-full overflow-y-auto p-4" data-testid="syllabus-view-container">
           <ErrorBoundary
             onError={(error) => {
-              console.error('📚 Syllabus Error:', { message: error.message, stack: error.stack });
+              console.error("📚 Syllabus Error:", { message: error.message, stack: error.stack });
             }}
           >
-            <SyllabusModePanel
-              documentId={bookId}
-              documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
-              chapters={chaptersForSyllabus}
-              onJumpToPage={(pageIndex) => {
-                syncToPage(pageIndex + 1);
-                setViewMode("reader");
-              }}
-              onStartStudySession={() => setViewMode("study")}
-            />
+            {!syllabusPages.length ? (
+              <SyllabusUploadPanel onParsed={handleParsedSyllabus} />
+            ) : (
+              <div className="space-y-3">
+                <div className="rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-300">
+                  <span className="font-medium text-white">Loaded syllabus:</span> {syllabusFileName}
+                </div>
+                <SyllabusStudyLauncher toc={syllabusToc} onStudyTopic={handleStudyTopic} />
+                <TocTree
+                  toc={syllabusToc}
+                  activePage={currentPage}
+                  onJump={handleSyllabusNodeClick}
+                  onStudy={handleStudyTopic}
+                />
+              </div>
+            )}
           </ErrorBoundary>
         </div>
       );
     }
 
     // ✅ Study Session View - PURE: Memo.cards-style flashcard study with Dashboard
-    if (viewMode === "study") {
+    if (activeShellTab === "study") {
       return (
         <div className="h-full" data-testid="study-view-container">
           <ErrorBoundary
@@ -2666,10 +2714,13 @@ export default function ThoughtUnitReader() {
         {/* Main Navigation Tabs */}
         <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 min-w-max" data-testid="main-nav">
           <button
-            onClick={() => setViewMode("reader")}
+            onClick={() => {
+              setViewMode("reader");
+              setActiveShellTab("reader");
+            }}
             data-testid="nav-reader"
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              viewMode === "reader" 
+              activeShellTab === "reader" 
                 ? "bg-yellow-500 text-black shadow-lg" 
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
@@ -2677,10 +2728,13 @@ export default function ThoughtUnitReader() {
             📖 Reader + Panel
           </button>
           <button
-            onClick={() => setViewMode("toc")}
+            onClick={() => {
+              setViewMode("toc");
+              setActiveShellTab("toc");
+            }}
             data-testid="nav-toc"
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              viewMode === "toc" 
+              activeShellTab === "toc" 
                 ? "bg-orange-500 text-white shadow-lg" 
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
@@ -2688,10 +2742,13 @@ export default function ThoughtUnitReader() {
             📑 TOC
           </button>
           <button
-            onClick={() => setViewMode("syllabus")}
+            onClick={() => {
+              setViewMode("syllabus");
+              setActiveShellTab("syllabus");
+            }}
             data-testid="nav-syllabus"
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              viewMode === "syllabus"
+              activeShellTab === "syllabus"
                 ? "bg-indigo-500 text-white shadow-lg"
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
@@ -2699,10 +2756,13 @@ export default function ThoughtUnitReader() {
             📚 Syllabus
           </button>
           <button
-            onClick={() => setViewMode("notelab")}
+            onClick={() => {
+              setViewMode("notelab");
+              setActiveShellTab("notelab");
+            }}
             data-testid="nav-notelab"
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              viewMode === "notelab"
+              activeShellTab === "notelab"
                 ? "bg-green-500 text-white shadow-lg"
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
@@ -2710,10 +2770,13 @@ export default function ThoughtUnitReader() {
             📝 NoteLab
           </button>
           <button
-            onClick={() => setViewMode("study")}
+            onClick={() => {
+              setViewMode("study");
+              setActiveShellTab("study");
+            }}
             data-testid="nav-study"
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              viewMode === "study"
+              activeShellTab === "study"
                 ? "bg-blue-500 text-white shadow-lg"
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
@@ -2728,7 +2791,10 @@ export default function ThoughtUnitReader() {
             🎯 DAT Apex
           </button>
           <button
-            onClick={() => setViewMode("reader")}
+            onClick={() => {
+              setViewMode("reader");
+              setActiveShellTab("reader");
+            }}
             className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700"
             title="Elena Mode is under construction."
           >
@@ -2737,7 +2803,7 @@ export default function ThoughtUnitReader() {
         </div>
 
         {/* Global Zoom Controls - Show when PDF is loaded */}
-        {fileUrl && pdfPageCount > 0 && viewMode === "reader" && (
+        {fileUrl && pdfPageCount > 0 && activeShellTab === "reader" && (
           <div className="flex items-center gap-1 bg-gray-900 rounded-lg px-2 py-1" data-testid="global-zoom">
             <button
               onClick={zoomOut}
@@ -2766,7 +2832,7 @@ export default function ThoughtUnitReader() {
         )}
 
         {/* Follow Scroll Toggle — OFF by default to prevent observer feedback loops */}
-        {fileUrl && viewMode === "reader" && (
+        {fileUrl && activeShellTab === "reader" && (
           <label className="inline-flex items-center gap-2 text-sm" title="When off, only Prev/Next/TOC changes the page. When on, scrolling can also advance pages.">
             <input
               type="checkbox"
@@ -2778,23 +2844,35 @@ export default function ThoughtUnitReader() {
             </span>
           </label>
         )}
-        <button
-          onClick={() =>
-            setFocusState((prev) => ({
-              ...prev,
-              running: !prev.running,
-              mode: prev.running ? prev.mode : "focus",
-              time: prev.running ? prev.time : 1500,
-            }))
-          }
-          className="text-xs px-3 py-1 rounded bg-purple-700 hover:bg-purple-600"
-        >
-          {focusState.running ? "Pause Focus Cycle" : "Start Focus Cycle"}
-        </button>
-        <span className="text-xs text-purple-200">
-          🟣 Focus Cycle: {String(Math.floor(focusState.time / 60)).padStart(2, "0")}:
-          {String(focusState.time % 60).padStart(2, "0")} remaining
-        </span>
+        <div className="flex items-center gap-2 rounded-xl border border-purple-400/30 bg-purple-900/30 px-2 py-1">
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+            focusState.mode === "focus" ? "bg-purple-500/30 text-purple-100" : "bg-emerald-500/30 text-emerald-100"
+          }`}>
+            {focusState.mode}
+          </span>
+          <span className="rounded-md bg-black/30 px-2 py-1 font-mono text-xs text-purple-100">
+            {String(Math.floor(focusState.time / 60)).padStart(2, "0")}:{String(focusState.time % 60).padStart(2, "0")}
+          </span>
+          <button
+            onClick={() =>
+              setFocusState((prev) => ({
+                ...prev,
+                running: !prev.running,
+                mode: prev.running ? prev.mode : prev.mode || "focus",
+                time: prev.time,
+              }))
+            }
+            className="text-xs rounded bg-purple-600 px-2 py-1 hover:bg-purple-500"
+          >
+            {focusState.running ? "Pause" : "Start"}
+          </button>
+          <button
+            onClick={() => setFocusState({ mode: "focus", time: 1500, running: false })}
+            className="text-xs rounded bg-slate-700 px-2 py-1 hover:bg-slate-600"
+          >
+            Reset
+          </button>
+        </div>
 
         <div className="flex-1" />
 
