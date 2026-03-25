@@ -31,6 +31,7 @@ import MemoCardsStudyPanel from "@/components/MemoCardsStudyPanel";
 import TocTree from "@/components/toc/TocTree";
 import SyllabusUploadPanel from "@/components/syllabus/SyllabusUploadPanel";
 import SyllabusStudyLauncher from "@/components/study/SyllabusStudyLauncher";
+import UnderConstructionPanel from "@/components/UnderConstructionPanel";
 
 // Pure View components (Strict Mode Separation - V1)
 import PureReaderView from "@/components/PureReaderView";
@@ -42,6 +43,7 @@ import { RightPanel } from "@/components/reader/RightPanel";
 import type { ActivePageContext, RightPanelState as UnifiedRightPanelState, TocNode } from "@/lib/readerContracts";
 import { splitParagraphs } from "@/lib/textNormalize";
 import { buildAutoToc, type PageTextBundle } from "@/lib/autoToc";
+import { extractFormulaCards } from "@/lib/right-panel/formulaNormalizer";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import DebugStatusBar from "@/components/DebugStatusBar";
 
@@ -364,11 +366,13 @@ export default function ThoughtUnitReader() {
 
   const [highlightedWord, setHighlightedWord] = useState("");
   const [fontSize, setFontSize] = useState(16);
-  const [fontFamily, setFontFamily] = useState("sans-serif");
+  const [readingMode, setReadingMode] = useState<"normal" | "dyslexia">("normal");
+  const [themeMode, setThemeMode] = useState<"dark" | "light">("dark");
+  const fontFamily = readingMode === "dyslexia" ? "Arial, Verdana, Tahoma, sans-serif" : "Inter, Georgia, serif";
   const [lineSpacing, setLineSpacing] = useState(1.5);
   const [clickSwitchesTo, setClickSwitchesTo] = useState(false);
   const [sampleText, setSampleText] = useState("");
-  const [darkMode, setDarkMode] = useState(true);
+  const darkMode = themeMode === "dark";
 
   // Voice settings state
   const [selectedVoice, setSelectedVoice] = useState<SpeechSynthesisVoice | null>(null);
@@ -451,8 +455,8 @@ export default function ThoughtUnitReader() {
         currentPage,
         currentThoughtUnit,
         pdfPageCount,
-        darkMode,
-        fontFamily,
+        themeMode,
+        readingMode,
         fontSize,
         lineSpacing,
         fileUrl,
@@ -499,21 +503,21 @@ export default function ThoughtUnitReader() {
     if (fileUrl && thoughtUnits.length > 0) {
       saveSessionState();
     }
-  }, [viewMode, currentPage, darkMode, fontFamily, fileUrl, thoughtUnits.length]);
+  }, [viewMode, currentPage, themeMode, readingMode, fileUrl, thoughtUnits.length]);
 
   // Restore session on mount
   useEffect(() => {
     const restored = restoreSessionState();
     if (restored) {
       setViewMode(
-        ((restored.viewMode === "toc" || restored.viewMode === "syllabus" || restored.viewMode === "notelab" || restored.viewMode === "study")
+        ((restored.viewMode === "toc" || restored.viewMode === "syllabus" || restored.viewMode === "notelab" || restored.viewMode === "study" || restored.viewMode === "elena")
           ? restored.viewMode
           : "reader") as WorkspaceMode
       );
       setCurrentPage(restored.currentPage || 1);
       setCurrentThoughtUnit(restored.currentThoughtUnit || 1);
-      setDarkMode(restored.darkMode !== undefined ? restored.darkMode : true);
-      setFontFamily(restored.fontFamily || "sans-serif");
+      setThemeMode(restored.themeMode || (restored.darkMode ? "dark" : "light") || "dark");
+      setReadingMode(restored.readingMode || ((restored.fontFamily || "").includes("Comic") ? "dyslexia" : "normal"));
       setFontSize(restored.fontSize || 16);
       setLineSpacing(restored.lineSpacing || 1.5);
       // Note: fileUrl and thoughtUnits will need to be re-uploaded as we can't store large data
@@ -521,8 +525,8 @@ export default function ThoughtUnitReader() {
   }, []);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", darkMode);
-  }, [darkMode]);
+    document.documentElement.classList.toggle("dark", themeMode === "dark");
+  }, [themeMode]);
 
   useEffect(() => {
     setActiveShellTab(viewMode);
@@ -2353,15 +2357,15 @@ export default function ThoughtUnitReader() {
   const handleStudyTopic = useCallback((node: TocNode) => {
     syncToPage(node.page, { reason: "TOC_JUMP" });
     setRightPanelResetKey((k) => k + 1);
-    setUnifiedPanelState((prev) => ({ ...prev, activeTab: "priority" }));
-    setViewMode("study");
-    setActiveShellTab("study");
+    setUnifiedPanelState((prev) => ({ ...prev, activeTab: "insights" }));
+    setViewMode("reader");
+    setActiveShellTab("reader");
   }, [syncToPage]);
 
   const handleSyllabusNodeClick = useCallback((node: TocNode) => {
     syncToPage(node.page, { reason: "TOC_JUMP" });
     setRightPanelResetKey((k) => k + 1);
-    setUnifiedPanelState((prev) => ({ ...prev, activeTab: "priority" }));
+    setUnifiedPanelState((prev) => ({ ...prev, activeTab: "insights" }));
     setViewMode("reader");
     setActiveShellTab("reader");
   }, [syncToPage]);
@@ -2438,6 +2442,7 @@ export default function ThoughtUnitReader() {
         sectionTitle: titleForPage(tableOfContents, currentPage),
         pageText: activePageText,
         paragraphTexts: splitParagraphs(activePageText),
+        formulas: extractFormulaCards(activePageText),
       };
 
       return (
@@ -2509,58 +2514,14 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ NoteLab View - PURE: NoteLab workspace only (no shared PDF)
     if (activeShellTab === "notelab") {
-      // Generate chapters from TOC, or fallback to page ranges if TOC is empty
-      let chaptersForNotelab: Array<{ id: string; title: string; pageNumber: number }> = [];
-
-      if (tableOfContents.length > 0) {
-        chaptersForNotelab = tableOfContents.map((entry, idx) => ({
-          id: `chapter_${idx}`,
-          title: sanitizeDocTitle(entry.title, `Chapter ${idx + 1}`),
-          pageNumber: entry.pageNumber
-        }));
-      } else if (pdfPageCount > 0) {
-        // Fallback: create page-range chapters (every 10 pages)
-        const rangeSize = 10;
-        const numRanges = Math.ceil(pdfPageCount / rangeSize);
-        for (let i = 0; i < numRanges; i++) {
-          const startPage = i * rangeSize + 1;
-          const endPage = Math.min((i + 1) * rangeSize, pdfPageCount);
-          chaptersForNotelab.push({
-            id: `pages_${startPage}_${endPage}`,
-            title: `Pages ${startPage}–${endPage}`,
-            pageNumber: startPage
-          });
-        }
-      }
-
       return (
-        <div className="h-full" data-testid="notelab-view-container">
-          <ErrorBoundary
-            onError={(error, errorInfo) => {
-              console.error('📝 NoteLab Error:', { message: error.message, stack: error.stack });
-            }}
-          >
-            <PureNoteLabView
-              documentId={bookId}
-              userId={USER_ID}
-              documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
-              chapters={chaptersForNotelab}
-              currentPage={currentPage}
-              onNavigateToPage={(pageIndex) => {
-                syncToPage(pageIndex);
-                setViewMode("reader");
-              }}
-              onStartStudy={() => setViewMode("study")}
-              getPageText={async (pageNumber: number) => {
-                // Find the thought unit for this page
-                const unitIndex = pageToUnit(pageNumber, pdfPageCount, thoughtUnits.length);
-                return thoughtUnits?.[unitIndex - 1]?.text || '';
-              }}
-            />
-          </ErrorBoundary>
-        </div>
+        <UnderConstructionPanel
+          icon="🧱"
+          title="NoteLab"
+          subtitle="Board view and connection mapping are in active development."
+          bullets={["Auto Notes", "Manual Notes", "Connection Map", "Smart Recall"]}
+        />
       );
     }
 
@@ -2622,53 +2583,25 @@ export default function ThoughtUnitReader() {
       );
     }
 
-    // ✅ Study Session View - PURE: Memo.cards-style flashcard study with Dashboard
     if (activeShellTab === "study") {
       return (
-        <div className="h-full" data-testid="study-view-container">
-          <ErrorBoundary
-            onError={(error, errorInfo) => {
-              console.error('🧠 Study Error:', { message: error.message, stack: error.stack });
-            }}
-          >
-            <div className="h-full flex flex-col">
-              {/* Study Dashboard Header */}
-              <div className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-xl">🧠</span>
-                  <h2 className="text-lg font-semibold text-white">Study Dashboard</h2>
-                  <span className="text-sm text-gray-400">
-                    {sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
-                  </span>
-                </div>
-                <button
-                  onClick={() => setViewMode("reader")}
-                  className="text-gray-400 hover:text-gray-200 px-3 py-1 rounded hover:bg-gray-700"
-                >
-                  Close
-                </button>
-              </div>
+        <UnderConstructionPanel
+          icon="🧠"
+          title="Study"
+          subtitle="Execution mode is being rebuilt around syllabus → topic → recall flow."
+          bullets={["Quick Recall", "Application", "Compare", "Focus Sessions"]}
+        />
+      );
+    }
 
-              {/* Main Study Panel */}
-              <div className="flex-1 overflow-hidden flex flex-col">
-                <div className="p-4 border-b border-gray-700 bg-gray-900/50">
-                  <FocusCycleCard />
-                </div>
-                <div className="flex-1 overflow-hidden">
-                  <MemoCardsStudyPanel
-                    documentId={bookId}
-                    documentTitle={sanitizeDocTitle(tableOfContents[0]?.title, uploadedFile?.name || "Document")}
-                    onNavigateToPage={(pageIdx) => {
-                      syncToPage(pageIdx + 1);
-                      setViewMode("reader");
-                    }}
-                    onClose={() => setViewMode("reader")}
-                  />
-                </div>
-              </div>
-            </div>
-          </ErrorBoundary>
-        </div>
+    if (activeShellTab === "elena") {
+      return (
+        <UnderConstructionPanel
+          icon="✨"
+          title="Elena Mode (Under Construction)"
+          subtitle="Guided Elena workflows are in active development."
+          bullets={["Premium tutoring flow", "Adaptive coaching", "Session memory", "Voice-guided review"]}
+        />
       );
     }
 
@@ -2693,12 +2626,12 @@ export default function ThoughtUnitReader() {
   }, []);
 
   return (
-    <div className="h-screen overflow-hidden flex flex-col bg-white text-slate-900 dark:bg-slate-900 dark:text-white">
+    <div className={`h-screen overflow-hidden flex flex-col ${themeMode === "dark" ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-900"} ${readingMode === "dyslexia" ? "tracking-wide leading-8" : "leading-6"}`} style={{ fontFamily }}>
       <header className="border-b border-slate-700/80 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white shadow-md">
         <div className="px-4 py-3 md:py-4 flex flex-col items-center justify-center text-center">
           <div className="relative inline-flex items-center">
             <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide text-blue-300 drop-shadow-[0_2px_10px_rgba(59,130,246,0.35)]">
-              Avrrio
+              Avrrio Reader
             </h1>
             <span
               aria-hidden
@@ -2792,15 +2725,15 @@ export default function ThoughtUnitReader() {
           </button>
           <button
             onClick={() => {
-              setViewMode("reader");
-              setActiveShellTab("reader");
+              setViewMode("elena");
+              setActiveShellTab("elena");
             }}
             className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700"
             title="Elena Mode is under construction."
           >
             Elena Mode (Under Construction)
           </button>
-        </div>
+                  </div>
 
         {/* Global Zoom Controls - Show when PDF is loaded */}
         {fileUrl && pdfPageCount > 0 && activeShellTab === "reader" && (
@@ -2844,15 +2777,16 @@ export default function ThoughtUnitReader() {
             </span>
           </label>
         )}
-        <div className="flex items-center gap-2 rounded-xl border border-purple-400/30 bg-purple-900/30 px-2 py-1">
+        <div className="flex items-center gap-2 rounded-full border border-purple-300/40 bg-white/10 backdrop-blur-md shadow-[0_0_20px_rgba(139,92,246,0.25)] px-3 py-1.5">
           <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-            focusState.mode === "focus" ? "bg-purple-500/30 text-purple-100" : "bg-emerald-500/30 text-emerald-100"
+            focusState.mode === "focus" ? "bg-purple-500/40 text-purple-100" : "bg-emerald-500/40 text-emerald-100"
           }`}>
-            {focusState.mode}
+            {focusState.mode === "focus" ? "Focus" : "Short Break"}
           </span>
-          <span className="rounded-md bg-black/30 px-2 py-1 font-mono text-xs text-purple-100">
+          <span className="rounded-xl bg-black/30 px-3 py-1.5 font-mono text-sm text-purple-100">
             {String(Math.floor(focusState.time / 60)).padStart(2, "0")}:{String(focusState.time % 60).padStart(2, "0")}
           </span>
+          <span className="text-[10px] text-slate-300">Long Break (soon)</span>
           <button
             onClick={() =>
               setFocusState((prev) => ({
@@ -2889,25 +2823,31 @@ export default function ThoughtUnitReader() {
           )}
         </label>
 
-        {/* Dyslexia Font Toggle */}
-        <button
-          onClick={() => setFontFamily((f) => f === "sans-serif" ? "Comic Sans MS, cursive" : "sans-serif")}
-          className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
-          title="Toggle Dyslexia-friendly font"
-        >
-          {fontFamily === "sans-serif" ? "🔤 Normal" : "🔤 Dyslexia"}
-        </button>
+        <div className="flex items-center gap-2 rounded-xl border border-white/20 bg-black/20 px-2 py-1">
+          <span className="text-[11px] text-slate-300">Reading</span>
+          {(["normal", "dyslexia"] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => setReadingMode(mode)}
+              className={`px-2.5 py-1 text-xs rounded-lg border ${readingMode === mode ? "bg-indigo-500/60 border-indigo-300 text-white" : "bg-slate-700/70 border-slate-500 text-slate-200"}`}
+            >
+              {mode === "normal" ? "📘 Normal" : "🔤 Dyslexia"}
+            </button>
+          ))}
+        </div>
 
-        {/* Dark mode */}
-        <button
-          onClick={() => {
-            document.documentElement.classList.toggle("dark");
-            setDarkMode((d) => !d);
-          }}
-          className="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
-        >
-          {darkMode ? "🌙 Dark" : "☀️ Light"}
-        </button>
+        <div className="flex items-center gap-2 rounded-xl border border-white/20 bg-black/20 px-2 py-1">
+          <span className="text-[11px] text-slate-300">Theme</span>
+          {(["dark", "light"] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => setThemeMode(mode)}
+              className={`px-2.5 py-1 text-xs rounded-lg border ${themeMode === mode ? "bg-amber-500/60 border-amber-300 text-white" : "bg-slate-700/70 border-slate-500 text-slate-200"}`}
+            >
+              {mode === "dark" ? "🌙 Dark" : "☀️ Light"}
+            </button>
+          ))}
+        </div>
 
         {/* 🔐 Auth status / control */}
         <div className="flex items-center gap-2">

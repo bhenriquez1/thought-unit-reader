@@ -1,0 +1,10 @@
+export const DIAGNOSTIC_WORDS = ["diagnostic test", "review question", "practice", "self-test", "find", "solve", "determine", "identify", "sketch"];
+export const DEFINITION_WORDS = ["is defined as", "refers to", "means", "is called", "term", "definition", "concept"];
+export const MECHANISM_WORDS = ["because", "due to", "results in", "therefore", "leads to", "causes", "mechanism", "pathway", "process"];
+export const COMPARISON_WORDS = ["vs", "versus", "unlike", "in contrast", "compared with", "difference", "similarity"];
+export const CLINICAL_WORDS = ["patient", "diagnosis", "symptom", "sign", "treatment", "management", "prognosis", "exam", "clinical", "disease"];
+export const CASE_WORDS = ["case", "presents with", "history", "chief complaint", "vignette", "scenario"];
+export const REFERENCE_WORDS = ["copyright", "references", "bibliography", "et al", "journal", "published", "doi"];
+export const FORMULA_WORDS = ["equation", "formula", "identity", "theorem", "expression", "solve for", "derive"];
+export const OVERVIEW_WORDS = ["introduction", "overview", "summary", "this chapter", "in this section", "we will", "this page"];
+export const APPLICATION_WORDS = ["example", "worked example", "apply", "use", "interpret", "predict", "in practice"];

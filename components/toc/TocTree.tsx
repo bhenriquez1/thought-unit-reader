@@ -124,6 +124,11 @@ function TocRow({
         <button onClick={() => onJump(node)} className="flex-1 text-left">
           <span className="font-medium">{node.title}</span>
           <span className="ml-2 text-xs text-slate-400">{KIND_LABEL[node.kind]} · p.{node.page}</span>
+          {node.source && (
+            <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${node.source === "fallback" ? "bg-amber-300/20 text-amber-100" : "bg-emerald-300/20 text-emerald-100"}`}>
+              {node.source === "fallback" ? "Fallback structure" : "Auto-detected"}
+            </span>
+          )}
         </button>
 
         {onStudy && (
