@@ -9,6 +9,16 @@ const STRUCTURED_HEADING_RE = /^(chapter|ch\.?|unit|week|module|assignment|exam|
 const SECTION_NUMBER_RE = /^((\d+(\.\d+){0,3})|([A-Z]\.)|([IVXLC]+\.))\s+(.{2,})$/;
 const FRONTMATTER_RE = /^(preface|foreword|introduction|contents|table of contents|syllabus)$/i;
 const ASSIGNMENT_WORD_RE = /\b(quiz|exam|midterm|final|assignment|project|discussion|deadline|due)\b/i;
+const STRUCTURED_RE = /^(chapter|ch\.?|unit|week|module|assignment|exam)\s+([\w.-]+)\b[:.\- ]*(.*)$/i;
+const SECTION_RE = /^((\d+(\.\d+){0,3})|([A-Z]\.)|([IVXLC]+\.))\s+(.{2,})$/;
+const FRONTMATTER_RE = /^(preface|foreword|introduction|contents|table of contents|syllabus)$/i;
+
+const isTitleCase = (line: string) => {
+  const words = line.trim().split(/\s+/);
+  if (words.length < 2 || words.length > 12) return false;
+  const upperStart = words.filter((w) => /^[A-Z][a-z]/.test(w)).length;
+  return upperStart / words.length > 0.6;
+};
 
 function cleanLine(line: string): string {
   return line.replace(/\s+/g, " ").trim();
@@ -42,6 +52,14 @@ function classifyStructured(line: string): TocNode["kind"] | null {
   if (SECTION_NUMBER_RE.test(line)) {
     return /^\d+\.\d+\.\d+/.test(line) ? "subsection" : "section";
   }
+function classifyLine(line: string): TocNode["kind"] | null {
+  if (STRUCTURED_RE.test(line)) {
+    if (/assignment|exam/i.test(line)) return "assignment";
+    if (/week|module|unit/i.test(line)) return "week";
+    return "chapter";
+  }
+  if (FRONTMATTER_RE.test(line)) return "frontmatter";
+  if (SECTION_RE.test(line)) return /^\d+\.\d+\.\d+/.test(line) ? "subsection" : "section";
   return null;
 }
 
@@ -62,6 +80,66 @@ function scoreHeuristic(line: string): number {
   if (line.length <= 70) score += 1;
   if (ASSIGNMENT_WORD_RE.test(line)) score += 2;
   return score;
+  const kind = classifyLine(line);
+  if (kind) score += 7;
+  if (/^[A-Z0-9 .:\-]+$/.test(line)) score += 3;
+  if (isTitleCase(line)) score += 2;
+  if (line.length < 90) score += 1;
+  if (/\.{2,}\s*\d+$/.test(line)) score += 1;
+  return score;
+}
+
+function buildFallbackToc(pages: PageTextBundle[]): TocNode[] {
+  const clusterSize = 10;
+  const nodes: TocNode[] = [];
+  for (let start = 1; start <= pages.length; start += clusterSize) {
+    const end = Math.min(start + clusterSize - 1, pages.length);
+    const idx = nodes.length + 1;
+    nodes.push({
+      id: `fallback-topic-${idx}`,
+      title: `Topic ${idx} (pp. ${start}–${end})`,
+      page: start,
+      kind: "section",
+      source: "fallback",
+      children: [],
+    });
+  }
+  return nodes;
+}
+
+export function buildAutoToc(pages: PageTextBundle[]): TocNode[] {
+  if (!pages.length) return [];
+  const flat: TocNode[] = [];
+
+  for (const page of pages) {
+    const lines = getCandidateLines(page.text);
+
+    for (const line of lines) {
+      const structuredKind = classifyLine(line);
+      const uppercaseHeuristic = /^[A-Z0-9\s\-:]{4,}$/.test(line) && line.length < 90;
+      const titleHeuristic = isTitleCase(line) && line.length < 90;
+
+      const kind = structuredKind || (uppercaseHeuristic ? "section" : titleHeuristic ? "subsection" : null);
+      if (!kind) continue;
+      const score = scoreLine(line);
+      if (score < 5) continue;
+
+      flat.push({
+        id: `auto-${kind}-${page.page}-${line.slice(0, 30)}`,
+        title: line,
+        page: page.page,
+        kind,
+        source: "auto",
+        children: [],
+      });
+    }
+  }
+
+  const deduped = dedupeNearby(flat);
+  const nested = nestToc(deduped);
+  if (nested.length > 0) return nested;
+
+  return buildFallbackToc(pages);
 }
 
 function dedupeNearby(nodes: TocNode[]): TocNode[] {

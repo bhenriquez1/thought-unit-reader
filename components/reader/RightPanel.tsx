@@ -89,6 +89,10 @@ export function RightPanel({
                 <div className="space-y-2">
                   {ctx.formulas.map((formula, idx) => (
                     <FormulaBlock key={idx} formula={formula.normalized} speakable={formula.speakable} usage={formula.usage} trap={formula.trap} />
+                    <div key={idx} className="rounded bg-black/30 p-2 font-mono text-xs">
+                      <p>{formula.normalized}</p>
+                      <p className="mt-1 text-slate-300">TTS: {formula.speakable}</p>
+                    </div>
                   ))}
                 </div>
               </Section>
@@ -155,6 +159,8 @@ function FormulaBlock({ formula, speakable, usage, trap }: { formula: string; sp
       {trap && <p className="mt-1 text-rose-200">Trap: {trap}</p>}
     </div>
   );
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-slate-100"><h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-300">{title}</h3>{children}</section>;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

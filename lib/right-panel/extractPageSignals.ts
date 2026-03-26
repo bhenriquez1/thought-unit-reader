@@ -21,6 +21,7 @@ export function extractPageSignals(ctx: ActivePageContext): PageSignals {
   const topicText = `${ctx.activeTopicTitle || ""} ${ctx.sectionTitle || ""} ${ctx.chapterTitle || ""}`;
   const documentTitle = ctx.documentTitle || "";
   const text = `${pageText}\n${nearbyText}\n${topicText}\n${documentTitle}`.toLowerCase();
+  const text = `${pageText}\n${nearbyText}`.toLowerCase();
   const lines = pageText.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   const formulaLines = detectFormulaLines(pageText);
 

@@ -24,6 +24,8 @@ export function toSpeakableFormula(raw: string): string {
     .replace(/\)/g, " close parenthesis ")
     .replace(/\^2|²/g, " squared ")
     .replace(/\^3|³/g, " cubed ")
+    .replace(/²/g, " squared ")
+    .replace(/³/g, " cubed ")
     .replace(/=/g, " equals ")
     .replace(/\+/g, " plus ")
     .replace(/−|-/g, " minus ")
@@ -52,4 +54,10 @@ export function extractFormulaCards(text: string): FormulaCard[] {
         trap: "Watch sign order and substitution consistency.",
       };
     });
+export function extractFormulaCards(text: string): FormulaCard[] {
+  return detectFormulaLines(text).slice(0, 6).map((raw) => ({
+    raw,
+    normalized: normalizeFormula(raw),
+    speakable: toSpeakableFormula(raw),
+  }));
 }
