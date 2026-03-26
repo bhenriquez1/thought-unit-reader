@@ -18,7 +18,9 @@ const hasAny = (text: string, words: string[]) => words.some((w) => text.include
 export function extractPageSignals(ctx: ActivePageContext): PageSignals {
   const pageText = ctx.pageText || "";
   const nearbyText = ctx.nearbyText || "";
-  const text = `${pageText}\n${nearbyText}`.toLowerCase();
+  const topicText = `${ctx.activeTopicTitle || ""} ${ctx.sectionTitle || ""} ${ctx.chapterTitle || ""}`;
+  const documentTitle = ctx.documentTitle || "";
+  const text = `${pageText}\n${nearbyText}\n${topicText}\n${documentTitle}`.toLowerCase();
   const lines = pageText.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   const formulaLines = detectFormulaLines(pageText);
 
@@ -48,6 +50,7 @@ export function extractPageSignals(ctx: ActivePageContext): PageSignals {
     nearbyHeading: ctx.sectionTitle || undefined,
     activeTopicTitle: ctx.activeTopicTitle,
     activeTopicKind: ctx.activeTopicKind || undefined,
+    documentTitle: ctx.documentTitle,
     pageText,
     nearbyText,
   };

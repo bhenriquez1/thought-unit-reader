@@ -13,6 +13,8 @@ export function normalizeFormula(raw: string): string {
   return raw
     .replace(/\s*([=+\-×÷\/()])\s*/g, " $1 ")
     .replace(/\s+/g, " ")
+    .replace(/\^2/g, "²")
+    .replace(/\^3/g, "³")
     .trim();
 }
 
@@ -20,8 +22,8 @@ export function toSpeakableFormula(raw: string): string {
   return raw
     .replace(/\(/g, " open parenthesis ")
     .replace(/\)/g, " close parenthesis ")
-    .replace(/²/g, " squared ")
-    .replace(/³/g, " cubed ")
+    .replace(/\^2|²/g, " squared ")
+    .replace(/\^3|³/g, " cubed ")
     .replace(/=/g, " equals ")
     .replace(/\+/g, " plus ")
     .replace(/−|-/g, " minus ")
@@ -31,10 +33,23 @@ export function toSpeakableFormula(raw: string): string {
     .trim();
 }
 
+function inferUsageHint(formula: string): string {
+  if (/a²\s*-\s*b²/.test(formula)) return "Use for difference-of-squares factoring patterns.";
+  if (/a²\s*\+\s*2ab\s*\+\s*b²/.test(formula)) return "Use when recognizing perfect-square trinomial expansion.";
+  return "Use when this symbolic structure appears in the stem/options.";
+}
+
 export function extractFormulaCards(text: string): FormulaCard[] {
-  return detectFormulaLines(text).slice(0, 6).map((raw) => ({
-    raw,
-    normalized: normalizeFormula(raw),
-    speakable: toSpeakableFormula(raw),
-  }));
+  return detectFormulaLines(text)
+    .slice(0, 6)
+    .map((raw) => {
+      const normalized = normalizeFormula(raw);
+      return {
+        raw,
+        normalized,
+        speakable: toSpeakableFormula(normalized),
+        usage: inferUsageHint(normalized),
+        trap: "Watch sign order and substitution consistency.",
+      };
+    });
 }
