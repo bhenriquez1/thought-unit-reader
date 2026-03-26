@@ -84,6 +84,7 @@ export interface PageSignals {
   nearbyHeading?: string;
   activeTopicTitle?: string;
   activeTopicKind?: string;
+  documentTitle?: string;
   pageText: string;
   nearbyText: string;
 }
