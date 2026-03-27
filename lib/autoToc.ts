@@ -5,7 +5,7 @@ export interface PageTextBundle {
   text: string;
 }
 
-const STRUCTURED_HEADING_RE = /^(chapter|ch\.?|unit|week|module|assignment|exam|lecture)\s+([\w.-]+)\b[:.\- ]*(.*)$/i;
+const STRUCTURED_HEADING_RE = /^(chapter|ch\.?|unit|week|module|assignment|exam|lecture|part|appendix)\s+([\w.-]+)\b[:.\- ]*(.*)$/i;
 const SECTION_NUMBER_RE = /^((\d+(\.\d+){0,3})|([A-Z]\.)|([IVXLC]+\.))\s+(.{2,})$/;
 const FRONTMATTER_RE = /^(preface|foreword|introduction|contents|table of contents|syllabus)$/i;
 const ASSIGNMENT_WORD_RE = /\b(quiz|exam|midterm|final|assignment|project|discussion|deadline|due)\b/i;
@@ -36,7 +36,8 @@ function classifyStructured(line: string): TocNode["kind"] | null {
   if (STRUCTURED_HEADING_RE.test(line)) {
     if (/assignment|quiz/i.test(line)) return "assignment";
     if (/exam|midterm|final/i.test(line)) return "exam";
-    if (/week|module|unit/i.test(line)) return "week";
+    if (/week|module|unit|part/i.test(line)) return "week";
+    if (/appendix/i.test(line)) return "topic";
     return "chapter";
   }
   if (FRONTMATTER_RE.test(line)) return "frontmatter";

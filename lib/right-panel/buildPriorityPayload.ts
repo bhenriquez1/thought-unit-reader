@@ -1,20 +1,21 @@
-import type { ActivePageContext, PageClassification, PriorityPayload } from "@/lib/readerContracts";
+import type { ActivePageContext, PageClassification, PageSignals, PriorityPayload } from "@/lib/readerContracts";
 
-function evidenceLines(ctx: ActivePageContext, count = 4): string[] {
-  return ctx.paragraphTexts
-    .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter((line) => line.length >= 28)
-    .slice(0, count);
+function topEvidence(signals: PageSignals, count = 5): string[] {
+  return (signals.paragraphSignals || [])
+    .filter((p) => !p.suppress)
+    .sort((a, b) => b.yieldScore - a.yieldScore)
+    .slice(0, count)
+    .map((p) => p.text);
 }
 
-export function buildPriorityPayload(ctx: ActivePageContext, classification: PageClassification): PriorityPayload {
+export function buildPriorityPayload(ctx: ActivePageContext, classification: PageClassification, signals: PageSignals): PriorityPayload {
   const pageType = classification.pageType;
-  const evidence = evidenceLines(ctx, 4);
+  const evidence = topEvidence(signals, 5);
 
   if (pageType === "diagnostic") {
     return {
       pageRole: "This page is testing whether the learner can execute the target skill under exam conditions.",
-      primaryGoal: "Recognize the underlying concept, choose the right solving framework, and avoid surface-level traps.",
+      primaryGoal: "Find the tested method and avoid the trap pattern.",
       mainIdeas: evidence.length ? evidence.slice(0, 4) : ["Identify tested skill", "Identify first move"],
       whyItMatters: ["Exam readiness", "Procedural fluency", "Concept transfer"],
       whatToRemember: ["What is being asked", "What framework applies", "What common mistake to avoid"],
@@ -24,38 +25,38 @@ export function buildPriorityPayload(ctx: ActivePageContext, classification: Pag
   if (pageType === "overview") {
     return {
       pageRole: "This page introduces the topic and frames what later pages will build.",
-      primaryGoal: "Anchor the big picture before memorizing details.",
-      mainIdeas: evidence.length ? evidence.slice(0, 3) : ["Why this topic matters", "Core idea"],
-      whyItMatters: ["Prevents fragmented learning"],
-      whatToRemember: ["Frame first, details second"],
+      primaryGoal: "Compress the chapter frame into a short map.",
+      mainIdeas: evidence.length ? evidence.slice(0, 3) : [ctx.sectionTitle || "Core frame"],
+      whyItMatters: ["Prevents fragmented memorization"],
+      whatToRemember: ["Big picture first", "Then details"],
     };
   }
 
   if (pageType === "clinical") {
     return {
       pageRole: "This page supports recognition, interpretation, and decision-making in a clinical context.",
-      primaryGoal: "Recognize findings and connect them to implications.",
+      primaryGoal: "Extract findings, implication, and next decision.",
       mainIdeas: evidence.length ? evidence.slice(0, 3) : ["Clinical relevance", "Recognition cues"],
-      whyItMatters: ["Faster diagnosis", "Safer management"],
+      whyItMatters: ["Differential accuracy", "Safer management decisions"],
       whatToRemember: ["Sign → interpretation → implication"],
     };
   }
 
   if (pageType === "formula") {
     return {
-      pageRole: "This page provides a symbolic rule set that must be understood structurally.",
-      primaryGoal: "Map symbols to meaning and pattern usage.",
+      pageRole: "This page teaches a symbolic rule that must be recognized and applied correctly.",
+      primaryGoal: "Map symbols, pattern, and valid usage.",
       mainIdeas: evidence.length ? evidence.slice(0, 3) : ["Variable meaning", "Transformation pattern"],
-      whyItMatters: ["Improves transfer to problems"],
-      whatToRemember: ["Variable meanings", "When to use", "Common misuse"],
+      whyItMatters: ["Faster pattern recognition in questions"],
+      whatToRemember: ["Symbol meaning", "Usage condition", "Trap sign"],
     };
   }
 
   return {
-    pageRole: "This page advances the current topic based on extracted evidence.",
-    primaryGoal: "Extract the claim and its practical consequence from this page.",
+    pageRole: "This page advances the current topic using evidence-ranked blocks.",
+    primaryGoal: "Keep only highest-yield ideas and suppress filler.",
     mainIdeas: evidence.length ? evidence : [ctx.pageText.slice(0, 160)],
     whyItMatters: ["Supports downstream reasoning in this chapter"],
-    whatToRemember: evidence.length ? evidence.slice(0, 2) : ["Use evidence from the page text"],
+    whatToRemember: evidence.length ? evidence.slice(0, 2) : ["Use evidence from page text"],
   };
 }

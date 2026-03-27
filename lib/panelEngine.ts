@@ -22,10 +22,10 @@ export function resolvePanelPayload(
 
   return {
     classification,
-    priority: buildPriorityPayload(ctx, classification),
-    explain: buildExplainPayload(ctx, classification),
-    relations: buildRelationsPayload(ctx, classification),
-    compare: buildComparePayload(ctx, classification),
-    insights: buildInsightsPayload(classification),
+    priority: buildPriorityPayload(ctx, classification, signals),
+    explain: buildExplainPayload(ctx, classification, signals),
+    relations: buildRelationsPayload(ctx, classification, signals),
+    compare: buildComparePayload(ctx, classification, signals),
+    insights: buildInsightsPayload(classification, signals),
   };
 }

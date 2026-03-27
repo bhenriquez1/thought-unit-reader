@@ -58,6 +58,36 @@ export interface TocNode {
   children?: TocNode[];
 }
 
+
+export type ParagraphKind =
+  | "definition"
+  | "mechanism"
+  | "clinical"
+  | "comparison"
+  | "formula"
+  | "application"
+  | "reference"
+  | "filler"
+  | "unknown";
+
+export interface ParagraphSignal {
+  text: string;
+  page: number;
+  index: number;
+  blockType: "heading" | "subheading" | "paragraph" | "bullet" | "tableRow" | "caption" | "reference" | "metadata";
+  kind: ParagraphKind;
+  yieldScore: number;
+  definitionScore: number;
+  mechanismScore: number;
+  clinicalScore: number;
+  comparisonScore: number;
+  examScore: number;
+  formulaScore: number;
+  fillerPenalty: number;
+  evidenceTerms: string[];
+  suppress: boolean;
+}
+
 export interface PageSignals {
   questionCount: number;
   numberedItemCount: number;
@@ -85,6 +115,7 @@ export interface PageSignals {
   activeTopicTitle?: string;
   activeTopicKind?: string;
   documentTitle?: string;
+  paragraphSignals?: ParagraphSignal[];
   pageText: string;
   nearbyText: string;
 }
@@ -128,11 +159,22 @@ export interface ComparePayload {
   emptyState?: string;
 }
 
+export interface DatInsightPayload {
+  testedConcepts: string[];
+  likelyQuestionAngles: string[];
+  commonTraps: string[];
+  mustKnowTerms: string[];
+  distinctionPairs: string[];
+  fastRecall: string[];
+  applicationCue?: string[];
+}
+
 export interface InsightsPayload {
   highYield: string[];
   traps: string[];
   hiddenConnections: string[];
   whatYouMayMiss: string[];
+  dat?: DatInsightPayload;
 }
 
 export interface ResolvedPanelPayload {

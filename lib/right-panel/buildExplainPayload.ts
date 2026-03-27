@@ -1,47 +1,50 @@
-import type { ActivePageContext, ExplainPayload, PageClassification } from "@/lib/readerContracts";
+import type { ActivePageContext, ExplainPayload, PageClassification, PageSignals } from "@/lib/readerContracts";
 
-function pickEvidence(ctx: ActivePageContext): string[] {
-  return ctx.paragraphTexts
-    .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter((line) => line.length >= 20)
-    .slice(0, 5);
+function evidenceByKind(signals: PageSignals, kind: string, limit = 3): string[] {
+  return (signals.paragraphSignals || [])
+    .filter((p) => !p.suppress && (kind === "any" || p.kind === kind))
+    .sort((a, b) => b.yieldScore - a.yieldScore)
+    .slice(0, limit)
+    .map((p) => p.text);
 }
 
-export function buildExplainPayload(ctx: ActivePageContext, classification: PageClassification): ExplainPayload {
+export function buildExplainPayload(_ctx: ActivePageContext, classification: PageClassification, signals: PageSignals): ExplainPayload {
   const t = classification.pageType;
-  const evidence = pickEvidence(ctx);
+  const core = evidenceByKind(signals, "any", 5);
+  const mechanismBlocks = evidenceByKind(signals, "mechanism", 3);
+  const definitionBlocks = evidenceByKind(signals, "definition", 3);
 
   if (t === "diagnostic") {
     return {
-      meaning: evidence[0] || "This question set checks conceptual execution, not just final answers.",
-      mechanism: evidence[1] || "The solving framework works when you classify the problem type before computation.",
+      meaning: core[0] || "This item set checks whether you can choose the right solving framework.",
+      mechanism: mechanismBlocks[0] || "Pattern recognition comes first, then execution.",
       stepwiseBreakdown: ["Identify problem type", "Choose governing rule", "Execute", "Check trap"],
-      application: ["Use this in timed drills", "Audit first-step errors"],
+      application: ["Practice timed", "Audit first-step errors"],
     };
   }
 
   if (t === "formula") {
     return {
-      meaning: evidence[0] || "What this formula represents in the system.",
-      mechanism: evidence[1] || "Why the structure of the formula works.",
-      stepwiseBreakdown: ["Define symbols", "Identify pattern", "Show relationship", "Indicate valid usage"],
-      application: ["When to use", "When not to use", "How to recognize in problems"],
+      meaning: definitionBlocks[0] || core[0] || "What the expression represents.",
+      mechanism: mechanismBlocks[0] || core[1] || "Why the algebraic structure works.",
+      stepwiseBreakdown: ["Define symbols", "Identify pattern family", "Transform/expand", "Check use conditions"],
+      application: ["When to use", "When not to use", "Common substitution traps"],
     };
   }
 
   if (t === "clinical") {
     return {
-      meaning: evidence[0] || "What clinical sign or finding is being recognized.",
-      mechanism: evidence[1] || "Why it happens and what that means clinically.",
-      stepwiseBreakdown: ["Recognize", "Interpret", "Infer implication", "Choose action"],
-      application: ["Use in differential diagnosis", "Use in treatment planning"],
+      meaning: core[0] || "What sign or symptom pattern is being recognized.",
+      mechanism: mechanismBlocks[0] || core[1] || "Why this pattern occurs and what it implies.",
+      stepwiseBreakdown: ["Recognize finding", "Interpret significance", "Differentiate alternatives", "Choose action"],
+      application: ["Differential diagnosis", "Treatment implication"],
     };
   }
 
   return {
-    meaning: evidence[0] || "Define the concept in plain language from this page.",
-    mechanism: evidence[1] || "Explain why it works using visible causal links.",
-    stepwiseBreakdown: evidence.slice(0, 4).length ? evidence.slice(0, 4) : ["Extract claim", "Find mechanism", "Link to context", "Apply"],
-    application: ["Write one recall Q", "Write one application Q"],
+    meaning: definitionBlocks[0] || core[0] || "Define the key concept in plain language.",
+    mechanism: mechanismBlocks[0] || core[1] || "Explain why the concept works.",
+    stepwiseBreakdown: core.slice(0, 4).length ? core.slice(0, 4) : ["Extract claim", "Find mechanism", "Connect context", "Apply"],
+    application: ["One recall question", "One application question"],
   };
 }
