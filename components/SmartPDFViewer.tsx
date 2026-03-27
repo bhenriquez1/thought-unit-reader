@@ -6,6 +6,8 @@ import { Page, pdfjs } from "react-pdf";
 import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api"; // ✅ correct type source
 import { useReaderSync } from "@/lib/readerSync";
 import { usePDFLoading } from "@/lib/pdfLoadingManager";
+import type { HighlightTarget } from "@/lib/readerContracts";
+import PdfEvidenceOverlay, { type OverlayRect } from "@/components/pdf/PdfEvidenceOverlay";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
 
@@ -43,6 +45,9 @@ export interface SmartPDFViewerProps {
   onActiveParagraphChange?: (snippet: string | null) => void;
   /** Focus and scroll to a snippet from right-panel evidence cards. */
   focusSnippet?: string | null;
+  highlightTargets?: HighlightTarget[];
+  focusedEvidenceId?: string | null;
+  onEvidenceFocus?: (evidenceId: string) => void;
   /** External page change lock to prevent observer feedback loops while rendering */
   isPageChanging?: boolean;
   /** Fires when the currently requested page render completes */
@@ -109,6 +114,9 @@ export default function SmartPDFViewer({
   onOutline,
   onActiveParagraphChange,
   focusSnippet,
+  highlightTargets,
+  focusedEvidenceId,
+  onEvidenceFocus,
   isPageChanging = false,
   onPageRenderComplete,
 }: SmartPDFViewerProps) {
@@ -129,6 +137,7 @@ export default function SmartPDFViewer({
   const [pageInput, setPageInput] = useState<string>(String(currentPage));
   const [showToolbar, setShowToolbar] = useState<boolean>(true);
   const [highlightPulse, setHighlightPulse] = useState<boolean>(false);
+  const [overlayRects, setOverlayRects] = useState<OverlayRect[]>([]);
   const viewerRef = useRef<HTMLDivElement>(null);
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -225,6 +234,37 @@ export default function SmartPDFViewer({
     }, 1600);
     return () => window.clearTimeout(timer);
   }, [focusSnippet, currentPage]);
+
+  useEffect(() => {
+    const container = viewerRef.current;
+    if (!container || !highlightTargets?.length) {
+      setOverlayRects([]);
+      return;
+    }
+    const textLayer = container.querySelector('.react-pdf__Page__textContent, .textLayer');
+    if (!textLayer) {
+      setOverlayRects([]);
+      return;
+    }
+    const layerRect = (textLayer as HTMLElement).getBoundingClientRect();
+    const spans = Array.from(textLayer.querySelectorAll("span")) as HTMLElement[];
+    const rects: OverlayRect[] = [];
+    highlightTargets.forEach((target) => {
+      const needle = target.normalizedText.slice(0, 42);
+      const span = spans.find((entry) => (entry.textContent || "").toLowerCase().replace(/\s+/g, " ").includes(needle));
+      if (!span) return;
+      const rect = span.getBoundingClientRect();
+      rects.push({
+        id: target.evidenceRefId,
+        level: target.level,
+        top: rect.top - layerRect.top,
+        left: rect.left - layerRect.left,
+        width: rect.width,
+        height: Math.max(14, rect.height),
+      });
+    });
+    setOverlayRects(rects);
+  }, [highlightTargets, currentPage]);
 
   // Enhanced PDF loading with robust error handling
   const {
@@ -537,6 +577,14 @@ export default function SmartPDFViewer({
                     background: 'radial-gradient(circle, rgba(255, 255, 0, 0.2) 0%, rgba(255, 255, 0, 0.1) 50%, transparent 100%)',
                     animation: 'pulse 1s ease-out',
                   }}
+                />
+              )}
+
+              {overlayRects.length > 0 && (
+                <PdfEvidenceOverlay
+                  rects={overlayRects}
+                  focusedId={focusedEvidenceId}
+                  onFocus={onEvidenceFocus}
                 />
               )}
 

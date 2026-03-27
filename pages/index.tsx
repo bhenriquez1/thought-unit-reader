@@ -44,9 +44,7 @@ import type { ActivePageContext, RightPanelState as UnifiedRightPanelState, TocN
 import { splitParagraphs } from "@/lib/textNormalize";
 import { buildAutoToc, type PageTextBundle } from "@/lib/autoToc";
 import { extractFormulaCards } from "@/lib/right-panel/formulaNormalizer";
-import { resolvePanelPayload } from "@/lib/panelEngine";
-import { extractPageSignals } from "@/lib/right-panel/extractPageSignals";
-import { buildModeProfile } from "@/lib/right-panel/modeProfile";
+import { useActivePageIntelligence } from "@/lib/useActivePageIntelligence";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import DebugStatusBar from "@/components/DebugStatusBar";
 
@@ -98,7 +96,8 @@ import ChunkRail from "@/components/ChunkRail";
 import { MultiViewContainer } from "@/components/ViewContainer";
 import { useReaderSync, stableChunkId, analyzeContentDensity } from "@/lib/readerSync";
 import { useUnifiedNavigation } from "@/lib/useUnifiedNavigation";
-import ThoughtDetectionWidget from "@/components/ThoughtDetectionWidget";
+import ShadowRecallPanel from "@/components/ShadowRecallPanel";
+import AmbientPlayer from "@/components/focus/AmbientPlayer";
 
 import {
   parseBookWithChapters,
@@ -406,6 +405,7 @@ export default function ThoughtUnitReader() {
   const [activeShellTab, setActiveShellTab] = useState<WorkspaceMode>("reader");
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [focusSnippet, setFocusSnippet] = useState<string | null>(null);
+  const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
 
   /* =========================================================================
      🔹 Unified Annotation Store (P0.1) - Shared between Surgeon View + NoteLab
@@ -712,34 +712,36 @@ export default function ThoughtUnitReader() {
     };
   }, [bookId, currentPage, currentThoughtUnit, pdfPageCount, syllabusToc, tableOfContents, thoughtUnits, uploadedFile?.name]);
 
-  const modeProfile = useMemo(
-    () => buildModeProfile(unifiedPanelState.audience, unifiedPanelState.depth),
-    [unifiedPanelState.audience, unifiedPanelState.depth],
-  );
-  const currentSignals = useMemo(
-    () =>
-      extractPageSignals(activePageContextForInsights, {
-        minYield: modeProfile.minYield,
-        minSignals: modeProfile.label === "student" ? 2 : 3,
-        maxSignals: modeProfile.maxEvidence,
-      }),
-    [activePageContextForInsights, modeProfile],
-  );
-  const currentPanelPayload = useMemo(
-    () => resolvePanelPayload(activePageContextForInsights, unifiedPanelState.audience, unifiedPanelState.depth),
-    [activePageContextForInsights, unifiedPanelState.audience, unifiedPanelState.depth],
-  );
+  const {
+    payloadKey,
+    highlightKey,
+    signals: currentSignals,
+    panelPayloads: currentPanelPayload,
+    highlightTargets,
+    limitedEvidence,
+  } = useActivePageIntelligence({
+    documentId: bookId,
+    pageNumber: currentPage,
+    ctx: activePageContextForInsights,
+    audience: unifiedPanelState.audience,
+    depth: unifiedPanelState.depth,
+  });
   const focusIntegrity = focusInterruptions === 0 ? "uninterrupted" : focusInterruptions === 1 ? "interrupted once" : "interrupted multiple times";
   const focusScore = Math.max(0, 100 - (focusInterruptions * 12));
   const focusConsistency = focusScore >= 90 ? "Strong" : focusScore >= 75 ? "Good" : "Needs recovery";
   const ambientEmbedUrl = useMemo(() => toYouTubeEmbed(ambientUrl), [ambientUrl]);
+  const resolveEvidenceId = useCallback((snippet: string) => {
+    const needle = snippet.toLowerCase().replace(/\s+/g, " ").slice(0, 48);
+    return highlightTargets.find((target) => target.normalizedText.includes(needle) || needle.includes(target.normalizedText.slice(0, 32)))?.evidenceRefId;
+  }, [highlightTargets]);
 
   useEffect(() => {
     if (activeShellTab !== "reader") return;
     const topSnippet = currentSignals.paragraphSignals?.[0]?.text;
     if (!topSnippet) return;
     setFocusSnippet(topSnippet);
-  }, [activeShellTab, currentPage, currentSignals.paragraphSignals]);
+    setFocusedEvidenceId(null);
+  }, [activeShellTab, currentPage, currentSignals.paragraphSignals, highlightKey]);
 
   /* =========================================================================
      🔹 Surgeon View: Text Selection Handler
@@ -2591,6 +2593,9 @@ export default function ThoughtUnitReader() {
                   fontFamily={fontFamily}
                   onActiveParagraphChange={handleActiveParagraphChange}
                   focusSnippet={focusSnippet}
+                  highlightTargets={highlightTargets}
+                  focusedEvidenceId={focusedEvidenceId}
+                  onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
                   onOpenFocusCycle={() => {
                     bindFocusCycleContext({
                       documentId: bookId,
@@ -2609,15 +2614,19 @@ export default function ThoughtUnitReader() {
             {/* Right: Unified Intelligence Panel */}
             <div className={fileUrl ? "h-full w-[32%] min-w-[380px] max-w-[520px] overflow-hidden border-l border-white/10" : "flex-1 h-full"}>
               <RightPanel
-                key={`${bookId}-${currentPage}-${rightPanelResetKey}`}
+                key={`${payloadKey}-${rightPanelResetKey}`}
                 ctx={activePageContext}
                 state={unifiedPanelState}
+                payload={currentPanelPayload}
                 onTabChange={(activeTab) => setUnifiedPanelState((s) => ({ ...s, activeTab }))}
                 onAudienceChange={(audience) => setUnifiedPanelState((s) => ({ ...s, audience }))}
                 onDepthChange={(depth) => setUnifiedPanelState((s) => ({ ...s, depth }))}
                 onDensityChange={(density) => setUnifiedPanelState((s) => ({ ...s, density }))}
-                onEvidenceClick={(snippet) => {
+                resolveEvidenceId={resolveEvidenceId}
+                focusedEvidenceId={focusedEvidenceId}
+                onEvidenceClick={(snippet, evidenceId) => {
                   setFocusSnippet(null);
+                  setFocusedEvidenceId(evidenceId || resolveEvidenceId(snippet) || null);
                   window.setTimeout(() => setFocusSnippet(snippet), 0);
                 }}
               />
@@ -3052,7 +3061,7 @@ export default function ThoughtUnitReader() {
           <div><span className="text-slate-400">Page Role:</span> <span className="text-slate-100">{currentSignals.pageRole || "teaching_page"}</span></div>
           <div><span className="text-slate-400">Evidence:</span> <span className="text-slate-100">{currentPanelPayload.classification.confidence >= 0.7 ? "Strong" : currentPanelPayload.classification.confidence >= 0.45 ? "Medium" : "Weak"}</span></div>
           <div><span className="text-slate-400">Signals:</span> <span className="text-slate-100">{(currentSignals.paragraphSignals || []).length}</span></div>
-          <div><span className="text-slate-400">Mode:</span> <span className="text-slate-100">{modeProfile.label}</span></div>
+          <div><span className="text-slate-400">Mode:</span> <span className="text-slate-100">{unifiedPanelState.audience === "clinical" ? "standard" : unifiedPanelState.audience}</span></div>
           <div><span className="text-slate-400">Focus Score:</span> <span className="text-slate-100">{focusScore}% ({focusConsistency})</span></div>
         </div>
       )}
@@ -3071,21 +3080,7 @@ export default function ThoughtUnitReader() {
           </div>
         </div>
       )}
-      {showAmbientPanel && ambientEmbedUrl && (
-        <div className="fixed bottom-6 right-6 z-40 w-[340px] rounded-xl border border-emerald-300/30 bg-slate-950/95 p-2 shadow-2xl">
-          <div className="mb-2 flex items-center justify-between text-xs text-emerald-100">
-            <span>Ambient Focus Audio</span>
-            <button className="rounded bg-slate-800 px-2 py-1" onClick={() => setShowAmbientPanel(false)}>Close</button>
-          </div>
-          <iframe
-            src={ambientEmbedUrl}
-            className="h-48 w-full rounded-lg"
-            allow="autoplay; encrypted-media"
-            allowFullScreen
-            title="Ambient focus player"
-          />
-        </div>
-      )}
+      {showAmbientPanel && ambientUrl && <AmbientPlayer url={ambientUrl} onClose={() => setShowAmbientPanel(false)} />}
 
       {showFocusCycleModal && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
@@ -3134,11 +3129,11 @@ export default function ThoughtUnitReader() {
             <button
               onClick={() => setShowThoughtPanel(true)}
               className="text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border border-white/20 transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)]"
-              title="Open Thought Detection"
+              title="Open Shadow Recall"
             >
               <div className="flex items-center gap-2">
-                <span className="text-lg">💭</span>
-                <span className="text-sm font-medium hidden sm:block">Thoughts</span>
+                <span className="text-lg">🕶️</span>
+                <span className="text-sm font-medium hidden sm:block">Shadow Recall</span>
               </div>
             </button>
           )}
@@ -3182,11 +3177,11 @@ export default function ThoughtUnitReader() {
           )}
         </div>
 
-      {/* Sliding Thought Detection Panel */}
+      {/* Sliding Shadow Recall Panel */}
       {showThoughtPanel && (
         <div className="fixed top-0 left-0 w-full sm:w-[480px] h-full bg-gray-900/95 backdrop-blur-md text-white z-50 flex flex-col shadow-2xl border-r border-gray-700">
           <div className="flex justify-between items-center p-4 border-b border-gray-700">
-            <h3 className="text-lg font-semibold">💭 Thoughts Inspector</h3>
+            <h3 className="text-lg font-semibold">🕶️ Shadow Recall</h3>
             <button
               onClick={() => setShowThoughtPanel(false)}
               className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-800"
@@ -3239,7 +3234,7 @@ export default function ThoughtUnitReader() {
             <div className="mb-6 space-y-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-amber-300">Missed signals (borderline)</p>
               {(currentSignals.rawParagraphSignals || [])
-                .filter((p) => !p.suppress && p.yieldScore >= Math.max(0.45, modeProfile.minYield - 0.05))
+                .filter((p) => !p.suppress && p.yieldScore >= 0.45)
                 .filter((p) => !(currentSignals.paragraphSignals || []).some((selected) => selected.index === p.index))
                 .slice(0, 3)
                 .map((p, idx) => (
@@ -3249,12 +3244,7 @@ export default function ThoughtUnitReader() {
                 ))}
             </div>
 
-            {/* Thought Input Widget */}
-            <ThoughtDetectionWidget
-              onThoughtDetected={handleThoughtDetected}
-              placeholder="What are you thinking about this page? Write your thoughts, questions, or insights here..."
-              className="mb-6"
-            />
+            <ShadowRecallPanel signals={currentSignals} limitedEvidence={limitedEvidence} />
 
             {/* Previous Thoughts */}
             {detectedThoughts.length > 0 && (

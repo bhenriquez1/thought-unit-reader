@@ -73,6 +73,28 @@ export type ParagraphKind =
   | "filler"
   | "unknown";
 
+export type HighlightLevel = "high_yield" | "supporting" | "weak";
+
+export interface EvidenceReference {
+  id: string;
+  page: number;
+  paragraphIndex: number;
+  text: string;
+  kind: ParagraphKind;
+}
+
+export interface HighlightTarget {
+  id: string;
+  page: number;
+  text: string;
+  normalizedText: string;
+  level: HighlightLevel;
+  score: number;
+  sourceParagraphIndex: number;
+  kind: ParagraphKind;
+  evidenceRefId: string;
+}
+
 export interface ParagraphSignal {
   text: string;
   page: number;
