@@ -30,6 +30,23 @@ export function buildInsightsPayload(classification: PageClassification, signals
   const comparison = topBy(signals, "comparison", 4);
   const examish = topBy(signals, "application", 4);
 
+  if (any.length === 0) {
+    return {
+      highYield: ["Evidence is too weak on this page to produce DAT-ready extraction."],
+      traps: ["Low text density detected; avoid overconfident inference."],
+      hiddenConnections: [],
+      whatYouMayMiss: ["Try another content-rich page or chapter section."],
+      dat: {
+        testedConcepts: [],
+        likelyQuestionAngles: [],
+        commonTraps: ["Weak text layer; extraction confidence is low."],
+        mustKnowTerms: [],
+        distinctionPairs: [],
+        fastRecall: [],
+      },
+    };
+  }
+
   const dat = {
     testedConcepts: extractTerms(any, 6),
     likelyQuestionAngles: examish.length ? examish.slice(0, 3) : any.slice(0, 3),

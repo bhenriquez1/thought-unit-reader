@@ -13,7 +13,7 @@ function cleanLine(line: string): string {
   return line.replace(/\s+/g, " ").trim();
 }
 
-function toNode(kind: TocNode["kind"], page: number, title: string, source: TocNode["source"] = "auto"): TocNode {
+function toNode(kind: TocNode["kind"], page: number, title: string, source: TocNode["source"] = "syllabus"): TocNode {
   return {
     id: `syllabus-${kind}-${page}-${title.slice(0, 24).replace(/\W+/g, "-")}`,
     kind,
