@@ -1,4 +1,6 @@
 import type { ActivePageContext, PageClassification, PageSignals, PriorityPayload } from "@/lib/readerContracts";
+import type { ReasoningModeProfile } from "./modeProfile";
+import { adaptLineForMode, filterEvidenceByMode } from "./modeProfile";
 
 function topEvidence(signals: PageSignals, count = 5): string[] {
   return (signals.paragraphSignals || [])
@@ -8,9 +10,10 @@ function topEvidence(signals: PageSignals, count = 5): string[] {
     .map((p) => p.text);
 }
 
-export function buildPriorityPayload(ctx: ActivePageContext, classification: PageClassification, signals: PageSignals): PriorityPayload {
+export function buildPriorityPayload(ctx: ActivePageContext, classification: PageClassification, signals: PageSignals, mode?: ReasoningModeProfile): PriorityPayload {
   const pageType = classification.pageType;
-  const evidence = topEvidence(signals, 5);
+  const tuned = mode ? filterEvidenceByMode(signals.paragraphSignals || [], mode).map((entry) => adaptLineForMode(entry.text, mode)) : [];
+  const evidence = tuned.length ? tuned : topEvidence(signals, 5);
 
   if (signals.pageRole && ["cover", "contents", "chapter_opener", "section_opener", "copyright_frontmatter", "image_scan_heavy"].includes(signals.pageRole)) {
     return {

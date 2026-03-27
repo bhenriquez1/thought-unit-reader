@@ -1,4 +1,5 @@
 import type { InsightsPayload, PageClassification, PageSignals } from "@/lib/readerContracts";
+import type { ReasoningModeProfile } from "./modeProfile";
 
 function topBy(signals: PageSignals, kind: string, limit = 4): string[] {
   return (signals.paragraphSignals || [])
@@ -23,8 +24,8 @@ function extractTerms(lines: string[], cap = 6): string[] {
   return Array.from(terms);
 }
 
-export function buildInsightsPayload(classification: PageClassification, signals: PageSignals): InsightsPayload {
-  const any = topBy(signals, "any", 6);
+export function buildInsightsPayload(classification: PageClassification, signals: PageSignals, mode?: ReasoningModeProfile): InsightsPayload {
+  const any = topBy(signals, "any", mode?.label === "expert" ? 7 : mode?.label === "student" ? 4 : 6);
   const clinical = topBy(signals, "clinical", 4);
   const formula = topBy(signals, "formula", 4);
   const comparison = topBy(signals, "comparison", 4);
@@ -53,6 +54,7 @@ export function buildInsightsPayload(classification: PageClassification, signals
     commonTraps: [
       classification.pageType === "clinical" ? "Confusing similar clinical patterns" : "Choosing the wrong rule from look-alike options",
       "Ignoring discriminating wording in stems",
+      ...(mode?.emphasizeTraps ? ["Over-generalizing beyond what the page evidence supports"] : []),
     ],
     mustKnowTerms: extractTerms(clinical.length ? clinical : any, 6),
     distinctionPairs: comparison.length ? comparison.slice(0, 3) : ["No grounded distinction pair found yet"],
@@ -65,7 +67,7 @@ export function buildInsightsPayload(classification: PageClassification, signals
   }
 
   return {
-    highYield: any.slice(0, 4),
+    highYield: any.slice(0, mode?.label === "student" ? 3 : 5),
     traps: dat.commonTraps,
     hiddenConnections: classification.pageType === "clinical" ? clinical.slice(0, 3) : any.slice(1, 4),
     whatYouMayMiss: ["Discriminating terms in stem language", "Condition or exception clauses"],

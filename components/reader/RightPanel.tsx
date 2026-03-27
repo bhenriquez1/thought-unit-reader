@@ -13,6 +13,7 @@ interface RightPanelProps {
   onAudienceChange: (value: RightPanelState["audience"]) => void;
   onDepthChange: (value: RightPanelState["depth"]) => void;
   onDensityChange: (value: RightPanelState["density"]) => void;
+  onEvidenceClick?: (snippet: string) => void;
 }
 
 const tabBtn =
@@ -27,6 +28,7 @@ export function RightPanel({
   onAudienceChange,
   onDepthChange,
   onDensityChange,
+  onEvidenceClick,
 }: RightPanelProps) {
   const payload = useMemo(
     () => resolvePanelPayload(ctx, state.audience, state.depth),
@@ -80,9 +82,9 @@ export function RightPanel({
           <div className={bodyClass}>
             <Section title="What this page is doing"><p>{payload.priority.pageRole}</p></Section>
             <Section title="Primary Goal"><p>{payload.priority.primaryGoal}</p></Section>
-            <Section title="Main ideas"><BulletList items={payload.priority.mainIdeas} /></Section>
-            <Section title="Why it matters"><BulletList items={payload.priority.whyItMatters} /></Section>
-            <Section title="What to remember"><BulletList items={payload.priority.whatToRemember} /></Section>
+            <Section title="Main ideas"><BulletList items={payload.priority.mainIdeas} onItemClick={onEvidenceClick} /></Section>
+            <Section title="Why it matters"><BulletList items={payload.priority.whyItMatters} onItemClick={onEvidenceClick} /></Section>
+            <Section title="What to remember"><BulletList items={payload.priority.whatToRemember} onItemClick={onEvidenceClick} /></Section>
           </div>
         )}
 
@@ -91,7 +93,7 @@ export function RightPanel({
             <Section title="Meaning"><p>{payload.explain.meaning}</p></Section>
             <Section title="Mechanism / Why"><p>{payload.explain.mechanism}</p></Section>
             <Section title="Stepwise Breakdown"><ol className="list-decimal space-y-1 pl-5">{payload.explain.stepwiseBreakdown.map((item, i) => <li key={i}>{item}</li>)}</ol></Section>
-            <Section title="Application"><BulletList items={payload.explain.application} /></Section>
+            <Section title="Application"><BulletList items={payload.explain.application} onItemClick={onEvidenceClick} /></Section>
             {showFormulaSection && (
               <Section title="Formula">
                 <div className="space-y-2">
@@ -106,9 +108,9 @@ export function RightPanel({
 
         {state.activeTab === "relations" && (
           <div className={bodyClass}>
-            <Section title="Prerequisites"><BulletList items={payload.relations.prerequisites} /></Section>
-            <Section title="Current Links"><BulletList items={payload.relations.currentLinks} /></Section>
-            <Section title="Downstream Links"><BulletList items={payload.relations.downstreamLinks} /></Section>
+            <Section title="Prerequisites"><BulletList items={payload.relations.prerequisites} onItemClick={onEvidenceClick} /></Section>
+            <Section title="Current Links"><BulletList items={payload.relations.currentLinks} onItemClick={onEvidenceClick} /></Section>
+            <Section title="Downstream Links"><BulletList items={payload.relations.downstreamLinks} onItemClick={onEvidenceClick} /></Section>
           </div>
         )}
 
@@ -118,9 +120,9 @@ export function RightPanel({
               <Section title={payload.compare.compareTitle || "Compare"}>
                 <p className="font-medium">{payload.compare.leftLabel} vs {payload.compare.rightLabel}</p>
                 <p className="mt-2 text-xs uppercase text-emerald-300">Similarities</p>
-                <BulletList items={payload.compare.similarities || []} />
+                <BulletList items={payload.compare.similarities || []} onItemClick={onEvidenceClick} />
                 <p className="mt-2 text-xs uppercase text-amber-300">Differences</p>
-                <BulletList items={payload.compare.differences || []} />
+                <BulletList items={payload.compare.differences || []} onItemClick={onEvidenceClick} />
                 {payload.compare.examTrap && <p className="mt-2 text-rose-200">Trap: {payload.compare.examTrap}</p>}
               </Section>
             ) : (
@@ -131,17 +133,17 @@ export function RightPanel({
 
         {state.activeTab === "insights" && (
           <div className={bodyClass}>
-            <Section title="High Yield"><BulletList items={payload.insights.highYield} /></Section>
-            <Section title="Traps"><BulletList items={payload.insights.traps} /></Section>
-            <Section title="Hidden Connections"><BulletList items={payload.insights.hiddenConnections} /></Section>
-            <Section title="What you may miss"><BulletList items={payload.insights.whatYouMayMiss} /></Section>
+            <Section title="High Yield"><BulletList items={payload.insights.highYield} onItemClick={onEvidenceClick} /></Section>
+            <Section title="Traps"><BulletList items={payload.insights.traps} onItemClick={onEvidenceClick} /></Section>
+            <Section title="Hidden Connections"><BulletList items={payload.insights.hiddenConnections} onItemClick={onEvidenceClick} /></Section>
+            <Section title="What you may miss"><BulletList items={payload.insights.whatYouMayMiss} onItemClick={onEvidenceClick} /></Section>
             {payload.insights.dat && (
               <>
-                <Section title="DAT Tested Concepts"><BulletList items={payload.insights.dat.testedConcepts} /></Section>
-                <Section title="Likely Question Angles"><BulletList items={payload.insights.dat.likelyQuestionAngles} /></Section>
-                <Section title="Must-Know Terms"><BulletList items={payload.insights.dat.mustKnowTerms} /></Section>
-                <Section title="Distinction Pairs"><BulletList items={payload.insights.dat.distinctionPairs} /></Section>
-                <Section title="Fast Recall"><BulletList items={payload.insights.dat.fastRecall} /></Section>
+                <Section title="DAT Tested Concepts"><BulletList items={payload.insights.dat.testedConcepts} onItemClick={onEvidenceClick} /></Section>
+                <Section title="Likely Question Angles"><BulletList items={payload.insights.dat.likelyQuestionAngles} onItemClick={onEvidenceClick} /></Section>
+                <Section title="Must-Know Terms"><BulletList items={payload.insights.dat.mustKnowTerms} onItemClick={onEvidenceClick} /></Section>
+                <Section title="Distinction Pairs"><BulletList items={payload.insights.dat.distinctionPairs} onItemClick={onEvidenceClick} /></Section>
+                <Section title="Fast Recall"><BulletList items={payload.insights.dat.fastRecall} onItemClick={onEvidenceClick} /></Section>
               </>
             )}
           </div>
@@ -178,7 +180,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-slate-100 break-words"><h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-300">{title}</h3>{children}</section>;
 }
 
-function BulletList({ items }: { items: string[] }) {
+function BulletList({ items, onItemClick }: { items: string[]; onItemClick?: (snippet: string) => void }) {
   if (!items.length) return <p className="text-slate-400">No grounded items yet.</p>;
-  return <ul className="list-disc space-y-1 pl-5">{items.map((item, i) => <li key={i}>{item}</li>)}</ul>;
+  return <ul className="list-disc space-y-1 pl-5">{items.map((item, i) => <li key={i}>{onItemClick ? <button className="text-left hover:text-emerald-200 transition-colors" onClick={() => onItemClick(item)}>{item}</button> : item}</li>)}</ul>;
 }
