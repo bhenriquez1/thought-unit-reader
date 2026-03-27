@@ -88,6 +88,7 @@ export function RightPanel({
               <Section title="Formula">
                 <div className="space-y-2">
                   {ctx.formulas.map((formula, idx) => (
+                    <FormulaBlock key={idx} formula={formula.normalized} speakable={formula.speakable} usage={formula.usage} trap={formula.trap} />
                     <div key={idx} className="rounded bg-black/30 p-2 font-mono text-xs">
                       <p>{formula.normalized}</p>
                       <p className="mt-1 text-slate-300">TTS: {formula.speakable}</p>
@@ -135,6 +136,31 @@ export function RightPanel({
       </div>
     </aside>
   );
+}
+
+
+function renderSuperscripts(formula: string): React.ReactNode {
+  const parts = formula.split(/(\d*[A-Za-z]?[²³])/g).filter(Boolean);
+  return parts.map((part, index) => {
+    const match = part.match(/^(\d*[A-Za-z]?)([²³])$/);
+    if (!match) return <span key={index}>{part}</span>;
+    const base = match[1] || "";
+    const power = match[2] === "²" ? "2" : "3";
+    return <span key={index}>{base}<sup>{power}</sup></span>;
+  });
+}
+
+function FormulaBlock({ formula, speakable, usage, trap }: { formula: string; speakable: string; usage?: string; trap?: string }) {
+  return (
+    <div className="rounded-lg border border-violet-300/30 bg-black/40 p-2 font-mono text-xs shadow-inner">
+      <p className="text-violet-100 tracking-wide">{renderSuperscripts(formula)}</p>
+      <p className="mt-1 text-slate-300">Speak: {speakable}</p>
+      {usage && <p className="mt-1 text-emerald-200">Use: {usage}</p>}
+      {trap && <p className="mt-1 text-rose-200">Trap: {trap}</p>}
+    </div>
+  );
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-slate-100"><h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-300">{title}</h3>{children}</section>;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
