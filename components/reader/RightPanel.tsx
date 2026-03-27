@@ -44,6 +44,11 @@ export function RightPanel({
           <p className="text-sm font-semibold text-white">{ctx.sectionTitle || ctx.chapterTitle || "Current Page"}</p>
           <p className="mt-1 text-[11px] text-slate-400">Page {ctx.pageNumber} of {ctx.totalPages}</p>
           <p className="mt-1 text-[11px] text-emerald-300">Page type: {payload.classification.pageType}</p>
+          {payload.classification.confidence < 0.35 || (ctx.pageText || "").trim().length < 120 ? (
+            <p className="mt-2 rounded bg-amber-500/15 px-2 py-1 text-[11px] text-amber-100">
+              Limited evidence on this page. Extraction is conservative to avoid fabricated output.
+            </p>
+          ) : null}
         </div>
       </div>
 

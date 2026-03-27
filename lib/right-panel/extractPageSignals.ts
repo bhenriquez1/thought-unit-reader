@@ -18,6 +18,19 @@ import { suppressFiller, selectTopSignals } from "@/lib/fillerFilter";
 
 const hasAny = (text: string, words: string[]) => words.some((w) => text.includes(w));
 
+function detectPageRole(pageText: string, heading: string, formulaCount: number, tableLikeRows: number): PageSignals["pageRole"] {
+  const text = pageText.toLowerCase();
+  const lineGroups = text.split(/\n+/).length;
+  if (!text.trim() || text.trim().length < 120) return "image_scan_heavy";
+  if (/table of contents|\bcontents\b/.test(text)) return "contents";
+  if (/all rights reserved|copyright|isbn|published by/.test(text)) return "copyright_frontmatter";
+  if ((/^chapter\s+\d+|^part\s+[ivx\d]+/im).test(pageText) && lineGroups < 12) return "chapter_opener";
+  if ((/^section\s+\d|^unit\s+\d|^module\s+\d/im).test(pageText) && lineGroups < 18) return "section_opener";
+  if ((/^\s*[A-Z][A-Z\s]{6,}$/m).test(pageText) && lineGroups < 10) return "cover";
+  if (formulaCount >= 2 || tableLikeRows >= 3 || /equation|formula|identity/.test(heading.toLowerCase())) return "table_formula";
+  return "regular_teaching";
+}
+
 export function extractPageSignals(ctx: ActivePageContext): PageSignals {
   const pageText = ctx.pageText || "";
   const nearbyText = ctx.nearbyText || "";
@@ -30,6 +43,8 @@ export function extractPageSignals(ctx: ActivePageContext): PageSignals {
   const blocks = segmentParagraphs(pageText);
   const scored = scoreParagraphs(blocks, ctx.pageNumber);
   const paragraphSignals = selectTopSignals(suppressFiller(scored));
+
+  const pageRole = detectPageRole(pageText, ctx.sectionTitle || "", formulaLines.length, lines.filter((line) => /\s{2,}|\|/.test(line)).length);
 
   return {
     questionCount: (pageText.match(/\?/g) || []).length,
@@ -58,6 +73,7 @@ export function extractPageSignals(ctx: ActivePageContext): PageSignals {
     activeTopicTitle: ctx.activeTopicTitle,
     activeTopicKind: ctx.activeTopicKind || undefined,
     documentTitle: ctx.documentTitle,
+    pageRole,
     paragraphSignals,
     pageText,
     nearbyText,
