@@ -14,6 +14,11 @@ const KIND_LABEL: Record<TocNode["kind"], string> = {
   subsection: "Subsection",
   week: "Week",
   assignment: "Assignment",
+  exam: "Exam",
+  deadline: "Deadline",
+  policy: "Policy",
+  objective: "Objective",
+  topic: "Topic",
   frontmatter: "Frontmatter",
 };
 

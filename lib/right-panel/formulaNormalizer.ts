@@ -1,6 +1,6 @@
 import type { FormulaCard } from "@/lib/readerContracts";
 
-const FORMULA_LINE_RE = /(=|\+|−|-|×|÷|\/|\^|²|³|\(|\)|\\frac|\\sqrt)/;
+const FORMULA_LINE_RE = /(=|\+|−|-|×|÷|\/|\^|²|³|₀|₁|₂|₃|₄|₅|₆|₇|₈|₉|√|\(|\)|\\frac|\\sqrt|\b[a-zA-Z]_[a-zA-Z0-9]+\b)/;
 
 export function detectFormulaLines(text: string): string[] {
   return text
@@ -24,6 +24,11 @@ export function toSpeakableFormula(raw: string): string {
     .replace(/\)/g, " close parenthesis ")
     .replace(/\^2|²/g, " squared ")
     .replace(/\^3|³/g, " cubed ")
+    .replace(/√|\\sqrt/g, " square root of ")
+    .replace(/₀/g, " subscript zero ")
+    .replace(/₁/g, " subscript one ")
+    .replace(/₂/g, " subscript two ")
+    .replace(/₃/g, " subscript three ")
     .replace(/=/g, " equals ")
     .replace(/\+/g, " plus ")
     .replace(/−|-/g, " minus ")
