@@ -2499,7 +2499,7 @@ export default function ThoughtUnitReader() {
             )}
 
             {/* Right: Unified Intelligence Panel */}
-            <div className={fileUrl ? "h-full w-[32%] min-w-[380px] max-w-[520px] overflow-y-auto border-l border-white/10" : "flex-1 h-full"}>
+            <div className={fileUrl ? "h-full w-[32%] min-w-[380px] max-w-[520px] overflow-hidden border-l border-white/10" : "flex-1 h-full"}>
               <RightPanel
                 key={`${bookId}-${currentPage}-${rightPanelResetKey}`}
                 ctx={activePageContext}

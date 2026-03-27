@@ -38,7 +38,8 @@ export function RightPanel({
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col overflow-hidden border-l border-white/10 bg-[rgb(11,18,34)]">
-      <div className="border-b border-white/10 p-3">
+      <div className="shrink-0 sticky top-0 z-10 bg-[rgb(11,18,34)] border-b border-white/10">
+      <div className="p-3">
         <div className="rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2">
           <p className="text-sm font-semibold text-white">{ctx.sectionTitle || ctx.chapterTitle || "Current Page"}</p>
           <p className="mt-1 text-[11px] text-slate-400">Page {ctx.pageNumber} of {ctx.totalPages}</p>
@@ -46,7 +47,7 @@ export function RightPanel({
         </div>
       </div>
 
-      <div className="border-b border-white/10 px-3 py-2">
+      <div className="border-t border-white/5 px-3 py-2">
         <div className="flex gap-2 overflow-x-auto pb-1">
           {(["priority", "explain", "relations", "compare", "insights"] as PanelTab[]).map((tab) => (
             <button key={tab} className={state.activeTab === tab ? activeTabBtn : tabBtn} onClick={() => onTabChange(tab)}>
@@ -67,8 +68,9 @@ export function RightPanel({
           </select>
         </div>
       </div>
+      </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 pr-2">
         {state.activeTab === "priority" && (
           <div className={bodyClass}>
             <Section title="What this page is doing"><p>{payload.priority.pageRole}</p></Section>
@@ -168,7 +170,7 @@ function FormulaBlock({ formula, speakable, usage, trap }: { formula: string; sp
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-slate-100"><h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-300">{title}</h3>{children}</section>;
+  return <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-slate-100 break-words"><h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-300">{title}</h3>{children}</section>;
 }
 
 function BulletList({ items }: { items: string[] }) {

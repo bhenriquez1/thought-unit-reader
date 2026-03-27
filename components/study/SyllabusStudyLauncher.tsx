@@ -11,12 +11,13 @@ function flatten(nodes: TocNode[]): TocNode[] {
 }
 
 export default function SyllabusStudyLauncher({ toc, onStudyTopic }: SyllabusStudyLauncherProps) {
-  const { recommended, fallback } = useMemo(() => {
+  const { recommended, fallback, sourceLabel } = useMemo(() => {
     const items = flatten(toc).filter((n) => n.kind !== "frontmatter");
     const first = items.sort((a, b) => a.page - b.page)[0] || null;
     return {
       recommended: first,
       fallback: items.length > 0 && items.every((node) => node.source === "fallback"),
+      sourceLabel: items.find((node) => node.source)?.source || "syllabus",
     };
   }, [toc]);
 
@@ -33,7 +34,7 @@ export default function SyllabusStudyLauncher({ toc, onStudyTopic }: SyllabusStu
       <div className="flex items-center gap-2">
         <p className="text-xs uppercase tracking-wide text-blue-200">Recommended next topic</p>
         <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${fallback ? "bg-amber-300/20 text-amber-100" : "bg-emerald-300/20 text-emerald-100"}`}>
-          {fallback ? "Fallback structure" : "Auto-detected"}
+          {fallback ? "Fallback structure" : `${sourceLabel[0].toUpperCase()}${sourceLabel.slice(1)} extracted`}
         </span>
       </div>
       <h3 className="mt-1 text-lg font-semibold">{recommended.title}</h3>
