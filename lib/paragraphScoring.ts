@@ -9,6 +9,9 @@ const formulaWords = /(=|\^|√|\b[a-z]_\d|\d+\/\d+|formula|equation|ratio|polyn
 const applicationWords = /(apply|clinical implication|management|use in practice|question|exam|trap|must know)/i;
 const referenceWords = /(doi|et al\.|references|bibliography|copyright)/i;
 const fillerWords = /(in general|throughout the years|it is important to remember|background|historically|acknowledg)/i;
+const trapWords = /(except|least likely|most likely|confus|pitfall|trap|versus|not\b|unless|associate(?:d)? with)/i;
+const distinctionWords = /(vs\.?|versus|acute|chronic|benign|malignant|direct|indirect|superficial|deep)/i;
+const decisionWords = /(diagnosis|next step|management|indication|contraindication|treatment choice)/i;
 
 function kindFor(text: string): ParagraphKind {
   if (referenceWords.test(text)) return "reference";
@@ -31,6 +34,9 @@ export function scoreParagraphs(blocks: RawBlock[], page: number): ParagraphSign
     const comparisonScore = comparisonWords.test(text) ? 1 : 0;
     const examScore = applicationWords.test(text) || /\bquiz|exam|dat|test\b/i.test(text) ? 1 : 0;
     const formulaScore = formulaWords.test(text) ? 1 : 0;
+    const trapScore = trapWords.test(text) ? 1 : 0;
+    const distinctionScore = distinctionWords.test(text) ? 1 : 0;
+    const clinicalDecisionScore = decisionWords.test(text) ? 1 : 0;
     const fillerPenalty = fillerWords.test(text) || block.blockType === "metadata" ? 1 : 0;
 
     const yieldScore =
@@ -41,6 +47,13 @@ export function scoreParagraphs(blocks: RawBlock[], page: number): ParagraphSign
       examScore * 1.6 +
       formulaScore * 1.3 -
       fillerPenalty * 1.5;
+    const examSignalScore =
+      trapScore * 1.6 +
+      distinctionScore * 1.5 +
+      mechanismScore * 1.4 +
+      definitionScore * 1.2 +
+      clinicalDecisionScore * 1.5 -
+      fillerPenalty * 1.5;
 
     const evidenceTerms = [
       ...(definitionWords.test(text) ? ["definition"] : []),
@@ -49,6 +62,8 @@ export function scoreParagraphs(blocks: RawBlock[], page: number): ParagraphSign
       ...(comparisonWords.test(text) ? ["compare"] : []),
       ...(formulaWords.test(text) ? ["formula"] : []),
       ...(applicationWords.test(text) ? ["exam"] : []),
+      ...(trapWords.test(text) ? ["trap"] : []),
+      ...(distinctionWords.test(text) ? ["distinction"] : []),
     ];
 
     return {
@@ -64,6 +79,10 @@ export function scoreParagraphs(blocks: RawBlock[], page: number): ParagraphSign
       comparisonScore,
       examScore,
       formulaScore,
+      trapScore,
+      distinctionScore,
+      clinicalDecisionScore,
+      examSignalScore,
       fillerPenalty,
       evidenceTerms,
       suppress: false,

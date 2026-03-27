@@ -34,7 +34,10 @@ export function useActivePageIntelligence({
   );
   const classification = useMemo(() => classifyPage(signals), [signals]);
   const panelPayloads = useMemo(() => resolvePanelPayload(ctx, audience, depth), [ctx, audience, depth]);
-  const limitedEvidence = classification.confidence < 0.35 || (ctx.pageText || "").trim().length < 120;
+  const limitedEvidence =
+    classification.confidence < 0.35 ||
+    (ctx.pageText || "").trim().length < 120 ||
+    ["cover", "contents", "chapter_opener", "section_opener", "copyright_frontmatter", "image_scan_heavy"].includes(signals.pageRole || "");
   const highlightTargets: HighlightTarget[] = useMemo(
     () => deriveHighlightTargets(signals, pageNumber, audience, limitedEvidence),
     [signals, pageNumber, audience, limitedEvidence],

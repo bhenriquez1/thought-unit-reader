@@ -2,7 +2,7 @@ import type { ActivePageContext, ComparePayload, PageClassification, PageSignals
 
 export function buildComparePayload(ctx: ActivePageContext, classification: PageClassification, signals: PageSignals): ComparePayload {
   const text = ctx.pageText.toLowerCase();
-  const compareBlocks = (signals.paragraphSignals || []).filter((p) => p.kind === "comparison" && !p.suppress);
+  const compareBlocks = (signals.paragraphSignals || []).filter((p) => (p.kind === "comparison" || p.distinctionScore > 0) && !p.suppress);
   const hasExplicitContrast = /\b(vs\.?|versus|unlike|in contrast|compared with|distinguish)\b/.test(text) || classification.pageType === "comparison" || compareBlocks.length > 0;
 
   if (!hasExplicitContrast) {

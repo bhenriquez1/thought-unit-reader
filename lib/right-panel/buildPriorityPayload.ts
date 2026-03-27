@@ -10,6 +10,14 @@ function topEvidence(signals: PageSignals, count = 5): string[] {
     .map((p) => p.text);
 }
 
+function ignoredEvidence(signals: PageSignals, count = 3): string[] {
+  return (signals.rawParagraphSignals || [])
+    .filter((p) => p.suppress || p.fillerPenalty > 0)
+    .sort((a, b) => b.fillerPenalty - a.fillerPenalty)
+    .slice(0, count)
+    .map((p) => p.text);
+}
+
 export function buildPriorityPayload(ctx: ActivePageContext, classification: PageClassification, signals: PageSignals, mode?: ReasoningModeProfile): PriorityPayload {
   const pageType = classification.pageType;
   const tuned = mode ? filterEvidenceByMode(signals.paragraphSignals || [], mode).map((entry) => adaptLineForMode(entry.text, mode)) : [];
@@ -22,6 +30,7 @@ export function buildPriorityPayload(ctx: ActivePageContext, classification: Pag
       mainIdeas: topEvidence(signals, 3),
       whyItMatters: ["Navigation and scope framing"],
       whatToRemember: ["Use this page for orientation, not deep concept extraction."],
+      whatToIgnore: ["Do not force exam inferences from structural text."],
     };
   }
 
@@ -32,6 +41,7 @@ export function buildPriorityPayload(ctx: ActivePageContext, classification: Pag
       mainIdeas: evidence.length ? evidence.slice(0, 4) : ["Identify tested skill", "Identify first move"],
       whyItMatters: ["Exam readiness", "Procedural fluency", "Concept transfer"],
       whatToRemember: ["What is being asked", "What framework applies", "What common mistake to avoid"],
+      whatToIgnore: ignoredEvidence(signals, 2),
     };
   }
 
@@ -42,6 +52,7 @@ export function buildPriorityPayload(ctx: ActivePageContext, classification: Pag
       mainIdeas: evidence.length ? evidence.slice(0, 3) : [ctx.sectionTitle || "Core frame"],
       whyItMatters: ["Prevents fragmented memorization"],
       whatToRemember: ["Big picture first", "Then details"],
+      whatToIgnore: ignoredEvidence(signals, 2),
     };
   }
 
@@ -52,6 +63,7 @@ export function buildPriorityPayload(ctx: ActivePageContext, classification: Pag
       mainIdeas: evidence.length ? evidence.slice(0, 3) : ["Clinical relevance", "Recognition cues"],
       whyItMatters: ["Differential accuracy", "Safer management decisions"],
       whatToRemember: ["Sign → interpretation → implication"],
+      whatToIgnore: ignoredEvidence(signals, 2),
     };
   }
 
@@ -62,6 +74,7 @@ export function buildPriorityPayload(ctx: ActivePageContext, classification: Pag
       mainIdeas: evidence.length ? evidence.slice(0, 3) : ["Variable meaning", "Transformation pattern"],
       whyItMatters: ["Faster pattern recognition in questions"],
       whatToRemember: ["Symbol meaning", "Usage condition", "Trap sign"],
+      whatToIgnore: ignoredEvidence(signals, 2),
     };
   }
 
@@ -71,5 +84,6 @@ export function buildPriorityPayload(ctx: ActivePageContext, classification: Pag
     mainIdeas: evidence.length ? evidence : [ctx.pageText.slice(0, 160)],
     whyItMatters: ["Supports downstream reasoning in this chapter"],
     whatToRemember: evidence.length ? evidence.slice(0, 2) : ["Use evidence from page text"],
+    whatToIgnore: ignoredEvidence(signals),
   };
 }

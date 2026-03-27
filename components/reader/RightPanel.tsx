@@ -92,6 +92,7 @@ export function RightPanel({
             <Section title="Main ideas"><BulletList items={payload.priority.mainIdeas} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
             <Section title="Why it matters"><BulletList items={payload.priority.whyItMatters} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
             <Section title="What to remember"><BulletList items={payload.priority.whatToRemember} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
+            <Section title="What to ignore"><BulletList items={payload.priority.whatToIgnore || []} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
           </div>
         )}
 
@@ -151,6 +152,7 @@ export function RightPanel({
                 <Section title="Must-Know Terms"><BulletList items={payload.insights.dat.mustKnowTerms} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
                 <Section title="Distinction Pairs"><BulletList items={payload.insights.dat.distinctionPairs} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
                 <Section title="Fast Recall"><BulletList items={payload.insights.dat.fastRecall} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
+                <Section title="Mechanism Anchor"><BulletList items={payload.insights.dat.mechanismAnchor || []} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
               </>
             )}
           </div>

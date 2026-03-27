@@ -14,6 +14,14 @@ export function buildRelationsPayload(_ctx: ActivePageContext, classification: P
   const clinical = byKind(signals, "clinical", 2);
   const formula = byKind(signals, "formula", 2);
 
+  if (signals.pageRole && ["cover", "contents", "chapter_opener", "section_opener", "copyright_frontmatter", "image_scan_heavy"].includes(signals.pageRole)) {
+    return {
+      prerequisites: ["Structural page: infer prerequisites conservatively."],
+      currentLinks: [],
+      downstreamLinks: ["Move to teaching-dense pages for grounded relation mapping."],
+    };
+  }
+
   if (classification.pageType === "clinical") {
     return {
       prerequisites: definitions.length ? definitions : ["Core anatomy/pathology prerequisite"],
