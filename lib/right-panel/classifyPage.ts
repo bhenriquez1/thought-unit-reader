@@ -34,6 +34,12 @@ export function classifyPage(signals: PageSignals): PageClassification {
   };
   const reasons: string[] = [];
 
+  const paragraphKinds = signals.paragraphSignals || [];
+  const paragraphCountByKind = paragraphKinds.reduce<Record<string, number>>((acc, entry) => {
+    acc[entry.kind] = (acc[entry.kind] || 0) + 1;
+    return acc;
+  }, {});
+
   if (signals.questionCount >= 3) scores.diagnostic += 3;
   if (signals.numberedItemCount >= 4) scores.diagnostic += 3;
   if (signals.hasDiagnosticWords) scores.diagnostic += 4;
@@ -72,6 +78,23 @@ export function classifyPage(signals: PageSignals): PageClassification {
 
   if (signals.citationCount >= 3) scores.reference += 4;
   if (signals.hasReferenceWords) scores.reference += 4;
+
+
+  scores.definition += (paragraphCountByKind.definition || 0) * 1.1;
+  scores.mechanism += (paragraphCountByKind.mechanism || 0) * 1.2;
+  scores.clinical += (paragraphCountByKind.clinical || 0) * 1.3;
+  scores.comparison += (paragraphCountByKind.comparison || 0) * 1.1;
+  scores.formula += (paragraphCountByKind.formula || 0) * 1.3;
+  scores.application += (paragraphCountByKind.application || 0) * 1.1;
+
+  // Leakage control: demote formula if clinical evidence dominates and formula evidence is weak.
+  if (scores.clinical >= 7 && scores.formula <= 3) {
+    scores.formula = Math.max(0, scores.formula - 2);
+  }
+  // Demote clinical if formula evidence dominates and clinical words are weak.
+  if (scores.formula >= 7 && !signals.hasClinicalWords && scores.clinical <= 3) {
+    scores.clinical = Math.max(0, scores.clinical - 2);
+  }
 
   applyBookContextBoosts(scores, signals);
 

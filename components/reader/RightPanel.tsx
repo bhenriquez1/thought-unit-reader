@@ -128,6 +128,15 @@ export function RightPanel({
             <Section title="Traps"><BulletList items={payload.insights.traps} /></Section>
             <Section title="Hidden Connections"><BulletList items={payload.insights.hiddenConnections} /></Section>
             <Section title="What you may miss"><BulletList items={payload.insights.whatYouMayMiss} /></Section>
+            {payload.insights.dat && (
+              <>
+                <Section title="DAT Tested Concepts"><BulletList items={payload.insights.dat.testedConcepts} /></Section>
+                <Section title="Likely Question Angles"><BulletList items={payload.insights.dat.likelyQuestionAngles} /></Section>
+                <Section title="Must-Know Terms"><BulletList items={payload.insights.dat.mustKnowTerms} /></Section>
+                <Section title="Distinction Pairs"><BulletList items={payload.insights.dat.distinctionPairs} /></Section>
+                <Section title="Fast Recall"><BulletList items={payload.insights.dat.fastRecall} /></Section>
+              </>
+            )}
           </div>
         )}
       </div>

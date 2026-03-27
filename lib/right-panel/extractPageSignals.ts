@@ -12,6 +12,9 @@ import {
   REFERENCE_WORDS,
 } from "./keywords";
 import { detectFormulaLines } from "./formulaNormalizer";
+import { segmentParagraphs } from "@/lib/paragraphSegmentation";
+import { scoreParagraphs } from "@/lib/paragraphScoring";
+import { suppressFiller, selectTopSignals } from "@/lib/fillerFilter";
 
 const hasAny = (text: string, words: string[]) => words.some((w) => text.includes(w));
 
@@ -23,6 +26,10 @@ export function extractPageSignals(ctx: ActivePageContext): PageSignals {
   const text = `${pageText}\n${nearbyText}\n${topicText}\n${documentTitle}`.toLowerCase();
   const lines = pageText.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   const formulaLines = detectFormulaLines(pageText);
+
+  const blocks = segmentParagraphs(pageText);
+  const scored = scoreParagraphs(blocks, ctx.pageNumber);
+  const paragraphSignals = selectTopSignals(suppressFiller(scored));
 
   return {
     questionCount: (pageText.match(/\?/g) || []).length,
@@ -51,6 +58,7 @@ export function extractPageSignals(ctx: ActivePageContext): PageSignals {
     activeTopicTitle: ctx.activeTopicTitle,
     activeTopicKind: ctx.activeTopicKind || undefined,
     documentTitle: ctx.documentTitle,
+    paragraphSignals,
     pageText,
     nearbyText,
   };

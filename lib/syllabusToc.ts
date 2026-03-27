@@ -50,6 +50,30 @@ function parseScheduleRows(page: PageTextBundle): TocNode[] {
   return rowNodes;
 }
 
+
+function groupByWeek(nodes: TocNode[]): TocNode[] {
+  const grouped: TocNode[] = [];
+  const seen = new Map<string, TocNode>();
+
+  for (const node of nodes) {
+    const dateMatch = node.title.match(DATE_RE);
+    if (!dateMatch) {
+      grouped.push(node);
+      continue;
+    }
+    const key = `${node.page}-${dateMatch[1]}`;
+    if (!seen.has(key)) {
+      const weekNode = toNode("week", node.page, `Week ${dateMatch[1]}`);
+      weekNode.children = [];
+      seen.set(key, weekNode);
+      grouped.push(weekNode);
+    }
+    seen.get(key)!.children!.push(node);
+  }
+
+  return grouped;
+}
+
 export function buildSyllabusToc(pages: PageTextBundle[]): TocNode[] {
   if (!pages.length) return [];
 
@@ -90,7 +114,7 @@ export function buildSyllabusToc(pages: PageTextBundle[]): TocNode[] {
     arr.findIndex((x) => x.kind === node.kind && x.page === node.page && x.title.toLowerCase() === node.title.toLowerCase()) === index,
   );
 
-  if (deduped.length > 0) return deduped.sort((a, b) => a.page - b.page);
+  if (deduped.length > 0) return groupByWeek(deduped.sort((a, b) => a.page - b.page));
 
   // 4) Final fallback to general TOC engine
   return buildAutoToc(pages);
