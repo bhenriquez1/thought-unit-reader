@@ -11,6 +11,7 @@
 import React, { useCallback, useState } from 'react';
 import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
+import type { HighlightTarget } from '@/lib/readerContracts';
 
 interface PureReaderViewProps {
   fileUrl: string | null;
@@ -27,6 +28,9 @@ interface PureReaderViewProps {
   /** Forwarded to SmartPDFViewer for scroll → active paragraph detection */
   onActiveParagraphChange?: (snippet: string | null) => void;
   focusSnippet?: string | null;
+  highlightTargets?: HighlightTarget[];
+  focusedEvidenceId?: string | null;
+  onEvidenceFocus?: (id: string) => void;
   onOpenFocusCycle?: () => void;
 }
 
@@ -43,6 +47,9 @@ export default function PureReaderView({
   fontFamily = 'Georgia',
   onActiveParagraphChange,
   focusSnippet,
+  highlightTargets,
+  focusedEvidenceId,
+  onEvidenceFocus,
   onOpenFocusCycle,
 }: PureReaderViewProps) {
   // Global zoom store
@@ -138,6 +145,9 @@ export default function PureReaderView({
           onOutline={onOutline}
           onActiveParagraphChange={onActiveParagraphChange}
           focusSnippet={focusSnippet}
+          highlightTargets={highlightTargets}
+          focusedEvidenceId={focusedEvidenceId}
+          onEvidenceFocus={onEvidenceFocus}
           isPageChanging={isPageChanging}
           onPageRenderComplete={() => setIsPageChanging(false)}
         />
