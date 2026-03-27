@@ -18,7 +18,7 @@ function getCandidateLines(text: string): string[] {
   return text
     .split("\n")
     .map(cleanLine)
-    .filter((line) => line.length >= 3 && line.length <= 140);
+    .filter((line) => line.length >= 3 && line.length <= 160);
 }
 
 function isUppercaseHeading(line: string): boolean {
@@ -34,7 +34,8 @@ function isTitleCaseHeading(line: string): boolean {
 
 function classifyStructured(line: string): TocNode["kind"] | null {
   if (STRUCTURED_HEADING_RE.test(line)) {
-    if (/assignment|exam/i.test(line)) return "assignment";
+    if (/assignment|quiz/i.test(line)) return "assignment";
+    if (/exam|midterm|final/i.test(line)) return "exam";
     if (/week|module|unit/i.test(line)) return "week";
     return "chapter";
   }
@@ -55,12 +56,26 @@ function scoreStructured(line: string): number {
   return score;
 }
 
-function scoreHeuristic(line: string): number {
+function scoreHeadingHeuristic(line: string): number {
   let score = 0;
   if (isUppercaseHeading(line)) score += 4;
   if (isTitleCaseHeading(line)) score += 3;
   if (line.length <= 70) score += 1;
   if (ASSIGNMENT_WORD_RE.test(line)) score += 2;
+  return score;
+}
+
+// Layer C: layout-ish heuristics with line isolation / page-start signals
+function scoreLayoutHeuristic(line: string, index: number, lines: string[]): number {
+  let score = 0;
+  const prev = lines[index - 1] || "";
+  const next = lines[index + 1] || "";
+  const isolated = prev.length === 0 || next.length === 0;
+  if (index <= 2) score += 2; // page-start heading bias
+  if (isolated) score += 2;
+  if (line.length >= 8 && line.length <= 65) score += 2;
+  if (/^(course|lab schedule|grading|attendance|learning goals|objectives|policy)/i.test(line)) score += 3;
+  if (/\.\.\.\s*\d+$/.test(line)) score += 2; // TOC-like dot leaders
   return score;
 }
 
@@ -79,14 +94,14 @@ function nestToc(flat: TocNode[]): TocNode[] {
   let currentSection: TocNode | null = null;
 
   for (const item of flat) {
-    if (item.kind === "chapter" || item.kind === "week" || item.kind === "frontmatter") {
+    if (item.kind === "chapter" || item.kind === "week" || item.kind === "frontmatter" || item.kind === "topic") {
       root.push({ ...item, children: [] });
       currentChapter = root[root.length - 1];
       currentSection = null;
       continue;
     }
 
-    if (item.kind === "section") {
+    if (item.kind === "section" || item.kind === "objective" || item.kind === "policy") {
       if (currentChapter) {
         currentChapter.children ||= [];
         currentChapter.children.push({ ...item, children: [] });
@@ -98,7 +113,7 @@ function nestToc(flat: TocNode[]): TocNode[] {
       continue;
     }
 
-    if (item.kind === "subsection") {
+    if (item.kind === "subsection" || item.kind === "assignment" || item.kind === "exam" || item.kind === "deadline") {
       if (currentSection) {
         currentSection.children ||= [];
         currentSection.children.push({ ...item, children: [] });
@@ -111,18 +126,22 @@ function nestToc(flat: TocNode[]): TocNode[] {
       continue;
     }
 
-    if (currentSection) {
-      currentSection.children ||= [];
-      currentSection.children.push({ ...item, children: [] });
-    } else if (currentChapter) {
-      currentChapter.children ||= [];
-      currentChapter.children.push({ ...item, children: [] });
-    } else {
-      root.push({ ...item, children: [] });
-    }
+    root.push({ ...item, children: [] });
   }
 
   return root;
+}
+
+function strongestLineForCluster(page: PageTextBundle | undefined): string | null {
+  if (!page) return null;
+  const lines = getCandidateLines(page.text);
+  let best: { line: string; score: number } | null = null;
+  for (let i = 0; i < Math.min(lines.length, 18); i += 1) {
+    const line = lines[i];
+    const score = scoreHeadingHeuristic(line) + scoreLayoutHeuristic(line, i, lines);
+    if (!best || score > best.score) best = { line, score };
+  }
+  return best && best.score >= 5 ? best.line : null;
 }
 
 function buildFallbackToc(pages: PageTextBundle[]): TocNode[] {
@@ -133,11 +152,13 @@ function buildFallbackToc(pages: PageTextBundle[]): TocNode[] {
   for (let start = 1; start <= maxPage; start += clusterSize) {
     const end = Math.min(start + clusterSize - 1, maxPage);
     const idx = nodes.length + 1;
+    const anchorPage = pages.find((p) => p.page === start) || pages.find((p) => p.page >= start && p.page <= end);
+    const strongTitle = strongestLineForCluster(anchorPage);
     nodes.push({
       id: `fallback-topic-${idx}`,
-      title: `Topic ${idx} (pp. ${start}–${end})`,
+      title: strongTitle || `Topic ${idx} (pp. ${start}–${end})`,
       page: start,
-      kind: "section",
+      kind: "topic",
       source: "fallback",
       children: [],
     });
@@ -148,16 +169,20 @@ function buildFallbackToc(pages: PageTextBundle[]): TocNode[] {
 export function buildAutoToc(pages: PageTextBundle[]): TocNode[] {
   if (!pages.length) return [];
 
-  const structured: TocNode[] = [];
-  const heuristic: TocNode[] = [];
+  const layerStructured: TocNode[] = [];
+  const layerHeading: TocNode[] = [];
+  const layerLayout: TocNode[] = [];
 
   for (const page of pages) {
     const lines = getCandidateLines(page.text);
 
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
       const structuredKind = classifyStructured(line);
+
+      // Layer B: structured parser
       if (structuredKind && scoreStructured(line) >= 6) {
-        structured.push({
+        layerStructured.push({
           id: `auto-structured-${structuredKind}-${page.page}-${line.slice(0, 30)}`,
           title: line,
           page: page.page,
@@ -168,12 +193,26 @@ export function buildAutoToc(pages: PageTextBundle[]): TocNode[] {
         continue;
       }
 
-      if (scoreHeuristic(line) >= 5) {
-        heuristic.push({
-          id: `auto-heuristic-${page.page}-${line.slice(0, 30)}`,
+      // Layer C1: heading heuristics
+      if (scoreHeadingHeuristic(line) >= 5) {
+        layerHeading.push({
+          id: `auto-heading-${page.page}-${line.slice(0, 30)}`,
           title: line,
           page: page.page,
           kind: isUppercaseHeading(line) ? "section" : "subsection",
+          source: "auto",
+          children: [],
+        });
+        continue;
+      }
+
+      // Layer C2: layout-ish heuristics
+      if (scoreLayoutHeuristic(line, i, lines) >= 6) {
+        layerLayout.push({
+          id: `auto-layout-${page.page}-${line.slice(0, 30)}`,
+          title: line,
+          page: page.page,
+          kind: "section",
           source: "auto",
           children: [],
         });
@@ -181,7 +220,9 @@ export function buildAutoToc(pages: PageTextBundle[]): TocNode[] {
     }
   }
 
-  const flattened = structured.length > 0 ? structured : heuristic;
-  const nested = nestToc(dedupeNearby(flattened));
+  const preferred = layerStructured.length > 0 ? layerStructured : layerHeading.length > 0 ? layerHeading : layerLayout;
+  const nested = nestToc(dedupeNearby(preferred));
+
+  // Layer D fallback clusters with smart labels.
   return nested.length > 0 ? nested : buildFallbackToc(pages);
 }

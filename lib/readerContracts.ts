@@ -53,7 +53,7 @@ export interface TocNode {
   id: string;
   title: string;
   page: number;
-  kind: "chapter" | "section" | "subsection" | "week" | "assignment" | "frontmatter";
+  kind: "chapter" | "section" | "subsection" | "week" | "assignment" | "exam" | "deadline" | "policy" | "objective" | "topic" | "frontmatter";
   source?: "auto" | "fallback";
   children?: TocNode[];
 }

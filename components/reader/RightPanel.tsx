@@ -34,6 +34,7 @@ export function RightPanel({
   );
 
   const bodyClass = state.density === "expanded" ? "space-y-4 text-sm" : "space-y-3 text-[13px]";
+  const showFormulaSection = Boolean(ctx.formulas?.length) && (payload.classification.pageType === "formula" || payload.classification.secondaryTypes.some((entry) => entry.type === "formula" && entry.confidence >= 0.5));
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col overflow-hidden border-l border-white/10 bg-[rgb(11,18,34)]">
@@ -84,10 +85,10 @@ export function RightPanel({
             <Section title="Mechanism / Why"><p>{payload.explain.mechanism}</p></Section>
             <Section title="Stepwise Breakdown"><ol className="list-decimal space-y-1 pl-5">{payload.explain.stepwiseBreakdown.map((item, i) => <li key={i}>{item}</li>)}</ol></Section>
             <Section title="Application"><BulletList items={payload.explain.application} /></Section>
-            {!!ctx.formulas?.length && (
+            {showFormulaSection && (
               <Section title="Formula">
                 <div className="space-y-2">
-                  {ctx.formulas.map((formula, idx) => (
+                  {(ctx.formulas ?? []).map((formula, idx) => (
                     <FormulaBlock key={idx} formula={formula.normalized} speakable={formula.speakable} usage={formula.usage} trap={formula.trap} />
                   ))}
                 </div>

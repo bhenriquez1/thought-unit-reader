@@ -2416,6 +2416,17 @@ export default function ThoughtUnitReader() {
     // Merged: Surgeon View + Expert Mode into single Expert View
     // Architecture: Relations → Clusters → Decision Rules (not concepts)
     if (activeShellTab === "reader") {
+      if (!fileUrl) {
+        return (
+          <div className="h-full grid place-items-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+            <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-white/5 p-8 text-center backdrop-blur-xl">
+              <h2 className="text-2xl font-bold text-blue-200">Upload your first textbook</h2>
+              <p className="mt-2 text-slate-300">Reader + Panel unlock after textbook upload. You can still use the Syllabus tab independently.</p>
+              <p className="mt-4 text-sm text-slate-400">No PDF pane, panel, or page navigation is shown until a real book is loaded.</p>
+            </div>
+          </div>
+        );
+      }
       // Find current chapter for context
       const currentChapter = tableOfContents.find((entry, idx) => {
         const nextEntry = tableOfContents[idx + 1];
