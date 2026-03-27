@@ -41,6 +41,8 @@ export interface SmartPDFViewerProps {
    * Use this to drive PDF scroll → insights-panel sync without DOM overlays.
    */
   onActiveParagraphChange?: (snippet: string | null) => void;
+  /** Focus and scroll to a snippet from right-panel evidence cards. */
+  focusSnippet?: string | null;
   /** External page change lock to prevent observer feedback loops while rendering */
   isPageChanging?: boolean;
   /** Fires when the currently requested page render completes */
@@ -106,6 +108,7 @@ export default function SmartPDFViewer({
   onPageCount,
   onOutline,
   onActiveParagraphChange,
+  focusSnippet,
   isPageChanging = false,
   onPageRenderComplete,
 }: SmartPDFViewerProps) {
@@ -203,6 +206,25 @@ export default function SmartPDFViewer({
       if (paragraphScrollTimerRef.current) clearTimeout(paragraphScrollTimerRef.current);
     };
   }, [isPageChanging, onActiveParagraphChange]);
+
+  useEffect(() => {
+    if (!focusSnippet) return;
+    const container = viewerRef.current;
+    if (!container) return;
+    const query = focusSnippet.trim().toLowerCase();
+    if (query.length < 12) return;
+    const spans = Array.from(container.querySelectorAll('.react-pdf__Page__textContent span, .textLayer span')) as HTMLElement[];
+    if (!spans.length) return;
+    const needle = query.slice(0, 42);
+    const target = spans.find((span) => (span.textContent || "").toLowerCase().includes(needle));
+    if (!target) return;
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+    target.classList.add("bg-yellow-300", "text-black", "rounded", "px-0.5");
+    const timer = window.setTimeout(() => {
+      target.classList.remove("bg-yellow-300", "text-black", "rounded", "px-0.5");
+    }, 1600);
+    return () => window.clearTimeout(timer);
+  }, [focusSnippet, currentPage]);
 
   // Enhanced PDF loading with robust error handling
   const {

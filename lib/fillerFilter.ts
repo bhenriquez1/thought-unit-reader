@@ -11,8 +11,8 @@ export function suppressFiller(signals: ParagraphSignal[]): ParagraphSignal[] {
   });
 }
 
-export function selectTopSignals(signals: ParagraphSignal[], min = 3, max = 7): ParagraphSignal[] {
-  const filtered = signals.filter((s) => !s.suppress).sort((a, b) => b.yieldScore - a.yieldScore);
+export function selectTopSignals(signals: ParagraphSignal[], min = 3, max = 7, minYield = 0): ParagraphSignal[] {
+  const filtered = signals.filter((s) => !s.suppress && s.yieldScore >= minYield).sort((a, b) => b.yieldScore - a.yieldScore);
   const count = Math.min(max, Math.max(min, filtered.length >= min ? filtered.length : min));
   return filtered.slice(0, count).sort((a, b) => a.index - b.index);
 }

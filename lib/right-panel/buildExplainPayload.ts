@@ -1,4 +1,6 @@
 import type { ActivePageContext, ExplainPayload, PageClassification, PageSignals } from "@/lib/readerContracts";
+import type { ReasoningModeProfile } from "./modeProfile";
+import { adaptLineForMode } from "./modeProfile";
 
 function evidenceByKind(signals: PageSignals, kind: string, limit = 3): string[] {
   return (signals.paragraphSignals || [])
@@ -8,9 +10,9 @@ function evidenceByKind(signals: PageSignals, kind: string, limit = 3): string[]
     .map((p) => p.text);
 }
 
-export function buildExplainPayload(_ctx: ActivePageContext, classification: PageClassification, signals: PageSignals): ExplainPayload {
+export function buildExplainPayload(_ctx: ActivePageContext, classification: PageClassification, signals: PageSignals, mode?: ReasoningModeProfile): ExplainPayload {
   const t = classification.pageType;
-  const core = evidenceByKind(signals, "any", 5);
+  const core = evidenceByKind(signals, "any", mode?.label === "expert" ? 6 : mode?.label === "student" ? 4 : 5).map((line) => mode ? adaptLineForMode(line, mode) : line);
   const mechanismBlocks = evidenceByKind(signals, "mechanism", 3);
   const definitionBlocks = evidenceByKind(signals, "definition", 3);
 
@@ -27,8 +29,10 @@ export function buildExplainPayload(_ctx: ActivePageContext, classification: Pag
     return {
       meaning: core[0] || "This item set checks whether you can choose the right solving framework.",
       mechanism: mechanismBlocks[0] || "Pattern recognition comes first, then execution.",
-      stepwiseBreakdown: ["Identify problem type", "Choose governing rule", "Execute", "Check trap"],
-      application: ["Practice timed", "Audit first-step errors"],
+      stepwiseBreakdown: mode?.label === "student"
+        ? ["Spot the problem type", "Pick the rule", "Solve step by step", "Check common mistake"]
+        : ["Identify problem type", "Choose governing rule", "Execute", "Check trap"],
+      application: mode?.label === "expert" ? ["Practice timed", "Audit first-step errors", "Stress-test with close distractors"] : ["Practice timed", "Audit first-step errors"],
     };
   }
 
@@ -54,6 +58,6 @@ export function buildExplainPayload(_ctx: ActivePageContext, classification: Pag
     meaning: definitionBlocks[0] || core[0] || "Define the key concept in plain language.",
     mechanism: mechanismBlocks[0] || core[1] || "Explain why the concept works.",
     stepwiseBreakdown: core.slice(0, 4).length ? core.slice(0, 4) : ["Extract claim", "Find mechanism", "Connect context", "Apply"],
-    application: ["One recall question", "One application question"],
+    application: mode?.label === "expert" ? ["One recall question", "One mechanism probe", "One application question"] : ["One recall question", "One application question"],
   };
 }

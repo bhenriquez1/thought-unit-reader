@@ -120,6 +120,7 @@ export interface PageSignals {
   documentTitle?: string;
   pageRole?: PageRole;
   paragraphSignals?: ParagraphSignal[];
+  rawParagraphSignals?: ParagraphSignal[];
   pageText: string;
   nearbyText: string;
 }

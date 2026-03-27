@@ -26,6 +26,7 @@ interface PureReaderViewProps {
   fontFamily?: string;
   /** Forwarded to SmartPDFViewer for scroll → active paragraph detection */
   onActiveParagraphChange?: (snippet: string | null) => void;
+  focusSnippet?: string | null;
   onOpenFocusCycle?: () => void;
 }
 
@@ -41,6 +42,7 @@ export default function PureReaderView({
   fontSize = 16,
   fontFamily = 'Georgia',
   onActiveParagraphChange,
+  focusSnippet,
   onOpenFocusCycle,
 }: PureReaderViewProps) {
   // Global zoom store
@@ -135,6 +137,7 @@ export default function PureReaderView({
           onTextSelect={onTextSelect}
           onOutline={onOutline}
           onActiveParagraphChange={onActiveParagraphChange}
+          focusSnippet={focusSnippet}
           isPageChanging={isPageChanging}
           onPageRenderComplete={() => setIsPageChanging(false)}
         />

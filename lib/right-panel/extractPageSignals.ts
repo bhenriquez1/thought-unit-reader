@@ -31,7 +31,7 @@ function detectPageRole(pageText: string, heading: string, formulaCount: number,
   return "regular_teaching";
 }
 
-export function extractPageSignals(ctx: ActivePageContext): PageSignals {
+export function extractPageSignals(ctx: ActivePageContext, options?: { minYield?: number; minSignals?: number; maxSignals?: number }): PageSignals {
   const pageText = ctx.pageText || "";
   const nearbyText = ctx.nearbyText || "";
   const topicText = `${ctx.activeTopicTitle || ""} ${ctx.sectionTitle || ""} ${ctx.chapterTitle || ""}`;
@@ -42,7 +42,13 @@ export function extractPageSignals(ctx: ActivePageContext): PageSignals {
 
   const blocks = segmentParagraphs(pageText);
   const scored = scoreParagraphs(blocks, ctx.pageNumber);
-  const paragraphSignals = selectTopSignals(suppressFiller(scored));
+  const suppressed = suppressFiller(scored);
+  const paragraphSignals = selectTopSignals(
+    suppressed,
+    options?.minSignals ?? 3,
+    options?.maxSignals ?? 7,
+    options?.minYield ?? 0,
+  );
 
   const pageRole = detectPageRole(pageText, ctx.sectionTitle || "", formulaLines.length, lines.filter((line) => /\s{2,}|\|/.test(line)).length);
 
@@ -75,6 +81,7 @@ export function extractPageSignals(ctx: ActivePageContext): PageSignals {
     documentTitle: ctx.documentTitle,
     pageRole,
     paragraphSignals,
+    rawParagraphSignals: suppressed,
     pageText,
     nearbyText,
   };
