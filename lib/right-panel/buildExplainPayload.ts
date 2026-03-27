@@ -14,6 +14,15 @@ export function buildExplainPayload(_ctx: ActivePageContext, classification: Pag
   const mechanismBlocks = evidenceByKind(signals, "mechanism", 3);
   const definitionBlocks = evidenceByKind(signals, "definition", 3);
 
+  if (signals.pageRole && ["cover", "contents", "chapter_opener", "section_opener", "copyright_frontmatter", "image_scan_heavy"].includes(signals.pageRole)) {
+    return {
+      meaning: `This page role is ${signals.pageRole.replace(/_/g, " ")} and mostly structural.`,
+      mechanism: "Use it to map chapter scope and sequence.",
+      stepwiseBreakdown: ["Identify structural cues", "Locate next teaching section", "Defer deep memorization"],
+      application: ["Jump to dense teaching pages for study output"],
+    };
+  }
+
   if (t === "diagnostic") {
     return {
       meaning: core[0] || "This item set checks whether you can choose the right solving framework.",

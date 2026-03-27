@@ -554,23 +554,43 @@ export default function ThoughtUnitReader() {
     depth: "standard",
     density: "condensed",
   });
-  const [focusState, setFocusState] = useState<{ mode: "focus" | "break"; time: number; running: boolean }>({
+  const [focusSettings, setFocusSettings] = useState({ focus: 1500, shortBreak: 300, longBreak: 900 });
+  const [ambientUrl, setAmbientUrl] = useState("");
+  const [cycleCount, setCycleCount] = useState(0);
+  const [focusState, setFocusState] = useState<{ mode: "focus" | "short_break" | "long_break"; time: number; running: boolean }>({
     mode: "focus",
     time: 1500,
     running: false,
   });
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storedAmbient = localStorage.getItem("avrrio-ambient-url");
+    if (storedAmbient) setAmbientUrl(storedAmbient);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!ambientUrl) return;
+    localStorage.setItem("avrrio-ambient-url", ambientUrl);
+  }, [ambientUrl]);
+
+  useEffect(() => {
     if (!focusState.running) return;
     const timer = window.setInterval(() => {
       setFocusState((prev) => {
         if (prev.time > 1) return { ...prev, time: prev.time - 1 };
-        if (prev.mode === "focus") return { mode: "break", time: 300, running: true };
-        return { mode: "focus", time: 1500, running: true };
+        if (prev.mode === "focus") {
+          const nextCycle = cycleCount + 1;
+          setCycleCount(nextCycle);
+          if (nextCycle % 4 === 0) return { mode: "long_break", time: focusSettings.longBreak, running: true };
+          return { mode: "short_break", time: focusSettings.shortBreak, running: true };
+        }
+        return { mode: "focus", time: focusSettings.focus, running: true };
       });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [focusState.running]);
+  }, [focusState.running, focusSettings, cycleCount]);
 
   // ✅ Auto-whiteboard control + data
   const [autoWhiteboard, setAutoWhiteboard] = useState<boolean>(false);
@@ -2775,19 +2795,6 @@ export default function ThoughtUnitReader() {
           </div>
         )}
 
-        {/* Follow Scroll Toggle — OFF by default to prevent observer feedback loops */}
-        {fileUrl && activeShellTab === "reader" && (
-          <label className="inline-flex items-center gap-2 text-sm" title="When off, only Prev/Next/TOC changes the page. When on, scrolling can also advance pages.">
-            <input
-              type="checkbox"
-              checked={followScroll}
-              onChange={(e) => setFollowScroll(e.target.checked)}
-            />
-            <span className={followScroll ? "text-blue-300" : "text-gray-400"}>
-              Follow Scroll
-            </span>
-          </label>
-        )}
         <div className="flex items-center gap-2 rounded-full border border-purple-300/40 bg-white/10 backdrop-blur-md shadow-[0_0_20px_rgba(139,92,246,0.25)] px-3 py-1.5">
           <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
             focusState.mode === "focus" ? "bg-purple-500/40 text-purple-100" : "bg-emerald-500/40 text-emerald-100"

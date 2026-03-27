@@ -4,6 +4,8 @@ export type AudienceMode = "student" | "clinical" | "expert";
 export type DepthMode = "standard" | "deep";
 export type DensityMode = "condensed" | "expanded";
 
+export type PageRole = "cover" | "contents" | "chapter_opener" | "section_opener" | "copyright_frontmatter" | "regular_teaching" | "table_formula" | "image_scan_heavy";
+
 export type PageType =
   | "diagnostic"
   | "definition"
@@ -116,6 +118,7 @@ export interface PageSignals {
   activeTopicTitle?: string;
   activeTopicKind?: string;
   documentTitle?: string;
+  pageRole?: PageRole;
   paragraphSignals?: ParagraphSignal[];
   pageText: string;
   nearbyText: string;

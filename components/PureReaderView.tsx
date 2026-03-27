@@ -44,7 +44,7 @@ export default function PureReaderView({
   onOpenFocusCycle,
 }: PureReaderViewProps) {
   // Global zoom store
-  const { zoom, zoomIn, zoomOut, resetZoom, getZoomPercent, canZoomIn, canZoomOut } = useZoomStore();
+  const { zoom } = useZoomStore();
   const [isPageChanging, setIsPageChanging] = useState(false);
 
   const navigateToPage = useCallback((page: number) => {
@@ -106,7 +106,7 @@ export default function PureReaderView({
           </button>
         </div>
 
-        {/* Zoom + Focus Cycle */}
+        {/* Focus Cycle */}
         <div className="flex items-center gap-2">
           <button
             onClick={onOpenFocusCycle}
@@ -114,29 +114,6 @@ export default function PureReaderView({
             title="Open Focus Cycle"
           >
             ⏱ Focus Cycle
-          </button>
-          <button
-            onClick={zoomOut}
-            disabled={!canZoomOut()}
-            className="px-2 py-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm"
-            title="Zoom out"
-          >
-            −
-          </button>
-          <button
-            onClick={resetZoom}
-            className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm min-w-[60px]"
-            title="Reset zoom"
-          >
-            {getZoomPercent()}%
-          </button>
-          <button
-            onClick={zoomIn}
-            disabled={!canZoomIn()}
-            className="px-2 py-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm"
-            title="Zoom in"
-          >
-            +
           </button>
         </div>
 

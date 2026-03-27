@@ -12,6 +12,16 @@ export function buildPriorityPayload(ctx: ActivePageContext, classification: Pag
   const pageType = classification.pageType;
   const evidence = topEvidence(signals, 5);
 
+  if (signals.pageRole && ["cover", "contents", "chapter_opener", "section_opener", "copyright_frontmatter", "image_scan_heavy"].includes(signals.pageRole)) {
+    return {
+      pageRole: `This is a ${signals.pageRole.replace(/_/g, " ")} page.`,
+      primaryGoal: "Orient the learner to structure and context before deep study.",
+      mainIdeas: topEvidence(signals, 3),
+      whyItMatters: ["Navigation and scope framing"],
+      whatToRemember: ["Use this page for orientation, not deep concept extraction."],
+    };
+  }
+
   if (pageType === "diagnostic") {
     return {
       pageRole: "This page is testing whether the learner can execute the target skill under exam conditions.",
