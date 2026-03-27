@@ -28,18 +28,18 @@ export function buildExplainPayload(_ctx: ActivePageContext, classification: Pag
   if (t === "diagnostic") {
     return {
       meaning: core[0] || "This item set checks whether you can choose the right solving framework.",
-      mechanism: mechanismBlocks[0] || "Pattern recognition comes first, then execution.",
+      mechanism: mechanismBlocks[0] || "No strong mechanism line was detected; stay with grounded decision steps only.",
       stepwiseBreakdown: mode?.label === "student"
         ? ["Spot the problem type", "Pick the rule", "Solve step by step", "Check common mistake"]
         : ["Identify problem type", "Choose governing rule", "Execute", "Check trap"],
-      application: mode?.label === "expert" ? ["Practice timed", "Audit first-step errors", "Stress-test with close distractors"] : ["Practice timed", "Audit first-step errors"],
+      application: mode?.label === "expert" ? ["Practice timed", "Audit first-step errors", "Stress-test with close distractors", "Think: cue → mechanism → answer"] : ["Practice timed", "Audit first-step errors"],
     };
   }
 
   if (t === "formula") {
     return {
       meaning: definitionBlocks[0] || core[0] || "What the expression represents.",
-      mechanism: mechanismBlocks[0] || core[1] || "Why the algebraic structure works.",
+      mechanism: mechanismBlocks[0] || core[1] || "No grounded mechanism line found; rely on symbol mapping only.",
       stepwiseBreakdown: ["Define symbols", "Identify pattern family", "Transform/expand", "Check use conditions"],
       application: ["When to use", "When not to use", "Common substitution traps"],
     };
@@ -48,7 +48,7 @@ export function buildExplainPayload(_ctx: ActivePageContext, classification: Pag
   if (t === "clinical") {
     return {
       meaning: core[0] || "What sign or symptom pattern is being recognized.",
-      mechanism: mechanismBlocks[0] || core[1] || "Why this pattern occurs and what it implies.",
+      mechanism: mechanismBlocks[0] || core[1] || "No grounded mechanism line found; use recognized sign chains only.",
       stepwiseBreakdown: ["Recognize finding", "Interpret significance", "Differentiate alternatives", "Choose action"],
       application: ["Differential diagnosis", "Treatment implication"],
     };
@@ -56,8 +56,8 @@ export function buildExplainPayload(_ctx: ActivePageContext, classification: Pag
 
   return {
     meaning: definitionBlocks[0] || core[0] || "Define the key concept in plain language.",
-    mechanism: mechanismBlocks[0] || core[1] || "Explain why the concept works.",
+    mechanism: mechanismBlocks[0] || core[1] || "No explicit mechanism sentence found on this page.",
     stepwiseBreakdown: core.slice(0, 4).length ? core.slice(0, 4) : ["Extract claim", "Find mechanism", "Connect context", "Apply"],
-    application: mode?.label === "expert" ? ["One recall question", "One mechanism probe", "One application question"] : ["One recall question", "One application question"],
+    application: mode?.label === "expert" ? ["One recall question", "One mechanism probe", "One application question", "Think in if→then chains"] : ["One recall question", "One application question"],
   };
 }

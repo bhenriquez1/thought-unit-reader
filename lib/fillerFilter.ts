@@ -2,7 +2,7 @@ import type { ParagraphSignal } from "@/lib/readerContracts";
 
 export function suppressFiller(signals: ParagraphSignal[]): ParagraphSignal[] {
   return signals.map((signal) => {
-    const lowYield = signal.yieldScore < 0.35;
+    const lowYield = signal.yieldScore < 0.35 && signal.examSignalScore < 1.2;
     const fillerKind = signal.kind === "filler" || signal.blockType === "metadata" || signal.blockType === "reference";
     return {
       ...signal,

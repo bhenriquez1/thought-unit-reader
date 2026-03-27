@@ -12,11 +12,12 @@ interface ShadowRecallResult {
 
 function evaluateRecall(answer: string, signals: PageSignals): ShadowRecallResult {
   const tokens = new Set(answer.toLowerCase().split(/\W+/).filter((t) => t.length > 3));
-  const evidence = (signals.paragraphSignals || []).map((entry) => entry.text);
+  const ranked = (signals.paragraphSignals || []).slice().sort((a, b) => b.examSignalScore - a.examSignalScore);
+  const evidence = ranked.map((entry) => entry.text);
   const concepts = evidence.slice(0, 5);
   const recalledConcepts = concepts.filter((line) => line.toLowerCase().split(/\W+/).some((token) => tokens.has(token)));
   const missedConcepts = concepts.filter((line) => !recalledConcepts.includes(line));
-  const traps = evidence.filter((line) => /\btrap|error|mistake|confus/i.test(line)).slice(0, 3);
+  const traps = ranked.filter((entry) => entry.trapScore > 0 || entry.distinctionScore > 0).map((entry) => entry.text).slice(0, 3);
   const recalledTraps = traps.filter((line) => line.toLowerCase().split(/\W+/).some((token) => tokens.has(token)));
   const missedTraps = traps.filter((line) => !recalledTraps.includes(line));
   const possible = Math.max(1, concepts.length + traps.length);
@@ -52,7 +53,9 @@ export default function ShadowRecallPanel({
       <div className="text-xs text-slate-200 space-y-1">
         <p>• What is the key concept on this page?</p>
         <p>• What is the mechanism or logic?</p>
+        <p>• What distinction matters here?</p>
         <p>• What would they test or ask?</p>
+        <p>• What trap would catch a student here?</p>
       </div>
       <textarea
         value={answer}
@@ -70,6 +73,7 @@ export default function ShadowRecallPanel({
           <p className="text-slate-200">Recalled concepts: {result.recalledConcepts.length || 0}</p>
           <p className="text-slate-200">Missed signals: {result.missedConcepts.length || 0}</p>
           <p className="text-slate-200">Missed traps: {result.missedTraps.length || 0}</p>
+          <p className="text-slate-200">Fast recall cues: {(signals.paragraphSignals || []).slice(0, 2).map((entry) => entry.text.slice(0, 45)).join(" • ") || "None"}</p>
           {result.feedback.map((line, idx) => (
             <p key={idx} className="text-slate-300">{line}</p>
           ))}

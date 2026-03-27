@@ -1,16 +1,16 @@
 import type { AudienceMode, HighlightLevel, HighlightTarget, PageSignals, ParagraphSignal } from "@/lib/readerContracts";
 
 const PRIORITY: Record<string, number> = {
-  definition: 1,
-  mechanism: 2,
-  clinical: 3,
-  comparison: 4,
+  mechanism: 1,
+  comparison: 2,
+  definition: 3,
+  clinical: 4,
   application: 5,
   formula: 6,
 };
 
 function rankSignal(signal: ParagraphSignal): number {
-  return (PRIORITY[signal.kind] || 99) * 100 - signal.yieldScore * 10;
+  return (PRIORITY[signal.kind] || 99) * 100 - signal.examSignalScore * 20 - signal.yieldScore * 5;
 }
 
 export function selectRenderableEvidence(signals: PageSignals, audience: AudienceMode): ParagraphSignal[] {

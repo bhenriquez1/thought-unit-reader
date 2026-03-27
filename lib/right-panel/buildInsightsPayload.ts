@@ -9,6 +9,13 @@ function topBy(signals: PageSignals, kind: string, limit = 4): string[] {
     .map((p) => p.text);
 }
 
+function topExamSignals(signals: PageSignals, limit = 5) {
+  return (signals.paragraphSignals || [])
+    .filter((p) => !p.suppress)
+    .sort((a, b) => b.examSignalScore - a.examSignalScore)
+    .slice(0, limit);
+}
+
 function extractTerms(lines: string[], cap = 6): string[] {
   const terms = new Set<string>();
   const termRe = /\b([A-Za-z][A-Za-z\-]{3,})\b/g;
@@ -25,25 +32,29 @@ function extractTerms(lines: string[], cap = 6): string[] {
 }
 
 export function buildInsightsPayload(classification: PageClassification, signals: PageSignals, mode?: ReasoningModeProfile): InsightsPayload {
-  const any = topBy(signals, "any", mode?.label === "expert" ? 7 : mode?.label === "student" ? 4 : 6);
+  const ranked = topExamSignals(signals, mode?.label === "expert" ? 7 : mode?.label === "student" ? 4 : 6);
+  const any = ranked.map((entry) => entry.text);
   const clinical = topBy(signals, "clinical", 4);
-  const formula = topBy(signals, "formula", 4);
   const comparison = topBy(signals, "comparison", 4);
-  const examish = topBy(signals, "application", 4);
+  const examish = ranked.filter((entry) => entry.examSignalScore >= 1.8).map((entry) => entry.text);
+  const mechanismAnchors = ranked.filter((entry) => entry.mechanismScore > 0).slice(0, 2).map((entry) => entry.text);
+  const groundedTrapLines = ranked.filter((entry) => entry.trapScore > 0 || entry.distinctionScore > 0).slice(0, 3).map((entry) => entry.text);
+  const maxExamSignal = ranked[0]?.examSignalScore ?? 0;
 
-  if (any.length === 0) {
+  if (any.length === 0 || maxExamSignal < 1.4) {
     return {
-      highYield: ["Evidence is too weak on this page to produce DAT-ready extraction."],
-      traps: ["Low text density detected; avoid overconfident inference."],
+      highYield: ["No strong DAT signal on this page yet."],
+      traps: ["Evidence is limited; avoid overconfident trap claims."],
       hiddenConnections: [],
-      whatYouMayMiss: ["Try another content-rich page or chapter section."],
+      whatYouMayMiss: ["Try a content-rich teaching page for stronger exam cues."],
       dat: {
         testedConcepts: [],
         likelyQuestionAngles: [],
-        commonTraps: ["Weak text layer; extraction confidence is low."],
+        commonTraps: [],
         mustKnowTerms: [],
         distinctionPairs: [],
         fastRecall: [],
+        mechanismAnchor: [],
       },
     };
   }
@@ -51,15 +62,14 @@ export function buildInsightsPayload(classification: PageClassification, signals
   const dat = {
     testedConcepts: extractTerms(any, 6),
     likelyQuestionAngles: examish.length ? examish.slice(0, 3) : any.slice(0, 3),
-    commonTraps: [
+    commonTraps: groundedTrapLines.length ? groundedTrapLines : [
       classification.pageType === "clinical" ? "Confusing similar clinical patterns" : "Choosing the wrong rule from look-alike options",
-      "Ignoring discriminating wording in stems",
-      ...(mode?.emphasizeTraps ? ["Over-generalizing beyond what the page evidence supports"] : []),
     ],
     mustKnowTerms: extractTerms(clinical.length ? clinical : any, 6),
     distinctionPairs: comparison.length ? comparison.slice(0, 3) : ["No grounded distinction pair found yet"],
     fastRecall: any.slice(0, 3).map((line) => line.length > 120 ? `${line.slice(0, 117)}...` : line),
     applicationCue: examish.slice(0, 3),
+    mechanismAnchor: mechanismAnchors,
   };
 
   if (classification.pageType === "formula") {

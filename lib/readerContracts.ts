@@ -108,6 +108,10 @@ export interface ParagraphSignal {
   comparisonScore: number;
   examScore: number;
   formulaScore: number;
+  trapScore: number;
+  distinctionScore: number;
+  clinicalDecisionScore: number;
+  examSignalScore: number;
   fillerPenalty: number;
   evidenceTerms: string[];
   suppress: boolean;
@@ -160,6 +164,7 @@ export interface PriorityPayload {
   mainIdeas: string[];
   whyItMatters: string[];
   whatToRemember: string[];
+  whatToIgnore?: string[];
 }
 
 export interface ExplainPayload {
@@ -194,6 +199,7 @@ export interface DatInsightPayload {
   distinctionPairs: string[];
   fastRecall: string[];
   applicationCue?: string[];
+  mechanismAnchor?: string[];
 }
 
 export interface InsightsPayload {
