@@ -134,6 +134,24 @@ function truncate(s: string, n: number) {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
+function toYouTubeEmbed(url: string): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, "");
+    let videoId = "";
+    if (host === "youtube.com" || host === "m.youtube.com") {
+      videoId = parsed.searchParams.get("v") || "";
+    } else if (host === "youtu.be") {
+      videoId = parsed.pathname.replace("/", "");
+    }
+    if (!videoId) return null;
+    return `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
+  } catch {
+    return null;
+  }
+}
+
 /** Sanitize document title - filter out error-like titles */
 function sanitizeDocTitle(title: string | undefined, fallback: string = "Document"): string {
   if (!title) return fallback;
@@ -563,6 +581,7 @@ export default function ThoughtUnitReader() {
   const [focusInterruptions, setFocusInterruptions] = useState(0);
   const [focusInterruptionLabel, setFocusInterruptionLabel] = useState<string | null>(null);
   const [focusSoftLock, setFocusSoftLock] = useState(true);
+  const [showAmbientPanel, setShowAmbientPanel] = useState(false);
   const [focusState, setFocusState] = useState<{ mode: "focus" | "short_break" | "long_break"; time: number; running: boolean }>({
     mode: "focus",
     time: 1500,
@@ -711,6 +730,16 @@ export default function ThoughtUnitReader() {
     [activePageContextForInsights, unifiedPanelState.audience, unifiedPanelState.depth],
   );
   const focusIntegrity = focusInterruptions === 0 ? "uninterrupted" : focusInterruptions === 1 ? "interrupted once" : "interrupted multiple times";
+  const focusScore = Math.max(0, 100 - (focusInterruptions * 12));
+  const focusConsistency = focusScore >= 90 ? "Strong" : focusScore >= 75 ? "Good" : "Needs recovery";
+  const ambientEmbedUrl = useMemo(() => toYouTubeEmbed(ambientUrl), [ambientUrl]);
+
+  useEffect(() => {
+    if (activeShellTab !== "reader") return;
+    const topSnippet = currentSignals.paragraphSignals?.[0]?.text;
+    if (!topSnippet) return;
+    setFocusSnippet(topSnippet);
+  }, [activeShellTab, currentPage, currentSignals.paragraphSignals]);
 
   /* =========================================================================
      🔹 Surgeon View: Text Selection Handler
@@ -2737,7 +2766,7 @@ export default function ThoughtUnitReader() {
       </header>
 
       {/* Quick controls */}
-      <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-gray-800 overflow-x-auto">
+      <div className={`flex flex-wrap items-center gap-3 px-4 py-2 overflow-x-auto ${themeMode === "dark" ? "bg-gray-800" : "bg-slate-100 border-b border-slate-200 text-slate-900"}`}>
         {/* Main Navigation Tabs */}
         <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 min-w-max" data-testid="main-nav">
           <button
@@ -2915,10 +2944,11 @@ export default function ThoughtUnitReader() {
             className="w-40 rounded bg-black/30 px-2 py-1 text-[10px]"
           />
           <button
-            onClick={() => ambientUrl && window.open(ambientUrl, "_blank", "noopener,noreferrer")}
-            className="text-xs rounded bg-emerald-700 px-2 py-1 hover:bg-emerald-600"
+            onClick={() => setShowAmbientPanel((prev) => !prev)}
+            disabled={!ambientEmbedUrl}
+            className="text-xs rounded bg-emerald-700 px-2 py-1 hover:bg-emerald-600 disabled:opacity-50"
           >
-            Ambient
+            {showAmbientPanel ? "Hide Ambient" : "Ambient"}
           </button>
         </div>
         {focusInterruptionLabel ? <span className="text-xs text-amber-300">{focusInterruptionLabel}</span> : null}
@@ -3018,20 +3048,19 @@ export default function ThoughtUnitReader() {
 
       </div>
       {fileUrl && activeShellTab === "reader" && (
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-2 px-4 py-2 border-y border-white/10 bg-slate-900/70 text-[11px]">
-          <div><span className="text-slate-400">Course:</span> <span className="text-slate-100">{uploadedFile?.name || "Current Course"}</span></div>
-          <div><span className="text-slate-400">Chapter:</span> <span className="text-slate-100">{activePageContextForInsights.chapterTitle || "Unknown"}</span></div>
-          <div><span className="text-slate-400">Topic:</span> <span className="text-slate-100">{activePageContextForInsights.activeTopicTitle || activePageContextForInsights.sectionTitle || "Current page"}</span></div>
-          <div><span className="text-slate-400">Page Role:</span> <span className="text-slate-100">{currentSignals.pageRole || "regular_teaching"}</span></div>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 px-4 py-2 border-y border-white/10 bg-slate-900/70 text-[11px]">
+          <div><span className="text-slate-400">Page Role:</span> <span className="text-slate-100">{currentSignals.pageRole || "teaching_page"}</span></div>
           <div><span className="text-slate-400">Evidence:</span> <span className="text-slate-100">{currentPanelPayload.classification.confidence >= 0.7 ? "Strong" : currentPanelPayload.classification.confidence >= 0.45 ? "Medium" : "Weak"}</span></div>
-          <div><span className="text-slate-400">High-yield blocks:</span> <span className="text-slate-100">{(currentSignals.paragraphSignals || []).length} ({modeProfile.label})</span></div>
+          <div><span className="text-slate-400">Signals:</span> <span className="text-slate-100">{(currentSignals.paragraphSignals || []).length}</span></div>
+          <div><span className="text-slate-400">Mode:</span> <span className="text-slate-100">{modeProfile.label}</span></div>
+          <div><span className="text-slate-400">Focus Score:</span> <span className="text-slate-100">{focusScore}% ({focusConsistency})</span></div>
         </div>
       )}
 
       {/* Main Content Area - Pure Views: Each view manages its own layout */}
       <div className="flex-1 overflow-hidden min-h-0">
         {/* Main Content - Pure View renders in full container */}
-        <div className="w-full h-full bg-gray-800 rounded-lg overflow-hidden">
+        <div className={`w-full h-full rounded-lg overflow-hidden ${themeMode === "dark" ? "bg-gray-800" : "bg-[#f8fafc] border border-slate-200"}`}>
           {renderContent()}
         </div>
       </div>
@@ -3040,6 +3069,21 @@ export default function ThoughtUnitReader() {
           <div className="absolute top-24 right-4 rounded-lg bg-purple-900/80 px-3 py-2 text-xs text-purple-100">
             Focus Mode active • {focusModeLabel} • Integrity: {focusIntegrity}
           </div>
+        </div>
+      )}
+      {showAmbientPanel && ambientEmbedUrl && (
+        <div className="fixed bottom-6 right-6 z-40 w-[340px] rounded-xl border border-emerald-300/30 bg-slate-950/95 p-2 shadow-2xl">
+          <div className="mb-2 flex items-center justify-between text-xs text-emerald-100">
+            <span>Ambient Focus Audio</span>
+            <button className="rounded bg-slate-800 px-2 py-1" onClick={() => setShowAmbientPanel(false)}>Close</button>
+          </div>
+          <iframe
+            src={ambientEmbedUrl}
+            className="h-48 w-full rounded-lg"
+            allow="autoplay; encrypted-media"
+            allowFullScreen
+            title="Ambient focus player"
+          />
         </div>
       )}
 
@@ -3064,7 +3108,7 @@ export default function ThoughtUnitReader() {
       )}
 
         {/* Floating Action Buttons - Bottom Left Stack */}
-        <div className="fixed bottom-[80px] left-6 z-40 flex flex-col gap-3 max-w-[160px] opacity-90">
+        <div className="fixed bottom-[80px] right-6 z-40 flex flex-col gap-3 max-w-[170px] opacity-90">
           {/* Chapter Absorption FAB (feature-flagged) */}
           {isFeatureEnabled('ENABLE_CHAPTER_ABSORPTION') && smartTOC.length > 0 && !absorptionState.showPanel && (
             <button
@@ -3098,6 +3142,16 @@ export default function ThoughtUnitReader() {
               </div>
             </button>
           )}
+
+          <button
+            className="text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border border-white/20 transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)]"
+            title="Speech mode is coming soon"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🎤</span>
+              <span className="text-sm font-medium hidden sm:block">Speech (Soon)</span>
+            </div>
+          </button>
           
           {/* Whiteboard FAB */}
           {!showWhiteboardPanel && (
@@ -3166,6 +3220,9 @@ export default function ThoughtUnitReader() {
               {(currentSignals.paragraphSignals || []).slice(0, 5).map((p, idx) => (
                 <button key={`${p.index}-${idx}`} onClick={() => setFocusSnippet(p.text)} className="w-full rounded border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-left text-xs text-emerald-100 hover:bg-emerald-500/20">
                   #{idx + 1} ({p.kind}, y={p.yieldScore.toFixed(2)}): {truncate(p.text, 140)}
+                  <span className="mt-1 block text-[10px] text-emerald-200/80">
+                    Why selected: {p.evidenceTerms.slice(0, 3).join(", ") || "high concept density"} • block={p.blockType}
+                  </span>
                 </button>
               ))}
             </div>
@@ -3177,6 +3234,19 @@ export default function ThoughtUnitReader() {
                   {p.kind} ({p.blockType}, y={p.yieldScore.toFixed(2)}): {truncate(p.text, 120)}
                 </div>
               ))}
+            </div>
+
+            <div className="mb-6 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-300">Missed signals (borderline)</p>
+              {(currentSignals.rawParagraphSignals || [])
+                .filter((p) => !p.suppress && p.yieldScore >= Math.max(0.45, modeProfile.minYield - 0.05))
+                .filter((p) => !(currentSignals.paragraphSignals || []).some((selected) => selected.index === p.index))
+                .slice(0, 3)
+                .map((p, idx) => (
+                  <div key={`${p.index}-missed-${idx}`} className="rounded border border-amber-300/20 bg-amber-500/10 px-2 py-1 text-xs text-amber-100">
+                    {p.kind} (y={p.yieldScore.toFixed(2)}): {truncate(p.text, 120)}
+                  </div>
+                ))}
             </div>
 
             {/* Thought Input Widget */}
