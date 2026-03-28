@@ -242,24 +242,43 @@ export default function SmartPDFViewer({
       return;
     }
     let attempts = 0;
+    let cancelled = false;
     const renderRects = () => {
+      if (cancelled) return;
       const textLayer = container.querySelector('.react-pdf__Page__textContent, .textLayer');
       if (!textLayer) {
-        if (attempts < 4) {
+        if (attempts < 10) {
           attempts += 1;
-          window.setTimeout(renderRects, 120);
+          window.setTimeout(renderRects, 120 + attempts * 40);
         } else {
+          console.warn("SmartPDFViewer: highlight targets available but text layer was not mounted.");
           setOverlayRects([]);
         }
         return;
       }
       const layerRect = (textLayer as HTMLElement).getBoundingClientRect();
       const spans = Array.from(textLayer.querySelectorAll("span")) as HTMLElement[];
+      if (!spans.length) {
+        if (attempts < 10) {
+          attempts += 1;
+          window.setTimeout(renderRects, 120 + attempts * 40);
+        } else {
+          console.warn("SmartPDFViewer: text layer mounted but no spans for highlight matching.");
+          setOverlayRects([]);
+        }
+        return;
+      }
       const rects: OverlayRect[] = [];
       highlightTargets.forEach((target) => {
         const needle = target.normalizedText.slice(0, 42);
-        const matches = spans.filter((entry) => (entry.textContent || "").toLowerCase().replace(/\s+/g, " ").includes(needle));
-        const span = matches[0];
+        let span = spans.find((entry) => (entry.textContent || "").toLowerCase().replace(/\s+/g, " ").includes(needle));
+        if (!span) {
+          const keywords = needle.split(" ").filter((word) => word.length >= 5).slice(0, 4);
+          span = spans.find((entry) => {
+            const hay = (entry.textContent || "").toLowerCase();
+            return keywords.some((word) => hay.includes(word));
+          });
+        }
         if (!span) return;
         const rect = span.getBoundingClientRect();
         rects.push({
@@ -271,9 +290,20 @@ export default function SmartPDFViewer({
           height: Math.max(14, rect.height),
         });
       });
+      if (!rects.length && highlightTargets.length > 0 && attempts < 10) {
+        attempts += 1;
+        window.setTimeout(renderRects, 140 + attempts * 40);
+        return;
+      }
+      if (!rects.length && highlightTargets.length > 0) {
+        console.warn("SmartPDFViewer: highlight matching completed with zero overlays.");
+      }
       setOverlayRects(rects);
     };
     window.requestAnimationFrame(renderRects);
+    return () => {
+      cancelled = true;
+    };
   }, [highlightTargets, currentPage]);
 
   // Enhanced PDF loading with robust error handling
