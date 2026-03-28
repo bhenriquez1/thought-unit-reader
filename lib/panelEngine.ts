@@ -2,6 +2,8 @@ import type {
   ActivePageContext,
   AudienceMode,
   DepthMode,
+  PageClassification,
+  PageSignals,
   ResolvedPanelPayload,
 } from "./readerContracts";
 import { classifyPage } from "./right-panel/classifyPage";
@@ -12,6 +14,24 @@ import { buildRelationsPayload } from "./right-panel/buildRelationsPayload";
 import { buildComparePayload } from "./right-panel/buildComparePayload";
 import { buildInsightsPayload } from "./right-panel/buildInsightsPayload";
 import { buildModeProfile } from "./right-panel/modeProfile";
+
+function buildResolvedPanelPayload(
+  ctx: ActivePageContext,
+  classification: PageClassification,
+  signals: PageSignals,
+  audience: AudienceMode,
+  depth: DepthMode,
+): ResolvedPanelPayload {
+  const mode = buildModeProfile(audience, depth);
+  return {
+    classification,
+    priority: buildPriorityPayload(ctx, classification, signals, mode),
+    explain: buildExplainPayload(ctx, classification, signals, mode),
+    relations: buildRelationsPayload(ctx, classification, signals),
+    compare: buildComparePayload(ctx, classification, signals),
+    insights: buildInsightsPayload(classification, signals, mode),
+  };
+}
 
 export function resolvePanelPayload(
   ctx: ActivePageContext,
@@ -25,13 +45,7 @@ export function resolvePanelPayload(
     maxSignals: mode.maxEvidence,
   });
   const classification = classifyPage(signals);
-
-  return {
-    classification,
-    priority: buildPriorityPayload(ctx, classification, signals, mode),
-    explain: buildExplainPayload(ctx, classification, signals, mode),
-    relations: buildRelationsPayload(ctx, classification, signals),
-    compare: buildComparePayload(ctx, classification, signals),
-    insights: buildInsightsPayload(classification, signals, mode),
-  };
+  return buildResolvedPanelPayload(ctx, classification, signals, audience, depth);
 }
+
+export { buildResolvedPanelPayload };

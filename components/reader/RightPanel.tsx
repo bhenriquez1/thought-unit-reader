@@ -24,6 +24,13 @@ const tabBtn =
   "rounded-md px-3 py-1.5 text-xs border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 whitespace-nowrap";
 const activeTabBtn =
   "rounded-md px-3 py-1.5 text-xs border border-emerald-400/40 bg-emerald-500/20 text-white whitespace-nowrap";
+const tabLabels: Record<PanelTab, string> = {
+  priority: "Page Frame",
+  explain: "Meaning",
+  relations: "Connections",
+  compare: "Contrast",
+  insights: "Apply / Test",
+};
 
 export function RightPanel({
   ctx,
@@ -65,7 +72,7 @@ export function RightPanel({
         <div className="flex gap-2 overflow-x-auto pb-1">
           {(["priority", "explain", "relations", "compare", "insights"] as PanelTab[]).map((tab) => (
             <button key={tab} className={state.activeTab === tab ? activeTabBtn : tabBtn} onClick={() => onTabChange(tab)}>
-              {tab[0].toUpperCase() + tab.slice(1)}
+              {tabLabels[tab]}
             </button>
           ))}
         </div>
@@ -87,11 +94,9 @@ export function RightPanel({
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 pr-2">
         {state.activeTab === "priority" && (
           <div className={bodyClass}>
-            <Section title="What this page is doing"><p>{payload.priority.pageRole}</p></Section>
-            <Section title="Primary Goal"><p>{payload.priority.primaryGoal}</p></Section>
-            <Section title="Main ideas"><BulletList items={payload.priority.mainIdeas} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
-            <Section title="Why it matters"><BulletList items={payload.priority.whyItMatters} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
-            <Section title="What to remember"><BulletList items={payload.priority.whatToRemember} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
+            <Section title="Page Frame"><p>{payload.priority.pageRole}</p></Section>
+            <Section title="Core Ideas"><BulletList items={payload.priority.mainIdeas.slice(0, 4)} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
+            <Section title="What matters most"><BulletList items={payload.priority.whatToRemember.slice(0, 4)} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
             <Section title="What to ignore"><BulletList items={payload.priority.whatToIgnore || []} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
           </div>
         )}
@@ -116,9 +121,9 @@ export function RightPanel({
 
         {state.activeTab === "relations" && (
           <div className={bodyClass}>
-            <Section title="Prerequisites"><BulletList items={payload.relations.prerequisites} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
-            <Section title="Current Links"><BulletList items={payload.relations.currentLinks} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
-            <Section title="Downstream Links"><BulletList items={payload.relations.downstreamLinks} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
+            <Section title="Upstream"><BulletList items={payload.relations.prerequisites} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
+            <Section title="On this page"><BulletList items={payload.relations.currentLinks} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
+            <Section title="Downstream"><BulletList items={payload.relations.downstreamLinks} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
           </div>
         )}
 
@@ -141,20 +146,11 @@ export function RightPanel({
 
         {state.activeTab === "insights" && (
           <div className={bodyClass}>
-            <Section title="High Yield"><BulletList items={payload.insights.highYield} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
-            <Section title="Traps"><BulletList items={payload.insights.traps} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
-            <Section title="Hidden Connections"><BulletList items={payload.insights.hiddenConnections} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
-            <Section title="What you may miss"><BulletList items={payload.insights.whatYouMayMiss} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
-            {payload.insights.dat && (
-              <>
-                <Section title="DAT Tested Concepts"><BulletList items={payload.insights.dat.testedConcepts} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
-                <Section title="Likely Question Angles"><BulletList items={payload.insights.dat.likelyQuestionAngles} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
-                <Section title="Must-Know Terms"><BulletList items={payload.insights.dat.mustKnowTerms} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
-                <Section title="Distinction Pairs"><BulletList items={payload.insights.dat.distinctionPairs} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
-                <Section title="Fast Recall"><BulletList items={payload.insights.dat.fastRecall} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
-                <Section title="Mechanism Anchor"><BulletList items={payload.insights.dat.mechanismAnchor || []} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} /></Section>
-              </>
-            )}
+            <Section title="Apply / Test">
+              <BulletList items={payload.insights.applyTest} onItemClick={onEvidenceClick} resolveEvidenceId={resolveEvidenceId} focusedEvidenceId={focusedEvidenceId} />
+              {payload.insights.message ? <p className="mt-2 text-slate-300">{payload.insights.message}</p> : null}
+              <p className="mt-2 text-xs text-slate-400">Exam signal score: {payload.insights.examSignalScore.toFixed(2)}</p>
+            </Section>
           </div>
         )}
       </div>

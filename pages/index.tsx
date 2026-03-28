@@ -46,7 +46,6 @@ import { buildAutoToc, type PageTextBundle } from "@/lib/autoToc";
 import { extractFormulaCards } from "@/lib/right-panel/formulaNormalizer";
 import { useActivePageIntelligence } from "@/lib/useActivePageIntelligence";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import DebugStatusBar from "@/components/DebugStatusBar";
 
 // Cognitive Engine Components (Surgeon View 2.0)
 import {
@@ -3561,9 +3560,6 @@ export default function ThoughtUnitReader() {
         }}
         visible={showHighlightMenu}
       />
-
-      {/* Debug Status Bar - Shows CourseContext state (temporary) */}
-      <DebugStatusBar documentId={bookId} />
 
     </div>
   );
