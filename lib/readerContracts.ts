@@ -4,7 +4,7 @@ export type AudienceMode = "student" | "clinical" | "expert";
 export type DepthMode = "standard" | "deep";
 export type DensityMode = "condensed" | "expanded";
 
-export type PageRole = "cover" | "contents" | "chapter_opener" | "section_opener" | "copyright_frontmatter" | "regular_teaching" | "table_formula" | "image_scan_heavy";
+export type PageRole = "cover" | "contents" | "chapter_opener" | "section_opener" | "copyright_frontmatter" | "history_background" | "regular_teaching" | "table_formula" | "image_scan_heavy";
 
 export type PageType =
   | "diagnostic"

@@ -34,6 +34,17 @@ export function buildPriorityPayload(ctx: ActivePageContext, classification: Pag
     };
   }
 
+  if (signals.pageRole === "history_background") {
+    return {
+      pageRole: "This page provides historical/background framing of the topic.",
+      primaryGoal: "Extract milestones, named figures, and innovations worth recall.",
+      mainIdeas: evidence.length ? evidence.slice(0, 4) : ["Identify key historical milestones"],
+      whyItMatters: ["Historical framing often anchors exam context questions"],
+      whatToRemember: ["Timeline anchor", "Named figure + contribution", "Core innovation"],
+      whatToIgnore: ignoredEvidence(signals, 2),
+    };
+  }
+
   if (pageType === "diagnostic") {
     return {
       pageRole: "This page is testing whether the learner can execute the target skill under exam conditions.",

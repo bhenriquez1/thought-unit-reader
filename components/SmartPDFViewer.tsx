@@ -241,29 +241,39 @@ export default function SmartPDFViewer({
       setOverlayRects([]);
       return;
     }
-    const textLayer = container.querySelector('.react-pdf__Page__textContent, .textLayer');
-    if (!textLayer) {
-      setOverlayRects([]);
-      return;
-    }
-    const layerRect = (textLayer as HTMLElement).getBoundingClientRect();
-    const spans = Array.from(textLayer.querySelectorAll("span")) as HTMLElement[];
-    const rects: OverlayRect[] = [];
-    highlightTargets.forEach((target) => {
-      const needle = target.normalizedText.slice(0, 42);
-      const span = spans.find((entry) => (entry.textContent || "").toLowerCase().replace(/\s+/g, " ").includes(needle));
-      if (!span) return;
-      const rect = span.getBoundingClientRect();
-      rects.push({
-        id: target.evidenceRefId,
-        level: target.level,
-        top: rect.top - layerRect.top,
-        left: rect.left - layerRect.left,
-        width: rect.width,
-        height: Math.max(14, rect.height),
+    let attempts = 0;
+    const renderRects = () => {
+      const textLayer = container.querySelector('.react-pdf__Page__textContent, .textLayer');
+      if (!textLayer) {
+        if (attempts < 4) {
+          attempts += 1;
+          window.setTimeout(renderRects, 120);
+        } else {
+          setOverlayRects([]);
+        }
+        return;
+      }
+      const layerRect = (textLayer as HTMLElement).getBoundingClientRect();
+      const spans = Array.from(textLayer.querySelectorAll("span")) as HTMLElement[];
+      const rects: OverlayRect[] = [];
+      highlightTargets.forEach((target) => {
+        const needle = target.normalizedText.slice(0, 42);
+        const matches = spans.filter((entry) => (entry.textContent || "").toLowerCase().replace(/\s+/g, " ").includes(needle));
+        const span = matches[0];
+        if (!span) return;
+        const rect = span.getBoundingClientRect();
+        rects.push({
+          id: target.evidenceRefId,
+          level: target.level,
+          top: rect.top - layerRect.top,
+          left: rect.left - layerRect.left,
+          width: rect.width,
+          height: Math.max(14, rect.height),
+        });
       });
-    });
-    setOverlayRects(rects);
+      setOverlayRects(rects);
+    };
+    window.requestAnimationFrame(renderRects);
   }, [highlightTargets, currentPage]);
 
   // Enhanced PDF loading with robust error handling

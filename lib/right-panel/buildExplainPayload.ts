@@ -25,6 +25,15 @@ export function buildExplainPayload(_ctx: ActivePageContext, classification: Pag
     };
   }
 
+  if (signals.pageRole === "history_background") {
+    return {
+      meaning: core[0] || "This page describes how the topic developed over time.",
+      mechanism: "Mechanism is timeline logic: event/innovation → consequence → current practice.",
+      stepwiseBreakdown: core.slice(0, 4).length ? core.slice(0, 4) : ["Anchor time period", "Identify person/innovation", "Map impact", "Connect to current concept"],
+      application: ["Use named milestone + impact as recall pair", "Expect 'who/when/why it changed' questions"],
+    };
+  }
+
   if (t === "diagnostic") {
     return {
       meaning: core[0] || "This item set checks whether you can choose the right solving framework.",
