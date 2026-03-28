@@ -191,23 +191,10 @@ export interface ComparePayload {
   emptyState?: string;
 }
 
-export interface DatInsightPayload {
-  testedConcepts: string[];
-  likelyQuestionAngles: string[];
-  commonTraps: string[];
-  mustKnowTerms: string[];
-  distinctionPairs: string[];
-  fastRecall: string[];
-  applicationCue?: string[];
-  mechanismAnchor?: string[];
-}
-
 export interface InsightsPayload {
-  highYield: string[];
-  traps: string[];
-  hiddenConnections: string[];
-  whatYouMayMiss: string[];
-  dat?: DatInsightPayload;
+  applyTest: string[];
+  examSignalScore: number;
+  message?: string;
 }
 
 export interface ResolvedPanelPayload {

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { ActivePageContext, AudienceMode, DepthMode, HighlightTarget } from "@/lib/readerContracts";
 import { extractPageSignals } from "@/lib/right-panel/extractPageSignals";
 import { classifyPage } from "@/lib/right-panel/classifyPage";
-import { resolvePanelPayload } from "@/lib/panelEngine";
+import { buildResolvedPanelPayload } from "@/lib/panelEngine";
 import { buildModeProfile } from "@/lib/right-panel/modeProfile";
 import { deriveHighlightTargets } from "@/lib/highlightMapping";
 
@@ -33,7 +33,10 @@ export function useActivePageIntelligence({
     [ctx, mode],
   );
   const classification = useMemo(() => classifyPage(signals), [signals]);
-  const panelPayloads = useMemo(() => resolvePanelPayload(ctx, audience, depth), [ctx, audience, depth]);
+  const panelPayloads = useMemo(
+    () => buildResolvedPanelPayload(ctx, classification, signals, audience, depth),
+    [ctx, classification, signals, audience, depth],
+  );
   const limitedEvidence =
     classification.confidence < 0.35 ||
     (ctx.pageText || "").trim().length < 120 ||
