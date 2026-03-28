@@ -12,6 +12,11 @@ const fillerWords = /(in general|throughout the years|it is important to remembe
 const trapWords = /(except|least likely|most likely|confus|pitfall|trap|versus|not\b|unless|associate(?:d)? with)/i;
 const distinctionWords = /(vs\.?|versus|acute|chronic|benign|malignant|direct|indirect|superficial|deep)/i;
 const decisionWords = /(diagnosis|next step|management|indication|contraindication|treatment choice)/i;
+const headingCueWords = /(introduction|overview|summary|framework|principle|key point)/i;
+const figureNoise = /(figure|fig\.|plate|image|legend|arrow|label|axis|scale bar)/i;
+const watermarkNoise = /(copyright|all rights reserved|www\.|http|printed in|edition|isbn|doi)/i;
+const lowSemanticNoise = /^([A-Za-z]?\d+[\s,.;:()\-]*){4,}$/;
+const repeatedNumberingNoise = /^(\d+[.)\-]?\s*){3,}[A-Za-z]?/;
 
 function kindFor(text: string): ParagraphKind {
   if (referenceWords.test(text)) return "reference";
@@ -37,23 +42,33 @@ export function scoreParagraphs(blocks: RawBlock[], page: number): ParagraphSign
     const trapScore = trapWords.test(text) ? 1 : 0;
     const distinctionScore = distinctionWords.test(text) ? 1 : 0;
     const clinicalDecisionScore = decisionWords.test(text) ? 1 : 0;
-    const fillerPenalty = fillerWords.test(text) || block.blockType === "metadata" ? 1 : 0;
+    const semanticDensity = (text.match(/[A-Za-z]{3,}/g) || []).length;
+    const isFigureNoise = block.blockType === "caption" && figureNoise.test(text);
+    const isWatermarkNoise = watermarkNoise.test(text) || block.blockType === "metadata" || block.blockType === "reference";
+    const isNumericNoise = lowSemanticNoise.test(text) || repeatedNumberingNoise.test(text) || semanticDensity < 4;
+    const overviewBoost = block.blockType === "heading" || headingCueWords.test(text) ? 0.6 : 0;
+    const fillerPenalty =
+      (fillerWords.test(text) ? 1 : 0) +
+      (isFigureNoise ? 1.2 : 0) +
+      (isWatermarkNoise ? 1.4 : 0) +
+      (isNumericNoise ? 1.1 : 0);
 
     const yieldScore =
-      definitionScore * 1.2 +
-      mechanismScore * 1.4 +
-      clinicalScore * 1.5 +
-      comparisonScore * 1.2 +
-      examScore * 1.6 +
-      formulaScore * 1.3 -
-      fillerPenalty * 1.5;
+      definitionScore * 1.5 +
+      mechanismScore * 1.7 +
+      clinicalScore * 1.6 +
+      comparisonScore * 1.4 +
+      examScore * 1.2 +
+      formulaScore * 1.1 +
+      overviewBoost -
+      fillerPenalty * 1.7;
     const examSignalScore =
       trapScore * 1.6 +
       distinctionScore * 1.5 +
       mechanismScore * 1.4 +
       definitionScore * 1.2 +
       clinicalDecisionScore * 1.5 -
-      fillerPenalty * 1.5;
+      fillerPenalty * 1.6;
 
     const evidenceTerms = [
       ...(definitionWords.test(text) ? ["definition"] : []),

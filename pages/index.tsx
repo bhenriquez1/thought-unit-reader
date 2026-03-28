@@ -736,10 +736,12 @@ export default function ThoughtUnitReader() {
 
   useEffect(() => {
     if (activeShellTab !== "reader") return;
+    setFocusedEvidenceId(null);
+    setFocusSnippet(null);
     const topSnippet = currentSignals.paragraphSignals?.[0]?.text;
     if (!topSnippet) return;
-    setFocusSnippet(topSnippet);
-    setFocusedEvidenceId(null);
+    const timer = window.setTimeout(() => setFocusSnippet(topSnippet), 0);
+    return () => window.clearTimeout(timer);
   }, [activeShellTab, currentPage, currentSignals.paragraphSignals, highlightKey]);
 
   /* =========================================================================

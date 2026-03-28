@@ -23,8 +23,8 @@ export function selectRenderableEvidence(signals: PageSignals, audience: Audienc
 
 export function levelForSignal(signal: ParagraphSignal, limitedEvidence: boolean): HighlightLevel {
   if (limitedEvidence) return "weak";
-  if (signal.yieldScore >= 0.72) return "high_yield";
-  if (signal.yieldScore >= 0.5) return "supporting";
+  if (signal.yieldScore >= 2.2) return "high_yield";
+  if (signal.yieldScore >= 1.1) return "supporting";
   return "weak";
 }
 

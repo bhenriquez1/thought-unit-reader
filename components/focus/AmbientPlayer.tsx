@@ -2,18 +2,41 @@ import React, { useEffect, useMemo, useState } from "react";
 
 export type AmbientMode = "floating" | "docked" | "background";
 
-function parseYoutubeToEmbed(url: string): string | null {
+type ParsedAmbient =
+  | { ok: true; embedUrl: string }
+  | { ok: false; reason: string };
+
+function parseYoutubeToEmbed(url: string): ParsedAmbient {
   try {
-    const parsed = new URL(url);
+    if (!url?.trim()) return { ok: false, reason: "Ambient link is empty." };
+    const parsed = new URL(url.trim());
     const host = parsed.hostname.replace(/^www\./, "");
-    const videoId =
-      host === "youtu.be"
-        ? parsed.pathname.replace("/", "")
-        : parsed.searchParams.get("v") || "";
-    if (!videoId) return null;
-    return `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
+    const allowed = ["youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"];
+    if (!allowed.includes(host)) {
+      return { ok: false, reason: "Only YouTube links are supported." };
+    }
+    let videoId = "";
+    if (host === "youtu.be") {
+      videoId = parsed.pathname.replace(/^\/+/, "").split("/")[0] || "";
+    } else if (parsed.pathname.startsWith("/embed/")) {
+      videoId = parsed.pathname.split("/embed/")[1]?.split("/")[0] || "";
+    } else {
+      videoId = parsed.searchParams.get("v") || "";
+    }
+    if (!videoId || !/^[a-zA-Z0-9_-]{6,}$/.test(videoId)) {
+      return { ok: false, reason: "Missing or invalid YouTube video id." };
+    }
+    const playlistId = parsed.searchParams.get("list");
+    const params = new URLSearchParams({
+      autoplay: "1",
+      rel: "0",
+      modestbranding: "1",
+      playsinline: "1",
+    });
+    if (playlistId) params.set("list", playlistId);
+    return { ok: true, embedUrl: `https://www.youtube.com/embed/${videoId}?${params.toString()}` };
   } catch {
-    return null;
+    return { ok: false, reason: "Invalid ambient link format." };
   }
 }
 
@@ -26,11 +49,11 @@ export default function AmbientPlayer({
 }) {
   const [mode, setMode] = useState<AmbientMode>("floating");
   const [compact, setCompact] = useState(true);
-  const [opacity, setOpacity] = useState(0.92);
+  const [opacity, setOpacity] = useState(0.3);
   const [position, setPosition] = useState({ x: 24, y: 24 });
   const [dragging, setDragging] = useState(false);
-  const [invalid, setInvalid] = useState(false);
-  const embedUrl = useMemo(() => parseYoutubeToEmbed(url), [url]);
+  const [invalid, setInvalid] = useState<string | null>(null);
+  const parsedEmbed = useMemo(() => parseYoutubeToEmbed(url), [url]);
 
   useEffect(() => {
     const storedMode = localStorage.getItem("avrrio-ambient-mode") as AmbientMode | null;
@@ -55,8 +78,8 @@ export default function AmbientPlayer({
   }, [mode, opacity, position]);
 
   useEffect(() => {
-    setInvalid(!embedUrl);
-  }, [embedUrl]);
+    setInvalid(parsedEmbed.ok ? null : parsedEmbed.reason);
+  }, [parsedEmbed]);
 
   useEffect(() => {
     const onMove = (ev: MouseEvent) => {
@@ -93,9 +116,9 @@ export default function AmbientPlayer({
       </div>
       <input type="range" min={0.35} max={1} step={0.05} value={opacity} onChange={(e) => setOpacity(Number(e.target.value))} className="mb-2 w-full" />
       {invalid ? (
-        <div className="rounded bg-rose-900/40 px-2 py-2 text-xs text-rose-200">Invalid ambient link</div>
-      ) : mode !== "background" && !compact && embedUrl ? (
-        <iframe title="Ambient video" src={embedUrl} className="h-44 w-72 rounded-lg" allow="autoplay; encrypted-media" allowFullScreen />
+        <div className="rounded bg-rose-900/40 px-2 py-2 text-xs text-rose-200">Invalid ambient link: {invalid}</div>
+      ) : mode !== "background" && !compact && parsedEmbed.ok ? (
+        <iframe title="Ambient video" src={parsedEmbed.embedUrl} className="h-44 w-72 rounded-lg" allow="autoplay; encrypted-media" allowFullScreen />
       ) : (
         <div className="rounded bg-slate-900 px-2 py-1 text-xs text-slate-300">Background audio active</div>
       )}
