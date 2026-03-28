@@ -98,6 +98,17 @@ export function classifyPage(signals: PageSignals): PageClassification {
 
   applyBookContextBoosts(scores, signals);
 
+  if (signals.pageRole === "history_background") {
+    scores.overview += 3;
+    scores.definition += 1;
+    scores.clinical = Math.max(0, scores.clinical - 4);
+    scores.case = Math.max(0, scores.case - 3);
+  }
+  if (signals.pageRole && ["cover", "contents", "chapter_opener", "section_opener", "copyright_frontmatter", "image_scan_heavy"].includes(signals.pageRole)) {
+    scores.clinical = Math.max(0, scores.clinical - 4);
+    scores.diagnostic = Math.max(0, scores.diagnostic - 3);
+  }
+
   const sorted = (Object.entries(scores) as Array<[BaseType, number]>).sort((a, b) => b[1] - a[1]);
   const [topType, topScore] = sorted[0];
   const [, secondScore] = sorted[1];

@@ -21,6 +21,13 @@ export function buildRelationsPayload(_ctx: ActivePageContext, classification: P
       downstreamLinks: ["Move to teaching-dense pages for grounded relation mapping."],
     };
   }
+  if (signals.pageRole === "history_background") {
+    return {
+      prerequisites: definitions.length ? definitions : ["Baseline concept vocabulary"],
+      currentLinks: byKind(signals, "any", 3),
+      downstreamLinks: ["Connect milestone to modern practice or exam application"],
+    };
+  }
 
   if (classification.pageType === "clinical") {
     return {

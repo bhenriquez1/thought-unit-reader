@@ -23,6 +23,7 @@ function detectPageRole(pageText: string, heading: string, formulaCount: number,
   const lineGroups = text.split(/\n+/).length;
   if (!text.trim() || text.trim().length < 120) return "image_scan_heavy";
   if (/table of contents|\bcontents\b/.test(text)) return "contents";
+  if (/\bhistory of|historical|origin of|milestone|evolution of|timeline\b/.test(text)) return "history_background";
   if (/all rights reserved|copyright|isbn|published by/.test(text)) return "copyright_frontmatter";
   if ((/^chapter\s+\d+|^part\s+[ivx\d]+/im).test(pageText) && lineGroups < 12) return "chapter_opener";
   if ((/^section\s+\d|^unit\s+\d|^module\s+\d/im).test(pageText) && lineGroups < 18) return "section_opener";

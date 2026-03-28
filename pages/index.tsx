@@ -3056,16 +3056,6 @@ export default function ThoughtUnitReader() {
         )}
 
       </div>
-      {fileUrl && activeShellTab === "reader" && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 px-4 py-2 border-y border-white/10 bg-slate-900/70 text-[11px]">
-          <div><span className="text-slate-400">Page Role:</span> <span className="text-slate-100">{currentSignals.pageRole || "teaching_page"}</span></div>
-          <div><span className="text-slate-400">Evidence:</span> <span className="text-slate-100">{currentPanelPayload.classification.confidence >= 0.7 ? "Strong" : currentPanelPayload.classification.confidence >= 0.45 ? "Medium" : "Weak"}</span></div>
-          <div><span className="text-slate-400">Signals:</span> <span className="text-slate-100">{(currentSignals.paragraphSignals || []).length}</span></div>
-          <div><span className="text-slate-400">Mode:</span> <span className="text-slate-100">{unifiedPanelState.audience === "clinical" ? "standard" : unifiedPanelState.audience}</span></div>
-          <div><span className="text-slate-400">Focus Score:</span> <span className="text-slate-100">{focusScore}% ({focusConsistency})</span></div>
-        </div>
-      )}
-
       {/* Main Content Area - Pure Views: Each view manages its own layout */}
       <div className="flex-1 overflow-hidden min-h-0">
         {/* Main Content - Pure View renders in full container */}
@@ -3191,60 +3181,30 @@ export default function ThoughtUnitReader() {
           </div>
           
           <div className="flex-1 overflow-auto p-4">
-            {/* Current Page Context */}
             <div className="mb-4 p-3 bg-blue-900/30 rounded-lg border border-blue-700/30">
               <div className="text-sm text-blue-300 mb-1">
                 📖 Page {currentPage} {uploadedFile?.name && `• ${truncate(uploadedFile.name, 30)}`}
               </div>
-              <div className="text-xs text-gray-400">
-                {titleForPage(tableOfContents, currentPage)}
-              </div>
-            </div>
-
-            <div className="mb-4 rounded-lg border border-purple-400/30 bg-purple-900/20 p-3">
-              <p className="text-xs uppercase tracking-wide text-purple-200">Extraction transparency</p>
-              <p className="mt-1 text-xs text-slate-300">Classification: {currentPanelPayload.classification.pageType} ({Math.round(currentPanelPayload.classification.confidence * 100)}% confidence)</p>
-              <p className="mt-1 text-xs text-slate-300">High-yield extracted: {(currentSignals.paragraphSignals || []).length} • Suppressed filler: {(currentSignals.rawParagraphSignals || []).filter((p) => p.suppress).length}</p>
-              {currentPanelPayload.classification.confidence < 0.35 ? (
-                <p className="mt-1 text-xs text-amber-200">Weak evidence detected — insights are intentionally conservative.</p>
-              ) : null}
-            </div>
-
-            <div className="mb-4 space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-300">Top extracted paragraphs</p>
-              {(currentSignals.paragraphSignals || []).slice(0, 5).map((p, idx) => (
-                <button key={`${p.index}-${idx}`} onClick={() => setFocusSnippet(p.text)} className="w-full rounded border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-left text-xs text-emerald-100 hover:bg-emerald-500/20">
-                  #{idx + 1} ({p.kind}, y={p.yieldScore.toFixed(2)}): {truncate(p.text, 140)}
-                  <span className="mt-1 block text-[10px] text-emerald-200/80">
-                    Why selected: {p.evidenceTerms.slice(0, 3).join(", ") || "high concept density"} • block={p.blockType}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            <div className="mb-6 space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-rose-300">Suppressed filler blocks</p>
-              {(currentSignals.rawParagraphSignals || []).filter((p) => p.suppress).slice(0, 4).map((p, idx) => (
-                <div key={`${p.index}-supp-${idx}`} className="rounded border border-rose-300/20 bg-rose-500/10 px-2 py-1 text-xs text-rose-100">
-                  {p.kind} ({p.blockType}, y={p.yieldScore.toFixed(2)}): {truncate(p.text, 120)}
-                </div>
-              ))}
-            </div>
-
-            <div className="mb-6 space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-300">Missed signals (borderline)</p>
-              {(currentSignals.rawParagraphSignals || [])
-                .filter((p) => !p.suppress && p.yieldScore >= 0.45)
-                .filter((p) => !(currentSignals.paragraphSignals || []).some((selected) => selected.index === p.index))
-                .slice(0, 3)
-                .map((p, idx) => (
-                  <div key={`${p.index}-missed-${idx}`} className="rounded border border-amber-300/20 bg-amber-500/10 px-2 py-1 text-xs text-amber-100">
-                    {p.kind} (y={p.yieldScore.toFixed(2)}): {truncate(p.text, 120)}
-                  </div>
-                ))}
+              <div className="text-xs text-gray-400">{titleForPage(tableOfContents, currentPage)}</div>
             </div>
 
             <ShadowRecallPanel signals={currentSignals} limitedEvidence={limitedEvidence} />
+
+            <details className="mt-4 rounded-lg border border-purple-400/30 bg-purple-900/15 p-3">
+              <summary className="cursor-pointer text-xs uppercase tracking-wide text-purple-200">Show evidence details</summary>
+              <div className="mt-3 rounded-lg border border-purple-400/20 bg-purple-900/20 p-3">
+                <p className="text-xs text-slate-300">Classification: {currentPanelPayload.classification.pageType} ({Math.round(currentPanelPayload.classification.confidence * 100)}% confidence)</p>
+                <p className="mt-1 text-xs text-slate-300">High-yield extracted: {(currentSignals.paragraphSignals || []).length} • Suppressed filler: {(currentSignals.rawParagraphSignals || []).filter((p) => p.suppress).length}</p>
+                {limitedEvidence ? <p className="mt-1 text-xs text-amber-200">Weak evidence detected — outputs are conservative.</p> : null}
+              </div>
+              <div className="mt-3 space-y-2">
+                {(currentSignals.paragraphSignals || []).slice(0, 4).map((p, idx) => (
+                  <button key={`${p.index}-${idx}`} onClick={() => setFocusSnippet(p.text)} className="w-full rounded border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-left text-xs text-emerald-100 hover:bg-emerald-500/20">
+                    #{idx + 1} ({p.kind}, exam={p.examSignalScore.toFixed(2)}): {truncate(p.text, 120)}
+                  </button>
+                ))}
+              </div>
+            </details>
 
             {/* Previous Thoughts */}
             {detectedThoughts.length > 0 && (
