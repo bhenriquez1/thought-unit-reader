@@ -1,0 +1,79 @@
+export type InsightPageType =
+  | "concept"
+  | "cause_effect"
+  | "process"
+  | "comparison"
+  | "decision"
+  | "clinical_reasoning"
+  | "narrative"
+  | "formula"
+  | "example"
+  | "definition"
+  | "mixed";
+
+export type ParagraphType = InsightPageType | "noise";
+
+export type LogicChain = {
+  id: string;
+  if: string;
+  then: string;
+  because: string;
+  next?: string;
+  trap?: string;
+  confidence: number;
+  sourceParagraphIds: string[];
+};
+
+export type ExtractedSignals = {
+  triggers: string[];
+  actions: string[];
+  reasons: string[];
+  outcomes: string[];
+  contrasts: string[];
+  examples: string[];
+};
+
+export type ParagraphInsight = {
+  id: string;
+  paragraphIndex: number;
+  rawText: string;
+  cleanedText: string;
+  paragraphType: ParagraphType;
+  summary: string;
+  coreSignals: string[];
+  logicChains: LogicChain[];
+  takeaways: string[];
+  traps?: string[];
+  applications?: string[];
+  priorityScore: number;
+  confidence: number;
+};
+
+export type PriorityBlock = {
+  id: string;
+  kind: "overview" | "logic_chain" | "takeaway" | "contrast" | "connection" | "application" | "dat_apex";
+  title: string;
+  content: string[] | LogicChain[];
+  priority: number;
+  collapsedByDefault: boolean;
+};
+
+export type DatApexInsight = {
+  testedConcept: string;
+  quickRule: string;
+  trapWarnings: string[];
+  likelyQuestionStem: string;
+  answerLogic: string[];
+};
+
+export type PageInsightModel = {
+  pageType: InsightPageType;
+  pageSummary: string;
+  topTakeaways: string[];
+  logicChains: LogicChain[];
+  priorityBlocks: PriorityBlock[];
+  hiddenBlocks: PriorityBlock[];
+  paragraphInsights: ParagraphInsight[];
+  scannedParagraphCount: number;
+  datApex?: DatApexInsight;
+};
