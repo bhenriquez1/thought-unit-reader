@@ -1,5 +1,6 @@
 import type {
   DatApexInsight,
+  DecisionPath,
   ExtractedSignals,
   InsightPageType,
   LogicChain,
@@ -199,6 +200,38 @@ function toPriorityBlocks(sorted: ParagraphInsight[]): PriorityBlock[] {
   ];
 }
 
+function toDecisionPaths(sorted: ParagraphInsight[]): DecisionPath[] {
+  return sorted
+    .slice(0, 6)
+    .map((entry, index) => {
+      const chain = entry.logicChains[0];
+      if (chain) {
+        return {
+          id: `dp-${entry.id}-${index}`,
+          condition: chain.if,
+          interpretation: entry.summary,
+          implication: chain.then,
+          nextMove: chain.next || entry.applications?.[0] || "Apply this rule to a concrete scenario.",
+          trap: chain.trap || entry.traps?.[0],
+          confidence: chain.confidence,
+          sourceParagraphIds: chain.sourceParagraphIds,
+        } satisfies DecisionPath;
+      }
+      return {
+        id: `dp-${entry.id}-${index}`,
+        condition: entry.coreSignals[0] || entry.summary,
+        interpretation: entry.summary,
+        implication: entry.takeaways[0] || "Key implication is grounded in this paragraph.",
+        nextMove: entry.applications?.[0] || "Check this rule against an example.",
+        trap: entry.traps?.[0],
+        confidence: entry.confidence,
+        sourceParagraphIds: [entry.id],
+      } satisfies DecisionPath;
+    })
+    .filter((path) => Boolean(path.condition && path.implication))
+    .slice(0, 3);
+}
+
 export function processPage(pageText: string, enableDatApex = false): PageInsightModel {
   const paragraphs = splitIntoParagraphs(pageText);
   const paragraphInsights = paragraphs.map((paragraph, index) => processParagraph(paragraph, index));
@@ -209,12 +242,14 @@ export function processPage(pageText: string, enableDatApex = false): PageInsigh
   const pageSummary = (visible.find((block) => block.kind === "overview")?.content as string[] | undefined)?.[0] || "Limited evidence on this page.";
   const logicChains = (visible.find((block) => block.kind === "logic_chain")?.content as LogicChain[] | undefined) || [];
   const topTakeaways = (visible.find((block) => block.kind === "takeaway")?.content as string[] | undefined) || [];
+  const decisionPaths = toDecisionPaths(sorted);
 
   return {
     pageType: inferPageType(sorted),
     pageSummary,
     topTakeaways,
     logicChains,
+    decisionPaths,
     priorityBlocks: visible,
     hiddenBlocks: hidden,
     paragraphInsights,
