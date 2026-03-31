@@ -24,6 +24,17 @@ export type LogicChain = {
   sourceParagraphIds: string[];
 };
 
+export type DecisionPath = {
+  id: string;
+  condition: string;
+  interpretation: string;
+  implication: string;
+  nextMove: string;
+  trap?: string;
+  confidence: number;
+  sourceParagraphIds: string[];
+};
+
 export type ExtractedSignals = {
   triggers: string[];
   actions: string[];
@@ -71,6 +82,7 @@ export type PageInsightModel = {
   pageSummary: string;
   topTakeaways: string[];
   logicChains: LogicChain[];
+  decisionPaths: DecisionPath[];
   priorityBlocks: PriorityBlock[];
   hiddenBlocks: PriorityBlock[];
   paragraphInsights: ParagraphInsight[];
