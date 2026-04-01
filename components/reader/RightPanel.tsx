@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import type { ActivePageContext, PanelTab, ResolvedPanelPayload, RightPanelState } from "@/lib/readerContracts";
 import { usePageInsights } from "@/hooks/usePageInsights";
 import type { DecisionPath } from "@/lib/insights/types";
+import { buildPanelView, type PanelDepth, type PanelMode, type PanelRole } from "@/lib/insights/buildPanelView";
 
 interface RightPanelProps {
   ctx: ActivePageContext;
@@ -34,18 +35,17 @@ export function RightPanel({
   resolveEvidenceId,
   focusedEvidenceId,
 }: RightPanelProps) {
-  const pageModel = usePageInsights(ctx.pageText || "", state.audience === "expert");
+  const insightState = usePageInsights(ctx.pageText || "", ctx.pageNumber, state.audience === "expert");
   const activeMode: Exclude<PanelTab, "priority"> = (state.activeTab === "priority" ? "insights" : state.activeTab) as Exclude<PanelTab, "priority">;
 
-  const visiblePaths = useMemo(() => {
-    const base = pageModel.decisionPaths.slice(0, 3);
-    if (activeMode === "compare") return base.filter((entry) => entry.template === "comparison").slice(0, 3);
-    if (activeMode === "relations") return base.filter((entry) => entry.template !== "comparison").slice(0, 3);
-    if (activeMode === "explain") return base.filter((entry) => entry.template === "science" || entry.template === "clinical").slice(0, 3);
-    return base;
-  }, [activeMode, pageModel.decisionPaths]);
-
-  const showApplyTest = pageModel.decisionPaths.some((entry) => Boolean(entry.trap || entry.nextMove));
+  const role: PanelRole = state.audience === "expert" ? "expert" : state.audience === "clinical" ? "operator" : "general";
+  const depth: PanelDepth = state.depth === "deep" ? "deep" : state.density === "condensed" ? "quick" : "standard";
+  const mode: PanelMode = activeMode === "insights" ? "insight" : activeMode === "relations" ? "relation" : activeMode === "compare" ? "compare" : activeMode === "explain" ? "explain" : "apply";
+  const panelView = useMemo(() => {
+    if (insightState.status !== "ready") return null;
+    return buildPanelView({ pageModel: insightState.model, mode, role, depth });
+  }, [insightState, mode, role, depth]);
+  const showApplyTest = insightState.status === "ready" && insightState.model.decisionPaths.some((entry) => Boolean(entry.trap || entry.nextMove));
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col overflow-y-auto border-l border-white/10 bg-[rgb(11,18,34)]">
@@ -76,42 +76,65 @@ export function RightPanel({
 
         <div className="flex flex-wrap gap-2">
           <select value={state.audience} onChange={(e) => onAudienceChange(e.target.value as RightPanelState["audience"])} className="rounded-md border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white">
-            <option value="student">Student</option>
-            <option value="clinical">Clinical</option>
+            <option value="student">General</option>
+            <option value="clinical">Operator</option>
             <option value="expert">Expert</option>
           </select>
-          <select value={state.depth} onChange={(e) => onDepthChange(e.target.value as RightPanelState["depth"])} className="rounded-md border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white">
+          <select
+            value={depth}
+            onChange={(e) => {
+              const value = e.target.value as PanelDepth;
+              if (value === "deep") {
+                onDepthChange("deep");
+                onDensityChange("expanded");
+              } else if (value === "quick") {
+                onDepthChange("standard");
+                onDensityChange("condensed");
+              } else {
+                onDepthChange("standard");
+                onDensityChange("expanded");
+              }
+            }}
+            className="rounded-md border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
+          >
+            <option value="quick">Quick</option>
             <option value="standard">Standard</option>
             <option value="deep">Deep</option>
-          </select>
-          <select value={state.density} onChange={(e) => onDensityChange(e.target.value as RightPanelState["density"])} className="rounded-md border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white">
-            <option value="condensed">Condensed</option>
-            <option value="expanded">Expanded</option>
           </select>
         </div>
       </div>
 
       <div className="flex flex-col gap-4 p-4 text-white">
+        {insightState.status === "loading" ? (
+          <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">Reading current page…</div>
+        ) : null}
+        {insightState.status === "error" ? (
+          <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">{insightState.message}</div>
+        ) : null}
+        {panelView ? (
+          <>
         <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
-          <div className="text-xs uppercase tracking-wide text-emerald-300">{pageModel.pageType.replace(/_/g, " ")}</div>
-          <p className="mt-2 text-sm leading-relaxed text-slate-300">{pageModel.pageSummary}</p>
+          <div className="text-xs uppercase tracking-wide text-emerald-300">{panelView.title}</div>
+          <p className="mt-2 text-sm leading-relaxed text-slate-300">{panelView.summary}</p>
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
           <div className="mb-2 text-xs uppercase text-slate-400">What matters most</div>
           <ul className="space-y-1 text-sm text-slate-200">
-            {pageModel.topTakeaways.slice(0, 3).map((takeaway, index) => (
+            {panelView.bullets.slice(0, 3).map((takeaway, index) => (
               <li key={`${takeaway}-${index}`}>• {takeaway}</li>
             ))}
           </ul>
         </div>
 
         <DecisionPathsSection
-          decisionPaths={visiblePaths.length ? visiblePaths : pageModel.decisionPaths.slice(0, 3)}
+          decisionPaths={panelView.sequences}
           onEvidenceClick={onEvidenceClick}
           resolveEvidenceId={resolveEvidenceId}
           focusedEvidenceId={focusedEvidenceId}
         />
+          </>
+        ) : null}
       </div>
     </aside>
   );

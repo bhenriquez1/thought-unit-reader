@@ -116,11 +116,24 @@ function buildLogicChains(text: string, paragraphId: string): LogicChain[] {
 }
 
 function summarizeParagraph(text: string, type: ParagraphType): string {
-  const firstSentence = text.split(/(?<=[.!?])\s+/)[0] || text;
-  if (type === "cause_effect") return "This paragraph explains a cause → effect relationship.";
-  if (type === "comparison") return "This paragraph contrasts related ideas that are easy to confuse.";
-  if (type === "process") return "This paragraph describes a process that should be followed step by step.";
-  return firstSentence.length > 160 ? `${firstSentence.slice(0, 157)}...` : firstSentence;
+  const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
+  const firstSentence = sentences[0] || text;
+  if (type === "cause_effect") {
+    const causal = sentences.find((entry) => /\b(leads? to|results? in|causes?|therefore|thus|because)\b/i.test(entry));
+    const line = causal || firstSentence;
+    return line.length > 140 ? `${line.slice(0, 137)}...` : line;
+  }
+  if (type === "comparison") {
+    const contrast = sentences.find((entry) => /\b(unlike|whereas|in contrast|rather than|distinguish)\b/i.test(entry));
+    const line = contrast || firstSentence;
+    return line.length > 140 ? `${line.slice(0, 137)}...` : line;
+  }
+  if (type === "process") {
+    const procedural = sentences.find((entry) => /\b(first|then|next|finally|step)\b/i.test(entry));
+    const line = procedural || firstSentence;
+    return line.length > 140 ? `${line.slice(0, 137)}...` : line;
+  }
+  return firstSentence.length > 150 ? `${firstSentence.slice(0, 147)}...` : firstSentence;
 }
 
 function scoreParagraphPriority(type: ParagraphType, signals: ExtractedSignals, text: string): number {
@@ -147,6 +160,13 @@ function processParagraph(text: string, paragraphIndex: number): ParagraphInsigh
   const logicChains = buildLogicChains(cleanedText, id);
   const summary = summarizeParagraph(cleanedText, paragraphType);
   const priorityScore = scoreParagraphPriority(paragraphType, signals, cleanedText);
+  const takeawayPool = dedupe([
+    summary,
+    ...signals.actions,
+    ...signals.reasons,
+    ...signals.outcomes,
+  ], (x) => x.toLowerCase()).filter((line) => line.length > 12);
+
   return {
     id,
     paragraphIndex,
@@ -156,12 +176,21 @@ function processParagraph(text: string, paragraphIndex: number): ParagraphInsigh
     summary,
     coreSignals: [...signals.triggers, ...signals.actions, ...signals.outcomes].slice(0, 4),
     logicChains,
-    takeaways: dedupe([summary, ...signals.actions, ...signals.reasons], (x) => x.toLowerCase()).slice(0, 3),
+    takeaways: takeawayPool.slice(0, 3),
     traps: signals.contrasts.slice(0, 2),
     applications: signals.actions.slice(0, 2),
     priorityScore,
     confidence: Math.max(0.2, Math.min(0.95, 0.35 + priorityScore * 0.08 + logicChains.length * 0.1)),
   };
+}
+
+function inferPagePurpose(sorted: ParagraphInsight[]): string {
+  const top = sorted[0];
+  if (!top) return "Limited evidence on this page.";
+  const second = sorted[1];
+  if (!second) return top.summary;
+  const blended = `${top.summary} ${second.takeaways[0] || ""}`.trim();
+  return blended.length > 170 ? `${blended.slice(0, 167)}...` : blended;
 }
 
 function inferPageType(sorted: ParagraphInsight[]): InsightPageType {
@@ -251,7 +280,7 @@ export function processPage(pageText: string, enableDatApex = false): PageInsigh
   const blocks = toPriorityBlocks(sorted);
   const visible = blocks.filter((block) => !block.collapsedByDefault);
   const hidden = blocks.filter((block) => block.collapsedByDefault);
-  const pageSummary = (visible.find((block) => block.kind === "overview")?.content as string[] | undefined)?.[0] || "Limited evidence on this page.";
+  const pageSummary = inferPagePurpose(sorted);
   const logicChains = (visible.find((block) => block.kind === "logic_chain")?.content as LogicChain[] | undefined) || [];
   const topTakeaways = (visible.find((block) => block.kind === "takeaway")?.content as string[] | undefined) || [];
   const decisionPaths = toDecisionPaths(sorted);
