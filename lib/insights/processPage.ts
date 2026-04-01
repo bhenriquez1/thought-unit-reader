@@ -204,26 +204,38 @@ function toDecisionPaths(sorted: ParagraphInsight[]): DecisionPath[] {
   return sorted
     .slice(0, 6)
     .map((entry, index) => {
+      const template: DecisionPath["template"] =
+        entry.paragraphType === "clinical_reasoning"
+          ? "clinical"
+          : entry.paragraphType === "comparison"
+            ? "comparison"
+            : entry.paragraphType === "cause_effect" || entry.paragraphType === "process" || entry.paragraphType === "formula"
+              ? "science"
+              : "operator";
       const chain = entry.logicChains[0];
       if (chain) {
         return {
           id: `dp-${entry.id}-${index}`,
+          template,
           condition: chain.if,
           interpretation: entry.summary,
           implication: chain.then,
           nextMove: chain.next || entry.applications?.[0] || "Apply this rule to a concrete scenario.",
           trap: chain.trap || entry.traps?.[0],
+          evidence: [entry.cleanedText, chain.because].filter(Boolean).slice(0, 2),
           confidence: chain.confidence,
           sourceParagraphIds: chain.sourceParagraphIds,
         } satisfies DecisionPath;
       }
       return {
         id: `dp-${entry.id}-${index}`,
+        template,
         condition: entry.coreSignals[0] || entry.summary,
         interpretation: entry.summary,
         implication: entry.takeaways[0] || "Key implication is grounded in this paragraph.",
         nextMove: entry.applications?.[0] || "Check this rule against an example.",
         trap: entry.traps?.[0],
+        evidence: [entry.cleanedText].filter(Boolean),
         confidence: entry.confidence,
         sourceParagraphIds: [entry.id],
       } satisfies DecisionPath;
