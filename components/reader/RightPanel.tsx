@@ -1,8 +1,9 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { ActivePageContext, PanelTab, ResolvedPanelPayload, RightPanelState } from "@/lib/readerContracts";
 import { usePageInsights } from "@/hooks/usePageInsights";
 import type { DecisionPath } from "@/lib/insights/types";
 import { buildPanelView, type PanelDepth, type PanelMode, type PanelRole } from "@/lib/insights/buildPanelView";
+import { buildGuidedReadView } from "@/lib/insights/buildGuidedReadView";
 
 interface RightPanelProps {
   ctx: ActivePageContext;
@@ -48,10 +49,19 @@ export function RightPanel({
   const mode: PanelMode = activeMode === "insights" ? "insight" : activeMode === "relations" ? "relation" : activeMode === "compare" ? "compare" : activeMode === "explain" ? "explain" : "apply";
   const parseKey = `${ctx.documentId}:${ctx.pageNumber}:${textHash}:${mode}:${role}:${depth}`;
   const insightState = usePageInsights(ctx.pageText || "", ctx.pageNumber, state.audience === "expert", parseKey);
-  const panelView = useMemo(() => {
+  const guidedView = useMemo(() => {
     if (insightState.status !== "ready") return null;
-    return buildPanelView({ pageModel: insightState.model, mode, role, depth });
+    buildPanelView({ pageModel: insightState.model, mode, role, depth });
+    return buildGuidedReadView({ pageModel: insightState.model, mode, role, depth });
   }, [insightState, mode, role, depth]);
+  const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!guidedView?.steps?.length) {
+      setSelectedStepId(null);
+      return;
+    }
+    setSelectedStepId(guidedView.steps[0].id);
+  }, [guidedView?.steps, ctx.pageNumber, mode, role, depth]);
   const showApplyTest = insightState.status === "ready" && insightState.model.decisionPaths.some((entry) => Boolean(entry.trap || entry.nextMove));
 
   return (
@@ -118,28 +128,31 @@ export function RightPanel({
         {insightState.status === "error" ? (
           <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">{insightState.message}</div>
         ) : null}
-        {panelView ? (
+        {guidedView ? (
           <>
         <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
-          <div className="text-xs uppercase tracking-wide text-emerald-300">{panelView.title}</div>
-          <p className="mt-2 text-sm leading-relaxed text-slate-300">{panelView.summary}</p>
+          <div className="text-xs uppercase tracking-wide text-emerald-300">Guided Read</div>
+          <p className="mt-2 text-sm leading-relaxed text-slate-300">{guidedView.pagePurpose}</p>
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
-          <div className="mb-2 text-xs uppercase text-slate-400">What matters most</div>
-          <ul className="space-y-1 text-sm text-slate-200">
-            {panelView.bullets.slice(0, 3).map((takeaway, index) => (
-              <li key={`${takeaway}-${index}`}>• {takeaway}</li>
-            ))}
-          </ul>
-        </div>
-
-        <DecisionPathsSection
-          decisionPaths={panelView.sequences}
+        <GuidedStepsSection
+          steps={guidedView.steps}
+          selectedStepId={selectedStepId}
+          onSelectStep={setSelectedStepId}
           onEvidenceClick={onEvidenceClick}
           resolveEvidenceId={resolveEvidenceId}
           focusedEvidenceId={focusedEvidenceId}
         />
+        {guidedView.supportTitle && guidedView.supportBullets?.length ? (
+          <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
+            <div className="mb-2 text-xs uppercase text-slate-400">{guidedView.supportTitle}</div>
+            <ul className="space-y-1 text-sm text-slate-200">
+              {guidedView.supportBullets.map((takeaway, index) => (
+                <li key={`${takeaway}-${index}`}>• {takeaway}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
           </>
         ) : null}
       </div>
@@ -147,27 +160,33 @@ export function RightPanel({
   );
 }
 
-function DecisionPathsSection({
-  decisionPaths,
+function GuidedStepsSection({
+  steps,
+  selectedStepId,
+  onSelectStep,
   onEvidenceClick,
   resolveEvidenceId,
   focusedEvidenceId,
 }: {
-  decisionPaths: DecisionPath[];
+  steps: Array<{ id: string; stepNumber: number; label: string; primaryText: string; secondaryText?: string; evidence: Array<{ text: string }> }>;
+  selectedStepId: string | null;
+  onSelectStep: (id: string) => void;
   onEvidenceClick?: (snippet: string, evidenceId?: string) => void;
   resolveEvidenceId?: (snippet: string) => string | undefined;
   focusedEvidenceId?: string | null;
 }) {
-  if (!decisionPaths?.length) return null;
+  if (!steps?.length) return null;
 
   return (
     <div className="rounded-2xl border border-emerald-500/20 bg-slate-950/70 p-5">
-      <div className="mb-3 text-xs uppercase text-emerald-300">Operator sequence</div>
+      <div className="mb-3 text-xs uppercase text-emerald-300">Guided Steps</div>
       <div className="space-y-4">
-        {decisionPaths.slice(0, 3).map((path) => (
-          <DecisionPathCard
-            key={path.id}
-            path={path}
+        {steps.map((step) => (
+          <GuidedStepCard
+            key={step.id}
+            step={step}
+            selected={selectedStepId === step.id}
+            onSelect={() => onSelectStep(step.id)}
             onEvidenceClick={onEvidenceClick}
             resolveEvidenceId={resolveEvidenceId}
             focusedEvidenceId={focusedEvidenceId}
@@ -178,32 +197,21 @@ function DecisionPathsSection({
   );
 }
 
-function labelsFor(template: DecisionPath["template"]) {
-  if (template === "clinical") {
-    return { a: "Finding", b: "Interpretation", c: "Clinical Weight", d: "Next Step", e: "Trap" };
-  }
-  if (template === "comparison") {
-    return { a: "A looks like B", b: "Separating Signal", c: "Why Distinction Matters", d: "Decision Rule", e: "Trap" };
-  }
-  if (template === "science") {
-    return { a: "Trigger", b: "Mechanism", c: "Result", d: "Prediction", e: "Confusion Point" };
-  }
-  return { a: "State", b: "Risk Signal", c: "Impact", d: "Action", e: "Failure Mode" };
-}
-
-function DecisionPathCard({
-  path,
+function GuidedStepCard({
+  step,
+  selected,
+  onSelect,
   onEvidenceClick,
   resolveEvidenceId,
   focusedEvidenceId,
 }: {
-  path: DecisionPath;
+  step: { id: string; stepNumber: number; label: string; primaryText: string; secondaryText?: string; evidence: Array<{ text: string }> };
+  selected: boolean;
+  onSelect: () => void;
   onEvidenceClick?: (snippet: string, evidenceId?: string) => void;
   resolveEvidenceId?: (snippet: string) => string | undefined;
   focusedEvidenceId?: string | null;
 }) {
-  const labels = labelsFor(path.template);
-
   const anchor = (value: string) => {
     const evidenceId = resolveEvidenceId?.(value);
     const active = Boolean(focusedEvidenceId && evidenceId === focusedEvidenceId);
@@ -217,26 +225,17 @@ function DecisionPathCard({
   };
 
   return (
-    <div className="space-y-3 rounded-xl border border-white/10 bg-slate-900/80 p-5">
-      <Row label={labels.a} valueNode={anchor(path.condition)} color="text-emerald-300" />
-      <Row label={labels.b} valueNode={anchor(path.interpretation)} color="text-cyan-300" />
-      <Row label={labels.c} valueNode={anchor(path.implication)} color="text-violet-300" />
-      <Row label={labels.d} valueNode={anchor(path.nextMove)} color="text-amber-300" />
-      {path.trap ? <Row label={labels.e} valueNode={anchor(path.trap)} color="text-rose-300" /> : null}
+    <div className={`space-y-3 rounded-xl border p-5 ${selected ? "border-emerald-400/50 bg-emerald-900/10" : "border-white/10 bg-slate-900/80"}`}>
+      <button onClick={onSelect} className="w-full text-left">
+        <p className="text-xs uppercase tracking-wide text-emerald-300">{step.stepNumber}. {step.label}</p>
+        <p className="mt-1 text-sm text-slate-100">{anchor(step.primaryText)}</p>
+        {step.secondaryText ? <p className="mt-1 text-xs text-slate-300">{anchor(step.secondaryText)}</p> : null}
+      </button>
       <div className="rounded border border-white/10 bg-black/20 p-3 text-xs text-slate-300 whitespace-normal break-words">
-        Evidence: {path.evidence.map((snippet, idx) => (
-          <span key={idx} className="mr-2">{anchor(snippet.length > 90 ? `${snippet.slice(0, 87)}...` : snippet)}</span>
+        Evidence: {step.evidence.map((snippet, idx) => (
+          <span key={idx} className="mr-2">{anchor(snippet.text.length > 90 ? `${snippet.text.slice(0, 87)}...` : snippet.text)}</span>
         ))}
       </div>
-    </div>
-  );
-}
-
-function Row({ label, valueNode, color }: { label: string; valueNode: React.ReactNode; color: string }) {
-  return (
-    <div className="text-sm leading-relaxed whitespace-normal break-words">
-      <p className={`font-semibold ${color} uppercase tracking-wide text-[11px]`}>{label}</p>
-      <div className="text-slate-300">{valueNode}</div>
     </div>
   );
 }
