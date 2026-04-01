@@ -8,6 +8,8 @@ export type InsightPageType =
   | "narrative"
   | "formula"
   | "example"
+  | "consequence"
+  | "signal"
   | "definition"
   | "mixed";
 

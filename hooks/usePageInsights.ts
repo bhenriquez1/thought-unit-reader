@@ -7,7 +7,12 @@ type PageInsightsState =
   | { status: "ready"; pageIndex: number; model: PageInsightModel }
   | { status: "error"; pageIndex: number; model: null; message: string };
 
-export function usePageInsights(pageText: string, pageIndex: number, enableDatApex = false): PageInsightsState {
+export function usePageInsights(
+  pageText: string,
+  pageIndex: number,
+  enableDatApex = false,
+  parseKey?: string,
+): PageInsightsState {
   const [state, setState] = useState<PageInsightsState>({ status: "idle", pageIndex, model: null });
   const versionRef = useRef(0);
 
@@ -27,7 +32,7 @@ export function usePageInsights(pageText: string, pageIndex: number, enableDatAp
         message: error instanceof Error ? error.message : "Failed to parse current page.",
       });
     });
-  }, [pageText, pageIndex, enableDatApex]);
+  }, [pageText, pageIndex, enableDatApex, parseKey]);
 
   return state;
 }

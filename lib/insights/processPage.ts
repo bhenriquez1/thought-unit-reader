@@ -19,6 +19,8 @@ const TYPE_PATTERNS: Array<{ type: InsightPageType; patterns: RegExp[] }> = [
   { type: "clinical_reasoning", patterns: [/\b(patient|symptom|diagnosis|clinical|finding|history|examination|treatment)\b/i] },
   { type: "formula", patterns: [/\b(equation|formula|calculate|solve|ratio|probability|molar|concentration)\b/i] },
   { type: "example", patterns: [/\b(for example|for instance|such as|consider)\b/i] },
+  { type: "consequence", patterns: [/\b(as a result|therefore|consequence|outcome|impact)\b/i] },
+  { type: "signal", patterns: [/\b(sign|signal|indicator|marker|suggests|indicates)\b/i] },
   { type: "narrative", patterns: [/\b(story|historical|origin|timeline|milestone)\b/i] },
   { type: "concept", patterns: [/\b(concept|principle|framework|overview)\b/i] },
 ];
@@ -133,6 +135,11 @@ function summarizeParagraph(text: string, type: ParagraphType): string {
     const line = procedural || firstSentence;
     return line.length > 140 ? `${line.slice(0, 137)}...` : line;
   }
+  if (type === "consequence" || type === "signal") {
+    const signalLine = sentences.find((entry) => /\b(indicates?|suggests?|result|impact|outcome|signal|marker)\b/i.test(entry));
+    const line = signalLine || firstSentence;
+    return line.length > 140 ? `${line.slice(0, 137)}...` : line;
+  }
   return firstSentence.length > 150 ? `${firstSentence.slice(0, 147)}...` : firstSentence;
 }
 
@@ -141,6 +148,7 @@ function scoreParagraphPriority(type: ParagraphType, signals: ExtractedSignals, 
   if (type === "decision" || type === "clinical_reasoning") score += 3;
   if (type === "cause_effect" || type === "comparison") score += 3;
   if (type === "process") score += 2;
+  if (type === "consequence" || type === "signal") score += 2;
   if (type === "definition") score += 2;
   if (signals.triggers.length > 0) score += 2;
   if (signals.actions.length > 0) score += 2;
