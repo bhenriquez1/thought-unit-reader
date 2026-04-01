@@ -26,11 +26,13 @@ export type LogicChain = {
 
 export type DecisionPath = {
   id: string;
+  template: "clinical" | "operator" | "science" | "comparison";
   condition: string;
   interpretation: string;
   implication: string;
   nextMove: string;
   trap?: string;
+  evidence: string[];
   confidence: number;
   sourceParagraphIds: string[];
 };
