@@ -39,6 +39,31 @@ export type DecisionPath = {
   sourceParagraphIds: string[];
 };
 
+export type EvidenceAnchor = {
+  id: string;
+  text: string;
+  paragraphIndex?: number;
+};
+
+export type GuidedReadStep = {
+  id: string;
+  stepNumber: number;
+  label: string;
+  primaryText: string;
+  secondaryText?: string;
+  mode: "insight" | "explain" | "compare" | "relation" | "apply";
+  role: "general" | "operator" | "expert";
+  evidence: EvidenceAnchor[];
+  confidence: number;
+};
+
+export type GuidedReadView = {
+  pagePurpose: string;
+  steps: GuidedReadStep[];
+  supportTitle?: string;
+  supportBullets?: string[];
+};
+
 export type ExtractedSignals = {
   triggers: string[];
   actions: string[];
