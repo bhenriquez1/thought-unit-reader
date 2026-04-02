@@ -41,9 +41,18 @@ export type DecisionPath = {
 
 export type EvidenceAnchor = {
   id: string;
+  paragraphIndex: number;
+  sentenceIndex?: number;
   text: string;
-  paragraphIndex?: number;
+  startOffset?: number;
+  endOffset?: number;
 };
+
+export type GuidedMode = "insight" | "explain" | "compare" | "relation" | "apply" | "apply_test";
+
+export type GuidedRole = "general" | "operator" | "expert";
+
+export type GuidedDepth = "quick" | "standard" | "deep";
 
 export type GuidedReadStep = {
   id: string;
@@ -51,7 +60,7 @@ export type GuidedReadStep = {
   label: string;
   primaryText: string;
   secondaryText?: string;
-  mode: "insight" | "explain" | "compare" | "relation" | "apply";
+  mode: GuidedMode;
   role: "general" | "operator" | "expert";
   evidence: EvidenceAnchor[];
   confidence: number;
