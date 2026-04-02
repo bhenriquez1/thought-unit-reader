@@ -1,4 +1,5 @@
 import { buildScenario } from "@/lib/insights/buildScenario";
+import { toCompleteSentence, toExpertSentence, toGeneralSentence, toOperatorSentence } from "@/lib/insights/sentenceCleanup";
 import type {
   DecisionPath,
   GuidedDepth,
@@ -42,17 +43,18 @@ function buildInsightView(pageModel: PageInsightModel, role: GuidedRole, depth: 
       mode: "insight",
       role,
       label: roleLabels(role, "insight", index),
-      primaryText: chooseByRole(role, path.condition, path.interpretation, path.implication),
-      secondaryText: index === 0 ? path.interpretation : path.implication,
+      primaryText: adaptByRole(role, path.condition, path.interpretation, path.implication, path.nextMove),
+      secondaryText: depth === "deep" ? adaptByRole(role, path.interpretation, path.implication, path.nextMove, path.trap) : undefined,
       path,
+      depth,
     }),
   );
 
   return {
-    pagePurpose: `Notice-first read: ${pageModel.pageSummary || "Find the strongest signal before details."}`,
+    pagePurpose: toCompleteSentence(`Notice-first read: ${pageModel.pageSummary || "find the strongest signal before details"}`),
     steps,
     supportTitle: "Main points",
-    supportBullets: dedupe(pageModel.topTakeaways).slice(0, bulletCount(depth)),
+    supportBullets: dedupe(pageModel.topTakeaways).slice(0, supportCount(depth)),
   };
 }
 
@@ -64,17 +66,18 @@ function buildExplainView(pageModel: PageInsightModel, role: GuidedRole, depth: 
       mode: "explain",
       role,
       label: roleLabels(role, "explain", index),
-      primaryText: index === 0 ? path.interpretation : index === 1 ? path.implication : path.nextMove,
-      secondaryText: index === 0 ? `Because: ${path.condition}` : path.trap,
+      primaryText: adaptByRole(role, path.interpretation, path.implication, path.nextMove, path.condition),
+      secondaryText: depth !== "quick" ? adaptByRole(role, `Because ${path.condition}`, path.implication, path.trap || path.condition, path.trap) : undefined,
       path,
+      depth,
     }),
   );
 
   return {
-    pagePurpose: `Mechanism read: ${pageModel.pageSummary || "Understand why this works."}`,
+    pagePurpose: toCompleteSentence(`Mechanism read: ${pageModel.pageSummary || "understand why this works"}`),
     steps,
     supportTitle: "Causal chain",
-    supportBullets: dedupe(top.flatMap((entry) => [entry.condition, entry.implication])).slice(0, bulletCount(depth)),
+    supportBullets: dedupe(top.flatMap((entry) => [entry.condition, entry.implication, entry.nextMove])).slice(0, supportCount(depth)),
   };
 }
 
@@ -89,17 +92,18 @@ function buildCompareView(pageModel: PageInsightModel, role: GuidedRole, depth: 
       mode: "compare",
       role,
       label: roleLabels(role, "compare", index),
-      primaryText: index === 0 ? path.condition : index === 1 ? path.implication : path.nextMove,
-      secondaryText: path.trap || path.interpretation,
+      primaryText: adaptByRole(role, path.condition, path.implication, path.nextMove, path.interpretation),
+      secondaryText: depth === "quick" ? undefined : adaptByRole(role, path.trap || path.interpretation, path.trap || path.nextMove, path.trap || path.implication, path.trap),
       path,
+      depth,
     }),
   );
 
   return {
-    pagePurpose: `Discrimination read: ${pageModel.pageSummary || "Separate look-alike ideas."}`,
+    pagePurpose: toCompleteSentence(`Discrimination read: ${pageModel.pageSummary || "separate look-alike ideas"}`),
     steps,
     supportTitle: "Do-not-confuse",
-    supportBullets: dedupe(top.flatMap((entry) => [entry.trap, entry.implication, entry.nextMove])).slice(0, bulletCount(depth)),
+    supportBullets: dedupe(top.flatMap((entry) => [entry.trap, entry.implication, entry.nextMove, entry.condition])).slice(0, supportCount(depth)),
   };
 }
 
@@ -111,18 +115,25 @@ function buildRelationView(pageModel: PageInsightModel, role: GuidedRole, depth:
       mode: "relation",
       role,
       label: roleLabels(role, "relation", index),
-      primaryText: index === 0 ? `Before: ${path.condition}` : index === 1 ? `Here: ${path.interpretation}` : `After: ${path.nextMove}`,
-      secondaryText: path.implication,
+      primaryText: adaptByRole(role, `Before ${path.condition}`, `Current ${path.interpretation}`, `Downstream ${path.nextMove}`, path.implication),
+      secondaryText: depth === "deep" ? adaptByRole(role, path.implication, path.nextMove, path.trap || path.implication, path.trap) : undefined,
       path,
+      depth,
     }),
   );
 
   return {
-    pagePurpose: `Workflow context: ${pageModel.pageSummary || "Place this page in sequence."}`,
+    pagePurpose: toCompleteSentence(`Workflow context: ${pageModel.pageSummary || "place this page in sequence"}`),
     steps,
     supportTitle: "Before / here / after",
-    supportBullets: dedupe(top.flatMap((entry) => [entry.condition, entry.interpretation, entry.nextMove])).slice(0, bulletCount(depth)),
+    supportBullets: dedupe(top.flatMap((entry) => [entry.condition, entry.interpretation, entry.nextMove, entry.implication])).slice(0, supportCount(depth)),
   };
+}
+
+function adaptByRole(role: GuidedRole, general: string, operator: string, expert: string, operatorAction?: string): string {
+  if (role === "expert") return toExpertSentence(expert);
+  if (role === "operator") return toOperatorSentence(operator, operatorAction);
+  return toGeneralSentence(general);
 }
 
 function ensurePaths(paths: DecisionPath[], depth: GuidedDepth): DecisionPath[] {
@@ -145,11 +156,11 @@ function fallbackPath(index: number): DecisionPath {
   return {
     id: `fallback-${index}`,
     template: "operator",
-    condition: "Key clue from this page.",
-    interpretation: "Interpret the clue before acting.",
-    implication: "This changes what should happen next.",
-    nextMove: "Use the rule on a concrete example.",
-    trap: "Do not confuse the clue with the conclusion.",
+    condition: "Key clue from this page",
+    interpretation: "Interpret the clue before acting",
+    implication: "This changes what should happen next",
+    nextMove: "Use the rule on a concrete example",
+    trap: "Do not confuse the clue with the conclusion",
     evidence: ["No explicit evidence line was extracted; use page summary context."],
     confidence: 0.5,
     sourceParagraphIds: [],
@@ -158,36 +169,14 @@ function fallbackPath(index: number): DecisionPath {
 
 function roleLabels(role: GuidedRole, mode: GuidedMode, index: number): string {
   const labels: Record<GuidedMode, string[]> = {
-    insight: role === "expert"
-      ? ["Signal", "Inference", "Rule", "Pitfall"]
-      : role === "operator"
-        ? ["Signal", "Read", "Action impact", "Miss"]
-        : ["Start here", "Notice this", "This means", "Do not miss"],
-    explain: role === "expert"
-      ? ["Mechanism", "Effect", "Consequence", "Boundary"]
-      : role === "operator"
-        ? ["Why it works", "What changes", "Operational effect", "Failure mode"]
-        : ["Main reason", "How it works", "What follows", "Why it matters"],
-    compare: role === "expert"
-      ? ["Look-alike", "Separating signal", "Decision rule", "Trap"]
-      : role === "operator"
-        ? ["Looks similar", "Difference", "Operational rule", "Miss"]
-        : ["Looks similar", "What separates it", "Why distinction matters", "Do not confuse"],
-    relation: role === "expert"
-      ? ["Upstream", "Current node", "Downstream", "System effect"]
-      : role === "operator"
-        ? ["Before", "Here", "Next", "Impact"]
-        : ["Before this", "On this page", "What follows", "Why this matters"],
+    insight: role === "expert" ? ["Indicator", "Inference", "Rule", "Pitfall"] : role === "operator" ? ["Signal", "Read", "Action", "Miss"] : ["Start here", "Notice this", "What this means", "Do not miss"],
+    explain: role === "expert" ? ["Mechanism", "Effect", "Consequence", "Boundary"] : role === "operator" ? ["Why it works", "Operational effect", "Next impact", "Failure mode"] : ["Main reason", "How it works", "What follows", "Why it matters"],
+    compare: role === "expert" ? ["Look-alike", "Separator", "Decision rule", "Trap"] : role === "operator" ? ["Looks similar", "Difference", "Operational rule", "Miss"] : ["Looks similar", "What separates it", "Why distinction matters", "Do not confuse"],
+    relation: role === "expert" ? ["Upstream", "Current node", "Downstream", "System effect"] : role === "operator" ? ["Before", "Current", "Next", "Impact"] : ["Before this", "On this page", "What follows", "Why this matters"],
     apply: ["Scenario", "Clue", "Next move", "Wrong move"],
     apply_test: ["Scenario", "Clue", "Next move", "Wrong move"],
   };
   return labels[mode][index] || `Step ${index + 1}`;
-}
-
-function chooseByRole(role: GuidedRole, general: string, operator: string, expert: string): string {
-  if (role === "expert") return expert;
-  if (role === "operator") return operator;
-  return general;
 }
 
 function toStep(args: {
@@ -198,8 +187,15 @@ function toStep(args: {
   primaryText: string;
   secondaryText?: string;
   path: DecisionPath;
+  depth: GuidedDepth;
 }): GuidedReadStep {
-  const evidenceText = args.path.evidence[0] || args.primaryText;
+  const evidenceLimit = args.depth === "quick" ? 1 : args.depth === "standard" ? 2 : 3;
+  const evidence = args.path.evidence.slice(0, evidenceLimit).map((text, evidenceIndex) => ({
+    id: `${args.path.id}-ev-${evidenceIndex}`,
+    paragraphIndex: args.index,
+    text: toCompleteSentence(text),
+  }));
+
   return {
     id: `${args.mode}-${args.index + 1}`,
     stepNumber: args.index + 1,
@@ -209,19 +205,19 @@ function toStep(args: {
     mode: args.mode,
     role: args.role,
     confidence: args.path.confidence,
-    evidence: [{ id: `${args.path.id}-ev`, paragraphIndex: args.index, text: evidenceText }],
+    evidence: evidence.length ? evidence : [{ id: `${args.path.id}-ev-fallback`, paragraphIndex: args.index, text: args.primaryText }],
   };
 }
 
-function bulletCount(depth: GuidedDepth): number {
-  return depth === "quick" ? 2 : depth === "standard" ? 3 : 4;
+function supportCount(depth: GuidedDepth): number {
+  return depth === "quick" ? 1 : depth === "standard" ? 3 : 5;
 }
 
 function dedupe(items: Array<string | undefined>): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const item of items) {
-    const clean = (item || "").trim();
+    const clean = toCompleteSentence(item || "").trim();
     if (!clean) continue;
     const key = clean.toLowerCase();
     if (seen.has(key)) continue;
