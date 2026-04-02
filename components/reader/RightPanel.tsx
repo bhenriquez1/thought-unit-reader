@@ -54,8 +54,10 @@ export function RightPanel({
   const insightState = usePageInsights(ctx.pageText || "", ctx.pageNumber, state.audience === "expert", parseKey);
   const guidedView = useMemo(() => {
     if (insightState.status !== "ready") return null;
+    if (insightState.pageIndex !== ctx.pageNumber) return null;
+    if (insightState.requestKey !== parseKey) return null;
     return buildGuidedReadView({ pageModel: insightState.model, mode, role, depth });
-  }, [insightState, mode, role, depth]);
+  }, [ctx.pageNumber, insightState, mode, role, depth, parseKey]);
 
   useEffect(() => {
     setOverrideMode(null);
@@ -131,7 +133,7 @@ export function RightPanel({
       </div>
 
       <div className="flex flex-col gap-4 p-4 text-white">
-        {insightState.status === "loading" ? <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">GUIDED READ · Reading current page…</div> : null}
+        {insightState.status === "loading" || insightState.requestKey !== parseKey ? <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">GUIDED READ · Reading current page…</div> : null}
         {insightState.status === "error" ? <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">Could not build reading path for this page.</div> : null}
 
         {guidedView ? (
@@ -162,6 +164,13 @@ export function RightPanel({
                       </div>
                       <p className="text-sm leading-relaxed text-slate-200">{step.primaryText}</p>
                       {step.secondaryText ? <p className="mt-2 text-xs text-slate-300">{step.secondaryText}</p> : null}
+                      {step.evidence.length ? (
+                        <div className="mt-2 space-y-1">
+                          {step.evidence.slice(0, depth === "quick" ? 1 : depth === "standard" ? 2 : 3).map((anchor) => (
+                            <p key={anchor.id} className="text-[11px] leading-relaxed text-slate-400">↳ {anchor.text}</p>
+                          ))}
+                        </div>
+                      ) : null}
                     </button>
                   );
                 })}

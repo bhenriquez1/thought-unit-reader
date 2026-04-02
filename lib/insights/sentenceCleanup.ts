@@ -1,48 +1,52 @@
-export function toCompleteSentence(input: string): string {
-  const cleaned = normalizeSpaces(input)
-    .replace(/\b([A-Za-z])\s*-\s*([A-Za-z])\b/g, "$1$2")
-    .replace(/^[-•\s]+/, "")
-    .trim();
+export function cleanSentence(input: string): string {
+  if (!input) return "";
 
-  if (!cleaned) return "No clear sentence could be extracted from this page.";
+  let sentence = input;
+  sentence = sentence.replace(/\n+/g, " ");
+  sentence = sentence.replace(/(\w+)-\s+(\w+)/g, "$1$2");
+  sentence = sentence.replace(/\s+/g, " ").trim();
+  sentence = sentence.replace(/^(and|or|but|so|because|whereas)\s+/i, "");
 
-  let sentence = cleaned;
-  if (!/^[A-Z]/.test(sentence)) sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
-  if (!/[.!?]$/.test(sentence)) sentence = `${sentence}.`;
-
-  if (looksFragmentary(sentence)) {
-    return `This page indicates: ${sentence}`;
+  if (sentence.length > 0) {
+    sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
   }
+
+  if (sentence && !/[.!?]$/.test(sentence)) {
+    sentence += ".";
+  }
+
   return sentence;
 }
 
-export function toGeneralSentence(input: string): string {
-  return toCompleteSentence(input)
-    .replace(/\btransillumination\b/gi, "strong focused light")
-    .replace(/\bimplication\b/gi, "meaning");
+export function completeFragment(input: string): string {
+  const sentence = cleanSentence(input);
+  if (!sentence) return "";
+
+  const tooShort = sentence.split(" ").length < 5;
+  const noVerb = !/(is|are|was|were|may|can|will|should|reveals?|indicates?|shows?|suggests?|means?|requires?)/i.test(sentence);
+
+  if (tooShort || noVerb) {
+    return `This indicates that ${sentence.charAt(0).toLowerCase()}${sentence.slice(1)}`;
+  }
+
+  return sentence;
 }
 
-export function toOperatorSentence(signal: string, action?: string): string {
-  const base = toCompleteSentence(signal);
-  if (!action) return `Signal: ${base}`;
-  return `Signal: ${base} Next move: ${toCompleteSentence(action)}`;
+export function roleSentence(input: string, role: "general" | "operator" | "expert"): string {
+  const base = completeFragment(input);
+
+  switch (role) {
+    case "general":
+      return base;
+    case "operator":
+      return cleanSentence(base.replace(/^This indicates that\s*/i, ""));
+    case "expert":
+      return cleanSentence(base.replace(/^This indicates that\s*/i, "").replace(/\bthe\b\s*/gi, "").trim());
+    default:
+      return base;
+  }
 }
 
-export function toExpertSentence(input: string): string {
-  const compressed = normalizeSpaces(input)
-    .replace(/\b(can|may|might|usually|generally)\b/gi, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-  return toCompleteSentence(compressed);
-}
-
-function normalizeSpaces(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
-}
-
-function looksFragmentary(value: string): boolean {
-  const lower = value.toLowerCase();
-  const hasVerb = /\b(is|are|was|were|be|reveals?|shows?|indicates?|suggests?|causes?|leads?|means?)\b/.test(lower);
-  const hasSubjectLike = /\b(this|that|it|light|fracture|page|finding|signal|pattern|result|condition|rule)\b/.test(lower);
-  return !(hasVerb && hasSubjectLike);
-}
+export const toGeneralSentence = (input: string) => roleSentence(input, "general");
+export const toOperatorSentence = (input: string) => roleSentence(input, "operator");
+export const toExpertSentence = (input: string) => roleSentence(input, "expert");

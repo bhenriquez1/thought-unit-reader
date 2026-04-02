@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { processPage } from "@/lib/insights/processPage";
 import type { PageInsightModel } from "@/lib/insights/types";
 
 type PageInsightsState =
-  | { status: "idle" | "loading"; pageIndex: number; model: null }
-  | { status: "ready"; pageIndex: number; model: PageInsightModel }
-  | { status: "error"; pageIndex: number; model: null; message: string };
+  | { status: "idle" | "loading"; pageIndex: number; model: null; requestKey: string }
+  | { status: "ready"; pageIndex: number; model: PageInsightModel; requestKey: string }
+  | { status: "error"; pageIndex: number; model: null; message: string; requestKey: string };
 
 export function usePageInsights(
   pageText: string,
@@ -13,26 +13,31 @@ export function usePageInsights(
   enableDatApex = false,
   parseKey?: string,
 ): PageInsightsState {
-  const [state, setState] = useState<PageInsightsState>({ status: "idle", pageIndex, model: null });
+  const requestKey = useMemo(() => parseKey || `${pageIndex}:${pageText.length}:${enableDatApex ? "x" : "n"}`, [enableDatApex, pageIndex, pageText.length, parseKey]);
+  const [state, setState] = useState<PageInsightsState>({ status: "idle", pageIndex, model: null, requestKey });
   const versionRef = useRef(0);
 
   useEffect(() => {
     const version = ++versionRef.current;
-    setState({ status: "loading", pageIndex, model: null });
-    Promise.resolve().then(() => {
-      const model = processPage(pageText || "", enableDatApex);
-      if (version !== versionRef.current) return;
-      setState({ status: "ready", pageIndex, model });
-    }).catch((error: unknown) => {
-      if (version !== versionRef.current) return;
-      setState({
-        status: "error",
-        pageIndex,
-        model: null,
-        message: error instanceof Error ? error.message : "Failed to parse current page.",
+    setState({ status: "loading", pageIndex, model: null, requestKey });
+
+    Promise.resolve()
+      .then(() => {
+        const model = processPage(pageText || "", enableDatApex);
+        if (version !== versionRef.current) return;
+        setState({ status: "ready", pageIndex, model, requestKey });
+      })
+      .catch((error: unknown) => {
+        if (version !== versionRef.current) return;
+        setState({
+          status: "error",
+          pageIndex,
+          model: null,
+          requestKey,
+          message: error instanceof Error ? error.message : "Failed to parse current page.",
+        });
       });
-    });
-  }, [pageText, pageIndex, enableDatApex, parseKey]);
+  }, [enableDatApex, pageIndex, pageText, requestKey]);
 
   return state;
 }

@@ -9,6 +9,7 @@ import type {
   ParagraphType,
   PriorityBlock,
 } from "@/lib/insights/types";
+import { cleanSentence } from "@/lib/insights/sentenceCleanup";
 
 const TYPE_PATTERNS: Array<{ type: InsightPageType; patterns: RegExp[] }> = [
   { type: "cause_effect", patterns: [/\b(because|therefore|thus|hence|results? in|leads? to|causes?|consequently)\b/i] },
@@ -38,11 +39,13 @@ function splitIntoParagraphs(pageText: string): string[] {
 }
 
 function normalizeParagraph(text: string): string {
-  return text
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/\s+/g, " ")
-    .trim();
+  return cleanSentence(
+    text
+      .replace(/[“”]/g, "\"")
+      .replace(/[‘’]/g, "'")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
 }
 
 function classifyParagraphType(text: string): ParagraphType {
