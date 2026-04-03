@@ -5,6 +5,9 @@ import { classifyPage } from "@/lib/right-panel/classifyPage";
 import { buildResolvedPanelPayload } from "@/lib/panelEngine";
 import { buildModeProfile } from "@/lib/right-panel/modeProfile";
 import { deriveHighlightTargets } from "@/lib/highlightMapping";
+import { processPage } from "@/lib/insights/processPage";
+import { classifyPageContent } from "@/lib/pdf/classifyPageContent";
+import { extractPriorityHighlights } from "@/lib/highlights/extractPriorityHighlights";
 
 interface UseActivePageIntelligenceArgs {
   documentId: string;
@@ -37,14 +40,33 @@ export function useActivePageIntelligence({
     () => buildResolvedPanelPayload(ctx, classification, signals, audience, depth),
     [ctx, classification, signals, audience, depth],
   );
+  const insightModel = useMemo(() => processPage(ctx.pageText || ""), [ctx.pageText]);
+  const pageClass = useMemo(() => classifyPageContent(ctx.pageText || ""), [ctx.pageText]);
   const limitedEvidence =
     classification.confidence < 0.35 ||
     (ctx.pageText || "").trim().length < 120 ||
     ["cover", "contents", "chapter_opener", "section_opener", "copyright_frontmatter", "image_scan_heavy"].includes(signals.pageRole || "");
-  const highlightTargets: HighlightTarget[] = useMemo(
-    () => deriveHighlightTargets(signals, pageNumber, audience, limitedEvidence),
-    [signals, pageNumber, audience, limitedEvidence],
-  );
+  const highlightTargets: HighlightTarget[] = useMemo(() => {
+    const derived = deriveHighlightTargets(signals, pageNumber, audience, limitedEvidence);
+    const priority = extractPriorityHighlights({
+      documentId,
+      pageNumber,
+      pageClass,
+      pageModel: insightModel,
+    }).map((item, index) => ({
+      id: `priority-${item.id}`,
+      page: pageNumber,
+      text: item.text,
+      normalizedText: item.text.toLowerCase(),
+      level: item.priority === "main" ? "high_yield" : item.priority === "support" ? "supporting" : "weak",
+      score: item.confidence,
+      sourceParagraphIndex: index,
+      kind: "application",
+      evidenceRefId: item.evidenceId || item.id,
+    } satisfies HighlightTarget));
+
+    return priority.length ? [...priority, ...derived].slice(0, 12) : derived;
+  }, [signals, pageNumber, audience, limitedEvidence, documentId, pageClass, insightModel]);
   const highlightKey = `${documentId}:${pageNumber}`;
 
   return {

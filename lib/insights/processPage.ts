@@ -11,6 +11,10 @@ import type {
 } from "@/lib/insights/types";
 import { cleanSentence } from "@/lib/insights/sentenceCleanup";
 
+function isBoilerplateLine(text: string): boolean {
+  return /all rights reserved|copyright|published by|isbn|edition|permissions|contributors?|acknowledg(e)?ments?|www\.|doi\b/i.test(text);
+}
+
 const TYPE_PATTERNS: Array<{ type: InsightPageType; patterns: RegExp[] }> = [
   { type: "cause_effect", patterns: [/\b(because|therefore|thus|hence|results? in|leads? to|causes?|consequently)\b/i] },
   { type: "process", patterns: [/\b(first|second|third|next|then|finally|step|sequence|process)\b/i] },
@@ -30,12 +34,12 @@ function splitIntoParagraphs(pageText: string): string[] {
   const byBlankLine = pageText
     .split(/\n\s*\n/g)
     .map((p) => p.replace(/\s+/g, " ").trim())
-    .filter((p) => p.length > 40);
+    .filter((p) => p.length > 40 && !isBoilerplateLine(p));
   if (byBlankLine.length >= 2) return byBlankLine;
   return pageText
     .split(/\n+/)
     .map((p) => p.replace(/\s+/g, " ").trim())
-    .filter((p) => p.length > 40);
+    .filter((p) => p.length > 40 && !isBoilerplateLine(p));
 }
 
 function normalizeParagraph(text: string): string {
