@@ -11,6 +11,7 @@
 import React, { useCallback, useState } from 'react';
 import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
+import type { HighlightTarget } from '@/lib/readerContracts';
 
 interface PureReaderViewProps {
   fileUrl: string | null;
@@ -26,6 +27,10 @@ interface PureReaderViewProps {
   fontFamily?: string;
   /** Forwarded to SmartPDFViewer for scroll → active paragraph detection */
   onActiveParagraphChange?: (snippet: string | null) => void;
+  focusSnippet?: string | null;
+  highlightTargets?: HighlightTarget[];
+  focusedEvidenceId?: string | null;
+  onEvidenceFocus?: (id: string) => void;
   onOpenFocusCycle?: () => void;
 }
 
@@ -41,10 +46,14 @@ export default function PureReaderView({
   fontSize = 16,
   fontFamily = 'Georgia',
   onActiveParagraphChange,
+  focusSnippet,
+  highlightTargets,
+  focusedEvidenceId,
+  onEvidenceFocus,
   onOpenFocusCycle,
 }: PureReaderViewProps) {
   // Global zoom store
-  const { zoom, zoomIn, zoomOut, resetZoom, getZoomPercent, canZoomIn, canZoomOut } = useZoomStore();
+  const { zoom } = useZoomStore();
   const [isPageChanging, setIsPageChanging] = useState(false);
 
   const navigateToPage = useCallback((page: number) => {
@@ -106,7 +115,7 @@ export default function PureReaderView({
           </button>
         </div>
 
-        {/* Zoom + Focus Cycle */}
+        {/* Focus Cycle */}
         <div className="flex items-center gap-2">
           <button
             onClick={onOpenFocusCycle}
@@ -114,29 +123,6 @@ export default function PureReaderView({
             title="Open Focus Cycle"
           >
             ⏱ Focus Cycle
-          </button>
-          <button
-            onClick={zoomOut}
-            disabled={!canZoomOut()}
-            className="px-2 py-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm"
-            title="Zoom out"
-          >
-            −
-          </button>
-          <button
-            onClick={resetZoom}
-            className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm min-w-[60px]"
-            title="Reset zoom"
-          >
-            {getZoomPercent()}%
-          </button>
-          <button
-            onClick={zoomIn}
-            disabled={!canZoomIn()}
-            className="px-2 py-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm"
-            title="Zoom in"
-          >
-            +
           </button>
         </div>
 
@@ -158,6 +144,10 @@ export default function PureReaderView({
           onTextSelect={onTextSelect}
           onOutline={onOutline}
           onActiveParagraphChange={onActiveParagraphChange}
+          focusSnippet={focusSnippet}
+          highlightTargets={highlightTargets}
+          focusedEvidenceId={focusedEvidenceId}
+          onEvidenceFocus={onEvidenceFocus}
           isPageChanging={isPageChanging}
           onPageRenderComplete={() => setIsPageChanging(false)}
         />

@@ -4,6 +4,31 @@ export type AudienceMode = "student" | "clinical" | "expert";
 export type DepthMode = "standard" | "deep";
 export type DensityMode = "condensed" | "expanded";
 
+export type PageRole = "cover" | "contents" | "chapter_opener" | "section_opener" | "copyright_frontmatter" | "history_background" | "regular_teaching" | "table_formula" | "image_scan_heavy";
+
+export type PageType =
+  | "diagnostic"
+  | "definition"
+  | "mechanism"
+  | "application"
+  | "overview"
+  | "comparison"
+  | "clinical"
+  | "formula"
+  | "case"
+  | "reference"
+  | "mixed"
+  | "unknown";
+
+export interface FormulaCard {
+  raw: string;
+  normalized: string;
+  speakable: string;
+  meaning?: string;
+  usage?: string;
+  trap?: string;
+}
+
 export interface ActivePageContext {
   documentId: string;
   documentTitle?: string;
@@ -16,6 +41,7 @@ export interface ActivePageContext {
   sectionTitle?: string | null;
   pageText: string;
   paragraphTexts: string[];
+  formulas?: FormulaCard[];
 }
 
 export interface RightPanelState {
@@ -29,52 +55,150 @@ export interface TocNode {
   id: string;
   title: string;
   page: number;
-  kind: "chapter" | "section" | "subsection" | "week" | "assignment" | "frontmatter";
+  kind: "chapter" | "section" | "subsection" | "week" | "assignment" | "exam" | "deadline" | "policy" | "objective" | "topic" | "frontmatter";
+  source?: "outline" | "structured" | "layout" | "contents" | "fallback" | "syllabus";
+  confidence?: number;
   children?: TocNode[];
 }
 
+
+export type ParagraphKind =
+  | "definition"
+  | "mechanism"
+  | "clinical"
+  | "comparison"
+  | "formula"
+  | "application"
+  | "reference"
+  | "filler"
+  | "unknown";
+
+export type HighlightLevel = "high_yield" | "supporting" | "weak";
+
+export interface EvidenceReference {
+  id: string;
+  page: number;
+  paragraphIndex: number;
+  text: string;
+  kind: ParagraphKind;
+}
+
+export interface HighlightTarget {
+  id: string;
+  page: number;
+  text: string;
+  normalizedText: string;
+  level: HighlightLevel;
+  score: number;
+  sourceParagraphIndex: number;
+  kind: ParagraphKind;
+  evidenceRefId: string;
+}
+
+export interface ParagraphSignal {
+  text: string;
+  page: number;
+  index: number;
+  blockType: "heading" | "subheading" | "paragraph" | "bullet" | "tableRow" | "caption" | "reference" | "metadata";
+  kind: ParagraphKind;
+  yieldScore: number;
+  definitionScore: number;
+  mechanismScore: number;
+  clinicalScore: number;
+  comparisonScore: number;
+  examScore: number;
+  formulaScore: number;
+  trapScore: number;
+  distinctionScore: number;
+  clinicalDecisionScore: number;
+  examSignalScore: number;
+  fillerPenalty: number;
+  evidenceTerms: string[];
+  suppress: boolean;
+}
+
+export interface PageSignals {
+  questionCount: number;
+  numberedItemCount: number;
+  headingCount: number;
+  formulaCount: number;
+  equationLineCount: number;
+  tableLikeRowCount: number;
+  citationCount: number;
+  bulletCount: number;
+  hasDiagnosticWords: boolean;
+  hasDefinitionWords: boolean;
+  hasMechanismWords: boolean;
+  hasComparisonWords: boolean;
+  hasClinicalWords: boolean;
+  hasCaseWords: boolean;
+  hasReferenceWords: boolean;
+  hasFormulaWords: boolean;
+  hasOverviewWords: boolean;
+  hasApplicationWords: boolean;
+  uppercaseHeadingDensity: number;
+  shortLineDensity: number;
+  symbolDensity: number;
+  numericDensity: number;
+  nearbyHeading?: string;
+  activeTopicTitle?: string;
+  activeTopicKind?: string;
+  documentTitle?: string;
+  pageRole?: PageRole;
+  paragraphSignals?: ParagraphSignal[];
+  rawParagraphSignals?: ParagraphSignal[];
+  pageText: string;
+  nearbyText: string;
+}
+
+export interface PageClassification {
+  pageType: PageType;
+  confidence: number;
+  secondaryTypes: Array<{ type: PageType; confidence: number }>;
+  reasons: string[];
+}
+
 export interface PriorityPayload {
-  title: string;
-  meaning: string;
+  pageRole: string;
+  primaryGoal: string;
   mainIdeas: string[];
-  whyItMatters: string;
+  whyItMatters: string[];
   whatToRemember: string[];
-  supportingQuote?: string;
+  whatToIgnore?: string[];
 }
 
 export interface ExplainPayload {
-  title: string;
-  whatThisMeans: string;
+  meaning: string;
   mechanism: string;
-  stepwise: string[];
+  stepwiseBreakdown: string[];
   application: string[];
 }
 
 export interface RelationsPayload {
-  title: string;
   prerequisites: string[];
   currentLinks: string[];
   downstreamLinks: string[];
 }
 
 export interface ComparePayload {
-  title: string;
-  comparePairs: Array<{
-    left: string;
-    right: string;
-    distinction: string;
-  }>;
-  emptyReason?: string;
+  hasMeaningfulCompare: boolean;
+  compareTitle?: string;
+  leftLabel?: string;
+  rightLabel?: string;
+  similarities?: string[];
+  differences?: string[];
+  examTrap?: string;
+  emptyState?: string;
 }
 
 export interface InsightsPayload {
-  title: string;
-  highYield: string[];
-  traps: string[];
-  hiddenConnections: string[];
+  applyTest: string[];
+  examSignalScore: number;
+  message?: string;
 }
 
 export interface ResolvedPanelPayload {
+  classification: PageClassification;
   priority: PriorityPayload;
   explain: ExplainPayload;
   relations: RelationsPayload;

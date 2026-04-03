@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { extractPdfPages } from "@/lib/pdfExtract";
-import { buildAutoToc } from "@/lib/autoToc";
+import { buildSyllabusToc } from "@/lib/syllabusToc";
 import type { TocNode } from "@/lib/readerContracts";
 import type { PageTextBundle } from "@/lib/autoToc";
 
@@ -29,7 +29,7 @@ export default function SyllabusUploadPanel({ onParsed }: SyllabusUploadPanelPro
 
     try {
       const pages = await extractPdfPages(objectUrl);
-      const toc = buildAutoToc(pages);
+      const toc = buildSyllabusToc(pages);
       onParsed({ fileName: file.name, pages, toc });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to parse syllabus PDF.");

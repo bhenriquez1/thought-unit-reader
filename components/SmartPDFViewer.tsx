@@ -6,6 +6,8 @@ import { Page, pdfjs } from "react-pdf";
 import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api"; // ✅ correct type source
 import { useReaderSync } from "@/lib/readerSync";
 import { usePDFLoading } from "@/lib/pdfLoadingManager";
+import type { HighlightTarget } from "@/lib/readerContracts";
+import PdfEvidenceOverlay, { type OverlayRect } from "@/components/pdf/PdfEvidenceOverlay";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
 
@@ -41,6 +43,11 @@ export interface SmartPDFViewerProps {
    * Use this to drive PDF scroll → insights-panel sync without DOM overlays.
    */
   onActiveParagraphChange?: (snippet: string | null) => void;
+  /** Focus and scroll to a snippet from right-panel evidence cards. */
+  focusSnippet?: string | null;
+  highlightTargets?: HighlightTarget[];
+  focusedEvidenceId?: string | null;
+  onEvidenceFocus?: (evidenceId: string) => void;
   /** External page change lock to prevent observer feedback loops while rendering */
   isPageChanging?: boolean;
   /** Fires when the currently requested page render completes */
@@ -106,6 +113,10 @@ export default function SmartPDFViewer({
   onPageCount,
   onOutline,
   onActiveParagraphChange,
+  focusSnippet,
+  highlightTargets,
+  focusedEvidenceId,
+  onEvidenceFocus,
   isPageChanging = false,
   onPageRenderComplete,
 }: SmartPDFViewerProps) {
@@ -126,6 +137,7 @@ export default function SmartPDFViewer({
   const [pageInput, setPageInput] = useState<string>(String(currentPage));
   const [showToolbar, setShowToolbar] = useState<boolean>(true);
   const [highlightPulse, setHighlightPulse] = useState<boolean>(false);
+  const [overlayRects, setOverlayRects] = useState<OverlayRect[]>([]);
   const viewerRef = useRef<HTMLDivElement>(null);
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -203,6 +215,96 @@ export default function SmartPDFViewer({
       if (paragraphScrollTimerRef.current) clearTimeout(paragraphScrollTimerRef.current);
     };
   }, [isPageChanging, onActiveParagraphChange]);
+
+  useEffect(() => {
+    if (!focusSnippet) return;
+    const container = viewerRef.current;
+    if (!container) return;
+    const query = focusSnippet.trim().toLowerCase();
+    if (query.length < 12) return;
+    const spans = Array.from(container.querySelectorAll('.react-pdf__Page__textContent span, .textLayer span')) as HTMLElement[];
+    if (!spans.length) return;
+    const needle = query.slice(0, 42);
+    const target = spans.find((span) => (span.textContent || "").toLowerCase().includes(needle));
+    if (!target) return;
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+    target.classList.add("bg-yellow-300", "text-black", "rounded", "px-0.5");
+    const timer = window.setTimeout(() => {
+      target.classList.remove("bg-yellow-300", "text-black", "rounded", "px-0.5");
+    }, 1600);
+    return () => window.clearTimeout(timer);
+  }, [focusSnippet, currentPage]);
+
+  useEffect(() => {
+    const container = viewerRef.current;
+    if (!container || !highlightTargets?.length) {
+      setOverlayRects([]);
+      return;
+    }
+    let attempts = 0;
+    let cancelled = false;
+    const renderRects = () => {
+      if (cancelled) return;
+      const textLayer = container.querySelector('.react-pdf__Page__textContent, .textLayer');
+      if (!textLayer) {
+        if (attempts < 10) {
+          attempts += 1;
+          window.setTimeout(renderRects, 120 + attempts * 40);
+        } else {
+          console.warn("SmartPDFViewer: highlight targets available but text layer was not mounted.");
+          setOverlayRects([]);
+        }
+        return;
+      }
+      const layerRect = (textLayer as HTMLElement).getBoundingClientRect();
+      const spans = Array.from(textLayer.querySelectorAll("span")) as HTMLElement[];
+      if (!spans.length) {
+        if (attempts < 10) {
+          attempts += 1;
+          window.setTimeout(renderRects, 120 + attempts * 40);
+        } else {
+          console.warn("SmartPDFViewer: text layer mounted but no spans for highlight matching.");
+          setOverlayRects([]);
+        }
+        return;
+      }
+      const rects: OverlayRect[] = [];
+      highlightTargets.forEach((target) => {
+        const needle = target.normalizedText.slice(0, 42);
+        let span = spans.find((entry) => (entry.textContent || "").toLowerCase().replace(/\s+/g, " ").includes(needle));
+        if (!span) {
+          const keywords = needle.split(" ").filter((word) => word.length >= 5).slice(0, 4);
+          span = spans.find((entry) => {
+            const hay = (entry.textContent || "").toLowerCase();
+            return keywords.some((word) => hay.includes(word));
+          });
+        }
+        if (!span) return;
+        const rect = span.getBoundingClientRect();
+        rects.push({
+          id: target.evidenceRefId,
+          level: target.level,
+          top: rect.top - layerRect.top,
+          left: rect.left - layerRect.left,
+          width: rect.width,
+          height: Math.max(14, rect.height),
+        });
+      });
+      if (!rects.length && highlightTargets.length > 0 && attempts < 10) {
+        attempts += 1;
+        window.setTimeout(renderRects, 140 + attempts * 40);
+        return;
+      }
+      if (!rects.length && highlightTargets.length > 0) {
+        console.warn("SmartPDFViewer: highlight matching completed with zero overlays.");
+      }
+      setOverlayRects(rects);
+    };
+    window.requestAnimationFrame(renderRects);
+    return () => {
+      cancelled = true;
+    };
+  }, [highlightTargets, currentPage]);
 
   // Enhanced PDF loading with robust error handling
   const {
@@ -515,6 +617,14 @@ export default function SmartPDFViewer({
                     background: 'radial-gradient(circle, rgba(255, 255, 0, 0.2) 0%, rgba(255, 255, 0, 0.1) 50%, transparent 100%)',
                     animation: 'pulse 1s ease-out',
                   }}
+                />
+              )}
+
+              {overlayRects.length > 0 && (
+                <PdfEvidenceOverlay
+                  rects={overlayRects}
+                  focusedId={focusedEvidenceId}
+                  onFocus={onEvidenceFocus}
                 />
               )}
 
