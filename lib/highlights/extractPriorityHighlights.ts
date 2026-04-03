@@ -1,4 +1,4 @@
-import { cleanupSentence } from "@/lib/insights/sentenceCleanup";
+import { cleanSentence } from "@/lib/insights/sentenceCleanup";
 import { isRenderableSentence } from "@/lib/insights/isRenderableSentence";
 import type { DecisionPath, PageInsightModel, ParagraphInsight } from "@/lib/insights/types";
 import type { PageContentClass } from "@/lib/pdf/classifyPageContent";
@@ -45,7 +45,10 @@ type ScoredHighlightCandidate = {
   score: number;
   kind: PriorityHighlightSpan["kind"];
   paragraphId?: string;
+  sentenceId?: string;
   evidenceId?: string;
+  startOffset?: number;
+  endOffset?: number;
   source: "paragraph" | "takeaway" | "sequence" | "summary";
 };
 
@@ -70,19 +73,16 @@ export function extractPriorityHighlights({
     .slice(0, budgets.main)
     .map((candidate) => toHighlight(candidate, documentId, pageNumber, "main"));
 
-  const usedIds = new Set(main.map((item) => item.id));
-
+  const used = new Set(main.map((item) => item.id));
   const support = candidates
-    .filter((candidate) => !usedIds.has(candidate.id))
-    .filter((candidate) => candidate.score >= 0.56)
+    .filter((candidate) => !used.has(candidate.id) && candidate.score >= 0.56)
     .slice(0, budgets.support)
     .map((candidate) => toHighlight(candidate, documentId, pageNumber, "support"));
 
-  support.forEach((item) => usedIds.add(item.id));
+  support.forEach((item) => used.add(item.id));
 
   const weak = candidates
-    .filter((candidate) => !usedIds.has(candidate.id))
-    .filter((candidate) => candidate.score >= 0.34)
+    .filter((candidate) => !used.has(candidate.id) && candidate.score >= 0.34)
     .slice(0, budgets.weak)
     .map((candidate) => toHighlight(candidate, documentId, pageNumber, "weak"));
 
@@ -90,14 +90,13 @@ export function extractPriorityHighlights({
 }
 
 function collectHighlightCandidates(pageModel: PageInsightModel, pageClass: PageContentClass): ScoredHighlightCandidate[] {
-  const out: ScoredHighlightCandidate[] = [];
+  const candidates: ScoredHighlightCandidate[] = [];
   const seen = new Set<string>();
 
   const push = (candidate: ScoredHighlightCandidate | null) => {
-    if (!candidate?.text) return;
-    if (seen.has(candidate.id)) return;
+    if (!candidate || !candidate.text || seen.has(candidate.id)) return;
     seen.add(candidate.id);
-    out.push(candidate);
+    candidates.push(candidate);
   };
 
   push(buildSummaryCandidate(pageModel.pageSummary));
@@ -105,9 +104,9 @@ function collectHighlightCandidates(pageModel: PageInsightModel, pageClass: Page
   for (const paragraph of pageModel.paragraphInsights || []) push(buildParagraphCandidate(paragraph, pageClass));
   for (const sequence of pageModel.decisionPaths || []) push(buildSequenceCandidate(sequence));
 
-  return out
+  return candidates
     .filter((item) => isRenderableSentence(item.text))
-    .sort((left, right) => right.score - left.score);
+    .sort((a, b) => b.score - a.score);
 }
 
 function buildSummaryCandidate(text: string): ScoredHighlightCandidate | null {
@@ -137,10 +136,8 @@ function buildTakeawayCandidate(text: string): ScoredHighlightCandidate | null {
 }
 
 function buildParagraphCandidate(paragraph: ParagraphInsight, pageClass: PageContentClass): ScoredHighlightCandidate | null {
-  const baseText = paragraph.summary || paragraph.cleanedText || paragraph.rawText || "";
-  const normalized = normalizeText(baseText);
+  const normalized = normalizeText(paragraph.summary || paragraph.cleanedText || paragraph.rawText || "");
   if (!normalized) return null;
-
   return {
     id: paragraph.id || `paragraph:${hashText(normalized)}`,
     text: normalized,
@@ -148,7 +145,6 @@ function buildParagraphCandidate(paragraph: ParagraphInsight, pageClass: PageCon
     score: scoreParagraph(paragraph, normalized, pageClass),
     kind: mapParagraphKindToHighlightKind(paragraph.paragraphType, normalized, pageClass),
     paragraphId: paragraph.id,
-    evidenceId: paragraph.id,
     source: "paragraph",
   };
 }
@@ -157,23 +153,19 @@ function buildSequenceCandidate(sequence: DecisionPath): ScoredHighlightCandidat
   const preferred = sequence.interpretation || sequence.implication || sequence.nextMove || sequence.condition || "";
   const normalized = normalizeText(preferred);
   if (!normalized) return null;
-
   return {
     id: sequence.id || `sequence:${hashText(normalized)}`,
     text: normalized,
     confidence: sequence.confidence ?? 0.58,
     score: scoreSequence(normalized, sequence),
     kind: inferHighlightKind(normalized, "sequence"),
-    paragraphId: sequence.sourceParagraphIds?.[0],
-    evidenceId: sequence.id,
     source: "sequence",
   };
 }
 
 function scoreParagraph(paragraph: ParagraphInsight, text: string, pageClass: PageContentClass): number {
   let score = paragraph.confidence ?? 0.55;
-  score += (paragraph.priorityScore || 0) * 0.06;
-  score += scoreTextSignals(text);
+  score += Math.max(0, paragraph.priorityScore || 0) * 0.03;
 
   if (paragraph.paragraphType === "definition") score += 0.1;
   if (paragraph.paragraphType === "cause_effect") score += 0.12;
@@ -181,9 +173,9 @@ function scoreParagraph(paragraph: ParagraphInsight, text: string, pageClass: Pa
   if (paragraph.paragraphType === "process") score += 0.08;
   if (paragraph.paragraphType === "clinical_reasoning" || paragraph.paragraphType === "decision") score += 0.12;
 
+  score += scoreTextSignals(text);
   if (pageClass === "form_page" && /\byes\b|\bno\b|_{2,}/i.test(text)) score -= 0.18;
   if (pageClass === "table_heavy" && text.length < 18) score -= 0.1;
-
   return clamp(score, 0, 1);
 }
 
@@ -207,7 +199,6 @@ function scoreText(text: string, source: ScoredHighlightCandidate["source"]): nu
 function scoreTextSignals(text: string): number {
   const lower = text.toLowerCase();
   let score = 0;
-
   if (/\bdefines?\b|\bdefined as\b|\brefers to\b|\bis called\b/.test(lower)) score += 0.08;
   if (/\bbecause\b|\btherefore\b|\bthus\b|\bleads? to\b|\bresults? in\b/.test(lower)) score += 0.08;
   if (/\bhowever\b|\bwhereas\b|\bin contrast\b|\bdiffers?\b/.test(lower)) score += 0.06;
@@ -215,16 +206,10 @@ function scoreTextSignals(text: string): number {
   if (/\bfirst\b|\bnext\b|\bthen\b|\bfinally\b|\bstep\b/.test(lower)) score += 0.05;
   if (/\bdiagnosis\b|\bmanagement\b|\bmechanism\b|\bpathway\b/.test(lower)) score += 0.05;
   if (text.length > 60 && text.length < 240) score += 0.05;
-
   return score;
 }
 
-function toHighlight(
-  candidate: ScoredHighlightCandidate,
-  documentId: string,
-  pageNumber: number,
-  priority: HighlightPriority,
-): PriorityHighlightSpan {
+function toHighlight(candidate: ScoredHighlightCandidate, documentId: string, pageNumber: number, priority: HighlightPriority): PriorityHighlightSpan {
   return {
     id: candidate.id,
     documentId,
@@ -234,22 +219,20 @@ function toHighlight(
     confidence: candidate.confidence,
     kind: candidate.kind,
     paragraphId: candidate.paragraphId,
+    sentenceId: candidate.sentenceId,
     evidenceId: candidate.evidenceId,
+    startOffset: candidate.startOffset,
+    endOffset: candidate.endOffset,
   };
 }
 
 function normalizeText(input: string): string {
-  const cleaned = cleanupSentence((input || "").replace(/\s+/g, " ").trim());
-  if (!cleaned) return "";
-  if (!isRenderableSentence(cleaned)) return "";
+  const cleaned = cleanSentence((input || "").replace(/\s+/g, " ").trim());
+  if (!cleaned || !isRenderableSentence(cleaned)) return "";
   return cleaned;
 }
 
-function mapParagraphKindToHighlightKind(
-  kind: ParagraphInsight["paragraphType"] | undefined,
-  text: string,
-  pageClass: PageContentClass,
-): PriorityHighlightSpan["kind"] {
+function mapParagraphKindToHighlightKind(kind: string | undefined, text: string, pageClass: PageContentClass): PriorityHighlightSpan["kind"] {
   if (pageClass === "form_page") return "evidence_sentence";
   switch (kind) {
     case "definition":
@@ -270,19 +253,16 @@ function mapParagraphKindToHighlightKind(
 
 function inferHighlightKind(text: string, source: ScoredHighlightCandidate["source"]): PriorityHighlightSpan["kind"] {
   const lower = text.toLowerCase();
-  if (source === "summary" && /\bchapter|section\b/.test(lower)) return "heading_anchor";
   if (/\bdefined as\b|\brefers to\b|\bis called\b/.test(lower)) return "definition";
   if (/\bbecause\b|\bleads? to\b|\bresults? in\b|\bmechanism\b/.test(lower)) return "mechanism";
   if (/\bhowever\b|\bwhereas\b|\bin contrast\b|\bdiffers?\b/.test(lower)) return "contrast";
   if (/\bfirst\b|\bnext\b|\bthen\b|\bfinally\b|\bstep\b/.test(lower)) return "process_step";
   if (/\bmust\b|\bshould\b|\brule\b|\bdiagnosis\b|\bmanagement\b/.test(lower)) return "clinical_rule";
+  if (source === "summary") return "evidence_sentence";
   return "core_claim";
 }
 
-function getBudgetsForPageClass(
-  pageClass: PageContentClass,
-  input: { maxMain: number; maxSupport: number; maxWeak: number },
-) {
+function getBudgetsForPageClass(pageClass: PageContentClass, input: { maxMain: number; maxSupport: number; maxWeak: number }) {
   switch (pageClass) {
     case "prose":
     case "prose_with_headings":
@@ -304,12 +284,7 @@ function hashText(input: string): string {
   let hash = 2166136261;
   for (let i = 0; i < input.length; i += 1) {
     hash ^= input.charCodeAt(i);
-    hash +=
-      (hash << 1) +
-      (hash << 4) +
-      (hash << 7) +
-      (hash << 8) +
-      (hash << 24);
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
   }
   return (hash >>> 0).toString(36);
 }

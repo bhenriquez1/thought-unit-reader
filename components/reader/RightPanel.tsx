@@ -4,7 +4,6 @@ import { usePageInsights } from "@/hooks/usePageInsights";
 import { useGuidedHighlightSync } from "@/hooks/useGuidedHighlightSync";
 import { buildGuidedReadView, type GuidedDepth, type GuidedMode, type GuidedRole } from "@/lib/insights/buildGuidedReadView";
 import { evaluatePageTruth } from "@/lib/insights/evaluatePageTruth";
-import { buildGroundedSupportView } from "@/lib/insights/buildGroundedSupportView";
 import { classifyPageContent } from "@/lib/pdf/classifyPageContent";
 import type { EvidenceAnchor } from "@/lib/insights/types";
 
@@ -66,11 +65,6 @@ export function RightPanel({
     pageModel: insightState.status === "ready" ? insightState.model : null,
     visiblePageText: ctx.pageText || "",
   }), [contentClass, ctx.documentId, ctx.pageNumber, ctx.pageText, insightState]);
-  const groundedSupportView = useMemo(() => {
-    if (insightState.status !== "ready") return null;
-    return buildGroundedSupportView(insightState.model);
-  }, [insightState]);
-
   const guidedView = useMemo(() => {
     if (!pageTruth.canRenderRightPanel) return null;
     if (insightState.status !== "ready") return null;
@@ -83,6 +77,7 @@ export function RightPanel({
     setOverrideMode(null);
   }, [activeTab]);
 
+
   const showApply = insightState.status === "ready" && insightState.model.decisionPaths.some((entry) => Boolean(entry.nextMove || entry.trap));
 
   const resolveFromAnchor = (anchor: EvidenceAnchor) => resolveEvidenceId?.(anchor.text);
@@ -92,6 +87,11 @@ export function RightPanel({
     resolveEvidenceId: resolveFromAnchor,
     autoFocusOnInit: false,
   });
+
+  useEffect(() => {
+    clearSelection();
+    onEvidenceClick?.("", undefined);
+  }, [ctx.documentId, ctx.pageNumber, parseKey, clearSelection, onEvidenceClick]);
 
   useEffect(() => {
     if (insightState.status === "loading") clearSelection();
@@ -203,23 +203,6 @@ export function RightPanel({
                 <ul className="space-y-1 text-sm text-slate-200">
                   {guidedView.supportBullets.map((bullet, index) => (
                     <li key={`${bullet}-${index}`}>• {bullet}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </>
-        ) : pageTruth.reason === "insufficient_prose" && groundedSupportView ? (
-          <>
-            <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
-              <div className="text-xs uppercase tracking-wide text-emerald-300">Grounded Support</div>
-              <p className="mt-2 text-sm leading-relaxed text-slate-200">{groundedSupportView.mainIdea}</p>
-            </div>
-            {groundedSupportView.support.length ? (
-              <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
-                <div className="mb-2 text-xs uppercase text-slate-400">Support</div>
-                <ul className="space-y-1 text-sm text-slate-200">
-                  {groundedSupportView.support.map((line, index) => (
-                    <li key={`support-${index}`}>• {line}</li>
                   ))}
                 </ul>
               </div>
