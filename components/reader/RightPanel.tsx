@@ -3,9 +3,10 @@ import type { ActivePageContext, PanelTab, ResolvedPanelPayload, RightPanelState
 import { usePageInsights } from "@/hooks/usePageInsights";
 import { useGuidedHighlightSync } from "@/hooks/useGuidedHighlightSync";
 import { buildGuidedReadView, type GuidedDepth, type GuidedMode, type GuidedRole } from "@/lib/insights/buildGuidedReadView";
-import type { EvidenceAnchor } from "@/lib/insights/types";
-import { classifyPageContent } from "@/lib/pdf/classifyPageContent";
 import { evaluatePageTruth } from "@/lib/insights/evaluatePageTruth";
+import { buildGroundedSupportView } from "@/lib/insights/buildGroundedSupportView";
+import { classifyPageContent } from "@/lib/pdf/classifyPageContent";
+import type { EvidenceAnchor } from "@/lib/insights/types";
 
 interface RightPanelProps {
   ctx: ActivePageContext;
@@ -54,28 +55,29 @@ export function RightPanel({
 
   const parseKey = `${ctx.documentId}:${ctx.pageNumber}:${textHash}:${mode}:${role}:${depth}`;
   const insightState = usePageInsights(ctx.pageText || "", ctx.pageNumber, state.audience === "expert", parseKey);
-  const pageClass = useMemo(() => classifyPageContent(ctx.pageText || ""), [ctx.pageText]);
-  const pageTruth = useMemo(
-    () =>
-      evaluatePageTruth({
-        visibleDocumentId: ctx.documentId,
-        visiblePageNumber: ctx.pageNumber,
-        visiblePageHash: parseKey,
-        sourceDocumentId: ctx.documentId,
-        sourcePageNumber: insightState.pageIndex,
-        sourcePageHash: insightState.requestKey,
-        insightsStatus: insightState.status,
-        pageModel: insightState.status === "ready" ? insightState.model : null,
-        pageClass,
-      }),
-    [ctx.documentId, ctx.pageNumber, insightState, pageClass, parseKey],
-  );
+  const contentClass = useMemo(() => classifyPageContent(ctx.pageText || ""), [ctx.pageText]);
+  const pageTruth = useMemo(() => evaluatePageTruth({
+    visibleDocumentId: ctx.documentId,
+    sourceDocumentId: ctx.documentId,
+    visiblePageNumber: ctx.pageNumber,
+    sourcePageNumber: insightState.pageIndex,
+    parseReady: insightState.status === "ready",
+    contentClass,
+    pageModel: insightState.status === "ready" ? insightState.model : null,
+    visiblePageText: ctx.pageText || "",
+  }), [contentClass, ctx.documentId, ctx.pageNumber, ctx.pageText, insightState]);
+  const groundedSupportView = useMemo(() => {
+    if (insightState.status !== "ready") return null;
+    return buildGroundedSupportView(insightState.model);
+  }, [insightState]);
 
   const guidedView = useMemo(() => {
-    if (insightState.status !== "ready") return null;
     if (!pageTruth.canRenderRightPanel) return null;
+    if (insightState.status !== "ready") return null;
+    if (insightState.pageIndex !== ctx.pageNumber) return null;
+    if (insightState.requestKey !== parseKey) return null;
     return buildGuidedReadView({ pageModel: insightState.model, mode, role, depth });
-  }, [insightState, mode, role, depth, pageTruth.canRenderRightPanel]);
+  }, [ctx.pageNumber, insightState, mode, role, depth, parseKey, pageTruth.canRenderRightPanel]);
 
   useEffect(() => {
     setOverrideMode(null);
@@ -84,10 +86,11 @@ export function RightPanel({
   const showApply = insightState.status === "ready" && insightState.model.decisionPaths.some((entry) => Boolean(entry.nextMove || entry.trap));
 
   const resolveFromAnchor = (anchor: EvidenceAnchor) => resolveEvidenceId?.(anchor.text);
-  const { selectedStepId, selectStep, previewStep, clearSelection } = useGuidedHighlightSync({
+  const { selectedStepId, selectStep, clearSelection } = useGuidedHighlightSync({
     steps: guidedView?.steps || [],
     onEvidenceClick,
     resolveEvidenceId: resolveFromAnchor,
+    autoFocusOnInit: false,
   });
 
   useEffect(() => {
@@ -151,18 +154,8 @@ export function RightPanel({
       </div>
 
       <div className="flex flex-col gap-4 p-4 text-white">
-        {insightState.status === "loading" || insightState.requestKey !== parseKey ? <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">GUIDED READ · Reading current page…</div> : null}
-        {!guidedView && insightState.status !== "loading" ? (
-          <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-200">
-            {pageTruth.reason === "image_only" ? "This page is primarily image-based. No grounded text was extracted from the current page."
-              : pageTruth.reason === "form_page" ? "This page is primarily a form/structured page. Guided prose extraction is withheld."
-                : pageTruth.reason === "table_heavy" ? "This page is table-heavy. Guided prose extraction is withheld for current-page trust."
-                  : pageTruth.reason === "fragment_only" ? "Only incomplete fragments were extracted from this page, so guided output is withheld."
-                    : pageTruth.reason === "failed_extraction" ? "Not enough grounded text was extracted from this page to build a reliable reading path."
-                      : pageTruth.reason === "stale_page" || pageTruth.reason === "book_changed" ? "Waiting for a fresh current-page extraction."
-                        : "Could not build reading path for this page."}
-          </div>
-        ) : null}
+        {renderTruthFallback(pageTruth.reason, insightState.status, insightState.requestKey !== parseKey)}
+        {insightState.status === "error" ? <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">Could not build reading path for this page.</div> : null}
 
         {guidedView ? (
           <>
@@ -182,8 +175,7 @@ export function RightPanel({
                   return (
                     <button
                       key={step.id}
-                      onMouseEnter={() => previewStep(step)}
-                      onClick={() => selectStep(step)}
+                      onClick={() => selectStep(step, true)}
                       className={`w-full rounded-xl border p-4 text-left whitespace-normal break-words ${selected || activeEvidence ? "border-emerald-400/40 bg-emerald-500/10" : "border-white/10 bg-slate-900/80"}`}
                     >
                       <div className="mb-2 flex items-center gap-2">
@@ -216,8 +208,45 @@ export function RightPanel({
               </div>
             ) : null}
           </>
+        ) : pageTruth.reason === "insufficient_prose" && groundedSupportView ? (
+          <>
+            <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
+              <div className="text-xs uppercase tracking-wide text-emerald-300">Grounded Support</div>
+              <p className="mt-2 text-sm leading-relaxed text-slate-200">{groundedSupportView.mainIdea}</p>
+            </div>
+            {groundedSupportView.support.length ? (
+              <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+                <div className="mb-2 text-xs uppercase text-slate-400">Support</div>
+                <ul className="space-y-1 text-sm text-slate-200">
+                  {groundedSupportView.support.map((line, index) => (
+                    <li key={`support-${index}`}>• {line}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </>
         ) : null}
       </div>
     </aside>
   );
+}
+
+
+function renderTruthFallback(reason: string, status: string, keyMismatch: boolean) {
+  if (status === "loading" || keyMismatch || reason === "loading") {
+    return <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">GUIDED READ · Reading current page…</div>;
+  }
+  if (reason === "image_only") {
+    return <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">This page is primarily image-based. No grounded text was extracted from the current page.</div>;
+  }
+  if (reason === "form_page") {
+    return <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">This page is primarily a form or structured intake page. Guided prose extraction is not shown here.</div>;
+  }
+  if (reason === "table_heavy") {
+    return <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">This page is table-heavy. Guided prose mode is limited until table summarization is enabled.</div>;
+  }
+  if (reason !== "ok") {
+    return <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">Not enough grounded text was extracted from the current page to build a reliable reading path.</div>;
+  }
+  return null;
 }

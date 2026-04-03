@@ -1,6 +1,5 @@
 import type { PageInsightModel } from "@/lib/insights/types";
 import type { PageContentClass } from "@/lib/pdf/classifyPageContent";
-import { isRenderableSentence } from "@/lib/insights/isRenderableSentence";
 
 export type PageTruthGateResult = {
   canRenderRightPanel: boolean;
@@ -19,58 +18,48 @@ export type PageTruthGateResult = {
   confidence: number;
 };
 
-export function evaluatePageTruth(args: {
+type EvaluateArgs = {
   visibleDocumentId: string;
-  visiblePageNumber: number;
-  visiblePageHash: string;
   sourceDocumentId: string;
+  visiblePageNumber: number;
   sourcePageNumber: number;
-  sourcePageHash: string;
-  insightsStatus: "idle" | "loading" | "ready" | "error";
+  parseReady: boolean;
+  contentClass: PageContentClass;
   pageModel: PageInsightModel | null;
-  pageClass: PageContentClass;
-}): PageTruthGateResult {
-  const {
-    visibleDocumentId,
-    visiblePageNumber,
-    visiblePageHash,
-    sourceDocumentId,
-    sourcePageNumber,
-    sourcePageHash,
-    insightsStatus,
-    pageModel,
-    pageClass,
-  } = args;
+  visiblePageText: string;
+};
 
-  if (insightsStatus === "loading" || insightsStatus === "idle") {
-    return { canRenderRightPanel: false, canRenderLeftHighlights: false, reason: "loading", confidence: 0 };
-  }
-  if (visibleDocumentId !== sourceDocumentId) {
-    return { canRenderRightPanel: false, canRenderLeftHighlights: false, reason: "book_changed", confidence: 0 };
-  }
-  if (visiblePageNumber !== sourcePageNumber || visiblePageHash !== sourcePageHash) {
-    return { canRenderRightPanel: false, canRenderLeftHighlights: false, reason: "stale_page", confidence: 0 };
-  }
-  if (insightsStatus === "error" || !pageModel) {
-    return { canRenderRightPanel: false, canRenderLeftHighlights: false, reason: "failed_extraction", confidence: 0.1 };
-  }
+export function evaluatePageTruth(args: EvaluateArgs): PageTruthGateResult {
+  const tokenCount = (args.visiblePageText.match(/[A-Za-z]+/g) || []).length;
+  const completeSentences = (args.visiblePageText.match(/[.!?](\s|$)/g) || []).length;
 
-  if (pageClass === "image_only") return { canRenderRightPanel: false, canRenderLeftHighlights: false, reason: "image_only", confidence: 0.2 };
-  if (pageClass === "form_page") return { canRenderRightPanel: false, canRenderLeftHighlights: true, reason: "form_page", confidence: 0.35 };
-  if (pageClass === "table_heavy") return { canRenderRightPanel: false, canRenderLeftHighlights: true, reason: "table_heavy", confidence: 0.4 };
-  if (pageClass === "failed_sparse") return { canRenderRightPanel: false, canRenderLeftHighlights: false, reason: "failed_extraction", confidence: 0.15 };
+  if (!args.parseReady) return fail("loading", 0);
+  if (args.visibleDocumentId !== args.sourceDocumentId) return fail("book_changed", 0);
+  if (args.visiblePageNumber !== args.sourcePageNumber) return fail("stale_page", 0);
+  if (!args.pageModel) return fail("failed_extraction", 0.1);
 
-  const completeSentences = pageModel.paragraphInsights
-    .map((entry) => entry.summary)
-    .filter((line) => isRenderableSentence(line)).length;
+  if (args.contentClass === "image_only") return fail("image_only", 0.2);
+  if (args.contentClass === "form_page") return fail("form_page", 0.3, true);
+  if (args.contentClass === "table_heavy") return fail("table_heavy", 0.35, true);
+  if (args.contentClass === "failed_sparse") return fail("failed_extraction", 0.2);
+  if (tokenCount < 25 || completeSentences < 2) return fail("insufficient_prose", 0.35, args.contentClass === "sparse_text");
 
-  if (completeSentences < 2) {
-    return { canRenderRightPanel: false, canRenderLeftHighlights: pageClass === "sparse_text", reason: "fragment_only", confidence: 0.3 };
-  }
+  const fragmentHeavy = args.pageModel.topTakeaways.every((line) => /\.\.\.$/.test(line.trim()));
+  if (fragmentHeavy) return fail("fragment_only", 0.25);
 
-  if (pageModel.paragraphInsights.length < 1) {
-    return { canRenderRightPanel: false, canRenderLeftHighlights: false, reason: "insufficient_prose", confidence: 0.25 };
-  }
+  return {
+    canRenderRightPanel: true,
+    canRenderLeftHighlights: true,
+    reason: "ok",
+    confidence: Math.min(1, 0.45 + Math.min(0.4, completeSentences * 0.08)),
+  };
+}
 
-  return { canRenderRightPanel: true, canRenderLeftHighlights: true, reason: "ok", confidence: 0.7 };
+function fail(reason: PageTruthGateResult["reason"], confidence: number, leftOk = false): PageTruthGateResult {
+  return {
+    canRenderRightPanel: false,
+    canRenderLeftHighlights: leftOk,
+    reason,
+    confidence,
+  };
 }

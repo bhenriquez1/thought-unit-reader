@@ -50,3 +50,5 @@ export function roleSentence(input: string, role: "general" | "operator" | "expe
 export const toGeneralSentence = (input: string) => roleSentence(input, "general");
 export const toOperatorSentence = (input: string) => roleSentence(input, "operator");
 export const toExpertSentence = (input: string) => roleSentence(input, "expert");
+
+export const cleanupSentence = cleanSentence;

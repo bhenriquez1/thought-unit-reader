@@ -10,7 +10,6 @@ import type {
   PriorityBlock,
 } from "@/lib/insights/types";
 import { cleanSentence } from "@/lib/insights/sentenceCleanup";
-import { isRenderableSentence } from "@/lib/insights/isRenderableSentence";
 
 const TYPE_PATTERNS: Array<{ type: InsightPageType; patterns: RegExp[] }> = [
   { type: "cause_effect", patterns: [/\b(because|therefore|thus|hence|results? in|leads? to|causes?|consequently)\b/i] },
@@ -122,19 +121,29 @@ function buildLogicChains(text: string, paragraphId: string): LogicChain[] {
 }
 
 function summarizeParagraph(text: string, type: ParagraphType): string {
-  const sentences = text
-    .split(/(?<=[.!?])\s+/)
-    .map((entry) => cleanSentence(entry))
-    .filter(Boolean);
-
-  const firstSentence = sentences.find((entry) => isRenderableSentence(entry)) || cleanSentence(sentences[0] || text);
-  const pick = (matcher: RegExp) => sentences.find((entry) => matcher.test(entry) && isRenderableSentence(entry)) || firstSentence;
-
-  if (type === "cause_effect") return pick(/\b(leads? to|results? in|causes?|therefore|thus|because)\b/i);
-  if (type === "comparison") return pick(/\b(unlike|whereas|in contrast|rather than|distinguish)\b/i);
-  if (type === "process") return pick(/\b(first|then|next|finally|step)\b/i);
-  if (type === "consequence" || type === "signal") return pick(/\b(indicates?|suggests?|result|impact|outcome|signal|marker)\b/i);
-  return firstSentence;
+  const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
+  const firstSentence = sentences[0] || text;
+  if (type === "cause_effect") {
+    const causal = sentences.find((entry) => /\b(leads? to|results? in|causes?|therefore|thus|because)\b/i.test(entry));
+    const line = causal || firstSentence;
+    return line.length > 140 ? `${line.slice(0, 137)}...` : line;
+  }
+  if (type === "comparison") {
+    const contrast = sentences.find((entry) => /\b(unlike|whereas|in contrast|rather than|distinguish)\b/i.test(entry));
+    const line = contrast || firstSentence;
+    return line.length > 140 ? `${line.slice(0, 137)}...` : line;
+  }
+  if (type === "process") {
+    const procedural = sentences.find((entry) => /\b(first|then|next|finally|step)\b/i.test(entry));
+    const line = procedural || firstSentence;
+    return line.length > 140 ? `${line.slice(0, 137)}...` : line;
+  }
+  if (type === "consequence" || type === "signal") {
+    const signalLine = sentences.find((entry) => /\b(indicates?|suggests?|result|impact|outcome|signal|marker)\b/i.test(entry));
+    const line = signalLine || firstSentence;
+    return line.length > 140 ? `${line.slice(0, 137)}...` : line;
+  }
+  return firstSentence.length > 150 ? `${firstSentence.slice(0, 147)}...` : firstSentence;
 }
 
 function scoreParagraphPriority(type: ParagraphType, signals: ExtractedSignals, text: string): number {

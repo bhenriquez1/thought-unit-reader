@@ -5,11 +5,12 @@ type UseGuidedHighlightSyncArgs = {
   steps: GuidedReadStep[];
   onEvidenceClick?: (snippet: string, evidenceId?: string) => void;
   resolveEvidenceId?: (anchor: EvidenceAnchor) => string | undefined;
+  autoFocusOnInit?: boolean;
 };
 
 type UseGuidedHighlightSyncResult = {
   selectedStepId: string | null;
-  selectStep: (step: GuidedReadStep) => void;
+  selectStep: (step: GuidedReadStep, focusEvidence?: boolean) => void;
   previewStep: (step: GuidedReadStep | null) => void;
   clearSelection: () => void;
 };
@@ -18,6 +19,7 @@ export function useGuidedHighlightSync({
   steps,
   onEvidenceClick,
   resolveEvidenceId,
+  autoFocusOnInit = false,
 }: UseGuidedHighlightSyncArgs): UseGuidedHighlightSyncResult {
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
 
@@ -29,13 +31,13 @@ export function useGuidedHighlightSync({
       return;
     }
     setSelectedStepId(firstStep.id);
-    triggerEvidence(firstStep, onEvidenceClick, resolveEvidenceId);
-  }, [firstStep, onEvidenceClick, resolveEvidenceId]);
+    if (autoFocusOnInit) triggerEvidence(firstStep, onEvidenceClick, resolveEvidenceId);
+  }, [autoFocusOnInit, firstStep, onEvidenceClick, resolveEvidenceId]);
 
   const selectStep = useCallback(
-    (step: GuidedReadStep) => {
+    (step: GuidedReadStep, focusEvidence = false) => {
       setSelectedStepId(step.id);
-      triggerEvidence(step, onEvidenceClick, resolveEvidenceId);
+      if (focusEvidence) triggerEvidence(step, onEvidenceClick, resolveEvidenceId);
     },
     [onEvidenceClick, resolveEvidenceId],
   );
