@@ -1,4 +1,5 @@
 import { toExpertSentence, toGeneralSentence, toOperatorSentence } from "@/lib/insights/sentenceCleanup";
+import { sanitizePrimarySentence } from "@/lib/insights/isRenderableSentence";
 import type {
   DecisionPath,
   GuidedDepth,
@@ -28,8 +29,8 @@ export function buildScenario({ pageModel, role, depth }: BuildScenarioArgs): Gu
     id: `apply-${index + 1}`,
     stepNumber: index + 1,
     label: entry.label,
-    primaryText: roleSentence(role, entry.primaryText),
-    secondaryText: entry.secondaryText && depth !== "quick" ? roleSentence(role, entry.secondaryText) : undefined,
+    primaryText: sanitizePrimarySentence(roleSentence(role, entry.primaryText), "No grounded scenario sentence was extracted from this page."),
+    secondaryText: entry.secondaryText && depth !== "quick" ? sanitizePrimarySentence(roleSentence(role, entry.secondaryText), "") : undefined,
     mode: "apply",
     role,
     confidence: scenarioBase?.confidence ?? 0.72,

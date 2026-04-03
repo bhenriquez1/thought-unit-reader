@@ -1,5 +1,6 @@
 import { buildScenario } from "@/lib/insights/buildScenario";
 import { toExpertSentence, toGeneralSentence, toOperatorSentence } from "@/lib/insights/sentenceCleanup";
+import { sanitizePrimarySentence } from "@/lib/insights/isRenderableSentence";
 import type {
   DecisionPath,
   GuidedDepth,
@@ -192,8 +193,8 @@ function toStep(args: {
     id: `${args.mode}-${args.index + 1}`,
     stepNumber: args.index + 1,
     label: args.label,
-    primaryText: args.primaryText,
-    secondaryText: args.secondaryText,
+    primaryText: sanitizePrimarySentence(args.primaryText, "No grounded sentence was extracted from the current page."),
+    secondaryText: args.secondaryText ? sanitizePrimarySentence(args.secondaryText, "") : undefined,
     mode: args.mode,
     role: args.role,
     confidence: args.path.confidence,
