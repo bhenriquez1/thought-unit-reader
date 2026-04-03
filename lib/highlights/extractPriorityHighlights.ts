@@ -62,7 +62,7 @@ export function extractPriorityHighlights({
   maxWeak = 3,
 }: ExtractPriorityHighlightsArgs): PriorityHighlightSpan[] {
   if (!pageModel) return [];
-  if (pageClass === "image_only" || pageClass === "failed_sparse") return [];
+  if (pageClass === "image_only" || pageClass === "failed_sparse" || pageClass === "front_matter") return [];
 
   const budgets = getBudgetsForPageClass(pageClass, { maxMain, maxSupport, maxWeak });
   const candidates = collectHighlightCandidates(pageModel, pageClass);

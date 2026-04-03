@@ -3,6 +3,7 @@ import type { ActivePageContext, PanelTab, ResolvedPanelPayload, RightPanelState
 import { usePageInsights } from "@/hooks/usePageInsights";
 import { useGuidedHighlightSync } from "@/hooks/useGuidedHighlightSync";
 import { buildGuidedReadView, type GuidedDepth, type GuidedMode, type GuidedRole } from "@/lib/insights/buildGuidedReadView";
+import { buildGroundedSupportView } from "@/lib/insights/buildGroundedSupportView";
 import { evaluatePageTruth } from "@/lib/insights/evaluatePageTruth";
 import { classifyPageContent } from "@/lib/pdf/classifyPageContent";
 import type { EvidenceAnchor } from "@/lib/insights/types";
@@ -65,6 +66,12 @@ export function RightPanel({
     pageModel: insightState.status === "ready" ? insightState.model : null,
     visiblePageText: ctx.pageText || "",
   }), [contentClass, ctx.documentId, ctx.pageNumber, ctx.pageText, insightState]);
+  const groundedSupportView = useMemo(() => {
+    if (insightState.status !== "ready") return null;
+    if (!["insufficient_prose", "fragment_only"].includes(pageTruth.reason)) return null;
+    return buildGroundedSupportView(insightState.model);
+  }, [insightState, pageTruth.reason]);
+
   const guidedView = useMemo(() => {
     if (!pageTruth.canRenderRightPanel) return null;
     if (insightState.status !== "ready") return null;
@@ -157,17 +164,17 @@ export function RightPanel({
         {renderTruthFallback(pageTruth.reason, insightState.status, insightState.requestKey !== parseKey)}
         {insightState.status === "error" ? <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">Could not build reading path for this page.</div> : null}
 
-        {guidedView ? (
+        {(guidedView || groundedSupportView) ? (
           <>
             <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
               <div className="text-xs uppercase tracking-wide text-emerald-300">Guided Read</div>
-              <p className="mt-2 text-sm leading-relaxed text-slate-300">{guidedView.pagePurpose}</p>
+              <p className="mt-2 text-sm leading-relaxed text-slate-300">{(guidedView || groundedSupportView)?.pagePurpose}</p>
             </div>
 
             <div className="rounded-2xl border border-emerald-500/20 bg-slate-950/70 p-5">
               <div className="mb-3 text-xs uppercase text-emerald-300">Reading path</div>
               <div className="space-y-4">
-                {guidedView.steps.map((step) => {
+                {(guidedView || groundedSupportView)?.steps.map((step) => {
                   const selected = selectedStepId === step.id;
                   const ev = step.evidence[0]?.text || step.primaryText;
                   const evidenceId = resolveEvidenceId?.(ev);
@@ -197,11 +204,11 @@ export function RightPanel({
               </div>
             </div>
 
-            {guidedView.supportTitle && guidedView.supportBullets?.length ? (
+            {(guidedView || groundedSupportView)?.supportTitle && (guidedView || groundedSupportView)?.supportBullets?.length ? (
               <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
-                <div className="mb-2 text-xs uppercase text-slate-400">{guidedView.supportTitle}</div>
+                <div className="mb-2 text-xs uppercase text-slate-400">{(guidedView || groundedSupportView)?.supportTitle}</div>
                 <ul className="space-y-1 text-sm text-slate-200">
-                  {guidedView.supportBullets.map((bullet, index) => (
+                  {(guidedView || groundedSupportView)?.supportBullets?.map((bullet, index) => (
                     <li key={`${bullet}-${index}`}>• {bullet}</li>
                   ))}
                 </ul>
@@ -224,6 +231,9 @@ function renderTruthFallback(reason: string, status: string, keyMismatch: boolea
   }
   if (reason === "form_page") {
     return <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">This page is primarily a form or structured intake page. Guided prose extraction is not shown here.</div>;
+  }
+  if (reason === "front_matter") {
+    return <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">This page appears to be front matter/copyright metadata, so guided reasoning is withheld.</div>;
   }
   if (reason === "table_heavy") {
     return <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">This page is table-heavy. Guided prose mode is limited until table summarization is enabled.</div>;
