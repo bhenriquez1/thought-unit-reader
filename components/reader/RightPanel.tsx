@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { ActivePageContext, PanelTab, ResolvedPanelPayload, RightPanelState } from "@/lib/readerContracts";
+import { useSemanticPage } from "@/hooks/useSemanticPage";
 import { usePageInsights } from "@/hooks/usePageInsights";
 import { useGuidedHighlightSync } from "@/hooks/useGuidedHighlightSync";
 import { buildGuidedReadView, type GuidedDepth, type GuidedMode, type GuidedRole } from "@/lib/insights/buildGuidedReadView";
 import type { EvidenceAnchor } from "@/lib/insights/types";
+import type { RawLine } from "@/lib/pdf/reconstructParagraphs";
 
 interface RightPanelProps {
   ctx: ActivePageContext;
@@ -16,6 +18,8 @@ interface RightPanelProps {
   onEvidenceClick?: (snippet: string, evidenceId?: string) => void;
   resolveEvidenceId?: (snippet: string) => string | undefined;
   focusedEvidenceId?: string | null;
+  /** Optional: structured per-line data for the current page. When absent, pageText is split into lines. */
+  currentPageRawLines?: RawLine[];
 }
 
 const modes: Array<{ tab: Exclude<PanelTab, "priority">; label: string; mode: GuidedMode }> = [
@@ -35,35 +39,86 @@ export function RightPanel({
   onEvidenceClick,
   resolveEvidenceId,
   focusedEvidenceId,
+  currentPageRawLines,
 }: RightPanelProps) {
-  const textHash = useMemo(() => {
-    const src = ctx.pageText || "";
-    let hash = 0;
-    for (let i = 0; i < src.length; i += 1) hash = (hash * 31 + src.charCodeAt(i)) | 0;
-    return String(hash);
-  }, [ctx.pageText]);
-
-  const activeTab: Exclude<PanelTab, "priority"> = (state.activeTab === "priority" ? "insights" : state.activeTab) as Exclude<PanelTab, "priority">;
+  const activeTab: Exclude<PanelTab, "priority"> = (
+    state.activeTab === "priority" ? "insights" : state.activeTab
+  ) as Exclude<PanelTab, "priority">;
   const [overrideMode, setOverrideMode] = useState<GuidedMode | null>(null);
-  const role: GuidedRole = state.audience === "expert" ? "expert" : state.audience === "clinical" ? "operator" : "general";
-  const depth: GuidedDepth = state.depth === "deep" ? "deep" : state.density === "condensed" ? "quick" : "standard";
-  const modeFromTab: GuidedMode = activeTab === "insights" ? "insight" : activeTab === "explain" ? "explain" : activeTab === "compare" ? "compare" : "relation";
+  const role: GuidedRole =
+    state.audience === "expert" ? "expert" : state.audience === "clinical" ? "operator" : "general";
+  const depth: GuidedDepth =
+    state.depth === "deep" ? "deep" : state.density === "condensed" ? "quick" : "standard";
+  const modeFromTab: GuidedMode =
+    activeTab === "insights"
+      ? "insight"
+      : activeTab === "explain"
+        ? "explain"
+        : activeTab === "compare"
+          ? "compare"
+          : "relation";
   const mode: GuidedMode = overrideMode ?? modeFromTab;
 
-  const parseKey = `${ctx.documentId}:${ctx.pageNumber}:${textHash}:${mode}:${role}:${depth}`;
-  const insightState = usePageInsights(ctx.pageText || "", ctx.pageNumber, state.audience === "expert", parseKey);
+  // Convert pageText to RawLine[] when structured lines are not provided
+  const rawLines = useMemo<RawLine[]>(() => {
+    if (currentPageRawLines && currentPageRawLines.length > 0) return currentPageRawLines;
+    const src = ctx.pageText || "";
+    return src
+      .split("\n")
+      .map((text, i) => ({ id: `txt-${i}`, text }))
+      .filter((l) => l.text.trim().length > 0);
+  }, [currentPageRawLines, ctx.pageText]);
+
+  // Layer 1 — semantic reconstruction
+  const {
+    status: semanticStatus,
+    semanticPage,
+    isCurrentPage: isSemanticCurrent,
+  } = useSemanticPage({
+    documentId: ctx.documentId,
+    pageNumber: ctx.pageNumber,
+    rawLines,
+    mode,
+    role,
+    depth,
+    enabled: rawLines.length > 0,
+  });
+
+  // Layer 2 — page insights from semantic page
+  const {
+    status: insightsStatus,
+    pageModel,
+    isCurrentPage: isInsightsCurrent,
+  } = usePageInsights({
+    semanticPage,
+    documentId: ctx.documentId,
+    pageNumber: ctx.pageNumber,
+    mode,
+    role,
+    depth,
+    enabled: semanticStatus === "ready" && isSemanticCurrent,
+  });
+
+  const canRenderGuided =
+    semanticStatus === "ready" &&
+    insightsStatus === "ready" &&
+    isSemanticCurrent &&
+    isInsightsCurrent &&
+    Boolean(pageModel);
+
   const guidedView = useMemo(() => {
-    if (insightState.status !== "ready") return null;
-    if (insightState.pageIndex !== ctx.pageNumber) return null;
-    if (insightState.requestKey !== parseKey) return null;
-    return buildGuidedReadView({ pageModel: insightState.model, mode, role, depth });
-  }, [ctx.pageNumber, insightState, mode, role, depth, parseKey]);
+    if (!canRenderGuided || !pageModel) return null;
+    return buildGuidedReadView({ pageModel, mode, role, depth });
+  }, [canRenderGuided, pageModel, mode, role, depth]);
 
   useEffect(() => {
     setOverrideMode(null);
   }, [activeTab]);
 
-  const showApply = insightState.status === "ready" && insightState.model.decisionPaths.some((entry) => Boolean(entry.nextMove || entry.trap));
+  const showApply =
+    canRenderGuided &&
+    pageModel != null &&
+    pageModel.decisionPaths.some((entry) => Boolean(entry.nextMove || entry.trap));
 
   const resolveFromAnchor = (anchor: EvidenceAnchor) => resolveEvidenceId?.(anchor.text);
   const { selectedStepId, selectStep, previewStep, clearSelection } = useGuidedHighlightSync({
@@ -73,8 +128,15 @@ export function RightPanel({
   });
 
   useEffect(() => {
-    if (insightState.status === "loading") clearSelection();
-  }, [insightState.status, clearSelection]);
+    if (!canRenderGuided) clearSelection();
+  }, [canRenderGuided, clearSelection]);
+
+  // Clear highlight on page change
+  useEffect(() => {
+    clearSelection();
+  }, [ctx.pageNumber, ctx.documentId, clearSelection]);
+
+  const isLoading = semanticStatus === "loading" || insightsStatus === "loading" || !isSemanticCurrent || !isInsightsCurrent;
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col overflow-y-auto border-l border-white/10 bg-[rgb(11,18,34)] break-words whitespace-normal">
@@ -103,7 +165,11 @@ export function RightPanel({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <select value={state.audience} onChange={(e) => onAudienceChange(e.target.value as RightPanelState["audience"])} className="rounded-md border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white">
+          <select
+            value={state.audience}
+            onChange={(e) => onAudienceChange(e.target.value as RightPanelState["audience"])}
+            className="rounded-md border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
+          >
             <option value="student">General</option>
             <option value="clinical">Operator</option>
             <option value="expert">Expert</option>
@@ -133,8 +199,17 @@ export function RightPanel({
       </div>
 
       <div className="flex flex-col gap-4 p-4 text-white">
-        {insightState.status === "loading" || insightState.requestKey !== parseKey ? <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">GUIDED READ · Reading current page…</div> : null}
-        {insightState.status === "error" ? <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">Could not build reading path for this page.</div> : null}
+        {isLoading ? (
+          <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">
+            GUIDED READ · Reading current page…
+          </div>
+        ) : null}
+
+        {semanticStatus === "error" || insightsStatus === "error" ? (
+          <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">
+            Could not build reading path for this page.
+          </div>
+        ) : null}
 
         {guidedView ? (
           <>
@@ -159,16 +234,26 @@ export function RightPanel({
                       className={`w-full rounded-xl border p-4 text-left whitespace-normal break-words ${selected || activeEvidence ? "border-emerald-400/40 bg-emerald-500/10" : "border-white/10 bg-slate-900/80"}`}
                     >
                       <div className="mb-2 flex items-center gap-2">
-                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/20 text-[11px] font-semibold text-emerald-200">{step.stepNumber}</span>
-                        <span className="text-xs uppercase tracking-wide text-emerald-200">{step.label}</span>
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/20 text-[11px] font-semibold text-emerald-200">
+                          {step.stepNumber}
+                        </span>
+                        <span className="text-xs uppercase tracking-wide text-emerald-200">
+                          {step.label}
+                        </span>
                       </div>
                       <p className="text-sm leading-relaxed text-slate-200">{step.primaryText}</p>
-                      {step.secondaryText ? <p className="mt-2 text-xs text-slate-300">{step.secondaryText}</p> : null}
+                      {step.secondaryText ? (
+                        <p className="mt-2 text-xs text-slate-300">{step.secondaryText}</p>
+                      ) : null}
                       {step.evidence.length ? (
                         <div className="mt-2 space-y-1">
-                          {step.evidence.slice(0, depth === "quick" ? 1 : depth === "standard" ? 2 : 3).map((anchor) => (
-                            <p key={anchor.id} className="text-[11px] leading-relaxed text-slate-400">↳ {anchor.text}</p>
-                          ))}
+                          {step.evidence
+                            .slice(0, depth === "quick" ? 1 : depth === "standard" ? 2 : 3)
+                            .map((anchor) => (
+                              <p key={anchor.id} className="text-[11px] leading-relaxed text-slate-400">
+                                ↳ {anchor.text}
+                              </p>
+                            ))}
                         </div>
                       ) : null}
                     </button>
