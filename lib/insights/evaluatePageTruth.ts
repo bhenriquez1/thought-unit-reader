@@ -14,7 +14,8 @@ export type PageTruthGateResult = {
     | "form_page"
     | "table_heavy"
     | "fragment_only"
-    | "failed_extraction";
+    | "failed_extraction"
+    | "front_matter";
   confidence: number;
 };
 
@@ -42,6 +43,7 @@ export function evaluatePageTruth(args: EvaluateArgs): PageTruthGateResult {
   if (args.contentClass === "form_page") return fail("form_page", 0.3, true);
   if (args.contentClass === "table_heavy") return fail("table_heavy", 0.35, true);
   if (args.contentClass === "failed_sparse") return fail("failed_extraction", 0.2);
+  if (args.contentClass === "front_matter") return fail("front_matter", 0.2);
   if (tokenCount < 25 || completeSentences < 2) return fail("insufficient_prose", 0.35, args.contentClass === "sparse_text");
 
   const fragmentHeavy = args.pageModel.topTakeaways.every((line) => /\.\.\.$/.test(line.trim()));
