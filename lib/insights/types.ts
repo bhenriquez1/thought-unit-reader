@@ -115,6 +115,29 @@ export type DatApexInsight = {
   answerLogic: string[];
 };
 
+export type OperatorSequence = {
+  id: string;
+  template: "clinical" | "comparison" | "science" | "operator";
+  signal?: string;
+  interpretation?: string;
+  impact?: string;
+  nextMove?: string;
+  action?: string;
+  trap?: string;
+  failureMode?: string;
+  mechanism?: string;
+  result?: string;
+  prediction?: string;
+  confusionPoint?: string;
+  separatingSignal?: string;
+  decisionRule?: string;
+  state?: string;
+  riskSignal?: string;
+  relation?: string;
+  confidence: number;
+  evidence: EvidenceAnchor[];
+};
+
 export type PageInsightModel = {
   pageType: InsightPageType;
   pageSummary: string;
@@ -126,4 +149,5 @@ export type PageInsightModel = {
   paragraphInsights: ParagraphInsight[];
   scannedParagraphCount: number;
   datApex?: DatApexInsight;
+  operatorSequences?: OperatorSequence[];
 };
