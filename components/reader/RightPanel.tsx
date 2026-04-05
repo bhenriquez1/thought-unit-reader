@@ -1,11 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { ActivePageContext, PanelTab, ResolvedPanelPayload, RightPanelState } from "@/lib/readerContracts";
-import { usePageInsights } from "@/hooks/usePageInsights";
 import { useGuidedHighlightSync } from "@/hooks/useGuidedHighlightSync";
 import { buildGuidedReadView, type GuidedDepth, type GuidedMode, type GuidedRole } from "@/lib/insights/buildGuidedReadView";
-import { evaluatePageTruth } from "@/lib/insights/evaluatePageTruth";
-import { classifyPageContent } from "@/lib/pdf/classifyPageContent";
 import type { EvidenceAnchor } from "@/lib/insights/types";
+import type { useActivePageIntelligence } from "@/lib/useActivePageIntelligence";
 
 interface RightPanelProps {
   ctx: ActivePageContext;
@@ -15,6 +13,7 @@ interface RightPanelProps {
   onDepthChange: (value: RightPanelState["depth"]) => void;
   onDensityChange: (value: RightPanelState["density"]) => void;
   payload?: ResolvedPanelPayload;
+  intelligence?: ReturnType<typeof useActivePageIntelligence>;
   onEvidenceClick?: (snippet: string, evidenceId?: string) => void;
   resolveEvidenceId?: (snippet: string) => string | undefined;
   focusedEvidenceId?: string | null;
@@ -37,14 +36,8 @@ export function RightPanel({
   onEvidenceClick,
   resolveEvidenceId,
   focusedEvidenceId,
+  intelligence,
 }: RightPanelProps) {
-  const textHash = useMemo(() => {
-    const src = ctx.pageText || "";
-    let hash = 0;
-    for (let i = 0; i < src.length; i += 1) hash = (hash * 31 + src.charCodeAt(i)) | 0;
-    return String(hash);
-  }, [ctx.pageText]);
-
   const activeTab: Exclude<PanelTab, "priority"> = (state.activeTab === "priority" ? "insights" : state.activeTab) as Exclude<PanelTab, "priority">;
   const [overrideMode, setOverrideMode] = useState<GuidedMode | null>(null);
   const role: GuidedRole = state.audience === "expert" ? "expert" : state.audience === "clinical" ? "operator" : "general";
@@ -52,42 +45,32 @@ export function RightPanel({
   const modeFromTab: GuidedMode = activeTab === "insights" ? "insight" : activeTab === "explain" ? "explain" : activeTab === "compare" ? "compare" : "relation";
   const mode: GuidedMode = overrideMode ?? modeFromTab;
 
-  const pageTruthKey = `${ctx.documentId}:${ctx.pageNumber}:${textHash}`;
-  const parseKey = `${pageTruthKey}:${state.audience === "expert" ? "x" : "n"}`;
-  const insightState = usePageInsights(ctx.pageText || "", ctx.pageNumber, state.audience === "expert", parseKey);
-  const contentClass = useMemo(() => classifyPageContent(ctx.pageText || ""), [ctx.pageText]);
-  const pageTruth = useMemo(() => evaluatePageTruth({
-    visibleDocumentId: ctx.documentId,
-    sourceDocumentId: ctx.documentId,
-    visiblePageNumber: ctx.pageNumber,
-    sourcePageNumber: insightState.pageIndex,
-    parseReady: insightState.status === "ready",
-    contentClass,
-    pageModel: insightState.status === "ready" ? insightState.model : null,
-    visiblePageText: ctx.pageText || "",
-  }), [contentClass, ctx.documentId, ctx.pageNumber, ctx.pageText, insightState]);
-  const isCurrentPageModel = insightState.status === "ready"
-    && insightState.pageIndex === ctx.pageNumber
-    && insightState.requestKey === parseKey;
+  const pageTruthKey = intelligence?.pageTruthKey || `${ctx.documentId}:${ctx.pageNumber}`;
+  const insightModel = intelligence?.pageModel || null;
+  const story = intelligence?.pageStory || null;
+  const parseStatus = intelligence?.status || "loading";
+  const isCurrentPageModel = Boolean(intelligence?.isCurrentPage && insightModel);
+  const pageTruth = intelligence?.pageTruth || { canRenderRightPanel: true, reason: "ok" };
+  const contentClass = intelligence?.pageClass || "prose";
 
   const guidedView = useMemo(() => {
     if (!pageTruth.canRenderRightPanel) return null;
     if (!isCurrentPageModel) return null;
     return buildGuidedReadView({
-      pageModel: insightState.model,
-      pageStory: insightState.model.pageStory || null,
+      pageModel: insightModel!,
+      pageStory: story,
       mode,
       role,
       depth,
       pageClass: contentClass,
     });
-  }, [insightState, mode, role, depth, pageTruth.canRenderRightPanel, contentClass, isCurrentPageModel]);
+  }, [insightModel, story, mode, role, depth, pageTruth.canRenderRightPanel, contentClass, isCurrentPageModel]);
 
   useEffect(() => {
     setOverrideMode(null);
   }, [activeTab]);
 
-  const showApply = insightState.status === "ready" && insightState.model.decisionPaths.some((entry) => Boolean(entry.nextMove || entry.trap));
+  const showApply = Boolean(insightModel?.decisionPaths.some((entry) => Boolean(entry.nextMove || entry.trap)));
 
   const resolveFromAnchor = (anchor: EvidenceAnchor) => resolveEvidenceId?.(anchor.text);
   const { selectedStepId, selectStep, clearSelection } = useGuidedHighlightSync({
@@ -100,7 +83,7 @@ export function RightPanel({
   useEffect(() => {
     clearSelection();
     onEvidenceClick?.("", undefined);
-  }, [ctx.documentId, ctx.pageNumber, parseKey, clearSelection, onEvidenceClick]);
+  }, [ctx.documentId, ctx.pageNumber, pageTruthKey, clearSelection, onEvidenceClick]);
 
   useEffect(() => {
     clearSelection();
@@ -108,8 +91,8 @@ export function RightPanel({
   }, [pageTruthKey, clearSelection, onEvidenceClick]);
 
   useEffect(() => {
-    if (insightState.status === "loading") clearSelection();
-  }, [insightState.status, clearSelection]);
+    if (parseStatus === "loading") clearSelection();
+  }, [parseStatus, clearSelection]);
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col overflow-y-auto border-l border-white/10 bg-[rgb(11,18,34)] break-words whitespace-normal">
@@ -168,8 +151,8 @@ export function RightPanel({
       </div>
 
       <div className="flex flex-col gap-4 p-4 text-white">
-        {renderTruthFallback(pageTruth.reason, insightState.status, !isCurrentPageModel)}
-        {insightState.status === "error" ? <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">Could not build reading path for this page.</div> : null}
+        {renderTruthFallback(pageTruth.reason, parseStatus, !isCurrentPageModel)}
+        {parseStatus === "error" ? <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">Could not build reading path for this page.</div> : null}
 
         {guidedView ? (
           <>

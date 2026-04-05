@@ -116,6 +116,10 @@ export type DatApexInsight = {
 };
 
 export type PageInsightModel = {
+  documentId?: string;
+  pageNumber?: number;
+  pageClass?: string;
+  requestKey?: string;
   pageType: InsightPageType;
   pageSummary: string;
   topTakeaways: string[];
@@ -125,6 +129,11 @@ export type PageInsightModel = {
   hiddenBlocks: PriorityBlock[];
   paragraphInsights: ParagraphInsight[];
   scannedParagraphCount: number;
+  formulaSignals?: Array<{
+    kind: "equation" | "expression" | "reaction" | "symbolic_definition" | "graph_reference" | "table_reference";
+    text: string;
+    confidence: number;
+  }>;
   pageStory?: import("@/lib/insights/buildPageStory").PageStory | null;
   datApex?: DatApexInsight;
 };
