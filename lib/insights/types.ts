@@ -125,5 +125,6 @@ export type PageInsightModel = {
   hiddenBlocks: PriorityBlock[];
   paragraphInsights: ParagraphInsight[];
   scannedParagraphCount: number;
+  pageStory?: import("@/lib/insights/buildPageStory").PageStory | null;
   datApex?: DatApexInsight;
 };

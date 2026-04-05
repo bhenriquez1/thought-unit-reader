@@ -8,7 +8,6 @@ import { deriveHighlightTargets } from "@/lib/highlightMapping";
 import { processPage } from "@/lib/insights/processPage";
 import { classifyPageContent } from "@/lib/pdf/classifyPageContent";
 import { extractPriorityHighlights } from "@/lib/highlights/extractPriorityHighlights";
-import { buildPageStory } from "@/lib/insights/buildPageStory";
 
 interface UseActivePageIntelligenceArgs {
   documentId: string;
@@ -43,13 +42,15 @@ export function useActivePageIntelligence({
   );
   const insightModel = useMemo(() => processPage(ctx.pageText || ""), [ctx.pageText]);
   const pageClass = useMemo(() => classifyPageContent(ctx.pageText || ""), [ctx.pageText]);
-  const story = useMemo(() => buildPageStory({
-    pageClass,
-    pageModel: insightModel,
-    role: audience === "expert" ? "expert" : audience === "clinical" ? "operator" : "general",
-    depth: depth === "deep" ? "deep" : "standard",
-    mode: "insight",
-  }), [audience, depth, insightModel, pageClass]);
+  const story = insightModel.pageStory || null;
+  const pageTruthKey = useMemo(() => {
+    const source = ctx.pageText || "";
+    let hash = 0;
+    for (let i = 0; i < source.length; i += 1) hash = (hash * 31 + source.charCodeAt(i)) | 0;
+    return `${documentId}:${pageNumber}:${hash}`;
+  }, [ctx.pageText, documentId, pageNumber]);
+  const status = (ctx.pageText || "").trim().length ? "ready" : "loading";
+  const isCurrentPage = Boolean((ctx.pageText || "").trim().length);
   const limitedEvidence =
     classification.confidence < 0.35 ||
     (ctx.pageText || "").trim().length < 120 ||
@@ -87,7 +88,11 @@ export function useActivePageIntelligence({
     signals,
     classification,
     panelPayloads,
+    insightModel,
     story,
+    pageTruthKey,
+    status,
+    isCurrentPage,
     highlightTargets,
     limitedEvidence,
   };

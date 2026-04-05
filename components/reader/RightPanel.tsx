@@ -52,7 +52,8 @@ export function RightPanel({
   const modeFromTab: GuidedMode = activeTab === "insights" ? "insight" : activeTab === "explain" ? "explain" : activeTab === "compare" ? "compare" : "relation";
   const mode: GuidedMode = overrideMode ?? modeFromTab;
 
-  const parseKey = `${ctx.documentId}:${ctx.pageNumber}:${textHash}:${mode}:${role}:${depth}`;
+  const pageTruthKey = `${ctx.documentId}:${ctx.pageNumber}:${textHash}`;
+  const parseKey = `${pageTruthKey}:${state.audience === "expert" ? "x" : "n"}`;
   const insightState = usePageInsights(ctx.pageText || "", ctx.pageNumber, state.audience === "expert", parseKey);
   const contentClass = useMemo(() => classifyPageContent(ctx.pageText || ""), [ctx.pageText]);
   const pageTruth = useMemo(() => evaluatePageTruth({
@@ -65,18 +66,26 @@ export function RightPanel({
     pageModel: insightState.status === "ready" ? insightState.model : null,
     visiblePageText: ctx.pageText || "",
   }), [contentClass, ctx.documentId, ctx.pageNumber, ctx.pageText, insightState]);
+  const isCurrentPageModel = insightState.status === "ready"
+    && insightState.pageIndex === ctx.pageNumber
+    && insightState.requestKey === parseKey;
+
   const guidedView = useMemo(() => {
     if (!pageTruth.canRenderRightPanel) return null;
-    if (insightState.status !== "ready") return null;
-    if (insightState.pageIndex !== ctx.pageNumber) return null;
-    if (insightState.requestKey !== parseKey) return null;
-    return buildGuidedReadView({ pageModel: insightState.model, mode, role, depth, pageClass: contentClass });
-  }, [ctx.pageNumber, insightState, mode, role, depth, parseKey, pageTruth.canRenderRightPanel, contentClass]);
+    if (!isCurrentPageModel) return null;
+    return buildGuidedReadView({
+      pageModel: insightState.model,
+      pageStory: insightState.model.pageStory || null,
+      mode,
+      role,
+      depth,
+      pageClass: contentClass,
+    });
+  }, [insightState, mode, role, depth, pageTruth.canRenderRightPanel, contentClass, isCurrentPageModel]);
 
   useEffect(() => {
     setOverrideMode(null);
   }, [activeTab]);
-
 
   const showApply = insightState.status === "ready" && insightState.model.decisionPaths.some((entry) => Boolean(entry.nextMove || entry.trap));
 
@@ -92,6 +101,11 @@ export function RightPanel({
     clearSelection();
     onEvidenceClick?.("", undefined);
   }, [ctx.documentId, ctx.pageNumber, parseKey, clearSelection, onEvidenceClick]);
+
+  useEffect(() => {
+    clearSelection();
+    onEvidenceClick?.("", undefined);
+  }, [pageTruthKey, clearSelection, onEvidenceClick]);
 
   useEffect(() => {
     if (insightState.status === "loading") clearSelection();
@@ -154,7 +168,7 @@ export function RightPanel({
       </div>
 
       <div className="flex flex-col gap-4 p-4 text-white">
-        {renderTruthFallback(pageTruth.reason, insightState.status, insightState.requestKey !== parseKey)}
+        {renderTruthFallback(pageTruth.reason, insightState.status, !isCurrentPageModel)}
         {insightState.status === "error" ? <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">Could not build reading path for this page.</div> : null}
 
         {guidedView ? (

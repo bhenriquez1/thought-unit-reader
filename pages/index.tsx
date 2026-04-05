@@ -716,6 +716,8 @@ export default function ThoughtUnitReader() {
     highlightKey,
     signals: currentSignals,
     panelPayloads: currentPanelPayload,
+    story: currentPageStory,
+    pageTruthKey,
     highlightTargets,
     limitedEvidence,
   } = useActivePageIntelligence({
@@ -3189,7 +3191,7 @@ export default function ThoughtUnitReader() {
               <div className="text-xs text-gray-400">{titleForPage(tableOfContents, currentPage)}</div>
             </div>
 
-            <ShadowRecallPanel signals={currentSignals} limitedEvidence={limitedEvidence} />
+            <ShadowRecallPanel pageStory={currentPageStory} pageTruthKey={pageTruthKey} />
 
             <details className="mt-4 rounded-lg border border-purple-400/30 bg-purple-900/15 p-3">
               <summary className="cursor-pointer text-xs uppercase tracking-wide text-purple-200">Show evidence details</summary>
