@@ -8,6 +8,7 @@ import { deriveHighlightTargets } from "@/lib/highlightMapping";
 import { processPage } from "@/lib/insights/processPage";
 import { classifyPageContent } from "@/lib/pdf/classifyPageContent";
 import { extractPriorityHighlights } from "@/lib/highlights/extractPriorityHighlights";
+import { buildPageStory } from "@/lib/insights/buildPageStory";
 
 interface UseActivePageIntelligenceArgs {
   documentId: string;
@@ -42,18 +43,29 @@ export function useActivePageIntelligence({
   );
   const insightModel = useMemo(() => processPage(ctx.pageText || ""), [ctx.pageText]);
   const pageClass = useMemo(() => classifyPageContent(ctx.pageText || ""), [ctx.pageText]);
+  const story = useMemo(() => buildPageStory({
+    pageClass,
+    pageModel: insightModel,
+    role: audience === "expert" ? "expert" : audience === "clinical" ? "operator" : "general",
+    depth: depth === "deep" ? "deep" : "standard",
+    mode: "insight",
+  }), [audience, depth, insightModel, pageClass]);
   const limitedEvidence =
     classification.confidence < 0.35 ||
     (ctx.pageText || "").trim().length < 120 ||
     ["cover", "contents", "chapter_opener", "section_opener", "copyright_frontmatter", "image_scan_heavy"].includes(signals.pageRole || "");
   const highlightTargets: HighlightTarget[] = useMemo(() => {
     const derived = deriveHighlightTargets(signals, pageNumber, audience, limitedEvidence);
-    const priority = extractPriorityHighlights({
-      documentId,
-      pageNumber,
-      pageClass,
-      pageModel: insightModel,
-    }).map((item, index) => ({
+    const priority = (pageClass === "copyright_frontmatter"
+      ? []
+      : extractPriorityHighlights({
+          documentId,
+          pageNumber,
+          pageClass,
+          pageModel: insightModel,
+          story,
+        })
+    ).map((item, index) => ({
       id: `priority-${item.id}`,
       page: pageNumber,
       text: item.text,
@@ -66,7 +78,7 @@ export function useActivePageIntelligence({
     } satisfies HighlightTarget));
 
     return priority.length ? [...priority, ...derived].slice(0, 12) : derived;
-  }, [signals, pageNumber, audience, limitedEvidence, documentId, pageClass, insightModel]);
+  }, [signals, pageNumber, audience, limitedEvidence, documentId, pageClass, insightModel, story]);
   const highlightKey = `${documentId}:${pageNumber}`;
 
   return {
@@ -75,6 +87,7 @@ export function useActivePageIntelligence({
     signals,
     classification,
     panelPayloads,
+    story,
     highlightTargets,
     limitedEvidence,
   };

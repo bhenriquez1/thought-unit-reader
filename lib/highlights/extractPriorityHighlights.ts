@@ -1,6 +1,7 @@
 import { cleanSentence } from "@/lib/insights/sentenceCleanup";
 import { isRenderableSentence } from "@/lib/insights/isRenderableSentence";
 import type { DecisionPath, PageInsightModel, ParagraphInsight } from "@/lib/insights/types";
+import type { PageStory } from "@/lib/insights/buildPageStory";
 import type { PageContentClass } from "@/lib/pdf/classifyPageContent";
 
 export type HighlightPriority = "main" | "support" | "weak";
@@ -36,6 +37,7 @@ type ExtractPriorityHighlightsArgs = {
   maxMain?: number;
   maxSupport?: number;
   maxWeak?: number;
+  story?: PageStory | null;
 };
 
 type ScoredHighlightCandidate = {
@@ -60,9 +62,42 @@ export function extractPriorityHighlights({
   maxMain = 2,
   maxSupport = 4,
   maxWeak = 3,
+  story = null,
 }: ExtractPriorityHighlightsArgs): PriorityHighlightSpan[] {
   if (!pageModel) return [];
-  if (pageClass === "image_only" || pageClass === "failed_sparse" || pageClass === "front_matter") return [];
+  if (pageClass === "image_only" || pageClass === "failed_sparse") return [];
+
+  if (story) {
+    const spans: PriorityHighlightSpan[] = [];
+    spans.push({
+      id: `story-main-${pageNumber}`,
+      documentId,
+      pageNumber,
+      text: story.mainIdea,
+      priority: "main",
+      confidence: story.confidence,
+      kind: "core_claim",
+    });
+    story.support.slice(0, maxSupport).forEach((line, index) => spans.push({
+      id: `story-support-${pageNumber}-${index}`,
+      documentId,
+      pageNumber,
+      text: line,
+      priority: "support",
+      confidence: Math.max(0.5, story.confidence - 0.1),
+      kind: "evidence_sentence",
+    }));
+    story.weakSupport.slice(0, maxWeak).forEach((line, index) => spans.push({
+      id: `story-weak-${pageNumber}-${index}`,
+      documentId,
+      pageNumber,
+      text: line,
+      priority: "weak",
+      confidence: Math.max(0.35, story.confidence - 0.2),
+      kind: "evidence_sentence",
+    }));
+    return spans.filter((item) => isRenderableSentence(item.text));
+  }
 
   const budgets = getBudgetsForPageClass(pageClass, { maxMain, maxSupport, maxWeak });
   const candidates = collectHighlightCandidates(pageModel, pageClass);
