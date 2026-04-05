@@ -13,24 +13,6 @@ import { cleanSentence } from "@/lib/insights/sentenceCleanup";
 import { buildPageStory } from "@/lib/insights/buildPageStory";
 import { classifyPageContent } from "@/lib/pdf/classifyPageContent";
 
-type FormulaSignal = {
-  kind: "equation" | "expression" | "reaction" | "symbolic_definition" | "graph_reference" | "table_reference";
-  text: string;
-  confidence: number;
-};
-
-type ProcessPageInput =
-  | string
-  | {
-      documentId?: string;
-      pageNumber?: number;
-      rawText: string;
-      pageClass?: string;
-      datFlag?: boolean;
-      requestKey?: string;
-      formulaSignals?: FormulaSignal[];
-    };
-
 function isBoilerplateLine(text: string): boolean {
   return /all rights reserved|copyright|published by|isbn|edition|permissions|contributors?|acknowledg(e)?ments?|www\.|doi\b/i.test(text);
 }
@@ -308,15 +290,7 @@ function toDecisionPaths(sorted: ParagraphInsight[]): DecisionPath[] {
     .slice(0, 3);
 }
 
-export function processPage(input: ProcessPageInput, enableDatApex = false): PageInsightModel {
-  const pageText = typeof input === "string" ? input : input.rawText || "";
-  const datEnabled = typeof input === "string" ? enableDatApex : (input.datFlag ?? enableDatApex);
-  const pageClassInput = typeof input === "string" ? undefined : input.pageClass;
-  const documentId = typeof input === "string" ? undefined : input.documentId;
-  const pageNumber = typeof input === "string" ? undefined : input.pageNumber;
-  const requestKey = typeof input === "string" ? undefined : input.requestKey;
-  const formulaSignals = typeof input === "string" ? undefined : input.formulaSignals;
-
+export function processPage(pageText: string, enableDatApex = false): PageInsightModel {
   const paragraphs = splitIntoParagraphs(pageText);
   const paragraphInsights = paragraphs.map((paragraph, index) => processParagraph(paragraph, index));
   const sorted = [...paragraphInsights].sort((a, b) => b.priorityScore - a.priorityScore);
@@ -327,7 +301,7 @@ export function processPage(input: ProcessPageInput, enableDatApex = false): Pag
   const logicChains = (visible.find((block) => block.kind === "logic_chain")?.content as LogicChain[] | undefined) || [];
   const topTakeaways = (visible.find((block) => block.kind === "takeaway")?.content as string[] | undefined) || [];
   const decisionPaths = toDecisionPaths(sorted);
-  const pageClass = pageClassInput || classifyPageContent(pageText || "");
+  const pageClass = classifyPageContent(pageText || "");
   const pageStory = buildPageStory({
     pageClass,
     pageModel: {
@@ -364,12 +338,7 @@ export function processPage(input: ProcessPageInput, enableDatApex = false): Pag
     hiddenBlocks: hidden,
     paragraphInsights,
     scannedParagraphCount: paragraphInsights.length,
-    documentId,
-    pageNumber,
-    pageClass,
-    requestKey,
-    formulaSignals,
     pageStory,
-    datApex: datEnabled ? buildDatApexInsight(sorted) : undefined,
+    datApex: enableDatApex ? buildDatApexInsight(sorted) : undefined,
   };
 }

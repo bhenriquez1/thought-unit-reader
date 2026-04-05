@@ -69,11 +69,12 @@ export function extractPriorityHighlights({
 
   if (story) {
     const spans: PriorityHighlightSpan[] = [];
+    const mainBlock = [story.mainIdea, story.support[0]].filter(Boolean).join(" ");
     spans.push({
       id: `story-main-${pageNumber}`,
       documentId,
       pageNumber,
-      text: story.mainIdea,
+      text: normalizeText(mainBlock) || story.mainIdea,
       priority: "main",
       confidence: story.confidence,
       kind: "core_claim",
@@ -100,7 +101,7 @@ export function extractPriorityHighlights({
   }
 
   const budgets = getBudgetsForPageClass(pageClass, { maxMain, maxSupport, maxWeak });
-  const candidates = collectHighlightCandidates(pageModel, pageClass);
+  const candidates = synthesizePriorityBlocks(collectHighlightCandidates(pageModel, pageClass));
   if (!candidates.length) return [];
 
   const main = candidates
@@ -122,6 +123,50 @@ export function extractPriorityHighlights({
     .map((candidate) => toHighlight(candidate, documentId, pageNumber, "weak"));
 
   return [...main, ...support, ...weak];
+}
+
+function synthesizePriorityBlocks(candidates: ScoredHighlightCandidate[]): ScoredHighlightCandidate[] {
+  const out: ScoredHighlightCandidate[] = [];
+  const used = new Set<string>();
+  for (let i = 0; i < candidates.length; i += 1) {
+    const candidate = candidates[i];
+    if (used.has(candidate.id)) continue;
+
+    const currentIndex = paragraphNumber(candidate.paragraphId);
+    const next = candidates[i + 1];
+    const nextIndex = paragraphNumber(next?.paragraphId);
+    const canMerge = currentIndex !== null
+      && nextIndex !== null
+      && Math.abs(currentIndex - nextIndex) === 1
+      && candidate.score >= 0.62
+      && (next?.score || 0) >= 0.54;
+
+    if (canMerge && next) {
+      used.add(candidate.id);
+      used.add(next.id);
+      out.push({
+        ...candidate,
+        id: `${candidate.id}+${next.id}`,
+        text: cleanSentence(`${candidate.text} ${next.text}`),
+        confidence: clamp((candidate.confidence + next.confidence) / 2, 0, 1),
+        score: clamp(Math.max(candidate.score, next.score) + 0.08, 0, 1),
+        kind: candidate.kind,
+        source: candidate.source,
+      });
+      i += 1;
+      continue;
+    }
+
+    out.push(candidate);
+    used.add(candidate.id);
+  }
+  return out;
+}
+
+function paragraphNumber(id?: string): number | null {
+  if (!id) return null;
+  const match = id.match(/(\d+)$/);
+  return match ? Number(match[1]) : null;
 }
 
 function collectHighlightCandidates(pageModel: PageInsightModel, pageClass: PageContentClass): ScoredHighlightCandidate[] {

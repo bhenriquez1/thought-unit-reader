@@ -6,8 +6,7 @@ import { buildResolvedPanelPayload } from "@/lib/panelEngine";
 import { buildModeProfile } from "@/lib/right-panel/modeProfile";
 import { deriveHighlightTargets } from "@/lib/highlightMapping";
 import { processPage } from "@/lib/insights/processPage";
-import { buildPageStory } from "@/lib/insights/buildPageStory";
-import { classifyPageContent } from "@/lib/pdf/classifyPageContent";
+import { classifyPageContent, type PageContentClass } from "@/lib/pdf/classifyPageContent";
 import { extractPriorityHighlights } from "@/lib/highlights/extractPriorityHighlights";
 import { evaluatePageTruth, type PageTruthGateResult } from "@/lib/insights/evaluatePageTruth";
 import type { PageInsightModel } from "@/lib/insights/types";
@@ -21,6 +20,16 @@ export type FormulaSignal = {
   confidence: number;
 };
 
+export type ActivePageIntelligenceSnapshot = {
+  status: ActivePageIntelligenceStatus;
+  pageTruthKey: string;
+  isCurrentPage: boolean;
+  pageClass: PageContentClass | null;
+  pageTruth: PageTruthGateResult | null;
+  pageModel: PageInsightModel | null;
+  story: PageStory | null;
+};
+
 interface UseActivePageIntelligenceArgs {
   documentId: string;
   pageNumber: number;
@@ -29,23 +38,22 @@ interface UseActivePageIntelligenceArgs {
   depth: DepthMode;
 }
 
-function buildPageTruthKey(documentId: string, pageNumber: number, pageText: string): string {
+function hashText(text: string): string {
   let hash = 0;
-  for (let i = 0; i < pageText.length; i += 1) hash = (hash * 31 + pageText.charCodeAt(i)) | 0;
-  return `${documentId}::${pageNumber}::${hash}`;
+  for (let i = 0; i < text.length; i += 1) hash = (hash * 31 + text.charCodeAt(i)) | 0;
+  return String(hash);
+}
+
+function buildPageTruthKey(documentId: string, pageNumber: number, pageText: string): string {
+  return `${documentId}::${pageNumber}::${hashText(pageText || "")}`;
 }
 
 function extractFormulaSignals(rawText: string): FormulaSignal[] {
   if (!rawText) return [];
+  const lines = rawText.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const out: FormulaSignal[] = [];
 
-  const lines = rawText
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const results: FormulaSignal[] = [];
-
-  const eqPattern = /([A-Za-z0-9\)\]]\s*=\s*[A-Za-z0-9\(\[\-+*/^]|[0-9A-Za-z].*[=<>≤≥])/;
+  const eqPattern = /([A-Za-z0-9)\]]\s*=\s*[A-Za-z0-9([\-+*/^]|[0-9A-Za-z].*[=<>≤≥])/;
   const chemPattern = /([A-Z][a-z]?\d*[\+\-]?(?:\s*\+\s*[A-Z][a-z]?\d*[\+\-]?)*\s*(?:->|→|⇌)\s*[A-Z][a-z]?\d*[\+\-]?)/;
   const graphPattern = /\b(graph|figure|plot|curve|parabola|slope|intercept)\b/i;
   const tablePattern = /\b(table|values|data set|distribution)\b/i;
@@ -53,28 +61,28 @@ function extractFormulaSignals(rawText: string): FormulaSignal[] {
 
   for (const line of lines) {
     if (eqPattern.test(line)) {
-      results.push({ kind: "equation", text: line, confidence: 0.95 });
+      out.push({ kind: "equation", text: line, confidence: 0.95 });
       continue;
     }
     if (chemPattern.test(line)) {
-      results.push({ kind: "reaction", text: line, confidence: 0.95 });
+      out.push({ kind: "reaction", text: line, confidence: 0.95 });
       continue;
     }
     if (graphPattern.test(line)) {
-      results.push({ kind: "graph_reference", text: line, confidence: 0.75 });
+      out.push({ kind: "graph_reference", text: line, confidence: 0.75 });
       continue;
     }
     if (tablePattern.test(line)) {
-      results.push({ kind: "table_reference", text: line, confidence: 0.7 });
+      out.push({ kind: "table_reference", text: line, confidence: 0.7 });
       continue;
     }
     if (symbolicPattern.test(line) && /[A-Za-z]\([A-Za-z]\)|[xyznrt]=|f\(x\)|[=]/.test(line)) {
-      results.push({ kind: "symbolic_definition", text: line, confidence: 0.72 });
+      out.push({ kind: "symbolic_definition", text: line, confidence: 0.72 });
     }
   }
 
   const seen = new Set<string>();
-  return results.filter((item) => {
+  return out.filter((item) => {
     const key = `${item.kind}::${item.text}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -91,23 +99,27 @@ export function useActivePageIntelligence({
 }: UseActivePageIntelligenceArgs) {
   const mode = useMemo(() => buildModeProfile(audience, depth), [audience, depth]);
   const payloadKey = `${documentId}:${pageNumber}:${audience}:${depth}`;
-  const rawText = ctx.pageText || "";
-
-  const pageTruthKey = useMemo(() => buildPageTruthKey(documentId, pageNumber, rawText), [documentId, pageNumber, rawText]);
+  const pageTruthKey = useMemo(() => buildPageTruthKey(documentId, pageNumber, ctx.pageText || ""), [ctx.pageText, documentId, pageNumber]);
 
   const [status, setStatus] = useState<ActivePageIntelligenceStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [signals, setSignals] = useState(() => extractPageSignals(ctx, {
+    minYield: 1,
+    minSignals: 2,
+    maxSignals: 8,
+  }));
+  const [classification, setClassification] = useState(() => classifyPage(signals));
+  const [panelPayloads, setPanelPayloads] = useState(() => buildResolvedPanelPayload(ctx, classifyPage(signals), signals, audience, depth));
   const [pageModel, setPageModel] = useState<PageInsightModel | null>(null);
   const [pageStory, setPageStory] = useState<PageStory | null>(null);
-  const [pageClass, setPageClass] = useState<ReturnType<typeof classifyPageContent> | null>(null);
+  const [pageClass, setPageClass] = useState<PageContentClass | null>(null);
   const [pageTruth, setPageTruth] = useState<PageTruthGateResult | null>(null);
-  const [priorityHighlights, setPriorityHighlights] = useState<ReturnType<typeof extractPriorityHighlights>>([]);
   const [formulaSignals, setFormulaSignals] = useState<FormulaSignal[]>([]);
-
+  const [priorityHighlights, setPriorityHighlights] = useState<ReturnType<typeof extractPriorityHighlights>>([]);
   const latestRequestRef = useRef<string>("");
 
   useEffect(() => {
-    const requestKey = `${pageTruthKey}::${audience}::${depth}`;
+    const requestKey = pageTruthKey;
     latestRequestRef.current = requestKey;
 
     setStatus("loading");
@@ -116,95 +128,80 @@ export function useActivePageIntelligence({
     setPageStory(null);
     setPageClass(null);
     setPageTruth(null);
-    setPriorityHighlights([]);
     setFormulaSignals([]);
+    setPriorityHighlights([]);
 
     Promise.resolve().then(() => {
-      try {
-        const computedPageClass = classifyPageContent(rawText);
-        const computedFormulaSignals = extractFormulaSignals(rawText);
-        const model = processPage({
-          documentId,
-          pageNumber,
-          rawText,
-          pageClass: computedPageClass,
-          requestKey: pageTruthKey,
-          datFlag: audience === "expert",
-          formulaSignals: computedFormulaSignals,
-        });
+      const localSignals = extractPageSignals(ctx, {
+        minYield: 1,
+        minSignals: 2,
+        maxSignals: 8,
+      });
+      const localClassification = classifyPage(localSignals);
+      const localPayloads = buildResolvedPanelPayload(ctx, localClassification, localSignals, audience, depth);
+      const localPageClass = classifyPageContent(ctx.pageText || "");
+      const localFormulaSignals = extractFormulaSignals(ctx.pageText || "");
+      const localPageModel = processPage(ctx.pageText || "");
+      const localPageStory = localPageModel.pageStory || null;
+      const localPageTruth = evaluatePageTruth({
+        visibleDocumentId: documentId,
+        sourceDocumentId: documentId,
+        visiblePageNumber: pageNumber,
+        sourcePageNumber: pageNumber,
+        parseReady: true,
+        contentClass: localPageClass,
+        pageModel: localPageModel,
+        visiblePageText: ctx.pageText || "",
+        formulaSignalsCount: localFormulaSignals.length,
+      });
+      const localHighlights = localPageClass === "copyright_frontmatter"
+        ? []
+        : extractPriorityHighlights({
+            documentId,
+            pageNumber,
+            pageClass: localPageClass,
+            pageModel: localPageModel,
+            story: localPageStory,
+          });
 
-        const story = model.pageStory || buildPageStory({
-          pageClass: computedPageClass,
-          pageModel: model,
-          role: audience === "expert" ? "expert" : audience === "clinical" ? "operator" : "general",
-          depth: depth === "deep" ? "deep" : "standard",
-          mode: "insight",
-        });
+      if (latestRequestRef.current !== requestKey) return;
 
-        const truth = evaluatePageTruth({
-          visibleDocumentId: documentId,
-          sourceDocumentId: documentId,
-          visiblePageNumber: pageNumber,
-          sourcePageNumber: pageNumber,
-          parseReady: true,
-          contentClass: computedPageClass,
-          pageModel: model,
-          visiblePageText: rawText,
-        });
-
-        const priority = extractPriorityHighlights({
-          documentId,
-          pageNumber,
-          pageClass: computedPageClass,
-          pageModel: model,
-          story,
-        });
-
-        if (latestRequestRef.current !== requestKey) return;
-
-        setPageClass(computedPageClass);
-        setFormulaSignals(computedFormulaSignals);
-        setPageModel(model);
-        setPageStory(story);
-        setPageTruth(truth);
-        setPriorityHighlights(priority);
-        setStatus("ready");
-      } catch (err) {
-        if (latestRequestRef.current !== requestKey) return;
-        setError(err instanceof Error ? err.message : "Failed to build active page intelligence.");
-        setStatus("error");
-      }
+      setSignals(localSignals);
+      setClassification(localClassification);
+      setPanelPayloads(localPayloads);
+      setPageClass(localPageClass);
+      setFormulaSignals(localFormulaSignals);
+      setPageModel(localPageModel);
+      setPageStory(localPageStory);
+      setPageTruth(localPageTruth);
+      setPriorityHighlights(localHighlights);
+      setStatus("ready");
+    }).catch((err: unknown) => {
+      if (latestRequestRef.current !== requestKey) return;
+      setError(err instanceof Error ? err.message : "Failed to build active page intelligence.");
+      setStatus("error");
     });
-  }, [pageTruthKey, audience, depth, documentId, pageNumber, rawText]);
+  }, [ctx, pageTruthKey, documentId, pageNumber]);
 
-  const isCurrentPage = useMemo(() => {
-    if (!pageModel) return false;
-    return pageModel.documentId === documentId && pageModel.pageNumber === pageNumber && pageModel.requestKey === pageTruthKey;
-  }, [pageModel, documentId, pageNumber, pageTruthKey]);
-
-  const signals = useMemo(
-    () =>
-      extractPageSignals(ctx, {
-        minYield: mode.minYield,
-        minSignals: mode.label === "student" ? 2 : 3,
-        maxSignals: mode.maxEvidence,
-      }),
-    [ctx, mode],
-  );
-  const classification = useMemo(() => classifyPage(signals), [signals]);
-  const panelPayloads = useMemo(
-    () => buildResolvedPanelPayload(ctx, classification, signals, audience, depth),
-    [ctx, classification, signals, audience, depth],
-  );
+  useEffect(() => {
+    const tunedSignals = extractPageSignals(ctx, {
+      minYield: mode.minYield,
+      minSignals: mode.label === "student" ? 2 : 3,
+      maxSignals: mode.maxEvidence,
+    });
+    setSignals(tunedSignals);
+    setClassification(classifyPage(tunedSignals));
+    setPanelPayloads(buildResolvedPanelPayload(ctx, classifyPage(tunedSignals), tunedSignals, audience, depth));
+  }, [ctx, mode, audience, depth]);
 
   const limitedEvidence =
     classification.confidence < 0.35 ||
-    rawText.trim().length < 120 ||
+    (ctx.pageText || "").trim().length < 120 ||
     ["cover", "contents", "chapter_opener", "section_opener", "copyright_frontmatter", "image_scan_heavy"].includes(signals.pageRole || "");
 
   const highlightTargets: HighlightTarget[] = useMemo(() => {
     const derived = deriveHighlightTargets(signals, pageNumber, audience, limitedEvidence);
-    const mappedPriority = priorityHighlights.map((item, index) => ({
+    const priority = priorityHighlights.map((item, index) => ({
       id: `priority-${item.id}`,
       page: pageNumber,
       text: item.text,
@@ -216,10 +213,11 @@ export function useActivePageIntelligence({
       evidenceRefId: item.evidenceId || item.id,
     } satisfies HighlightTarget));
 
-    return mappedPriority.length ? [...mappedPriority, ...derived].slice(0, 12) : derived;
+    return priority.length ? [...priority, ...derived].slice(0, 12) : derived;
   }, [signals, pageNumber, audience, limitedEvidence, priorityHighlights]);
 
   const highlightKey = `${documentId}:${pageNumber}`;
+  const isCurrentPage = Boolean(pageModel && status === "ready" && latestRequestRef.current.startsWith(pageTruthKey));
 
   return {
     payloadKey,
@@ -227,18 +225,16 @@ export function useActivePageIntelligence({
     signals,
     classification,
     panelPayloads,
-    insightModel: pageModel,
+    pageModel,
     story: pageStory,
+    pageClass,
+    pageTruth,
     pageTruthKey,
+    formulaSignals,
+    priorityHighlights,
     status,
     error,
     isCurrentPage,
-    pageClass,
-    pageTruth,
-    pageModel,
-    pageStory,
-    priorityHighlights,
-    formulaSignals,
     highlightTargets,
     limitedEvidence,
   };

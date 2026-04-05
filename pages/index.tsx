@@ -711,24 +711,27 @@ export default function ThoughtUnitReader() {
     };
   }, [bookId, currentPage, currentThoughtUnit, pdfPageCount, syllabusToc, tableOfContents, thoughtUnits, uploadedFile?.name]);
 
-  const activePageIntelligence = useActivePageIntelligence({
+  const {
+    payloadKey,
+    highlightKey,
+    signals: currentSignals,
+    panelPayloads: currentPanelPayload,
+    pageModel: currentPageModel,
+    story: currentPageStory,
+    pageClass: currentPageClass,
+    pageTruth: currentPageTruth,
+    pageTruthKey,
+    status: pageIntelligenceStatus,
+    isCurrentPage: isCurrentIntelligencePage,
+    highlightTargets,
+    limitedEvidence,
+  } = useActivePageIntelligence({
     documentId: bookId,
     pageNumber: currentPage,
     ctx: activePageContextForInsights,
     audience: unifiedPanelState.audience,
     depth: unifiedPanelState.depth,
   });
-
-  const {
-    payloadKey,
-    highlightKey,
-    signals: currentSignals,
-    panelPayloads: currentPanelPayload,
-    story: currentPageStory,
-    pageTruthKey,
-    highlightTargets,
-    limitedEvidence,
-  } = activePageIntelligence;
   const focusIntegrity = focusInterruptions === 0 ? "uninterrupted" : focusInterruptions === 1 ? "interrupted once" : "interrupted multiple times";
   const focusScore = Math.max(0, 100 - (focusInterruptions * 12));
   const focusConsistency = focusScore >= 90 ? "Strong" : focusScore >= 75 ? "Good" : "Needs recovery";
@@ -2623,7 +2626,15 @@ export default function ThoughtUnitReader() {
                 ctx={activePageContext}
                 state={unifiedPanelState}
                 payload={currentPanelPayload}
-                intelligence={activePageIntelligence}
+                intelligence={{
+                  status: pageIntelligenceStatus,
+                  pageTruthKey,
+                  isCurrentPage: isCurrentIntelligencePage,
+                  pageClass: currentPageClass,
+                  pageTruth: currentPageTruth,
+                  pageModel: currentPageModel,
+                  story: currentPageStory,
+                }}
                 onTabChange={(activeTab) => setUnifiedPanelState((s) => ({ ...s, activeTab }))}
                 onAudienceChange={(audience) => setUnifiedPanelState((s) => ({ ...s, audience }))}
                 onDepthChange={(depth) => setUnifiedPanelState((s) => ({ ...s, depth }))}

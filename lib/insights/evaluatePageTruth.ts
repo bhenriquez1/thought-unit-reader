@@ -28,6 +28,7 @@ type EvaluateArgs = {
   contentClass: PageContentClass;
   pageModel: PageInsightModel | null;
   visiblePageText: string;
+  formulaSignalsCount?: number;
 };
 
 export function evaluatePageTruth(args: EvaluateArgs): PageTruthGateResult {
@@ -44,7 +45,17 @@ export function evaluatePageTruth(args: EvaluateArgs): PageTruthGateResult {
   if (args.contentClass === "table_heavy") return fail("table_heavy", 0.35, true);
   if (args.contentClass === "failed_sparse") return fail("failed_extraction", 0.2);
   if (args.contentClass === "copyright_frontmatter") return fail("front_matter", 0.2);
-  if (tokenCount < 25 || completeSentences < 2) return fail("insufficient_prose", 0.35, args.contentClass === "sparse_text");
+  if (tokenCount < 25 || completeSentences < 2) {
+    if ((args.formulaSignalsCount || 0) > 0) {
+      return {
+        canRenderRightPanel: true,
+        canRenderLeftHighlights: true,
+        reason: "ok",
+        confidence: 0.42,
+      };
+    }
+    return fail("insufficient_prose", 0.35, args.contentClass === "sparse_text");
+  }
 
   const fragmentHeavy = args.pageModel.topTakeaways.every((line) => /\.\.\.$/.test(line.trim()));
   if (fragmentHeavy) return fail("fragment_only", 0.25);
