@@ -69,17 +69,20 @@ export function extractPriorityHighlights({
 
   if (story) {
     const spans: PriorityHighlightSpan[] = [];
-    const mainBlock = [story.mainIdea, story.support[0]].filter(Boolean).join(" ");
-    spans.push({
-      id: `story-main-${pageNumber}`,
+    const mainBlocks = (story.highlightPlan?.main?.length ? story.highlightPlan.main : [story.mainIdea, story.support[0]])
+      .filter(Boolean)
+      .slice(0, maxMain);
+    mainBlocks.forEach((line, index) => spans.push({
+      id: `story-main-${pageNumber}-${index}`,
       documentId,
       pageNumber,
-      text: normalizeText(mainBlock) || story.mainIdea,
+      text: normalizeText(line) || story.mainIdea,
       priority: "main",
       confidence: story.confidence,
       kind: "core_claim",
-    });
-    story.support.slice(0, maxSupport).forEach((line, index) => spans.push({
+    }));
+    const supportBlocks = (story.highlightPlan?.support?.length ? story.highlightPlan.support : story.support).slice(0, maxSupport);
+    supportBlocks.forEach((line, index) => spans.push({
       id: `story-support-${pageNumber}-${index}`,
       documentId,
       pageNumber,
@@ -88,7 +91,8 @@ export function extractPriorityHighlights({
       confidence: Math.max(0.5, story.confidence - 0.1),
       kind: "evidence_sentence",
     }));
-    story.weakSupport.slice(0, maxWeak).forEach((line, index) => spans.push({
+    const weakBlocks = (story.highlightPlan?.weak?.length ? story.highlightPlan.weak : story.weakSupport).slice(0, maxWeak);
+    weakBlocks.forEach((line, index) => spans.push({
       id: `story-weak-${pageNumber}-${index}`,
       documentId,
       pageNumber,

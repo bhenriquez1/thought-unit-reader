@@ -41,8 +41,18 @@ export function evaluatePageTruth(args: EvaluateArgs): PageTruthGateResult {
   if (!args.pageModel) return fail("failed_extraction", 0.1);
 
   if (args.contentClass === "image_only") return fail("image_only", 0.2);
-  if (args.contentClass === "form_page") return fail("form_page", 0.3, true);
-  if (args.contentClass === "table_heavy") return fail("table_heavy", 0.35, true);
+  if (args.contentClass === "form_page") {
+    if ((args.formulaSignalsCount || 0) > 0 || (args.pageModel?.topTakeaways.length || 0) >= 2) {
+      return { canRenderRightPanel: true, canRenderLeftHighlights: true, reason: "ok", confidence: 0.41 };
+    }
+    return fail("form_page", 0.3, true);
+  }
+  if (args.contentClass === "table_heavy") {
+    if ((args.formulaSignalsCount || 0) > 0 || (args.pageModel?.topTakeaways.length || 0) >= 2) {
+      return { canRenderRightPanel: true, canRenderLeftHighlights: true, reason: "ok", confidence: 0.44 };
+    }
+    return fail("table_heavy", 0.35, true);
+  }
   if (args.contentClass === "failed_sparse") return fail("failed_extraction", 0.2);
   if (args.contentClass === "copyright_frontmatter") return fail("front_matter", 0.2);
   if (tokenCount < 25 || completeSentences < 2) {

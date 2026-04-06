@@ -66,8 +66,19 @@ export interface PageStory {
   shortNarrative: string;
   steps: PageStoryStep[];
   mainIdea: string;
+  narrativeLead: string;
   support: string[];
   weakSupport: string[];
+  mechanisms: string[];
+  distinctions: string[];
+  relations: string[];
+  applications: string[];
+  trapSignals: string[];
+  highlightPlan: {
+    main: string[];
+    support: string[];
+    weak: string[];
+  };
   trap: PageStoryTrap | null;
   shadowRecall: ShadowRecallModel;
   sourceCount: number;
@@ -156,8 +167,13 @@ export function buildPageStory({
   const mainIdea = cleanSentence(steps[0]?.content || narrative);
   const support = steps.slice(1, 3).map((s) => s.content).filter(isRenderableSentence);
   const weakSupport = buildWeakSupport(ranked, steps);
+  const mechanisms = extractStepBucket(steps, ["Mechanism", "Effect", "Consequence"]);
+  const distinctions = extractStepBucket(steps, ["Compare", "Boundary", "Trap"]);
+  const relations = extractStepBucket(steps, ["Relation", "Consequence", "Effect"]);
+  const applications = extractStepBucket(steps, ["Action", "Case", "Rule", "Clue"]);
 
   const trap = detectTrap(ranked, steps, narrative);
+  const trapSignals = uniqueSentences([trap?.sentence, ...extractStepBucket(steps, ["Trap", "Boundary"])]);
   const shadowRecall = buildShadowRecall({ narrative, steps, trap, pageClass, mode });
 
   const confidence = computeStoryConfidence(ranked, steps, narrative, trap);
@@ -168,13 +184,31 @@ export function buildPageStory({
     shortNarrative: shortenSentence(narrative, 180),
     steps,
     mainIdea,
+    narrativeLead: steps[0]?.content || narrative,
     support,
     weakSupport,
+    mechanisms,
+    distinctions,
+    relations,
+    applications,
+    trapSignals,
+    highlightPlan: {
+      main: uniqueSentences([mainIdea, support[0]]).slice(0, 2),
+      support: uniqueSentences([...support, ...mechanisms, ...distinctions]).slice(0, 4),
+      weak: uniqueSentences([...weakSupport, ...relations, ...applications]).slice(0, 4),
+    },
     trap,
     shadowRecall,
     sourceCount: ranked.length,
     confidence,
   };
+}
+
+function extractStepBucket(steps: PageStoryStep[], labels: StoryLabel[]): string[] {
+  return steps
+    .filter((step) => labels.includes(step.label))
+    .flatMap((step) => [step.content, ...step.support])
+    .filter(isRenderableSentence);
 }
 
 function collectCandidates(pageModel: BuildPageStoryInput["pageModel"]): NarrativeCandidate[] {

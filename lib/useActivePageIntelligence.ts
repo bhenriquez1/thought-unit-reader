@@ -9,6 +9,7 @@ import { processPage } from "@/lib/insights/processPage";
 import { classifyPageContent, type PageContentClass } from "@/lib/pdf/classifyPageContent";
 import { extractPriorityHighlights } from "@/lib/highlights/extractPriorityHighlights";
 import { evaluatePageTruth, type PageTruthGateResult } from "@/lib/insights/evaluatePageTruth";
+import { buildPageStory } from "@/lib/insights/buildPageStory";
 import type { PageInsightModel } from "@/lib/insights/types";
 import type { PageStory } from "@/lib/insights/buildPageStory";
 
@@ -90,18 +91,11 @@ function extractFormulaSignals(rawText: string): FormulaSignal[] {
   }).slice(0, 12);
 }
 
-function resolveExtractionClass(pageClass: PageContentClass, formulaSignals: FormulaSignal[]): PageContentClass {
-  if (formulaSignals.length >= 2 && (pageClass === "sparse_text" || pageClass === "failed_sparse" || pageClass === "table_heavy")) {
-    return "mixed_visual";
-  }
-  return pageClass;
-}
-
-function signalBudgetsForPageClass(pageClass: PageContentClass) {
-  if (pageClass === "table_heavy") return { minYield: 1, minSignals: 1, maxSignals: 5 };
-  if (pageClass === "form_page") return { minYield: 1, minSignals: 1, maxSignals: 4 };
-  if (pageClass === "mixed_visual") return { minYield: 1, minSignals: 2, maxSignals: 6 };
-  return { minYield: 1, minSignals: 2, maxSignals: 8 };
+function pickStoryMode(pageClass: PageContentClass, formulaCount: number) {
+  if (pageClass === "table_heavy") return "relation" as const;
+  if (pageClass === "form_page") return "apply_test" as const;
+  if ((pageClass === "mixed_visual" || pageClass === "sparse_text" || pageClass === "failed_sparse") && formulaCount > 0) return "explain" as const;
+  return "insight" as const;
 }
 
 export function useActivePageIntelligence({
@@ -146,15 +140,27 @@ export function useActivePageIntelligence({
     setPriorityHighlights([]);
 
     Promise.resolve().then(() => {
-      const localFormulaSignals = extractFormulaSignals(ctx.pageText || "");
-      const basePageClass = classifyPageContent(ctx.pageText || "");
-      const localPageClass = resolveExtractionClass(basePageClass, localFormulaSignals);
-      const classBudgets = signalBudgetsForPageClass(localPageClass);
-      const localSignals = extractPageSignals(ctx, classBudgets);
+      const localSignals = extractPageSignals(ctx, {
+        minYield: 1,
+        minSignals: 2,
+        maxSignals: 8,
+      });
       const localClassification = classifyPage(localSignals);
       const localPayloads = buildResolvedPanelPayload(ctx, localClassification, localSignals, audience, depth);
+      const rawPageClass = classifyPageContent(ctx.pageText || "");
+      const localFormulaSignals = extractFormulaSignals(ctx.pageText || "");
+      const localPageClass: PageContentClass =
+        localFormulaSignals.length >= 2 && (rawPageClass === "sparse_text" || rawPageClass === "failed_sparse")
+          ? "mixed_visual"
+          : rawPageClass;
       const localPageModel = processPage(ctx.pageText || "");
-      const localPageStory = localPageModel.pageStory || null;
+      const localPageStory = localPageModel.pageStory || buildPageStory({
+        pageClass: localPageClass,
+        pageModel: localPageModel,
+        mode: pickStoryMode(localPageClass, localFormulaSignals.length),
+        role: "general",
+        depth: "standard",
+      });
       const localPageTruth = evaluatePageTruth({
         visibleDocumentId: documentId,
         sourceDocumentId: documentId,
@@ -196,17 +202,15 @@ export function useActivePageIntelligence({
   }, [ctx, pageTruthKey, documentId, pageNumber]);
 
   useEffect(() => {
-    const dynamicClass = resolveExtractionClass(classifyPageContent(ctx.pageText || ""), formulaSignals);
-    const classBudgets = signalBudgetsForPageClass(dynamicClass);
     const tunedSignals = extractPageSignals(ctx, {
-      minYield: Math.max(classBudgets.minYield, mode.minYield),
-      minSignals: Math.max(classBudgets.minSignals, mode.label === "student" ? 2 : 3),
-      maxSignals: Math.min(classBudgets.maxSignals + 2, mode.maxEvidence + 2),
+      minYield: mode.minYield,
+      minSignals: mode.label === "student" ? 2 : 3,
+      maxSignals: mode.maxEvidence,
     });
     setSignals(tunedSignals);
     setClassification(classifyPage(tunedSignals));
     setPanelPayloads(buildResolvedPanelPayload(ctx, classifyPage(tunedSignals), tunedSignals, audience, depth));
-  }, [ctx, mode, audience, depth, formulaSignals]);
+  }, [ctx, mode, audience, depth]);
 
   const limitedEvidence =
     classification.confidence < 0.35 ||
@@ -230,7 +234,7 @@ export function useActivePageIntelligence({
     return priority.length ? [...priority, ...derived].slice(0, 12) : derived;
   }, [signals, pageNumber, audience, limitedEvidence, priorityHighlights]);
 
-  const highlightKey = pageTruthKey;
+  const highlightKey = `${documentId}:${pageNumber}`;
   const isCurrentPage = Boolean(pageModel && status === "ready" && latestRequestRef.current.startsWith(pageTruthKey));
 
   return {
