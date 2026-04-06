@@ -235,7 +235,7 @@ export function useActivePageIntelligence({
   }, [signals, pageNumber, audience, limitedEvidence, priorityHighlights]);
 
   const highlightKey = `${documentId}:${pageNumber}`;
-  const isCurrentPage = Boolean(pageModel && status === "ready" && latestRequestRef.current.startsWith(pageTruthKey));
+  const isCurrentPage = Boolean(pageModel && status === "ready" && latestRequestRef.current === pageTruthKey);
 
   return {
     payloadKey,

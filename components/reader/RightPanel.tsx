@@ -83,11 +83,6 @@ export function RightPanel({
   }, [ctx.documentId, ctx.pageNumber, pageTruthKey, clearSelection, onEvidenceClick]);
 
   useEffect(() => {
-    clearSelection();
-    onEvidenceClick?.("", undefined);
-  }, [pageTruthKey, clearSelection, onEvidenceClick]);
-
-  useEffect(() => {
     if (intelligence.status === "loading") clearSelection();
   }, [intelligence.status, clearSelection]);
 

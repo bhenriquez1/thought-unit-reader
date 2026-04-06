@@ -13,7 +13,7 @@ export function usePageInsights(
   enableDatApex = false,
   parseKey?: string,
 ): PageInsightsState {
-  const requestKey = useMemo(() => parseKey || `${pageIndex}:${pageText.length}:${enableDatApex ? "x" : "n"}`, [enableDatApex, pageIndex, pageText.length, parseKey]);
+  const requestKey = useMemo(() => parseKey || `${pageIndex}:${pageText.slice(0, 64)}:${pageText.length}:${enableDatApex ? "x" : "n"}`, [enableDatApex, pageIndex, pageText, parseKey]);
   const [state, setState] = useState<PageInsightsState>({ status: "idle", pageIndex, model: null, requestKey });
   const versionRef = useRef(0);
 
