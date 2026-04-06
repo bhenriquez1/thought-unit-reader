@@ -63,22 +63,17 @@ export interface ShadowRecallModel {
 export interface PageStory {
   pageClass: string;
   narrative: string;
+  narrativeLead: string;
   shortNarrative: string;
   steps: PageStoryStep[];
   mainIdea: string;
-  narrativeLead: string;
   support: string[];
   weakSupport: string[];
-  mechanisms: string[];
-  distinctions: string[];
-  relations: string[];
-  applications: string[];
+  supportingLogic: string[];
+  comparisonSignals: string[];
+  relationSignals: string[];
+  applySignals: string[];
   trapSignals: string[];
-  highlightPlan: {
-    main: string[];
-    support: string[];
-    weak: string[];
-  };
   trap: PageStoryTrap | null;
   shadowRecall: ShadowRecallModel;
   sourceCount: number;
@@ -167,13 +162,13 @@ export function buildPageStory({
   const mainIdea = cleanSentence(steps[0]?.content || narrative);
   const support = steps.slice(1, 3).map((s) => s.content).filter(isRenderableSentence);
   const weakSupport = buildWeakSupport(ranked, steps);
-  const mechanisms = extractStepBucket(steps, ["Mechanism", "Effect", "Consequence"]);
-  const distinctions = extractStepBucket(steps, ["Compare", "Boundary", "Trap"]);
-  const relations = extractStepBucket(steps, ["Relation", "Consequence", "Effect"]);
-  const applications = extractStepBucket(steps, ["Action", "Case", "Rule", "Clue"]);
+  const supportingLogic = collectSignalsByLabels(steps, ["Mechanism", "Effect", "Interpretation"]);
+  const comparisonSignals = collectSignalsByLabels(steps, ["Compare", "Boundary", "Trap"]).slice(0, 4);
+  const relationSignals = collectSignalsByLabels(steps, ["Relation", "Consequence", "Mechanism"]).slice(0, 4);
+  const applySignals = collectSignalsByLabels(steps, ["Action", "Case", "Rule", "Clue"]).slice(0, 4);
 
   const trap = detectTrap(ranked, steps, narrative);
-  const trapSignals = uniqueSentences([trap?.sentence, ...extractStepBucket(steps, ["Trap", "Boundary"])]);
+  const trapSignals = uniqueSentences([trap?.sentence, ...steps.filter((s) => s.label === "Trap" || s.label === "Boundary").map((s) => s.content)]).slice(0, 3);
   const shadowRecall = buildShadowRecall({ narrative, steps, trap, pageClass, mode });
 
   const confidence = computeStoryConfidence(ranked, steps, narrative, trap);
@@ -181,22 +176,17 @@ export function buildPageStory({
   return {
     pageClass,
     narrative,
+    narrativeLead: steps[0]?.content || narrative,
     shortNarrative: shortenSentence(narrative, 180),
     steps,
     mainIdea,
-    narrativeLead: steps[0]?.content || narrative,
     support,
     weakSupport,
-    mechanisms,
-    distinctions,
-    relations,
-    applications,
+    supportingLogic,
+    comparisonSignals,
+    relationSignals,
+    applySignals,
     trapSignals,
-    highlightPlan: {
-      main: uniqueSentences([mainIdea, support[0]]).slice(0, 2),
-      support: uniqueSentences([...support, ...mechanisms, ...distinctions]).slice(0, 4),
-      weak: uniqueSentences([...weakSupport, ...relations, ...applications]).slice(0, 4),
-    },
     trap,
     shadowRecall,
     sourceCount: ranked.length,
@@ -204,11 +194,14 @@ export function buildPageStory({
   };
 }
 
-function extractStepBucket(steps: PageStoryStep[], labels: StoryLabel[]): string[] {
-  return steps
-    .filter((step) => labels.includes(step.label))
-    .flatMap((step) => [step.content, ...step.support])
-    .filter(isRenderableSentence);
+function collectSignalsByLabels(steps: PageStoryStep[], labels: StoryLabel[]): string[] {
+  return uniqueSentences(
+    steps
+      .filter((step) => labels.includes(step.label))
+      .flatMap((step) => [step.content, ...step.support])
+      .map((item) => normalizeSentence(item))
+      .filter(Boolean) as string[],
+  ).slice(0, 5);
 }
 
 function collectCandidates(pageModel: BuildPageStoryInput["pageModel"]): NarrativeCandidate[] {

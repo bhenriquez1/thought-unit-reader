@@ -116,6 +116,9 @@ export type DatApexInsight = {
 };
 
 export type PageInsightModel = {
+  documentId?: string;
+  pageNumber?: number;
+  requestKey?: string;
   pageType: InsightPageType;
   pageSummary: string;
   topTakeaways: string[];

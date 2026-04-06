@@ -69,19 +69,23 @@ export function extractPriorityHighlights({
 
   if (story) {
     const spans: PriorityHighlightSpan[] = [];
-    const mainBlocks = (story.highlightPlan?.main?.length ? story.highlightPlan.main : [story.mainIdea, story.support[0]])
-      .filter(Boolean)
-      .slice(0, maxMain);
-    mainBlocks.forEach((line, index) => spans.push({
-      id: `story-main-${pageNumber}-${index}`,
+    const mainBlock = [story.mainIdea, story.narrativeLead, story.support[0]].filter(Boolean).join(" ");
+    spans.push({
+      id: `story-main-${pageNumber}`,
       documentId,
       pageNumber,
-      text: normalizeText(line) || story.mainIdea,
+      text: normalizeText(mainBlock) || story.mainIdea,
       priority: "main",
       confidence: story.confidence,
       kind: "core_claim",
-    }));
-    const supportBlocks = (story.highlightPlan?.support?.length ? story.highlightPlan.support : story.support).slice(0, maxSupport);
+    });
+    const supportBlocks = uniqueNormalized([
+      ...story.supportingLogic,
+      ...story.comparisonSignals,
+      ...story.relationSignals,
+      ...story.applySignals,
+      ...story.support,
+    ]).slice(0, maxSupport);
     supportBlocks.forEach((line, index) => spans.push({
       id: `story-support-${pageNumber}-${index}`,
       documentId,
@@ -91,7 +95,7 @@ export function extractPriorityHighlights({
       confidence: Math.max(0.5, story.confidence - 0.1),
       kind: "evidence_sentence",
     }));
-    const weakBlocks = (story.highlightPlan?.weak?.length ? story.highlightPlan.weak : story.weakSupport).slice(0, maxWeak);
+    const weakBlocks = uniqueNormalized([...story.trapSignals, ...story.weakSupport]).slice(0, maxWeak);
     weakBlocks.forEach((line, index) => spans.push({
       id: `story-weak-${pageNumber}-${index}`,
       documentId,
@@ -127,6 +131,20 @@ export function extractPriorityHighlights({
     .map((candidate) => toHighlight(candidate, documentId, pageNumber, "weak"));
 
   return [...main, ...support, ...weak];
+}
+
+function uniqueNormalized(lines: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const line of lines) {
+    const normalized = normalizeText(line);
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(normalized);
+  }
+  return out;
 }
 
 function synthesizePriorityBlocks(candidates: ScoredHighlightCandidate[]): ScoredHighlightCandidate[] {

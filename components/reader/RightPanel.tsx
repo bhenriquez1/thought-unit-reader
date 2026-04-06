@@ -80,7 +80,7 @@ export function RightPanel({
   useEffect(() => {
     clearSelection();
     onEvidenceClick?.("", undefined);
-  }, [ctx.documentId, ctx.pageNumber, pageTruthKey, clearSelection, onEvidenceClick]);
+  }, [pageTruthKey, clearSelection, onEvidenceClick]);
 
   useEffect(() => {
     if (intelligence.status === "loading") clearSelection();

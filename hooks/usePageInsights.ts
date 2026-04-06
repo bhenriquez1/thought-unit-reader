@@ -13,7 +13,12 @@ export function usePageInsights(
   enableDatApex = false,
   parseKey?: string,
 ): PageInsightsState {
-  const requestKey = useMemo(() => parseKey || `${pageIndex}:${pageText.slice(0, 64)}:${pageText.length}:${enableDatApex ? "x" : "n"}`, [enableDatApex, pageIndex, pageText, parseKey]);
+  const textFingerprint = useMemo(() => {
+    let hash = 0;
+    for (let i = 0; i < pageText.length; i += 1) hash = (hash * 31 + pageText.charCodeAt(i)) | 0;
+    return String(hash);
+  }, [pageText]);
+  const requestKey = useMemo(() => parseKey || `${pageIndex}:${textFingerprint}:${enableDatApex ? "x" : "n"}`, [enableDatApex, pageIndex, textFingerprint, parseKey]);
   const [state, setState] = useState<PageInsightsState>({ status: "idle", pageIndex, model: null, requestKey });
   const versionRef = useRef(0);
 
@@ -23,7 +28,12 @@ export function usePageInsights(
 
     Promise.resolve()
       .then(() => {
-        const model = processPage(pageText || "", enableDatApex);
+        const parsed = processPage(pageText || "", enableDatApex);
+        const model: PageInsightModel = {
+          ...parsed,
+          pageNumber: pageIndex,
+          requestKey,
+        };
         if (version !== versionRef.current) return;
         setState({ status: "ready", pageIndex, model, requestKey });
       })

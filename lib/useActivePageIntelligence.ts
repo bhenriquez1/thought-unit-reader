@@ -153,7 +153,13 @@ export function useActivePageIntelligence({
         localFormulaSignals.length >= 2 && (rawPageClass === "sparse_text" || rawPageClass === "failed_sparse")
           ? "mixed_visual"
           : rawPageClass;
-      const localPageModel = processPage(ctx.pageText || "");
+      const parsedModel = processPage(ctx.pageText || "");
+      const localPageModel: PageInsightModel = {
+        ...parsedModel,
+        documentId,
+        pageNumber,
+        requestKey,
+      };
       const localPageStory = localPageModel.pageStory || buildPageStory({
         pageClass: localPageClass,
         pageModel: localPageModel,
@@ -235,7 +241,14 @@ export function useActivePageIntelligence({
   }, [signals, pageNumber, audience, limitedEvidence, priorityHighlights]);
 
   const highlightKey = `${documentId}:${pageNumber}`;
-  const isCurrentPage = Boolean(pageModel && status === "ready" && latestRequestRef.current === pageTruthKey);
+  const isCurrentPage = Boolean(
+    status === "ready"
+      && pageModel
+      && latestRequestRef.current === pageTruthKey
+      && pageModel.requestKey === pageTruthKey
+      && pageModel.pageNumber === pageNumber
+      && pageModel.documentId === documentId,
+  );
 
   return {
     payloadKey,
