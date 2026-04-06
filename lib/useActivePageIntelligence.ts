@@ -90,6 +90,20 @@ function extractFormulaSignals(rawText: string): FormulaSignal[] {
   }).slice(0, 12);
 }
 
+function resolveExtractionClass(pageClass: PageContentClass, formulaSignals: FormulaSignal[]): PageContentClass {
+  if (formulaSignals.length >= 2 && (pageClass === "sparse_text" || pageClass === "failed_sparse" || pageClass === "table_heavy")) {
+    return "mixed_visual";
+  }
+  return pageClass;
+}
+
+function signalBudgetsForPageClass(pageClass: PageContentClass) {
+  if (pageClass === "table_heavy") return { minYield: 1, minSignals: 1, maxSignals: 5 };
+  if (pageClass === "form_page") return { minYield: 1, minSignals: 1, maxSignals: 4 };
+  if (pageClass === "mixed_visual") return { minYield: 1, minSignals: 2, maxSignals: 6 };
+  return { minYield: 1, minSignals: 2, maxSignals: 8 };
+}
+
 export function useActivePageIntelligence({
   documentId,
   pageNumber,
@@ -132,15 +146,13 @@ export function useActivePageIntelligence({
     setPriorityHighlights([]);
 
     Promise.resolve().then(() => {
-      const localSignals = extractPageSignals(ctx, {
-        minYield: 1,
-        minSignals: 2,
-        maxSignals: 8,
-      });
+      const localFormulaSignals = extractFormulaSignals(ctx.pageText || "");
+      const basePageClass = classifyPageContent(ctx.pageText || "");
+      const localPageClass = resolveExtractionClass(basePageClass, localFormulaSignals);
+      const classBudgets = signalBudgetsForPageClass(localPageClass);
+      const localSignals = extractPageSignals(ctx, classBudgets);
       const localClassification = classifyPage(localSignals);
       const localPayloads = buildResolvedPanelPayload(ctx, localClassification, localSignals, audience, depth);
-      const localPageClass = classifyPageContent(ctx.pageText || "");
-      const localFormulaSignals = extractFormulaSignals(ctx.pageText || "");
       const localPageModel = processPage(ctx.pageText || "");
       const localPageStory = localPageModel.pageStory || null;
       const localPageTruth = evaluatePageTruth({
@@ -184,15 +196,17 @@ export function useActivePageIntelligence({
   }, [ctx, pageTruthKey, documentId, pageNumber]);
 
   useEffect(() => {
+    const dynamicClass = resolveExtractionClass(classifyPageContent(ctx.pageText || ""), formulaSignals);
+    const classBudgets = signalBudgetsForPageClass(dynamicClass);
     const tunedSignals = extractPageSignals(ctx, {
-      minYield: mode.minYield,
-      minSignals: mode.label === "student" ? 2 : 3,
-      maxSignals: mode.maxEvidence,
+      minYield: Math.max(classBudgets.minYield, mode.minYield),
+      minSignals: Math.max(classBudgets.minSignals, mode.label === "student" ? 2 : 3),
+      maxSignals: Math.min(classBudgets.maxSignals + 2, mode.maxEvidence + 2),
     });
     setSignals(tunedSignals);
     setClassification(classifyPage(tunedSignals));
     setPanelPayloads(buildResolvedPanelPayload(ctx, classifyPage(tunedSignals), tunedSignals, audience, depth));
-  }, [ctx, mode, audience, depth]);
+  }, [ctx, mode, audience, depth, formulaSignals]);
 
   const limitedEvidence =
     classification.confidence < 0.35 ||
@@ -216,7 +230,7 @@ export function useActivePageIntelligence({
     return priority.length ? [...priority, ...derived].slice(0, 12) : derived;
   }, [signals, pageNumber, audience, limitedEvidence, priorityHighlights]);
 
-  const highlightKey = `${documentId}:${pageNumber}`;
+  const highlightKey = pageTruthKey;
   const isCurrentPage = Boolean(pageModel && status === "ready" && latestRequestRef.current.startsWith(pageTruthKey));
 
   return {

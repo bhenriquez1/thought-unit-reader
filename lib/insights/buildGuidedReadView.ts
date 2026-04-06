@@ -20,7 +20,7 @@ export function buildGuidedReadView(args: {
   }
 
   const modeName = args.mode === "apply" ? "apply/test" : args.mode;
-  const templates = modeTemplates(args.mode, story, transformed);
+  const templates = modeTemplates(args.mode, story, transformed, args.pageClass);
   const maxSteps = args.depth === "quick" ? 2 : args.depth === "standard" ? 3 : 4;
 
   return {
@@ -40,8 +40,19 @@ export function buildGuidedReadView(args: {
   };
 }
 
-function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedReadView) {
+function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedReadView, pageClass?: string) {
   const base = transformed.steps;
+  if (pageClass === "table_heavy" || pageClass === "mixed_visual" || pageClass === "form_page") {
+    return {
+      purpose: story.mainIdea,
+      steps: [
+        { label: "Core Signal", primary: story.mainIdea || base[0]?.primaryText, secondary: story.support[0] },
+        { label: "Decode", primary: story.steps[1]?.content || base[1]?.primaryText, secondary: story.support[1] },
+        { label: "Interpret", primary: story.shadowRecall.reveal.application || base[2]?.primaryText, secondary: story.support[2] },
+        { label: "Common Miss", primary: story.trap?.sentence || base[3]?.primaryText, secondary: story.weakSupport[0] },
+      ],
+    };
+  }
   if (mode === "explain") {
     return {
       purpose: story.shadowRecall.reveal.mechanism || story.mainIdea,
