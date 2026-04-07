@@ -1,18 +1,8 @@
 import { transformByMode } from "@/lib/insights/transformByMode";
-import type { GuidedDepth, GuidedMode, GuidedReadView, GuidedRole, PageInsightModel } from "@/lib/insights/types";
-import type { PageStory, TrapBlock } from "@/lib/insights/buildPageStory";
+import type { GuidedDepth, GuidedMode, GuidedReadView, GuidedRole, OperatorCard, OperatorCardKind, PageInsightModel } from "@/lib/insights/types";
+import type { PageStory } from "@/lib/insights/buildPageStory";
 
 export type { GuidedMode, GuidedRole, GuidedDepth };
-
-export type OperatorCardKind = "pattern" | "decision" | "mechanism" | "distinction" | "relation" | "trap";
-export type OperatorCard = {
-  id: string;
-  kind: OperatorCardKind;
-  title: string;
-  primary: string;
-  bullets: string[];
-  severity?: "low" | "medium" | "high";
-};
 
 export function buildGuidedReadView(args: {
   pageModel: PageInsightModel;
@@ -22,16 +12,13 @@ export function buildGuidedReadView(args: {
   pageClass?: string;
   pageStory?: PageStory | null;
 }): GuidedReadView {
+  const transformed = transformByMode(args);
   const story = args.pageStory || args.pageModel.pageStory || null;
-  // Pass story into transformByMode so block-first construction happens there
-  const transformed = transformByMode({ ...args, pageStory: story });
 
   if (!story) {
     return transformed;
   }
 
-  // transformByMode already used blocks when available; modeTemplates here is a
-  // safety overlay for any steps that still came from DecisionPath fallback.
   const modeName = args.mode === "apply" ? "apply/test" : args.mode;
   const templates = modeTemplates(args.mode, story, transformed);
   const maxSteps = args.depth === "quick" ? 2 : args.depth === "standard" ? 3 : 4;
@@ -41,8 +28,6 @@ export function buildGuidedReadView(args: {
     steps: transformed.steps.slice(0, maxSteps).map((step, index) => {
       const matchingStoryStep = story.steps[index];
       const template = templates.steps[index];
-      // Inject block evidence when the step doesn't already have rich evidence
-      // (block-first steps carry evidence from StoryBlock.support[1..]+evidence[])
       const blockEvidence = template?.evidence ?? [];
       const stepEvidence =
         step.evidence.length && !step.id.endsWith("-blk-0")
@@ -56,7 +41,6 @@ export function buildGuidedReadView(args: {
         ...step,
         label: template?.label || step.label,
         primaryText: template?.primary || step.primaryText || matchingStoryStep?.content || story.mainIdea,
-        // Use up to two support items joined rather than only the first
         secondaryText:
           template?.secondary ||
           step.secondaryText ||
@@ -64,10 +48,52 @@ export function buildGuidedReadView(args: {
         evidence: stepEvidence.length ? stepEvidence : step.evidence,
       };
     }),
+    cards: buildOperatorCards(args.mode, story),
     supportTitle: `Grounded support (${modeName})`,
     supportBullets: [story.mainIdea, ...story.support, ...story.weakSupport].slice(0, args.depth === "quick" ? 2 : args.depth === "standard" ? 4 : 6),
-    cards: toOperatorCards(args.mode, story, templates),
   };
+}
+
+function toCard(kind: OperatorCardKind, title: string, primary?: string | null, bullets: Array<string | null | undefined> = [], severity?: "low" | "medium" | "high"): OperatorCard | null {
+  if (!primary) return null;
+  return {
+    id: kind,
+    kind,
+    title,
+    primary,
+    bullets: bullets.filter(Boolean) as string[],
+    severity,
+  };
+}
+
+function buildOperatorCards(mode: GuidedMode, story: PageStory): OperatorCard[] {
+  const pattern = toCard("pattern", "Pattern", story.patternBlock?.trigger || story.mainIdea, [story.patternBlock?.context]);
+  const decision = toCard("decision", "Decision", story.decisionBlock?.action || story.applicationBlock?.text, [
+    ...(story.decisionBlock?.nextSteps || []),
+    story.decisionBlock?.avoid?.[0] ? `Avoid: ${story.decisionBlock.avoid[0]}` : undefined,
+    story.decisionBlock?.threshold ? `Use when: ${story.decisionBlock.threshold}` : undefined,
+  ]);
+  const mechanism = toCard("mechanism", "Mechanism", story.mechanismBlock?.text || story.supportingLogic[0], [
+    ...(story.mechanismBlock?.support || []),
+    ...(story.mechanismBlock?.evidence || []).slice(0, 2),
+  ]);
+  const distinction = toCard("distinction", "Distinction", story.distinctionBlock?.text || story.comparisonSignals[0], story.distinctionBlock?.support || []);
+  const relation = toCard("relation", "Relation", story.relationBlock?.text || story.relationSignals[0], story.relationBlock?.support || []);
+  const application = toCard("application", "Application", story.applicationBlock?.text || story.applySignals[0], [
+    ...(story.applicationBlock?.support || []),
+    story.decisionBlock?.nextSteps?.[0],
+  ]);
+  const trap = toCard("trap", "Trap", story.trapBlock?.trap || story.trap?.sentence, [
+    story.trapBlock?.whyWrong,
+    story.trapBlock?.consequence ? `Consequence: ${story.trapBlock.consequence}` : undefined,
+  ], story.trapBlock?.severity || "medium");
+
+  const compact = (cards: Array<OperatorCard | null>) => cards.filter(Boolean) as OperatorCard[];
+  if (mode === "explain") return compact([pattern, mechanism, relation, trap]);
+  if (mode === "compare") return compact([pattern, distinction, trap]);
+  if (mode === "relation") return compact([pattern, relation, mechanism, trap]);
+  if (mode === "apply" || mode === "apply_test") return compact([pattern, decision, application, trap]);
+  return compact([pattern, decision, mechanism, trap]);
 }
 
 function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedReadView) {
@@ -129,49 +155,4 @@ function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedRe
       { label: "Trap", primary: trapPrimary || base[3]?.primaryText, secondary: trapSecondary, evidence: trapEvidence },
     ],
   };
-}
-
-function toOperatorCards(mode: GuidedMode, story: PageStory, templates: { purpose: string; steps: Array<{ label: string; primary?: string; secondary?: string }> }): OperatorCard[] {
-  const pattern: OperatorCard | null = story.patternBlock?.trigger
-    ? { id: "pattern", kind: "pattern", title: "Pattern", primary: story.patternBlock.trigger, bullets: [story.patternBlock.context || ""].filter(Boolean) }
-    : null;
-  const decision: OperatorCard | null = story.decisionBlock?.action
-    ? {
-        id: "decision",
-        kind: "decision",
-        title: "Decision",
-        primary: story.decisionBlock.action,
-        bullets: [
-          ...story.decisionBlock.nextSteps,
-          ...(story.decisionBlock.avoid[0] ? [`Avoid: ${story.decisionBlock.avoid[0]}`] : []),
-          ...(story.decisionBlock.threshold ? [`Use when: ${story.decisionBlock.threshold}`] : []),
-        ].slice(0, 4),
-      }
-    : null;
-  const mechanism: OperatorCard | null = story.mechanismBlock?.text
-    ? { id: "mechanism", kind: "mechanism", title: "Mechanism", primary: story.mechanismBlock.text, bullets: story.mechanismBlock.support.slice(0, 3) }
-    : null;
-  const distinction: OperatorCard | null = story.distinctionBlock?.text
-    ? { id: "distinction", kind: "distinction", title: "Distinction", primary: story.distinctionBlock.text, bullets: story.distinctionBlock.support.slice(0, 3) }
-    : null;
-  const relation: OperatorCard | null = story.relationBlock?.text
-    ? { id: "relation", kind: "relation", title: "Relation", primary: story.relationBlock.text, bullets: story.relationBlock.support.slice(0, 3) }
-    : null;
-  const trap: OperatorCard | null = story.trapBlock?.trap
-    ? {
-        id: "trap",
-        kind: "trap",
-        title: "Trap",
-        primary: story.trapBlock.trap,
-        bullets: [story.trapBlock.whyWrong, story.trapBlock.consequence, story.trapBlock.confusionWith].filter(Boolean) as string[],
-        severity: story.trapBlock.severity,
-      }
-    : null;
-
-  const compact = (cards: Array<OperatorCard | null>) => cards.filter(Boolean) as OperatorCard[];
-  if (mode === "explain") return compact([pattern, mechanism, relation, trap]);
-  if (mode === "compare") return compact([pattern, distinction, trap]);
-  if (mode === "relation") return compact([pattern, relation, mechanism, trap]);
-  if (mode === "apply" || mode === "apply_test") return compact([pattern, decision, trap]);
-  return compact([pattern, decision, mechanism, trap]);
 }

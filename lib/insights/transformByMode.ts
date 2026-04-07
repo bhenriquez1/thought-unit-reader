@@ -8,10 +8,11 @@ import type {
   GuidedReadStep,
   GuidedReadView,
   GuidedRole,
+  OperatorCard,
+  OperatorCardKind,
   PageInsightModel,
-  StoryBlock,
 } from "@/lib/insights/types";
-import type { PageStory, TrapBlock } from "@/lib/insights/buildPageStory";
+import type { PageStory } from "@/lib/insights/buildPageStory";
 
 type TransformArgs = {
   pageModel: PageInsightModel;
@@ -23,272 +24,125 @@ type TransformArgs = {
 
 export function transformByMode({ pageModel, mode, role, depth, pageStory }: TransformArgs): GuidedReadView {
   const story = pageStory || pageModel.pageStory || null;
+  if (story) {
+    return buildOperatorCardView(story, mode, role, depth);
+  }
   switch (mode) {
     case "insight":
-      return buildInsightView(pageModel, role, depth, story);
+      return buildInsightView(pageModel, role, depth);
     case "explain":
-      return buildExplainView(pageModel, role, depth, story);
+      return buildExplainView(pageModel, role, depth);
     case "compare":
-      return buildCompareView(pageModel, role, depth, story);
+      return buildCompareView(pageModel, role, depth);
     case "relation":
-      return buildRelationView(pageModel, role, depth, story);
+      return buildRelationView(pageModel, role, depth);
     case "apply":
     case "apply_test":
-      return buildApplyView(pageModel, role, depth, story);
+      return buildScenario({ pageModel, role, depth });
     default:
-      return buildInsightView(pageModel, role, depth, story);
+      return buildInsightView(pageModel, role, depth);
   }
 }
 
-// ---------------------------------------------------------------------------
-// Block-first step builder — produces structurally richer steps than toStep()
-// ---------------------------------------------------------------------------
-
-function toStepFromBlock(args: {
-  index: number;
-  mode: GuidedMode;
-  role: GuidedRole;
-  depth: GuidedDepth;
-  label: string;
-  block: StoryBlock;
-}): GuidedReadStep {
-  const evidenceLimit = args.depth === "quick" ? 1 : args.depth === "standard" ? 2 : 3;
-  const primary = roleSentence(args.role, args.block.text);
-  const secondary = args.block.support[0] ? roleSentence(args.role, args.block.support[0]) : undefined;
-  // support[1..] + block.evidence feed the evidence list (deeper than primaryText/secondaryText)
-  const evidenceCandidates = [
-    ...args.block.support.slice(1),
-    ...args.block.evidence,
-  ].filter((t) => isRenderableSentence(t));
-  const evidence = (evidenceCandidates.length ? evidenceCandidates : [args.block.text])
-    .slice(0, evidenceLimit)
-    .map((text, i) => ({
-      id: `${args.mode}-${args.index + 1}-blk-${i}`,
-      paragraphIndex: args.index,
-      text: roleSentence(args.role, text),
-    }));
+function buildOperatorCardView(story: PageStory, mode: GuidedMode, role: GuidedRole, depth: GuidedDepth): GuidedReadView {
+  const cards = cardsByMode(story, mode);
+  const steps = cards
+    .slice(0, stepCount(depth))
+    .map((card, index) => cardToStep(card, index, mode, role));
 
   return {
-    id: `${args.mode}-${args.index + 1}`,
-    stepNumber: args.index + 1,
-    label: args.label,
-    primaryText: isRenderableSentence(primary) ? primary : "No grounded sentence was extracted for this step.",
-    secondaryText: secondary && isRenderableSentence(secondary) ? secondary : undefined,
-    mode: args.mode,
-    role: args.role,
-    confidence: args.block.score,
-    evidence,
+    pagePurpose: roleSentence(role, story.patternBlock?.trigger || story.mainIdea || story.shortNarrative || "Focus on the page pattern."),
+    steps,
+    cards,
+    supportTitle: "Grounded support",
+    supportBullets: dedupe([story.mainIdea, ...story.support, ...story.weakSupport]).slice(0, bulletCount(depth)),
   };
 }
 
-/** Convert TrapBlock (new shape) into the StoryBlock interface expected by toStepFromBlock. */
-function trapToStoryBlock(trap: TrapBlock): StoryBlock {
-  return {
-    id: "trap",
-    field: "trap",
-    text: trap.trap,
-    support: [trap.whyWrong, trap.consequence, trap.confusionWith].filter(Boolean) as string[],
-    evidence: [trap.trap],
-    score: trap.severity === "high" ? 0.85 : trap.severity === "medium" ? 0.7 : 0.6,
-  };
-}
-
-function hasText(block: StoryBlock | null | undefined): block is StoryBlock {
-  return Boolean(block?.text && isRenderableSentence(block.text));
-}
-
-// ---------------------------------------------------------------------------
-// Mode builders
-// ---------------------------------------------------------------------------
-
-function buildInsightView(pageModel: PageInsightModel, role: GuidedRole, depth: GuidedDepth, story: PageStory | null): GuidedReadView {
-  const maxSteps = stepCount(depth);
-
-  if (story) {
-    const blockSequence: Array<{ block: StoryBlock | null; label: string }> = [
-      { block: story.mainIdeaBlock, label: roleLabels(role, "insight", 0) },
-      { block: story.mechanismBlock, label: roleLabels(role, "insight", 1) },
-      { block: story.applicationBlock, label: roleLabels(role, "insight", 2) },
-      { block: story.trapBlock ? trapToStoryBlock(story.trapBlock) : null, label: roleLabels(role, "insight", 3) },
-    ];
-    const usable = blockSequence.filter((b) => hasText(b.block));
-    if (usable.length >= 2) {
-      const steps = usable.slice(0, maxSteps).map(({ block, label }, index) =>
-        toStepFromBlock({ index, mode: "insight", role, depth, label, block: block! }),
-      );
-      return {
-        pagePurpose: roleSentence(role, story.mainIdeaBlock?.text || story.mainIdea || pageModel.pageSummary || "Find the strongest signal before details"),
-        steps,
-        supportTitle: "Main points",
-        supportBullets: dedupe([story.mainIdea, ...story.support, ...story.weakSupport]).slice(0, bulletCount(depth)),
-      };
-    }
-  }
-
+function buildInsightView(pageModel: PageInsightModel, role: GuidedRole, depth: GuidedDepth): GuidedReadView {
   const top = ensurePaths(pageModel.decisionPaths, depth);
   return {
     pagePurpose: roleSentence(role, `Notice-first read: ${pageModel.pageSummary || "Find the strongest signal before details"}`),
     steps: top.map((path, index) =>
-      toStep({ index, mode: "insight", role, depth, label: roleLabels(role, "insight", index), primaryText: roleSentence(role, chooseByRole(role, path.condition, path.interpretation, path.implication)), secondaryText: depth === "deep" ? roleSentence(role, index === 0 ? path.interpretation : path.implication) : undefined, path }),
+      toStep({
+        index,
+        mode: "insight",
+        role,
+        depth,
+        label: roleLabels(role, "insight", index),
+        primaryText: roleSentence(role, chooseByRole(role, path.condition, path.interpretation, path.implication)),
+        secondaryText: depth === "deep" ? roleSentence(role, index === 0 ? path.interpretation : path.implication) : undefined,
+        path,
+      }),
     ),
     supportTitle: "Main points",
     supportBullets: dedupe(pageModel.topTakeaways).slice(0, bulletCount(depth)),
   };
 }
 
-function buildExplainView(pageModel: PageInsightModel, role: GuidedRole, depth: GuidedDepth, story: PageStory | null): GuidedReadView {
-  const maxSteps = stepCount(depth);
-
-  if (story) {
-    const blockSequence: Array<{ block: StoryBlock | null; label: string }> = [
-      { block: story.mechanismBlock, label: roleLabels(role, "explain", 0) },
-      { block: story.mainIdeaBlock, label: roleLabels(role, "explain", 1) },
-      { block: story.relationBlock, label: roleLabels(role, "explain", 2) },
-      { block: story.trapBlock ? trapToStoryBlock(story.trapBlock) : null, label: roleLabels(role, "explain", 3) },
-    ];
-    const usable = blockSequence.filter((b) => hasText(b.block));
-    if (usable.length >= 2) {
-      const steps = usable.slice(0, maxSteps).map(({ block, label }, index) =>
-        toStepFromBlock({ index, mode: "explain", role, depth, label, block: block! }),
-      );
-      return {
-        pagePurpose: roleSentence(role, `Mechanism read: ${story.mechanismBlock?.text || story.supportingLogic[0] || pageModel.pageSummary || "Understand why this works"}`),
-        steps,
-        supportTitle: "Causal chain",
-        supportBullets: dedupe([
-          story.mechanismBlock?.text,
-          ...story.mechanismBlock?.support || [],
-          ...story.supportingLogic,
-        ]).slice(0, bulletCount(depth)),
-      };
-    }
-  }
-
+function buildExplainView(pageModel: PageInsightModel, role: GuidedRole, depth: GuidedDepth): GuidedReadView {
   const top = ensurePaths(pageModel.decisionPaths, depth);
   return {
     pagePurpose: roleSentence(role, `Mechanism read: ${pageModel.pageSummary || "Understand why this works"}`),
     steps: top.map((path, index) =>
-      toStep({ index, mode: "explain", role, depth, label: roleLabels(role, "explain", index), primaryText: roleSentence(role, index === 0 ? path.interpretation : index === 1 ? path.implication : path.nextMove), secondaryText: roleSentence(role, index === 0 ? `Because ${path.condition}` : path.trap || path.condition), path }),
+      toStep({
+        index,
+        mode: "explain",
+        role,
+        depth,
+        label: roleLabels(role, "explain", index),
+        primaryText: roleSentence(role, index === 0 ? path.interpretation : index === 1 ? path.implication : path.nextMove),
+        secondaryText: roleSentence(role, index === 0 ? `Because ${path.condition}` : path.trap || path.condition),
+        path,
+      }),
     ),
     supportTitle: "Causal chain",
-    supportBullets: dedupe(top.flatMap((entry) => [entry.condition, entry.implication])).slice(0, bulletCount(depth)),
+    supportBullets: dedupe(top.flatMap((entry) => [entry.condition, entry.interpretation, entry.implication, entry.nextMove])).slice(0, bulletCount(depth)),
   };
 }
 
-function buildCompareView(pageModel: PageInsightModel, role: GuidedRole, depth: GuidedDepth, story: PageStory | null): GuidedReadView {
-  const maxSteps = stepCount(depth);
-
-  if (story) {
-    const blockSequence: Array<{ block: StoryBlock | null; label: string }> = [
-      { block: story.distinctionBlock, label: roleLabels(role, "compare", 0) },
-      { block: story.mechanismBlock, label: roleLabels(role, "compare", 1) },
-      { block: story.applicationBlock, label: roleLabels(role, "compare", 2) },
-      { block: story.trapBlock ? trapToStoryBlock(story.trapBlock) : null, label: roleLabels(role, "compare", 3) },
-    ];
-    const usable = blockSequence.filter((b) => hasText(b.block));
-    if (usable.length >= 2) {
-      const steps = usable.slice(0, maxSteps).map(({ block, label }, index) =>
-        toStepFromBlock({ index, mode: "compare", role, depth, label, block: block! }),
-      );
-      return {
-        pagePurpose: roleSentence(role, `Discrimination read: ${story.distinctionBlock?.text || story.comparisonSignals[0] || pageModel.pageSummary || "Separate look-alike ideas"}`),
-        steps,
-        supportTitle: "Do-not-confuse",
-        supportBullets: dedupe([
-          story.distinctionBlock?.text,
-          ...story.distinctionBlock?.support || [],
-          ...story.comparisonSignals,
-          story.trapBlock?.text,
-        ]).slice(0, bulletCount(depth)),
-      };
-    }
-  }
-
+function buildCompareView(pageModel: PageInsightModel, role: GuidedRole, depth: GuidedDepth): GuidedReadView {
   const comparePaths = pageModel.decisionPaths.filter((entry) => entry.template === "comparison");
   const top = ensurePaths(comparePaths.length ? comparePaths : pageModel.decisionPaths, depth);
   return {
     pagePurpose: roleSentence(role, `Discrimination read: ${pageModel.pageSummary || "Separate look-alike ideas"}`),
     steps: top.map((path, index) =>
-      toStep({ index, mode: "compare", role, depth, label: roleLabels(role, "compare", index), primaryText: roleSentence(role, index === 0 ? path.condition : index === 1 ? path.implication : path.nextMove), secondaryText: roleSentence(role, path.trap || path.interpretation), path }),
+      toStep({
+        index,
+        mode: "compare",
+        role,
+        depth,
+        label: roleLabels(role, "compare", index),
+        primaryText: roleSentence(role, index === 0 ? path.condition : index === 1 ? path.implication : path.nextMove),
+        secondaryText: roleSentence(role, path.trap || path.interpretation),
+        path,
+      }),
     ),
     supportTitle: "Do-not-confuse",
     supportBullets: dedupe(top.flatMap((entry) => [entry.trap, entry.implication, entry.nextMove])).slice(0, bulletCount(depth)),
   };
 }
 
-function buildRelationView(pageModel: PageInsightModel, role: GuidedRole, depth: GuidedDepth, story: PageStory | null): GuidedReadView {
-  const maxSteps = stepCount(depth);
-
-  if (story) {
-    const blockSequence: Array<{ block: StoryBlock | null; label: string }> = [
-      { block: story.relationBlock, label: roleLabels(role, "relation", 0) },
-      { block: story.mainIdeaBlock, label: roleLabels(role, "relation", 1) },
-      { block: story.applicationBlock, label: roleLabels(role, "relation", 2) },
-      { block: story.distinctionBlock || story.mechanismBlock, label: roleLabels(role, "relation", 3) },
-    ];
-    const usable = blockSequence.filter((b) => hasText(b.block));
-    if (usable.length >= 2) {
-      const steps = usable.slice(0, maxSteps).map(({ block, label }, index) =>
-        toStepFromBlock({ index, mode: "relation", role, depth, label, block: block! }),
-      );
-      return {
-        pagePurpose: roleSentence(role, `Workflow context: ${story.relationBlock?.text || story.relationSignals[0] || pageModel.pageSummary || "Place this page in sequence"}`),
-        steps,
-        supportTitle: "Before / here / after",
-        supportBullets: dedupe([
-          story.relationBlock?.text,
-          ...story.relationBlock?.support || [],
-          ...story.relationSignals,
-        ]).slice(0, bulletCount(depth)),
-      };
-    }
-  }
-
+function buildRelationView(pageModel: PageInsightModel, role: GuidedRole, depth: GuidedDepth): GuidedReadView {
   const top = ensurePaths(pageModel.decisionPaths, depth);
   return {
     pagePurpose: roleSentence(role, `Workflow context: ${pageModel.pageSummary || "Place this page in sequence"}`),
     steps: top.map((path, index) =>
-      toStep({ index, mode: "relation", role, depth, label: roleLabels(role, "relation", index), primaryText: roleSentence(role, index === 0 ? `Before this, ${path.condition}` : index === 1 ? `On this page, ${path.interpretation}` : `After this, ${path.nextMove}`), secondaryText: depth === "quick" ? undefined : roleSentence(role, path.implication), path }),
+      toStep({
+        index,
+        mode: "relation",
+        role,
+        depth,
+        label: roleLabels(role, "relation", index),
+        primaryText: roleSentence(role, index === 0 ? `Before this, ${path.condition}` : index === 1 ? `On this page, ${path.interpretation}` : `After this, ${path.nextMove}`),
+        secondaryText: depth === "quick" ? undefined : roleSentence(role, path.implication),
+        path,
+      }),
     ),
     supportTitle: "Before / here / after",
     supportBullets: dedupe(top.flatMap((entry) => [entry.condition, entry.interpretation, entry.nextMove])).slice(0, bulletCount(depth)),
   };
 }
-
-function buildApplyView(pageModel: PageInsightModel, role: GuidedRole, depth: GuidedDepth, story: PageStory | null): GuidedReadView {
-  const maxSteps = stepCount(depth);
-
-  if (story) {
-    const blockSequence: Array<{ block: StoryBlock | null; label: string }> = [
-      { block: story.applicationBlock, label: roleLabels(role, "apply", 0) },
-      { block: story.mainIdeaBlock, label: roleLabels(role, "apply", 1) },
-      { block: story.mechanismBlock, label: roleLabels(role, "apply", 2) },
-      { block: story.trapBlock ? trapToStoryBlock(story.trapBlock) : null, label: roleLabels(role, "apply", 3) },
-    ];
-    const usable = blockSequence.filter((b) => hasText(b.block));
-    if (usable.length >= 2) {
-      const steps = usable.slice(0, maxSteps).map(({ block, label }, index) =>
-        toStepFromBlock({ index, mode: "apply", role, depth, label, block: block! }),
-      );
-      return {
-        pagePurpose: roleSentence(role, `Apply read: ${story.applicationBlock?.text || story.applySignals[0] || pageModel.pageSummary || "Apply the rule to a concrete case"}`),
-        steps,
-        supportTitle: "Apply signals",
-        supportBullets: dedupe([
-          story.applicationBlock?.text,
-          ...story.applicationBlock?.support || [],
-          ...story.applySignals,
-        ]).slice(0, bulletCount(depth)),
-      };
-    }
-  }
-
-  return buildScenario({ pageModel, role, depth });
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function ensurePaths(paths: DecisionPath[], depth: GuidedDepth): DecisionPath[] {
   const needed = stepCount(depth);
@@ -317,16 +171,81 @@ function fallbackPath(index: number): DecisionPath {
   };
 }
 
+function toCard(kind: OperatorCardKind, title: string, primary?: string | null, bullets: Array<string | null | undefined> = [], severity?: "low" | "medium" | "high"): OperatorCard | null {
+  if (!primary || !isRenderableSentence(primary)) return null;
+  return {
+    id: `${kind}-${title.toLowerCase().replace(/\s+/g, "-")}`,
+    kind,
+    title,
+    primary,
+    bullets: dedupe(bullets.filter(Boolean) as string[]),
+    severity,
+  };
+}
+
+function cardsByMode(story: PageStory, mode: GuidedMode): OperatorCard[] {
+  const pattern = toCard("pattern", "Pattern", story.patternBlock?.trigger || story.mainIdeaBlock?.text || story.mainIdea, [
+    story.patternBlock?.context,
+    story.mainIdeaBlock?.support?.[0],
+  ]);
+  const decision = toCard("decision", "Decision", story.decisionBlock?.action || story.applicationBlock?.text, [
+    ...(story.decisionBlock?.nextSteps || []),
+    story.decisionBlock?.threshold ? `Use when: ${story.decisionBlock.threshold}` : undefined,
+  ]);
+  const application = toCard("application", "Application", story.applicationBlock?.text || story.applySignals[0], [
+    ...(story.applicationBlock?.support || []),
+    story.decisionBlock?.nextSteps?.[0],
+  ]);
+  const mechanism = toCard("mechanism", "Mechanism", story.mechanismBlock?.text || story.supportingLogic[0], [
+    ...(story.mechanismBlock?.support || []),
+    ...(story.mechanismBlock?.evidence || []).slice(0, 2),
+  ]);
+  const distinction = toCard("distinction", "Distinction", story.distinctionBlock?.text || story.comparisonSignals[0], story.distinctionBlock?.support || []);
+  const relation = toCard("relation", "Relation", story.relationBlock?.text || story.relationSignals[0], story.relationBlock?.support || []);
+  const trap = toCard(
+    "trap",
+    "Trap",
+    story.trapBlock?.trap || story.trap?.sentence,
+    [story.trapBlock?.whyWrong, story.trapBlock?.confusionWith, story.trapBlock?.consequence],
+    story.trapBlock?.severity || "medium",
+  );
+
+  const keep = (items: Array<OperatorCard | null>) => items.filter(Boolean) as OperatorCard[];
+  if (mode === "explain") return keep([pattern, mechanism, relation, trap]);
+  if (mode === "compare") return keep([pattern, distinction, trap]);
+  if (mode === "relation") return keep([pattern, relation, mechanism, trap]);
+  if (mode === "apply" || mode === "apply_test") return keep([pattern, decision, application, trap]);
+  return keep([pattern, decision, mechanism, trap]);
+}
+
+function cardToStep(card: OperatorCard, index: number, mode: GuidedMode, role: GuidedRole): GuidedReadStep {
+  return {
+    id: `${mode}-${index + 1}`,
+    stepNumber: index + 1,
+    label: card.title,
+    primaryText: roleSentence(role, card.primary),
+    secondaryText: card.bullets.length ? roleSentence(role, card.bullets[0]) : undefined,
+    mode,
+    role,
+    confidence: 0.75,
+    evidence: card.bullets.slice(0, 2).map((text, evidenceIndex) => ({
+      id: `${card.id}-ev-${evidenceIndex}`,
+      paragraphIndex: index,
+      text: roleSentence(role, text),
+    })),
+  };
+}
+
 function roleLabels(role: GuidedRole, mode: GuidedMode, index: number): string {
   const labels: Record<GuidedMode, string[]> = {
     insight: role === "expert" ? ["Indicator", "Inference", "Rule", "Pitfall"] : role === "operator" ? ["Signal", "Read", "Action", "Miss"] : ["Start here", "Notice", "This means", "Do not miss"],
     explain: role === "expert" ? ["Mechanism", "Effect", "Consequence", "Boundary"] : role === "operator" ? ["Why", "Change", "Result", "Failure mode"] : ["Main reason", "How", "What follows", "Why it matters"],
     compare: role === "expert" ? ["Look-alike", "Separator", "Decision rule", "Trap"] : role === "operator" ? ["Looks similar", "Difference", "Rule", "Miss"] : ["Looks similar", "What separates it", "Why it matters", "Do not confuse"],
     relation: role === "expert" ? ["Upstream", "Current", "Downstream", "System effect"] : role === "operator" ? ["Before", "Here", "Next", "Impact"] : ["Before this", "On this page", "What follows", "Why this matters"],
-    apply: ["Case", "Key Clue", "Next Move", "Wrong Move"],
-    apply_test: ["Case", "Key Clue", "Next Move", "Wrong Move"],
+    apply: ["Scenario", "Clue", "Next move", "Wrong move"],
+    apply_test: ["Scenario", "Clue", "Next move", "Wrong move"],
   };
-  return labels[mode]?.[index] || `Step ${index + 1}`;
+  return labels[mode][index] || `Step ${index + 1}`;
 }
 
 function roleSentence(role: GuidedRole, text: string): string {
