@@ -69,7 +69,7 @@ export function extractPriorityHighlights({
 
   if (story) {
     const spans: PriorityHighlightSpan[] = [];
-    const mainBlock = [story.mainIdea, story.narrativeLead, story.support[0]].filter(Boolean).join(" ");
+    const mainBlock = [story.mainIdeaBlock?.text || story.mainIdea, story.narrativeLead, story.mainIdeaBlock?.support[0] || story.support[0]].filter(Boolean).join(" ");
     spans.push({
       id: `story-main-${pageNumber}`,
       documentId,
@@ -80,10 +80,7 @@ export function extractPriorityHighlights({
       kind: "core_claim",
     });
     const supportBlocks = uniqueNormalized([
-      ...story.supportingLogic,
-      ...story.comparisonSignals,
-      ...story.relationSignals,
-      ...story.applySignals,
+      ...story.supportBlocks.flatMap((block) => [block.text, ...block.support]),
       ...story.support,
     ]).slice(0, maxSupport);
     supportBlocks.forEach((line, index) => spans.push({
@@ -95,7 +92,11 @@ export function extractPriorityHighlights({
       confidence: Math.max(0.5, story.confidence - 0.1),
       kind: "evidence_sentence",
     }));
-    const weakBlocks = uniqueNormalized([...story.trapSignals, ...story.weakSupport]).slice(0, maxWeak);
+    const weakBlocks = uniqueNormalized([
+      ...story.weakBlocks.flatMap((block) => [block.text, ...block.support]),
+      ...story.trapSignals,
+      ...story.weakSupport,
+    ]).slice(0, maxWeak);
     weakBlocks.forEach((line, index) => spans.push({
       id: `story-weak-${pageNumber}-${index}`,
       documentId,
