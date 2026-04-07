@@ -18,8 +18,9 @@ export default function ShadowRecallPanel({
       main: pageStory.mainIdeaBlock?.text || reveal?.mainIdea || "",
       mechanism: pageStory.mechanismBlock?.text || reveal?.mechanism || "",
       distinction: pageStory.distinctionBlock?.text || reveal?.distinction || "",
-      application: pageStory.applicationBlock?.text || reveal?.application || "",
-      trap: pageStory.trapBlock?.text || reveal?.trap || "",
+      application: pageStory.decisionBlock?.action || pageStory.applicationBlock?.text || reveal?.application || "",
+      trap: pageStory.trapBlock?.trap || reveal?.trap || "",
+      wrongMove: pageStory.decisionBlock?.avoid[0] || pageStory.trapBlock?.whyWrong || "",
     };
   }, [pageStory, reveal]);
 
@@ -51,6 +52,7 @@ export default function ShadowRecallPanel({
           <p className="text-slate-200"><strong>Distinction:</strong> {semanticReveal.distinction || "—"}</p>
           <p className="text-slate-200"><strong>Application:</strong> {semanticReveal.application || "—"}</p>
           <p className="text-slate-200"><strong>Trap:</strong> {semanticReveal.trap || "—"}</p>
+          <p className="text-amber-200"><strong>Avoid:</strong> {semanticReveal.wrongMove || "—"}</p>
         </div>
       )}
     </div>

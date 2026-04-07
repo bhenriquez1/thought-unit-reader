@@ -51,6 +51,14 @@ export interface DecisionBlock {
   confidence: number;
 }
 
+export interface TrapBlock {
+  trap: string;
+  whyWrong?: string;
+  confusionWith?: string;
+  consequence?: string;
+  severity: "low" | "medium" | "high";
+}
+
 export interface PageStoryStep {
   id: number;
   label: StoryLabel;
@@ -106,16 +114,16 @@ export interface PageStory {
   relationSignals: string[];
   applySignals: string[];
   trapSignals: string[];
+  patternBlock: PatternBlock | null;
+  decisionBlock: DecisionBlock | null;
   mainIdeaBlock: StoryBlock | null;
   mechanismBlock: StoryBlock | null;
   distinctionBlock: StoryBlock | null;
   relationBlock: StoryBlock | null;
   applicationBlock: StoryBlock | null;
-  trapBlock: StoryBlock | null;
+  trapBlock: TrapBlock | null;
   supportBlocks: StoryBlock[];
   weakBlocks: StoryBlock[];
-  patternBlock: PatternBlock | null;
-  decisionBlock: DecisionBlock | null;
   trap: PageStoryTrap | null;
   shadowRecall: ShadowRecallModel;
   sourceCount: number;
@@ -219,25 +227,11 @@ export function buildPageStory({
   const distinctionBlock = buildStoryBlock("distinction", "distinction", comparisonSignals[0], comparisonSignals.slice(1), steps.find((s) => s.label === "Compare" || s.label === "Boundary")?.evidence || comparisonSignals, 0.63);
   const relationBlock = buildStoryBlock("relation", "relation", relationSignals[0], relationSignals.slice(1), steps.find((s) => s.label === "Relation" || s.label === "Consequence")?.evidence || relationSignals, 0.61);
   const applicationBlock = buildStoryBlock("application", "application", applySignals[0], applySignals.slice(1), steps.find((s) => s.label === "Action" || s.label === "Case" || s.label === "Rule")?.evidence || applySignals, 0.64);
-  const trapBlock = buildStoryBlock("trap", "trap", trapSignals[0] || trap?.sentence, trapSignals.slice(1), steps.find((s) => s.label === "Trap")?.evidence || trapSignals, 0.6);
+  const patternBlock = buildPatternBlock(mainIdea, narrative, steps[0]?.score || 0.7);
+  const decisionBlock = buildDecisionBlock(applicationBlock, applySignals, trapSignals);
+  const trapBlock = buildTrapBlock(trapSignals, trap);
   const supportBlocks = [mechanismBlock, distinctionBlock, relationBlock, applicationBlock].filter(Boolean) as StoryBlock[];
-  const weakBlocks = [trapBlock].filter(Boolean) as StoryBlock[];
-  const patternBlock: PatternBlock | null = mainIdeaBlock
-    ? {
-        trigger: mainIdeaBlock.text,
-        context: narrativeLeadFrom(mainIdeaBlock.text, mechanismBlock?.text),
-        confidence: Math.max(mainIdeaBlock.score, 0.62),
-      }
-    : null;
-  const decisionBlock: DecisionBlock | null = applicationBlock
-    ? {
-        action: applicationBlock.text,
-        nextSteps: applicationBlock.support.slice(0, 3),
-        avoid: trapBlock ? [trapBlock.text, ...trapBlock.support].slice(0, 3) : trapSignals.slice(0, 3),
-        threshold: pickDecisionThreshold(steps, relationSignals, comparisonSignals),
-        confidence: applicationBlock.score,
-      }
-    : null;
+  const weakBlocks = [buildStoryBlock("trap", "trap-weak", trapBlock?.trap, trapSignals.slice(1), trapSignals, 0.58)].filter(Boolean) as StoryBlock[];
 
   const confidence = computeStoryConfidence(ranked, steps, narrative, trap);
 
@@ -256,6 +250,8 @@ export function buildPageStory({
     relationSignals,
     applySignals,
     trapSignals,
+    patternBlock,
+    decisionBlock,
     mainIdeaBlock,
     mechanismBlock,
     distinctionBlock,
@@ -264,8 +260,6 @@ export function buildPageStory({
     trapBlock,
     supportBlocks,
     weakBlocks,
-    patternBlock,
-    decisionBlock,
     trap,
     shadowRecall,
     sourceCount: ranked.length,
@@ -273,15 +267,39 @@ export function buildPageStory({
   };
 }
 
-function narrativeLeadFrom(pattern: string, mechanism?: string): string {
-  if (mechanism) return cleanSentence(`${pattern} This happens because ${lowerStart(removeTrailingPeriod(mechanism))}.`);
-  return pattern;
+function buildPatternBlock(mainIdea: string, narrative: string, confidence: number): PatternBlock | null {
+  const trigger = normalizeSentence(mainIdea);
+  if (!trigger) return null;
+  return {
+    trigger,
+    context: normalizeSentence(narrative) || undefined,
+    confidence: clamp01(confidence),
+  };
 }
 
-function pickDecisionThreshold(steps: PageStoryStep[], relations: string[], distinctions: string[]): string | undefined {
-  const fromCase = steps.find((s) => s.label === "Case" || s.label === "Clue")?.content;
-  if (fromCase) return fromCase;
-  return relations[0] || distinctions[0] || undefined;
+function buildDecisionBlock(applicationBlock: StoryBlock | null, applySignals: string[], trapSignals: string[]): DecisionBlock | null {
+  const action = normalizeSentence(applicationBlock?.text || applySignals[0]);
+  if (!action) return null;
+  return {
+    action,
+    nextSteps: uniqueSentences([...(applicationBlock?.support || []), ...applySignals.slice(1)]).slice(0, 3),
+    avoid: uniqueSentences(trapSignals).slice(0, 3),
+    threshold: normalizeSentence(applySignals.find((line) => /\bif\b|\bwhen\b|\bunless\b/i.test(line)) || undefined) || undefined,
+    confidence: clamp01(applicationBlock?.score || 0.62),
+  };
+}
+
+function buildTrapBlock(trapSignals: string[], trap: PageStoryTrap | null): TrapBlock | null {
+  const trapText = normalizeSentence(trapSignals[0] || trap?.sentence);
+  if (!trapText) return null;
+  const severity: TrapBlock["severity"] = trap?.confidence && trap.confidence > 0.8 ? "high" : trap?.confidence && trap.confidence > 0.6 ? "medium" : "low";
+  return {
+    trap: trapText,
+    whyWrong: normalizeSentence(trapSignals[1]) || undefined,
+    confusionWith: normalizeSentence(trapSignals[2]) || undefined,
+    consequence: normalizeSentence(trap?.sentence && trap?.sentence !== trapText ? trap.sentence : undefined) || undefined,
+    severity,
+  };
 }
 
 function buildStoryBlock(field: StoryField, prefix: string, text?: string | null, support: string[] = [], evidence: string[] = [], score = 0.6): StoryBlock | null {
