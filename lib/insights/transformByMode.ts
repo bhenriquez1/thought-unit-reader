@@ -11,7 +11,7 @@ import type {
   PageInsightModel,
   StoryBlock,
 } from "@/lib/insights/types";
-import type { PageStory } from "@/lib/insights/buildPageStory";
+import type { PageStory, TrapBlock } from "@/lib/insights/buildPageStory";
 
 type TransformArgs = {
   pageModel: PageInsightModel;
@@ -81,6 +81,18 @@ function toStepFromBlock(args: {
   };
 }
 
+/** Convert TrapBlock (new shape) into the StoryBlock interface expected by toStepFromBlock. */
+function trapToStoryBlock(trap: TrapBlock): StoryBlock {
+  return {
+    id: "trap",
+    field: "trap",
+    text: trap.trap,
+    support: [trap.whyWrong, trap.consequence, trap.confusionWith].filter(Boolean) as string[],
+    evidence: [trap.trap],
+    score: trap.severity === "high" ? 0.85 : trap.severity === "medium" ? 0.7 : 0.6,
+  };
+}
+
 function hasText(block: StoryBlock | null | undefined): block is StoryBlock {
   return Boolean(block?.text && isRenderableSentence(block.text));
 }
@@ -97,7 +109,7 @@ function buildInsightView(pageModel: PageInsightModel, role: GuidedRole, depth: 
       { block: story.mainIdeaBlock, label: roleLabels(role, "insight", 0) },
       { block: story.mechanismBlock, label: roleLabels(role, "insight", 1) },
       { block: story.applicationBlock, label: roleLabels(role, "insight", 2) },
-      { block: story.trapBlock, label: roleLabels(role, "insight", 3) },
+      { block: story.trapBlock ? trapToStoryBlock(story.trapBlock) : null, label: roleLabels(role, "insight", 3) },
     ];
     const usable = blockSequence.filter((b) => hasText(b.block));
     if (usable.length >= 2) {
@@ -132,7 +144,7 @@ function buildExplainView(pageModel: PageInsightModel, role: GuidedRole, depth: 
       { block: story.mechanismBlock, label: roleLabels(role, "explain", 0) },
       { block: story.mainIdeaBlock, label: roleLabels(role, "explain", 1) },
       { block: story.relationBlock, label: roleLabels(role, "explain", 2) },
-      { block: story.trapBlock, label: roleLabels(role, "explain", 3) },
+      { block: story.trapBlock ? trapToStoryBlock(story.trapBlock) : null, label: roleLabels(role, "explain", 3) },
     ];
     const usable = blockSequence.filter((b) => hasText(b.block));
     if (usable.length >= 2) {
@@ -171,7 +183,7 @@ function buildCompareView(pageModel: PageInsightModel, role: GuidedRole, depth: 
       { block: story.distinctionBlock, label: roleLabels(role, "compare", 0) },
       { block: story.mechanismBlock, label: roleLabels(role, "compare", 1) },
       { block: story.applicationBlock, label: roleLabels(role, "compare", 2) },
-      { block: story.trapBlock, label: roleLabels(role, "compare", 3) },
+      { block: story.trapBlock ? trapToStoryBlock(story.trapBlock) : null, label: roleLabels(role, "compare", 3) },
     ];
     const usable = blockSequence.filter((b) => hasText(b.block));
     if (usable.length >= 2) {
@@ -251,7 +263,7 @@ function buildApplyView(pageModel: PageInsightModel, role: GuidedRole, depth: Gu
       { block: story.applicationBlock, label: roleLabels(role, "apply", 0) },
       { block: story.mainIdeaBlock, label: roleLabels(role, "apply", 1) },
       { block: story.mechanismBlock, label: roleLabels(role, "apply", 2) },
-      { block: story.trapBlock, label: roleLabels(role, "apply", 3) },
+      { block: story.trapBlock ? trapToStoryBlock(story.trapBlock) : null, label: roleLabels(role, "apply", 3) },
     ];
     const usable = blockSequence.filter((b) => hasText(b.block));
     if (usable.length >= 2) {
