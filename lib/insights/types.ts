@@ -71,6 +71,14 @@ export type GuidedReadView = {
   steps: GuidedReadStep[];
   supportTitle?: string;
   supportBullets?: string[];
+  cards?: Array<{
+    id: string;
+    kind: "pattern" | "decision" | "mechanism" | "distinction" | "relation" | "trap";
+    title: string;
+    primary: string;
+    bullets: string[];
+    severity?: "low" | "medium" | "high";
+  }>;
 };
 
 export type StoryField =
@@ -102,6 +110,14 @@ export type DecisionBlock = {
   avoid: string[];
   threshold?: string;
   confidence: number;
+};
+
+export type TrapBlock = {
+  trap: string;
+  whyWrong?: string;
+  confusionWith?: string;
+  consequence?: string;
+  severity: "low" | "medium" | "high";
 };
 
 export type ExtractedSignals = {

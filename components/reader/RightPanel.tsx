@@ -154,9 +154,21 @@ export function RightPanel({
             </div>
 
             <div className="rounded-2xl border border-emerald-500/20 bg-slate-950/70 p-5">
-              <div className="mb-3 text-xs uppercase text-emerald-300">Reading path</div>
-              <div className="space-y-4">
-                {guidedView.steps.map((step) => {
+              <div className="mb-3 text-xs uppercase text-emerald-300">Operator view</div>
+              <div className="space-y-3">
+                {guidedView.cards?.length ? guidedView.cards.map((card) => (
+                  <section key={card.id} className={cardClasses(card.kind, card.severity)}>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-200">{card.title}</div>
+                    <p className="mt-2 text-sm leading-relaxed text-slate-100">{card.primary}</p>
+                    {card.bullets?.length ? (
+                      <ul className="mt-2 space-y-1">
+                        {card.bullets.map((bullet, index) => (
+                          <li key={`${card.id}-${index}`} className="text-xs text-slate-300">• {bullet}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </section>
+                )) : guidedView.steps.map((step) => {
                   const selected = selectedStepId === step.id;
                   const ev = step.evidence[0]?.text || step.primaryText;
                   const evidenceId = resolveEvidenceId?.(ev);
@@ -168,17 +180,13 @@ export function RightPanel({
                       onClick={() => selectStep(step, true)}
                       className={`w-full rounded-xl border p-4 text-left whitespace-normal break-words ${
                         selected || activeEvidence
-                          ? trapLike
-                            ? "border-rose-400/50 bg-rose-500/10"
-                            : "border-emerald-400/40 bg-emerald-500/10"
-                          : trapLike
-                            ? "border-rose-500/30 bg-rose-950/30"
-                            : "border-white/10 bg-slate-900/80"
+                          ? trapLike ? "border-rose-400/50 bg-rose-500/10" : "border-emerald-400/40 bg-emerald-500/10"
+                          : trapLike ? "border-rose-500/30 bg-rose-950/30" : "border-white/10 bg-slate-900/80"
                       }`}
                     >
                       <div className="mb-2 flex items-center gap-2">
                         <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/20 text-[11px] font-semibold text-emerald-200">{step.stepNumber}</span>
-                        <span className={`text-xs uppercase tracking-wide ${trapLike ? "text-rose-200" : "text-emerald-200"}`}>{step.label}</span>
+                        <span className={`text-xs uppercase tracking-wide ${trapLike ? "text-rose-300" : "text-emerald-200"}`}>{step.label}</span>
                       </div>
                       <p className="text-sm leading-relaxed text-slate-200">{step.primaryText}</p>
                       {step.secondaryText ? <p className="mt-2 text-xs text-slate-300">{step.secondaryText}</p> : null}
@@ -233,4 +241,17 @@ function renderTruthFallback(reason: string, status: string, keyMismatch: boolea
     return <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">Not enough grounded text was extracted from the current page to build a reliable reading path.</div>;
   }
   return null;
+}
+
+function cardClasses(kind: "pattern" | "decision" | "mechanism" | "distinction" | "relation" | "trap", severity?: "low" | "medium" | "high") {
+  if (kind === "trap") {
+    if (severity === "high") return "rounded-2xl border border-red-300 bg-red-500/15 p-4";
+    if (severity === "medium") return "rounded-2xl border border-amber-300 bg-amber-500/15 p-4";
+    return "rounded-2xl border border-orange-300 bg-orange-500/10 p-4";
+  }
+  if (kind === "decision") return "rounded-2xl border border-blue-400/40 bg-blue-500/10 p-4";
+  if (kind === "mechanism") return "rounded-2xl border border-violet-400/40 bg-violet-500/10 p-4";
+  if (kind === "distinction") return "rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4";
+  if (kind === "relation") return "rounded-2xl border border-cyan-400/40 bg-cyan-500/10 p-4";
+  return "rounded-2xl border border-white/20 bg-white/5 p-4";
 }

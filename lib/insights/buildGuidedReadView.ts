@@ -1,8 +1,18 @@
 import { transformByMode } from "@/lib/insights/transformByMode";
 import type { GuidedDepth, GuidedMode, GuidedReadView, GuidedRole, PageInsightModel } from "@/lib/insights/types";
-import type { PageStory } from "@/lib/insights/buildPageStory";
+import type { PageStory, TrapBlock } from "@/lib/insights/buildPageStory";
 
 export type { GuidedMode, GuidedRole, GuidedDepth };
+
+export type OperatorCardKind = "pattern" | "decision" | "mechanism" | "distinction" | "relation" | "trap";
+export type OperatorCard = {
+  id: string;
+  kind: OperatorCardKind;
+  title: string;
+  primary: string;
+  bullets: string[];
+  severity?: "low" | "medium" | "high";
+};
 
 export function buildGuidedReadView(args: {
   pageModel: PageInsightModel;
@@ -56,11 +66,16 @@ export function buildGuidedReadView(args: {
     }),
     supportTitle: `Grounded support (${modeName})`,
     supportBullets: [story.mainIdea, ...story.support, ...story.weakSupport].slice(0, args.depth === "quick" ? 2 : args.depth === "standard" ? 4 : 6),
+    cards: toOperatorCards(args.mode, story, templates),
   };
 }
 
 function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedReadView) {
   const base = transformed.steps;
+  const trapPrimary = story.trapBlock?.trap || story.trapSignals[0] || story.trap?.sentence;
+  const trapSecondary = story.trapBlock?.whyWrong || story.weakSupport[0];
+  const trapEvidence = (story.trapBlock ? [story.trapBlock.whyWrong, story.trapBlock.consequence, story.trapBlock.confusionWith].filter(Boolean) as string[] : story.trapSignals.slice(1));
+
   if (mode === "explain") {
     return {
       purpose: story.mechanismBlock?.text || story.supportingLogic[0] || story.shadowRecall.reveal.mechanism || story.mainIdea,
@@ -68,7 +83,7 @@ function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedRe
         { label: "Mechanism", primary: story.mechanismBlock?.text || story.supportingLogic[0] || story.shadowRecall.reveal.mechanism || base[0]?.primaryText, secondary: story.mechanismBlock?.support.slice(0, 2).join(" — ") || story.support[0], evidence: story.mechanismBlock?.evidence || [] },
         { label: "Effect", primary: story.supportingLogic[1] || story.steps[1]?.content || base[1]?.primaryText, secondary: story.support.slice(0, 2).join(" — ") || story.support[1], evidence: story.mechanismBlock?.support.slice(2) || [] },
         { label: "Consequence", primary: story.supportingLogic[2] || story.steps[2]?.content || base[2]?.primaryText, secondary: story.support[2], evidence: story.supportingLogic.slice(3) || [] },
-        { label: "Boundary", primary: story.trapBlock?.text || story.trapSignals[0] || story.trap?.sentence || base[3]?.primaryText, secondary: story.trapBlock?.support.slice(0, 2).join(" — ") || story.weakSupport[0], evidence: story.trapBlock?.evidence || [] },
+        { label: "Boundary", primary: trapPrimary || base[3]?.primaryText, secondary: trapSecondary, evidence: trapEvidence },
       ],
     };
   }
@@ -79,7 +94,7 @@ function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedRe
         { label: "Look-Alike", primary: story.distinctionBlock?.text || story.comparisonSignals[0] || story.steps[0]?.content || base[0]?.primaryText, secondary: story.distinctionBlock?.support.slice(0, 2).join(" — ") || story.support[0], evidence: story.distinctionBlock?.evidence || [] },
         { label: "Separator", primary: story.comparisonSignals[1] || story.shadowRecall.reveal.distinction || base[1]?.primaryText, secondary: story.distinctionBlock?.support[1] || story.support[1], evidence: story.comparisonSignals.slice(2) || [] },
         { label: "Decision Rule", primary: story.comparisonSignals[2] || story.applySignals[0] || base[2]?.primaryText, secondary: story.support[2], evidence: story.applySignals.slice(1) || [] },
-        { label: "Trap", primary: story.trapBlock?.text || story.trapSignals[0] || story.trap?.sentence || base[3]?.primaryText, secondary: story.trapBlock?.support.slice(0, 2).join(" — ") || story.weakSupport[0], evidence: story.trapBlock?.evidence || [] },
+        { label: "Trap", primary: trapPrimary || base[3]?.primaryText, secondary: trapSecondary, evidence: trapEvidence },
       ],
     };
   }
@@ -101,7 +116,7 @@ function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedRe
         { label: "Case", primary: story.patternBlock?.trigger || story.applicationBlock?.text || story.applySignals[0] || story.steps[0]?.content || base[0]?.primaryText, secondary: story.patternBlock?.context || story.applicationBlock?.support.slice(0, 2).join(" — ") || story.support[0], evidence: story.applicationBlock?.evidence || [] },
         { label: "Key Clue", primary: story.decisionBlock?.threshold || story.applySignals[1] || story.mainIdeaBlock?.text || story.mainIdea || base[1]?.primaryText, secondary: story.applicationBlock?.support[1] || story.support[1], evidence: story.mainIdeaBlock?.evidence || [] },
         { label: "Next Move", primary: story.decisionBlock?.action || story.applySignals[2] || story.shadowRecall.reveal.application || base[2]?.primaryText, secondary: (story.decisionBlock?.nextSteps || []).slice(0, 2).join(" — ") || story.applicationBlock?.support[2] || story.support[2], evidence: story.applicationBlock?.support.slice(3) || [] },
-        { label: "Wrong Move", primary: story.decisionBlock?.avoid[0] || story.trapBlock?.text || story.trapSignals[0] || story.trap?.sentence || base[3]?.primaryText, secondary: story.trapBlock?.support.slice(0, 2).join(" — ") || story.weakSupport[0], evidence: story.trapBlock?.evidence || [] },
+        { label: "Wrong Move", primary: trapPrimary || base[3]?.primaryText, secondary: trapSecondary, evidence: trapEvidence },
       ],
     };
   }
@@ -111,7 +126,52 @@ function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedRe
       { label: "Pattern", primary: story.patternBlock?.trigger || story.mainIdeaBlock?.text || story.mainIdea || base[0]?.primaryText, secondary: story.patternBlock?.context || story.mainIdeaBlock?.support.slice(0, 2).join(" — ") || story.support[0], evidence: story.mainIdeaBlock?.evidence || [] },
       { label: "Decision", primary: story.decisionBlock?.action || story.shadowRecall.reveal.application || base[1]?.primaryText, secondary: story.decisionBlock?.nextSteps[0] || story.support[1], evidence: (story.decisionBlock?.nextSteps || []).slice(1) },
       { label: "Mechanism", primary: story.mechanismBlock?.text || story.steps[1]?.content || base[2]?.primaryText, secondary: story.mechanismBlock?.support.slice(0, 2).join(" — ") || story.support[2], evidence: story.mechanismBlock?.evidence || [] },
-      { label: "Trap", primary: story.decisionBlock?.avoid[0] || story.trapBlock?.text || story.trap?.sentence || base[3]?.primaryText, secondary: story.trapBlock?.support.slice(0, 2).join(" — ") || story.weakSupport[0], evidence: story.trapBlock?.evidence || [] },
+      { label: "Trap", primary: trapPrimary || base[3]?.primaryText, secondary: trapSecondary, evidence: trapEvidence },
     ],
   };
+}
+
+function toOperatorCards(mode: GuidedMode, story: PageStory, templates: { purpose: string; steps: Array<{ label: string; primary?: string; secondary?: string }> }): OperatorCard[] {
+  const pattern: OperatorCard | null = story.patternBlock?.trigger
+    ? { id: "pattern", kind: "pattern", title: "Pattern", primary: story.patternBlock.trigger, bullets: [story.patternBlock.context || ""].filter(Boolean) }
+    : null;
+  const decision: OperatorCard | null = story.decisionBlock?.action
+    ? {
+        id: "decision",
+        kind: "decision",
+        title: "Decision",
+        primary: story.decisionBlock.action,
+        bullets: [
+          ...story.decisionBlock.nextSteps,
+          ...(story.decisionBlock.avoid[0] ? [`Avoid: ${story.decisionBlock.avoid[0]}`] : []),
+          ...(story.decisionBlock.threshold ? [`Use when: ${story.decisionBlock.threshold}`] : []),
+        ].slice(0, 4),
+      }
+    : null;
+  const mechanism: OperatorCard | null = story.mechanismBlock?.text
+    ? { id: "mechanism", kind: "mechanism", title: "Mechanism", primary: story.mechanismBlock.text, bullets: story.mechanismBlock.support.slice(0, 3) }
+    : null;
+  const distinction: OperatorCard | null = story.distinctionBlock?.text
+    ? { id: "distinction", kind: "distinction", title: "Distinction", primary: story.distinctionBlock.text, bullets: story.distinctionBlock.support.slice(0, 3) }
+    : null;
+  const relation: OperatorCard | null = story.relationBlock?.text
+    ? { id: "relation", kind: "relation", title: "Relation", primary: story.relationBlock.text, bullets: story.relationBlock.support.slice(0, 3) }
+    : null;
+  const trap: OperatorCard | null = story.trapBlock?.trap
+    ? {
+        id: "trap",
+        kind: "trap",
+        title: "Trap",
+        primary: story.trapBlock.trap,
+        bullets: [story.trapBlock.whyWrong, story.trapBlock.consequence, story.trapBlock.confusionWith].filter(Boolean) as string[],
+        severity: story.trapBlock.severity,
+      }
+    : null;
+
+  const compact = (cards: Array<OperatorCard | null>) => cards.filter(Boolean) as OperatorCard[];
+  if (mode === "explain") return compact([pattern, mechanism, relation, trap]);
+  if (mode === "compare") return compact([pattern, distinction, trap]);
+  if (mode === "relation") return compact([pattern, relation, mechanism, trap]);
+  if (mode === "apply" || mode === "apply_test") return compact([pattern, decision, trap]);
+  return compact([pattern, decision, mechanism, trap]);
 }
