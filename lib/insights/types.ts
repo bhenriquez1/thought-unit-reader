@@ -66,19 +66,30 @@ export type GuidedReadStep = {
   confidence: number;
 };
 
+export type OperatorCardKind =
+  | "pattern"
+  | "decision"
+  | "application"
+  | "mechanism"
+  | "distinction"
+  | "relation"
+  | "trap";
+
+export type OperatorCard = {
+  id: string;
+  kind: OperatorCardKind;
+  title: string;
+  primary: string;
+  bullets: string[];
+  severity?: "low" | "medium" | "high";
+};
+
 export type GuidedReadView = {
   pagePurpose: string;
   steps: GuidedReadStep[];
+  cards?: OperatorCard[];
   supportTitle?: string;
   supportBullets?: string[];
-  cards?: Array<{
-    id: string;
-    kind: "pattern" | "decision" | "mechanism" | "distinction" | "relation" | "trap";
-    title: string;
-    primary: string;
-    bullets: string[];
-    severity?: "low" | "medium" | "high";
-  }>;
 };
 
 export type StoryField =

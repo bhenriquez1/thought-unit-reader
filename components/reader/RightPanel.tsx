@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import type { ActivePageContext, PanelTab, ResolvedPanelPayload, RightPanelState } from "@/lib/readerContracts";
 import { useGuidedHighlightSync } from "@/hooks/useGuidedHighlightSync";
 import { buildGuidedReadView, type GuidedDepth, type GuidedMode, type GuidedRole } from "@/lib/insights/buildGuidedReadView";
-import type { EvidenceAnchor } from "@/lib/insights/types";
+import type { EvidenceAnchor, OperatorCard, OperatorCardKind } from "@/lib/insights/types";
 import type { ActivePageIntelligenceSnapshot } from "@/lib/useActivePageIntelligence";
 
 interface RightPanelProps {
@@ -155,52 +155,46 @@ export function RightPanel({
 
             <div className="rounded-2xl border border-emerald-500/20 bg-slate-950/70 p-5">
               <div className="mb-3 text-xs uppercase text-emerald-300">Operator view</div>
-              <div className="space-y-3">
-                {guidedView.cards?.length ? guidedView.cards.map((card) => (
-                  <section key={card.id} className={cardClasses(card.kind, card.severity)}>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-200">{card.title}</div>
-                    <p className="mt-2 text-sm leading-relaxed text-slate-100">{card.primary}</p>
-                    {card.bullets?.length ? (
-                      <ul className="mt-2 space-y-1">
-                        {card.bullets.map((bullet, index) => (
-                          <li key={`${card.id}-${index}`} className="text-xs text-slate-300">• {bullet}</li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </section>
-                )) : guidedView.steps.map((step) => {
-                  const selected = selectedStepId === step.id;
-                  const ev = step.evidence[0]?.text || step.primaryText;
-                  const evidenceId = resolveEvidenceId?.(ev);
-                  const activeEvidence = Boolean(focusedEvidenceId && evidenceId === focusedEvidenceId);
-                  const trapLike = /\b(trap|wrong move|pitfall|boundary)\b/i.test(step.label);
-                  return (
-                    <button
-                      key={step.id}
-                      onClick={() => selectStep(step, true)}
-                      className={`w-full rounded-xl border p-4 text-left whitespace-normal break-words ${
-                        selected || activeEvidence
-                          ? trapLike ? "border-rose-400/50 bg-rose-500/10" : "border-emerald-400/40 bg-emerald-500/10"
-                          : trapLike ? "border-rose-500/30 bg-rose-950/30" : "border-white/10 bg-slate-900/80"
-                      }`}
-                    >
-                      <div className="mb-2 flex items-center gap-2">
-                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/20 text-[11px] font-semibold text-emerald-200">{step.stepNumber}</span>
-                        <span className={`text-xs uppercase tracking-wide ${trapLike ? "text-rose-300" : "text-emerald-200"}`}>{step.label}</span>
-                      </div>
-                      <p className="text-sm leading-relaxed text-slate-200">{step.primaryText}</p>
-                      {step.secondaryText ? <p className="mt-2 text-xs text-slate-300">{step.secondaryText}</p> : null}
-                      {step.evidence.length ? (
-                        <div className="mt-2 space-y-1">
-                          {step.evidence.slice(0, depth === "quick" ? 1 : depth === "standard" ? 2 : 3).map((anchor) => (
-                            <p key={anchor.id} className="text-[11px] leading-relaxed text-slate-400">↳ {anchor.text}</p>
-                          ))}
+              {guidedView.cards?.length ? (
+                <div className="space-y-3">
+                  {guidedView.cards.map((card) => <OperatorCardView key={card.id} card={card} />)}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {guidedView.steps.map((step) => {
+                    const selected = selectedStepId === step.id;
+                    const ev = step.evidence[0]?.text || step.primaryText;
+                    const evidenceId = resolveEvidenceId?.(ev);
+                    const activeEvidence = Boolean(focusedEvidenceId && evidenceId === focusedEvidenceId);
+                    const trapLike = /\b(trap|wrong move|pitfall|boundary)\b/i.test(step.label);
+                    return (
+                      <button
+                        key={step.id}
+                        onClick={() => selectStep(step, true)}
+                        className={`w-full rounded-xl border p-4 text-left whitespace-normal break-words ${
+                          selected || activeEvidence
+                            ? trapLike ? "border-rose-400/50 bg-rose-500/10" : "border-emerald-400/40 bg-emerald-500/10"
+                            : trapLike ? "border-rose-500/30 bg-rose-950/30" : "border-white/10 bg-slate-900/80"
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/20 text-[11px] font-semibold text-emerald-200">{step.stepNumber}</span>
+                          <span className={`text-xs uppercase tracking-wide ${trapLike ? "text-rose-300" : "text-emerald-200"}`}>{step.label}</span>
                         </div>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
+                        <p className="text-sm leading-relaxed text-slate-200">{step.primaryText}</p>
+                        {step.secondaryText ? <p className="mt-2 text-xs text-slate-300">{step.secondaryText}</p> : null}
+                        {step.evidence.length ? (
+                          <div className="mt-2 space-y-1">
+                            {step.evidence.slice(0, depth === "quick" ? 1 : depth === "standard" ? 2 : 3).map((anchor) => (
+                              <p key={anchor.id} className="text-[11px] leading-relaxed text-slate-400">↳ {anchor.text}</p>
+                            ))}
+                          </div>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {guidedView.supportTitle && guidedView.supportBullets?.length ? (
@@ -220,6 +214,41 @@ export function RightPanel({
   );
 }
 
+function cardClasses(kind: OperatorCardKind, severity?: "low" | "medium" | "high") {
+  if (kind === "trap") return severity === "high" ? "rounded-2xl border border-red-400/60 bg-red-500/15 p-4" : severity === "medium" ? "rounded-2xl border border-amber-400/60 bg-amber-500/15 p-4" : "rounded-2xl border border-orange-300/50 bg-orange-500/10 p-4";
+  if (kind === "decision") return "rounded-2xl border border-blue-400/40 bg-blue-500/10 p-4";
+  if (kind === "application") return "rounded-2xl border border-indigo-300/40 bg-indigo-500/10 p-4";
+  if (kind === "mechanism") return "rounded-2xl border border-violet-300/40 bg-violet-500/10 p-4";
+  if (kind === "distinction") return "rounded-2xl border border-emerald-300/40 bg-emerald-500/10 p-4";
+  if (kind === "relation") return "rounded-2xl border border-cyan-300/40 bg-cyan-500/10 p-4";
+  return "rounded-2xl border border-slate-300/30 bg-slate-900/70 p-4";
+}
+
+function titleClasses(kind: OperatorCardKind) {
+  if (kind === "trap") return "text-xs font-semibold uppercase tracking-wide text-amber-200";
+  if (kind === "decision") return "text-xs font-semibold uppercase tracking-wide text-blue-200";
+  if (kind === "application") return "text-xs font-semibold uppercase tracking-wide text-indigo-200";
+  if (kind === "mechanism") return "text-xs font-semibold uppercase tracking-wide text-violet-200";
+  if (kind === "distinction") return "text-xs font-semibold uppercase tracking-wide text-emerald-200";
+  if (kind === "relation") return "text-xs font-semibold uppercase tracking-wide text-cyan-200";
+  return "text-xs font-semibold uppercase tracking-wide text-slate-200";
+}
+
+function OperatorCardView({ card }: { card: OperatorCard }) {
+  return (
+    <section className={cardClasses(card.kind, card.severity)}>
+      <div className={titleClasses(card.kind)}>{card.title}</div>
+      <div className="mt-2 text-sm font-medium leading-6 text-slate-100">{card.primary}</div>
+      {card.bullets?.length ? (
+        <ul className="mt-3 space-y-1">
+          {card.bullets.map((bullet, idx) => (
+            <li key={`${card.id}-${idx}`} className="text-xs text-slate-300 leading-5">• {bullet}</li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
 
 function renderTruthFallback(reason: string, status: string, keyMismatch: boolean) {
   if (status === "loading" || keyMismatch || reason === "loading") {
@@ -241,17 +270,4 @@ function renderTruthFallback(reason: string, status: string, keyMismatch: boolea
     return <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">Not enough grounded text was extracted from the current page to build a reliable reading path.</div>;
   }
   return null;
-}
-
-function cardClasses(kind: "pattern" | "decision" | "mechanism" | "distinction" | "relation" | "trap", severity?: "low" | "medium" | "high") {
-  if (kind === "trap") {
-    if (severity === "high") return "rounded-2xl border border-red-300 bg-red-500/15 p-4";
-    if (severity === "medium") return "rounded-2xl border border-amber-300 bg-amber-500/15 p-4";
-    return "rounded-2xl border border-orange-300 bg-orange-500/10 p-4";
-  }
-  if (kind === "decision") return "rounded-2xl border border-blue-400/40 bg-blue-500/10 p-4";
-  if (kind === "mechanism") return "rounded-2xl border border-violet-400/40 bg-violet-500/10 p-4";
-  if (kind === "distinction") return "rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4";
-  if (kind === "relation") return "rounded-2xl border border-cyan-400/40 bg-cyan-500/10 p-4";
-  return "rounded-2xl border border-white/20 bg-white/5 p-4";
 }
