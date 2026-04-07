@@ -11,7 +11,16 @@ export default function ShadowRecallPanel({
   const [answer, setAnswer] = useState("");
   const [revealed, setRevealed] = useState(false);
   const prompts = useMemo(() => pageStory?.shadowRecall.questions || [], [pageStory]);
-  const reveal = useMemo(() => pageStory?.shadowRecall.reveal || null, [pageStory]);
+  const reveal = useMemo(() => {
+    if (!pageStory) return null;
+    return {
+      mainIdea: pageStory.mainIdeaBlock?.text || pageStory.shadowRecall.reveal.mainIdea,
+      mechanism: pageStory.mechanismBlock?.text || pageStory.shadowRecall.reveal.mechanism,
+      distinction: pageStory.distinctionBlock?.text || pageStory.shadowRecall.reveal.distinction,
+      application: pageStory.applicationBlock?.text || pageStory.shadowRecall.reveal.application,
+      trap: pageStory.trapBlock?.text || pageStory.shadowRecall.reveal.trap,
+    };
+  }, [pageStory]);
 
   useEffect(() => {
     setAnswer("");
