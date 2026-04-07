@@ -69,7 +69,12 @@ export function extractPriorityHighlights({
 
   if (story) {
     const spans: PriorityHighlightSpan[] = [];
-    const mainBlock = [story.mainIdeaBlock?.text || story.mainIdea, story.narrativeLead, story.mainIdeaBlock?.support[0] || story.support[0]].filter(Boolean).join(" ");
+    const mainBlock = [
+      story.patternBlock?.trigger,
+      story.mechanismBlock?.text,
+      story.mainIdeaBlock?.text,
+      story.mainIdea,
+    ].filter(Boolean).join(" ");
     spans.push({
       id: `story-main-${pageNumber}`,
       documentId,
@@ -81,6 +86,11 @@ export function extractPriorityHighlights({
     });
     const supportBlocks = uniqueNormalized([
       ...story.supportBlocks.flatMap((block) => [block.text, ...block.support]),
+      ...story.decisionBlock ? [story.decisionBlock.action, ...story.decisionBlock.nextSteps] : [],
+      ...story.supportingLogic,
+      ...story.comparisonSignals,
+      ...story.relationSignals,
+      ...story.applySignals,
       ...story.support,
     ]).slice(0, maxSupport);
     supportBlocks.forEach((line, index) => spans.push({
@@ -94,6 +104,7 @@ export function extractPriorityHighlights({
     }));
     const weakBlocks = uniqueNormalized([
       ...story.weakBlocks.flatMap((block) => [block.text, ...block.support]),
+      ...story.decisionBlock?.avoid || [],
       ...story.trapSignals,
       ...story.weakSupport,
     ]).slice(0, maxWeak);

@@ -28,14 +28,28 @@ export type StoryField =
   | "application"
   | "trap";
 
-export type StoryBlock = {
+export interface StoryBlock {
   id: string;
   field: StoryField;
   text: string;
   support: string[];
   evidence: string[];
   score: number;
-};
+}
+
+export interface PatternBlock {
+  trigger: string;
+  context?: string;
+  confidence: number;
+}
+
+export interface DecisionBlock {
+  action: string;
+  nextSteps: string[];
+  avoid: string[];
+  threshold?: string;
+  confidence: number;
+}
 
 export interface PageStoryStep {
   id: number;
@@ -78,6 +92,7 @@ export interface ShadowRecallModel {
 }
 
 export interface PageStory {
+  truthKey: string;
   pageClass: string;
   narrative: string;
   narrativeLead: string;
@@ -99,6 +114,8 @@ export interface PageStory {
   trapBlock: StoryBlock | null;
   supportBlocks: StoryBlock[];
   weakBlocks: StoryBlock[];
+  patternBlock: PatternBlock | null;
+  decisionBlock: DecisionBlock | null;
   trap: PageStoryTrap | null;
   shadowRecall: ShadowRecallModel;
   sourceCount: number;
@@ -195,19 +212,38 @@ export function buildPageStory({
   const trap = detectTrap(ranked, steps, narrative);
   const trapSignals = uniqueSentences([trap?.sentence, ...steps.filter((s) => s.label === "Trap" || s.label === "Boundary").map((s) => s.content)]).slice(0, 3);
   const shadowRecall = buildShadowRecall({ narrative, steps, trap, pageClass, mode });
-  const mainIdeaBlock = toStoryBlock("main_idea", "main", mainIdea, support.slice(0, 2), steps[0]?.evidence || [narrative], steps[0]?.score || 0.82);
-  const mechanismBlock = toStoryBlock("mechanism", "mechanism", supportingLogic[0], supportingLogic.slice(1, 3), steps.find((s) => s.label === "Mechanism" || s.label === "Effect")?.evidence || [], 0.74);
-  const distinctionBlock = toStoryBlock("distinction", "distinction", comparisonSignals[0], comparisonSignals.slice(1, 3), steps.find((s) => s.label === "Compare" || s.label === "Boundary")?.evidence || [], 0.72);
-  const relationBlock = toStoryBlock("relation", "relation", relationSignals[0], relationSignals.slice(1, 3), steps.find((s) => s.label === "Relation")?.evidence || [], 0.7);
-  const applicationBlock = toStoryBlock("application", "application", applySignals[0], applySignals.slice(1, 3), steps.find((s) => s.label === "Action" || s.label === "Case")?.evidence || [], 0.71);
-  const trapBlock = toStoryBlock("trap", "trap", trapSignals[0] || trap?.sentence, trapSignals.slice(1, 3), trapSignals, trap ? trap.confidence : 0.58);
+  const truthKey = `${pageClass}:${normalizeForCompare(mainIdea).slice(0, 64)}`;
+
+  const mainIdeaBlock = buildStoryBlock("main_idea", "main", mainIdea, support, steps[0]?.evidence || [mainIdea], steps[0]?.score || 0.7);
+  const mechanismBlock = buildStoryBlock("mechanism", "mechanism", supportingLogic[0], supportingLogic.slice(1), steps.find((s) => s.label === "Mechanism" || s.label === "Effect")?.evidence || supportingLogic, 0.68);
+  const distinctionBlock = buildStoryBlock("distinction", "distinction", comparisonSignals[0], comparisonSignals.slice(1), steps.find((s) => s.label === "Compare" || s.label === "Boundary")?.evidence || comparisonSignals, 0.63);
+  const relationBlock = buildStoryBlock("relation", "relation", relationSignals[0], relationSignals.slice(1), steps.find((s) => s.label === "Relation" || s.label === "Consequence")?.evidence || relationSignals, 0.61);
+  const applicationBlock = buildStoryBlock("application", "application", applySignals[0], applySignals.slice(1), steps.find((s) => s.label === "Action" || s.label === "Case" || s.label === "Rule")?.evidence || applySignals, 0.64);
+  const trapBlock = buildStoryBlock("trap", "trap", trapSignals[0] || trap?.sentence, trapSignals.slice(1), steps.find((s) => s.label === "Trap")?.evidence || trapSignals, 0.6);
   const supportBlocks = [mechanismBlock, distinctionBlock, relationBlock, applicationBlock].filter(Boolean) as StoryBlock[];
   const weakBlocks = [trapBlock].filter(Boolean) as StoryBlock[];
+  const patternBlock: PatternBlock | null = mainIdeaBlock
+    ? {
+        trigger: mainIdeaBlock.text,
+        context: narrativeLeadFrom(mainIdeaBlock.text, mechanismBlock?.text),
+        confidence: Math.max(mainIdeaBlock.score, 0.62),
+      }
+    : null;
+  const decisionBlock: DecisionBlock | null = applicationBlock
+    ? {
+        action: applicationBlock.text,
+        nextSteps: applicationBlock.support.slice(0, 3),
+        avoid: trapBlock ? [trapBlock.text, ...trapBlock.support].slice(0, 3) : trapSignals.slice(0, 3),
+        threshold: pickDecisionThreshold(steps, relationSignals, comparisonSignals),
+        confidence: applicationBlock.score,
+      }
+    : null;
 
   const confidence = computeStoryConfidence(ranked, steps, narrative, trap);
 
   return {
     pageClass,
+    truthKey,
     narrative,
     narrativeLead: steps[0]?.content || narrative,
     shortNarrative: shortenSentence(narrative, 180),
@@ -228,6 +264,8 @@ export function buildPageStory({
     trapBlock,
     supportBlocks,
     weakBlocks,
+    patternBlock,
+    decisionBlock,
     trap,
     shadowRecall,
     sourceCount: ranked.length,
@@ -235,15 +273,26 @@ export function buildPageStory({
   };
 }
 
-function toStoryBlock(field: StoryField, id: string, text?: string | null, support: string[] = [], evidence: string[] = [], score = 0.7): StoryBlock | null {
-  const primary = normalizeSentence(text || undefined);
-  if (!primary) return null;
+function narrativeLeadFrom(pattern: string, mechanism?: string): string {
+  if (mechanism) return cleanSentence(`${pattern} This happens because ${lowerStart(removeTrailingPeriod(mechanism))}.`);
+  return pattern;
+}
+
+function pickDecisionThreshold(steps: PageStoryStep[], relations: string[], distinctions: string[]): string | undefined {
+  const fromCase = steps.find((s) => s.label === "Case" || s.label === "Clue")?.content;
+  if (fromCase) return fromCase;
+  return relations[0] || distinctions[0] || undefined;
+}
+
+function buildStoryBlock(field: StoryField, prefix: string, text?: string | null, support: string[] = [], evidence: string[] = [], score = 0.6): StoryBlock | null {
+  const normalizedText = normalizeSentence(text);
+  if (!normalizedText) return null;
   return {
-    id: `block-${id}`,
+    id: `${prefix}-${normalizeForCompare(normalizedText).slice(0, 24)}`,
     field,
-    text: primary,
-    support: uniqueSentences(support),
-    evidence: uniqueSentences(evidence),
+    text: normalizedText,
+    support: uniqueSentences(support).slice(0, 3),
+    evidence: uniqueSentences(evidence).slice(0, 3),
     score: clamp01(score),
   };
 }

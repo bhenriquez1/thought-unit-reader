@@ -57,8 +57,8 @@ function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedRe
     return {
       purpose: story.distinctionBlock?.text || story.comparisonSignals[0] || story.shadowRecall.reveal.distinction || story.mainIdea,
       steps: [
-        { label: "Look-Alike", primary: story.comparisonSignals[0] || story.steps[0]?.content || base[0]?.primaryText, secondary: story.distinctionBlock?.support[0] || story.support[0] },
-        { label: "Separator", primary: story.distinctionBlock?.text || story.comparisonSignals[1] || story.shadowRecall.reveal.distinction || base[1]?.primaryText, secondary: story.support[1] },
+        { label: "Look-Alike", primary: story.distinctionBlock?.text || story.comparisonSignals[0] || story.steps[0]?.content || base[0]?.primaryText, secondary: story.distinctionBlock?.support[0] || story.support[0] },
+        { label: "Separator", primary: story.comparisonSignals[1] || story.shadowRecall.reveal.distinction || base[1]?.primaryText, secondary: story.distinctionBlock?.support[1] || story.support[1] },
         { label: "Decision Rule", primary: story.comparisonSignals[2] || story.applySignals[0] || base[2]?.primaryText, secondary: story.support[2] },
         { label: "Trap", primary: story.trapBlock?.text || story.trapSignals[0] || story.trap?.sentence || base[3]?.primaryText, secondary: story.trapBlock?.support[0] || story.weakSupport[0] },
       ],
@@ -68,31 +68,31 @@ function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedRe
     return {
       purpose: story.relationBlock?.text || story.relationSignals[0] || story.steps[0]?.content || story.mainIdea,
       steps: [
-        { label: "Before", primary: story.relationSignals[0] || story.steps[0]?.content || base[0]?.primaryText, secondary: story.relationBlock?.support[0] || story.support[0] },
-        { label: "Current Node", primary: story.relationSignals[1] || story.steps[1]?.content || base[1]?.primaryText, secondary: story.support[1] },
+        { label: "Before", primary: story.relationBlock?.text || story.relationSignals[0] || story.steps[0]?.content || base[0]?.primaryText, secondary: story.relationBlock?.support[0] || story.support[0] },
+        { label: "Current Node", primary: story.relationSignals[1] || story.steps[1]?.content || base[1]?.primaryText, secondary: story.relationBlock?.support[1] || story.support[1] },
         { label: "Downstream", primary: story.relationSignals[2] || story.steps[2]?.content || base[2]?.primaryText, secondary: story.support[2] },
-        { label: "System Effect", primary: story.relationSignals[3] || story.relationBlock?.text || story.shadowRecall.reveal.application || base[3]?.primaryText, secondary: story.weakSupport[0] },
+        { label: "System Effect", primary: story.relationSignals[3] || story.shadowRecall.reveal.application || base[3]?.primaryText, secondary: story.weakSupport[0] },
       ],
     };
   }
   if (mode === "apply" || mode === "apply_test") {
     return {
-      purpose: story.applicationBlock?.text || story.applySignals[0] || story.shadowRecall.reveal.application || story.mainIdea,
+      purpose: story.decisionBlock?.action || story.applicationBlock?.text || story.applySignals[0] || story.shadowRecall.reveal.application || story.mainIdea,
       steps: [
-        { label: "Case", primary: story.applicationBlock?.text || story.applySignals[0] || story.steps[0]?.content || base[0]?.primaryText, secondary: story.applicationBlock?.support[0] || story.support[0] },
-        { label: "Key Clue", primary: story.applySignals[1] || story.mainIdea || base[1]?.primaryText, secondary: story.support[1] },
-        { label: "Next Move", primary: story.applySignals[2] || story.shadowRecall.reveal.application || base[2]?.primaryText, secondary: story.support[2] },
-        { label: "Wrong Move", primary: story.trapBlock?.text || story.trapSignals[0] || story.trap?.sentence || base[3]?.primaryText, secondary: story.trapBlock?.support[0] || story.weakSupport[0] },
+        { label: "Case", primary: story.patternBlock?.trigger || story.applicationBlock?.text || story.applySignals[0] || story.steps[0]?.content || base[0]?.primaryText, secondary: story.patternBlock?.context || story.applicationBlock?.support[0] || story.support[0] },
+        { label: "Key Clue", primary: story.decisionBlock?.threshold || story.applySignals[1] || story.mainIdeaBlock?.text || story.mainIdea || base[1]?.primaryText, secondary: story.applicationBlock?.support[1] || story.support[1] },
+        { label: "Next Move", primary: story.decisionBlock?.action || story.applySignals[2] || story.shadowRecall.reveal.application || base[2]?.primaryText, secondary: story.decisionBlock?.nextSteps[0] || story.applicationBlock?.support[2] || story.support[2] },
+        { label: "Wrong Move", primary: story.decisionBlock?.avoid[0] || story.trapBlock?.text || story.trapSignals[0] || story.trap?.sentence || base[3]?.primaryText, secondary: story.trapBlock?.support[0] || story.weakSupport[0] },
       ],
     };
   }
   return {
-    purpose: story.mainIdeaBlock?.text || story.mainIdea,
+    purpose: story.patternBlock?.trigger || story.mainIdeaBlock?.text || story.mainIdea,
     steps: [
-      { label: "Main Signal", primary: story.mainIdea || base[0]?.primaryText, secondary: story.support[0] },
-      { label: "Interpretation", primary: story.steps[1]?.content || base[1]?.primaryText, secondary: story.support[1] },
-      { label: "Rule", primary: story.shadowRecall.reveal.application || base[2]?.primaryText, secondary: story.support[2] },
-      { label: "Pitfall", primary: story.trap?.sentence || base[3]?.primaryText, secondary: story.weakSupport[0] },
+      { label: "Pattern", primary: story.patternBlock?.trigger || story.mainIdeaBlock?.text || story.mainIdea || base[0]?.primaryText, secondary: story.patternBlock?.context || story.mainIdeaBlock?.support[0] || story.support[0] },
+      { label: "Decision", primary: story.decisionBlock?.action || story.shadowRecall.reveal.application || base[1]?.primaryText, secondary: story.decisionBlock?.nextSteps[0] || story.support[1] },
+      { label: "Mechanism", primary: story.mechanismBlock?.text || story.steps[1]?.content || base[2]?.primaryText, secondary: story.mechanismBlock?.support[0] || story.support[2] },
+      { label: "Trap", primary: story.decisionBlock?.avoid[0] || story.trapBlock?.text || story.trap?.sentence || base[3]?.primaryText, secondary: story.trapBlock?.support[0] || story.weakSupport[0] },
     ],
   };
 }

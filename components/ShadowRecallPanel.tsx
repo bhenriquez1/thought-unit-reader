@@ -11,16 +11,17 @@ export default function ShadowRecallPanel({
   const [answer, setAnswer] = useState("");
   const [revealed, setRevealed] = useState(false);
   const prompts = useMemo(() => pageStory?.shadowRecall.questions || [], [pageStory]);
-  const reveal = useMemo(() => {
+  const reveal = useMemo(() => pageStory?.shadowRecall.reveal || null, [pageStory]);
+  const semanticReveal = useMemo(() => {
     if (!pageStory) return null;
     return {
-      mainIdea: pageStory.mainIdeaBlock?.text || pageStory.shadowRecall.reveal.mainIdea,
-      mechanism: pageStory.mechanismBlock?.text || pageStory.shadowRecall.reveal.mechanism,
-      distinction: pageStory.distinctionBlock?.text || pageStory.shadowRecall.reveal.distinction,
-      application: pageStory.applicationBlock?.text || pageStory.shadowRecall.reveal.application,
-      trap: pageStory.trapBlock?.text || pageStory.shadowRecall.reveal.trap,
+      main: pageStory.mainIdeaBlock?.text || reveal?.mainIdea || "",
+      mechanism: pageStory.mechanismBlock?.text || reveal?.mechanism || "",
+      distinction: pageStory.distinctionBlock?.text || reveal?.distinction || "",
+      application: pageStory.applicationBlock?.text || reveal?.application || "",
+      trap: pageStory.trapBlock?.text || reveal?.trap || "",
     };
-  }, [pageStory]);
+  }, [pageStory, reveal]);
 
   useEffect(() => {
     setAnswer("");
@@ -43,13 +44,13 @@ export default function ShadowRecallPanel({
       <button className="rounded bg-indigo-600 px-3 py-1 text-xs hover:bg-indigo-500" onClick={() => setRevealed(true)}>
         Reveal
       </button>
-      {revealed && reveal && (
+      {revealed && semanticReveal && (
         <div className="space-y-2 text-xs">
-          <p className="text-slate-200"><strong>Main idea:</strong> {reveal.mainIdea || "—"}</p>
-          <p className="text-slate-200"><strong>Mechanism:</strong> {reveal.mechanism || "—"}</p>
-          <p className="text-slate-200"><strong>Distinction:</strong> {reveal.distinction || "—"}</p>
-          <p className="text-slate-200"><strong>Application:</strong> {reveal.application || "—"}</p>
-          <p className="text-slate-200"><strong>Trap:</strong> {reveal.trap || "—"}</p>
+          <p className="text-slate-200"><strong>Main idea:</strong> {semanticReveal.main || "—"}</p>
+          <p className="text-slate-200"><strong>Mechanism:</strong> {semanticReveal.mechanism || "—"}</p>
+          <p className="text-slate-200"><strong>Distinction:</strong> {semanticReveal.distinction || "—"}</p>
+          <p className="text-slate-200"><strong>Application:</strong> {semanticReveal.application || "—"}</p>
+          <p className="text-slate-200"><strong>Trap:</strong> {semanticReveal.trap || "—"}</p>
         </div>
       )}
     </div>

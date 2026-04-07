@@ -73,6 +73,37 @@ export type GuidedReadView = {
   supportBullets?: string[];
 };
 
+export type StoryField =
+  | "main_idea"
+  | "mechanism"
+  | "distinction"
+  | "relation"
+  | "application"
+  | "trap";
+
+export type StoryBlock = {
+  id: string;
+  field: StoryField;
+  text: string;
+  support: string[];
+  evidence: string[];
+  score: number;
+};
+
+export type PatternBlock = {
+  trigger: string;
+  context?: string;
+  confidence: number;
+};
+
+export type DecisionBlock = {
+  action: string;
+  nextSteps: string[];
+  avoid: string[];
+  threshold?: string;
+  confidence: number;
+};
+
 export type ExtractedSignals = {
   triggers: string[];
   actions: string[];

@@ -161,15 +161,24 @@ export function RightPanel({
                   const ev = step.evidence[0]?.text || step.primaryText;
                   const evidenceId = resolveEvidenceId?.(ev);
                   const activeEvidence = Boolean(focusedEvidenceId && evidenceId === focusedEvidenceId);
+                  const trapLike = /\b(trap|wrong move|pitfall|boundary)\b/i.test(step.label);
                   return (
                     <button
                       key={step.id}
                       onClick={() => selectStep(step, true)}
-                      className={`w-full rounded-xl border p-4 text-left whitespace-normal break-words ${selected || activeEvidence ? "border-emerald-400/40 bg-emerald-500/10" : "border-white/10 bg-slate-900/80"}`}
+                      className={`w-full rounded-xl border p-4 text-left whitespace-normal break-words ${
+                        selected || activeEvidence
+                          ? trapLike
+                            ? "border-rose-400/50 bg-rose-500/10"
+                            : "border-emerald-400/40 bg-emerald-500/10"
+                          : trapLike
+                            ? "border-rose-500/30 bg-rose-950/30"
+                            : "border-white/10 bg-slate-900/80"
+                      }`}
                     >
                       <div className="mb-2 flex items-center gap-2">
                         <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/20 text-[11px] font-semibold text-emerald-200">{step.stepNumber}</span>
-                        <span className="text-xs uppercase tracking-wide text-emerald-200">{step.label}</span>
+                        <span className={`text-xs uppercase tracking-wide ${trapLike ? "text-rose-200" : "text-emerald-200"}`}>{step.label}</span>
                       </div>
                       <p className="text-sm leading-relaxed text-slate-200">{step.primaryText}</p>
                       {step.secondaryText ? <p className="mt-2 text-xs text-slate-300">{step.secondaryText}</p> : null}
