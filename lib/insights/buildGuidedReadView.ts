@@ -1,5 +1,5 @@
 import { transformByMode } from "@/lib/insights/transformByMode";
-import type { GuidedDepth, GuidedMode, GuidedReadView, GuidedRole, OperatorCard, OperatorCardKind, PageInsightModel } from "@/lib/insights/types";
+import type { DecisionDrill, GuidedDepth, GuidedMode, GuidedReadView, GuidedRole, OperatorCard, OperatorCardKind, PageInsightModel } from "@/lib/insights/types";
 import type { PageStory } from "@/lib/insights/buildPageStory";
 
 export type { GuidedMode, GuidedRole, GuidedDepth };
@@ -49,9 +49,66 @@ export function buildGuidedReadView(args: {
       };
     }),
     cards: buildOperatorCards(args.mode, story),
+    drill: (args.mode === "apply" || args.mode === "apply_test") ? buildDecisionDrill(story) : undefined,
     supportTitle: `Grounded support (${modeName})`,
     supportBullets: [story.mainIdea, ...story.support, ...story.weakSupport].slice(0, args.depth === "quick" ? 2 : args.depth === "standard" ? 4 : 6),
   };
+}
+
+function buildDecisionDrill(story: PageStory): DecisionDrill {
+  const caseCue =
+    story.patternBlock?.trigger ||
+    story.applicationBlock?.text ||
+    story.applySignals[0] ||
+    story.mainIdea;
+
+  const bestNextMove =
+    story.decisionBlock?.action ||
+    story.applySignals[1] ||
+    story.applicationBlock?.text ||
+    story.mainIdea;
+
+  const why =
+    story.mechanismBlock?.text ||
+    story.decisionBlock?.threshold ||
+    story.supportingLogic[0] ||
+    story.support[0] ||
+    "";
+
+  const wrongMove =
+    story.trapBlock?.trap ||
+    story.trap?.sentence ||
+    story.trapSignals[0];
+
+  const wrongMoveReason =
+    story.trapBlock?.whyWrong ||
+    story.trapBlock?.consequence ||
+    story.weakSupport[0];
+
+  const examTest = buildExamTest(caseCue, bestNextMove, wrongMove);
+
+  return {
+    caseCue,
+    caseCueContext: story.patternBlock?.context || story.applicationBlock?.support[0],
+    bestNextMove,
+    bestNextMoveSteps: (story.decisionBlock?.nextSteps || story.applicationBlock?.support || []).slice(0, 3),
+    why,
+    wrongMove,
+    wrongMoveReason,
+    examTest,
+    confidence: story.confidence,
+  };
+}
+
+function buildExamTest(caseCue: string, nextMove: string, wrongMove?: string): string | undefined {
+  if (!caseCue || !nextMove) return undefined;
+  const cue = caseCue.replace(/\.$/, "").trim();
+  const stem = `If ${cue.charAt(0).toLowerCase()}${cue.slice(1)}, what is the best next step?`;
+  if (wrongMove) {
+    const wrong = wrongMove.replace(/\.$/, "").trim();
+    return `${stem} (Not: ${wrong.charAt(0).toLowerCase()}${wrong.slice(1)})`;
+  }
+  return stem;
 }
 
 function toCard(kind: OperatorCardKind, title: string, primary?: string | null, bullets: Array<string | null | undefined> = [], severity?: "low" | "medium" | "high"): OperatorCard | null {

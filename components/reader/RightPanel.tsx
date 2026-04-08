@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import type { ActivePageContext, PanelTab, ResolvedPanelPayload, RightPanelState } from "@/lib/readerContracts";
 import { useGuidedHighlightSync } from "@/hooks/useGuidedHighlightSync";
 import { buildGuidedReadView, type GuidedDepth, type GuidedMode, type GuidedRole } from "@/lib/insights/buildGuidedReadView";
-import type { EvidenceAnchor, OperatorCard, OperatorCardKind } from "@/lib/insights/types";
+import type { DecisionDrill, EvidenceAnchor, OperatorCard, OperatorCardKind } from "@/lib/insights/types";
 import type { ActivePageIntelligenceSnapshot } from "@/lib/useActivePageIntelligence";
 
 interface RightPanelProps {
@@ -148,56 +148,57 @@ export function RightPanel({
 
         {guidedView ? (
           <>
-            <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
-              <div className="text-xs uppercase tracking-wide text-emerald-300">Guided Read</div>
-              <p className="mt-2 text-sm leading-relaxed text-slate-300">{guidedView.pagePurpose}</p>
-            </div>
+            <ModeIntentHeader mode={mode} pagePurpose={guidedView.pagePurpose} />
 
-            <div className="rounded-2xl border border-emerald-500/20 bg-slate-950/70 p-5">
-              <div className="mb-3 text-xs uppercase text-emerald-300">Operator view</div>
-              {guidedView.cards?.length ? (
-                <div className="space-y-3">
-                  {guidedView.cards.map((card) => <OperatorCardView key={card.id} card={card} />)}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {guidedView.steps.map((step) => {
-                    const selected = selectedStepId === step.id;
-                    const ev = step.evidence[0]?.text || step.primaryText;
-                    const evidenceId = resolveEvidenceId?.(ev);
-                    const activeEvidence = Boolean(focusedEvidenceId && evidenceId === focusedEvidenceId);
-                    const trapLike = /\b(trap|wrong move|pitfall|boundary)\b/i.test(step.label);
-                    return (
-                      <button
-                        key={step.id}
-                        onClick={() => selectStep(step, true)}
-                        className={`w-full rounded-xl border p-4 text-left whitespace-normal break-words ${
-                          selected || activeEvidence
-                            ? trapLike ? "border-rose-400/50 bg-rose-500/10" : "border-emerald-400/40 bg-emerald-500/10"
-                            : trapLike ? "border-rose-500/30 bg-rose-950/30" : "border-white/10 bg-slate-900/80"
-                        }`}
-                      >
-                        <div className="mb-2 flex items-center gap-2">
-                          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/20 text-[11px] font-semibold text-emerald-200">{step.stepNumber}</span>
-                          <span className={`text-xs uppercase tracking-wide ${trapLike ? "text-rose-300" : "text-emerald-200"}`}>{step.label}</span>
-                        </div>
-                        <p className="text-sm leading-relaxed text-slate-200">{step.primaryText}</p>
-                        {step.secondaryText ? <p className="mt-2 text-xs text-slate-300">{step.secondaryText}</p> : null}
-                        {step.evidence.length ? (
-                          <div className="mt-2 space-y-1">
-                            {step.evidence.slice(0, depth === "quick" ? 1 : depth === "standard" ? 2 : 3).map((anchor) => (
-                              <p key={anchor.id} className="text-[11px] leading-relaxed text-slate-400">↳ {anchor.text}</p>
-                            ))}
+            {(mode === "apply" || mode === "apply_test") && guidedView.drill ? (
+              <DecisionDrillView drill={guidedView.drill} depth={depth} />
+            ) : (
+              <div className="rounded-2xl border border-emerald-500/20 bg-slate-950/70 p-5">
+                <div className="mb-3 text-xs uppercase text-emerald-300">Operator view</div>
+                {guidedView.cards?.length ? (
+                  <div className="space-y-3">
+                    {guidedView.cards.map((card) => <OperatorCardView key={card.id} card={card} />)}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {guidedView.steps.map((step) => {
+                      const selected = selectedStepId === step.id;
+                      const ev = step.evidence[0]?.text || step.primaryText;
+                      const evidenceId = resolveEvidenceId?.(ev);
+                      const activeEvidence = Boolean(focusedEvidenceId && evidenceId === focusedEvidenceId);
+                      const trapLike = /\b(trap|wrong move|pitfall|boundary)\b/i.test(step.label);
+                      return (
+                        <button
+                          key={step.id}
+                          onClick={() => selectStep(step, true)}
+                          className={`w-full rounded-xl border p-4 text-left whitespace-normal break-words ${
+                            selected || activeEvidence
+                              ? trapLike ? "border-rose-400/50 bg-rose-500/10" : "border-emerald-400/40 bg-emerald-500/10"
+                              : trapLike ? "border-rose-500/30 bg-rose-950/30" : "border-white/10 bg-slate-900/80"
+                          }`}
+                        >
+                          <div className="mb-2 flex items-center gap-2">
+                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/20 text-[11px] font-semibold text-emerald-200">{step.stepNumber}</span>
+                            <span className={`text-xs uppercase tracking-wide ${trapLike ? "text-rose-300" : "text-emerald-200"}`}>{step.label}</span>
                           </div>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+                          <p className="text-sm leading-relaxed text-slate-200">{step.primaryText}</p>
+                          {step.secondaryText ? <p className="mt-2 text-xs text-slate-300">{step.secondaryText}</p> : null}
+                          {step.evidence.length ? (
+                            <div className="mt-2 space-y-1">
+                              {step.evidence.slice(0, depth === "quick" ? 1 : depth === "standard" ? 2 : 3).map((anchor) => (
+                                <p key={anchor.id} className="text-[11px] leading-relaxed text-slate-400">↳ {anchor.text}</p>
+                              ))}
+                            </div>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
-            {guidedView.supportTitle && guidedView.supportBullets?.length ? (
+            {guidedView.supportTitle && guidedView.supportBullets?.length && mode !== "apply" && mode !== "apply_test" ? (
               <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
                 <div className="mb-2 text-xs uppercase text-slate-400">{guidedView.supportTitle}</div>
                 <ul className="space-y-1 text-sm text-slate-200">
@@ -247,6 +248,76 @@ function OperatorCardView({ card }: { card: OperatorCard }) {
         </ul>
       ) : null}
     </section>
+  );
+}
+
+const MODE_INTENT: Record<GuidedMode, { question: string; color: string }> = {
+  insight:    { question: "What matters on this page?",   color: "text-emerald-300" },
+  explain:    { question: "How does this actually work?", color: "text-violet-300" },
+  compare:    { question: "What gets confused with what?", color: "text-cyan-300" },
+  relation:   { question: "What connects to what?",       color: "text-blue-300" },
+  apply:      { question: "What would you do?",           color: "text-amber-300" },
+  apply_test: { question: "What would they ask?",         color: "text-amber-300" },
+};
+
+function ModeIntentHeader({ mode, pagePurpose }: { mode: GuidedMode; pagePurpose: string }) {
+  const intent = MODE_INTENT[mode];
+  return (
+    <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
+      <div className={`text-[10px] font-semibold uppercase tracking-widest ${intent.color}`}>{intent.question}</div>
+      <p className="mt-1.5 text-sm leading-relaxed text-slate-300">{pagePurpose}</p>
+    </div>
+  );
+}
+
+function DecisionDrillView({ drill, depth }: { drill: DecisionDrill; depth: GuidedDepth }) {
+  return (
+    <div className="space-y-2.5">
+      {/* Case Cue */}
+      <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4">
+        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-amber-300">Case Cue</div>
+        <p className="text-sm font-medium leading-6 text-slate-100">{drill.caseCue}</p>
+        {drill.caseCueContext ? <p className="mt-1 text-xs text-amber-200/70">{drill.caseCueContext}</p> : null}
+      </div>
+
+      {/* Best Next Move */}
+      <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4">
+        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-emerald-300">Best Next Move</div>
+        <p className="text-sm font-medium leading-6 text-slate-100">{drill.bestNextMove}</p>
+        {drill.bestNextMoveSteps.length > 0 ? (
+          <ul className="mt-2 space-y-0.5">
+            {drill.bestNextMoveSteps.slice(0, depth === "quick" ? 1 : 3).map((step, i) => (
+              <li key={i} className="text-xs text-slate-300 leading-5">→ {step}</li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+
+      {/* Why */}
+      {drill.why ? (
+        <div className="rounded-2xl border border-violet-400/30 bg-violet-500/10 p-4">
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-violet-300">Why</div>
+          <p className="text-sm leading-6 text-slate-200">{drill.why}</p>
+        </div>
+      ) : null}
+
+      {/* Wrong Move */}
+      {drill.wrongMove ? (
+        <div className="rounded-2xl border border-rose-400/50 bg-rose-500/10 p-4">
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-rose-300">Wrong Move</div>
+          <p className="text-sm font-medium leading-6 text-slate-100">{drill.wrongMove}</p>
+          {drill.wrongMoveReason ? <p className="mt-1 text-xs text-rose-200/70">{drill.wrongMoveReason}</p> : null}
+        </div>
+      ) : null}
+
+      {/* Exam Test */}
+      {drill.examTest && depth !== "quick" ? (
+        <div className="rounded-2xl border border-slate-400/20 bg-slate-800/60 p-4">
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Exam Test</div>
+          <p className="text-sm italic leading-6 text-slate-300">{drill.examTest}</p>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

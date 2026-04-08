@@ -125,10 +125,19 @@ export function useActivePageIntelligence({
   const [formulaSignals, setFormulaSignals] = useState<FormulaSignal[]>([]);
   const [priorityHighlights, setPriorityHighlights] = useState<ExtractPriorityHighlightsResult>({ pageNumber, main: [], support: [], weak: [], all: [], stats: { candidatesSeen: 0, candidatesAccepted: 0, blocksMerged: 0, spansResolved: 0, usedStory: false, usedFallback: false } });
   const latestRequestRef = useRef<string>("");
+  // Always holds the latest ctx so the page-processing effect reads current
+  // values without ctx itself being a dependency (avoids spurious re-runs
+  // when nearbyText / activeTopicTitle update on the same page).
+  const ctxRef = useRef(ctx);
+  ctxRef.current = ctx;
 
+  // Primary effect: fires only when the page identity changes (documentId,
+  // pageNumber, or pageText hash). Does NOT re-run when nearbyText or other
+  // auxiliary ctx fields update.
   useEffect(() => {
     const requestKey = pageTruthKey;
     latestRequestRef.current = requestKey;
+    const snapshot = ctxRef.current;
 
     setStatus("loading");
     setError(null);
@@ -140,20 +149,22 @@ export function useActivePageIntelligence({
     setPriorityHighlights({ pageNumber, main: [], support: [], weak: [], all: [], stats: { candidatesSeen: 0, candidatesAccepted: 0, blocksMerged: 0, spansResolved: 0, usedStory: false, usedFallback: false } });
 
     Promise.resolve().then(() => {
-      const localSignals = extractPageSignals(ctx, {
+      if (latestRequestRef.current !== requestKey) return;
+
+      const localSignals = extractPageSignals(snapshot, {
         minYield: 1,
         minSignals: 2,
         maxSignals: 8,
       });
       const localClassification = classifyPage(localSignals);
-      const localPayloads = buildResolvedPanelPayload(ctx, localClassification, localSignals, audience, depth);
-      const rawPageClass = classifyPageContent(ctx.pageText || "");
-      const localFormulaSignals = extractFormulaSignals(ctx.pageText || "");
+      const localPayloads = buildResolvedPanelPayload(snapshot, localClassification, localSignals, audience, depth);
+      const rawPageClass = classifyPageContent(snapshot.pageText || "");
+      const localFormulaSignals = extractFormulaSignals(snapshot.pageText || "");
       const localPageClass: PageContentClass =
         localFormulaSignals.length >= 2 && (rawPageClass === "sparse_text" || rawPageClass === "failed_sparse")
           ? "mixed_visual"
           : rawPageClass;
-      const parsedModel = processPage(ctx.pageText || "");
+      const parsedModel = processPage(snapshot.pageText || "");
       const localPageModel: PageInsightModel = {
         ...parsedModel,
         documentId,
@@ -175,13 +186,13 @@ export function useActivePageIntelligence({
         parseReady: true,
         contentClass: localPageClass,
         pageModel: localPageModel,
-        visiblePageText: ctx.pageText || "",
+        visiblePageText: snapshot.pageText || "",
         formulaSignalsCount: localFormulaSignals.length,
       });
       const localHighlights = extractPriorityHighlights({
         documentId,
         pageNumber,
-        pageText: ctx.pageText || "",
+        pageText: snapshot.pageText || "",
         pageClass: localPageClass,
         pageModel: localPageModel,
         pageStory: localPageStory,
@@ -204,18 +215,24 @@ export function useActivePageIntelligence({
       setError(err instanceof Error ? err.message : "Failed to build active page intelligence.");
       setStatus("error");
     });
-  }, [ctx, pageTruthKey, documentId, pageNumber]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageTruthKey, documentId, pageNumber]);
 
+  // Audience/depth tuning effect: only re-runs when audience or depth changes
+  // on the SAME page. Skips during active page load to avoid overwriting the
+  // clean reset state before the primary effect commits its result.
   useEffect(() => {
-    const tunedSignals = extractPageSignals(ctx, {
+    if (status === "loading") return;
+    const snapshot = ctxRef.current;
+    const tunedSignals = extractPageSignals(snapshot, {
       minYield: mode.minYield,
       minSignals: mode.label === "student" ? 2 : 3,
       maxSignals: mode.maxEvidence,
     });
     setSignals(tunedSignals);
     setClassification(classifyPage(tunedSignals));
-    setPanelPayloads(buildResolvedPanelPayload(ctx, classifyPage(tunedSignals), tunedSignals, audience, depth));
-  }, [ctx, mode, audience, depth]);
+    setPanelPayloads(buildResolvedPanelPayload(snapshot, classifyPage(tunedSignals), tunedSignals, audience, depth));
+  }, [status, mode, audience, depth]);
 
   const limitedEvidence =
     classification.confidence < 0.35 ||

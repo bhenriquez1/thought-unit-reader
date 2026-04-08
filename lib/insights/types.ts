@@ -84,10 +84,23 @@ export type OperatorCard = {
   severity?: "low" | "medium" | "high";
 };
 
+export type DecisionDrill = {
+  caseCue: string;
+  caseCueContext?: string;
+  bestNextMove: string;
+  bestNextMoveSteps: string[];
+  why: string;
+  wrongMove?: string;
+  wrongMoveReason?: string;
+  examTest?: string;
+  confidence: number;
+};
+
 export type GuidedReadView = {
   pagePurpose: string;
   steps: GuidedReadStep[];
   cards?: OperatorCard[];
+  drill?: DecisionDrill;
   supportTitle?: string;
   supportBullets?: string[];
 };
