@@ -1,406 +1,829 @@
 import { cleanSentence } from "@/lib/insights/sentenceCleanup";
 import { isRenderableSentence } from "@/lib/insights/isRenderableSentence";
-import type { DecisionPath, PageInsightModel, ParagraphInsight } from "@/lib/insights/types";
+import type { PageInsightModel, ParagraphInsight } from "@/lib/insights/types";
 import type { PageStory } from "@/lib/insights/buildPageStory";
 import type { PageContentClass } from "@/lib/pdf/classifyPageContent";
 
-export type HighlightPriority = "main" | "support" | "weak";
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
 
-export type PriorityHighlightSpan = {
-  id: string;
-  documentId: string;
-  pageNumber: number;
-  text: string;
-  priority: HighlightPriority;
-  confidence: number;
-  kind:
-    | "core_claim"
-    | "mechanism"
-    | "definition"
-    | "contrast"
-    | "process_step"
-    | "clinical_rule"
-    | "evidence_sentence"
-    | "heading_anchor";
-  paragraphId?: string;
-  sentenceId?: string;
-  evidenceId?: string;
-  startOffset?: number;
-  endOffset?: number;
+export type PriorityTier = "main" | "support" | "weak";
+
+export type SemanticHighlightKind =
+  | "main_pattern"
+  | "main_mechanism"
+  | "support_explanation"
+  | "support_relation"
+  | "support_distinction"
+  | "support_decision"
+  | "support_application"
+  | "trap_warning"
+  | "trap_boundary"
+  | "weak_caveat";
+
+export type HighlightSource =
+  | "story_pattern"
+  | "story_mechanism"
+  | "story_distinction"
+  | "story_relation"
+  | "story_decision"
+  | "story_application"
+  | "story_trap"
+  | "paragraph_cluster"
+  | "formula_cluster"
+  | "fallback";
+
+export type TextSpan = {
+  start: number;
+  end: number;
 };
 
-type ExtractPriorityHighlightsArgs = {
-  documentId: string;
+export type PriorityHighlightBlock = {
+  id: string;
+  priority: PriorityTier;
+  kind: SemanticHighlightKind;
+  source: HighlightSource;
+  text: string;
+  shortLabel?: string;
+  spans: TextSpan[];
+  score: number;
+  confidence: number;
+  paragraphIndexes?: number[];
+  evidence?: string[];
+  support?: string[];
+  blockId?: string;
+  blockField?: string;
+  isMerged: boolean;
+};
+
+export type ExtractPriorityHighlightsInput = {
+  documentId?: string;
   pageNumber: number;
-  pageClass: PageContentClass;
-  pageModel: PageInsightModel | null;
+  pageText: string;
+  pageClass?: PageContentClass | string;
+  pageModel?: PageInsightModel | null;
+  pageStory?: PageStory | null;
   maxMain?: number;
   maxSupport?: number;
   maxWeak?: number;
-  story?: PageStory | null;
+  mergeWindowChars?: number;
 };
 
-type ScoredHighlightCandidate = {
-  id: string;
-  text: string;
-  confidence: number;
-  score: number;
-  kind: PriorityHighlightSpan["kind"];
-  paragraphId?: string;
-  sentenceId?: string;
-  evidenceId?: string;
-  startOffset?: number;
-  endOffset?: number;
-  source: "paragraph" | "takeaway" | "sequence" | "summary";
+export type ExtractPriorityHighlightsResult = {
+  pageTruthKey?: string;
+  pageNumber: number;
+  documentId?: string;
+  main: PriorityHighlightBlock[];
+  support: PriorityHighlightBlock[];
+  weak: PriorityHighlightBlock[];
+  all: PriorityHighlightBlock[];
+  stats: {
+    candidatesSeen: number;
+    candidatesAccepted: number;
+    blocksMerged: number;
+    spansResolved: number;
+    usedStory: boolean;
+    usedFallback: boolean;
+  };
 };
+
+// ---------------------------------------------------------------------------
+// Base scores by semantic kind
+// ---------------------------------------------------------------------------
+
+const BASE_KIND_SCORE: Record<SemanticHighlightKind, number> = {
+  main_pattern: 100,
+  main_mechanism: 96,
+  trap_warning: 92,
+  support_decision: 90,
+  support_explanation: 88,
+  support_distinction: 86,
+  support_relation: 84,
+  support_application: 83,
+  trap_boundary: 80,
+  weak_caveat: 70,
+};
+
+// ---------------------------------------------------------------------------
+// Internal candidate type
+// ---------------------------------------------------------------------------
+
+type CandidateBlock = {
+  id: string;
+  priority: PriorityTier;
+  kind: SemanticHighlightKind;
+  source: HighlightSource;
+  text: string;
+  shortLabel: string;
+  support: string[];
+  evidence: string[];
+  blockId?: string;
+  blockField?: string;
+  score: number;
+  confidence: number;
+};
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
 
 export function extractPriorityHighlights({
   documentId,
   pageNumber,
+  pageText,
   pageClass,
   pageModel,
+  pageStory,
   maxMain = 2,
   maxSupport = 4,
-  maxWeak = 3,
-  story = null,
-}: ExtractPriorityHighlightsArgs): PriorityHighlightSpan[] {
-  if (!pageModel) return [];
-  if (pageClass === "image_only" || pageClass === "failed_sparse") return [];
+  maxWeak = 2,
+  mergeWindowChars = 220,
+}: ExtractPriorityHighlightsInput): ExtractPriorityHighlightsResult {
+  const empty = (stats: Partial<ExtractPriorityHighlightsResult["stats"]> = {}): ExtractPriorityHighlightsResult => ({
+    pageNumber,
+    documentId,
+    main: [],
+    support: [],
+    weak: [],
+    all: [],
+    stats: { candidatesSeen: 0, candidatesAccepted: 0, blocksMerged: 0, spansResolved: 0, usedStory: false, usedFallback: false, ...stats },
+  });
 
-  if (story) {
-    const spans: PriorityHighlightSpan[] = [];
-    const mainBlock = [
-      story.patternBlock?.trigger || story.mainIdeaBlock?.text,
-      story.mechanismBlock?.text || story.narrativeLead,
-    ].filter(Boolean).join(" ");
-    spans.push({
-      id: `story-main-${pageNumber}`,
-      documentId,
-      pageNumber,
-      text: normalizeText(mainBlock) || story.mainIdea,
-      priority: "main",
-      confidence: story.confidence,
-      kind: "core_claim",
+  if (!pageText) return empty();
+  if (pageClass === "image_only" || pageClass === "failed_sparse" || pageClass === "copyright_frontmatter") return empty();
+
+  // ------- Build candidates -------
+  let candidates: CandidateBlock[] = [];
+  let usedStory = false;
+  let usedFallback = false;
+
+  if (pageStory) {
+    candidates = buildStoryCandidates(pageStory, pageNumber);
+    usedStory = true;
+  }
+
+  if (!candidates.length && pageModel) {
+    candidates = buildFallbackCandidates(pageModel, pageClass as PageContentClass | undefined);
+    usedFallback = true;
+  }
+
+  const candidatesSeen = candidates.length;
+  if (!candidatesSeen) return empty({ usedStory, usedFallback });
+
+  // ------- Score modifiers -------
+  for (const c of candidates) {
+    c.score = applyScoreModifiers(c);
+  }
+
+  // ------- Deduplicate -------
+  const deduped = deduplicate(candidates);
+
+  // ------- Resolve spans -------
+  const resolved: PriorityHighlightBlock[] = [];
+  let spansResolved = 0;
+
+  for (const c of deduped) {
+    const spans = resolveBlockSpans(pageText, c.text, c.support, c.evidence);
+    if (!spans.length && !usedFallback) continue; // strict: skip blocks with no span unless fallback
+    if (spans.length) spansResolved++;
+    resolved.push({
+      id: c.id,
+      priority: c.priority,
+      kind: c.kind,
+      source: c.source,
+      text: c.text,
+      shortLabel: c.shortLabel,
+      spans,
+      score: c.score,
+      confidence: c.confidence,
+      evidence: c.evidence.length ? c.evidence : undefined,
+      support: c.support.length ? c.support : undefined,
+      blockId: c.blockId,
+      blockField: c.blockField,
+      isMerged: false,
     });
-    const supportBlocks = uniqueNormalized([
-      ...story.supportBlocks.flatMap((block) => [block.text, ...block.support]),
-      ...(story.decisionBlock ? [story.decisionBlock.action, ...story.decisionBlock.nextSteps] : []),
-      ...story.supportingLogic,
-      ...story.comparisonSignals,
-      ...story.relationSignals,
-      ...story.applySignals,
-      ...story.support,
-    ]).slice(0, maxSupport);
-    supportBlocks.forEach((line, index) => spans.push({
-      id: `story-support-${pageNumber}-${index}`,
-      documentId,
-      pageNumber,
-      text: line,
+  }
+
+  // ------- Merge adjacent blocks -------
+  const merged = mergeAdjacentBlocks(resolved, mergeWindowChars);
+  const blocksMerged = resolved.length - merged.length;
+
+  // ------- Bucket into tiers -------
+  const mainBlocks = merged.filter((b) => b.priority === "main").slice(0, maxMain);
+  const supportBlocks = merged.filter((b) => b.priority === "support").slice(0, maxSupport);
+  const weakBlocks = merged.filter((b) => b.priority === "weak").slice(0, maxWeak);
+
+  const all = [...mainBlocks, ...supportBlocks, ...weakBlocks].sort((a, b) => b.score - a.score);
+
+  return {
+    pageNumber,
+    documentId,
+    main: mainBlocks,
+    support: supportBlocks,
+    weak: weakBlocks,
+    all,
+    stats: {
+      candidatesSeen,
+      candidatesAccepted: merged.length,
+      blocksMerged,
+      spansResolved,
+      usedStory,
+      usedFallback,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Story-first candidate builder
+// ---------------------------------------------------------------------------
+
+function buildStoryCandidates(story: PageStory, pageNumber: number): CandidateBlock[] {
+  const candidates: CandidateBlock[] = [];
+  const n = pageNumber;
+
+  // Main: pattern
+  if (story.patternBlock?.trigger && isRenderableSentence(story.patternBlock.trigger)) {
+    candidates.push({
+      id: `pat-${n}`,
+      priority: "main",
+      kind: "main_pattern",
+      source: "story_pattern",
+      text: clean(story.patternBlock.trigger),
+      shortLabel: "Pattern",
+      support: compact([story.patternBlock.context]),
+      evidence: [],
+      blockId: "patternBlock",
+      blockField: "patternBlock",
+      score: BASE_KIND_SCORE.main_pattern,
+      confidence: story.confidence,
+    });
+  } else if (story.mainIdeaBlock?.text && isRenderableSentence(story.mainIdeaBlock.text)) {
+    candidates.push({
+      id: `pat-${n}`,
+      priority: "main",
+      kind: "main_pattern",
+      source: "story_pattern",
+      text: clean(story.mainIdeaBlock.text),
+      shortLabel: "Pattern",
+      support: story.mainIdeaBlock.support.slice(0, 2),
+      evidence: story.mainIdeaBlock.evidence.slice(0, 2),
+      blockId: "mainIdeaBlock",
+      blockField: "mainIdeaBlock",
+      score: BASE_KIND_SCORE.main_pattern - 4,
+      confidence: story.confidence,
+    });
+  }
+
+  // Main: mechanism
+  if (story.mechanismBlock?.text && isRenderableSentence(story.mechanismBlock.text)) {
+    candidates.push({
+      id: `mech-${n}`,
+      priority: "main",
+      kind: "main_mechanism",
+      source: "story_mechanism",
+      text: clean(story.mechanismBlock.text),
+      shortLabel: "Mechanism",
+      support: story.mechanismBlock.support.slice(0, 3),
+      evidence: story.mechanismBlock.evidence.slice(0, 2),
+      blockId: "mechanismBlock",
+      blockField: "mechanismBlock",
+      score: BASE_KIND_SCORE.main_mechanism,
+      confidence: story.confidence,
+    });
+  } else if (story.supportingLogic[0] && isRenderableSentence(story.supportingLogic[0])) {
+    candidates.push({
+      id: `mech-${n}`,
+      priority: "main",
+      kind: "main_mechanism",
+      source: "story_mechanism",
+      text: clean(story.supportingLogic[0]),
+      shortLabel: "Mechanism",
+      support: story.supportingLogic.slice(1, 3),
+      evidence: [],
+      score: BASE_KIND_SCORE.main_mechanism - 6,
+      confidence: story.confidence * 0.85,
+    });
+  }
+
+  // Support: decision
+  if (story.decisionBlock?.action && isRenderableSentence(story.decisionBlock.action)) {
+    candidates.push({
+      id: `dec-${n}`,
       priority: "support",
-      confidence: Math.max(0.5, story.confidence - 0.1),
-      kind: "evidence_sentence",
-    }));
-    const weakBlocks = uniqueNormalized([
-      ...story.weakBlocks.flatMap((block) => [block.text, ...block.support]),
-      ...(story.trapBlock ? [story.trapBlock.trap, story.trapBlock.whyWrong || "", story.trapBlock.consequence || ""] : []),
-      ...story.trapSignals,
-      ...story.weakSupport,
-    ]).slice(0, maxWeak);
-    weakBlocks.forEach((line, index) => spans.push({
-      id: `story-weak-${pageNumber}-${index}`,
-      documentId,
-      pageNumber,
-      text: line,
+      kind: "support_decision",
+      source: "story_decision",
+      text: clean(story.decisionBlock.action),
+      shortLabel: "Decision",
+      support: story.decisionBlock.nextSteps.slice(0, 2),
+      evidence: compact([story.decisionBlock.threshold]),
+      blockId: "decisionBlock",
+      blockField: "decisionBlock",
+      score: BASE_KIND_SCORE.support_decision,
+      confidence: story.confidence * 0.9,
+    });
+  }
+
+  // Support: distinction
+  if (story.distinctionBlock?.text && isRenderableSentence(story.distinctionBlock.text)) {
+    candidates.push({
+      id: `dist-${n}`,
+      priority: "support",
+      kind: "support_distinction",
+      source: "story_distinction",
+      text: clean(story.distinctionBlock.text),
+      shortLabel: "Distinction",
+      support: story.distinctionBlock.support.slice(0, 2),
+      evidence: story.distinctionBlock.evidence.slice(0, 2),
+      blockId: "distinctionBlock",
+      blockField: "distinctionBlock",
+      score: BASE_KIND_SCORE.support_distinction,
+      confidence: story.confidence * 0.88,
+    });
+  } else if (story.comparisonSignals[0] && isRenderableSentence(story.comparisonSignals[0])) {
+    candidates.push({
+      id: `dist-${n}`,
+      priority: "support",
+      kind: "support_distinction",
+      source: "story_distinction",
+      text: clean(story.comparisonSignals[0]),
+      shortLabel: "Distinction",
+      support: story.comparisonSignals.slice(1, 3),
+      evidence: [],
+      score: BASE_KIND_SCORE.support_distinction - 5,
+      confidence: story.confidence * 0.8,
+    });
+  }
+
+  // Support: relation
+  if (story.relationBlock?.text && isRenderableSentence(story.relationBlock.text)) {
+    candidates.push({
+      id: `rel-${n}`,
+      priority: "support",
+      kind: "support_relation",
+      source: "story_relation",
+      text: clean(story.relationBlock.text),
+      shortLabel: "Relation",
+      support: story.relationBlock.support.slice(0, 2),
+      evidence: story.relationBlock.evidence.slice(0, 2),
+      blockId: "relationBlock",
+      blockField: "relationBlock",
+      score: BASE_KIND_SCORE.support_relation,
+      confidence: story.confidence * 0.87,
+    });
+  } else if (story.relationSignals[0] && isRenderableSentence(story.relationSignals[0])) {
+    candidates.push({
+      id: `rel-${n}`,
+      priority: "support",
+      kind: "support_relation",
+      source: "story_relation",
+      text: clean(story.relationSignals[0]),
+      shortLabel: "Relation",
+      support: story.relationSignals.slice(1, 3),
+      evidence: [],
+      score: BASE_KIND_SCORE.support_relation - 5,
+      confidence: story.confidence * 0.78,
+    });
+  }
+
+  // Support: application
+  if (story.applicationBlock?.text && isRenderableSentence(story.applicationBlock.text)) {
+    candidates.push({
+      id: `app-${n}`,
+      priority: "support",
+      kind: "support_application",
+      source: "story_application",
+      text: clean(story.applicationBlock.text),
+      shortLabel: "Application",
+      support: story.applicationBlock.support.slice(0, 2),
+      evidence: story.applicationBlock.evidence.slice(0, 2),
+      blockId: "applicationBlock",
+      blockField: "applicationBlock",
+      score: BASE_KIND_SCORE.support_application,
+      confidence: story.confidence * 0.86,
+    });
+  } else if (story.applySignals[0] && isRenderableSentence(story.applySignals[0])) {
+    candidates.push({
+      id: `app-${n}`,
+      priority: "support",
+      kind: "support_application",
+      source: "story_application",
+      text: clean(story.applySignals[0]),
+      shortLabel: "Application",
+      support: story.applySignals.slice(1, 3),
+      evidence: [],
+      score: BASE_KIND_SCORE.support_application - 5,
+      confidence: story.confidence * 0.76,
+    });
+  }
+
+  // Support: mechanism support → support_explanation
+  for (const logicLine of story.supportingLogic.slice(1, 3)) {
+    if (!isRenderableSentence(logicLine)) continue;
+    if (candidates.some((c) => textSimilarity(c.text, logicLine) > 0.82)) continue;
+    candidates.push({
+      id: `exp-${n}-${candidates.length}`,
+      priority: "support",
+      kind: "support_explanation",
+      source: "story_mechanism",
+      text: clean(logicLine),
+      shortLabel: "Explanation",
+      support: [],
+      evidence: [],
+      score: BASE_KIND_SCORE.support_explanation - 4,
+      confidence: story.confidence * 0.78,
+    });
+  }
+
+  // Weak: trap
+  if (story.trapBlock?.trap && isRenderableSentence(story.trapBlock.trap)) {
+    candidates.push({
+      id: `trap-${n}`,
       priority: "weak",
-      confidence: Math.max(0.35, story.confidence - 0.2),
-      kind: "evidence_sentence",
-    }));
-    return spans.filter((item) => isRenderableSentence(item.text));
-  }
-
-  const budgets = getBudgetsForPageClass(pageClass, { maxMain, maxSupport, maxWeak });
-  const candidates = synthesizePriorityBlocks(collectHighlightCandidates(pageModel, pageClass));
-  if (!candidates.length) return [];
-
-  const main = candidates
-    .filter((candidate) => candidate.score >= 0.78)
-    .slice(0, budgets.main)
-    .map((candidate) => toHighlight(candidate, documentId, pageNumber, "main"));
-
-  const used = new Set(main.map((item) => item.id));
-  const support = candidates
-    .filter((candidate) => !used.has(candidate.id) && candidate.score >= 0.56)
-    .slice(0, budgets.support)
-    .map((candidate) => toHighlight(candidate, documentId, pageNumber, "support"));
-
-  support.forEach((item) => used.add(item.id));
-
-  const weak = candidates
-    .filter((candidate) => !used.has(candidate.id) && candidate.score >= 0.34)
-    .slice(0, budgets.weak)
-    .map((candidate) => toHighlight(candidate, documentId, pageNumber, "weak"));
-
-  return [...main, ...support, ...weak];
-}
-
-function uniqueNormalized(lines: string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const line of lines) {
-    const normalized = normalizeText(line);
-    if (!normalized) continue;
-    const key = normalized.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(normalized);
-  }
-  return out;
-}
-
-function synthesizePriorityBlocks(candidates: ScoredHighlightCandidate[]): ScoredHighlightCandidate[] {
-  const out: ScoredHighlightCandidate[] = [];
-  const used = new Set<string>();
-  for (let i = 0; i < candidates.length; i += 1) {
-    const candidate = candidates[i];
-    if (used.has(candidate.id)) continue;
-
-    const currentIndex = paragraphNumber(candidate.paragraphId);
-    const next = candidates[i + 1];
-    const nextIndex = paragraphNumber(next?.paragraphId);
-    const canMerge = currentIndex !== null
-      && nextIndex !== null
-      && Math.abs(currentIndex - nextIndex) === 1
-      && candidate.score >= 0.62
-      && (next?.score || 0) >= 0.54;
-
-    if (canMerge && next) {
-      used.add(candidate.id);
-      used.add(next.id);
-      out.push({
-        ...candidate,
-        id: `${candidate.id}+${next.id}`,
-        text: cleanSentence(`${candidate.text} ${next.text}`),
-        confidence: clamp((candidate.confidence + next.confidence) / 2, 0, 1),
-        score: clamp(Math.max(candidate.score, next.score) + 0.08, 0, 1),
-        kind: candidate.kind,
-        source: candidate.source,
+      kind: "trap_warning",
+      source: "story_trap",
+      text: clean(story.trapBlock.trap),
+      shortLabel: "Trap",
+      support: compact([story.trapBlock.whyWrong, story.trapBlock.consequence]),
+      evidence: compact([story.trapBlock.confusionWith]),
+      blockId: "trapBlock",
+      blockField: "trapBlock",
+      score: BASE_KIND_SCORE.trap_warning,
+      confidence: story.confidence * 0.92,
+    });
+    // Boundary sub-block
+    if (story.trapBlock.consequence && isRenderableSentence(story.trapBlock.consequence)) {
+      candidates.push({
+        id: `bound-${n}`,
+        priority: "weak",
+        kind: "trap_boundary",
+        source: "story_trap",
+        text: clean(story.trapBlock.consequence),
+        shortLabel: "Boundary",
+        support: compact([story.trapBlock.whyWrong]),
+        evidence: [],
+        score: BASE_KIND_SCORE.trap_boundary,
+        confidence: story.confidence * 0.82,
       });
-      i += 1;
-      continue;
     }
-
-    out.push(candidate);
-    used.add(candidate.id);
+  } else if (story.trap?.sentence && isRenderableSentence(story.trap.sentence)) {
+    candidates.push({
+      id: `trap-${n}`,
+      priority: "weak",
+      kind: "trap_warning",
+      source: "story_trap",
+      text: clean(story.trap.sentence),
+      shortLabel: "Trap",
+      support: [],
+      evidence: [],
+      score: BASE_KIND_SCORE.trap_warning - 6,
+      confidence: story.confidence * 0.8,
+    });
+  } else if (story.trapSignals[0] && isRenderableSentence(story.trapSignals[0])) {
+    candidates.push({
+      id: `trap-${n}`,
+      priority: "weak",
+      kind: "trap_warning",
+      source: "story_trap",
+      text: clean(story.trapSignals[0]),
+      shortLabel: "Trap",
+      support: story.trapSignals.slice(1, 3),
+      evidence: [],
+      score: BASE_KIND_SCORE.trap_warning - 10,
+      confidence: story.confidence * 0.72,
+    });
   }
-  return out;
+
+  // Weak caveat from weakSupport
+  for (const wline of story.weakSupport.slice(0, 2)) {
+    if (!isRenderableSentence(wline)) continue;
+    if (candidates.some((c) => textSimilarity(c.text, wline) > 0.8)) continue;
+    candidates.push({
+      id: `cav-${n}-${candidates.length}`,
+      priority: "weak",
+      kind: "weak_caveat",
+      source: "story_trap",
+      text: clean(wline),
+      shortLabel: "Caveat",
+      support: [],
+      evidence: [],
+      score: BASE_KIND_SCORE.weak_caveat,
+      confidence: story.confidence * 0.7,
+    });
+  }
+
+  return candidates.filter((c) => c.text.length >= 15);
 }
 
-function paragraphNumber(id?: string): number | null {
-  if (!id) return null;
-  const match = id.match(/(\d+)$/);
-  return match ? Number(match[1]) : null;
-}
+// ---------------------------------------------------------------------------
+// Fallback candidate builder (no story)
+// ---------------------------------------------------------------------------
 
-function collectHighlightCandidates(pageModel: PageInsightModel, pageClass: PageContentClass): ScoredHighlightCandidate[] {
-  const candidates: ScoredHighlightCandidate[] = [];
+function buildFallbackCandidates(pageModel: PageInsightModel, pageClass?: PageContentClass): CandidateBlock[] {
+  const candidates: CandidateBlock[] = [];
   const seen = new Set<string>();
 
-  const push = (candidate: ScoredHighlightCandidate | null) => {
-    if (!candidate || !candidate.text || seen.has(candidate.id)) return;
-    seen.add(candidate.id);
-    candidates.push(candidate);
+  const tryAdd = (text: string, priority: PriorityTier, kind: SemanticHighlightKind, id: string) => {
+    const normalized = clean(text);
+    if (!normalized || !isRenderableSentence(normalized)) return;
+    const key = normalizeForSearch(normalized);
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push({
+      id,
+      priority,
+      kind,
+      source: "fallback",
+      text: normalized,
+      shortLabel: shortLabelForKind(kind),
+      support: [],
+      evidence: [],
+      score: BASE_KIND_SCORE[kind] - 15,
+      confidence: 0.6,
+    });
   };
 
-  push(buildSummaryCandidate(pageModel.pageSummary));
-  for (const takeaway of pageModel.topTakeaways || []) push(buildTakeawayCandidate(takeaway));
-  for (const paragraph of pageModel.paragraphInsights || []) push(buildParagraphCandidate(paragraph, pageClass));
-  for (const sequence of pageModel.decisionPaths || []) push(buildSequenceCandidate(sequence));
+  // Page summary → main pattern
+  if (pageModel.pageSummary) tryAdd(pageModel.pageSummary, "main", "main_pattern", "fb-summary");
+
+  // Paragraph insights → classify by type
+  for (const para of (pageModel.paragraphInsights || []).slice(0, 8)) {
+    const text = para.summary || para.cleanedText || para.rawText || "";
+    const kind = fallbackKindForParagraph(para);
+    const priority: PriorityTier = kind === "main_mechanism" || kind === "main_pattern" ? "main" : kind === "trap_warning" ? "weak" : "support";
+    tryAdd(text, priority, kind, `fb-para-${para.id}`);
+  }
+
+  // Top takeaways → support_explanation
+  for (const t of (pageModel.topTakeaways || []).slice(0, 3)) {
+    tryAdd(t, "support", "support_explanation", `fb-take-${hashText(t)}`);
+  }
+
+  // Decision paths trap → trap_warning
+  for (const dp of (pageModel.decisionPaths || []).slice(0, 3)) {
+    if (dp.trap) tryAdd(dp.trap, "weak", "trap_warning", `fb-trap-${dp.id}`);
+    if (dp.interpretation) tryAdd(dp.interpretation, "support", "support_decision", `fb-dec-${dp.id}`);
+  }
 
   return candidates
-    .filter((item) => isRenderableSentence(item.text))
+    .filter((c) => c.text.length >= 15)
     .sort((a, b) => b.score - a.score);
 }
 
-function buildSummaryCandidate(text: string): ScoredHighlightCandidate | null {
-  const normalized = normalizeText(text);
-  if (!normalized) return null;
-  return {
-    id: `summary:${hashText(normalized)}`,
-    text: normalized,
-    confidence: 0.84,
-    score: 0.86,
-    kind: inferHighlightKind(normalized, "summary"),
-    source: "summary",
-  };
-}
-
-function buildTakeawayCandidate(text: string): ScoredHighlightCandidate | null {
-  const normalized = normalizeText(text);
-  if (!normalized) return null;
-  return {
-    id: `takeaway:${hashText(normalized)}`,
-    text: normalized,
-    confidence: 0.72,
-    score: scoreText(normalized, "takeaway"),
-    kind: inferHighlightKind(normalized, "takeaway"),
-    source: "takeaway",
-  };
-}
-
-function buildParagraphCandidate(paragraph: ParagraphInsight, pageClass: PageContentClass): ScoredHighlightCandidate | null {
-  const normalized = normalizeText(paragraph.summary || paragraph.cleanedText || paragraph.rawText || "");
-  if (!normalized) return null;
-  return {
-    id: paragraph.id || `paragraph:${hashText(normalized)}`,
-    text: normalized,
-    confidence: paragraph.confidence ?? 0.62,
-    score: scoreParagraph(paragraph, normalized, pageClass),
-    kind: mapParagraphKindToHighlightKind(paragraph.paragraphType, normalized, pageClass),
-    paragraphId: paragraph.id,
-    source: "paragraph",
-  };
-}
-
-function buildSequenceCandidate(sequence: DecisionPath): ScoredHighlightCandidate | null {
-  const preferred = sequence.interpretation || sequence.implication || sequence.nextMove || sequence.condition || "";
-  const normalized = normalizeText(preferred);
-  if (!normalized) return null;
-  return {
-    id: sequence.id || `sequence:${hashText(normalized)}`,
-    text: normalized,
-    confidence: sequence.confidence ?? 0.58,
-    score: scoreSequence(normalized, sequence),
-    kind: inferHighlightKind(normalized, "sequence"),
-    source: "sequence",
-  };
-}
-
-function scoreParagraph(paragraph: ParagraphInsight, text: string, pageClass: PageContentClass): number {
-  let score = paragraph.confidence ?? 0.55;
-  score += Math.max(0, paragraph.priorityScore || 0) * 0.03;
-
-  if (paragraph.paragraphType === "definition") score += 0.1;
-  if (paragraph.paragraphType === "cause_effect") score += 0.12;
-  if (paragraph.paragraphType === "comparison") score += 0.09;
-  if (paragraph.paragraphType === "process") score += 0.08;
-  if (paragraph.paragraphType === "clinical_reasoning" || paragraph.paragraphType === "decision") score += 0.12;
-
-  score += scoreTextSignals(text);
-  if (pageClass === "form_page" && /\byes\b|\bno\b|_{2,}/i.test(text)) score -= 0.18;
-  if (pageClass === "table_heavy" && text.length < 18) score -= 0.1;
-  return clamp(score, 0, 1);
-}
-
-function scoreSequence(text: string, sequence: DecisionPath): number {
-  let score = sequence.confidence ?? 0.52;
-  if (sequence.nextMove) score += 0.06;
-  if (sequence.trap) score += 0.03;
-  if (sequence.implication) score += 0.06;
-  score += scoreTextSignals(text);
-  return clamp(score, 0, 1);
-}
-
-function scoreText(text: string, source: ScoredHighlightCandidate["source"]): number {
-  let score = 0.45;
-  if (source === "summary") score += 0.22;
-  if (source === "takeaway") score += 0.12;
-  score += scoreTextSignals(text);
-  return clamp(score, 0, 1);
-}
-
-function scoreTextSignals(text: string): number {
-  const lower = text.toLowerCase();
-  let score = 0;
-  if (/\bdefines?\b|\bdefined as\b|\brefers to\b|\bis called\b/.test(lower)) score += 0.08;
-  if (/\bbecause\b|\btherefore\b|\bthus\b|\bleads? to\b|\bresults? in\b/.test(lower)) score += 0.08;
-  if (/\bhowever\b|\bwhereas\b|\bin contrast\b|\bdiffers?\b/.test(lower)) score += 0.06;
-  if (/\bmust\b|\bshould\b|\bimportant\b|\bkey\b|\bmain\b/.test(lower)) score += 0.06;
-  if (/\bfirst\b|\bnext\b|\bthen\b|\bfinally\b|\bstep\b/.test(lower)) score += 0.05;
-  if (/\bdiagnosis\b|\bmanagement\b|\bmechanism\b|\bpathway\b/.test(lower)) score += 0.05;
-  if (text.length > 60 && text.length < 240) score += 0.05;
-  return score;
-}
-
-function toHighlight(candidate: ScoredHighlightCandidate, documentId: string, pageNumber: number, priority: HighlightPriority): PriorityHighlightSpan {
-  return {
-    id: candidate.id,
-    documentId,
-    pageNumber,
-    text: candidate.text,
-    priority,
-    confidence: candidate.confidence,
-    kind: candidate.kind,
-    paragraphId: candidate.paragraphId,
-    sentenceId: candidate.sentenceId,
-    evidenceId: candidate.evidenceId,
-    startOffset: candidate.startOffset,
-    endOffset: candidate.endOffset,
-  };
-}
-
-function normalizeText(input: string): string {
-  const cleaned = cleanSentence((input || "").replace(/\s+/g, " ").trim());
-  if (!cleaned || !isRenderableSentence(cleaned)) return "";
-  return cleaned;
-}
-
-function mapParagraphKindToHighlightKind(kind: string | undefined, text: string, pageClass: PageContentClass): PriorityHighlightSpan["kind"] {
-  if (pageClass === "form_page") return "evidence_sentence";
-  switch (kind) {
-    case "definition":
-      return "definition";
-    case "cause_effect":
-      return "mechanism";
-    case "comparison":
-      return "contrast";
-    case "process":
-      return "process_step";
-    case "clinical_reasoning":
-    case "decision":
-      return "clinical_rule";
-    default:
-      return inferHighlightKind(text, "paragraph");
+function fallbackKindForParagraph(para: ParagraphInsight): SemanticHighlightKind {
+  switch (para.paragraphType) {
+    case "cause_effect": return "main_mechanism";
+    case "comparison": return "support_distinction";
+    case "decision": case "clinical_reasoning": return "support_decision";
+    case "process": return "support_explanation";
+    case "signal": case "consequence": return "trap_warning";
+    default: return "main_pattern";
   }
 }
 
-function inferHighlightKind(text: string, source: ScoredHighlightCandidate["source"]): PriorityHighlightSpan["kind"] {
-  const lower = text.toLowerCase();
-  if (/\bdefined as\b|\brefers to\b|\bis called\b/.test(lower)) return "definition";
-  if (/\bbecause\b|\bleads? to\b|\bresults? in\b|\bmechanism\b/.test(lower)) return "mechanism";
-  if (/\bhowever\b|\bwhereas\b|\bin contrast\b|\bdiffers?\b/.test(lower)) return "contrast";
-  if (/\bfirst\b|\bnext\b|\bthen\b|\bfinally\b|\bstep\b/.test(lower)) return "process_step";
-  if (/\bmust\b|\bshould\b|\brule\b|\bdiagnosis\b|\bmanagement\b/.test(lower)) return "clinical_rule";
-  if (source === "summary") return "evidence_sentence";
-  return "core_claim";
+// ---------------------------------------------------------------------------
+// Score modifiers
+// ---------------------------------------------------------------------------
+
+function applyScoreModifiers(c: CandidateBlock): number {
+  let score = c.score;
+  const text = c.text.toLowerCase();
+
+  // Evidence richness
+  if (c.evidence.length >= 2) score += 8;
+  if (c.support.length >= 2) score += 6;
+
+  // Operator language
+  if (/\bif\b|\bwhen\b|\bbecause\b|\btherefore\b|\brather than\b|\bavoid\b|\bdo not\b/.test(text)) score += 5;
+
+  // High confidence
+  if (c.confidence >= 0.9) score += 4;
+
+  // Boilerplate penalty
+  if (/^(this page|this section|in this chapter|as mentioned|as discussed|see below|see above)\b/i.test(text)) score -= 20;
+
+  // Fragmentary penalty
+  if (c.text.length < 20) score -= 10;
+
+  return score;
 }
 
-function getBudgetsForPageClass(pageClass: PageContentClass, input: { maxMain: number; maxSupport: number; maxWeak: number }) {
-  switch (pageClass) {
-    case "prose":
-    case "prose_with_headings":
-      return { main: input.maxMain, support: input.maxSupport, weak: input.maxWeak };
-    case "mixed_visual":
-      return { main: 1, support: 3, weak: 2 };
-    case "sparse_text":
-      return { main: 1, support: 2, weak: 1 };
-    case "form_page":
-      return { main: 1, support: 3, weak: 1 };
-    case "table_heavy":
-      return { main: 1, support: 2, weak: 1 };
-    default:
-      return { main: 0, support: 0, weak: 0 };
+// ---------------------------------------------------------------------------
+// Deduplication
+// ---------------------------------------------------------------------------
+
+function deduplicate(candidates: CandidateBlock[]): CandidateBlock[] {
+  const sorted = [...candidates].sort((a, b) => b.score - a.score);
+  const accepted: CandidateBlock[] = [];
+
+  for (const c of sorted) {
+    const isDuplicate = accepted.some((a) => {
+      if (textSimilarity(a.text, c.text) > 0.86) return true;
+      if (a.text.includes(c.text) || c.text.includes(a.text)) return true;
+      return false;
+    });
+    if (!isDuplicate) accepted.push(c);
+  }
+
+  return accepted;
+}
+
+// ---------------------------------------------------------------------------
+// Span resolution
+// ---------------------------------------------------------------------------
+
+function resolveBlockSpans(pageText: string, blockText: string, support: string[] = [], evidence: string[] = []): TextSpan[] {
+  if (!blockText || !pageText) return [];
+
+  const pageNorm = normalizeForSearch(pageText);
+  const blockNorm = normalizeForSearch(blockText);
+
+  // 1. Exact normalized match
+  const exactIdx = pageNorm.indexOf(blockNorm);
+  if (exactIdx !== -1) {
+    return [{ start: exactIdx, end: exactIdx + blockNorm.length }];
+  }
+
+  // 2. Prefix match (first 60 normalized chars)
+  const prefix = blockNorm.slice(0, 60).trim();
+  if (prefix.length >= 20) {
+    const prefixIdx = pageNorm.indexOf(prefix);
+    if (prefixIdx !== -1) {
+      return [{ start: prefixIdx, end: Math.min(prefixIdx + blockNorm.length, pageText.length) }];
+    }
+  }
+
+  // 3. Best-sentence fuzzy match (word overlap)
+  const blockWords = new Set(blockNorm.split(/\s+/).filter((w) => w.length > 3));
+  if (blockWords.size >= 3) {
+    const sentences = splitSentences(pageText);
+    let bestScore = 0;
+    let bestSpan: TextSpan | null = null;
+
+    for (const { start, end, text: sent } of sentences) {
+      const sentWords = new Set(normalizeForSearch(sent).split(/\s+/).filter((w) => w.length > 3));
+      let overlap = 0;
+      for (const w of blockWords) {
+        if (sentWords.has(w)) overlap++;
+      }
+      const score = overlap / blockWords.size;
+      if (score > bestScore && score >= 0.5) {
+        bestScore = score;
+        bestSpan = { start, end };
+      }
+    }
+
+    if (bestSpan) return [bestSpan];
+  }
+
+  // 4. Support / evidence fallback
+  for (const fallback of [...support, ...evidence]) {
+    if (!fallback || fallback.length < 15) continue;
+    const fallbackNorm = normalizeForSearch(fallback).slice(0, 50);
+    const idx = pageNorm.indexOf(fallbackNorm);
+    if (idx !== -1) {
+      return [{ start: idx, end: Math.min(idx + fallback.length, pageText.length) }];
+    }
+  }
+
+  return [];
+}
+
+function splitSentences(text: string): Array<{ text: string; start: number; end: number }> {
+  const results: Array<{ text: string; start: number; end: number }> = [];
+  const re = /[^.!?]+[.!?]*/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    const sent = match[0].trim();
+    if (sent.length >= 20) results.push({ text: sent, start: match.index, end: match.index + match[0].length });
+  }
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Merge adjacent blocks
+// ---------------------------------------------------------------------------
+
+const ALLOWED_MERGE_PAIRS: Partial<Record<SemanticHighlightKind, SemanticHighlightKind[]>> = {
+  main_pattern: ["main_mechanism"],
+  main_mechanism: ["main_pattern"],
+  support_explanation: ["support_decision"],
+  support_decision: ["support_explanation"],
+  support_distinction: ["support_relation"],
+  support_relation: ["support_distinction"],
+};
+
+function mergeAdjacentBlocks(blocks: PriorityHighlightBlock[], windowChars: number): PriorityHighlightBlock[] {
+  const out: PriorityHighlightBlock[] = [];
+  const used = new Set<string>();
+
+  for (let i = 0; i < blocks.length; i++) {
+    if (used.has(blocks[i].id)) continue;
+    const current = blocks[i];
+    let merged = false;
+
+    for (let j = i + 1; j < blocks.length; j++) {
+      if (used.has(blocks[j].id)) continue;
+      const next = blocks[j];
+
+      if (!canMerge(current, next, windowChars)) continue;
+
+      // Merge: combine text and spans
+      used.add(current.id);
+      used.add(next.id);
+      const combinedBlock: PriorityHighlightBlock = {
+        id: `${current.id}+${next.id}`,
+        priority: current.priority,
+        kind: current.kind,
+        source: current.source,
+        text: cleanSentence(`${current.text} ${next.text}`),
+        shortLabel: current.shortLabel,
+        spans: [...current.spans, ...next.spans].sort((a, b) => a.start - b.start),
+        score: Math.max(current.score, next.score) + 4,
+        confidence: (current.confidence + next.confidence) / 2,
+        evidence: [...(current.evidence || []), ...(next.evidence || [])],
+        support: [...(current.support || []), ...(next.support || [])],
+        blockId: current.blockId,
+        blockField: current.blockField,
+        isMerged: true,
+      };
+      out.push(combinedBlock);
+      merged = true;
+      break;
+    }
+
+    if (!merged && !used.has(current.id)) {
+      used.add(current.id);
+      out.push(current);
+    }
+  }
+
+  return out;
+}
+
+function canMerge(a: PriorityHighlightBlock, b: PriorityHighlightBlock, windowChars: number): boolean {
+  if (a.priority !== b.priority) return false;
+  // Trap never merges
+  if (a.kind === "trap_warning" || a.kind === "trap_boundary" || b.kind === "trap_warning" || b.kind === "trap_boundary") return false;
+  // Must be an allowed pair
+  const allowedForA = ALLOWED_MERGE_PAIRS[a.kind] || [];
+  if (!allowedForA.includes(b.kind)) return false;
+  // Spans must be near-adjacent
+  if (!a.spans.length || !b.spans.length) return false;
+  const aEnd = Math.max(...a.spans.map((s) => s.end));
+  const bStart = Math.min(...b.spans.map((s) => s.start));
+  return Math.abs(bStart - aEnd) <= windowChars;
+}
+
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
+
+function clean(text: string): string {
+  return cleanSentence((text || "").replace(/\s+/g, " ").trim());
+}
+
+function compact(items: Array<string | null | undefined>): string[] {
+  return items.filter((s): s is string => Boolean(s) && s.length > 0);
+}
+
+function normalizeForSearch(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function textSimilarity(a: string, b: string): number {
+  const aNorm = normalizeForSearch(a);
+  const bNorm = normalizeForSearch(b);
+  const aWords = new Set(aNorm.split(/\s+/).filter((w) => w.length > 2));
+  const bWords = new Set(bNorm.split(/\s+/).filter((w) => w.length > 2));
+  if (!aWords.size || !bWords.size) return 0;
+  let shared = 0;
+  for (const w of aWords) {
+    if (bWords.has(w)) shared++;
+  }
+  return shared / Math.max(aWords.size, bWords.size);
+}
+
+function shortLabelForKind(kind: SemanticHighlightKind): string {
+  switch (kind) {
+    case "main_pattern": return "Pattern";
+    case "main_mechanism": return "Mechanism";
+    case "support_explanation": return "Explanation";
+    case "support_distinction": return "Distinction";
+    case "support_relation": return "Relation";
+    case "support_decision": return "Decision";
+    case "support_application": return "Application";
+    case "trap_warning": return "Trap";
+    case "trap_boundary": return "Boundary";
+    case "weak_caveat": return "Caveat";
   }
 }
 
 function hashText(input: string): string {
   let hash = 2166136261;
-  for (let i = 0; i < input.length; i += 1) {
+  for (let i = 0; i < input.length; i++) {
     hash ^= input.charCodeAt(i);
-    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+    hash = (hash * 16777619) >>> 0;
   }
-  return (hash >>> 0).toString(36);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
+  return hash.toString(36);
 }

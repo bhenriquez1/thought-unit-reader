@@ -7,7 +7,7 @@ import { buildModeProfile } from "@/lib/right-panel/modeProfile";
 import { deriveHighlightTargets } from "@/lib/highlightMapping";
 import { processPage } from "@/lib/insights/processPage";
 import { classifyPageContent, type PageContentClass } from "@/lib/pdf/classifyPageContent";
-import { extractPriorityHighlights } from "@/lib/highlights/extractPriorityHighlights";
+import { extractPriorityHighlights, type ExtractPriorityHighlightsResult } from "@/lib/highlights/extractPriorityHighlights";
 import { evaluatePageTruth, type PageTruthGateResult } from "@/lib/insights/evaluatePageTruth";
 import { buildPageStory } from "@/lib/insights/buildPageStory";
 import type { PageInsightModel } from "@/lib/insights/types";
@@ -123,7 +123,7 @@ export function useActivePageIntelligence({
   const [pageClass, setPageClass] = useState<PageContentClass | null>(null);
   const [pageTruth, setPageTruth] = useState<PageTruthGateResult | null>(null);
   const [formulaSignals, setFormulaSignals] = useState<FormulaSignal[]>([]);
-  const [priorityHighlights, setPriorityHighlights] = useState<ReturnType<typeof extractPriorityHighlights>>([]);
+  const [priorityHighlights, setPriorityHighlights] = useState<ExtractPriorityHighlightsResult>({ pageNumber, main: [], support: [], weak: [], all: [], stats: { candidatesSeen: 0, candidatesAccepted: 0, blocksMerged: 0, spansResolved: 0, usedStory: false, usedFallback: false } });
   const latestRequestRef = useRef<string>("");
 
   useEffect(() => {
@@ -137,7 +137,7 @@ export function useActivePageIntelligence({
     setPageClass(null);
     setPageTruth(null);
     setFormulaSignals([]);
-    setPriorityHighlights([]);
+    setPriorityHighlights({ pageNumber, main: [], support: [], weak: [], all: [], stats: { candidatesSeen: 0, candidatesAccepted: 0, blocksMerged: 0, spansResolved: 0, usedStory: false, usedFallback: false } });
 
     Promise.resolve().then(() => {
       const localSignals = extractPageSignals(ctx, {
@@ -178,15 +178,14 @@ export function useActivePageIntelligence({
         visiblePageText: ctx.pageText || "",
         formulaSignalsCount: localFormulaSignals.length,
       });
-      const localHighlights = localPageClass === "copyright_frontmatter"
-        ? []
-        : extractPriorityHighlights({
-            documentId,
-            pageNumber,
-            pageClass: localPageClass,
-            pageModel: localPageModel,
-            story: localPageStory,
-          });
+      const localHighlights = extractPriorityHighlights({
+        documentId,
+        pageNumber,
+        pageText: ctx.pageText || "",
+        pageClass: localPageClass,
+        pageModel: localPageModel,
+        pageStory: localPageStory,
+      });
 
       if (latestRequestRef.current !== requestKey) return;
 
@@ -225,7 +224,7 @@ export function useActivePageIntelligence({
 
   const highlightTargets: HighlightTarget[] = useMemo(() => {
     const derived = deriveHighlightTargets(signals, pageNumber, audience, limitedEvidence);
-    const priority = priorityHighlights.map((item, index) => ({
+    const priority = priorityHighlights.all.map((item, index) => ({
       id: `priority-${item.id}`,
       page: pageNumber,
       text: item.text,
@@ -234,7 +233,7 @@ export function useActivePageIntelligence({
       score: item.confidence,
       sourceParagraphIndex: index,
       kind: "application",
-      evidenceRefId: item.evidenceId || item.id,
+      evidenceRefId: item.id,
     } satisfies HighlightTarget));
 
     return priority.length ? [...priority, ...derived].slice(0, 12) : derived;
