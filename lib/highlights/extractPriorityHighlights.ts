@@ -519,7 +519,7 @@ function buildStoryCandidates(story: PageStory, pageNumber: number): CandidateBl
 // Fallback candidate builder (no story)
 // ---------------------------------------------------------------------------
 
-function buildFallbackCandidates(pageModel: PageInsightModel, pageClass?: PageContentClass): CandidateBlock[] {
+function buildFallbackCandidates(pageModel: PageInsightModel, _pageClass?: PageContentClass): CandidateBlock[] {
   const candidates: CandidateBlock[] = [];
   const seen = new Set<string>();
 
