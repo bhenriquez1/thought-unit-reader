@@ -228,7 +228,7 @@ export function buildPageStory({
   const relationBlock = buildStoryBlock("relation", "relation", relationSignals[0], relationSignals.slice(1), steps.find((s) => s.label === "Relation" || s.label === "Consequence")?.evidence || relationSignals, 0.61);
   const applicationBlock = buildStoryBlock("application", "application", applySignals[0], applySignals.slice(1), steps.find((s) => s.label === "Action" || s.label === "Case" || s.label === "Rule")?.evidence || applySignals, 0.64);
   const patternBlock = buildPatternBlock(mainIdea, narrative, steps[0]?.score || 0.7);
-  const decisionBlock = buildDecisionBlock(applicationBlock, applySignals, trapSignals);
+  const decisionBlock = buildDecisionBlock(applicationBlock, applySignals, trapSignals, supportingLogic);
   const trapBlock = buildTrapBlock(trapSignals, trap);
   const supportBlocks = [mechanismBlock, distinctionBlock, relationBlock, applicationBlock].filter(Boolean) as StoryBlock[];
   const weakBlocks = [buildStoryBlock("trap", "trap-weak", trapBlock?.trap, trapSignals.slice(1), trapSignals, 0.58)].filter(Boolean) as StoryBlock[];
@@ -277,7 +277,7 @@ function buildPatternBlock(mainIdea: string, narrative: string, confidence: numb
   };
 }
 
-function buildDecisionBlock(applicationBlock: StoryBlock | null, applySignals: string[], trapSignals: string[]): DecisionBlock | null {
+function buildDecisionBlock(applicationBlock: StoryBlock | null, applySignals: string[], trapSignals: string[], supportingLogic: string[] = []): DecisionBlock | null {
   const action = normalizeSentence(applicationBlock?.text || applySignals[0] || supportingLogic[0]);
   if (!action) return null;
   return {
