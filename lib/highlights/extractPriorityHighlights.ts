@@ -151,7 +151,7 @@ export function extractPriorityHighlights({
   });
 
   if (!pageText) return empty();
-  if (pageClass === "image_only" || pageClass === "failed_sparse" || pageClass === "copyright_frontmatter") return empty();
+  if (pageClass === "image_only" || pageClass === "copyright_frontmatter") return empty();
 
   // ------- Build candidates -------
   let candidates: CandidateBlock[] = [];

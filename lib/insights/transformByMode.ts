@@ -192,7 +192,7 @@ function cardsByMode(story: PageStory, mode: GuidedMode): OperatorCard[] {
     ...(story.decisionBlock?.nextSteps || []),
     story.decisionBlock?.threshold ? `Use when: ${story.decisionBlock.threshold}` : undefined,
   ]);
-  const application = toCard("application", "Application", story.applicationBlock?.text || story.applySignals[0], [
+  const application = toCard("application", "Application", story.applicationBlock?.text || story.applySignals[0] || story.supportingLogic[0], [
     ...(story.applicationBlock?.support || []),
     story.decisionBlock?.nextSteps?.[0],
   ]);

@@ -196,7 +196,7 @@ function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedRe
     return {
       purpose: story.decisionBlock?.action || story.applicationBlock?.text || story.applySignals[0] || story.shadowRecall.reveal.application || story.mainIdea,
       steps: [
-        { label: "Case", primary: story.patternBlock?.trigger || story.applicationBlock?.text || story.applySignals[0] || story.steps[0]?.content || base[0]?.primaryText, secondary: story.patternBlock?.context || story.applicationBlock?.support.slice(0, 2).join(" — ") || story.support[0], evidence: story.applicationBlock?.evidence || [] },
+        { label: "Case", primary: story.applicationBlock?.text || story.applySignals[0] || story.mechanismBlock?.text || story.steps[0]?.content || base[0]?.primaryText, secondary: story.applicationBlock?.support.slice(0, 2).join(" — ") || story.mechanismBlock?.support[0] || story.support[0], evidence: story.applicationBlock?.evidence || [] },
         { label: "Key Clue", primary: story.decisionBlock?.threshold || story.applySignals[1] || story.mainIdeaBlock?.text || story.mainIdea || base[1]?.primaryText, secondary: story.applicationBlock?.support[1] || story.support[1], evidence: story.mainIdeaBlock?.evidence || [] },
         { label: "Next Move", primary: story.decisionBlock?.action || story.applySignals[2] || story.shadowRecall.reveal.application || base[2]?.primaryText, secondary: (story.decisionBlock?.nextSteps || []).slice(0, 2).join(" — ") || story.applicationBlock?.support[2] || story.support[2], evidence: story.applicationBlock?.support.slice(3) || [] },
         { label: "Wrong Move", primary: trapPrimary || base[3]?.primaryText, secondary: trapSecondary, evidence: trapEvidence },

@@ -278,7 +278,7 @@ function buildPatternBlock(mainIdea: string, narrative: string, confidence: numb
 }
 
 function buildDecisionBlock(applicationBlock: StoryBlock | null, applySignals: string[], trapSignals: string[]): DecisionBlock | null {
-  const action = normalizeSentence(applicationBlock?.text || applySignals[0]);
+  const action = normalizeSentence(applicationBlock?.text || applySignals[0] || supportingLogic[0]);
   if (!action) return null;
   return {
     action,
