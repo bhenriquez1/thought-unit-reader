@@ -245,11 +245,19 @@ export function useActivePageIntelligence({
       id: `priority-${item.id}`,
       page: pageNumber,
       text: item.text,
-      normalizedText: item.text.toLowerCase(),
+      // Normalize the same way SmartPDFViewer normalizes span text so matching succeeds
+      // on OCR noise, smart quotes, hyphenation, ligatures.
+      normalizedText: item.text
+        .toLowerCase()
+        .replace(/\u00ad/g, "")        // soft hyphens
+        .replace(/[^\w\s]/g, " ")      // punctuation → space
+        .replace(/\s+/g, " ")
+        .trim(),
       level: item.priority === "main" ? "high_yield" : item.priority === "support" ? "supporting" : "weak",
       score: item.confidence,
       sourceParagraphIndex: index,
-      kind: "application",
+      // Map semantic kind to ParagraphKind for visual differentiation in overlay
+      kind: item.kind.startsWith("trap") ? "clinical" : item.kind === "main_mechanism" ? "mechanism" : item.kind === "support_distinction" ? "comparison" : "application",
       evidenceRefId: item.id,
     } satisfies HighlightTarget));
 
