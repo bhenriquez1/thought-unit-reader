@@ -146,9 +146,9 @@ function buildOperatorCards(mode: GuidedMode, story: PageStory): OperatorCard[] 
   ], story.trapBlock?.severity || "medium");
 
   const compact = (cards: Array<OperatorCard | null>) => cards.filter(Boolean) as OperatorCard[];
-  if (mode === "explain") return compact([pattern, mechanism, relation, trap]);
-  if (mode === "compare") return compact([pattern, distinction, trap]);
-  if (mode === "relation") return compact([pattern, relation, mechanism, trap]);
+  if (mode === "explain") return compact([mechanism, pattern, relation, trap]);
+  if (mode === "compare") return compact([distinction, pattern, trap]);
+  if (mode === "relation") return compact([relation, pattern, mechanism, trap]);
   if (mode === "apply" || mode === "apply_test") return compact([pattern, decision, application, trap]);
   return compact([pattern, decision, mechanism, trap]);
 }
