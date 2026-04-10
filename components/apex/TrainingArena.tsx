@@ -1,13 +1,13 @@
 "use client";
 // components/apex/TrainingArena.tsx
-// DAT Training Arena — Biology, General Chemistry, Organic Chemistry, PAT, QR/Math
-// Each subject has 4 tabs: PDRM | Practice | Generate | Review
+// DAT Training Arena — Learn → Practice → Generate → Review
+// Each subject panel: Learn (PDRM accordion) | Practice | Generate | Review
 
 import React, { useState, useCallback } from "react";
 import { useApexEngineStore } from "@/lib/stores/apexEngineStore";
-import { DAT_PATTERNS, getPatternsByCategory } from "@/types/patterns";
+import { DAT_PATTERN_MODULES, PatSubtype, getModulesBySection } from "@/lib/apex/datApex.seed";
+import { generateNextQuestion, scaleDifficulty, type GeneratorMode, type GeneratorDifficulty, type GeneratorProfile } from "@/lib/apex/datApex.generator";
 import type { ApexSection } from "@/lib/apex/datApexTypes";
-import { computeNextDifficulty } from "@/lib/apex/apexScoringEngine";
 
 // ---------------------------------------------------------------------------
 // Subject config
@@ -69,153 +69,91 @@ const SUBJECTS: Subject[] = [
     id: "qr",
     label: "QR / Math",
     emoji: "🔢",
-    category: "reading-comprehension",
+    category: "qr",
     colorFrom: "from-pink-600/20",
     colorTo: "to-rose-600/20",
     border: "border-pink-500/30",
     textAccent: "text-pink-300",
   },
+  {
+    id: "rc",
+    label: "Reading",
+    emoji: "📖",
+    category: "rc",
+    colorFrom: "from-teal-600/20",
+    colorTo: "to-cyan-600/20",
+    border: "border-teal-500/30",
+    textAccent: "text-teal-300",
+  },
 ];
 
-type TabId = "pdrm" | "practice" | "generate" | "review";
-
-// ---------------------------------------------------------------------------
-// Question generator (template-based, no API needed)
-// ---------------------------------------------------------------------------
-
-function generateQuestionForPattern(
-  patternId: string,
-  section: ApexSection,
-  difficulty: number,
-  datPlus: boolean,
-): {
-  question: string;
-  choices: string[];
-  answer: string;
-  explanation: string;
-  pdrm: { pattern: string; decisionRule: string; trap: string };
-} {
-  const pattern = DAT_PATTERNS.find((p) => p.id === patternId);
-  if (!pattern) {
-    return {
-      question: `Which of the following best demonstrates the key rule for this ${section.toUpperCase()} pattern?`,
-      choices: ["Apply the rule directly", "Invert the rule", "Skip this step", "Use an approximation"],
-      answer: "Apply the rule directly",
-      explanation: "The core decision rule must be applied directly when the trigger condition is met.",
-      pdrm: { pattern: "General Pattern", decisionRule: "Apply rule to trigger", trap: "Do not invert or approximate" },
-    };
-  }
-
-  const rule = pattern.rules?.[0];
-  const trap = pattern.commonMistakes?.[0] || "Misapplying the rule";
-  const diffStr = datPlus ? " (harder variant)" : difficulty > 6 ? " (hard)" : "";
-
-  const stems = [
-    `Based on the trigger "${pattern.description?.slice(0, 60) || pattern.name}", what is the correct next step${diffStr}?`,
-    `Which statement about "${pattern.name}" is most accurate according to the decision rule${diffStr}?`,
-    `A student encounters a problem that triggers "${pattern.name}". What should they do first${diffStr}?`,
-  ];
-  const question = stems[difficulty % stems.length];
-
-  const correct = rule?.description || `Apply the ${pattern.name} rule correctly`;
-  const distractors = datPlus
-    ? [
-        trap,
-        `Reverse the ${pattern.name} logic and check boundary conditions`,
-        `Apply only part of the decision rule without considering exceptions`,
-      ]
-    : [
-        trap,
-        `Skip the ${pattern.name} check and use a generic approach`,
-        `Apply a similar rule from a different context`,
-      ];
-
-  const choices = shuffleArray([correct, ...distractors.slice(0, 3)]);
-
-  return {
-    question,
-    choices,
-    answer: correct,
-    explanation: `${pattern.name}: ${rule?.description || correct}. Common trap: ${trap}.`,
-    pdrm: {
-      pattern: pattern.name,
-      decisionRule: rule?.description || correct,
-      trap,
-    },
-  };
-}
-
-function shuffleArray<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
+type TabId = "learn" | "practice" | "generate" | "review";
 
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function PdrmTab({ subject }: { subject: Subject }) {
-  const patterns = getPatternsByCategory(subject.category as never);
+function LearnTab({ subject }: { subject: Subject }) {
+  const modules = getModulesBySection(subject.id as ApexSection);
   const storePatterns = useApexEngineStore((s) =>
     s.patterns.filter((p) => p.section === subject.id),
   );
+  const [openId, setOpenId] = useState<string | null>(null);
 
   return (
-    <div className="space-y-4">
-      <p className="text-xs text-gray-400">
-        Pattern · Decision Rule · Mechanism · Trap — the 4 frames to own before
-        you practice.
+    <div className="space-y-2">
+      <p className="text-xs text-gray-400 mb-3">
+        Pattern → Decision Rule → Mechanism → Trap. Open each to study before you practice.
       </p>
-      {patterns.slice(0, 6).map((p) => {
-        const stored = storePatterns.find((sp) => sp.id === p.id);
+      {modules.map((m) => {
+        const stored = storePatterns.find((p) => p.id === m.id);
+        const isOpen = openId === m.id;
         return (
-          <div key={p.id} className="bg-black/20 rounded-lg p-4 border border-gray-600/30">
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-medium text-white text-sm">{p.name}</span>
-              {stored && stored.timesSeen > 0 && (
-                <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full ${
-                    stored.masteryLevel === "mastered"
-                      ? "bg-emerald-500/20 text-emerald-300"
-                      : stored.masteryLevel === "strong"
-                        ? "bg-green-500/20 text-green-300"
-                        : stored.masteryLevel === "unstable"
-                          ? "bg-yellow-500/20 text-yellow-300"
-                          : "bg-gray-500/20 text-gray-400"
-                  }`}
-                >
-                  {stored.masteryLevel}
-                </span>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div>
-                <span className="text-purple-400 font-medium">Pattern</span>
-                <p className="text-gray-300 mt-0.5">{p.description}</p>
+          <div key={m.id} className="rounded-lg border border-gray-600/30 overflow-hidden">
+            <button
+              onClick={() => setOpenId(isOpen ? null : m.id)}
+              className="w-full flex items-center justify-between px-3 py-2.5 bg-black/20 hover:bg-black/30 transition-colors text-left"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-white">{m.name}</span>
+                {m.patSubtype && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-gray-400 uppercase">
+                    {m.patSubtype.replace("_", " ")}
+                  </span>
+                )}
               </div>
-              <div>
-                <span className="text-blue-400 font-medium">Decision Rule</span>
-                <p className="text-gray-300 mt-0.5">
-                  {p.rules?.[0]?.description || "—"}
-                </p>
+              <div className="flex items-center gap-2 shrink-0">
+                {stored && stored.masteryLevel !== "unseen" && stored.timesSeen > 0 && (
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                    stored.masteryLevel === "mastered" ? "bg-emerald-500/20 text-emerald-300"
+                      : stored.masteryLevel === "strong" ? "bg-green-500/20 text-green-300"
+                      : stored.masteryLevel === "unstable" ? "bg-yellow-500/20 text-yellow-300"
+                      : "bg-gray-500/20 text-gray-400"
+                  }`}>{stored.masteryLevel}</span>
+                )}
+                <span className="text-gray-500 text-xs">{isOpen ? "▲" : "▼"}</span>
               </div>
-              <div>
-                <span className="text-green-400 font-medium">Mechanism</span>
-                <p className="text-gray-300 mt-0.5">
-                  {p.examples?.[0] || "—"}
-                </p>
+            </button>
+            {isOpen && (
+              <div className="p-3 bg-black/10 grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-purple-400 font-medium">Pattern</span>
+                  <p className="text-gray-300 mt-1 leading-relaxed">{m.pattern}</p>
+                </div>
+                <div>
+                  <span className="text-blue-400 font-medium">Decision Rule</span>
+                  <p className="text-gray-300 mt-1 leading-relaxed">{m.decisionRule}</p>
+                </div>
+                <div>
+                  <span className="text-green-400 font-medium">Mechanism</span>
+                  <p className="text-gray-300 mt-1 leading-relaxed">{m.mechanism}</p>
+                </div>
+                <div>
+                  <span className="text-rose-400 font-medium">Trap</span>
+                  <p className="text-gray-300 mt-1 leading-relaxed">{m.trap}</p>
+                </div>
               </div>
-              <div>
-                <span className="text-rose-400 font-medium">Trap</span>
-                <p className="text-gray-300 mt-0.5">
-                  {p.commonMistakes?.[0] || "—"}
-                </p>
-              </div>
-            </div>
+            )}
           </div>
         );
       })}
@@ -280,43 +218,59 @@ function PracticeTab({ subject }: { subject: Subject }) {
   );
 }
 
+const PAT_SUBTYPES: { id: PatSubtype; label: string }[] = [
+  { id: "keyhole",       label: "Keyhole" },
+  { id: "angle_ranking", label: "Angles" },
+  { id: "cube_counting", label: "Cubes" },
+  { id: "paper_folding", label: "Paper" },
+  { id: "tfe",           label: "TFE" },
+];
+
 function GenerateTab({ subject }: { subject: Subject }) {
   const [datPlus, setDatPlus] = useState(false);
+  const [mode, setMode] = useState<GeneratorMode>("pattern_drill");
   const [generating, setGenerating] = useState(false);
-  const [activeQuestion, setActiveQuestion] = useState<ReturnType<
-    typeof generateQuestionForPattern
-  > | null>(null);
+  const [activeQuestion, setActiveQuestion] = useState<import("@/lib/apex/datApexTypes").GeneratedQuestion | null>(null);
   const [selectedPatternId, setSelectedPatternId] = useState<string>("");
+  const [patSubtype, setPatSubtype] = useState<PatSubtype>("keyhole");
   const [selectedAnswer, setSelectedAnswer] = useState<string>("");
   const [revealed, setRevealed] = useState(false);
   const [timingStart, setTimingStart] = useState<number | null>(null);
 
   const { saveGeneratedQuestion, recordAttempt, patterns: storePatterns } = useApexEngineStore();
 
-  const subjectPatterns = getPatternsByCategory(subject.category as never);
-  const latestPatternId = selectedPatternId || subjectPatterns[0]?.id || "";
+  const subjectModules = getModulesBySection(subject.id as ApexSection);
+  const latestPatternId = selectedPatternId || subjectModules[0]?.id || "";
 
   const currentStorePattern = storePatterns.find((p) => p.section === subject.id && p.timesSeen > 0);
-  const accuracy = currentStorePattern
-    ? Math.round((currentStorePattern.timesCorrect / currentStorePattern.timesSeen) * 100)
-    : 50;
-  const difficulty = computeNextDifficulty(5, accuracy, 60, 50, datPlus);
+  const accuracy = currentStorePattern && currentStorePattern.timesSeen > 0
+    ? currentStorePattern.timesCorrect / currentStorePattern.timesSeen
+    : 0.5;
+  const difficulty = scaleDifficulty(5, { accuracy, datPlus }) as GeneratorDifficulty;
 
   const handleGenerate = useCallback(() => {
     setGenerating(true);
     setSelectedAnswer("");
     setRevealed(false);
     setTimingStart(Date.now());
-    const q = generateQuestionForPattern(latestPatternId, subject.id, difficulty, datPlus);
-    setActiveQuestion(q);
 
-    // Persist to question bank
-    saveGeneratedQuestion({
-      section: subject.id,
-      patternId: latestPatternId,
+    const profile: GeneratorProfile = {
+      section: subject.id as ApexSection,
+      mode,
       difficulty,
       datPlus,
-      trapType: q.pdrm.trap,
+      targetPatternIds: latestPatternId ? [latestPatternId] : undefined,
+      patSubtype: subject.id === "pat" ? patSubtype : undefined,
+    };
+    const q = generateNextQuestion(profile);
+    setActiveQuestion(q);
+
+    saveGeneratedQuestion({
+      section: subject.id as ApexSection,
+      patternId: latestPatternId || q.patternId,
+      difficulty,
+      datPlus,
+      trapType: q.trapType,
       question: q.question,
       choices: q.choices,
       answer: q.answer,
@@ -324,7 +278,7 @@ function GenerateTab({ subject }: { subject: Subject }) {
       pdrm: q.pdrm,
     });
     setGenerating(false);
-  }, [latestPatternId, subject.id, difficulty, datPlus, saveGeneratedQuestion]);
+  }, [latestPatternId, subject.id, difficulty, datPlus, mode, patSubtype, saveGeneratedQuestion]);
 
   const handleSubmit = () => {
     if (!selectedAnswer || !activeQuestion || !timingStart) return;
@@ -344,34 +298,69 @@ function GenerateTab({ subject }: { subject: Subject }) {
 
   return (
     <div className="space-y-4">
-      {/* Controls */}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-2">
-          {subjectPatterns.slice(0, 4).map((p) => (
+      {/* PAT subtype selector */}
+      {subject.id === "pat" && (
+        <div className="flex flex-wrap gap-1.5">
+          {PAT_SUBTYPES.map((s) => (
             <button
-              key={p.id}
-              onClick={() => setSelectedPatternId(p.id)}
-              className={`px-2 py-1 rounded text-xs border transition-colors ${
-                (selectedPatternId || subjectPatterns[0]?.id) === p.id
+              key={s.id}
+              onClick={() => setPatSubtype(s.id)}
+              className={`px-2.5 py-1 rounded text-xs border transition-colors ${
+                patSubtype === s.id
                   ? `${subject.border} bg-white/10 text-white`
                   : "border-gray-600/30 text-gray-400 hover:text-white"
               }`}
             >
-              {p.name.split(" ").slice(0, 2).join(" ")}
+              {s.label}
             </button>
           ))}
         </div>
-        {/* DAT / DAT+ toggle */}
+      )}
+
+      {/* Mode + pattern selector row */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          {subjectModules.slice(0, subject.id === "pat" ? 0 : 4).map((m) => (
+            <button
+              key={m.id}
+              onClick={() => setSelectedPatternId(m.id)}
+              className={`px-2 py-1 rounded text-xs border transition-colors ${
+                (selectedPatternId || subjectModules[0]?.id) === m.id
+                  ? `${subject.border} bg-white/10 text-white`
+                  : "border-gray-600/30 text-gray-400 hover:text-white"
+              }`}
+            >
+              {m.name.split(" ").slice(0, 2).join(" ")}
+            </button>
+          ))}
+        </div>
         <button
           onClick={() => setDatPlus((v) => !v)}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+          className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
             datPlus
               ? "bg-amber-500/20 border-amber-500/50 text-amber-300"
               : "bg-black/20 border-gray-600/30 text-gray-400"
           }`}
         >
-          {datPlus ? "DAT+" : "DAT"} Mode
+          {datPlus ? "DAT+" : "DAT"}
         </button>
+      </div>
+
+      {/* Mode selector */}
+      <div className="flex flex-wrap gap-1.5">
+        {(["pattern_drill", "trap_training", "decision", "recognition"] as GeneratorMode[]).map((m) => (
+          <button
+            key={m}
+            onClick={() => setMode(m)}
+            className={`px-2 py-1 rounded text-[11px] border transition-colors ${
+              mode === m
+                ? `${subject.border} bg-white/10 text-white`
+                : "border-gray-600/30 text-gray-500 hover:text-gray-300"
+            }`}
+          >
+            {m.replace("_", " ")}
+          </button>
+        ))}
       </div>
 
       <button
@@ -530,7 +519,7 @@ function ReviewTab({ subject }: { subject: Subject }) {
 // ---------------------------------------------------------------------------
 
 function SubjectPanel({ subject }: { subject: Subject }) {
-  const [tab, setTab] = useState<TabId>("pdrm");
+  const [tab, setTab] = useState<TabId>("learn");
   const { patterns: storePatterns } = useApexEngineStore();
   const readinessForSubject = storePatterns
     .filter((p) => p.section === subject.id && p.timesSeen > 0)
@@ -541,7 +530,7 @@ function SubjectPanel({ subject }: { subject: Subject }) {
   const avgReadiness = patCount ? Math.round(readinessForSubject / patCount) : 0;
 
   const tabs: { id: TabId; label: string }[] = [
-    { id: "pdrm", label: "PDRM" },
+    { id: "learn", label: "Learn" },
     { id: "practice", label: "Practice" },
     { id: "generate", label: "Generate" },
     { id: "review", label: "Review" },
@@ -586,7 +575,7 @@ function SubjectPanel({ subject }: { subject: Subject }) {
 
       {/* Tab content */}
       <div className="min-h-[200px]">
-        {tab === "pdrm" && <PdrmTab subject={subject} />}
+        {tab === "learn" && <LearnTab subject={subject} />}
         {tab === "practice" && <PracticeTab subject={subject} />}
         {tab === "generate" && <GenerateTab subject={subject} />}
         {tab === "review" && <ReviewTab subject={subject} />}
@@ -614,7 +603,7 @@ export default function TrainingArena() {
             🏟️ DAT Training Arena
           </h2>
           <p className="text-blue-200 text-sm mt-1">
-            Biology · Gen Chem · Orgo · PAT · QR — PDRM → Practice → Generate → Review
+            Bio · GC · Orgo · PAT · QR · RC — Learn → Practice → Generate → Review
           </p>
         </div>
         <span className="text-gray-400 text-sm">{expanded ? "▲ Collapse" : "▼ Open"}</span>
