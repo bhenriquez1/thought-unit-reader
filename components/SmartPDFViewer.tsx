@@ -326,6 +326,31 @@ export default function SmartPDFViewer({
           matchedSpans = spansForNeedle(needle);
           if (matchedSpans.length) break;
         }
+
+        // Fallback: try support/evidence strings forwarded from the highlight block
+        if (!matchedSpans.length && (target.support?.length || target.evidence?.length)) {
+          for (const fallback of [...(target.support ?? []), ...(target.evidence ?? [])]) {
+            if (!fallback || fallback.length < 12) continue;
+            const fallbackNorm = fallback
+              .toLowerCase()
+              .replace(/\u00ad/g, "")
+              .replace(/[^\w\s]/g, " ")
+              .replace(/\s+/g, " ")
+              .trim();
+            const fbWords = fallbackNorm.split(" ").filter(Boolean);
+            const fbCandidates = [
+              fbWords.slice(0, 6).join(" "),
+              fbWords.slice(0, 4).join(" "),
+              fbWords.filter((w) => w.length >= 4).slice(0, 3).join(" "),
+            ].filter((n) => n.length >= 4);
+            for (const needle of fbCandidates) {
+              matchedSpans = spansForNeedle(needle);
+              if (matchedSpans.length) break;
+            }
+            if (matchedSpans.length) break;
+          }
+        }
+
         if (!matchedSpans.length) return;
 
         const geo = rectFromSpans(matchedSpans.slice(0, 12));
