@@ -257,7 +257,10 @@ export function useActivePageIntelligence({
       score: item.confidence,
       sourceParagraphIndex: index,
       // Map semantic kind to ParagraphKind for visual differentiation in overlay
-      kind: item.kind.startsWith("trap") ? "clinical" : item.kind === "main_mechanism" ? "mechanism" : item.kind === "support_distinction" ? "comparison" : "application",
+      kind: item.kind.startsWith("trap") ? "clinical"
+        : (item.kind === "main_mechanism" || item.kind === "main_pattern" || item.kind === "support_decision") ? "mechanism"
+        : (item.kind === "support_distinction" || item.kind === "support_relation" || item.kind === "weak_caveat") ? "comparison"
+        : "application",
       evidenceRefId: item.id,
     } satisfies HighlightTarget));
 

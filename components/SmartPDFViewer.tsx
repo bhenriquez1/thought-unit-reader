@@ -316,7 +316,9 @@ export default function SmartPDFViewer({
           words.slice(0, 6).join(" "),
           words.slice(0, 4).join(" "),
           words.filter((w) => w.length >= 4).slice(0, 3).join(" "),
-          words.filter((w) => w.length >= 5).slice(0, 2).join(" ") || "",
+          words.filter((w) => w.length >= 6).slice(0, 3).join(" "),
+          words.filter((w) => w.length >= 5).slice(0, 2).join(" "),
+          words.slice(-4).join(" "),
         ].filter((n) => n.length >= 4);
 
         let matchedSpans: HTMLElement[] = [];
