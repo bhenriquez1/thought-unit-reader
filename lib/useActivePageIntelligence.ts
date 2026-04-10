@@ -139,6 +139,12 @@ export function useActivePageIntelligence({
     latestRequestRef.current = requestKey;
     const snapshot = ctxRef.current;
 
+    // Synchronous reset — clear all stale state before async work begins
+    const freshSignals = extractPageSignals(snapshot, { minYield: 1, minSignals: 2, maxSignals: 8 });
+    const freshClassification = classifyPage(freshSignals);
+    setSignals(freshSignals);
+    setClassification(freshClassification);
+    setPanelPayloads(buildResolvedPanelPayload(snapshot, freshClassification, freshSignals, audience, depth));
     setStatus("loading");
     setError(null);
     setPageModel(null);
@@ -262,6 +268,9 @@ export function useActivePageIntelligence({
         : (item.kind === "support_distinction" || item.kind === "support_relation" || item.kind === "weak_caveat") ? "comparison"
         : "application",
       evidenceRefId: item.id,
+      // Forward fallback anchors so SmartPDFViewer can attempt secondary matches
+      support: item.support?.length ? item.support : undefined,
+      evidence: item.evidence?.length ? item.evidence : undefined,
     } satisfies HighlightTarget));
 
     return priority.length ? [...priority, ...derived].slice(0, 12) : derived;

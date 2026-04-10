@@ -93,6 +93,9 @@ export interface HighlightTarget {
   sourceParagraphIndex: number;
   kind: ParagraphKind;
   evidenceRefId: string;
+  /** Fallback anchor strings forwarded from PriorityHighlightBlock — used by SmartPDFViewer when the primary text fails to match */
+  support?: string[];
+  evidence?: string[];
 }
 
 export interface ParagraphSignal {
