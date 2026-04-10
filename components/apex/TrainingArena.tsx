@@ -3,7 +3,7 @@
 // DAT Training Arena — Learn → Practice → Generate → Review
 // Each subject panel: Learn (PDRM accordion) | Practice | Generate | Review
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useApexEngineStore } from "@/lib/stores/apexEngineStore";
 import { DAT_PATTERN_MODULES, PatSubtype, getModulesBySection } from "@/lib/apex/datApex.seed";
 import { generateNextQuestion, scaleDifficulty, type GeneratorMode, type GeneratorDifficulty, type GeneratorProfile } from "@/lib/apex/datApex.generator";
@@ -237,7 +237,14 @@ function GenerateTab({ subject }: { subject: Subject }) {
   const [revealed, setRevealed] = useState(false);
   const [timingStart, setTimingStart] = useState<number | null>(null);
 
-  const { saveGeneratedQuestion, recordAttempt, patterns: storePatterns } = useApexEngineStore();
+  const {
+    saveGeneratedQuestion,
+    recordAttempt,
+    addMistake,
+    startSession,
+    endSession,
+    patterns: storePatterns,
+  } = useApexEngineStore();
 
   const subjectModules = getModulesBySection(subject.id as ApexSection);
   const latestPatternId = selectedPatternId || subjectModules[0]?.id || "";
@@ -248,7 +255,36 @@ function GenerateTab({ subject }: { subject: Subject }) {
     : 0.5;
   const difficulty = scaleDifficulty(5, { accuracy, datPlus }) as GeneratorDifficulty;
 
+  // Session tracking
+  const sessionIdRef = useRef<string | null>(null);
+  const sessionStatsRef = useRef({ correct: 0, total: 0, patternsTouched: new Set<string>(), trapsTriggered: new Set<string>() });
+  const [sessionTotal, setSessionTotal] = useState(0);
+  const [sessionCorrect, setSessionCorrect] = useState(0);
+
+  // End session on unmount
+  useEffect(() => {
+    return () => {
+      if (sessionIdRef.current) {
+        const stats = sessionStatsRef.current;
+        endSession(sessionIdRef.current, {
+          correct: stats.correct,
+          total: stats.total,
+          patternsTouched: Array.from(stats.patternsTouched),
+          trapsTriggered: Array.from(stats.trapsTriggered),
+        });
+        sessionIdRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleGenerate = useCallback(() => {
+    // Start a session on first question
+    if (!sessionIdRef.current) {
+      sessionIdRef.current = startSession("pattern_drill", subject.id as ApexSection);
+      sessionStatsRef.current = { correct: 0, total: 0, patternsTouched: new Set(), trapsTriggered: new Set() };
+    }
+
     setGenerating(true);
     setSelectedAnswer("");
     setRevealed(false);
@@ -278,22 +314,52 @@ function GenerateTab({ subject }: { subject: Subject }) {
       pdrm: q.pdrm,
     });
     setGenerating(false);
-  }, [latestPatternId, subject.id, difficulty, datPlus, mode, patSubtype, saveGeneratedQuestion]);
+  }, [latestPatternId, subject.id, difficulty, datPlus, mode, patSubtype, saveGeneratedQuestion, startSession]);
 
   const handleSubmit = () => {
     if (!selectedAnswer || !activeQuestion || !timingStart) return;
     const timeSeconds = Math.round((Date.now() - timingStart) / 1000);
     const correct = selectedAnswer === activeQuestion.answer;
     setRevealed(true);
+
+    const pid = latestPatternId || activeQuestion.patternId;
+
     recordAttempt({
       questionId: `gen-${Date.now()}`,
       section: subject.id,
-      patternId: latestPatternId,
+      patternId: pid,
       correct,
       selectedAnswer,
       timeSeconds,
       trapTriggered: !correct ? activeQuestion.pdrm.trap : undefined,
     });
+
+    // Log mistake with full PDRM breakdown when wrong
+    if (!correct) {
+      addMistake({
+        questionId: `gen-${Date.now()}`,
+        section: subject.id as ApexSection,
+        patternId: pid,
+        userAnswer: selectedAnswer,
+        correctAnswer: activeQuestion.answer,
+        reasonMissed: activeQuestion.trapType ? "trap_fell_for" : "wrong_rule",
+        pdrm: {
+          pattern: activeQuestion.pdrm.pattern,
+          decisionRule: activeQuestion.pdrm.decisionRule,
+          reason: activeQuestion.explanation,
+          miss: activeQuestion.pdrm.trap || "Selected wrong answer",
+        },
+      });
+    }
+
+    // Update session stats
+    const stats = sessionStatsRef.current;
+    stats.total += 1;
+    if (correct) stats.correct += 1;
+    if (pid) stats.patternsTouched.add(pid);
+    if (!correct && activeQuestion.pdrm.trap) stats.trapsTriggered.add(activeQuestion.pdrm.trap);
+    setSessionTotal(stats.total);
+    setSessionCorrect(stats.correct);
   };
 
   return (
@@ -363,12 +429,23 @@ function GenerateTab({ subject }: { subject: Subject }) {
         ))}
       </div>
 
+      {/* Session stats bar */}
+      {sessionTotal > 0 && (
+        <div className="flex items-center gap-3 text-xs px-3 py-2 bg-black/20 rounded-lg border border-gray-600/20">
+          <span className="text-gray-400">Session:</span>
+          <span className="text-white font-medium">{sessionTotal} done</span>
+          <span className={sessionTotal > 0 ? (sessionCorrect / sessionTotal >= 0.7 ? "text-emerald-400" : sessionCorrect / sessionTotal >= 0.5 ? "text-yellow-400" : "text-rose-400") : "text-gray-400"}>
+            {sessionTotal > 0 ? Math.round((sessionCorrect / sessionTotal) * 100) : 0}% correct
+          </span>
+        </div>
+      )}
+
       <button
         onClick={handleGenerate}
         disabled={generating}
         className={`w-full py-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-medium text-sm transition-all ${generating ? "opacity-50" : ""}`}
       >
-        {generating ? "Generating…" : "Generate Question"}
+        {generating ? "Generating…" : sessionTotal === 0 ? "Generate Question" : "Next Question"}
       </button>
 
       {/* Question */}
