@@ -102,16 +102,18 @@ function masteryLevel(timesSeen: number, timesCorrect: number): UserPattern["mas
 // Seed patterns — loaded from DAT_PATTERNS so the dashboard has data on day 1
 // ---------------------------------------------------------------------------
 
-import { DAT_PATTERNS } from "@/types/patterns";
+import { DAT_PATTERN_MODULES } from "@/lib/apex/datApex.seed";
 
+// Seed from DAT_PATTERN_MODULES — single source of truth shared with the generator and Learn tab.
+// IDs here MUST match the ids in DAT_PATTERN_MODULES so recordPatternAttempt finds the right row.
 function buildSeedPatterns(): UserPattern[] {
-  return DAT_PATTERNS.slice(0, 14).map((p) => ({
-    id: p.id,
-    section: categoryToSection(p.category),
-    name: p.name,
-    trigger: p.description || p.name,
-    decisionRule: p.rules?.[0]?.description || "",
-    commonTrap: p.commonMistakes?.[0] || "",
+  return DAT_PATTERN_MODULES.map((m) => ({
+    id: m.id,
+    section: m.section,
+    name: m.name,
+    trigger: m.pattern,
+    decisionRule: m.decisionRule,
+    commonTrap: m.trap,
     masteryLevel: "unseen" as const,
     readiness: 0,
     timesSeen: 0,
@@ -120,14 +122,6 @@ function buildSeedPatterns(): UserPattern[] {
     avgTimeSeconds: 0,
     updatedAt: now(),
   }));
-}
-
-function categoryToSection(cat: string): ApexSection {
-  if (cat === "organic-chemistry") return "orgo";
-  if (cat === "general-chemistry") return "gc";
-  if (cat === "biology") return "bio";
-  if (cat === "pat") return "pat";
-  return "rc";
 }
 
 // ---------------------------------------------------------------------------
@@ -342,7 +336,7 @@ export const useApexEngineStore = create<ApexEngineStore>()(
       setProjection: (p) => set({ projection: p }),
     }),
     {
-      name: "apex-engine-v1",
+      name: "apex-engine-v2",
       storage: createJSONStorage(() => {
         if (typeof window === "undefined") {
           return {

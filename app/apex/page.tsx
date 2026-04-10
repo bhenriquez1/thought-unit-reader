@@ -1,14 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import Link from "next/link";
 import { DAT_SECTIONS } from "@/types/apex-exam";
-import {
-  DAT_PATTERNS,
-  PATTERN_CATEGORIES,
-  getPatternsByCategory,
-} from "@/types/patterns";
-import { protocolHandler, isProtocolSupported } from "@/lib/protocolHandler";
+import { DAT_PATTERN_MODULES, getModulesBySection } from "@/lib/apex/datApex.seed";
 import { useApexEngineStore } from "@/lib/stores/apexEngineStore";
 import TrainingArena from "@/components/apex/TrainingArena";
 
@@ -62,14 +57,6 @@ export default function DATLearningHub() {
     traps,
     currentRecommendation,
   } = useApexEngineStore();
-
-  const [protocolStatus] = useState({
-    supported: typeof window !== "undefined" ? isProtocolSupported() : false,
-    registered:
-      typeof window !== "undefined"
-        ? protocolHandler.getRegistrationStatus()
-        : false,
-  });
 
   // ── Derived metrics ────────────────────────────────────────────────────────
 
@@ -368,172 +355,81 @@ export default function DATLearningHub() {
                 rule, and common trap.
               </p>
 
-              {/* Pattern Categories Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                {Object.entries(PATTERN_CATEGORIES).map(
-                  ([categoryKey, categoryName]) => {
-                    const categoryPatterns = getPatternsByCategory(
-                      categoryKey as keyof typeof PATTERN_CATEGORIES,
-                    );
-                    const categoryColors: Record<string, string> = {
-                      "organic-chemistry":
-                        "from-green-600/20 to-emerald-600/20 border-green-500/30",
-                      "general-chemistry":
-                        "from-blue-600/20 to-cyan-600/20 border-blue-500/30",
-                      biology:
-                        "from-purple-600/20 to-violet-600/20 border-purple-500/30",
-                      pat: "from-yellow-600/20 to-orange-600/20 border-yellow-500/30",
-                      "reading-comprehension":
-                        "from-pink-600/20 to-rose-600/20 border-pink-500/30",
-                    };
-
-                    // Readiness for this category from store
-                    const catSectionMap: Record<string, string> = {
-                      "organic-chemistry": "orgo",
-                      "general-chemistry": "gc",
-                      biology: "bio",
-                      pat: "pat",
-                      "reading-comprehension": "rc",
-                    };
-                    const sectionId = catSectionMap[categoryKey];
-                    const sectionPatterns = patterns.filter(
-                      (p) => p.section === sectionId,
-                    );
-                    const avgReadiness =
-                      sectionPatterns.length > 0
-                        ? Math.round(
-                            sectionPatterns.reduce(
-                              (s, p) => s + p.readiness,
-                              0,
-                            ) / sectionPatterns.length,
-                          )
+              {/* Section grid — sourced from DAT_PATTERN_MODULES (single source of truth) */}
+              {(() => {
+                const SECTION_CONFIG: Array<{
+                  id: "bio" | "gc" | "orgo" | "pat" | "rc" | "qr";
+                  label: string;
+                  gradient: string;
+                  border: string;
+                }> = [
+                  { id: "bio",  label: "Biology",              gradient: "from-purple-600/20 to-violet-600/20",  border: "border-purple-500/30" },
+                  { id: "gc",   label: "General Chemistry",    gradient: "from-blue-600/20 to-cyan-600/20",      border: "border-blue-500/30"   },
+                  { id: "orgo", label: "Organic Chemistry",    gradient: "from-green-600/20 to-emerald-600/20",  border: "border-green-500/30"  },
+                  { id: "pat",  label: "PAT",                  gradient: "from-yellow-600/20 to-orange-600/20",  border: "border-yellow-500/30" },
+                  { id: "rc",   label: "Reading Comprehension",gradient: "from-pink-600/20 to-rose-600/20",      border: "border-pink-500/30"   },
+                  { id: "qr",   label: "QR / Math",            gradient: "from-teal-600/20 to-cyan-600/20",     border: "border-teal-500/30"   },
+                ];
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    {SECTION_CONFIG.map((sec) => {
+                      const sectionModules = getModulesBySection(sec.id);
+                      const sectionPatterns = patterns.filter((p) => p.section === sec.id);
+                      const seenInSection = sectionPatterns.filter((p) => p.timesSeen > 0);
+                      const avgReadiness = seenInSection.length
+                        ? Math.round(seenInSection.reduce((s, p) => s + p.readiness, 0) / seenInSection.length)
                         : null;
-
-                    return (
-                      <div
-                        key={categoryKey}
-                        className={`bg-gradient-to-br ${categoryColors[categoryKey] ?? "from-gray-600/20 to-gray-700/20 border-gray-500/30"} rounded-lg p-4 border`}
-                      >
-                        <div className="flex items-center justify-between mb-3">
-                          <h3 className="font-semibold text-white">
-                            {categoryName as string}
-                          </h3>
-                          <div className="flex items-center gap-2">
-                            {avgReadiness !== null && (
-                              <span className="text-xs bg-white/10 px-2 py-0.5 rounded text-green-300">
-                                {avgReadiness}% ready
-                              </span>
-                            )}
-                            <span className="text-xs bg-white/10 px-2 py-1 rounded text-gray-300">
-                              {categoryPatterns.length} patterns
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2 mb-4">
-                          {categoryPatterns.slice(0, 2).map((pattern) => {
-                            const sp = patterns.find(
-                              (p) => p.id === pattern.id,
-                            );
-                            return (
-                              <div key={pattern.id} className="text-sm">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-white font-medium">
-                                    • {pattern.name}
-                                  </span>
-                                  {sp && sp.timesSeen > 0 && (
-                                    <span
-                                      className={`text-xs px-1 rounded ${
-                                        sp.masteryLevel === "mastered"
-                                          ? "bg-green-500/20 text-green-300"
-                                          : sp.masteryLevel === "strong"
-                                            ? "bg-blue-500/20 text-blue-300"
-                                            : sp.masteryLevel === "unstable"
-                                              ? "bg-yellow-500/20 text-yellow-300"
-                                              : "bg-red-500/20 text-red-300"
-                                      }`}
-                                    >
-                                      {sp.masteryLevel}
-                                    </span>
-                                  )}
-                                </div>
-                                {sp && (
-                                  <p className="text-gray-400 text-xs mt-0.5 ml-3">
-                                    Trap: {sp.commonTrap || pattern.commonMistakes?.[0] || "—"}
-                                  </p>
-                                )}
-                              </div>
-                            );
-                          })}
-                          {categoryPatterns.length > 2 && (
-                            <div className="text-xs text-gray-400">
-                              +{categoryPatterns.length - 2} more patterns
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <Link
-                            href={`/apex/patterns?category=${categoryKey}`}
-                            className="flex-1 text-center px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded text-xs transition-colors"
-                          >
-                            Study Patterns
-                          </Link>
-                          <Link
-                            href={`/apex/generator?section=${sectionId}`}
-                            className="flex-1 text-center px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded text-xs transition-colors"
-                          >
-                            Practice
-                          </Link>
-                        </div>
-                      </div>
-                    );
-                  },
-                )}
-              </div>
-
-              {/* High-Yield Pattern Spotlight */}
-              <div className="bg-gradient-to-r from-yellow-600/10 to-orange-600/10 rounded-lg p-4 border border-yellow-500/30 mb-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg">⭐</span>
-                  <h3 className="font-semibold text-yellow-300">
-                    High-Yield Pattern Spotlight
-                  </h3>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {DAT_PATTERNS.filter((p) => p.tags.includes("high-yield"))
-                    .slice(0, 3)
-                    .map((pattern) => {
-                      const sp = patterns.find((p) => p.id === pattern.id);
                       return (
-                        <div
-                          key={pattern.id}
-                          className="bg-black/20 rounded-lg p-3 border border-gray-600/30"
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <h4 className="font-medium text-white text-sm">
-                              {pattern.name}
-                            </h4>
-                            {sp && sp.timesSeen > 0 && (
-                              <span className="text-xs text-gray-400">
-                                {sp.readiness}%
+                        <div key={sec.id} className={`bg-gradient-to-br ${sec.gradient} rounded-lg p-4 border ${sec.border}`}>
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 className="font-semibold text-white">{sec.label}</h3>
+                            <div className="flex items-center gap-2">
+                              {avgReadiness !== null && (
+                                <span className="text-xs bg-white/10 px-2 py-0.5 rounded text-green-300">
+                                  {avgReadiness}% ready
+                                </span>
+                              )}
+                              <span className="text-xs bg-white/10 px-2 py-1 rounded text-gray-300">
+                                {sectionModules.length} patterns
                               </span>
+                            </div>
+                          </div>
+                          <div className="space-y-2 mb-4">
+                            {sectionModules.slice(0, 2).map((m) => {
+                              const sp = patterns.find((p) => p.id === m.id);
+                              return (
+                                <div key={m.id} className="text-sm">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-white font-medium">• {m.name}</span>
+                                    {sp && sp.timesSeen > 0 && (
+                                      <span className={`text-xs px-1 rounded ${
+                                        sp.masteryLevel === "mastered" ? "bg-green-500/20 text-green-300"
+                                          : sp.masteryLevel === "strong" ? "bg-blue-500/20 text-blue-300"
+                                          : sp.masteryLevel === "unstable" ? "bg-yellow-500/20 text-yellow-300"
+                                          : "bg-red-500/20 text-red-300"
+                                      }`}>{sp.masteryLevel}</span>
+                                    )}
+                                  </div>
+                                  <p className="text-gray-400 text-xs mt-0.5 ml-3">
+                                    Trap: {m.trap.slice(0, 60)}{m.trap.length > 60 ? "…" : ""}
+                                  </p>
+                                </div>
+                              );
+                            })}
+                            {sectionModules.length > 2 && (
+                              <div className="text-xs text-gray-400">+{sectionModules.length - 2} more patterns</div>
                             )}
                           </div>
-                          <p className="text-xs text-gray-300 mb-3">
-                            {pattern.description}
-                          </p>
-                          <div className="flex gap-2">
+                          <div className="flex items-center gap-2">
                             <Link
-                              href={`/apex/patterns/${pattern.id}`}
-                              className="text-xs px-2 py-1 bg-blue-600/30 text-blue-200 rounded hover:bg-blue-600/40 transition-colors"
+                              href={`/apex/patterns?section=${sec.id}`}
+                              className="flex-1 text-center px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded text-xs transition-colors"
                             >
-                              Learn Rules
+                              Study Patterns
                             </Link>
                             <Link
-                              href={`/apex/generator?pattern=${pattern.id}`}
-                              className="text-xs px-2 py-1 bg-green-600/30 text-green-200 rounded hover:bg-green-600/40 transition-colors"
+                              href={`/apex/generator?section=${sec.id}`}
+                              className="flex-1 text-center px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded text-xs transition-colors"
                             >
                               Practice
                             </Link>
@@ -541,8 +437,55 @@ export default function DATLearningHub() {
                         </div>
                       );
                     })}
-                </div>
-              </div>
+                  </div>
+                );
+              })()}
+
+              {/* Pattern Spotlight — top 3 modules with lowest store readiness (priority focus) */}
+              {(() => {
+                const spotlight = [...DAT_PATTERN_MODULES]
+                  .map((m) => {
+                    const sp = patterns.find((p) => p.id === m.id);
+                    return { m, readiness: sp?.readiness ?? 0, timesSeen: sp?.timesSeen ?? 0 };
+                  })
+                  .filter((x) => x.timesSeen === 0 || x.readiness < 70)
+                  .slice(0, 3);
+                if (!spotlight.length) return null;
+                return (
+                  <div className="bg-gradient-to-r from-yellow-600/10 to-orange-600/10 rounded-lg p-4 border border-yellow-500/30 mb-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-lg">⭐</span>
+                      <h3 className="font-semibold text-yellow-300">Priority Pattern Focus</h3>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {spotlight.map(({ m, readiness, timesSeen }) => (
+                        <div key={m.id} className="bg-black/20 rounded-lg p-3 border border-gray-600/30">
+                          <div className="flex items-center justify-between mb-1">
+                            <h4 className="font-medium text-white text-sm">{m.name}</h4>
+                            {timesSeen > 0 && (
+                              <span className={`text-xs ${readiness < 50 ? "text-rose-400" : "text-yellow-400"}`}>
+                                {readiness}%
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-400 mb-1">
+                            <span className="text-purple-400">Pattern:</span> {m.pattern.slice(0, 50)}{m.pattern.length > 50 ? "…" : ""}
+                          </p>
+                          <p className="text-xs text-rose-400/80 mb-3">
+                            Trap: {m.trap.slice(0, 50)}{m.trap.length > 50 ? "…" : ""}
+                          </p>
+                          <Link
+                            href={`/apex/generator?section=${m.section}`}
+                            className="text-xs px-2 py-1 bg-green-600/30 text-green-200 rounded hover:bg-green-600/40 transition-colors"
+                          >
+                            Practice Now
+                          </Link>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="flex flex-wrap gap-3">
                 <Link
@@ -793,21 +736,11 @@ export default function DATLearningHub() {
                 ))}
               </div>
 
-              <div className="mt-4 pt-4 border-t border-gray-600/30">
-                <div className="text-xs text-gray-400 mb-2">
-                  Engine status
+              {insights.length === 1 && insights[0].startsWith("Complete") && (
+                <div className="mt-4 pt-4 border-t border-gray-600/30 text-xs text-gray-500">
+                  Engine recalculates after each session.
                 </div>
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`w-2 h-2 rounded-full ${protocolStatus.supported ? "bg-green-400" : "bg-red-400"}`}
-                  />
-                  <span className="text-xs text-gray-300">
-                    {protocolStatus.supported
-                      ? "Protocol Supported"
-                      : "Protocol Not Supported"}
-                  </span>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Quick Actions */}
