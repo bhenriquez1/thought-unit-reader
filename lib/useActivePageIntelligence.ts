@@ -94,7 +94,7 @@ function extractFormulaSignals(rawText: string): FormulaSignal[] {
 
 function pickStoryMode(pageClass: PageContentClass, formulaCount: number) {
   if (pageClass === "table_heavy") return "relation" as const;
-  if (pageClass === "form_page") return "apply_test" as const;
+  if (pageClass === "form_page") return "apply" as const;
   if ((pageClass === "mixed_visual" || pageClass === "sparse_text" || pageClass === "failed_sparse") && formulaCount > 0) return "explain" as const;
   return "insight" as const;
 }

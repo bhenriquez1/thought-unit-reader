@@ -788,7 +788,9 @@ function compact(items: Array<string | null | undefined>): string[] {
 }
 
 function normalizeForSearch(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  // Keep aligned with SmartPDFViewer span normalization so prefix matching
+  // succeeds across the extraction→viewer boundary.
+  return text.toLowerCase().replace(/\u00ad/g, "").replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function textSimilarity(a: string, b: string): number {

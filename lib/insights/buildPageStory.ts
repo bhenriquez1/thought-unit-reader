@@ -164,7 +164,7 @@ export type BuildPageStoryInput = {
   };
   role?: StoryRole;
   depth?: StoryDepth;
-  mode?: "insight" | "explain" | "compare" | "relation" | "apply_test";
+  mode?: "insight" | "explain" | "compare" | "relation" | "apply";
 };
 
 type CandidateSourceKind = "summary" | "takeaway" | "paragraph" | "decision_path";
@@ -473,7 +473,7 @@ function structuralBoost(c: NarrativeCandidate, mode: BuildPageStoryInput["mode"
   if (mode === "compare" && c.relationHint === "comparison") boost += 0.14;
   if (mode === "relation" && c.relationHint === "process") boost += 0.14;
   if (mode === "explain" && c.relationHint === "cause") boost += 0.14;
-  if (mode === "apply_test" && containsActionableRule(c.sentence)) boost += 0.14;
+  if (mode === "apply" && containsActionableRule(c.sentence)) boost += 0.14;
 
   return boost;
 }
@@ -612,7 +612,7 @@ function chooseStepCandidates(
       tryAdd((c) => containsCause(c.sentence));
       tryAdd((c) => containsBoundary(c.sentence));
       break;
-    case "apply_test":
+    case "apply":
       tryAdd((c) => containsCaseWord(c.sentence) || c.labelHint === "Case");
       tryAdd((c) => containsActionableRule(c.sentence) || c.labelHint === "Action");
       tryAdd((c) => containsTrapWord(c.sentence) || c.labelHint === "Trap");
@@ -677,7 +677,7 @@ function contentToStoryAnchor(
       return shapeForRole(`The page starts by placing this in sequence: ${lowerStart(removeTrailingPeriod(base))}.`, role);
     case "explain":
       return shapeForRole(`The page first explains the core mechanism: ${lowerStart(removeTrailingPeriod(base))}.`, role);
-    case "apply_test":
+    case "apply":
       return shapeForRole(`The page first sets up the case or rule: ${lowerStart(removeTrailingPeriod(base))}.`, role);
     case "insight":
     default:
@@ -813,7 +813,7 @@ function buildShadowRecallQuestions(mode: BuildPageStoryInput["mode"]): string[]
         "What follows after it?",
         "What wider effect does the sequence create?",
       ];
-    case "apply_test":
+    case "apply":
       return [
         "What case or scenario is implied on this page?",
         "What clue matters most?",
@@ -840,7 +840,7 @@ function inferDecisionPathLabel(d: MaybeDecisionPath): StoryLabel {
 }
 
 function inferModeAwareLabel(c: NarrativeCandidate, mode: BuildPageStoryInput["mode"], index: number): StoryLabel {
-  if (mode === "apply_test") {
+  if (mode === "apply") {
     if (index === 0) return "Case";
     if (index === 1) return "Clue";
     if (index === 2) return "Action";
