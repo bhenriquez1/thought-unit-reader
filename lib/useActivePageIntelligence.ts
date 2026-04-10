@@ -29,6 +29,7 @@ export type ActivePageIntelligenceSnapshot = {
   pageTruth: PageTruthGateResult | null;
   pageModel: PageInsightModel | null;
   story: PageStory | null;
+  priorityHighlights: ExtractPriorityHighlightsResult;
 };
 
 interface UseActivePageIntelligenceArgs {
@@ -131,6 +132,15 @@ export function useActivePageIntelligence({
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
 
+  // currentPageRef is updated synchronously at render time — BEFORE any effects
+  // fire. This means it always reflects the page that React is currently rendering,
+  // even in the window between when a new page triggers a re-render and when the
+  // new page's primary effect actually runs. The commit stale check uses this ref
+  // instead of latestRequestRef (which is updated inside the effect) to prevent
+  // page N-1's microtask from committing results after page N has already started.
+  const currentPageRef = useRef({ documentId, pageNumber, pageTruthKey });
+  currentPageRef.current = { documentId, pageNumber, pageTruthKey };
+
   // Primary effect: fires only when the page identity changes (documentId,
   // pageNumber, or pageText hash). Does NOT re-run when nearbyText or other
   // auxiliary ctx fields update.
@@ -204,7 +214,9 @@ export function useActivePageIntelligence({
         pageStory: localPageStory,
       });
 
-      if (latestRequestRef.current !== requestKey) return;
+      // Use currentPageRef (render-time, not effect-time) so this check is valid
+      // even before the new page's primary effect has fired and updated latestRequestRef.
+      if (currentPageRef.current.pageTruthKey !== requestKey) return;
 
       setSignals(localSignals);
       setClassification(localClassification);
@@ -247,7 +259,14 @@ export function useActivePageIntelligence({
 
   const highlightTargets: HighlightTarget[] = useMemo(() => {
     const derived = deriveHighlightTargets(signals, pageNumber, audience, limitedEvidence);
-    const priority = priorityHighlights.all.map((item, index) => ({
+    // Guard: only use priority highlights that belong to the current page.
+    // If async highlights for the previous page arrive after the new page has
+    // started rendering, priorityHighlights.pageNumber will differ from pageNumber
+    // and we skip them entirely to prevent cross-page contamination.
+    const priorityItems = priorityHighlights.pageNumber === pageNumber
+      ? priorityHighlights.all
+      : [];
+    const priority = priorityItems.map((item, index) => ({
       id: `priority-${item.id}`,
       page: pageNumber,
       text: item.text,
@@ -283,7 +302,10 @@ export function useActivePageIntelligence({
       && latestRequestRef.current === pageTruthKey
       && pageModel.requestKey === pageTruthKey
       && pageModel.pageNumber === pageNumber
-      && pageModel.documentId === documentId,
+      && pageModel.documentId === documentId
+      // Ensure sparse/image-heavy pages (canRenderRightPanel: false) don't
+      // expose stale right-panel content from a previous page.
+      && (pageTruth?.canRenderRightPanel !== false),
   );
 
   return {

@@ -19,6 +19,18 @@ export function buildGuidedReadView(args: {
     return transformed;
   }
 
+  // Mode signal gate: if the page has no dedicated signal for this mode,
+  // return an explicit empty state rather than converging to story.mainIdea.
+  if (!modeHasSignal(args.mode, story)) {
+    const modeLabel = args.mode.charAt(0).toUpperCase() + args.mode.slice(1);
+    return {
+      ...transformed,
+      pagePurpose: `No ${modeLabel} signal on this page`,
+      steps: [],
+      cards: [],
+    };
+  }
+
   const modeName = args.mode === "apply" ? "apply/test" : args.mode;
   const templates = modeTemplates(args.mode, story, transformed);
   const maxSteps = args.depth === "quick" ? 2 : args.depth === "standard" ? 3 : 4;
@@ -49,7 +61,7 @@ export function buildGuidedReadView(args: {
       };
     }),
     cards: buildOperatorCards(args.mode, story),
-    drill: (args.mode === "apply" || args.mode === "apply_test") ? buildDecisionDrill(story) : undefined,
+    drill: args.mode === "apply" ? buildDecisionDrill(story) : undefined,
     supportTitle: `Grounded support (${modeName})`,
     supportBullets: [story.mainIdea, ...story.support, ...story.weakSupport].slice(0, args.depth === "quick" ? 2 : args.depth === "standard" ? 4 : 6),
   };
@@ -149,8 +161,19 @@ function buildOperatorCards(mode: GuidedMode, story: PageStory): OperatorCard[] 
   if (mode === "explain") return compact([mechanism, pattern, relation, trap]);
   if (mode === "compare") return compact([distinction, pattern, trap]);
   if (mode === "relation") return compact([relation, pattern, mechanism, trap]);
-  if (mode === "apply" || mode === "apply_test") return compact([pattern, decision, application, trap]);
+  if (mode === "apply") return compact([pattern, decision, application, trap]);
   return compact([pattern, decision, mechanism, trap]);
+}
+
+// Returns true if the page story contains mode-specific signal.
+// When false, buildGuidedReadView returns an empty state instead of
+// converging every mode to story.mainIdea.
+function modeHasSignal(mode: GuidedMode, story: PageStory): boolean {
+  if (mode === "explain")  return Boolean(story.mechanismBlock || story.supportingLogic.length >= 2);
+  if (mode === "compare")  return Boolean(story.distinctionBlock || story.comparisonSignals.length >= 2);
+  if (mode === "relation") return Boolean(story.relationBlock || story.relationSignals.length >= 2);
+  if (mode === "apply")    return Boolean(story.applicationBlock || story.decisionBlock);
+  return true; // insight always shows something
 }
 
 function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedReadView) {
@@ -161,9 +184,9 @@ function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedRe
 
   if (mode === "explain") {
     return {
-      purpose: story.mechanismBlock?.text || story.supportingLogic[0] || story.shadowRecall.reveal.mechanism || story.mainIdea,
+      purpose: story.mechanismBlock?.text || story.supportingLogic[0] || base[0]?.primaryText,
       steps: [
-        { label: "Mechanism", primary: story.mechanismBlock?.text || story.supportingLogic[0] || story.shadowRecall.reveal.mechanism || base[0]?.primaryText, secondary: story.mechanismBlock?.support.slice(0, 2).join(" — ") || story.support[0], evidence: story.mechanismBlock?.evidence || [] },
+        { label: "Mechanism", primary: story.mechanismBlock?.text || story.supportingLogic[0] || base[0]?.primaryText, secondary: story.mechanismBlock?.support.slice(0, 2).join(" — ") || story.support[0], evidence: story.mechanismBlock?.evidence || [] },
         { label: "Effect", primary: story.supportingLogic[1] || story.steps[1]?.content || base[1]?.primaryText, secondary: story.support.slice(0, 2).join(" — ") || story.support[1], evidence: story.mechanismBlock?.support.slice(2) || [] },
         { label: "Consequence", primary: story.supportingLogic[2] || story.steps[2]?.content || base[2]?.primaryText, secondary: story.support[2], evidence: story.supportingLogic.slice(3) || [] },
         { label: "Boundary", primary: trapPrimary || base[3]?.primaryText, secondary: trapSecondary, evidence: trapEvidence },
@@ -172,10 +195,10 @@ function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedRe
   }
   if (mode === "compare") {
     return {
-      purpose: story.distinctionBlock?.text || story.comparisonSignals[0] || story.shadowRecall.reveal.distinction || story.mainIdea,
+      purpose: story.distinctionBlock?.text || story.comparisonSignals[0] || base[0]?.primaryText,
       steps: [
-        { label: "Look-Alike", primary: story.distinctionBlock?.text || story.comparisonSignals[0] || story.steps[0]?.content || base[0]?.primaryText, secondary: story.distinctionBlock?.support.slice(0, 2).join(" — ") || story.support[0], evidence: story.distinctionBlock?.evidence || [] },
-        { label: "Separator", primary: story.comparisonSignals[1] || story.shadowRecall.reveal.distinction || base[1]?.primaryText, secondary: story.distinctionBlock?.support[1] || story.support[1], evidence: story.comparisonSignals.slice(2) || [] },
+        { label: "Look-Alike", primary: story.distinctionBlock?.text || story.comparisonSignals[0] || base[0]?.primaryText, secondary: story.distinctionBlock?.support.slice(0, 2).join(" — ") || story.support[0], evidence: story.distinctionBlock?.evidence || [] },
+        { label: "Separator", primary: story.comparisonSignals[1] || base[1]?.primaryText, secondary: story.distinctionBlock?.support[1] || story.support[1], evidence: story.comparisonSignals.slice(2) || [] },
         { label: "Decision Rule", primary: story.comparisonSignals[2] || story.decisionBlock?.threshold || story.distinctionBlock?.support[1] || base[2]?.primaryText, secondary: story.support[2], evidence: story.comparisonSignals.slice(2) || [] },
         { label: "Trap", primary: trapPrimary || base[3]?.primaryText, secondary: trapSecondary, evidence: trapEvidence },
       ],
@@ -183,22 +206,22 @@ function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedRe
   }
   if (mode === "relation") {
     return {
-      purpose: story.relationBlock?.text || story.relationSignals[0] || story.steps[0]?.content || story.mainIdea,
+      purpose: story.relationBlock?.text || story.relationSignals[0] || base[0]?.primaryText,
       steps: [
-        { label: "Before", primary: story.relationBlock?.text || story.relationSignals[0] || story.steps[0]?.content || base[0]?.primaryText, secondary: story.relationBlock?.support.slice(0, 2).join(" — ") || story.support[0], evidence: story.relationBlock?.evidence || [] },
+        { label: "Before", primary: story.relationBlock?.text || story.relationSignals[0] || base[0]?.primaryText, secondary: story.relationBlock?.support.slice(0, 2).join(" — ") || story.support[0], evidence: story.relationBlock?.evidence || [] },
         { label: "Current Node", primary: story.relationSignals[1] || story.steps[1]?.content || base[1]?.primaryText, secondary: story.relationBlock?.support[1] || story.support[1], evidence: story.relationSignals.slice(2) || [] },
         { label: "Downstream", primary: story.relationSignals[2] || story.steps[2]?.content || base[2]?.primaryText, secondary: story.support[2], evidence: story.relationSignals.slice(3) || [] },
         { label: "System Effect", primary: story.relationSignals[3] || story.supportingLogic[1] || base[3]?.primaryText, secondary: story.weakSupport[0], evidence: story.relationBlock?.support.slice(2) || [] },
       ],
     };
   }
-  if (mode === "apply" || mode === "apply_test") {
+  if (mode === "apply") {
     return {
-      purpose: story.decisionBlock?.action || story.applicationBlock?.text || story.applySignals[0] || story.shadowRecall.reveal.application || story.mainIdea,
+      purpose: story.decisionBlock?.action || story.applicationBlock?.text || story.applySignals[0] || base[0]?.primaryText,
       steps: [
-        { label: "Case", primary: story.applicationBlock?.text || story.applySignals[0] || story.mechanismBlock?.text || story.steps[0]?.content || base[0]?.primaryText, secondary: story.applicationBlock?.support.slice(0, 2).join(" — ") || story.mechanismBlock?.support[0] || story.support[0], evidence: story.applicationBlock?.evidence || [] },
-        { label: "Key Clue", primary: story.decisionBlock?.threshold || story.applySignals[1] || story.mainIdeaBlock?.text || story.mainIdea || base[1]?.primaryText, secondary: story.applicationBlock?.support[1] || story.support[1], evidence: story.mainIdeaBlock?.evidence || [] },
-        { label: "Next Move", primary: story.decisionBlock?.action || story.applySignals[2] || story.shadowRecall.reveal.application || base[2]?.primaryText, secondary: (story.decisionBlock?.nextSteps || []).slice(0, 2).join(" — ") || story.applicationBlock?.support[2] || story.support[2], evidence: story.applicationBlock?.support.slice(3) || [] },
+        { label: "Case", primary: story.applicationBlock?.text || story.applySignals[0] || story.mechanismBlock?.text || base[0]?.primaryText, secondary: story.applicationBlock?.support.slice(0, 2).join(" — ") || story.mechanismBlock?.support[0] || story.support[0], evidence: story.applicationBlock?.evidence || [] },
+        { label: "Key Clue", primary: story.decisionBlock?.threshold || story.applySignals[1] || base[1]?.primaryText, secondary: story.applicationBlock?.support[1] || story.support[1], evidence: [] },
+        { label: "Next Move", primary: story.decisionBlock?.action || story.applySignals[2] || base[2]?.primaryText, secondary: (story.decisionBlock?.nextSteps || []).slice(0, 2).join(" — ") || story.applicationBlock?.support[2] || story.support[2], evidence: story.applicationBlock?.support.slice(3) || [] },
         { label: "Wrong Move", primary: trapPrimary || base[3]?.primaryText, secondary: trapSecondary, evidence: trapEvidence },
       ],
     };
