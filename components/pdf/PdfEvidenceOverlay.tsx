@@ -27,13 +27,13 @@ export default function PdfEvidenceOverlay({
           type="button"
           onClick={() => onFocus?.(rect.id)}
           className={`pointer-events-auto absolute rounded-sm transition-shadow ${
-            rect.semanticKind === "clinical"
-              ? "bg-rose-400/30"
-              : rect.level === "high_yield"
-                ? "bg-yellow-300/35"
-                : rect.level === "supporting"
-                  ? "bg-blue-300/25"
-                  : "bg-slate-200/15"
+            rect.semanticKind === "clinical" ? "bg-rose-400/30"
+              : rect.semanticKind === "mechanism" ? "bg-amber-300/35"
+              : rect.semanticKind === "comparison" ? "bg-sky-300/30"
+              : rect.semanticKind === "application" ? "bg-blue-300/25"
+              : rect.level === "high_yield" ? "bg-yellow-300/35"
+              : rect.level === "supporting" ? "bg-blue-300/25"
+              : "bg-slate-200/15"
           } ${focusedId === rect.id ? "ring-2 ring-emerald-300 shadow-[0_0_16px_rgba(16,185,129,0.5)]" : ""}`}
           style={{ top: rect.top, left: rect.left, width: rect.width, height: rect.height }}
           aria-label="Evidence highlight"

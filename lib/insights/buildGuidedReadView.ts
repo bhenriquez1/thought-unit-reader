@@ -176,7 +176,7 @@ function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedRe
       steps: [
         { label: "Look-Alike", primary: story.distinctionBlock?.text || story.comparisonSignals[0] || story.steps[0]?.content || base[0]?.primaryText, secondary: story.distinctionBlock?.support.slice(0, 2).join(" — ") || story.support[0], evidence: story.distinctionBlock?.evidence || [] },
         { label: "Separator", primary: story.comparisonSignals[1] || story.shadowRecall.reveal.distinction || base[1]?.primaryText, secondary: story.distinctionBlock?.support[1] || story.support[1], evidence: story.comparisonSignals.slice(2) || [] },
-        { label: "Decision Rule", primary: story.comparisonSignals[2] || story.applySignals[0] || base[2]?.primaryText, secondary: story.support[2], evidence: story.applySignals.slice(1) || [] },
+        { label: "Decision Rule", primary: story.comparisonSignals[2] || story.decisionBlock?.threshold || story.distinctionBlock?.support[1] || base[2]?.primaryText, secondary: story.support[2], evidence: story.comparisonSignals.slice(2) || [] },
         { label: "Trap", primary: trapPrimary || base[3]?.primaryText, secondary: trapSecondary, evidence: trapEvidence },
       ],
     };
@@ -188,7 +188,7 @@ function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedRe
         { label: "Before", primary: story.relationBlock?.text || story.relationSignals[0] || story.steps[0]?.content || base[0]?.primaryText, secondary: story.relationBlock?.support.slice(0, 2).join(" — ") || story.support[0], evidence: story.relationBlock?.evidence || [] },
         { label: "Current Node", primary: story.relationSignals[1] || story.steps[1]?.content || base[1]?.primaryText, secondary: story.relationBlock?.support[1] || story.support[1], evidence: story.relationSignals.slice(2) || [] },
         { label: "Downstream", primary: story.relationSignals[2] || story.steps[2]?.content || base[2]?.primaryText, secondary: story.support[2], evidence: story.relationSignals.slice(3) || [] },
-        { label: "System Effect", primary: story.relationSignals[3] || story.shadowRecall.reveal.application || base[3]?.primaryText, secondary: story.weakSupport[0], evidence: story.relationBlock?.support.slice(2) || [] },
+        { label: "System Effect", primary: story.relationSignals[3] || story.supportingLogic[1] || base[3]?.primaryText, secondary: story.weakSupport[0], evidence: story.relationBlock?.support.slice(2) || [] },
       ],
     };
   }
@@ -207,7 +207,7 @@ function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedRe
     purpose: story.patternBlock?.trigger || story.mainIdeaBlock?.text || story.mainIdea,
     steps: [
       { label: "Pattern", primary: story.patternBlock?.trigger || story.mainIdeaBlock?.text || story.mainIdea || base[0]?.primaryText, secondary: story.patternBlock?.context || story.mainIdeaBlock?.support.slice(0, 2).join(" — ") || story.support[0], evidence: story.mainIdeaBlock?.evidence || [] },
-      { label: "Decision", primary: story.decisionBlock?.action || story.shadowRecall.reveal.application || base[1]?.primaryText, secondary: story.decisionBlock?.nextSteps[0] || story.support[1], evidence: (story.decisionBlock?.nextSteps || []).slice(1) },
+      { label: "Decision", primary: story.decisionBlock?.action || story.decisionBlock?.nextSteps?.[0] || story.mechanismBlock?.support[0] || base[1]?.primaryText, secondary: story.decisionBlock?.nextSteps[0] || story.support[1], evidence: (story.decisionBlock?.nextSteps || []).slice(1) },
       { label: "Mechanism", primary: story.mechanismBlock?.text || story.steps[1]?.content || base[2]?.primaryText, secondary: story.mechanismBlock?.support.slice(0, 2).join(" — ") || story.support[2], evidence: story.mechanismBlock?.evidence || [] },
       { label: "Trap", primary: trapPrimary || base[3]?.primaryText, secondary: trapSecondary, evidence: trapEvidence },
     ],

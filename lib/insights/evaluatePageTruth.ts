@@ -53,7 +53,12 @@ export function evaluatePageTruth(args: EvaluateArgs): PageTruthGateResult {
     }
     return fail("table_heavy", 0.35, true);
   }
-  if (args.contentClass === "failed_sparse") return fail("failed_extraction", 0.2);
+  if (args.contentClass === "failed_sparse") {
+    if ((args.pageModel?.topTakeaways.length || 0) >= 1) {
+      return { canRenderRightPanel: true, canRenderLeftHighlights: true, reason: "ok", confidence: 0.3 };
+    }
+    return fail("failed_extraction", 0.2);
+  }
   if (args.contentClass === "copyright_frontmatter") return fail("front_matter", 0.2);
   if (tokenCount < 25 || completeSentences < 2) {
     if ((args.formulaSignalsCount || 0) > 0) {

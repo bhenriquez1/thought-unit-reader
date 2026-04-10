@@ -214,7 +214,7 @@ export function buildPageStory({
   const weakSupport = buildWeakSupport(ranked, steps);
   const supportingLogic = collectSignalsByLabels(steps, ["Mechanism", "Effect", "Interpretation"]);
   const comparisonSignals = collectSignalsByLabels(steps, ["Compare", "Boundary", "Trap"]).slice(0, 4);
-  const relationSignals = collectSignalsByLabels(steps, ["Relation", "Consequence", "Mechanism"]).slice(0, 4);
+  const relationSignals = collectSignalsByLabels(steps, ["Relation", "Consequence"]).slice(0, 4);
   const applySignals = collectSignalsByLabels(steps, ["Action", "Case", "Rule", "Clue"]).slice(0, 4);
 
   const trap = detectTrap(ranked, steps, narrative);

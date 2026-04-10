@@ -161,7 +161,17 @@ export function RightPanel({
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {guidedView.steps.map((step) => {
+                    {(() => {
+                      const ac = mode === "explain"
+                        ? { active: "border-violet-400/40 bg-violet-500/10", num: "bg-violet-500/20 text-violet-200", label: "text-violet-200" }
+                        : mode === "compare"
+                          ? { active: "border-cyan-400/40 bg-cyan-500/10", num: "bg-cyan-500/20 text-cyan-200", label: "text-cyan-200" }
+                          : mode === "relation"
+                            ? { active: "border-blue-400/40 bg-blue-500/10", num: "bg-blue-500/20 text-blue-200", label: "text-blue-200" }
+                            : (mode === "apply" || mode === "apply_test")
+                              ? { active: "border-amber-400/50 bg-amber-500/20", num: "bg-amber-500/20 text-amber-200", label: "text-amber-200" }
+                              : { active: "border-emerald-400/40 bg-emerald-500/10", num: "bg-emerald-500/20 text-emerald-200", label: "text-emerald-200" };
+                      return guidedView.steps.map((step) => {
                       const selected = selectedStepId === step.id;
                       const ev = step.evidence[0]?.text || step.primaryText;
                       const evidenceId = resolveEvidenceId?.(ev);
@@ -173,13 +183,13 @@ export function RightPanel({
                           onClick={() => selectStep(step, true)}
                           className={`w-full rounded-xl border p-4 text-left whitespace-normal break-words ${
                             selected || activeEvidence
-                              ? trapLike ? "border-rose-400/50 bg-rose-500/10" : "border-emerald-400/40 bg-emerald-500/10"
+                              ? trapLike ? "border-rose-400/50 bg-rose-500/10" : ac.active
                               : trapLike ? "border-rose-500/30 bg-rose-950/30" : "border-white/10 bg-slate-900/80"
                           }`}
                         >
                           <div className="mb-2 flex items-center gap-2">
-                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/20 text-[11px] font-semibold text-emerald-200">{step.stepNumber}</span>
-                            <span className={`text-xs uppercase tracking-wide ${trapLike ? "text-rose-300" : "text-emerald-200"}`}>{step.label}</span>
+                            <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold ${trapLike ? "bg-rose-500/20 text-rose-200" : ac.num}`}>{step.stepNumber}</span>
+                            <span className={`text-xs uppercase tracking-wide ${trapLike ? "text-rose-300" : ac.label}`}>{step.label}</span>
                           </div>
                           <p className="text-sm leading-relaxed text-slate-200">{step.primaryText}</p>
                           {step.secondaryText ? <p className="mt-2 text-xs text-slate-300">{step.secondaryText}</p> : null}
@@ -192,7 +202,8 @@ export function RightPanel({
                           ) : null}
                         </button>
                       );
-                    })}
+                    });
+                    })()}
                   </div>
                 )}
               </div>
