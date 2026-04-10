@@ -37,7 +37,6 @@ export function transformByMode({ pageModel, mode, role, depth, pageStory }: Tra
     case "relation":
       return buildRelationView(pageModel, role, depth);
     case "apply":
-    case "apply_test":
       return buildScenario({ pageModel, role, depth });
     default:
       return buildInsightView(pageModel, role, depth);
@@ -214,7 +213,7 @@ function cardsByMode(story: PageStory, mode: GuidedMode): OperatorCard[] {
   if (mode === "explain") return keep([pattern, mechanism, relation, trap]);
   if (mode === "compare") return keep([pattern, distinction, trap]);
   if (mode === "relation") return keep([pattern, relation, mechanism, trap]);
-  if (mode === "apply" || mode === "apply_test") return keep([pattern, decision, application, trap]);
+  if (mode === "apply") return keep([pattern, decision, application, trap]);
   return keep([pattern, decision, mechanism, trap]);
 }
 
@@ -243,7 +242,6 @@ function roleLabels(role: GuidedRole, mode: GuidedMode, index: number): string {
     compare: role === "expert" ? ["Look-alike", "Separator", "Decision rule", "Trap"] : role === "operator" ? ["Looks similar", "Difference", "Rule", "Miss"] : ["Looks similar", "What separates it", "Why it matters", "Do not confuse"],
     relation: role === "expert" ? ["Upstream", "Current", "Downstream", "System effect"] : role === "operator" ? ["Before", "Here", "Next", "Impact"] : ["Before this", "On this page", "What follows", "Why this matters"],
     apply: ["Scenario", "Clue", "Next move", "Wrong move"],
-    apply_test: ["Scenario", "Clue", "Next move", "Wrong move"],
   };
   return labels[mode][index] || `Step ${index + 1}`;
 }

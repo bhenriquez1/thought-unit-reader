@@ -146,11 +146,32 @@ export function RightPanel({
         {renderTruthFallback(pageTruth?.reason || "loading", intelligence.status, !isCurrentPageModel)}
         {intelligence.status === "error" ? <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">Could not build reading path for this page.</div> : null}
 
+        {intelligence.priorityHighlights.all.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Read in this order</p>
+            {intelligence.priorityHighlights.all.slice(0, 5).map((block, i) => (
+              <button
+                key={block.id}
+                onClick={() => onEvidenceClick?.("", `priority-${block.id}`)}
+                className="flex w-full items-start gap-2 rounded-md bg-white/5 px-2 py-1.5 text-left transition-colors hover:bg-white/10"
+              >
+                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-600 text-[10px] text-white">
+                  {i + 1}
+                </span>
+                <span className="line-clamp-2 text-xs leading-relaxed text-slate-300">
+                  <span className="font-medium text-slate-200">{block.kind.replace(/_/g, " ")}: </span>
+                  {block.text.length > 80 ? `${block.text.slice(0, 80)}…` : block.text}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
         {guidedView ? (
           <>
             <ModeIntentHeader mode={mode} pagePurpose={guidedView.pagePurpose} />
 
-            {(mode === "apply" || mode === "apply_test") && guidedView.drill ? (
+            {mode === "apply" && guidedView.drill ? (
               <DecisionDrillView drill={guidedView.drill} depth={depth} />
             ) : (
               <div className="rounded-2xl border border-emerald-500/20 bg-slate-950/70 p-5">
@@ -168,7 +189,7 @@ export function RightPanel({
                           ? { active: "border-cyan-400/40 bg-cyan-500/10", num: "bg-cyan-500/20 text-cyan-200", label: "text-cyan-200" }
                           : mode === "relation"
                             ? { active: "border-blue-400/40 bg-blue-500/10", num: "bg-blue-500/20 text-blue-200", label: "text-blue-200" }
-                            : (mode === "apply" || mode === "apply_test")
+                            : mode === "apply"
                               ? { active: "border-amber-400/50 bg-amber-500/20", num: "bg-amber-500/20 text-amber-200", label: "text-amber-200" }
                               : { active: "border-emerald-400/40 bg-emerald-500/10", num: "bg-emerald-500/20 text-emerald-200", label: "text-emerald-200" };
                       return guidedView.steps.map((step) => {
@@ -209,7 +230,7 @@ export function RightPanel({
               </div>
             )}
 
-            {guidedView.supportTitle && guidedView.supportBullets?.length && mode !== "apply" && mode !== "apply_test" ? (
+            {guidedView.supportTitle && guidedView.supportBullets?.length && mode !== "apply" ? (
               <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
                 <div className="mb-2 text-xs uppercase text-slate-400">{guidedView.supportTitle}</div>
                 <ul className="space-y-1 text-sm text-slate-200">
@@ -268,7 +289,6 @@ const MODE_INTENT: Record<GuidedMode, { question: string; color: string }> = {
   compare:    { question: "What gets confused with what?", color: "text-cyan-300" },
   relation:   { question: "What connects to what?",       color: "text-blue-300" },
   apply:      { question: "What would you do?",           color: "text-amber-300" },
-  apply_test: { question: "What would they ask?",         color: "text-amber-300" },
 };
 
 function ModeIntentHeader({ mode, pagePurpose }: { mode: GuidedMode; pagePurpose: string }) {
