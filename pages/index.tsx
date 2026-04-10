@@ -725,6 +725,7 @@ export default function ThoughtUnitReader() {
     isCurrentPage: isCurrentIntelligencePage,
     highlightTargets,
     limitedEvidence,
+    priorityHighlights: currentPriorityHighlights,
   } = useActivePageIntelligence({
     documentId: bookId,
     pageNumber: currentPage,
@@ -2634,6 +2635,7 @@ export default function ThoughtUnitReader() {
                   pageTruth: currentPageTruth,
                   pageModel: currentPageModel,
                   story: currentPageStory,
+                  priorityHighlights: currentPriorityHighlights,
                 }}
                 onTabChange={(activeTab) => setUnifiedPanelState((s) => ({ ...s, activeTab }))}
                 onAudienceChange={(audience) => setUnifiedPanelState((s) => ({ ...s, audience }))}

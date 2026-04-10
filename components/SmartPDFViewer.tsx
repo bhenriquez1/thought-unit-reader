@@ -688,11 +688,19 @@ export default function SmartPDFViewer({
               )}
 
               {overlayRects.length > 0 && (
-                <PdfEvidenceOverlay
-                  rects={overlayRects}
-                  focusedId={focusedEvidenceId}
-                  onFocus={onEvidenceFocus}
-                />
+                <>
+                  {/* Dim veil sits below the evidence overlay (z-[19] < z-20).
+                      Non-highlighted text recedes; decoded blocks jump forward. */}
+                  <div
+                    className="pointer-events-none absolute inset-0 z-[19] bg-slate-900/20"
+                    aria-hidden
+                  />
+                  <PdfEvidenceOverlay
+                    rects={overlayRects}
+                    focusedId={focusedEvidenceId}
+                    onFocus={onEvidenceFocus}
+                  />
+                </>
               )}
 
               {/* Hidden prefetch: pre-warm react-pdf render cache for page N+1 */}

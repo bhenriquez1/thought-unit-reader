@@ -48,7 +48,7 @@ export type EvidenceAnchor = {
   endOffset?: number;
 };
 
-export type GuidedMode = "insight" | "explain" | "compare" | "relation" | "apply" | "apply_test";
+export type GuidedMode = "insight" | "explain" | "compare" | "relation" | "apply";
 
 export type GuidedRole = "general" | "operator" | "expert";
 
