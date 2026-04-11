@@ -217,6 +217,7 @@ export function useActivePageIntelligence({
         pageText: snapshot.pageText || "",
       });
 
+
       const localParagraphRoleMap = buildParagraphRoleMap(
         snapshot.pageText || "",
         localPageStory,
