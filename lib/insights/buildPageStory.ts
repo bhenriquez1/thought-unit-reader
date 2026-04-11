@@ -122,6 +122,8 @@ export interface PageStory {
   relationBlock: StoryBlock | null;
   applicationBlock: StoryBlock | null;
   trapBlock: TrapBlock | null;
+  /** Single highest-confidence irreversible takeaway — distinct from patternBlock */
+  bottomLineBlock: StoryBlock | null;
   supportBlocks: StoryBlock[];
   weakBlocks: StoryBlock[];
   trap: PageStoryTrap | null;
@@ -142,6 +144,8 @@ type MaybeParagraphInsight = {
   priority?: number;
   evidenceSnippet?: string;
   evidence?: string;
+  /** Semantic class from processPage (cause_effect | comparison | decision | process | etc.) */
+  paragraphType?: string;
 };
 
 type MaybeDecisionPath = {
@@ -178,6 +182,10 @@ interface NarrativeCandidate {
   labelHint?: StoryLabel;
   trapHint?: string;
   relationHint?: "contrast" | "cause" | "process" | "definition" | "comparison" | "state";
+  /** Full paragraph text (if this candidate came from a paragraph) for cluster evidence */
+  paragraphText?: string;
+  /** Semantic class of the source paragraph (cause_effect | comparison | decision | etc.) */
+  paragraphType?: string;
 }
 
 export function buildPageStory({
@@ -222,14 +230,87 @@ export function buildPageStory({
   const shadowRecall = buildShadowRecall({ narrative, steps, trap, pageClass, mode });
   const truthKey = `${pageClass}:${normalizeForCompare(mainIdea).slice(0, 64)}`;
 
+  // ── Paragraph-cluster block assembly ─────────────────────────────────────
+  // Build dedicated candidate pools keyed by the paragraph's semantic class
+  // so each semantic block draws from its own source rather than the flat
+  // ranked list. A paragraph can contribute to at most one major block —
+  // tracked by `claimedNormalized` — preventing cross-block convergence.
+  const claimedNormalized = new Set<string>();
+  const claimOne = (pool: NarrativeCandidate[]): NarrativeCandidate | undefined => {
+    const c = pool.find((c) => !claimedNormalized.has(c.normalized));
+    if (c) claimedNormalized.add(c.normalized);
+    return c;
+  };
+
+  const mechanismPool = buildSemanticPool(ranked, ["cause_effect", "process"], ["Mechanism", "Effect"], (c) => containsCause(c.sentence) || containsProcess(c.sentence));
+  const distinctionPool = buildSemanticPool(ranked, ["comparison"], ["Compare", "Boundary"], (c) => containsComparison(c.sentence) || containsContrast(c.sentence));
+  const decisionPool = buildSemanticPool(ranked, ["decision", "clinical_reasoning"], ["Rule", "Action", "Case"], (c) => containsActionableRule(c.sentence));
+  const trapPool = buildSemanticPool(ranked, ["consequence", "signal"], ["Trap"], (c) => containsTrapWord(c.sentence));
+  const relationPool = buildSemanticPool(ranked, ["process", "cause_effect"], ["Relation", "Consequence"], (c) => c.relationHint === "process" || c.relationHint === "cause");
+
+  const mechCand = claimOne(mechanismPool);
+  const distCand = claimOne(distinctionPool);
+  const decCand = claimOne(decisionPool);
+  const trapCand = claimOne(trapPool);
+  const relCand = claimOne(relationPool);
+
+  const mechanismBlock = mechCand
+    ? buildStoryBlock("mechanism", "mechanism",
+        mechCand.sentence,
+        collectParagraphSupport(mechCand, ranked).slice(0, 3),
+        mechCand.evidence,
+        mechCand.score)
+    : buildStoryBlock("mechanism", "mechanism", supportingLogic[0], supportingLogic.slice(1), steps.find((s) => s.label === "Mechanism" || s.label === "Effect")?.evidence || supportingLogic, 0.68);
+
+  const distinctionBlock = distCand
+    ? buildStoryBlock("distinction", "distinction",
+        distCand.sentence,
+        collectParagraphSupport(distCand, ranked).filter((s) => !mechCand || !isNearDuplicate(s, mechCand.sentence)).slice(0, 3),
+        distCand.evidence,
+        distCand.score)
+    : buildStoryBlock("distinction", "distinction", comparisonSignals[0], comparisonSignals.slice(1), steps.find((s) => s.label === "Compare" || s.label === "Boundary")?.evidence || comparisonSignals, 0.63);
+
+  const relationBlock = relCand && (!mechCand || !isNearDuplicate(relCand.sentence, mechCand.sentence))
+    ? buildStoryBlock("relation", "relation",
+        relCand.sentence,
+        collectParagraphSupport(relCand, ranked).filter((s) => !isNearDuplicate(s, relCand.sentence)).slice(0, 3),
+        relCand.evidence,
+        relCand.score)
+    : buildStoryBlock("relation", "relation", relationSignals[0], relationSignals.slice(1), steps.find((s) => s.label === "Relation" || s.label === "Consequence")?.evidence || relationSignals, 0.61);
+
+  const applicationBlock = decCand
+    ? buildStoryBlock("application", "application",
+        decCand.sentence,
+        collectParagraphSupport(decCand, ranked).slice(0, 3),
+        decCand.evidence,
+        decCand.score)
+    : buildStoryBlock("application", "application", applySignals[0], applySignals.slice(1), steps.find((s) => s.label === "Action" || s.label === "Case" || s.label === "Rule")?.evidence || applySignals, 0.64);
+
   const mainIdeaBlock = buildStoryBlock("main_idea", "main", mainIdea, support, steps[0]?.evidence || [mainIdea], steps[0]?.score || 0.7);
-  const mechanismBlock = buildStoryBlock("mechanism", "mechanism", supportingLogic[0], supportingLogic.slice(1), steps.find((s) => s.label === "Mechanism" || s.label === "Effect")?.evidence || supportingLogic, 0.68);
-  const distinctionBlock = buildStoryBlock("distinction", "distinction", comparisonSignals[0], comparisonSignals.slice(1), steps.find((s) => s.label === "Compare" || s.label === "Boundary")?.evidence || comparisonSignals, 0.63);
-  const relationBlock = buildStoryBlock("relation", "relation", relationSignals[0], relationSignals.slice(1), steps.find((s) => s.label === "Relation" || s.label === "Consequence")?.evidence || relationSignals, 0.61);
-  const applicationBlock = buildStoryBlock("application", "application", applySignals[0], applySignals.slice(1), steps.find((s) => s.label === "Action" || s.label === "Case" || s.label === "Rule")?.evidence || applySignals, 0.64);
   const patternBlock = buildPatternBlock(mainIdea, narrative, steps[0]?.score || 0.7);
   const decisionBlock = buildDecisionBlock(applicationBlock, applySignals, trapSignals, supportingLogic);
-  const trapBlock = buildTrapBlock(trapSignals, trap);
+
+  // trapBlock: prefer a paragraph that explicitly contains trap/contrast signals
+  const trapBlockText = trapCand?.sentence || trapSignals[0] || trap?.sentence;
+  const trapBlock = buildTrapBlock(
+    uniqueSentences([trapBlockText, ...trapSignals]).slice(0, 3),
+    trap,
+  );
+
+  // bottomLineBlock: highest-confidence single takeaway distinct from mainIdea
+  const bottomLineCand = ranked.find((c) =>
+    !isNearDuplicate(c.sentence, mainIdea) &&
+    !claimedNormalized.has(c.normalized) &&
+    c.score >= 0.7,
+  );
+  const bottomLineBlock = bottomLineCand
+    ? buildStoryBlock("main_idea", "bottom-line",
+        bottomLineCand.sentence,
+        collectParagraphSupport(bottomLineCand, ranked).filter((s) => !isNearDuplicate(s, mainIdea)).slice(0, 2),
+        bottomLineCand.evidence,
+        bottomLineCand.score)
+    : null;
+
   const supportBlocks = [mechanismBlock, distinctionBlock, relationBlock, applicationBlock].filter(Boolean) as StoryBlock[];
   const weakBlocks = [buildStoryBlock("trap", "trap-weak", trapBlock?.trap, trapSignals.slice(1), trapSignals, 0.58)].filter(Boolean) as StoryBlock[];
 
@@ -258,6 +339,7 @@ export function buildPageStory({
     relationBlock,
     applicationBlock,
     trapBlock,
+    bottomLineBlock,
     supportBlocks,
     weakBlocks,
     trap,
@@ -265,6 +347,53 @@ export function buildPageStory({
     sourceCount: ranked.length,
     confidence,
   };
+}
+
+// ── Semantic pool helpers ─────────────────────────────────────────────────
+
+/**
+ * Build a candidate pool for a specific semantic block kind.
+ * Priority order: paragraphs whose `paragraphType` matches one of `wantedTypes`
+ * first, then candidates whose label matches `wantedLabels`, then any candidate
+ * that satisfies the `fallbackTest` predicate — all filtered by distinct text.
+ */
+function buildSemanticPool(
+  ranked: NarrativeCandidate[],
+  wantedTypes: string[],
+  wantedLabels: StoryLabel[],
+  fallbackTest: (c: NarrativeCandidate) => boolean,
+): NarrativeCandidate[] {
+  const byType = ranked.filter((c) => c.paragraphType && wantedTypes.includes(c.paragraphType));
+  const byLabel = ranked.filter((c) => c.labelHint && wantedLabels.includes(c.labelHint) && !byType.some((x) => x.normalized === c.normalized));
+  const byFallback = ranked.filter((c) => fallbackTest(c) && !byType.some((x) => x.normalized === c.normalized) && !byLabel.some((x) => x.normalized === c.normalized));
+  return [...byType, ...byLabel, ...byFallback];
+}
+
+/**
+ * Collect up to 3 distinct support sentences from the same paragraph
+ * (via paragraphText) or from related ranked candidates.
+ */
+function collectParagraphSupport(primary: NarrativeCandidate, ranked: NarrativeCandidate[]): string[] {
+  const pool: string[] = [];
+
+  // Sentences from the same source paragraph
+  if (primary.paragraphText) {
+    const sentences = primary.paragraphText
+      .split(/(?<=[.!?])\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 20 && !isNearDuplicate(s, primary.sentence));
+    pool.push(...sentences.slice(0, 3));
+  }
+
+  // Ranked candidates with the same relationHint
+  for (const c of ranked) {
+    if (c.normalized === primary.normalized) continue;
+    if (primary.relationHint && c.relationHint === primary.relationHint && !isNearDuplicate(c.sentence, primary.sentence)) {
+      pool.push(c.sentence);
+    }
+  }
+
+  return uniqueSentences(pool).slice(0, 3);
 }
 
 function buildPatternBlock(mainIdea: string, narrative: string, confidence: number): PatternBlock | null {
@@ -390,6 +519,8 @@ function collectCandidates(pageModel: BuildPageStoryInput["pageModel"]): Narrati
       labelHint: inferLabel(best),
       trapHint: normalizeSentence(p.trap) || undefined,
       relationHint: inferRelationHint(best),
+      paragraphText: normalizeSentence(p.evidence || p.text) || undefined,
+      paragraphType: p.paragraphType,
     });
   }
 
@@ -465,8 +596,12 @@ function structuralBoost(c: NarrativeCandidate, mode: BuildPageStoryInput["mode"
   if (c.sourceKind === "decision_path") boost += 0.11;
 
   if (containsContrast(c.sentence)) boost += 0.06;
-  if (containsCause(c.sentence)) boost += 0.07;
-  if (containsProcess(c.sentence)) boost += 0.05;
+  // Use c.relationHint (already computed via inferRelationHint, which is mutually
+  // exclusive) rather than re-calling containsCause/containsProcess independently.
+  // Re-calling the raw functions would double-boost sentences where both patterns
+  // fire (e.g. "This process leads to…" matches both cause and process).
+  if (c.relationHint === "cause") boost += 0.07;
+  else if (c.relationHint === "process") boost += 0.05;
   if (containsBoundary(c.sentence)) boost += 0.05;
   if (containsActionableRule(c.sentence)) boost += 0.05;
 
@@ -1109,7 +1244,16 @@ function containsBoundary(sentence: string): boolean {
 }
 
 function containsActionableRule(sentence: string): boolean {
-  return /\b(apply|use|check|avoid|do not|should|must|next move|rule)\b/i.test(sentence);
+  // "should" and "must" alone fire on ~35% of ordinary descriptive prose
+  // ("it should be noted", "cells must maintain their form"). Require:
+  //  - explicit action verbs (apply, use, check, avoid, do not, next move)
+  //  - OR "should/must" at sentence start (clear directive intent)
+  //  - OR "rule:" / "rule is" patterns (explicit rule annotation)
+  return (
+    /\b(apply|use|check|avoid|do not|next move)\b/i.test(sentence) ||
+    /^(should|must)\b/i.test(sentence.trim()) ||
+    /\brule\s*[:—]|\brule\s+is\b/i.test(sentence)
+  );
 }
 
 function containsTrapWord(sentence: string): boolean {
