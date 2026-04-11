@@ -270,7 +270,7 @@ function buildStoryCandidates(
       kind: "main_pattern",
       source: "story_pattern",
       text: clean(patternText),
-      shortLabel: "Pattern",
+      shortLabel: "Signal",
       support: compact([story.patternBlock?.context, ...(story.mainIdeaBlock?.support.slice(0, 1) || [])]),
       evidence: patEvidence,
       blockId: "patternBlock",
@@ -354,7 +354,7 @@ function buildStoryCandidates(
       kind: "support_decision",
       source: "story_decision",
       text: clean(story.decisionBlock.action),
-      shortLabel: "Decision",
+      shortLabel: "Rule",
       support: story.decisionBlock.nextSteps.slice(0, 2),
       evidence: compact([story.decisionBlock.threshold]),
       blockId: "decisionBlock",
@@ -434,7 +434,7 @@ function buildStoryCandidates(
       kind: "support_application",
       source: "story_application",
       text: clean(story.applicationBlock.text),
-      shortLabel: "Application",
+      shortLabel: "Action",
       support: story.applicationBlock.support.slice(0, 2),
       evidence: story.applicationBlock.evidence.slice(0, 2),
       blockId: "applicationBlock",
@@ -449,7 +449,7 @@ function buildStoryCandidates(
       kind: "support_application",
       source: "story_application",
       text: clean(story.applySignals[0]),
-      shortLabel: "Application",
+      shortLabel: "Action",
       support: story.applySignals.slice(1, 3),
       evidence: [],
       score: BASE_KIND_SCORE.support_application - 5,
@@ -737,13 +737,33 @@ function resolveBlockSpans(
   const pageNorm = normalizeForSearch(pageText);
   const blockNorm = normalizeForSearch(blockText);
 
-  // 1. Paragraph-level match — prefer returning the full paragraph span so the
-  //    highlight covers the semantic unit rather than just a sentence fragment.
+  // 1. Paragraph-guided sentence match — identify which paragraph contains the
+  //    block text, then locate the exact sentence span within it for tight anchoring.
+  //    Returning the full paragraph creates an overly broad "wash" highlight, so we
+  //    search for the block text itself inside the host paragraph first.
   if (paragraphIndex.length) {
     const blockPrefix = blockNorm.slice(0, 50);
     const hostParagraph = paragraphIndex.find((p) => p.normText.includes(blockPrefix));
     if (hostParagraph) {
-      return [{ start: hostParagraph.start, end: hostParagraph.end }];
+      // Try exact text search within the host paragraph.
+      const needle = blockText.slice(0, 40);
+      const rawIdx = pageText.indexOf(needle, hostParagraph.start);
+      if (rawIdx >= hostParagraph.start && rawIdx <= hostParagraph.end) {
+        return [{ start: rawIdx, end: Math.min(rawIdx + blockText.length + 5, hostParagraph.end) }];
+      }
+      // Try normalized search inside the host paragraph.
+      const normOffset = hostParagraph.normText.indexOf(blockNorm.slice(0, 40));
+      if (normOffset >= 0) {
+        const spanStart = hostParagraph.start + normOffset;
+        return [{ start: spanStart, end: Math.min(spanStart + blockText.length + 5, hostParagraph.end) }];
+      }
+      // Fallback: clamp to a sentence-length window at the paragraph start
+      // rather than returning the entire paragraph.
+      const sentenceEnd = hostParagraph.text.search(/[.!?]\s/) + 1;
+      const windowEnd = sentenceEnd > 5
+        ? hostParagraph.start + sentenceEnd
+        : Math.min(hostParagraph.start + blockText.length + 20, hostParagraph.end);
+      return [{ start: hostParagraph.start, end: windowEnd }];
     }
   }
 
@@ -918,13 +938,13 @@ function textSimilarity(a: string, b: string): number {
 
 function shortLabelForKind(kind: SemanticHighlightKind): string {
   switch (kind) {
-    case "main_pattern": return "Pattern";
+    case "main_pattern": return "Signal";
     case "main_mechanism": return "Mechanism";
-    case "support_explanation": return "Explanation";
+    case "support_explanation": return "Key Point";
     case "support_distinction": return "Distinction";
-    case "support_relation": return "Relation";
-    case "support_decision": return "Decision";
-    case "support_application": return "Application";
+    case "support_relation": return "Connection";
+    case "support_decision": return "Rule";
+    case "support_application": return "Action";
     case "trap_warning": return "Trap";
     case "trap_boundary": return "Boundary";
     case "weak_caveat": return "Caveat";

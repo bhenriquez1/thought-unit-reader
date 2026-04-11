@@ -572,10 +572,10 @@ export default function ThoughtUnitReader() {
     currentPageVersion: buildCurrentPageVersion("default-book", 1, null),
   });
   const [unifiedPanelState, setUnifiedPanelState] = useState<UnifiedRightPanelState>({
-    activeTab: "priority",
-    audience: "student",
+    activeTab: "insights",
+    audience: "clinical",   // operator-level extraction quality
     depth: "standard",
-    density: "condensed",
+    density: "expanded",
   });
   const [focusSettings, setFocusSettings] = useState({ focus: 1500, shortBreak: 300, longBreak: 900 });
   const [ambientUrl, setAmbientUrl] = useState("");
@@ -2646,10 +2646,6 @@ export default function ThoughtUnitReader() {
                   story: currentPageStory,
                   priorityHighlights: currentPriorityHighlights,
                 }}
-                onTabChange={(activeTab) => setUnifiedPanelState((s) => ({ ...s, activeTab }))}
-                onAudienceChange={(audience) => setUnifiedPanelState((s) => ({ ...s, audience }))}
-                onDepthChange={(depth) => setUnifiedPanelState((s) => ({ ...s, depth }))}
-                onDensityChange={(density) => setUnifiedPanelState((s) => ({ ...s, density }))}
                 resolveEvidenceId={resolveEvidenceId}
                 focusedEvidenceId={focusedEvidenceId}
                 onEvidenceClick={(snippet, evidenceId) => {
