@@ -309,12 +309,14 @@ export function processPage(pageText: string, enableDatApex = false): PageInsigh
       topTakeaways,
       paragraphInsights: paragraphInsights.map((entry) => ({
         summary: entry.summary,
+        text: entry.cleanedText,
         signal: entry.coreSignals[0],
         application: entry.applications?.[0],
         trap: entry.traps?.[0],
         score: entry.confidence,
         priority: entry.priorityScore / 10,
         evidence: entry.cleanedText,
+        paragraphType: entry.paragraphType,
       })),
       decisionPaths: decisionPaths.map((entry) => ({
         condition: entry.condition,
