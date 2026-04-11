@@ -3118,6 +3118,23 @@ export default function ThoughtUnitReader() {
 
         {/* Floating Action Buttons - Bottom Left Stack */}
         <div className="fixed bottom-[80px] right-6 z-40 flex flex-col gap-3 max-w-[170px] opacity-90">
+          {/* Highlight color legend */}
+          <div className="rounded-xl border border-white/10 bg-[rgb(11,18,34)]/90 backdrop-blur-sm px-2.5 py-2">
+            <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-500">Page guide</div>
+            <div className="space-y-1">
+              {([
+                { color: "bg-amber-300/70 border border-amber-400/50", label: "Signal" },
+                { color: "bg-blue-300/60 border border-blue-400/40", label: "Rule" },
+                { color: "bg-sky-200/60 border border-sky-400/35", label: "Support" },
+                { color: "bg-rose-400/65 border border-rose-500/50", label: "Trap" },
+              ] as const).map(({ color, label }) => (
+                <div key={label} className="flex items-center gap-1.5">
+                  <span className={`h-2 w-3.5 shrink-0 rounded-sm ${color}`} />
+                  <span className="text-[10px] text-slate-300">{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
           {/* Chapter Absorption FAB (feature-flagged) */}
           {isFeatureEnabled('ENABLE_CHAPTER_ABSORPTION') && smartTOC.length > 0 && !absorptionState.showPanel && (
             <button
