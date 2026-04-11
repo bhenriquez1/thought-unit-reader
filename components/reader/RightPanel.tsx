@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { ActivePageContext, ResolvedPanelPayload, RightPanelState } from "@/lib/readerContracts";
 import { useGuidedHighlightSync } from "@/hooks/useGuidedHighlightSync";
 import { buildGuidedReadView, type GuidedDepth, type GuidedMode, type GuidedRole } from "@/lib/insights/buildGuidedReadView";
@@ -24,33 +24,40 @@ const DEPTH: GuidedDepth = "standard";
 const MODE: GuidedMode = "insight";
 
 // Map semantic kind → human-readable role label + accent color
+// Global color system: amber=Important, blue=Support, sky=Additional, rose=Warning
 const KIND_ROLE: Record<SemanticHighlightKind | string, { label: string; color: string }> = {
-  main_pattern:        { label: "Signal",      color: "text-amber-300" },
-  main_mechanism:      { label: "Mechanism",   color: "text-violet-300" },
-  support_decision:    { label: "Rule",        color: "text-blue-300" },
-  support_explanation: { label: "Key Point",   color: "text-emerald-300" },
-  trap_warning:        { label: "Trap",        color: "text-rose-300" },
-  trap_boundary:       { label: "Boundary",    color: "text-orange-300" },
-  support_distinction: { label: "Distinction", color: "text-cyan-300" },
-  support_relation:    { label: "Connection",  color: "text-sky-300" },
-  support_application: { label: "Action",      color: "text-indigo-300" },
-  weak_caveat:         { label: "Caveat",      color: "text-slate-400" },
+  main_pattern:        { label: "Important",  color: "text-amber-300" },
+  main_mechanism:      { label: "Important",  color: "text-amber-300" },
+  support_decision:    { label: "Support",    color: "text-blue-300" },
+  support_explanation: { label: "Support",    color: "text-blue-300" },
+  trap_warning:        { label: "Warning",    color: "text-rose-300" },
+  trap_boundary:       { label: "Warning",    color: "text-rose-300" },
+  support_distinction: { label: "Additional", color: "text-sky-300" },
+  support_relation:    { label: "Additional", color: "text-sky-300" },
+  support_application: { label: "Support",    color: "text-blue-300" },
+  weak_caveat:         { label: "Note",       color: "text-slate-400" },
 };
 
 function kindMeta(kind: string, shortLabel?: string): { label: string; color: string } {
-  // shortLabel from extractPriorityHighlights takes priority ("Bottom Line", etc.)
+  // shortLabel from extractPriorityHighlights takes priority
   if (shortLabel && shortLabel !== kind.replace(/_/g, " ")) {
-    const color = shortLabel === "Trap" ? "text-rose-300"
-      : shortLabel === "Mechanism" ? "text-violet-300"
-      : shortLabel === "Signal" ? "text-amber-300"
-      : shortLabel === "Rule" ? "text-blue-300"
-      : shortLabel === "Action" ? "text-indigo-300"
-      : shortLabel === "Bottom Line" ? "text-emerald-300"
+    const color = shortLabel === "Warning" ? "text-rose-300"
+      : shortLabel === "Important" ? "text-amber-300"
+      : shortLabel === "Support" ? "text-blue-300"
+      : shortLabel === "Additional" ? "text-sky-300"
+      : shortLabel === "Note" ? "text-slate-400"
       : "text-slate-300";
     return { label: shortLabel, color };
   }
   return KIND_ROLE[kind] ?? { label: kind.replace(/_/g, " "), color: "text-slate-300" };
 }
+
+const LOADING_PHASES = [
+  "Reading current page…",
+  "Analyzing paragraph roles…",
+  "Mapping important lines…",
+  "Building operator view…",
+];
 
 export function RightPanel({
   state,
@@ -63,6 +70,26 @@ export function RightPanel({
   const pageModel = intelligence.pageModel;
   const pageTruth = intelligence.pageTruth;
   const isCurrentPageModel = Boolean(intelligence.isCurrentPage && pageModel && intelligence.status === "ready");
+
+  const [loadingPhase, setLoadingPhase] = useState(0);
+  const loadingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (intelligence.status === "loading") {
+      setLoadingPhase(0);
+      loadingIntervalRef.current = setInterval(() => {
+        setLoadingPhase((p) => (p + 1) % LOADING_PHASES.length);
+      }, 700);
+    } else {
+      if (loadingIntervalRef.current) {
+        clearInterval(loadingIntervalRef.current);
+        loadingIntervalRef.current = null;
+      }
+    }
+    return () => {
+      if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
+    };
+  }, [intelligence.status]);
 
   const guidedView = useMemo(() => {
     if (!pageTruth?.canRenderRightPanel) return null;
@@ -102,11 +129,13 @@ export function RightPanel({
       {/* Header */}
       <div className="border-b border-white/10 px-4 py-3">
         <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">Operator View</div>
-        <div className="mt-0.5 text-[11px] text-slate-500">Current page · {intelligence.status === "loading" ? "reading…" : "ready"}</div>
+        <div className="mt-0.5 text-[11px] text-slate-500">
+          {intelligence.status === "loading" ? LOADING_PHASES[loadingPhase] : "Current page · ready"}
+        </div>
       </div>
 
       <div className="flex flex-col gap-4 p-4 text-white">
-        {renderTruthFallback(pageTruth?.reason || "loading", intelligence.status, !isCurrentPageModel)}
+        {renderTruthFallback(pageTruth?.reason || "loading", intelligence.status, !isCurrentPageModel, loadingPhase)}
         {intelligence.status === "error" ? (
           <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">
             Could not build reading path for this page.
@@ -327,11 +356,17 @@ function OperatorCardView({ card }: { card: OperatorCard }) {
   );
 }
 
-function renderTruthFallback(reason: string, status: string, keyMismatch: boolean) {
+function renderTruthFallback(reason: string, status: string, keyMismatch: boolean, loadingPhase = 0) {
   if (status === "loading" || keyMismatch || reason === "loading") {
     return (
-      <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">
-        OPERATOR VIEW · Reading current page…
+      <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2 w-2 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          </span>
+          <span className="text-sm text-slate-300">{LOADING_PHASES[loadingPhase]}</span>
+        </div>
       </div>
     );
   }

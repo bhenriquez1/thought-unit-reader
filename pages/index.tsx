@@ -3123,10 +3123,10 @@ export default function ThoughtUnitReader() {
             <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-500">Page guide</div>
             <div className="space-y-1">
               {([
-                { color: "bg-amber-300/70 border border-amber-400/50", label: "Signal" },
-                { color: "bg-blue-300/60 border border-blue-400/40", label: "Rule" },
-                { color: "bg-sky-200/60 border border-sky-400/35", label: "Support" },
-                { color: "bg-rose-400/65 border border-rose-500/50", label: "Trap" },
+                { color: "bg-amber-300/70 border border-amber-400/50", label: "Important" },
+                { color: "bg-blue-300/60 border border-blue-400/40", label: "Support" },
+                { color: "bg-sky-200/60 border border-sky-400/35", label: "Additional" },
+                { color: "bg-rose-400/65 border border-rose-500/50", label: "Warning" },
               ] as const).map(({ color, label }) => (
                 <div key={label} className="flex items-center gap-1.5">
                   <span className={`h-2 w-3.5 shrink-0 rounded-sm ${color}`} />
