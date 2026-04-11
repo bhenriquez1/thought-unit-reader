@@ -3,6 +3,7 @@ import { isRenderableSentence } from "@/lib/insights/isRenderableSentence";
 import type { PageInsightModel, ParagraphInsight } from "@/lib/insights/types";
 import type { PageStory } from "@/lib/insights/buildPageStory";
 import type { PageContentClass } from "@/lib/pdf/classifyPageContent";
+import type { ParagraphRoleBlock, ParagraphRole } from "@/lib/highlights/paragraphRoleMap";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -63,6 +64,8 @@ export type ExtractPriorityHighlightsInput = {
   pageText: string;
   /** Pre-split paragraph texts from the current page for paragraph-level span anchoring */
   paragraphTexts?: string[];
+  /** Pre-classified paragraph roles — adds full-paragraph candidates for primary/trap paragraphs not already covered by story blocks */
+  paragraphRoleMap?: ParagraphRoleBlock[];
   pageClass?: PageContentClass | string;
   pageModel?: PageInsightModel | null;
   pageStory?: PageStory | null;
@@ -135,6 +138,7 @@ export function extractPriorityHighlights({
   pageNumber,
   pageText,
   paragraphTexts,
+  paragraphRoleMap,
   pageClass,
   pageModel,
   pageStory,
@@ -174,6 +178,14 @@ export function extractPriorityHighlights({
   if (!candidates.length && pageModel) {
     candidates = buildFallbackCandidates(pageModel, pageClass as PageContentClass | undefined);
     usedFallback = true;
+  }
+
+  // Add paragraph-role candidates for paragraphs not already covered by
+  // story blocks. These produce full-paragraph highlights for primary/trap
+  // paragraphs that story extraction may have only partially captured.
+  if (paragraphRoleMap?.length) {
+    const roleCandidates = buildRoleMapCandidates(paragraphRoleMap, candidates, pageNumber);
+    if (roleCandidates.length) candidates = [...candidates, ...roleCandidates];
   }
 
   const candidatesSeen = candidates.length;
@@ -538,6 +550,83 @@ function buildStoryCandidates(
   }
 
   return candidates.filter((c) => c.text.length >= 15);
+}
+
+// ---------------------------------------------------------------------------
+// Paragraph-role map candidate builder
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert paragraph-role classifications into highlight candidates.
+ *
+ * Only paragraphs with a meaningful role (not low_value) are added, and only
+ * when they are not already covered by an existing story candidate (to avoid
+ * duplicate highlights on the same text).  The full paragraph text is used
+ * so SmartPDFViewer will anchor the overlay to the whole paragraph block
+ * rather than a single sentence.
+ */
+function buildRoleMapCandidates(
+  roleMap: ParagraphRoleBlock[],
+  existingCandidates: CandidateBlock[],
+  pageNumber: number,
+): CandidateBlock[] {
+  const added: CandidateBlock[] = [];
+
+  for (const block of roleMap) {
+    if (block.role === "low_value") continue;
+    if (block.text.length < 40) continue;
+
+    // Check if an existing story candidate already covers this paragraph.
+    // "Covers" = the story candidate text appears in the paragraph or vice versa.
+    const blockPrefixNorm = block.text.toLowerCase().replace(/[^\w\s]/g, " ").slice(0, 55).trim();
+    const alreadyCovered = existingCandidates.some((c) => {
+      const cNorm = c.text.toLowerCase().replace(/[^\w\s]/g, " ").slice(0, 55).trim();
+      return (
+        blockPrefixNorm.includes(cNorm.slice(0, 40)) ||
+        cNorm.includes(blockPrefixNorm.slice(0, 40))
+      );
+    });
+    if (alreadyCovered) continue;
+
+    const { kind, priority, score } = roleToKindMapping(block.role);
+
+    added.push({
+      id: `role-${block.paragraphIndex}-${pageNumber}`,
+      priority,
+      kind,
+      source: "paragraph_cluster",
+      text: block.text,
+      shortLabel: shortLabelForRole(block.role),
+      support: [],
+      evidence: [],
+      score,
+      confidence: 0.72,
+    });
+  }
+
+  return added;
+}
+
+function roleToKindMapping(role: ParagraphRole): { kind: SemanticHighlightKind; priority: PriorityTier; score: number } {
+  switch (role) {
+    case "primary_signal":      return { kind: "main_pattern",        priority: "main",    score: BASE_KIND_SCORE.main_pattern - 3 };
+    case "trap_warning":        return { kind: "trap_warning",         priority: "support", score: BASE_KIND_SCORE.trap_warning - 3 };
+    case "decision_rule":       return { kind: "support_decision",     priority: "support", score: BASE_KIND_SCORE.support_decision - 3 };
+    case "support_explanation": return { kind: "support_explanation",  priority: "support", score: BASE_KIND_SCORE.support_explanation - 3 };
+    case "support_relation":    return { kind: "support_relation",     priority: "support", score: BASE_KIND_SCORE.support_relation - 3 };
+    default:                    return { kind: "weak_caveat",           priority: "weak",    score: BASE_KIND_SCORE.weak_caveat };
+  }
+}
+
+function shortLabelForRole(role: ParagraphRole): string {
+  switch (role) {
+    case "primary_signal":      return "Signal";
+    case "trap_warning":        return "Trap";
+    case "decision_rule":       return "Rule";
+    case "support_explanation": return "Key Point";
+    case "support_relation":    return "Connection";
+    default:                    return "Note";
+  }
 }
 
 // ---------------------------------------------------------------------------

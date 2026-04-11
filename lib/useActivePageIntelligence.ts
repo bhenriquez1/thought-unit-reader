@@ -8,6 +8,7 @@ import { deriveHighlightTargets } from "@/lib/highlightMapping";
 import { processPage } from "@/lib/insights/processPage";
 import { classifyPageContent, type PageContentClass } from "@/lib/pdf/classifyPageContent";
 import { extractPriorityHighlights, type ExtractPriorityHighlightsResult } from "@/lib/highlights/extractPriorityHighlights";
+import { buildParagraphRoleMap } from "@/lib/highlights/paragraphRoleMap";
 import { evaluatePageTruth, type PageTruthGateResult } from "@/lib/insights/evaluatePageTruth";
 import { buildPageStory } from "@/lib/insights/buildPageStory";
 import type { PageInsightModel } from "@/lib/insights/types";
@@ -205,6 +206,11 @@ export function useActivePageIntelligence({
         visiblePageText: snapshot.pageText || "",
         formulaSignalsCount: localFormulaSignals.length,
       });
+      const localParagraphRoleMap = buildParagraphRoleMap(
+        snapshot.pageText || "",
+        localPageStory,
+        snapshot.paragraphTexts?.length ? snapshot.paragraphTexts : undefined,
+      );
       const localHighlights = extractPriorityHighlights({
         documentId,
         pageNumber,
@@ -212,6 +218,7 @@ export function useActivePageIntelligence({
         // Provide pre-split paragraph texts so resolveBlockSpans can try
         // paragraph-level anchoring before falling back to sentence-level.
         paragraphTexts: snapshot.paragraphTexts?.length ? snapshot.paragraphTexts : undefined,
+        paragraphRoleMap: localParagraphRoleMap.length ? localParagraphRoleMap : undefined,
         pageClass: localPageClass,
         pageModel: localPageModel,
         pageStory: localPageStory,
