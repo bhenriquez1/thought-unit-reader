@@ -209,6 +209,9 @@ export function useActivePageIntelligence({
         documentId,
         pageNumber,
         pageText: snapshot.pageText || "",
+        // Provide pre-split paragraph texts so resolveBlockSpans can try
+        // paragraph-level anchoring before falling back to sentence-level.
+        paragraphTexts: snapshot.paragraphTexts?.length ? snapshot.paragraphTexts : undefined,
         pageClass: localPageClass,
         pageModel: localPageModel,
         pageStory: localPageStory,

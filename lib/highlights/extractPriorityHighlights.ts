@@ -61,6 +61,8 @@ export type ExtractPriorityHighlightsInput = {
   documentId?: string;
   pageNumber: number;
   pageText: string;
+  /** Pre-split paragraph texts from the current page for paragraph-level span anchoring */
+  paragraphTexts?: string[];
   pageClass?: PageContentClass | string;
   pageModel?: PageInsightModel | null;
   pageStory?: PageStory | null;
@@ -132,6 +134,7 @@ export function extractPriorityHighlights({
   documentId,
   pageNumber,
   pageText,
+  paragraphTexts,
   pageClass,
   pageModel,
   pageStory,
@@ -140,6 +143,11 @@ export function extractPriorityHighlights({
   maxWeak = 2,
   mergeWindowChars = 220,
 }: ExtractPriorityHighlightsInput): ExtractPriorityHighlightsResult {
+  // Build a paragraph index from the page text for paragraph-level span anchoring.
+  // Prefer caller-provided paragraphTexts (already split by splitParagraphs), then
+  // fall back to a simple blank-line split. Each entry records the paragraph text
+  // and its character offset within pageText.
+  const pageParagraphIndex = buildParagraphIndex(pageText, paragraphTexts);
   const empty = (stats: Partial<ExtractPriorityHighlightsResult["stats"]> = {}): ExtractPriorityHighlightsResult => ({
     pageNumber,
     documentId,
@@ -159,7 +167,7 @@ export function extractPriorityHighlights({
   let usedFallback = false;
 
   if (pageStory) {
-    candidates = buildStoryCandidates(pageStory, pageNumber);
+    candidates = buildStoryCandidates(pageStory, pageNumber, pageParagraphIndex);
     usedStory = true;
   }
 
@@ -184,7 +192,7 @@ export function extractPriorityHighlights({
   let spansResolved = 0;
 
   for (const c of deduped) {
-    const spans = resolveBlockSpans(pageText, c.text, c.support, c.evidence);
+    const spans = resolveBlockSpans(pageText, c.text, c.support, c.evidence, pageParagraphIndex);
     if (!spans.length && !usedFallback) continue; // strict: skip blocks with no span unless fallback
     if (spans.length) spansResolved++;
     resolved.push({
@@ -238,75 +246,107 @@ export function extractPriorityHighlights({
 // Story-first candidate builder
 // ---------------------------------------------------------------------------
 
-function buildStoryCandidates(story: PageStory, pageNumber: number): CandidateBlock[] {
+function buildStoryCandidates(
+  story: PageStory,
+  pageNumber: number,
+  paragraphIndex: ParagraphIndexEntry[],
+): CandidateBlock[] {
   const candidates: CandidateBlock[] = [];
   const n = pageNumber;
 
-  // Main: pattern
-  if (story.patternBlock?.trigger && isRenderableSentence(story.patternBlock.trigger)) {
+  // ── Main: pattern ──────────────────────────────────────────────────────────
+  const patternText = story.patternBlock?.trigger || story.mainIdeaBlock?.text || null;
+  if (patternText && isRenderableSentence(patternText)) {
+    // Enrich text with paragraph evidence so SmartPDFViewer has more words
+    // to match, reducing missed anchors on OCR text.
+    const patEvidence = pickBestEvidence(
+      story.mainIdeaBlock?.evidence || [],
+      patternText,
+      paragraphIndex,
+    );
     candidates.push({
       id: `pat-${n}`,
       priority: "main",
       kind: "main_pattern",
       source: "story_pattern",
-      text: clean(story.patternBlock.trigger),
+      text: clean(patternText),
       shortLabel: "Pattern",
-      support: compact([story.patternBlock.context]),
-      evidence: [],
+      support: compact([story.patternBlock?.context, ...(story.mainIdeaBlock?.support.slice(0, 1) || [])]),
+      evidence: patEvidence,
       blockId: "patternBlock",
       blockField: "patternBlock",
-      score: BASE_KIND_SCORE.main_pattern,
-      confidence: story.confidence,
-    });
-  } else if (story.mainIdeaBlock?.text && isRenderableSentence(story.mainIdeaBlock.text)) {
-    candidates.push({
-      id: `pat-${n}`,
-      priority: "main",
-      kind: "main_pattern",
-      source: "story_pattern",
-      text: clean(story.mainIdeaBlock.text),
-      shortLabel: "Pattern",
-      support: story.mainIdeaBlock.support.slice(0, 2),
-      evidence: story.mainIdeaBlock.evidence.slice(0, 2),
-      blockId: "mainIdeaBlock",
-      blockField: "mainIdeaBlock",
-      score: BASE_KIND_SCORE.main_pattern - 4,
+      score: story.patternBlock?.trigger ? BASE_KIND_SCORE.main_pattern : BASE_KIND_SCORE.main_pattern - 4,
       confidence: story.confidence,
     });
   }
 
-  // Main: mechanism
+  // ── Main: mechanism ────────────────────────────────────────────────────────
+  // Only emit mechanism if it's clearly distinct from pattern (> 28% different
+  // words). If they're near-identical, the pattern block already covers it and
+  // emitting both creates duplicate highlights.
   if (story.mechanismBlock?.text && isRenderableSentence(story.mechanismBlock.text)) {
-    candidates.push({
-      id: `mech-${n}`,
-      priority: "main",
-      kind: "main_mechanism",
-      source: "story_mechanism",
-      text: clean(story.mechanismBlock.text),
-      shortLabel: "Mechanism",
-      support: story.mechanismBlock.support.slice(0, 3),
-      evidence: story.mechanismBlock.evidence.slice(0, 2),
-      blockId: "mechanismBlock",
-      blockField: "mechanismBlock",
-      score: BASE_KIND_SCORE.main_mechanism,
-      confidence: story.confidence,
-    });
+    const patSimilarity = patternText ? textSimilarity(story.mechanismBlock.text, patternText) : 0;
+    if (patSimilarity < 0.72) {
+      const mechEvidence = pickBestEvidence(story.mechanismBlock.evidence, story.mechanismBlock.text, paragraphIndex);
+      candidates.push({
+        id: `mech-${n}`,
+        priority: "main",
+        kind: "main_mechanism",
+        source: "story_mechanism",
+        text: clean(story.mechanismBlock.text),
+        shortLabel: "Mechanism",
+        support: story.mechanismBlock.support.slice(0, 3),
+        evidence: mechEvidence,
+        blockId: "mechanismBlock",
+        blockField: "mechanismBlock",
+        score: BASE_KIND_SCORE.main_mechanism,
+        confidence: story.confidence,
+      });
+    }
   } else if (story.supportingLogic[0] && isRenderableSentence(story.supportingLogic[0])) {
-    candidates.push({
-      id: `mech-${n}`,
-      priority: "main",
-      kind: "main_mechanism",
-      source: "story_mechanism",
-      text: clean(story.supportingLogic[0]),
-      shortLabel: "Mechanism",
-      support: story.supportingLogic.slice(1, 3),
-      evidence: [],
-      score: BASE_KIND_SCORE.main_mechanism - 6,
-      confidence: story.confidence * 0.85,
-    });
+    // Only use the first supportingLogic entry — don't spread multiple entries
+    // into separate candidates; that was the "fake diversity" path.
+    const logicSimilarity = patternText ? textSimilarity(story.supportingLogic[0], patternText) : 0;
+    if (logicSimilarity < 0.72) {
+      candidates.push({
+        id: `mech-${n}`,
+        priority: "main",
+        kind: "main_mechanism",
+        source: "story_mechanism",
+        text: clean(story.supportingLogic[0]),
+        shortLabel: "Mechanism",
+        support: [],
+        evidence: [],
+        score: BASE_KIND_SCORE.main_mechanism - 6,
+        confidence: story.confidence * 0.85,
+      });
+    }
   }
 
-  // Support: decision
+  // ── Support: bottom line ───────────────────────────────────────────────────
+  // Use the new bottomLineBlock (distinct irreversible takeaway) as a support
+  // block so the insight mode's "read in this order" list has a clear third item.
+  if (story.bottomLineBlock?.text && isRenderableSentence(story.bottomLineBlock.text)) {
+    const btmSimilarity = patternText ? textSimilarity(story.bottomLineBlock.text, patternText) : 0;
+    if (btmSimilarity < 0.65) {
+      candidates.push({
+        id: `btm-${n}`,
+        priority: "support",
+        kind: "support_explanation",
+        source: "story_pattern",
+        text: clean(story.bottomLineBlock.text),
+        shortLabel: "Bottom Line",
+        support: story.bottomLineBlock.support.slice(0, 2),
+        evidence: story.bottomLineBlock.evidence.slice(0, 2),
+        blockId: "bottomLineBlock",
+        blockField: "bottomLineBlock",
+        score: BASE_KIND_SCORE.support_explanation + 2,
+        confidence: story.confidence * 0.9,
+      });
+    }
+  }
+
+  // ── Support: decision ──────────────────────────────────────────────────────
   if (story.decisionBlock?.action && isRenderableSentence(story.decisionBlock.action)) {
     candidates.push({
       id: `dec-${n}`,
@@ -324,7 +364,7 @@ function buildStoryCandidates(story: PageStory, pageNumber: number): CandidateBl
     });
   }
 
-  // Support: distinction
+  // ── Support: distinction ───────────────────────────────────────────────────
   if (story.distinctionBlock?.text && isRenderableSentence(story.distinctionBlock.text)) {
     candidates.push({
       id: `dist-${n}`,
@@ -355,7 +395,7 @@ function buildStoryCandidates(story: PageStory, pageNumber: number): CandidateBl
     });
   }
 
-  // Support: relation
+  // ── Support: relation ──────────────────────────────────────────────────────
   if (story.relationBlock?.text && isRenderableSentence(story.relationBlock.text)) {
     candidates.push({
       id: `rel-${n}`,
@@ -386,7 +426,7 @@ function buildStoryCandidates(story: PageStory, pageNumber: number): CandidateBl
     });
   }
 
-  // Support: application
+  // ── Support: application ───────────────────────────────────────────────────
   if (story.applicationBlock?.text && isRenderableSentence(story.applicationBlock.text)) {
     candidates.push({
       id: `app-${n}`,
@@ -417,29 +457,14 @@ function buildStoryCandidates(story: PageStory, pageNumber: number): CandidateBl
     });
   }
 
-  // Support: mechanism support → support_explanation
-  for (const logicLine of story.supportingLogic.slice(1, 3)) {
-    if (!isRenderableSentence(logicLine)) continue;
-    if (candidates.some((c) => textSimilarity(c.text, logicLine) > 0.82)) continue;
-    candidates.push({
-      id: `exp-${n}-${candidates.length}`,
-      priority: "support",
-      kind: "support_explanation",
-      source: "story_mechanism",
-      text: clean(logicLine),
-      shortLabel: "Explanation",
-      support: [],
-      evidence: [],
-      score: BASE_KIND_SCORE.support_explanation - 4,
-      confidence: story.confidence * 0.78,
-    });
-  }
-
-  // Weak: trap
+  // ── Trap (elevated to "support" priority) ──────────────────────────────────
+  // Traps are semantically important — "weak" hid them below generic support
+  // blocks. Now they're "support" priority so they appear in the reading order
+  // list and overlay alongside other support blocks with distinct coloring.
   if (story.trapBlock?.trap && isRenderableSentence(story.trapBlock.trap)) {
     candidates.push({
       id: `trap-${n}`,
-      priority: "weak",
+      priority: "support",   // ← was "weak"
       kind: "trap_warning",
       source: "story_trap",
       text: clean(story.trapBlock.trap),
@@ -451,7 +476,7 @@ function buildStoryCandidates(story: PageStory, pageNumber: number): CandidateBl
       score: BASE_KIND_SCORE.trap_warning,
       confidence: story.confidence * 0.92,
     });
-    // Boundary sub-block
+    // Boundary as a weak sub-block (keeps visual separation from the main trap)
     if (story.trapBlock.consequence && isRenderableSentence(story.trapBlock.consequence)) {
       candidates.push({
         id: `bound-${n}`,
@@ -469,7 +494,7 @@ function buildStoryCandidates(story: PageStory, pageNumber: number): CandidateBl
   } else if (story.trap?.sentence && isRenderableSentence(story.trap.sentence)) {
     candidates.push({
       id: `trap-${n}`,
-      priority: "weak",
+      priority: "support",   // ← was "weak"
       kind: "trap_warning",
       source: "story_trap",
       text: clean(story.trap.sentence),
@@ -482,7 +507,7 @@ function buildStoryCandidates(story: PageStory, pageNumber: number): CandidateBl
   } else if (story.trapSignals[0] && isRenderableSentence(story.trapSignals[0])) {
     candidates.push({
       id: `trap-${n}`,
-      priority: "weak",
+      priority: "weak",      // low-confidence fallback trap stays weak
       kind: "trap_warning",
       source: "story_trap",
       text: clean(story.trapSignals[0]),
@@ -494,8 +519,8 @@ function buildStoryCandidates(story: PageStory, pageNumber: number): CandidateBl
     });
   }
 
-  // Weak caveat from weakSupport
-  for (const wline of story.weakSupport.slice(0, 2)) {
+  // ── Weak caveat from weakSupport ───────────────────────────────────────────
+  for (const wline of story.weakSupport.slice(0, 1)) {
     if (!isRenderableSentence(wline)) continue;
     if (candidates.some((c) => textSimilarity(c.text, wline) > 0.8)) continue;
     candidates.push({
@@ -513,6 +538,74 @@ function buildStoryCandidates(story: PageStory, pageNumber: number): CandidateBl
   }
 
   return candidates.filter((c) => c.text.length >= 15);
+}
+
+// ---------------------------------------------------------------------------
+// Paragraph index helpers
+// ---------------------------------------------------------------------------
+
+type ParagraphIndexEntry = {
+  text: string;
+  normText: string;
+  start: number;
+  end: number;
+};
+
+/**
+ * Build a character-offset index of paragraphs within `pageText` so that
+ * span resolution can try paragraph-level anchoring before falling to
+ * sentence-level fuzzy matching.
+ */
+function buildParagraphIndex(pageText: string, paragraphTexts?: string[]): ParagraphIndexEntry[] {
+  if (!pageText) return [];
+  const out: ParagraphIndexEntry[] = [];
+
+  // Use caller-provided paragraph splits when available, otherwise split by blank lines
+  const rawParas = paragraphTexts?.length
+    ? paragraphTexts
+    : pageText.split(/\n\s*\n+/).map((p) => p.replace(/\s+/g, " ").trim()).filter((p) => p.length > 30);
+
+  let searchFrom = 0;
+  for (const para of rawParas) {
+    if (!para) continue;
+    const idx = pageText.indexOf(para.slice(0, 40), searchFrom);
+    if (idx === -1) {
+      // Paragraph not found verbatim — skip (may be a re-normalised version)
+      continue;
+    }
+    const end = Math.min(idx + para.length, pageText.length);
+    out.push({ text: para, normText: normalizeForSearch(para), start: idx, end });
+    searchFrom = idx + 1;
+  }
+
+  return out;
+}
+
+/**
+ * Pick the best evidence strings for a story block by:
+ * 1. Prefer paragraph-aligned evidence (the paragraph that contains the block text)
+ * 2. Otherwise return the raw evidence strings from the block
+ */
+function pickBestEvidence(
+  blockEvidence: string[],
+  blockText: string,
+  paragraphIndex: ParagraphIndexEntry[],
+): string[] {
+  if (!blockEvidence.length) return [];
+
+  // Try to find the paragraph that contains the block text
+  const blockNorm = normalizeForSearch(blockText).slice(0, 50);
+  const hostParagraph = paragraphIndex.find((p) => p.normText.includes(blockNorm));
+  if (hostParagraph) {
+    // Split host paragraph into sentences and return them as evidence
+    const sentences = hostParagraph.text
+      .split(/(?<=[.!?])\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 20 && s !== blockText);
+    if (sentences.length) return sentences.slice(0, 3);
+  }
+
+  return blockEvidence.slice(0, 3);
 }
 
 // ---------------------------------------------------------------------------
@@ -632,19 +725,35 @@ function deduplicate(candidates: CandidateBlock[]): CandidateBlock[] {
 // Span resolution
 // ---------------------------------------------------------------------------
 
-function resolveBlockSpans(pageText: string, blockText: string, support: string[] = [], evidence: string[] = []): TextSpan[] {
+function resolveBlockSpans(
+  pageText: string,
+  blockText: string,
+  support: string[] = [],
+  evidence: string[] = [],
+  paragraphIndex: ParagraphIndexEntry[] = [],
+): TextSpan[] {
   if (!blockText || !pageText) return [];
 
   const pageNorm = normalizeForSearch(pageText);
   const blockNorm = normalizeForSearch(blockText);
 
-  // 1. Exact normalized match
+  // 1. Paragraph-level match — prefer returning the full paragraph span so the
+  //    highlight covers the semantic unit rather than just a sentence fragment.
+  if (paragraphIndex.length) {
+    const blockPrefix = blockNorm.slice(0, 50);
+    const hostParagraph = paragraphIndex.find((p) => p.normText.includes(blockPrefix));
+    if (hostParagraph) {
+      return [{ start: hostParagraph.start, end: hostParagraph.end }];
+    }
+  }
+
+  // 2. Exact normalized match
   const exactIdx = pageNorm.indexOf(blockNorm);
   if (exactIdx !== -1) {
     return [{ start: exactIdx, end: exactIdx + blockNorm.length }];
   }
 
-  // 2. Prefix match (first 60 normalized chars)
+  // 3. Prefix match (first 60 normalized chars)
   const prefix = blockNorm.slice(0, 60).trim();
   if (prefix.length >= 20) {
     const prefixIdx = pageNorm.indexOf(prefix);
@@ -653,7 +762,7 @@ function resolveBlockSpans(pageText: string, blockText: string, support: string[
     }
   }
 
-  // 3. Best-sentence fuzzy match (word overlap)
+  // 4. Best-sentence fuzzy match (word overlap)
   const blockWords = new Set(blockNorm.split(/\s+/).filter((w) => w.length > 3));
   if (blockWords.size >= 3) {
     const sentences = splitSentences(pageText);
@@ -676,8 +785,9 @@ function resolveBlockSpans(pageText: string, blockText: string, support: string[
     if (bestSpan) return [bestSpan];
   }
 
-  // 4. Support / evidence fallback
-  for (const fallback of [...support, ...evidence]) {
+  // 5. Support / evidence fallback — try evidence strings (may include full
+  //    paragraph text from processPage's cleanedText), then support strings.
+  for (const fallback of [...evidence, ...support]) {
     if (!fallback || fallback.length < 15) continue;
     const fallbackNorm = normalizeForSearch(fallback).slice(0, 50);
     const idx = pageNorm.indexOf(fallbackNorm);
