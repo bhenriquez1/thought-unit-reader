@@ -13,7 +13,11 @@ import { segmentPageBlocks } from "./segmentPageBlocks";
 import { normalizePageBlocks } from "./normalizePageBlocks";
 import { classifyPageType } from "./classifyPageType";
 import { assignParagraphRoles } from "./assignParagraphRoles";
-import { cleanBlockText, isCompleteSentence } from "./textCleanup";
+import {
+  bestCompleteSentence,
+  canonicalTextKey,
+  sentenceSafeSupport,
+} from "./textCleanup";
 
 // ---------------------------------------------------------------------------
 // Public type
@@ -140,13 +144,14 @@ function makeBlock(
   support: NormalizedPageBlock[],
 ): StoryBlockV2 | null {
   if (!primary) return null;
-  const text = safeSentence(primary.text);
+  const text = bestCompleteSentence(primary.text);
   if (!text) return null;
 
-  const supportTexts = support
-    .map((b) => safeSentence(b.text))
-    .filter((t): t is string => Boolean(t) && t !== text)
-    .slice(0, 3);
+  // sentenceSafeSupport deduplicates and validates each support sentence
+  const supportTexts = sentenceSafeSupport(
+    support.map((b) => b.text).filter((t) => t !== primary.text),
+    3,
+  );
 
   return {
     id,
@@ -166,7 +171,7 @@ function makeActionBlock(
 ): StoryBlockV2 | null {
   const src = ruleSrc ?? fallback;
   if (!src) return null;
-  const text = safeSentence(src.text);
+  const text = bestCompleteSentence(src.text);
   if (!text) return null;
   return {
     id,
@@ -187,7 +192,7 @@ function makeBottomLine(
 ): StoryBlockV2 | null {
   // Prefer an explicit bottom_line block
   if (explicit) {
-    const text = safeSentence(explicit.text);
+    const text = bestCompleteSentence(explicit.text);
     if (text) {
       return {
         id,
@@ -203,7 +208,7 @@ function makeBottomLine(
   // Conservative fallback — rule, then signal
   const src = rule ?? signal;
   if (!src) return null;
-  const text = safeSentence(src.text);
+  const text = bestCompleteSentence(src.text);
   if (!text) return null;
   return {
     id,
@@ -233,7 +238,7 @@ function finalizeStory(story: Omit<PageStoryV2, "highlights">): Omit<PageStoryV2
 
   const deduped = major.map((block): StoryBlockV2 | null => {
     if (!block) return null;
-    const key = canonical(block.text);
+    const key = canonicalTextKey(block.text);
     if (seen.has(key)) return null;
     seen.set(key, block.id);
     return block;
@@ -303,16 +308,6 @@ function topBlocksForRoles(
 // Utility helpers
 // ---------------------------------------------------------------------------
 
-function safeSentence(text: string): string | null {
-  const cleaned = cleanBlockText(text);
-  if (!isCompleteSentence(cleaned)) return null;
-  return cleaned;
-}
-
-function canonical(text: string): string {
-  return cleanBlockText(text).toLowerCase().replace(/\s+/g, " ").slice(0, 100);
-}
-
 function normalizeScore(score: number): number {
   return Math.max(0.1, Math.min(1, score / 10));
 }
@@ -320,7 +315,7 @@ function normalizeScore(score: number): number {
 function dedupeBlocks(blocks: StoryBlockV2[]): StoryBlockV2[] {
   const seen = new Set<string>();
   return blocks.filter((b) => {
-    const key = canonical(b.text);
+    const key = canonicalTextKey(b.text);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
