@@ -1,4 +1,5 @@
 import { transformByMode } from "@/lib/insights/transformByMode";
+import { compressToNote } from "@/lib/insights/sentenceCleanup";
 import type { DecisionDrill, GuidedDepth, GuidedMode, GuidedReadView, GuidedRole, OperatorCard, OperatorCardKind, PageInsightModel } from "@/lib/insights/types";
 import type { PageStory } from "@/lib/insights/buildPageStory";
 
@@ -147,48 +148,66 @@ function buildOperatorCards(story: PageStory): OperatorCard[] {
 }
 
 // Operator View template: Signal → Rule → Mechanism → Action → Trap
+// Each primary/secondary is compressed via compressToNote for surgeon-style brevity.
 function operatorTemplates(story: PageStory, transformed: GuidedReadView) {
   const base = transformed.steps;
-  const trapPrimary = story.trapBlock?.trap || story.trapSignals[0] || story.trap?.sentence;
-  const trapSecondary = story.trapBlock?.whyWrong || story.weakSupport[0];
-  const trapEvidence = (story.trapBlock
-    ? [story.trapBlock.whyWrong, story.trapBlock.consequence, story.trapBlock.confusionWith].filter(Boolean) as string[]
-    : story.trapSignals.slice(1));
+
+  const raw = {
+    signalPrimary:     story.patternBlock?.trigger || story.mainIdeaBlock?.text || story.mainIdea || base[0]?.primaryText || "",
+    signalSecondary:   story.patternBlock?.context || story.mainIdeaBlock?.support.slice(0, 2).join(" — ") || story.support[0] || "",
+    signalEvidence:    story.mainIdeaBlock?.evidence || [],
+
+    rulePrimary:       story.bottomLineBlock?.text || story.decisionBlock?.threshold || story.decisionBlock?.action || story.applySignals[0] || base[1]?.primaryText || "",
+    ruleSecondary:     story.bottomLineBlock?.support[0] || story.decisionBlock?.nextSteps[0] || story.support[1] || "",
+    ruleEvidence:      story.bottomLineBlock?.evidence || (story.decisionBlock?.nextSteps || []).slice(1),
+
+    mechPrimary:       story.mechanismBlock?.text || story.steps[1]?.content || base[2]?.primaryText || "",
+    mechSecondary:     story.mechanismBlock?.support.slice(0, 2).join(" — ") || story.support[2] || "",
+    mechEvidence:      story.mechanismBlock?.evidence || [],
+
+    actionPrimary:     story.decisionBlock?.action || story.applicationBlock?.text || story.applySignals[0] || base[3]?.primaryText || "",
+    actionSecondary:   (story.decisionBlock?.nextSteps || []).slice(0, 2).join(" — ") || story.applicationBlock?.support[0] || story.support[3] || "",
+    actionEvidence:    story.applicationBlock?.support?.slice(2) || [],
+
+    trapPrimary:       story.trapBlock?.trap || story.trapSignals[0] || story.trap?.sentence || base[4]?.primaryText || "",
+    trapSecondary:     story.trapBlock?.whyWrong || story.weakSupport[0] || "",
+    trapEvidence:      story.trapBlock
+      ? [story.trapBlock.whyWrong, story.trapBlock.consequence, story.trapBlock.confusionWith].filter(Boolean) as string[]
+      : story.trapSignals.slice(1),
+  };
 
   return {
-    purpose: story.patternBlock?.trigger || story.mainIdeaBlock?.text || story.mainIdea,
+    purpose: compressToNote(raw.signalPrimary, "signal"),
     steps: [
       {
         label: "Signal",
-        primary: story.patternBlock?.trigger || story.mainIdeaBlock?.text || story.mainIdea || base[0]?.primaryText,
-        secondary: story.patternBlock?.context || story.mainIdeaBlock?.support.slice(0, 2).join(" — ") || story.support[0],
-        evidence: story.mainIdeaBlock?.evidence || [],
+        primary:   compressToNote(raw.signalPrimary, "signal"),
+        secondary: compressToNote(raw.signalSecondary, "support"),
+        evidence:  raw.signalEvidence,
       },
       {
         label: "Rule",
-        // Prefer the irreversible bottom-line takeaway; fall back to decision threshold or action.
-        primary: story.bottomLineBlock?.text || story.decisionBlock?.threshold || story.decisionBlock?.action || story.applySignals[0] || base[1]?.primaryText,
-        secondary: story.bottomLineBlock?.support[0] || story.decisionBlock?.nextSteps[0] || story.support[1],
-        evidence: story.bottomLineBlock?.evidence || (story.decisionBlock?.nextSteps || []).slice(1),
+        primary:   compressToNote(raw.rulePrimary, "rule"),
+        secondary: compressToNote(raw.ruleSecondary, "support"),
+        evidence:  raw.ruleEvidence,
       },
       {
         label: "Mechanism",
-        primary: story.mechanismBlock?.text || story.steps[1]?.content || base[2]?.primaryText,
-        secondary: story.mechanismBlock?.support.slice(0, 2).join(" — ") || story.support[2],
-        evidence: story.mechanismBlock?.evidence || [],
+        primary:   compressToNote(raw.mechPrimary, "mechanism"),
+        secondary: compressToNote(raw.mechSecondary, "support"),
+        evidence:  raw.mechEvidence,
       },
       {
         label: "Action",
-        // Distinct from Rule — the executable next move rather than the governing decision.
-        primary: story.decisionBlock?.action || story.applicationBlock?.text || story.applySignals[0] || base[3]?.primaryText,
-        secondary: (story.decisionBlock?.nextSteps || []).slice(0, 2).join(" — ") || story.applicationBlock?.support[0] || story.support[3],
-        evidence: story.applicationBlock?.support?.slice(2) || [],
+        primary:   compressToNote(raw.actionPrimary, "action"),
+        secondary: compressToNote(raw.actionSecondary, "support"),
+        evidence:  raw.actionEvidence,
       },
       {
         label: "Trap",
-        primary: trapPrimary || base[4]?.primaryText,
-        secondary: trapSecondary,
-        evidence: trapEvidence,
+        primary:   compressToNote(raw.trapPrimary, "trap"),
+        secondary: compressToNote(raw.trapSecondary, "support"),
+        evidence:  raw.trapEvidence,
       },
     ],
   };

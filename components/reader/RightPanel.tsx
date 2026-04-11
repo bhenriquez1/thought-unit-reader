@@ -2,6 +2,7 @@ import React, { useEffect, useMemo } from "react";
 import type { ActivePageContext, ResolvedPanelPayload, RightPanelState } from "@/lib/readerContracts";
 import { useGuidedHighlightSync } from "@/hooks/useGuidedHighlightSync";
 import { buildGuidedReadView, type GuidedDepth, type GuidedMode, type GuidedRole } from "@/lib/insights/buildGuidedReadView";
+import { compressToNote } from "@/lib/insights/sentenceCleanup";
 import type { EvidenceAnchor } from "@/lib/insights/types";
 import type { ActivePageIntelligenceSnapshot } from "@/lib/useActivePageIntelligence";
 import type { SemanticHighlightKind } from "@/lib/highlights/extractPriorityHighlights";
@@ -128,7 +129,7 @@ export function RightPanel({
                   </span>
                   <div className="min-w-0 flex-1">
                     <span className={`text-[9px] font-semibold uppercase tracking-wider ${meta.color}`}>{meta.label}</span>
-                    <p className="mt-0.5 text-xs leading-relaxed text-slate-200 line-clamp-3">{block.text}</p>
+                    <p className="mt-0.5 text-xs leading-relaxed text-slate-200">{compressToNote(block.text, (block.shortLabel || block.kind).toLowerCase())}</p>
                   </div>
                 </button>
               );
@@ -141,7 +142,7 @@ export function RightPanel({
             {/* Page purpose */}
             <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
               <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-300">What matters on this page</div>
-              <p className="mt-1.5 text-sm leading-relaxed text-slate-300">{guidedView.pagePurpose}</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-slate-300">{compressToNote(guidedView.pagePurpose, "signal")}</p>
             </div>
 
             {/* Operator step cards */}
