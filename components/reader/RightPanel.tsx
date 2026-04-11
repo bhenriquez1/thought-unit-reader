@@ -6,6 +6,7 @@ import { compressToNote } from "@/lib/insights/sentenceCleanup";
 import type { EvidenceAnchor } from "@/lib/insights/types";
 import type { ActivePageIntelligenceSnapshot } from "@/lib/useActivePageIntelligence";
 import type { SemanticHighlightKind } from "@/lib/highlights/extractPriorityHighlights";
+import type { PageStoryV2, StoryBlockV2 } from "@/lib/insights/buildPageStoryV2";
 
 interface RightPanelProps {
   ctx: ActivePageContext;
@@ -137,7 +138,10 @@ export function RightPanel({
           </div>
         )}
 
-        {guidedView ? (
+        {/* ── v2 Operator View (paragraph-first, sentence-complete) ────────── */}
+        {intelligence.storyV2?.signalBlock ? (
+          <V2OperatorView storyV2={intelligence.storyV2} />
+        ) : guidedView ? (
           <>
             {/* Page purpose */}
             <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
@@ -215,6 +219,75 @@ export function RightPanel({
         ) : null}
       </div>
     </aside>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// v2 Operator View — paragraph-first, sentence-complete blocks
+// ---------------------------------------------------------------------------
+
+const V2_BLOCK_STYLES: Record<string, { border: string; title: string; bg: string }> = {
+  signal:      { border: "border-amber-400/40",  title: "text-amber-300",   bg: "bg-amber-500/8" },
+  rule:        { border: "border-blue-400/40",   title: "text-blue-300",    bg: "bg-blue-500/8" },
+  mechanism:   { border: "border-violet-400/40", title: "text-violet-300",  bg: "bg-violet-500/8" },
+  action:      { border: "border-indigo-400/40", title: "text-indigo-300",  bg: "bg-indigo-500/8" },
+  trap:        { border: "border-rose-400/50",   title: "text-rose-300",    bg: "bg-rose-500/10" },
+  bottom_line: { border: "border-emerald-400/40", title: "text-emerald-300", bg: "bg-emerald-500/8" },
+};
+
+const PAGE_CLASS_LABEL: Record<string, string> = {
+  narrative_text:   "Narrative",
+  clinical_prose:   "Clinical",
+  form_checklist:   "Form / Checklist",
+  table_structured: "Table",
+  diagram_caption:  "Diagram",
+  mixed_layout:     "Mixed layout",
+  frontmatter:      "Front matter",
+  image_only:       "Image",
+  sparse_text:      "Sparse text",
+};
+
+function V2BlockCard({ block }: { block: StoryBlockV2 }) {
+  const style = V2_BLOCK_STYLES[block.kind] ?? V2_BLOCK_STYLES.signal;
+  return (
+    <section className={`rounded-2xl border p-4 ${style.border} ${style.bg}`}>
+      <div className={`text-[10px] font-semibold uppercase tracking-wider ${style.title}`}>{block.title}</div>
+      <p className="mt-2 text-sm font-medium leading-relaxed text-slate-100">{block.text}</p>
+      {block.support.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {block.support.map((s, idx) => (
+            <li key={`${block.id}-sup-${idx}`} className="text-xs leading-5 text-slate-300">• {s}</li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function V2OperatorView({ storyV2 }: { storyV2: PageStoryV2 }) {
+  const blocks: StoryBlockV2[] = [
+    storyV2.signalBlock,
+    storyV2.ruleBlock,
+    storyV2.mechanismBlock,
+    storyV2.actionBlock,
+    storyV2.trapBlock,
+    storyV2.bottomLineBlock,
+  ].filter((b): b is StoryBlockV2 => Boolean(b));
+
+  if (!blocks.length) return null;
+
+  const classLabel = PAGE_CLASS_LABEL[storyV2.pageClass] ?? storyV2.pageClass;
+
+  return (
+    <div className="rounded-2xl border border-emerald-500/20 bg-slate-950/70 p-5">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-[10px] uppercase tracking-wider text-emerald-400">Operator View</span>
+        <span className="rounded-full border border-white/10 bg-slate-800 px-2 py-0.5 text-[9px] text-slate-400">{classLabel}</span>
+      </div>
+      <div className="space-y-3">
+        {blocks.map((block) => <V2BlockCard key={block.id} block={block} />)}
+      </div>
+    </div>
   );
 }
 

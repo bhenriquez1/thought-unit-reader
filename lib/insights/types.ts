@@ -200,5 +200,129 @@ export type PageInsightModel = {
   paragraphInsights: ParagraphInsight[];
   scannedParagraphCount: number;
   pageStory?: import("@/lib/insights/buildPageStory").PageStory | null;
+  pageStoryV2?: import("@/lib/insights/buildPageStoryV2").PageStoryV2 | null;
   datApex?: DatApexInsight;
+};
+
+// ===========================================================================
+// Page-story v2 types
+// All v2 types are additive — existing v1 types above are unchanged.
+// ===========================================================================
+
+export type BoundingBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type RawPageBlockKind =
+  | "paragraph"
+  | "heading"
+  | "list_item"
+  | "table_row"
+  | "form_field"
+  | "caption"
+  | "diagram_label"
+  | "unknown";
+
+export type RawPageBlock = {
+  id: string;
+  kind: RawPageBlockKind;
+  pageNumber: number;
+  text: string;
+  rawText: string;
+  blockIndex: number;
+  bbox?: BoundingBox;
+  lineCount?: number;
+  confidence?: number;
+};
+
+export type NormalizedPageBlock = {
+  id: string;
+  sourceId: string;
+  kind: RawPageBlockKind;
+  pageNumber: number;
+  text: string;
+  sentences: string[];
+  blockIndex: number;
+  bbox?: BoundingBox;
+  isComplete: boolean;
+  isLikelyNoise: boolean;
+  score: number;
+};
+
+/**
+ * v2 page classification.  Broader than PageContentClass (used by the existing
+ * evaluation/gating layer) — both co-exist intentionally.
+ */
+export type PageClass =
+  | "narrative_text"
+  | "clinical_prose"
+  | "form_checklist"
+  | "table_structured"
+  | "diagram_caption"
+  | "mixed_layout"
+  | "frontmatter"
+  | "image_only"
+  | "sparse_text";
+
+/**
+ * v2 paragraph role — richer than the simpler ParagraphRole in paragraphRoleMap.ts.
+ * Adds mechanism, support_distinction, bottom_line, background.
+ */
+export type ParagraphRoleV2 =
+  | "primary_signal"
+  | "decision_rule"
+  | "mechanism"
+  | "support_explanation"
+  | "support_relation"
+  | "support_distinction"
+  | "trap_warning"
+  | "bottom_line"
+  | "background";
+
+export type ParagraphRoleAssignment = {
+  blockId: string;
+  role: ParagraphRoleV2;
+  score: number;
+  reasons: string[];
+};
+
+export type StoryEvidenceV2 = {
+  blockId: string;
+  text: string;
+  paragraphIndex: number;
+  score: number;
+  bbox?: BoundingBox;
+};
+
+export type StoryBlockKindV2 =
+  | "signal"
+  | "rule"
+  | "mechanism"
+  | "action"
+  | "trap"
+  | "bottom_line";
+
+export type StoryBlockV2 = {
+  id: string;
+  kind: StoryBlockKindV2;
+  title: string;
+  /** Must be a complete sentence — never a fragment. */
+  text: string;
+  /** Complete sentences only. */
+  support: string[];
+  evidence: StoryEvidenceV2[];
+  confidence: number;
+};
+
+export type HighlightSemanticKind = "signal" | "mechanism" | "support" | "trap";
+
+export type HighlightPriority = "main" | "support" | "weak";
+
+export type StoryHighlight = {
+  blockId: string;
+  priority: HighlightPriority;
+  semanticKind: HighlightSemanticKind;
 };

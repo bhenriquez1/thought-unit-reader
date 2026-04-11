@@ -9,6 +9,7 @@ import { processPage } from "@/lib/insights/processPage";
 import { classifyPageContent, type PageContentClass } from "@/lib/pdf/classifyPageContent";
 import { extractPriorityHighlights, type ExtractPriorityHighlightsResult } from "@/lib/highlights/extractPriorityHighlights";
 import { buildParagraphRoleMap } from "@/lib/highlights/paragraphRoleMap";
+import { buildPageStoryV2, type PageStoryV2 } from "@/lib/insights/buildPageStoryV2";
 import { evaluatePageTruth, type PageTruthGateResult } from "@/lib/insights/evaluatePageTruth";
 import { buildPageStory } from "@/lib/insights/buildPageStory";
 import type { PageInsightModel } from "@/lib/insights/types";
@@ -30,6 +31,7 @@ export type ActivePageIntelligenceSnapshot = {
   pageTruth: PageTruthGateResult | null;
   pageModel: PageInsightModel | null;
   story: PageStory | null;
+  storyV2: PageStoryV2 | null;
   priorityHighlights: ExtractPriorityHighlightsResult;
 };
 
@@ -122,6 +124,7 @@ export function useActivePageIntelligence({
   const [panelPayloads, setPanelPayloads] = useState(() => buildResolvedPanelPayload(ctx, classifyPage(signals), signals, audience, depth));
   const [pageModel, setPageModel] = useState<PageInsightModel | null>(null);
   const [pageStory, setPageStory] = useState<PageStory | null>(null);
+  const [pageStoryV2, setPageStoryV2] = useState<PageStoryV2 | null>(null);
   const [pageClass, setPageClass] = useState<PageContentClass | null>(null);
   const [pageTruth, setPageTruth] = useState<PageTruthGateResult | null>(null);
   const [formulaSignals, setFormulaSignals] = useState<FormulaSignal[]>([]);
@@ -160,6 +163,7 @@ export function useActivePageIntelligence({
     setError(null);
     setPageModel(null);
     setPageStory(null);
+    setPageStoryV2(null);
     setPageClass(null);
     setPageTruth(null);
     setFormulaSignals([]);
@@ -206,6 +210,13 @@ export function useActivePageIntelligence({
         visiblePageText: snapshot.pageText || "",
         formulaSignalsCount: localFormulaSignals.length,
       });
+      const localPageStoryV2 = buildPageStoryV2({
+        documentId,
+        pageNumber,
+        truthKey: requestKey,
+        pageText: snapshot.pageText || "",
+      });
+
       const localParagraphRoleMap = buildParagraphRoleMap(
         snapshot.pageText || "",
         localPageStory,
@@ -235,6 +246,7 @@ export function useActivePageIntelligence({
       setFormulaSignals(localFormulaSignals);
       setPageModel(localPageModel);
       setPageStory(localPageStory);
+      setPageStoryV2(localPageStoryV2);
       setPageTruth(localPageTruth);
       setPriorityHighlights(localHighlights);
       setStatus("ready");
@@ -326,6 +338,7 @@ export function useActivePageIntelligence({
     panelPayloads,
     pageModel,
     story: pageStory,
+    storyV2: pageStoryV2,
     pageClass,
     pageTruth,
     pageTruthKey,
