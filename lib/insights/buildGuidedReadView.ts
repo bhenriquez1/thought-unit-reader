@@ -230,7 +230,9 @@ function modeTemplates(mode: GuidedMode, story: PageStory, transformed: GuidedRe
     purpose: story.patternBlock?.trigger || story.mainIdeaBlock?.text || story.mainIdea,
     steps: [
       { label: "Pattern", primary: story.patternBlock?.trigger || story.mainIdeaBlock?.text || story.mainIdea || base[0]?.primaryText, secondary: story.patternBlock?.context || story.mainIdeaBlock?.support.slice(0, 2).join(" — ") || story.support[0], evidence: story.mainIdeaBlock?.evidence || [] },
-      { label: "Decision", primary: story.decisionBlock?.action || story.decisionBlock?.nextSteps?.[0] || story.mechanismBlock?.support[0] || base[1]?.primaryText, secondary: story.decisionBlock?.nextSteps[0] || story.support[1], evidence: (story.decisionBlock?.nextSteps || []).slice(1) },
+      // "Bottom Line" step: use the distinct irreversible takeaway when available,
+      // otherwise fall back to the decision action.
+      { label: "Decision", primary: story.bottomLineBlock?.text || story.decisionBlock?.action || story.decisionBlock?.nextSteps?.[0] || story.mechanismBlock?.support[0] || base[1]?.primaryText, secondary: story.bottomLineBlock?.support[0] || story.decisionBlock?.nextSteps[0] || story.support[1], evidence: story.bottomLineBlock?.evidence || (story.decisionBlock?.nextSteps || []).slice(1) },
       { label: "Mechanism", primary: story.mechanismBlock?.text || story.steps[1]?.content || base[2]?.primaryText, secondary: story.mechanismBlock?.support.slice(0, 2).join(" — ") || story.support[2], evidence: story.mechanismBlock?.evidence || [] },
       { label: "Trap", primary: trapPrimary || base[3]?.primaryText, secondary: trapSecondary, evidence: trapEvidence },
     ],

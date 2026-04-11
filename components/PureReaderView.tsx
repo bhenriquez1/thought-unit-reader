@@ -32,6 +32,8 @@ interface PureReaderViewProps {
   focusedEvidenceId?: string | null;
   onEvidenceFocus?: (id: string) => void;
   onOpenFocusCycle?: () => void;
+  /** Live per-page text extracted from the PDF text layer. Forwarded to SmartPDFViewer. */
+  onPageTextExtracted?: (page: number, text: string) => void;
 }
 
 export default function PureReaderView({
@@ -51,6 +53,7 @@ export default function PureReaderView({
   focusedEvidenceId,
   onEvidenceFocus,
   onOpenFocusCycle,
+  onPageTextExtracted,
 }: PureReaderViewProps) {
   // Global zoom store
   const { zoom } = useZoomStore();
@@ -150,6 +153,7 @@ export default function PureReaderView({
           onEvidenceFocus={onEvidenceFocus}
           isPageChanging={isPageChanging}
           onPageRenderComplete={() => setIsPageChanging(false)}
+          onPageTextExtracted={onPageTextExtracted}
         />
       </div>
     </div>

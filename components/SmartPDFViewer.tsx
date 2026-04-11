@@ -52,6 +52,12 @@ export interface SmartPDFViewerProps {
   isPageChanging?: boolean;
   /** Fires when the currently requested page render completes */
   onPageRenderComplete?: (page: number) => void;
+  /**
+   * Called once per page render with the raw text extracted from the PDF text
+   * layer. Use this to feed live per-page text into the extraction pipeline
+   * instead of relying on pre-parsed thought-unit approximations.
+   */
+  onPageTextExtracted?: (page: number, text: string) => void;
 }
 
 /** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
@@ -119,6 +125,7 @@ export default function SmartPDFViewer({
   onEvidenceFocus,
   isPageChanging = false,
   onPageRenderComplete,
+  onPageTextExtracted,
 }: SmartPDFViewerProps) {
   // Stable key root: prefer explicit docId, fall back to fileUrl
   const pageKeyRoot = docId ?? fileUrl;
@@ -673,6 +680,15 @@ export default function SmartPDFViewer({
                 onRenderSuccess={() => onPageRenderComplete?.(currentPage)}
                 onRenderError={(error) => {
                   console.error(`SmartPDFViewer: Page ${currentPage} render error:`, error);
+                }}
+                onGetTextSuccess={(textContent: any) => {
+                  if (!onPageTextExtracted) return;
+                  const text = (textContent?.items ?? [])
+                    .map((item: any) => item.str ?? "")
+                    .join(" ")
+                    .replace(/\s+/g, " ")
+                    .trim();
+                  if (text.length > 20) onPageTextExtracted(currentPage, text);
                 }}
               />
 
