@@ -716,8 +716,16 @@ export default function ThoughtUnitReader() {
     highlightKey,
     signals: currentSignals,
     panelPayloads: currentPanelPayload,
+    pageModel: currentPageModel,
+    story: currentPageStory,
+    pageClass: currentPageClass,
+    pageTruth: currentPageTruth,
+    pageTruthKey,
+    status: pageIntelligenceStatus,
+    isCurrentPage: isCurrentIntelligencePage,
     highlightTargets,
     limitedEvidence,
+    priorityHighlights: currentPriorityHighlights,
   } = useActivePageIntelligence({
     documentId: bookId,
     pageNumber: currentPage,
@@ -2615,10 +2623,20 @@ export default function ThoughtUnitReader() {
             {/* Right: Unified Intelligence Panel */}
             <div className={fileUrl ? "h-full w-[32%] min-w-[380px] max-w-[520px] overflow-hidden border-l border-white/10" : "flex-1 h-full"}>
               <RightPanel
-                key={`${payloadKey}-${rightPanelResetKey}`}
+                key={`${pageTruthKey}-${rightPanelResetKey}`}
                 ctx={activePageContext}
                 state={unifiedPanelState}
                 payload={currentPanelPayload}
+                intelligence={{
+                  status: pageIntelligenceStatus,
+                  pageTruthKey,
+                  isCurrentPage: isCurrentIntelligencePage,
+                  pageClass: currentPageClass,
+                  pageTruth: currentPageTruth,
+                  pageModel: currentPageModel,
+                  story: currentPageStory,
+                  priorityHighlights: currentPriorityHighlights,
+                }}
                 onTabChange={(activeTab) => setUnifiedPanelState((s) => ({ ...s, activeTab }))}
                 onAudienceChange={(audience) => setUnifiedPanelState((s) => ({ ...s, audience }))}
                 onDepthChange={(depth) => setUnifiedPanelState((s) => ({ ...s, depth }))}
@@ -3189,7 +3207,7 @@ export default function ThoughtUnitReader() {
               <div className="text-xs text-gray-400">{titleForPage(tableOfContents, currentPage)}</div>
             </div>
 
-            <ShadowRecallPanel signals={currentSignals} limitedEvidence={limitedEvidence} />
+            <ShadowRecallPanel key={pageTruthKey} pageStory={currentPageStory} pageTruthKey={pageTruthKey} />
 
             <details className="mt-4 rounded-lg border border-purple-400/30 bg-purple-900/15 p-3">
               <summary className="cursor-pointer text-xs uppercase tracking-wide text-purple-200">Show evidence details</summary>

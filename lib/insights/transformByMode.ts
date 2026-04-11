@@ -8,17 +8,25 @@ import type {
   GuidedReadStep,
   GuidedReadView,
   GuidedRole,
+  OperatorCard,
+  OperatorCardKind,
   PageInsightModel,
 } from "@/lib/insights/types";
+import type { PageStory } from "@/lib/insights/buildPageStory";
 
 type TransformArgs = {
   pageModel: PageInsightModel;
   mode: GuidedMode;
   role: GuidedRole;
   depth: GuidedDepth;
+  pageStory?: PageStory | null;
 };
 
-export function transformByMode({ pageModel, mode, role, depth }: TransformArgs): GuidedReadView {
+export function transformByMode({ pageModel, mode, role, depth, pageStory }: TransformArgs): GuidedReadView {
+  const story = pageStory || pageModel.pageStory || null;
+  if (story) {
+    return buildOperatorCardView(story, mode, role, depth);
+  }
   switch (mode) {
     case "insight":
       return buildInsightView(pageModel, role, depth);
@@ -29,11 +37,25 @@ export function transformByMode({ pageModel, mode, role, depth }: TransformArgs)
     case "relation":
       return buildRelationView(pageModel, role, depth);
     case "apply":
-    case "apply_test":
       return buildScenario({ pageModel, role, depth });
     default:
       return buildInsightView(pageModel, role, depth);
   }
+}
+
+function buildOperatorCardView(story: PageStory, mode: GuidedMode, role: GuidedRole, depth: GuidedDepth): GuidedReadView {
+  const cards = cardsByMode(story, mode);
+  const steps = cards
+    .slice(0, stepCount(depth))
+    .map((card, index) => cardToStep(card, index, mode, role));
+
+  return {
+    pagePurpose: roleSentence(role, story.patternBlock?.trigger || story.mainIdea || story.shortNarrative || "Focus on the page pattern."),
+    steps,
+    cards,
+    supportTitle: "Grounded support",
+    supportBullets: dedupe([story.mainIdea, ...story.support, ...story.weakSupport]).slice(0, bulletCount(depth)),
+  };
 }
 
 function buildInsightView(pageModel: PageInsightModel, role: GuidedRole, depth: GuidedDepth): GuidedReadView {
@@ -74,7 +96,7 @@ function buildExplainView(pageModel: PageInsightModel, role: GuidedRole, depth: 
       }),
     ),
     supportTitle: "Causal chain",
-    supportBullets: dedupe(top.flatMap((entry) => [entry.condition, entry.implication])).slice(0, bulletCount(depth)),
+    supportBullets: dedupe(top.flatMap((entry) => [entry.condition, entry.interpretation, entry.implication, entry.nextMove])).slice(0, bulletCount(depth)),
   };
 }
 
@@ -148,6 +170,71 @@ function fallbackPath(index: number): DecisionPath {
   };
 }
 
+function toCard(kind: OperatorCardKind, title: string, primary?: string | null, bullets: Array<string | null | undefined> = [], severity?: "low" | "medium" | "high"): OperatorCard | null {
+  if (!primary || !isRenderableSentence(primary)) return null;
+  return {
+    id: `${kind}-${title.toLowerCase().replace(/\s+/g, "-")}`,
+    kind,
+    title,
+    primary,
+    bullets: dedupe(bullets.filter(Boolean) as string[]),
+    severity,
+  };
+}
+
+function cardsByMode(story: PageStory, mode: GuidedMode): OperatorCard[] {
+  const pattern = toCard("pattern", "Pattern", story.patternBlock?.trigger || story.mainIdeaBlock?.text || story.mainIdea, [
+    story.patternBlock?.context,
+    story.mainIdeaBlock?.support?.[0],
+  ]);
+  const decision = toCard("decision", "Decision", story.decisionBlock?.action || story.applicationBlock?.text, [
+    ...(story.decisionBlock?.nextSteps || []),
+    story.decisionBlock?.threshold ? `Use when: ${story.decisionBlock.threshold}` : undefined,
+  ]);
+  const application = toCard("application", "Application", story.applicationBlock?.text || story.applySignals[0], [
+    ...(story.applicationBlock?.support || []),
+    story.decisionBlock?.nextSteps?.[0],
+  ]);
+  const mechanism = toCard("mechanism", "Mechanism", story.mechanismBlock?.text || story.supportingLogic[0], [
+    ...(story.mechanismBlock?.support || []),
+    ...(story.mechanismBlock?.evidence || []).slice(0, 2),
+  ]);
+  const distinction = toCard("distinction", "Distinction", story.distinctionBlock?.text || story.comparisonSignals[0], story.distinctionBlock?.support || []);
+  const relation = toCard("relation", "Relation", story.relationBlock?.text || story.relationSignals[0], story.relationBlock?.support || []);
+  const trap = toCard(
+    "trap",
+    "Trap",
+    story.trapBlock?.trap || story.trap?.sentence,
+    [story.trapBlock?.whyWrong, story.trapBlock?.confusionWith, story.trapBlock?.consequence],
+    story.trapBlock?.severity || "medium",
+  );
+
+  const keep = (items: Array<OperatorCard | null>) => items.filter(Boolean) as OperatorCard[];
+  if (mode === "explain") return keep([pattern, mechanism, relation, trap]);
+  if (mode === "compare") return keep([pattern, distinction, trap]);
+  if (mode === "relation") return keep([pattern, relation, mechanism, trap]);
+  if (mode === "apply") return keep([pattern, decision, application, trap]);
+  return keep([pattern, decision, mechanism, trap]);
+}
+
+function cardToStep(card: OperatorCard, index: number, mode: GuidedMode, role: GuidedRole): GuidedReadStep {
+  return {
+    id: `${mode}-${index + 1}`,
+    stepNumber: index + 1,
+    label: card.title,
+    primaryText: roleSentence(role, card.primary),
+    secondaryText: card.bullets.length ? roleSentence(role, card.bullets[0]) : undefined,
+    mode,
+    role,
+    confidence: 0.75,
+    evidence: card.bullets.slice(0, 2).map((text, evidenceIndex) => ({
+      id: `${card.id}-ev-${evidenceIndex}`,
+      paragraphIndex: index,
+      text: roleSentence(role, text),
+    })),
+  };
+}
+
 function roleLabels(role: GuidedRole, mode: GuidedMode, index: number): string {
   const labels: Record<GuidedMode, string[]> = {
     insight: role === "expert" ? ["Indicator", "Inference", "Rule", "Pitfall"] : role === "operator" ? ["Signal", "Read", "Action", "Miss"] : ["Start here", "Notice", "This means", "Do not miss"],
@@ -155,7 +242,6 @@ function roleLabels(role: GuidedRole, mode: GuidedMode, index: number): string {
     compare: role === "expert" ? ["Look-alike", "Separator", "Decision rule", "Trap"] : role === "operator" ? ["Looks similar", "Difference", "Rule", "Miss"] : ["Looks similar", "What separates it", "Why it matters", "Do not confuse"],
     relation: role === "expert" ? ["Upstream", "Current", "Downstream", "System effect"] : role === "operator" ? ["Before", "Here", "Next", "Impact"] : ["Before this", "On this page", "What follows", "Why this matters"],
     apply: ["Scenario", "Clue", "Next move", "Wrong move"],
-    apply_test: ["Scenario", "Clue", "Next move", "Wrong move"],
   };
   return labels[mode][index] || `Step ${index + 1}`;
 }

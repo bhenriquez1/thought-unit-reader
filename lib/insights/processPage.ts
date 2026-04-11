@@ -10,6 +10,12 @@ import type {
   PriorityBlock,
 } from "@/lib/insights/types";
 import { cleanSentence } from "@/lib/insights/sentenceCleanup";
+import { buildPageStory } from "@/lib/insights/buildPageStory";
+import { classifyPageContent } from "@/lib/pdf/classifyPageContent";
+
+function isBoilerplateLine(text: string): boolean {
+  return /all rights reserved|copyright|published by|isbn|edition|permissions|contributors?|acknowledg(e)?ments?|www\.|doi\b/i.test(text);
+}
 
 const TYPE_PATTERNS: Array<{ type: InsightPageType; patterns: RegExp[] }> = [
   { type: "cause_effect", patterns: [/\b(because|therefore|thus|hence|results? in|leads? to|causes?|consequently)\b/i] },
@@ -30,12 +36,12 @@ function splitIntoParagraphs(pageText: string): string[] {
   const byBlankLine = pageText
     .split(/\n\s*\n/g)
     .map((p) => p.replace(/\s+/g, " ").trim())
-    .filter((p) => p.length > 40);
+    .filter((p) => p.length > 40 && !isBoilerplateLine(p));
   if (byBlankLine.length >= 2) return byBlankLine;
   return pageText
     .split(/\n+/)
     .map((p) => p.replace(/\s+/g, " ").trim())
-    .filter((p) => p.length > 40);
+    .filter((p) => p.length > 40 && !isBoilerplateLine(p));
 }
 
 function normalizeParagraph(text: string): string {
@@ -295,6 +301,32 @@ export function processPage(pageText: string, enableDatApex = false): PageInsigh
   const logicChains = (visible.find((block) => block.kind === "logic_chain")?.content as LogicChain[] | undefined) || [];
   const topTakeaways = (visible.find((block) => block.kind === "takeaway")?.content as string[] | undefined) || [];
   const decisionPaths = toDecisionPaths(sorted);
+  const pageClass = classifyPageContent(pageText || "");
+  const pageStory = buildPageStory({
+    pageClass,
+    pageModel: {
+      pageSummary,
+      topTakeaways,
+      paragraphInsights: paragraphInsights.map((entry) => ({
+        summary: entry.summary,
+        signal: entry.coreSignals[0],
+        application: entry.applications?.[0],
+        trap: entry.traps?.[0],
+        score: entry.confidence,
+        priority: entry.priorityScore / 10,
+        evidence: entry.cleanedText,
+      })),
+      decisionPaths: decisionPaths.map((entry) => ({
+        condition: entry.condition,
+        interpretation: entry.interpretation,
+        implication: entry.implication,
+        nextMove: entry.nextMove,
+        trap: entry.trap,
+        evidenceSnippet: entry.evidence[0],
+      })),
+    },
+    mode: "insight",
+  });
 
   return {
     pageType: inferPageType(sorted),
@@ -306,6 +338,7 @@ export function processPage(pageText: string, enableDatApex = false): PageInsigh
     hiddenBlocks: hidden,
     paragraphInsights,
     scannedParagraphCount: paragraphInsights.length,
+    pageStory,
     datApex: enableDatApex ? buildDatApexInsight(sorted) : undefined,
   };
 }

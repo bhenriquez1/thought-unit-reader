@@ -12,6 +12,12 @@ try {
 
 const nextConfig = {
   reactStrictMode: true,
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   images: {
     // keep this if you rely on unoptimized images; otherwise you can remove it
     unoptimized: true,

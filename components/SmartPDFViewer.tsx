@@ -269,26 +269,93 @@ export default function SmartPDFViewer({
         return;
       }
       const rects: OverlayRect[] = [];
+
+      // Build a concatenated-text index so we can match multi-word phrases
+      // across adjacent word-spans (react-pdf renders each word as its own span).
+      const spanNorm = spans.map((s) =>
+        (s.textContent || "")
+          .toLowerCase()
+          .replace(/\u00ad/g, "")      // soft hyphens
+          .replace(/[^\w\s]/g, " ")    // punctuation → space
+          .replace(/\s+/g, " ")
+          .trim(),
+      );
+      const offsets: number[] = [];
+      let cursor = 0;
+      for (const t of spanNorm) { offsets.push(cursor); cursor += t.length + 1; }
+      const concatText = spanNorm.join(" ");
+
+      function spansForNeedle(needle: string): HTMLElement[] {
+        const idx = concatText.indexOf(needle);
+        if (idx === -1) return [];
+        const end = idx + needle.length;
+        return spans.filter((_, i) => offsets[i] + spanNorm[i].length > idx && offsets[i] < end);
+      }
+
+      function rectFromSpans(matched: HTMLElement[]): { top: number; left: number; width: number; height: number } | null {
+        if (!matched.length) return null;
+        const dr = matched.map((s) => s.getBoundingClientRect());
+        const top = Math.min(...dr.map((r) => r.top)) - layerRect.top;
+        const left = Math.min(...dr.map((r) => r.left)) - layerRect.left;
+        const bottom = Math.max(...dr.map((r) => r.bottom)) - layerRect.top;
+        const right = Math.max(...dr.map((r) => r.right)) - layerRect.left;
+        return { top, left, width: right - left, height: Math.max(14, bottom - top) };
+      }
+
       highlightTargets.forEach((target) => {
-        const needle = target.normalizedText.slice(0, 42);
-        let span = spans.find((entry) => (entry.textContent || "").toLowerCase().replace(/\s+/g, " ").includes(needle));
-        if (!span) {
-          const keywords = needle.split(" ").filter((word) => word.length >= 5).slice(0, 4);
-          span = spans.find((entry) => {
-            const hay = (entry.textContent || "").toLowerCase();
-            return keywords.some((word) => hay.includes(word));
-          });
+        // Normalize needle the same way we normalized span text
+        const fullNeedle = target.normalizedText
+          .replace(/[^\w\s]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        // Try progressively shorter prefixes: full → 6 words → 4 words → 3 words → 1 long keyword
+        const words = fullNeedle.split(" ").filter(Boolean);
+        const candidates = [
+          words.slice(0, 8).join(" "),
+          words.slice(0, 6).join(" "),
+          words.slice(0, 4).join(" "),
+          words.filter((w) => w.length >= 4).slice(0, 3).join(" "),
+          words.filter((w) => w.length >= 6).slice(0, 3).join(" "),
+          words.filter((w) => w.length >= 5).slice(0, 2).join(" "),
+          words.slice(-4).join(" "),
+        ].filter((n) => n.length >= 4);
+
+        let matchedSpans: HTMLElement[] = [];
+        for (const needle of candidates) {
+          matchedSpans = spansForNeedle(needle);
+          if (matchedSpans.length) break;
         }
-        if (!span) return;
-        const rect = span.getBoundingClientRect();
-        rects.push({
-          id: target.evidenceRefId,
-          level: target.level,
-          top: rect.top - layerRect.top,
-          left: rect.left - layerRect.left,
-          width: rect.width,
-          height: Math.max(14, rect.height),
-        });
+
+        // Fallback: try support/evidence strings forwarded from the highlight block
+        if (!matchedSpans.length && (target.support?.length || target.evidence?.length)) {
+          for (const fallback of [...(target.support ?? []), ...(target.evidence ?? [])]) {
+            if (!fallback || fallback.length < 12) continue;
+            const fallbackNorm = fallback
+              .toLowerCase()
+              .replace(/\u00ad/g, "")
+              .replace(/[^\w\s]/g, " ")
+              .replace(/\s+/g, " ")
+              .trim();
+            const fbWords = fallbackNorm.split(" ").filter(Boolean);
+            const fbCandidates = [
+              fbWords.slice(0, 6).join(" "),
+              fbWords.slice(0, 4).join(" "),
+              fbWords.filter((w) => w.length >= 4).slice(0, 3).join(" "),
+            ].filter((n) => n.length >= 4);
+            for (const needle of fbCandidates) {
+              matchedSpans = spansForNeedle(needle);
+              if (matchedSpans.length) break;
+            }
+            if (matchedSpans.length) break;
+          }
+        }
+
+        if (!matchedSpans.length) return;
+
+        const geo = rectFromSpans(matchedSpans.slice(0, 12));
+        if (!geo) return;
+        rects.push({ id: target.evidenceRefId, level: target.level, semanticKind: target.kind as OverlayRect["semanticKind"], ...geo });
       });
       if (!rects.length && highlightTargets.length > 0 && attempts < 10) {
         attempts += 1;
@@ -621,11 +688,19 @@ export default function SmartPDFViewer({
               )}
 
               {overlayRects.length > 0 && (
-                <PdfEvidenceOverlay
-                  rects={overlayRects}
-                  focusedId={focusedEvidenceId}
-                  onFocus={onEvidenceFocus}
-                />
+                <>
+                  {/* Dim veil sits below the evidence overlay (z-[19] < z-20).
+                      Non-highlighted text recedes; decoded blocks jump forward. */}
+                  <div
+                    className="pointer-events-none absolute inset-0 z-[19] bg-slate-900/20"
+                    aria-hidden
+                  />
+                  <PdfEvidenceOverlay
+                    rects={overlayRects}
+                    focusedId={focusedEvidenceId}
+                    onFocus={onEvidenceFocus}
+                  />
+                </>
               )}
 
               {/* Hidden prefetch: pre-warm react-pdf render cache for page N+1 */}

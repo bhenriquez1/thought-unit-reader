@@ -6,7 +6,8 @@ export type PageContentClass =
   | "image_only"
   | "mixed_visual"
   | "sparse_text"
-  | "failed_sparse";
+  | "failed_sparse"
+  | "copyright_frontmatter";
 
 export function classifyPageContent(pageText: string): PageContentClass {
   const text = (pageText || "").trim();
@@ -20,7 +21,9 @@ export function classifyPageContent(pageText: string): PageContentClass {
   const labelValue = lines.filter((line) => /^[A-Za-z][A-Za-z\s]{2,25}:\s*\S/.test(line)).length;
   const tableLike = lines.filter((line) => /\s{2,}|\|/.test(line)).length;
   const headingLike = lines.filter((line) => /^[A-Z][A-Z\s\-]{5,}$/.test(line)).length;
+  const boilerplateHits = lines.filter((line) => /all rights reserved|copyright|isbn|published by|permissions|edition|library of congress|contributor/i.test(line)).length;
 
+  if (boilerplateHits >= 2 && sentenceCount < 3) return "copyright_frontmatter";
   if (words.length < 25) return "sparse_text";
   if (sentenceCount === 0 && words.length < 80) return "failed_sparse";
   if (blankLike >= 3 || labelValue >= 5) return "form_page";

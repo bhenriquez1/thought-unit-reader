@@ -48,7 +48,7 @@ export type EvidenceAnchor = {
   endOffset?: number;
 };
 
-export type GuidedMode = "insight" | "explain" | "compare" | "relation" | "apply" | "apply_test";
+export type GuidedMode = "insight" | "explain" | "compare" | "relation" | "apply";
 
 export type GuidedRole = "general" | "operator" | "expert";
 
@@ -66,11 +66,82 @@ export type GuidedReadStep = {
   confidence: number;
 };
 
+export type OperatorCardKind =
+  | "pattern"
+  | "decision"
+  | "application"
+  | "mechanism"
+  | "distinction"
+  | "relation"
+  | "trap";
+
+export type OperatorCard = {
+  id: string;
+  kind: OperatorCardKind;
+  title: string;
+  primary: string;
+  bullets: string[];
+  severity?: "low" | "medium" | "high";
+};
+
+export type DecisionDrill = {
+  caseCue: string;
+  caseCueContext?: string;
+  bestNextMove: string;
+  bestNextMoveSteps: string[];
+  why: string;
+  wrongMove?: string;
+  wrongMoveReason?: string;
+  examTest?: string;
+  confidence: number;
+};
+
 export type GuidedReadView = {
   pagePurpose: string;
   steps: GuidedReadStep[];
+  cards?: OperatorCard[];
+  drill?: DecisionDrill;
   supportTitle?: string;
   supportBullets?: string[];
+};
+
+export type StoryField =
+  | "main_idea"
+  | "mechanism"
+  | "distinction"
+  | "relation"
+  | "application"
+  | "trap";
+
+export type StoryBlock = {
+  id: string;
+  field: StoryField;
+  text: string;
+  support: string[];
+  evidence: string[];
+  score: number;
+};
+
+export type PatternBlock = {
+  trigger: string;
+  context?: string;
+  confidence: number;
+};
+
+export type DecisionBlock = {
+  action: string;
+  nextSteps: string[];
+  avoid: string[];
+  threshold?: string;
+  confidence: number;
+};
+
+export type TrapBlock = {
+  trap: string;
+  whyWrong?: string;
+  confusionWith?: string;
+  consequence?: string;
+  severity: "low" | "medium" | "high";
 };
 
 export type ExtractedSignals = {
@@ -116,6 +187,9 @@ export type DatApexInsight = {
 };
 
 export type PageInsightModel = {
+  documentId?: string;
+  pageNumber?: number;
+  requestKey?: string;
   pageType: InsightPageType;
   pageSummary: string;
   topTakeaways: string[];
@@ -125,5 +199,6 @@ export type PageInsightModel = {
   hiddenBlocks: PriorityBlock[];
   paragraphInsights: ParagraphInsight[];
   scannedParagraphCount: number;
+  pageStory?: import("@/lib/insights/buildPageStory").PageStory | null;
   datApex?: DatApexInsight;
 };
