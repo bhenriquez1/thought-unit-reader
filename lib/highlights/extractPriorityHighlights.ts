@@ -282,7 +282,7 @@ function buildStoryCandidates(
       kind: "main_pattern",
       source: "story_pattern",
       text: clean(patternText),
-      shortLabel: "Signal",
+      shortLabel: "Important",
       support: compact([story.patternBlock?.context, ...(story.mainIdeaBlock?.support.slice(0, 1) || [])]),
       evidence: patEvidence,
       blockId: "patternBlock",
@@ -306,7 +306,7 @@ function buildStoryCandidates(
         kind: "main_mechanism",
         source: "story_mechanism",
         text: clean(story.mechanismBlock.text),
-        shortLabel: "Mechanism",
+        shortLabel: "Important",
         support: story.mechanismBlock.support.slice(0, 3),
         evidence: mechEvidence,
         blockId: "mechanismBlock",
@@ -326,7 +326,7 @@ function buildStoryCandidates(
         kind: "main_mechanism",
         source: "story_mechanism",
         text: clean(story.supportingLogic[0]),
-        shortLabel: "Mechanism",
+        shortLabel: "Important",
         support: [],
         evidence: [],
         score: BASE_KIND_SCORE.main_mechanism - 6,
@@ -347,7 +347,7 @@ function buildStoryCandidates(
         kind: "support_explanation",
         source: "story_pattern",
         text: clean(story.bottomLineBlock.text),
-        shortLabel: "Bottom Line",
+        shortLabel: "Important",
         support: story.bottomLineBlock.support.slice(0, 2),
         evidence: story.bottomLineBlock.evidence.slice(0, 2),
         blockId: "bottomLineBlock",
@@ -366,7 +366,7 @@ function buildStoryCandidates(
       kind: "support_decision",
       source: "story_decision",
       text: clean(story.decisionBlock.action),
-      shortLabel: "Rule",
+      shortLabel: "Support",
       support: story.decisionBlock.nextSteps.slice(0, 2),
       evidence: compact([story.decisionBlock.threshold]),
       blockId: "decisionBlock",
@@ -384,7 +384,7 @@ function buildStoryCandidates(
       kind: "support_distinction",
       source: "story_distinction",
       text: clean(story.distinctionBlock.text),
-      shortLabel: "Distinction",
+      shortLabel: "Additional",
       support: story.distinctionBlock.support.slice(0, 2),
       evidence: story.distinctionBlock.evidence.slice(0, 2),
       blockId: "distinctionBlock",
@@ -399,7 +399,7 @@ function buildStoryCandidates(
       kind: "support_distinction",
       source: "story_distinction",
       text: clean(story.comparisonSignals[0]),
-      shortLabel: "Distinction",
+      shortLabel: "Additional",
       support: story.comparisonSignals.slice(1, 3),
       evidence: [],
       score: BASE_KIND_SCORE.support_distinction - 5,
@@ -415,7 +415,7 @@ function buildStoryCandidates(
       kind: "support_relation",
       source: "story_relation",
       text: clean(story.relationBlock.text),
-      shortLabel: "Relation",
+      shortLabel: "Additional",
       support: story.relationBlock.support.slice(0, 2),
       evidence: story.relationBlock.evidence.slice(0, 2),
       blockId: "relationBlock",
@@ -430,7 +430,7 @@ function buildStoryCandidates(
       kind: "support_relation",
       source: "story_relation",
       text: clean(story.relationSignals[0]),
-      shortLabel: "Relation",
+      shortLabel: "Additional",
       support: story.relationSignals.slice(1, 3),
       evidence: [],
       score: BASE_KIND_SCORE.support_relation - 5,
@@ -446,7 +446,7 @@ function buildStoryCandidates(
       kind: "support_application",
       source: "story_application",
       text: clean(story.applicationBlock.text),
-      shortLabel: "Action",
+      shortLabel: "Support",
       support: story.applicationBlock.support.slice(0, 2),
       evidence: story.applicationBlock.evidence.slice(0, 2),
       blockId: "applicationBlock",
@@ -461,7 +461,7 @@ function buildStoryCandidates(
       kind: "support_application",
       source: "story_application",
       text: clean(story.applySignals[0]),
-      shortLabel: "Action",
+      shortLabel: "Support",
       support: story.applySignals.slice(1, 3),
       evidence: [],
       score: BASE_KIND_SCORE.support_application - 5,
@@ -480,7 +480,7 @@ function buildStoryCandidates(
       kind: "trap_warning",
       source: "story_trap",
       text: clean(story.trapBlock.trap),
-      shortLabel: "Trap",
+      shortLabel: "Warning",
       support: compact([story.trapBlock.whyWrong, story.trapBlock.consequence]),
       evidence: compact([story.trapBlock.confusionWith]),
       blockId: "trapBlock",
@@ -496,7 +496,7 @@ function buildStoryCandidates(
         kind: "trap_boundary",
         source: "story_trap",
         text: clean(story.trapBlock.consequence),
-        shortLabel: "Boundary",
+        shortLabel: "Warning",
         support: compact([story.trapBlock.whyWrong]),
         evidence: [],
         score: BASE_KIND_SCORE.trap_boundary,
@@ -510,7 +510,7 @@ function buildStoryCandidates(
       kind: "trap_warning",
       source: "story_trap",
       text: clean(story.trap.sentence),
-      shortLabel: "Trap",
+      shortLabel: "Warning",
       support: [],
       evidence: [],
       score: BASE_KIND_SCORE.trap_warning - 6,
@@ -523,7 +523,7 @@ function buildStoryCandidates(
       kind: "trap_warning",
       source: "story_trap",
       text: clean(story.trapSignals[0]),
-      shortLabel: "Trap",
+      shortLabel: "Warning",
       support: story.trapSignals.slice(1, 3),
       evidence: [],
       score: BASE_KIND_SCORE.trap_warning - 10,
@@ -541,7 +541,7 @@ function buildStoryCandidates(
       kind: "weak_caveat",
       source: "story_trap",
       text: clean(wline),
-      shortLabel: "Caveat",
+      shortLabel: "Note",
       support: [],
       evidence: [],
       score: BASE_KIND_SCORE.weak_caveat,
@@ -620,11 +620,11 @@ function roleToKindMapping(role: ParagraphRole): { kind: SemanticHighlightKind; 
 
 function shortLabelForRole(role: ParagraphRole): string {
   switch (role) {
-    case "primary_signal":      return "Signal";
-    case "trap_warning":        return "Trap";
-    case "decision_rule":       return "Rule";
-    case "support_explanation": return "Key Point";
-    case "support_relation":    return "Connection";
+    case "primary_signal":      return "Important";
+    case "trap_warning":        return "Warning";
+    case "decision_rule":       return "Support";
+    case "support_explanation": return "Support";
+    case "support_relation":    return "Additional";
     default:                    return "Note";
   }
 }
@@ -1027,16 +1027,16 @@ function textSimilarity(a: string, b: string): number {
 
 function shortLabelForKind(kind: SemanticHighlightKind): string {
   switch (kind) {
-    case "main_pattern": return "Signal";
-    case "main_mechanism": return "Mechanism";
-    case "support_explanation": return "Key Point";
-    case "support_distinction": return "Distinction";
-    case "support_relation": return "Connection";
-    case "support_decision": return "Rule";
-    case "support_application": return "Action";
-    case "trap_warning": return "Trap";
-    case "trap_boundary": return "Boundary";
-    case "weak_caveat": return "Caveat";
+    case "main_pattern": return "Important";
+    case "main_mechanism": return "Important";
+    case "support_explanation": return "Support";
+    case "support_distinction": return "Additional";
+    case "support_relation": return "Additional";
+    case "support_decision": return "Support";
+    case "support_application": return "Support";
+    case "trap_warning": return "Warning";
+    case "trap_boundary": return "Warning";
+    case "weak_caveat": return "Note";
   }
 }
 
