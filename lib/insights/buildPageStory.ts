@@ -465,8 +465,12 @@ function structuralBoost(c: NarrativeCandidate, mode: BuildPageStoryInput["mode"
   if (c.sourceKind === "decision_path") boost += 0.11;
 
   if (containsContrast(c.sentence)) boost += 0.06;
-  if (containsCause(c.sentence)) boost += 0.07;
-  if (containsProcess(c.sentence)) boost += 0.05;
+  // Use c.relationHint (already computed via inferRelationHint, which is mutually
+  // exclusive) rather than re-calling containsCause/containsProcess independently.
+  // Re-calling the raw functions would double-boost sentences where both patterns
+  // fire (e.g. "This process leads to…" matches both cause and process).
+  if (c.relationHint === "cause") boost += 0.07;
+  else if (c.relationHint === "process") boost += 0.05;
   if (containsBoundary(c.sentence)) boost += 0.05;
   if (containsActionableRule(c.sentence)) boost += 0.05;
 
@@ -1109,7 +1113,16 @@ function containsBoundary(sentence: string): boolean {
 }
 
 function containsActionableRule(sentence: string): boolean {
-  return /\b(apply|use|check|avoid|do not|should|must|next move|rule)\b/i.test(sentence);
+  // "should" and "must" alone fire on ~35% of ordinary descriptive prose
+  // ("it should be noted", "cells must maintain their form"). Require:
+  //  - explicit action verbs (apply, use, check, avoid, do not, next move)
+  //  - OR "should/must" at sentence start (clear directive intent)
+  //  - OR "rule:" / "rule is" patterns (explicit rule annotation)
+  return (
+    /\b(apply|use|check|avoid|do not|next move)\b/i.test(sentence) ||
+    /^(should|must)\b/i.test(sentence.trim()) ||
+    /\brule\s*[:—]|\brule\s+is\b/i.test(sentence)
+  );
 }
 
 function containsTrapWord(sentence: string): boolean {
