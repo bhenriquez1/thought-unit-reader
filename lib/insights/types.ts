@@ -326,3 +326,166 @@ export type StoryHighlight = {
   priority: HighlightPriority;
   semanticKind: HighlightSemanticKind;
 };
+
+// ===========================================================================
+// Page-story v3 types — human-reader simulation layer
+// ===========================================================================
+
+export type ReadingPriority =
+  | "read_first"
+  | "read_second"
+  | "read_later"
+  | "optional"
+  | "warning";
+
+export type ReaderIntent =
+  | "orient"
+  | "learn_core"
+  | "apply_rule"
+  | "notice_exception"
+  | "store_support"
+  | "skip_for_now";
+
+/** Cognitive reading mode — distinct from structural PageClass */
+export type PageReadingMode =
+  | "concept_page"
+  | "clinical_page"
+  | "form_page"
+  | "diagram_page"
+  | "narrative_page"
+  | "reference_page";
+
+export type ParagraphNoteKind =
+  | "important"
+  | "support"
+  | "additional"
+  | "warning";
+
+export type ParagraphSalienceV3 = {
+  blockId: string;
+  salience: number;
+  novelty: number;
+  ruleDensity: number;
+  warningDensity: number;
+  supportDensity: number;
+  headingBoost: number;
+  structuralBoost: number;
+};
+
+export type ParagraphRoleAssignmentV3 = {
+  blockId: string;
+  pageNumber: number;
+  role: ParagraphRoleV2;
+  roleScore: number;
+  readingPriority: ReadingPriority;
+  readerIntent: ReaderIntent;
+  salience: ParagraphSalienceV3;
+};
+
+export type ParagraphNoteV3 = {
+  id: string;
+  sourceBlockId: string;
+  paragraphIndex: number;
+  pageNumber: number;
+  kind: ParagraphNoteKind;
+  priority: ReadingPriority;
+  intent: ReaderIntent;
+  originalText: string;
+  summarySentence: string;
+  whyItMatters?: string;
+  actionNote?: string;
+  warningNote?: string;
+  operatorLabel?: string;
+  confidence: number;
+};
+
+export type ReadingStepV3 = {
+  id: string;
+  label: string;
+  sourceBlockId: string;
+  paragraphIndex: number;
+  priority: ReadingPriority;
+  note: string;
+};
+
+export type PageBriefStatusV3 =
+  | "reading"
+  | "ready"
+  | "weak"
+  | "non_body_page";
+
+export type PageBriefV3 = {
+  pageBottomLine: string;
+  pagePurpose: string;
+  currentPageStatus: PageBriefStatusV3;
+};
+
+export type HighlightSemanticKindV3 =
+  | "important"
+  | "support"
+  | "additional"
+  | "warning";
+
+export type HighlightPriorityV3 =
+  | "main"
+  | "support"
+  | "weak";
+
+export type HighlightPlanItemV3 = {
+  id: string;
+  blockId: string;
+  pageNumber: number;
+  semanticKind: HighlightSemanticKindV3;
+  priority: HighlightPriorityV3;
+};
+
+export type StoryBlockKindV3 =
+  | "signal"
+  | "rule"
+  | "mechanism"
+  | "action"
+  | "trap"
+  | "bottom_line";
+
+export type StoryEvidenceV3 = {
+  blockId: string;
+  pageNumber: number;
+  sentence: string;
+};
+
+export type StoryBlockV3 = {
+  id: string;
+  kind: StoryBlockKindV3;
+  pageNumber: number;
+  sourceBlockId: string;
+  text: string;
+  support: string[];
+  evidence: StoryEvidenceV3[];
+};
+
+export type BuildPageStoryV3Input = {
+  truthKey: string;
+  documentId: string;
+  pageNumber: number;
+  pageText: string;
+  layoutBlocks?: RawPageBlock[];
+};
+
+export type PageStoryV3 = {
+  truthKey: string;
+  documentId: string;
+  pageNumber: number;
+  pageClass: PageClass;
+  readingMode: PageReadingMode;
+  brief: PageBriefV3;
+  paragraphRoleAssignments: ParagraphRoleAssignmentV3[];
+  paragraphNotes: ParagraphNoteV3[];
+  readingPath: ReadingStepV3[];
+  signalBlock:     StoryBlockV3 | null;
+  ruleBlock:       StoryBlockV3 | null;
+  mechanismBlock:  StoryBlockV3 | null;
+  actionBlock:     StoryBlockV3 | null;
+  trapBlock:       StoryBlockV3 | null;
+  bottomLineBlock: StoryBlockV3 | null;
+  highlightPlan: HighlightPlanItemV3[];
+};

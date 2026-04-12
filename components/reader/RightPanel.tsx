@@ -8,6 +8,7 @@ import type { ActivePageIntelligenceSnapshot } from "@/lib/useActivePageIntellig
 import type { SemanticHighlightKind } from "@/lib/highlights/extractPriorityHighlights";
 import type { PageStoryV2, StoryBlockV2 } from "@/lib/insights/buildPageStoryV2";
 import type { ParagraphNote, ReaderRole } from "@/lib/insights/buildParagraphNotes";
+import type { PageStoryV3, ParagraphNoteV3, ReadingStepV3, PageBriefV3 } from "@/lib/insights/buildPageStoryV3";
 
 interface RightPanelProps {
   ctx: ActivePageContext;
@@ -161,33 +162,42 @@ export function RightPanel({
   // ---------------------------------------------------------------------------
   // Rendering decision
   // ---------------------------------------------------------------------------
+  const storyV3 = intelligence.storyV3;
   const storyV2 = intelligence.storyV2;
-  const paragraphNotes: ParagraphNote[] = storyV2?.paragraphNotes ?? [];
 
-  // Build bottom line text — but suppress it if it's the same as the first
-  // paragraph note (which is common when the signal block IS the top paragraph).
+  // V3 is the primary view when paragraph notes exist
+  const v3Notes   = storyV3?.paragraphNotes ?? [];
+  const v3Path    = storyV3?.readingPath    ?? [];
+  const v3Brief   = storyV3?.brief          ?? null;
+
+  // V2 paragraph notes as fallback (rich prose pages that V3 did not activate)
+  const v2Notes: ParagraphNote[] = storyV2?.paragraphNotes ?? [];
+
+  // V2 bottom line — suppress if same as first V2 note
   const rawBottomLine = storyV2?.bottomLineBlock?.text ?? storyV2?.signalBlock?.text ?? null;
-  const firstNoteKey = paragraphNotes[0]?.text.toLowerCase().slice(0, 70) ?? "";
-  const bottomLineDuplicate = rawBottomLine
-    ? rawBottomLine.toLowerCase().slice(0, 70) === firstNoteKey
-    : false;
-  const bottomLineText = bottomLineDuplicate ? null : rawBottomLine;
+  const v2FirstKey    = v2Notes[0]?.text.toLowerCase().slice(0, 70) ?? "";
+  const v2BottomLineText = (rawBottomLine && rawBottomLine.toLowerCase().slice(0, 70) !== v2FirstKey)
+    ? rawBottomLine
+    : null;
 
-  // Paragraph map is the primary view when notes exist
-  const showParagraphMap = isCurrentPageModel && paragraphNotes.length > 0;
-  // V2 operator cards are shown only when paragraph map is empty (sparse pages)
-  const showV2Operator = isCurrentPageModel && !showParagraphMap && Boolean(storyV2?.signalBlock);
-  // v1 guided view is the last resort
-  const showGuidedView = isCurrentPageModel && !showParagraphMap && !showV2Operator && Boolean(guidedView);
+  const showV3View       = isCurrentPageModel && v3Notes.length > 0;
+  const showV2Map        = isCurrentPageModel && !showV3View && v2Notes.length > 0;
+  const showV2Operator   = isCurrentPageModel && !showV3View && !showV2Map && Boolean(storyV2?.signalBlock);
+  const showGuidedView   = isCurrentPageModel && !showV3View && !showV2Map && !showV2Operator && Boolean(guidedView);
+
+  // V3 header status label
+  const headerStatus = intelligence.status === "loading"
+    ? LOADING_PHASES[loadingPhase]
+    : showV3View && v3Brief
+    ? v3Brief.pagePurpose
+    : "Current page · ready";
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col overflow-y-auto border-l border-white/10 bg-[rgb(11,18,34)] break-words whitespace-normal">
       {/* Header */}
       <div className="border-b border-white/10 px-4 py-3">
         <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">Page Notes</div>
-        <div className="mt-0.5 text-[11px] text-slate-500">
-          {intelligence.status === "loading" ? LOADING_PHASES[loadingPhase] : "Current page · ready"}
-        </div>
+        <div className="mt-0.5 text-[11px] text-slate-500">{headerStatus}</div>
       </div>
 
       <div className="flex flex-col gap-4 p-4 text-white">
@@ -200,23 +210,32 @@ export function RightPanel({
           </div>
         )}
 
-        {/* ── A. Page Bottom Line ────────────────────────────────────────── */}
-        {isCurrentPageModel && bottomLineText && (
-          <BottomLineCard text={bottomLineText} />
+        {/* ── A. V3 Primary View ─────────────────────────────────────────── */}
+        {showV3View && v3Brief && <PageBriefCard brief={v3Brief} />}
+        {showV3View && v3Path.length > 0 && (
+          <ReadingPathView
+            steps={v3Path}
+            onStepClick={(text) => onEvidenceClick?.(text, undefined)}
+          />
+        )}
+        {showV3View && (
+          <V3ParagraphMapView
+            notes={v3Notes}
+            onNoteClick={(text) => onEvidenceClick?.(text, undefined)}
+          />
         )}
 
-        {/* ── B. Paragraph Map (primary view) ───────────────────────────── */}
-        {showParagraphMap && (
+        {/* ── B. V2 Paragraph Map (fallback) ────────────────────────────── */}
+        {showV2Map && v2BottomLineText && <BottomLineCard text={v2BottomLineText} />}
+        {showV2Map && (
           <ParagraphMapView
-            notes={paragraphNotes}
+            notes={v2Notes}
             onNoteClick={(text) => onEvidenceClick?.(text, undefined)}
           />
         )}
 
         {/* ── C. V2 Operator View (sparse-page fallback) ────────────────── */}
-        {showV2Operator && storyV2 && (
-          <V2OperatorView storyV2={storyV2} />
-        )}
+        {showV2Operator && storyV2 && <V2OperatorView storyV2={storyV2} />}
 
         {/* ── D. v1 Guided View (last resort) ───────────────────────────── */}
         {showGuidedView && guidedView && (
@@ -247,7 +266,127 @@ function BottomLineCard({ text }: { text: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Paragraph Map
+// V3 — Page brief card
+// ---------------------------------------------------------------------------
+
+function PageBriefCard({ brief }: { brief: PageBriefV3 }) {
+  if (!brief.pageBottomLine) return null;
+  return (
+    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
+      <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-amber-400">Bottom line</div>
+      <p className="text-sm font-medium leading-relaxed text-slate-100">
+        {compressToNote(brief.pageBottomLine, "signal")}
+      </p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// V3 — Reading path ("Read in this order")
+// ---------------------------------------------------------------------------
+
+const STEP_PRIORITY_STYLES: Record<string, { dot: string; label: string; border: string }> = {
+  read_first:  { dot: "bg-amber-400",    label: "text-amber-300",  border: "border-amber-400/30 bg-amber-500/5" },
+  warning:     { dot: "bg-rose-400",     label: "text-rose-300",   border: "border-rose-400/30 bg-rose-500/5" },
+  read_second: { dot: "bg-blue-400",     label: "text-blue-300",   border: "border-blue-400/25 bg-blue-500/5" },
+  read_later:  { dot: "bg-slate-500",    label: "text-slate-400",  border: "border-slate-600/30 bg-slate-800/30" },
+  optional:    { dot: "bg-slate-600",    label: "text-slate-500",  border: "border-slate-700/20 bg-slate-900/20" },
+};
+
+function ReadingPathView({
+  steps,
+  onStepClick,
+}: {
+  steps: ReadingStepV3[];
+  onStepClick: (text: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Read in this order</p>
+      {steps.map((step, i) => {
+        const s = STEP_PRIORITY_STYLES[step.priority] ?? STEP_PRIORITY_STYLES.read_later;
+        return (
+          <button
+            key={step.id}
+            onClick={() => onStepClick(step.note)}
+            className={`w-full rounded-xl border p-3 text-left transition-colors hover:brightness-110 ${s.border}`}
+          >
+            <div className="flex items-start gap-2.5">
+              <span className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${s.dot} text-slate-900`}>
+                {i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <span className={`text-[9px] font-semibold uppercase tracking-wider ${s.label}`}>{step.label}</span>
+                <p className="mt-0.5 text-xs leading-relaxed text-slate-200 line-clamp-2">{step.note}</p>
+              </div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// V3 — Paragraph note card (richer than V2)
+// ---------------------------------------------------------------------------
+
+function V3NoteCard({
+  note,
+  index,
+  onClick,
+}: {
+  note: ParagraphNoteV3;
+  index: number;
+  onClick: (text: string) => void;
+}) {
+  const s = READER_ROLE_STYLES[note.kind];
+  const detail = note.warningNote ?? note.actionNote ?? note.whyItMatters;
+  return (
+    <button
+      onClick={() => onClick(note.summarySentence)}
+      className={`w-full rounded-xl border p-3.5 text-left transition-colors hover:brightness-110 ${s.border} ${s.bg}`}
+    >
+      <div className="mb-2 flex items-center gap-2">
+        <span className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${s.badge}`}>
+          {index + 1}
+        </span>
+        <span className={`text-[9px] font-semibold uppercase tracking-wider ${s.label}`}>
+          {note.operatorLabel ?? note.kind}
+        </span>
+      </div>
+      <p className={`text-xs leading-relaxed ${s.text}`}>
+        {compressToNote(note.summarySentence, note.kind === "warning" ? "trap" : note.kind === "important" ? "signal" : "")}
+      </p>
+      {detail && detail !== note.summarySentence && (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
+          {compressToNote(detail, "")}
+        </p>
+      )}
+    </button>
+  );
+}
+
+function V3ParagraphMapView({
+  notes,
+  onNoteClick,
+}: {
+  notes: ParagraphNoteV3[];
+  onNoteClick: (text: string) => void;
+}) {
+  const visible = notes.slice(0, 10);
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Paragraph notes</p>
+      {visible.map((note, i) => (
+        <V3NoteCard key={note.id} note={note} index={i} onClick={onNoteClick} />
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Paragraph Map (V2 fallback)
 // ---------------------------------------------------------------------------
 
 const ROLE_LABEL: Record<ReaderRole, string> = {
