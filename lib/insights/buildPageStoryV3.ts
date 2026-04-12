@@ -22,14 +22,12 @@
 
 import type {
   BuildPageStoryV3Input,
-  NormalizedPageBlock,
   PageBriefStatusV3,
   PageBriefV3,
   PageClass,
   PageReadingMode,
   PageStoryV3,
   ParagraphNoteV3,
-  ParagraphRoleAssignmentV3,
   StoryBlockV3,
   StoryEvidenceV3,
 } from "./types";
@@ -47,10 +45,10 @@ import { normalizePageBlocks } from "./normalizePageBlocks";
 import { classifyPageType } from "./classifyPageType";
 import { classifyReadingMode } from "./classifyReadingMode";
 import { assignParagraphSalience } from "./assignParagraphSalience";
-import { buildParagraphNotesV3 } from "./buildParagraphNotesV3";
+import { buildParagraphNotes } from "./buildParagraphNotesV3";
 import { buildReadingPath } from "./buildReadingPath";
 import { buildHighlightPlan } from "./buildHighlightPlan";
-import { bestCompleteSentence, canonicalTextKey, sentenceSafeSupport } from "./textCleanup";
+import { canonicalTextKey, sentenceSafeSupport } from "./textCleanup";
 
 // ---------------------------------------------------------------------------
 // Page brief
@@ -243,11 +241,16 @@ export function buildPageStoryV3(input: BuildPageStoryV3Input): PageStoryV3 {
   });
 
   // Pass 3 — compress into paragraph notes
-  const paragraphNotes = buildParagraphNotesV3(normalizedBlocks, roleAssignments);
+  const paragraphNotes = buildParagraphNotes({
+    blocks:      normalizedBlocks,
+    assignments: roleAssignments,
+    pageClass,
+    readingMode,
+  });
 
   // Pass 4 — structure
   const brief       = buildPageBrief(paragraphNotes, readingMode, pageClass);
-  const readingPath = buildReadingPath(paragraphNotes);
+  const readingPath = buildReadingPath({ paragraphNotes, maxSteps: 4 });
 
   // Pass 5 — operationalize
   const storyBlocks   = synthesizeStoryBlocks(paragraphNotes, input.truthKey, input.pageNumber);

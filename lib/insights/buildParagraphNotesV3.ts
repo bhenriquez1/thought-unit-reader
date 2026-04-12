@@ -2,24 +2,26 @@
  * buildParagraphNotesV3.ts
  *
  * Converts ParagraphRoleAssignmentV3 + NormalizedPageBlock data into
- * human-readable ParagraphNoteV3 objects — one per meaningful paragraph,
- * in original reading order.
+ * ParagraphNoteV3 objects — one per meaningful paragraph, ordered by
+ * reading priority (read_first → warning → read_second → read_later).
  *
- * Each note contains:
- *   - summarySentence: the strongest complete sentence from the paragraph
- *   - whyItMatters: optional second distinct sentence (context/reason)
- *   - actionNote: imperative-form note for decision_rule paragraphs
- *   - warningNote: alert text for trap_warning paragraphs
- *   - operatorLabel: reader-facing role label for the card header
+ * This is the layer that gives the system a reader voice:
+ * not extracted text, not relabeled prose — resident notes, surgeon briefing,
+ * pilot checklist. Each paragraph becomes a compressed note with:
+ *   - summarySentence: the strongest complete sentence
+ *   - whyItMatters: explanatory follow-on (for important/mechanism)
+ *   - actionNote: imperative sentence (for decision_rule)
+ *   - warningNote: alert sentence (for trap_warning)
+ *   - operatorLabel: card header ("Rule", "Warning", "Bottom line", etc.)
  *
- * Production rules enforced here:
- *   Rule 1 — no incomplete sentence ever reaches final render
- *   Rule 2 — no two notes may emit the same canonical sentence
- *   Rule 5 — captions/URLs/headers must never become page-level content
+ * Note: role values follow ParagraphRoleV2 naming (primary_signal,
+ * decision_rule, trap_warning, support_relation, etc.).
  */
 
 import type {
   NormalizedPageBlock,
+  PageClass,
+  PageReadingMode,
   ParagraphNoteKind,
   ParagraphNoteV3,
   ParagraphRoleAssignmentV3,
@@ -28,173 +30,226 @@ import type {
 } from "./types";
 import {
   bestCompleteSentence,
-  extractCompleteSentences,
   canonicalTextKey,
+  cleanBlockText,
+  extractCompleteSentences,
+  sentenceSafeSupport,
 } from "./textCleanup";
 
-// Block kinds that should never produce a paragraph note
-const SKIP_KINDS = new Set([
-  "heading", "caption", "diagram_label", "table_row", "form_field",
-]);
-
-// Minimum confidence threshold for emitting a note.
-// Blocks with near-zero salience (pure noise that passed the noise filter)
-// are still suppressed here.
-const MIN_SALIENCE_FOR_NOTE = 0.5;
-
 // ---------------------------------------------------------------------------
-// Role → kind mapping
+// Input type
 // ---------------------------------------------------------------------------
 
-const ROLE_TO_KIND: Record<ParagraphRoleV2, ParagraphNoteKind> = {
-  primary_signal:      "important",
-  bottom_line:         "important",
-  decision_rule:       "support",
-  mechanism:           "support",
-  support_explanation: "support",
-  support_relation:    "additional",
-  support_distinction: "additional",
-  trap_warning:        "warning",
-  background:          "additional",
+export type BuildParagraphNotesInput = {
+  blocks:      NormalizedPageBlock[];
+  assignments: ParagraphRoleAssignmentV3[];
+  pageClass:   PageClass;
+  readingMode: PageReadingMode;
 };
+
+// ---------------------------------------------------------------------------
+// Priority weighting — controls confidence and sort order
+// ---------------------------------------------------------------------------
+
+function priorityWeight(priority: ReadingPriority): number {
+  switch (priority) {
+    case "read_first":  return 1.00;
+    case "read_second": return 0.85;
+    case "warning":     return 0.82;
+    case "read_later":  return 0.65;
+    case "optional":
+    default:            return 0.45;
+  }
+}
+
+function clampConfidence(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+// ---------------------------------------------------------------------------
+// Role → note kind
+// ---------------------------------------------------------------------------
+
+function noteKindFromRole(role: ParagraphRoleV2): ParagraphNoteKind {
+  switch (role) {
+    case "trap_warning":
+      return "warning";
+    case "primary_signal":
+    case "bottom_line":
+      return "important";
+    case "decision_rule":
+    case "mechanism":
+    case "support_explanation":
+    case "support_relation":
+    case "support_distinction":
+      return "support";
+    case "background":
+    default:
+      return "additional";
+  }
+}
+
+function noteKindFromPriority(
+  role: ParagraphRoleV2,
+  priority: ReadingPriority,
+): ParagraphNoteKind {
+  if (priority === "warning" || role === "trap_warning") return "warning";
+  if (priority === "read_first")                         return "important";
+  if (priority === "read_second" || priority === "read_later") return "support";
+  return noteKindFromRole(role);
+}
 
 // ---------------------------------------------------------------------------
 // Role → operator label (right-panel card header)
 // ---------------------------------------------------------------------------
 
-function operatorLabelForRole(
-  role: ParagraphRoleV2,
-  priority: ReadingPriority,
-): string {
+function labelForRole(role: ParagraphRoleV2): string {
   switch (role) {
-    case "primary_signal":
-      return priority === "read_first" ? "Key concept" : "Signal";
-    case "bottom_line":
-      return "Bottom line";
-    case "decision_rule":
-      return "Rule";
-    case "mechanism":
-      return "Mechanism";
-    case "support_relation":
-      return "Relation";
-    case "support_distinction":
-      return "Distinction";
-    case "trap_warning":
-      return "Warning";
-    case "support_explanation":
-      return "Support";
+    case "primary_signal":       return "Important";
+    case "decision_rule":        return "Rule";
+    case "mechanism":            return "Why";
+    case "support_relation":     return "Connection";
+    case "support_distinction":  return "Difference";
+    case "trap_warning":         return "Warning";
+    case "bottom_line":          return "Bottom line";
+    case "support_explanation":  return "Support";
     case "background":
-      return "Additional";
-    default:
-      return "Note";
+    default:                     return "Additional";
   }
 }
 
 // ---------------------------------------------------------------------------
-// Confidence from salience score
+// Note field builders
 // ---------------------------------------------------------------------------
 
-function normalizeConfidence(salience: number): number {
-  return Math.min(1, Math.max(0.1, salience / 10));
+function sentenceForRole(
+  _role: ParagraphRoleV2,
+  sentence: string,
+): string {
+  // Conservative: do not rewrite content semantics.
+  // Clean and return the best sentence as-is; the reader trusts the source.
+  return cleanBlockText(sentence);
 }
 
-// ---------------------------------------------------------------------------
-// Extract a "why it matters" sentence
-//
-// Prefers a sentence that follows the main sentence and adds context
-// (reasons, consequences, comparisons). Avoids repeating the summary.
-// ---------------------------------------------------------------------------
-
-function extractWhyItMatters(
-  allSentences: string[],
-  summarySentence: string,
+function buildWhyItMatters(
+  role: ParagraphRoleV2,
+  supportSentences: string[],
+  readingMode: PageReadingMode,
 ): string | undefined {
-  const summary = summarySentence.toLowerCase();
-  const candidate = allSentences.find((s) => {
-    if (s === summarySentence) return false;
-    if (s.length < 25)         return false;
-    const lower = s.toLowerCase();
-    // Prefer explanatory / consequential language
-    if (/\b(because|therefore|due to|results in|leads to|so that|which means|since)\b/.test(lower)) {
-      return true;
-    }
-    // Accept any sentence that isn't just a restatement
-    return lower.slice(0, 50) !== summary.slice(0, 50);
-  });
-  return candidate;
+  if (!supportSentences.length) return undefined;
+  const best = supportSentences[0];
+  if (!best) return undefined;
+
+  switch (role) {
+    case "primary_signal":
+    case "bottom_line":
+    case "mechanism":
+    case "support_relation":
+    case "support_distinction":
+      return best;
+    case "decision_rule":
+      return readingMode === "clinical_page" ? best : undefined;
+    default:
+      return undefined;
+  }
+}
+
+function buildActionNote(
+  role: ParagraphRoleV2,
+  supportSentences: string[],
+  readingMode: PageReadingMode,
+  pageClass: PageClass,
+): string | undefined {
+  if (role === "decision_rule") return supportSentences[0];
+  if (readingMode === "form_page" || pageClass === "form_checklist") {
+    return supportSentences[0];
+  }
+  return undefined;
+}
+
+function buildWarningNote(
+  role: ParagraphRoleV2,
+  summarySentence: string,
+  supportSentences: string[],
+): string | undefined {
+  if (role === "trap_warning") return summarySentence;
+  return supportSentences.find((s) =>
+    /\b(avoid|warning|risk|pitfall|mistake|error|wrong|except|unless)\b/i.test(s),
+  );
 }
 
 // ---------------------------------------------------------------------------
-// Extract an action note for decision_rule paragraphs
+// Sort assignments by reading priority then salience then reading order
 // ---------------------------------------------------------------------------
 
-function extractActionNote(sentences: string[]): string | undefined {
-  return sentences.find((s) => {
-    const lower = s.toLowerCase();
-    return /\b(must|should|always|never|avoid|use|check|confirm|rule out|evaluate|assess|obtain)\b/.test(lower);
+function sortAssignmentsForReading(
+  assignments: ParagraphRoleAssignmentV3[],
+  blockMap: Map<string, NormalizedPageBlock>,
+): ParagraphRoleAssignmentV3[] {
+  return [...assignments].sort((a, b) => {
+    const pw = priorityWeight(b.readingPriority) - priorityWeight(a.readingPriority);
+    if (pw !== 0) return pw;
+
+    const sw = b.salience.salience - a.salience.salience;
+    if (sw !== 0) return sw;
+
+    const ia = blockMap.get(a.blockId)?.blockIndex ?? Number.MAX_SAFE_INTEGER;
+    const ib = blockMap.get(b.blockId)?.blockIndex ?? Number.MAX_SAFE_INTEGER;
+    return ia - ib;
   });
 }
 
 // ---------------------------------------------------------------------------
-// Extract a warning note for trap_warning paragraphs
+// Deduplication
 // ---------------------------------------------------------------------------
 
-function extractWarningNote(sentences: string[]): string | undefined {
-  return sentences.find((s) => {
-    const lower = s.toLowerCase();
-    return /\b(avoid|risk|danger|pitfall|mistake|error|do not|don't|warning|except|unless|complication)\b/.test(lower);
-  });
+function dedupeNotes(notes: ParagraphNoteV3[]): ParagraphNoteV3[] {
+  const seen = new Set<string>();
+  const out: ParagraphNoteV3[] = [];
+  for (const note of notes) {
+    const key = canonicalTextKey(note.summarySentence);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(note);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
 // Main builder
 // ---------------------------------------------------------------------------
 
-export function buildParagraphNotesV3(
-  blocks: NormalizedPageBlock[],
-  assignments: ParagraphRoleAssignmentV3[],
+export function buildParagraphNotes(
+  input: BuildParagraphNotesInput,
 ): ParagraphNoteV3[] {
-  // Build lookup maps
-  const assignmentMap = new Map(assignments.map((a) => [a.blockId, a]));
-  const blockMap      = new Map(blocks.map((b) => [b.id, b]));
+  const { blocks, assignments, pageClass, readingMode } = input;
 
-  const seenTexts = new Set<string>();
+  const blockMap = new Map(blocks.map((b) => [b.id, b]));
+  const ordered  = sortAssignmentsForReading(assignments, blockMap);
+
   const notes: ParagraphNoteV3[] = [];
 
-  // Emit notes in original reading order (blockIndex ascending)
-  const orderedBlocks = [...blocks].sort((a, b) => a.blockIndex - b.blockIndex);
+  for (const assignment of ordered) {
+    const block = blockMap.get(assignment.blockId);
+    if (!block)             continue;
+    if (block.isLikelyNoise) continue;
 
-  for (const block of orderedBlocks) {
-    if (block.isLikelyNoise)          continue;
-    if (SKIP_KINDS.has(block.kind))   continue;
-    if (block.text.trim().length < 30) continue;
+    const mainSentence =
+      bestCompleteSentence(block.text) ??
+      extractCompleteSentences(block.text)[0] ??
+      null;
+    if (!mainSentence) continue;
 
-    const assignment = assignmentMap.get(block.id);
-    if (!assignment) continue;
-    if (assignment.salience.salience < MIN_SALIENCE_FOR_NOTE) continue;
+    const supportSentences = sentenceSafeSupport(
+      extractCompleteSentences(block.text).filter((s) => s !== mainSentence),
+      2,
+    );
 
-    const summarySentence = bestCompleteSentence(block.text);
-    if (!summarySentence) continue;
-
-    // Rule 2 — no duplicate canonical sentences
-    const key = canonicalTextKey(summarySentence);
-    if (seenTexts.has(key)) continue;
-    seenTexts.add(key);
-
-    const allSentences = extractCompleteSentences(block.text);
-    const kind         = ROLE_TO_KIND[assignment.role];
-    const label        = operatorLabelForRole(assignment.role, assignment.readingPriority);
-
-    const whyItMatters = extractWhyItMatters(allSentences, summarySentence);
-    const actionNote   = assignment.role === "decision_rule"
-      ? extractActionNote(allSentences)
-      : undefined;
-    const warningNote  = assignment.role === "trap_warning"
-      ? extractWarningNote(allSentences) ?? summarySentence
-      : undefined;
+    const summarySentence = sentenceForRole(assignment.role, mainSentence);
+    const kind            = noteKindFromPriority(assignment.role, assignment.readingPriority);
 
     notes.push({
-      id:             `v3note-${block.id}`,
+      id:             `paragraph-note:${block.id}`,
       sourceBlockId:  block.id,
       paragraphIndex: block.blockIndex,
       pageNumber:     block.pageNumber,
@@ -203,13 +258,15 @@ export function buildParagraphNotesV3(
       intent:         assignment.readerIntent,
       originalText:   block.text,
       summarySentence,
-      whyItMatters,
-      actionNote,
-      warningNote,
-      operatorLabel:  label,
-      confidence:     normalizeConfidence(assignment.salience.salience),
+      whyItMatters:   buildWhyItMatters(assignment.role, supportSentences, readingMode),
+      actionNote:     buildActionNote(assignment.role, supportSentences, readingMode, pageClass),
+      warningNote:    buildWarningNote(assignment.role, summarySentence, supportSentences),
+      operatorLabel:  labelForRole(assignment.role),
+      confidence:     clampConfidence(
+        (assignment.salience.salience / 10) * priorityWeight(assignment.readingPriority),
+      ),
     });
   }
 
-  return notes;
+  return dedupeNotes(notes);
 }
