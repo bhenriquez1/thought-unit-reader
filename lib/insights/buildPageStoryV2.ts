@@ -104,11 +104,25 @@ function synthesizeStory(ctx: SynthesisCtx): Omit<PageStoryV2, "highlights" | "p
   const mechSrc      = topBlockForRole("mechanism",      ctx.blocks, ctx.assignments);
   const trapSrc      = topBlockForRole("trap_warning",   ctx.blocks, ctx.assignments);
   const btmSrc       = topBlockForRole("bottom_line",    ctx.blocks, ctx.assignments);
-  const supportSrcs  = topBlocksForRoles(SUPPORT_ROLES,  ctx.blocks, ctx.assignments, 4);
+
+  // Build a set of block IDs already claimed by named primary roles so that
+  // support blocks and fallback chains cannot re-use the same source block
+  // (which would produce semantic collapse — identical sentences in Signal +
+  // Action + BottomLine on sparse pages).
+  const usedPrimaryIds = new Set<string>(
+    [signalSrc, ruleSrc, mechSrc, trapSrc, btmSrc]
+      .filter((b): b is NormalizedPageBlock => b !== null)
+      .map((b) => b.id),
+  );
+
+  const supportSrcs  = topBlocksForRoles(SUPPORT_ROLES,  ctx.blocks, ctx.assignments, 4)
+    .filter((b) => !usedPrimaryIds.has(b.id));
 
   const signalBlock    = makeBlock(`${ctx.truthKey}:signal`,      "signal",      "Signal",      signalSrc,   supportSrcs.slice(0, 2));
   const ruleBlock      = makeBlock(`${ctx.truthKey}:rule`,        "rule",        "Rule",        ruleSrc,     supportSrcs.slice(0, 1));
   const mechanismBlock = makeBlock(`${ctx.truthKey}:mechanism`,   "mechanism",   "Mechanism",   mechSrc,     supportSrcs.slice(0, 1));
+  // Action falls back to ruleSrc; if rule and signal are the same sentence
+  // the text will be deduplicated later in finalizeStory.
   const actionBlock    = makeActionBlock(`${ctx.truthKey}:action`, ruleSrc, supportSrcs[0] ?? null);
   const trapBlock      = makeBlock(`${ctx.truthKey}:trap`,        "trap",        "Trap",        trapSrc,     []);
   const bottomLineBlock = makeBottomLine(`${ctx.truthKey}:bottom-line`, btmSrc, signalSrc, ruleSrc);

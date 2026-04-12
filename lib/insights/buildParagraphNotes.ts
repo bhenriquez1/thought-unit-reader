@@ -49,12 +49,14 @@ const ROLE_MAP: Record<ParagraphRoleV2, ReaderRole | null> = {
 };
 
 // Minimum role-assignment score to emit a note.
-// Background/additional require stronger evidence — they're context-only and
-// produce the most noise when the threshold is too low.
+// All roles use 1 — block-kind filtering (SKIP_BLOCK_KINDS) handles structural
+// noise. MIN_SCORE > 1 was silently killing all "background" prose paragraphs
+// because every background block scores exactly 1, producing 0 paragraph notes
+// on descriptive pages and forcing the right panel into the story-card fallback.
 const MIN_SCORE: Record<ReaderRole, number> = {
   important:  1,
-  support:    2,
-  additional: 4,
+  support:    1,
+  additional: 1,
   warning:    1,
 };
 
