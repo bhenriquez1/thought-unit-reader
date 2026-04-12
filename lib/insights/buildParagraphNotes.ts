@@ -49,13 +49,20 @@ const ROLE_MAP: Record<ParagraphRoleV2, ReaderRole | null> = {
 };
 
 // Minimum role-assignment score to emit a note.
-// Background is context-only — require stronger evidence before showing it.
+// Background/additional require stronger evidence — they're context-only and
+// produce the most noise when the threshold is too low.
 const MIN_SCORE: Record<ReaderRole, number> = {
   important:  1,
-  support:    1,
-  additional: 2,
+  support:    2,
+  additional: 4,
   warning:    1,
 };
+
+// Block kinds that never produce useful paragraph notes.
+// Headings are chapter titles, captions are figure labels, etc.
+const SKIP_BLOCK_KINDS = new Set([
+  "heading", "caption", "diagram_label", "table_row", "form_field",
+]);
 
 // ---------------------------------------------------------------------------
 // Builder
@@ -80,6 +87,9 @@ export function buildParagraphNotes(
   // Iterate blocks in their original reading order
   for (const block of blocks) {
     if (block.isLikelyNoise) continue;
+    // Skip structural/non-prose block kinds — they produce noise notes
+    // (e.g., chapter heading appearing as "Important: Chapter 12 — Scalp Flaps")
+    if (SKIP_BLOCK_KINDS.has(block.kind)) continue;
 
     const assignment = assignmentMap.get(block.id);
     if (!assignment) continue;

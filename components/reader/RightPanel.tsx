@@ -163,7 +163,15 @@ export function RightPanel({
   // ---------------------------------------------------------------------------
   const storyV2 = intelligence.storyV2;
   const paragraphNotes: ParagraphNote[] = storyV2?.paragraphNotes ?? [];
-  const bottomLineText = storyV2?.bottomLineBlock?.text ?? storyV2?.signalBlock?.text ?? null;
+
+  // Build bottom line text — but suppress it if it's the same as the first
+  // paragraph note (which is common when the signal block IS the top paragraph).
+  const rawBottomLine = storyV2?.bottomLineBlock?.text ?? storyV2?.signalBlock?.text ?? null;
+  const firstNoteKey = paragraphNotes[0]?.text.toLowerCase().slice(0, 70) ?? "";
+  const bottomLineDuplicate = rawBottomLine
+    ? rawBottomLine.toLowerCase().slice(0, 70) === firstNoteKey
+    : false;
+  const bottomLineText = bottomLineDuplicate ? null : rawBottomLine;
 
   // Paragraph map is the primary view when notes exist
   const showParagraphMap = isCurrentPageModel && paragraphNotes.length > 0;
