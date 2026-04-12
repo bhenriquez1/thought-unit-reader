@@ -826,25 +826,32 @@ function resolveBlockSpans(
   const pageNorm = normalizeForSearch(pageText);
   const blockNorm = normalizeForSearch(blockText);
 
-  // 1. Paragraph-guided match — once we locate the host paragraph that contains
-  //    the block text, anchor the highlight to the ENTIRE paragraph so the left
-  //    panel shows a dominant block, not a thin sentence strip.
+  // 1. Paragraph-guided match — locate the host paragraph then anchor to the
+  //    specific sentence within it (not the full paragraph) so each highlight
+  //    covers a meaningful ~2-4 line block rather than an entire paragraph wall.
   if (paragraphIndex.length) {
     const blockPrefix = blockNorm.slice(0, 50);
     const hostParagraph = paragraphIndex.find((p) => p.normText.includes(blockPrefix));
     if (hostParagraph) {
-      // Verify the block text is actually within this paragraph before committing.
+      // Path A: exact raw match of first 40 chars within the paragraph bounds
       const needle = blockText.slice(0, 40);
       const rawIdx = pageText.indexOf(needle, hostParagraph.start);
       if (rawIdx >= hostParagraph.start && rawIdx <= hostParagraph.end) {
-        return [{ start: hostParagraph.start, end: hostParagraph.end }];
+        return [{ start: rawIdx, end: Math.min(rawIdx + blockText.length, hostParagraph.end) }];
       }
+      // Path B: normalized offset approximation within the paragraph
       const normOffset = hostParagraph.normText.indexOf(blockNorm.slice(0, 40));
       if (normOffset >= 0) {
-        return [{ start: hostParagraph.start, end: hostParagraph.end }];
+        const approxStart = hostParagraph.start + normOffset;
+        return [{ start: approxStart, end: Math.min(approxStart + blockText.length, hostParagraph.end) }];
       }
-      // Paragraph found but exact offset unclear — still use full paragraph bounds.
-      return [{ start: hostParagraph.start, end: hostParagraph.end }];
+      // Path C: paragraph found but offsets unclear — use first sentence-length
+      // chunk of the paragraph (avoids covering the entire wall of text).
+      const sentenceEnd = Math.min(
+        hostParagraph.start + Math.max(blockText.length, 180),
+        hostParagraph.end,
+      );
+      return [{ start: hostParagraph.start, end: sentenceEnd }];
     }
   }
 
