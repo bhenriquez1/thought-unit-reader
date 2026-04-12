@@ -42,7 +42,7 @@ export function buildGuidedReadView(args: {
       return {
         ...step,
         label: template?.label || step.label,
-        primaryText: template?.primary || step.primaryText || matchingStoryStep?.content || story.mainIdea,
+        primaryText: template?.primary || step.primaryText,
         secondaryText:
           template?.secondary ||
           step.secondaryText ||
@@ -128,7 +128,7 @@ function toCard(kind: OperatorCardKind, title: string, primary?: string | null, 
 }
 
 function buildOperatorCards(story: PageStory): OperatorCard[] {
-  const pattern = toCard("pattern", "Signal", story.patternBlock?.trigger || story.mainIdea, [story.patternBlock?.context]);
+  const pattern = toCard("pattern", "Signal", story.patternBlock?.trigger || story.mainIdeaBlock?.text, [story.patternBlock?.context]);
   const decision = toCard("decision", "Rule", story.decisionBlock?.action || story.bottomLineBlock?.text || story.applicationBlock?.text, [
     ...(story.decisionBlock?.nextSteps || []),
     story.decisionBlock?.avoid?.[0] ? `Avoid: ${story.decisionBlock.avoid[0]}` : undefined,
@@ -153,7 +153,7 @@ function operatorTemplates(story: PageStory, transformed: GuidedReadView) {
   const base = transformed.steps;
 
   const raw = {
-    signalPrimary:     story.patternBlock?.trigger || story.mainIdeaBlock?.text || story.mainIdea || base[0]?.primaryText || "",
+    signalPrimary:     story.patternBlock?.trigger || story.mainIdeaBlock?.text || base[0]?.primaryText || "",
     signalSecondary:   story.patternBlock?.context || story.mainIdeaBlock?.support.slice(0, 2).join(" — ") || story.support[0] || "",
     signalEvidence:    story.mainIdeaBlock?.evidence || [],
 
