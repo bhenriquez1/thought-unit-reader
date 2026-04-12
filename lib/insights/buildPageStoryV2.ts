@@ -18,6 +18,7 @@ import {
   canonicalTextKey,
   sentenceSafeSupport,
 } from "./textCleanup";
+import { buildParagraphNotes, type ParagraphNote } from "./buildParagraphNotes";
 
 // ---------------------------------------------------------------------------
 // Public type
@@ -42,6 +43,7 @@ export type PageStoryV2 = {
   supportBlocks: StoryBlockV2[];
 
   paragraphRoles: ParagraphRoleAssignment[];
+  paragraphNotes: ParagraphNote[];
   highlights:     StoryHighlight[];
 };
 
@@ -70,10 +72,11 @@ export function buildPageStoryV2(input: {
     assignments: paragraphRoles,
   });
 
-  const finalizedStory = finalizeStory(baseStory);
-  const highlights     = mapStoryToHighlights(finalizedStory);
+  const finalizedStory   = finalizeStory(baseStory);
+  const highlights       = mapStoryToHighlights(finalizedStory);
+  const paragraphNotes   = buildParagraphNotes(normalizedBlocks, paragraphRoles, pageClass);
 
-  return { ...finalizedStory, highlights };
+  return { ...finalizedStory, highlights, paragraphNotes };
 }
 
 // ---------------------------------------------------------------------------
@@ -95,7 +98,7 @@ type SynthesisCtx = {
   assignments: ParagraphRoleAssignment[];
 };
 
-function synthesizeStory(ctx: SynthesisCtx): Omit<PageStoryV2, "highlights"> {
+function synthesizeStory(ctx: SynthesisCtx): Omit<PageStoryV2, "highlights" | "paragraphNotes"> {
   const signalSrc    = topBlockForRole("primary_signal", ctx.blocks, ctx.assignments);
   const ruleSrc      = topBlockForRole("decision_rule",  ctx.blocks, ctx.assignments);
   const mechSrc      = topBlockForRole("mechanism",      ctx.blocks, ctx.assignments);
@@ -225,7 +228,7 @@ function makeBottomLine(
 // Finalization — deduplication
 // ---------------------------------------------------------------------------
 
-function finalizeStory(story: Omit<PageStoryV2, "highlights">): Omit<PageStoryV2, "highlights"> {
+function finalizeStory(story: Omit<PageStoryV2, "highlights" | "paragraphNotes">): Omit<PageStoryV2, "highlights" | "paragraphNotes"> {
   const seen = new Map<string, string>();
   const major: Array<StoryBlockV2 | null> = [
     story.signalBlock,
@@ -263,7 +266,7 @@ function finalizeStory(story: Omit<PageStoryV2, "highlights">): Omit<PageStoryV2
 // Highlight mapping
 // ---------------------------------------------------------------------------
 
-function mapStoryToHighlights(story: Omit<PageStoryV2, "highlights">): StoryHighlight[] {
+function mapStoryToHighlights(story: Omit<PageStoryV2, "highlights" | "paragraphNotes">): StoryHighlight[] {
   const out: StoryHighlight[] = [];
   if (story.signalBlock)    out.push({ blockId: story.signalBlock.id,    priority: "main",    semanticKind: "signal" });
   if (story.mechanismBlock) out.push({ blockId: story.mechanismBlock.id, priority: "main",    semanticKind: "mechanism" });
