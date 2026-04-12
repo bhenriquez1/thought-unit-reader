@@ -826,33 +826,25 @@ function resolveBlockSpans(
   const pageNorm = normalizeForSearch(pageText);
   const blockNorm = normalizeForSearch(blockText);
 
-  // 1. Paragraph-guided sentence match — identify which paragraph contains the
-  //    block text, then locate the exact sentence span within it for tight anchoring.
-  //    Returning the full paragraph creates an overly broad "wash" highlight, so we
-  //    search for the block text itself inside the host paragraph first.
+  // 1. Paragraph-guided match — once we locate the host paragraph that contains
+  //    the block text, anchor the highlight to the ENTIRE paragraph so the left
+  //    panel shows a dominant block, not a thin sentence strip.
   if (paragraphIndex.length) {
     const blockPrefix = blockNorm.slice(0, 50);
     const hostParagraph = paragraphIndex.find((p) => p.normText.includes(blockPrefix));
     if (hostParagraph) {
-      // Try exact text search within the host paragraph.
+      // Verify the block text is actually within this paragraph before committing.
       const needle = blockText.slice(0, 40);
       const rawIdx = pageText.indexOf(needle, hostParagraph.start);
       if (rawIdx >= hostParagraph.start && rawIdx <= hostParagraph.end) {
-        return [{ start: rawIdx, end: Math.min(rawIdx + blockText.length + 5, hostParagraph.end) }];
+        return [{ start: hostParagraph.start, end: hostParagraph.end }];
       }
-      // Try normalized search inside the host paragraph.
       const normOffset = hostParagraph.normText.indexOf(blockNorm.slice(0, 40));
       if (normOffset >= 0) {
-        const spanStart = hostParagraph.start + normOffset;
-        return [{ start: spanStart, end: Math.min(spanStart + blockText.length + 5, hostParagraph.end) }];
+        return [{ start: hostParagraph.start, end: hostParagraph.end }];
       }
-      // Fallback: clamp to a sentence-length window at the paragraph start
-      // rather than returning the entire paragraph.
-      const sentenceEnd = hostParagraph.text.search(/[.!?]\s/) + 1;
-      const windowEnd = sentenceEnd > 5
-        ? hostParagraph.start + sentenceEnd
-        : Math.min(hostParagraph.start + blockText.length + 20, hostParagraph.end);
-      return [{ start: hostParagraph.start, end: windowEnd }];
+      // Paragraph found but exact offset unclear — still use full paragraph bounds.
+      return [{ start: hostParagraph.start, end: hostParagraph.end }];
     }
   }
 
