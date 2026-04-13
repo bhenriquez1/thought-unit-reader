@@ -157,12 +157,29 @@ export function extractCompleteSentences(text: string): string[] {
   );
 }
 
+// Intro/label sentence patterns — these appear at the start of merged blocks and
+// carry structural labels ("Introduction:", "Note:", "Figure 1:") rather than
+// substantive content. We skip them and prefer the first non-label sentence.
+const INTRO_LABEL_PATTERN =
+  /^(introduction|note|figure|table|box|example|summary|overview|recall|key|definition|background|objective|purpose|goal|concept)\b/i;
+// Short label-colon form: "Signal: X" or "Rule: Y" where the tail is a short fragment
+const SHORT_LABEL_COLON = /^[A-Za-z][A-Za-z\s]{1,20}:\s*\S/;
+
+function isIntroLabel(sentence: string): boolean {
+  if (INTRO_LABEL_PATTERN.test(sentence)) return true;
+  // Short label-colon where the total sentence is under 60 chars — likely a heading fragment
+  if (SHORT_LABEL_COLON.test(sentence) && sentence.length < 60) return true;
+  return false;
+}
+
 export function bestCompleteSentence(text: string): string | null {
   const sentences = extractCompleteSentences(text);
   if (!sentences.length) return null;
 
-  // Prefer the first complete sentence, conservative choice
-  return sentences[0];
+  // Prefer the first substantive sentence (skip structural intro/label sentences).
+  // Fall back to sentences[0] if every sentence looks like a label.
+  const substantive = sentences.find((s) => s.length >= 30 && !isIntroLabel(s));
+  return substantive ?? sentences[0];
 }
 
 export function isLikelyNoiseText(text: string): boolean {

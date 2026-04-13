@@ -1,5 +1,6 @@
 import { cleanSentence } from "@/lib/insights/sentenceCleanup";
 import { isRenderableSentence } from "@/lib/insights/isRenderableSentence";
+import { extractCompleteSentences } from "@/lib/insights/textCleanup";
 import type { PageInsightModel, ParagraphInsight } from "@/lib/insights/types";
 import type { PageStory } from "@/lib/insights/buildPageStory";
 import type { PageContentClass } from "@/lib/pdf/classifyPageContent";
@@ -590,12 +591,15 @@ function buildRoleMapCandidates(
 
     const { kind, priority, score } = roleToKindMapping(block.role);
 
+    // Use the first complete sentence as the highlight needle so resolveBlockSpans
+    // can locate a precise sentence span instead of a full-paragraph span.
+    const firstSentence = extractCompleteSentences(block.text)[0] ?? block.text.slice(0, 120);
     added.push({
       id: `role-${block.paragraphIndex}-${pageNumber}`,
       priority,
       kind,
       source: "paragraph_cluster",
-      text: block.text,
+      text: firstSentence,
       shortLabel: shortLabelForRole(block.role),
       support: [],
       evidence: [],
@@ -845,12 +849,12 @@ function resolveBlockSpans(
         const approxStart = hostParagraph.start + normOffset;
         return [{ start: approxStart, end: Math.min(approxStart + blockText.length, hostParagraph.end) }];
       }
-      // Path C: paragraph found but offsets unclear — use first sentence-length
-      // chunk of the paragraph (avoids covering the entire wall of text).
-      const sentenceEnd = Math.min(
-        hostParagraph.start + Math.max(blockText.length, 180),
-        hostParagraph.end,
-      );
+      // Path C: paragraph found but offsets unclear — use block text length capped
+      // at 50% of the host paragraph to avoid painting the entire paragraph region.
+      // This keeps the highlight to roughly one sentence even when blockText is long.
+      const paragraphLen = hostParagraph.end - hostParagraph.start;
+      const spanLen = Math.min(blockText.length, Math.floor(paragraphLen * 0.5));
+      const sentenceEnd = Math.min(hostParagraph.start + Math.max(spanLen, 60), hostParagraph.end);
       return [{ start: hostParagraph.start, end: sentenceEnd }];
     }
   }

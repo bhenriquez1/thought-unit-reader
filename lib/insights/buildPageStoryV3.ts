@@ -138,16 +138,22 @@ function synthesizeStoryBlocks(
   pageNumber: number,
 ): Pick<PageStoryV3, "signalBlock" | "ruleBlock" | "mechanismBlock" | "actionBlock" | "trapBlock" | "bottomLineBlock"> {
   const seen = new Set<string>();
+  const usedSourceBlocks = new Set<string>();
 
   function pickFirst(
     predicate: (n: ParagraphNoteV3) => boolean,
   ): ParagraphNoteV3 | null {
-    return notes.find((n) => predicate(n) && !seen.has(canonicalTextKey(n.summarySentence))) ?? null;
+    return notes.find((n) =>
+      predicate(n)
+      && !seen.has(canonicalTextKey(n.summarySentence))
+      && !usedSourceBlocks.has(n.sourceBlockId)
+    ) ?? null;
   }
 
   function claim(note: ParagraphNoteV3 | null): ParagraphNoteV3 | null {
     if (!note) return null;
     seen.add(canonicalTextKey(note.summarySentence));
+    usedSourceBlocks.add(note.sourceBlockId);
     return note;
   }
 
