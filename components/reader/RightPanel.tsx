@@ -9,6 +9,8 @@ import type { SemanticHighlightKind } from "@/lib/highlights/extractPriorityHigh
 import type { PageStoryV2, StoryBlockV2 } from "@/lib/insights/buildPageStoryV2";
 import type { ParagraphNote, ReaderRole } from "@/lib/insights/buildParagraphNotes";
 import type { PageStoryV3, ParagraphNoteV3, ReadingStepV3, PageBriefV3 } from "@/lib/insights/buildPageStoryV3";
+import { buildNarrativeBlocks, type NarrativeBlock, type NarrativeBlockType } from "@/lib/insights/buildNarrativeBlocks";
+import { buildShadowRecall, type ShadowRecallModel } from "@/lib/insights/buildShadowRecall";
 
 interface RightPanelProps {
   ctx: ActivePageContext;
@@ -160,6 +162,23 @@ export function RightPanel({
   }, [intelligence.status, clearSelection]);
 
   // ---------------------------------------------------------------------------
+  // Narrative blocks + shadow recall (primary content layer)
+  // ---------------------------------------------------------------------------
+  const narrativeBlocks = useMemo((): NarrativeBlock[] => {
+    if (!isCurrentPageModel || !pageModel) return [];
+    return buildNarrativeBlocks(pageModel, intelligence.storyV3);
+  }, [isCurrentPageModel, pageModel, intelligence.storyV3]);
+
+  const shadowRecall = useMemo((): ShadowRecallModel | null => {
+    if (!isCurrentPageModel || !pageModel) return null;
+    return buildShadowRecall(pageModel, intelligence.storyV3 ?? undefined);
+  }, [isCurrentPageModel, pageModel, intelligence.storyV3]);
+
+  const [recallOpen, setRecallOpen] = useState(false);
+  // Reset recall reveal when page changes
+  useEffect(() => { setRecallOpen(false); }, [pageTruthKey]);
+
+  // ---------------------------------------------------------------------------
   // Rendering decision
   // ---------------------------------------------------------------------------
   const storyV3 = intelligence.storyV3;
@@ -180,15 +199,17 @@ export function RightPanel({
     ? rawBottomLine
     : null;
 
-  const showV3View       = isCurrentPageModel && v3Notes.length > 0;
-  const showV2Map        = isCurrentPageModel && !showV3View && v2Notes.length > 0;
-  const showV2Operator   = isCurrentPageModel && !showV3View && !showV2Map && Boolean(storyV2?.signalBlock);
-  const showGuidedView   = isCurrentPageModel && !showV3View && !showV2Map && !showV2Operator && Boolean(guidedView);
+  // Narrative view is now the primary view — replaces fragmented story cards
+  const showNarrativeView  = isCurrentPageModel && narrativeBlocks.length > 0;
+  const showV3View         = isCurrentPageModel && !showNarrativeView && v3Notes.length > 0;
+  const showV2Map          = isCurrentPageModel && !showNarrativeView && !showV3View && v2Notes.length > 0;
+  const showV2Operator     = isCurrentPageModel && !showNarrativeView && !showV3View && !showV2Map && Boolean(storyV2?.signalBlock);
+  const showGuidedView     = isCurrentPageModel && !showNarrativeView && !showV3View && !showV2Map && !showV2Operator && Boolean(guidedView);
 
-  // V3 header status label
+  // Header status label
   const headerStatus = intelligence.status === "loading"
     ? LOADING_PHASES[loadingPhase]
-    : showV3View && v3Brief
+    : (showNarrativeView || showV3View) && v3Brief
     ? v3Brief.pagePurpose
     : "Current page · ready";
 
@@ -208,6 +229,27 @@ export function RightPanel({
           <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">
             Could not build reading path for this page.
           </div>
+        )}
+
+        {/* ── 0. Narrative View (primary story layer) ───────────────────── */}
+        {showNarrativeView && (
+          <NarrativeBlocksView
+            blocks={narrativeBlocks}
+            onBlockClick={(text) => onEvidenceClick?.(text, undefined)}
+          />
+        )}
+        {showNarrativeView && v3Path.length > 0 && (
+          <ReadingPathView
+            steps={v3Path}
+            onStepClick={(text) => onEvidenceClick?.(text, undefined)}
+          />
+        )}
+        {showNarrativeView && shadowRecall && (
+          <ShadowRecallSection
+            recall={shadowRecall}
+            open={recallOpen}
+            onToggle={() => setRecallOpen((o) => !o)}
+          />
         )}
 
         {/* ── A. V3 Primary View ─────────────────────────────────────────── */}
@@ -668,4 +710,142 @@ function renderTruthFallback(reason: string, status: string, keyMismatch: boolea
     </div>
   );
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Narrative blocks — primary story layer
+// ---------------------------------------------------------------------------
+
+const NARRATIVE_STYLES: Record<NarrativeBlockType, { border: string; bg: string; label: string }> = {
+  core:        { border: "border-amber-400/40",    bg: "bg-amber-500/5",    label: "text-amber-300"   },
+  logic:       { border: "border-blue-400/40",     bg: "bg-blue-500/5",     label: "text-blue-300"    },
+  application: { border: "border-emerald-400/35",  bg: "bg-emerald-500/5",  label: "text-emerald-300" },
+};
+
+function NarrativeBlockCard({
+  block,
+  onBlockClick,
+}: {
+  block: NarrativeBlock;
+  onBlockClick: (text: string) => void;
+}) {
+  const s = NARRATIVE_STYLES[block.type];
+  return (
+    <div className={`rounded-2xl border ${s.border} ${s.bg} p-4`}>
+      <div className={`mb-2 text-[9px] font-semibold uppercase tracking-widest ${s.label}`}>
+        {block.title}
+      </div>
+      <button
+        onClick={() => onBlockClick(block.content)}
+        className="w-full text-left"
+      >
+        <p className="text-sm leading-relaxed text-slate-100">{block.content}</p>
+      </button>
+      {block.evidence.length > 0 && (
+        <div className="mt-2.5 space-y-1 border-t border-white/5 pt-2">
+          {block.evidence.map((e, i) => (
+            <button
+              key={i}
+              onClick={() => onBlockClick(e)}
+              className="w-full text-left text-xs leading-relaxed text-slate-400 transition-colors hover:text-slate-300"
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NarrativeBlocksView({
+  blocks,
+  onBlockClick,
+}: {
+  blocks: NarrativeBlock[];
+  onBlockClick: (text: string) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      {blocks.map((block) => (
+        <NarrativeBlockCard key={block.id} block={block} onBlockClick={onBlockClick} />
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Shadow recall — page-grounded recall prompts + reveal
+// ---------------------------------------------------------------------------
+
+function ShadowRecallSection({
+  recall,
+  open,
+  onToggle,
+}: {
+  recall: ShadowRecallModel;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-600/30 bg-slate-800/30">
+      <button
+        onClick={onToggle}
+        className="flex w-full items-center justify-between px-4 py-3 text-left"
+      >
+        <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">
+          Self-test · {recall.pageLabel}
+        </span>
+        <span className="text-[10px] text-slate-500">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="space-y-3 px-4 pb-4">
+          {/* Prompts */}
+          <div className="space-y-2">
+            {Object.entries(recall.prompts).map(([key, prompt]) => {
+              const revealKey = `${key}Truth` as keyof typeof recall.reveal;
+              const answer = typeof recall.reveal[revealKey] === "string"
+                ? (recall.reveal[revealKey] as string)
+                : null;
+              return (
+                <RecallItem key={key} prompt={prompt} answer={answer ?? ""} />
+              );
+            })}
+          </div>
+          {/* Fast recall cues */}
+          {recall.reveal.fastRecallCues.length > 0 && (
+            <div className="border-t border-white/5 pt-2">
+              <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-500">
+                Fast recall cues
+              </div>
+              <ul className="space-y-1">
+                {recall.reveal.fastRecallCues.map((cue, i) => (
+                  <li key={i} className="text-xs text-slate-400">· {cue}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecallItem({ prompt, answer }: { prompt: string; answer: string }) {
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <div className="rounded-xl border border-white/5 bg-slate-900/50 px-3 py-2">
+      <p className="text-xs text-slate-300">{prompt}</p>
+      {revealed ? (
+        <p className="mt-1.5 text-xs leading-relaxed text-slate-100">{answer}</p>
+      ) : (
+        <button
+          onClick={() => setRevealed(true)}
+          className="mt-1.5 text-[10px] text-slate-500 underline underline-offset-2 hover:text-slate-400"
+        >
+          Reveal
+        </button>
+      )}
+    </div>
+  );
 }
