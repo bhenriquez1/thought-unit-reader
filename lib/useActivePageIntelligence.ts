@@ -11,7 +11,8 @@ import { extractPriorityHighlights, type ExtractPriorityHighlightsResult } from 
 import { buildParagraphRoleMap } from "@/lib/highlights/paragraphRoleMap";
 import { buildPageStoryV2, type PageStoryV2 } from "@/lib/insights/buildPageStoryV2";
 import { buildPageStoryV3, type PageStoryV3 } from "@/lib/insights/buildPageStoryV3";
-import { buildNarrativePageView } from "@/lib/insights/buildNarrativePageView";
+import { buildNarrativePageView, type NarrativeBuildResult } from "@/lib/insights/buildNarrativePageView";
+import type { NarrativePageView as LegacyNarrativeView, SectionOutput } from "@/lib/insights/types";
 import { evaluatePageTruth, type PageTruthGateResult } from "@/lib/insights/evaluatePageTruth";
 import { buildPageStory } from "@/lib/insights/buildPageStory";
 import type { PageInsightModel } from "@/lib/insights/types";
@@ -228,7 +229,19 @@ export function useActivePageIntelligence({
         pageText: snapshot.pageText || "",
       });
 
-      const localNarrativePageView = buildNarrativePageView(localPageStoryV3);
+      const localCandidates = buildSentenceCandidatesFromPageModel(localPageModel, pageNumber);
+      const localNarrativeResult: NarrativeBuildResult | null = localCandidates.length > 0
+        ? buildNarrativePageView({
+            candidates: localCandidates,
+            pageNumber,
+            pageTitle: localPageModel.pageSummary,
+            maxSupportPerSection: 3,
+          })
+        : null;
+      // Bridge to legacy NarrativePageView format for extractPriorityHighlights
+      const localNarrativePageView: LegacyNarrativeView | null = localNarrativeResult
+        ? bridgeToLegacyNarrativeView(localNarrativeResult, pageNumber)
+        : null;
 
       const localParagraphRoleMap = buildParagraphRoleMap(
         snapshot.pageText || "",
@@ -374,5 +387,94 @@ export function useActivePageIntelligence({
     isCurrentPage,
     highlightTargets,
     limitedEvidence,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Adapter: PageInsightModel → SentenceCandidate[]
+// Temporary bridge until the backend stores native sentence candidates.
+// ---------------------------------------------------------------------------
+
+function buildSentenceCandidatesFromPageModel(
+  pageModel: any,
+  pageNumber: number
+): any[] {
+  const candidates: any[] = [];
+
+  (pageModel?.paragraphInsights || []).forEach((p: any, paragraphIndex: number) => {
+    const texts = [p.meaning, p.summary, p.takeaway, p.text].filter(Boolean);
+
+    texts.forEach((text: string, sentenceIndex: number) => {
+      candidates.push({
+        id: `${p.id || `p-${paragraphIndex}`}-s-${sentenceIndex}`,
+        text,
+        cleanedText: text,
+        normalizedText: text,
+        pageNumber,
+        paragraphId: p.id || `p-${paragraphIndex}`,
+        sentenceIndex,
+        paragraphIndex,
+        roleHints: {
+          isDefinition: /defined as|refers to|is called|means/i.test(text),
+          isMechanism: /because|mechanism|drives|through|via|causes/i.test(text),
+          isCause: /because|causes|leads to|results in/i.test(text),
+          isEffect: /results in|therefore|thus|leads to/i.test(text),
+          isContrast: /however|whereas|unlike|in contrast|versus|vs\./i.test(text),
+          isWarning: /avoid|trap|mistake|wrong|pitfall|do not/i.test(text),
+          isAction: /should|must|use|apply|identify|consider|remember/i.test(text),
+          isExample: /for example|for instance|e\.g\./i.test(text),
+          isEvidence: /because|this means|therefore|thus/i.test(text),
+          isSummaryLike: sentenceIndex === 0,
+        },
+        scores: {
+          salience: p.priorityScore ?? p.score ?? 0.5,
+          instructional: /should|must|identify|compare|apply|diagnosis|rule/i.test(text)
+            ? 0.8
+            : 0.35,
+          actionability: /should|must|use|apply|remember|avoid/i.test(text)
+            ? 0.8
+            : 0.25,
+          warning: /avoid|trap|mistake|wrong|pitfall|do not/i.test(text)
+            ? 0.85
+            : 0.1,
+          supportStrength: /because|therefore|results in|means|explains/i.test(text)
+            ? 0.8
+            : 0.35,
+          centrality: sentenceIndex === 0 ? 0.8 : 0.45,
+        },
+      });
+    });
+  });
+
+  return candidates;
+}
+
+// ---------------------------------------------------------------------------
+// Bridge: NarrativeBuildResult → legacy NarrativePageView (for extractPriorityHighlights)
+// ---------------------------------------------------------------------------
+
+function bridgeToLegacyNarrativeView(
+  result: NarrativeBuildResult,
+  pageNumber: number
+): LegacyNarrativeView {
+  function toSectionOutput(
+    section: "main_signal" | "rule" | "trap" | "grounded_support",
+    sel: NonNullable<NarrativeBuildResult["mainSignal"]> | undefined
+  ): SectionOutput | undefined {
+    if (!sel) return undefined;
+    return {
+      section,
+      primary: sel.primary ?? sel.anchor,
+      support: sel.supporting,
+      rejected: sel.rejected.map((r) => r.candidate),
+    };
+  }
+
+  return {
+    pageNumber,
+    mainSignal: toSectionOutput("main_signal", result.mainSignal),
+    rule: toSectionOutput("rule", result.rule),
+    trap: toSectionOutput("trap", result.trap),
+    groundedSupport: toSectionOutput("grounded_support", result.groundedSupport),
   };
 }
