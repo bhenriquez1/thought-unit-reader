@@ -489,3 +489,30 @@ export type PageStoryV3 = {
   bottomLineBlock: StoryBlockV3 | null;
   highlightPlan: HighlightPlanItemV3[];
 };
+
+// ---------------------------------------------------------------------------
+// Narrative page view — sentence-level section output
+// ---------------------------------------------------------------------------
+
+// SentenceCandidate is defined in buildSupportNeighborhood.ts and imported where needed.
+// SectionOutput and NarrativePageView are the UI-facing output types.
+
+export type SectionOutput = {
+  section: "main_signal" | "rule" | "trap" | "grounded_support";
+  /** The primary sentence for this section. Absent for grounded_support (support-only). */
+  primary?: import("./buildSupportNeighborhood").SentenceCandidate;
+  /** Supporting sentences (distinct from primary). */
+  support: import("./buildSupportNeighborhood").SentenceCandidate[];
+  /** Candidates that were considered but rejected. */
+  rejected: import("./buildSupportNeighborhood").SentenceCandidate[];
+  reason?: string;
+};
+
+export type NarrativePageView = {
+  pageNumber: number;
+  mainSignal?: SectionOutput;
+  rule?: SectionOutput;
+  trap?: SectionOutput;
+  groundedSupport?: SectionOutput;
+  noOutputReason?: string;
+};

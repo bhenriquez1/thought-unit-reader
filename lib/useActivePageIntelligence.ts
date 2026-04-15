@@ -11,6 +11,7 @@ import { extractPriorityHighlights, type ExtractPriorityHighlightsResult } from 
 import { buildParagraphRoleMap } from "@/lib/highlights/paragraphRoleMap";
 import { buildPageStoryV2, type PageStoryV2 } from "@/lib/insights/buildPageStoryV2";
 import { buildPageStoryV3, type PageStoryV3 } from "@/lib/insights/buildPageStoryV3";
+import { buildNarrativePageView } from "@/lib/insights/buildNarrativePageView";
 import { evaluatePageTruth, type PageTruthGateResult } from "@/lib/insights/evaluatePageTruth";
 import { buildPageStory } from "@/lib/insights/buildPageStory";
 import type { PageInsightModel } from "@/lib/insights/types";
@@ -227,6 +228,8 @@ export function useActivePageIntelligence({
         pageText: snapshot.pageText || "",
       });
 
+      const localNarrativePageView = buildNarrativePageView(localPageStoryV3);
+
       const localParagraphRoleMap = buildParagraphRoleMap(
         snapshot.pageText || "",
         localPageStory,
@@ -240,6 +243,7 @@ export function useActivePageIntelligence({
         // paragraph-level anchoring before falling back to sentence-level.
         paragraphTexts: snapshot.paragraphTexts?.length ? snapshot.paragraphTexts : undefined,
         paragraphRoleMap: localParagraphRoleMap.length ? localParagraphRoleMap : undefined,
+        narrativePageView: localNarrativePageView ?? undefined,
         pageClass: localPageClass,
         pageModel: localPageModel,
         pageStory: localPageStory,
