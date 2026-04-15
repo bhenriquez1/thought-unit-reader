@@ -342,14 +342,13 @@ export function useActivePageIntelligence({
       evidence: item.evidence?.length ? item.evidence : undefined,
     } satisfies HighlightTarget));
 
-    // Drop weak-level items — they produce near-invisible overlays that
-    // contribute to visual noise without adding reading guidance.
-    // Cap at 6 total (3 dominant + 3 supporting) so the left panel shows
-    // a clear hierarchy rather than washing the full page with tints.
+    // Cap: 3 main + 3 support + 2 weak so the left panel shows a clear
+    // hierarchy without washing the full page with overlapping tints.
     if (priority.length) {
-      const dominant  = priority.filter((t) => t.level === "high_yield").slice(0, 3);
-      const subdued   = priority.filter((t) => t.level === "supporting").slice(0, 3);
-      return [...dominant, ...subdued];
+      const dominant = priority.filter((t) => t.level === "high_yield").slice(0, 3);
+      const subdued  = priority.filter((t) => t.level === "supporting").slice(0, 3);
+      const faint    = priority.filter((t) => t.level === "weak").slice(0, 2);
+      return [...dominant, ...subdued, ...faint];
     }
     return derived.filter((t) => t.level !== "weak").slice(0, 4);
   }, [signals, pageNumber, audience, limitedEvidence, priorityHighlights]);

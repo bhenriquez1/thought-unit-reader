@@ -21,40 +21,41 @@ export default function PdfEvidenceOverlay({
 }) {
   return (
     <div className="pointer-events-none absolute inset-0 z-20">
-      {rects.map((rect) => (
-        <button
-          key={rect.id}
-          type="button"
-          onClick={() => onFocus?.(rect.id)}
-          className={`pointer-events-auto absolute rounded-sm transition-shadow ${
-            // Border thickness is driven by level so high_yield always dominates
-            // supporting regardless of semantic kind.
-            rect.level === "high_yield" ? "border-2"
-              : rect.level === "supporting" ? "border"
-              : "border-0"
-          } ${
-            // Fill color + border color + shadow from semantic kind.
-            // mechanism gets an outer glow (not just inset) so it lifts off the page.
-            // supporting level without a semantic kind gets a visible thin border so
-            // it reads as an intentional highlight rather than a faint wash.
-            rect.semanticKind === "clinical"
-              ? "bg-rose-400/55 border-rose-500/50"
-              : rect.semanticKind === "mechanism"
-              ? "bg-amber-200/60 border-amber-400/50 shadow-[0_0_6px_rgba(251,191,36,0.55),inset_0_0_0_1px_rgba(251,191,36,0.4)]"
-              : rect.semanticKind === "comparison"
-              ? "bg-sky-200/50 border-sky-400/40"
-              : rect.semanticKind === "application"
-              ? "bg-blue-200/45 border-blue-400/35"
-              : rect.level === "high_yield"
-              ? "bg-amber-200/60 border-amber-400/50 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.4)]"
-              : rect.level === "supporting"
-              ? "bg-blue-200/40 border-blue-400/25"
-              : "bg-slate-200/20"
-          } ${focusedId === rect.id ? "ring-2 ring-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.7)]" : ""}`}
-          style={{ top: rect.top, left: rect.left, width: rect.width, height: rect.height }}
-          aria-label="Evidence highlight"
-        />
-      ))}
+      {rects.map((rect) => {
+        const focused = focusedId === rect.id;
+        return (
+          <button
+            key={rect.id}
+            type="button"
+            onClick={() => onFocus?.(rect.id)}
+            className={`pointer-events-auto absolute rounded-sm transition-colors ${priorityClassName(rect.level, focused)}`}
+            style={{ top: rect.top, left: rect.left, width: rect.width, height: rect.height }}
+            aria-label="Evidence highlight"
+          />
+        );
+      })}
     </div>
   );
+}
+
+function priorityClassName(
+  level: OverlayRect["level"],
+  focused: boolean
+): string {
+  switch (level) {
+    case "high_yield":
+      return focused
+        ? "bg-emerald-400/45 ring-2 ring-emerald-200/90 shadow-[0_0_0_1px_rgba(52,211,153,0.35)]"
+        : "bg-emerald-400/28 ring-1 ring-emerald-300/70";
+    case "supporting":
+      return focused
+        ? "bg-sky-400/35 ring-2 ring-sky-200/80 shadow-[0_0_0_1px_rgba(56,189,248,0.28)]"
+        : "bg-sky-400/20 ring-1 ring-sky-300/40";
+    case "weak":
+      return focused
+        ? "bg-slate-300/28 ring-2 ring-slate-100/60"
+        : "bg-slate-300/14 ring-1 ring-slate-200/18";
+    default:
+      return "bg-yellow-300/20";
+  }
 }
