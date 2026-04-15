@@ -11,8 +11,8 @@ import type { ParagraphNote, ReaderRole } from "@/lib/insights/buildParagraphNot
 import type { PageStoryV3, ParagraphNoteV3, ReadingStepV3, PageBriefV3 } from "@/lib/insights/buildPageStoryV3";
 import { buildNarrativeBlocks, type NarrativeBlock, type NarrativeBlockType } from "@/lib/insights/buildNarrativeBlocks";
 import { buildShadowRecall, type ShadowRecallModel } from "@/lib/insights/buildShadowRecall";
-import { buildNarrativePageView } from "@/lib/insights/buildNarrativePageView";
-import type { NarrativePageView, SectionOutput } from "@/lib/insights/types";
+import { buildNarrativePageView, type NarrativeBuildResult } from "@/lib/insights/buildNarrativePageView";
+import type { NarrativeSection } from "@/lib/insights/materializeNarrativeSupport";
 
 interface RightPanelProps {
   ctx: ActivePageContext;
@@ -167,10 +167,17 @@ export function RightPanel({
   // Narrative blocks + shadow recall (primary content layer)
   // ---------------------------------------------------------------------------
   // Sentence-level narrative view — primary story layer (4 semantic sections)
-  const narrativePageView = useMemo((): NarrativePageView | null => {
-    if (!isCurrentPageModel || !intelligence.storyV3) return null;
-    return buildNarrativePageView(intelligence.storyV3);
-  }, [isCurrentPageModel, intelligence.storyV3]);
+  const narrativePageView = useMemo((): NarrativeBuildResult | null => {
+    if (!isCurrentPageModel || !pageModel) return null;
+    const candidates = buildSentenceCandidatesFromPageModel(pageModel, pageModel.pageNumber ?? 0);
+    if (!candidates.length) return null;
+    return buildNarrativePageView({
+      candidates,
+      pageNumber: pageModel.pageNumber ?? 0,
+      pageTitle: pageModel.pageSummary,
+      maxSupportPerSection: 3,
+    });
+  }, [isCurrentPageModel, pageModel]);
 
   // Legacy 3-block narrative (core/logic/application) — fallback only
   const narrativeBlocks = useMemo((): NarrativeBlock[] => {
@@ -210,7 +217,7 @@ export function RightPanel({
 
   // NarrativePageView = primary: sentence-level semantic section view
   const showNarrativePageView = isCurrentPageModel && Boolean(
-    narrativePageView?.mainSignal || narrativePageView?.rule || narrativePageView?.trap
+    narrativePageView?.narrative.sections.length
   );
   // Legacy 3-block narrative (core/logic/application) — fallback only
   const showNarrativeView  = isCurrentPageModel && !showNarrativePageView && narrativeBlocks.length > 0;
@@ -246,8 +253,8 @@ export function RightPanel({
 
         {/* ── 0a. Narrative Page View (primary — sentence-level sections) ── */}
         {showNarrativePageView && narrativePageView && (
-          <NarrativePageViewSection
-            view={narrativePageView}
+          <NarrativeSections
+            sections={narrativePageView.narrative.sections}
             onBlockClick={(text) => onEvidenceClick?.(text, undefined)}
           />
         )}
@@ -750,95 +757,49 @@ function renderTruthFallback(reason: string, status: string, keyMismatch: boolea
 // Narrative page view — sentence-level 4-section story
 // ---------------------------------------------------------------------------
 
-const NPV_STYLES = {
-  main_signal: {
-    border: "border-amber-400/40",
-    bg: "bg-amber-500/5",
-    label: "text-amber-300",
-    title: "What this page is saying",
-  },
-  rule: {
-    border: "border-blue-400/40",
-    bg: "bg-blue-500/5",
-    label: "text-blue-300",
-    title: "What to take from it",
-  },
-  trap: {
-    border: "border-rose-400/50",
-    bg: "bg-rose-500/8",
-    label: "text-rose-300",
-    title: "Where people go wrong",
-  },
-  grounded_support: {
-    border: "border-slate-600/40",
-    bg: "bg-slate-800/30",
-    label: "text-slate-400",
-    title: "Evidence from the page",
-  },
-} as const;
-
-function NarrativeSectionCard({
-  section,
+function NarrativeSections({
+  sections,
   onBlockClick,
 }: {
-  section: SectionOutput;
+  sections: NarrativeSection[];
   onBlockClick: (text: string) => void;
 }) {
-  const s = NPV_STYLES[section.section];
-  const hasPrimary = Boolean(section.primary?.text);
-  const supportLines = section.support.filter((c) => c.text && c.text !== section.primary?.text);
-
-  if (!hasPrimary && supportLines.length === 0) return null;
-
-  return (
-    <div className={`rounded-2xl border ${s.border} ${s.bg} p-4`}>
-      <div className={`mb-2 text-[9px] font-semibold uppercase tracking-widest ${s.label}`}>
-        {s.title}
-      </div>
-      {hasPrimary && section.primary && (
-        <button
-          onClick={() => onBlockClick(section.primary!.text)}
-          className="w-full text-left"
-        >
-          <p className="text-sm leading-relaxed text-slate-100">{section.primary.text}</p>
-        </button>
-      )}
-      {supportLines.length > 0 && (
-        <div className={`space-y-1 ${hasPrimary ? "mt-2.5 border-t border-white/5 pt-2" : ""}`}>
-          {supportLines.map((c, i) => (
-            <button
-              key={`${c.id}-${i}`}
-              onClick={() => onBlockClick(c.text)}
-              className="w-full text-left text-xs leading-relaxed text-slate-400 transition-colors hover:text-slate-300"
-            >
-              {c.text}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function NarrativePageViewSection({
-  view,
-  onBlockClick,
-}: {
-  view: NarrativePageView;
-  onBlockClick: (text: string) => void;
-}) {
-  const sections = [view.mainSignal, view.rule, view.trap, view.groundedSupport].filter(
-    (s): s is SectionOutput => Boolean(s)
-  );
   if (!sections.length) return null;
   return (
     <div className="space-y-3">
-      {sections.map((section) => (
-        <NarrativeSectionCard
-          key={section.section}
-          section={section}
-          onBlockClick={onBlockClick}
-        />
+      {sections.map((section, index) => (
+        <div
+          key={section.key}
+          className="rounded-2xl border border-white/10 bg-slate-900/70 p-4"
+        >
+          <div className="mb-2 flex items-center gap-2">
+            <div className="flex h-5 w-5 items-center justify-center rounded-full border border-emerald-400/40 bg-emerald-500/10 text-[10px] font-semibold text-emerald-200">
+              {index + 1}
+            </div>
+            <div className="text-[9px] font-semibold uppercase tracking-widest text-emerald-300">
+              {section.title}
+            </div>
+          </div>
+          <button
+            onClick={() => onBlockClick(section.lead)}
+            className="w-full text-left"
+          >
+            <p className="text-sm leading-relaxed text-slate-100">{section.lead}</p>
+          </button>
+          {section.support?.length > 0 && (
+            <div className="mt-2.5 space-y-1 border-t border-white/5 pt-2">
+              {section.support.map((item, idx) => (
+                <button
+                  key={`${section.key}-support-${idx}`}
+                  onClick={() => onBlockClick(item)}
+                  className="w-full text-left text-xs leading-relaxed text-slate-400 transition-colors hover:text-slate-300"
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       ))}
     </div>
   );
@@ -980,4 +941,52 @@ function RecallItem({ prompt, answer }: { prompt: string; answer: string }) {
       )}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Adapter: PageInsightModel → SentenceCandidate[]
+// Temporary bridge until the backend stores native sentence candidates.
+// ---------------------------------------------------------------------------
+
+function buildSentenceCandidatesFromPageModel(pageModel: any, pageNumber: number): any[] {
+  const candidates: any[] = [];
+
+  (pageModel?.paragraphInsights || []).forEach((p: any, paragraphIndex: number) => {
+    const texts = [p.meaning, p.summary, p.takeaway, p.text].filter(Boolean);
+
+    texts.forEach((text: string, sentenceIndex: number) => {
+      candidates.push({
+        id: `${p.id || `p-${paragraphIndex}`}-s-${sentenceIndex}`,
+        text,
+        cleanedText: text,
+        normalizedText: text,
+        pageNumber,
+        paragraphId: p.id || `p-${paragraphIndex}`,
+        sentenceIndex,
+        paragraphIndex,
+        roleHints: {
+          isDefinition: /defined as|refers to|is called|means/i.test(text),
+          isMechanism: /because|mechanism|drives|through|via|causes/i.test(text),
+          isCause: /because|causes|leads to|results in/i.test(text),
+          isEffect: /results in|therefore|thus|leads to/i.test(text),
+          isContrast: /however|whereas|unlike|in contrast|versus|vs\./i.test(text),
+          isWarning: /avoid|trap|mistake|wrong|pitfall|do not/i.test(text),
+          isAction: /should|must|use|apply|identify|consider|remember/i.test(text),
+          isExample: /for example|for instance|e\.g\./i.test(text),
+          isEvidence: /because|this means|therefore|thus/i.test(text),
+          isSummaryLike: sentenceIndex === 0,
+        },
+        scores: {
+          salience: p.priorityScore ?? p.score ?? 0.5,
+          instructional: /should|must|identify|compare|apply|diagnosis|rule/i.test(text) ? 0.8 : 0.35,
+          actionability: /should|must|use|apply|remember|avoid/i.test(text) ? 0.8 : 0.25,
+          warning: /avoid|trap|mistake|wrong|pitfall|do not/i.test(text) ? 0.85 : 0.1,
+          supportStrength: /because|therefore|results in|means|explains/i.test(text) ? 0.8 : 0.35,
+          centrality: sentenceIndex === 0 ? 0.8 : 0.45,
+        },
+      });
+    });
+  });
+
+  return candidates;
 }
