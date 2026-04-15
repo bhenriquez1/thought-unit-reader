@@ -1,7 +1,7 @@
 import { cleanSentence } from "@/lib/insights/sentenceCleanup";
 import { isRenderableSentence } from "@/lib/insights/isRenderableSentence";
 import { extractCompleteSentences } from "@/lib/insights/textCleanup";
-import type { PageInsightModel, ParagraphInsight } from "@/lib/insights/types";
+import type { PageInsightModel, ParagraphInsight, NarrativePageView } from "@/lib/insights/types";
 import type { PageStory } from "@/lib/insights/buildPageStory";
 import type { PageContentClass } from "@/lib/pdf/classifyPageContent";
 import type { ParagraphRoleBlock, ParagraphRole } from "@/lib/highlights/paragraphRoleMap";
@@ -70,6 +70,11 @@ export type ExtractPriorityHighlightsInput = {
   pageClass?: PageContentClass | string;
   pageModel?: PageInsightModel | null;
   pageStory?: PageStory | null;
+  /**
+   * Narrative page view from buildNarrativePageView — when provided, its sentence-level
+   * candidates are injected as high-priority highlights before the role-map candidates.
+   */
+  narrativePageView?: NarrativePageView | null;
   maxMain?: number;
   maxSupport?: number;
   maxWeak?: number;
@@ -143,6 +148,7 @@ export function extractPriorityHighlights({
   pageClass,
   pageModel,
   pageStory,
+  narrativePageView,
   maxMain = 2,
   maxSupport = 4,
   maxWeak = 2,
@@ -181,9 +187,16 @@ export function extractPriorityHighlights({
     usedFallback = true;
   }
 
+  // Add narrative-view sentence-level candidates (main signal, support, trap).
+  // These are preferred over role-map candidates because they are semantically
+  // deduplicated and targeted to single sentences rather than paragraphs.
+  if (narrativePageView) {
+    const narrativeCandidates = buildNarrativeViewCandidates(narrativePageView, candidates, pageNumber);
+    if (narrativeCandidates.length) candidates = [...candidates, ...narrativeCandidates];
+  }
+
   // Add paragraph-role candidates for paragraphs not already covered by
-  // story blocks. These produce full-paragraph highlights for primary/trap
-  // paragraphs that story extraction may have only partially captured.
+  // story blocks or narrative-view candidates.
   if (paragraphRoleMap?.length) {
     const roleCandidates = buildRoleMapCandidates(paragraphRoleMap, candidates, pageNumber);
     if (roleCandidates.length) candidates = [...candidates, ...roleCandidates];
@@ -556,6 +569,81 @@ function buildStoryCandidates(
 // ---------------------------------------------------------------------------
 // Paragraph-role map candidate builder
 // ---------------------------------------------------------------------------
+
+/**
+ * Convert a NarrativePageView into highlight candidates.
+ *
+ * Produces sentence-precision candidates:
+ *   mainSignal.primary → kind: "main_pattern"   priority: "main"
+ *   rule.primary       → kind: "support_decision" priority: "support"
+ *   trap.primary       → kind: "trap_warning"    priority: "support"
+ *   groundedSupport    → kind: "support_explanation" priority: "support"
+ *
+ * Only adds a candidate when not already covered by an existing candidate.
+ */
+function buildNarrativeViewCandidates(
+  view: NarrativePageView,
+  existingCandidates: CandidateBlock[],
+  pageNumber: number,
+): CandidateBlock[] {
+  const added: CandidateBlock[] = [];
+  let idx = 0;
+
+  function isAlreadyCovered(text: string): boolean {
+    const normNew = text.toLowerCase().replace(/[^\w\s]/g, " ").slice(0, 55).trim();
+    return existingCandidates.some((c) => {
+      const normExisting = c.text.toLowerCase().replace(/[^\w\s]/g, " ").slice(0, 55).trim();
+      return normNew.includes(normExisting.slice(0, 40)) || normExisting.includes(normNew.slice(0, 40));
+    });
+  }
+
+  function addCandidate(
+    text: string,
+    kind: SemanticHighlightKind,
+    priority: PriorityTier,
+    shortLabel: string,
+    score: number,
+  ) {
+    if (!text || text.length < 20) return;
+    if (isAlreadyCovered(text)) return;
+    added.push({
+      id: `npv-${pageNumber}-${idx++}`,
+      priority,
+      kind,
+      source: "story_pattern",
+      text,
+      shortLabel,
+      support: [],
+      evidence: [],
+      score,
+      confidence: 0.88,
+    });
+  }
+
+  // Main signal
+  if (view.mainSignal?.primary?.text) {
+    addCandidate(view.mainSignal.primary.text, "main_pattern", "main", "Important", BASE_KIND_SCORE.main_pattern);
+  }
+
+  // Rule
+  if (view.rule?.primary?.text) {
+    addCandidate(view.rule.primary.text, "support_decision", "support", "Support", BASE_KIND_SCORE.support_decision);
+  }
+
+  // Trap
+  if (view.trap?.primary?.text) {
+    addCandidate(view.trap.primary.text, "trap_warning", "support", "Warning", BASE_KIND_SCORE.trap_warning);
+  }
+
+  // Grounded support sentences
+  for (const c of (view.groundedSupport?.support ?? []).slice(0, 3)) {
+    if (c.text) {
+      addCandidate(c.text, "support_explanation", "support", "Support", BASE_KIND_SCORE.support_explanation - 2);
+    }
+  }
+
+  return added;
+}
 
 /**
  * Convert paragraph-role classifications into highlight candidates.

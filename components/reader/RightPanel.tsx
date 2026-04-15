@@ -11,6 +11,8 @@ import type { ParagraphNote, ReaderRole } from "@/lib/insights/buildParagraphNot
 import type { PageStoryV3, ParagraphNoteV3, ReadingStepV3, PageBriefV3 } from "@/lib/insights/buildPageStoryV3";
 import { buildNarrativeBlocks, type NarrativeBlock, type NarrativeBlockType } from "@/lib/insights/buildNarrativeBlocks";
 import { buildShadowRecall, type ShadowRecallModel } from "@/lib/insights/buildShadowRecall";
+import { buildNarrativePageView } from "@/lib/insights/buildNarrativePageView";
+import type { NarrativePageView, SectionOutput } from "@/lib/insights/types";
 
 interface RightPanelProps {
   ctx: ActivePageContext;
@@ -164,6 +166,13 @@ export function RightPanel({
   // ---------------------------------------------------------------------------
   // Narrative blocks + shadow recall (primary content layer)
   // ---------------------------------------------------------------------------
+  // Sentence-level narrative view — primary story layer (4 semantic sections)
+  const narrativePageView = useMemo((): NarrativePageView | null => {
+    if (!isCurrentPageModel || !intelligence.storyV3) return null;
+    return buildNarrativePageView(intelligence.storyV3);
+  }, [isCurrentPageModel, intelligence.storyV3]);
+
+  // Legacy 3-block narrative (core/logic/application) — fallback only
   const narrativeBlocks = useMemo((): NarrativeBlock[] => {
     if (!isCurrentPageModel || !pageModel) return [];
     return buildNarrativeBlocks(pageModel, intelligence.storyV3);
@@ -199,17 +208,21 @@ export function RightPanel({
     ? rawBottomLine
     : null;
 
-  // Narrative view is now the primary view — replaces fragmented story cards
-  const showNarrativeView  = isCurrentPageModel && narrativeBlocks.length > 0;
-  const showV3View         = isCurrentPageModel && !showNarrativeView && v3Notes.length > 0;
-  const showV2Map          = isCurrentPageModel && !showNarrativeView && !showV3View && v2Notes.length > 0;
-  const showV2Operator     = isCurrentPageModel && !showNarrativeView && !showV3View && !showV2Map && Boolean(storyV2?.signalBlock);
-  const showGuidedView     = isCurrentPageModel && !showNarrativeView && !showV3View && !showV2Map && !showV2Operator && Boolean(guidedView);
+  // NarrativePageView = primary: sentence-level semantic section view
+  const showNarrativePageView = isCurrentPageModel && Boolean(
+    narrativePageView?.mainSignal || narrativePageView?.rule || narrativePageView?.trap
+  );
+  // Legacy 3-block narrative (core/logic/application) — fallback only
+  const showNarrativeView  = isCurrentPageModel && !showNarrativePageView && narrativeBlocks.length > 0;
+  const showV3View         = isCurrentPageModel && !showNarrativePageView && !showNarrativeView && v3Notes.length > 0;
+  const showV2Map          = isCurrentPageModel && !showNarrativePageView && !showNarrativeView && !showV3View && v2Notes.length > 0;
+  const showV2Operator     = isCurrentPageModel && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && Boolean(storyV2?.signalBlock);
+  const showGuidedView     = isCurrentPageModel && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && !showV2Operator && Boolean(guidedView);
 
   // Header status label
   const headerStatus = intelligence.status === "loading"
     ? LOADING_PHASES[loadingPhase]
-    : (showNarrativeView || showV3View) && v3Brief
+    : (showNarrativePageView || showNarrativeView || showV3View) && v3Brief
     ? v3Brief.pagePurpose
     : "Current page · ready";
 
@@ -231,7 +244,28 @@ export function RightPanel({
           </div>
         )}
 
-        {/* ── 0. Narrative View (primary story layer) ───────────────────── */}
+        {/* ── 0a. Narrative Page View (primary — sentence-level sections) ── */}
+        {showNarrativePageView && narrativePageView && (
+          <NarrativePageViewSection
+            view={narrativePageView}
+            onBlockClick={(text) => onEvidenceClick?.(text, undefined)}
+          />
+        )}
+        {showNarrativePageView && v3Path.length > 0 && (
+          <ReadingPathView
+            steps={v3Path}
+            onStepClick={(text) => onEvidenceClick?.(text, undefined)}
+          />
+        )}
+        {showNarrativePageView && shadowRecall && (
+          <ShadowRecallSection
+            recall={shadowRecall}
+            open={recallOpen}
+            onToggle={() => setRecallOpen((o) => !o)}
+          />
+        )}
+
+        {/* ── 0b. Narrative View (legacy 3-block fallback) ──────────────── */}
         {showNarrativeView && (
           <NarrativeBlocksView
             blocks={narrativeBlocks}
@@ -710,6 +744,104 @@ function renderTruthFallback(reason: string, status: string, keyMismatch: boolea
     </div>
   );
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Narrative page view — sentence-level 4-section story
+// ---------------------------------------------------------------------------
+
+const NPV_STYLES = {
+  main_signal: {
+    border: "border-amber-400/40",
+    bg: "bg-amber-500/5",
+    label: "text-amber-300",
+    title: "What this page is saying",
+  },
+  rule: {
+    border: "border-blue-400/40",
+    bg: "bg-blue-500/5",
+    label: "text-blue-300",
+    title: "What to take from it",
+  },
+  trap: {
+    border: "border-rose-400/50",
+    bg: "bg-rose-500/8",
+    label: "text-rose-300",
+    title: "Where people go wrong",
+  },
+  grounded_support: {
+    border: "border-slate-600/40",
+    bg: "bg-slate-800/30",
+    label: "text-slate-400",
+    title: "Evidence from the page",
+  },
+} as const;
+
+function NarrativeSectionCard({
+  section,
+  onBlockClick,
+}: {
+  section: SectionOutput;
+  onBlockClick: (text: string) => void;
+}) {
+  const s = NPV_STYLES[section.section];
+  const hasPrimary = Boolean(section.primary?.text);
+  const supportLines = section.support.filter((c) => c.text && c.text !== section.primary?.text);
+
+  if (!hasPrimary && supportLines.length === 0) return null;
+
+  return (
+    <div className={`rounded-2xl border ${s.border} ${s.bg} p-4`}>
+      <div className={`mb-2 text-[9px] font-semibold uppercase tracking-widest ${s.label}`}>
+        {s.title}
+      </div>
+      {hasPrimary && section.primary && (
+        <button
+          onClick={() => onBlockClick(section.primary!.text)}
+          className="w-full text-left"
+        >
+          <p className="text-sm leading-relaxed text-slate-100">{section.primary.text}</p>
+        </button>
+      )}
+      {supportLines.length > 0 && (
+        <div className={`space-y-1 ${hasPrimary ? "mt-2.5 border-t border-white/5 pt-2" : ""}`}>
+          {supportLines.map((c, i) => (
+            <button
+              key={`${c.id}-${i}`}
+              onClick={() => onBlockClick(c.text)}
+              className="w-full text-left text-xs leading-relaxed text-slate-400 transition-colors hover:text-slate-300"
+            >
+              {c.text}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NarrativePageViewSection({
+  view,
+  onBlockClick,
+}: {
+  view: NarrativePageView;
+  onBlockClick: (text: string) => void;
+}) {
+  const sections = [view.mainSignal, view.rule, view.trap, view.groundedSupport].filter(
+    (s): s is SectionOutput => Boolean(s)
+  );
+  if (!sections.length) return null;
+  return (
+    <div className="space-y-3">
+      {sections.map((section) => (
+        <NarrativeSectionCard
+          key={section.section}
+          section={section}
+          onBlockClick={onBlockClick}
+        />
+      ))}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
