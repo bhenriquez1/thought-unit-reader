@@ -86,10 +86,10 @@ export interface TextRange {
 }
 
 export interface PageRect {
-  x: number;      // normalized 0..1
-  y: number;      // normalized 0..1
-  width: number;  // normalized 0..1
-  height: number; // normalized 0..1
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface EvidenceAnchor {
@@ -134,7 +134,7 @@ export interface ReadingGraphHeading {
   id: string;
   text: string;
   normalizedText: string;
-  level: number; // 1 = chapter, 2 = section, 3 = subsection...
+  level: number;
   pageNumber: number;
   blockId?: string;
   rects: PageRect[];
@@ -143,6 +143,14 @@ export interface ReadingGraphHeading {
   inToc: boolean;
   parentHeadingId?: string;
   sectionPath: string[];
+}
+
+export interface ReadingGraphBlockMetadata {
+  listStyle?: "bulleted" | "numbered";
+  hasNumericDensity?: boolean;
+  hasEquationDensity?: boolean;
+  hasBoilerplateSignal?: boolean;
+  estimatedColumns?: number;
 }
 
 export interface ReadingGraphBlock {
@@ -158,13 +166,7 @@ export interface ReadingGraphBlock {
   sectionPath: string[];
   sentenceIds: string[];
   confidence: number;
-  metadata?: {
-    listStyle?: "bulleted" | "numbered";
-    hasNumericDensity?: boolean;
-    hasEquationDensity?: boolean;
-    hasBoilerplateSignal?: boolean;
-    estimatedColumns?: number;
-  };
+  metadata?: ReadingGraphBlockMetadata;
 }
 
 export interface ReadingGraphSentence {
@@ -181,17 +183,14 @@ export interface ReadingGraphSentence {
   headingId?: string;
   sectionPath: string[];
 
-  // semantics
   role: SentenceRole;
   roleScore: number;
 
-  // ranking
   salienceScore: number;
   supportScore: number;
   narrativeScore: number;
   highlightScore: number;
 
-  // quality
   isRenderable: boolean;
   isBoilerplate: boolean;
   isFragment: boolean;
@@ -200,7 +199,6 @@ export interface ReadingGraphSentence {
   isContrastLike: boolean;
   isMechanismLike: boolean;
 
-  // linking
   anchorIds: string[];
   relatedSentenceIds: string[];
 }
@@ -259,10 +257,8 @@ export interface NarrativePageView {
   pageSummary: string;
   storyTitle: string;
 
-  // 1, 2, 3, 4 should feel separate but connected
   sections: NarrativeSection[];
 
-  // optional compact views for mode switching
   mainSignal?: NarrativeSection;
   rule?: NarrativeSection;
   mechanism?: NarrativeSection;
@@ -322,17 +318,19 @@ export interface ShadowRecallPrompt {
   rubric: string[];
 }
 
+export interface ShadowRecallAnswerKey {
+  keyConcept: string;
+  mechanism?: string;
+  distinction?: string;
+  testableRule?: string;
+  trap?: string;
+}
+
 export interface ShadowRecallModel {
   pageLabel: string;
   sectionLabel?: string;
   prompts: ShadowRecallPrompt[];
-  answerKey: {
-    keyConcept: string;
-    mechanism?: string;
-    distinction?: string;
-    testableRule?: string;
-    trap?: string;
-  };
+  answerKey: ShadowRecallAnswerKey;
   fastRecallCues: string[];
 }
 
@@ -350,6 +348,20 @@ export interface TocPageAnchor {
   label: string;
   inferred: boolean;
   confidence: number;
+}
+
+export interface ReadingGraphDiagnostics {
+  rawTextLength: number;
+  cleanedTextLength: number;
+  headingCount: number;
+  blockCount: number;
+  sentenceCount: number;
+  renderableSentenceCount: number;
+  boilerplateSentenceCount: number;
+  fragmentSentenceCount: number;
+  neighborhoodCount: number;
+  highlightCount: number;
+  notes: string[];
 }
 
 export interface PageReadingGraph {
@@ -375,19 +387,6 @@ export interface PageReadingGraph {
   priorityHighlights: PriorityHighlightSet;
   tocAnchors: TocPageAnchor[];
 
-  diagnostics?: {
-    rawTextLength: number;
-    cleanedTextLength: number;
-    headingCount: number;
-    blockCount: number;
-    sentenceCount: number;
-    renderableSentenceCount: number;
-    boilerplateSentenceCount: number;
-    fragmentSentenceCount: number;
-    neighborhoodCount: number;
-    highlightCount: number;
-    notes: string[];
-  };
-
+  diagnostics?: ReadingGraphDiagnostics;
   errors?: string[];
 }

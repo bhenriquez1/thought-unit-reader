@@ -51,12 +51,14 @@ import type {
   PriorityHighlight,
   PriorityHighlightSet,
   ShadowRecallModel,
+  ShadowRecallAnswerKey,
   ShadowRecallPrompt,
   GroundedSupportView,
   ReadingGraphStatus,
   ReadingGraphHeading,
   ReadingGraphBlock,
   ReadingGraphSentence,
+  ReadingGraphDiagnostics,
   EvidenceAnchor,
   SupportNeighborhood,
   TocPageAnchor,
@@ -357,7 +359,7 @@ function bridgeShadowRecall(
       distinction: old.reveal.distinctionTruth || undefined,
       testableRule: old.reveal.testPointTruth || undefined,
       trap: old.reveal.studentTrapTruth || undefined,
-    },
+    } satisfies ShadowRecallAnswerKey,
     fastRecallCues: old.reveal.fastRecallCues ?? [],
   };
 }
@@ -444,7 +446,7 @@ function buildDiagnostics(params: {
   neighborhoods: SupportNeighborhood[];
   priorityHighlights: PriorityHighlightSet;
   notes: string[];
-}) {
+}): ReadingGraphDiagnostics {
   return {
     rawTextLength: params.rawPageText.length,
     cleanedTextLength: params.cleanedText.length,
