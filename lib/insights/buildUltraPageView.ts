@@ -13,9 +13,12 @@ import {
   type SourceParagraph,
 } from "./extractConceptBlocks";
 import {
-  selectDistinctForRole,
-  isTooSimilar,
   TRAP_RE,
+  REASON_RE,
+  RULE_RE,
+  dedupeSections,
+  type SectionCandidate,
+  type SectionKind,
 } from "./dedupeSectionCandidates";
 
 // ---------------------------------------------------------------------------
@@ -58,6 +61,11 @@ export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelFor
       ...(p.coreSignals ?? []).map((t, i) => ({ text: t, score: p.priorityScore * (2 - i * 0.25) })),
       ...(p.takeaways   ?? []).map((t)    => ({ text: t, score: p.priorityScore })),
       ...(p.traps       ?? []).map((t)    => ({ text: t, score: p.priorityScore * 1.5 })),
+      ...(p.logicChains ?? []).flatMap((lc) => [
+        lc.because ? { text: lc.because, score: p.priorityScore * 2.5 } : null,
+        lc.trap    ? { text: lc.trap,    score: p.priorityScore * 1.8 } : null,
+        (lc.if && lc.then) ? { text: `${lc.if}, therefore ${lc.then}`, score: p.priorityScore * 1.5 } : null,
+      ]),
     ].filter((x): x is ScoredText => Boolean(x));
 
     const seen = new Set<string>();
@@ -100,10 +108,6 @@ function normalizeLine(text: string, fallback: string): string {
   return isRenderableSentence(cleaned) ? cleaned : fallback;
 }
 
-function renderable(s: string): boolean {
-  return isRenderableSentence(cleanSentence(s ?? ""));
-}
-
 interface BuiltFields {
   pattern: string;
   surgicalReason: string;
@@ -112,60 +116,47 @@ interface BuiltFields {
 }
 
 function buildConceptFields(concept: ConceptBlockInput, coreIdea: string): BuiltFields {
-  const pool = [
-    concept.anchorSentence,
-    ...concept.supportSentences,
-    ...concept.trapCandidates,
-  ].map((s) => cleanSentence(s)).filter(renderable);
+  const candidates: SectionCandidate[] = [];
+  let seq = 0;
 
-  const used: string[] = [coreIdea];
+  const add = (text: string, kind: SectionKind, score: number) => {
+    const t = cleanSentence(text);
+    if (t) candidates.push({ id: `${concept.id}-${kind}-${seq++}`, text: t, kind, score });
+  };
 
-  // PATTERN — concept-recognition sentence (what the reader should notice)
-  const patternCandidates = [concept.anchorSentence, ...concept.supportSentences];
-  const pattern = normalizeLine(
-    selectDistinctForRole(patternCandidates.map((s) => cleanSentence(s)), used, "pattern", renderable,
-      concept.anchorSentence || "This concept introduces a central idea on the page."),
-    "This concept introduces a central idea on the page."
-  );
-  used.push(pattern);
+  // PATTERN: anchor is the primary definition/descriptor
+  add(concept.anchorSentence, "pattern", 10);
+  concept.supportSentences.forEach((s, i) => add(s, "pattern", 5 - i * 0.5));
 
-  // SURGICAL REASON — mechanism / justification (why it matters)
-  const reasonCandidates = [...concept.supportSentences, concept.anchorSentence];
-  const surgicalReason = normalizeLine(
-    selectDistinctForRole(reasonCandidates.map((s) => cleanSentence(s)), used, "reason", renderable,
-      "This concept matters because it explains how the page's main idea works."),
-    "This concept matters because it explains how the page's main idea works."
-  );
-  used.push(surgicalReason);
+  // REASON: prefer causal/explanatory signals (logicChain.because flows here via supportSentences)
+  concept.supportSentences.forEach((s, i) => {
+    add(s, "reason", (REASON_RE.test(s) ? 9 : 4) - i * 0.5);
+  });
+  add(concept.anchorSentence, "reason", 2);
 
-  // TRAP — contrast / exception / confusion point (functionally different from above)
-  const trapCandidates = [
-    ...concept.trapCandidates,
-    // also check support sentences for trap signals
-    ...concept.supportSentences.filter((s) => TRAP_RE.test(s)),
-    ...pool.filter((s) => TRAP_RE.test(s)),
-  ];
-  const trapFallback = `Do not confuse ${concept.title.toLowerCase()} with nearby supporting details on the page.`;
-  const trap = normalizeLine(
-    trapCandidates.length
-      ? selectDistinctForRole(trapCandidates.map((s) => cleanSentence(s)), used, "trap", renderable, trapFallback)
-      : trapFallback,
-    trapFallback
-  );
-  used.push(trap);
+  // TRAP: contrast/exception sentences
+  concept.trapCandidates.forEach((s, i) => add(s, "trap", 10 - i));
+  concept.supportSentences.forEach((s) => { if (TRAP_RE.test(s)) add(s, "trap", 6); });
 
-  // RULE — operational takeaway (must differ from pattern, reason, trap)
-  const ruleCandidates = [
-    ...concept.supportSentences,
-    concept.anchorSentence,
-  ];
-  const rule = normalizeLine(
-    selectDistinctForRole(ruleCandidates.map((s) => cleanSentence(s)), used, "rule", renderable,
-      "Use this as the key rule from the page."),
-    "Use this as the key rule from the page."
-  );
+  // RULE: operational takeaway, prefer RULE_RE signals
+  concept.supportSentences.forEach((s, i) => {
+    add(s, "rule", (RULE_RE.test(s) ? 9 : 3) - i * 0.5);
+  });
+  add(concept.anchorSentence, "rule", 1);
 
-  return { pattern, surgicalReason, trap, rule };
+  const result = dedupeSections(candidates, coreIdea);
+
+  const fallbackPattern = cleanSentence(concept.anchorSentence) || "This concept introduces a central idea on the page.";
+  const fallbackReason = "This concept matters because it explains how the page's main idea works.";
+  const fallbackTrap = `Do not confuse ${concept.title.toLowerCase()} with nearby supporting details on the page.`;
+  const fallbackRule = "Use this as the key rule from the page.";
+
+  return {
+    pattern:        normalizeLine(result.selected.pattern?.text       ?? fallbackPattern, fallbackPattern),
+    surgicalReason: normalizeLine(result.selected.reason?.text        ?? fallbackReason,  fallbackReason),
+    trap:           normalizeLine(result.selected.trap?.text          ?? fallbackTrap,    fallbackTrap),
+    rule:           normalizeLine(result.selected.rule?.text          ?? fallbackRule,    fallbackRule),
+  };
 }
 
 function importanceLabel(level: ConceptBlockInput["importance"]): string {
@@ -181,36 +172,34 @@ function buildMiniTest(concepts: ConceptBlockInput[]): string[] {
 }
 
 function buildCompression(concepts: ConceptBlockInput[], coreIdea: string): string[] {
-  // Collect rule-quality candidates from all concepts, deduped
-  const allCandidates: string[] = [];
+  const candidates: SectionCandidate[] = [];
+  let seq = 0;
+
   for (const c of concepts) {
-    allCandidates.push(
-      cleanSentence(c.anchorSentence),
-      ...c.supportSentences.map((s) => cleanSentence(s)),
-    );
-  }
-
-  const rules: string[] = [];
-  const usedRules: string[] = [coreIdea];
-
-  for (const candidate of allCandidates) {
-    if (rules.length >= 3) break;
-    if (!renderable(candidate)) continue;
-    if (isTooSimilar(candidate, usedRules)) continue;
-    rules.push(candidate);
-    usedRules.push(candidate);
-  }
-
-  // Pad to at least 3 with distinct anchor sentences from concepts
-  for (let i = 0; i < concepts.length && rules.length < 3; i++) {
-    const s = cleanSentence(concepts[i].anchorSentence);
-    if (renderable(s) && !isTooSimilar(s, usedRules)) {
-      rules.push(s);
-      usedRules.push(s);
+    const anchor = cleanSentence(c.anchorSentence);
+    if (anchor) {
+      candidates.push({
+        id: `comp-${c.id}-anchor-${seq++}`,
+        text: anchor,
+        kind: "compression",
+        score: RULE_RE.test(anchor) ? 8 : 4,
+      });
     }
+    c.supportSentences.forEach((s) => {
+      const t = cleanSentence(s);
+      if (t) {
+        candidates.push({
+          id: `comp-${c.id}-sup-${seq++}`,
+          text: t,
+          kind: "compression",
+          score: RULE_RE.test(t) ? 7 : 3,
+        });
+      }
+    });
   }
 
-  return rules.slice(0, 3).map((r, i) => `Rule ${i + 1}: ${r}`);
+  const result = dedupeSections(candidates, coreIdea);
+  return result.compression.map((c, i) => `Rule ${i + 1}: ${c.text}`);
 }
 
 function inferPageTitle(page: PageModelForConcepts, concepts: ConceptBlockInput[]): string {
