@@ -15,6 +15,7 @@ import { buildNarrativePageView, type NarrativeBuildResult } from "@/lib/insight
 import type { NarrativeSection } from "@/lib/insights/materializeNarrativeSupport";
 import { extractConceptBlocks } from "@/lib/reader/extractConceptBlocks";
 import type { ConceptBlock, ReaderPageView } from "@/lib/reader/types";
+import { buildUltraPageView, type UltraPageView, type UltraConceptBlock } from "@/lib/insights/buildUltraPageView";
 
 interface RightPanelProps {
   ctx: ActivePageContext;
@@ -166,8 +167,14 @@ export function RightPanel({
   }, [intelligence.status, clearSelection]);
 
   // ---------------------------------------------------------------------------
-  // Concept blocks — primary content layer (universal reader)
+  // ULTRA view — primary content layer (universal reader)
   // ---------------------------------------------------------------------------
+  const ultraPageView = useMemo((): UltraPageView | null => {
+    if (!isCurrentPageModel || !pageModel) return null;
+    return buildUltraPageView(pageModel);
+  }, [isCurrentPageModel, pageModel]);
+
+  // Legacy concept blocks — kept for ConceptBlocksView fallback
   const readerPageView = useMemo((): ReaderPageView | null => {
     if (!isCurrentPageModel || !pageModel) return null;
     const view = extractConceptBlocks(pageModel);
@@ -226,17 +233,18 @@ export function RightPanel({
     ? rawBottomLine
     : null;
 
-  // Concept blocks = primary view for all content pages
-  const showConceptBlocks = isCurrentPageModel && Boolean(readerPageView);
-  // All narrative/story views are fallbacks when concept extraction yields nothing
-  const showNarrativePageView = isCurrentPageModel && !showConceptBlocks && Boolean(
+  // ULTRA = primary view; concept blocks = secondary; narrative/story = fallbacks
+  const showUltraView     = isCurrentPageModel && Boolean(ultraPageView);
+  const showConceptBlocks = isCurrentPageModel && !showUltraView && Boolean(readerPageView);
+  const showNarrativePageView = isCurrentPageModel && !showUltraView && !showConceptBlocks && Boolean(
     narrativePageView?.narrative.sections.length
   );
-  const showNarrativeView  = isCurrentPageModel && !showConceptBlocks && !showNarrativePageView && narrativeBlocks.length > 0;
-  const showV3View         = isCurrentPageModel && !showConceptBlocks && !showNarrativePageView && !showNarrativeView && v3Notes.length > 0;
-  const showV2Map          = isCurrentPageModel && !showConceptBlocks && !showNarrativePageView && !showNarrativeView && !showV3View && v2Notes.length > 0;
-  const showV2Operator     = isCurrentPageModel && !showConceptBlocks && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && Boolean(storyV2?.signalBlock);
-  const showGuidedView     = isCurrentPageModel && !showConceptBlocks && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && !showV2Operator && Boolean(guidedView);
+  const gate = !showUltraView && !showConceptBlocks;
+  const showNarrativeView  = isCurrentPageModel && gate && !showNarrativePageView && narrativeBlocks.length > 0;
+  const showV3View         = isCurrentPageModel && gate && !showNarrativePageView && !showNarrativeView && v3Notes.length > 0;
+  const showV2Map          = isCurrentPageModel && gate && !showNarrativePageView && !showNarrativeView && !showV3View && v2Notes.length > 0;
+  const showV2Operator     = isCurrentPageModel && gate && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && Boolean(storyV2?.signalBlock);
+  const showGuidedView     = isCurrentPageModel && gate && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && !showV2Operator && Boolean(guidedView);
 
   // Header status label
   const headerStatus = intelligence.status === "loading"
@@ -263,7 +271,15 @@ export function RightPanel({
           </div>
         )}
 
-        {/* ── PRIMARY: Concept Blocks View ─────────────────────────────── */}
+        {/* ── PRIMARY: ULTRA View ───────────────────────────────────────── */}
+        {showUltraView && ultraPageView && (
+          <UltraView
+            view={ultraPageView}
+            onAnchorClick={(text) => onEvidenceClick?.(text, undefined)}
+          />
+        )}
+
+        {/* ── SECONDARY: Concept Blocks View (ULTRA unavailable) ────────── */}
         {showConceptBlocks && readerPageView && (
           <ConceptBlocksView
             view={readerPageView}
@@ -352,6 +368,137 @@ export function RightPanel({
         )}
       </div>
     </aside>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ULTRA View — primary right-panel view
+// ---------------------------------------------------------------------------
+
+const ULTRA_IMPORTANCE_COLOR: Record<string, string> = {
+  "VERY HIGH": "text-amber-300",
+  "HIGH":      "text-blue-300",
+  "MEDIUM":    "text-sky-300",
+  "LOW":       "text-slate-500",
+};
+
+function UltraConceptCard({
+  block,
+  onAnchorClick,
+}: {
+  block: UltraConceptBlock;
+  onAnchorClick: (text: string) => void;
+}) {
+  const importanceColor = ULTRA_IMPORTANCE_COLOR[block.importance] ?? "text-slate-400";
+  return (
+    <button
+      onClick={() => onAnchorClick(block.pattern)}
+      className="w-full rounded-xl border border-white/10 bg-slate-900/60 p-4 text-left transition-colors hover:brightness-110"
+    >
+      {/* Header */}
+      <div className="mb-3 flex items-center gap-2">
+        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-[10px] font-bold text-amber-200">
+          {block.ordinal}
+        </span>
+        <span className="flex-1 text-[12px] font-semibold text-slate-100">{block.title}</span>
+        <span className={`text-[9px] font-semibold uppercase tracking-wider ${importanceColor}`}>
+          {block.importance}
+        </span>
+      </div>
+
+      {/* Fields */}
+      <div className="space-y-2 text-xs leading-relaxed">
+        <div className="flex gap-2">
+          <span className="w-4 shrink-0 font-semibold text-slate-500">P</span>
+          <span className="text-slate-200">{block.pattern}</span>
+        </div>
+        <div className="flex gap-2">
+          <span className="w-4 shrink-0 text-yellow-400">⚡</span>
+          <span className="text-slate-300">{block.surgicalReason}</span>
+        </div>
+        <div className="flex gap-2">
+          <span className="w-4 shrink-0 text-rose-400">❗</span>
+          <span className="text-slate-300">{block.trap}</span>
+        </div>
+        <div className="flex gap-2">
+          <span className="w-4 shrink-0 text-orange-400">🔥</span>
+          <span className="text-slate-200">{block.rule}</span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function UltraView({
+  view,
+  onAnchorClick,
+}: {
+  view: UltraPageView;
+  onAnchorClick: (text: string) => void;
+}) {
+  const [miniTestOpen, setMiniTestOpen] = useState(false);
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div>
+        <div className="text-[9px] font-semibold uppercase tracking-widest text-emerald-400">
+          {view.subtitle}
+        </div>
+        <div className="mt-0.5 text-[11px] font-semibold text-slate-300">{view.title}</div>
+      </div>
+
+      {/* Core Idea */}
+      <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
+        <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-amber-400">
+          Core Idea
+        </div>
+        <p className="text-sm font-medium leading-relaxed text-slate-100">{view.coreIdea}</p>
+      </div>
+
+      {/* Concept blocks */}
+      <div className="space-y-2">
+        {view.blocks.map((block) => (
+          <UltraConceptCard key={block.ordinal} block={block} onAnchorClick={onAnchorClick} />
+        ))}
+      </div>
+
+      {/* Mini Test */}
+      {view.miniTest.length > 0 && (
+        <div className="rounded-2xl border border-slate-600/30 bg-slate-800/30">
+          <button
+            onClick={() => setMiniTestOpen((o) => !o)}
+            className="flex w-full items-center justify-between px-4 py-3 text-left"
+          >
+            <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">
+              Mini Test
+            </span>
+            <span className="text-[10px] text-slate-500">{miniTestOpen ? "▲" : "▼"}</span>
+          </button>
+          {miniTestOpen && (
+            <div className="space-y-2 px-4 pb-4">
+              {view.miniTest.map((q, i) => (
+                <MiniTestItem key={i} question={q} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* STR Compression */}
+      {view.compression.length > 0 && (
+        <div className="rounded-xl border border-white/8 bg-slate-900/60 px-4 py-3">
+          <div className="mb-2 text-[9px] font-semibold uppercase tracking-widest text-slate-500">
+            STR Compression
+          </div>
+          <div className="space-y-1">
+            {view.compression.map((line, i) => (
+              <p key={i} className="text-xs leading-relaxed text-slate-400">{line}</p>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -8,6 +8,9 @@ import { deriveHighlightTargets } from "@/lib/highlightMapping";
 import { processPage } from "@/lib/insights/processPage";
 import { classifyPageContent, type PageContentClass } from "@/lib/pdf/classifyPageContent";
 import { extractPriorityHighlights, type ExtractPriorityHighlightsResult } from "@/lib/highlights/extractPriorityHighlights";
+import { buildHighlightBucketsFromConcepts } from "@/lib/highlights/buildHighlightBucketsFromConcepts";
+import { adaptPageInsightModel } from "@/lib/insights/buildUltraPageView";
+import { extractConceptBlocks as extractConceptBlocksCore } from "@/lib/insights/extractConceptBlocks";
 import { buildParagraphRoleMap } from "@/lib/highlights/paragraphRoleMap";
 import { buildPageStoryV2, type PageStoryV2 } from "@/lib/insights/buildPageStoryV2";
 import { buildPageStoryV3, type PageStoryV3 } from "@/lib/insights/buildPageStoryV3";
@@ -308,11 +311,27 @@ export function useActivePageIntelligence({
     ["cover", "contents", "chapter_opener", "section_opener", "copyright_frontmatter", "image_scan_heavy"].includes(signals.pageRole || "");
 
   const highlightTargets: HighlightTarget[] = useMemo(() => {
-    const derived = deriveHighlightTargets(signals, pageNumber, audience, limitedEvidence);
-    // Guard: only use priority highlights that belong to the current page.
-    // If async highlights for the previous page arrive after the new page has
-    // started rendering, priorityHighlights.pageNumber will differ from pageNumber
-    // and we skip them entirely to prevent cross-page contamination.
+    // Primary: concept-derived highlights — precise sentence-level, tier-matched to right panel
+    if (pageModel) {
+      const adapted = adaptPageInsightModel(pageModel);
+      const concepts = extractConceptBlocksCore(adapted);
+      if (concepts.length > 0) {
+        const buckets = buildHighlightBucketsFromConcepts(concepts);
+        return buckets.map((b, index) => ({
+          id: b.id,
+          page: pageNumber,
+          text: b.text,
+          normalizedText: b.normalizedText,
+          level: b.tier,
+          score: b.confidence,
+          sourceParagraphIndex: index,
+          kind: b.tier === "trap" ? "clinical" : b.tier === "important" ? "mechanism" : "application",
+          evidenceRefId: b.sentenceId ?? b.id,
+        } satisfies HighlightTarget));
+      }
+    }
+
+    // Fallback: priority highlights from extractPriorityHighlights pipeline
     const priorityItems = priorityHighlights.pageNumber === pageNumber
       ? priorityHighlights.all
       : [];
@@ -320,12 +339,10 @@ export function useActivePageIntelligence({
       id: `priority-${item.id}`,
       page: pageNumber,
       text: item.text,
-      // Normalize the same way SmartPDFViewer normalizes span text so matching succeeds
-      // on OCR noise, smart quotes, hyphenation, ligatures.
       normalizedText: item.text
         .toLowerCase()
-        .replace(/\u00ad/g, "")        // soft hyphens
-        .replace(/[^\w\s]/g, " ")      // punctuation → space
+        .replace(/\u00ad/g, "")
+        .replace(/[^\w\s]/g, " ")
         .replace(/\s+/g, " ")
         .trim(),
       level: item.kind.startsWith("trap") ? "trap"
@@ -334,19 +351,15 @@ export function useActivePageIntelligence({
         : "additional",
       score: item.confidence,
       sourceParagraphIndex: index,
-      // Map semantic kind to ParagraphKind for visual differentiation in overlay
       kind: item.kind.startsWith("trap") ? "clinical"
         : (item.kind === "main_mechanism" || item.kind === "main_pattern") ? "mechanism"
         : (item.kind === "support_distinction" || item.kind === "support_relation" || item.kind === "weak_caveat") ? "comparison"
         : "application",
       evidenceRefId: item.id,
-      // Forward fallback anchors so SmartPDFViewer can attempt secondary matches
       support: item.support?.length ? item.support : undefined,
       evidence: item.evidence?.length ? item.evidence : undefined,
     } satisfies HighlightTarget));
 
-    // Cap: 3 main + 3 support + 2 weak so the left panel shows a clear
-    // hierarchy without washing the full page with overlapping tints.
     if (priority.length) {
       const dominant = priority.filter((t) => t.level === "important").slice(0, 3);
       const traps    = priority.filter((t) => t.level === "trap").slice(0, 2);
@@ -354,8 +367,9 @@ export function useActivePageIntelligence({
       const faint    = priority.filter((t) => t.level === "additional").slice(0, 2);
       return [...dominant, ...traps, ...subdued, ...faint];
     }
+    const derived = deriveHighlightTargets(signals, pageNumber, audience, limitedEvidence);
     return derived.filter((t) => t.level !== "additional").slice(0, 4);
-  }, [signals, pageNumber, audience, limitedEvidence, priorityHighlights]);
+  }, [pageModel, signals, pageNumber, audience, limitedEvidence, priorityHighlights]);
 
   const highlightKey = `${documentId}:${pageNumber}`;
   const isCurrentPage = Boolean(
