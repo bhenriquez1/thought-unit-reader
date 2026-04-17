@@ -73,7 +73,7 @@ export type ParagraphKind =
   | "filler"
   | "unknown";
 
-export type HighlightLevel = "high_yield" | "supporting" | "weak";
+export type HighlightLevel = "important" | "support" | "additional" | "trap";
 
 export interface EvidenceReference {
   id: string;

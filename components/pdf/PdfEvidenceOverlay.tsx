@@ -6,7 +6,7 @@ export interface OverlayRect {
   left: number;
   width: number;
   height: number;
-  level: "high_yield" | "supporting" | "weak";
+  level: "important" | "support" | "additional" | "trap";
   semanticKind?: "clinical" | "mechanism" | "comparison" | "application";
 }
 
@@ -43,18 +43,22 @@ function priorityClassName(
   focused: boolean
 ): string {
   switch (level) {
-    case "high_yield":
+    case "important":
       return focused
-        ? "bg-emerald-400/45 ring-2 ring-emerald-200/90 shadow-[0_0_0_1px_rgba(52,211,153,0.35)]"
-        : "bg-emerald-400/28 ring-1 ring-emerald-300/70";
-    case "supporting":
+        ? "bg-amber-400/45 ring-2 ring-amber-200/90 shadow-[0_0_0_1px_rgba(251,191,36,0.35)]"
+        : "bg-amber-400/28 ring-1 ring-amber-300/70";
+    case "trap":
       return focused
-        ? "bg-sky-400/35 ring-2 ring-sky-200/80 shadow-[0_0_0_1px_rgba(56,189,248,0.28)]"
-        : "bg-sky-400/20 ring-1 ring-sky-300/40";
-    case "weak":
+        ? "bg-rose-400/40 ring-2 ring-rose-200/80 shadow-[0_0_0_1px_rgba(251,113,133,0.30)]"
+        : "bg-rose-400/22 ring-1 ring-rose-300/55";
+    case "support":
       return focused
-        ? "bg-slate-300/28 ring-2 ring-slate-100/60"
-        : "bg-slate-300/14 ring-1 ring-slate-200/18";
+        ? "bg-blue-400/35 ring-2 ring-blue-200/80 shadow-[0_0_0_1px_rgba(96,165,250,0.28)]"
+        : "bg-blue-400/20 ring-1 ring-blue-300/40";
+    case "additional":
+      return focused
+        ? "bg-sky-400/28 ring-2 ring-sky-100/60"
+        : "bg-sky-400/14 ring-1 ring-sky-200/30";
     default:
       return "bg-yellow-300/20";
   }
