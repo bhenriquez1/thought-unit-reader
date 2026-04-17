@@ -8,6 +8,9 @@ import { useReaderSync } from "@/lib/readerSync";
 import { usePDFLoading } from "@/lib/pdfLoadingManager";
 import type { HighlightTarget } from "@/lib/readerContracts";
 import PdfEvidenceOverlay, { type OverlayRect } from "@/components/pdf/PdfEvidenceOverlay";
+import type { HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
+import { matchNeighborhoodMemberToText, type NeighborhoodMember, type PageTextRecord } from "@/lib/highlights/matchNeighborhoodMemberToText";
+import { buildHighlightRects, type TextItemRect, type NeighborhoodMemberPlacement } from "@/lib/highlights/buildHighlightRects";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
 
@@ -46,6 +49,8 @@ export interface SmartPDFViewerProps {
   /** Focus and scroll to a snippet from right-panel evidence cards. */
   focusSnippet?: string | null;
   highlightTargets?: HighlightTarget[];
+  /** Structured neighborhood highlights — when present, uses layered matching pipeline */
+  highlightNeighborhoods?: HighlightNeighborhood[];
   focusedEvidenceId?: string | null;
   onEvidenceFocus?: (evidenceId: string) => void;
   /** External page change lock to prevent observer feedback loops while rendering */
@@ -121,6 +126,7 @@ export default function SmartPDFViewer({
   onActiveParagraphChange,
   focusSnippet,
   highlightTargets,
+  highlightNeighborhoods,
   focusedEvidenceId,
   onEvidenceFocus,
   isPageChanging = false,
@@ -244,46 +250,42 @@ export default function SmartPDFViewer({
 
   useEffect(() => {
     const container = viewerRef.current;
-    if (!container || !highlightTargets?.length) {
+    const hasNeighborhoods = (highlightNeighborhoods?.length ?? 0) > 0;
+    const hasTargets = (highlightTargets?.length ?? 0) > 0;
+
+    if (!container || (!hasNeighborhoods && !hasTargets)) {
       setOverlayRects([]);
       return;
     }
+
     let attempts = 0;
     let cancelled = false;
+
     const renderRects = () => {
       if (cancelled) return;
+
       const textLayer = container.querySelector('.react-pdf__Page__textContent, .textLayer');
       if (!textLayer) {
-        if (attempts < 10) {
-          attempts += 1;
-          window.setTimeout(renderRects, 120 + attempts * 40);
-        } else {
-          console.warn("SmartPDFViewer: highlight targets available but text layer was not mounted.");
-          setOverlayRects([]);
-        }
+        if (attempts < 10) { attempts += 1; window.setTimeout(renderRects, 120 + attempts * 40); }
+        else { setOverlayRects([]); }
         return;
       }
+
       const layerRect = (textLayer as HTMLElement).getBoundingClientRect();
       const spans = Array.from(textLayer.querySelectorAll("span")) as HTMLElement[];
+
       if (!spans.length) {
-        if (attempts < 10) {
-          attempts += 1;
-          window.setTimeout(renderRects, 120 + attempts * 40);
-        } else {
-          console.warn("SmartPDFViewer: text layer mounted but no spans for highlight matching.");
-          setOverlayRects([]);
-        }
+        if (attempts < 10) { attempts += 1; window.setTimeout(renderRects, 120 + attempts * 40); }
+        else { setOverlayRects([]); }
         return;
       }
-      const rects: OverlayRect[] = [];
 
-      // Build a concatenated-text index so we can match multi-word phrases
-      // across adjacent word-spans (react-pdf renders each word as its own span).
+      // Build span index — shared by both paths
       const spanNorm = spans.map((s) =>
         (s.textContent || "")
           .toLowerCase()
-          .replace(/\u00ad/g, "")      // soft hyphens
-          .replace(/[^\w\s]/g, " ")    // punctuation → space
+          .replace(/\u00ad/g, "")
+          .replace(/[^\w\s]/g, " ")
           .replace(/\s+/g, " ")
           .trim(),
       );
@@ -292,6 +294,73 @@ export default function SmartPDFViewer({
       for (const t of spanNorm) { offsets.push(cursor); cursor += t.length + 1; }
       const concatText = spanNorm.join(" ");
 
+      // ── NEIGHBORHOOD PATH ──────────────────────────────────────────────────
+      if (hasNeighborhoods) {
+        // Build TextItemRect[] — each span gets DOM coords + text offsets
+        const textItems: TextItemRect[] = spans.map((span, i) => {
+          const dr = span.getBoundingClientRect();
+          return {
+            id: `span-${i}`,
+            pageNumber: currentPage,
+            text: span.textContent || "",
+            normalizedText: spanNorm[i],
+            startOffset: offsets[i],
+            endOffset: offsets[i] + spanNorm[i].length,
+            x: dr.left - layerRect.left,
+            y: dr.top - layerRect.top,
+            width: dr.width,
+            height: Math.max(12, dr.height),
+          };
+        });
+
+        const pageTextRecord: PageTextRecord = {
+          rawText: concatText,
+          normalizedText: concatText,
+        };
+
+        const placements: NeighborhoodMemberPlacement[] = [];
+
+        for (const n of highlightNeighborhoods!) {
+          const members: Array<{ line: typeof n.anchor; kind: NeighborhoodMember["kind"] }> = [
+            { line: n.anchor,    kind: "anchor"     },
+            ...n.support.map((l) => ({ line: l, kind: "support"    as const })),
+            ...n.additional.map((l) => ({ line: l, kind: "additional" as const })),
+            ...(n.trap ? [{ line: n.trap, kind: "trap" as const }] : []),
+          ];
+
+          for (const { line, kind } of members) {
+            const member: NeighborhoodMember = { id: line.id, text: line.text, kind, sentenceId: line.sentenceId };
+            const result = matchNeighborhoodMemberToText(member, pageTextRecord);
+            placements.push({ memberId: line.id, kind, text: line.text, candidate: result.best });
+          }
+        }
+
+        const { overlays } = buildHighlightRects({ pageNumber: currentPage, placements, textItemRects: textItems });
+
+        const newRects: OverlayRect[] = overlays
+          .filter((o) => o.displayMode !== "hidden")
+          .flatMap((o, oi) =>
+            o.rects.map((r, ri) => ({
+              id: ri === 0 ? o.memberId : `${o.memberId}-r${ri}`,
+              top: r.y,
+              left: r.x,
+              width: r.width,
+              height: r.height,
+              level: o.tier as OverlayRect["level"],
+              semanticKind: (o.kind === "anchor" ? "mechanism" : o.kind === "trap" ? "clinical" : "application") as OverlayRect["semanticKind"],
+            }))
+          );
+
+        if (!newRects.length && attempts < 10) {
+          attempts += 1;
+          window.setTimeout(renderRects, 140 + attempts * 40);
+          return;
+        }
+        setOverlayRects(newRects);
+        return;
+      }
+
+      // ── FALLBACK: flat highlightTargets path (unchanged) ───────────────────
       function spansForNeedle(needle: string): HTMLElement[] {
         const idx = concatText.indexOf(needle);
         if (idx === -1) return [];
@@ -302,22 +371,16 @@ export default function SmartPDFViewer({
       function rectFromSpans(matched: HTMLElement[]): { top: number; left: number; width: number; height: number } | null {
         if (!matched.length) return null;
         const dr = matched.map((s) => s.getBoundingClientRect());
-        const top = Math.min(...dr.map((r) => r.top)) - layerRect.top;
-        const left = Math.min(...dr.map((r) => r.left)) - layerRect.left;
+        const top    = Math.min(...dr.map((r) => r.top))    - layerRect.top;
+        const left   = Math.min(...dr.map((r) => r.left))   - layerRect.left;
         const bottom = Math.max(...dr.map((r) => r.bottom)) - layerRect.top;
-        const right = Math.max(...dr.map((r) => r.right)) - layerRect.left;
+        const right  = Math.max(...dr.map((r) => r.right))  - layerRect.left;
         return { top, left, width: right - left, height: Math.max(14, bottom - top) };
       }
 
-      highlightTargets.forEach((target) => {
-        // Normalize needle the same way we normalized span text
-        const fullNeedle = target.normalizedText
-          .replace(/[^\w\s]/g, " ")
-          .replace(/\s+/g, " ")
-          .trim();
-
-        // Try progressively shorter prefixes: full → 6 words → 4 words → 3 words → 1 long keyword
-        const words = fullNeedle.split(" ").filter(Boolean);
+      const rects: OverlayRect[] = [];
+      highlightTargets!.forEach((target) => {
+        const words = target.normalizedText.replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
         const candidates = [
           words.slice(0, 8).join(" "),
           words.slice(0, 6).join(" "),
@@ -334,23 +397,11 @@ export default function SmartPDFViewer({
           if (matchedSpans.length) break;
         }
 
-        // Fallback: try support/evidence strings forwarded from the highlight block
         if (!matchedSpans.length && (target.support?.length || target.evidence?.length)) {
           for (const fallback of [...(target.support ?? []), ...(target.evidence ?? [])]) {
             if (!fallback || fallback.length < 12) continue;
-            const fallbackNorm = fallback
-              .toLowerCase()
-              .replace(/\u00ad/g, "")
-              .replace(/[^\w\s]/g, " ")
-              .replace(/\s+/g, " ")
-              .trim();
-            const fbWords = fallbackNorm.split(" ").filter(Boolean);
-            const fbCandidates = [
-              fbWords.slice(0, 6).join(" "),
-              fbWords.slice(0, 4).join(" "),
-              fbWords.filter((w) => w.length >= 4).slice(0, 3).join(" "),
-            ].filter((n) => n.length >= 4);
-            for (const needle of fbCandidates) {
+            const fbWords = fallback.toLowerCase().replace(/\u00ad/g, "").replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+            for (const needle of [fbWords.slice(0, 6).join(" "), fbWords.slice(0, 4).join(" "), fbWords.filter((w) => w.length >= 4).slice(0, 3).join(" ")].filter((n) => n.length >= 4)) {
               matchedSpans = spansForNeedle(needle);
               if (matchedSpans.length) break;
             }
@@ -359,26 +410,22 @@ export default function SmartPDFViewer({
         }
 
         if (!matchedSpans.length) return;
-
         const geo = rectFromSpans(matchedSpans.slice(0, 12));
         if (!geo) return;
         rects.push({ id: target.evidenceRefId, level: target.level, semanticKind: target.kind as OverlayRect["semanticKind"], ...geo });
       });
-      if (!rects.length && highlightTargets.length > 0 && attempts < 10) {
+
+      if (!rects.length && (highlightTargets?.length ?? 0) > 0 && attempts < 10) {
         attempts += 1;
         window.setTimeout(renderRects, 140 + attempts * 40);
         return;
       }
-      if (!rects.length && highlightTargets.length > 0) {
-        console.warn("SmartPDFViewer: highlight matching completed with zero overlays.");
-      }
       setOverlayRects(rects);
     };
+
     window.requestAnimationFrame(renderRects);
-    return () => {
-      cancelled = true;
-    };
-  }, [highlightTargets, currentPage]);
+    return () => { cancelled = true; };
+  }, [highlightTargets, highlightNeighborhoods, currentPage]);
 
   // Enhanced PDF loading with robust error handling
   const {

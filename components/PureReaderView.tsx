@@ -12,6 +12,7 @@ import React, { useCallback, useState } from 'react';
 import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 import type { HighlightTarget } from '@/lib/readerContracts';
+import type { HighlightNeighborhood } from '@/lib/highlights/buildHighlightNeighborhoods';
 
 interface PureReaderViewProps {
   fileUrl: string | null;
@@ -29,6 +30,7 @@ interface PureReaderViewProps {
   onActiveParagraphChange?: (snippet: string | null) => void;
   focusSnippet?: string | null;
   highlightTargets?: HighlightTarget[];
+  highlightNeighborhoods?: HighlightNeighborhood[];
   focusedEvidenceId?: string | null;
   onEvidenceFocus?: (id: string) => void;
   onOpenFocusCycle?: () => void;
@@ -50,6 +52,7 @@ export default function PureReaderView({
   onActiveParagraphChange,
   focusSnippet,
   highlightTargets,
+  highlightNeighborhoods,
   focusedEvidenceId,
   onEvidenceFocus,
   onOpenFocusCycle,
@@ -149,6 +152,7 @@ export default function PureReaderView({
           onActiveParagraphChange={onActiveParagraphChange}
           focusSnippet={focusSnippet}
           highlightTargets={highlightTargets}
+          highlightNeighborhoods={highlightNeighborhoods}
           focusedEvidenceId={focusedEvidenceId}
           onEvidenceFocus={onEvidenceFocus}
           isPageChanging={isPageChanging}

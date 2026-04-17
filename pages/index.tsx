@@ -732,6 +732,7 @@ export default function ThoughtUnitReader() {
     status: pageIntelligenceStatus,
     isCurrentPage: isCurrentIntelligencePage,
     highlightTargets,
+    highlightNeighborhoods,
     limitedEvidence,
     priorityHighlights: currentPriorityHighlights,
   } = useActivePageIntelligence({
@@ -2611,6 +2612,7 @@ export default function ThoughtUnitReader() {
                   onActiveParagraphChange={handleActiveParagraphChange}
                   focusSnippet={focusSnippet}
                   highlightTargets={highlightTargets}
+                  highlightNeighborhoods={highlightNeighborhoods}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
                   onOpenFocusCycle={() => {
