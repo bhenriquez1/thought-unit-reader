@@ -118,6 +118,11 @@ export function RightPanel({
   const pageTruth = intelligence.pageTruth;
   const isCurrentPageModel = Boolean(intelligence.isCurrentPage && pageModel && intelligence.status === "ready");
 
+  // Hard-reset selected concept block when page/document changes
+  const [selectedBlockIndex, setSelectedBlockIndex] = useState(0);
+  const renderKey = pageTruthKey;
+  useEffect(() => { setSelectedBlockIndex(0); }, [renderKey]);
+
   // Loading phase cycling
   const [loadingPhase, setLoadingPhase] = useState(0);
   const loadingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -275,6 +280,8 @@ export function RightPanel({
         {showUltraView && ultraPageView && (
           <UltraView
             view={ultraPageView}
+            selectedBlockIndex={selectedBlockIndex}
+            onSelectBlock={setSelectedBlockIndex}
             onAnchorClick={(text) => onEvidenceClick?.(text, undefined)}
           />
         )}
@@ -375,128 +382,114 @@ export function RightPanel({
 // ULTRA View — primary right-panel view
 // ---------------------------------------------------------------------------
 
-const ULTRA_IMPORTANCE_COLOR: Record<string, string> = {
-  "VERY HIGH": "text-amber-300",
-  "HIGH":      "text-blue-300",
-  "MEDIUM":    "text-sky-300",
-  "LOW":       "text-slate-500",
-};
-
-function UltraConceptCard({
-  block,
-  onAnchorClick,
-}: {
-  block: UltraConceptBlock;
-  onAnchorClick: (text: string) => void;
-}) {
-  const importanceColor = ULTRA_IMPORTANCE_COLOR[block.importance] ?? "text-slate-400";
+function PanelSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <button
-      onClick={() => onAnchorClick(block.pattern)}
-      className="w-full rounded-xl border border-white/10 bg-slate-900/60 p-4 text-left transition-colors hover:brightness-110"
-    >
-      {/* Header */}
-      <div className="mb-3 flex items-center gap-2">
-        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-[10px] font-bold text-amber-200">
-          {block.ordinal}
-        </span>
-        <span className="flex-1 text-[12px] font-semibold text-slate-100">{block.title}</span>
-        <span className={`text-[9px] font-semibold uppercase tracking-wider ${importanceColor}`}>
-          {block.importance}
-        </span>
+    <section className="rounded-2xl border border-white/10 bg-[#071224] px-4 py-4 shadow-sm">
+      <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#9dc4ff]">
+        {title}
       </div>
-
-      {/* Fields */}
-      <div className="space-y-2 text-xs leading-relaxed">
-        <div className="flex gap-2">
-          <span className="w-4 shrink-0 font-semibold text-slate-500">P</span>
-          <span className="text-slate-200">{block.pattern}</span>
-        </div>
-        <div className="flex gap-2">
-          <span className="w-4 shrink-0 text-yellow-400">⚡</span>
-          <span className="text-slate-300">{block.surgicalReason}</span>
-        </div>
-        <div className="flex gap-2">
-          <span className="w-4 shrink-0 text-rose-400">❗</span>
-          <span className="text-slate-300">{block.trap}</span>
-        </div>
-        <div className="flex gap-2">
-          <span className="w-4 shrink-0 text-orange-400">🔥</span>
-          <span className="text-slate-200">{block.rule}</span>
-        </div>
-      </div>
-    </button>
+      {children}
+    </section>
   );
+}
+
+function BulletLine({ children }: { children: React.ReactNode }) {
+  return <li className="leading-6 text-[14px] text-white/90">{children}</li>;
 }
 
 function UltraView({
   view,
+  selectedBlockIndex,
+  onSelectBlock,
   onAnchorClick,
 }: {
   view: UltraPageView;
+  selectedBlockIndex: number;
+  onSelectBlock: (i: number) => void;
   onAnchorClick: (text: string) => void;
 }) {
-  const [miniTestOpen, setMiniTestOpen] = useState(false);
+  const selectedBlock = view.blocks[selectedBlockIndex] ?? view.blocks[0] ?? null;
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div>
-        <div className="text-[9px] font-semibold uppercase tracking-widest text-emerald-400">
-          {view.subtitle}
+      {/* ULTRA header + Core Idea */}
+      <PanelSection title={view.title}>
+        <div className="mb-3 text-[12px] italic text-white/55">{view.subtitle}</div>
+        <div className="rounded-xl border border-amber-400/20 bg-[#0b1830] px-4 py-4">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-300">
+            🚀 Core Idea
+          </div>
+          <p className="text-[15px] leading-7 text-white/95">{view.coreIdea}</p>
         </div>
-        <div className="mt-0.5 text-[11px] font-semibold text-slate-300">{view.title}</div>
-      </div>
+      </PanelSection>
 
-      {/* Core Idea */}
-      <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
-        <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-amber-400">
-          Core Idea
+      {/* Concept blocks — tab selector + detail */}
+      <PanelSection title="Concept Blocks">
+        <div className="mb-4 flex flex-wrap gap-2">
+          {view.blocks.map((block, index) => (
+            <button
+              key={`${block.ordinal}-${block.title}`}
+              type="button"
+              onClick={() => { onSelectBlock(index); onAnchorClick(block.pattern); }}
+              className={[
+                "rounded-full border px-3 py-1.5 text-[12px] transition",
+                index === selectedBlockIndex
+                  ? "border-amber-400/40 bg-amber-400/10 text-amber-200"
+                  : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10",
+              ].join(" ")}
+            >
+              {block.ordinal} · {block.title}
+            </button>
+          ))}
         </div>
-        <p className="text-sm font-medium leading-relaxed text-slate-100">{view.coreIdea}</p>
-      </div>
 
-      {/* Concept blocks */}
-      <div className="space-y-2">
-        {view.blocks.map((block) => (
-          <UltraConceptCard key={block.ordinal} block={block} onAnchorClick={onAnchorClick} />
-        ))}
-      </div>
+        {selectedBlock && (
+          <div className="rounded-2xl border border-white/10 bg-[#0a1428] px-4 py-4">
+            <div className="mb-3 text-[16px] font-semibold text-white">
+              {selectedBlock.ordinal}️⃣ {selectedBlock.title}
+            </div>
+            <div className="space-y-4">
+              <div>
+                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#8fd3ff]">P — Pattern</div>
+                <p className="text-[14px] leading-6 text-white/90">{selectedBlock.pattern}</p>
+              </div>
+              <div>
+                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#ffd580]">⚡ Surgical Reason</div>
+                <p className="text-[14px] leading-6 text-white/90">{selectedBlock.surgicalReason}</p>
+              </div>
+              <div>
+                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#ff9da1]">❗ Trap</div>
+                <p className="text-[14px] leading-6 text-white/90">{selectedBlock.trap}</p>
+              </div>
+              <div>
+                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#ffb86b]">🔥 Rule</div>
+                <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
+              </div>
+              <div>
+                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#c7f59b]">🎯 Importance</div>
+                <p className="text-[14px] leading-6 text-white/90">{selectedBlock.importance}</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </PanelSection>
 
       {/* Mini Test */}
       {view.miniTest.length > 0 && (
-        <div className="rounded-2xl border border-slate-600/30 bg-slate-800/30">
-          <button
-            onClick={() => setMiniTestOpen((o) => !o)}
-            className="flex w-full items-center justify-between px-4 py-3 text-left"
-          >
-            <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">
-              Mini Test
-            </span>
-            <span className="text-[10px] text-slate-500">{miniTestOpen ? "▲" : "▼"}</span>
-          </button>
-          {miniTestOpen && (
-            <div className="space-y-2 px-4 pb-4">
-              {view.miniTest.map((q, i) => (
-                <MiniTestItem key={i} question={q} />
-              ))}
-            </div>
-          )}
-        </div>
+        <PanelSection title={`Mini Test · Page ${view.blocks[0] ? String(view.blocks.length) : "—"}`}>
+          <ul className="space-y-2">
+            {view.miniTest.map((q, i) => <BulletLine key={i}>{q}</BulletLine>)}
+          </ul>
+        </PanelSection>
       )}
 
       {/* STR Compression */}
       {view.compression.length > 0 && (
-        <div className="rounded-xl border border-white/8 bg-slate-900/60 px-4 py-3">
-          <div className="mb-2 text-[9px] font-semibold uppercase tracking-widest text-slate-500">
-            STR Compression
-          </div>
-          <div className="space-y-1">
-            {view.compression.map((line, i) => (
-              <p key={i} className="text-xs leading-relaxed text-slate-400">{line}</p>
-            ))}
-          </div>
-        </div>
+        <PanelSection title="STR Compression">
+          <ul className="space-y-2">
+            {view.compression.map((line, i) => <BulletLine key={i}>{line}</BulletLine>)}
+          </ul>
+        </PanelSection>
       )}
     </div>
   );
