@@ -5,6 +5,7 @@
 import { cleanSentence } from "./sentenceCleanup";
 import { isRenderableSentence } from "./isRenderableSentence";
 import { TRAP_RE, REASON_RE } from "./dedupeSectionCandidates";
+import { inferConceptTitle } from "./inferConceptTitle";
 
 export type ConceptImportance = "very_high" | "high" | "medium" | "low";
 
@@ -86,14 +87,6 @@ function hasRuleSignal(text: string): boolean {
   return REASON_RE.test(text) || RULE_MARKERS.some((m) => normalize(text).includes(m));
 }
 
-function titleCase(text: string): string {
-  return text
-    .trim()
-    .replace(/\s+/g, " ")
-    .split(" ")
-    .map((w) => (!w ? w : w.charAt(0).toUpperCase() + w.slice(1)))
-    .join(" ");
-}
 
 function sentenceScore(sentence: SourceSentence): number {
   const cleaned = cleanSentence(sentence.text);
@@ -141,15 +134,8 @@ function inferTitle(
   anchor: SourceSentence,
   headingMap: Map<string, SourceHeading>
 ): string {
-  if (paragraph.headingId && headingMap.has(paragraph.headingId)) {
-    return titleCase(headingMap.get(paragraph.headingId)!.text);
-  }
-  const cleaned = cleanSentence(anchor.text);
-  const colonMatch = cleaned.match(/^([^:]{4,80}):/);
-  if (colonMatch?.[1]) return titleCase(colonMatch[1]);
-  const firstChunk = cleaned.split(/[,.]/)[0]?.trim();
-  if (firstChunk && firstChunk.length >= 8 && firstChunk.length <= 60) return titleCase(firstChunk);
-  return "Key Concept";
+  const headingText = paragraph.headingId ? headingMap.get(paragraph.headingId)?.text : undefined;
+  return inferConceptTitle(cleanSentence(anchor.text), headingText);
 }
 
 function extractTrapCandidates(sentences: SourceSentence[]): string[] {
