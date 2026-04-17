@@ -5,7 +5,7 @@
 import { cleanSentence } from "@/lib/insights/sentenceCleanup";
 import { isRenderableSentence } from "@/lib/insights/isRenderableSentence";
 import type { ConceptBlockInput } from "@/lib/insights/extractConceptBlocks";
-import { REASON_RE, TRAP_RE } from "@/lib/insights/dedupeSectionCandidates";
+import { REASON_RE, TRAP_RE, isTooSimilar } from "@/lib/insights/dedupeSectionCandidates";
 
 export type HighlightTier = "important" | "support" | "additional" | "trap";
 
@@ -76,9 +76,9 @@ export function buildHighlightBucketsFromConcepts(
       }, seen);
     }
 
-    // SUPPORT (second) — second explanation sentence from same neighborhood, if available and distinct
+    // SUPPORT (second) — second explanation sentence, only if it carries a genuine REASON signal
     const secondSupport = concept.supportSentences.find(
-      (s) => s !== primarySupport && !TRAP_RE.test(s)
+      (s) => s !== primarySupport && REASON_RE.test(s) && !TRAP_RE.test(s)
     );
     if (secondSupport) {
       const idx = concept.supportSentences.indexOf(secondSupport);
@@ -93,10 +93,16 @@ export function buildHighlightBucketsFromConcepts(
       }, seen);
     }
 
-    // ADDITIONAL — a secondary detail from the neighborhood (3rd+ support sentence)
-    const additionalSentence = concept.supportSentences.find(
-      (s) => s !== primarySupport && s !== secondSupport && !TRAP_RE.test(s)
-    );
+    // ADDITIONAL — a secondary detail that is meaningfully distinct from anchor + support
+    const anchorNorm   = cleanSentence(concept.anchorSentence);
+    const support0Norm = primarySupport ? cleanSentence(primarySupport) : "";
+    const support1Norm = secondSupport  ? cleanSentence(secondSupport)  : "";
+    const additionalSentence = concept.supportSentences.find((s) => {
+      if (s === primarySupport || s === secondSupport) return false;
+      if (TRAP_RE.test(s)) return false;
+      const t = cleanSentence(s);
+      return !isTooSimilar(t, [anchorNorm, support0Norm, support1Norm].filter(Boolean));
+    });
     if (additionalSentence) {
       const idx = concept.supportSentences.indexOf(additionalSentence);
       pushUnique(out, {
@@ -110,9 +116,8 @@ export function buildHighlightBucketsFromConcepts(
       }, seen);
     }
 
-    // TRAP — real contrast/exception/confusion sentence from same neighborhood
-    const trapSentence = concept.trapCandidates[0]
-      ?? concept.supportSentences.find((s) => TRAP_RE.test(s));
+    // TRAP — only genuine contrast candidates from extractTrapCandidates (no TRAP_RE fallback)
+    const trapSentence = concept.trapCandidates[0];
     if (trapSentence) {
       pushUnique(out, {
         id: `trap-${concept.id}-0`,

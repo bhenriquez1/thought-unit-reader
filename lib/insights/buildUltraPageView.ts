@@ -20,6 +20,7 @@ import {
   type SectionCandidate,
   type SectionKind,
 } from "./dedupeSectionCandidates";
+import { buildCompressionRules } from "./buildCompressionRules";
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -171,36 +172,6 @@ function buildMiniTest(concepts: ConceptBlockInput[]): string[] {
   );
 }
 
-function buildCompression(concepts: ConceptBlockInput[], coreIdea: string): string[] {
-  const candidates: SectionCandidate[] = [];
-  let seq = 0;
-
-  for (const c of concepts) {
-    const anchor = cleanSentence(c.anchorSentence);
-    if (anchor) {
-      candidates.push({
-        id: `comp-${c.id}-anchor-${seq++}`,
-        text: anchor,
-        kind: "compression",
-        score: RULE_RE.test(anchor) ? 8 : 4,
-      });
-    }
-    c.supportSentences.forEach((s) => {
-      const t = cleanSentence(s);
-      if (t) {
-        candidates.push({
-          id: `comp-${c.id}-sup-${seq++}`,
-          text: t,
-          kind: "compression",
-          score: RULE_RE.test(t) ? 7 : 3,
-        });
-      }
-    });
-  }
-
-  const result = dedupeSections(candidates, coreIdea);
-  return result.compression.map((c, i) => `Rule ${i + 1}: ${c.text}`);
-}
 
 function inferPageTitle(page: PageModelForConcepts, concepts: ConceptBlockInput[]): string {
   if (page.pageTitle?.trim()) return page.pageTitle.trim();
@@ -233,12 +204,14 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
     };
   });
 
+  const usedFieldTexts = blocks.flatMap((b) => [b.pattern, b.surgicalReason, b.trap, b.rule]);
+
   return {
     title: `ULTRA – ${inferPageTitle(page, concepts)}`,
     subtitle: "STR + PDRM + Surgical Comprehension Engine",
     coreIdea,
     blocks,
     miniTest: buildMiniTest(concepts),
-    compression: buildCompression(concepts, coreIdea),
+    compression: buildCompressionRules(concepts, coreIdea, usedFieldTexts),
   };
 }
