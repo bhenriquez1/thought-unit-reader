@@ -13,6 +13,8 @@ import { buildNarrativeBlocks, type NarrativeBlock, type NarrativeBlockType } fr
 import { buildShadowRecall, type ShadowRecallModel } from "@/lib/insights/buildShadowRecall";
 import { buildNarrativePageView, type NarrativeBuildResult } from "@/lib/insights/buildNarrativePageView";
 import type { NarrativeSection } from "@/lib/insights/materializeNarrativeSupport";
+import { extractConceptBlocks } from "@/lib/reader/extractConceptBlocks";
+import type { ConceptBlock, ReaderPageView } from "@/lib/reader/types";
 
 interface RightPanelProps {
   ctx: ActivePageContext;
@@ -164,7 +166,16 @@ export function RightPanel({
   }, [intelligence.status, clearSelection]);
 
   // ---------------------------------------------------------------------------
-  // Narrative blocks + shadow recall (primary content layer)
+  // Concept blocks — primary content layer (universal reader)
+  // ---------------------------------------------------------------------------
+  const readerPageView = useMemo((): ReaderPageView | null => {
+    if (!isCurrentPageModel || !pageModel) return null;
+    const view = extractConceptBlocks(pageModel);
+    return view.isWeak ? null : view;
+  }, [isCurrentPageModel, pageModel]);
+
+  // ---------------------------------------------------------------------------
+  // Narrative blocks + shadow recall (fallback content layer)
   // ---------------------------------------------------------------------------
   // Sentence-level narrative view — primary story layer (4 semantic sections)
   const narrativePageView = useMemo((): NarrativeBuildResult | null => {
@@ -215,16 +226,17 @@ export function RightPanel({
     ? rawBottomLine
     : null;
 
-  // NarrativePageView = primary: sentence-level semantic section view
-  const showNarrativePageView = isCurrentPageModel && Boolean(
+  // Concept blocks = primary view for all content pages
+  const showConceptBlocks = isCurrentPageModel && Boolean(readerPageView);
+  // All narrative/story views are fallbacks when concept extraction yields nothing
+  const showNarrativePageView = isCurrentPageModel && !showConceptBlocks && Boolean(
     narrativePageView?.narrative.sections.length
   );
-  // Legacy 3-block narrative (core/logic/application) — fallback only
-  const showNarrativeView  = isCurrentPageModel && !showNarrativePageView && narrativeBlocks.length > 0;
-  const showV3View         = isCurrentPageModel && !showNarrativePageView && !showNarrativeView && v3Notes.length > 0;
-  const showV2Map          = isCurrentPageModel && !showNarrativePageView && !showNarrativeView && !showV3View && v2Notes.length > 0;
-  const showV2Operator     = isCurrentPageModel && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && Boolean(storyV2?.signalBlock);
-  const showGuidedView     = isCurrentPageModel && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && !showV2Operator && Boolean(guidedView);
+  const showNarrativeView  = isCurrentPageModel && !showConceptBlocks && !showNarrativePageView && narrativeBlocks.length > 0;
+  const showV3View         = isCurrentPageModel && !showConceptBlocks && !showNarrativePageView && !showNarrativeView && v3Notes.length > 0;
+  const showV2Map          = isCurrentPageModel && !showConceptBlocks && !showNarrativePageView && !showNarrativeView && !showV3View && v2Notes.length > 0;
+  const showV2Operator     = isCurrentPageModel && !showConceptBlocks && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && Boolean(storyV2?.signalBlock);
+  const showGuidedView     = isCurrentPageModel && !showConceptBlocks && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && !showV2Operator && Boolean(guidedView);
 
   // Header status label
   const headerStatus = intelligence.status === "loading"
@@ -251,7 +263,15 @@ export function RightPanel({
           </div>
         )}
 
-        {/* ── 0a. Narrative Page View (primary — sentence-level sections) ── */}
+        {/* ── PRIMARY: Concept Blocks View ─────────────────────────────── */}
+        {showConceptBlocks && readerPageView && (
+          <ConceptBlocksView
+            view={readerPageView}
+            onAnchorClick={(text) => onEvidenceClick?.(text, undefined)}
+          />
+        )}
+
+        {/* ── FALLBACK 0a. Narrative Page View ─────────────────────────── */}
         {showNarrativePageView && narrativePageView && (
           <NarrativeSections
             sections={narrativePageView.narrative.sections}
@@ -332,6 +352,199 @@ export function RightPanel({
         )}
       </div>
     </aside>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Concept Blocks View — universal reader primary view
+// ---------------------------------------------------------------------------
+
+const TIER_STYLES: Record<ConceptBlock["tier"], {
+  border: string; bg: string; badge: string; label: string; labelColor: string;
+}> = {
+  important: {
+    border: "border-amber-400/40",
+    bg: "bg-amber-500/5",
+    badge: "bg-amber-500/20 text-amber-200",
+    label: "Important",
+    labelColor: "text-amber-300",
+  },
+  support: {
+    border: "border-blue-400/40",
+    bg: "bg-blue-500/5",
+    badge: "bg-blue-500/20 text-blue-200",
+    label: "Support",
+    labelColor: "text-blue-300",
+  },
+  additional: {
+    border: "border-sky-400/35",
+    bg: "bg-sky-500/5",
+    badge: "bg-sky-500/20 text-sky-200",
+    label: "Additional",
+    labelColor: "text-sky-300",
+  },
+  trap: {
+    border: "border-rose-400/50",
+    bg: "bg-rose-500/8",
+    badge: "bg-rose-500/20 text-rose-200",
+    label: "Trap",
+    labelColor: "text-rose-300",
+  },
+};
+
+const IMPORTANCE_DOT: Record<ConceptBlock["importance"], string> = {
+  critical: "bg-amber-400",
+  high:     "bg-blue-400",
+  medium:   "bg-sky-400",
+  low:      "bg-slate-500",
+};
+
+function ConceptCard({
+  block,
+  index,
+  onAnchorClick,
+}: {
+  block: ConceptBlock;
+  index: number;
+  onAnchorClick: (text: string) => void;
+}) {
+  const s = TIER_STYLES[block.tier];
+  return (
+    <button
+      onClick={() => onAnchorClick(block.anchorText)}
+      className={`w-full rounded-xl border p-4 text-left transition-colors hover:brightness-110 ${s.border} ${s.bg}`}
+    >
+      {/* Header row */}
+      <div className="mb-3 flex items-center gap-2">
+        <span className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${s.badge}`}>
+          {index + 1}
+        </span>
+        <span className={`text-[9px] font-semibold uppercase tracking-wider ${s.labelColor}`}>
+          {s.label}
+        </span>
+        <span className={`ml-auto h-1.5 w-1.5 rounded-full ${IMPORTANCE_DOT[block.importance]}`} />
+      </div>
+
+      {/* Title */}
+      <p className="mb-2.5 text-[13px] font-semibold leading-snug text-slate-100">
+        {block.title}
+      </p>
+
+      {/* Fields */}
+      <div className="space-y-1.5 text-xs leading-relaxed">
+        {block.pattern && (
+          <div className="flex gap-2">
+            <span className="w-4 shrink-0 text-slate-500">P</span>
+            <span className="text-slate-200">{block.pattern}</span>
+          </div>
+        )}
+        {block.reason && (
+          <div className="flex gap-2">
+            <span className="w-4 shrink-0 text-yellow-400">⚡</span>
+            <span className="text-slate-300">{block.reason}</span>
+          </div>
+        )}
+        {block.trap && (
+          <div className="flex gap-2">
+            <span className="w-4 shrink-0 text-rose-400">❗</span>
+            <span className="text-slate-300">{block.trap}</span>
+          </div>
+        )}
+        {block.rule && (
+          <div className="flex gap-2">
+            <span className="w-4 shrink-0 text-orange-400">🔥</span>
+            <span className="text-slate-200">{block.rule}</span>
+          </div>
+        )}
+      </div>
+    </button>
+  );
+}
+
+function ConceptBlocksView({
+  view,
+  onAnchorClick,
+}: {
+  view: ReaderPageView;
+  onAnchorClick: (text: string) => void;
+}) {
+  const [miniTestOpen, setMiniTestOpen] = useState(false);
+
+  return (
+    <div className="space-y-4">
+      {/* Core Idea */}
+      {view.coreIdea && (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
+          <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-amber-400">
+            Core Idea
+          </div>
+          <p className="text-sm font-medium leading-relaxed text-slate-100">{view.coreIdea}</p>
+        </div>
+      )}
+
+      {/* Concept blocks */}
+      <div className="space-y-2">
+        {view.concepts.map((block, i) => (
+          <ConceptCard
+            key={block.id}
+            block={block}
+            index={i}
+            onAnchorClick={onAnchorClick}
+          />
+        ))}
+      </div>
+
+      {/* Mini Test */}
+      {view.miniTest.length > 0 && (
+        <div className="rounded-2xl border border-slate-600/30 bg-slate-800/30">
+          <button
+            onClick={() => setMiniTestOpen((o) => !o)}
+            className="flex w-full items-center justify-between px-4 py-3 text-left"
+          >
+            <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">
+              Mini Test
+            </span>
+            <span className="text-[10px] text-slate-500">{miniTestOpen ? "▲" : "▼"}</span>
+          </button>
+          {miniTestOpen && (
+            <div className="space-y-2 px-4 pb-4">
+              {view.miniTest.map((q, i) => (
+                <MiniTestItem key={i} question={q} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Compression */}
+      {view.compression && (
+        <div className="rounded-xl border border-white/8 bg-slate-900/60 px-4 py-3">
+          <div className="mb-1 text-[9px] font-semibold uppercase tracking-widest text-slate-500">
+            Compression
+          </div>
+          <p className="text-xs leading-relaxed text-slate-400">{view.compression}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MiniTestItem({ question }: { question: string }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div className="rounded-xl border border-white/5 bg-slate-900/50 px-3 py-2">
+      <p className="text-xs text-slate-300">{question}</p>
+      {shown ? (
+        <p className="mt-1.5 text-[11px] text-slate-500 italic">Think it through — no answer provided.</p>
+      ) : (
+        <button
+          onClick={() => setShown(true)}
+          className="mt-1.5 text-[10px] text-slate-500 underline underline-offset-2 hover:text-slate-400"
+        >
+          I&apos;ll try it
+        </button>
+      )}
+    </div>
   );
 }
 
