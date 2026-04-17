@@ -328,7 +328,10 @@ export function useActivePageIntelligence({
         .replace(/[^\w\s]/g, " ")      // punctuation → space
         .replace(/\s+/g, " ")
         .trim(),
-      level: item.priority === "main" ? "high_yield" : item.priority === "support" ? "supporting" : "weak",
+      level: item.kind.startsWith("trap") ? "trap"
+        : item.priority === "main" ? "important"
+        : item.priority === "support" ? "support"
+        : "additional",
       score: item.confidence,
       sourceParagraphIndex: index,
       // Map semantic kind to ParagraphKind for visual differentiation in overlay
@@ -345,12 +348,13 @@ export function useActivePageIntelligence({
     // Cap: 3 main + 3 support + 2 weak so the left panel shows a clear
     // hierarchy without washing the full page with overlapping tints.
     if (priority.length) {
-      const dominant = priority.filter((t) => t.level === "high_yield").slice(0, 3);
-      const subdued  = priority.filter((t) => t.level === "supporting").slice(0, 3);
-      const faint    = priority.filter((t) => t.level === "weak").slice(0, 2);
-      return [...dominant, ...subdued, ...faint];
+      const dominant = priority.filter((t) => t.level === "important").slice(0, 3);
+      const traps    = priority.filter((t) => t.level === "trap").slice(0, 2);
+      const subdued  = priority.filter((t) => t.level === "support").slice(0, 3);
+      const faint    = priority.filter((t) => t.level === "additional").slice(0, 2);
+      return [...dominant, ...traps, ...subdued, ...faint];
     }
-    return derived.filter((t) => t.level !== "weak").slice(0, 4);
+    return derived.filter((t) => t.level !== "additional").slice(0, 4);
   }, [signals, pageNumber, audience, limitedEvidence, priorityHighlights]);
 
   const highlightKey = `${documentId}:${pageNumber}`;

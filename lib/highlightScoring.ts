@@ -22,10 +22,10 @@ export function selectRenderableEvidence(signals: PageSignals, audience: Audienc
 }
 
 export function levelForSignal(signal: ParagraphSignal, limitedEvidence: boolean): HighlightLevel {
-  if (limitedEvidence) return "weak";
-  if (signal.yieldScore >= 2.2) return "high_yield";
-  if (signal.yieldScore >= 1.1) return "supporting";
-  return "weak";
+  if (limitedEvidence) return "additional";
+  if (signal.yieldScore >= 2.2) return "important";
+  if (signal.yieldScore >= 1.1) return "support";
+  return "additional";
 }
 
 export function maxWeakHighlights(limitedEvidence: boolean): number {
@@ -40,7 +40,7 @@ export function buildHighlightTargets(
   let weakCount = 0;
   return selected.flatMap((signal) => {
     const level = levelForSignal(signal, limitedEvidence);
-    if (level === "weak") {
+    if (level === "additional") {
       weakCount += 1;
       if (weakCount > maxWeakHighlights(limitedEvidence)) return [];
     }
