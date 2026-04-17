@@ -4,6 +4,7 @@
 
 import { cleanSentence } from "./sentenceCleanup";
 import { isRenderableSentence } from "./isRenderableSentence";
+import { TRAP_RE, REASON_RE } from "./dedupeSectionCandidates";
 
 export type ConceptImportance = "very_high" | "high" | "medium" | "low";
 
@@ -57,11 +58,8 @@ export interface ConceptBlockInput {
 const MAX_BLOCKS = 5;
 const MIN_BLOCKS = 2;
 
-const CONTRAST_MARKERS = [
-  "however", "but", "although", "whereas", "in contrast",
-  "rather than", "except", "instead", "conversely", "unlike", "not",
-];
-
+// Use canonical signal regexes from dedupeSectionCandidates (TRAP_RE, REASON_RE)
+// Keep local lists only for score boosting
 const RULE_MARKERS = [
   "defined as", "is called", "refers to", "means", "therefore",
   "thus", "in other words", "results in", "causes", "leads to", "because",
@@ -81,13 +79,11 @@ function startsWithLowValueOpener(text: string): boolean {
 }
 
 function hasContrast(text: string): boolean {
-  const lower = normalize(text);
-  return CONTRAST_MARKERS.some((m) => lower.includes(m));
+  return TRAP_RE.test(text);
 }
 
 function hasRuleSignal(text: string): boolean {
-  const lower = normalize(text);
-  return RULE_MARKERS.some((m) => lower.includes(m));
+  return REASON_RE.test(text) || RULE_MARKERS.some((m) => normalize(text).includes(m));
 }
 
 function titleCase(text: string): string {
@@ -157,9 +153,18 @@ function inferTitle(
 }
 
 function extractTrapCandidates(sentences: SourceSentence[]): string[] {
-  return dedupeSentences(
-    sentences.map((s) => cleanSentence(s.text)).filter((text) => hasContrast(text))
-  ).slice(0, 2);
+  // Sort by trap signal strength: TRAP_RE match first, then by length (longer = more specific)
+  const trapSentences = sentences
+    .map((s) => cleanSentence(s.text))
+    .filter((text) => hasContrast(text) && isRenderableSentence(text))
+    .sort((a, b) => {
+      const aStrong = /\b(however|unlike|in contrast|rather than|should not be confused|do not confuse|not the same|different from)\b/i.test(a);
+      const bStrong = /\b(however|unlike|in contrast|rather than|should not be confused|do not confuse|not the same|different from)\b/i.test(b);
+      if (aStrong && !bStrong) return -1;
+      if (!aStrong && bStrong) return 1;
+      return b.length - a.length;
+    });
+  return dedupeSentences(trapSentences).slice(0, 2);
 }
 
 function buildConceptFromParagraph(
