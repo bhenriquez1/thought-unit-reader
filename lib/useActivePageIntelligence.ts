@@ -8,7 +8,7 @@ import { deriveHighlightTargets } from "@/lib/highlightMapping";
 import { processPage } from "@/lib/insights/processPage";
 import { classifyPageContent, type PageContentClass } from "@/lib/pdf/classifyPageContent";
 import { extractPriorityHighlights, type ExtractPriorityHighlightsResult } from "@/lib/highlights/extractPriorityHighlights";
-import { buildHighlightBucketsFromConcepts } from "@/lib/highlights/buildHighlightBucketsFromConcepts";
+import { buildHighlightNeighborhoods, flattenNeighborhoods, type HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
 import { adaptPageInsightModel } from "@/lib/insights/buildUltraPageView";
 import { extractConceptBlocks as extractConceptBlocksCore } from "@/lib/insights/extractConceptBlocks";
 import { buildParagraphRoleMap } from "@/lib/highlights/paragraphRoleMap";
@@ -310,25 +310,39 @@ export function useActivePageIntelligence({
     (ctx.pageText || "").trim().length < 120 ||
     ["cover", "contents", "chapter_opener", "section_opener", "copyright_frontmatter", "image_scan_heavy"].includes(signals.pageRole || "");
 
+  const highlightNeighborhoods: HighlightNeighborhood[] = useMemo(() => {
+    if (!pageModel) return [];
+    const adapted = adaptPageInsightModel(pageModel);
+    const concepts = extractConceptBlocksCore(adapted);
+    return concepts.length > 0 ? buildHighlightNeighborhoods(concepts) : [];
+  }, [pageModel, pageNumber]);
+
   const highlightTargets: HighlightTarget[] = useMemo(() => {
-    // Primary: concept-derived highlights — precise sentence-level, tier-matched to right panel
-    if (pageModel) {
-      const adapted = adaptPageInsightModel(pageModel);
-      const concepts = extractConceptBlocksCore(adapted);
-      if (concepts.length > 0) {
-        const buckets = buildHighlightBucketsFromConcepts(concepts);
-        return buckets.map((b, index) => ({
-          id: b.id,
+    // Primary: neighborhood-derived highlights in concept-cluster order
+    if (highlightNeighborhoods.length > 0) {
+      return flattenNeighborhoods(highlightNeighborhoods).map((line, index) => {
+        // Extract conceptId from id prefix (e.g. "important-concept-p-0" → neighborhoodId "neighborhood-concept-p-0")
+        const neighborhoodId = highlightNeighborhoods.find((n) =>
+          n.anchor.id === line.id ||
+          n.support.some((s) => s.id === line.id) ||
+          n.additional.some((a) => a.id === line.id) ||
+          n.trap?.id === line.id
+        )?.id;
+        const neighborhoodTitle = highlightNeighborhoods.find((n) => n.id === neighborhoodId)?.title;
+        return {
+          id: line.id,
           page: pageNumber,
-          text: b.text,
-          normalizedText: b.normalizedText,
-          level: b.tier,
-          score: b.confidence,
+          text: line.text,
+          normalizedText: line.normalizedText,
+          level: line.tier,
+          score: line.score,
           sourceParagraphIndex: index,
-          kind: b.tier === "trap" ? "clinical" : b.tier === "important" ? "mechanism" : "application",
-          evidenceRefId: b.sentenceId ?? b.id,
-        } satisfies HighlightTarget));
-      }
+          kind: line.tier === "trap" ? "clinical" : line.tier === "important" ? "mechanism" : "application",
+          evidenceRefId: line.sentenceId ?? line.id,
+          neighborhoodId,
+          neighborhoodTitle,
+        } satisfies HighlightTarget;
+      });
     }
 
     // Fallback: priority highlights from extractPriorityHighlights pipeline
@@ -403,6 +417,7 @@ export function useActivePageIntelligence({
     error,
     isCurrentPage,
     highlightTargets,
+    highlightNeighborhoods,
     limitedEvidence,
   };
 }
