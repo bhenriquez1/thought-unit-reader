@@ -2,6 +2,8 @@
 // Semantic similarity utilities for right-panel field deduplication.
 // Prevents Core Idea / Pattern / Reason / Trap / Rule from repeating each other.
 
+import { isRenderableSentence } from "./isRenderableSentence";
+
 // ---------------------------------------------------------------------------
 // Universal discourse-role signals (not domain-specific)
 // ---------------------------------------------------------------------------
@@ -87,4 +89,90 @@ export function selectDistinctForRole(
     if (!isTooSimilar(c, usedLines)) return c;
   }
   return fallback;
+}
+
+// ---------------------------------------------------------------------------
+// Formal section API — batch dedup across all 6 section kinds
+// ---------------------------------------------------------------------------
+
+export type SectionKind =
+  | "coreIdea" | "pattern" | "reason" | "trap" | "rule" | "compression";
+
+export interface SectionCandidate {
+  id: string;
+  text: string;
+  kind: SectionKind;
+  score: number;
+  sourceSentenceIds?: string[];
+}
+
+export interface DedupeSectionResult {
+  selected: Partial<Record<SectionKind, SectionCandidate>>;
+  compression: SectionCandidate[];
+  rejected: SectionCandidate[];
+}
+
+const SECTION_ORDER: Exclude<SectionKind, "compression">[] = [
+  "coreIdea", "pattern", "reason", "trap", "rule",
+];
+
+function kindBonus(text: string, kind: SectionKind): number {
+  switch (kind) {
+    case "coreIdea":    return 0;
+    case "pattern":     return PATTERN_RE.test(text) ? 4 : 0;
+    case "reason":      return REASON_RE.test(text)  ? 4 : 0;
+    case "trap":        return TRAP_RE.test(text)    ? 5 : 0;
+    case "rule":        return RULE_RE.test(text)    ? 4 : 0;
+    case "compression": return (RULE_RE.test(text) ? 3 : 0) + (text.length >= 60 ? 1 : 0);
+  }
+}
+
+export function dedupeSections(
+  candidates: SectionCandidate[],
+  coreIdea: string
+): DedupeSectionResult {
+  const selected: Partial<Record<SectionKind, SectionCandidate>> = {};
+  const compression: SectionCandidate[] = [];
+  const rejected: SectionCandidate[] = [];
+
+  const usedTexts: string[] = coreIdea ? [coreIdea] : [];
+
+  const scored = candidates.map((c) => ({
+    ...c,
+    effectiveScore: c.score + kindBonus(c.text, c.kind),
+  }));
+
+  for (const kind of SECTION_ORDER) {
+    const pool = scored
+      .filter((c) => c.kind === kind)
+      .sort((a, b) => b.effectiveScore - a.effectiveScore);
+
+    for (const c of pool) {
+      if (!isRenderableSentence(c.text)) { rejected.push(c); continue; }
+      if (isTooSimilar(c.text, usedTexts)) { rejected.push(c); continue; }
+      selected[kind] = c;
+      usedTexts.push(c.text);
+      break;
+    }
+  }
+
+  // COMPRESSION — up to 3 distinct rule-quality lines, distinct from all selected
+  const compressionUsed: string[] = [coreIdea];
+  for (const v of Object.values(selected)) {
+    if (v) compressionUsed.push(v.text);
+  }
+
+  const compressionPool = scored
+    .filter((c) => c.kind === "compression")
+    .sort((a, b) => b.effectiveScore - a.effectiveScore);
+
+  for (const c of compressionPool) {
+    if (compression.length >= 3) break;
+    if (!isRenderableSentence(c.text)) { rejected.push(c); continue; }
+    if (isTooSimilar(c.text, compressionUsed)) { rejected.push(c); continue; }
+    compression.push(c);
+    compressionUsed.push(c.text);
+  }
+
+  return { selected, compression, rejected };
 }
