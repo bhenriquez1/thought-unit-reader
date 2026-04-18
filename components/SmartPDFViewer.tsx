@@ -12,6 +12,7 @@ import GuidedNeighborhoodOverlay from "@/components/pdf/GuidedNeighborhoodOverla
 import type { HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
 import { matchNeighborhoodMemberToText, type NeighborhoodMember, type PageTextRecord } from "@/lib/highlights/matchNeighborhoodMemberToText";
 import { buildHighlightRects, type TextItemRect, type NeighborhoodMemberPlacement, type HighlightOverlayRect } from "@/lib/highlights/buildHighlightRects";
+import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
 
@@ -64,6 +65,8 @@ export interface SmartPDFViewerProps {
    * instead of relying on pre-parsed thought-unit approximations.
    */
   onPageTextExtracted?: (page: number, text: string) => void;
+  /** Fires whenever the guided reading path changes — null when no neighborhoods are active. */
+  onReadingPath?: (path: RenderGuidedReadingPathResult | null) => void;
 }
 
 /** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
@@ -134,6 +137,7 @@ export default function SmartPDFViewer({
   isPageChanging = false,
   onPageRenderComplete,
   onPageTextExtracted,
+  onReadingPath,
 }: SmartPDFViewerProps) {
   // Stable key root: prefer explicit docId, fall back to fileUrl
   const pageKeyRoot = docId ?? fileUrl;
@@ -157,6 +161,10 @@ export default function SmartPDFViewer({
     neighborhoods: HighlightNeighborhood[];
     overlays: HighlightOverlayRect[];
   } | null>(null);
+  // Clear reading path immediately when guided data goes away (e.g. page turn).
+  useEffect(() => {
+    if (guidedOverlayData === null) onReadingPath?.(null);
+  }, [guidedOverlayData, onReadingPath]);
   const viewerRef = useRef<HTMLDivElement>(null);
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -759,6 +767,7 @@ export default function SmartPDFViewer({
                     <GuidedNeighborhoodOverlay
                       neighborhoods={guidedOverlayData.neighborhoods}
                       overlayRects={guidedOverlayData.overlays}
+                      onReadingPath={onReadingPath}
                     />
                   ) : (
                     <PdfEvidenceOverlay

@@ -2,13 +2,14 @@
 // Neighborhood-aware, inline-style highlight renderer.
 // Renders true highlight fills (not underline-style) in page reading order.
 // Main Signal → Explains It → Extra Context → Do Not Confuse
+// Numbered reading-path badges are placed on the first rect of each guided step.
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import type { HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
 import type { HighlightOverlayRect } from "@/lib/highlights/buildHighlightRects";
 import type { GuidedNeighborhoodOverlayEntry, GuidedTier } from "@/lib/highlights/renderGuidedNeighborhoodOverlays";
-import { renderGuidedReadingPath } from "@/lib/highlights/renderGuidedReadingPath";
+import { renderGuidedReadingPath, type RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import type { MatchConfidence } from "@/lib/highlights/matchNeighborhoodMemberToText";
 
 // ---------------------------------------------------------------------------
@@ -37,6 +38,13 @@ const TIER_STYLE: Record<GuidedTier, { background: string; border: string; boxSh
   },
 };
 
+const BADGE_BG: Record<GuidedTier, string> = {
+  main_signal:    "rgba(161, 98, 7, 0.95)",
+  explains_it:    "rgba(37, 99, 235, 0.95)",
+  extra_context:  "rgba(71, 85, 105, 0.95)",
+  do_not_confuse: "rgba(190, 24, 93, 0.95)",
+};
+
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
@@ -45,6 +53,7 @@ export interface GuidedNeighborhoodOverlayProps {
   overlayRects: HighlightOverlayRect[];
   visible?: boolean;
   onOverlayClick?: (payload: { neighborhoodId: string; memberId?: string; tier: GuidedTier; text?: string }) => void;
+  onReadingPath?: (path: RenderGuidedReadingPathResult | null) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +64,7 @@ export default function GuidedNeighborhoodOverlay({
   overlayRects,
   visible = true,
   onOverlayClick,
+  onReadingPath,
 }: GuidedNeighborhoodOverlayProps) {
   const guided = useMemo(() => {
     if (!neighborhoods.length || !overlayRects.length) return null;
@@ -82,6 +92,34 @@ export default function GuidedNeighborhoodOverlay({
     });
   }, [neighborhoods, overlayRects]);
 
+  // Bubble the reading path result up so parent can build a dynamic legend.
+  useEffect(() => {
+    onReadingPath?.(guided);
+  }, [guided, onReadingPath]);
+
+  // Sequential badge entries — one per guided step (not per rect).
+  // Traps use "!" instead of a number.
+  const badgeEntries = useMemo(() => {
+    if (!guided) return [];
+    const entries: Array<{
+      id: string;
+      label: string;
+      x: number;
+      y: number;
+      tier: GuidedTier;
+    }> = [];
+    let counter = 1;
+    for (const neighborhood of guided.neighborhoods) {
+      for (const overlay of neighborhood.overlays) {
+        const firstRect = overlay.rects[0];
+        if (!firstRect) continue;
+        const label = overlay.tier === "do_not_confuse" ? "!" : String(counter++);
+        entries.push({ id: `${overlay.id}:badge`, label, x: firstRect.x, y: firstRect.y, tier: overlay.tier });
+      }
+    }
+    return entries;
+  }, [guided]);
+
   if (!visible || !guided?.flatOverlays.length) return null;
 
   return (
@@ -89,6 +127,7 @@ export default function GuidedNeighborhoodOverlay({
       className="pointer-events-none absolute inset-0 z-20"
       aria-hidden="true"
     >
+      {/* Highlight fills */}
       {guided.neighborhoods.map((group) => (
         <React.Fragment key={group.neighborhoodId}>
           {group.overlays.map((entry) => {
@@ -123,6 +162,34 @@ export default function GuidedNeighborhoodOverlay({
             ));
           })}
         </React.Fragment>
+      ))}
+
+      {/* Numbered reading-path badges */}
+      {badgeEntries.map((badge) => (
+        <div
+          key={badge.id}
+          style={{
+            position: "absolute",
+            left: badge.x - 10,
+            top: badge.y - 10,
+            width: 20,
+            height: 20,
+            borderRadius: 999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 11,
+            fontWeight: 700,
+            color: "white",
+            background: BADGE_BG[badge.tier],
+            boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+            zIndex: 80,
+            pointerEvents: "none",
+            userSelect: "none",
+          }}
+        >
+          {badge.label}
+        </div>
       ))}
     </div>
   );
