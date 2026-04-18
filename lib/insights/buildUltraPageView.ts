@@ -21,6 +21,7 @@ import {
   type SectionKind,
 } from "./dedupeSectionCandidates";
 import { buildCompressionRules } from "./buildCompressionRules";
+import { buildMiniTestQuestions } from "./buildMiniTestQuestions";
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -165,11 +166,8 @@ function importanceLabel(level: ConceptBlockInput["importance"]): string {
 }
 
 function buildMiniTest(concepts: ConceptBlockInput[]): string[] {
-  return concepts.slice(0, 4).map((c) =>
-    c.trapCandidates[0]
-      ? `What is the common mistake when working with ${c.title.toLowerCase()}?`
-      : `What is the key idea behind ${c.title.toLowerCase()}?`
-  );
+  const result = buildMiniTestQuestions(concepts);
+  return result.questions.map((q) => q.question);
 }
 
 
