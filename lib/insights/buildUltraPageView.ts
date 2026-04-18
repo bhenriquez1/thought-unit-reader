@@ -20,7 +20,7 @@ import {
   type SectionCandidate,
   type SectionKind,
 } from "./dedupeSectionCandidates";
-import { buildCompressionRules } from "./buildCompressionRules";
+import { buildCompressionRules, type BuildCompressionRulesInput } from "./buildCompressionRules";
 import { buildMiniTestQuestions } from "./buildMiniTestQuestions";
 
 // ---------------------------------------------------------------------------
@@ -202,7 +202,30 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
     };
   });
 
-  const usedFieldTexts = blocks.flatMap((b) => [b.pattern, b.surgicalReason, b.trap, b.rule]);
+  const compressionInput: BuildCompressionRulesInput = {
+    pageKey: `${page.documentId}:${page.pageNumber}`,
+    pageTitle: inferPageTitle(page, concepts),
+    pageSummary: page.pageSummary ?? undefined,
+    conceptBlocks: blocks.map((b, i) => ({
+      id: concepts[i].id,
+      title: b.title,
+      pattern: b.pattern,
+      reason: b.surgicalReason,
+      trap: b.trap,
+      rule: b.rule,
+      importance: b.importance,
+    })),
+    supportNeighborhoods: concepts.map((c) => ({
+      id: c.id,
+      title: c.title,
+      anchor: c.anchorSentence,
+      support: c.supportSentences,
+      trap: c.trapCandidates[0] ?? null,
+    })),
+  };
+
+  const compressionResult = buildCompressionRules(compressionInput);
+  const compression = compressionResult.rules.map((r, i) => `Rule ${i + 1}: ${r.text}`);
 
   return {
     title: `ULTRA – ${inferPageTitle(page, concepts)}`,
@@ -210,6 +233,6 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
     coreIdea,
     blocks,
     miniTest: buildMiniTest(concepts),
-    compression: buildCompressionRules(concepts, coreIdea, usedFieldTexts),
+    compression,
   };
 }

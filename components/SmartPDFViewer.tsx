@@ -12,6 +12,7 @@ import type { HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeigh
 import { matchNeighborhoodMemberToText, type NeighborhoodMember, type PageTextRecord } from "@/lib/highlights/matchNeighborhoodMemberToText";
 import { buildHighlightRects, type TextItemRect, type NeighborhoodMemberPlacement } from "@/lib/highlights/buildHighlightRects";
 import { renderGuidedNeighborhoodOverlays, type GuidedTier } from "@/lib/highlights/renderGuidedNeighborhoodOverlays";
+import { renderGuidedReadingPath } from "@/lib/highlights/renderGuidedReadingPath";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
 
@@ -347,14 +348,20 @@ export default function SmartPDFViewer({
 
         const { overlays } = buildHighlightRects({ pageNumber: currentPage, placements, textItemRects: textItems });
 
-        // Run guided reading-order model: neighborhoods sorted by page position,
-        // within each: anchor → support → additional → trap
-        const { flat: guidedFlat } = renderGuidedNeighborhoodOverlays({
+        // Stage 1: group by neighborhood, sort by page position
+        const guidedNeighborhoods = renderGuidedNeighborhoodOverlays({
           neighborhoods: highlightNeighborhoods!,
           overlays,
         });
 
-        const newRects: OverlayRect[] = guidedFlat
+        // Stage 2: boost opacity + enforce reading-path sequence
+        const { flatOverlays } = renderGuidedReadingPath({
+          neighborhoods: guidedNeighborhoods.neighborhoods,
+          showBadges: false,
+          showConnectors: false,
+        });
+
+        const newRects: OverlayRect[] = flatOverlays
           .flatMap((entry) =>
             entry.rects.map((r, ri) => ({
               id: ri === 0 ? entry.id : `${entry.id}-r${ri}`,
