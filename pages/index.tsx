@@ -46,6 +46,8 @@ import { buildAutoToc, type PageTextBundle } from "@/lib/autoToc";
 import { extractFormulaCards } from "@/lib/right-panel/formulaNormalizer";
 import { useActivePageIntelligence } from "@/lib/useActivePageIntelligence";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import { buildGuidedLegend } from "@/lib/highlights/buildGuidedLegend";
+import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 
 // Cognitive Engine Components (Surgeon View 2.0)
 import {
@@ -408,6 +410,7 @@ export default function ThoughtUnitReader() {
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [focusSnippet, setFocusSnippet] = useState<string | null>(null);
   const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
+  const [guidedPath, setGuidedPath] = useState<RenderGuidedReadingPathResult | null>(null);
 
   /* =========================================================================
      🔹 Unified Annotation Store (P0.1) - Shared between Surgeon View + NoteLab
@@ -2615,6 +2618,7 @@ export default function ThoughtUnitReader() {
                   highlightNeighborhoods={highlightNeighborhoods}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
+                  onReadingPath={setGuidedPath}
                   onOpenFocusCycle={() => {
                     bindFocusCycleContext({
                       documentId: bookId,
@@ -3120,23 +3124,49 @@ export default function ThoughtUnitReader() {
 
         {/* Floating Action Buttons - Bottom Left Stack */}
         <div className="fixed bottom-[80px] right-6 z-40 flex flex-col gap-3 max-w-[170px] opacity-90">
-          {/* Highlight color legend */}
-          <div className="rounded-xl border border-white/10 bg-[rgb(11,18,34)]/90 backdrop-blur-sm px-2.5 py-2">
-            <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-500">Page guide</div>
-            <div className="space-y-1">
-              {([
-                { color: "bg-amber-400/56 border border-amber-300/88", label: "Main Signal" },
-                { color: "bg-blue-400/42 border border-blue-300/72", label: "Explains It" },
-                { color: "bg-sky-400/32 border border-sky-200/62", label: "Extra Context" },
-                { color: "bg-rose-400/50 border border-rose-300/80", label: "Do Not Confuse" },
-              ] as const).map(({ color, label }) => (
-                <div key={label} className="flex items-center gap-1.5">
-                  <span className={`h-2 w-3.5 shrink-0 rounded-sm ${color}`} />
-                  <span className="text-[10px] text-slate-300">{label}</span>
+          {/* Highlight color legend — dynamic from current page guided reading path */}
+          {(() => {
+            const legend = buildGuidedLegend({ guidedPath });
+            const badgeBg: Record<string, string> = {
+              main_signal:    "rgba(161, 98, 7, 0.95)",
+              explains_it:    "rgba(37, 99, 235, 0.95)",
+              extra_context:  "rgba(71, 85, 105, 0.95)",
+              do_not_confuse: "rgba(190, 24, 93, 0.95)",
+            };
+            if (!legend.entries.length) return null;
+            return (
+              <div className="rounded-xl border border-white/10 bg-[rgb(11,18,34)]/90 backdrop-blur-sm px-2.5 py-2">
+                <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-500">Page guide</div>
+                <div className="space-y-1.5">
+                  {legend.entries.map((entry) => (
+                    <div key={entry.id} className="flex items-center gap-1.5">
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          width: 16,
+                          height: 16,
+                          borderRadius: 999,
+                          background: badgeBg[entry.tier],
+                          fontSize: 9,
+                          fontWeight: 700,
+                          color: "white",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {entry.badge}
+                      </span>
+                      <div className="min-w-0">
+                        <span className="text-[10px] text-slate-300">{entry.label}</span>
+                        <span className="text-[9px] text-slate-500 ml-1">— {entry.description}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
+            );
+          })()}
           {/* Chapter Absorption FAB (feature-flagged) */}
           {isFeatureEnabled('ENABLE_CHAPTER_ABSORPTION') && smartTOC.length > 0 && !absorptionState.showPanel && (
             <button
