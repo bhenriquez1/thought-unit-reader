@@ -11,6 +11,7 @@ import PdfEvidenceOverlay, { type OverlayRect } from "@/components/pdf/PdfEviden
 import type { HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
 import { matchNeighborhoodMemberToText, type NeighborhoodMember, type PageTextRecord } from "@/lib/highlights/matchNeighborhoodMemberToText";
 import { buildHighlightRects, type TextItemRect, type NeighborhoodMemberPlacement } from "@/lib/highlights/buildHighlightRects";
+import { renderGuidedNeighborhoodOverlays, type GuidedTier } from "@/lib/highlights/renderGuidedNeighborhoodOverlays";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
 
@@ -112,6 +113,15 @@ async function resolveOutline(
   }
 
   return out;
+}
+
+function guidedTierToLevel(tier: GuidedTier): OverlayRect["level"] {
+  switch (tier) {
+    case "main_signal":    return "important";
+    case "explains_it":   return "support";
+    case "extra_context": return "additional";
+    case "do_not_confuse": return "trap";
+  }
 }
 
 export default function SmartPDFViewer({
@@ -337,17 +347,22 @@ export default function SmartPDFViewer({
 
         const { overlays } = buildHighlightRects({ pageNumber: currentPage, placements, textItemRects: textItems });
 
-        const newRects: OverlayRect[] = overlays
-          .filter((o) => o.displayMode !== "hidden")
-          .flatMap((o, oi) =>
-            o.rects.map((r, ri) => ({
-              id: ri === 0 ? o.memberId : `${o.memberId}-r${ri}`,
+        // Run guided reading-order model: neighborhoods sorted by page position,
+        // within each: anchor → support → additional → trap
+        const { flat: guidedFlat } = renderGuidedNeighborhoodOverlays({
+          neighborhoods: highlightNeighborhoods!,
+          overlays,
+        });
+
+        const newRects: OverlayRect[] = guidedFlat
+          .flatMap((entry) =>
+            entry.rects.map((r, ri) => ({
+              id: ri === 0 ? entry.id : `${entry.id}-r${ri}`,
               top: r.y,
               left: r.x,
               width: r.width,
               height: r.height,
-              level: o.tier as OverlayRect["level"],
-              semanticKind: (o.kind === "anchor" ? "mechanism" : o.kind === "trap" ? "clinical" : "application") as OverlayRect["semanticKind"],
+              level: guidedTierToLevel(entry.tier),
             }))
           );
 
