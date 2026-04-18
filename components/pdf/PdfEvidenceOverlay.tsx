@@ -45,21 +45,21 @@ function priorityClassName(
   switch (level) {
     case "important":
       return focused
-        ? "bg-amber-400/65 ring-2 ring-amber-200/90 shadow-[0_0_0_1px_rgba(251,191,36,0.50)]"
-        : "bg-amber-400/45 ring-1 ring-amber-300/80";
+        ? "bg-amber-400/75 ring-2 ring-amber-200/95 shadow-[0_0_0_2px_rgba(251,191,36,0.60)]"
+        : "bg-amber-400/56 ring-1 ring-amber-300/88";
     case "trap":
       return focused
-        ? "bg-rose-400/60 ring-2 ring-rose-200/90 shadow-[0_0_0_1px_rgba(251,113,133,0.50)]"
-        : "bg-rose-400/42 ring-1 ring-rose-300/70";
+        ? "bg-rose-400/70 ring-2 ring-rose-200/95 shadow-[0_0_0_2px_rgba(251,113,133,0.60)]"
+        : "bg-rose-400/50 ring-1 ring-rose-300/80";
     case "support":
       return focused
-        ? "bg-blue-400/52 ring-2 ring-blue-200/85 shadow-[0_0_0_1px_rgba(96,165,250,0.42)]"
-        : "bg-blue-400/34 ring-1 ring-blue-300/60";
+        ? "bg-blue-400/62 ring-2 ring-blue-200/90 shadow-[0_0_0_1px_rgba(96,165,250,0.52)]"
+        : "bg-blue-400/42 ring-1 ring-blue-300/72";
     case "additional":
       return focused
-        ? "bg-sky-400/42 ring-2 ring-sky-100/75"
-        : "bg-sky-400/26 ring-1 ring-sky-200/50";
+        ? "bg-sky-400/50 ring-2 ring-sky-100/80"
+        : "bg-sky-400/32 ring-1 ring-sky-200/62";
     default:
-      return "bg-yellow-300/30";
+      return "bg-yellow-300/40";
   }
 }
