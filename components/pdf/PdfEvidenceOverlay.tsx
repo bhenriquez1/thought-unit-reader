@@ -45,21 +45,21 @@ function priorityClassName(
   switch (level) {
     case "important":
       return focused
-        ? "bg-amber-400/45 ring-2 ring-amber-200/90 shadow-[0_0_0_1px_rgba(251,191,36,0.35)]"
-        : "bg-amber-400/28 ring-1 ring-amber-300/70";
+        ? "bg-amber-400/65 ring-2 ring-amber-200/90 shadow-[0_0_0_1px_rgba(251,191,36,0.50)]"
+        : "bg-amber-400/45 ring-1 ring-amber-300/80";
     case "trap":
       return focused
-        ? "bg-rose-400/40 ring-2 ring-rose-200/80 shadow-[0_0_0_1px_rgba(251,113,133,0.30)]"
-        : "bg-rose-400/22 ring-1 ring-rose-300/55";
+        ? "bg-rose-400/60 ring-2 ring-rose-200/90 shadow-[0_0_0_1px_rgba(251,113,133,0.50)]"
+        : "bg-rose-400/42 ring-1 ring-rose-300/70";
     case "support":
       return focused
-        ? "bg-blue-400/35 ring-2 ring-blue-200/80 shadow-[0_0_0_1px_rgba(96,165,250,0.28)]"
-        : "bg-blue-400/20 ring-1 ring-blue-300/40";
+        ? "bg-blue-400/52 ring-2 ring-blue-200/85 shadow-[0_0_0_1px_rgba(96,165,250,0.42)]"
+        : "bg-blue-400/34 ring-1 ring-blue-300/60";
     case "additional":
       return focused
-        ? "bg-sky-400/28 ring-2 ring-sky-100/60"
-        : "bg-sky-400/14 ring-1 ring-sky-200/30";
+        ? "bg-sky-400/42 ring-2 ring-sky-100/75"
+        : "bg-sky-400/26 ring-1 ring-sky-200/50";
     default:
-      return "bg-yellow-300/20";
+      return "bg-yellow-300/30";
   }
 }

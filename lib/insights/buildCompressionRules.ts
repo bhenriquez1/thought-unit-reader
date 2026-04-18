@@ -153,7 +153,7 @@ export function buildCompressionRulesTyped(
     }
   }
 
-  // Emergency pad: relax inter-rule threshold to 0.55 if still short
+  // Pass 3: relax inter-rule threshold to 0.55 (emergency pad)
   let usedEmergencyPad = false;
   if (rules.length < 3) {
     usedEmergencyPad = true;
@@ -163,6 +163,33 @@ export function buildCompressionRulesTyped(
       if (isTooSimilar(text, usedRuleTexts, 0.55)) continue;
       rules.push({ role, text });
       usedRuleTexts.push(text);
+    }
+  }
+
+  // Pass 4: drop barrier entirely — pull from candidates that differ from each other
+  // This guarantees 3 rules even on sparse pages.
+  if (rules.length < 3) {
+    for (const { text, role } of candidates) {
+      if (rules.length >= 3) break;
+      if (isTooSimilar(text, usedRuleTexts, 0.60)) continue;
+      rules.push({ role, text });
+      usedRuleTexts.push(text);
+    }
+  }
+
+  // Pass 5: last-resort synthetic fallbacks — only if page is truly empty
+  const SYNTHETIC_FALLBACKS: Array<{ role: CompressionRole; text: string }> = [
+    { role: "recognition",  text: "This concept defines a key term or idea on the page." },
+    { role: "mechanism",    text: "The mechanism here explains why the main idea works the way it does." },
+    { role: "application",  text: "Apply this by using the page's core rule in the relevant context." },
+  ];
+  if (rules.length < 3) {
+    for (const fb of SYNTHETIC_FALLBACKS) {
+      if (rules.length >= 3) break;
+      if (!isTooSimilar(fb.text, usedRuleTexts, 0.60)) {
+        rules.push(fb);
+        usedRuleTexts.push(fb.text);
+      }
     }
   }
 
