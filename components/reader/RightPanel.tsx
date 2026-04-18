@@ -177,14 +177,15 @@ export function RightPanel({
   const ultraPageView = useMemo((): UltraPageView | null => {
     if (!isCurrentPageModel || !pageModel) return null;
     return buildUltraPageView(pageModel);
-  }, [isCurrentPageModel, pageModel]);
+  // pageTruthKey ensures mini test + compression reset immediately on page/doc change
+  }, [isCurrentPageModel, pageModel, pageTruthKey]);
 
   // Legacy concept blocks — kept for ConceptBlocksView fallback
   const readerPageView = useMemo((): ReaderPageView | null => {
     if (!isCurrentPageModel || !pageModel) return null;
     const view = extractConceptBlocks(pageModel);
     return view.isWeak ? null : view;
-  }, [isCurrentPageModel, pageModel]);
+  }, [isCurrentPageModel, pageModel, pageTruthKey]);
 
   // ---------------------------------------------------------------------------
   // Narrative blocks + shadow recall (fallback content layer)
