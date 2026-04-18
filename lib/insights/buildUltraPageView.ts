@@ -225,7 +225,12 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
   };
 
   const compressionResult = buildCompressionRules(compressionInput);
-  const compression = compressionResult.rules.map((r, i) => `Rule ${i + 1}: ${r.text}`);
+  const sourceRank = (src: string) =>
+    src === "synthesized" ? 4 : src.startsWith("neighborhood") ? 3 : src.startsWith("block") ? 2 : 1;
+  const sortedRules = [...compressionResult.rules].sort(
+    (a, b) => sourceRank(b.source) - sourceRank(a.source) || b.score - a.score
+  );
+  const compression = sortedRules.slice(0, 3).map((r, i) => `Rule ${i + 1}: ${r.text}`);
 
   return {
     title: `ULTRA – ${inferPageTitle(page, concepts)}`,
