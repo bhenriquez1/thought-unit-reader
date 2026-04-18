@@ -1,14 +1,31 @@
 // lib/insights/buildCompressionRules.ts
-// v2: role-balanced, current-page only, hard 3-rule minimum.
+// v3: stricter anti-dup + true synthesis pass.
 //
-// Job contract: Compression must NOT copy Core Idea / Pattern / Reason / Trap / Rule.
-// Each rule covers a different cognitive layer of the page.
+// Goals:
+// - current-page only inputs
+// - always try for at least 3 distinct rules
+// - reject copied / lightly reworded concept-block text
+// - prefer role-balanced rules:
+//   1. recognition / identity
+//   2. mechanism / logic
+//   3. application / consequence / boundary
+// - universal for all books
 
 export type CompressionRole =
   | "recognition"
   | "mechanism"
   | "application"
   | "boundary";
+
+export type CompressionSource =
+  | "summary"
+  | "block_pattern"
+  | "block_reason"
+  | "block_rule"
+  | "block_trap"
+  | "neighborhood_anchor"
+  | "neighborhood_support"
+  | "synthesized";
 
 export interface CompressionConceptBlock {
   id: string;
@@ -43,7 +60,7 @@ export interface CompressionRule {
   text: string;
   role: CompressionRole;
   score: number;
-  source: "summary" | "block_pattern" | "block_reason" | "block_rule" | "block_trap" | "neighborhood_anchor" | "neighborhood_support" | "synthesized";
+  source: CompressionSource;
 }
 
 export interface BuildCompressionRulesResult {
@@ -52,69 +69,85 @@ export interface BuildCompressionRulesResult {
   rejected: CompressionRule[];
 }
 
+interface CandidateSeed {
+  id: string;
+  text: string;
+  role: CompressionRole;
+  score: number;
+  source: CompressionSource;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                   PUBLIC                                   */
+/* -------------------------------------------------------------------------- */
+
 export function buildCompressionRules(
   input: BuildCompressionRulesInput
 ): BuildCompressionRulesResult {
   const minRules = Math.max(3, input.minRules ?? 3);
+  const protectedTexts = collectProtectedTexts(input);
+  const rawCandidates = collectCandidates(input);
+  const normalizedCandidates = dedupeCandidates(rawCandidates);
 
-  const candidates = collectCandidates(input);
   const selected: CompressionRule[] = [];
   const rejected: CompressionRule[] = [];
 
-  const roleOrder: CompressionRole[] = [
-    "recognition",
-    "mechanism",
-    "application",
-    "boundary",
-  ];
+  const roleOrder: CompressionRole[] = ["recognition", "mechanism", "application", "boundary"];
 
-  // Pass 1: one distinct rule per role
+  // Pass 1: one best distinct candidate per role
   for (const role of roleOrder) {
-    const roleCandidates = candidates
+    const roleCandidates = normalizedCandidates
       .filter((c) => c.role === role)
       .sort((a, b) => b.score - a.score);
-
-    const picked = selectDistinctCandidate(roleCandidates, selected);
-    if (picked) selected.push(picked);
+    const picked = selectDistinctCandidate(roleCandidates, selected, protectedTexts, role);
+    if (picked) {
+      selected.push(materializeRule(picked, selected.length + 1));
+    } else {
+      rejected.push(...roleCandidates.map((c) => materializeRule(c, rejected.length + 100)));
+    }
   }
 
-  // Pass 2: backfill until minimum
-  const remaining = candidates
+  // Pass 2: backfill with strongest distinct candidate regardless of role
+  const remaining = normalizedCandidates
     .filter((c) => !selected.some((s) => s.id === c.id))
     .sort((a, b) => b.score - a.score);
 
   for (const candidate of remaining) {
     if (selected.length >= minRules) break;
-    if (isDistinctEnough(candidate.text, selected.map((s) => s.text))) {
-      selected.push(candidate);
+    if (passesStrictAntiDup(candidate.text, selected.map((s) => s.text), protectedTexts, candidate.role, selected)) {
+      selected.push(materializeRule(candidate, selected.length + 1));
     } else {
-      rejected.push(candidate);
+      rejected.push(materializeRule(candidate, rejected.length + 100));
     }
   }
 
-  // Pass 3: synthesize from page inputs if still underfilled
-  while (selected.length < minRules) {
-    const synthetic = synthesizeRule(input, selected);
-    if (!synthetic) break;
-    if (isDistinctEnough(synthetic.text, selected.map((s) => s.text))) {
-      selected.push(synthetic);
+  // Pass 3: synthesize true page-level rules if still underfilled
+  const synthesizedPool = buildSynthesizedCandidates(input, protectedTexts, selected);
+  for (const candidate of synthesizedPool) {
+    if (selected.length >= minRules) break;
+    if (passesStrictAntiDup(candidate.text, selected.map((s) => s.text), protectedTexts, candidate.role, selected)) {
+      selected.push(materializeRule(candidate, selected.length + 1));
     } else {
-      rejected.push(synthetic);
-      break;
+      rejected.push(materializeRule(candidate, rejected.length + 100));
     }
   }
 
-  const finalRules = selected
-    .slice(0, Math.max(minRules, selected.length))
-    .map((rule, idx) => ({
-      ...rule,
-      id: `compression-${idx + 1}-${rule.role}`,
-      text: ensureSentence(rule.text),
-    }));
+  // Pass 4: emergency — force minimum, relax inter-rule threshold
+  if (selected.length < minRules) {
+    const emergencyPool = [...remaining, ...synthesizedPool]
+      .filter((c) => !selected.some((s) => s.id === c.id))
+      .sort((a, b) => b.score - a.score);
+    for (const candidate of emergencyPool) {
+      if (selected.length >= minRules) break;
+      if (isDistinctEnough(candidate.text, selected.map((s) => s.text), 0.82)) {
+        selected.push(materializeRule(candidate, selected.length + 1));
+      }
+    }
+  }
 
   return {
     pageKey: input.pageKey ?? null,
-    rules: finalRules,
+    rules: selected.slice(0, Math.max(minRules, selected.length)),
     rejected,
   };
 }
@@ -123,241 +156,300 @@ export function buildCompressionRules(
 /*                             CANDIDATE COLLECTION                           */
 /* -------------------------------------------------------------------------- */
 
-function collectCandidates(input: BuildCompressionRulesInput): CompressionRule[] {
-  const out: CompressionRule[] = [];
+function collectCandidates(input: BuildCompressionRulesInput): CandidateSeed[] {
+  const out: CandidateSeed[] = [];
 
-  if (input.pageSummary && isRenderableSentence(input.pageSummary)) {
-    out.push({
-      id: "summary-recognition",
-      text: input.pageSummary,
-      role: "recognition",
-      score: 0.9,
-      source: "summary",
-    });
+  if (isRenderableSentence(input.pageSummary)) {
+    out.push({ id: "summary", text: input.pageSummary!.trim(), role: "recognition", score: 0.74, source: "summary" });
   }
 
   for (const block of input.conceptBlocks) {
-    if (block.pattern && isRenderableSentence(block.pattern)) {
-      out.push({
-        id: `${block.id}-pattern`,
-        text: compressSentence(block.pattern),
-        role: "recognition",
-        score: 0.86,
-        source: "block_pattern",
-      });
-    }
-    if (block.reason && isRenderableSentence(block.reason)) {
-      out.push({
-        id: `${block.id}-reason`,
-        text: compressSentence(block.reason),
-        role: "mechanism",
-        score: 0.88,
-        source: "block_reason",
-      });
-    }
-    if (block.rule && isRenderableSentence(block.rule)) {
-      out.push({
-        id: `${block.id}-rule`,
-        text: compressSentence(block.rule),
-        role: "application",
-        score: 0.87,
-        source: "block_rule",
-      });
-    }
-    if (block.trap && isRenderableSentence(block.trap)) {
-      out.push({
-        id: `${block.id}-trap`,
-        text: normalizeTrapToRule(block.trap),
-        role: "boundary",
-        score: 0.82,
-        source: "block_trap",
-      });
-    }
+    if (isRenderableSentence(block.pattern))
+      out.push({ id: `${block.id}:pattern`, text: sanitizeSentence(block.pattern!), role: "recognition", score: 0.76, source: "block_pattern" });
+    if (isRenderableSentence(block.reason))
+      out.push({ id: `${block.id}:reason`, text: sanitizeSentence(block.reason!), role: "mechanism", score: 0.80, source: "block_reason" });
+    if (isRenderableSentence(block.rule))
+      out.push({ id: `${block.id}:rule`, text: sanitizeSentence(block.rule!), role: "application", score: 0.78, source: "block_rule" });
+    if (isRenderableSentence(block.trap))
+      out.push({ id: `${block.id}:trap`, text: normalizeTrapToBoundary(block.trap!), role: "boundary", score: 0.70, source: "block_trap" });
   }
 
   for (const neighborhood of input.supportNeighborhoods ?? []) {
-    if (neighborhood.anchor && isRenderableSentence(neighborhood.anchor)) {
-      out.push({
-        id: `${neighborhood.id}-anchor`,
-        text: compressSentence(neighborhood.anchor),
-        role: "recognition",
-        score: 0.8,
-        source: "neighborhood_anchor",
-      });
-    }
-    for (const [index, support] of (neighborhood.support ?? []).entries()) {
+    if (isRenderableSentence(neighborhood.anchor))
+      out.push({ id: `${neighborhood.id}:anchor`, text: sanitizeSentence(neighborhood.anchor!), role: "recognition", score: 0.68, source: "neighborhood_anchor" });
+    for (const [i, support] of (neighborhood.support ?? []).entries()) {
       if (!isRenderableSentence(support)) continue;
-      out.push({
-        id: `${neighborhood.id}-support-${index}`,
-        text: compressSentence(support),
-        role: inferRoleFromSentence(support),
-        score: 0.72 - index * 0.03,
-        source: "neighborhood_support",
-      });
-    }
-    if (neighborhood.trap && isRenderableSentence(neighborhood.trap)) {
-      out.push({
-        id: `${neighborhood.id}-trap`,
-        text: normalizeTrapToRule(neighborhood.trap),
-        role: "boundary",
-        score: 0.76,
-        source: "block_trap",
-      });
+      out.push({ id: `${neighborhood.id}:support:${i}`, text: sanitizeSentence(support), role: inferRoleFromSentence(support), score: Math.max(0.5, 0.65 - i * 0.03), source: "neighborhood_support" });
     }
   }
+
+  return out;
+}
+
+function buildSynthesizedCandidates(
+  input: BuildCompressionRulesInput,
+  protectedTexts: string[],
+  selected: CompressionRule[]
+): CandidateSeed[] {
+  const out: CandidateSeed[] = [];
+  const rolesNeeded = missingRoles(selected);
+
+  const pattern  = firstRenderable(input.conceptBlocks.map((b) => b.pattern));
+  const reason   = firstRenderable(input.conceptBlocks.map((b) => b.reason));
+  const rule     = firstRenderable(input.conceptBlocks.map((b) => b.rule));
+  const trap     = firstRenderable(input.conceptBlocks.map((b) => b.trap));
+  const anchor   = firstRenderable((input.supportNeighborhoods ?? []).map((n) => n.anchor));
+  const support  = firstRenderable((input.supportNeighborhoods ?? []).flatMap((n) => n.support ?? []));
+  const title    = sanitizeSentence(input.pageTitle ?? "");
+  const summary  = sanitizeSentence(input.pageSummary ?? "");
+
+  const tryAdd = (id: string, text: string | null, role: CompressionRole, score: number) => {
+    if (!text) return;
+    if (passesStrictAntiDup(text, selected.map((s) => s.text), protectedTexts, role, selected)) {
+      out.push({ id, text, role, score, source: "synthesized" });
+    }
+  };
+
+  if (rolesNeeded.has("recognition"))
+    tryAdd("synth:recognition", synthesizeRecognitionRule(title, summary, pattern, anchor), "recognition", 0.84);
+  if (rolesNeeded.has("mechanism"))
+    tryAdd("synth:mechanism", synthesizeMechanismRule(reason, support, pattern, summary), "mechanism", 0.86);
+  if (rolesNeeded.has("application"))
+    tryAdd("synth:application", synthesizeApplicationRule(rule, pattern, support, summary), "application", 0.83);
+  if (rolesNeeded.has("boundary"))
+    tryAdd("synth:boundary", synthesizeBoundaryRule(trap, pattern, reason, summary), "boundary", 0.80);
+
+  // Fallback cross-role syntheses for replacing weak copied lines
+  const fallbacks = [
+    synthesizeRecognitionRule(title, summary, pattern, anchor),
+    synthesizeMechanismRule(reason, support, pattern, summary),
+    synthesizeApplicationRule(rule, pattern, support, summary),
+    synthesizeBoundaryRule(trap, pattern, reason, summary),
+  ];
+  fallbacks.forEach((text, i) => {
+    if (!text) return;
+    if (passesStrictAntiDup(text, selected.map((s) => s.text), protectedTexts, undefined, selected)) {
+      out.push({ id: `synth:fallback:${i}`, text, role: inferRoleFromSentence(text), score: 0.75 - i * 0.02, source: "synthesized" });
+    }
+  });
 
   return dedupeCandidates(out);
 }
 
-function dedupeCandidates(candidates: CompressionRule[]): CompressionRule[] {
-  const kept: CompressionRule[] = [];
-  for (const candidate of candidates.sort((a, b) => b.score - a.score)) {
-    if (isDistinctEnough(candidate.text, kept.map((k) => k.text))) {
-      kept.push(candidate);
-    }
+/* -------------------------------------------------------------------------- */
+/*                             STRICT ANTI-DUP LOGIC                          */
+/* -------------------------------------------------------------------------- */
+
+function collectProtectedTexts(input: BuildCompressionRulesInput): string[] {
+  const out: string[] = [];
+  if (isRenderableSentence(input.pageSummary)) out.push(sanitizeSentence(input.pageSummary!));
+  for (const b of input.conceptBlocks) {
+    if (isRenderableSentence(b.pattern)) out.push(sanitizeSentence(b.pattern!));
+    if (isRenderableSentence(b.reason))  out.push(sanitizeSentence(b.reason!));
+    if (isRenderableSentence(b.rule))    out.push(sanitizeSentence(b.rule!));
+    if (isRenderableSentence(b.trap))    out.push(sanitizeSentence(b.trap!));
+  }
+  return out;
+}
+
+function selectDistinctCandidate(
+  candidates: CandidateSeed[],
+  selected: CompressionRule[],
+  protectedTexts: string[],
+  preferredRole?: CompressionRole
+): CandidateSeed | null {
+  for (const c of candidates) {
+    if (passesStrictAntiDup(c.text, selected.map((s) => s.text), protectedTexts, preferredRole, selected)) return c;
+  }
+  return null;
+}
+
+function passesStrictAntiDup(
+  text: string,
+  selectedTexts: string[],
+  protectedTexts: string[],
+  preferredRole?: CompressionRole,
+  selectedRules?: CompressionRule[]
+): boolean {
+  const cleaned = sanitizeSentence(text);
+  if (!cleaned || !isRenderableSentence(cleaned)) return false;
+
+  // 1. Distinct from already-selected compression rules
+  if (!isDistinctEnough(cleaned, selectedTexts, 0.66)) return false;
+
+  // 2. Distinct from protected source texts — reject near-copies of panel fields
+  for (const source of protectedTexts) {
+    const sn = normalize(source);
+    const cn = normalize(cleaned);
+    if (!sn || !cn) continue;
+    if (tokenSimilarity(cn, sn) >= 0.84 || containmentSimilarity(cn, sn) >= 0.88) return false;
+    if (sameLead(cn, sn) && tokenSimilarity(cn, sn) >= 0.72) return false;
+  }
+
+  // 3. Role-aware diversity
+  if (preferredRole && selectedRules?.length) {
+    const sameRoleTexts = selectedRules.filter((r) => r.role === preferredRole).map((r) => r.text);
+    if (!isDistinctEnough(cleaned, sameRoleTexts, 0.60)) return false;
+  }
+
+  return true;
+}
+
+function isDistinctEnough(text: string, existing: string[], threshold: number): boolean {
+  const norm = normalize(text);
+  if (!norm) return false;
+  for (const e of existing) {
+    const en = normalize(e);
+    if (!en) continue;
+    if (norm === en) return false;
+    if (tokenSimilarity(norm, en) >= threshold) return false;
+    if (containmentSimilarity(norm, en) >= threshold + 0.12) return false;
+  }
+  return true;
+}
+
+function dedupeCandidates(candidates: CandidateSeed[]): CandidateSeed[] {
+  const kept: CandidateSeed[] = [];
+  for (const c of candidates.sort((a, b) => b.score - a.score)) {
+    if (isDistinctEnough(c.text, kept.map((k) => k.text), 0.72)) kept.push(c);
   }
   return kept;
 }
 
 /* -------------------------------------------------------------------------- */
-/*                              SELECTION + SYNTHESIS                         */
+/*                               TRUE SYNTHESIS                               */
 /* -------------------------------------------------------------------------- */
 
-function selectDistinctCandidate(
-  candidates: CompressionRule[],
-  selected: CompressionRule[]
-): CompressionRule | null {
-  for (const candidate of candidates) {
-    if (isDistinctEnough(candidate.text, selected.map((s) => s.text))) {
-      return candidate;
-    }
-  }
-  return null;
+function synthesizeRecognitionRule(title: string, summary: string, pattern?: string | null, anchor?: string | null): string | null {
+  const src = firstRenderable([pattern, anchor, summary]);
+  if (!src) return null;
+  const clause = distillClause(src);
+  if (!clause) return null;
+  return title
+    ? ensureSentence(`${title} is organized around the idea that ${lowercaseFirst(clause)}`)
+    : ensureSentence(`The page centers on the idea that ${lowercaseFirst(clause)}`);
 }
 
-function synthesizeRule(
-  input: BuildCompressionRulesInput,
-  selected: CompressionRule[]
-): CompressionRule | null {
-  const usedRoles = new Set(selected.map((s) => s.role));
-  const role = nextMissingRole(usedRoles);
-  return synthesizeFromInputs(input, role);
+function synthesizeMechanismRule(reason?: string | null, support?: string | null, pattern?: string | null, summary?: string | null): string | null {
+  const src = firstRenderable([reason, support, pattern, summary]);
+  if (!src) return null;
+  const clause = distillClause(src);
+  if (!clause) return null;
+  return startsWithMechanismSignal(clause) ? ensureSentence(clause) : ensureSentence(`This works because ${lowercaseFirst(clause)}`);
 }
 
-function nextMissingRole(used: Set<CompressionRole>): CompressionRole {
-  if (!used.has("recognition"))  return "recognition";
-  if (!used.has("mechanism"))    return "mechanism";
-  if (!used.has("application"))  return "application";
-  return "boundary";
+function synthesizeApplicationRule(rule?: string | null, pattern?: string | null, support?: string | null, summary?: string | null): string | null {
+  const src = firstRenderable([rule, support, pattern, summary]);
+  if (!src) return null;
+  const clause = distillClause(src);
+  if (!clause) return null;
+  return startsWithActionSignal(clause) ? ensureSentence(clause) : ensureSentence(`Use this page to recognize that ${lowercaseFirst(clause)}`);
 }
 
-function synthesizeFromInputs(
-  input: BuildCompressionRulesInput,
-  role: CompressionRole
-): CompressionRule | null {
-  const summary   = safe(input.pageSummary);
-  const title     = safe(input.pageTitle);
-  const firstBlock = input.conceptBlocks[0];
-
-  switch (role) {
-    case "recognition":
-      if (summary) return { id: "synthetic-recognition", text: compressSentence(summary), role, score: 0.61, source: "synthesized" };
-      if (title && firstBlock?.pattern)
-        return { id: "synthetic-recognition-title", text: `${title} centers on ${lowercaseFirst(stripTerminal(firstBlock.pattern))}.`, role, score: 0.58, source: "synthesized" };
-      return null;
-
-    case "mechanism":
-      if (firstBlock?.reason) return { id: "synthetic-mechanism", text: compressSentence(firstBlock.reason), role, score: 0.6, source: "synthesized" };
-      if (input.supportNeighborhoods?.[0]?.support?.[0])
-        return { id: "synthetic-mechanism-support", text: compressSentence(input.supportNeighborhoods[0].support![0]), role, score: 0.57, source: "synthesized" };
-      return null;
-
-    case "application":
-      if (firstBlock?.rule) return { id: "synthetic-application", text: compressSentence(firstBlock.rule), role, score: 0.59, source: "synthesized" };
-      if (summary)
-        return { id: "synthetic-application-summary", text: `Use this page to recognize and apply the idea that ${lowercaseFirst(stripTerminal(summary))}.`, role, score: 0.52, source: "synthesized" };
-      return null;
-
-    case "boundary":
-      if (firstBlock?.trap) return { id: "synthetic-boundary", text: normalizeTrapToRule(firstBlock.trap), role, score: 0.55, source: "synthesized" };
-      return { id: "synthetic-boundary-fallback", text: "Do not confuse the page's main signal with nearby supporting details.", role, score: 0.45, source: "synthesized" };
-  }
+function synthesizeBoundaryRule(trap?: string | null, pattern?: string | null, reason?: string | null, summary?: string | null): string | null {
+  const src = firstRenderable([trap, pattern, reason, summary]);
+  if (!src) return null;
+  const clause = distillClause(src);
+  if (!clause) return null;
+  return /^do not\b/i.test(clause) ? ensureSentence(clause) : ensureSentence(`Do not confuse ${lowercaseFirst(clause)} with nearby supporting details`);
 }
 
-/* -------------------------------------------------------------------------- */
-/*                                 ROLE INFERENCE                             */
-/* -------------------------------------------------------------------------- */
-
-function inferRoleFromSentence(text: string): CompressionRole {
-  const norm = normalize(text);
-  if (hasAny(norm, ["because", "therefore", "so that", "leads to", "causes", "due to", "results in"])) return "mechanism";
-  if (hasAny(norm, ["do not", "avoid", "rather than", "however", "unlike", "except", "not to be confused"])) return "boundary";
-  if (hasAny(norm, ["use", "apply", "recognize", "should", "must", "can be used"])) return "application";
-  return "recognition";
-}
-
-/* -------------------------------------------------------------------------- */
-/*                              TEXT UTILITIES                                 */
-/* -------------------------------------------------------------------------- */
-
-function normalizeTrapToRule(text: string): string {
-  const cleaned = compressSentence(text);
-  if (/^do not\b/i.test(cleaned) || /^avoid\b/i.test(cleaned)) return ensureSentence(cleaned);
-  return ensureSentence(`Do not confuse ${lowercaseFirst(stripTerminal(cleaned))}.`);
-}
-
-function compressSentence(text: string): string {
-  return ensureSentence(text).replace(/\s+/g, " ").replace(/\s*–\s*/g, " — ").trim();
-}
-
-function ensureSentence(text: string): string {
-  const t = safe(text).replace(/\s+/g, " ").trim();
-  if (!t) return "";
-  return /[.!?]$/.test(t) ? t : `${t}.`;
-}
-
-function isRenderableSentence(text: string): boolean {
-  const t = safe(text);
-  if (!t || t.length < 20) return false;
-  if (/[.…]{2,}/.test(t)) return false;
-  return t.split(/\s+/).filter(Boolean).length >= 5;
-}
-
-function isDistinctEnough(text: string, existing: string[]): boolean {
-  const norm = normalize(text);
-  if (!norm) return false;
-  for (const candidate of existing) {
-    const other = normalize(candidate);
-    if (!other) continue;
-    if (norm === other) return false;
-    if (tokenSimilarity(norm, other) >= 0.72) return false;
-  }
-  return true;
-}
-
-function tokenSimilarity(a: string, b: string): number {
-  const aSet = new Set(a.split(" ").filter(Boolean));
-  const bSet = new Set(b.split(" ").filter(Boolean));
-  if (!aSet.size || !bSet.size) return 0;
-  let overlap = 0;
-  for (const token of aSet) { if (bSet.has(token)) overlap += 1; }
-  return new Set([...aSet, ...bSet]).size ? overlap / new Set([...aSet, ...bSet]).size : 0;
-}
-
-function normalize(text: string): string {
-  return safe(text)
-    .toLowerCase()
-    .replace(/[^\w\s]/g, " ")
+function distillClause(text: string): string {
+  const cleaned = sanitizeSentence(text)
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return "";
+  const parts = cleaned.split(/\b(?:however|for example|such as|although|rather than|instead|whereas)\b/i);
+  return (parts[0] ?? cleaned)
+    .replace(/^(this page|the page|this concept|this section)\s+(shows|explains|covers|develops)\s+/i, "")
+    .replace(/^(ultimately|in general|overall|therefore)\s+/i, "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function safe(value?: string | null): string { return (value ?? "").trim(); }
-function stripTerminal(text: string): string { return safe(text).replace(/[.!?]+$/, ""); }
-function lowercaseFirst(text: string): string {
-  const v = safe(text);
-  return v ? v.charAt(0).toLowerCase() + v.slice(1) : v;
+/* -------------------------------------------------------------------------- */
+/*                                  HELPERS                                   */
+/* -------------------------------------------------------------------------- */
+
+function materializeRule(seed: CandidateSeed, index: number): CompressionRule {
+  return { id: `compression-${index}-${seed.role}`, text: ensureSentence(seed.text), role: seed.role, score: seed.score, source: seed.source };
 }
-function hasAny(text: string, needles: string[]): boolean {
-  return needles.some((n) => text.includes(n));
+
+function missingRoles(selected: CompressionRule[]): Set<CompressionRole> {
+  const used = new Set(selected.map((s) => s.role));
+  return new Set((["recognition", "mechanism", "application", "boundary"] as CompressionRole[]).filter((r) => !used.has(r)));
 }
+
+function firstRenderable(values: Array<string | null | undefined>): string | null {
+  for (const v of values) { if (isRenderableSentence(v)) return sanitizeSentence(v!); }
+  return null;
+}
+
+function inferRoleFromSentence(text: string): CompressionRole {
+  const n = normalize(text);
+  if (hasAny(n, ["because", "therefore", "so that", "causes", "results in", "due to", "leads to"])) return "mechanism";
+  if (hasAny(n, ["do not", "avoid", "rather than", "however", "except", "not to be confused"])) return "boundary";
+  if (hasAny(n, ["use", "apply", "recognize", "should", "must", "can be used"])) return "application";
+  return "recognition";
+}
+
+function normalizeTrapToBoundary(text: string): string {
+  const cleaned = sanitizeSentence(text);
+  if (/^do not\b/i.test(cleaned) || /^avoid\b/i.test(cleaned)) return ensureSentence(cleaned);
+  return ensureSentence(`Do not confuse ${lowercaseFirst(stripTerminal(cleaned))}`);
+}
+
+function sanitizeSentence(text?: string | null): string {
+  return ensureSentence((text ?? "").replace(/\s+/g, " ").replace(/\s*[-–—]\s*/g, " ").trim());
+}
+
+function ensureSentence(text: string): string {
+  const t = (text ?? "").replace(/\s+/g, " ").trim();
+  return t ? (/[.!?]$/.test(t) ? t : `${t}.`) : "";
+}
+
+function isRenderableSentence(text?: string | null): boolean {
+  const t = (text ?? "").replace(/\s+/g, " ").trim();
+  if (!t || t.length < 24) return false;
+  if (/[.…]{2,}/.test(t)) return false;
+  if (/^[\d\s.,\-:;()]+$/.test(t)) return false;
+  return t.split(/\s+/).length >= 6;
+}
+
+function normalize(text: string): string {
+  return text.toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function tokenSimilarity(a: string, b: string): number {
+  const as = new Set(a.split(" ").filter(Boolean));
+  const bs = new Set(b.split(" ").filter(Boolean));
+  if (!as.size || !bs.size) return 0;
+  let overlap = 0;
+  for (const t of as) { if (bs.has(t)) overlap++; }
+  return new Set([...as, ...bs]).size ? overlap / new Set([...as, ...bs]).size : 0;
+}
+
+function containmentSimilarity(a: string, b: string): number {
+  const at = a.split(" ").filter(Boolean);
+  const bt = b.split(" ").filter(Boolean);
+  if (!at.length || !bt.length) return 0;
+  const shorter = at.length <= bt.length ? at : bt;
+  const longerSet = new Set(at.length <= bt.length ? bt : at);
+  let overlap = 0;
+  for (const t of shorter) { if (longerSet.has(t)) overlap++; }
+  return shorter.length ? overlap / shorter.length : 0;
+}
+
+function sameLead(a: string, b: string): boolean {
+  const al = a.split(" ").slice(0, 5).join(" ");
+  const bl = b.split(" ").slice(0, 5).join(" ");
+  return Boolean(al && bl && al === bl);
+}
+
+function stripTerminal(text: string): string { return text.replace(/[.!?]+$/, "").trim(); }
+function lowercaseFirst(text: string): string { return text ? text.charAt(0).toLowerCase() + text.slice(1) : text; }
+function startsWithMechanismSignal(text: string): boolean { return /^(because|this works because|when|as|since)\b/i.test(text); }
+function startsWithActionSignal(text: string): boolean { return /^(use|apply|recognize|treat|interpret|identify|consider|remember)\b/i.test(text); }
+function hasAny(text: string, needles: string[]): boolean { return needles.some((n) => text.includes(n)); }

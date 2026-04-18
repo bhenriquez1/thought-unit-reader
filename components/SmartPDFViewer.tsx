@@ -8,11 +8,10 @@ import { useReaderSync } from "@/lib/readerSync";
 import { usePDFLoading } from "@/lib/pdfLoadingManager";
 import type { HighlightTarget } from "@/lib/readerContracts";
 import PdfEvidenceOverlay, { type OverlayRect } from "@/components/pdf/PdfEvidenceOverlay";
+import GuidedNeighborhoodOverlay from "@/components/pdf/GuidedNeighborhoodOverlay";
 import type { HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
 import { matchNeighborhoodMemberToText, type NeighborhoodMember, type PageTextRecord } from "@/lib/highlights/matchNeighborhoodMemberToText";
-import { buildHighlightRects, type TextItemRect, type NeighborhoodMemberPlacement } from "@/lib/highlights/buildHighlightRects";
-import { renderGuidedNeighborhoodOverlays, type GuidedTier } from "@/lib/highlights/renderGuidedNeighborhoodOverlays";
-import { renderGuidedReadingPath } from "@/lib/highlights/renderGuidedReadingPath";
+import { buildHighlightRects, type TextItemRect, type NeighborhoodMemberPlacement, type HighlightOverlayRect } from "@/lib/highlights/buildHighlightRects";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
 
@@ -116,14 +115,6 @@ async function resolveOutline(
   return out;
 }
 
-function guidedTierToLevel(tier: GuidedTier): OverlayRect["level"] {
-  switch (tier) {
-    case "main_signal":    return "important";
-    case "explains_it":   return "support";
-    case "extra_context": return "additional";
-    case "do_not_confuse": return "trap";
-  }
-}
 
 export default function SmartPDFViewer({
   fileUrl,
@@ -162,6 +153,10 @@ export default function SmartPDFViewer({
   const [showToolbar, setShowToolbar] = useState<boolean>(true);
   const [highlightPulse, setHighlightPulse] = useState<boolean>(false);
   const [overlayRects, setOverlayRects] = useState<OverlayRect[]>([]);
+  const [guidedOverlayData, setGuidedOverlayData] = useState<{
+    neighborhoods: HighlightNeighborhood[];
+    overlays: HighlightOverlayRect[];
+  } | null>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -266,6 +261,7 @@ export default function SmartPDFViewer({
 
     if (!container || (!hasNeighborhoods && !hasTargets)) {
       setOverlayRects([]);
+      setGuidedOverlayData(null);
       return;
     }
 
@@ -348,41 +344,20 @@ export default function SmartPDFViewer({
 
         const { overlays } = buildHighlightRects({ pageNumber: currentPage, placements, textItemRects: textItems });
 
-        // Stage 1: group by neighborhood, sort by page position
-        const guidedNeighborhoods = renderGuidedNeighborhoodOverlays({
-          neighborhoods: highlightNeighborhoods!,
-          overlays,
-        });
-
-        // Stage 2: boost opacity + enforce reading-path sequence
-        const { flatOverlays } = renderGuidedReadingPath({
-          neighborhoods: guidedNeighborhoods.neighborhoods,
-          showBadges: false,
-          showConnectors: false,
-        });
-
-        const newRects: OverlayRect[] = flatOverlays
-          .flatMap((entry) =>
-            entry.rects.map((r, ri) => ({
-              id: ri === 0 ? entry.id : `${entry.id}-r${ri}`,
-              top: r.y,
-              left: r.x,
-              width: r.width,
-              height: r.height,
-              level: guidedTierToLevel(entry.tier),
-            }))
-          );
-
-        if (!newRects.length && attempts < 10) {
+        const hasVisible = overlays.some((o) => o.rects.length > 0 && o.displayMode !== "hidden");
+        if (!hasVisible && attempts < 10) {
           attempts += 1;
           window.setTimeout(renderRects, 140 + attempts * 40);
           return;
         }
-        setOverlayRects(newRects);
+
+        setGuidedOverlayData({ neighborhoods: highlightNeighborhoods!, overlays });
+        setOverlayRects([]);
         return;
       }
 
       // ── FALLBACK: flat highlightTargets path (unchanged) ───────────────────
+      setGuidedOverlayData(null);
       function spansForNeedle(needle: string): HTMLElement[] {
         const idx = concatText.indexOf(needle);
         if (idx === -1) return [];
@@ -772,7 +747,7 @@ export default function SmartPDFViewer({
                 />
               )}
 
-              {overlayRects.length > 0 && (
+              {(overlayRects.length > 0 || guidedOverlayData !== null) && (
                 <>
                   {/* Dim veil sits below the evidence overlay (z-[19] < z-20).
                       Non-highlighted text recedes; decoded blocks jump forward. */}
@@ -780,11 +755,18 @@ export default function SmartPDFViewer({
                     className="pointer-events-none absolute inset-0 z-[19] bg-slate-900/20"
                     aria-hidden
                   />
-                  <PdfEvidenceOverlay
-                    rects={overlayRects}
-                    focusedId={focusedEvidenceId}
-                    onFocus={onEvidenceFocus}
-                  />
+                  {guidedOverlayData ? (
+                    <GuidedNeighborhoodOverlay
+                      neighborhoods={guidedOverlayData.neighborhoods}
+                      overlayRects={guidedOverlayData.overlays}
+                    />
+                  ) : (
+                    <PdfEvidenceOverlay
+                      rects={overlayRects}
+                      focusedId={focusedEvidenceId}
+                      onFocus={onEvidenceFocus}
+                    />
+                  )}
                 </>
               )}
 
