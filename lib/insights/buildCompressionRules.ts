@@ -145,6 +145,24 @@ export function buildCompressionRules(
     }
   }
 
+  // Pass 5: synthesis guarantee — if no synthesized rule was selected, swap the
+  // lowest-scoring block rule for the best synthesized candidate that is distinct enough.
+  const hasSynthesized = selected.some((r) => r.source === "synthesized");
+  if (!hasSynthesized && selected.length > 0) {
+    const synthPool = buildSynthesizedCandidates(input, protectedTexts, []);
+    const bestSynth = synthPool
+      .sort((a, b) => b.score - a.score)
+      .find((c) => isDistinctEnough(c.text, selected.map((s) => s.text), 0.66));
+    if (bestSynth) {
+      const worstIdx = selected.reduce(
+        (minI, r, i) => (r.score < selected[minI].score ? i : minI),
+        0
+      );
+      rejected.push(selected[worstIdx]);
+      selected[worstIdx] = materializeRule(bestSynth, worstIdx + 1);
+    }
+  }
+
   return {
     pageKey: input.pageKey ?? null,
     rules: selected.slice(0, Math.max(minRules, selected.length)),

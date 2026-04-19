@@ -16,12 +16,14 @@ import type { NarrativeSection } from "@/lib/insights/materializeNarrativeSuppor
 import { extractConceptBlocks } from "@/lib/reader/extractConceptBlocks";
 import type { ConceptBlock, ReaderPageView } from "@/lib/reader/types";
 import { buildUltraPageView, type UltraPageView, type UltraConceptBlock } from "@/lib/insights/buildUltraPageView";
+import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 
 interface RightPanelProps {
   ctx: ActivePageContext;
   state: RightPanelState;
   payload?: ResolvedPanelPayload;
   intelligence: ActivePageIntelligenceSnapshot;
+  guidedPath?: RenderGuidedReadingPathResult | null;
   onEvidenceClick?: (snippet: string, evidenceId?: string) => void;
   resolveEvidenceId?: (snippet: string) => string | undefined;
   focusedEvidenceId?: string | null;
@@ -109,6 +111,7 @@ function kindMeta(kind: string, shortLabel?: string): { label: string; color: st
 export function RightPanel({
   state,
   intelligence,
+  guidedPath,
   onEvidenceClick,
   resolveEvidenceId,
   focusedEvidenceId,
@@ -179,6 +182,27 @@ export function RightPanel({
     return buildUltraPageView(pageModel);
   // pageTruthKey ensures mini test + compression reset immediately on page/doc change
   }, [isCurrentPageModel, pageModel, pageTruthKey]);
+
+  // Re-sort blocks to match badge order (left page physical position order).
+  const displayView = useMemo((): UltraPageView | null => {
+    if (!ultraPageView) return null;
+    const pageNeighborhoods = guidedPath?.neighborhoods;
+    if (!pageNeighborhoods?.length) return ultraPageView;
+
+    const byConceptId = new Map(ultraPageView.blocks.map((b) => [b.conceptId, b]));
+    const ordered: UltraConceptBlock[] = [];
+    for (const n of pageNeighborhoods) {
+      if (!n.conceptId) continue;
+      const block = byConceptId.get(n.conceptId);
+      if (block) ordered.push({ ...block, ordinal: ordered.length + 1 });
+    }
+    for (const block of ultraPageView.blocks) {
+      if (!ordered.some((b) => b.conceptId === block.conceptId)) {
+        ordered.push({ ...block, ordinal: ordered.length + 1 });
+      }
+    }
+    return { ...ultraPageView, blocks: ordered };
+  }, [ultraPageView, guidedPath]);
 
   // Legacy concept blocks — kept for ConceptBlocksView fallback
   const readerPageView = useMemo((): ReaderPageView | null => {
@@ -278,9 +302,9 @@ export function RightPanel({
         )}
 
         {/* ── PRIMARY: ULTRA View ───────────────────────────────────────── */}
-        {showUltraView && ultraPageView && (
+        {showUltraView && displayView && (
           <UltraView
-            view={ultraPageView}
+            view={displayView}
             selectedBlockIndex={selectedBlockIndex}
             onSelectBlock={setSelectedBlockIndex}
             onAnchorClick={(text) => onEvidenceClick?.(text, undefined)}
