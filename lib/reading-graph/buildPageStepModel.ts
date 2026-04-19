@@ -1,0 +1,533 @@
+// lib/reading-graph/buildPageStepModel.ts
+//
+// Shared current-page step model builder.
+// This is the unification layer that both the left badge path and the right concept blocks
+// should eventually consume from the same current-page structure.
+//
+// Intent:
+// - Left = visual guided path
+// - Right = cognitive explanation path
+// - Mini Test = page-native questioning path
+// - STR Compression = distilled rule path
+//
+// All should originate from this same current-page step model.
+
+export type PageStepRole =
+  | "main_signal"
+  | "explanation"
+  | "support"
+  | "deepening"
+  | "trap";
+
+export interface ConceptBlockInput {
+  id: string;
+  title?: string | null;
+  pattern?: string | null;
+  surgicalReason?: string | null;
+  trap?: string | null;
+  rule?: string | null;
+  importance?: string | null;
+}
+
+export interface HighlightNeighborhoodMemberInput {
+  id: string;
+  text: string;
+}
+
+export interface HighlightNeighborhoodInput {
+  id: string;
+  conceptId?: string;
+  title?: string;
+  anchor?: HighlightNeighborhoodMemberInput | null;
+  support?: HighlightNeighborhoodMemberInput[];
+  additional?: HighlightNeighborhoodMemberInput[];
+  trap?: HighlightNeighborhoodMemberInput | null;
+}
+
+export interface SupportNeighborhoodInput {
+  id: string;
+  title?: string | null;
+  anchor?: string | null;
+  support?: string[];
+  additional?: string[];
+  trap?: string | null;
+}
+
+export interface BuildPageStepModelInput {
+  pageKey: string;
+  pageTitle?: string | null;
+  pageSummary?: string | null;
+  conceptBlocks: ConceptBlockInput[];
+  highlightNeighborhoods: HighlightNeighborhoodInput[];
+  supportNeighborhoods?: SupportNeighborhoodInput[];
+}
+
+export interface PageStepLeftView {
+  neighborhoodId?: string;
+  memberIds: string[];
+  badgeLabel: string;
+  legendLabel: string;
+}
+
+export interface PageStepRightView {
+  title: string;
+  pattern?: string | null;
+  surgicalReason?: string | null;
+  trap?: string | null;
+  rule?: string | null;
+  importance?: string | null;
+}
+
+export interface PageStepMiniTestHooks {
+  coreMeaning?: string | null;
+  mechanism?: string | null;
+  distinction?: string | null;
+  application?: string | null;
+  skimTrap?: string | null;
+}
+
+export interface PageStepCompressionHooks {
+  recognitionHook?: string | null;
+  mechanismHook?: string | null;
+  applicationHook?: string | null;
+  boundaryHook?: string | null;
+}
+
+export interface PageStepModel {
+  id: string;
+  order: number;
+  role: PageStepRole;
+  title: string;
+  anchorText: string;
+  supportTexts: string[];
+  additionalTexts: string[];
+  trapText?: string | null;
+  left: PageStepLeftView;
+  right: PageStepRightView;
+  miniTest: PageStepMiniTestHooks;
+  compression: PageStepCompressionHooks;
+}
+
+export interface BuildPageStepModelResult {
+  pageKey: string;
+  pageTitle?: string | null;
+  pageSummary?: string | null;
+  steps: PageStepModel[];
+}
+
+/**
+ * Builds a current-page step model from neighborhoods and concept blocks.
+ *
+ * Strategy:
+ * 1. Use highlight neighborhoods as the canonical step sequence
+ * 2. Enrich each step with matching concept block content
+ * 3. Infer a role per step
+ * 4. Emit an ordered shared steps[] that both left and right can consume
+ */
+export function buildPageStepModel(
+  input: BuildPageStepModelInput
+): BuildPageStepModelResult {
+  const normalizedNeighborhoods = normalizeHighlightNeighborhoods(
+    input.highlightNeighborhoods
+  );
+  const normalizedBlocks = normalizeConceptBlocks(input.conceptBlocks);
+  const steps: PageStepModel[] = normalizedNeighborhoods.map((neighborhood, index) => {
+    const conceptBlock = findBestConceptBlockMatch(neighborhood, normalizedBlocks);
+    const supportNeighborhood = findBestSupportNeighborhoodMatch(
+      neighborhood,
+      input.supportNeighborhoods ?? []
+    );
+
+    const title =
+      cleanLocal(
+        neighborhood.title ||
+          conceptBlock?.title ||
+          inferTitleFromAnchor(neighborhood.anchorText) ||
+          `Step ${index + 1}`
+      ) || `Step ${index + 1}`;
+
+    const role = inferStepRole({ index, neighborhood, conceptBlock, supportNeighborhood });
+
+    const anchorText =
+      neighborhood.anchorText ||
+      conceptBlock?.pattern ||
+      supportNeighborhood?.anchor ||
+      input.pageSummary ||
+      "";
+
+    const supportTexts = uniqueNonEmpty([
+      ...neighborhood.supportTexts,
+      ...(supportNeighborhood?.support ?? []),
+      conceptBlock?.surgicalReason ?? "",
+    ]);
+
+    const additionalTexts = uniqueNonEmpty([
+      ...neighborhood.additionalTexts,
+      ...(supportNeighborhood?.additional ?? []),
+    ]);
+
+    const trapText =
+      neighborhood.trapText ||
+      supportNeighborhood?.trap ||
+      conceptBlock?.trap ||
+      null;
+
+    return {
+      id: `${input.pageKey}:step:${index + 1}`,
+      order: index + 1,
+      role,
+      title,
+      anchorText: cleanLocal(anchorText),
+      supportTexts: supportTexts.map(cleanLocal).filter(Boolean),
+      additionalTexts: additionalTexts.map(cleanLocal).filter(Boolean),
+      trapText: trapText ? cleanLocal(trapText) : null,
+      left: {
+        neighborhoodId: neighborhood.id,
+        memberIds: neighborhood.memberIds,
+        badgeLabel: badgeLabelForStep(index + 1, role),
+        legendLabel: legendLabelForRole(role),
+      },
+      right: {
+        title,
+        pattern: cleanNullable(
+          conceptBlock?.pattern || neighborhood.anchorText || supportNeighborhood?.anchor
+        ),
+        surgicalReason: cleanNullable(
+          conceptBlock?.surgicalReason || supportTexts[0] || null
+        ),
+        trap: cleanNullable(trapText),
+        rule: cleanNullable(conceptBlock?.rule || synthesizeRuleFromStepText(anchorText, supportTexts)),
+        importance: cleanNullable(conceptBlock?.importance || importanceForRole(role)),
+      },
+      miniTest: {
+        coreMeaning: buildCoreMeaningHook(title, anchorText),
+        mechanism: buildMechanismHook(title, conceptBlock?.surgicalReason || supportTexts[0]),
+        distinction: buildDistinctionHook(title, trapText, anchorText),
+        application: buildApplicationHook(title, conceptBlock?.rule || supportTexts[0]),
+        skimTrap: buildSkimTrapHook(title, trapText, anchorText),
+      },
+      compression: {
+        recognitionHook: cleanNullable(anchorText),
+        mechanismHook: cleanNullable(conceptBlock?.surgicalReason || supportTexts[0]),
+        applicationHook: cleanNullable(conceptBlock?.rule || supportTexts[0]),
+        boundaryHook: cleanNullable(trapText),
+      },
+    };
+  });
+
+  return {
+    pageKey: input.pageKey,
+    pageTitle: input.pageTitle ?? null,
+    pageSummary: input.pageSummary ?? null,
+    steps,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/*                             NORMALIZATION                                  */
+/* -------------------------------------------------------------------------- */
+
+interface NormalizedHighlightNeighborhood {
+  id: string;
+  title?: string;
+  conceptId?: string;
+  anchorText: string;
+  supportTexts: string[];
+  additionalTexts: string[];
+  trapText?: string | null;
+  memberIds: string[];
+}
+
+interface NormalizedConceptBlock {
+  id: string;
+  title?: string | null;
+  pattern?: string | null;
+  surgicalReason?: string | null;
+  trap?: string | null;
+  rule?: string | null;
+  importance?: string | null;
+}
+
+function normalizeHighlightNeighborhoods(
+  neighborhoods: HighlightNeighborhoodInput[]
+): NormalizedHighlightNeighborhood[] {
+  return neighborhoods.map((n) => ({
+    id: n.id,
+    title: n.title,
+    conceptId: n.conceptId,
+    anchorText: cleanLocal(n.anchor?.text || ""),
+    supportTexts: uniqueNonEmpty((n.support ?? []).map((m) => cleanLocal(m.text))),
+    additionalTexts: uniqueNonEmpty((n.additional ?? []).map((m) => cleanLocal(m.text))),
+    trapText: n.trap?.text ? cleanLocal(n.trap.text) : null,
+    memberIds: uniqueNonEmpty([
+      n.anchor?.id ?? "",
+      ...(n.support ?? []).map((m) => m.id),
+      ...(n.additional ?? []).map((m) => m.id),
+      n.trap?.id ?? "",
+    ]),
+  }));
+}
+
+function normalizeConceptBlocks(blocks: ConceptBlockInput[]): NormalizedConceptBlock[] {
+  return blocks.map((b) => ({
+    id: b.id,
+    title: cleanNullable(b.title),
+    pattern: cleanNullable(b.pattern),
+    surgicalReason: cleanNullable(b.surgicalReason),
+    trap: cleanNullable(b.trap),
+    rule: cleanNullable(b.rule),
+    importance: cleanNullable(b.importance),
+  }));
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  MATCHING                                  */
+/* -------------------------------------------------------------------------- */
+
+function findBestConceptBlockMatch(
+  neighborhood: NormalizedHighlightNeighborhood,
+  blocks: NormalizedConceptBlock[]
+): NormalizedConceptBlock | null {
+  if (!blocks.length) return null;
+  let best: NormalizedConceptBlock | null = null;
+  let bestScore = -1;
+  const needle = [neighborhood.title, neighborhood.anchorText, neighborhood.trapText]
+    .filter(Boolean)
+    .join(" ");
+  for (const block of blocks) {
+    const hay = [block.title, block.pattern, block.rule, block.trap].filter(Boolean).join(" ");
+    const score = semanticOverlapScore(needle, hay);
+    if (score > bestScore) { best = block; bestScore = score; }
+  }
+  return best;
+}
+
+function findBestSupportNeighborhoodMatch(
+  neighborhood: NormalizedHighlightNeighborhood,
+  supportNeighborhoods: SupportNeighborhoodInput[]
+): SupportNeighborhoodInput | null {
+  if (!supportNeighborhoods.length) return null;
+  let best: SupportNeighborhoodInput | null = null;
+  let bestScore = -1;
+  const needle = [neighborhood.title, neighborhood.anchorText, neighborhood.trapText]
+    .filter(Boolean)
+    .join(" ");
+  for (const candidate of supportNeighborhoods) {
+    const hay = [
+      candidate.title, candidate.anchor,
+      ...(candidate.support ?? []), ...(candidate.additional ?? []), candidate.trap,
+    ].filter(Boolean).join(" ");
+    const score = semanticOverlapScore(needle, hay);
+    if (score > bestScore) { best = candidate; bestScore = score; }
+  }
+  return best;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                 ROLE LOGIC                                 */
+/* -------------------------------------------------------------------------- */
+
+function inferStepRole(args: {
+  index: number;
+  neighborhood: NormalizedHighlightNeighborhood;
+  conceptBlock: NormalizedConceptBlock | null;
+  supportNeighborhood: SupportNeighborhoodInput | null;
+}): PageStepRole {
+  const combined = [
+    args.neighborhood.anchorText,
+    ...(args.neighborhood.supportTexts ?? []),
+    args.neighborhood.trapText ?? "",
+    args.conceptBlock?.pattern ?? "",
+    args.conceptBlock?.surgicalReason ?? "",
+    args.conceptBlock?.trap ?? "",
+    args.conceptBlock?.rule ?? "",
+    args.supportNeighborhood?.anchor ?? "",
+    ...(args.supportNeighborhood?.support ?? []),
+    ...(args.supportNeighborhood?.additional ?? []),
+    args.supportNeighborhood?.trap ?? "",
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  if (
+    combined.includes("do not confuse") ||
+    combined.includes("rather than") ||
+    combined.includes("trap") ||
+    combined.includes("mistake") ||
+    combined.includes("warning")
+  ) return "trap";
+
+  if (
+    combined.includes("because") ||
+    combined.includes("therefore") ||
+    combined.includes("due to") ||
+    combined.includes("leads to") ||
+    combined.includes("results in")
+  ) return args.index === 0 ? "main_signal" : "explanation";
+
+  if (
+    combined.includes("for example") ||
+    combined.includes("such as") ||
+    combined.includes("in addition") ||
+    combined.includes("also")
+  ) return "deepening";
+
+  if (args.index === 0) return "main_signal";
+  if (args.index === 1) return "explanation";
+  return "support";
+}
+
+/* -------------------------------------------------------------------------- */
+/*                             LEFT/RIGHT HELPERS                             */
+/* -------------------------------------------------------------------------- */
+
+function badgeLabelForStep(stepNumber: number, role: PageStepRole): string {
+  return role === "trap" ? "!" : String(stepNumber);
+}
+
+function legendLabelForRole(role: PageStepRole): string {
+  switch (role) {
+    case "main_signal":  return "Main Signal — Start here";
+    case "explanation":  return "Explains It";
+    case "support":      return "Support / Continuation";
+    case "deepening":    return "Extra Context / Deepening";
+    case "trap":         return "Do Not Confuse / Final Check";
+    default:             return "Guided Step";
+  }
+}
+
+function importanceForRole(role: PageStepRole): string {
+  switch (role) {
+    case "main_signal":  return "VERY HIGH";
+    case "explanation":  return "HIGH";
+    case "support":      return "HIGH";
+    case "deepening":    return "MEDIUM";
+    case "trap":         return "HIGH";
+    default:             return "HIGH";
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*                            MINI TEST HOOKS                                 */
+/* -------------------------------------------------------------------------- */
+
+function buildCoreMeaningHook(title: string, anchorText: string): string {
+  return cleanLocal(
+    `What is the core meaning of ${lowercaseFirst(title)} and why does this page treat it as central?`
+  ) || cleanLocal(anchorText);
+}
+
+function buildMechanismHook(title: string, mechanismText?: string | null): string | null {
+  if (mechanismText) {
+    return cleanLocal(`How does ${lowercaseFirst(title)} work here and what mechanism drives it?`);
+  }
+  return cleanLocal(`How does this page explain the mechanism or logic behind ${lowercaseFirst(title)}?`);
+}
+
+function buildDistinctionHook(
+  title: string,
+  trapText?: string | null,
+  anchorText?: string | null
+): string | null {
+  if (trapText) {
+    return cleanLocal(`What distinction or contrast matters most when thinking about ${lowercaseFirst(title)}?`);
+  }
+  return cleanLocal(`What should not be confused with ${lowercaseFirst(title)} on this page?`) || cleanLocal(anchorText ?? "");
+}
+
+function buildApplicationHook(title: string, applicationText?: string | null): string | null {
+  if (applicationText) {
+    return cleanLocal(`What is the key operational rule for ${lowercaseFirst(title)} and when does it apply?`);
+  }
+  return cleanLocal(`What should you be able to apply or recognize after reading about ${lowercaseFirst(title)}?`);
+}
+
+function buildSkimTrapHook(
+  title: string,
+  trapText?: string | null,
+  anchorText?: string | null
+): string | null {
+  if (trapText) {
+    return cleanLocal(`What do readers commonly misunderstand about ${lowercaseFirst(title)}?`);
+  }
+  return cleanLocal(`What would a reader miss if they only skimmed this page about ${lowercaseFirst(title)}?`) || cleanLocal(anchorText ?? "");
+}
+
+/* -------------------------------------------------------------------------- */
+/*                           COMPRESSION HELPERS                              */
+/* -------------------------------------------------------------------------- */
+
+function synthesizeRuleFromStepText(anchorText: string, supportTexts: string[]): string | null {
+  const source = anchorText || supportTexts[0] || "";
+  return source ? cleanLocal(source) : null;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                   UTILS                                    */
+/* -------------------------------------------------------------------------- */
+
+function semanticOverlapScore(a: string, b: string): number {
+  const aTokens = tokenize(a);
+  const bTokens = tokenize(b);
+  if (!aTokens.length || !bTokens.length) return 0;
+  const aSet = new Set(aTokens);
+  const bSet = new Set(bTokens);
+  let overlap = 0;
+  for (const token of aSet) { if (bSet.has(token)) overlap += 1; }
+  const union = new Set([...aSet, ...bSet]).size;
+  return union === 0 ? 0 : overlap / union;
+}
+
+function tokenize(text: string): string[] {
+  return (text || "")
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+function inferTitleFromAnchor(anchorText?: string | null): string | null {
+  if (!anchorText) return null;
+  const cleaned = cleanLocal(anchorText);
+  if (!cleaned) return null;
+  return cleaned
+    .split(/\s+/)
+    .slice(0, 6)
+    .map(capitalizeFirst)
+    .join(" ")
+    .replace(/[.?!]+$/, "");
+}
+
+function cleanLocal(value?: string | null): string {
+  const text = (value ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  return /[.!?]$/.test(text) ? text : `${text}.`;
+}
+
+function cleanNullable(value?: string | null): string | null {
+  const text = (value ?? "").replace(/\s+/g, " ").trim();
+  return text ? cleanLocal(text) : null;
+}
+
+function uniqueNonEmpty(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const normalized = (value ?? "").trim();
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(normalized);
+  }
+  return out;
+}
+
+function lowercaseFirst(value: string): string {
+  if (!value) return value;
+  return value.charAt(0).toLowerCase() + value.slice(1);
+}
+
+function capitalizeFirst(value: string): string {
+  if (!value) return value;
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
