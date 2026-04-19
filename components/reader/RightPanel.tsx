@@ -27,6 +27,7 @@ interface RightPanelProps {
   onEvidenceClick?: (snippet: string, evidenceId?: string) => void;
   resolveEvidenceId?: (snippet: string) => string | undefined;
   focusedEvidenceId?: string | null;
+  onRoleLabelMap?: (map: Map<string, string>) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -115,6 +116,7 @@ export function RightPanel({
   onEvidenceClick,
   resolveEvidenceId,
   focusedEvidenceId,
+  onRoleLabelMap,
 }: RightPanelProps) {
   const pageTruthKey = intelligence.pageTruthKey;
   const pageModel = intelligence.pageModel;
@@ -203,6 +205,16 @@ export function RightPanel({
     }
     return { ...ultraPageView, blocks: ordered };
   }, [ultraPageView, guidedPath]);
+
+  // Emit conceptId → roleLabel map so the left panel can label its badges.
+  const roleLabelMap = useMemo((): Map<string, string> => {
+    if (!ultraPageView?.steps) return new Map();
+    return new Map(ultraPageView.steps.map((s) => [s.conceptId, s.roleLabel]));
+  }, [ultraPageView]);
+
+  useEffect(() => {
+    onRoleLabelMap?.(roleLabelMap);
+  }, [roleLabelMap, onRoleLabelMap]);
 
   // Legacy concept blocks — kept for ConceptBlocksView fallback
   const readerPageView = useMemo((): ReaderPageView | null => {

@@ -46,6 +46,12 @@ export interface UltraConceptBlock {
   importance: string;
 }
 
+export interface UltraPageViewStep {
+  conceptId: string;
+  role: string;
+  roleLabel: string;
+}
+
 export interface UltraPageView {
   title: string;
   subtitle: string;
@@ -53,6 +59,7 @@ export interface UltraPageView {
   blocks: UltraConceptBlock[];
   miniTest: string[];
   compression: string[];
+  steps: UltraPageViewStep[];
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +175,17 @@ function buildConceptFields(concept: ConceptBlockInput, coreIdea: string): Built
     trap:           normalizeLine(result.selected.trap?.text          ?? fallbackTrap,    fallbackTrap),
     rule:           normalizeLine(result.selected.rule?.text          ?? fallbackRule,    fallbackRule),
   };
+}
+
+function roleLabelForPageStepRole(role: string): string {
+  switch (role) {
+    case "main_signal":  return "Core";
+    case "explanation":  return "Why";
+    case "support":      return "How";
+    case "deepening":    return "More";
+    case "trap":         return "!";
+    default:             return "";
+  }
 }
 
 function importanceLabel(level: ConceptBlockInput["importance"]): string {
@@ -298,6 +316,12 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
   );
   const compression = sortedRules.slice(0, 3).map((r, i) => `Rule ${i + 1}: ${r.text}`);
 
+  const steps: UltraPageViewStep[] = pageStepResult.steps.map((step) => ({
+    conceptId: step.left.neighborhoodId ?? "",
+    role: step.role,
+    roleLabel: roleLabelForPageStepRole(step.role),
+  }));
+
   return {
     title: `ULTRA – ${inferPageTitle(page, concepts)}`,
     subtitle: "STR + PDRM + Surgical Comprehension Engine",
@@ -305,5 +329,6 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
     blocks,
     miniTest,
     compression,
+    steps,
   };
 }

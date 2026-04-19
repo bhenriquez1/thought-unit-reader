@@ -411,6 +411,7 @@ export default function ThoughtUnitReader() {
   const [focusSnippet, setFocusSnippet] = useState<string | null>(null);
   const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
   const [guidedPath, setGuidedPath] = useState<RenderGuidedReadingPathResult | null>(null);
+  const [roleLabelByConceptId, setRoleLabelByConceptId] = useState<Map<string, string>>(new Map());
 
   /* =========================================================================
      🔹 Unified Annotation Store (P0.1) - Shared between Surgeon View + NoteLab
@@ -2619,6 +2620,7 @@ export default function ThoughtUnitReader() {
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
                   onReadingPath={setGuidedPath}
+                  roleLabelByConceptId={roleLabelByConceptId}
                   onOpenFocusCycle={() => {
                     bindFocusCycleContext({
                       documentId: bookId,
@@ -2653,6 +2655,7 @@ export default function ThoughtUnitReader() {
                   priorityHighlights: currentPriorityHighlights,
                 }}
                 guidedPath={guidedPath}
+                onRoleLabelMap={setRoleLabelByConceptId}
                 resolveEvidenceId={resolveEvidenceId}
                 focusedEvidenceId={focusedEvidenceId}
                 onEvidenceClick={(snippet, evidenceId) => {

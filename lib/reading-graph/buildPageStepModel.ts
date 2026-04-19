@@ -410,15 +410,15 @@ function importanceForRole(role: PageStepRole): string {
 /* -------------------------------------------------------------------------- */
 
 function buildCoreMeaningHook(title: string, anchorText: string): string {
-  return cleanLocal(`What is ${title} and why does this page treat it as central?`)
-    || cleanLocal(anchorText);
+  const q = extractDefinitionQuestion(anchorText);
+  if (q) return q;
+  return cleanLocal(`What does ${titleToNounPhrase(title)} mean on this page?`) || cleanLocal(anchorText);
 }
 
 function buildMechanismHook(title: string, mechanismText?: string | null): string | null {
-  if (mechanismText) {
-    return cleanLocal(`How does ${title} work here?`);
-  }
-  return cleanLocal(`How does this page explain the logic behind ${title}?`);
+  const q = extractCausalQuestion(mechanismText || "");
+  if (q) return q;
+  return cleanLocal(`How does ${titleToNounPhrase(title)} work here?`);
 }
 
 function buildDistinctionHook(
@@ -426,17 +426,14 @@ function buildDistinctionHook(
   trapText?: string | null,
   anchorText?: string | null
 ): string | null {
-  if (trapText) {
-    return cleanLocal(`What contrast or distinction matters most for ${title}?`);
-  }
-  return cleanLocal(`What should not be confused with ${title} on this page?`) || cleanLocal(anchorText ?? "");
+  if (trapText) return cleanLocal(`What is often confused with ${titleToNounPhrase(title)}?`);
+  return cleanLocal(anchorText ?? "") || null;
 }
 
 function buildApplicationHook(title: string, applicationText?: string | null): string | null {
-  if (applicationText) {
-    return cleanLocal(`What is the key rule for ${title} and when does it apply?`);
-  }
-  return cleanLocal(`What should you recognize or apply after reading about ${title}?`);
+  const q = extractOperationalQuestion(applicationText || "");
+  if (q) return q;
+  return cleanLocal(`When would you apply the rule for ${titleToNounPhrase(title)}?`);
 }
 
 function buildSkimTrapHook(
@@ -444,10 +441,38 @@ function buildSkimTrapHook(
   trapText?: string | null,
   anchorText?: string | null
 ): string | null {
-  if (trapText) {
-    return cleanLocal(`What do readers commonly misunderstand about ${title}?`);
-  }
-  return cleanLocal(`What would a skimmer miss about ${title} on this page?`) || cleanLocal(anchorText ?? "");
+  if (trapText) return cleanLocal(`What do readers commonly misread about ${titleToNounPhrase(title)}?`);
+  return cleanLocal(anchorText ?? "") || null;
+}
+
+function titleToNounPhrase(title: string): string {
+  const words = title.replace(/[.!?]+$/, "").split(/\s+/);
+  return words.slice(0, 4).join(" ");
+}
+
+function extractDefinitionQuestion(text: string): string | null {
+  if (!text) return null;
+  const m = text.match(/^(.{4,35}?)\s+(indicates?|means?|represents?|refers? to|is defined as)\s+/i);
+  if (m) return cleanLocal(`What does ${m[1].trim()} ${m[2].toLowerCase()}?`);
+  const m2 = text.match(/(?:you can|one can|we can)\s+(determine|find|calculate|derive)\s+(.{4,40})/i);
+  if (m2) return cleanLocal(`How do you ${m2[1].toLowerCase()} ${m2[2].trim().replace(/[.!?]+$/, "")}?`);
+  return null;
+}
+
+function extractCausalQuestion(text: string): string | null {
+  if (!text) return null;
+  const m = text.match(/^(.{4,35}?)\s+(leads? to|causes?|results? in)\s+(.{4,40})/i);
+  if (m) return cleanLocal(`Why does ${m[1].trim()} ${m[2].toLowerCase()} ${m[3].trim().replace(/[.!?]+$/, "")}?`);
+  const m2 = text.match(/^because\s+(.{4,40}?)[,;]\s+(.{4,40})/i);
+  if (m2) return cleanLocal(`Why does ${m2[2].trim().replace(/[.!?]+$/, "")}?`);
+  return null;
+}
+
+function extractOperationalQuestion(text: string): string | null {
+  if (!text) return null;
+  const m = text.match(/^(.{4,40}?)\s+(?:can be|is|are)\s+(?:ignored?|negligible|disregarded?)/i);
+  if (m) return cleanLocal(`When can ${m[1].trim()} be ignored?`);
+  return null;
 }
 
 /* -------------------------------------------------------------------------- */
