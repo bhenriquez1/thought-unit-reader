@@ -145,14 +145,19 @@ export function buildCompressionRules(
     }
   }
 
-  // Pass 5: synthesis guarantee — if no synthesized rule was selected, swap the
-  // lowest-scoring block rule for the best synthesized candidate that is distinct enough.
+  // Pass 5: synthesis guarantee — always swap the lowest-scoring block rule for
+  // the best synthesized candidate. Synthesis bias (+0.05) ensures synthesized
+  // rules outrank copied block rules when quality is similar.
   const hasSynthesized = selected.some((r) => r.source === "synthesized");
   if (!hasSynthesized && selected.length > 0) {
     const synthPool = buildSynthesizedCandidates(input, protectedTexts, []);
-    const bestSynth = synthPool
+    // Apply +0.05 score bias so synthesized candidates consistently outrank block copies
+    const biasedPool = synthPool.map((c) => ({ ...c, score: c.score + 0.05 }));
+    // Use a permissive 0.50 threshold — always swap unless the synthesized text is
+    // essentially identical to an already-selected rule
+    const bestSynth = biasedPool
       .sort((a, b) => b.score - a.score)
-      .find((c) => isDistinctEnough(c.text, selected.map((s) => s.text), 0.66));
+      .find((c) => isDistinctEnough(c.text, selected.map((s) => s.text), 0.50));
     if (bestSynth) {
       const worstIdx = selected.reduce(
         (minI, r, i) => (r.score < selected[minI].score ? i : minI),

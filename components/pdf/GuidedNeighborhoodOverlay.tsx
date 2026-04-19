@@ -117,6 +117,8 @@ export default function GuidedNeighborhoodOverlay({
       const roleLabel = roleLabelByConceptId?.get(neighborhood.conceptId ?? "") ?? "";
       let isFirstInNeighborhood = true;
       for (const overlay of neighborhood.overlays) {
+        // extra_context entries (filler, figure captions) get no badge
+        if (overlay.tier === "extra_context") continue;
         const firstRect = overlay.rects[0];
         if (!firstRect) continue;
         const isTrap = overlay.tier === "do_not_confuse";

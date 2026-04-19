@@ -232,12 +232,20 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
 
   if (!concepts.length) return null;
 
-  // Use the AI-generated page summary as the primary coreIdea source.
-  // The normalization engine's coreIdea is a regex-extracted pattern, weaker than the model summary.
+  // Use the page summary as the primary coreIdea source.
+  // When it is absent or too short, find the strongest support sentence from the
+  // top concept rather than falling back to its bare anchor (which is often a fragment).
   const normalizedSummary = page.pageSummary;
 
+  const summaryFallback = (() => {
+    if (normalizedSummary && normalizedSummary.length >= 30) return normalizedSummary;
+    const top = concepts[0];
+    if (!top) return "";
+    return top.supportSentences.find((s) => s.length >= 40) ?? top.anchorSentence ?? "";
+  })();
+
   const coreIdea = normalizeLine(
-    normalizedSummary ?? concepts[0]?.anchorSentence ?? "",
+    summaryFallback,
     "This page develops one core idea through a small set of connected concepts."
   );
 
