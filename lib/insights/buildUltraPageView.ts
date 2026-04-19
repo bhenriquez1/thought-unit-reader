@@ -1,6 +1,9 @@
 // lib/insights/buildUltraPageView.ts
 // Converts a PageInsightModel into the ULTRA structured right-panel view.
 // All fields are complete sentences — no fragments.
+//
+// Architecture: buildPageStepModel is the shared step model that drives
+// mini test and STR compression so they are page-native, not template-like.
 
 import type { PageInsightModel } from "@/lib/insights/types";
 import { cleanSentence } from "./sentenceCleanup";
@@ -21,7 +24,7 @@ import {
   type SectionKind,
 } from "./dedupeSectionCandidates";
 import { buildCompressionRules, type BuildCompressionRulesInput } from "./buildCompressionRules";
-import { buildMiniTestQuestions } from "./buildMiniTestQuestions";
+import { buildPageStepModel } from "@/lib/reading-graph/buildPageStepModel";
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -130,7 +133,7 @@ function buildConceptFields(concept: ConceptBlockInput, coreIdea: string): Built
   add(concept.anchorSentence, "pattern", 10);
   concept.supportSentences.forEach((s, i) => add(s, "pattern", 5 - i * 0.5));
 
-  // REASON: prefer causal/explanatory signals (logicChain.because flows here via supportSentences)
+  // REASON: prefer causal/explanatory signals
   concept.supportSentences.forEach((s, i) => {
     add(s, "reason", (REASON_RE.test(s) ? 9 : 4) - i * 0.5);
   });
@@ -165,12 +168,6 @@ function importanceLabel(level: ConceptBlockInput["importance"]): string {
   return { very_high: "VERY HIGH", high: "HIGH", medium: "MEDIUM", low: "LOW" }[level] ?? "MEDIUM";
 }
 
-function buildMiniTest(concepts: ConceptBlockInput[]): string[] {
-  const result = buildMiniTestQuestions(concepts);
-  return result.questions.map((q) => q.question);
-}
-
-
 function inferPageTitle(page: PageModelForConcepts, concepts: ConceptBlockInput[]): string {
   if (page.pageTitle?.trim()) return page.pageTitle.trim();
   if (concepts[0]?.title) return concepts[0].title;
@@ -192,6 +189,7 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
     "This page develops one core idea through a small set of connected concepts."
   );
 
+  // Concept blocks use buildConceptFields + dedupeSections for field quality.
   const blocks: UltraConceptBlock[] = concepts.map((c, i) => {
     const fields = buildConceptFields(c, coreIdea);
     return {
@@ -202,6 +200,52 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
     };
   });
 
+  // Shared step model: drives mini test and enriches compression candidates.
+  // Synthetic neighborhoods are built from concept data so both sides stay in sync.
+  const pageStepResult = buildPageStepModel({
+    pageKey: `${page.documentId}:${page.pageNumber}`,
+    pageTitle: inferPageTitle(page, concepts),
+    pageSummary: page.pageSummary ?? undefined,
+    conceptBlocks: blocks.map((b, i) => ({
+      id: concepts[i].id,
+      title: b.title,
+      pattern: b.pattern,
+      surgicalReason: b.surgicalReason,
+      trap: b.trap,
+      rule: b.rule,
+      importance: b.importance,
+    })),
+    highlightNeighborhoods: concepts.map((c) => ({
+      id: c.id,
+      title: c.title,
+      anchor: { id: `${c.id}:a`, text: c.anchorSentence },
+      support: c.supportSentences.map((s, i) => ({ id: `${c.id}:s${i}`, text: s })),
+      additional: [],
+      trap: c.trapCandidates[0] ? { id: `${c.id}:t`, text: c.trapCandidates[0] } : null,
+    })),
+    supportNeighborhoods: concepts.map((c) => ({
+      id: c.id,
+      title: c.title,
+      anchor: c.anchorSentence,
+      support: c.supportSentences,
+      additional: [],
+      trap: c.trapCandidates[0] ?? null,
+    })),
+  });
+
+  // Mini test: from step model hooks — more page-native, question per step angle
+  const miniTest = pageStepResult.steps
+    .flatMap((step) => [
+      step.miniTest.coreMeaning,
+      step.miniTest.mechanism,
+      step.miniTest.distinction,
+      step.miniTest.application,
+      step.miniTest.skimTrap,
+    ])
+    .filter((q): q is string => Boolean(q))
+    .slice(0, 5);
+
+  // STR Compression: keep sophisticated anti-dup + synthesis, enrich with step hooks
   const compressionInput: BuildCompressionRulesInput = {
     pageKey: `${page.documentId}:${page.pageNumber}`,
     pageTitle: inferPageTitle(page, concepts),
@@ -215,13 +259,27 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
       rule: b.rule,
       importance: b.importance,
     })),
-    supportNeighborhoods: concepts.map((c) => ({
-      id: c.id,
-      title: c.title,
-      anchor: c.anchorSentence,
-      support: c.supportSentences,
-      trap: c.trapCandidates[0] ?? null,
-    })),
+    supportNeighborhoods: [
+      // Primary: concept-level neighborhoods
+      ...concepts.map((c) => ({
+        id: c.id,
+        title: c.title,
+        anchor: c.anchorSentence,
+        support: c.supportSentences,
+        trap: c.trapCandidates[0] ?? null,
+      })),
+      // Supplemental: step model compression hooks as additional synthesized candidates
+      ...pageStepResult.steps.map((step, i) => ({
+        id: `step-synth-${i}`,
+        title: step.right.title,
+        anchor: step.compression.recognitionHook ?? null,
+        support: [
+          step.compression.mechanismHook,
+          step.compression.applicationHook,
+        ].filter((s): s is string => Boolean(s)),
+        trap: step.compression.boundaryHook ?? null,
+      })),
+    ],
   };
 
   const compressionResult = buildCompressionRules(compressionInput);
@@ -237,7 +295,7 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
     subtitle: "STR + PDRM + Surgical Comprehension Engine",
     coreIdea,
     blocks,
-    miniTest: buildMiniTest(concepts),
+    miniTest,
     compression,
   };
 }
