@@ -3124,8 +3124,11 @@ export default function ThoughtUnitReader() {
 
         {/* Floating Action Buttons - Bottom Left Stack */}
         <div className="fixed bottom-[80px] right-6 z-40 flex flex-col gap-3 max-w-[170px] opacity-90">
-          {/* Highlight color legend — dynamic from current page guided reading path */}
+          {/* Highlight color legend — always present when highlights are active; dynamic from guided path */}
           {(() => {
+            const hasHighlights = (highlightNeighborhoods?.length ?? 0) > 0;
+            if (!hasHighlights) return null;
+
             const legend = buildGuidedLegend({ guidedPath });
             const badgeBg: Record<string, string> = {
               main_signal:    "rgba(161, 98, 7, 0.95)",
@@ -3133,12 +3136,25 @@ export default function ThoughtUnitReader() {
               extra_context:  "rgba(71, 85, 105, 0.95)",
               do_not_confuse: "rgba(190, 24, 93, 0.95)",
             };
-            if (!legend.entries.length) return null;
+
+            // Fallback entries shown while guidedPath is loading (brief window on page turn)
+            type LegendEntry = {
+              id: string; tier: string; badge: string;
+              label: string; description: string;
+            };
+            const fallback: LegendEntry[] = [
+              { id: "legend:main_signal",    tier: "main_signal",    badge: "1", label: "Main Signal",    description: "Start here" },
+              { id: "legend:explains_it",    tier: "explains_it",    badge: "2", label: "Explains It",    description: "Then read this" },
+              { id: "legend:extra_context",  tier: "extra_context",  badge: "3", label: "Extra Context",  description: "Then deepen" },
+              { id: "legend:do_not_confuse", tier: "do_not_confuse", badge: "!", label: "Do Not Confuse", description: "Final check" },
+            ];
+            const entries = legend.entries.length > 0 ? legend.entries : fallback;
+
             return (
               <div className="rounded-xl border border-white/10 bg-[rgb(11,18,34)]/90 backdrop-blur-sm px-2.5 py-2">
                 <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-500">Page guide</div>
                 <div className="space-y-1.5">
-                  {legend.entries.map((entry) => (
+                  {entries.map((entry) => (
                     <div key={entry.id} className="flex items-center gap-1.5">
                       <span
                         style={{
@@ -3148,7 +3164,7 @@ export default function ThoughtUnitReader() {
                           width: 16,
                           height: 16,
                           borderRadius: 999,
-                          background: badgeBg[entry.tier],
+                          background: badgeBg[entry.tier] ?? "rgba(100,100,100,0.8)",
                           fontSize: 9,
                           fontWeight: 700,
                           color: "white",
