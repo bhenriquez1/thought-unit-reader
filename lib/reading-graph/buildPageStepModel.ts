@@ -410,16 +410,15 @@ function importanceForRole(role: PageStepRole): string {
 /* -------------------------------------------------------------------------- */
 
 function buildCoreMeaningHook(title: string, anchorText: string): string {
-  return cleanLocal(
-    `What is the core meaning of ${lowercaseFirst(title)} and why does this page treat it as central?`
-  ) || cleanLocal(anchorText);
+  return cleanLocal(`What is ${title} and why does this page treat it as central?`)
+    || cleanLocal(anchorText);
 }
 
 function buildMechanismHook(title: string, mechanismText?: string | null): string | null {
   if (mechanismText) {
-    return cleanLocal(`How does ${lowercaseFirst(title)} work here and what mechanism drives it?`);
+    return cleanLocal(`How does ${title} work here?`);
   }
-  return cleanLocal(`How does this page explain the mechanism or logic behind ${lowercaseFirst(title)}?`);
+  return cleanLocal(`How does this page explain the logic behind ${title}?`);
 }
 
 function buildDistinctionHook(
@@ -428,16 +427,16 @@ function buildDistinctionHook(
   anchorText?: string | null
 ): string | null {
   if (trapText) {
-    return cleanLocal(`What distinction or contrast matters most when thinking about ${lowercaseFirst(title)}?`);
+    return cleanLocal(`What contrast or distinction matters most for ${title}?`);
   }
-  return cleanLocal(`What should not be confused with ${lowercaseFirst(title)} on this page?`) || cleanLocal(anchorText ?? "");
+  return cleanLocal(`What should not be confused with ${title} on this page?`) || cleanLocal(anchorText ?? "");
 }
 
 function buildApplicationHook(title: string, applicationText?: string | null): string | null {
   if (applicationText) {
-    return cleanLocal(`What is the key operational rule for ${lowercaseFirst(title)} and when does it apply?`);
+    return cleanLocal(`What is the key rule for ${title} and when does it apply?`);
   }
-  return cleanLocal(`What should you be able to apply or recognize after reading about ${lowercaseFirst(title)}?`);
+  return cleanLocal(`What should you recognize or apply after reading about ${title}?`);
 }
 
 function buildSkimTrapHook(
@@ -446,9 +445,9 @@ function buildSkimTrapHook(
   anchorText?: string | null
 ): string | null {
   if (trapText) {
-    return cleanLocal(`What do readers commonly misunderstand about ${lowercaseFirst(title)}?`);
+    return cleanLocal(`What do readers commonly misunderstand about ${title}?`);
   }
-  return cleanLocal(`What would a reader miss if they only skimmed this page about ${lowercaseFirst(title)}?`) || cleanLocal(anchorText ?? "");
+  return cleanLocal(`What would a skimmer miss about ${title} on this page?`) || cleanLocal(anchorText ?? "");
 }
 
 /* -------------------------------------------------------------------------- */

@@ -2652,6 +2652,7 @@ export default function ThoughtUnitReader() {
                   story: currentPageStory,
                   priorityHighlights: currentPriorityHighlights,
                 }}
+                guidedPath={guidedPath}
                 resolveEvidenceId={resolveEvidenceId}
                 focusedEvidenceId={focusedEvidenceId}
                 onEvidenceClick={(snippet, evidenceId) => {

@@ -36,6 +36,7 @@ import {
 // ---------------------------------------------------------------------------
 
 export interface UltraConceptBlock {
+  conceptId: string;
   ordinal: number;
   title: string;
   pattern: string;
@@ -198,6 +199,7 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
   const blocks: UltraConceptBlock[] = concepts.map((c, i) => {
     const fields = buildConceptFields(c, coreIdea);
     return {
+      conceptId: c.id,
       ordinal: i + 1,
       title: c.title,
       ...fields,
