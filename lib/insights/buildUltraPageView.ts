@@ -30,6 +30,7 @@ import {
   type MiniTestQuestionCandidate,
   type MiniTestRole,
 } from "./selectMiniTestQuestions";
+import { normalizeClinicalText } from "@/lib/normalization/normalizeClinicalText";
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -203,13 +204,39 @@ function inferPageTitle(page: PageModelForConcepts, concepts: ConceptBlockInput[
 // ---------------------------------------------------------------------------
 
 export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView | null {
+  // --- Normalization gate: suppress non-instructional pages ---
+  const rawPageText = (pageModel.paragraphInsights ?? [])
+    .map((p) => p.cleanedText || p.rawText || "")
+    .filter(Boolean)
+    .join(" ");
+
+  const headingLines = (pageModel.paragraphInsights ?? [])
+    .filter((p) => {
+      const t = (p.cleanedText || p.rawText || "").trim();
+      return t.length > 0 && t.length < 90 && !/[.!?]$/.test(t);
+    })
+    .slice(0, 6)
+    .map((p) => p.cleanedText || p.rawText || "");
+
+  const normResult = normalizeClinicalText({
+    pageText: rawPageText,
+    pageTitle: pageModel.pageSummary ?? undefined,
+    pageNumber: pageModel.pageNumber ?? undefined,
+    headingLines,
+  });
+
+  if (!normResult.shouldRenderFullPanel) return null;
+
   const page = adaptPageInsightModel(pageModel);
   const concepts = extractConceptBlocks(page);
 
   if (!concepts.length) return null;
 
+  // Use the normalization engine's coreIdea when it's sharper than the model summary.
+  const normalizedSummary = normResult.coreIdea ?? page.pageSummary;
+
   const coreIdea = normalizeLine(
-    page.pageSummary ?? concepts[0]?.anchorSentence ?? "",
+    normalizedSummary ?? concepts[0]?.anchorSentence ?? "",
     "This page develops one core idea through a small set of connected concepts."
   );
 
