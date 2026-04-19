@@ -25,6 +25,11 @@ import {
 } from "./dedupeSectionCandidates";
 import { buildCompressionRules, type BuildCompressionRulesInput } from "./buildCompressionRules";
 import { buildPageStepModel } from "@/lib/reading-graph/buildPageStepModel";
+import {
+  selectMiniTestQuestions,
+  type MiniTestQuestionCandidate,
+  type MiniTestRole,
+} from "./selectMiniTestQuestions";
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -233,17 +238,18 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
     })),
   });
 
-  // Mini test: from step model hooks — more page-native, question per step angle
-  const miniTest = pageStepResult.steps
-    .flatMap((step) => [
-      step.miniTest.coreMeaning,
-      step.miniTest.mechanism,
-      step.miniTest.distinction,
-      step.miniTest.application,
-      step.miniTest.skimTrap,
-    ])
-    .filter((q): q is string => Boolean(q))
-    .slice(0, 5);
+  // Mini test: role-balanced selection in step order from shared step model
+  const miniTestCandidates: MiniTestQuestionCandidate[] = pageStepResult.steps.flatMap((step) =>
+    (["coreMeaning", "mechanism", "distinction", "application", "skimTrap"] as MiniTestRole[]).map((role) => ({
+      id: `${step.id}:${role}`,
+      stepId: step.id,
+      stepOrder: step.order,
+      role,
+      text: step.miniTest[role] ?? "",
+    }))
+  ).filter((c) => Boolean(c.text));
+  const miniTestResult = selectMiniTestQuestions({ candidates: miniTestCandidates, maxQuestions: 5 });
+  const miniTest = miniTestResult.questions.map((q) => q.text);
 
   // STR Compression: keep sophisticated anti-dup + synthesis, enrich with step hooks
   const compressionInput: BuildCompressionRulesInput = {
