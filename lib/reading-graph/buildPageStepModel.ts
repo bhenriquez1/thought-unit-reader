@@ -370,6 +370,29 @@ function inferStepRole(args: {
     combined.includes("also")
   ) return "deepening";
 
+  // Clinical signals
+  if (
+    combined.includes("the clinician must") ||
+    combined.includes("diagnosis determines") ||
+    combined.includes("chief complaint") ||
+    combined.includes("treatment decision")
+  ) return args.index === 0 ? "main_signal" : "explanation";
+
+  // Scientific consequence signals
+  if (
+    (combined.includes("when") && (combined.includes("changes") || combined.includes("transforms"))) ||
+    combined.includes("this means") ||
+    combined.includes("as a result")
+  ) return args.index === 0 ? "main_signal" : "explanation";
+
+  // Operational/application signals
+  if (
+    combined.includes("we can") ||
+    combined.includes("you can") ||
+    combined.includes("one can") ||
+    combined.includes("can be used")
+  ) return args.index <= 1 ? "explanation" : "deepening";
+
   if (args.index === 0) return "main_signal";
   if (args.index === 1) return "explanation";
   return "support";
@@ -446,8 +469,13 @@ function buildSkimTrapHook(
 }
 
 function titleToNounPhrase(title: string): string {
-  const words = title.replace(/[.!?]+$/, "").split(/\s+/);
-  return words.slice(0, 4).join(" ");
+  const cleaned = title.replace(/[.!?]+$/, "").replace(/^(The|A|An)\s+/i, "").trim();
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  const verbIdx = words.findIndex((w) =>
+    /^(indicates?|describes?|defines?|measures?|represents?|shows?|means?|refers?|is|are|was|were|has|have)$/i.test(w)
+  );
+  const cutAt = verbIdx > 0 ? Math.min(verbIdx, 4) : Math.min(4, words.length);
+  return words.slice(0, cutAt).join(" ");
 }
 
 function extractDefinitionQuestion(text: string): string | null {

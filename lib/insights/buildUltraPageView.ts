@@ -232,8 +232,9 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
 
   if (!concepts.length) return null;
 
-  // Use the normalization engine's coreIdea when it's sharper than the model summary.
-  const normalizedSummary = normResult.coreIdea ?? page.pageSummary;
+  // Use the AI-generated page summary as the primary coreIdea source.
+  // The normalization engine's coreIdea is a regex-extracted pattern, weaker than the model summary.
+  const normalizedSummary = page.pageSummary;
 
   const coreIdea = normalizeLine(
     normalizedSummary ?? concepts[0]?.anchorSentence ?? "",
