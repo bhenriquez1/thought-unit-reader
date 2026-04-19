@@ -202,11 +202,40 @@ function processParagraph(text: string, paragraphIndex: number): ParagraphInsigh
 }
 
 function inferPagePurpose(sorted: ParagraphInsight[]): string {
-  const top = sorted[0];
-  if (!top) return "Limited evidence on this page.";
-  const second = sorted[1];
-  if (!second) return top.summary;
-  const blended = `${top.summary} ${second.takeaways[0] || ""}`.trim();
+  if (!sorted.length) return "";
+
+  const STRONG_TYPES = new Set([
+    "definition", "cause_effect", "decision", "clinical_reasoning", "consequence", "signal",
+  ]);
+
+  // Prefer a high-priority paragraph with a strong semantic type
+  const strongParagraph = sorted.find(
+    (p) => STRONG_TYPES.has(p.paragraphType) && p.summary.length >= 30 && p.priorityScore >= 2
+  );
+
+  const primary = strongParagraph ?? sorted[0];
+  if (!primary) return "";
+
+  // Use summary if substantial; otherwise fall through to takeaways / coreSignals
+  let base = primary.summary;
+  if (base.length < 30) {
+    base =
+      primary.takeaways.find((t) => t.length >= 30) ??
+      primary.coreSignals.find((s) => s.length >= 30) ??
+      base;
+  }
+  if (!base || base.length < 15) return "";
+
+  // Supplement with one distinct takeaway from a different high-priority paragraph
+  const secondary = sorted.find(
+    (p) =>
+      p !== primary &&
+      p.priorityScore >= 2 &&
+      (p.takeaways[0]?.length ?? 0) >= 20 &&
+      p.takeaways[0]?.toLowerCase().slice(0, 35) !== base.toLowerCase().slice(0, 35)
+  );
+  const supplement = secondary?.takeaways[0] ?? "";
+  const blended = supplement ? `${base} ${supplement}`.trim() : base;
   return blended.length > 170 ? `${blended.slice(0, 167)}...` : blended;
 }
 

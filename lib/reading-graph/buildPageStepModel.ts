@@ -297,7 +297,14 @@ function findBestConceptBlockMatch(
   for (const block of blocks) {
     const hay = [block.title, block.pattern, block.rule, block.trap].filter(Boolean).join(" ");
     const score = semanticOverlapScore(needle, hay);
-    if (score > bestScore) { best = block; bestScore = score; }
+    if (score > bestScore + 0.02) {
+      best = block; bestScore = score;
+    } else if (Math.abs(score - bestScore) <= 0.02 && score > 0) {
+      // Tie-break: prefer the block with more specific content (longer pattern)
+      const existingLen = (best?.pattern ?? best?.title ?? "").split(/\s+/).length;
+      const candidateLen = (block.pattern ?? block.title ?? "").split(/\s+/).length;
+      if (candidateLen > existingLen) { best = block; bestScore = score; }
+    }
   }
   return best;
 }
@@ -435,13 +442,17 @@ function importanceForRole(role: PageStepRole): string {
 function buildCoreMeaningHook(title: string, anchorText: string): string {
   const q = extractDefinitionQuestion(anchorText);
   if (q) return q;
-  return cleanLocal(`What does ${titleToNounPhrase(title)} mean on this page?`) || cleanLocal(anchorText);
+  const phrase = isWeakTitle(title) ? extractNounPhrase(anchorText) : titleToNounPhrase(title);
+  if (!phrase || isGenericPhrase(phrase)) return cleanLocal(anchorText);
+  return cleanLocal(`What does ${phrase} mean on this page?`) || cleanLocal(anchorText);
 }
 
 function buildMechanismHook(title: string, mechanismText?: string | null): string | null {
   const q = extractCausalQuestion(mechanismText || "");
   if (q) return q;
-  return cleanLocal(`How does ${titleToNounPhrase(title)} work here?`);
+  const phrase = isWeakTitle(title) ? extractNounPhrase(mechanismText || title) : titleToNounPhrase(title);
+  if (!phrase || isGenericPhrase(phrase)) return mechanismText ? cleanLocal(mechanismText) : null;
+  return cleanLocal(`How does ${phrase} work here?`);
 }
 
 function buildDistinctionHook(
@@ -449,14 +460,20 @@ function buildDistinctionHook(
   trapText?: string | null,
   anchorText?: string | null
 ): string | null {
-  if (trapText) return cleanLocal(`What is often confused with ${titleToNounPhrase(title)}?`);
+  if (trapText) {
+    const phrase = isWeakTitle(title) ? extractNounPhrase(anchorText || trapText) : titleToNounPhrase(title);
+    if (phrase && !isGenericPhrase(phrase)) return cleanLocal(`What is often confused with ${phrase}?`);
+    return cleanLocal(trapText);
+  }
   return cleanLocal(anchorText ?? "") || null;
 }
 
 function buildApplicationHook(title: string, applicationText?: string | null): string | null {
   const q = extractOperationalQuestion(applicationText || "");
   if (q) return q;
-  return cleanLocal(`When would you apply the rule for ${titleToNounPhrase(title)}?`);
+  const phrase = isWeakTitle(title) ? extractNounPhrase(applicationText || title) : titleToNounPhrase(title);
+  if (!phrase || isGenericPhrase(phrase)) return applicationText ? cleanLocal(applicationText) : null;
+  return cleanLocal(`When would you apply the rule for ${phrase}?`);
 }
 
 function buildSkimTrapHook(
@@ -464,8 +481,31 @@ function buildSkimTrapHook(
   trapText?: string | null,
   anchorText?: string | null
 ): string | null {
-  if (trapText) return cleanLocal(`What do readers commonly misread about ${titleToNounPhrase(title)}?`);
+  if (trapText) {
+    const phrase = isWeakTitle(title) ? extractNounPhrase(anchorText || trapText) : titleToNounPhrase(title);
+    if (phrase && !isGenericPhrase(phrase)) return cleanLocal(`What do readers commonly misread about ${phrase}?`);
+    return cleanLocal(trapText);
+  }
   return cleanLocal(anchorText ?? "") || null;
+}
+
+function isWeakTitle(title: string): boolean {
+  const t = title.trim();
+  return t.length < 5 || /^step\s+\d+$/i.test(t) || /^(concept|topic|section|page)\s*\d*$/i.test(t);
+}
+
+function extractNounPhrase(text: string): string {
+  const stripped = (text ?? "").replace(/[.!?]+$/, "").trim();
+  if (!stripped) return "";
+  const words = stripped.split(/\s+/).filter(Boolean);
+  const STOP = new Set(["the", "a", "an", "in", "on", "at", "to", "of", "and", "or", "but", "is", "are", "was", "were", "that", "this", "it", "its", "by", "for", "with"]);
+  const start = words.findIndex((w) => !STOP.has(w.toLowerCase()));
+  const from = start >= 0 ? start : 0;
+  return words.slice(from, from + 4).join(" ");
+}
+
+function isGenericPhrase(phrase: string): boolean {
+  return /^(step|concept|topic|section|page)\s*\d*\.?$/i.test(phrase.trim());
 }
 
 function titleToNounPhrase(title: string): string {

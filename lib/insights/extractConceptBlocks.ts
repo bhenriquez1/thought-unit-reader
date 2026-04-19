@@ -105,7 +105,23 @@ function sentenceScore(sentence: SourceSentence): number {
 
 function chooseAnchorSentence(sentences: SourceSentence[]): SourceSentence | null {
   if (!sentences.length) return null;
-  return [...sentences].sort((a, b) => sentenceScore(b) - sentenceScore(a))[0] ?? null;
+  const total = sentences.length;
+  return (
+    [...sentences].sort((a, b) => {
+      const diff = sentenceScore(b) - sentenceScore(a);
+      if (Math.abs(diff) > 0.5) return diff;
+      // Tie-break 1: prefer sentences in the 12–28 word range (highest specificity)
+      const aWords = a.text.split(/\s+/).length;
+      const bWords = b.text.split(/\s+/).length;
+      const aOpt = Math.abs(aWords - 20);
+      const bOpt = Math.abs(bWords - 20);
+      if (aOpt !== bOpt) return aOpt - bOpt;
+      // Tie-break 2: prefer sentences near the middle of the paragraph
+      const aPos = Math.abs(sentences.indexOf(a) / Math.max(total - 1, 1) - 0.5);
+      const bPos = Math.abs(sentences.indexOf(b) / Math.max(total - 1, 1) - 0.5);
+      return aPos - bPos;
+    })[0] ?? null
+  );
 }
 
 function inferImportance(score: number): ConceptImportance {
@@ -240,7 +256,14 @@ function mergeRelatedConcepts(concepts: ConceptBlockInput[]): ConceptBlockInput[
 }
 
 function selectBestConcepts(concepts: ConceptBlockInput[]): ConceptBlockInput[] {
-  const ranked = [...concepts].sort((a, b) => b.score - a.score);
+  const ranked = [...concepts].sort((a, b) => {
+    const diff = b.score - a.score;
+    if (Math.abs(diff) > 0.5) return diff;
+    // Tie-break: prefer anchor sentences in the 12–28 word range (more specific)
+    const aWords = a.anchorSentence.split(/\s+/).length;
+    const bWords = b.anchorSentence.split(/\s+/).length;
+    return Math.abs(aWords - 20) - Math.abs(bWords - 20);
+  });
   const trimmed = ranked.slice(0, MAX_BLOCKS);
   return trimmed.length >= MIN_BLOCKS ? trimmed : ranked.slice(0, Math.max(MIN_BLOCKS, ranked.length));
 }
