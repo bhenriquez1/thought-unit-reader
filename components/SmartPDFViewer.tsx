@@ -67,6 +67,8 @@ export interface SmartPDFViewerProps {
   onPageTextExtracted?: (page: number, text: string) => void;
   /** Fires whenever the guided reading path changes — null when no neighborhoods are active. */
   onReadingPath?: (path: RenderGuidedReadingPathResult | null) => void;
+  /** Maps conceptId → role label ("Core", "Why", "How", "More") for badge role pills. */
+  roleLabelByConceptId?: Map<string, string>;
 }
 
 /** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
@@ -138,6 +140,7 @@ export default function SmartPDFViewer({
   onPageRenderComplete,
   onPageTextExtracted,
   onReadingPath,
+  roleLabelByConceptId,
 }: SmartPDFViewerProps) {
   // Stable key root: prefer explicit docId, fall back to fileUrl
   const pageKeyRoot = docId ?? fileUrl;
@@ -768,6 +771,7 @@ export default function SmartPDFViewer({
                       neighborhoods={guidedOverlayData.neighborhoods}
                       overlayRects={guidedOverlayData.overlays}
                       onReadingPath={onReadingPath}
+                      roleLabelByConceptId={roleLabelByConceptId}
                     />
                   ) : (
                     <PdfEvidenceOverlay

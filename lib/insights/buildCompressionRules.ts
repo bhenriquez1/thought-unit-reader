@@ -340,36 +340,69 @@ function dedupeCandidates(candidates: CandidateSeed[]): CandidateSeed[] {
 
 function synthesizeRecognitionRule(title: string, summary: string, pattern?: string | null, anchor?: string | null): string | null {
   const src = firstRenderable([pattern, anchor, summary]);
-  if (!src) return null;
-  const clause = distillClause(src);
-  if (!clause) return null;
-  return title
-    ? ensureSentence(`${title} is organized around the idea that ${lowercaseFirst(clause)}`)
-    : ensureSentence(`The page centers on the idea that ${lowercaseFirst(clause)}`);
+  return src ? compressToRule(src, "recognition") : null;
 }
 
 function synthesizeMechanismRule(reason?: string | null, support?: string | null, pattern?: string | null, summary?: string | null): string | null {
   const src = firstRenderable([reason, support, pattern, summary]);
-  if (!src) return null;
-  const clause = distillClause(src);
-  if (!clause) return null;
-  return startsWithMechanismSignal(clause) ? ensureSentence(clause) : ensureSentence(`This works because ${lowercaseFirst(clause)}`);
+  return src ? compressToRule(src, "mechanism") : null;
 }
 
 function synthesizeApplicationRule(rule?: string | null, pattern?: string | null, support?: string | null, summary?: string | null): string | null {
   const src = firstRenderable([rule, support, pattern, summary]);
-  if (!src) return null;
-  const clause = distillClause(src);
-  if (!clause) return null;
-  return startsWithActionSignal(clause) ? ensureSentence(clause) : ensureSentence(`Use this page to recognize that ${lowercaseFirst(clause)}`);
+  return src ? compressToRule(src, "application") : null;
 }
 
 function synthesizeBoundaryRule(trap?: string | null, pattern?: string | null, reason?: string | null, summary?: string | null): string | null {
   const src = firstRenderable([trap, pattern, reason, summary]);
-  if (!src) return null;
-  const clause = distillClause(src);
-  if (!clause) return null;
-  return /^do not\b/i.test(clause) ? ensureSentence(clause) : ensureSentence(`Do not confuse ${lowercaseFirst(clause)} with nearby supporting details`);
+  return src ? compressToRule(src, "boundary") : null;
+}
+
+function compressToRule(text: string, role: CompressionRole): string | null {
+  const c = distillClause(text);
+  if (!c) return null;
+  const stripped = c.replace(/[.!?]+$/, "").trim();
+
+  switch (role) {
+    case "recognition": {
+      // "X indicates/means Y" → "X = Y."
+      const m = stripped.match(/^(.{4,40}?)\s+(indicates?|means?|represents?|is defined as)\s+(.{4,60})/i);
+      if (m) return ensureSentence(`${m[1].trim()} = ${lowercaseFirst(truncW(m[3], 9))}`);
+      return ensureSentence(truncW(stripped, 11));
+    }
+    case "mechanism": {
+      // "X leads to / causes / results in Y" → "X → Y."
+      const m = stripped.match(/^(.{4,45}?)\s+(?:leads? to|therefore|causes?|results? in)\s+(.{4,55})/i);
+      if (m) return ensureSentence(`${truncW(m[1], 6)} → ${lowercaseFirst(truncW(m[2], 7))}`);
+      // "Because X, Y" → "X → Y."
+      const m2 = stripped.match(/^because\s+(.{4,40}?)[,;]\s+(.{4,40})/i);
+      if (m2) return ensureSentence(`${truncW(m2[1], 6)} → ${lowercaseFirst(truncW(m2[2], 7))}`);
+      if (startsWithMechanismSignal(stripped)) return ensureSentence(truncW(stripped, 11));
+      return ensureSentence(truncW(stripped, 11));
+    }
+    case "application": {
+      // "X can be ignored/negligible" → "Ignore X in this context."
+      const m = stripped.match(/^(.{4,40}?)\s+(?:can be|is|are)\s+(?:ignored?|negligible|disregarded?)/i);
+      if (m) return ensureSentence(`Ignore ${lowercaseFirst(truncW(m[1], 7))} in this context`);
+      if (startsWithActionSignal(stripped)) return ensureSentence(truncW(stripped, 12));
+      return ensureSentence(truncW(stripped, 11));
+    }
+    case "boundary": {
+      // "If/when X changes → Y"
+      const m = stripped.match(/(?:if|when)\s+(.{4,35}?)\s+changes?[,;]?\s+(.{4,45})/i);
+      if (m) return ensureSentence(`If ${m[1].trim()} changes → ${lowercaseFirst(truncW(m[2], 7))}`);
+      // "X is not / unlike / different from Y" → "X ≠ Y."
+      const m2 = stripped.match(/^(.{4,35}?)\s+(?:is not|are not|unlike|different from)\s+(.{4,40})/i);
+      if (m2) return ensureSentence(`${truncW(m2[1], 6)} ≠ ${lowercaseFirst(truncW(m2[2], 6))}`);
+      if (/^do not\b/i.test(stripped)) return ensureSentence(truncW(stripped, 11));
+      return ensureSentence(truncW(stripped, 11));
+    }
+  }
+}
+
+function truncW(text: string, n: number): string {
+  const words = (text ?? "").replace(/[.!?]+$/, "").split(/\s+/);
+  return words.length <= n ? text.replace(/[.!?]+$/, "") : words.slice(0, n).join(" ");
 }
 
 function distillClause(text: string): string {

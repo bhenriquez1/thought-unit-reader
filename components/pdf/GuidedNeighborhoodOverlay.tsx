@@ -54,6 +54,8 @@ export interface GuidedNeighborhoodOverlayProps {
   visible?: boolean;
   onOverlayClick?: (payload: { neighborhoodId: string; memberId?: string; tier: GuidedTier; text?: string }) => void;
   onReadingPath?: (path: RenderGuidedReadingPathResult | null) => void;
+  /** Maps conceptId → short role label ("Core", "Why", "How", "More") for badge role pills. */
+  roleLabelByConceptId?: Map<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -65,6 +67,7 @@ export default function GuidedNeighborhoodOverlay({
   visible = true,
   onOverlayClick,
   onReadingPath,
+  roleLabelByConceptId,
 }: GuidedNeighborhoodOverlayProps) {
   const guided = useMemo(() => {
     if (!neighborhoods.length || !overlayRects.length) return null;
@@ -98,7 +101,7 @@ export default function GuidedNeighborhoodOverlay({
   }, [guided, onReadingPath]);
 
   // Sequential badge entries — one per guided step (not per rect).
-  // Traps use "!" instead of a number.
+  // Traps use "!" instead of a number. First overlay per neighborhood gets a role label pill.
   const badgeEntries = useMemo(() => {
     if (!guided) return [];
     const entries: Array<{
@@ -107,18 +110,30 @@ export default function GuidedNeighborhoodOverlay({
       x: number;
       y: number;
       tier: GuidedTier;
+      roleLabel: string;
     }> = [];
     let counter = 1;
     for (const neighborhood of guided.neighborhoods) {
+      const roleLabel = roleLabelByConceptId?.get(neighborhood.conceptId ?? "") ?? "";
+      let isFirstInNeighborhood = true;
       for (const overlay of neighborhood.overlays) {
         const firstRect = overlay.rects[0];
         if (!firstRect) continue;
-        const label = overlay.tier === "do_not_confuse" ? "!" : String(counter++);
-        entries.push({ id: `${overlay.id}:badge`, label, x: firstRect.x, y: firstRect.y, tier: overlay.tier });
+        const isTrap = overlay.tier === "do_not_confuse";
+        const label = isTrap ? "!" : String(counter++);
+        entries.push({
+          id: `${overlay.id}:badge`,
+          label,
+          x: firstRect.x,
+          y: firstRect.y,
+          tier: overlay.tier,
+          roleLabel: isFirstInNeighborhood && !isTrap ? roleLabel : "",
+        });
+        isFirstInNeighborhood = false;
       }
     }
     return entries;
-  }, [guided]);
+  }, [guided, roleLabelByConceptId]);
 
   if (!visible || !guided?.flatOverlays.length) return null;
 
@@ -164,31 +179,58 @@ export default function GuidedNeighborhoodOverlay({
         </React.Fragment>
       ))}
 
-      {/* Numbered reading-path badges */}
+      {/* Numbered reading-path badges with optional role label pill */}
       {badgeEntries.map((badge) => (
         <div
           key={badge.id}
           style={{
             position: "absolute",
             left: badge.x - 10,
-            top: badge.y - 10,
-            width: 20,
-            height: 20,
-            borderRadius: 999,
+            top: badge.roleLabel ? badge.y - 14 : badge.y - 10,
             display: "flex",
+            flexDirection: "column",
             alignItems: "center",
-            justifyContent: "center",
-            fontSize: 11,
-            fontWeight: 700,
-            color: "white",
-            background: BADGE_BG[badge.tier],
-            boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+            gap: 2,
             zIndex: 80,
             pointerEvents: "none",
             userSelect: "none",
           }}
         >
-          {badge.label}
+          <div
+            style={{
+              width: 20,
+              height: 20,
+              borderRadius: 999,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 11,
+              fontWeight: 700,
+              color: "white",
+              background: BADGE_BG[badge.tier],
+              boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+            }}
+          >
+            {badge.label}
+          </div>
+          {badge.roleLabel && (
+            <div
+              style={{
+                fontSize: 7,
+                fontWeight: 700,
+                color: "white",
+                background: BADGE_BG[badge.tier],
+                borderRadius: 3,
+                padding: "0px 3px",
+                lineHeight: "11px",
+                letterSpacing: "0.03em",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.28)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {badge.roleLabel}
+            </div>
+          )}
         </div>
       ))}
     </div>
