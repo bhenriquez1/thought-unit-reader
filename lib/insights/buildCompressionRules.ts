@@ -365,37 +365,42 @@ function compressToRule(text: string, role: CompressionRole): string | null {
 
   switch (role) {
     case "recognition": {
-      // "X indicates/means Y" → "X = Y."
+      // "X indicates/means Y" → "X = Y." only when RHS is a noun phrase, not a clause
       const m = stripped.match(/^(.{4,40}?)\s+(indicates?|means?|represents?|is defined as)\s+(.{4,60})/i);
-      if (m) return ensureSentence(`${m[1].trim()} = ${lowercaseFirst(truncW(m[3], 9))}`);
-      return ensureSentence(truncW(stripped, 11));
+      if (m) {
+        const rhs = m[3].trim();
+        if (!/^(how|that|which|what|whether|when|if|where)\b/i.test(rhs)) {
+          return ensureSentence(`${m[1].trim()} = ${lowercaseFirst(truncW(rhs, 7))}`);
+        }
+      }
+      return ensureSentence(truncAtClause(stripped, 18));
     }
     case "mechanism": {
       // "X leads to / causes / results in Y" → "X → Y."
       const m = stripped.match(/^(.{4,45}?)\s+(?:leads? to|therefore|causes?|results? in)\s+(.{4,55})/i);
-      if (m) return ensureSentence(`${truncW(m[1], 6)} → ${lowercaseFirst(truncW(m[2], 7))}`);
+      if (m) return ensureSentence(`${truncW(m[1], 8)} → ${lowercaseFirst(truncW(m[2], 10))}`);
       // "Because X, Y" → "X → Y."
       const m2 = stripped.match(/^because\s+(.{4,40}?)[,;]\s+(.{4,40})/i);
-      if (m2) return ensureSentence(`${truncW(m2[1], 6)} → ${lowercaseFirst(truncW(m2[2], 7))}`);
-      if (startsWithMechanismSignal(stripped)) return ensureSentence(truncW(stripped, 11));
-      return ensureSentence(truncW(stripped, 11));
+      if (m2) return ensureSentence(`${truncW(m2[1], 8)} → ${lowercaseFirst(truncW(m2[2], 8))}`);
+      if (startsWithMechanismSignal(stripped)) return ensureSentence(truncAtClause(stripped, 16));
+      return ensureSentence(truncAtClause(stripped, 16));
     }
     case "application": {
       // "X can be ignored/negligible" → "Ignore X in this context."
       const m = stripped.match(/^(.{4,40}?)\s+(?:can be|is|are)\s+(?:ignored?|negligible|disregarded?)/i);
       if (m) return ensureSentence(`Ignore ${lowercaseFirst(truncW(m[1], 7))} in this context`);
-      if (startsWithActionSignal(stripped)) return ensureSentence(truncW(stripped, 12));
-      return ensureSentence(truncW(stripped, 11));
+      if (startsWithActionSignal(stripped)) return ensureSentence(truncAtClause(stripped, 16));
+      return ensureSentence(truncAtClause(stripped, 16));
     }
     case "boundary": {
       // "If/when X changes → Y"
       const m = stripped.match(/(?:if|when)\s+(.{4,35}?)\s+changes?[,;]?\s+(.{4,45})/i);
-      if (m) return ensureSentence(`If ${m[1].trim()} changes → ${lowercaseFirst(truncW(m[2], 7))}`);
+      if (m) return ensureSentence(`If ${m[1].trim()} changes → ${lowercaseFirst(truncW(m[2], 8))}`);
       // "X is not / unlike / different from Y" → "X ≠ Y."
       const m2 = stripped.match(/^(.{4,35}?)\s+(?:is not|are not|unlike|different from)\s+(.{4,40})/i);
-      if (m2) return ensureSentence(`${truncW(m2[1], 6)} ≠ ${lowercaseFirst(truncW(m2[2], 6))}`);
-      if (/^do not\b/i.test(stripped)) return ensureSentence(truncW(stripped, 11));
-      return ensureSentence(truncW(stripped, 11));
+      if (m2) return ensureSentence(`${truncW(m2[1], 8)} ≠ ${lowercaseFirst(truncW(m2[2], 8))}`);
+      if (/^do not\b/i.test(stripped)) return ensureSentence(truncAtClause(stripped, 16));
+      return ensureSentence(truncAtClause(stripped, 16));
     }
   }
 }
@@ -403,6 +408,18 @@ function compressToRule(text: string, role: CompressionRole): string | null {
 function truncW(text: string, n: number): string {
   const words = (text ?? "").replace(/[.!?]+$/, "").split(/\s+/);
   return words.length <= n ? text.replace(/[.!?]+$/, "") : words.slice(0, n).join(" ");
+}
+
+function truncAtClause(text: string, maxWords: number): string {
+  const stripped = (text ?? "").replace(/[.!?]+$/, "").trim();
+  const words = stripped.split(/\s+/);
+  if (words.length <= maxWords) return stripped;
+  // Try to cut at first clause boundary after 6+ words
+  const clauseEnd = stripped.search(/,|;|\s+(?:and|but|or|which|that|where|when)\s/);
+  if (clauseEnd > 0 && stripped.slice(0, clauseEnd).split(/\s+/).length >= 6) {
+    return stripped.slice(0, clauseEnd).trim();
+  }
+  return words.slice(0, maxWords).join(" ");
 }
 
 function distillClause(text: string): string {

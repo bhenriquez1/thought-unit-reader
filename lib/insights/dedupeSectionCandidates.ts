@@ -12,7 +12,7 @@ export const PATTERN_RE = /\b(defines?|is defined|describes?|consists? of|refers
 
 export const REASON_RE  = /\b(because|therefore|thus|results? in|leads? to|allows?|explains?|helps?|causes?|enables?|drives?|underlies?|involves?|due to|so that|in order to|responsible for|accounts? for|attributed to)\b/i;
 
-export const TRAP_RE    = /\b(however|but|although|whereas|unlike|in contrast|rather than|except|not |can be confused|should not be confused|do not|does not|is not|are not|conversely|instead|the difference|different from|distinct from|must not|incorrectly|often mistaken)\b/i;
+export const TRAP_RE    = /\b(whereas|unlike|in contrast|rather than|the difference|different from|distinct from|conversely|instead|can be confused|should not be confused|do not confuse|does not|is not|are not|must not|incorrectly|often mistaken|commonly confused|not to be confused)\b/i;
 
 export const RULE_RE    = /\b(key takeaway|therefore|in other words|thus|the main point|should be understood|can be treated|remember|note that|importantly|always|never|must|the rule is|key rule|general rule|takeaway|it follows that)\b/i;
 
