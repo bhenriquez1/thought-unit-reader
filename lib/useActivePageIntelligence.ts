@@ -20,6 +20,7 @@ import { evaluatePageTruth, type PageTruthGateResult } from "@/lib/insights/eval
 import { buildPageStory } from "@/lib/insights/buildPageStory";
 import type { PageInsightModel } from "@/lib/insights/types";
 import type { PageStory } from "@/lib/insights/buildPageStory";
+import { normalizeClinicalText, type ClinicalNormalizationResult } from "@/lib/normalization/normalizeClinicalText";
 
 export type ActivePageIntelligenceStatus = "idle" | "loading" | "ready" | "error";
 
@@ -137,6 +138,7 @@ export function useActivePageIntelligence({
   const [pageTruth, setPageTruth] = useState<PageTruthGateResult | null>(null);
   const [formulaSignals, setFormulaSignals] = useState<FormulaSignal[]>([]);
   const [priorityHighlights, setPriorityHighlights] = useState<ExtractPriorityHighlightsResult>({ pageNumber, main: [], support: [], weak: [], all: [], stats: { candidatesSeen: 0, candidatesAccepted: 0, blocksMerged: 0, spansResolved: 0, usedStory: false, usedFallback: false } });
+  const [normResult, setNormResult] = useState<ClinicalNormalizationResult | null>(null);
   const latestRequestRef = useRef<string>("");
   // Always holds the latest ctx so the page-processing effect reads current
   // values without ctx itself being a dependency (avoids spurious re-runs
@@ -177,6 +179,7 @@ export function useActivePageIntelligence({
     setPageTruth(null);
     setFormulaSignals([]);
     setPriorityHighlights({ pageNumber, main: [], support: [], weak: [], all: [], stats: { candidatesSeen: 0, candidatesAccepted: 0, blocksMerged: 0, spansResolved: 0, usedStory: false, usedFallback: false } });
+    setNormResult(null);
 
     Promise.resolve().then(() => {
       if (latestRequestRef.current !== requestKey) return;
@@ -201,6 +204,21 @@ export function useActivePageIntelligence({
         pageNumber,
         requestKey,
       };
+
+      // Normalization gate — computed once per page change, shared by both highlight
+      // and right-panel pipelines so suppression is consistent and early.
+      const normHeadingLines = (snapshot.pageText || "")
+        .split(/\n+/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0 && l.length < 90 && !/[.!?]$/.test(l))
+        .slice(0, 6);
+      const localNormResult = normalizeClinicalText({
+        pageText: snapshot.pageText || "",
+        pageTitle: localPageModel.pageSummary ?? undefined,
+        pageNumber,
+        headingLines: normHeadingLines,
+      });
+
       const localPageStory = localPageModel.pageStory || buildPageStory({
         pageClass: localPageClass,
         pageModel: localPageModel,
@@ -280,6 +298,7 @@ export function useActivePageIntelligence({
       setPageStoryV3(localPageStoryV3);
       setPageTruth(localPageTruth);
       setPriorityHighlights(localHighlights);
+      setNormResult(localNormResult);
       setStatus("ready");
     }).catch((err: unknown) => {
       if (latestRequestRef.current !== requestKey) return;
@@ -311,13 +330,14 @@ export function useActivePageIntelligence({
     ["cover", "contents", "chapter_opener", "section_opener", "copyright_frontmatter", "image_scan_heavy"].includes(signals.pageRole || "");
 
   const highlightNeighborhoods: HighlightNeighborhood[] = useMemo(() => {
-    if (!pageModel) return [];
+    if (!pageModel || !normResult?.shouldRenderFullPanel) return [];
     const adapted = adaptPageInsightModel(pageModel);
     const concepts = extractConceptBlocksCore(adapted);
     return concepts.length > 0 ? buildHighlightNeighborhoods(concepts) : [];
-  }, [pageModel, pageNumber]);
+  }, [pageModel, pageNumber, normResult]);
 
   const highlightTargets: HighlightTarget[] = useMemo(() => {
+    if (!normResult?.shouldRenderFullPanel) return [];
     // Primary: neighborhood-derived highlights in concept-cluster order
     if (highlightNeighborhoods.length > 0) {
       return flattenNeighborhoods(highlightNeighborhoods).map((line, index) => {
@@ -419,6 +439,7 @@ export function useActivePageIntelligence({
     highlightTargets,
     highlightNeighborhoods,
     limitedEvidence,
+    normResult,
   };
 }
 

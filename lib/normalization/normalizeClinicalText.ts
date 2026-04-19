@@ -216,6 +216,17 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
     /\bchapter outline\b|\bcontents\b|\bpart\b\s+\d+\b/.test(text) && words < 90
   ) return "chapter_title";
 
+  // Chapter opener: page text starts with "chapter N" and has sparse prose
+  if (/^chapter\s+\d+\b/.test(text.trim()) && words < 180 && sentenceCount < 5) return "chapter_title";
+
+  // Heading-heavy page: majority of words are in headings, very few complete sentences
+  if (
+    input.headingLines.length >= 3 &&
+    words > 0 &&
+    headingWords / words > 0.55 &&
+    sentenceCount < 5
+  ) return "chapter_title";
+
   if (input.imageCoverageRatio > 0.82 && words < 25) return "image_only";
   if (input.graphCoverageRatio > 0.72 && sentenceCount < 2) return "graph_only";
   if (input.diagramCoverageRatio > 0.7 && words < 35) return "diagram_only";
