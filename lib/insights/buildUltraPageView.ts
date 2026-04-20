@@ -5,7 +5,7 @@
 // Architecture: buildPageStepModel is the shared step model that drives
 // mini test and STR compression so they are page-native, not template-like.
 
-import type { PageInsightModel } from "@/lib/insights/types";
+import type { PageInsightModel, ParagraphInsight } from "@/lib/insights/types";
 import { cleanSentence } from "./sentenceCleanup";
 import { isRenderableSentence } from "./isRenderableSentence";
 import {
@@ -31,6 +31,7 @@ import {
   type MiniTestRole,
 } from "./selectMiniTestQuestions";
 import { normalizeClinicalText } from "@/lib/normalization/normalizeClinicalText";
+import { scoreClinicalPriority, type ClinicalPriorityCandidate } from "./scoreClinicalPriority";
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -57,7 +58,7 @@ export interface UltraPageViewDebug {
   pageKind: string;
   shouldRenderFullPanel: boolean;
   pageSummaryLength: number;
-  coreIdeaSource: "pageSummary" | "supportSentence" | "anchorFallback" | "hardFallback";
+  coreIdeaSource: "pageSummary" | "chiefSignal" | "supportSentence" | "anchorFallback" | "hardFallback";
   conceptCandidates: Array<{ id: string; title: string; score: number; anchorLen: number }>;
 }
 
@@ -73,6 +74,22 @@ export interface UltraPageView {
 }
 
 // ---------------------------------------------------------------------------
+// Hard content filter — runs before scoring; blocks non-instructional content
+// ---------------------------------------------------------------------------
+
+function isValidCoreParagraph(p: ParagraphInsight): boolean {
+  const text = (p.cleanedText || p.rawText || "").trim();
+  if (!text || p.paragraphType === "noise") return false;
+  if (text.length < 80) return false;
+  // Reject figure captions, table headers, diagram labels
+  if (/^(figure\s*\d|fig\.\s*\d|table\s*\d|diagram\s*\d|image\s*\d)/i.test(text)) return false;
+  // Reject structural / TOC content
+  if (/^(chapter\s+\d|section\s+\d|key\s+concepts?|learning\s+objectives?|table\s+of\s+contents)/i.test(text)) return false;
+  // Must carry at least one explanation signal
+  return /\b(is|are|was|were|causes?|leads?\s+to|results?\s+in|depends?|occurs?|because|means?|defined\s+as|refers?\s+to|consists?\s+of|involves?)\b/i.test(text);
+}
+
+// ---------------------------------------------------------------------------
 // Adapter: PageInsightModel → PageModelForConcepts
 // ---------------------------------------------------------------------------
 
@@ -80,7 +97,9 @@ export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelFor
   const allSentences: SourceSentence[] = [];
   const sourceParagraphs: SourceParagraph[] = [];
 
-  for (const p of (pageModel.paragraphInsights ?? [])) {
+  const validInsights = (pageModel.paragraphInsights ?? []).filter(isValidCoreParagraph);
+
+  for (const p of validInsights) {
     const sentenceIds: string[] = [];
 
     type ScoredText = { text: string; score: number };
@@ -172,6 +191,23 @@ function buildConceptFields(concept: ConceptBlockInput, coreIdea: string): Built
   });
   add(concept.anchorSentence, "rule", 1);
 
+  // Clinical priority boost: re-score candidates based on clinical role signals
+  const clinicalInputs: ClinicalPriorityCandidate[] = [
+    { id: "anchor", text: concept.anchorSentence },
+    ...concept.supportSentences.map((s, i) => ({ id: `sup${i}`, text: s })),
+    ...concept.trapCandidates.map((s, i) => ({ id: `trap${i}`, text: s })),
+  ];
+  const clinicalScores = scoreClinicalPriority(clinicalInputs);
+  const clinicalByKey = new Map(clinicalScores.map((cs) => [cs.text.toLowerCase().slice(0, 60), cs]));
+  for (const c of candidates) {
+    const cs = clinicalByKey.get(c.text.toLowerCase().slice(0, 60));
+    if (!cs) continue;
+    if (c.kind === "pattern" && (cs.role === "chief_signal" || cs.role === "interpretation")) c.score += 3;
+    if (c.kind === "reason"  && (cs.role === "interpretation" || cs.role === "diagnostic_rule")) c.score += 3;
+    if (c.kind === "trap"    && cs.role === "trap") c.score += 4;
+    if (c.kind === "rule"    && (cs.role === "treatment_implication" || cs.role === "next_step" || cs.role === "diagnostic_rule")) c.score += 3;
+  }
+
   const result = dedupeSections(candidates, coreIdea);
 
   const fallbackPattern = cleanSentence(concept.anchorSentence) || "This concept introduces a central idea on the page.";
@@ -242,12 +278,22 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
   if (!concepts.length) return null;
 
   // Use the page summary as the primary coreIdea source.
-  // When it is absent or too short, find the strongest support sentence from the
-  // top concept rather than falling back to its bare anchor (which is often a fragment).
+  // When absent/short: prefer the top clinical chief_signal across all concept
+  // sentences, then the top support sentence, then the bare anchor.
   const normalizedSummary = page.pageSummary;
+
+  const chiefSignalText = (() => {
+    const allCandidates: ClinicalPriorityCandidate[] = concepts.flatMap((c, ci) => [
+      { id: `${ci}:anchor`, text: c.anchorSentence },
+      ...c.supportSentences.map((s, si) => ({ id: `${ci}:sup${si}`, text: s })),
+    ]);
+    const ranked = scoreClinicalPriority(allCandidates);
+    return ranked.find((s) => s.role === "chief_signal" && s.text.length >= 40)?.text ?? null;
+  })();
 
   const summaryFallback = (() => {
     if (normalizedSummary && normalizedSummary.length >= 30) return normalizedSummary;
+    if (chiefSignalText) return chiefSignalText;
     const top = concepts[0];
     if (!top) return "";
     return top.supportSentences.find((s) => s.length >= 40) ?? top.anchorSentence ?? "";
@@ -370,6 +416,8 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
   const coreIdeaSource: UltraPageViewDebug["coreIdeaSource"] =
     normalizedSummary && normalizedSummary.length >= 30
       ? "pageSummary"
+      : chiefSignalText
+      ? "chiefSignal"
       : concepts[0]?.supportSentences.find((s) => s.length >= 40)
       ? "supportSentence"
       : concepts[0]?.anchorSentence
