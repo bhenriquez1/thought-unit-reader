@@ -275,22 +275,33 @@ export function RightPanel({
     ? rawBottomLine
     : null;
 
+  // Non-instructional gate: suppresses all content views on title/figure/TOC pages
+  const normResult = intelligence.normResult ?? null;
+  const pageIsNonInstructional =
+    isCurrentPageModel &&
+    intelligence.status !== "loading" &&
+    normResult !== null &&
+    normResult.shouldRenderFullPanel === false;
+
   // ULTRA = primary view; concept blocks = secondary; narrative/story = fallbacks
-  const showUltraView     = isCurrentPageModel && Boolean(ultraPageView);
-  const showConceptBlocks = isCurrentPageModel && !showUltraView && Boolean(readerPageView);
-  const showNarrativePageView = isCurrentPageModel && !showUltraView && !showConceptBlocks && Boolean(
+  // All views gated on !pageIsNonInstructional so no fake output on suppressed pages
+  const showUltraView     = isCurrentPageModel && !pageIsNonInstructional && Boolean(ultraPageView);
+  const showConceptBlocks = isCurrentPageModel && !pageIsNonInstructional && !showUltraView && Boolean(readerPageView);
+  const showNarrativePageView = isCurrentPageModel && !pageIsNonInstructional && !showUltraView && !showConceptBlocks && Boolean(
     narrativePageView?.narrative.sections.length
   );
   const gate = !showUltraView && !showConceptBlocks;
-  const showNarrativeView  = isCurrentPageModel && gate && !showNarrativePageView && narrativeBlocks.length > 0;
-  const showV3View         = isCurrentPageModel && gate && !showNarrativePageView && !showNarrativeView && v3Notes.length > 0;
-  const showV2Map          = isCurrentPageModel && gate && !showNarrativePageView && !showNarrativeView && !showV3View && v2Notes.length > 0;
-  const showV2Operator     = isCurrentPageModel && gate && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && Boolean(storyV2?.signalBlock);
-  const showGuidedView     = isCurrentPageModel && gate && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && !showV2Operator && Boolean(guidedView);
+  const showNarrativeView  = isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && narrativeBlocks.length > 0;
+  const showV3View         = isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && v3Notes.length > 0;
+  const showV2Map          = isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && !showV3View && v2Notes.length > 0;
+  const showV2Operator     = isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && Boolean(storyV2?.signalBlock);
+  const showGuidedView     = isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && !showV2Operator && Boolean(guidedView);
 
   // Header status label
   const headerStatus = intelligence.status === "loading"
     ? LOADING_PHASES[loadingPhase]
+    : pageIsNonInstructional
+    ? "Not available on this page"
     : (showNarrativePageView || showNarrativeView || showV3View) && v3Brief
     ? v3Brief.pagePurpose
     : "Current page · ready";
@@ -335,8 +346,20 @@ export function RightPanel({
           </div>
         )}
 
+        {/* ── NON-INSTRUCTIONAL PAGE STATE ────────────────────────── */}
+        {pageIsNonInstructional && (
+          <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-5 flex flex-col gap-2">
+            <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+              {inferUnavailablePageLabel(normResult?.pageKind)}
+            </div>
+            <div className="text-sm text-slate-500">
+              Structured page intelligence is not available on this page.
+            </div>
+          </div>
+        )}
+
         {/* Loading / gating state */}
-        {renderTruthFallback(pageTruth?.reason || "loading", intelligence.status, !isCurrentPageModel, loadingPhase)}
+        {!pageIsNonInstructional && renderTruthFallback(pageTruth?.reason || "loading", intelligence.status, !isCurrentPageModel, loadingPhase)}
 
         {intelligence.status === "error" && (
           <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">
@@ -1131,6 +1154,20 @@ function OperatorCardView({ card }: { card: OperatorCard }) {
 // ---------------------------------------------------------------------------
 // Loading / gate fallback
 // ---------------------------------------------------------------------------
+
+function inferUnavailablePageLabel(pageKind?: string): string {
+  switch (pageKind) {
+    case "chapter_title":      return "Chapter title page";
+    case "front_matter":       return "Front matter";
+    case "image_only":         return "Image-only page";
+    case "graph_only":         return "Graph-only page";
+    case "diagram_only":       return "Diagram-only page";
+    case "table_heavy":        return "Table-heavy page";
+    case "questionnaire_form": return "Form page";
+    case "insufficient_prose": return "Insufficient text";
+    default:                   return "Non-instructional page";
+  }
+}
 
 function renderTruthFallback(reason: string, status: string, keyMismatch: boolean, loadingPhase = 0) {
   if (status === "loading" || keyMismatch || reason === "loading") {

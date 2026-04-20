@@ -41,6 +41,7 @@ export type ActivePageIntelligenceSnapshot = {
   storyV2: PageStoryV2 | null;
   storyV3: PageStoryV3 | null;
   priorityHighlights: ExtractPriorityHighlightsResult;
+  normResult: ClinicalNormalizationResult | null;
 };
 
 interface UseActivePageIntelligenceArgs {
