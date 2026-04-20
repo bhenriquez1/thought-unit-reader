@@ -31,7 +31,10 @@ import {
   type MiniTestRole,
 } from "./selectMiniTestQuestions";
 import { normalizeClinicalText } from "@/lib/normalization/normalizeClinicalText";
-import { scoreClinicalPriority, type ClinicalPriorityCandidate } from "./scoreClinicalPriority";
+import { detectPageDomain, type PageDomain } from "./detectPageDomain";
+import { findMainTeachingZone } from "./findMainTeachingZone";
+import { scoreDomainPriority, type DomainPriorityScore } from "./scoreDomainPriority";
+import type { ClinicalPriorityCandidate } from "./scoreClinicalPriority";
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -56,6 +59,7 @@ export interface UltraPageViewStep {
 
 export interface UltraPageViewDebug {
   pageKind: string;
+  domain: PageDomain;
   shouldRenderFullPanel: boolean;
   pageSummaryLength: number;
   coreIdeaSource: "pageSummary" | "chiefSignal" | "supportSentence" | "anchorFallback" | "hardFallback";
@@ -97,9 +101,7 @@ export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelFor
   const allSentences: SourceSentence[] = [];
   const sourceParagraphs: SourceParagraph[] = [];
 
-  const validInsights = (pageModel.paragraphInsights ?? []).filter(isValidCoreParagraph);
-
-  for (const p of validInsights) {
+  for (const p of (pageModel.paragraphInsights ?? [])) {
     const sentenceIds: string[] = [];
 
     type ScoredText = { text: string; score: number };
@@ -162,7 +164,7 @@ interface BuiltFields {
   rule: string;
 }
 
-function buildConceptFields(concept: ConceptBlockInput, coreIdea: string): BuiltFields {
+function buildConceptFields(concept: ConceptBlockInput, coreIdea: string, domain: PageDomain): BuiltFields {
   const candidates: SectionCandidate[] = [];
   let seq = 0;
 
@@ -191,21 +193,18 @@ function buildConceptFields(concept: ConceptBlockInput, coreIdea: string): Built
   });
   add(concept.anchorSentence, "rule", 1);
 
-  // Clinical priority boost: re-score candidates based on clinical role signals
-  const clinicalInputs: ClinicalPriorityCandidate[] = [
+  // Domain-aware priority boost: re-score candidates using domain-specific roles
+  const domainInputs: ClinicalPriorityCandidate[] = [
     { id: "anchor", text: concept.anchorSentence },
     ...concept.supportSentences.map((s, i) => ({ id: `sup${i}`, text: s })),
     ...concept.trapCandidates.map((s, i) => ({ id: `trap${i}`, text: s })),
   ];
-  const clinicalScores = scoreClinicalPriority(clinicalInputs);
-  const clinicalByKey = new Map(clinicalScores.map((cs) => [cs.text.toLowerCase().slice(0, 60), cs]));
+  const domainScores: DomainPriorityScore[] = scoreDomainPriority(domainInputs, domain);
+  const domainByKey = new Map(domainScores.map((ds) => [ds.text.toLowerCase().slice(0, 60), ds]));
   for (const c of candidates) {
-    const cs = clinicalByKey.get(c.text.toLowerCase().slice(0, 60));
-    if (!cs) continue;
-    if (c.kind === "pattern" && (cs.role === "chief_signal" || cs.role === "interpretation")) c.score += 3;
-    if (c.kind === "reason"  && (cs.role === "interpretation" || cs.role === "diagnostic_rule")) c.score += 3;
-    if (c.kind === "trap"    && cs.role === "trap") c.score += 4;
-    if (c.kind === "rule"    && (cs.role === "treatment_implication" || cs.role === "next_step" || cs.role === "diagnostic_rule")) c.score += 3;
+    const ds = domainByKey.get(c.text.toLowerCase().slice(0, 60));
+    if (!ds || ds.slot === "support") continue;
+    if (c.kind === ds.slot) c.score += ds.slot === "trap" ? 4 : 3;
   }
 
   const result = dedupeSections(candidates, coreIdea);
@@ -272,14 +271,18 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
 
   if (!normResult.shouldRenderFullPanel) return null;
 
-  const page = adaptPageInsightModel(pageModel);
+  // Detect domain once — drives scoring and coreIdea selection downstream
+  const domain = detectPageDomain(rawPageText);
+
+  // Apply hard filter + teaching zone before concept extraction
+  const validInsights = (pageModel.paragraphInsights ?? []).filter(isValidCoreParagraph);
+  const zoneInsights = findMainTeachingZone(validInsights);
+  const page = adaptPageInsightModel({ ...pageModel, paragraphInsights: zoneInsights });
   const concepts = extractConceptBlocks(page);
 
   if (!concepts.length) return null;
 
-  // Use the page summary as the primary coreIdea source.
-  // When absent/short: prefer the top clinical chief_signal across all concept
-  // sentences, then the top support sentence, then the bare anchor.
+  // Core idea: pageSummary → domain chief_signal → support sentence → bare anchor
   const normalizedSummary = page.pageSummary;
 
   const chiefSignalText = (() => {
@@ -287,8 +290,15 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
       { id: `${ci}:anchor`, text: c.anchorSentence },
       ...c.supportSentences.map((s, si) => ({ id: `${ci}:sup${si}`, text: s })),
     ]);
-    const ranked = scoreClinicalPriority(allCandidates);
-    return ranked.find((s) => s.role === "chief_signal" && s.text.length >= 40)?.text ?? null;
+    const ranked = scoreDomainPriority(allCandidates, domain);
+    // For math: prefer formula + interpretation; for others: prefer "pattern" slot
+    if (domain === "math") {
+      const formula = ranked.find((s) => s.slot === "pattern" && s.text.length >= 10);
+      const interp  = ranked.find((s) => s.slot === "reason"  && s.text.length >= 20 && s.text !== formula?.text);
+      if (formula && interp) return `${formula.text}: ${interp.text.toLowerCase().replace(/[.!?]+$/, "")}`;
+      return formula?.text ?? null;
+    }
+    return ranked.find((s) => s.slot === "pattern" && s.text.length >= 40)?.text ?? null;
   })();
 
   const summaryFallback = (() => {
@@ -304,9 +314,9 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
     "This page develops one core idea through a small set of connected concepts."
   );
 
-  // Concept blocks use buildConceptFields + dedupeSections for field quality.
+  // Concept blocks — pass domain so field scoring is domain-aware
   const blocks: UltraConceptBlock[] = concepts.map((c, i) => {
-    const fields = buildConceptFields(c, coreIdea);
+    const fields = buildConceptFields(c, coreIdea, domain);
     return {
       conceptId: c.id,
       ordinal: i + 1,
@@ -426,6 +436,7 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
 
   const _debug: UltraPageViewDebug = {
     pageKind: normResult.pageKind,
+    domain,
     shouldRenderFullPanel: normResult.shouldRenderFullPanel,
     pageSummaryLength: (pageModel.pageSummary ?? "").length,
     coreIdeaSource,
