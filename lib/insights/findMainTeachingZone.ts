@@ -17,7 +17,7 @@ const EXPLANATORY_TYPES = new Set<ParagraphType>([
 ]);
 
 export function findMainTeachingZone(paragraphs: ParagraphInsight[]): ParagraphInsight[] {
-  if (paragraphs.length <= 3) return paragraphs;
+  if (paragraphs.length <= 5) return paragraphs;
 
   return [...paragraphs]
     .map((p) => {
@@ -31,6 +31,6 @@ export function findMainTeachingZone(paragraphs: ParagraphInsight[]): ParagraphI
       return { p, zoneScore };
     })
     .sort((a, b) => b.zoneScore - a.zoneScore)
-    .slice(0, 3)
+    .slice(0, 5)
     .map(({ p }) => p);
 }
