@@ -79,6 +79,26 @@ const MIN_PROSE_WORDS = 55;
 const MIN_SENTENCES = 3;
 const MIN_CANONICAL_STATEMENTS = 2;
 
+// Returns true when the page carries recognizable learning content regardless
+// of prose density. Used to override the word/sentence count suppression gates.
+function hasInstructionalSignals(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    // Science / chemistry / biology vocabulary
+    /\b(atom|molecule|element|mass|proton|neutron|electron|isotope|reaction|cell|protein|organism|compound|bond|ion|nucleus|periodic|valence)\b/.test(lower) ||
+    // Explanation connectors that mark instructional prose
+    /\b(therefore|because|results? in|leads? to|defined as|is called|refers? to|consists? of|means|indicates|represents|is characterized by)\b/.test(lower) ||
+    // Instructional phrases
+    /\b(for example|such as|in other words|that is)\b/.test(lower) ||
+    // Clinical vocabulary
+    /\b(patient|clinician|diagnosis|treatment|symptom|finding|clinical|prognosis)\b/.test(lower) ||
+    // Math / physics vocabulary
+    /\b(theorem|integral|derivative|equation|formula|function|calculate|solve|force|velocity|acceleration|momentum)\b/.test(lower) ||
+    // Math symbols
+    /[=∫∑∂π√]/.test(text)
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /*                                   PUBLIC                                   */
 /* -------------------------------------------------------------------------- */
@@ -144,7 +164,12 @@ export function normalizeClinicalText(
 
   const dedupedStatements = dedupeCanonicalStatements(canonicalStatements);
 
-  if (dedupedStatements.length < MIN_CANONICAL_STATEMENTS) {
+  // Pages with instructional signals need only 1 canonical statement to render.
+  // Hard-topic textbook pages often produce few but high-quality statements.
+  const minStatements = hasInstructionalSignals(cleanedPageText.toLowerCase())
+    ? 1
+    : MIN_CANONICAL_STATEMENTS;
+  if (dedupedStatements.length < minStatements) {
     return {
       pageKind,
       shouldRenderFullPanel: false,
@@ -251,8 +276,14 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
   ) return "scientific_exposition";
 
   if (words < MIN_PROSE_WORDS || sentenceCount < MIN_SENTENCES) {
-    if (headingWords < 18 && words < 70) return "chapter_title";
-    return "insufficient_prose";
+    // Only suppress when there are no recognizable instructional signals.
+    // Textbook pages with figures or sparse layout often have low prose density
+    // but still carry real learning content.
+    if (!hasInstructionalSignals(text)) {
+      if (headingWords < 18 && words < 70) return "chapter_title";
+      return "insufficient_prose";
+    }
+    // Instructional signals present — fall through to instructional_prose
   }
 
   return "instructional_prose";
@@ -268,6 +299,10 @@ function shouldRenderPageKind(pageKind: PageKind, pageText: string, sentences: s
     pageKind === "questionnaire_form" ||
     pageKind === "insufficient_prose"
   ) return false;
+  // Instructional signal override: render even when prose is sparse.
+  // Textbook pages with figures, headers, or split-column layout often have
+  // fewer words/sentences than the threshold but still contain real learning content.
+  if (hasInstructionalSignals(pageText.toLowerCase())) return true;
   if (wordCount(pageText) < MIN_PROSE_WORDS) return false;
   if (sentences.length < MIN_SENTENCES) return false;
   return true;
