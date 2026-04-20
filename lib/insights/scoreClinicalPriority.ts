@@ -1,14 +1,13 @@
 // lib/insights/scoreClinicalPriority.ts
 // Scores valid-paragraph candidates by clinical/scientific importance.
-// Used after isValidCoreParagraph filtering to rank what matters first,
-// not just what is most similar.
+// Multi-dimensional scoring separates centrality, reasoning, actionability,
+// trap risk, and exam relevance — drives role classification for all domains.
 
 export type ClinicalPriorityRole =
-  | "chief_signal"
-  | "interpretation"
-  | "diagnostic_rule"
-  | "treatment_implication"
-  | "next_step"
+  | "main_signal"
+  | "mechanism"
+  | "decision_rule"
+  | "application"
   | "trap"
   | "support";
 
@@ -19,6 +18,9 @@ export interface ClinicalPriorityCandidate {
   sentenceIndex?: number;
   semanticScore?: number;
   explanatoryScore?: number;
+  centralityScore?: number;
+  reasoningScore?: number;
+  examSignalScore?: number;
 }
 
 export interface ClinicalPriorityScore {
@@ -42,57 +44,74 @@ function scoreOneCandidate(
 ): ClinicalPriorityScore {
   const text = candidate.text ?? "";
   const lower = text.toLowerCase();
-  let score = 0.2;
+  const words = text.split(/\s+/).filter(Boolean).length;
   const reasons: string[] = [];
-  let role: ClinicalPriorityRole = "support";
 
-  if (matchesChiefSignal(lower)) {
-    score += 0.32;
-    role = "chief_signal";
-    reasons.push("chief signal");
+  // Dimension 1: centrality — is this the key definition/main signal?
+  let centralityScore = candidate.centralityScore ?? 0;
+  if (matchesMainSignal(lower)) {
+    centralityScore += 0.7;
+    reasons.push("main signal");
+  }
+  if (matchesDefinition(lower)) {
+    centralityScore += 0.6;
+    reasons.push("definition");
+  }
+
+  // Dimension 2: reasoning — does this explain a mechanism or causal chain?
+  let reasoningScore = candidate.reasoningScore ?? 0;
+  if (matchesMechanism(lower)) {
+    reasoningScore += 0.7;
+    reasons.push("mechanism");
   }
   if (matchesInterpretation(lower)) {
-    score += 0.24;
-    if (role === "support") role = "interpretation";
-    reasons.push("interpretation cue");
+    reasoningScore += 0.4;
+    reasons.push("interpretation");
   }
-  if (matchesDiagnosticRule(lower)) {
-    score += 0.28;
-    if (role === "support" || role === "interpretation") role = "diagnostic_rule";
-    reasons.push("diagnostic rule");
+
+  // Dimension 3: actionability — decision rules, clinical rules, application
+  let actionabilityScore = 0;
+  if (matchesDecisionRule(lower)) {
+    actionabilityScore += 0.7;
+    reasons.push("decision rule");
   }
-  if (matchesTreatmentImplication(lower)) {
-    score += 0.18;
-    if (role === "support") role = "treatment_implication";
-    reasons.push("treatment implication");
+  if (matchesApplication(lower)) {
+    actionabilityScore += 0.5;
+    reasons.push("application");
   }
-  if (matchesNextStep(lower)) {
-    score += 0.14;
-    if (role === "support") role = "next_step";
-    reasons.push("next-step action");
-  }
+
+  // Dimension 4: trap risk — contrast, exception, common mistake
+  let trapRiskScore = 0;
   if (matchesTrap(lower)) {
-    score += 0.22;
-    role = "trap";
-    reasons.push("trap / caution");
+    trapRiskScore += 0.8;
+    reasons.push("trap/caution");
   }
-  if (candidate.semanticScore != null) {
-    score += candidate.semanticScore * 0.18;
-    reasons.push("semantic support");
+
+  // Dimension 5: exam signal — high-yield exam-relevant patterns
+  let examSignalScore = candidate.examSignalScore ?? 0;
+  if (matchesExamSignal(lower)) {
+    examSignalScore += 0.6;
+    reasons.push("exam signal");
   }
-  if (candidate.explanatoryScore != null) {
-    score += candidate.explanatoryScore * 0.14;
-    reasons.push("explanatory support");
-  }
-  const words = text.split(/\s+/).filter(Boolean).length;
-  if (words >= 10 && words <= 28) {
-    score += 0.08;
-    reasons.push("good explanatory length");
-  }
-  if (words < 7) {
-    score -= 0.18;
-    reasons.push("too short");
-  }
+
+  // Length: 10–35 words is the sweet spot for instructional sentences
+  const lengthFactor = words >= 10 && words <= 35 ? 0.1 : words < 7 ? -0.15 : 0;
+
+  // Caller-provided boosts (semantic similarity, explanatory tag from type model)
+  const callerBoost =
+    (candidate.semanticScore ?? 0) * 0.08 +
+    (candidate.explanatoryScore ?? 0) * 0.06;
+
+  const score =
+    centralityScore    * 0.30 +
+    reasoningScore     * 0.20 +
+    actionabilityScore * 0.20 +
+    trapRiskScore      * 0.15 +
+    examSignalScore    * 0.15 +
+    lengthFactor +
+    callerBoost;
+
+  const role = inferRole(centralityScore, reasoningScore, actionabilityScore, trapRiskScore, lower);
 
   return {
     id: candidate.id,
@@ -103,26 +122,49 @@ function scoreOneCandidate(
   };
 }
 
-function matchesChiefSignal(text: string): boolean {
-  return /\bchief complaint\b|\bpatient reports\b|\bpain\b|\bsymptom\b|\bfinding\b|\bdiagnosis\b|\bcore concept\b|\bdefined as\b|\bis characterized by\b/.test(text);
+function inferRole(
+  centrality: number,
+  reasoning: number,
+  actionability: number,
+  trapRisk: number,
+  lower: string
+): ClinicalPriorityRole {
+  if (trapRisk >= 0.8) return "trap";
+  if (centrality >= 0.5 && centrality >= reasoning && centrality >= actionability) return "main_signal";
+  if (reasoning >= 0.5 && reasoning >= actionability) return "mechanism";
+  if (actionability >= 0.5 && matchesDecisionRule(lower)) return "decision_rule";
+  if (actionability >= 0.5) return "application";
+  return "support";
+}
+
+function matchesMainSignal(text: string): boolean {
+  return /\b(core concept|chief complaint|main finding|central idea|key principle|primary cause|defining feature|hallmark|pathognomonic)\b/.test(text);
+}
+
+function matchesDefinition(text: string): boolean {
+  return /\b(is defined as|is characterized by|refers to|is called|is known as|is a type of|consists of|means that|is described as|is the process of|is the ability)\b/.test(text);
+}
+
+function matchesMechanism(text: string): boolean {
+  return /\b(causes?|leads? to|results? in|because|therefore|thus|hence|consequently|produces?|generates?|triggers?|stimulates?|inhibits?|activates?|promotes?|depends on|mediated by|regulated by)\b/.test(text);
 }
 
 function matchesInterpretation(text: string): boolean {
-  return /\bindicates?\b|\bsuggests?\b|\bimplies?\b|\breflects?\b|\bmeans?\b|\bconsistent with\b|\bresults? in\b|\bleads? to\b|\bcauses?\b/.test(text);
+  return /\bindicates?\b|\bsuggests?\b|\bimplies?\b|\breflects?\b|\bconsistent with\b/.test(text);
 }
 
-function matchesDiagnosticRule(text: string): boolean {
-  return /\bmust\b|\bshould\b|\brequires?\b|\bdifferentiate\b|\bdetermine\b|\bestablish\b|\bdo not\b|\bdo not confuse\b/.test(text);
+function matchesDecisionRule(text: string): boolean {
+  return /\b(must|should|requires?\b|do not|never|always|differentiate|determine|establish)\b/.test(text);
 }
 
-function matchesTreatmentImplication(text: string): boolean {
-  return /\btreatment\b|\bmanage\b|\bmanagement\b|\bintervention\b|\bnecessary\b|\bdecision\b/.test(text);
-}
-
-function matchesNextStep(text: string): boolean {
-  return /\bnext\b|\bask\b|\bevaluate\b|\bconfirm\b|\btest\b|\bassess\b|\bobtain\b/.test(text);
+function matchesApplication(text: string): boolean {
+  return /\b(treatment|manage|management|intervention|used (for|in|to)|applied to|in practice|clinically|in patients?)\b/.test(text);
 }
 
 function matchesTrap(text: string): boolean {
-  return /\brather than\b|\bmay not\b|\bconfuse\b|\bmistake\b|\bmisdiagnosis\b|\bunlike\b|\bin contrast\b|\bnot the same\b/.test(text);
+  return /\b(rather than|may not|do not confuse|should not be confused|unlike|in contrast|not the same|different from|commonly mistaken|however|exception|not to be confused|misdiagnosis|mistake|pitfall)\b/.test(text);
+}
+
+function matchesExamSignal(text: string): boolean {
+  return /\b(key (point|concept|fact)|high.yield|remember|recall|note that|importantly|classic(ally)?|commonly tested|board exam|usmle|mcat|nclex)\b/.test(text);
 }

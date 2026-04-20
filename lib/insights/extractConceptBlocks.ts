@@ -9,6 +9,23 @@ import { inferConceptTitle } from "./inferConceptTitle";
 
 export type ConceptImportance = "very_high" | "high" | "medium" | "low";
 
+export type ConceptRole =
+  | "definition"    // "X is defined as", "X is characterized by"
+  | "mechanism"     // "X causes", "X leads to", "because"
+  | "variation"     // "unlike X", "in contrast", "however"
+  | "measurement"   // numbers with units, "unit of", "equal to"
+  | "example"       // "for example", "such as"
+  | "detail";       // everything else
+
+export const ROLE_PRIORITY: Record<ConceptRole, number> = {
+  definition:  6,
+  mechanism:   5,
+  variation:   4,
+  measurement: 3,
+  example:     2,
+  detail:      1,
+};
+
 export interface SourceSentence {
   id: string;
   text: string;
@@ -54,6 +71,7 @@ export interface ConceptBlockInput {
   paragraphIds: string[];
   importance: ConceptImportance;
   score: number;
+  conceptRole: ConceptRole;
 }
 
 const MAX_BLOCKS = 5;
@@ -154,6 +172,33 @@ function inferTitle(
   return inferConceptTitle(cleanSentence(anchor.text), headingText);
 }
 
+function classifyConceptRole(anchorText: string, supportTexts: string[]): ConceptRole {
+  const lower = anchorText.toLowerCase();
+
+  // Definition: explicit definitional copula or structural "is a/the X that/which"
+  if (/\b(is defined as|is characterized by|refers to|is called|is known as|is a type of|is described as|is the process of|is the ability to|consists of)\b/.test(lower)) return "definition";
+  if (/\b(defined as|means that|means \w|is an? \w+ (that|which|of))\b/.test(lower)) return "definition";
+  if (/\b(is (a|an|the) \w[\w\s]+ (that|which|used|found|located|formed|produced|made))\b/.test(lower)) return "definition";
+
+  // Mechanism: causal / process language
+  if (/\b(causes?|leads? to|results? in|because|therefore|thus|hence|consequently|triggers?|stimulates?|inhibits?|activates?|promotes?|mediates?|drives?|prevents?|allows?)\b/.test(lower)) return "mechanism";
+  if (/\b(depends? on|regulated by|controlled by|initiated by|releases?|absorbs?)\b/.test(lower)) return "mechanism";
+
+  // Variation / contrast / exception
+  if (/\b(unlike|however|in contrast|whereas|although|despite|rather than|on the other hand|except)\b/.test(lower)) return "variation";
+  if (/\b(not all|not every|does not|cannot|different from|differs from|distinguished from)\b/.test(lower)) return "variation";
+
+  // Measurement: numeric values with domain units, or quantitative framing
+  if (/\b\d+(\.\d+)?\s*(daltons?|da\b|amu|mol\b|kg\b|g\b|cm\b|mm\b|nm\b|km\b|l\b|ml\b|pa\b|kpa\b|hz\b|ev\b|kev\b|mev\b|degrees?|°|%)/i.test(anchorText)) return "measurement";
+  if (/\b(unit of|measured in|is approximately|is equal to|equals approximately|range(s)? from|between \d+ and \d+)\b/i.test(lower)) return "measurement";
+  if (/\b(atomic (mass|weight|number)|molecular (weight|mass)|mass number|proton number|neutron number)\b/.test(lower) && /\d/.test(anchorText)) return "measurement";
+
+  // Example: illustrative instance
+  if (/\b(for example|for instance|such as|e\.g\.|i\.e\.|including|just as|consider)\b/.test(lower)) return "example";
+
+  return "detail";
+}
+
 function extractTrapCandidates(sentences: SourceSentence[]): string[] {
   // Sort by trap signal strength: TRAP_RE match first, then by length (longer = more specific)
   const trapSentences = sentences
@@ -203,6 +248,7 @@ function buildConceptFromParagraph(
     paragraphIds: [paragraph.id],
     importance: inferImportance(score),
     score,
+    conceptRole: classifyConceptRole(anchorText, support),
   };
 }
 
@@ -247,6 +293,10 @@ function mergeRelatedConcepts(concepts: ConceptBlockInput[]): ConceptBlockInput[
         merged.paragraphIds = Array.from(new Set([...merged.paragraphIds, ...candidate.paragraphIds]));
         merged.score += Math.max(1, Math.floor(candidate.score / 3));
         merged.importance = inferImportance(merged.score);
+        // Prefer the higher-priority role when merging
+        if (ROLE_PRIORITY[candidate.conceptRole] > ROLE_PRIORITY[merged.conceptRole]) {
+          merged.conceptRole = candidate.conceptRole;
+        }
       }
     }
 
@@ -256,16 +306,65 @@ function mergeRelatedConcepts(concepts: ConceptBlockInput[]): ConceptBlockInput[
 }
 
 function selectBestConcepts(concepts: ConceptBlockInput[]): ConceptBlockInput[] {
-  const ranked = [...concepts].sort((a, b) => {
-    const diff = b.score - a.score;
-    if (Math.abs(diff) > 0.5) return diff;
-    // Tie-break: prefer anchor sentences in the 12–28 word range (more specific)
-    const aWords = a.anchorSentence.split(/\s+/).length;
-    const bWords = b.anchorSentence.split(/\s+/).length;
-    return Math.abs(aWords - 20) - Math.abs(bWords - 20);
+  if (!concepts.length) return [];
+
+  // Group by role, sorted by score within each group
+  const byRole = new Map<ConceptRole, ConceptBlockInput[]>();
+  for (const c of concepts) {
+    const role = c.conceptRole;
+    if (!byRole.has(role)) byRole.set(role, []);
+    byRole.get(role)!.push(c);
+  }
+  for (const [, group] of byRole) {
+    group.sort((a, b) => b.score - a.score);
+  }
+
+  const selected: ConceptBlockInput[] = [];
+  const usedIds = new Set<string>();
+
+  // First pass: one best from each high-priority role in tier order
+  for (const role of ["definition", "mechanism", "variation"] as ConceptRole[]) {
+    const best = byRole.get(role)?.[0];
+    if (best && !usedIds.has(best.id)) {
+      selected.push(best);
+      usedIds.add(best.id);
+    }
+  }
+
+  // Second pass: fill remaining slots with best available by score
+  const remaining = [...concepts]
+    .filter((c) => !usedIds.has(c.id))
+    .sort((a, b) => {
+      const diff = b.score - a.score;
+      if (Math.abs(diff) > 0.5) return diff;
+      const aWords = a.anchorSentence.split(/\s+/).length;
+      const bWords = b.anchorSentence.split(/\s+/).length;
+      return Math.abs(aWords - 20) - Math.abs(bWords - 20);
+    });
+
+  for (const c of remaining) {
+    if (selected.length >= MAX_BLOCKS) break;
+    selected.push(c);
+    usedIds.add(c.id);
+  }
+
+  // Ensure at least MIN_BLOCKS
+  if (selected.length < MIN_BLOCKS) {
+    for (const c of [...concepts].sort((a, b) => b.score - a.score)) {
+      if (selected.length >= MIN_BLOCKS) break;
+      if (!usedIds.has(c.id)) {
+        selected.push(c);
+        usedIds.add(c.id);
+      }
+    }
+  }
+
+  // Sort final set by role priority (definition first = badge #1 on left)
+  return selected.sort((a, b) => {
+    const rDiff = ROLE_PRIORITY[b.conceptRole] - ROLE_PRIORITY[a.conceptRole];
+    if (rDiff !== 0) return rDiff;
+    return b.score - a.score;
   });
-  const trimmed = ranked.slice(0, MAX_BLOCKS);
-  return trimmed.length >= MIN_BLOCKS ? trimmed : ranked.slice(0, Math.max(MIN_BLOCKS, ranked.length));
 }
 
 export function extractConceptBlocks(page: PageModelForConcepts): ConceptBlockInput[] {

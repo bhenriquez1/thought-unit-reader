@@ -62,8 +62,8 @@ export interface UltraPageViewDebug {
   domain: PageDomain;
   shouldRenderFullPanel: boolean;
   pageSummaryLength: number;
-  coreIdeaSource: "pageSummary" | "chiefSignal" | "supportSentence" | "anchorFallback" | "hardFallback";
-  conceptCandidates: Array<{ id: string; title: string; score: number; anchorLen: number }>;
+  coreIdeaSource: "pageSummary" | "definitionRole" | "chiefSignal" | "supportSentence" | "anchorFallback" | "hardFallback";
+  conceptCandidates: Array<{ id: string; title: string; score: number; anchorLen: number; role: string }>;
 }
 
 export interface UltraPageView {
@@ -303,6 +303,9 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
 
   const summaryFallback = (() => {
     if (normalizedSummary && normalizedSummary.length >= 30) return normalizedSummary;
+    // Prefer the definition-role concept anchor as the core idea source
+    const definitionConcept = concepts.find((c) => c.conceptRole === "definition");
+    if (definitionConcept) return definitionConcept.anchorSentence;
     if (chiefSignalText) return chiefSignalText;
     const top = concepts[0];
     if (!top) return "";
@@ -426,6 +429,8 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
   const coreIdeaSource: UltraPageViewDebug["coreIdeaSource"] =
     normalizedSummary && normalizedSummary.length >= 30
       ? "pageSummary"
+      : concepts.find((c) => c.conceptRole === "definition")
+      ? "definitionRole"
       : chiefSignalText
       ? "chiefSignal"
       : concepts[0]?.supportSentences.find((s) => s.length >= 40)
@@ -445,6 +450,7 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
       title: c.title,
       score: c.score,
       anchorLen: c.anchorSentence.length,
+      role: c.conceptRole,
     })),
   };
 
