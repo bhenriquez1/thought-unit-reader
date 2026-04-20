@@ -53,6 +53,14 @@ export interface UltraPageViewStep {
   roleLabel: string;
 }
 
+export interface UltraPageViewDebug {
+  pageKind: string;
+  shouldRenderFullPanel: boolean;
+  pageSummaryLength: number;
+  coreIdeaSource: "pageSummary" | "supportSentence" | "anchorFallback" | "hardFallback";
+  conceptCandidates: Array<{ id: string; title: string; score: number; anchorLen: number }>;
+}
+
 export interface UltraPageView {
   title: string;
   subtitle: string;
@@ -61,6 +69,7 @@ export interface UltraPageView {
   miniTest: string[];
   compression: string[];
   steps: UltraPageViewStep[];
+  _debug?: UltraPageViewDebug;
 }
 
 // ---------------------------------------------------------------------------
@@ -358,6 +367,37 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
     roleLabel: roleLabelForPageStepRole(step.role),
   }));
 
+  const coreIdeaSource: UltraPageViewDebug["coreIdeaSource"] =
+    normalizedSummary && normalizedSummary.length >= 30
+      ? "pageSummary"
+      : concepts[0]?.supportSentences.find((s) => s.length >= 40)
+      ? "supportSentence"
+      : concepts[0]?.anchorSentence
+      ? "anchorFallback"
+      : "hardFallback";
+
+  const _debug: UltraPageViewDebug = {
+    pageKind: normResult.pageKind,
+    shouldRenderFullPanel: normResult.shouldRenderFullPanel,
+    pageSummaryLength: (pageModel.pageSummary ?? "").length,
+    coreIdeaSource,
+    conceptCandidates: concepts.map((c) => ({
+      id: c.id,
+      title: c.title,
+      score: c.score,
+      anchorLen: c.anchorSentence.length,
+    })),
+  };
+
+  console.log("[ULTRA DEBUG]", {
+    pageKey: `${page.documentId}:${page.pageNumber}`,
+    ..._debug,
+    coreIdea,
+    blocks: blocks.map((b) => ({ id: b.conceptId, title: b.title })),
+    miniTestCount: miniTest.length,
+    compressionCount: compression.length,
+  });
+
   return {
     title: `ULTRA – ${inferPageTitle(page, concepts)}`,
     subtitle: "STR + PDRM + Surgical Comprehension Engine",
@@ -366,5 +406,6 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
     miniTest,
     compression,
     steps,
+    _debug,
   };
 }
