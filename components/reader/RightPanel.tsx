@@ -304,6 +304,36 @@ export function RightPanel({
       </div>
 
       <div className="flex flex-col gap-4 p-4 text-white">
+        {/* ── DEBUG CARD (temporary — remove after diagnosis) ─────────── */}
+        {process.env.NODE_ENV !== "production" && (
+          <div style={{
+            fontSize: 10,
+            fontFamily: "monospace",
+            background: "rgba(0,255,100,0.06)",
+            border: "1px solid rgba(0,255,100,0.18)",
+            borderRadius: 6,
+            padding: "6px 8px",
+            color: "#86efac",
+            lineHeight: 1.6,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-all",
+          }}>
+            {[
+              `isCurrentPage: ${isCurrentPageModel}`,
+              `pageTruthKey: ${pageTruthKey}`,
+              `viewSource: ${showUltraView ? "ULTRA" : showConceptBlocks ? "ConceptBlocks" : showNarrativePageView ? "NarrativePage" : showNarrativeView ? "Narrative" : showV3View ? "V3" : showV2Map ? "V2Map" : showV2Operator ? "V2Op" : showGuidedView ? "Guided" : "none"}`,
+              `blockCount: ${displayView?.blocks.length ?? 0}`,
+              `miniTestCount: ${displayView?.miniTest.length ?? 0}`,
+              `compressionCount: ${displayView?.compression.length ?? 0}`,
+              `pageKind: ${displayView?._debug?.pageKind ?? "—"}`,
+              `shouldRender: ${displayView?._debug?.shouldRenderFullPanel ?? "—"}`,
+              `summaryLen: ${displayView?._debug?.pageSummaryLength ?? "—"}`,
+              `coreIdeaSource: ${displayView?._debug?.coreIdeaSource ?? "—"}`,
+              `concepts: ${displayView?._debug?.conceptCandidates.map((c) => `${c.title}(${c.score})`).join(", ") ?? "—"}`,
+            ].join("\n")}
+          </div>
+        )}
+
         {/* Loading / gating state */}
         {renderTruthFallback(pageTruth?.reason || "loading", intelligence.status, !isCurrentPageModel, loadingPhase)}
 
