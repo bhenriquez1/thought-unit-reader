@@ -326,6 +326,7 @@ export function RightPanel({
               `miniTestCount: ${displayView?.miniTest.length ?? 0}`,
               `compressionCount: ${displayView?.compression.length ?? 0}`,
               `pageKind: ${displayView?._debug?.pageKind ?? "—"}`,
+              `domain: ${displayView?._debug?.domain ?? "—"}`,
               `shouldRender: ${displayView?._debug?.shouldRenderFullPanel ?? "—"}`,
               `summaryLen: ${displayView?._debug?.pageSummaryLength ?? "—"}`,
               `coreIdeaSource: ${displayView?._debug?.coreIdeaSource ?? "—"}`,
