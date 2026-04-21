@@ -280,7 +280,13 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
   const validInsights = (pageModel.paragraphInsights ?? []).filter(isValidCoreParagraph);
   const zoneInsights = findMainTeachingZone(validInsights);
   const page = adaptPageInsightModel({ ...pageModel, paragraphInsights: zoneInsights });
-  const concepts = extractConceptBlocks(page);
+  let concepts = extractConceptBlocks(page);
+
+  // Fallback: if zone filtering was too aggressive, retry with all valid insights
+  if (!concepts.length && zoneInsights.length < validInsights.length) {
+    const fallbackPage = adaptPageInsightModel({ ...pageModel, paragraphInsights: validInsights });
+    concepts = extractConceptBlocks(fallbackPage);
+  }
 
   if (!concepts.length) return null;
 
