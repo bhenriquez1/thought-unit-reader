@@ -120,7 +120,6 @@ export default function GuidedNeighborhoodOverlay({
         conceptRoleLabel(sourceNeighborhood?.conceptRole) ||
         roleLabelByConceptId?.get(neighborhood.conceptId ?? "") ||
         "";
-      let isFirstInNeighborhood = true;
       for (const overlay of neighborhood.overlays) {
         // extra_context entries (filler, figure captions) get no badge
         if (overlay.tier === "extra_context") continue;
@@ -134,9 +133,9 @@ export default function GuidedNeighborhoodOverlay({
           x: firstRect.x,
           y: firstRect.y,
           tier: overlay.tier,
-          roleLabel: isFirstInNeighborhood && !isTrap ? roleLabel : "",
+          // Show role label only on the main_signal anchor — one per concept neighborhood
+          roleLabel: overlay.tier === "main_signal" ? roleLabel : "",
         });
-        isFirstInNeighborhood = false;
       }
     }
     return entries;

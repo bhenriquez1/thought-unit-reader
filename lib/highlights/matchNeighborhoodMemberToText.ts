@@ -508,7 +508,7 @@ function normalizeText(text: string): string {
     .toLowerCase()
     .replace(/[\u2010-\u2015]/g, "-")
     .replace(/\u00a0/g, " ")
-    .replace(/[^\w\s-]/g, " ")
+    .replace(/[^\w\s\-=+*/^]/g, " ")  // preserve math operators so formula text matches
     .replace(/\s+/g, " ")
     .trim();
 }
