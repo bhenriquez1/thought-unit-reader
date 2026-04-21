@@ -11,7 +11,7 @@
 
 import { cleanSentence } from "@/lib/insights/sentenceCleanup";
 import { isRenderableSentence } from "@/lib/insights/isRenderableSentence";
-import type { ConceptBlockInput } from "@/lib/insights/extractConceptBlocks";
+import type { ConceptBlockInput, ConceptRole } from "@/lib/insights/extractConceptBlocks";
 import { REASON_RE, TRAP_RE, isTooSimilar } from "@/lib/insights/dedupeSectionCandidates";
 
 export type HighlightTier = "important" | "support" | "additional" | "trap";
@@ -34,6 +34,7 @@ export interface HighlightNeighborhood {
   additional: HighlightLine[]; // 0–1 distinct secondary detail
   trap: HighlightLine | null;  // 0–1 genuine contrast/confusion sentence
   priorityScore: number;
+  conceptRole?: ConceptRole;   // structural role (definition / mechanism / variation …)
 }
 
 function normalize(text: string): string {
@@ -186,6 +187,7 @@ export function buildHighlightNeighborhoods(
       additional,
       trap,
       priorityScore: concept.score,
+      conceptRole: concept.conceptRole,
     });
   }
 

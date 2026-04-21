@@ -439,20 +439,30 @@ function importanceForRole(role: PageStepRole): string {
 /*                            MINI TEST HOOKS                                 */
 /* -------------------------------------------------------------------------- */
 
+function buildPageNativeQuestion(role: string, text: string): string {
+  const stem = (text || "").replace(/[.!?]+$/, "").slice(0, 100).trim();
+  if (!stem) return "";
+  switch (role) {
+    case "coreMeaning":   return cleanLocal(`What concept does this introduce: "${stem}"`);
+    case "mechanism":     return cleanLocal(`What does this explain: "${stem}"`);
+    case "distinction":   return cleanLocal(`What should readers not confuse based on: "${stem}"`);
+    case "application":   return cleanLocal(`When or how would this apply: "${stem}"`);
+    case "skimTrap":      return cleanLocal(`What common mistake does this warn against: "${stem}"`);
+    default:              return cleanLocal(text);
+  }
+}
+
 function buildCoreMeaningHook(title: string, anchorText: string): string {
   const q = extractDefinitionQuestion(anchorText);
   if (q) return q;
-  const phrase = isWeakTitle(title) ? extractNounPhrase(anchorText) : titleToNounPhrase(title);
-  if (!phrase || isGenericPhrase(phrase)) return cleanLocal(anchorText);
-  return cleanLocal(`What does ${phrase} mean on this page?`) || cleanLocal(anchorText);
+  return buildPageNativeQuestion("coreMeaning", anchorText) || cleanLocal(anchorText);
 }
 
 function buildMechanismHook(title: string, mechanismText?: string | null): string | null {
   const q = extractCausalQuestion(mechanismText || "");
   if (q) return q;
-  const phrase = isWeakTitle(title) ? extractNounPhrase(mechanismText || title) : titleToNounPhrase(title);
-  if (!phrase || isGenericPhrase(phrase)) return mechanismText ? cleanLocal(mechanismText) : null;
-  return cleanLocal(`How does ${phrase} work here?`);
+  if (!mechanismText) return null;
+  return buildPageNativeQuestion("mechanism", mechanismText) || cleanLocal(mechanismText);
 }
 
 function buildDistinctionHook(
@@ -460,20 +470,15 @@ function buildDistinctionHook(
   trapText?: string | null,
   anchorText?: string | null
 ): string | null {
-  if (trapText) {
-    const phrase = isWeakTitle(title) ? extractNounPhrase(anchorText || trapText) : titleToNounPhrase(title);
-    if (phrase && !isGenericPhrase(phrase)) return cleanLocal(`What is often confused with ${phrase}?`);
-    return cleanLocal(trapText);
-  }
-  return cleanLocal(anchorText ?? "") || null;
+  if (trapText) return buildPageNativeQuestion("distinction", trapText) || cleanLocal(trapText);
+  return anchorText ? buildPageNativeQuestion("distinction", anchorText) || null : null;
 }
 
 function buildApplicationHook(title: string, applicationText?: string | null): string | null {
   const q = extractOperationalQuestion(applicationText || "");
   if (q) return q;
-  const phrase = isWeakTitle(title) ? extractNounPhrase(applicationText || title) : titleToNounPhrase(title);
-  if (!phrase || isGenericPhrase(phrase)) return applicationText ? cleanLocal(applicationText) : null;
-  return cleanLocal(`When would you apply the rule for ${phrase}?`);
+  if (!applicationText) return null;
+  return buildPageNativeQuestion("application", applicationText) || cleanLocal(applicationText);
 }
 
 function buildSkimTrapHook(
@@ -481,12 +486,8 @@ function buildSkimTrapHook(
   trapText?: string | null,
   anchorText?: string | null
 ): string | null {
-  if (trapText) {
-    const phrase = isWeakTitle(title) ? extractNounPhrase(anchorText || trapText) : titleToNounPhrase(title);
-    if (phrase && !isGenericPhrase(phrase)) return cleanLocal(`What do readers commonly misread about ${phrase}?`);
-    return cleanLocal(trapText);
-  }
-  return cleanLocal(anchorText ?? "") || null;
+  if (trapText) return buildPageNativeQuestion("skimTrap", trapText) || cleanLocal(trapText);
+  return anchorText ? buildPageNativeQuestion("skimTrap", anchorText) || null : null;
 }
 
 function isWeakTitle(title: string): boolean {
@@ -520,7 +521,8 @@ function titleToNounPhrase(title: string): string {
 
 function extractDefinitionQuestion(text: string): string | null {
   if (!text) return null;
-  const m = text.match(/^(.{4,35}?)\s+(indicates?|means?|represents?|refers? to|is defined as)\s+/i);
+  // Match mid-sentence definitions (not just ^ start)
+  const m = text.match(/(.{4,45}?)\s+(indicates?|means?|represents?|refers? to|is defined as)\s+(.{4,60})/i);
   if (m) return cleanLocal(`What does ${m[1].trim()} ${m[2].toLowerCase()}?`);
   const m2 = text.match(/(?:you can|one can|we can)\s+(determine|find|calculate|derive)\s+(.{4,40})/i);
   if (m2) return cleanLocal(`How do you ${m2[1].toLowerCase()} ${m2[2].trim().replace(/[.!?]+$/, "")}?`);
@@ -529,7 +531,8 @@ function extractDefinitionQuestion(text: string): string | null {
 
 function extractCausalQuestion(text: string): string | null {
   if (!text) return null;
-  const m = text.match(/^(.{4,35}?)\s+(leads? to|causes?|results? in)\s+(.{4,40})/i);
+  // Match mid-sentence causal chains (not just ^ start)
+  const m = text.match(/(.{4,45}?)\s+(leads? to|causes?|results? in)\s+(.{4,50})/i);
   if (m) return cleanLocal(`Why does ${m[1].trim()} ${m[2].toLowerCase()} ${m[3].trim().replace(/[.!?]+$/, "")}?`);
   const m2 = text.match(/^because\s+(.{4,40}?)[,;]\s+(.{4,40})/i);
   if (m2) return cleanLocal(`Why does ${m2[2].trim().replace(/[.!?]+$/, "")}?`);

@@ -81,9 +81,11 @@ export interface UltraPageView {
 // Hard content filter — runs before scoring; blocks non-instructional content
 // ---------------------------------------------------------------------------
 
-function isValidCoreParagraph(p: ParagraphInsight): boolean {
+export function isValidCoreParagraph(p: ParagraphInsight): boolean {
   const text = (p.cleanedText || p.rawText || "").trim();
   if (!text || p.paragraphType === "noise") return false;
+  // Formula paragraphs: bypass length and explanation-signal checks
+  if (p.paragraphType === "formula") return text.length >= 15;
   if (text.length < 80) return false;
   // Reject figure captions, table headers, diagram labels
   if (/^(figure\s*\d|fig\.\s*\d|table\s*\d|diagram\s*\d|image\s*\d)/i.test(text)) return false;
