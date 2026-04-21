@@ -114,7 +114,12 @@ export default function GuidedNeighborhoodOverlay({
     }> = [];
     let counter = 1;
     for (const neighborhood of guided.neighborhoods) {
-      const roleLabel = roleLabelByConceptId?.get(neighborhood.conceptId ?? "") ?? "";
+      // Find conceptRole from the source neighborhood for auto-derived label
+      const sourceNeighborhood = neighborhoods.find((n) => n.id === neighborhood.neighborhoodId);
+      const roleLabel =
+        conceptRoleLabel(sourceNeighborhood?.conceptRole) ||
+        roleLabelByConceptId?.get(neighborhood.conceptId ?? "") ||
+        "";
       let isFirstInNeighborhood = true;
       for (const overlay of neighborhood.overlays) {
         // extra_context entries (filler, figure captions) get no badge
@@ -242,6 +247,17 @@ export default function GuidedNeighborhoodOverlay({
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function conceptRoleLabel(role?: string): string {
+  switch (role) {
+    case "definition":   return "Defines";
+    case "mechanism":    return "Explains";
+    case "variation":    return "Contrasts";
+    case "measurement":  return "Measures";
+    case "example":      return "Example";
+    default:             return "";
+  }
+}
 
 function materializeEntries(
   n: HighlightNeighborhood,

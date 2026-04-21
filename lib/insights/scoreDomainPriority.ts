@@ -64,8 +64,10 @@ function scoreOne(c: ClinicalPriorityCandidate, domain: PageDomain): DomainPrior
       break;
     }
     case "math": {
-      // Prefer formula-like text (contains = with operands)
-      if (/[=]/.test(text) && /[a-zA-Z0-9]/.test(text.replace(/\s/g, ""))) {
+      // Prefer formula-like text (=, calculus operators, or explicit formula vocabulary)
+      const isMathFormula = /[=∫∂∑]|lim\b|d\/d[xt]|\bintegral\b|\bderivative\b|\btheorem\b/i.test(text)
+        && /[a-zA-Z0-9]/.test(text.replace(/\s/g, ""));
+      if (isMathFormula) {
         score += 0.36; role = "formula"; slot = "pattern";
       } else if (/\bequals?\b|\brepresents?\b|\bthis means\b|\bwhere\b|\bdefined as\b/.test(lower)) {
         score += 0.24; role = "interpretation"; slot = "reason";

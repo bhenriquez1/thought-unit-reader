@@ -188,6 +188,9 @@ function classifyConceptRole(anchorText: string, supportTexts: string[]): Concep
   if (/\b(unlike|however|in contrast|whereas|although|despite|rather than|on the other hand|except)\b/.test(lower)) return "variation";
   if (/\b(not all|not every|does not|cannot|different from|differs from|distinguished from)\b/.test(lower)) return "variation";
 
+  // Formula: mathematical relationship — definitional in math context (checked before measurement)
+  if (/[=∫∂∑]|lim\b|d\/d[xt]|\\frac|\bintegral\b|\bderivative\b/i.test(anchorText)) return "definition";
+
   // Measurement: numeric values with domain units, or quantitative framing
   if (/\b\d+(\.\d+)?\s*(daltons?|da\b|amu|mol\b|kg\b|g\b|cm\b|mm\b|nm\b|km\b|l\b|ml\b|pa\b|kpa\b|hz\b|ev\b|kev\b|mev\b|degrees?|°|%)/i.test(anchorText)) return "measurement";
   if (/\b(unit of|measured in|is approximately|is equal to|equals approximately|range(s)? from|between \d+ and \d+)\b/i.test(lower)) return "measurement";
