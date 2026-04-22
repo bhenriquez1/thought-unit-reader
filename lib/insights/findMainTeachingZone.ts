@@ -16,18 +16,31 @@ const EXPLANATORY_TYPES = new Set<ParagraphType>([
   "formula",
 ]);
 
+function isMathFormulaText(text: string): boolean {
+  return /[=∫∂∑]|lim\b|d\/d[xt]|\\frac|\\int|\\sum|\bderivative\b|\bintegral\b/i.test(text);
+}
+
+function isMathExplanationText(text: string): boolean {
+  return /\bfunction\b|\bsequence\b|\bdepends on\b|\brepresented\b|\bgraph\b|\bquantity\b|\brate\b/i.test(text);
+}
+
 export function findMainTeachingZone(paragraphs: ParagraphInsight[]): ParagraphInsight[] {
   if (paragraphs.length <= 5) return paragraphs;
 
   return [...paragraphs]
     .map((p) => {
       const text = (p.cleanedText || p.rawText || "").trim();
+      const isFormula = p.paragraphType === "formula" || isMathFormulaText(text);
+      const isMathExplain = isMathExplanationText(text);
       const explanatoryScore = EXPLANATORY_TYPES.has(p.paragraphType) ? 1.0 : 0.3;
-      const lengthScore = text.length > 120 ? 0.2 : -0.2;
-      const zoneScore =
+      // Formula paragraphs are short by nature — don't penalize them for it
+      const lengthScore = isFormula ? 0.2 : (text.length > 120 ? 0.2 : -0.2);
+      let zoneScore =
         explanatoryScore * 0.5 +
         Math.min(p.priorityScore / 10, 1.0) * 0.3 +
         lengthScore;
+      if (isFormula) zoneScore += 0.18;
+      if (isMathExplain) zoneScore += 0.14;
       return { p, zoneScore };
     })
     .sort((a, b) => b.zoneScore - a.zoneScore)

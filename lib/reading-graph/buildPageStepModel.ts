@@ -524,6 +524,12 @@ function extractDefinitionQuestion(text: string): string | null {
   // Match mid-sentence definitions (not just ^ start)
   const m = text.match(/(.{4,45}?)\s+(indicates?|means?|represents?|refers? to|is defined as)\s+(.{4,60})/i);
   if (m) return cleanLocal(`What does ${m[1].trim()} ${m[2].toLowerCase()}?`);
+  // "X is the [noun/count] of Y" → "What is X?"  (e.g. "Atomic number is the number of protons")
+  const m3 = text.match(/(.{4,35}?)\s+is the\s+[\w\s]{2,20}\s+of\b/i);
+  if (m3) return cleanLocal(`What is ${m3[1].trim()}?`);
+  // "X is a/an Y" → "What is X?"
+  const m4 = text.match(/(.{4,35}?)\s+is an?\s+(.{4,50})/i);
+  if (m4) return cleanLocal(`What is ${m4[1].trim()}?`);
   const m2 = text.match(/(?:you can|one can|we can)\s+(determine|find|calculate|derive)\s+(.{4,40})/i);
   if (m2) return cleanLocal(`How do you ${m2[1].toLowerCase()} ${m2[2].trim().replace(/[.!?]+$/, "")}?`);
   return null;
