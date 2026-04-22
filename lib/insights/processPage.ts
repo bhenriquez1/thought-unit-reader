@@ -22,9 +22,9 @@ const TYPE_PATTERNS: Array<{ type: InsightPageType; patterns: RegExp[] }> = [
   { type: "process", patterns: [/\b(first|second|third|next|then|finally|step|sequence|process)\b/i] },
   { type: "decision", patterns: [/\b(if|when|should|must|choose|decide|determine|indicates?|suggests?)\b/i] },
   { type: "comparison", patterns: [/\b(compared with|in contrast|whereas|unlike|similar|difference|distinguish)\b/i] },
-  { type: "definition", patterns: [/\b(is defined as|refers to|means|is called)\b/i] },
+  { type: "definition", patterns: [/\b(is defined as|refers to|means|is called|is the \w+ of|is an? \w+ (that|which))\b/i] },
   { type: "clinical_reasoning", patterns: [/\b(patient|symptom|diagnosis|clinical|finding|history|examination|treatment)\b/i] },
-  { type: "formula", patterns: [/\b(equation|formula|calculate|solve|ratio|probability|molar|concentration)\b/i] },
+  { type: "formula", patterns: [/\b(equation|formula|calculate|solve|ratio|probability|molar|concentration|derivative|integral|differenti|calculus|theorem|gradient)\b/i, /lim\b.*[(\[]|[=∫∂∑]/] },
   { type: "example", patterns: [/\b(for example|for instance|such as|consider)\b/i] },
   { type: "consequence", patterns: [/\b(as a result|therefore|consequence|outcome|impact)\b/i] },
   { type: "signal", patterns: [/\b(sign|signal|indicator|marker|suggests|indicates)\b/i] },
@@ -77,8 +77,10 @@ function extractSignals(text: string): ExtractedSignals {
   return {
     triggers: extractClauses(text, /\b(if|when|whenever)\b/i),
     actions: actions.slice(0, 5).map((m) => m.trim()),
-    reasons: extractClauses(text, /\b(because|since|as|due to)\b/i),
-    outcomes: extractClauses(text, /\b(therefore|thus|so|results in|leads to|causes)\b/i),
+    // Expand reasons to include science/math relational language — captures "X determines Y", "X represents Y"
+    reasons: extractClauses(text, /\b(because|since|as|due to|determines?|represents?|identifies?|governs?)\b/i),
+    // Expand outcomes to include definitional relationships — captures "X consists of Y", "X equals Y"
+    outcomes: extractClauses(text, /\b(therefore|thus|so|results? in|leads? to|causes?|equals?|consists? of)\b/i),
     contrasts: contrasts.slice(0, 4).map((m) => m.trim()),
     examples: examples.slice(0, 4).map((m) => m.trim()),
   };
@@ -111,8 +113,8 @@ function buildLogicChains(text: string, paragraphId: string): LogicChain[] {
         confidence: 0.78,
         sourceParagraphIds: [paragraphId],
       });
-    } else if (/\b(suggests?|indicates?|leads? to|results? in|causes?)\b/.test(lower)) {
-      const [left, right] = sentence.split(/\b(suggests?|indicates?|leads? to|results? in|causes?)\b/i);
+    } else if (/\b(suggests?|indicates?|leads? to|results? in|causes?|determines?|represents?|equals?|consists? of)\b/.test(lower)) {
+      const [left, right] = sentence.split(/\b(suggests?|indicates?|leads? to|results? in|causes?|determines?|represents?|equals?|consists? of)\b/i);
       chains.push({
         id: `${paragraphId}-chain-${chains.length}`,
         if: (left || sentence).trim(),
@@ -159,6 +161,9 @@ function scoreParagraphPriority(type: ParagraphType, signals: ExtractedSignals, 
   if (type === "process") score += 2;
   if (type === "consequence" || type === "signal") score += 2;
   if (type === "definition") score += 2;
+  // Formula and concept paragraphs carry structural teaching content — rank them
+  if (type === "formula") score += 2;
+  if (type === "concept") score += 1;
   if (signals.triggers.length > 0) score += 2;
   if (signals.actions.length > 0) score += 2;
   if (signals.reasons.length > 0) score += 1;
