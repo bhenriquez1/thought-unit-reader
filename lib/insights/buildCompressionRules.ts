@@ -199,10 +199,10 @@ function collectCandidates(input: BuildCompressionRulesInput): CandidateSeed[] {
 
   for (const neighborhood of input.supportNeighborhoods ?? []) {
     if (isRenderableSentence(neighborhood.anchor))
-      out.push({ id: `${neighborhood.id}:anchor`, text: sanitizeSentence(neighborhood.anchor!), role: "recognition", score: 0.68, source: "neighborhood_anchor" });
+      out.push({ id: `${neighborhood.id}:anchor`, text: sanitizeSentence(neighborhood.anchor!), role: "recognition", score: 0.73, source: "neighborhood_anchor" });
     for (const [i, support] of (neighborhood.support ?? []).entries()) {
       if (!isRenderableSentence(support)) continue;
-      out.push({ id: `${neighborhood.id}:support:${i}`, text: sanitizeSentence(support), role: inferRoleFromSentence(support), score: Math.max(0.5, 0.65 - i * 0.03), source: "neighborhood_support" });
+      out.push({ id: `${neighborhood.id}:support:${i}`, text: sanitizeSentence(support), role: inferRoleFromSentence(support), score: Math.max(0.5, 0.73 - i * 0.02), source: "neighborhood_support" });
     }
   }
 
