@@ -117,6 +117,14 @@ export function isValidCoreParagraph(p: ParagraphInsight): boolean {
 // Adapter: PageInsightModel → PageModelForConcepts
 // ---------------------------------------------------------------------------
 
+function splitRawSentences(text: string): string[] {
+  if (!text) return [];
+  return text
+    .split(/(?<=[.!?])\s+(?=[A-Z"'])/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 20);
+}
+
 export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelForConcepts {
   const allSentences: SourceSentence[] = [];
   const sourceParagraphs: SourceParagraph[] = [];
@@ -135,6 +143,13 @@ export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelFor
         lc.trap    ? { text: lc.trap,    score: p.priorityScore * 1.8 } : null,
         (lc.if && lc.then) ? { text: `${lc.if}, therefore ${lc.then}`, score: p.priorityScore * 1.5 } : null,
       ]),
+      // Raw sentences from cleanedText — ensures all paragraph content is available
+      // even when derived fields (coreSignals, logicChains) are sparse.
+      // Score is lower than derived fields so enriched signals still win anchor selection.
+      ...splitRawSentences(p.cleanedText || p.rawText || "").map((t, i) => ({
+        text: t,
+        score: Math.max(0.5, p.priorityScore * 0.75 - i * 0.1),
+      })),
     ].filter((x): x is ScoredText => Boolean(x));
 
     const seen = new Set<string>();
