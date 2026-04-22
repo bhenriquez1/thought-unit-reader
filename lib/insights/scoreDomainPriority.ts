@@ -51,7 +51,7 @@ function scoreOne(c: ClinicalPriorityCandidate, domain: PageDomain): DomainPrior
       break;
     }
     case "science": {
-      if (/\bis defined as\b|\brefers? to\b|\bmeans?\b|\bis called\b|\bconsists? of\b|\bcharacterized by\b/.test(lower)) {
+      if (/\bis defined as\b|\brefers? to\b|\bmeans?\b|\bis called\b|\bconsists? of\b|\bcharacterized by\b|\bis the \w+ of\b|\bis an? \w+ (that|which)\b/.test(lower)) {
         score += 0.32; role = "definition"; slot = "pattern";
       } else if (/\bleads? to\b|\bcauses?\b|\bresults? in\b|\bbecause\b|\btherefore\b|\bthus\b|\bconsequently\b/.test(lower)) {
         score += 0.28; role = "mechanism"; slot = "reason";
