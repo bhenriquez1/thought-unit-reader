@@ -129,10 +129,19 @@ export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelFor
   const allSentences: SourceSentence[] = [];
   const sourceParagraphs: SourceParagraph[] = [];
 
-  for (const p of (pageModel.paragraphInsights ?? [])) {
+  const paragraphs = pageModel.paragraphInsights ?? [];
+  // Pre-compute first raw sentence per paragraph index for cross-paragraph support context.
+  // Single-sentence paragraphs (e.g. isolated definitions) get the next paragraph's opening
+  // sentence as a low-score support candidate so they can produce non-empty supportSentences.
+  const firstRawByIdx = paragraphs.map((p) =>
+    splitRawSentences(p.cleanedText || p.rawText || "")[0] ?? null
+  );
+
+  for (const [idx, p] of paragraphs.entries()) {
     const sentenceIds: string[] = [];
 
     type ScoredText = { text: string; score: number };
+    const rawSentences = splitRawSentences(p.cleanedText || p.rawText || "");
     const inputs: ScoredText[] = [
       p.summary           ? { text: p.summary,  score: p.priorityScore * 3 } : null,
       ...(p.coreSignals ?? []).map((t, i) => ({ text: t, score: p.priorityScore * (2 - i * 0.25) })),
@@ -146,10 +155,16 @@ export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelFor
       // Raw sentences from cleanedText — ensures all paragraph content is available
       // even when derived fields (coreSignals, logicChains) are sparse.
       // Score is lower than derived fields so enriched signals still win anchor selection.
-      ...splitRawSentences(p.cleanedText || p.rawText || "").map((t, i) => ({
+      ...rawSentences.map((t, i) => ({
         text: t,
         score: Math.max(0.5, p.priorityScore * 0.75 - i * 0.1),
       })),
+      // Cross-paragraph context: for single-sentence paragraphs, add the first sentence
+      // of the next paragraph as a low-score support candidate. This prevents isolated
+      // definition sentences from always producing empty supportSentences.
+      ...(rawSentences.length <= 1 && firstRawByIdx[idx + 1]
+        ? [{ text: firstRawByIdx[idx + 1]!, score: Math.max(0.3, p.priorityScore * 0.4) }]
+        : []),
     ].filter((x): x is ScoredText => Boolean(x));
 
     const seen = new Set<string>();
@@ -247,10 +262,11 @@ function buildConceptFields(concept: ConceptBlockInput, coreIdea: string, domain
   const anchorClean = cleanSentence(concept.anchorSentence) || "";
   const firstSupport = cleanSentence(concept.supportSentences[0] ?? "") || "";
 
-  // Page-native fallbacks: use actual page text, never generic template strings
+  // Page-native fallbacks: use actual page text, never generic template strings.
+  // Reason/rule must NOT fall back to anchor — an empty field is better than repeating pattern.
   const fallbackPattern = anchorClean || "This concept introduces a central idea on the page.";
-  const pageNativeReason = firstSupport || anchorClean;
-  const pageNativeRule = firstSupport || anchorClean;
+  const pageNativeReason = firstSupport;
+  const pageNativeRule = firstSupport;
 
   return {
     pattern:        normalizeLine(result.selected.pattern?.text ?? fallbackPattern, fallbackPattern),
