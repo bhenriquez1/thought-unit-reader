@@ -81,11 +81,29 @@ export interface UltraPageView {
 // Hard content filter — runs before scoring; blocks non-instructional content
 // ---------------------------------------------------------------------------
 
+function looksLikeMathFormula(text: string): boolean {
+  return /[=∫∂∑]|lim\b|d\/d[xt]|\\frac|\\int|\\sum|\bderivative\b|\bintegral\b/i.test(text);
+}
+
+function hasMathExplanationSignal(text: string): boolean {
+  return (
+    looksLikeMathFormula(text) ||
+    /\bfunction\b|\bsequence\b|\bdepends on\b|\brepresented\b|\bgraph\b|\bmodel\b|\bquantity\b|\brate\b|\bvalue\b/i.test(text)
+  );
+}
+
 export function isValidCoreParagraph(p: ParagraphInsight): boolean {
   const text = (p.cleanedText || p.rawText || "").trim();
   if (!text || p.paragraphType === "noise") return false;
-  // Formula paragraphs: bypass length and explanation-signal checks
-  if (p.paragraphType === "formula") return text.length >= 15;
+  // Formula paragraphs (by type or by content): bypass length and explanation-signal checks
+  if (p.paragraphType === "formula" || looksLikeMathFormula(text)) return text.length >= 12;
+  // Math explanation paragraphs: lower threshold — a 40-char definition is still valid
+  if (hasMathExplanationSignal(text)) {
+    if (text.length < 40) return false;
+    if (/^(figure\s*\d|fig\.\s*\d|table\s*\d|diagram\s*\d|image\s*\d)/i.test(text)) return false;
+    if (/^(chapter\s+\d|section\s+\d|table\s+of\s+contents)/i.test(text)) return false;
+    return true;
+  }
   if (text.length < 80) return false;
   // Reject figure captions, table headers, diagram labels
   if (/^(figure\s*\d|fig\.\s*\d|table\s*\d|diagram\s*\d|image\s*\d)/i.test(text)) return false;
@@ -211,16 +229,19 @@ function buildConceptFields(concept: ConceptBlockInput, coreIdea: string, domain
 
   const result = dedupeSections(candidates, coreIdea);
 
-  const fallbackPattern = cleanSentence(concept.anchorSentence) || "This concept introduces a central idea on the page.";
-  const fallbackReason = "This concept matters because it explains how the page's main idea works.";
-  const fallbackTrap = `Do not confuse ${concept.title.toLowerCase()} with nearby supporting details on the page.`;
-  const fallbackRule = "Use this as the key rule from the page.";
+  const anchorClean = cleanSentence(concept.anchorSentence) || "";
+  const firstSupport = cleanSentence(concept.supportSentences[0] ?? "") || "";
+
+  // Page-native fallbacks: use actual page text, never generic template strings
+  const fallbackPattern = anchorClean || "This concept introduces a central idea on the page.";
+  const pageNativeReason = firstSupport || anchorClean;
+  const pageNativeRule = firstSupport || anchorClean;
 
   return {
-    pattern:        normalizeLine(result.selected.pattern?.text       ?? fallbackPattern, fallbackPattern),
-    surgicalReason: normalizeLine(result.selected.reason?.text        ?? fallbackReason,  fallbackReason),
-    trap:           normalizeLine(result.selected.trap?.text          ?? fallbackTrap,    fallbackTrap),
-    rule:           normalizeLine(result.selected.rule?.text          ?? fallbackRule,    fallbackRule),
+    pattern:        normalizeLine(result.selected.pattern?.text ?? fallbackPattern, fallbackPattern),
+    surgicalReason: normalizeLine(result.selected.reason?.text  ?? pageNativeReason, pageNativeReason),
+    trap:           result.selected.trap?.text ? normalizeLine(result.selected.trap.text, "") : "",
+    rule:           normalizeLine(result.selected.rule?.text    ?? pageNativeRule,   pageNativeRule),
   };
 }
 
