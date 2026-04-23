@@ -11,6 +11,7 @@ import { extractPriorityHighlights, type ExtractPriorityHighlightsResult } from 
 import { buildHighlightNeighborhoods, flattenNeighborhoods, type HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
 import { adaptPageInsightModel, isValidCoreParagraph } from "@/lib/insights/buildUltraPageView";
 import { extractConceptBlocks as extractConceptBlocksCore } from "@/lib/insights/extractConceptBlocks";
+import { findMainTeachingZone } from "@/lib/insights/findMainTeachingZone";
 import { buildParagraphRoleMap } from "@/lib/highlights/paragraphRoleMap";
 import { buildPageStoryV2, type PageStoryV2 } from "@/lib/insights/buildPageStoryV2";
 import { buildPageStoryV3, type PageStoryV3 } from "@/lib/insights/buildPageStoryV3";
@@ -332,9 +333,11 @@ export function useActivePageIntelligence({
 
   const highlightNeighborhoods: HighlightNeighborhood[] = useMemo(() => {
     if (!pageModel || !normResult?.shouldRenderFullPanel) return [];
+    const filteredParagraphs = (pageModel.paragraphInsights ?? []).filter(isValidCoreParagraph);
+    const teachingZoneParagraphs = findMainTeachingZone(filteredParagraphs);
     const adapted = adaptPageInsightModel({
       ...pageModel,
-      paragraphInsights: (pageModel.paragraphInsights ?? []).filter(isValidCoreParagraph),
+      paragraphInsights: teachingZoneParagraphs,
     });
     const concepts = extractConceptBlocksCore(adapted);
     return concepts.length > 0 ? buildHighlightNeighborhoods(concepts) : [];

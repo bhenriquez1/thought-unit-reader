@@ -84,8 +84,15 @@ export interface UltraPageView {
 export function isValidCoreParagraph(p: ParagraphInsight): boolean {
   const text = (p.cleanedText || p.rawText || "").trim();
   if (!text || p.paragraphType === "noise") return false;
-  // Formula paragraphs: bypass length and explanation-signal checks
-  if (p.paragraphType === "formula") return text.length >= 15;
+
+  const looksLikeMathFormula = /[=∫∂∑]|lim\b|d\/d[xt]|\\frac|\\int|\\sum|\bderivative\b|\bintegral\b/i.test(text);
+  const looksLikeMathExplanation = /\b(function|sequence|represent|depends on|limit|approach|graph|rate|value)\b/i.test(text);
+
+  // Formula paragraphs: bypass long-length gating to preserve symbolic anchors.
+  if (p.paragraphType === "formula" || looksLikeMathFormula) return text.length >= 12;
+  // Short math explanation context should survive near formulas.
+  if (looksLikeMathExplanation) return text.length >= 35;
+
   if (text.length < 80) return false;
   // Reject figure captions, table headers, diagram labels
   if (/^(figure\s*\d|fig\.\s*\d|table\s*\d|diagram\s*\d|image\s*\d)/i.test(text)) return false;
