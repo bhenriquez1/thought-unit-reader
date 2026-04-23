@@ -12,7 +12,6 @@ import { buildHighlightNeighborhoods, flattenNeighborhoods, type HighlightNeighb
 import { adaptPageInsightModel, isValidCoreParagraph } from "@/lib/insights/buildUltraPageView";
 import { findMainTeachingZone } from "@/lib/insights/findMainTeachingZone";
 import { extractConceptBlocks as extractConceptBlocksCore } from "@/lib/insights/extractConceptBlocks";
-import { findMainTeachingZone } from "@/lib/insights/findMainTeachingZone";
 import { buildParagraphRoleMap } from "@/lib/highlights/paragraphRoleMap";
 import { buildPageStoryV2, type PageStoryV2 } from "@/lib/insights/buildPageStoryV2";
 import { buildPageStoryV3, type PageStoryV3 } from "@/lib/insights/buildPageStoryV3";
