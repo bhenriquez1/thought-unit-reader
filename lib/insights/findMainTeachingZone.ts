@@ -16,34 +16,63 @@ const EXPLANATORY_TYPES = new Set<ParagraphType>([
   "formula",
 ]);
 
-function isMathFormulaText(text: string): boolean {
+function getParagraphText(p: ParagraphInsight): string {
+  return (p.cleanedText || p.rawText || "").trim();
+}
+
+function looksLikeMathFormula(text: string): boolean {
   return /[=∫∂∑]|lim\b|d\/d[xt]|\\frac|\\int|\\sum|\bderivative\b|\bintegral\b/i.test(text);
 }
 
-function isMathExplanationText(text: string): boolean {
-  return /\bfunction\b|\bsequence\b|\bdepends on\b|\brepresented\b|\bgraph\b|\bquantity\b|\brate\b/i.test(text);
+function looksLikeMathExplanation(text: string): boolean {
+  return /\b(function|sequence|depends on|represent|graph|rate|value|approach|limit|increases?|decreases?)\b/i.test(text);
 }
 
 export function findMainTeachingZone(paragraphs: ParagraphInsight[]): ParagraphInsight[] {
   if (paragraphs.length <= 5) return paragraphs;
 
-  return [...paragraphs]
-    .map((p) => {
-      const text = (p.cleanedText || p.rawText || "").trim();
-      const isFormula = p.paragraphType === "formula" || isMathFormulaText(text);
-      const isMathExplain = isMathExplanationText(text);
-      const explanatoryScore = EXPLANATORY_TYPES.has(p.paragraphType) ? 1.0 : 0.3;
-      // Formula paragraphs are short by nature — don't penalize them for it
-      const lengthScore = isFormula ? 0.2 : (text.length > 120 ? 0.2 : -0.2);
-      let zoneScore =
-        explanatoryScore * 0.5 +
-        Math.min(p.priorityScore / 10, 1.0) * 0.3 +
-        lengthScore;
-      if (isFormula) zoneScore += 0.18;
-      if (isMathExplain) zoneScore += 0.14;
-      return { p, zoneScore };
-    })
+  const scored = paragraphs.map((p, index) => {
+    const text = getParagraphText(p);
+    const isFormula = p.paragraphType === "formula" || looksLikeMathFormula(text);
+    const isMathExplain = looksLikeMathExplanation(text);
+    const numeric = p as ParagraphInsight & { explanatoryScore?: number; semanticScore?: number };
+    const explanatoryScore = EXPLANATORY_TYPES.has(p.paragraphType) ? 1.0 : 0.3;
+    const lengthScore = isFormula ? 0.2 : (text.length > 120 ? 0.2 : -0.2);
+    const zoneScore =
+      explanatoryScore * 0.5 +
+      Math.min(p.priorityScore / 10, 1.0) * 0.3 +
+      lengthScore +
+      Math.max(0, numeric.explanatoryScore ?? 0) * 0.2 +
+      Math.max(0, numeric.semanticScore ?? 0) * 0.15 +
+      (isFormula ? 0.22 : 0) +
+      (isMathExplain ? 0.16 : 0);
+    return { p, index, text, isFormula, isMathExplain, zoneScore };
+  });
+
+  const primary = [...scored]
     .sort((a, b) => b.zoneScore - a.zoneScore)
-    .slice(0, 5)
-    .map(({ p }) => p);
+    .slice(0, 5);
+
+  const chosen = new Map<number, ParagraphInsight>();
+  for (const item of primary) {
+    chosen.set(item.index, item.p);
+
+    if (!item.isFormula) continue;
+    const neighbors = [
+      scored[item.index - 1],
+      scored[item.index + 1],
+      scored[item.index - 2],
+      scored[item.index + 2],
+    ].filter((n): n is NonNullable<typeof n> => Boolean(n));
+
+    const bestNeighbor = neighbors
+      .filter((n) => n.isMathExplain || /\b(explain|means|represents|therefore|thus|so)\b/i.test(n.text))
+      .sort((a, b) => b.zoneScore - a.zoneScore)[0];
+
+    if (bestNeighbor) chosen.set(bestNeighbor.index, bestNeighbor.p);
+  }
+
+  return [...chosen.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, p]) => p);
 }

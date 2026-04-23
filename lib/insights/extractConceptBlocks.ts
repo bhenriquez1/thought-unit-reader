@@ -362,12 +362,55 @@ function selectBestConcepts(concepts: ConceptBlockInput[]): ConceptBlockInput[] 
     }
   }
 
-  // Sort final set by role priority (definition first = badge #1 on left)
-  return selected.sort((a, b) => {
-    const rDiff = ROLE_PRIORITY[b.conceptRole] - ROLE_PRIORITY[a.conceptRole];
-    if (rDiff !== 0) return rDiff;
-    return b.score - a.score;
+  // Enforce strict hierarchy in final order:
+  // definition first (if present), mechanism second (if present),
+  // then remaining by role priority + score.
+  return sortConceptsByStrictHierarchy(selected);
+}
+
+function sortConceptsByStrictHierarchy<T extends {
+  conceptRole?: ConceptRole;
+  score?: number;
+}>(concepts: T[]): T[] {
+  const ranked = [...concepts].sort((a, b) => {
+    const roleA = ROLE_PRIORITY[a.conceptRole ?? "detail"] ?? 0;
+    const roleB = ROLE_PRIORITY[b.conceptRole ?? "detail"] ?? 0;
+    if (roleA !== roleB) return roleB - roleA;
+    return (b.score ?? 0) - (a.score ?? 0);
   });
+
+  const definitions = ranked.filter((c) => c.conceptRole === "definition");
+  const mechanisms = ranked.filter((c) => c.conceptRole === "mechanism");
+  const variations = ranked.filter((c) => c.conceptRole === "variation");
+  const measurements = ranked.filter((c) => c.conceptRole === "measurement");
+  const examples = ranked.filter((c) => c.conceptRole === "example");
+  const details = ranked.filter((c) => !c.conceptRole || c.conceptRole === "detail");
+
+  const ordered: T[] = [];
+  const used = new Set<T>();
+
+  if (definitions.length > 0) {
+    ordered.push(definitions[0]);
+    used.add(definitions[0]);
+  }
+
+  if (mechanisms.length > 0) {
+    const mech = mechanisms.find((c) => !used.has(c));
+    if (mech) {
+      ordered.push(mech);
+      used.add(mech);
+    }
+  }
+
+  for (const bucket of [definitions, mechanisms, variations, measurements, examples, details]) {
+    for (const item of bucket) {
+      if (used.has(item)) continue;
+      ordered.push(item);
+      used.add(item);
+    }
+  }
+
+  return ordered;
 }
 
 export function extractConceptBlocks(page: PageModelForConcepts): ConceptBlockInput[] {
