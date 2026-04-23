@@ -10,7 +10,7 @@ import { isRenderableSentence } from "./isRenderableSentence";
 
 export const PATTERN_RE = /\b(defines?|is defined|describes?|consists? of|refers? to|is made of|occurs? when|depends on|includes?|can be grouped|comprises?|is characterized|represents?|classified as|known as|called|composed of|made up of|formed by|constitutes?)\b/i;
 
-export const REASON_RE  = /\b(because|therefore|thus|results? in|leads? to|allows?|explains?|helps?|causes?|enables?|drives?|underlies?|involves?|due to|so that|in order to|responsible for|accounts? for|attributed to)\b/i;
+export const REASON_RE  = /\b(because|therefore|thus|results? in|leads? to|allows?|explains?|helps?|causes?|enables?|drives?|underlies?|involves?|due to|so that|in order to|responsible for|accounts? for|attributed to|determines?|represents?|identifies?|governs?|equals?|consists? of|constitutes?)\b/i;
 
 export const TRAP_RE    = /\b(whereas|unlike|in contrast|rather than|the difference|different from|distinct from|conversely|instead|can be confused|should not be confused|do not confuse|does not|is not|are not|must not|incorrectly|often mistaken|commonly confused|not to be confused)\b/i;
 

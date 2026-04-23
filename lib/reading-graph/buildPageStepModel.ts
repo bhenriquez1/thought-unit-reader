@@ -439,16 +439,30 @@ function importanceForRole(role: PageStepRole): string {
 /*                            MINI TEST HOOKS                                 */
 /* -------------------------------------------------------------------------- */
 
+function extractSubjectPhrase(text: string, maxWords = 8): string {
+  const words = (text || "").replace(/[.!?]+$/, "").split(/\s+/).filter(Boolean);
+  // Cut at the first main verb to isolate the subject noun phrase
+  const verbIdx = words.findIndex(
+    (w, i) =>
+      i >= 2 &&
+      /^(is|are|was|were|has|have|can|could|will|would|should|must|means?|determines?|causes?|leads?|refers?|contains?|includes?|represents?|defines?|consists?)\b/i.test(w)
+  );
+  const cutAt = verbIdx >= 2 && verbIdx <= maxWords ? verbIdx : Math.min(maxWords, words.length);
+  return words.slice(0, cutAt).join(" ").replace(/^(The|A|An)\s+/i, "").trim();
+}
+
 function buildPageNativeQuestion(role: string, text: string): string {
-  const stem = (text || "").replace(/[.!?]+$/, "").slice(0, 100).trim();
+  if (!text) return "";
+  const stem = (text || "").replace(/[.!?]+$/, "").trim();
   if (!stem) return "";
+  const subject = extractSubjectPhrase(stem, 8) || stem.split(/\s+/).slice(0, 8).join(" ");
   switch (role) {
-    case "coreMeaning":   return cleanLocal(`What concept does this introduce: "${stem}"`);
-    case "mechanism":     return cleanLocal(`What does this explain: "${stem}"`);
-    case "distinction":   return cleanLocal(`What should readers not confuse based on: "${stem}"`);
-    case "application":   return cleanLocal(`When or how would this apply: "${stem}"`);
-    case "skimTrap":      return cleanLocal(`What common mistake does this warn against: "${stem}"`);
-    default:              return cleanLocal(text);
+    case "coreMeaning":   return cleanLocal(`What does ${subject} mean`);
+    case "mechanism":     return cleanLocal(`What does ${subject} cause or lead to`);
+    case "distinction":   return cleanLocal(`What should not be confused with ${subject}`);
+    case "application":   return cleanLocal(`When or how is ${subject} applied`);
+    case "skimTrap":      return cleanLocal(`What mistake is associated with ${subject}`);
+    default:              return cleanLocal(stem.split(/\s+/).slice(0, 12).join(" "));
   }
 }
 
@@ -524,6 +538,12 @@ function extractDefinitionQuestion(text: string): string | null {
   // Match mid-sentence definitions (not just ^ start)
   const m = text.match(/(.{4,45}?)\s+(indicates?|means?|represents?|refers? to|is defined as)\s+(.{4,60})/i);
   if (m) return cleanLocal(`What does ${m[1].trim()} ${m[2].toLowerCase()}?`);
+  // "X is the [noun/count] of Y" → "What is X?"  (e.g. "Atomic number is the number of protons")
+  const m3 = text.match(/(.{4,35}?)\s+is the\s+[\w\s]{2,20}\s+of\b/i);
+  if (m3) return cleanLocal(`What is ${m3[1].trim()}?`);
+  // "X is a/an Y" → "What is X?"
+  const m4 = text.match(/(.{4,35}?)\s+is an?\s+(.{4,50})/i);
+  if (m4) return cleanLocal(`What is ${m4[1].trim()}?`);
   const m2 = text.match(/(?:you can|one can|we can)\s+(determine|find|calculate|derive)\s+(.{4,40})/i);
   if (m2) return cleanLocal(`How do you ${m2[1].toLowerCase()} ${m2[2].trim().replace(/[.!?]+$/, "")}?`);
   return null;

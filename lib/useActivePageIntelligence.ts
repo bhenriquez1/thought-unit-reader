@@ -10,6 +10,7 @@ import { classifyPageContent, type PageContentClass } from "@/lib/pdf/classifyPa
 import { extractPriorityHighlights, type ExtractPriorityHighlightsResult } from "@/lib/highlights/extractPriorityHighlights";
 import { buildHighlightNeighborhoods, flattenNeighborhoods, type HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
 import { adaptPageInsightModel, isValidCoreParagraph } from "@/lib/insights/buildUltraPageView";
+import { findMainTeachingZone } from "@/lib/insights/findMainTeachingZone";
 import { extractConceptBlocks as extractConceptBlocksCore } from "@/lib/insights/extractConceptBlocks";
 import { findMainTeachingZone } from "@/lib/insights/findMainTeachingZone";
 import { buildParagraphRoleMap } from "@/lib/highlights/paragraphRoleMap";
@@ -338,6 +339,11 @@ export function useActivePageIntelligence({
     const adapted = adaptPageInsightModel({
       ...pageModel,
       paragraphInsights: teachingZoneParagraphs,
+    const validInsights = (pageModel.paragraphInsights ?? []).filter(isValidCoreParagraph);
+    const zoneInsights = findMainTeachingZone(validInsights);
+    const adapted = adaptPageInsightModel({
+      ...pageModel,
+      paragraphInsights: zoneInsights,
     });
     const concepts = extractConceptBlocksCore(adapted);
     return concepts.length > 0 ? buildHighlightNeighborhoods(concepts) : [];

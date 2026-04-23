@@ -177,12 +177,12 @@ function classifyConceptRole(anchorText: string, supportTexts: string[]): Concep
 
   // Definition: explicit definitional copula or structural "is a/the X that/which"
   if (/\b(is defined as|is characterized by|refers to|is called|is known as|is a type of|is described as|is the process of|is the ability to|consists of)\b/.test(lower)) return "definition";
-  if (/\b(defined as|means that|means \w|is an? \w+ (that|which|of))\b/.test(lower)) return "definition";
+  if (/\b(defined as|means that|means \w|is (a|an|the) \w+ (that|which|of))\b/.test(lower)) return "definition";
   if (/\b(is (a|an|the) \w[\w\s]+ (that|which|used|found|located|formed|produced|made))\b/.test(lower)) return "definition";
 
-  // Mechanism: causal / process language
+  // Mechanism: causal / process language including science relational verbs
   if (/\b(causes?|leads? to|results? in|because|therefore|thus|hence|consequently|triggers?|stimulates?|inhibits?|activates?|promotes?|mediates?|drives?|prevents?|allows?)\b/.test(lower)) return "mechanism";
-  if (/\b(depends? on|regulated by|controlled by|initiated by|releases?|absorbs?)\b/.test(lower)) return "mechanism";
+  if (/\b(depends? on|regulated by|controlled by|initiated by|releases?|absorbs?|determines?|identifies?|governs?|regulates?|establishes?|reveals?)\b/.test(lower)) return "mechanism";
 
   // Variation / contrast / exception
   if (/\b(unlike|however|in contrast|whereas|although|despite|rather than|on the other hand|except)\b/.test(lower)) return "variation";
