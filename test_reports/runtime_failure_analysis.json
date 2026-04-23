@@ -1,0 +1,1384 @@
+{
+  "generatedAt": "2026-04-23T00:38:09.969Z",
+  "cases": [
+    {
+      "id": "biology_failure_case",
+      "rawExtractedPageText": "Chapter 3: Cellular Energetics Overview\n\nThe electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane. Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space. ATP synthase uses the proton gradient to produce ATP from ADP and inorganic phosphate.\n\nStudents often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists. However, the conceptual layer that matters is coupling: redox energy is converted to an electrochemical gradient and then converted again to chemical bond energy in ATP. If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.\n\nA common trap is confusing where ATP is generated and where reducing equivalents are produced. Glycolysis generates ATP and NADH in the cytosol; the Krebs cycle generates most NADH in the matrix; oxidative phosphorylation generates most ATP at the inner membrane. Do not confuse substrate-level phosphorylation with oxidative phosphorylation.\n\nFor example, rotenone blocks complex I and cyanide blocks complex IV, but both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+      "detectedDomain": "math",
+      "pageKind": "scientific_exposition",
+      "pageClass": "prose",
+      "shouldRenderFullPanel": true,
+      "detectedFormulaSignals": [],
+      "filteredParagraphList": [
+        {
+          "id": "p-0",
+          "type": "process",
+          "priorityScore": 2,
+          "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane. Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to "
+        },
+        {
+          "id": "p-1",
+          "type": "process",
+          "priorityScore": 6,
+          "text": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists. However, the conceptual layer that matters is coupling: redox energy is converted to an electrochemical gradient a"
+        },
+        {
+          "id": "p-2",
+          "type": "mixed",
+          "priorityScore": 0,
+          "text": "A common trap is confusing where ATP is generated and where reducing equivalents are produced. Glycolysis generates ATP and NADH in the cytosol; the Krebs cycle generates most NADH in the matrix; oxidative phosphorylatio"
+        },
+        {
+          "id": "p-3",
+          "type": "cause_effect",
+          "priorityScore": 5,
+          "text": "For example, rotenone blocks complex I and cyanide blocks complex IV, but both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor."
+        }
+      ],
+      "mainTeachingZone": [
+        {
+          "id": "p-0",
+          "type": "process",
+          "priorityScore": 2,
+          "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane. Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to "
+        },
+        {
+          "id": "p-1",
+          "type": "process",
+          "priorityScore": 6,
+          "text": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists. However, the conceptual layer that matters is coupling: redox energy is converted to an electrochemical gradient a"
+        },
+        {
+          "id": "p-2",
+          "type": "mixed",
+          "priorityScore": 0,
+          "text": "A common trap is confusing where ATP is generated and where reducing equivalents are produced. Glycolysis generates ATP and NADH in the cytosol; the Krebs cycle generates most NADH in the matrix; oxidative phosphorylatio"
+        },
+        {
+          "id": "p-3",
+          "type": "cause_effect",
+          "priorityScore": 5,
+          "text": "For example, rotenone blocks complex I and cyanide blocks complex IV, but both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor."
+        }
+      ],
+      "conceptRoleClassification": [
+        {
+          "id": "concept-p-0",
+          "role": "definition",
+          "score": 14,
+          "anchor": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane."
+        },
+        {
+          "id": "concept-p-1",
+          "role": "mechanism",
+          "score": 26,
+          "anchor": "Oxygen is absent, therefore If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses."
+        },
+        {
+          "id": "concept-p-3",
+          "role": "mechanism",
+          "score": 19.5,
+          "anchor": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor."
+        },
+        {
+          "id": "concept-p-2",
+          "role": "detail",
+          "score": 6,
+          "anchor": "A common trap is confusing where ATP is generated and where reducing equivalents are produced."
+        }
+      ],
+      "crossParagraphReasoningChain": [
+        {
+          "paragraphId": "p-1",
+          "if": "oxygen is absent",
+          "then": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+          "because": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses."
+        }
+      ],
+      "priorityScoringResults": [
+        {
+          "id": "3:anchor",
+          "text": "A common trap is confusing where ATP is generated and where reducing equivalents are produced.",
+          "role": "interpretation",
+          "slot": "reason",
+          "score": 0.52
+        },
+        {
+          "id": "0:anchor",
+          "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
+          "role": "support",
+          "slot": "support",
+          "score": 0.28
+        },
+        {
+          "id": "1:anchor",
+          "text": "Oxygen is absent, therefore If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+          "role": "support",
+          "slot": "support",
+          "score": 0.28
+        },
+        {
+          "id": "1:sup0",
+          "text": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+          "role": "support",
+          "slot": "support",
+          "score": 0.28
+        },
+        {
+          "id": "1:sup1",
+          "text": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
+          "role": "support",
+          "slot": "support",
+          "score": 0.28
+        },
+        {
+          "id": "2:anchor",
+          "text": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+          "role": "support",
+          "slot": "support",
+          "score": 0.28
+        }
+      ],
+      "chosenCoreIdeaSource": "pageSummary",
+      "chosenConceptBlockSource": [
+        {
+          "conceptId": "concept-p-0",
+          "title": "The Electron Transport Chain Is A",
+          "pattern": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane."
+        },
+        {
+          "conceptId": "concept-p-1",
+          "title": "Oxygen Is Absent",
+          "pattern": "Oxygen is absent, therefore If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses."
+        },
+        {
+          "conceptId": "concept-p-3",
+          "title": "Both Reduce Oxidative Atp Production Because",
+          "pattern": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor."
+        },
+        {
+          "conceptId": "concept-p-2",
+          "title": "A Common Trap Is Confusing Where",
+          "pattern": "A common trap is confusing where ATP is generated and where reducing equivalents are produced."
+        }
+      ],
+      "miniTestCandidateList": [
+        {
+          "id": "analysis-doc:14:step:1:coreMeaning",
+          "stepId": "analysis-doc:14:step:1",
+          "stepOrder": 1,
+          "role": "coreMeaning",
+          "text": "What concept does this introduce: \"The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane\"."
+        },
+        {
+          "id": "analysis-doc:14:step:1:mechanism",
+          "stepId": "analysis-doc:14:step:1",
+          "stepOrder": 1,
+          "role": "mechanism",
+          "text": "What does this explain: \"The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane\"."
+        },
+        {
+          "id": "analysis-doc:14:step:1:distinction",
+          "stepId": "analysis-doc:14:step:1",
+          "stepOrder": 1,
+          "role": "distinction",
+          "text": "What should readers not confuse based on: \"The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane\"."
+        },
+        {
+          "id": "analysis-doc:14:step:1:application",
+          "stepId": "analysis-doc:14:step:1",
+          "stepOrder": 1,
+          "role": "application",
+          "text": "When or how would this apply: \"The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane\"."
+        },
+        {
+          "id": "analysis-doc:14:step:1:skimTrap",
+          "stepId": "analysis-doc:14:step:1",
+          "stepOrder": 1,
+          "role": "skimTrap",
+          "text": "What common mistake does this warn against: \"The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane\"."
+        },
+        {
+          "id": "analysis-doc:14:step:2:coreMeaning",
+          "stepId": "analysis-doc:14:step:2",
+          "stepOrder": 2,
+          "role": "coreMeaning",
+          "text": "What concept does this introduce: \"Oxygen is absent, therefore If oxygen is absent, electron transport stalls, NADH accumulates, and AT\"."
+        },
+        {
+          "id": "analysis-doc:14:step:2:mechanism",
+          "stepId": "analysis-doc:14:step:2",
+          "stepOrder": 2,
+          "role": "mechanism",
+          "text": "What does this explain: \"If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses\"."
+        },
+        {
+          "id": "analysis-doc:14:step:2:distinction",
+          "stepId": "analysis-doc:14:step:2",
+          "stepOrder": 2,
+          "role": "distinction",
+          "text": "What should readers not confuse based on: \"Oxygen is absent, therefore If oxygen is absent, electron transport stalls, NADH accumulates, and AT\"."
+        },
+        {
+          "id": "analysis-doc:14:step:2:application",
+          "stepId": "analysis-doc:14:step:2",
+          "stepOrder": 2,
+          "role": "application",
+          "text": "When or how would this apply: \"Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected l\"."
+        },
+        {
+          "id": "analysis-doc:14:step:2:skimTrap",
+          "stepId": "analysis-doc:14:step:2",
+          "stepOrder": 2,
+          "role": "skimTrap",
+          "text": "What common mistake does this warn against: \"Oxygen is absent, therefore If oxygen is absent, electron transport stalls, NADH accumulates, and AT\"."
+        },
+        {
+          "id": "analysis-doc:14:step:3:coreMeaning",
+          "stepId": "analysis-doc:14:step:3",
+          "stepOrder": 3,
+          "role": "coreMeaning",
+          "text": "What concept does this introduce: \"Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal accep\"."
+        },
+        {
+          "id": "analysis-doc:14:step:3:mechanism",
+          "stepId": "analysis-doc:14:step:3",
+          "stepOrder": 3,
+          "role": "mechanism",
+          "text": "What does this explain: \"Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal accep\"."
+        },
+        {
+          "id": "analysis-doc:14:step:3:distinction",
+          "stepId": "analysis-doc:14:step:3",
+          "stepOrder": 3,
+          "role": "distinction",
+          "text": "What should readers not confuse based on: \"Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal accep\"."
+        },
+        {
+          "id": "analysis-doc:14:step:3:application",
+          "stepId": "analysis-doc:14:step:3",
+          "stepOrder": 3,
+          "role": "application",
+          "text": "When or how would this apply: \"Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal accep\"."
+        },
+        {
+          "id": "analysis-doc:14:step:3:skimTrap",
+          "stepId": "analysis-doc:14:step:3",
+          "stepOrder": 3,
+          "role": "skimTrap",
+          "text": "What common mistake does this warn against: \"Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal accep\"."
+        },
+        {
+          "id": "analysis-doc:14:step:4:coreMeaning",
+          "stepId": "analysis-doc:14:step:4",
+          "stepOrder": 4,
+          "role": "coreMeaning",
+          "text": "What concept does this introduce: \"A common trap is confusing where ATP is generated and where reducing equivalents are produced\"."
+        },
+        {
+          "id": "analysis-doc:14:step:4:mechanism",
+          "stepId": "analysis-doc:14:step:4",
+          "stepOrder": 4,
+          "role": "mechanism",
+          "text": "What does this explain: \"A common trap is confusing where ATP is generated and where reducing equivalents are produced\"."
+        },
+        {
+          "id": "analysis-doc:14:step:4:distinction",
+          "stepId": "analysis-doc:14:step:4",
+          "stepOrder": 4,
+          "role": "distinction",
+          "text": "What should readers not confuse based on: \"A common trap is confusing where ATP is generated and where reducing equivalents are produced\"."
+        },
+        {
+          "id": "analysis-doc:14:step:4:application",
+          "stepId": "analysis-doc:14:step:4",
+          "stepOrder": 4,
+          "role": "application",
+          "text": "When or how would this apply: \"A common trap is confusing where ATP is generated and where reducing equivalents are produced\"."
+        },
+        {
+          "id": "analysis-doc:14:step:4:skimTrap",
+          "stepId": "analysis-doc:14:step:4",
+          "stepOrder": 4,
+          "role": "skimTrap",
+          "text": "What common mistake does this warn against: \"A common trap is confusing where ATP is generated and where reducing equivalents are produced\"."
+        }
+      ],
+      "miniTestSelectedResults": {
+        "questions": [
+          {
+            "id": "analysis-doc:14:step:1:coreMeaning",
+            "stepId": "analysis-doc:14:step:1",
+            "stepOrder": 1,
+            "role": "coreMeaning",
+            "text": "What concept does this introduce: \"The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane\"?",
+            "score": 0.64
+          },
+          {
+            "id": "analysis-doc:14:step:1:distinction",
+            "stepId": "analysis-doc:14:step:1",
+            "stepOrder": 1,
+            "role": "distinction",
+            "text": "What should readers not confuse based on: \"The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane\"?",
+            "score": 0.6299999999999999
+          },
+          {
+            "id": "analysis-doc:14:step:2:mechanism",
+            "stepId": "analysis-doc:14:step:2",
+            "stepOrder": 2,
+            "role": "mechanism",
+            "text": "What does this explain: \"If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses\"?",
+            "score": 0.64
+          },
+          {
+            "id": "analysis-doc:14:step:2:application",
+            "stepId": "analysis-doc:14:step:2",
+            "stepOrder": 2,
+            "role": "application",
+            "text": "When or how would this apply: \"Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected l\"?",
+            "score": 0.72
+          },
+          {
+            "id": "analysis-doc:14:step:2:skimTrap",
+            "stepId": "analysis-doc:14:step:2",
+            "stepOrder": 2,
+            "role": "skimTrap",
+            "text": "What common mistake does this warn against: \"Oxygen is absent, therefore If oxygen is absent, electron transport stalls, NADH accumulates, and AT\"?",
+            "score": 0.5499999999999999
+          }
+        ],
+        "rejected": []
+      },
+      "compressionCandidateList": {
+        "selected": [
+          {
+            "id": "compression-1-mechanism",
+            "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-2-mechanism",
+            "text": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-3-mechanism",
+            "text": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          }
+        ],
+        "rejected": [
+          {
+            "id": "compression-100-mechanism",
+            "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-100-mechanism",
+            "text": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-100-mechanism",
+            "text": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-100-mechanism",
+            "text": "A common trap is confusing where ATP is generated and where reducing equivalents are produced.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-104-application",
+            "text": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
+            "role": "application",
+            "score": 0.78,
+            "source": "block_rule"
+          },
+          {
+            "id": "compression-105-mechanism",
+            "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-106-mechanism",
+            "text": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-107-mechanism",
+            "text": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-108-mechanism",
+            "text": "A common trap is confusing where ATP is generated and where reducing equivalents are produced.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-109-application",
+            "text": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
+            "role": "application",
+            "score": 0.78,
+            "source": "block_rule"
+          }
+        ]
+      },
+      "compressionSelectedResults": [
+        {
+          "id": "compression-1-mechanism",
+          "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
+          "role": "mechanism",
+          "score": 0.8,
+          "source": "block_reason"
+        },
+        {
+          "id": "compression-2-mechanism",
+          "text": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+          "role": "mechanism",
+          "score": 0.8,
+          "source": "block_reason"
+        },
+        {
+          "id": "compression-3-mechanism",
+          "text": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+          "role": "mechanism",
+          "score": 0.8,
+          "source": "block_reason"
+        }
+      ],
+      "highlightNeighborhoodsGeneratedForLeftPanel": [
+        {
+          "id": "neighborhood-concept-p-1",
+          "conceptId": "concept-p-1",
+          "title": "Oxygen Is Absent",
+          "anchor": {
+            "id": "important-concept-p-1",
+            "text": "Oxygen is absent, therefore If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+            "normalizedText": "oxygen is absent therefore if oxygen is absent electron transport stalls nadh accumulates and atp yield collapses",
+            "sentenceId": "p-1-s3",
+            "tier": "important",
+            "score": 0.8500000000000001
+          },
+          "support": [
+            {
+              "id": "support-concept-p-1-0",
+              "text": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+              "normalizedText": "if oxygen is absent electron transport stalls nadh accumulates and atp yield collapses",
+              "sentenceId": "p-1-s0",
+              "tier": "support",
+              "score": 0.78
+            }
+          ],
+          "additional": [
+            {
+              "id": "additional-concept-p-1-0",
+              "text": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
+              "normalizedText": "students often memorize glycolysis the krebs cycle and oxidative phosphorylation as disconnected lists",
+              "sentenceId": "p-1-s1",
+              "tier": "additional",
+              "score": 0.52
+            }
+          ],
+          "trap": null,
+          "priorityScore": 26,
+          "conceptRole": "mechanism",
+          "depthLevel": "full"
+        }
+      ],
+      "finalDataObjectConsumedByRightPanel": {
+        "title": "ULTRA – The Electron Transport Chain Is A",
+        "subtitle": "STR + PDRM + Surgical Comprehension Engine",
+        "coreIdea": "This page develops one core idea through a small set of connected concepts.",
+        "blocks": [
+          {
+            "conceptId": "concept-p-0",
+            "ordinal": 1,
+            "title": "The Electron Transport Chain Is A",
+            "pattern": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
+            "surgicalReason": "This concept matters because it explains how the page's main idea works.",
+            "trap": "Do not confuse the electron transport chain is a with nearby supporting details on the page.",
+            "rule": "Use this as the key rule from the page.",
+            "importance": "VERY HIGH"
+          },
+          {
+            "conceptId": "concept-p-1",
+            "ordinal": 2,
+            "title": "Oxygen Is Absent",
+            "pattern": "Oxygen is absent, therefore If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+            "surgicalReason": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
+            "trap": "Do not confuse oxygen is absent with nearby supporting details on the page.",
+            "rule": "Use this as the key rule from the page.",
+            "importance": "VERY HIGH"
+          },
+          {
+            "conceptId": "concept-p-3",
+            "ordinal": 3,
+            "title": "Both Reduce Oxidative Atp Production Because",
+            "pattern": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+            "surgicalReason": "This concept matters because it explains how the page's main idea works.",
+            "trap": "Do not confuse both reduce oxidative atp production because with nearby supporting details on the page.",
+            "rule": "Use this as the key rule from the page.",
+            "importance": "VERY HIGH"
+          },
+          {
+            "conceptId": "concept-p-2",
+            "ordinal": 4,
+            "title": "A Common Trap Is Confusing Where",
+            "pattern": "A common trap is confusing where ATP is generated and where reducing equivalents are produced.",
+            "surgicalReason": "This concept matters because it explains how the page's main idea works.",
+            "trap": "Do not confuse a common trap is confusing where with nearby supporting details on the page.",
+            "rule": "Use this as the key rule from the page.",
+            "importance": "MEDIUM"
+          }
+        ],
+        "miniTest": [
+          "What concept does this introduce: \"The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane\"?",
+          "What does this explain: \"This concept matters because it explains how the page's main idea works\"?",
+          "When or how would this apply: \"Use this as the key rule from the page\"?",
+          "What should readers not confuse based on: \"Do not confuse oxygen is absent with nearby supporting details on the page\"?",
+          "What common mistake does this warn against: \"Do not confuse oxygen is absent with nearby supporting details on the page\"?"
+        ],
+        "compression": [
+          "Rule 1: This concept matters because it explains how the page's main idea works.",
+          "Rule 2: Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
+          "Rule 3: Use this as the key rule from the page."
+        ],
+        "steps": [
+          {
+            "conceptId": "concept-p-0",
+            "role": "trap",
+            "roleLabel": "!"
+          },
+          {
+            "conceptId": "concept-p-1",
+            "role": "trap",
+            "roleLabel": "!"
+          },
+          {
+            "conceptId": "concept-p-3",
+            "role": "trap",
+            "roleLabel": "!"
+          },
+          {
+            "conceptId": "concept-p-2",
+            "role": "trap",
+            "roleLabel": "!"
+          }
+        ],
+        "_debug": {
+          "pageKind": "scientific_exposition",
+          "domain": "math",
+          "shouldRenderFullPanel": true,
+          "pageSummaryLength": 170,
+          "coreIdeaSource": "pageSummary",
+          "conceptCandidates": [
+            {
+              "id": "concept-p-0",
+              "title": "The Electron Transport Chain Is A",
+              "score": 14,
+              "anchorLen": 98,
+              "role": "definition"
+            },
+            {
+              "id": "concept-p-1",
+              "title": "Oxygen Is Absent",
+              "score": 26,
+              "anchorLen": 118,
+              "role": "mechanism"
+            },
+            {
+              "id": "concept-p-3",
+              "title": "Both Reduce Oxidative Atp Production Because",
+              "score": 19.5,
+              "anchorLen": 104,
+              "role": "mechanism"
+            },
+            {
+              "id": "concept-p-2",
+              "title": "A Common Trap Is Confusing Where",
+              "score": 6,
+              "anchorLen": 94,
+              "role": "detail"
+            }
+          ]
+        }
+      },
+      "leftRightSourceComparison": {
+        "leftConceptIds": [
+          "concept-p-0",
+          "concept-p-1",
+          "concept-p-3",
+          "concept-p-2"
+        ],
+        "rightConceptIds": [
+          "concept-p-0",
+          "concept-p-1",
+          "concept-p-3",
+          "concept-p-2"
+        ],
+        "overlapConceptIds": [
+          "concept-p-0",
+          "concept-p-1",
+          "concept-p-3",
+          "concept-p-2"
+        ]
+      }
+    },
+    {
+      "id": "calculus_failure_case",
+      "rawExtractedPageText": "Section 5.4 Chain Rule and Related Rates\n\nIf y = f(g(x)), then dy/dx = f'(g(x)) · g'(x). This identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function.\n\nIn related rates, differentiate both sides with respect to time and keep track of which variables depend on t. For a sphere with V = (4/3)πr^3, dV/dt = 4πr^2 · dr/dt. The formula sentence is often copied, but students miss the conceptual anchor: every symbol must be tied to the same instant in time.\n\nHowever, many solutions fail because they plug in radius values before differentiating, which destroys variable dependence and loses dr/dt. Another trap is mixing partial snapshots from two moments of motion.\n\nExample: When r = 3 cm and dr/dt = 2 cm/s, then dV/dt = 72π cm^3/s. This numerical step should be last, not first.",
+      "detectedDomain": "math",
+      "pageKind": "mathematical_exposition",
+      "pageClass": "prose",
+      "shouldRenderFullPanel": true,
+      "detectedFormulaSignals": [
+        "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x). This identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function.",
+        "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t. For a sphere with V = (4/3)πr^3, dV/dt = 4πr^2 · dr/dt. The formula sentence is often copied, but students miss the conceptual anchor: every symbol must be tied to the same instant in time.",
+        "Example: When r = 3 cm and dr/dt = 2 cm/s, then dV/dt = 72π cm^3/s. This numerical step should be last, not first."
+      ],
+      "filteredParagraphList": [
+        {
+          "id": "p-0",
+          "type": "process",
+          "priorityScore": 4,
+          "text": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x). This identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner fu"
+        },
+        {
+          "id": "p-1",
+          "type": "decision",
+          "priorityScore": 6,
+          "text": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t. For a sphere with V = (4/3)πr^3, dV/dt = 4πr^2 · dr/dt. The formula sentence is often copied, but students mi"
+        },
+        {
+          "id": "p-2",
+          "type": "cause_effect",
+          "priorityScore": 5,
+          "text": "However, many solutions fail because they plug in radius values before differentiating, which destroys variable dependence and loses dr/dt. Another trap is mixing partial snapshots from two moments of motion."
+        },
+        {
+          "id": "p-3",
+          "type": "process",
+          "priorityScore": 6,
+          "text": "Example: When r = 3 cm and dr/dt = 2 cm/s, then dV/dt = 72π cm^3/s. This numerical step should be last, not first."
+        }
+      ],
+      "mainTeachingZone": [
+        {
+          "id": "p-0",
+          "type": "process",
+          "priorityScore": 4,
+          "text": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x). This identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner fu"
+        },
+        {
+          "id": "p-1",
+          "type": "decision",
+          "priorityScore": 6,
+          "text": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t. For a sphere with V = (4/3)πr^3, dV/dt = 4πr^2 · dr/dt. The formula sentence is often copied, but students mi"
+        },
+        {
+          "id": "p-2",
+          "type": "cause_effect",
+          "priorityScore": 5,
+          "text": "However, many solutions fail because they plug in radius values before differentiating, which destroys variable dependence and loses dr/dt. Another trap is mixing partial snapshots from two moments of motion."
+        },
+        {
+          "id": "p-3",
+          "type": "process",
+          "priorityScore": 6,
+          "text": "Example: When r = 3 cm and dr/dt = 2 cm/s, then dV/dt = 72π cm^3/s. This numerical step should be last, not first."
+        }
+      ],
+      "conceptRoleClassification": [
+        {
+          "id": "concept-p-3",
+          "role": "definition",
+          "score": 31,
+          "anchor": "Example: When r = 3 cm and dr/dt = 2 cm/s, then dV/dt = 72π cm^3/s."
+        },
+        {
+          "id": "concept-p-1",
+          "role": "mechanism",
+          "score": 30,
+          "anchor": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t."
+        },
+        {
+          "id": "concept-p-0",
+          "role": "definition",
+          "score": 21,
+          "anchor": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x)."
+        },
+        {
+          "id": "concept-p-2",
+          "role": "mechanism",
+          "score": 27,
+          "anchor": "However, many solutions fail because they plug in radius values before differentiating, which destroys variable dependence and loses dr/dt."
+        }
+      ],
+      "crossParagraphReasoningChain": [
+        {
+          "paragraphId": "p-0",
+          "if": "y = f(g(x))",
+          "then": "dy/dx = f'(g(x)) · g'(x)",
+          "because": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x)."
+        },
+        {
+          "paragraphId": "p-3",
+          "if": "r = 3 cm and dr/dt = 2 cm/s",
+          "then": "dV/dt = 72π cm^3/s",
+          "because": "Example: When r = 3 cm and dr/dt = 2 cm/s, then dV/dt = 72π cm^3/s."
+        }
+      ],
+      "priorityScoringResults": [
+        {
+          "id": "0:anchor",
+          "text": "Example: When r = 3 cm and dr/dt = 2 cm/s, then dV/dt = 72π cm^3/s.",
+          "role": "formula",
+          "slot": "pattern",
+          "score": 0.64
+        },
+        {
+          "id": "0:sup1",
+          "text": "R = 3 cm and dr/dt = 2 cm/s, therefore dV/dt = 72π cm^3/s.",
+          "role": "formula",
+          "slot": "pattern",
+          "score": 0.64
+        },
+        {
+          "id": "2:anchor",
+          "text": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x).",
+          "role": "formula",
+          "slot": "pattern",
+          "score": 0.64
+        },
+        {
+          "id": "2:sup0",
+          "text": "Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x).",
+          "role": "formula",
+          "slot": "pattern",
+          "score": 0.56
+        },
+        {
+          "id": "1:anchor",
+          "text": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t.",
+          "role": "support",
+          "slot": "support",
+          "score": 0.28
+        },
+        {
+          "id": "1:sup1",
+          "text": "Students miss the conceptual anchor: every symbol must be tied to the same instant in time.",
+          "role": "support",
+          "slot": "support",
+          "score": 0.28
+        },
+        {
+          "id": "3:anchor",
+          "text": "However, many solutions fail because they plug in radius values before differentiating, which destroys variable dependence and loses dr/dt.",
+          "role": "support",
+          "slot": "support",
+          "score": 0.28
+        },
+        {
+          "id": "1:sup0",
+          "text": "Must be tied to the same instant in time.",
+          "role": "support",
+          "slot": "support",
+          "score": 0.2
+        },
+        {
+          "id": "0:sup0",
+          "text": "Should be last, not first.",
+          "role": "support",
+          "slot": "support",
+          "score": 0.020000000000000018
+        }
+      ],
+      "chosenCoreIdeaSource": "pageSummary",
+      "chosenConceptBlockSource": [
+        {
+          "conceptId": "concept-p-3",
+          "title": "Example: When R = 3 Cm",
+          "pattern": "Example: When r = 3 cm and dr/dt = 2 cm/s, then dV/dt = 72π cm^3/s."
+        },
+        {
+          "conceptId": "concept-p-1",
+          "title": "In Related Rates",
+          "pattern": "Must be tied to the same instant in time."
+        },
+        {
+          "conceptId": "concept-p-0",
+          "title": "Key Concept",
+          "pattern": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x)."
+        },
+        {
+          "conceptId": "concept-p-2",
+          "title": "However, Many Solutions Fail Because",
+          "pattern": "However, many solutions fail because they plug in radius values before differentiating, which destroys variable dependence and loses dr/dt."
+        }
+      ],
+      "miniTestCandidateList": [
+        {
+          "id": "analysis-doc:27:step:1:coreMeaning",
+          "stepId": "analysis-doc:27:step:1",
+          "stepOrder": 1,
+          "role": "coreMeaning",
+          "text": "What concept does this introduce: \"Example: When r = 3 cm and dr/dt = 2 cm/s, then dV/dt = 72π cm^3/s\"."
+        },
+        {
+          "id": "analysis-doc:27:step:1:mechanism",
+          "stepId": "analysis-doc:27:step:1",
+          "stepOrder": 1,
+          "role": "mechanism",
+          "text": "What does this explain: \"Should be last, not first\"."
+        },
+        {
+          "id": "analysis-doc:27:step:1:distinction",
+          "stepId": "analysis-doc:27:step:1",
+          "stepOrder": 1,
+          "role": "distinction",
+          "text": "What should readers not confuse based on: \"Example: When r = 3 cm and dr/dt = 2 cm/s, then dV/dt = 72π cm^3/s\"."
+        },
+        {
+          "id": "analysis-doc:27:step:1:application",
+          "stepId": "analysis-doc:27:step:1",
+          "stepOrder": 1,
+          "role": "application",
+          "text": "When or how would this apply: \"R = 3 cm and dr/dt = 2 cm/s, therefore dV/dt = 72π cm^3/s\"."
+        },
+        {
+          "id": "analysis-doc:27:step:1:skimTrap",
+          "stepId": "analysis-doc:27:step:1",
+          "stepOrder": 1,
+          "role": "skimTrap",
+          "text": "What common mistake does this warn against: \"Example: When r = 3 cm and dr/dt = 2 cm/s, then dV/dt = 72π cm^3/s\"."
+        },
+        {
+          "id": "analysis-doc:27:step:2:coreMeaning",
+          "stepId": "analysis-doc:27:step:2",
+          "stepOrder": 2,
+          "role": "coreMeaning",
+          "text": "What concept does this introduce: \"In related rates, differentiate both sides with respect to time and keep track of which variables de\"."
+        },
+        {
+          "id": "analysis-doc:27:step:2:mechanism",
+          "stepId": "analysis-doc:27:step:2",
+          "stepOrder": 2,
+          "role": "mechanism",
+          "text": "What does this explain: \"Must be tied to the same instant in time\"."
+        },
+        {
+          "id": "analysis-doc:27:step:2:distinction",
+          "stepId": "analysis-doc:27:step:2",
+          "stepOrder": 2,
+          "role": "distinction",
+          "text": "What should readers not confuse based on: \"In related rates, differentiate both sides with respect to time and keep track of which variables de\"."
+        },
+        {
+          "id": "analysis-doc:27:step:2:application",
+          "stepId": "analysis-doc:27:step:2",
+          "stepOrder": 2,
+          "role": "application",
+          "text": "When or how would this apply: \"Students miss the conceptual anchor: every symbol must be tied to the same instant in time\"."
+        },
+        {
+          "id": "analysis-doc:27:step:2:skimTrap",
+          "stepId": "analysis-doc:27:step:2",
+          "stepOrder": 2,
+          "role": "skimTrap",
+          "text": "What common mistake does this warn against: \"In related rates, differentiate both sides with respect to time and keep track of which variables de\"."
+        },
+        {
+          "id": "analysis-doc:27:step:3:coreMeaning",
+          "stepId": "analysis-doc:27:step:3",
+          "stepOrder": 3,
+          "role": "coreMeaning",
+          "text": "What concept does this introduce: \"If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x)\"."
+        },
+        {
+          "id": "analysis-doc:27:step:3:mechanism",
+          "stepId": "analysis-doc:27:step:3",
+          "stepOrder": 3,
+          "role": "mechanism",
+          "text": "What does this explain: \"Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x)\"."
+        },
+        {
+          "id": "analysis-doc:27:step:3:distinction",
+          "stepId": "analysis-doc:27:step:3",
+          "stepOrder": 3,
+          "role": "distinction",
+          "text": "What should readers not confuse based on: \"If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x)\"."
+        },
+        {
+          "id": "analysis-doc:27:step:3:application",
+          "stepId": "analysis-doc:27:step:3",
+          "stepOrder": 3,
+          "role": "application",
+          "text": "When or how would this apply: \"Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x)\"."
+        },
+        {
+          "id": "analysis-doc:27:step:3:skimTrap",
+          "stepId": "analysis-doc:27:step:3",
+          "stepOrder": 3,
+          "role": "skimTrap",
+          "text": "What common mistake does this warn against: \"If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x)\"."
+        },
+        {
+          "id": "analysis-doc:27:step:4:coreMeaning",
+          "stepId": "analysis-doc:27:step:4",
+          "stepOrder": 4,
+          "role": "coreMeaning",
+          "text": "What concept does this introduce: \"However, many solutions fail because they plug in radius values before differentiating, which destro\"."
+        },
+        {
+          "id": "analysis-doc:27:step:4:mechanism",
+          "stepId": "analysis-doc:27:step:4",
+          "stepOrder": 4,
+          "role": "mechanism",
+          "text": "What does this explain: \"However, many solutions fail because they plug in radius values before differentiating, which destro\"."
+        },
+        {
+          "id": "analysis-doc:27:step:4:distinction",
+          "stepId": "analysis-doc:27:step:4",
+          "stepOrder": 4,
+          "role": "distinction",
+          "text": "What should readers not confuse based on: \"However, many solutions fail because they plug in radius values before differentiating, which destro\"."
+        },
+        {
+          "id": "analysis-doc:27:step:4:application",
+          "stepId": "analysis-doc:27:step:4",
+          "stepOrder": 4,
+          "role": "application",
+          "text": "When or how would this apply: \"However, many solutions fail because they plug in radius values before differentiating, which destro\"."
+        },
+        {
+          "id": "analysis-doc:27:step:4:skimTrap",
+          "stepId": "analysis-doc:27:step:4",
+          "stepOrder": 4,
+          "role": "skimTrap",
+          "text": "What common mistake does this warn against: \"However, many solutions fail because they plug in radius values before differentiating, which destro\"."
+        }
+      ],
+      "miniTestSelectedResults": {
+        "questions": [
+          {
+            "id": "analysis-doc:27:step:1:mechanism",
+            "stepId": "analysis-doc:27:step:1",
+            "stepOrder": 1,
+            "role": "mechanism",
+            "text": "What does this explain: \"Should be last, not first\"?",
+            "score": 0.74
+          },
+          {
+            "id": "analysis-doc:27:step:1:application",
+            "stepId": "analysis-doc:27:step:1",
+            "stepOrder": 1,
+            "role": "application",
+            "text": "When or how would this apply: \"R = 3 cm and dr/dt = 2 cm/s, therefore dV/dt = 72π cm^3/s\"?",
+            "score": 0.72
+          },
+          {
+            "id": "analysis-doc:27:step:3:coreMeaning",
+            "stepId": "analysis-doc:27:step:3",
+            "stepOrder": 3,
+            "role": "coreMeaning",
+            "text": "What concept does this introduce: \"If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x)\"?",
+            "score": 0.64
+          },
+          {
+            "id": "analysis-doc:27:step:3:distinction",
+            "stepId": "analysis-doc:27:step:3",
+            "stepOrder": 3,
+            "role": "distinction",
+            "text": "What should readers not confuse based on: \"If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x)\"?",
+            "score": 0.72
+          },
+          {
+            "id": "analysis-doc:27:step:3:skimTrap",
+            "stepId": "analysis-doc:27:step:3",
+            "stepOrder": 3,
+            "role": "skimTrap",
+            "text": "What common mistake does this warn against: \"If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x)\"?",
+            "score": 0.64
+          }
+        ],
+        "rejected": []
+      },
+      "compressionCandidateList": {
+        "selected": [
+          {
+            "id": "compression-1-mechanism",
+            "text": "Must be tied to the same instant in time.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-2-mechanism",
+            "text": "Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x).",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-3-mechanism",
+            "text": "However, many solutions fail because they plug in radius values before differentiating, which destroys variable dependence and loses dr/dt.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          }
+        ],
+        "rejected": [
+          {
+            "id": "compression-100-recognition",
+            "text": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t.",
+            "role": "recognition",
+            "score": 0.76,
+            "source": "block_pattern"
+          },
+          {
+            "id": "compression-101-mechanism",
+            "text": "Must be tied to the same instant in time.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-101-mechanism",
+            "text": "Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x).",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-101-mechanism",
+            "text": "However, many solutions fail because they plug in radius values before differentiating, which destroys variable dependence and loses dr/dt.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-104-application",
+            "text": "R = 3 cm and dr/dt = 2 cm/s, therefore dV/dt = 72π cm^3/s.",
+            "role": "application",
+            "score": 0.78,
+            "source": "block_rule"
+          },
+          {
+            "id": "compression-105-mechanism",
+            "text": "Must be tied to the same instant in time.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-106-mechanism",
+            "text": "Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x).",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-107-mechanism",
+            "text": "However, many solutions fail because they plug in radius values before differentiating, which destroys variable dependence and loses dr/dt.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-108-application",
+            "text": "R = 3 cm and dr/dt = 2 cm/s, therefore dV/dt = 72π cm^3/s.",
+            "role": "application",
+            "score": 0.78,
+            "source": "block_rule"
+          },
+          {
+            "id": "compression-109-recognition",
+            "text": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t.",
+            "role": "recognition",
+            "score": 0.76,
+            "source": "block_pattern"
+          }
+        ]
+      },
+      "compressionSelectedResults": [
+        {
+          "id": "compression-1-mechanism",
+          "text": "Must be tied to the same instant in time.",
+          "role": "mechanism",
+          "score": 0.8,
+          "source": "block_reason"
+        },
+        {
+          "id": "compression-2-mechanism",
+          "text": "Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x).",
+          "role": "mechanism",
+          "score": 0.8,
+          "source": "block_reason"
+        },
+        {
+          "id": "compression-3-mechanism",
+          "text": "However, many solutions fail because they plug in radius values before differentiating, which destroys variable dependence and loses dr/dt.",
+          "role": "mechanism",
+          "score": 0.8,
+          "source": "block_reason"
+        }
+      ],
+      "highlightNeighborhoodsGeneratedForLeftPanel": [
+        {
+          "id": "neighborhood-concept-p-3",
+          "conceptId": "concept-p-3",
+          "title": "Example: When R = 3 Cm",
+          "anchor": {
+            "id": "important-concept-p-3",
+            "text": "Example: When r = 3 cm and dr/dt = 2 cm/s, then dV/dt = 72π cm^3/s.",
+            "normalizedText": "example when r 3 cm and dr dt 2 cm s then dv dt 72 cm 3 s",
+            "sentenceId": "p-3-s0",
+            "tier": "important",
+            "score": 0.92
+          },
+          "support": [
+            {
+              "id": "support-concept-p-3-0",
+              "text": "R = 3 cm and dr/dt = 2 cm/s, therefore dV/dt = 72π cm^3/s.",
+              "normalizedText": "r 3 cm and dr dt 2 cm s therefore dv dt 72 cm 3 s",
+              "sentenceId": "p-3-s2",
+              "tier": "support",
+              "score": 0.78
+            }
+          ],
+          "additional": [
+            {
+              "id": "additional-concept-p-3-0",
+              "text": "Should be last, not first.",
+              "normalizedText": "should be last not first",
+              "sentenceId": "p-3-s1",
+              "tier": "additional",
+              "score": 0.52
+            }
+          ],
+          "trap": null,
+          "priorityScore": 31,
+          "conceptRole": "definition",
+          "depthLevel": "full"
+        },
+        {
+          "id": "neighborhood-concept-p-1",
+          "conceptId": "concept-p-1",
+          "title": "In Related Rates",
+          "anchor": {
+            "id": "important-concept-p-1",
+            "text": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t.",
+            "normalizedText": "in related rates differentiate both sides with respect to time and keep track of which variables depend on t",
+            "sentenceId": "p-1-s0",
+            "tier": "important",
+            "score": 0.8500000000000001
+          },
+          "support": [
+            {
+              "id": "support-concept-p-1-0",
+              "text": "Must be tied to the same instant in time.",
+              "normalizedText": "must be tied to the same instant in time",
+              "sentenceId": "p-1-s1",
+              "tier": "support",
+              "score": 0.78
+            }
+          ],
+          "additional": [],
+          "trap": null,
+          "priorityScore": 30,
+          "conceptRole": "mechanism",
+          "depthLevel": "full"
+        },
+        {
+          "id": "neighborhood-concept-p-0",
+          "conceptId": "concept-p-0",
+          "title": "Key Concept",
+          "anchor": {
+            "id": "important-concept-p-0",
+            "text": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x).",
+            "normalizedText": "if y f g x then dy dx f g x g x",
+            "sentenceId": "p-0-s0",
+            "tier": "important",
+            "score": 0.78
+          },
+          "support": [
+            {
+              "id": "support-concept-p-0-0",
+              "text": "Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x).",
+              "normalizedText": "y f g x therefore dy dx f g x g x",
+              "sentenceId": "p-0-s1",
+              "tier": "support",
+              "score": 0.78
+            }
+          ],
+          "additional": [],
+          "trap": null,
+          "priorityScore": 21,
+          "conceptRole": "definition",
+          "depthLevel": "full"
+        }
+      ],
+      "finalDataObjectConsumedByRightPanel": {
+        "title": "ULTRA – Example: When R = 3 Cm",
+        "subtitle": "STR + PDRM + Surgical Comprehension Engine",
+        "coreIdea": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t.",
+        "blocks": [
+          {
+            "conceptId": "concept-p-3",
+            "ordinal": 1,
+            "title": "Example: When R = 3 Cm",
+            "pattern": "Example: When r = 3 cm and dr/dt = 2 cm/s, then dV/dt = 72π cm^3/s.",
+            "surgicalReason": "R = 3 cm and dr/dt = 2 cm/s, therefore dV/dt = 72π cm^3/s.",
+            "trap": "Do not confuse example: when r = 3 cm with nearby supporting details on the page.",
+            "rule": "Should be last, not first.",
+            "importance": "VERY HIGH"
+          },
+          {
+            "conceptId": "concept-p-1",
+            "ordinal": 2,
+            "title": "In Related Rates",
+            "pattern": "Must be tied to the same instant in time.",
+            "surgicalReason": "This concept matters because it explains how the page's main idea works.",
+            "trap": "Do not confuse in related rates with nearby supporting details on the page.",
+            "rule": "Use this as the key rule from the page.",
+            "importance": "VERY HIGH"
+          },
+          {
+            "conceptId": "concept-p-0",
+            "ordinal": 3,
+            "title": "Key Concept",
+            "pattern": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x).",
+            "surgicalReason": "Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x).",
+            "trap": "Do not confuse key concept with nearby supporting details on the page.",
+            "rule": "Use this as the key rule from the page.",
+            "importance": "VERY HIGH"
+          },
+          {
+            "conceptId": "concept-p-2",
+            "ordinal": 4,
+            "title": "However, Many Solutions Fail Because",
+            "pattern": "However, many solutions fail because they plug in radius values before differentiating, which destroys variable dependence and loses dr/dt.",
+            "surgicalReason": "This concept matters because it explains how the page's main idea works.",
+            "trap": "Do not confuse however, many solutions fail because with nearby supporting details on the page.",
+            "rule": "Use this as the key rule from the page.",
+            "importance": "VERY HIGH"
+          }
+        ],
+        "miniTest": [
+          "When or how would this apply: \"Should be last, not first\"?",
+          "What does this explain: \"This concept matters because it explains how the page's main idea works\"?",
+          "What should readers not confuse based on: \"Do not confuse in related rates with nearby supporting details on the page\"?",
+          "What common mistake does this warn against: \"Do not confuse in related rates with nearby supporting details on the page\"?",
+          "What concept does this introduce: \"If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x)\"?"
+        ],
+        "compression": [
+          "Rule 1: R = 3 cm and dr/dt = 2 cm/s, therefore dV/dt = 72π cm^3/s.",
+          "Rule 2: This concept matters because it explains how the page's main idea works.",
+          "Rule 3: Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x)."
+        ],
+        "steps": [
+          {
+            "conceptId": "concept-p-3",
+            "role": "trap",
+            "roleLabel": "!"
+          },
+          {
+            "conceptId": "concept-p-1",
+            "role": "trap",
+            "roleLabel": "!"
+          },
+          {
+            "conceptId": "concept-p-0",
+            "role": "trap",
+            "roleLabel": "!"
+          },
+          {
+            "conceptId": "concept-p-2",
+            "role": "trap",
+            "roleLabel": "!"
+          }
+        ],
+        "_debug": {
+          "pageKind": "mathematical_exposition",
+          "domain": "math",
+          "shouldRenderFullPanel": true,
+          "pageSummaryLength": 170,
+          "coreIdeaSource": "pageSummary",
+          "conceptCandidates": [
+            {
+              "id": "concept-p-3",
+              "title": "Example: When R = 3 Cm",
+              "score": 31,
+              "anchorLen": 67,
+              "role": "definition"
+            },
+            {
+              "id": "concept-p-1",
+              "title": "In Related Rates",
+              "score": 30,
+              "anchorLen": 110,
+              "role": "mechanism"
+            },
+            {
+              "id": "concept-p-0",
+              "title": "Key Concept",
+              "score": 21,
+              "anchorLen": 46,
+              "role": "definition"
+            },
+            {
+              "id": "concept-p-2",
+              "title": "However, Many Solutions Fail Because",
+              "score": 27,
+              "anchorLen": 139,
+              "role": "mechanism"
+            }
+          ]
+        }
+      },
+      "leftRightSourceComparison": {
+        "leftConceptIds": [
+          "concept-p-3",
+          "concept-p-1",
+          "concept-p-0",
+          "concept-p-2"
+        ],
+        "rightConceptIds": [
+          "concept-p-3",
+          "concept-p-1",
+          "concept-p-0",
+          "concept-p-2"
+        ],
+        "overlapConceptIds": [
+          "concept-p-3",
+          "concept-p-1",
+          "concept-p-0",
+          "concept-p-2"
+        ]
+      }
+    }
+  ]
+}

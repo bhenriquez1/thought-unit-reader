@@ -21,6 +21,7 @@ import { buildPageStory } from "@/lib/insights/buildPageStory";
 import type { PageInsightModel } from "@/lib/insights/types";
 import type { PageStory } from "@/lib/insights/buildPageStory";
 import { normalizeClinicalText, type ClinicalNormalizationResult } from "@/lib/normalization/normalizeClinicalText";
+import { findMainTeachingZone } from "@/lib/insights/findMainTeachingZone";
 
 export type ActivePageIntelligenceStatus = "idle" | "loading" | "ready" | "error";
 
@@ -332,9 +333,11 @@ export function useActivePageIntelligence({
 
   const highlightNeighborhoods: HighlightNeighborhood[] = useMemo(() => {
     if (!pageModel || !normResult?.shouldRenderFullPanel) return [];
+    const filteredParagraphs = (pageModel.paragraphInsights ?? []).filter(isValidCoreParagraph);
+    const teachingZoneParagraphs = findMainTeachingZone(filteredParagraphs);
     const adapted = adaptPageInsightModel({
       ...pageModel,
-      paragraphInsights: (pageModel.paragraphInsights ?? []).filter(isValidCoreParagraph),
+      paragraphInsights: teachingZoneParagraphs,
     });
     const concepts = extractConceptBlocksCore(adapted);
     return concepts.length > 0 ? buildHighlightNeighborhoods(concepts) : [];
@@ -407,7 +410,7 @@ export function useActivePageIntelligence({
     }
     const derived = deriveHighlightTargets(signals, pageNumber, audience, limitedEvidence);
     return derived.filter((t) => t.level !== "additional").slice(0, 4);
-  }, [pageModel, signals, pageNumber, audience, limitedEvidence, priorityHighlights]);
+  }, [pageModel, signals, pageNumber, audience, limitedEvidence, priorityHighlights, highlightNeighborhoods, normResult]);
 
   const highlightKey = `${documentId}:${pageNumber}`;
   const isCurrentPage = Boolean(

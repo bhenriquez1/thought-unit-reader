@@ -35,6 +35,7 @@ export interface HighlightNeighborhood {
   trap: HighlightLine | null;  // 0–1 genuine contrast/confusion sentence
   priorityScore: number;
   conceptRole?: ConceptRole;   // structural role (definition / mechanism / variation …)
+  depthLevel?: "full" | "partial" | "anchor_only";
 }
 
 function normalize(text: string): string {
@@ -191,7 +192,39 @@ export function buildHighlightNeighborhoods(
     });
   }
 
-  return neighborhoods;
+  const withDepth = enforceNeighborhoodDepth(neighborhoods);
+  if (withDepth.length > 0) {
+    return withDepth.sort((a, b) => b.priorityScore - a.priorityScore);
+  }
+
+  // Fallback: preserve at least one anchor-only neighborhood if suppression removed all.
+  return neighborhoods.slice(0, 1).map((n) => ({ ...n, depthLevel: "anchor_only" as const }));
+}
+
+function enforceNeighborhoodDepth(items: HighlightNeighborhood[]): HighlightNeighborhood[] {
+  return items
+    .map((item) => {
+      const support = (item.support ?? []).filter((line) => line.text.trim().length >= 24);
+      const additional = (item.additional ?? []).filter((line) => line.text.trim().length >= 24);
+      const hasSupport = support.length >= 1;
+      const hasPartial = additional.length >= 1 || Boolean(item.trap);
+      const depthLevel: HighlightNeighborhood["depthLevel"] = hasSupport
+        ? "full"
+        : hasPartial
+        ? "partial"
+        : "anchor_only";
+
+      return {
+        ...item,
+        support,
+        additional,
+        depthLevel,
+        priorityScore:
+          item.priorityScore -
+          (depthLevel === "anchor_only" ? 0.45 : depthLevel === "partial" ? 0.15 : 0),
+      };
+    })
+    .filter((item) => item.depthLevel !== "anchor_only");
 }
 
 /**

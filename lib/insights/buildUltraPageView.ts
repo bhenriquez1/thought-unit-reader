@@ -84,8 +84,8 @@ export interface UltraPageView {
 export function isValidCoreParagraph(p: ParagraphInsight): boolean {
   const text = (p.cleanedText || p.rawText || "").trim();
   if (!text || p.paragraphType === "noise") return false;
-  // Formula paragraphs: bypass length and explanation-signal checks
-  if (p.paragraphType === "formula") return text.length >= 15;
+  if (p.paragraphType === "formula" || looksLikeMathFormula(text)) return text.length >= 12;
+  if (looksLikeMathExplanation(text)) return text.length >= 35;
   if (text.length < 80) return false;
   // Reject figure captions, table headers, diagram labels
   if (/^(figure\s*\d|fig\.\s*\d|table\s*\d|diagram\s*\d|image\s*\d)/i.test(text)) return false;
@@ -93,6 +93,14 @@ export function isValidCoreParagraph(p: ParagraphInsight): boolean {
   if (/^(chapter\s+\d|section\s+\d|key\s+concepts?|learning\s+objectives?|table\s+of\s+contents)/i.test(text)) return false;
   // Must carry at least one explanation signal
   return /\b(is|are|was|were|causes?|leads?\s+to|results?\s+in|depends?|occurs?|because|means?|defined\s+as|refers?\s+to|consists?\s+of|involves?)\b/i.test(text);
+}
+
+function looksLikeMathFormula(text: string): boolean {
+  return /[=∫∂∑]|lim\b|d\/d[xt]|\\frac|\\int|\\sum|\bderivative\b|\bintegral\b/i.test(text);
+}
+
+function looksLikeMathExplanation(text: string): boolean {
+  return /\b(function|sequence|represent|depends on|limit|approach|graph|rate|value)\b/i.test(text);
 }
 
 // ---------------------------------------------------------------------------
