@@ -306,6 +306,23 @@ export function RightPanel({
     ? v3Brief.pagePurpose
     : "Current page · ready";
 
+  // [TRACE] temporary rendering decision instrumentation
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[TRACE RightPanel]", {
+      status: intelligence.status,
+      isCurrentPageModel,
+      pageIsNonInstructional,
+      pageKind: normResult?.pageKind,
+      shouldRenderFullPanel: normResult?.shouldRenderFullPanel,
+      showUltraView,
+      showConceptBlocks,
+      showNarrativePageView,
+      showV3View,
+      showV2Map,
+      headerStatus,
+    });
+  }
+
   return (
     <aside className="flex h-full min-h-0 w-full flex-col overflow-y-auto border-l border-white/10 bg-[rgb(11,18,34)] break-words whitespace-normal">
       {/* Header */}

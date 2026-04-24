@@ -289,6 +289,22 @@ export function useActivePageIntelligence({
       // even before the new page's primary effect has fired and updated latestRequestRef.
       if (currentPageRef.current.pageTruthKey !== requestKey) return;
 
+      // [TRACE] temporary pipeline instrumentation
+      const _traceValid = (localPageModel.paragraphInsights ?? []).filter(isValidCoreParagraph);
+      const _traceZone  = findMainTeachingZone(_traceValid);
+      const _tracePage  = adaptPageInsightModel({ ...localPageModel, paragraphInsights: _traceZone });
+      const _traceConcepts = extractConceptBlocksCore(_tracePage);
+      console.log("[TRACE useActivePageIntelligence]", {
+        pageNumber,
+        pageKind: localNormResult.pageKind,
+        shouldRenderFullPanel: localNormResult.shouldRenderFullPanel,
+        canRenderRightPanel: localPageTruth.canRenderRightPanel,
+        paragraphCount: (localPageModel.paragraphInsights ?? []).length,
+        validParagraphCount: _traceValid.length,
+        teachingZoneCount: _traceZone.length,
+        conceptCount: _traceConcepts.length,
+      });
+
       setSignals(localSignals);
       setClassification(localClassification);
       setPanelPayloads(localPayloads);

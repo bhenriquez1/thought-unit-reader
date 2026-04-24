@@ -121,6 +121,7 @@ export function normalizeClinicalText(
   });
 
   if (!shouldRenderPageKind(pageKind, cleanedPageText, sentences)) {
+    console.log("[TRACE normalizeClinicalText]", { pageKind, shouldRenderFullPanel: false, refusalReason: refusalReasonForPageKind(pageKind), canonicalCount: 0, wordCount: wordCount(cleanedPageText) });
     return {
       pageKind,
       shouldRenderFullPanel: false,
@@ -168,6 +169,7 @@ export function normalizeClinicalText(
   // often survives PDF extraction poorly, leaving few canonical statements even
   // on content-rich calculus/physics pages. The concept pipeline handles extraction.
   if (pageKind === "mathematical_exposition" && (looksLikeFormula(cleanedPageText) || countMathSignals(cleanedPageText) >= 2)) {
+    console.log("[TRACE normalizeClinicalText]", { pageKind, shouldRenderFullPanel: true, refusalReason: null, canonicalCount: dedupedStatements.length, wordCount: wordCount(cleanedPageText) });
     return {
       pageKind,
       shouldRenderFullPanel: true,
@@ -189,6 +191,7 @@ export function normalizeClinicalText(
     ? 1
     : MIN_CANONICAL_STATEMENTS;
   if (dedupedStatements.length < minStatements) {
+    console.log("[TRACE normalizeClinicalText]", { pageKind, shouldRenderFullPanel: false, refusalReason: "insufficient_normalized_signal", canonicalCount: dedupedStatements.length, wordCount: wordCount(cleanedPageText) });
     return {
       pageKind,
       shouldRenderFullPanel: false,
@@ -209,6 +212,7 @@ export function normalizeClinicalText(
     return a.normalizedText.length - b.normalizedText.length;
   });
 
+  console.log("[TRACE normalizeClinicalText]", { pageKind, shouldRenderFullPanel: true, refusalReason: null, canonicalCount: ranked.length, wordCount: wordCount(cleanedPageText) });
   return {
     pageKind,
     shouldRenderFullPanel: true,
