@@ -38,6 +38,10 @@ interface PriorityComprehensionPanelProps {
   onSaveToNoteLab?: (insight: RankedInsight) => void;
   onMarkConfusing?: (insight: RankedInsight) => void;
   onHighlightParagraph?: (text: string) => void;
+  /** Optional: preview/hover callback for PDF anchoring UX (noop in this panel if unused). */
+  onPreviewSource?: (text: string | null) => void;
+  /** Optional: jump-to-source callback (used by panels that support SourceRef). */
+  onJumpToSource?: (ref: any) => void;
 
   // Panel zoom & sync
   /** CSS font-size multiplier (e.g. 0.9, 1.0, 1.25). Applied via --insightScale variable. */
@@ -49,6 +53,13 @@ interface PriorityComprehensionPanelProps {
   activeItemId?: string | null;
   /** Whether sync-scroll is enabled. Default: true */
   syncEnabled?: boolean;
+
+  /** Optional: show extracting skeleton state (some parent shells pass this). */
+  isExtracting?: boolean;
+  /** Optional: deep analysis view hint (some parent shells pass this). */
+  deepAnalysisMode?: boolean;
+  /** Optional: parent-controlled layout; ignore local controls if true. */
+  hideModeControls?: boolean;
 }
 
 // ============================================================================

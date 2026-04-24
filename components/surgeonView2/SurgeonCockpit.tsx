@@ -557,9 +557,10 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   useEffect(() => {
     if (currentPage === undefined || totalPages === 0) return;
 
-    const pagesToPrefetch = [activePageNumber + 1, activePageNumber - 1].filter(
-      (p) => p >= 1 && p <= totalPages,
-    );
+    const pagesToPrefetch = [
+      currentPage + 1,
+      currentPage - 1,
+    ].filter(p => p >= 1 && p <= totalPages);
 
     const prefetchPage = async (pageNum: number) => {
       try {
