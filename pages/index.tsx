@@ -362,9 +362,8 @@ export default function ThoughtUnitReader() {
 
   const [thoughtUnits, setThoughtUnits] = useState<ThoughtUnit[]>([]);
   const [currentThoughtUnit, setCurrentThoughtUnit] = useState(1);
-  // Live per-page text extracted via onGetTextSuccess — takes priority over
-  // thought-unit ratio mapping so every page flip produces distinct page text.
-  const [extractedPageText, setExtractedPageText] = useState<{ page: number; text: string } | null>(null);
+  // Live per-page text extracted from PDF.js — Map caches all visited pages.
+  const [pageTextByPage, setPageTextByPage] = useState<Map<number, string>>(() => new Map());
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
@@ -702,7 +701,7 @@ export default function ThoughtUnitReader() {
     // when the live text hasn't arrived yet for this page.
     const unitFallback = thoughtUnits?.[currentThoughtUnit - 1]?.text || "";
     const activePageText =
-      (extractedPageText?.page === currentPage ? extractedPageText.text : null) || unitFallback;
+      pageTextByPage.get(currentPage) || unitFallback;
     const nearestSyllabusNode = flattenTocNodes(syllabusToc).find((node) => node.page === currentPage) || null;
     return {
       documentId: bookId,
@@ -721,7 +720,7 @@ export default function ThoughtUnitReader() {
       paragraphTexts: splitParagraphs(activePageText),
       formulas: extractFormulaCards(activePageText),
     };
-  }, [bookId, currentPage, currentThoughtUnit, extractedPageText, pdfPageCount, syllabusToc, tableOfContents, thoughtUnits, uploadedFile?.name]);
+  }, [bookId, currentPage, currentThoughtUnit, pageTextByPage, pdfPageCount, syllabusToc, tableOfContents, thoughtUnits, uploadedFile?.name]);
 
   const {
     payloadKey,
@@ -2633,7 +2632,7 @@ export default function ThoughtUnitReader() {
                     });
                     setShowFocusCycleModal(true);
                   }}
-                  onPageTextExtracted={(page, text) => setExtractedPageText({ page, text })}
+                  onPageTextExtracted={(pageNumber, text) => setPageTextByPage((prev) => { const next = new Map(prev); next.set(pageNumber, text); return next; })}
                 />
               </div>
             )}
