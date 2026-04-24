@@ -11,8 +11,20 @@
 
 import { cleanSentence } from "@/lib/insights/sentenceCleanup";
 import { isRenderableSentence } from "@/lib/insights/isRenderableSentence";
+import { ROLE_PRIORITY } from "@/lib/insights/extractConceptBlocks";
 import type { ConceptBlockInput, ConceptRole } from "@/lib/insights/extractConceptBlocks";
 import { REASON_RE, TRAP_RE, isTooSimilar } from "@/lib/insights/dedupeSectionCandidates";
+
+// Math path: examples are promoted before measurements/rules so worked examples
+// appear at step 3 (after definition → meaning), not buried after quantitative rules.
+const MATH_ROLE_PRIORITY: Record<ConceptRole, number> = {
+  definition:  6,
+  mechanism:   5,
+  example:     4,
+  measurement: 3,
+  variation:   2,
+  detail:      1,
+};
 
 export type HighlightTier = "important" | "support" | "additional" | "trap";
 
@@ -67,7 +79,8 @@ function makeLine(
  * from the anchor and each other.
  */
 export function buildHighlightNeighborhoods(
-  concepts: ConceptBlockInput[]
+  concepts: ConceptBlockInput[],
+  options?: { pageKind?: string }
 ): HighlightNeighborhood[] {
   const neighborhoods: HighlightNeighborhood[] = [];
   const seenTexts = new Set<string>(); // global across all neighborhoods
@@ -193,15 +206,25 @@ export function buildHighlightNeighborhoods(
     });
   }
 
-  const finalNeighborhoods = enforceNeighborhoodDepth(neighborhoods)
-    .sort((a, b) => b.priorityScore - a.priorityScore);
+  const rolePriorities = options?.pageKind === "mathematical_exposition"
+    ? MATH_ROLE_PRIORITY
+    : ROLE_PRIORITY;
 
-  // If every neighborhood is anchor-only, preserve one strongest so page doesn't go blank.
-  return finalNeighborhoods.length > 0
-    ? finalNeighborhoods
-    : neighborhoods
-      .sort((a, b) => b.priorityScore - a.priorityScore)
-      .slice(0, 1);
+  const finalNeighborhoods = enforceNeighborhoodDepth(neighborhoods)
+    .sort((a, b) => {
+      // Primary: structural role order (definition → mechanism → example → detail)
+      const roleA = rolePriorities[a.conceptRole ?? "detail"] ?? 0;
+      const roleB = rolePriorities[b.conceptRole ?? "detail"] ?? 0;
+      if (roleA !== roleB) return roleB - roleA;
+      // Secondary: concept extraction score
+      return b.priorityScore - a.priorityScore;
+    });
+
+  // Suppress the guided overlay when fewer than 2 neighborhoods have enough
+  // depth to form a meaningful structural reading path. A single definition
+  // with no explanation/example is not a guided path — fall back to priority highlights.
+  if (finalNeighborhoods.length < 2) return [];
+  return finalNeighborhoods;
 }
 
 function enforceNeighborhoodDepth<T extends HighlightNeighborhood>(items: T[]): T[] {

@@ -19,6 +19,7 @@ export type PageKind =
   | "table_heavy"
   | "front_matter"
   | "chapter_title"
+  | "section_title"
   | "image_only"
   | "graph_only"
   | "insufficient_prose";
@@ -267,13 +268,21 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
   // Chapter opener: page text starts with "chapter N" and has sparse prose
   if (/^chapter\s+\d+\b/.test(text.trim()) && words < 180 && sentenceCount < 5) return "chapter_title";
 
-  // Overview / summary / learning-objectives pages with sparse instructional prose
+  // Overview / summary / learning-objectives pages — always suppress regardless of vocab.
+  // These structural signposts never carry teachable prose dense enough to render.
   if (
     /\b(key concepts?|learning objectives?|chapter overview|unit overview|chapter summary|section summary|objectives?)\b/.test(text) &&
     words < 250 &&
-    sentenceCount < 7 &&
-    !hasInstructionalSignals(text)
+    sentenceCount < 7
   ) return "chapter_title";
+
+  // Numbered section header: "3.2 Photosynthesis" or "Section 4.1 ATP" with sparse prose
+  const firstLine = input.text.trim().split(/\n/).map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+  if (
+    (/^\d+\.\d+(\.\d+)?\s+\S/.test(firstLine) || /^section\s+\d+\.\d+\b/i.test(firstLine)) &&
+    words < 150 &&
+    sentenceCount < 4
+  ) return "section_title";
 
   // Heading-heavy page: majority of words are in headings, very few complete sentences
   if (
@@ -287,7 +296,7 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
   // Uses raw text (not lowercased) for line-level detection independent of coverage ratios.
   const rawLines = input.text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   const captionLineCount = rawLines.filter((l) =>
-    /^(figure|fig\.|table|diagram|image|exhibit)\s*\d/i.test(l)
+    /^(figure|fig\.|table|diagram|image|exhibit)\s*[\dA-Za-z]/i.test(l)
   ).length;
   if (rawLines.length >= 4 && captionLineCount / rawLines.length >= 0.35) return "image_only";
 
@@ -332,6 +341,7 @@ function shouldRenderPageKind(pageKind: PageKind, pageText: string, sentences: s
   if (
     pageKind === "front_matter" ||
     pageKind === "chapter_title" ||
+    pageKind === "section_title" ||
     pageKind === "diagram_only" ||
     pageKind === "image_only" ||
     pageKind === "graph_only" ||
@@ -351,6 +361,7 @@ function refusalReasonForPageKind(pageKind: PageKind): string {
   const reasons: Partial<Record<PageKind, string>> = {
     front_matter: "front_matter",
     chapter_title: "chapter_title",
+    section_title: "section_title",
     diagram_only: "diagram_only",
     image_only: "image_only",
     graph_only: "graph_only",

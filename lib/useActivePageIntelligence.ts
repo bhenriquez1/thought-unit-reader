@@ -294,15 +294,33 @@ export function useActivePageIntelligence({
       const _traceZone  = findMainTeachingZone(_traceValid);
       const _tracePage  = adaptPageInsightModel({ ...localPageModel, paragraphInsights: _traceZone });
       const _traceConcepts = extractConceptBlocksCore(_tracePage);
+      const _traceNeighborhoods = _traceConcepts.length > 0
+        ? buildHighlightNeighborhoods(_traceConcepts, { pageKind: localNormResult.pageKind })
+        : [];
+      const _traceStructuralSteps = _traceNeighborhoods.filter(n => n.depthLevel !== "anchor_only").length;
+      const _traceMathSteps = localNormResult.pageKind === "mathematical_exposition"
+        ? _traceNeighborhoods.filter(n => ["definition", "mechanism", "example"].includes(n.conceptRole ?? "")).length
+        : 0;
+      const _traceOverlaySuppressedReason = !localNormResult.shouldRenderFullPanel
+        ? "normalization_gate"
+        : _traceConcepts.length === 0
+        ? "no_concepts"
+        : _traceNeighborhoods.length === 0
+        ? "insufficient_structural_steps"
+        : null;
       console.log("[TRACE useActivePageIntelligence]", {
         pageNumber,
         pageKind: localNormResult.pageKind,
         shouldRenderFullPanel: localNormResult.shouldRenderFullPanel,
         canRenderRightPanel: localPageTruth.canRenderRightPanel,
+        instructionalScore: _traceValid.length > 0 ? Math.round((_traceConcepts.length / _traceValid.length) * 100) / 100 : 0,
         paragraphCount: (localPageModel.paragraphInsights ?? []).length,
         validParagraphCount: _traceValid.length,
         teachingZoneCount: _traceZone.length,
         conceptCount: _traceConcepts.length,
+        structuralStepCount: _traceStructuralSteps,
+        mathStepCount: _traceMathSteps,
+        overlaySuppressedReason: _traceOverlaySuppressedReason,
       });
 
       setSignals(localSignals);
@@ -356,7 +374,7 @@ export function useActivePageIntelligence({
       paragraphInsights: zoneInsights,
     });
     const concepts = extractConceptBlocksCore(adapted);
-    return concepts.length > 0 ? buildHighlightNeighborhoods(concepts) : [];
+    return concepts.length > 0 ? buildHighlightNeighborhoods(concepts, { pageKind: normResult.pageKind }) : [];
   }, [pageModel, pageNumber, normResult]);
 
   const highlightTargets: HighlightTarget[] = useMemo(() => {
