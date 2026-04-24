@@ -328,9 +328,12 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
     if (!hasMathDomain && !hasFormulaInText) return null;
   }
 
+  console.log("[TRACE buildUltraPageView:entry]", { pageKind: normResult.pageKind, domain, shouldRenderFullPanel: normResult.shouldRenderFullPanel, mathOverride: !normResult.shouldRenderFullPanel });
+
   // Apply hard filter + teaching zone before concept extraction
   const validInsights = (pageModel.paragraphInsights ?? []).filter(isValidCoreParagraph);
   const zoneInsights = findMainTeachingZone(validInsights);
+  console.log("[TRACE buildUltraPageView:zone]", { validParagraphs: validInsights.length, teachingZoneSize: zoneInsights.length, zoneIsSubset: zoneInsights.length < validInsights.length });
   const page = adaptPageInsightModel({ ...pageModel, paragraphInsights: zoneInsights });
   let concepts = extractConceptBlocks(page);
 
@@ -340,6 +343,7 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
     concepts = extractConceptBlocks(fallbackPage);
   }
 
+  console.log("[TRACE buildUltraPageView:concepts]", { conceptCount: concepts.length, returnNull: concepts.length === 0 });
   if (!concepts.length) return null;
 
   // Core idea: pageSummary → domain chief_signal → support sentence → bare anchor
