@@ -3,47 +3,16 @@
 //   - insightScale: font-size multiplier for card text (CSS-variable-driven, no transform)
 //   - syncInsightsToPdf: when true, the active insight tracks PDF scroll / selection
 //   - activeParagraphId: the insight item currently considered "active"
-//   - tone/depth/renderPolicy: single source of truth for paragraph intelligence rendering
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { strictLocalStorage } from '@/lib/storage/safePersist';
 
 export const INSIGHT_SCALES = [0.9, 1.0, 1.1, 1.25, 1.4] as const;
 export type InsightScale = typeof INSIGHT_SCALES[number];
-export type InsightMode = 'quick' | 'deep';
-export type InsightTone = 'polish' | 'student' | 'clinical' | 'expert';
-export type InsightDepth = 'minimal' | 'standard' | 'deep';
-export type InsightRenderPolicy = 'condensed' | 'expanded';
-export type InsightPersona = 'student' | 'clinical' | 'expert';
-
-/** Single source of truth for all insight controls — included in every cache/query key */
-export type InsightControls = {
-  mode: InsightMode;
-  depth: InsightDepth;
-  view: InsightRenderPolicy;
-  persona: InsightPersona;
-  followScroll: boolean;
-};
-
-export type InsightSettings = {
-  depth: InsightDepth;
-  tone: InsightTone;
-  view: InsightRenderPolicy;
-};
 
 interface InsightsPanelState {
-  essentialStudentMode: boolean;
-  setEssentialStudentMode: (enabled: boolean) => void;
-
-  // ── Mode: quick (essential summary) | deep (full teaching scaffold) ───────
-  mode: InsightMode;
-  setMode: (mode: InsightMode) => void;
-
-  // ── Computed controls snapshot (for cache key composition) ───────────────
-  getControls: () => InsightControls;
-
   // ── Zoom ──────────────────────────────────────────────────────────────────
+  /** CSS font-scale multiplier for insight cards. Stored as exact members of INSIGHT_SCALES. */
   insightScale: InsightScale;
   setInsightScale: (scale: InsightScale) => void;
   scaleUp: () => void;
@@ -52,195 +21,98 @@ interface InsightsPanelState {
   canScaleUp: () => boolean;
   canScaleDown: () => boolean;
 
-  // ── Orientation/tone/depth single-source state ───────────────────────────
-  // Canonical names used by the paragraph intelligence pipeline
-  audience: InsightTone;
-  setAudience: (audience: InsightTone) => void;
-  view: InsightRenderPolicy;
-  setView: (view: InsightRenderPolicy) => void;
-
-  // Backwards-compatible aliases used in existing components
-  tone: InsightTone;
-  setTone: (tone: InsightTone) => void;
-  depth: InsightDepth;
-  setDepth: (depth: InsightDepth) => void;
-  renderPolicy: InsightRenderPolicy;
-  setRenderPolicy: (policy: InsightRenderPolicy) => void;
-
   // ── Sync toggle ───────────────────────────────────────────────────────────
+  /**
+   * When true, the insights panel scrolls its active item into view whenever
+   * the active insight changes (driven by PDF paragraph selection).
+   * Default OFF so the user can scroll both panels independently; clicking
+   * an insight still highlights the PDF region regardless of this toggle.
+   */
   syncInsightsToPdf: boolean;
   setSyncInsightsToPdf: (sync: boolean) => void;
   toggleSync: () => void;
 
   // ── Active anchor ─────────────────────────────────────────────────────────
+  /**
+   * ID of the insight item currently "focused" (from PDF selection or insight click).
+   * Used by PriorityComprehensionPanel to scroll the card into view when sync is on.
+   */
   activeParagraphId: string | null;
   setActiveParagraphId: (id: string | null) => void;
 
   // ── Selection (set on insight card click) ────────────────────────────────
+  /** ID of the last insight card the user clicked. */
   selectedInsightId: string | null;
   setSelectedInsightId: (id: string | null) => void;
 
-  expandedCardIds: string[];
-  toggleExpandedCard: (id: string) => void;
-  setExpandedCardIds: (ids: string[]) => void;
-  toggleExpandedCardId: (id: string) => void;
-
-  followScroll: boolean;
-  setFollowScroll: (follow: boolean) => void;
-
+  /** Raw text snippet of the paragraph currently visible in the PDF (from scroll detection). */
   activeVisibleText: string | null;
   setActiveVisibleText: (text: string | null) => void;
-
-  focusOnSource: (id: string) => void;
-  resetInsightLayout: () => void;
-
-  // ── Pinned highlights — text snippets the user has locked on the PDF ───────
-  pinnedTexts: string[];
-  pinText: (text: string) => void;
-  unpinText: (text: string) => void;
-  isPinned: (text: string) => boolean;
-  clearPinnedTexts: () => void;
 }
-
 
 export const useInsightsPanelStore = create<InsightsPanelState>()(
   persist(
     (set, get) => ({
-      mode: 'quick',
-      essentialStudentMode: true,
-      setEssentialStudentMode: (essentialStudentMode) => set({ essentialStudentMode }),
-      setMode: (mode) => set({ mode }),
-      getControls: (): InsightControls => {
-        const s = get();
-        const rawPersona = s.audience as string;
-        const persona: InsightPersona =
-          rawPersona === 'clinical' ? 'clinical'
-          : rawPersona === 'expert' ? 'expert'
-          : 'student';
-        return {
-          mode: s.mode,
-          depth: s.depth,
-          view: s.view,
-          persona,
-          followScroll: s.followScroll,
-        };
-      },
-
+      // ── Zoom ──
       insightScale: 1.0,
+
       setInsightScale: (scale) => set({ insightScale: scale }),
+
       scaleUp: () => {
         const idx = INSIGHT_SCALES.indexOf(get().insightScale);
-        if (idx < INSIGHT_SCALES.length - 1) set({ insightScale: INSIGHT_SCALES[idx + 1] });
+        if (idx < INSIGHT_SCALES.length - 1) {
+          set({ insightScale: INSIGHT_SCALES[idx + 1] });
+        }
       },
+
       scaleDown: () => {
         const idx = INSIGHT_SCALES.indexOf(get().insightScale);
-        if (idx > 0) set({ insightScale: INSIGHT_SCALES[idx - 1] });
+        if (idx > 0) {
+          set({ insightScale: INSIGHT_SCALES[idx - 1] });
+        }
       },
+
       resetScale: () => set({ insightScale: 1.0 }),
-      canScaleUp: () => INSIGHT_SCALES.indexOf(get().insightScale) < INSIGHT_SCALES.length - 1,
-      canScaleDown: () => INSIGHT_SCALES.indexOf(get().insightScale) > 0,
 
-      audience: 'student',
-      setAudience: (audience) => set({ audience, tone: audience }),
-      tone: 'student',
-      setTone: (tone) => set({ tone, audience: tone }),
-      depth: 'standard',
-      setDepth: (depth) => set({ depth }),
-      view: 'condensed',
-      setView: (view) => set({ view, renderPolicy: view }),
-      renderPolicy: 'condensed',
-      setRenderPolicy: (renderPolicy) => set({ renderPolicy, view: renderPolicy }),
+      canScaleUp: () => {
+        const idx = INSIGHT_SCALES.indexOf(get().insightScale);
+        return idx < INSIGHT_SCALES.length - 1;
+      },
 
-      syncInsightsToPdf: false,
+      canScaleDown: () => {
+        const idx = INSIGHT_SCALES.indexOf(get().insightScale);
+        return idx > 0;
+      },
+
+      // ── Sync toggle ──
+      syncInsightsToPdf: false, // OFF by default — no scroll coupling
       setSyncInsightsToPdf: (sync) => set({ syncInsightsToPdf: sync }),
       toggleSync: () => set((s) => ({ syncInsightsToPdf: !s.syncInsightsToPdf })),
 
+      // ── Active anchor ──
       activeParagraphId: null,
       setActiveParagraphId: (id) => set({ activeParagraphId: id }),
 
+      // ── Selection ──
       selectedInsightId: null,
       setSelectedInsightId: (id) => set({ selectedInsightId: id }),
 
-      expandedCardIds: [],
-      toggleExpandedCard: (id) => set((state) => {
-        const exists = state.expandedCardIds.includes(id);
-        return {
-          expandedCardIds: exists
-            ? state.expandedCardIds.filter((cardId) => cardId !== id)
-            : [...state.expandedCardIds, id],
-        };
-      }),
-
-      followScroll: false,
-      setFollowScroll: (follow) => set({ followScroll: follow }),
-
       activeVisibleText: null,
       setActiveVisibleText: (text) => set({ activeVisibleText: text }),
-
-      focusOnSource: (id) => set({ activeParagraphId: id, selectedInsightId: id }),
-      resetInsightLayout: () => set({
-        insightScale: 1.0,
-        mode: 'quick',
-        depth: 'standard',
-        view: 'condensed',
-        renderPolicy: 'condensed',
-        audience: 'student',
-        tone: 'student',
-        followScroll: false,
-        syncInsightsToPdf: false,
-        essentialStudentMode: true,
-        expandedCardIds: [],
-        selectedInsightId: null,
-        activeParagraphId: null,
-        activeVisibleText: null,
-      }),
-
-      pinnedTexts: [],
-      pinText: (text) => set((s) => ({
-        pinnedTexts: s.pinnedTexts.includes(text) ? s.pinnedTexts : [...s.pinnedTexts, text],
-      })),
-      unpinText: (text) => set((s) => ({ pinnedTexts: s.pinnedTexts.filter((t) => t !== text) })),
-      isPinned: (text) => get().pinnedTexts.includes(text),
-      clearPinnedTexts: () => set({ pinnedTexts: [] }),
-
-      setExpandedCardIds: (ids) => set({ expandedCardIds: ids.slice(0, 500) }),
-      toggleExpandedCardId: (id) => set((state) => ({
-        expandedCardIds: state.expandedCardIds.includes(id)
-          ? state.expandedCardIds.filter((x) => x !== id)
-          : [...state.expandedCardIds, id],
-      })),
     }),
     {
-      // Keep this key UI-only and intentionally small.
-      name: 'tur-ui',
+      name: 'insights-panel-storage',
       storage: createJSONStorage(() => {
         if (typeof window === 'undefined') {
           return { getItem: () => null, setItem: () => {}, removeItem: () => {} };
         }
-        return strictLocalStorage;
+        return localStorage;
       }),
+      // Persist user preferences but not transient active-id
       partialize: (state) => ({
         insightScale: state.insightScale,
         syncInsightsToPdf: state.syncInsightsToPdf,
-        audience: state.audience,
-        view: state.view,
-        tone: state.tone,
-        depth: state.depth,
-        renderPolicy: state.renderPolicy,
-        expandedCardIds: state.expandedCardIds,
-        followScroll: state.followScroll,
-        mode: state.mode,
-        essentialStudentMode: state.essentialStudentMode,
       }),
-      onRehydrateStorage: () => {
-        if (typeof window === 'undefined') return;
-        // Cleanup old key that may contain oversized historical state.
-        try {
-          localStorage.removeItem('insights-panel-storage');
-        } catch (error) {
-          console.warn('[insights-panel-store] Unable to cleanup legacy storage key', error);
-        }
-      },
     }
   )
 );
