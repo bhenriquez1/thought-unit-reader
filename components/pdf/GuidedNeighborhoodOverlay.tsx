@@ -111,15 +111,17 @@ export default function GuidedNeighborhoodOverlay({
       y: number;
       tier: GuidedTier;
       roleLabel: string;
+      tooltip: string;
     }> = [];
     let counter = 1;
     for (const neighborhood of guided.neighborhoods) {
-      // Find conceptRole from the source neighborhood for auto-derived label
+      // Find conceptRole and support text from the source neighborhood
       const sourceNeighborhood = neighborhoods.find((n) => n.id === neighborhood.neighborhoodId);
       const roleLabel =
         conceptRoleLabel(sourceNeighborhood?.conceptRole) ||
         roleLabelByConceptId?.get(neighborhood.conceptId ?? "") ||
         "";
+      const supportText = sourceNeighborhood?.support?.[0]?.text ?? "";
       for (const overlay of neighborhood.overlays) {
         // extra_context entries (filler, figure captions) get no badge
         if (overlay.tier === "extra_context") continue;
@@ -127,19 +129,25 @@ export default function GuidedNeighborhoodOverlay({
         if (!firstRect) continue;
         const isTrap = overlay.tier === "do_not_confuse";
         const label = isTrap ? "!" : String(counter++);
+        // Tooltip: show role label + truncated support sentence for anchor badges
+        const tooltipRole = isTrap ? "Trap" : (overlay.tier === "main_signal" ? (roleLabel || "Key concept") : "");
+        const tooltipSupport = overlay.tier === "main_signal" && supportText
+          ? `\n${supportText.length > 100 ? supportText.slice(0, 97) + "…" : supportText}`
+          : "";
         entries.push({
           id: `${overlay.id}:badge`,
           label,
           x: firstRect.x,
           y: firstRect.y,
           tier: overlay.tier,
-          // Show role label only on the main_signal anchor — one per concept neighborhood
-          roleLabel: overlay.tier === "main_signal" ? roleLabel : "",
+          // Show role label on main_signal anchor and as "Trap" on do_not_confuse
+          roleLabel: (overlay.tier === "main_signal" || isTrap) ? (isTrap ? "Trap" : roleLabel) : "",
+          tooltip: tooltipRole ? `${tooltipRole}${tooltipSupport}` : "",
         });
       }
     }
     return entries;
-  }, [guided, roleLabelByConceptId]);
+  }, [guided, roleLabelByConceptId, neighborhoods]);
 
   if (!visible || !guided?.flatOverlays.length) return null;
 
@@ -189,6 +197,7 @@ export default function GuidedNeighborhoodOverlay({
       {badgeEntries.map((badge) => (
         <div
           key={badge.id}
+          title={badge.tooltip || undefined}
           style={{
             position: "absolute",
             left: badge.x - 10,

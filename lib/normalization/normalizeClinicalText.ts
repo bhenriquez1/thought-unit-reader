@@ -164,6 +164,25 @@ export function normalizeClinicalText(
 
   const dedupedStatements = dedupeCanonicalStatements(canonicalStatements);
 
+  // Math exposition pages with formula signals always render — formula notation
+  // often survives PDF extraction poorly, leaving few canonical statements even
+  // on content-rich calculus/physics pages. The concept pipeline handles extraction.
+  if (pageKind === "mathematical_exposition" && (looksLikeFormula(cleanedPageText) || countMathSignals(cleanedPageText) >= 2)) {
+    return {
+      pageKind,
+      shouldRenderFullPanel: true,
+      refusalReason: null,
+      canonicalStatements: dedupedStatements,
+      dominantSignal: dedupedStatements[0]?.normalizedText ?? null,
+      coreIdea: null,
+      mechanism: null,
+      warning: null,
+      applicationRule: null,
+      formulas: uniqueStrings(formulas),
+      thresholds: uniqueStrings(thresholds),
+    };
+  }
+
   // Pages with instructional signals need only 1 canonical statement to render.
   // Hard-topic textbook pages often produce few but high-quality statements.
   const minStatements = hasInstructionalSignals(cleanedPageText.toLowerCase())
@@ -244,6 +263,14 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
   // Chapter opener: page text starts with "chapter N" and has sparse prose
   if (/^chapter\s+\d+\b/.test(text.trim()) && words < 180 && sentenceCount < 5) return "chapter_title";
 
+  // Overview / summary / learning-objectives pages with sparse instructional prose
+  if (
+    /\b(key concepts?|learning objectives?|chapter overview|unit overview|chapter summary|section summary|objectives?)\b/.test(text) &&
+    words < 250 &&
+    sentenceCount < 7 &&
+    !hasInstructionalSignals(text)
+  ) return "chapter_title";
+
   // Heading-heavy page: majority of words are in headings, very few complete sentences
   if (
     input.headingLines.length >= 3 &&
@@ -251,6 +278,14 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
     headingWords / words > 0.55 &&
     sentenceCount < 5
   ) return "chapter_title";
+
+  // Figure-caption-heavy page: many lines that start with "Figure / Fig. / Table / Diagram"
+  // Uses raw text (not lowercased) for line-level detection independent of coverage ratios.
+  const rawLines = input.text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const captionLineCount = rawLines.filter((l) =>
+    /^(figure|fig\.|table|diagram|image|exhibit)\s*\d/i.test(l)
+  ).length;
+  if (rawLines.length >= 4 && captionLineCount / rawLines.length >= 0.35) return "image_only";
 
   if (input.imageCoverageRatio > 0.82 && words < 25) return "image_only";
   if (input.graphCoverageRatio > 0.72 && sentenceCount < 2) return "graph_only";

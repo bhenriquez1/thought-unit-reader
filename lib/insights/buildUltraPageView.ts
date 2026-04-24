@@ -82,7 +82,7 @@ export interface UltraPageView {
 // ---------------------------------------------------------------------------
 
 function looksLikeMathFormula(text: string): boolean {
-  return /[=∫∂∑]|lim\b|d\/d[xt]|\\frac|\\int|\\sum|\bderivative\b|\bintegral\b/i.test(text);
+  return /[=∫∂∑]|lim\b|d[a-z]\/d[a-z]|\\frac|\\int|\\sum|\bderivative\b|\bintegral\b|\bchain rule\b|\brelated rates\b/i.test(text);
 }
 
 function looksLikeMathExplanation(text: string): boolean {
@@ -315,10 +315,18 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
     headingLines,
   });
 
-  if (!normResult.shouldRenderFullPanel) return null;
-
   // Detect domain once — drives scoring and coreIdea selection downstream
   const domain = detectPageDomain(rawPageText);
+
+  if (!normResult.shouldRenderFullPanel) {
+    // Math pages where formula notation was stripped by PDF extraction may produce
+    // few canonical statements yet still contain rich paragraph text. Allow render
+    // when the domain is clearly math or there are explicit formula signals in the
+    // processed paragraph text.
+    const hasMathDomain = domain === "math";
+    const hasFormulaInText = looksLikeMathFormula(rawPageText) || /\bderivative\b|\bintegral\b|\btheorem\b|\bcalculus\b/i.test(rawPageText);
+    if (!hasMathDomain && !hasFormulaInText) return null;
+  }
 
   // Apply hard filter + teaching zone before concept extraction
   const validInsights = (pageModel.paragraphInsights ?? []).filter(isValidCoreParagraph);
