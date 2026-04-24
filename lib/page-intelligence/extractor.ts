@@ -12,6 +12,34 @@ import type { PageText, PageSource, OCRCacheEntry } from './types';
 const MIN_TEXT_LENGTH = 40; // Minimum chars for native text to be considered valid
 const OCR_CACHE_PREFIX = 'ocr:';
 const OCR_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+const EXTRACTION_FAILURE_PATTERNS = [
+  /unable to extract text from this document/i,
+  /failed to extract/i,
+  /no text available/i,
+];
+
+function sanitizeExtractionText(text: string): string {
+  if (!text) return '';
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  if (EXTRACTION_FAILURE_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return '';
+  }
+  return text.trim();
+}
+
+function scoreTextQuality(text: string): number {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return 0;
+  const alphaTokens = normalized.match(/[A-Za-z]{3,}/g)?.length ?? 0;
+  const brokenTokens = normalized.match(/[A-Za-z]-\s+[A-Za-z]/g)?.length ?? 0;
+  const sentenceMarks = normalized.match(/[.!?]/g)?.length ?? 0;
+  const lengthScore = Math.min(60, normalized.length / 8);
+  const tokenScore = Math.min(25, alphaTokens / 3);
+  const sentenceScore = Math.min(20, sentenceMarks * 2);
+  const penalty = Math.min(30, brokenTokens * 6);
+  return Math.max(0, Math.min(100, Math.round(lengthScore + tokenScore + sentenceScore - penalty)));
+}
 
 // ============================================================================
 // OCR Engine (lazy-loaded tesseract.js)
@@ -151,6 +179,7 @@ export interface ExtractPageTextOptions {
   getPageImageDataUrl: () => Promise<string>;
   ocrEnabled?: boolean;
   minTextLength?: number;
+  mixedLengthRatio?: number;
   onOCRStart?: () => void;
   onOCRComplete?: (text: string, confidence: number) => void;
 }
@@ -172,21 +201,27 @@ export async function extractPageText(options: ExtractPageTextOptions): Promise<
     getPageImageDataUrl,
     ocrEnabled = true,
     minTextLength = MIN_TEXT_LENGTH,
+    mixedLengthRatio = 0.75,
     onOCRStart,
     onOCRComplete
   } = options;
 
   // Step 1: Try native text extraction
+  let nativeText = '';
   try {
-    const nativeText = await getNativeText();
-    const trimmedText = nativeText?.trim() || '';
+    nativeText = sanitizeExtractionText((await getNativeText()) || '');
 
-    if (trimmedText.length >= minTextLength) {
+    const nativeQuality = scoreTextQuality(nativeText);
+    const shouldUseNative = nativeText.length >= minTextLength && nativeQuality >= 35;
+    if (shouldUseNative) {
       return {
         pageNumber,
-        text: trimmedText,
+        text: nativeText,
+        nativeText,
+        ocrText: '',
+        mergedText: nativeText,
         source: 'native' as PageSource,
-        confidence: 100
+        confidence: Math.max(80, nativeQuality)
       };
     }
   } catch (error) {
@@ -198,6 +233,9 @@ export async function extractPageText(options: ExtractPageTextOptions): Promise<
     return {
       pageNumber,
       text: '',
+      nativeText,
+      ocrText: '',
+      mergedText: '',
       source: 'native' as PageSource,
       confidence: 0
     };
@@ -206,10 +244,22 @@ export async function extractPageText(options: ExtractPageTextOptions): Promise<
   // Step 3: Check OCR cache
   const cached = await getCachedOCR(docId, pageNumber);
   if (cached) {
+    const cachedText = sanitizeExtractionText(cached.text);
+    const hasNativeFragment = nativeText.length > 0;
+    const shouldMergeNativeAndOCR = hasNativeFragment && nativeText.length < minTextLength;
+    const mergedText = shouldMergeNativeAndOCR
+      ? `${nativeText}
+
+${cachedText}`.trim()
+      : cachedText;
+
     return {
       pageNumber,
-      text: cached.text,
-      source: 'ocr' as PageSource,
+      text: mergedText,
+      nativeText,
+      ocrText: cachedText,
+      mergedText,
+      source: shouldMergeNativeAndOCR ? 'mixed' as PageSource : 'ocr' as PageSource,
       confidence: cached.confidence
     };
   }
@@ -220,22 +270,36 @@ export async function extractPageText(options: ExtractPageTextOptions): Promise<
 
     const imageDataUrl = await getPageImageDataUrl();
     const ocrResult = await ocrDataUrlToText(imageDataUrl);
+    const sanitizedOcrText = sanitizeExtractionText(ocrResult.text);
 
     // Cache the result
     await cacheOCR({
       docId,
       pageNumber,
-      text: ocrResult.text,
+      text: sanitizedOcrText,
       confidence: ocrResult.confidence,
       extractedAt: Date.now()
     });
 
-    onOCRComplete?.(ocrResult.text, ocrResult.confidence);
+    onOCRComplete?.(sanitizedOcrText, ocrResult.confidence);
+
+    const hasNativeFragment = nativeText.length > 0;
+    const shouldMergeNativeAndOCR = hasNativeFragment && nativeText.length < minTextLength;
+    const nativeRatio = minTextLength > 0 ? nativeText.length / minTextLength : 0;
+    const isMixed = shouldMergeNativeAndOCR && nativeRatio >= mixedLengthRatio;
+    const mergedText = shouldMergeNativeAndOCR
+      ? `${nativeText}
+
+${sanitizedOcrText}`.trim()
+      : sanitizedOcrText;
 
     return {
       pageNumber,
-      text: ocrResult.text,
-      source: 'ocr' as PageSource,
+      text: mergedText,
+      nativeText,
+      ocrText: sanitizedOcrText,
+      mergedText,
+      source: isMixed ? 'mixed' as PageSource : 'ocr' as PageSource,
       confidence: ocrResult.confidence
     };
   } catch (error) {
@@ -243,6 +307,9 @@ export async function extractPageText(options: ExtractPageTextOptions): Promise<
     return {
       pageNumber,
       text: '',
+      nativeText,
+      ocrText: '',
+      mergedText: '',
       source: 'ocr' as PageSource,
       confidence: 0
     };

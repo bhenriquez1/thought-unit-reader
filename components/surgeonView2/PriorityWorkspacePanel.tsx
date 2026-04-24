@@ -4,16 +4,12 @@
 
 import React from 'react';
 import type { RankedInsight } from '@/lib/relationshipSchema/types';
-import type { InsightsResult, PageExtractionResult, ReasoningFlow } from '@/lib/engines';
-import type { PageIntelligence } from '@/lib/page-intelligence';
+import type { PageIntelligence, SourceRef } from '@/lib/page-intelligence';
 import PriorityComprehensionPanel from './PriorityComprehensionPanel';
 
 interface PriorityWorkspacePanelProps {
   insights: RankedInsight[];
   pageIntelligence?: PageIntelligence | null;
-  pageInsights?: InsightsResult | null;
-  pageReasoning?: ReasoningFlow | null;
-  pageExtraction?: PageExtractionResult | null;
   selectedCardId?: string | null;
   onJumpToPage?: (page: number) => void;
   onExplain?: (insight: RankedInsight) => void;
@@ -21,41 +17,48 @@ interface PriorityWorkspacePanelProps {
   onSendToNoteLab?: (insight: RankedInsight) => void;
   isExtracting?: boolean;
   onHighlightParagraph?: (text: string) => void;
+  onPreviewSource?: (text: string | null) => void;
+  /** Jump to source in PDF — from SourceAnchor "Jump to source" button */
+  onJumpToSource?: (ref: SourceRef) => void;
   /** Font-size scale for insight cards (from insightsPanelStore) */
   insightScale?: number;
   /** Sync: scroll active card into view when this id changes */
   syncEnabled?: boolean;
+  /** Deep Analysis Mode: show all paragraph units + structure map */
+  deepAnalysisMode?: boolean;
 }
 
 export const PriorityWorkspacePanel: React.FC<PriorityWorkspacePanelProps> = ({
   insights,
   pageIntelligence,
-  pageInsights,
-  pageReasoning,
-  pageExtraction,
   selectedCardId,
   onJumpToPage,
   onExplain,
-  onMakeCard,
   onSendToNoteLab,
   onHighlightParagraph,
+  onPreviewSource,
+  onJumpToSource,
   insightScale,
   syncEnabled,
+  deepAnalysisMode,
+  isExtracting,
 }) => {
   return (
     <PriorityComprehensionPanel
       rankedInsights={insights}
       pageIntelligence={pageIntelligence}
-      pageInsights={pageInsights}
-      pageReasoning={pageReasoning}
-      pageExtraction={pageExtraction}
       onInsightClick={onExplain}
       onJumpToPage={onJumpToPage}
       onSaveToNoteLab={onSendToNoteLab}
       onHighlightParagraph={onHighlightParagraph}
+      onPreviewSource={onPreviewSource}
+      onJumpToSource={onJumpToSource}
       insightScale={insightScale}
       activeItemId={selectedCardId}
       syncEnabled={syncEnabled}
+      deepAnalysisMode={deepAnalysisMode}
+      isExtracting={isExtracting}
+      hideModeControls
     />
   );
 };

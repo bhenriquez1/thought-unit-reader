@@ -16,6 +16,8 @@ const TRAP_TYPE_CONFIG: Record<TrapType, { icon: string; color: string; label: s
   EXCEPTION: { icon: '❗', color: 'text-red-400', label: 'Exception' },
   NEGATION: { icon: '🚫', color: 'text-rose-400', label: 'Negation' },
   WORDING_TRICK: { icon: '🔤', color: 'text-purple-400', label: 'Wording' },
+  ABSOLUTE_QUALIFIER: { icon: '⚡', color: 'text-yellow-400', label: 'Absolute' },
+  CLASSIFICATION_BOUNDARY: { icon: '🗂️', color: 'text-indigo-400', label: 'Stage/Grade' },
 };
 
 // ============================================================================

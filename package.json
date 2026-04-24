@@ -15,7 +15,7 @@
     "dev:clean": "npm run clean && next dev",
     "type-check": "tsc --noEmit",
     "render-build": "if [ -f package-lock.json ]; then npm ci; else npm install; fi && npm run build",
-    "setup:pdf-worker": "node -e \"const fs=require('fs');const p=require('path');fs.mkdirSync('public',{recursive:true});const cand=['node_modules/pdfjs-dist/build/pdf.worker.min.mjs','node_modules/pdfjs-dist/build/pdf.worker.min.js','node_modules/pdfjs-dist/build/pdf.worker.js'];const src=cand.find(f=>fs.existsSync(f));if(!src){console.error('❌ pdf.worker not found in pdfjs-dist');process.exit(1);}const dest=p.join('public','pdf.worker.min.mjs');fs.copyFileSync(src,dest);console.log('✅ pdf.worker copied from',src,'→',dest);\"",
+    "setup:pdf-worker": "node scripts/copy-pdf-worker.mjs",
     "postinstall": "npm run setup:pdf-worker"
   },
   "dependencies": {
@@ -36,6 +36,7 @@
     "idb-keyval": "^6.2.2",
     "jspdf": "^3.0.1",
     "lucide-react": "^0.532.0",
+    "microsoft-cognitiveservices-speech-sdk": "^1.48.0",
     "next": "^14.2.5",
     "next-themes": "^0.4.6",
     "openai": "^5.12.0",

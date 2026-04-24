@@ -17,6 +17,17 @@ import { clusterSegments, mergeSimilarClusters } from './clusters';
 import { generateInsights } from './insights';
 import { generateExplain } from './explain';
 import { generateCards } from './cards';
+import { buildParagraphUnits, buildQuoteHash } from './paragraphIntelligence';
+import { annotateTraps } from './trapDetector';
+import { buildStructureMap } from './structureMap';
+import { buildInsightContinuity } from './continuity';
+import { normalizePageText, filterSegmentsByPageRelevance } from './normalizer';
+import { canSynthesizePage, getFallbackDisplayState } from '@/lib/synthesis/fallbackPolicy';
+import {
+  buildPageMemory,
+  upsertConceptGraph,
+  buildAllTabResponses,
+} from './conceptGraph';
 
 // ============================================================================
 // Export Types
@@ -94,12 +105,39 @@ export {
   getDueCards,
 } from './cards';
 
+export { buildParagraphUnits, buildQuoteHash } from './paragraphIntelligence';
+export { detectParagraphTraps, annotateTraps } from './trapDetector';
+export type { TrapHit, TrapKind } from './trapDetector';
+export {
+  buildPageTextIndex,
+  resolveHighlight,
+  getSpeechCursorY,
+  getSpeechCursorBbox,
+  TextLayerRegistry,
+} from './textLayerIndex';
+export type { TextToken, PageTextIndex, HighlightRegion } from './textLayerIndex';
+export { buildStructureMap } from './structureMap';
+export type { StructureMap, StructureMapNode, StructureMapStage } from './structureMap';
+export { buildInsightContinuity } from './continuity';
+export type { InsightContinuity } from './continuity';
+export { normalizePageText, filterSegmentsByPageRelevance };
+export {
+  computePageFingerprint,
+  buildPageMemory,
+  upsertConceptGraph,
+  verifyGrounding,
+  buildTabResponse,
+  buildAllTabResponses,
+} from './conceptGraph';
+export type { PageDomain, FigureContext, NormalizedPageText, NormalizationReport } from './normalizer';
+
 // ============================================================================
 // IndexedDB Cache for Page Intelligence Results
 // ============================================================================
 
 const CACHE_PREFIX = 'pageint:';
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const EXTRACTION_VERSION = 'v2';
 
 interface CachedPageIntelligence {
   data: PageIntelligence;
@@ -111,7 +149,7 @@ async function getCachedPageIntelligence(
   pageNumber: number
 ): Promise<PageIntelligence | null> {
   try {
-    const key = `${CACHE_PREFIX}${docId}:${pageNumber}`;
+    const key = `${CACHE_PREFIX}${docId}:${pageNumber}:${EXTRACTION_VERSION}`;
     const cached = await get<CachedPageIntelligence>(key);
 
     if (cached && Date.now() - cached.cachedAt < CACHE_TTL) {
@@ -130,7 +168,7 @@ async function cachePageIntelligence(
   data: PageIntelligence
 ): Promise<void> {
   try {
-    const key = `${CACHE_PREFIX}${docId}:${pageNumber}`;
+    const key = `${CACHE_PREFIX}${docId}:${pageNumber}:${EXTRACTION_VERSION}`;
     await set(key, { data, cachedAt: Date.now() });
   } catch (error) {
     console.warn('[PageIntelligence] Cache write failed:', error);
@@ -201,16 +239,26 @@ export async function buildPageIntelligence(
     minTextLength,
   });
 
-  const text = pageText.text;
   const source: PageSource = pageText.source;
-  const confidence = pageText.confidence;
+  const confidence = pageText.confidence ?? 0;
+  const nativeText = pageText.nativeText || '';
+  const ocrText = pageText.ocrText || '';
 
-  // Handle empty text
+  const normalized = normalizePageText(pageText.mergedText || pageText.text);
+  const text = normalized.text;
+
+  // Handle empty text — return stub with always-populated continuity
   if (!text || text.trim().length < minTextLength) {
+    const emptyContinuity = buildInsightContinuity([], [], [], []);
     const emptyResult: PageIntelligence = {
       pageNumber,
       source,
       confidence,
+      extractionMethod: 'failed',
+      extractionVersion: EXTRACTION_VERSION,
+      nativeText,
+      ocrText,
+      mergedText: text,
       segments: [],
       signals: [],
       relations: [],
@@ -222,6 +270,18 @@ export async function buildPageIntelligence(
         pitfalls: [],
       },
       cards: [],
+      paragraphUnits: [],
+      structureMap: { pageNumber, topic: `Page ${pageNumber}`, nodes: [], completeness: 0 },
+      continuity: emptyContinuity,
+      domain: normalized.domain,
+      normalization: {
+        dehyphenatedWords: normalized.report.dehyphenatedWords,
+        repairedLineWraps: normalized.report.repairedLineWraps,
+        figureCaptionsDetected: normalized.report.figureCaptionsDetected,
+        removedCitationArtifacts: normalized.report.removedCitationArtifacts,
+        lowQuality: normalized.report.lowQuality,
+      },
+      fallbackState: { canSynthesize: false, reason: 'low_confidence', message: getFallbackDisplayState().message },
       extractedAt: Date.now(),
     };
 
@@ -233,7 +293,14 @@ export async function buildPageIntelligence(
   }
 
   // Step 2: Segment text
-  const segments = segmentText(text, { pageNumber });
+  const segments = filterSegmentsByPageRelevance(segmentText(text, { pageNumber }));
+
+  // Step 2b: Build ranked paragraph units (role-classified with char offsets)
+  //          then annotate each unit with trap detection results.
+  // NOTE: buildParagraphUnits expects a 0-based pageIndex. pageNumber is 1-based,
+  //       so we pass (pageNumber - 1) to keep pageIndex consistent with SourceRef.pageIndex
+  //       which handleJumpToSource interprets as 0-based (targetPage = pageIndex + 1).
+  const paragraphUnits = annotateTraps(buildParagraphUnits(text, pageNumber - 1, docId));
 
   // Step 3: Detect signals
   const signals = detectSignals({ segments });
@@ -246,19 +313,24 @@ export async function buildPageIntelligence(
   clusters = mergeSimilarClusters(clusters);
 
   // Step 6: Generate insights with DAT scoring
-  const insights = generateInsights({
+  const rawInsights = generateInsights({
     segments,
     signals,
     relations,
     clusters,
     ocrConfidence: confidence,
   });
+  const insights = normalized.report.lowQuality
+    ? rawInsights.filter((insight) => insight.score >= 55).slice(0, 6)
+    : rawInsights;
 
   // Step 7: Generate explanation
   const explain = generateExplain({
     segments,
     signals,
     insights,
+    domain: normalized.domain,
+    figureContext: normalized.figureContext,
   });
 
   // Step 8: Generate study cards
@@ -269,8 +341,14 @@ export async function buildPageIntelligence(
     docId,
   });
 
-  // Build result
-  const intelligence: PageIntelligence = {
+  // Step 9: Build structure map (Definition → Mechanism → Application → Clinical)
+  const structureMap = buildStructureMap(segments, signals, paragraphUnits, pageNumber);
+
+  // Step 10: Build insight continuity (always-populated — never empty)
+  const continuity = buildInsightContinuity(insights, segments, signals, paragraphUnits);
+
+  // Step 11: Build page memory + persistent concept graph + tab-specific responses
+  const pageMemory = buildPageMemory(docId, {
     pageNumber,
     source,
     confidence,
@@ -281,6 +359,84 @@ export async function buildPageIntelligence(
     insights,
     explain,
     cards,
+    paragraphUnits,
+    structureMap,
+    continuity,
+    domain: normalized.domain,
+    extractedAt: Date.now(),
+  });
+  const conceptGraph = upsertConceptGraph(docId, {
+    pageNumber,
+    source,
+    confidence,
+    segments,
+    signals,
+    relations,
+    clusters,
+    insights,
+    explain,
+    cards,
+    paragraphUnits,
+    structureMap,
+    continuity,
+    domain: normalized.domain,
+    extractedAt: Date.now(),
+  });
+  const { tabResponses, tabPayloads } = buildAllTabResponses(docId, {
+    pageNumber,
+    source,
+    confidence,
+    segments,
+    signals,
+    relations,
+    clusters,
+    insights,
+    explain,
+    cards,
+    paragraphUnits,
+    structureMap,
+    continuity,
+    domain: normalized.domain,
+    extractedAt: Date.now(),
+  }, pageMemory, conceptGraph);
+
+  // Build result
+  const canSynthesize = canSynthesizePage(confidence, text);
+
+  const intelligence: PageIntelligence = {
+    pageNumber,
+    source,
+    confidence,
+    extractionMethod: source === 'mixed' ? 'hybrid' : source === 'native' ? 'native' : 'ocr',
+    extractionVersion: EXTRACTION_VERSION,
+    nativeText,
+    ocrText,
+    mergedText: text,
+    segments,
+    signals,
+    relations,
+    clusters,
+    insights,
+    explain,
+    cards,
+    paragraphUnits,
+    structureMap,
+    continuity,
+    pageMemory,
+    conceptGraph,
+    tabResponses,
+    tabPayloads,
+    domain: normalized.domain,
+    fallbackState: canSynthesize
+      ? { canSynthesize: true }
+      : { canSynthesize: false, reason: 'low_confidence', message: getFallbackDisplayState().message },
+    normalization: {
+      dehyphenatedWords: normalized.report.dehyphenatedWords,
+      repairedLineWraps: normalized.report.repairedLineWraps,
+      figureCaptionsDetected: normalized.report.figureCaptionsDetected,
+      removedCitationArtifacts: normalized.report.removedCitationArtifacts,
+      lowQuality: normalized.report.lowQuality,
+    },
     extractedAt: Date.now(),
   };
 
@@ -368,7 +524,7 @@ export async function refreshPageIntelligence(
 ): Promise<BuildPageIntelligenceResult> {
   // Clear cache for this page first
   const { pageNumber, docId = 'default' } = args;
-  const key = `${CACHE_PREFIX}${docId}:${pageNumber}`;
+  const key = `${CACHE_PREFIX}${docId}:${pageNumber}:${EXTRACTION_VERSION}`;
   await set(key, undefined);
 
   // Rebuild

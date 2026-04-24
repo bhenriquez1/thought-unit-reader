@@ -299,7 +299,9 @@ export type TrapType =
   | 'THRESHOLD'
   | 'EXCEPTION'
   | 'NEGATION'
-  | 'WORDING_TRICK';
+  | 'WORDING_TRICK'
+  | 'ABSOLUTE_QUALIFIER'
+  | 'CLASSIFICATION_BOUNDARY';
 
 /** Extended trap kinds per spec */
 export type TrapKind =
@@ -546,3 +548,15 @@ export interface SurgeonEngineState {
   isProcessing: boolean;
   processingStep?: string;
 }
+
+// ============================================================================
+// PR3: Re-export source-anchoring types from page-intelligence for consumers
+// ============================================================================
+
+export type {
+  SourceRef,
+  AnchoredItem,
+  ParagraphUnit,
+  ParagraphRole,
+  ParagraphSignals,
+} from '../page-intelligence/types';

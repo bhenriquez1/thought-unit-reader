@@ -41,6 +41,12 @@ export interface SmartPDFViewerProps {
    * Use this to drive PDF scroll → insights-panel sync without DOM overlays.
    */
   onActiveParagraphChange?: (snippet: string | null) => void;
+  /** External page change lock to prevent observer feedback loops while rendering */
+  isPageChanging?: boolean;
+  /** Fires when the currently requested page render completes */
+  onPageRenderComplete?: (page: number) => void;
+  /** Emits extracted text for the current page (best-effort). Empty string means unavailable. */
+  onPageTextExtracted?: (pageNumber: number, text: string) => void;
 }
 
 /** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
@@ -102,6 +108,9 @@ export default function SmartPDFViewer({
   onPageCount,
   onOutline,
   onActiveParagraphChange,
+  isPageChanging = false,
+  onPageRenderComplete,
+  onPageTextExtracted,
 }: SmartPDFViewerProps) {
   // Stable key root: prefer explicit docId, fall back to fileUrl
   const pageKeyRoot = docId ?? fileUrl;
@@ -133,6 +142,7 @@ export default function SmartPDFViewer({
     if (!container) return;
 
     const handleScroll = () => {
+      if (isPageChanging) return;
       if (paragraphScrollTimerRef.current) {
         clearTimeout(paragraphScrollTimerRef.current);
       }
@@ -195,7 +205,7 @@ export default function SmartPDFViewer({
       container.removeEventListener('scroll', handleScroll);
       if (paragraphScrollTimerRef.current) clearTimeout(paragraphScrollTimerRef.current);
     };
-  }, [onActiveParagraphChange]);
+  }, [isPageChanging, onActiveParagraphChange]);
 
   // Enhanced PDF loading with robust error handling
   const {
@@ -252,12 +262,40 @@ export default function SmartPDFViewer({
     }
   }, [pdfDocument, onOutline]);
 
+  // Best-effort page text extraction for the intelligence pipeline.
+  // This is intentionally independent of thoughtUnits and uses PDF.js textContent.
+  useEffect(() => {
+    if (!onPageTextExtracted) return;
+    if (!isLoaded || !pdfDocument) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const page = await (pdfDocument as any).getPage(currentPage);
+        const textContent = await page.getTextContent();
+        const items = (textContent?.items || []) as any[];
+        const raw = items.map((it) => (typeof it?.str === 'string' ? it.str : '')).join(' ');
+        const text = raw.replace(/\s+/g, ' ').trim();
+        if (!cancelled) onPageTextExtracted(currentPage, text);
+      } catch {
+        // Treat extraction failures as unavailable.
+        if (!cancelled) onPageTextExtracted(currentPage, '');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPage, isLoaded, onPageTextExtracted, pdfDocument]);
+
   useEffect(() => {
     setPageInput(String(currentPage));
   }, [currentPage]);
 
   // Enhanced page change handler with sync integration and fallback
   const handlePageChangeWithSync = (newPage: number, source: 'scroll' | 'navigation' | 'programmatic' = 'navigation') => {
+    if (isPageChanging) return;
     console.log(`📄 SmartPDFViewer: Page change ${currentPage} -> ${newPage} (${source})`);
     
     // Validate page bounds - only proceed if PDF is loaded and we have valid page count
@@ -300,6 +338,7 @@ export default function SmartPDFViewer({
     
     // Enhanced debounced callback with pulse animation
     const handleVisibleTextChange = (visibleText: string, topElement: HTMLElement | null) => {
+      if (isPageChanging) return;
       console.log(`👁️ SmartPDFViewer: Visible text changed (${visibleText.length} chars)`);
       
       // Clear any existing sync timeout
@@ -335,7 +374,7 @@ export default function SmartPDFViewer({
       }
       stopVisibleTextObserver();
     };
-  }, [fileUrl, startVisibleTextObserver, stopVisibleTextObserver, syncPDFToChunk]);
+  }, [fileUrl, isPageChanging, startVisibleTextObserver, stopVisibleTextObserver, syncPDFToChunk]);
 
   const handleZoomIn = () => setInternalZoom((z) => Math.min(z + 0.25, 2.5));
   const handleZoomOut = () => setInternalZoom((z) => Math.max(z - 0.25, 0.6));
@@ -492,6 +531,7 @@ export default function SmartPDFViewer({
                     <div className="text-red-400">Failed to render page {currentPage}</div>
                   </div>
                 }
+                onRenderSuccess={() => onPageRenderComplete?.(currentPage)}
                 onRenderError={(error) => {
                   console.error(`SmartPDFViewer: Page ${currentPage} render error:`, error);
                 }}

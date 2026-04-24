@@ -1,10 +1,21 @@
 // scripts/copy-pdf-worker.mjs
-import { mkdir, copyFile } from "node:fs/promises";
-import { dirname } from "node:path";
-const src = "node_modules/pdfjs-dist/build/pdf.worker.min.mjs";
-const dst = "public/pdf.worker.min.mjs";
-await mkdir(dirname(dst), { recursive: true });
-await copyFile(src, dst).catch((e) => {
-  console.error("Failed to copy pdf.worker.min.mjs:", e?.message || e);
-  process.exitCode = 1;
-});
+import { existsSync, mkdirSync, copyFileSync } from "node:fs";
+
+const dest = "public/pdf.worker.min.mjs";
+
+mkdirSync("public", { recursive: true });
+
+const candidates = [
+  "node_modules/pdfjs-dist/build/pdf.worker.min.js",
+  "node_modules/pdfjs-dist/build/pdf.worker.mjs",
+  "node_modules/pdfjs-dist/build/pdf.worker.js",
+];
+
+const src = candidates.find((f) => existsSync(f));
+
+if (!src) {
+  throw new Error("pdf.worker not found in pdfjs-dist — checked: " + candidates.join(", "));
+}
+
+copyFileSync(src, dest);
+console.log("✓ pdf.worker copied from", src);

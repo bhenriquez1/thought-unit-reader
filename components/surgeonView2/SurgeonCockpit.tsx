@@ -5,33 +5,26 @@
 // Layout: Left rail (clusters) | Main (relations) | Right (comprehension tabs)
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { BlockMath, ImportanceBar, renderMath } from './MathDisplay';
 import { useRelationshipStore } from '@/lib/relationshipSchema/store';
 import { useNoteLabStore } from '@/lib/cognitiveEngine/noteLabStore';
 import { useSurgeonEngineStore } from '@/lib/surgeonEngine/store';
 import { useExpertViewStore } from '@/lib/cognitive/expertViewStore';
 import { usePageContextStore } from '@/lib/cognitive/pageContextStore';
+import { useReaderState } from '@/lib/cognitive/useReaderState';
 import type {
   ReasoningChain,
 } from '@/lib/cognitive/types';
 import type { PatternCluster, Relation, DecisionRule, RankedInsight, Concept } from '@/lib/relationshipSchema/types';
 import {
-  extractPage,
-  generateInsights,
-  generateExplain,
   generateCardsFromInsights,
-  buildReasoningFlow,
-  type PageExtractionResult,
-  type InsightsResult,
-  type ExplainPayload,
-  type StudyCard,
-  type ReasoningFlow,
 } from '@/lib/engines';
 // Page Intelligence module with OCR support
 import {
   buildPageIntelligence,
   buildChapterIntelligence,
   type PageIntelligence,
-  type PageSource,
+  type TabResponse,
 } from '@/lib/page-intelligence';
 import ClusterRail from './ClusterRail';
 import RelationPanel from './RelationPanel';
@@ -53,9 +46,24 @@ import { enrichInsightsWithApex } from '@/lib/apex/patternLibrary';
 import { useCourseContextStore } from '@/lib/stores/courseContextStore';
 import { useStudySessionStore } from '@/lib/stores/studySessionStore';
 import { useInsightsPanelStore } from '@/lib/stores/insightsPanelStore';
+import { buildActivePageContext as buildReaderActivePageContext, getPageContextCacheKey, type ActivePageContext as ReaderActivePageContext } from '@/lib/reader/activePageContext';
+import { buildActivePageContext, getActivePageContextKey, type ActivePageContext } from '@/lib/surgeonEngine/activePageContext';
+import { resolvePanelTitle } from '@/lib/surgeonEngine/panelResolver';
+import { sanitizeTitle } from '@/lib/page-intelligence/titleResolution';
+import { normalizeRenderableText, sanitizeRenderList, sanitizeRenderText, stripFluff } from '@/lib/page-intelligence/outputSanitizer';
+import type { RightPanelState, RightPanelTab } from '@/state/rightPanelState';
+import { buildCurrentPageVersion, DEFAULT_RIGHT_PANEL_STATE } from '@/state/rightPanelState';
+import { normalizePagePayload } from '@/lib/normalization/DocumentNormalizer';
+import { resolveRightPanelView, type GroundedPayload } from '@/lib/comprehension/resolveRightPanelView';
 
 // Expert View 2.1 tabs - Simplified for cognitive flow
 type ComprehensionTab = 'priority' | 'explain' | 'relations' | 'compare' | 'insights';
+
+type PanelRenderState =
+  | { status: 'ready'; pageVersion: string; payload: GroundedPayload }
+  | { status: 'loading'; pageVersion: string; payload: GroundedPayload | null }
+  | { status: 'empty'; pageVersion: string; reason: 'not-extracted' | 'no-grounded-result' }
+  | { status: 'error'; pageVersion: string; message: string; payload: GroundedPayload | null };
 
 // ============================================================================
 // DOM Text Layer Scraping
@@ -88,6 +96,19 @@ interface SurgeonCockpitProps {
   pageTexts?: Map<number, string>;
   onExtractPage?: (pageIndex: number) => Promise<void>;
   onHighlightParagraph?: (text: string) => void;
+  onPreviewSource?: (text: string | null) => void;
+  /** Called when user clicks "Jump to source" on any SourceAnchor — for PDF scroll+highlight */
+  onJumpToSource?: (ref: import('@/lib/page-intelligence').SourceRef) => void;
+  /** ElevenLabs config for Narrate tab (optional) */
+  elevenLabsConfig?: { apiKey: string; voiceId: string };
+  /** Azure TTS config for Narrate tab (optional) */
+  azureConfig?: { subscriptionKey: string; region: string; voiceName?: string };
+  /** Keep right insight panel scroll position across page turns */
+  preservePanelScroll?: boolean;
+  rightPanelState?: RightPanelState;
+  onRightPanelStateChange?: (updater: RightPanelState | ((prev: RightPanelState) => RightPanelState)) => void;
+  onRightPanelTabChange?: (tab: RightPanelTab) => void;
+  onRightPanelCardChange?: (cardId: string | null) => void;
 }
 
 export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
@@ -99,6 +120,15 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   pageTexts,
   onExtractPage,
   onHighlightParagraph,
+  onPreviewSource,
+  onJumpToSource,
+  elevenLabsConfig,
+  azureConfig,
+  preservePanelScroll = false,
+  rightPanelState,
+  onRightPanelStateChange,
+  onRightPanelTabChange,
+  onRightPanelCardChange,
 }) => {
   // Relationship store
   const {
@@ -137,28 +167,57 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   // Surgeon Engine Store
   const surgeonEngine = useSurgeonEngineStore();
 
-<<<<<<< HEAD
   // Insights Panel Store — zoom + sync toggle + paragraph tracking
   const {
     insightScale,
     syncInsightsToPdf,
     activeParagraphId,
     activeVisibleText,
-=======
-  // Insights Panel Store — zoom + sync toggle
-  const {
-    insightScale,
-    syncInsightsToPdf,
->>>>>>> a0e16f5 (feat: insights panel zoom + sync toggle)
     scaleUp,
     scaleDown,
     canScaleUp,
     canScaleDown,
     toggleSync,
+    focusOnSource,
+    setActiveParagraphId,
+    depth,
+    setDepth,
+    mode,
+    setMode,
+    setAudience,
+    setView,
+    setEssentialStudentMode,
+    followScroll,
+    audience,
+    view,
+    essentialStudentMode,
+    resetInsightLayout,
+    setSelectedInsightId,
+    setActiveVisibleText,
+    setExpandedCardIds,
   } = useInsightsPanelStore();
 
+  // Canonical ReaderState (single source of truth for page + panel state)
+  const {
+    pageIndex,
+    sectionId,
+    paragraphId,
+    activeTab,
+    insightDepth,
+    sectionMode,
+    setDocument: setReaderDocument,
+    setActivePageContext: setReaderActivePageContext,
+    setActiveTab,
+    setInsightDepth,
+    setSectionMode,
+    setSectionId,
+    setParagraphId,
+    onPageChange,
+    getCachedInsight,
+    setCachedInsight,
+  } = useReaderState();
+
   // Local state
-  const [activeTab, setActiveTab] = useState<ComprehensionTab>('priority');
   const [selectedCardId, setSelectedCardId] = useState<string | undefined>();
   const [showInsightOverlay, setShowInsightOverlay] = useState(false);
   const [showDrillMode, setShowDrillMode] = useState(false);
@@ -170,26 +229,135 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   const [extractionStatus, setExtractionStatus] = useState<string>('');
   const hasAutoExtracted = useRef(false);
   const hasRunSurgeonEngines = useRef(false);
-
-  // Page-aware extraction state (new engines)
-  const [pageExtraction, setPageExtraction] = useState<PageExtractionResult | null>(null);
-  const [pageInsights, setPageInsights] = useState<InsightsResult | null>(null);
-  const [pageExplain, setPageExplain] = useState<ExplainPayload | null>(null);
-  const [pageReasoning, setPageReasoning] = useState<ReasoningFlow | null>(null);
-  const [generatedStudyCards, setGeneratedStudyCards] = useState<StudyCard[]>([]);
+  const extractionRequestIdRef = useRef(0);
+  const extractionAbortRef = useRef<AbortController | null>(null);
+  const rightPanelScrollRef = useRef<HTMLDivElement | null>(null);
+  const currentPageRef = useRef<number>(currentPage);
+  const activeRequestKeyRef = useRef<string>('');
 
   // Page Intelligence state (OCR-enabled pipeline)
   const [pageIntelligence, setPageIntelligence] = useState<PageIntelligence | null>(null);
+  const [readerPageContext, setReaderPageContext] = useState<ReaderActivePageContext | null>(null);
   const [ocrEnabled, setOcrEnabled] = useState(true);
   const [ocrStatus, setOcrStatus] = useState<'idle' | 'running' | 'done'>('idle');
-  const [autoExtract, setAutoExtract] = useState(false);
+  const [autoExtract, setAutoExtract] = useState(true); // auto-fire on page load
   const [extractScope, setExtractScope] = useState<ExtractScope>('page');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const payloadCacheRef = useRef<Map<string, GroundedPayload>>(new Map());
+  const [panelRenderState, setPanelRenderState] = useState<PanelRenderState>(() => ({
+    status: 'loading',
+    pageVersion: buildCurrentPageVersion(documentId, Math.max(1, currentPage || 1), sectionId ?? null),
+    payload: null,
+  }));
+
+  const tabTitle = useMemo(() => {
+    switch (activeTab) {
+      case 'priority': return 'Page Priorities';
+      case 'explain': return 'Professional Explanation';
+      case 'relations': return 'Concept Relationships';
+      case 'compare': return 'Concept Comparison';
+      case 'insights': return 'Insight Extraction';
+      default: return 'Page Priorities';
+    }
+  }, [activeTab, currentPage]);
+
+  const activePageNumber = useMemo(() => Math.max(1, currentPage || 1), [currentPage]);
+  const activePageIndex = useMemo(() => activePageNumber - 1, [activePageNumber]);
+  const effectiveRightPanelState = useMemo<RightPanelState>(() => {
+    if (rightPanelState) return rightPanelState;
+    return {
+      ...DEFAULT_RIGHT_PANEL_STATE,
+      activeDocumentId: documentId,
+      activePageNumber,
+      activeTab: activeTab as RightPanelTab,
+      audienceMode: audience,
+      depthMode: depth,
+      densityMode: view,
+      deeperReasoningEnabled: mode === 'deep',
+      syncHighlightsEnabled: syncInsightsToPdf,
+      activeCardId: selectedCardId ?? null,
+      currentPageVersion: buildCurrentPageVersion(documentId, activePageNumber, sectionId),
+      activeSectionId: sectionId ?? null,
+    };
+  }, [
+    rightPanelState,
+    documentId,
+    activePageNumber,
+    activeTab,
+    audience,
+    depth,
+    view,
+    mode,
+    syncInsightsToPdf,
+    selectedCardId,
+    sectionId,
+  ]);
+
+  const activeParagraphIndex = useMemo(() => {
+    const units = pageIntelligence?.paragraphUnits;
+    if (!units?.length || !activeParagraphId) return undefined;
+    const idx = units.findIndex((unit) => unit.id === activeParagraphId);
+    return idx >= 0 ? idx + 1 : undefined;
+  }, [pageIntelligence?.paragraphUnits, activeParagraphId]);
+
+  const panelContext = useMemo(() => buildActivePageContext({
+    documentId: documentId || null,
+    pageNumber: activePageNumber,
+    sectionId: effectiveRightPanelState.activeSectionId,
+    tab: effectiveRightPanelState.activeTab as ActivePageContext['tab'],
+    audienceMode: effectiveRightPanelState.audienceMode,
+    depthMode: effectiveRightPanelState.depthMode,
+    densityMode: effectiveRightPanelState.densityMode,
+    essentialMode: !effectiveRightPanelState.deeperReasoningEnabled,
+    deeperReasoning: effectiveRightPanelState.deeperReasoningEnabled,
+  }), [documentId, activePageNumber, effectiveRightPanelState]);
+
+  useEffect(() => {
+    setReaderActivePageContext(panelContext);
+  }, [panelContext, setReaderActivePageContext]);
+
+  const updateRightPanelState = useCallback((updater: RightPanelState | ((prev: RightPanelState) => RightPanelState)) => {
+    if (!onRightPanelStateChange) return;
+    onRightPanelStateChange((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      return {
+        ...next,
+        activeDocumentId: documentId,
+        activePageNumber,
+        currentPageVersion: buildCurrentPageVersion(documentId, activePageNumber, next.activeSectionId ?? null),
+      };
+    });
+  }, [onRightPanelStateChange, documentId, activePageNumber]);
+
+
+  const contextTopic = useMemo(() => {
+    return resolvePanelTitle(pageIntelligence, pageContext.context?.tocPath?.title || null);
+  }, [pageIntelligence, pageContext.context?.tocPath?.title]);
+
+  useEffect(() => {
+    if (activeTab === 'narrate') setActiveTab('priority');
+  }, [activeTab, setActiveTab]);
+
+  useEffect(() => {
+    if (!rightPanelState) return;
+    if (activeTab !== rightPanelState.activeTab) setActiveTab(rightPanelState.activeTab as any);
+    if (audience !== rightPanelState.audienceMode) setAudience(rightPanelState.audienceMode);
+    if (depth !== rightPanelState.depthMode) setDepth(rightPanelState.depthMode);
+    if (view !== rightPanelState.densityMode) setView(rightPanelState.densityMode);
+    if ((mode === 'deep') !== rightPanelState.deeperReasoningEnabled) {
+      setMode(rightPanelState.deeperReasoningEnabled ? 'deep' : 'quick');
+      setEssentialStudentMode(!rightPanelState.deeperReasoningEnabled);
+    }
+    if (syncInsightsToPdf !== rightPanelState.syncHighlightsEnabled) {
+      useInsightsPanelStore.getState().setSyncInsightsToPdf(rightPanelState.syncHighlightsEnabled);
+    }
+  }, [rightPanelState, activeTab, audience, depth, view, mode, syncInsightsToPdf, setActiveTab, setAudience, setDepth, setView, setMode, setEssentialStudentMode]);
 
   // Sync document context on mount
   useEffect(() => {
     if (documentId) {
       setDocId(documentId);
+      setReaderDocument(documentId);
       surgeonEngine.setBook(documentId, surgeonEngine.domain);
       expertView.setDocument(documentId, documentTitle, totalPages);
       pageContext.setDocument(documentId, totalPages);
@@ -202,23 +370,53 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   useEffect(() => {
     if (currentPage === undefined) return;
 
-    pageContext.setPage(currentPage);
-    expertView.setPage(currentPage);
-    surgeonEngine.setPageContext(currentPage);
-    courseContext.setPage(currentPage);
+    const pageChanged = currentPageRef.current !== currentPage;
+    currentPageRef.current = currentPage;
 
-    // Reset per-page extraction state so the UI doesn't show stale data from previous page
-    setPageIntelligence(null);
-    setPageExtraction(null);
-    setPageInsights(null);
-    setPageExplain(null);
-    setPageReasoning(null);
+    if (pageChanged && !preservePanelScroll && rightPanelScrollRef.current) {
+      rightPanelScrollRef.current.scrollTop = 0;
+    }
+
+    pageContext.setPage(activePageNumber);
+    expertView.setPage(activePageNumber);
+    surgeonEngine.setPageContext(activePageNumber);
+    courseContext.setPage(activePageNumber);
+    onPageChange(activePageNumber);
+
+    extractionRequestIdRef.current += 1;
+    extractionAbortRef.current?.abort();
+    extractionAbortRef.current = null;
+
+    const nextPageVersion = buildCurrentPageVersion(documentId, activePageNumber, null);
+    const cachedPayloadForPage = payloadCacheRef.current.get(nextPageVersion) ?? null;
+    setPanelRenderState((prev) => ({
+      status: 'loading',
+      pageVersion: nextPageVersion,
+      payload: cachedPayloadForPage ?? (prev.status === 'ready' || prev.status === 'loading' || prev.status === 'error' ? prev.payload : null),
+    }));
+
+    // Reset per-page extraction status while preserving visible payload during transition
+    setReaderPageContext(null);
     setExtractionStatus('');
     setOcrStatus('idle');
 
     // Reset UI selection state: don't carry previous-page selection into new page
     setSelectedCardId(undefined);
     setSelectedInsightTarget(null);
+    setActiveParagraphId(null);  // prevent stale ID from lighting up a card on the new page
+    setSelectedInsightId(null);
+    setActiveVisibleText(null);
+    setExpandedCardIds([]);
+    setSectionId(null);
+    setParagraphId(null);
+    onRightPanelCardChange?.(null);
+    updateRightPanelState((prev) => ({
+      ...prev,
+      activeDocumentId: documentId,
+      activePageNumber,
+      activeSectionId: null,
+      activeCardId: null,
+    }));
     // Clear cluster/unit selection in both stores so insight cards reset cleanly
     selectCluster(undefined);
     selectRelation(undefined);
@@ -226,43 +424,93 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     surgeonEngine.selectUnit(undefined);
 
     // Load cached intelligence for this page (IndexedDB, no-op if missing)
-    courseContext.getPageIntelligence(currentPage).then((cached) => {
+    courseContext.getPageIntelligence(activePageNumber).then((cached) => {
       if (cached) {
+        if (currentPageRef.current !== activePageNumber) return;
         setPageIntelligence(cached);
+        setReaderPageContext(buildReaderActivePageContext(documentId, cached));
+      } else {
+        setPageIntelligence(null);
       }
     }).catch(() => {});
-  }, [currentPage]);
+  }, [activePageNumber, currentPage, preservePanelScroll, documentId, setSelectedInsightId, setActiveVisibleText, setExpandedCardIds, activePageIndex, sectionId, updateRightPanelState, onRightPanelCardChange]);
+
+  useEffect(() => {
+    if (rightPanelScrollRef.current) {
+      rightPanelScrollRef.current.scrollTop = 0;
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    setInsightDepth(depth);
+  }, [depth, setInsightDepth]);
+
+  useEffect(() => {
+    setSectionMode(mode);
+  }, [mode, setSectionMode]);
+
+  useEffect(() => {
+    const activeParagraph = activeParagraphId || null;
+    if (activeParagraph !== paragraphId) {
+      setParagraphId(activeParagraph);
+    }
+  }, [activeParagraphId, paragraphId, setParagraphId]);
 
   // PDF scroll → insight card sync:
   // When the active visible paragraph text changes and Sync is ON,
-  // find the ranked insight whose claim/title best overlaps the snippet and activate it.
+  // 1) find the ranked insight whose claim/title best overlaps the snippet and activate it
+  // 2) find the ParagraphUnit matching the snippet and set activeParagraphId in store
   useEffect(() => {
-    if (!syncInsightsToPdf || !activeVisibleText || !rankedInsights.length) return;
+    if (!activeVisibleText) return;
 
-    const needle = activeVisibleText.toLowerCase();
-    const needleWords = new Set(needle.split(/\s+/).filter(w => w.length > 4));
-    if (needleWords.size < 2) return;
+    const timer = setTimeout(() => {
+      const needle = activeVisibleText.toLowerCase();
+      const needleWords = new Set(needle.split(/\s+/).filter(w => w.length > 4));
+      if (needleWords.size < 2) return;
 
-    let bestId: string | undefined;
-    let bestScore = 0;
-
-    for (const insight of rankedInsights) {
-      const haystack = `${insight.title} ${insight.claim || ''} ${insight.whyItMatters || ''}`.toLowerCase();
-      let score = 0;
-      for (const word of needleWords) {
-        if (haystack.includes(word)) score++;
+      // 1) Match ranked insight for right-panel card sync
+      if (syncInsightsToPdf && rankedInsights.length) {
+        let bestId: string | undefined;
+        let bestScore = 0;
+        for (const insight of rankedInsights) {
+          const haystack = `${insight.title} ${insight.claim || ''} ${insight.whyItMatters || ''}`.toLowerCase();
+          let score = 0;
+          for (const word of needleWords) {
+            if (haystack.includes(word)) score++;
+          }
+          if (score > bestScore) { bestScore = score; bestId = insight.id; }
+        }
+        if (bestScore >= 2 && bestId && bestId !== selectedCardId) {
+          setSelectedCardId(bestId);
+          onRightPanelCardChange?.(bestId);
+        }
       }
-      if (score > bestScore) {
-        bestScore = score;
-        bestId = insight.id;
-      }
-    }
 
-    // Only update if we matched at least 2 words (avoid spurious matches)
-    if (bestScore >= 2 && bestId && bestId !== selectedCardId) {
-      setSelectedCardId(bestId);
-    }
-  }, [activeVisibleText, syncInsightsToPdf]);
+      // 2) Match ParagraphUnit for active-paragraph tracking (condensed panel focus).
+      // Only update when follow-scroll or insight sync is enabled, so the condensed
+      // panel doesn't jump while the user is manually scrolling with both off.
+      if (followScroll || syncInsightsToPdf) {
+        const units = pageIntelligence?.paragraphUnits ?? [];
+        if (units.length) {
+          let bestUnit: typeof units[0] | null = null;
+          let bestUnitScore = 0;
+          for (const u of units) {
+            const hay = u.text.toLowerCase();
+            let score = 0;
+            for (const word of needleWords) {
+              if (hay.includes(word)) score++;
+            }
+            if (score > bestUnitScore) { bestUnitScore = score; bestUnit = u; }
+          }
+          if (bestUnit && bestUnitScore >= 2) {
+            setActiveParagraphId(bestUnit.id);
+          }
+        }
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [activeVisibleText, syncInsightsToPdf, followScroll, selectedCardId, pageIntelligence]);
 
   // Auto-extract with debounce (800–1000 ms) when page changes and auto-extract is on
   useEffect(() => {
@@ -273,37 +521,42 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     return () => clearTimeout(timer);
   }, [currentPage, autoExtract]);
 
-  // Prefetch: background-load page N+1 intelligence so it's cached when user navigates forward.
+  // Prefetch: background-load page N+1 and N-1 intelligence so navigation is snappy.
   // Runs after a longer delay (3 s) to avoid contending with the current-page extraction.
   useEffect(() => {
     if (currentPage === undefined || totalPages === 0) return;
-    const nextPage = currentPage + 1;
-    if (nextPage > totalPages) return;
 
-    const timer = setTimeout(async () => {
+    const pagesToPrefetch = [activePageNumber + 1, activePageNumber - 1].filter(
+      (p) => p >= 1 && p <= totalPages,
+    );
+
+    const prefetchPage = async (pageNum: number) => {
       try {
-        // Check if already cached — no-op if so
-        const cached = await courseContext.getPageIntelligence(nextPage).catch(() => null);
+        const cached = await courseContext.getPageIntelligence(pageNum).catch(() => null);
         if (cached) return; // already warm
 
-        const nextText = pageTexts?.get(nextPage) ?? '';
-        if (nextText.trim().length < 40) return; // no text to prefetch with
+        const text = pageTexts?.get(pageNum) ?? '';
+        if (text.trim().length < 40) return;
 
         if (process.env.NODE_ENV === 'development') {
-          console.log(`[SurgeonCockpit] Prefetching page ${nextPage} intelligence`);
+          console.log(`[SurgeonCockpit] Prefetching page ${pageNum} intelligence`);
         }
 
         const result = await buildPageIntelligence({
-          pageNumber: nextPage,
+          pageNumber: pageNum,
           docId: documentId,
-          getNativeText: async () => nextText,
-          getPageImageDataUrl: async () => '', // no OCR for prefetch
+          getNativeText: async () => text,
+          getPageImageDataUrl: async () => '',
           options: { ocrEnabled: false, datScoring: false, minTextLength: 40 },
         });
-        await courseContext.storePageIntelligence(nextPage, result.intelligence);
+        await courseContext.storePageIntelligence(pageNum, result.intelligence);
       } catch {
-        // Prefetch failure is silent — user will trigger extraction on demand
+        // Prefetch failure is silent
       }
+    };
+
+    const timer = setTimeout(() => {
+      for (const p of pagesToPrefetch) prefetchPage(p);
     }, 3000);
 
     return () => clearTimeout(timer);
@@ -349,9 +602,30 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     return rankedInsights.filter(i => i.type === 'EXAM_TRAP' || i.trap);
   }, [rankedInsights]);
 
+  const pageScopedInsights = useMemo(() => {
+    const pageContextKey = readerPageContext
+      ? getPageContextCacheKey(readerPageContext.docId, readerPageContext.pageNumber, readerPageContext.extractionVersion)
+      : `${documentId}:${activePageNumber}:pending`;
+    const cacheKey = `${pageContextKey}:${getActivePageContextKey(panelContext)}`;
+    const cached = getCachedInsight<RankedInsight[]>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const filtered = rankedInsights.filter((insight) =>
+      insight.evidence.some((span) => span.page === activePageIndex),
+    );
+    setCachedInsight(cacheKey, filtered);
+    return filtered;
+  }, [panelContext, readerPageContext, activePageIndex, activePageNumber, documentId, getCachedInsight, rankedInsights, setCachedInsight]);
+
   // Page context info
   const pageCtx = pageContext.getPageContext();
-  const chapterTitle = pageCtx.tocPath?.title || 'Unknown Chapter';
+  const chapterTitle = pageCtx.tocPath?.title
+    || readerPageContext?.detectedSectionTitle
+    || pageIntelligence?.structureMap?.topic
+    || `Page ${activePageNumber}`;
+  const cleanedChapterTitle = sanitizeTitle(chapterTitle, 'Current Page');
   const confidencePercent = Math.round(pageCtx.confidence * 100);
 
   // ============================================================================
@@ -360,41 +634,63 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
   //   2. DOM text layer scraping (.react-pdf__Page__textContent)
   //   3. Empty string → will trigger OCR if enabled
   // ============================================================================
-  const getPageText = useCallback((page: number): string => {
+  const getPageText = useCallback((pageNumber: number): string => {
     // Tier 1: pre-extracted Map
-    const mapped = pageTexts?.get(page);
-    if (mapped && mapped.trim().length >= 40) return mapped.trim();
+    const mapped = pageTexts?.get(pageNumber);
+    if (mapped && mapped.trim().length >= 40) {
+      return normalizePagePayload({ documentId, page: pageNumber, text: mapped.trim() }).cleanedText;
+    }
 
     // Tier 2: live DOM text layer (react-pdf renders this as selectable text)
     const domText = getDOMPageText();
-    if (domText.length >= 40) return domText;
+    if (domText.length >= 40) {
+      return normalizePagePayload({ documentId, page: pageNumber, text: domText }).cleanedText;
+    }
 
     return '';
-  }, [pageTexts]);
+  }, [pageTexts, documentId]);
 
   // Handle extract current page - uses new Page Intelligence pipeline with OCR fallback
   const handleExtractCurrentPage = useCallback(async () => {
-    const nativeText = getPageText(currentPage);
+    const requestId = ++extractionRequestIdRef.current;
+    extractionAbortRef.current?.abort();
+    const controller = new AbortController();
+    extractionAbortRef.current = controller;
+    const requestedPageVersion = buildCurrentPageVersion(documentId, activePageNumber, effectiveRightPanelState.activeSectionId ?? null);
+
+    const nativeText = getPageText(activePageNumber);
     const hasNativeText = nativeText.length >= 40;
+    const requestKey = `${requestedPageVersion}:${readerPageContext?.extractionVersion || 'v2'}:${mode}:${audience}:${view}`;
+    activeRequestKeyRef.current = requestKey;
 
     if (!hasNativeText && !ocrEnabled) {
       setExtractionStatus('No text found. Enable OCR for scanned PDFs or wait for the page to fully render.');
+      setPanelRenderState({
+        status: 'empty',
+        pageVersion: requestedPageVersion,
+        reason: 'not-extracted',
+      });
       return;
     }
 
     setExtractionStatus(hasNativeText ? 'Extracting page…' : 'Running OCR on page…');
     if (!hasNativeText && ocrEnabled) setOcrStatus('running');
+    setPanelRenderState((prev) => ({
+      status: 'loading',
+      pageVersion: requestedPageVersion,
+      payload: payloadCacheRef.current.get(requestedPageVersion) ?? (prev.status === 'ready' || prev.status === 'loading' || prev.status === 'error' ? prev.payload : null),
+    }));
 
     try {
       const result = await buildPageIntelligence({
-        pageNumber: currentPage,
+        pageNumber: activePageNumber,
         docId: documentId,
         getNativeText: async () => nativeText,
         getPageImageDataUrl: async () => {
           // Find the visible PDF canvas for OCR rendering
           const selectors = [
             '.react-pdf__Page__canvas',
-            `canvas[data-page="${currentPage}"]`,
+            `canvas[data-page="${activePageNumber}"]`,
             '.pdfViewer canvas',
             '[data-testid="pure-reader-view"] canvas',
             '[data-testid="expert-view-container"] canvas',
@@ -411,61 +707,97 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         options: { ocrEnabled, datScoring: true, minTextLength: 40 },
       });
 
+      if (controller.signal.aborted || requestId !== extractionRequestIdRef.current) return;
+      if (activeRequestKeyRef.current !== requestKey) return;
+      if (currentPageRef.current !== activePageNumber) return;
       setPageIntelligence(result.intelligence);
-      setOcrStatus(result.intelligence.source === 'ocr' ? 'done' : 'idle');
+      setReaderPageContext(buildReaderActivePageContext(documentId, result.intelligence));
+      setOcrStatus(result.intelligence.source === 'native' ? 'idle' : 'done');
+
+      const resolvedPayload: GroundedPayload = {
+        pageNumber: result.intelligence.pageNumber ?? activePageNumber,
+        header: contextTopic,
+        priority: {
+          overview: result.intelligence.explain?.summary ?? contextTopic,
+          mainIdeas: pageScopedInsights.slice(0, 5).map((insight) => insight.claim || insight.title),
+          whyItMatters: pageScopedInsights[0]?.whyItMatters ?? '',
+          remember: pageScopedInsights.slice(0, 2).map((insight) => insight.title),
+        },
+        relations: {
+          edges: (result.intelligence.relations ?? []).slice(0, 8).map((relation: any) => ({
+            from: relation.from ?? relation.subjId ?? '',
+            to: relation.to ?? relation.objId ?? '',
+            why: relation.why ?? relation.predicate ?? '',
+          })),
+        },
+        compare: {
+          contrasts: (((result.intelligence.tabPayloads?.comparePayload as any)?.coreContrasts ?? []) as any[]).slice(0, 8).map((entry: any) => ({
+            a: entry.left || entry.a || '',
+            b: entry.right || entry.b || '',
+            confusion: entry.difference || entry.confusion || '',
+          })),
+        },
+        cards: pageScopedInsights.map((insight) => ({
+          id: insight.id,
+          title: insight.title,
+          claim: insight.claim,
+        })),
+        paragraphUnits: result.intelligence.paragraphUnits?.map((unit) => ({ id: unit.id, text: unit.text })),
+      };
+      payloadCacheRef.current.set(requestedPageVersion, resolvedPayload);
+      setPanelRenderState({
+        status: 'ready',
+        pageVersion: requestedPageVersion,
+        payload: resolvedPayload,
+      });
 
       // Persist to CourseContext (IndexedDB) → Study + NoteLab will read from here
-      await courseContext.storePageIntelligence(currentPage, result.intelligence);
+      await courseContext.storePageIntelligence(activePageNumber, result.intelligence);
 
-      // If text is available, run the legacy engine pipeline too
+      // Run relationship store extraction (feeds Relations/Compare tabs)
       const text = result.intelligence.segments.map(s => s.text).join('\n\n');
       if (text.trim().length > 50) {
-        setExtractionStatus('Generating insights…');
-        const extraction = await extractPage({ docId: documentId, pageIndex: currentPage, text });
-        setPageExtraction(extraction);
+        await extractFromMultiplePages([{ pageIndex: activePageIndex, text }]);
+      }
 
-        const insights = await generateInsights(extraction);
-        setPageInsights(insights);
-
-        setExtractionStatus('Building reasoning flow…');
-        const reasoning = await buildReasoningFlow(extraction);
-        setPageReasoning(reasoning);
-
-        // Run relationship store extraction (Relations/Compare tabs)
-        await extractFromMultiplePages([{ pageIndex: currentPage, text }]);
-
-        // Push auto-generated study cards to the Study session store
-        if (result.intelligence.cards.length > 0) {
-          const studyStore = useStudySessionStore.getState();
-          if (studyStore.addCardsFromPageIntel) {
-            studyStore.addCardsFromPageIntel(documentId, currentPage, result.intelligence.cards);
-          }
+      // Push auto-generated study cards to the Study session store
+      if (result.intelligence.cards.length > 0) {
+        const studyStore = useStudySessionStore.getState();
+        if (studyStore.addCardsFromPageIntel) {
+          studyStore.addCardsFromPageIntel(documentId, activePageNumber, result.intelligence.cards);
         }
       }
 
       const statusText = result.fromCache
         ? 'Loaded from cache'
-        : `Done in ${result.processingTimeMs}ms${result.intelligence.source === 'ocr' ? ' (OCR)' : ''}`;
+        : `Done in ${result.processingTimeMs}ms${result.intelligence.source !== 'native' ? ` (${result.intelligence.source.toUpperCase()})` : ''}`;
       setExtractionStatus(statusText);
       setTimeout(() => setExtractionStatus(''), 3000);
     } catch (error) {
+      if (controller.signal.aborted) return;
       setExtractionStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setOcrStatus('idle');
+      setPanelRenderState((prev) => ({
+        status: 'error',
+        pageVersion: requestedPageVersion,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        payload: payloadCacheRef.current.get(requestedPageVersion) ?? (prev.status === 'ready' || prev.status === 'loading' || prev.status === 'error' ? prev.payload : null),
+      }));
     }
-  }, [getPageText, currentPage, documentId, extractFromMultiplePages, ocrEnabled, courseContext]);
+  }, [activePageIndex, activePageNumber, getPageText, currentPage, documentId, extractFromMultiplePages, ocrEnabled, courseContext, mode, audience, view, readerPageContext?.extractionVersion, effectiveRightPanelState.activeSectionId, contextTopic, pageScopedInsights]);
 
   // Check if chapter extraction is available
   const chapterRangeAvailable = useMemo(() => {
     // Check pageContext first, then courseContext
-    const pcRange = pageContext.getChapterRange(currentPage);
-    const ccRange = courseContext.getChapterRangeForPage(currentPage);
+    const pcRange = pageContext.getChapterRange(activePageNumber);
+    const ccRange = courseContext.getChapterRangeForPage(activePageNumber);
     return pcRange || ccRange;
-  }, [currentPage, pageContext, courseContext.syllabusTopics]);
+  }, [activePageNumber, currentPage, pageContext, courseContext.syllabusTopics]);
 
   // Handle extract chapter — uses Page Intelligence pipeline for each page in chapter
   const handleExtractChapter = useCallback(async () => {
-    const chapterRange = pageContext.getChapterRange(currentPage) ||
-                         courseContext.getChapterRangeForPage(currentPage);
+    const chapterRange = pageContext.getChapterRange(activePageNumber) ||
+                         courseContext.getChapterRangeForPage(activePageNumber);
 
     if (!chapterRange) {
       setExtractionStatus('No chapter range available. Upload a syllabus with page ranges first.');
@@ -496,7 +828,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         totalCards += intel.cards.length;
         const text = intel.segments.map(s => s.text).join('\n\n');
         if (text.trim().length > 50) {
-          legacyPages.push({ pageIndex: intel.pageNumber, text });
+          legacyPages.push({ pageIndex: intel.pageNumber - 1, text });
         }
       }
 
@@ -510,7 +842,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     } catch (error) {
       setExtractionStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }, [currentPage, documentId, pageContext, courseContext, extractFromMultiplePages, getPageText, ocrEnabled]);
+  }, [activePageNumber, currentPage, documentId, pageContext, courseContext, extractFromMultiplePages, getPageText, ocrEnabled]);
 
   // Unified extract handler for SmartExtractControl
   const handleUnifiedExtract = useCallback(async () => {
@@ -521,12 +853,14 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     }
   }, [extractScope, chapterRangeAvailable, handleExtractChapter, handleExtractCurrentPage]);
 
-  // Handle card selection
+  // Handle card selection — also updates the store so sync-scroll + PDF focus fire
   const handleCardClick = useCallback((insight: RankedInsight) => {
     setSelectedCardId(insight.id);
+    onRightPanelCardChange?.(insight.id);
+    focusOnSource(insight.id);
     setSelectedInsightTarget({ type: insight.sourceType, id: insight.sourceId });
     setShowInsightOverlay(true);
-  }, []);
+  }, [focusOnSource, onRightPanelCardChange]);
 
   // NoteLab actions
   const { importFromInsight, markConfusing: noteLabMarkConfusing } = useNoteLabStore();
@@ -583,7 +917,7 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       const cards = await generateCardsFromInsights({
         insights: {
           docId: documentId,
-          scope: { mode: 'PAGE' as const, pageIndex: currentPage },
+          scope: { mode: 'PAGE' as const, pageIndex: activePageIndex },
           generatedAt: Date.now(),
           whatMatters: [{
             id: insight.id,
@@ -602,7 +936,6 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         },
         includeWhatMissing: false,
       });
-      setGeneratedStudyCards(prev => [...prev, ...cards]);
       setToastMessage(`Created ${cards.length} study card(s)`);
       setTimeout(() => setToastMessage(null), 3000);
     } catch (error) {
@@ -610,13 +943,15 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
       setToastMessage('Failed to create card');
       setTimeout(() => setToastMessage(null), 3000);
     }
-  }, []);
+  }, [activePageIndex, documentId, currentPage]);
 
-  // Handle "Explain" action from PriorityWorkspacePanel
+  // Handle "Explain" action — also updates store so PDF sync fires on tab switch
   const handleExplainInsight = useCallback((insight: RankedInsight) => {
     setSelectedCardId(insight.id);
+    onRightPanelCardChange?.(insight.id);
+    focusOnSource(insight.id);
     setActiveTab('explain');
-  }, []);
+  }, [focusOnSource, onRightPanelCardChange]);
 
   const handleReadCard = useCallback((insight: RankedInsight) => {
     if (!isWebSpeechAvailable()) return;
@@ -626,42 +961,97 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
     speakText(text, { rate: 1.0 });
   }, []);
 
-  // Handle generate explain for current page
-  const handleGenerateExplain = useCallback(async () => {
-    if (!pageExtraction) return;
-
-    try {
-      const explain = await generateExplain({
-        extraction: pageExtraction,
-        insights: pageInsights || undefined,
-      });
-      setPageExplain(explain);
-    } catch (error) {
-      console.error('Failed to generate explain:', error);
-    }
-  }, [pageExtraction, pageInsights]);
-
-  // Handle generate study cards from insights
-  const handleGenerateStudyCards = useCallback(async () => {
-    if (!pageInsights) return;
-
-    try {
-      const cards = await generateCardsFromInsights({
-        insights: pageInsights,
-        includeWhatMissing: false,
-      });
-      setGeneratedStudyCards(cards);
-    } catch (error) {
-      console.error('Failed to generate study cards:', error);
-    }
-  }, [pageInsights]);
-
   // Get active relations
   const activeRelations = selectedClusterId
     ? getRelationsForCluster(selectedClusterId)
     : Object.values(relations).filter(r => r.confidence >= filterByConfidence);
 
   const chains = selectedClusterId ? getChainsFromCluster(selectedClusterId) : [];
+
+  const buildGroundedPayload = useCallback((intelligence: PageIntelligence | null): GroundedPayload | null => {
+    if (!intelligence) return null;
+    return {
+      pageNumber: intelligence.pageNumber ?? activePageNumber,
+      header: contextTopic,
+      priority: {
+        overview: intelligence.explain?.summary ?? contextTopic,
+        mainIdeas: pageScopedInsights.slice(0, 5).map((insight) => insight.claim || insight.title),
+        whyItMatters: pageScopedInsights[0]?.whyItMatters ?? '',
+        remember: pageScopedInsights.slice(0, 2).map((insight) => insight.title),
+      },
+      relations: {
+        edges: activeRelations.slice(0, 8).map((relation) => ({
+          from: concepts[relation.subjId]?.label ?? relation.subjId,
+          to: concepts[relation.objId]?.label ?? relation.objId,
+          why: relation.predicate,
+        })),
+      },
+      compare: {
+        contrasts: (((intelligence.tabPayloads?.comparePayload as any)?.coreContrasts ?? []) as any[]).slice(0, 8).map((entry: any) => ({
+          a: entry.left || entry.a || '',
+          b: entry.right || entry.b || '',
+          confusion: entry.difference || entry.confusion || '',
+        })),
+      },
+      cards: pageScopedInsights.map((insight) => ({
+        id: insight.id,
+        title: insight.title,
+        claim: insight.claim,
+      })),
+      paragraphUnits: intelligence.paragraphUnits?.map((unit) => ({ id: unit.id, text: unit.text })),
+    };
+  }, [activePageNumber, contextTopic, pageScopedInsights, activeRelations, concepts]);
+
+  const currentPageVersion = effectiveRightPanelState.currentPageVersion;
+
+  useEffect(() => {
+    const payloadFromIntel = buildGroundedPayload(pageIntelligence);
+    if (payloadFromIntel) {
+      payloadCacheRef.current.set(currentPageVersion, payloadFromIntel);
+      setPanelRenderState({
+        status: 'ready',
+        pageVersion: currentPageVersion,
+        payload: payloadFromIntel,
+      });
+      return;
+    }
+
+    const cachedPayload = payloadCacheRef.current.get(currentPageVersion) ?? null;
+    const isLoading = isRelationExtracting || ocrStatus === 'running';
+
+    if (isLoading) {
+        setPanelRenderState((prev) => ({
+          status: 'loading',
+          pageVersion: currentPageVersion,
+          payload: cachedPayload ?? (prev.status === 'ready' || prev.status === 'loading' || prev.status === 'error' ? prev.payload : null),
+        }));
+      return;
+    }
+
+    if (cachedPayload) {
+      setPanelRenderState({
+        status: 'ready',
+        pageVersion: currentPageVersion,
+        payload: cachedPayload,
+      });
+      return;
+    }
+
+    setPanelRenderState({
+      status: 'empty',
+      pageVersion: currentPageVersion,
+      reason: 'not-extracted',
+    });
+  }, [buildGroundedPayload, currentPageVersion, pageIntelligence, isRelationExtracting, ocrStatus]);
+
+  const visiblePanelPayload = panelRenderState.status === 'ready' || panelRenderState.status === 'loading' || panelRenderState.status === 'error'
+    ? panelRenderState.payload
+    : null;
+
+  const resolvedPanelView = useMemo(() => resolveRightPanelView({
+    state: effectiveRightPanelState,
+    groundedPagePayload: visiblePanelPayload,
+  }), [effectiveRightPanelState, visiblePanelPayload]);
 
   return (
     <div className="flex flex-col h-full bg-gray-900 text-white">
@@ -676,13 +1066,13 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
         <span className="text-gray-600">|</span>
 
         {/* Current Chapter */}
-        <span className="text-xs text-gray-400 truncate max-w-[180px]" title={chapterTitle}>
-          {chapterTitle}
+        <span className="text-xs text-gray-400 truncate max-w-[180px]" title={cleanedChapterTitle}>
+          {cleanedChapterTitle}
         </span>
 
         {/* Page Number */}
         <span className="text-xs text-gray-500">
-          p.{currentPage + 1}/{totalPages}
+          p.{activePageNumber}/{totalPages}
         </span>
 
         {/* Confidence Pill */}
@@ -704,13 +1094,17 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
               px-2 py-0.5 text-[10px] font-medium rounded-full
               ${pageIntelligence.source === 'native'
                 ? 'bg-green-500/20 text-green-400'
-                : 'bg-amber-500/20 text-amber-400'}
+                : pageIntelligence.source === 'mixed'
+                  ? 'bg-blue-500/20 text-blue-400'
+                  : 'bg-amber-500/20 text-amber-400'}
             `}
-            title={pageIntelligence.source === 'ocr'
-              ? `OCR confidence: ${pageIntelligence.confidence || 0}%`
-              : 'Native PDF text'}
+            title={pageIntelligence.source === 'native'
+              ? 'Native PDF text'
+              : pageIntelligence.source === 'mixed'
+                ? `Mixed extraction (native + OCR), OCR confidence: ${pageIntelligence.confidence || 0}%`
+                : `OCR confidence: ${pageIntelligence.confidence || 0}%`}
           >
-            {pageIntelligence.source === 'native' ? 'Native' : 'OCR'}
+            {pageIntelligence.source === 'native' ? 'Native' : pageIntelligence.source === 'mixed' ? 'Mixed' : 'OCR'}
           </span>
         )}
 
@@ -832,63 +1226,107 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
           />
         )}
 
-        {/* Tab Bar - Priority Comprehension Mode */}
-        <div className="flex items-center border-b border-gray-700 bg-gray-800/50 px-3 py-1 gap-1">
-          <ModeChip
+        {/* Page Context Header */}
+        <div className="px-3 pt-2">
+          <div className="rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2">
+            <p className="text-xs text-gray-300">{cleanedChapterTitle}</p>
+            <p className="text-sm font-semibold text-gray-100 truncate">{resolvedPanelView.header || contextTopic}</p>
+            <p className="text-[11px] text-gray-400">Page {activePageNumber} of {totalPages}</p>
+          </div>
+        </div>
+
+        {/* Insight Card */}
+        <div className="mx-3 mt-2 mb-3 flex-1 min-h-0 rounded-xl border border-white/5 bg-[rgba(18,22,34,0.85)] p-3 flex flex-col overflow-hidden">
+          <div className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 mb-2 sticky top-0 z-20">
+            <p className="text-sm text-gray-100 font-semibold tracking-wide">
+              Page {activePageNumber} — {tabTitle}
+            </p>
+            <p className="mt-1 text-[11px] text-gray-300">
+              {activeParagraphIndex ? `Paragraph ${activeParagraphIndex} • ` : ''}
+              Insight Depth: <span className="text-violet-300 capitalize">{insightDepth}</span>
+              {panelRenderState.status === 'loading' ? <span className="ml-2 text-blue-300">• Updating…</span> : null}
+            </p>
+          </div>
+
+          {/* Tabs + control strip */}
+          <div className="border border-white/5 rounded-lg bg-gray-900/70 backdrop-blur-sm px-2 py-2 gap-2 mb-2 sticky top-[62px] z-20 flex flex-col">
+            <div className="flex items-center gap-1 min-w-0 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:thin]">
+              <ModeChip
             label="Priority"
-            active={activeTab === 'priority'}
-            onClick={() => setActiveTab('priority')}
-            badge={rankedInsights.filter(i => i.bucket === 'CRITICAL' || i.bucket === 'HIGH_YIELD').length || undefined}
-          />
-          <ModeChip
+            active={effectiveRightPanelState.activeTab === 'priority'}
+            onClick={() => {
+              setActiveTab('priority');
+              onRightPanelTabChange?.('priority');
+              updateRightPanelState((prev) => ({ ...prev, activeTab: 'priority' }));
+            }}
+            badge={pageScopedInsights.filter(i => i.bucket === 'CRITICAL' || i.bucket === 'HIGH_YIELD').length || undefined}
+            />
+            <ModeChip
             label="Explain"
-            active={activeTab === 'explain'}
-            onClick={() => setActiveTab('explain')}
-          />
-          <ModeChip
+            active={effectiveRightPanelState.activeTab === 'explain'}
+            onClick={() => {
+              setActiveTab('explain');
+              onRightPanelTabChange?.('explain');
+              updateRightPanelState((prev) => ({ ...prev, activeTab: 'explain' }));
+            }}
+            />
+            <ModeChip
             label="Relations"
-            active={activeTab === 'relations'}
-            onClick={() => setActiveTab('relations')}
+            active={effectiveRightPanelState.activeTab === 'relations'}
+            onClick={() => {
+              setActiveTab('relations');
+              onRightPanelTabChange?.('relations');
+              updateRightPanelState((prev) => ({ ...prev, activeTab: 'relations' }));
+            }}
             badge={Object.keys(relations).length || undefined}
-          />
-          <ModeChip
+            />
+            <ModeChip
             label="Compare"
-            active={activeTab === 'compare'}
-            onClick={() => setActiveTab('compare')}
-          />
-          <ModeChip
+            active={effectiveRightPanelState.activeTab === 'compare'}
+            onClick={() => {
+              setActiveTab('compare');
+              onRightPanelTabChange?.('compare');
+              updateRightPanelState((prev) => ({ ...prev, activeTab: 'compare' }));
+            }}
+            />
+            <ModeChip
             label="Insights"
-            active={activeTab === 'insights'}
-            onClick={() => setActiveTab('insights')}
-            badge={pageInsights?.whatMatters?.length || pageIntelligence?.insights?.length || undefined}
-          />
+            active={effectiveRightPanelState.activeTab === 'insights'}
+            onClick={() => {
+              setActiveTab('insights');
+              onRightPanelTabChange?.('insights');
+              updateRightPanelState((prev) => ({ ...prev, activeTab: 'insights' }));
+            }}
+            />
+            </div>
 
-          {/* Spacer */}
-          <div className="flex-1" />
-
-          {/* Insight panel zoom controls — font-size based, no transform */}
-          <div className="flex items-center gap-0.5" title="Insight text size">
-            <button
+            <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:thin]">
+              {/* Insight panel zoom controls — font-size based, no transform */}
+              <div className="flex items-center gap-0.5" title="Insight text size">
+              <button
               onClick={scaleDown}
               disabled={!canScaleDown()}
               className="px-1.5 py-0.5 text-[10px] text-gray-400 hover:text-white disabled:opacity-30 rounded hover:bg-gray-700"
               aria-label="Decrease insight font size"
             >
               A−
-            </button>
-            <button
+              </button>
+              <button
               onClick={scaleUp}
               disabled={!canScaleUp()}
               className="px-1.5 py-0.5 text-[10px] text-gray-400 hover:text-white disabled:opacity-30 rounded hover:bg-gray-700"
               aria-label="Increase insight font size"
             >
               A+
-            </button>
-          </div>
+              </button>
+              </div>
 
-          {/* Sync toggle — prevents right panel fighting PDF scroll */}
-          <button
-            onClick={toggleSync}
+              {/* Sync toggle — prevents right panel fighting PDF scroll */}
+              <button
+            onClick={() => {
+              toggleSync();
+              updateRightPanelState((prev) => ({ ...prev, syncHighlightsEnabled: !syncInsightsToPdf }));
+            }}
             className={`ml-1 px-1.5 py-0.5 text-[10px] rounded transition-colors ${
               syncInsightsToPdf
                 ? 'bg-teal-600/80 text-white'
@@ -898,78 +1336,238 @@ export const SurgeonCockpit: React.FC<SurgeonCockpitProps> = ({
             aria-label="Toggle insight sync"
           >
             {syncInsightsToPdf ? '⇄ Sync' : '⇄ Free'}
-          </button>
-        </div>
+              </button>
 
-        {/* Tab Content - Unified Panel */}
-        <div className="flex-1 overflow-y-auto">
-          {activeTab === 'priority' && (
-            <PriorityWorkspacePanel
-              insights={rankedInsights}
-              pageIntelligence={pageIntelligence}
-              pageInsights={pageInsights}
-              pageReasoning={pageReasoning}
-              selectedCardId={selectedCardId}
-              onJumpToPage={onJumpToPage}
-              onExplain={handleExplainInsight}
-              onMakeCard={handleMakeCard}
-              onSendToNoteLab={handleSendToNoteLab}
-              isExtracting={isRelationExtracting}
-              onHighlightParagraph={onHighlightParagraph}
-              insightScale={insightScale}
-              syncEnabled={syncInsightsToPdf}
-            />
+              <select
+              value={effectiveRightPanelState.audienceMode}
+              onChange={(e) => {
+                const next = e.target.value as typeof effectiveRightPanelState.audienceMode;
+                setAudience(next);
+                updateRightPanelState((prev) => ({ ...prev, audienceMode: next }));
+              }}
+              className="bg-gray-800 text-[10px] text-gray-200 rounded px-2 py-1 border border-gray-600 min-h-[30px] min-w-[110px]"
+              title="Audience mode"
+            >
+              <option value="polish">Polish</option>
+              <option value="student">Student</option>
+              <option value="clinical">Clinical</option>
+              <option value="expert">Expert</option>
+              </select>
+              <select
+              value={effectiveRightPanelState.depthMode}
+              onChange={(e) => {
+                const next = e.target.value as typeof effectiveRightPanelState.depthMode;
+                setDepth(next);
+                updateRightPanelState((prev) => ({ ...prev, depthMode: next }));
+              }}
+              className="bg-gray-800 text-[10px] text-gray-200 rounded px-2 py-1 border border-gray-600 min-h-[30px] min-w-[100px]"
+              title="Depth mode"
+            >
+              <option value="minimal">Minimal</option>
+              <option value="standard">Standard</option>
+              <option value="deep">Deep</option>
+              </select>
+              <select
+              value={effectiveRightPanelState.densityMode}
+              onChange={(e) => {
+                const next = e.target.value as typeof effectiveRightPanelState.densityMode;
+                setView(next);
+                updateRightPanelState((prev) => ({ ...prev, densityMode: next }));
+              }}
+              className="bg-gray-800 text-[10px] text-gray-200 rounded px-2 py-1 border border-gray-600 min-h-[30px] min-w-[100px]"
+              title="Density mode"
+            >
+              <option value="condensed">Condensed</option>
+              <option value="expanded">Expanded</option>
+              </select>
+              <button
+              onClick={() => {
+                setEssentialStudentMode(!essentialStudentMode);
+                const next = !essentialStudentMode;
+                updateRightPanelState((prev) => ({ ...prev, deeperReasoningEnabled: !next }));
+              }}
+              className={`px-2 py-1 text-[10px] rounded min-h-[30px] ${essentialStudentMode ? 'bg-teal-700/70 text-teal-100' : 'bg-gray-700 text-gray-300'}`}
+            >
+              Essential
+              </button>
+              <button
+              onClick={() => {
+                const nextMode = mode === 'deep' ? 'quick' : 'deep';
+                setMode(nextMode);
+                setEssentialStudentMode(nextMode !== 'deep');
+                updateRightPanelState((prev) => ({ ...prev, deeperReasoningEnabled: nextMode === 'deep' }));
+              }}
+              className={`px-2 py-1 text-[10px] rounded min-h-[30px] ${mode === 'deep' ? 'bg-purple-600/80 text-white border border-purple-500/60' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700'}`}
+              title="Toggle deeper reasoning"
+            >
+              Reasoning
+              </button>
+
+              <div className="ml-auto shrink-0" />
+              <button
+              onClick={() => {
+                resetInsightLayout();
+                setActiveTab('priority');
+                onRightPanelTabChange?.('priority');
+                setAudience('student');
+                setDepth('standard');
+                setView('condensed');
+                setEssentialStudentMode(true);
+                setMode('quick');
+                setSelectedCardId(undefined);
+                onRightPanelCardChange?.(null);
+                setSelectedInsightTarget(null);
+                selectRelation(undefined);
+                selectCluster(undefined);
+                setExpandedCardIds([]);
+                updateRightPanelState((prev) => ({
+                  ...prev,
+                  activeTab: 'priority',
+                  audienceMode: 'student',
+                  depthMode: 'standard',
+                  densityMode: 'condensed',
+                  deeperReasoningEnabled: false,
+                  activeCardId: null,
+                }));
+                if (rightPanelScrollRef.current) rightPanelScrollRef.current.scrollTop = 0;
+              }}
+              className="ml-1 px-1.5 py-0.5 text-[10px] rounded text-gray-400 hover:text-gray-200 hover:bg-gray-700"
+              title="Reset insight layout and panel-local state"
+            >
+              Reset
+              </button>
+            </div>
+          </div>
+
+          {/* Tab Content - Unified Panel */}
+          <div ref={rightPanelScrollRef} className="flex-1 min-h-0 overflow-y-auto pr-1">
+
+          {panelRenderState.status === 'error' && !panelRenderState.payload ? (
+            <div className="mx-2 my-3 rounded-lg border border-red-700/50 bg-red-950/30 p-3 text-xs text-red-200">
+              {panelRenderState.message}
+            </div>
+          ) : panelRenderState.status === 'empty' ? (
+            <div className="mx-2 my-3 rounded-lg border border-slate-700 bg-slate-900/60 p-3 text-xs text-slate-300">
+              {panelRenderState.reason === 'not-extracted' ? 'Extract this page to build grounded learning cards.' : 'No grounded result for this page yet.'}
+            </div>
+          ) : panelRenderState.status === 'loading' && !visiblePanelPayload ? (
+            <div className="mx-2 my-3 space-y-2 animate-pulse">
+              <div className="h-4 rounded bg-slate-700/60" />
+              <div className="h-4 rounded bg-slate-700/50" />
+              <div className="h-20 rounded bg-slate-800/60" />
+            </div>
+          ) : readerPageContext?.fallbackState ? (
+            <div className="mx-2 my-3 rounded-lg border border-amber-600/40 bg-amber-950/20 p-3 text-xs text-amber-100 space-y-2">
+              <p>{readerPageContext.fallbackState.message}</p>
+              <div className="flex flex-wrap gap-2">
+                {readerPageContext.fallbackState.actions.map((action) => (
+                  <button key={action} className="px-2 py-1 rounded bg-gray-800 border border-gray-700 text-gray-200">{action}</button>
+                ))}
+              </div>
+            </div>
+          ) : effectiveRightPanelState.activeTab === 'priority' && (
+            essentialStudentMode ? (
+              <PriorityComprehensionPanel
+                rankedInsights={pageScopedInsights}
+                pageIntelligence={pageIntelligence}
+                onHighlightParagraph={onHighlightParagraph}
+                onPreviewSource={onPreviewSource}
+                onJumpToSource={onJumpToSource}
+                insightScale={insightScale}
+                syncEnabled={syncInsightsToPdf}
+                deepAnalysisMode={mode === 'deep'}
+                isExtracting={isRelationExtracting}
+                hideModeControls
+              />
+            ) : (
+              <PriorityWorkspacePanel
+                insights={pageScopedInsights}
+                pageIntelligence={pageIntelligence}
+                selectedCardId={selectedCardId}
+                onJumpToPage={onJumpToPage}
+                onExplain={handleExplainInsight}
+                onMakeCard={handleMakeCard}
+                onSendToNoteLab={handleSendToNoteLab}
+                isExtracting={isRelationExtracting}
+                onHighlightParagraph={onHighlightParagraph}
+                onPreviewSource={onPreviewSource}
+                onJumpToSource={onJumpToSource}
+                insightScale={insightScale}
+                syncEnabled={syncInsightsToPdf}
+                deepAnalysisMode={mode === 'deep'}
+              />
+            )
           )}
-          {activeTab === 'explain' && (
+          {!readerPageContext?.fallbackState && effectiveRightPanelState.activeTab === 'explain' && (
             <ExplainTab
               selectedCardId={selectedCardId}
-              insights={rankedInsights}
+              insights={pageScopedInsights}
               onSelectCard={() => setActiveTab('priority')}
-              pageExtraction={pageExtraction}
-              pageInsights={pageInsights}
-              pageExplain={pageExplain}
-              onGenerateExplain={handleGenerateExplain}
               pageIntelligence={pageIntelligence}
+              tabResponse={pageIntelligence?.tabPayloads?.explainPayload ?? pageIntelligence?.tabResponses?.explain}
+              tone={audience}
+              depth={panelContext.deeperReasoning ? 'deep' : depth}
+              density={view}
+              essential={essentialStudentMode}
             />
           )}
-          {activeTab === 'relations' && (
-            <RelationsTab
-              relations={activeRelations}
-              clusters={Object.values(clusters)}
-              concepts={concepts}
-              chains={chains}
-              selectedCluster={selectedCluster}
-              onSelectCluster={selectCluster}
-              onRelationClick={(relation) => {
-                selectRelation(relation.id);
-                setSelectedInsightTarget({ type: 'relation', id: relation.id });
-                setShowInsightOverlay(true);
-              }}
-              onJumpToPage={onJumpToPage}
-            />
+          {!readerPageContext?.fallbackState && effectiveRightPanelState.activeTab === 'relations' && (
+              <RelationsTab
+                relations={activeRelations}
+                clusters={Object.values(clusters)}
+                concepts={concepts}
+                chains={chains}
+                selectedCluster={selectedCluster}
+                onSelectCluster={selectCluster}
+                onRelationClick={(relation) => {
+                  selectRelation(relation.id);
+                  setSelectedInsightTarget({ type: 'relation', id: relation.id });
+                  setShowInsightOverlay(true);
+                }}
+                onJumpToPage={onJumpToPage}
+                pageIntelligence={pageIntelligence}
+                tabResponse={pageIntelligence?.tabPayloads?.relationsPayload ?? pageIntelligence?.tabResponses?.relations}
+              />
           )}
-          {activeTab === 'compare' && (
-            <CompareTab
-              selectedCardId={selectedCardId}
-              insights={rankedInsights}
-              onSelectCard={() => setActiveTab('priority')}
-            />
+          {!readerPageContext?.fallbackState && effectiveRightPanelState.activeTab === 'compare' && (
+              <CompareTab
+                selectedCardId={selectedCardId}
+                insights={pageScopedInsights}
+                onSelectCard={() => setActiveTab('priority')}
+                pageIntelligence={pageIntelligence}
+                tabResponse={pageIntelligence?.tabPayloads?.comparePayload ?? pageIntelligence?.tabResponses?.compare}
+              />
           )}
-          {activeTab === 'insights' && (
+          {!readerPageContext?.fallbackState && effectiveRightPanelState.activeTab === 'insights' && (
             <InsightsTab
-              insights={rankedInsights}
+              insights={pageScopedInsights}
               trapInsights={trapInsights}
               selectedCardId={selectedCardId}
-              onCardClick={handleCardClick}
+              onCardClick={(insight) => {
+                setSelectedCardId(insight.id);
+                onRightPanelCardChange?.(insight.id);
+                const anchor = pageIntelligence?.paragraphUnits?.find((unit) => unit.text.toLowerCase().includes((insight.claim || insight.title).slice(0, 32).toLowerCase()));
+                if (anchor?.text && onHighlightParagraph) {
+                  onHighlightParagraph(anchor.text.slice(0, 120));
+                }
+              }}
               onJumpToPage={onJumpToPage}
-              reasoningChain={expertView.getReasoningChain()}
-              pageInsights={pageInsights}
-              pageReasoning={pageReasoning}
-              onGenerateStudyCards={handleGenerateStudyCards}
-              generatedStudyCards={generatedStudyCards}
+              reasoningChain={undefined}
               pageIntelligence={pageIntelligence}
+              tabResponse={pageIntelligence?.tabPayloads?.insightsPayload ?? pageIntelligence?.tabResponses?.insights}
             />
           )}
+          {(panelRenderState.status === 'loading' && visiblePanelPayload) && (
+            <div className="mx-2 my-3 rounded border border-blue-800/40 bg-blue-950/20 px-2 py-1 text-[11px] text-blue-200">
+              Updating…
+            </div>
+          )}
+          {(panelRenderState.status === 'error' && visiblePanelPayload) && (
+            <div className="mx-2 my-3 rounded border border-red-700/40 bg-red-950/20 px-2 py-1 text-[11px] text-red-200">
+              {panelRenderState.message}
+            </div>
+          )}
+          </div>
         </div>
       </div>
 
@@ -1028,9 +1626,11 @@ const ModeChip: React.FC<{
   active: boolean;
   onClick: () => void;
   badge?: number;
-}> = ({ label, active, onClick, badge }) => (
+  title?: string;
+}> = ({ label, active, onClick, badge, title }) => (
   <button
     onClick={onClick}
+    title={title}
     className={`
       flex-1 px-2 py-1.5 text-[11px] font-medium rounded transition-all relative
       ${active
@@ -1048,247 +1648,349 @@ const ModeChip: React.FC<{
   </button>
 );
 
-// Explain Tab - Whiteboard-ready micro-lessons (page-aware)
+// ============================================================================
+// Ninja Nerd Section — one styled teaching block
+// ============================================================================
+const NinjaNerdSection: React.FC<{
+  icon: string;
+  label: string;
+  accent: string;       // Tailwind text-* colour class
+  border: string;       // Tailwind border-* colour class
+  bg: string;           // Tailwind bg-* colour class
+  children: React.ReactNode;
+}> = ({ icon, label, accent, border, bg, children }) => (
+  <div className={`rounded-xl border ${border} ${bg} overflow-hidden`}>
+    <div className={`px-3 py-1.5 border-b ${border} flex items-center gap-1.5`}>
+      <span className="text-sm">{icon}</span>
+      <span className={`text-[10px] font-bold uppercase tracking-widest ${accent}`}>{label}</span>
+    </div>
+    <div className="px-3 py-2.5 text-[12px] text-gray-200 leading-relaxed">
+      {children}
+    </div>
+  </div>
+);
+
+function inferCompareLines(pageIntelligence?: PageIntelligence | null): string[] {
+  const segments = pageIntelligence?.segments ?? [];
+  const meaningful = segments
+    .map((segment) => sanitizeRenderText(segment.text))
+    .filter((text) => text.split(' ').length >= 8);
+  if (meaningful.length >= 2) {
+    return [`Primary contrast: ${meaningful[0]} vs ${meaningful[1]}`];
+  }
+  if (meaningful.length === 1) {
+    return [`Primary contrast: ${meaningful[0]} vs the standard baseline approach on this page.`];
+  }
+  return ['Primary contrast: current concept vs standard approach based on mechanism/function.'];
+}
+
+function inferRelationLines(pageIntelligence?: PageIntelligence | null): string[] {
+  const segments = pageIntelligence?.segments ?? [];
+  const meaningful = segments
+    .map((segment) => sanitizeRenderText(segment.text))
+    .filter((text) => text.split(' ').length >= 8)
+    .slice(0, 3);
+  if (meaningful.length === 0) {
+    return [
+      'This concept builds on a prior prerequisite introduced on this page.',
+      'This connects to the main mechanism emphasized in the current section.',
+      'This leads to a downstream implication highlighted in the page flow.',
+    ];
+  }
+  return [
+    `This concept builds on: ${meaningful[0]}`,
+    `This connects to: ${meaningful[1] ?? meaningful[0]}`,
+    `This leads to: ${meaningful[2] ?? meaningful[meaningful.length - 1]}`,
+  ];
+}
+
+// ============================================================================
+// Explain Tab — Ninja Nerd conceptual teaching driven by Page Intelligence
+// ============================================================================
 const ExplainTab: React.FC<{
   selectedCardId?: string;
   insights: RankedInsight[];
   onSelectCard: () => void;
-  pageExtraction?: PageExtractionResult | null;
-  pageInsights?: InsightsResult | null;
-  pageExplain?: ExplainPayload | null;
-  onGenerateExplain?: () => Promise<void>;
   pageIntelligence?: PageIntelligence | null;
-}> = ({ selectedCardId, insights, onSelectCard, pageExtraction, pageInsights, pageExplain, onGenerateExplain, pageIntelligence }) => {
+  tabResponse?: TabResponse;
+  tone?: 'polish' | 'student' | 'clinical' | 'expert';
+  depth?: 'minimal' | 'standard' | 'deep';
+  density?: 'condensed' | 'expanded';
+  essential?: boolean;
+}> = ({ selectedCardId, insights, onSelectCard, pageIntelligence, tabResponse, tone = 'student', depth = 'standard', density = 'condensed', essential = false }) => {
   const selected = insights.find(i => i.id === selectedCardId);
-  const [isGenerating, setIsGenerating] = useState(false);
-
-  const handleGenerateExplain = useCallback(async () => {
-    if (!onGenerateExplain) return;
-    setIsGenerating(true);
-    try {
-      await onGenerateExplain();
-    } finally {
-      setIsGenerating(false);
-    }
-  }, [onGenerateExplain]);
-
-  // Use Page Intelligence explain if available
   const piExplain = pageIntelligence?.explain;
+  const continuity = pageIntelligence?.continuity;
 
-  // Page-aware explain from Page Intelligence
-  if (piExplain && piExplain.summary !== 'No text available for this page.') {
-    return (
-      <div className="p-3 space-y-4 overflow-y-auto">
-        <div className="bg-gray-800 rounded-lg p-3 border border-teal-500/40">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs font-semibold text-teal-400">Page Explanation</h3>
-            {pageIntelligence?.source === 'ocr' && (
-              <span className="px-1.5 py-0.5 text-[9px] bg-amber-500/20 text-amber-400 rounded">
-                via OCR
-              </span>
-            )}
-          </div>
+  // --- Empty state ---
+  const hasContent =
+    (piExplain && piExplain.summary !== 'No text available for this page.') ||
+    selected ||
+    continuity;
 
-          {/* Summary */}
-          <div className="space-y-2 mb-4">
-            <h4 className="text-[10px] font-semibold text-gray-400 uppercase">Summary</h4>
-            <p className="text-xs text-gray-300">{piExplain.summary}</p>
-          </div>
-
-          {/* Key Points */}
-          {piExplain.bullets.length > 0 && (
-            <div className="space-y-2 mb-4">
-              <h4 className="text-[10px] font-semibold text-gray-400 uppercase">Key Points</h4>
-              <div className="space-y-1.5">
-                {piExplain.bullets.map((bullet, idx) => (
-                  <div key={idx} className="flex gap-2 text-xs">
-                    <span className="text-teal-500">•</span>
-                    <span className="text-gray-300">{bullet}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Pitfalls / Exam Traps */}
-          {piExplain.pitfalls.length > 0 && (
-            <div className="space-y-2 mb-4">
-              <h4 className="text-[10px] font-semibold text-gray-400 uppercase flex items-center gap-1">
-                <span>⚠️</span> Exam Pitfalls
-              </h4>
-              <div className="space-y-1.5">
-                {piExplain.pitfalls.map((pitfall, idx) => (
-                  <div key={idx} className="bg-amber-900/20 border border-amber-700/40 rounded p-2 text-xs text-amber-200">
-                    {pitfall}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Mnemonics */}
-          {piExplain.mnemonics && piExplain.mnemonics.length > 0 && (
-            <div className="space-y-2 mb-4">
-              <h4 className="text-[10px] font-semibold text-gray-400 uppercase flex items-center gap-1">
-                <span>💡</span> Memory Aids
-              </h4>
-              <div className="space-y-1.5">
-                {piExplain.mnemonics.map((mnemonic, idx) => (
-                  <div key={idx} className="bg-purple-900/20 border border-purple-700/40 rounded p-2 text-xs text-purple-300">
-                    {mnemonic}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex gap-2">
-            <button className="flex-1 px-2 py-1.5 text-[10px] bg-teal-600 hover:bg-teal-500 text-white rounded">
-              Copy to Clipboard
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Page-aware explain: show "Explain this page" when extraction exists
-  if (pageExplain) {
-    return (
-      <div className="p-3 space-y-4 overflow-y-auto">
-        <div className="bg-gray-800 rounded-lg p-3 border border-teal-500/40">
-          <h3 className="text-xs font-semibold text-teal-400 mb-3">{pageExplain.title}</h3>
-
-          {/* Steps */}
-          <div className="space-y-2 mb-4">
-            <h4 className="text-[10px] font-semibold text-gray-400 uppercase">Key Steps</h4>
-            <div className="space-y-1.5">
-              {pageExplain.steps.map((step, idx) => (
-                <div key={idx} className="flex gap-2 text-xs">
-                  <span className="text-teal-500 font-semibold">{idx + 1}.</span>
-                  <span className="text-gray-300">{step}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Draw Instructions */}
-          <div className="space-y-2 mb-4">
-            <h4 className="text-[10px] font-semibold text-gray-400 uppercase">Whiteboard Instructions</h4>
-            <div className="bg-gray-900 rounded p-2 space-y-1">
-              {pageExplain.drawInstructions.map((instruction, idx) => (
-                <p key={idx} className="text-xs text-gray-200">• {instruction}</p>
-              ))}
-            </div>
-          </div>
-
-          {/* Exam Questions */}
-          {pageExplain.examQuestions.length > 0 && (
-            <div className="space-y-2 mb-4">
-              <h4 className="text-[10px] font-semibold text-gray-400 uppercase">Exam Questions</h4>
-              <div className="space-y-2">
-                {pageExplain.examQuestions.map((eq, idx) => (
-                  <div key={idx} className="bg-gray-900/50 rounded p-2 border border-gray-700">
-                    <p className="text-xs text-purple-300 font-medium mb-1">Q: {eq.q}</p>
-                    <p className="text-[10px] text-gray-400">A: {eq.a}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Mnemonic */}
-          {pageExplain.mnemonic && (
-            <div className="bg-amber-900/20 border border-amber-700/40 rounded p-2 mb-3">
-              <p className="text-xs text-amber-300">💡 {pageExplain.mnemonic}</p>
-            </div>
-          )}
-
-          <div className="flex gap-2">
-            <button className="flex-1 px-2 py-1.5 text-[10px] bg-teal-600 hover:bg-teal-500 text-white rounded">
-              Copy to Clipboard
-            </button>
-            <button className="flex-1 px-2 py-1.5 text-[10px] bg-gray-700 hover:bg-gray-600 text-gray-300 rounded">
-              Explain on Whiteboard
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Show "Explain this page" CTA when extraction exists but no explain yet
-  if (pageExtraction && !pageExplain) {
+  if (!hasContent) {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-        <span className="text-3xl mb-3">📝</span>
-        <h3 className="text-sm font-medium text-gray-300 mb-1">Page Extracted</h3>
-        <p className="text-xs text-gray-500 mb-4 max-w-[180px]">
-          Generate a whiteboard-ready micro-lesson for this page.
-        </p>
-        <button
-          onClick={handleGenerateExplain}
-          disabled={isGenerating}
-          className="px-4 py-2 text-xs bg-teal-600 hover:bg-teal-500 text-white rounded-lg disabled:opacity-50"
-        >
-          {isGenerating ? 'Generating...' : 'Explain This Page'}
-        </button>
-      </div>
-    );
-  }
-
-  // Fall back to card-based explain
-  if (!selected) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-        <span className="text-3xl mb-3">📝</span>
+        <span className="text-3xl mb-3">🧠</span>
         <h3 className="text-sm font-medium text-gray-300 mb-1">Explain Mode</h3>
-        <p className="text-xs text-gray-500 mb-4 max-w-[180px]">
-          Extract a page first, then generate whiteboard-ready micro-lessons.
+        <p className="text-xs text-gray-500 mb-4 max-w-[200px]">
+          Extract a page to generate Ninja Nerd–style conceptual teaching cards.
         </p>
         <button
           onClick={onSelectCard}
           className="px-3 py-1.5 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg"
         >
-          Or select a card
+          Or select an insight card
         </button>
       </div>
     );
   }
 
-  return (
-    <div className="p-3 space-y-4">
-      <div className="bg-gray-800 rounded-lg p-3 border border-gray-700">
-        <h3 className="text-xs font-semibold text-teal-400 mb-2">{selected.title}</h3>
-        <p className="text-xs text-gray-300 mb-3">{selected.claim}</p>
+  // --- Derive teaching content ---
+  // Priority: selected card → page intelligence → continuity scaffold
+  const topicTitle = sanitizeTitle(
+    selected?.title ??
+    piExplain?.summary?.slice(0, 60) ??
+    continuity?.corePattern.slice(0, 60) ??
+    'Current Page',
+    'Current Page',
+  );
 
-        <div className="space-y-2">
-          <h4 className="text-[10px] font-semibold text-gray-400 uppercase">Whiteboard Prompt</h4>
-          <div className="bg-gray-900 rounded p-2 text-xs text-gray-200 font-mono">
-            Draw a diagram showing: {selected.title}
-            <br />
-            <br />
-            Key points to include:
-            <br />
-            • {selected.whyItMatters}
-            <br />
-            • Show relationships to related concepts
+  const sectionExplanation = tabResponse?.sections.find((s) => s.label === 'Section explanation')?.content;
+  const whatThisMeans = stripFluff(sanitizeRenderText(
+    normalizeRenderableText(
+      selected?.claim ??
+      sectionExplanation ??
+      piExplain?.summary ??
+      continuity?.corePattern ??
+      'See page for core definition.',
+    ),
+  ));
+
+  const mechanism = stripFluff(sanitizeRenderText(
+    continuity?.conceptualBridge ??
+    (piExplain?.bullets?.[0] ? `First, ${piExplain.bullets[0]}` : null),
+  ));
+
+  // Key steps from explain bullets
+  const explainFlow = tabResponse?.sections.find(s => s.label === 'Subsection flow')?.content;
+  const keySteps = sanitizeRenderList(Array.isArray(explainFlow) ? explainFlow : (explainFlow ? [explainFlow] : (piExplain?.bullets ?? [])));
+
+  const whyItMatters = stripFluff(sanitizeRenderText(
+    continuity?.clinicalConnection ??
+    selected?.whyItMatters ??
+    'Foundational for board exam mastery.',
+  ));
+
+  // How to think: use the corePattern + conceptualBridge as a mental model
+  const toneLead =
+    tone === 'expert' ? 'Mechanistically, ' :
+    tone === 'clinical' ? 'Clinically, ' :
+    tone === 'polish' ? 'In practical terms, ' :
+    '';
+
+  const howToThink = stripFluff(sanitizeRenderText(
+    continuity
+      ? `${toneLead}think of "${continuity.corePattern}" as the core idea. ${continuity.conceptualBridge}`
+      : selected
+        ? `${toneLead}connect "${selected.title}" to the broader system — ask why, not just what.`
+        : null,
+  ));
+
+  // Exam trap: pitfalls + continuity warning
+  const examTraps: string[] = sanitizeRenderList([
+    ...(piExplain?.pitfalls ?? []),
+    ...(continuity?.commonMisunderstanding ? [continuity.commonMisunderstanding] : []),
+  ]).map((value) => stripFluff(value)).filter((v, i, a) => a.indexOf(v) === i).slice(0, depth === 'deep' ? 4 : 2); // deduplicate
+
+  // Mnemonics
+  const mnemonics = sanitizeRenderList(piExplain?.mnemonics ?? []);
+  const compact = density === 'condensed';
+
+  // Math formulas on this page
+  const mathSegments = pageIntelligence?.segments.filter(
+    s => s.kind === 'math' || (s.mathDensity ?? 0) > 0.15
+  ) ?? [];
+
+  return (
+    <div className={`p-3 ${compact ? 'space-y-2' : 'space-y-3'} overflow-y-auto insightPanelScroll`}>
+      {/* Topic header */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-teal-300 leading-tight max-w-[80%] whitespace-normal">
+          {topicTitle}
+        </h3>
+        {pageIntelligence?.source !== 'native' && (
+          <span className="px-1.5 py-0.5 text-[9px] bg-amber-500/20 text-amber-400 rounded flex-shrink-0">
+            {pageIntelligence?.source === 'mixed' ? 'Mixed' : 'OCR'}
+          </span>
+        )}
+      </div>
+
+      {/* 1. WHAT THIS MEANS */}
+      <NinjaNerdSection
+        icon="🧠"
+        label="What This Means"
+        accent="text-teal-300"
+        border="border-teal-700/50"
+        bg="bg-teal-900/10"
+      >
+        {whatThisMeans}
+      </NinjaNerdSection>
+
+      {/* 2. MECHANISM — with structure flow connector if available */}
+      {mechanism && depth !== 'minimal' && (
+        <NinjaNerdSection
+          icon="⚙️"
+          label="Mechanism"
+          accent="text-purple-300"
+          border="border-purple-700/50"
+          bg="bg-purple-900/10"
+        >
+          <div className="space-y-1.5">
+            <p>{mechanism}</p>
+            {keySteps.length > 0 && !essential && (
+              <div className="mt-2 space-y-1">
+                {keySteps.slice(0, 6).map((step, i) => (
+                  <div key={i} className="flex gap-2 items-start">
+                    <span className="text-purple-400 font-mono text-[10px] flex-shrink-0 mt-0.5">
+                      {i + 1}.
+                    </span>
+                    <span className="text-gray-300 text-[11px]">{step}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </NinjaNerdSection>
+      )}
+
+      {depth !== 'minimal' && (
+      <NinjaNerdSection
+        icon="🪜"
+        label="Stepwise Breakdown"
+        accent="text-cyan-300"
+        border="border-cyan-700/50"
+        bg="bg-cyan-900/10"
+      >
+        <ol className="space-y-1.5 list-decimal ml-4">
+          <li>Start by defining the core claim in one sentence: {whatThisMeans}</li>
+          {mechanism && <li>Then ask what drives it biologically or conceptually: {mechanism}</li>}
+          <li>Next connect it to adjacent ideas so it is not memorized in isolation.</li>
+          <li>Finally test your understanding by predicting what changes if one step fails.</li>
+        </ol>
+      </NinjaNerdSection>
+      )}
+
+      {/* 3. WHY IT MATTERS */}
+
+      <NinjaNerdSection
+        icon="🧬"
+        label="Why It Matters"
+        accent="text-green-300"
+        border="border-green-700/50"
+        bg="bg-green-900/10"
+      >
+        {whyItMatters}
+      </NinjaNerdSection>
+
+      {/* 5. HOW TO THINK ABOUT IT */}
+      {howToThink && (depth !== 'minimal' || tone !== 'student') && (
+        <NinjaNerdSection
+          icon="💭"
+          label="How to Think About It"
+          accent="text-blue-300"
+          border="border-blue-700/50"
+          bg="bg-blue-900/10"
+        >
+          {howToThink}
+        </NinjaNerdSection>
+      )}
+
+      {/* 6. MATH FORMULAS — inline block math for any formula segments */}
+      {mathSegments.length > 0 && (
+        <div className="rounded-xl border border-teal-700/40 bg-gray-900/50 overflow-hidden">
+          <div className="px-3 py-1.5 border-b border-teal-800/30 flex items-center gap-1.5">
+            <span className="text-sm">📐</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-teal-500">
+              Formulas
+            </span>
+          </div>
+          <div className="px-3 py-2 space-y-1.5">
+            {mathSegments.slice(0, 3).map((seg, i) => (
+              <div key={i}>
+                <BlockMath expr={seg.mathRaw ?? seg.text} />
+                {seg.mathRaw && seg.mathRaw !== seg.text && (
+                  <p className="text-[10px] text-gray-500 text-center mt-0.5">{seg.text.slice(0, 60)}</p>
+                )}
+              </div>
+            ))}
           </div>
         </div>
+      )}
 
-        <div className="mt-3 flex gap-2">
-          <button className="flex-1 px-2 py-1.5 text-[10px] bg-teal-600 hover:bg-teal-500 text-white rounded">
-            Copy Prompt
-          </button>
-          <button className="flex-1 px-2 py-1.5 text-[10px] bg-gray-700 hover:bg-gray-600 text-gray-300 rounded">
-            Generate Diagram
-          </button>
-        </div>
-      </div>
+      {/* 7. EXAM TRAPS */}
+      {examTraps.length > 0 && depth !== 'minimal' && (
+        <NinjaNerdSection
+          icon="⚠️"
+          label="Exam Traps"
+          accent="text-amber-300"
+          border="border-amber-700/50"
+          bg="bg-amber-900/10"
+        >
+          <div className="space-y-2">
+            {examTraps.map((trap, i) => (
+              <div
+                key={i}
+                className="flex gap-2 items-start bg-amber-900/20 rounded-lg p-2 border border-amber-700/30"
+              >
+                <span className="text-amber-400 flex-shrink-0 mt-0.5">▲</span>
+                <span className="text-amber-200 text-[11px]">{trap}</span>
+              </div>
+            ))}
+          </div>
+        </NinjaNerdSection>
+      )}
 
-      <div className="text-[10px] text-gray-500 italic">
-        Pro tip: Use the prompt with Ninja Nerd-style whiteboard explanations
-      </div>
+      {/* 8. MEMORY AIDS — mnemonics */}
+      {mnemonics.length > 0 && depth === 'deep' && !essential && (
+        <NinjaNerdSection
+          icon="💡"
+          label="Memory Aids"
+          accent="text-violet-300"
+          border="border-violet-700/50"
+          bg="bg-violet-900/10"
+        >
+          <div className="space-y-1.5">
+            {mnemonics.map((m, i) => (
+              <div
+                key={i}
+                className="flex gap-2 items-start bg-violet-900/20 rounded-lg p-2 border border-violet-700/30"
+              >
+                <span className="text-violet-400 flex-shrink-0">🔑</span>
+                <span className="text-violet-200 text-[11px]">{m}</span>
+              </div>
+            ))}
+          </div>
+        </NinjaNerdSection>
+      )}
+
+      {/* Copy button */}
+      <button
+        onClick={() => {
+          const text = [
+            `TOPIC: ${topicTitle}`,
+            `WHAT: ${whatThisMeans}`,
+            mechanism ? `MECHANISM: ${mechanism}` : '',
+            `WHY: ${whyItMatters}`,
+            howToThink ? `MENTAL MODEL: ${howToThink}` : '',
+            examTraps.length ? `EXAM TRAPS:\n${examTraps.map(t => `• ${t}`).join('\n')}` : '',
+          ].filter(Boolean).join('\n\n');
+          navigator.clipboard?.writeText(text).catch(() => {});
+        }}
+        className="w-full px-2 py-1.5 text-[10px] bg-teal-700/40 hover:bg-teal-700/70 text-teal-300 rounded-lg border border-teal-700/40 transition-colors"
+      >
+        Copy Explanation
+      </button>
     </div>
   );
 };
@@ -1298,7 +2000,9 @@ const CompareTab: React.FC<{
   selectedCardId?: string;
   insights: RankedInsight[];
   onSelectCard: () => void;
-}> = ({ selectedCardId, insights, onSelectCard }) => {
+  pageIntelligence?: PageIntelligence | null;
+  tabResponse?: TabResponse;
+}> = ({ selectedCardId, insights, onSelectCard, pageIntelligence, tabResponse }) => {
   const selected = insights.find(i => i.id === selectedCardId);
 
   // Find confusable pairs
@@ -1306,27 +2010,28 @@ const CompareTab: React.FC<{
     return insights.filter(i =>
       i.type === 'EXAM_TRAP' ||
       (i.trap && i.trap.toLowerCase().includes('look-alike')) ||
-      (i.claim || '').toLowerCase().includes(' vs ')
+      sanitizeRenderText(i.claim).toLowerCase().includes(' vs ')
     ).slice(0, 3);
   }, [insights]);
 
-  if (!selected && confusables.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-        <span className="text-3xl mb-3">⚖️</span>
-        <h3 className="text-sm font-medium text-gray-300 mb-1">Compare Mode</h3>
-        <p className="text-xs text-gray-500 mb-4 max-w-[180px]">
-          Shows differential tables: A vs B vs C with discriminating features.
-        </p>
-        <button
-          onClick={onSelectCard}
-          className="px-3 py-1.5 text-xs bg-teal-600 hover:bg-teal-500 text-white rounded-lg"
-        >
-          Select a card to compare
-        </button>
-      </div>
-    );
-  }
+  const schemaVs = tabResponse?.sections.find(s => s.label === 'A vs B candidates')?.content;
+  const schemaConfusions = tabResponse?.sections.find(s => s.label === 'Commonly confused concepts')?.content;
+  const autoCompareCandidates = useMemo(() => {
+    const segments = pageIntelligence?.segments ?? [];
+    const fromContrast = segments
+      .filter((segment) => /\b(unlike|whereas|in contrast|versus|vs\.?)\b/i.test(segment.text))
+      .map((segment) => sanitizeRenderText(segment.text))
+      .filter(Boolean)
+      .slice(0, 4);
+    if (fromContrast.length) return fromContrast;
+
+    const rels = pageIntelligence?.relations ?? [];
+    return rels.slice(0, 4).map((rel) => `${sanitizeRenderText(rel.from)} vs ${sanitizeRenderText(rel.to)}`).filter(Boolean);
+  }, [pageIntelligence]);
+  const inferredCompareCandidates = useMemo(() => inferCompareLines(pageIntelligence), [pageIntelligence]);
+  const hasGroundedCompare = Array.isArray(schemaVs)
+    ? schemaVs.some((row) => typeof row === 'string' && !row.toLowerCase().includes('no compare pair available'))
+    : autoCompareCandidates.length > 0;
 
   return (
     <div className="p-3 space-y-4">
@@ -1336,44 +2041,64 @@ const CompareTab: React.FC<{
             Comparing: {selected.title}
           </h3>
 
-          <table className="w-full text-[10px] border-collapse">
+          <table className="w-full text-[11px] border-collapse">
             <thead>
               <tr className="text-left text-gray-400">
                 <th className="p-1.5 border-b border-gray-700">Feature</th>
                 <th className="p-1.5 border-b border-gray-700">{selected.title}</th>
-                <th className="p-1.5 border-b border-gray-700 text-gray-500">Similar</th>
+                <th className="p-1.5 border-b border-gray-700 text-gray-300">Analog / Contrast</th>
               </tr>
             </thead>
             <tbody className="text-gray-300">
               <tr>
                 <td className="p-1.5 border-b border-gray-700/50 text-gray-400">Definition</td>
-                <td className="p-1.5 border-b border-gray-700/50">{selected.claim?.slice(0, 40) || '-'}</td>
-                <td className="p-1.5 border-b border-gray-700/50 text-gray-500">-</td>
+                <td className="p-1.5 border-b border-gray-700/50">{sanitizeRenderText(selected.claim) || '-'}</td>
+                <td className="p-1.5 border-b border-gray-700/50 text-gray-300">Like a neighboring concept that serves a similar role but with different trigger conditions.</td>
               </tr>
               <tr>
                 <td className="p-1.5 border-b border-gray-700/50 text-gray-400">Key Finding</td>
-                <td className="p-1.5 border-b border-gray-700/50">-</td>
-                <td className="p-1.5 border-b border-gray-700/50 text-gray-500">-</td>
+                <td className="p-1.5 border-b border-gray-700/50">{selected.whyItMatters || 'Key downstream effect in context.'}</td>
+                <td className="p-1.5 border-b border-gray-700/50 text-gray-300">Do not confuse with terms that look similar but point to a different mechanism.</td>
               </tr>
               <tr>
                 <td className="p-1.5 text-gray-400">Differentiator</td>
-                <td className="p-1.5">{selected.whyItMatters?.slice(0, 40) || '-'}</td>
-                <td className="p-1.5 text-gray-500">-</td>
+                <td className="p-1.5">{selected.whyItMatters || '-'}</td>
+                <td className="p-1.5 text-gray-300">Think: this is like a checkpoint, not a final endpoint.</td>
               </tr>
             </tbody>
           </table>
         </div>
       )}
 
-      {confusables.length > 0 && (
+      {(Array.isArray(schemaVs) && schemaVs.length > 0) || autoCompareCandidates.length > 0 || inferredCompareCandidates.length > 0 ? (
+        <div>
+          <h3 className="text-[10px] font-semibold text-gray-400 uppercase mb-2">A vs B (Graph Query)</h3>
+          <div className="space-y-1.5">
+            {(Array.isArray(schemaVs) && schemaVs.length > 0
+              ? sanitizeRenderList(schemaVs)
+              : autoCompareCandidates.length > 0
+                ? autoCompareCandidates
+                : inferredCompareCandidates).map((line, idx) => (
+              <div key={idx} className="bg-blue-900/20 border border-blue-700/40 rounded p-2 text-xs text-blue-200">{sanitizeRenderText(line)}</div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-gray-500">No compare pair available on this page yet.</p>
+      )}
+
+      {(confusables.length > 0 || (Array.isArray(schemaConfusions) && schemaConfusions.length > 0)) && (
         <div>
           <h3 className="text-[10px] font-semibold text-gray-400 uppercase mb-2">
             Common Confusions on This Page
           </h3>
           <div className="space-y-1.5">
-            {confusables.map(c => (
+            {(Array.isArray(schemaConfusions) && schemaConfusions.length > 0
+              ? sanitizeRenderList(schemaConfusions).map((c, idx) => ({ id: `schema-${idx}`, title: c }))
+              : confusables
+            ).map(c => (
               <div key={c.id} className="bg-amber-900/20 border border-amber-700/40 rounded p-2 text-xs text-amber-200">
-                {c.title}
+                {sanitizeRenderText(c.title)}
               </div>
             ))}
           </div>
@@ -1383,7 +2108,9 @@ const CompareTab: React.FC<{
   );
 };
 
-// Insights Tab - What matters + What you're missing + Study card generation
+// Insights Tab - What matters + What you're missing
+// Data flows from pageIntelligence (primary) or rankedInsights (fallback).
+// Legacy pageInsights / pageReasoning removed — pageIntelligence covers everything.
 const InsightsTab: React.FC<{
   insights: RankedInsight[];
   trapInsights: RankedInsight[];
@@ -1391,11 +2118,8 @@ const InsightsTab: React.FC<{
   onCardClick: (insight: RankedInsight) => void;
   onJumpToPage: (page: number) => void;
   reasoningChain?: ReasoningChain;
-  pageInsights?: InsightsResult | null;
-  pageReasoning?: ReasoningFlow | null;
-  onGenerateStudyCards?: () => Promise<void>;
-  generatedStudyCards?: StudyCard[];
   pageIntelligence?: PageIntelligence | null;
+  tabResponse?: TabResponse;
 }> = ({
   insights,
   trapInsights,
@@ -1403,34 +2127,26 @@ const InsightsTab: React.FC<{
   onCardClick,
   onJumpToPage,
   reasoningChain,
-  pageInsights,
-  pageReasoning,
-  onGenerateStudyCards,
-  generatedStudyCards,
   pageIntelligence,
+  tabResponse,
 }) => {
-  const [isGenerating, setIsGenerating] = useState(false);
   const highYield = insights.filter(i => i.bucket === 'CRITICAL' || i.bucket === 'HIGH_YIELD');
   const traps = trapInsights.slice(0, 5);
 
-  const handleGenerateCards = useCallback(async () => {
-    if (!onGenerateStudyCards) return;
-    setIsGenerating(true);
-    try {
-      await onGenerateStudyCards();
-    } finally {
-      setIsGenerating(false);
-    }
-  }, [onGenerateStudyCards]);
-
-  // Use page intelligence insights if available, otherwise fall back to other sources
+  // Page Intelligence is the primary source; rankedInsights is the fallback
   const piInsights = pageIntelligence?.insights || [];
   const piRelations = pageIntelligence?.relations || [];
-  const piClusters = pageIntelligence?.clusters || [];
-  const piCards = pageIntelligence?.cards || [];
-  const whatMattersItems = pageInsights?.whatMatters || [];
-  const whatMissingItems = pageInsights?.whatMissing || [];
-  const missingFromReasoning = pageReasoning?.missingNodeSuggestions || reasoningChain?.missing?.map(m => m.detail) || [];
+  const piCards = pageIntelligence?.cards   || [];
+  const missingFromReasoning = reasoningChain?.missing?.map(m => m.detail) || [];
+  const schemaHidden = tabResponse?.sections.find(s => s.label === 'Hidden implications')?.content;
+  const schemaTraps = tabResponse?.sections.find(s => s.label === 'Exam traps')?.content;
+
+  const deepSignals = [
+    sanitizeRenderText(schemaHidden) || (pageIntelligence?.continuity?.corePattern ? `Deeper pattern: ${pageIntelligence.continuity.corePattern}` : null),
+    pageIntelligence?.continuity?.conceptualBridge ? `Hidden bridge: ${pageIntelligence.continuity.conceptualBridge}` : null,
+    pageIntelligence?.continuity?.clinicalConnection ? `Why this section matters now: ${pageIntelligence.continuity.clinicalConnection}` : null,
+    pageIntelligence?.continuity?.commonMisunderstanding ? `Easy-to-miss pitfall: ${pageIntelligence.continuity.commonMisunderstanding}` : null,
+  ].filter((value): value is string => Boolean(value));
 
   return (
     <div className="p-3 space-y-4 overflow-y-auto">
@@ -1473,7 +2189,8 @@ const InsightsTab: React.FC<{
                     </span>
                   </div>
                 </div>
-                <p className="text-gray-400 line-clamp-3">{insight.body}</p>
+                <ImportanceBar score={insight.score} className="my-1.5" />
+                <p className="text-gray-400">{insight.body}</p>
                 <div className="flex gap-1 mt-1.5 flex-wrap">
                   {insight.tags.slice(0, 3).map(tag => (
                     <span key={tag} className="px-1 py-0.5 text-[9px] bg-gray-700 text-gray-400 rounded">
@@ -1484,28 +2201,6 @@ const InsightsTab: React.FC<{
                     Score: {insight.score}
                   </span>
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : whatMattersItems.length > 0 ? (
-          <div className="space-y-1.5">
-            {whatMattersItems.slice(0, 8).map(item => (
-              <div
-                key={item.id}
-                className="bg-gray-800/50 border border-gray-700 rounded-lg p-2.5 text-xs hover:border-teal-500/40 cursor-pointer transition-colors"
-              >
-                <div className="flex items-start justify-between gap-2 mb-1">
-                  <span className="font-medium text-teal-300">{item.title}</span>
-                  <div className="flex gap-1 flex-shrink-0">
-                    {item.tags.slice(0, 2).map(tag => (
-                      <span key={tag} className="px-1 py-0.5 text-[9px] bg-gray-700 text-gray-400 rounded">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <p className="text-gray-400 line-clamp-2 mb-1">{item.summary}</p>
-                <p className="text-[10px] text-gray-500 italic">{item.whyItMatters}</p>
               </div>
             ))}
           </div>
@@ -1524,10 +2219,10 @@ const InsightsTab: React.FC<{
                 `}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <span className="line-clamp-2">{insight.title}</span>
+                  <span className="whitespace-normal">{insight.title}</span>
                   {insight.evidence?.[0]?.page !== undefined && (
                     <span
-                      onClick={(e) => { e.stopPropagation(); onJumpToPage(insight.evidence![0].page); }}
+                      onClick={(e) => { e.stopPropagation(); onJumpToPage(insight.evidence![0].page + 1); }}
                       className="text-[10px] text-teal-400 hover:text-teal-300 flex-shrink-0"
                     >
                       p.{insight.evidence[0].page + 1}
@@ -1568,30 +2263,29 @@ const InsightsTab: React.FC<{
               {piCards.slice(0, 5).map(card => (
                 <div key={card.id} className="bg-purple-900/20 border border-purple-700/40 rounded p-2 text-xs">
                   <p className="text-purple-300 font-medium mb-1">{card.front}</p>
-                  <p className="text-gray-400 text-[10px] line-clamp-2">{card.back}</p>
+                  <p className="text-gray-400 text-[10px]">{card.back}</p>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Generate Study Cards button */}
-        {(piInsights.length > 0 || whatMattersItems.length > 0 || highYield.length > 0) && onGenerateStudyCards && (
-          <button
-            onClick={handleGenerateCards}
-            disabled={isGenerating}
-            className="mt-3 w-full px-3 py-2 text-xs bg-purple-600 hover:bg-purple-500 text-white rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            <span>📚</span>
-            {isGenerating ? 'Generating...' : 'Generate Study Cards from What Matters'}
-          </button>
-        )}
+      </section>
 
-        {/* Show generated cards count */}
-        {generatedStudyCards && generatedStudyCards.length > 0 && (
-          <div className="mt-2 px-2 py-1.5 bg-purple-900/20 border border-purple-700/40 rounded text-xs text-purple-300">
-            ✓ {generatedStudyCards.length} study cards generated
+      <section>
+        <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+          <span>🧭</span> Deeper Insight
+        </h3>
+        {deepSignals.length > 0 ? (
+          <div className="space-y-1.5">
+            {deepSignals.map((signal, idx) => (
+              <div key={idx} className="bg-slate-900/60 border border-slate-700 rounded p-2 text-xs text-slate-200">
+                {signal}
+              </div>
+            ))}
           </div>
+        ) : (
+          <p className="text-xs text-gray-500 italic">Extract content to reveal deeper logic and hidden structure.</p>
         )}
       </section>
 
@@ -1608,28 +2302,19 @@ const InsightsTab: React.FC<{
                 onClick={() => onCardClick(trap)}
                 className="w-full text-left px-2.5 py-2 rounded-lg border border-amber-700/40 bg-amber-900/20 text-amber-200 text-xs hover:border-amber-600/40"
               >
-                <span className="line-clamp-2">{trap.title}</span>
+                <span>{trap.title}</span>
               </button>
             ))}
           </div>
         </section>
       )}
 
-      {/* What You May Be Missing - from reasoning flow */}
+      {/* What You May Be Missing - from reasoning chain */}
       <section>
         <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
           <span>🔍</span> What You May Be Missing
         </h3>
-        {whatMissingItems.length > 0 ? (
-          <div className="space-y-1.5">
-            {whatMissingItems.map(item => (
-              <div key={item.id} className="bg-gray-800/50 border border-gray-700 rounded p-2 text-xs">
-                <span className="text-amber-400 font-medium">{item.title}:</span>
-                <span className="text-gray-400 ml-1">{item.summary}</span>
-              </div>
-            ))}
-          </div>
-        ) : missingFromReasoning.length > 0 ? (
+        {missingFromReasoning.length > 0 ? (
           <div className="space-y-1.5">
             {missingFromReasoning.slice(0, 5).map((suggestion, idx) => (
               <div key={idx} className="bg-gray-800/50 border border-gray-700 rounded p-2 text-xs">
@@ -1656,6 +2341,47 @@ const InsightsTab: React.FC<{
   );
 };
 
+// ============================================================================
+// Clinical Reasoning Flow — causal chain from page intelligence relations
+// ============================================================================
+function buildClinicalFlow(
+  piRelations: import('@/lib/page-intelligence').Relation[],
+  piSegments: import('@/lib/page-intelligence').Segment[]
+): Array<{ from: string; to: string; predicate: string }> {
+  // Only use causal / sequential relations
+  const causal = piRelations.filter(r =>
+    r.type === 'causes' || r.type === 'leads_to' || r.type === 'indicates'
+  );
+  if (causal.length === 0) return [];
+
+  // Build an adjacency set: from → to
+  const edgeMap = new Map<string, { to: string; predicate: string }>();
+  for (const r of causal) {
+    if (!edgeMap.has(r.from)) {
+      edgeMap.set(r.from, { to: r.to, predicate: r.type.replace('_', ' ') });
+    }
+  }
+
+  // Find a root node (appears as 'from' but not as 'to' in any edge)
+  const allTos = new Set(causal.map(r => r.to));
+  const roots = causal.map(r => r.from).filter(f => !allTos.has(f));
+  const root = roots[0] ?? causal[0].from;
+
+  // Walk the chain up to 6 hops
+  const chain: Array<{ from: string; to: string; predicate: string }> = [];
+  let current = root;
+  const seen = new Set<string>();
+  while (chain.length < 6) {
+    const edge = edgeMap.get(current);
+    if (!edge || seen.has(current)) break;
+    seen.add(current);
+    chain.push({ from: current, to: edge.to, predicate: edge.predicate });
+    current = edge.to;
+  }
+
+  return chain;
+}
+
 // Relations Tab - Shows clusters and relations in a compact view
 const RelationsTab: React.FC<{
   relations: Relation[];
@@ -1666,6 +2392,8 @@ const RelationsTab: React.FC<{
   onSelectCluster: (clusterId: string) => void;
   onRelationClick: (relation: Relation) => void;
   onJumpToPage?: (page: number) => void;
+  pageIntelligence?: PageIntelligence | null;
+  tabResponse?: TabResponse;
 }> = ({
   relations,
   clusters,
@@ -1675,8 +2403,36 @@ const RelationsTab: React.FC<{
   onSelectCluster,
   onRelationClick,
   onJumpToPage,
+  pageIntelligence,
+  tabResponse,
 }) => {
-  const hasContent = relations.length > 0 || clusters.length > 0;
+  const autoRelations = useMemo(() => {
+    const rels = pageIntelligence?.relations ?? [];
+    if (rels.length > 0) return rels.slice(0, 6).map((r) => `${sanitizeRenderText(r.from)} → ${sanitizeRenderText(r.to)}`);
+    const segments = pageIntelligence?.segments ?? [];
+    return segments
+      .filter((segment) => /\b(leads to|causes|results in|because|therefore|thus)\b/i.test(segment.text))
+      .map((segment) => sanitizeRenderText(segment.text))
+      .slice(0, 4);
+  }, [pageIntelligence]);
+  const inferredRelations = useMemo(() => inferRelationLines(pageIntelligence), [pageIntelligence]);
+  const hasContent = relations.length > 0 || clusters.length > 0 || autoRelations.length > 0 || inferredRelations.length > 0;
+
+  // Build clinical reasoning flow from page intelligence relations
+  const clinicalFlow = useMemo(() => {
+    if (!pageIntelligence?.relations?.length) return [];
+    return buildClinicalFlow(pageIntelligence.relations, pageIntelligence.segments);
+  }, [pageIntelligence]);
+
+  const schemaRelations = tabResponse?.sections.find(s => s.label === 'Concept relationships on this page')?.content;
+
+  const conceptualLinks = useMemo(() => {
+    const rels = pageIntelligence?.relations ?? [];
+    const prerequisites = rels.filter(r => ['requires', 'precedes', 'is_part_of', 'is_type_of'].includes(r.type)).slice(0, 5);
+    const downstream = rels.filter(r => ['leads_to', 'causes', 'indicates', 'results_in'].includes(r.type)).slice(0, 5);
+    const neighbors = rels.filter(r => !prerequisites.includes(r) && !downstream.includes(r)).slice(0, 5);
+    return { prerequisites, downstream, neighbors };
+  }, [pageIntelligence]);
 
   if (!hasContent) {
     return (
@@ -1684,14 +2440,92 @@ const RelationsTab: React.FC<{
         <span className="text-3xl mb-3">🔗</span>
         <h3 className="text-sm font-medium text-gray-300 mb-1">Relations View</h3>
         <p className="text-xs text-gray-500 max-w-[200px]">
-          Extract a page to see concept relationships and pattern clusters.
+          No grounded relations found for this page yet.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="p-3 overflow-y-auto h-full">
+    <div className="p-3 overflow-y-auto h-full space-y-4">
+      {(Array.isArray(schemaRelations) && schemaRelations.length > 0) || autoRelations.length > 0 || inferredRelations.length > 0 ? (
+        <section className="rounded-xl border border-indigo-700/60 bg-indigo-900/20 p-3">
+          <h3 className="text-[10px] font-semibold text-indigo-200 uppercase tracking-wide mb-2">Page-grounded Relationships</h3>
+          <div className="space-y-1 text-[11px] text-indigo-100">
+            {(Array.isArray(schemaRelations) && schemaRelations.length > 0
+              ? sanitizeRenderList(schemaRelations)
+              : autoRelations.length > 0
+                ? autoRelations
+                : inferredRelations)
+              .map((line, idx) => <p key={idx}>{sanitizeRenderText(line)}</p>)}
+          </div>
+        </section>
+      ) : (
+        <p className="text-xs text-gray-500">No grounded relations found on this page yet.</p>
+      )}
+
+      {(conceptualLinks.prerequisites.length > 0 || conceptualLinks.downstream.length > 0 || conceptualLinks.neighbors.length > 0) && (
+        <section className="rounded-xl border border-gray-700/60 bg-gray-900/40 p-3">
+          <h3 className="text-[10px] font-semibold text-gray-300 uppercase tracking-wide mb-2">Conceptual Links</h3>
+          <div className="space-y-2 text-[11px]">
+            {conceptualLinks.prerequisites.length > 0 && (
+              <div>
+                <p className="text-blue-300 mb-1">Builds on</p>
+                {conceptualLinks.prerequisites.map(rel => <p key={rel.id} className="text-gray-300">• {rel.from} → {rel.to}</p>)}
+              </div>
+            )}
+            {conceptualLinks.downstream.length > 0 && (
+              <div>
+                <p className="text-emerald-300 mb-1">Leads to</p>
+                {conceptualLinks.downstream.map(rel => <p key={rel.id} className="text-gray-300">• {rel.from} → {rel.to}</p>)}
+              </div>
+            )}
+            {conceptualLinks.neighbors.length > 0 && (
+              <div>
+                <p className="text-purple-300 mb-1">Conceptual neighbors</p>
+                {conceptualLinks.neighbors.map(rel => <p key={rel.id} className="text-gray-300">• {rel.from} ↔ {rel.to}</p>)}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* Clinical Reasoning Flow — only when page intelligence relations detected */}
+      {clinicalFlow.length >= 2 && (
+        <section className="mb-4">
+          <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+            <span>⛓️</span> Clinical Reasoning Flow
+          </h3>
+          <div className="rounded-xl border border-teal-700/40 bg-gray-900/50 overflow-hidden">
+            <div className="px-3 py-2.5 space-y-0">
+              {clinicalFlow.map((edge, idx) => (
+                <div key={idx}>
+                  {/* From node (only on first) */}
+                  {idx === 0 && (
+                    <div className="px-2.5 py-1.5 rounded-lg bg-teal-900/30 border border-teal-700/40 text-[11px] text-teal-200 font-medium">
+                      {edge.from}
+                    </div>
+                  )}
+                  {/* Arrow + predicate */}
+                  <div className="flex items-center gap-1.5 my-0.5 pl-4">
+                    <div className="h-3 w-px bg-gray-600" />
+                    <span className="text-[9px] text-purple-400 italic">{edge.predicate}</span>
+                  </div>
+                  {/* To node */}
+                  <div className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border ${
+                    idx === clinicalFlow.length - 1
+                      ? 'bg-red-900/20 border-red-700/40 text-red-200'
+                      : 'bg-gray-800/50 border-gray-700/50 text-gray-200'
+                  }`}>
+                    {edge.to}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Clusters Section */}
       {clusters.length > 0 && (
         <section className="mb-4">
@@ -1717,7 +2551,7 @@ const RelationsTab: React.FC<{
                   <span className="text-[10px] text-gray-500">{cluster.relationIds.length} rel</span>
                 </div>
                 {cluster.summary && (
-                  <p className="text-[10px] text-gray-500 mt-0.5 line-clamp-1">{cluster.summary}</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">{sanitizeRenderText(cluster.summary)}</p>
                 )}
               </button>
             ))}
@@ -1764,7 +2598,7 @@ const RelationsTab: React.FC<{
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          onJumpToPage(page);
+                          onJumpToPage(page + 1);
                         }}
                         className="text-[9px] text-teal-400 hover:text-teal-300"
                       >

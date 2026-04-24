@@ -8,7 +8,7 @@
 // ❌ No Thought Units (those belong in Surgeon View)
 // ✅ Uses global zoom store for shared zoom across views
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 
@@ -26,6 +26,9 @@ interface PureReaderViewProps {
   fontFamily?: string;
   /** Forwarded to SmartPDFViewer for scroll → active paragraph detection */
   onActiveParagraphChange?: (snippet: string | null) => void;
+  onOpenFocusCycle?: () => void;
+  /** Emits extracted text for the current page (best-effort). Empty string means unavailable. */
+  onPageTextExtracted?: (pageNumber: number, text: string) => void;
 }
 
 export default function PureReaderView({
@@ -40,18 +43,27 @@ export default function PureReaderView({
   fontSize = 16,
   fontFamily = 'Georgia',
   onActiveParagraphChange,
+  onOpenFocusCycle,
+  onPageTextExtracted,
 }: PureReaderViewProps) {
   // Global zoom store
   const { zoom, zoomIn, zoomOut, resetZoom, getZoomPercent, canZoomIn, canZoomOut } = useZoomStore();
-  
+  const [isPageChanging, setIsPageChanging] = useState(false);
+
+  const navigateToPage = useCallback((page: number) => {
+    if (isPageChanging || page === currentPage) return;
+    setIsPageChanging(true);
+    onPageChange(page);
+  }, [currentPage, isPageChanging, onPageChange]);
+
   const handlePrevPage = useCallback(() => {
-    if (currentPage > 1) onPageChange(currentPage - 1);
-  }, [currentPage, onPageChange]);
-  
+    if (currentPage > 1) navigateToPage(currentPage - 1);
+  }, [currentPage, navigateToPage]);
+
   const handleNextPage = useCallback(() => {
-    if (currentPage < pdfPageCount) onPageChange(currentPage + 1);
-  }, [currentPage, pdfPageCount, onPageChange]);
-  
+    if (currentPage < pdfPageCount) navigateToPage(currentPage + 1);
+  }, [currentPage, pdfPageCount, navigateToPage]);
+
   // No file uploaded
   if (!fileUrl) {
     return (
@@ -69,7 +81,7 @@ export default function PureReaderView({
       </div>
     );
   }
-  
+
   return (
     <div className="h-full flex flex-col bg-gray-900" data-testid="pure-reader-view">
       {/* Minimal Toolbar - Only essential reading controls */}
@@ -78,27 +90,34 @@ export default function PureReaderView({
         <div className="flex items-center gap-3">
           <button
             onClick={handlePrevPage}
-            disabled={currentPage <= 1}
+            disabled={isPageChanging || currentPage <= 1}
             className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm transition-colors"
             data-testid="prev-page-btn"
           >
             ← Prev
           </button>
           <span className="text-sm text-gray-300 font-medium">
-            Page {currentPage} of {pdfPageCount || '...'}
+            Page {currentPage} of {pdfPageCount || '...'} {isPageChanging ? '• loading…' : ''}
           </span>
           <button
             onClick={handleNextPage}
-            disabled={currentPage >= pdfPageCount}
+            disabled={isPageChanging || currentPage >= pdfPageCount}
             className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm transition-colors"
             data-testid="next-page-btn"
           >
             Next →
           </button>
         </div>
-        
-        {/* Zoom Controls */}
+
+        {/* Zoom + Focus Cycle */}
         <div className="flex items-center gap-2">
+          <button
+            onClick={onOpenFocusCycle}
+            className="px-3 py-1 bg-purple-700 hover:bg-purple-600 rounded text-sm"
+            title="Open Focus Cycle"
+          >
+            ⏱ Focus Cycle
+          </button>
           <button
             onClick={zoomOut}
             disabled={!canZoomOut()}
@@ -123,13 +142,13 @@ export default function PureReaderView({
             +
           </button>
         </div>
-        
+
         {/* Mode indicator */}
         <div className="text-xs text-gray-500">
           📖 Reader Mode
         </div>
       </div>
-      
+
       {/* PDF Viewer - FULL WIDTH, no split */}
       <div className="flex-1 overflow-auto bg-gray-950">
         <SmartPDFViewer
@@ -137,11 +156,14 @@ export default function PureReaderView({
           docId={docId}
           currentPage={currentPage}
           scale={zoom}
-          onPageChange={onPageChange}
+          onPageChange={navigateToPage}
           onPageCount={onPageCount}
           onTextSelect={onTextSelect}
           onOutline={onOutline}
           onActiveParagraphChange={onActiveParagraphChange}
+          onPageTextExtracted={onPageTextExtracted}
+          isPageChanging={isPageChanging}
+          onPageRenderComplete={() => setIsPageChanging(false)}
         />
       </div>
     </div>

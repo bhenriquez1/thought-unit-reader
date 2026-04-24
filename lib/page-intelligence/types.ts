@@ -6,11 +6,14 @@
 // Source and Text Types
 // ============================================================================
 
-export type PageSource = "native" | "ocr";
+export type PageSource = "native" | "ocr" | "mixed";
 
 export interface PageText {
   pageNumber: number;
   text: string;
+  nativeText?: string;
+  ocrText?: string;
+  mergedText?: string;
   source: PageSource;
   confidence?: number; // OCR confidence avg if available (0-100)
 }
@@ -149,6 +152,276 @@ export interface ExplainResult {
   bullets: string[];
   pitfalls: string[];
   mnemonics?: string[];
+  domainStyle?: 'pharmacology' | 'periodontology' | 'biology' | 'clinical' | 'general';
+}
+
+// ============================================================================
+// Paragraph Intelligence — role-classified units with source anchoring (PR3)
+// ============================================================================
+
+export type ParagraphRole =
+  | 'definition'
+  | 'mechanism'
+  | 'clinical'
+  | 'example'
+  | 'step'
+  | 'warning'
+  | 'exam_trap'
+  | 'formula'
+  | 'summary';
+
+export interface ParagraphSignals {
+  hasNumbers: boolean;
+  hasUnits: boolean;
+  hasNegation: boolean;
+  hasComparison: boolean;
+  hasCausal: boolean;
+  hasTemporal: boolean;
+  hasClinicalTerms: boolean;
+}
+
+/** Dimensional sub-scores (0–100) for a paragraph — shown as chips in the UI */
+export interface ParagraphSubScores {
+  /** Definitions, key terms, "is defined as" patterns */
+  conceptScore: number;
+  /** Cause→effect, pathway, process verbs */
+  mechanismScore: number;
+  /** If/then, staging criteria, classification thresholds */
+  decisionScore: number;
+  /** Exceptions, negations, confusables, "most likely" */
+  examTrapScore: number;
+  /** Formulas, variables, units, equations */
+  mathScore: number;
+  /** Symptom→diagnosis→test→treatment chains */
+  clinicalScore: number;
+  /** Heading proximity, bullet lists, figure/table refs */
+  structureScore: number;
+}
+
+/**
+ * A ranked, role-classified paragraph unit anchored to exact char positions.
+ * Used by all engine tabs for jump-to-source navigation.
+ */
+export interface ParagraphUnit {
+  id: string;
+  pageIndex: number;
+  text: string;
+  /** Character offset in page text where this paragraph starts */
+  startChar: number;
+  /** Character offset in page text where this paragraph ends */
+  endChar: number;
+  /** Optional bounding box if OCR provides coordinates */
+  bbox?: { x: number; y: number; w: number; h: number };
+  role: ParagraphRole;
+  /** Importance 0–100 scored by role + clinical signals (weighted sub-score sum) */
+  importance: number;
+  keyTerms: string[];
+  signals: ParagraphSignals;
+  /** Dimensional sub-scores for visualization */
+  subScores?: ParagraphSubScores;
+  /** 3–5 human-readable labels explaining why this paragraph scored as it did */
+  whyScoredSignals?: string[];
+  /** Detected DAT trap types in this paragraph */
+  trapTypes?: string[];
+}
+
+/**
+ * Source anchor for any output item — enables click-to-focus in PDF.
+ */
+export interface SourceRef {
+  pageIndex: number;
+  pageNumberLabel?: string;
+  paragraphId: string;
+  /** Approximate vertical location within page (0–100) */
+  yPct?: number;
+  /** Logical PDF column */
+  column?: 'left' | 'right' | 'full';
+  /** Paragraph block index in reading order (1-based) */
+  block?: number;
+  startChar: number;
+  endChar: number;
+  /** Sentence-level character offsets (within paragraphText) for fine-grained highlight */
+  sentenceStartChar?: number;
+  sentenceEndChar?: number;
+  /** Short representative quote ≤ 180 chars */
+  quote: string;
+  /** Verbatim exact quote for strict comparison */
+  quoteText?: string;
+  /** Simple hash of normalized quote for deduplication */
+  quoteHash?: string;
+  bbox?: { x: number; y: number; w: number; h: number };
+  confidence: number; // 0..1
+  /** Origin of the text — native PDF text layer vs OCR */
+  textOrigin?: 'pdfText' | 'ocr';
+  /** Extraction run identifier */
+  runId?: string;
+  /** Engine version string */
+  engineVersion?: string;
+}
+
+/**
+ * Generic output item from any engine, anchored to source material.
+ */
+export interface AnchoredItem<T = unknown> {
+  id: string;
+  kind:
+    | 'high_yield'
+    | 'mechanism'
+    | 'exam_trap'
+    | 'clinical_relevance'
+    | 'insight'
+    | 'relation'
+    | 'compare'
+    | 'explain'
+    | 'math'
+    | 'clinical_flow';
+  title?: string;
+  content: string;
+  tags?: string[];
+  source: SourceRef;
+  payload?: T;
+}
+
+// ============================================================================
+// Structure Map — 4-stage learning scaffold per page
+// ============================================================================
+
+export type StructureMapStage =
+  | 'definition'
+  | 'mechanism'
+  | 'application'
+  | 'clinical_relevance';
+
+export interface StructureMapNode {
+  id: string;
+  stage: StructureMapStage;
+  label: string;
+  text: string;
+  sourceIds: string[];
+  confidence: number;
+}
+
+export interface StructureMap {
+  pageNumber: number;
+  topic: string;
+  nodes: StructureMapNode[];
+  /** 0–1: fraction of the 4 stages detected */
+  completeness: number;
+}
+
+// ============================================================================
+// Insight Continuity — always-populated structured intelligence
+// ============================================================================
+
+export interface InsightContinuity {
+  /** Dominant concept/theme */
+  corePattern: string;
+  /** How this connects to adjacent content */
+  conceptualBridge: string;
+  /** Clinical downstream application */
+  clinicalConnection: string;
+  /** Most common student misunderstanding */
+  commonMisunderstanding: string;
+  /** Data richness indicator */
+  quality: 'rich' | 'minimal' | 'stub';
+}
+
+// ============================================================================
+// Persistent Concept Graph + Page Memory Engine
+// ============================================================================
+
+export type GraphNodeType =
+  | 'DocumentNode'
+  | 'ChapterNode'
+  | 'SectionNode'
+  | 'SubsectionNode'
+  | 'ParagraphNode'
+  | 'FigureNode'
+  | 'TableNode'
+  | 'TermNode'
+  | 'MechanismNode'
+  | 'ClinicalConceptNode'
+  | 'ComparisonNode'
+  | 'QuestionNode'
+  | 'UserNoteNode';
+
+export type GraphEdgeType =
+  | 'belongs_to'
+  | 'defines'
+  | 'explains'
+  | 'contrasts_with'
+  | 'depends_on'
+  | 'leads_to'
+  | 'illustrates'
+  | 'appears_with'
+  | 'summarized_by'
+  | 'anchored_to'
+  | 'mentioned_in';
+
+export interface ConceptGraphNode {
+  id: string;
+  type: GraphNodeType;
+  label: string;
+  pageIndex: number;
+  metadata?: Record<string, unknown>;
+  updatedAt: number;
+}
+
+export interface ConceptGraphEdge {
+  id: string;
+  type: GraphEdgeType;
+  fromId: string;
+  toId: string;
+  pageIndex: number;
+  score: number;
+  metadata?: Record<string, unknown>;
+  updatedAt: number;
+}
+
+export interface ConceptGraph {
+  docId: string;
+  version: string;
+  nodes: Record<string, ConceptGraphNode>;
+  edges: Record<string, ConceptGraphEdge>;
+  updatedAt: number;
+}
+
+export interface PageMemory {
+  docId: string;
+  pageIndex: number;
+  fingerprint: string;
+  headingCandidates: string[];
+  visibleParagraphIds: string[];
+  visibleFigureIds: string[];
+  sectionId?: string;
+  subsectionId?: string;
+  dominantConceptIds: string[];
+  updatedAt: number;
+}
+
+export type TabType = 'priority' | 'explain' | 'relations' | 'compare' | 'insights';
+
+export type SourceAnchor = SourceRef;
+
+export interface TabResponse {
+  pageIndex: number;
+  fingerprint: string;
+  tab: TabType;
+  title: string;
+  sections: Array<{
+    label: string;
+    content: string | string[];
+  }>;
+  sourceAnchors: SourceAnchor[];
+  relatedNodeIds: string[];
+}
+
+export interface TabPayloadContracts {
+  priorityPayload: TabResponse;
+  explainPayload: TabResponse;
+  relationsPayload: TabResponse;
+  comparePayload: TabResponse;
+  insightsPayload: TabResponse;
 }
 
 // ============================================================================
@@ -159,6 +432,16 @@ export interface PageIntelligence {
   pageNumber: number;
   source: PageSource;
   confidence?: number;
+  extractionMethod?: 'native' | 'ocr' | 'hybrid' | 'failed';
+  extractionVersion?: string;
+  nativeText?: string;
+  ocrText?: string;
+  mergedText?: string;
+  fallbackState?: {
+    canSynthesize: boolean;
+    reason?: string;
+    message?: string;
+  };
   segments: Segment[];
   signals: Signal[];
   relations: Relation[];
@@ -166,6 +449,30 @@ export interface PageIntelligence {
   insights: Insight[];
   explain: ExplainResult;
   cards: StudyCard[];
+  /** Ranked, role-classified paragraphs with source anchoring (PR3) */
+  paragraphUnits?: ParagraphUnit[];
+  /** 4-stage learning scaffold: Definition → Mechanism → Application → Clinical */
+  structureMap?: StructureMap;
+  /** Always-populated structured intelligence (never empty) */
+  continuity?: InsightContinuity;
+  /** Grounding snapshot for current page; required for mode-specific query outputs */
+  pageMemory?: PageMemory;
+  /** Persistent per-document graph snapshot after integrating this page */
+  conceptGraph?: ConceptGraph;
+  /** Mode-specific, page-grounded responses consumed by right-panel tabs */
+  tabResponses?: Record<TabType, TabResponse>;
+  /** Strict mode payload contracts so each tab can render independent query output */
+  tabPayloads?: TabPayloadContracts;
+  /** Detected dominant domain on this page */
+  domain?: 'pharmacology' | 'periodontology' | 'biology' | 'clinical' | 'general';
+  /** Pre-synthesis cleanup diagnostics */
+  normalization?: {
+    dehyphenatedWords: number;
+    repairedLineWraps: number;
+    figureCaptionsDetected: number;
+    removedCitationArtifacts?: number;
+    lowQuality: boolean;
+  };
   extractedAt: number;
 }
 

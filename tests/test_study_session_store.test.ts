@@ -8,6 +8,14 @@ import { useAnnotationStore } from '../lib/stores/annotationStore';
 
 // localStorage is mocked in setup.ts
 
+const TEST_VIEW_MODE = {
+  mode: 'full' as const,
+  showOnlyHighlights: false,
+  showHeadings: true,
+  showFigureCaptions: true,
+  contextSentences: 2
+};
+
 describe('StudySessionStore - P2 Implementation', () => {
   const TEST_DOC_ID = 'test-doc-123';
   
@@ -31,42 +39,54 @@ describe('StudySessionStore - P2 Implementation', () => {
         'ann-1': {
           id: 'ann-1',
           documentId: TEST_DOC_ID,
-          pageNumber: 1,
+          chapterId: 'ch-1',
+          pageIndex: 1,
+          anchor: { type: 'textRange', start: 0, end: 10 },
+          pdrm: {},
+          userId: 'test-user',
           selectedText: 'Test highlight text for studying',
           noteContent: 'This is a note about the highlight',
           tags: [],
           color: '#ffff00',
-          createdAt: Date.now(),
-          updatedAt: Date.now()
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         },
         'ann-2': {
           id: 'ann-2',
           documentId: TEST_DOC_ID,
-          pageNumber: 2,
+          chapterId: 'ch-1',
+          pageIndex: 2,
+          anchor: { type: 'textRange', start: 0, end: 10 },
+          pdrm: {},
+          userId: 'test-user',
           selectedText: 'Another important concept to remember',
           noteContent: 'Key concept explanation',
           tags: ['weak', 'quiz-miss'],
           color: '#ff0000',
-          createdAt: Date.now(),
-          updatedAt: Date.now()
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         },
         'ann-3': {
           id: 'ann-3',
           documentId: TEST_DOC_ID,
-          pageNumber: 3,
+          chapterId: 'ch-1',
+          pageIndex: 3,
+          anchor: { type: 'textRange', start: 0, end: 10 },
+          pdrm: {},
+          userId: 'test-user',
           selectedText: 'Flashcard front text',
           flashcardFront: 'What is the main concept?',
           flashcardBack: 'The main concept is XYZ',
           noteContent: '',
           tags: [],
           color: '#00ff00',
-          createdAt: Date.now(),
-          updatedAt: Date.now()
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         }
       },
       activeDocumentId: TEST_DOC_ID,
-      activePageNumber: 1,
-      viewMode: 'all',
+      activePageIndex: 1,
+      viewMode: TEST_VIEW_MODE,
       pendingHighlight: null
     });
   });
@@ -252,18 +272,22 @@ describe('StudySessionStore - SM-2 Algorithm', () => {
         'ann-sm2': {
           id: 'ann-sm2',
           documentId: TEST_DOC_ID,
-          pageNumber: 1,
+          chapterId: 'ch-1',
+          pageIndex: 1,
+          anchor: { type: 'textRange', start: 0, end: 10 },
+          pdrm: {},
+          userId: 'test-user',
           selectedText: 'SM-2 test content for spaced repetition algorithm testing with sufficient length',
           noteContent: 'Testing spaced repetition algorithm implementation',
           tags: [],
           color: '#ffff00',
-          createdAt: Date.now(),
-          updatedAt: Date.now()
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         }
       },
       activeDocumentId: TEST_DOC_ID,
-      activePageNumber: 1,
-      viewMode: 'all',
+      activePageIndex: 1,
+      viewMode: TEST_VIEW_MODE,
       pendingHighlight: null
     });
   });

@@ -57,6 +57,12 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
           <div>
             <h1 className="text-lg font-bold text-white">Surgeon View</h1>
             <p className="text-xs text-gray-400 truncate max-w-[200px]">{documentTitle}</p>
+            {/* Build SHA indicator — confirms the deployed build is current */}
+            {process.env.NEXT_PUBLIC_BUILD_SHA && (
+              <p className="text-[9px] font-mono text-gray-600 select-none">
+                build {process.env.NEXT_PUBLIC_BUILD_SHA}
+              </p>
+            )}
           </div>
         </div>
 
