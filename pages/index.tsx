@@ -1224,6 +1224,8 @@ export default function ThoughtUnitReader() {
     handleRightPanelStateChange((prev) => ({ ...prev, activeTab: tab }));
   }, [handleRightPanelStateChange]);
 
+  
+
   /* =========================================================================
      🔹 Upload PDF — parse + detect diagrams
   ========================================================================= */

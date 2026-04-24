@@ -41,6 +41,7 @@ export interface SmartPDFViewerProps {
    * Use this to drive PDF scroll → insights-panel sync without DOM overlays.
    */
   onActiveParagraphChange?: (snippet: string | null) => void;
+
   /** External page change lock to prevent observer feedback loops while rendering */
   isPageChanging?: boolean;
   /** Fires when the currently requested page render completes */
@@ -108,6 +109,7 @@ export default function SmartPDFViewer({
   onPageCount,
   onOutline,
   onActiveParagraphChange,
+
   isPageChanging = false,
   onPageRenderComplete,
   onPageTextExtracted,
