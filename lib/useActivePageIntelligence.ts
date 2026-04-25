@@ -22,6 +22,7 @@ import { buildPageStory } from "@/lib/insights/buildPageStory";
 import type { PageInsightModel } from "@/lib/insights/types";
 import type { PageStory } from "@/lib/insights/buildPageStory";
 import { normalizeClinicalText, type ClinicalNormalizationResult } from "@/lib/normalization/normalizeClinicalText";
+import { selectTeachingSource } from "@/lib/insights/selectTeachingSource";
 
 export type ActivePageIntelligenceStatus = "idle" | "loading" | "ready" | "error";
 
@@ -199,16 +200,10 @@ export function useActivePageIntelligence({
         localFormulaSignals.length >= 2 && (rawPageClass === "sparse_text" || rawPageClass === "failed_sparse")
           ? "mixed_visual"
           : rawPageClass;
-      const parsedModel = processPage(snapshot.pageText || "");
-      const localPageModel: PageInsightModel = {
-        ...parsedModel,
-        documentId,
-        pageNumber,
-        requestKey,
-      };
 
-      // Normalization gate — computed once per page change, shared by both highlight
-      // and right-panel pipelines so suppression is consistent and early.
+      // Normalization gate — runs BEFORE processPage so pageKind is available
+      // for teaching source selection. Full pageText is always passed here for
+      // accurate classification (the selector narrows it afterward).
       const normHeadingLines = (snapshot.pageText || "")
         .split(/\n+/)
         .map((l) => l.trim())
@@ -216,10 +211,41 @@ export function useActivePageIntelligence({
         .slice(0, 6);
       const localNormResult = normalizeClinicalText({
         pageText: snapshot.pageText || "",
-        pageTitle: localPageModel.pageSummary ?? undefined,
+        pageTitle: null,
         pageNumber,
         headingLines: normHeadingLines,
       });
+
+      // Zone the page text and select only the authoritative teaching source
+      // before processPage sees it. This prevents figure captions, sidebar
+      // callouts, and exercise prompts from ranking above the actual lesson.
+      const teachingSource = selectTeachingSource(snapshot.pageText || "", localNormResult.pageKind);
+      console.log("[TRACE sourceSelector]", {
+        pageNumber,
+        pageKind: localNormResult.pageKind,
+        zones: teachingSource.zones,
+        selectedZone: teachingSource.selectedZone,
+        selectedWordCount: teachingSource.selectedWordCount,
+        suppressedReason: teachingSource.suppressedReason,
+      });
+      if (teachingSource.mathPath) {
+        console.log("[TRACE mathPath]", {
+          pageNumber,
+          ...teachingSource.mathPath,
+        });
+      }
+
+      // Use the selected source text for concept extraction.
+      // Fall back to full page text only if the selector found nothing
+      // (the normalization gate's shouldRenderFullPanel will suppress the panel anyway).
+      const sourceTextForProcessing = teachingSource.selectedText || snapshot.pageText || "";
+      const parsedModel = processPage(sourceTextForProcessing);
+      const localPageModel: PageInsightModel = {
+        ...parsedModel,
+        documentId,
+        pageNumber,
+        requestKey,
+      };
 
       const localPageStory = localPageModel.pageStory || buildPageStory({
         pageClass: localPageClass,
@@ -289,7 +315,7 @@ export function useActivePageIntelligence({
       // even before the new page's primary effect has fired and updated latestRequestRef.
       if (currentPageRef.current.pageTruthKey !== requestKey) return;
 
-      // [TRACE] temporary pipeline instrumentation
+      // [TRACE] temporary pipeline instrumentation — all logs use [TRACE] prefix for easy console filtering
       const _traceValid = (localPageModel.paragraphInsights ?? []).filter(isValidCoreParagraph);
       const _traceZone  = findMainTeachingZone(_traceValid);
       const _tracePage  = adaptPageInsightModel({ ...localPageModel, paragraphInsights: _traceZone });
@@ -303,6 +329,8 @@ export function useActivePageIntelligence({
         : 0;
       const _traceOverlaySuppressedReason = !localNormResult.shouldRenderFullPanel
         ? "normalization_gate"
+        : teachingSource.suppressedReason
+        ? `source_suppressed:${teachingSource.suppressedReason}`
         : _traceConcepts.length === 0
         ? "no_concepts"
         : _traceNeighborhoods.length === 0
@@ -321,6 +349,12 @@ export function useActivePageIntelligence({
         structuralStepCount: _traceStructuralSteps,
         mathStepCount: _traceMathSteps,
         overlaySuppressedReason: _traceOverlaySuppressedReason,
+      });
+      console.log("[TRACE overlayPath]", {
+        pageNumber,
+        stepCount: _traceStructuralSteps,
+        roles: _traceNeighborhoods.map(n => n.conceptRole ?? "detail"),
+        suppressedReason: _traceOverlaySuppressedReason,
       });
 
       setSignals(localSignals);

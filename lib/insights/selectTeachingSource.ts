@@ -1,0 +1,225 @@
+// lib/insights/selectTeachingSource.ts
+//
+// Teaching source selector: zones raw PDF page text and returns only the
+// subset the concept-extraction pipeline should treat as "the lesson".
+//
+// Problem: PDF pages mix figure captions, sidebar callouts, key-concept boxes,
+// table cells, and exercise prompts with actual instructional prose. Treating
+// all text equally lets captions and sidebars rank above the real lesson.
+//
+// Solution: classify each paragraph-block into a zone, then pick only the
+// zones that are authoritative for the page's kind.
+
+export type TextZone =
+  | "mainBody"
+  | "heading"
+  | "figureCaption"
+  | "table"
+  | "sidebar"
+  | "formulaBlock"
+  | "exercise";
+
+export interface ZonedBlock {
+  zone: TextZone;
+  text: string;
+  wordCount: number;
+}
+
+export interface TeachingSourceResult {
+  selectedText: string;
+  selectedZone: TextZone;
+  selectedWordCount: number;
+  suppressedReason: string | null;
+  zones: { zone: TextZone; wordCount: number }[];
+  mathPath: {
+    formulaCount: number;
+    explanationCount: number;
+    stepCount: number;
+    canRender: boolean;
+  } | null;
+}
+
+// ── Zone-detection patterns ────────────────────────────────────────────────
+
+const CAPTION_RE = /^(figure|fig\.|table|diagram|image|plate|chart|exhibit)\s*[\dA-Za-z]/i;
+const SIDEBAR_RE = /^(key concept[s:]?|did you know|learning objective[s:]?|note:|tip:|important:|remember:|recall:|definition:|boxed text|concept check)/i;
+const EXERCISE_RE = /^(problem|exercise|question|practice|q\.|q\d|activity|try it|worked example)\s*\d*/i;
+const TABLE_LINE_RE = /\t[^\t]+\t|\|[^|]+\|/;
+// ≥2 distinct math signals in a block → formula-dense
+const MATH_SIGNAL_RE = /[=∫∑∂π√∞±]|dy\/dx|f\(['"]?x['"]?\)|lim\s*[_({]|\bderivative\b|\bintegral\b|\btheorem\b|\bproof\b|\bdy\b.*=|\bd[xy]\b/i;
+
+/* -------------------------------------------------------------------------- */
+/*                               PUBLIC API                                   */
+/* -------------------------------------------------------------------------- */
+
+export function selectTeachingSource(
+  rawText: string,
+  pageKind: string
+): TeachingSourceResult {
+  if (!rawText.trim()) {
+    return empty("empty_page_text");
+  }
+
+  const paragraphs = rawText.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  // Fall back to line-splitting for dense single-block pages
+  const blocks: ZonedBlock[] = (paragraphs.length >= 2 ? paragraphs : rawText.split(/\n/).filter(Boolean))
+    .map(classifyBlock);
+
+  const zoneSummary = buildZoneSummary(blocks);
+
+  if (pageKind === "mathematical_exposition") {
+    return buildMathTeachingSource(blocks, zoneSummary);
+  }
+
+  return buildProseTeachingSource(blocks, zoneSummary);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                           ZONE CLASSIFIER                                  */
+/* -------------------------------------------------------------------------- */
+
+function classifyBlock(paragraph: string): ZonedBlock {
+  const lines = paragraph.split(/\n/).map((l) => l.trim()).filter(Boolean);
+  const firstLine = lines[0] ?? "";
+  const words = wordCount(paragraph);
+
+  if (CAPTION_RE.test(firstLine)) return { zone: "figureCaption", text: paragraph, wordCount: words };
+  if (SIDEBAR_RE.test(firstLine)) return { zone: "sidebar", text: paragraph, wordCount: words };
+  if (EXERCISE_RE.test(firstLine)) return { zone: "exercise", text: paragraph, wordCount: words };
+  if (lines.some((l) => TABLE_LINE_RE.test(l))) return { zone: "table", text: paragraph, wordCount: words };
+
+  // Formula-dense: ≥2 distinct math signals
+  const mathHits = countRegexMatches(paragraph, MATH_SIGNAL_RE);
+  if (mathHits >= 2) return { zone: "formulaBlock", text: paragraph, wordCount: words };
+
+  // Short, no terminal punctuation → structural heading
+  if (words < 10 && lines.length === 1 && !/[.!?]$/.test(firstLine)) {
+    return { zone: "heading", text: paragraph, wordCount: words };
+  }
+
+  return { zone: "mainBody", text: paragraph, wordCount: words };
+}
+
+/* -------------------------------------------------------------------------- */
+/*                         PROSE TEACHING SOURCE                              */
+/* -------------------------------------------------------------------------- */
+
+function buildProseTeachingSource(
+  blocks: ZonedBlock[],
+  zones: { zone: TextZone; wordCount: number }[]
+): TeachingSourceResult {
+  // Ordered by teaching authority: mainBody → heading → sidebar (last resort)
+  const mainBodyBlocks = blocks.filter((b) => b.zone === "mainBody");
+  const headingBlocks = blocks.filter((b) => b.zone === "heading");
+
+  let selectedBlocks = mainBodyBlocks;
+  let selectedZone: TextZone = "mainBody";
+
+  if (mainBodyBlocks.length === 0 && headingBlocks.length > 0) {
+    // Page is heading-only — use headings as a last resort so caller can still suppress
+    selectedBlocks = headingBlocks;
+    selectedZone = "heading";
+  }
+
+  const selectedText = selectedBlocks.map((b) => b.text).join("\n\n");
+  const selectedWords = selectedBlocks.reduce((n, b) => n + b.wordCount, 0);
+
+  if (selectedWords < 40) {
+    return {
+      selectedText: "",
+      selectedZone,
+      selectedWordCount: 0,
+      suppressedReason: "insufficient_main_body",
+      zones,
+      mathPath: null,
+    };
+  }
+
+  return {
+    selectedText,
+    selectedZone,
+    selectedWordCount: selectedWords,
+    suppressedReason: null,
+    zones,
+    mathPath: null,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/*                          MATH TEACHING SOURCE                              */
+/* -------------------------------------------------------------------------- */
+
+function buildMathTeachingSource(
+  blocks: ZonedBlock[],
+  zones: { zone: TextZone; wordCount: number }[]
+): TeachingSourceResult {
+  const formulaBlocks = blocks.filter((b) => b.zone === "formulaBlock");
+  const mainBodyBlocks = blocks.filter((b) => b.zone === "mainBody");
+  const headingBlocks = blocks.filter((b) => b.zone === "heading");
+
+  // Math path: formulas + prose explanation + headings, in document order
+  const selectedBlocks = blocks.filter(
+    (b) => b.zone === "formulaBlock" || b.zone === "mainBody" || b.zone === "heading"
+  );
+
+  const formulaCount = formulaBlocks.length;
+  const explanationCount = mainBodyBlocks.length;
+  const stepCount = Math.min(formulaCount + Math.floor(explanationCount / 2), 5);
+  const selectedWords = selectedBlocks.reduce((n, b) => n + b.wordCount, 0);
+  // Render if at least one formula block OR enough explanatory prose
+  const canRender = formulaCount >= 1 || selectedWords >= 60;
+
+  const mathPath = { formulaCount, explanationCount, stepCount, canRender };
+
+  if (!canRender) {
+    return {
+      selectedText: "",
+      selectedZone: "formulaBlock",
+      selectedWordCount: 0,
+      suppressedReason: "insufficient_math_content",
+      zones,
+      mathPath,
+    };
+  }
+
+  return {
+    selectedText: selectedBlocks.map((b) => b.text).join("\n\n"),
+    selectedZone: "formulaBlock",
+    selectedWordCount: selectedWords,
+    suppressedReason: null,
+    zones,
+    mathPath,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                 HELPERS                                    */
+/* -------------------------------------------------------------------------- */
+
+function empty(reason: string): TeachingSourceResult {
+  return {
+    selectedText: "",
+    selectedZone: "mainBody",
+    selectedWordCount: 0,
+    suppressedReason: reason,
+    zones: [],
+    mathPath: null,
+  };
+}
+
+function buildZoneSummary(blocks: ZonedBlock[]): { zone: TextZone; wordCount: number }[] {
+  const map = new Map<TextZone, number>();
+  for (const block of blocks) {
+    map.set(block.zone, (map.get(block.zone) ?? 0) + block.wordCount);
+  }
+  return Array.from(map.entries()).map(([zone, wordCount]) => ({ zone, wordCount }));
+}
+
+function wordCount(text: string): number {
+  return (text ?? "").trim().split(/\s+/).filter(Boolean).length;
+}
+
+function countRegexMatches(text: string, re: RegExp): number {
+  const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
+  return (text.match(g) ?? []).length;
+}
