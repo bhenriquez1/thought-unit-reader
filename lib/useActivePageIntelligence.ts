@@ -317,7 +317,7 @@ export function useActivePageIntelligence({
 
       // [TRACE] temporary pipeline instrumentation — all logs use [TRACE] prefix for easy console filtering
       const _traceValid = (localPageModel.paragraphInsights ?? []).filter(isValidCoreParagraph);
-      const _traceZone  = findMainTeachingZone(_traceValid);
+      const _traceZone  = findMainTeachingZone(_traceValid, { pageKind: localNormResult.pageKind });
       const _tracePage  = adaptPageInsightModel({ ...localPageModel, paragraphInsights: _traceZone });
       const _traceConcepts = extractConceptBlocksCore(_tracePage);
       const _traceNeighborhoods = _traceConcepts.length > 0
@@ -402,7 +402,7 @@ export function useActivePageIntelligence({
   const highlightNeighborhoods: HighlightNeighborhood[] = useMemo(() => {
     if (!pageModel || !normResult?.shouldRenderFullPanel) return [];
     const validInsights = (pageModel.paragraphInsights ?? []).filter(isValidCoreParagraph);
-    const zoneInsights = findMainTeachingZone(validInsights);
+    const zoneInsights = findMainTeachingZone(validInsights, { pageKind: normResult?.pageKind });
     const adapted = adaptPageInsightModel({
       ...pageModel,
       paragraphInsights: zoneInsights,

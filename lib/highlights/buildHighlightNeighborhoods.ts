@@ -220,10 +220,13 @@ export function buildHighlightNeighborhoods(
       return b.priorityScore - a.priorityScore;
     });
 
-  // Suppress the guided overlay when fewer than 2 neighborhoods have enough
-  // depth to form a meaningful structural reading path. A single definition
-  // with no explanation/example is not a guided path — fall back to priority highlights.
-  if (finalNeighborhoods.length < 2) return [];
+  // Suppress the guided overlay only when zero structural neighborhoods survive.
+  // A single neighborhood is still returned so the legend has one concrete entry
+  // rather than falling back to the hardcoded four-tier placeholder. The overlay
+  // will show one concept step instead of a full guided path — acceptable for
+  // sparse pages. Zero neighborhoods means nothing renderable; return [] so the
+  // priority-highlights fallback takes over.
+  if (finalNeighborhoods.length === 0) return [];
   return finalNeighborhoods;
 }
 

@@ -97,10 +97,10 @@ export function isValidCoreParagraph(p: ParagraphInsight): boolean {
   // Short math explanation context should survive near formulas.
   if (looksLikeMathExplanation(text)) return text.length >= 35;
   if (text.length < 80) return false;
-  // Reject figure captions, table headers, diagram labels
-  if (/^(figure\s*\d|fig\.\s*\d|table\s*\d|diagram\s*\d|image\s*\d)/i.test(text)) return false;
+  // Reject figure captions, table headers, diagram labels — including letter-indexed ones (Fig. A, Table S1)
+  if (/^(figure|fig\.|table|diagram|image|plate|chart|exhibit)\s*[\dA-Za-z]/i.test(text)) return false;
   // Reject structural / TOC content
-  if (/^(chapter\s+\d|section\s+\d|key\s+concepts?|learning\s+objectives?|table\s+of\s+contents)/i.test(text)) return false;
+  if (/^(chapter\s+\d|section\s+\d|\d+\.\d+\s|key\s+concepts?|learning\s+objectives?|table\s+of\s+contents)/i.test(text)) return false;
   // Must carry at least one explanation signal
   return /\b(is|are|was|were|causes?|leads?\s+to|results?\s+in|depends?|occurs?|because|means?|defined\s+as|refers?\s+to|consists?\s+of|involves?)\b/i.test(text);
 }
@@ -332,7 +332,7 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
 
   // Apply hard filter + teaching zone before concept extraction
   const validInsights = (pageModel.paragraphInsights ?? []).filter(isValidCoreParagraph);
-  const zoneInsights = findMainTeachingZone(validInsights);
+  const zoneInsights = findMainTeachingZone(validInsights, { pageKind: normResult.pageKind });
   console.log("[TRACE buildUltraPageView:zone]", { validParagraphs: validInsights.length, teachingZoneSize: zoneInsights.length, zoneIsSubset: zoneInsights.length < validInsights.length });
   const page = adaptPageInsightModel({ ...pageModel, paragraphInsights: zoneInsights });
   let concepts = extractConceptBlocks(page);

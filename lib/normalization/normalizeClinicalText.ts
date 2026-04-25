@@ -310,10 +310,10 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
     /\blast name\b|\bfirst name\b|\bsymptoms\b|\bplease check\b/.test(text)
   ) return "questionnaire_form";
 
-  if (
-    /\bderivative\b|\bintegral\b|\blimit\b|\bfunction\b|\btheorem\b|\bproof\b|\bdy\/dx\b/.test(text) ||
-    countMathSignals(text) >= 3
-  ) return "mathematical_exposition";
+  // Unambiguous calculus symbols/terms → math without counting
+  if (/[∫∑∂∇]|dy\/dx|d[xyz]\/d[xyz]|\b(derivative|integral|calculus|antiderivative|chain rule|related rates)\b/i.test(text)) return "mathematical_exposition";
+  // Weaker signals: 2+ hits catches fragmented PDF extraction (e.g. "lim" + "theorem" on separate lines)
+  if (countMathSignals(text) >= 2) return "mathematical_exposition";
 
   if (
     /\bpatient\b|\bclinician\b|\bdiagnosis\b|\btreatment\b|\bsymptoms\b|\bclinical\b|\bchief complaint\b/.test(text)

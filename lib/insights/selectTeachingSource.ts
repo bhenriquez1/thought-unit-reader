@@ -88,9 +88,11 @@ function classifyBlock(paragraph: string): ZonedBlock {
   if (EXERCISE_RE.test(firstLine)) return { zone: "exercise", text: paragraph, wordCount: words };
   if (lines.some((l) => TABLE_LINE_RE.test(l))) return { zone: "table", text: paragraph, wordCount: words };
 
-  // Formula-dense: ≥2 distinct math signals
+  // Formula-dense: ≥2 distinct math signals, OR a short block (< 20 words) with ≥1 signal.
+  // The short-block exception handles single-equation lines that PDF.js often extracts
+  // as isolated short paragraphs: "f'(x) = lim(h→0) [f(x+h) – f(x)] / h"
   const mathHits = countRegexMatches(paragraph, MATH_SIGNAL_RE);
-  if (mathHits >= 2) return { zone: "formulaBlock", text: paragraph, wordCount: words };
+  if (mathHits >= 2 || (mathHits >= 1 && words < 20)) return { zone: "formulaBlock", text: paragraph, wordCount: words };
 
   // Short, no terminal punctuation → structural heading
   if (words < 10 && lines.length === 1 && !/[.!?]$/.test(firstLine)) {

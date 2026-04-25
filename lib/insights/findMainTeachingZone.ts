@@ -28,8 +28,16 @@ function looksLikeMathExplanation(text: string): boolean {
   return /\b(function|sequence|depends on|represent|graph|rate|value|approach|limit|increases?|decreases?)\b/i.test(text);
 }
 
-export function findMainTeachingZone(paragraphs: ParagraphInsight[]): ParagraphInsight[] {
+export function findMainTeachingZone(
+  paragraphs: ParagraphInsight[],
+  options?: { pageKind?: string }
+): ParagraphInsight[] {
   if (paragraphs.length <= 5) return paragraphs;
+
+  // Formula and math-explanation bonuses are only meaningful on confirmed math pages.
+  // Applying them on science/biology pages causes photosynthesis equations or
+  // "rate of reaction" phrases to outscore the actual explanatory prose.
+  const isMathPage = options?.pageKind === "mathematical_exposition";
 
   const scored = paragraphs.map((p, index) => {
     const text = getParagraphText(p);
@@ -44,8 +52,8 @@ export function findMainTeachingZone(paragraphs: ParagraphInsight[]): ParagraphI
       lengthScore +
       Math.max(0, numeric.explanatoryScore ?? 0) * 0.2 +
       Math.max(0, numeric.semanticScore ?? 0) * 0.15 +
-      (isFormula ? 0.22 : 0) +
-      (isMathExplain ? 0.16 : 0);
+      (isFormula && isMathPage ? 0.22 : 0) +
+      (isMathExplain && isMathPage ? 0.16 : 0);
     return { p, index, text, isFormula, isMathExplain, zoneScore };
   });
 
