@@ -30,7 +30,7 @@ import {
   type MiniTestQuestionCandidate,
   type MiniTestRole,
 } from "./selectMiniTestQuestions";
-import { normalizeClinicalText } from "@/lib/normalization/normalizeClinicalText";
+import { normalizeClinicalText, type ClinicalNormalizationResult } from "@/lib/normalization/normalizeClinicalText";
 import { detectPageDomain, type PageDomain } from "./detectPageDomain";
 import { findMainTeachingZone } from "./findMainTeachingZone";
 import { scoreDomainPriority, type DomainPriorityScore } from "./scoreDomainPriority";
@@ -293,8 +293,16 @@ function inferPageTitle(page: PageModelForConcepts, concepts: ConceptBlockInput[
 // Main builder
 // ---------------------------------------------------------------------------
 
-export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView | null {
-  // --- Normalization gate: suppress non-instructional pages ---
+export function buildUltraPageView(
+  pageModel: PageInsightModel,
+  options?: { existingNormResult?: ClinicalNormalizationResult }
+): UltraPageView | null {
+  // Reconstruct text from paragraphInsights for domain detection and any
+  // fallback normalization. NOTE: when existingNormResult is provided we skip
+  // re-classifying — the caller already ran normalizeClinicalText on the full
+  // page text. Re-running on the filtered paragraphInsights text would
+  // downgrade math pages (fewer signals in mainBody-only text) and break the
+  // math bypass that relies on pageKind === "mathematical_exposition".
   const rawPageText = (pageModel.paragraphInsights ?? [])
     .map((p) => p.cleanedText || p.rawText || "")
     .filter(Boolean)
@@ -308,7 +316,7 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
     .slice(0, 6)
     .map((p) => p.cleanedText || p.rawText || "");
 
-  const normResult = normalizeClinicalText({
+  const normResult = options?.existingNormResult ?? normalizeClinicalText({
     pageText: rawPageText,
     pageTitle: pageModel.pageSummary ?? undefined,
     pageNumber: pageModel.pageNumber ?? undefined,
@@ -328,6 +336,15 @@ export function buildUltraPageView(pageModel: PageInsightModel): UltraPageView |
     if (!hasMathDomain && !hasFormulaInText) return null;
   }
 
+  console.log("[TRACE mathPipeline]", {
+    pageNumber: pageModel.pageNumber,
+    usedExistingNormResult: Boolean(options?.existingNormResult),
+    pageKind: normResult.pageKind,
+    domain,
+    shouldRenderFullPanel: normResult.shouldRenderFullPanel,
+    rawPageTextLength: rawPageText.length,
+    paragraphInsightsCount: (pageModel.paragraphInsights ?? []).length,
+  });
   console.log("[TRACE buildUltraPageView:entry]", { pageKind: normResult.pageKind, domain, shouldRenderFullPanel: normResult.shouldRenderFullPanel, mathOverride: !normResult.shouldRenderFullPanel });
 
   // Apply hard filter + teaching zone before concept extraction

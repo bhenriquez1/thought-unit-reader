@@ -270,6 +270,14 @@ export default function SmartPDFViewer({
     const hasNeighborhoods = (highlightNeighborhoods?.length ?? 0) > 0;
     const hasTargets = (highlightTargets?.length ?? 0) > 0;
 
+    console.log("[TRACE overlayNeighborhoods]", {
+      pageNumber: currentPage,
+      neighborhoodCount: highlightNeighborhoods?.length ?? 0,
+      depthLevels: (highlightNeighborhoods ?? []).map(n => n.depthLevel),
+      titles: (highlightNeighborhoods ?? []).map(n => n.title?.slice(0, 40)),
+      hasTargets,
+    });
+
     if (!container || (!hasNeighborhoods && !hasTargets)) {
       setOverlayRects([]);
       setGuidedOverlayData(null);

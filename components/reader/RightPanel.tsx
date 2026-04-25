@@ -181,9 +181,12 @@ export function RightPanel({
   // ---------------------------------------------------------------------------
   const ultraPageView = useMemo((): UltraPageView | null => {
     if (!isCurrentPageModel || !pageModel) return null;
-    return buildUltraPageView(pageModel);
+    // Pass the already-computed normResult so buildUltraPageView does not
+    // re-classify the page from filtered paragraphInsights text — that second
+    // classification was downgrading math pages to instructional_prose.
+    return buildUltraPageView(pageModel, { existingNormResult: normResult ?? undefined });
   // pageTruthKey ensures mini test + compression reset immediately on page/doc change
-  }, [isCurrentPageModel, pageModel, pageTruthKey]);
+  }, [isCurrentPageModel, pageModel, pageTruthKey, normResult]);
 
   // Re-sort blocks to match badge order (left page physical position order).
   const displayView = useMemo((): UltraPageView | null => {

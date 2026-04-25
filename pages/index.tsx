@@ -3135,6 +3135,13 @@ export default function ThoughtUnitReader() {
             if (!hasHighlights) return null;
 
             const legend = buildGuidedLegend({ guidedPath });
+            console.log("[TRACE overlayLegend]", {
+              guidedPathExists: Boolean(guidedPath),
+              flatOverlayCount: guidedPath?.flatOverlays?.length ?? 0,
+              legendEntryCount: legend.entries.length,
+              legendTiers: legend.entries.map(e => e.tier),
+              usingFallback: legend.entries.length === 0,
+            });
             const badgeBg: Record<string, string> = {
               main_signal:    "rgba(161, 98, 7, 0.95)",
               explains_it:    "rgba(37, 99, 235, 0.95)",

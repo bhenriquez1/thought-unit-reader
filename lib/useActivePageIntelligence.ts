@@ -235,10 +235,20 @@ export function useActivePageIntelligence({
         });
       }
 
-      // Use the selected source text for concept extraction.
-      // Fall back to full page text only if the selector found nothing
-      // (the normalization gate's shouldRenderFullPanel will suppress the panel anyway).
-      const sourceTextForProcessing = teachingSource.selectedText || snapshot.pageText || "";
+      // Use the selected source text for concept extraction. Do NOT fall back
+      // to raw snapshot.pageText — that would re-admit captions and sidebars
+      // that selectTeachingSource deliberately excluded. When selectedText is
+      // empty (e.g. figure-heavy pages with insufficient mainBody), processPage
+      // receives an empty string and produces no paragraphs. The normalization
+      // gate (shouldRenderFullPanel) then shows "Not available" — correct.
+      const sourceTextForProcessing = teachingSource.selectedText ?? "";
+      console.log("[TRACE activePageText]", {
+        pageNumber,
+        rawPageTextLength: (snapshot.pageText || "").length,
+        selectedTextLength: sourceTextForProcessing.length,
+        suppressedReason: teachingSource.suppressedReason,
+        first100: sourceTextForProcessing.slice(0, 100),
+      });
       const parsedModel = processPage(sourceTextForProcessing);
       const localPageModel: PageInsightModel = {
         ...parsedModel,
@@ -355,6 +365,14 @@ export function useActivePageIntelligence({
         stepCount: _traceStructuralSteps,
         roles: _traceNeighborhoods.map(n => n.conceptRole ?? "detail"),
         suppressedReason: _traceOverlaySuppressedReason,
+      });
+      console.log("[TRACE leftRightSourceCompare]", {
+        pageNumber,
+        sourceTextLength: sourceTextForProcessing.length,
+        neighborhoodCount: _traceNeighborhoods.length,
+        neighborhoodTitles: _traceNeighborhoods.map(n => n.title?.slice(0, 40)),
+        anchorTexts: _traceNeighborhoods.map(n => n.anchor.text.slice(0, 60)),
+        sourceWasFiltered: teachingSource.suppressedReason === null && sourceTextForProcessing.length < (snapshot.pageText || "").length,
       });
 
       setSignals(localSignals);
