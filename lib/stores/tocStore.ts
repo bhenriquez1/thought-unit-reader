@@ -213,6 +213,29 @@ function generatePageRangeToc(pageCount: number, chunkSize: number = 10): TocIte
   return items;
 }
 
+const quotaSafeStorage = typeof window === 'undefined'
+  ? { getItem: () => null as string | null, setItem: () => {}, removeItem: () => {} }
+  : {
+      getItem: (name: string): string | null => {
+        try { return localStorage.getItem(name); } catch { return null; }
+      },
+      setItem: (name: string, value: string): void => {
+        try {
+          localStorage.setItem(name, value);
+        } catch (e) {
+          if (
+            e instanceof DOMException &&
+            (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22)
+          ) {
+            console.warn('[WARN toc-store quota skipped]', { valueLength: value.length });
+          }
+        }
+      },
+      removeItem: (name: string): void => {
+        try { localStorage.removeItem(name); } catch { /* ignore */ }
+      },
+    };
+
 export const useTocStore = create<TocState>()(
   persist(
     (set, get) => ({
@@ -355,21 +378,23 @@ export const useTocStore = create<TocState>()(
     }),
     {
       name: 'toc-store',
-      storage: createJSONStorage(() => {
-        // SSR-safe localStorage access
-        if (typeof window === 'undefined') {
-          return {
-            getItem: () => null,
-            setItem: () => {},
-            removeItem: () => {},
-          };
-        }
-        return localStorage;
-      }),
-      partialize: (state) => ({
-        tocs: state.tocs
-      }),
+      storage: createJSONStorage(() => quotaSafeStorage),
+      partialize: (state) => {
+        const sorted = Object.entries(state.tocs)
+          .sort(([, a], [, b]) =>
+            new Date(b.lastAccessed).getTime() - new Date(a.lastAccessed).getTime()
+          )
+          .slice(0, 10)
+          .map(([id, doc]) => [id, { ...doc, items: doc.items.slice(0, 500) }] as const);
+        return { tocs: Object.fromEntries(sorted) };
+      },
       skipHydration: typeof window === 'undefined',
+      onRehydrateStorage: () => (_state: TocState | undefined, error: unknown) => {
+        if (error) {
+          console.warn('[WARN toc-store] rehydration failed, clearing', error);
+          try { localStorage.removeItem('toc-store'); } catch { /* ignore */ }
+        }
+      },
     }
   )
 );
