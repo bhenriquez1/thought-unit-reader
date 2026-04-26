@@ -179,6 +179,16 @@ export function RightPanel({
   // ---------------------------------------------------------------------------
   // ULTRA view — primary content layer (universal reader)
   // ---------------------------------------------------------------------------
+
+  // Non-instructional gate: suppresses all content views on title/figure/TOC pages
+  // MUST be declared before ultraPageView useMemo — normResult is captured in the closure.
+  const normResult = intelligence.normResult ?? null;
+  const pageIsNonInstructional =
+    isCurrentPageModel &&
+    intelligence.status !== "loading" &&
+    normResult !== null &&
+    normResult.shouldRenderFullPanel === false;
+
   const ultraPageView = useMemo((): UltraPageView | null => {
     if (!isCurrentPageModel || !pageModel) return null;
     // Pass the already-computed normResult so buildUltraPageView does not
@@ -277,14 +287,6 @@ export function RightPanel({
   const v2BottomLineText = (rawBottomLine && rawBottomLine.toLowerCase().slice(0, 70) !== v2FirstKey)
     ? rawBottomLine
     : null;
-
-  // Non-instructional gate: suppresses all content views on title/figure/TOC pages
-  const normResult = intelligence.normResult ?? null;
-  const pageIsNonInstructional =
-    isCurrentPageModel &&
-    intelligence.status !== "loading" &&
-    normResult !== null &&
-    normResult.shouldRenderFullPanel === false;
 
   // ULTRA = primary view; concept blocks = secondary; narrative/story = fallbacks
   // All views gated on !pageIsNonInstructional so no fake output on suppressed pages
