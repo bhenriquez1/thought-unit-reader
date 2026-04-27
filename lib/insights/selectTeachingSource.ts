@@ -41,12 +41,12 @@ export interface TeachingSourceResult {
 
 // ── Zone-detection patterns ────────────────────────────────────────────────
 
-const CAPTION_RE = /^(figure|fig\.|table|diagram|image|plate|chart|exhibit)\s*[\dA-Za-z]/i;
-const SIDEBAR_RE = /^(key concept[s:]?|did you know|learning objective[s:]?|note:|tip:|important:|remember:|recall:|definition:|boxed text|concept check)/i;
-const EXERCISE_RE = /^(problem|exercise|question|practice|q\.|q\d|activity|try it|worked example)\s*\d*/i;
+const CAPTION_RE = /^(figure|fig\.|table|diagram|image|plate|chart|exhibit|photo|photograph|micrograph|sketch|illustration)\s*[\dA-Za-z]{1,3}/i;
+const SIDEBAR_RE = /^(key concept[s:]?|key term[s:]?|key definition[s:]?|key vocabular|glossary|did you know|learning objective[s:]?|note:|tip:|important:|remember:|recall:|definition:|boxed text|concept check|summary box|chapter summary|in summary|summary:|review:|chapter review|review question[s:]?|check your understanding|test yourself|test your knowledge|clinical pearl|case study:|spotlight:|fast fact|scientific note|apply:|application box|going deeper|box\s*\d)/i;
+const EXERCISE_RE = /^(problem|exercise|question|practice|q\.|q\d|\d+\.\s|activity|try it|worked example|solve:|calculate:|derive:|scenario:|challenge:|lab activity|lab exercise|experiment:|check it)\s*\d*/i;
 const TABLE_LINE_RE = /\t[^\t]+\t|\|[^|]+\|/;
 // ≥2 distinct math signals in a block → formula-dense
-const MATH_SIGNAL_RE = /[=∫∑∂π√∞±]|dy\/dx|f\(['"]?x['"]?\)|lim\s*[_({]|\bderivative\b|\bintegral\b|\btheorem\b|\bproof\b|\bdy\b.*=|\bd[xy]\b/i;
+const MATH_SIGNAL_RE = /[=∫∑∂π√∞±→≤≥≠∈]|dy\/dx|d[xyz]\/d[txyz]|d\/d[txyz]|f\(['"]?x['"]?\)|\blim\b|\bderivative\b|\bintegral\b|\btheorem\b|\bproof\b|\bdy\b.*=|\bd[xy]\b/i;
 
 /* -------------------------------------------------------------------------- */
 /*                               PUBLIC API                                   */
@@ -87,6 +87,11 @@ function classifyBlock(paragraph: string): ZonedBlock {
   if (SIDEBAR_RE.test(firstLine)) return { zone: "sidebar", text: paragraph, wordCount: words };
   if (EXERCISE_RE.test(firstLine)) return { zone: "exercise", text: paragraph, wordCount: words };
   if (lines.some((l) => TABLE_LINE_RE.test(l))) return { zone: "table", text: paragraph, wordCount: words };
+  // Secondary scan: a non-first line starting with a caption/sidebar signal inside a short
+  // block (< 30 words) means the whole block is a captioned figure or callout, not prose.
+  if (words < 30 && lines.slice(1).some((l) => CAPTION_RE.test(l.trim()) || SIDEBAR_RE.test(l.trim()))) {
+    return { zone: "figureCaption", text: paragraph, wordCount: words };
+  }
 
   // Formula-dense: ≥2 distinct math signals, OR a short block (< 20 words) with ≥1 signal.
   // The short-block exception handles single-equation lines that PDF.js often extracts

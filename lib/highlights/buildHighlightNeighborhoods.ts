@@ -248,7 +248,10 @@ function enforceNeighborhoodDepth<T extends HighlightNeighborhood>(items: T[]): 
           (depthLevel === "anchor_only" ? 0.45 : depthLevel === "partial" ? 0.15 : 0),
       };
     })
-    .filter((item) => item.depthLevel !== "anchor_only");
+    // anchor_only neighborhoods are kept when they have a meaningful priority score so
+    // sparse pages (math theorems, thin prose) still produce one legend entry rather
+    // than falling back to the hardcoded four-tier placeholder.
+    .filter((item) => item.depthLevel !== "anchor_only" || item.priorityScore >= 1.0);
 }
 
 /**
