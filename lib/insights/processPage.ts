@@ -55,7 +55,13 @@ function normalizeParagraph(text: string): string {
 }
 
 function classifyParagraphType(text: string): ParagraphType {
-  if (text.length < 50) return "noise";
+  if (text.length < 50) {
+    // Short math/formula lines (e.g. "dV/dt = 4πr² · dr/dt") are still classifiable.
+    // Only preserve them if they contain an unambiguous math signal; all other short
+    // text stays "noise" so non-math noise filtering is unchanged.
+    if (/[=∫∑∂π√∞±→]|dy\/dx|d[xyz]\/d[txyz]|d\/d[txyz]|\blim\b|\bf\(x\)\b/i.test(text)) return "formula";
+    return "noise";
+  }
   const scored = TYPE_PATTERNS.map(({ type, patterns }) => ({
     type,
     score: patterns.reduce((acc, regex) => acc + (regex.test(text) ? 1 : 0), 0),

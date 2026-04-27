@@ -237,7 +237,7 @@ function tryNormalizedSentenceTextMatch(
     }
   }
 
-  if (!bestSentence || bestScore < 0.82) return null;
+  if (!bestSentence || bestScore < 0.65) return null;
 
   const sentenceText = cleanMemberText(bestSentence.text);
   const startOffset =
