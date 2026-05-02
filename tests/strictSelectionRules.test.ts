@@ -57,7 +57,7 @@ describe("strict selection/retention rules", () => {
         trapCandidates: [],
         paragraphIds: ["p1"],
         importance: "medium",
-        score: 10,
+        score: 0.9,  // after anchor_only penalty (-0.45) → 0.45, below the 0.6 threshold
         conceptRole: "definition",
       },
       {

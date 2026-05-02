@@ -677,6 +677,9 @@ function countMathSignals(text: string): number {
     /\bproduct rule\b/i, /\bquotient rule\b/i,
     /\bextrem[au]\b/i, /\bconcavity\b/i, /\bantiderivative\b/i,
     /\bd\/d[txyz]\b/i,
+    // Sequence / series / convergence vocabulary
+    /\bsequence\b/i, /\bconverge[sd]?\b/i, /\bdiverge[sd]?\b/i,
+    /\bmonoton\w+\b/i, /\bseries\b/i, /\bbounded\b/i,
   ];
   return patterns.reduce((n, p) => n + (p.test(text) ? 1 : 0), 0);
 }

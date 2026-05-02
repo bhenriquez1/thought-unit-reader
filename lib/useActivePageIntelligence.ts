@@ -60,8 +60,8 @@ function hashText(text: string): string {
   return String(hash);
 }
 
-function buildPageTruthKey(documentId: string, pageNumber: number, pageText: string): string {
-  return `${documentId}::${pageNumber}::${hashText(pageText || "")}`;
+function buildPageTruthKey(documentId: string, pageNumber: number): string {
+  return `${documentId}::${pageNumber}`;
 }
 
 function extractFormulaSignals(rawText: string): FormulaSignal[] {
@@ -71,6 +71,8 @@ function extractFormulaSignals(rawText: string): FormulaSignal[] {
 
   const eqPattern = /([A-Za-z0-9)\]]\s*=\s*[A-Za-z0-9([\-+*/^]|[0-9A-Za-z].*[=<>≤≥])/;
   const chemPattern = /([A-Z][a-z]?\d*[\+\-]?(?:\s*\+\s*[A-Z][a-z]?\d*[\+\-]?)*\s*(?:->|→|⇌)\s*[A-Z][a-z]?\d*[\+\-]?)/;
+  // Sequence/convergence notation: {aₙ}, {a_n}, lim n→∞, Δx, Δy, standalone →
+  const sequencePattern = /\{[A-Za-z][₀-₉_][A-Za-z0-9]*\}|\blim\s+[a-z]\s*→|[ΔδΣ][A-Za-z]|\b[a-z]_\{?n\}?\s*(?:→|→\s*[0-9∞])|→\s*(?:[0-9∞]|\\infty)/;
   const graphPattern = /\b(graph|figure|plot|curve|parabola|slope|intercept)\b/i;
   const tablePattern = /\b(table|values|data set|distribution)\b/i;
   const symbolicPattern = /\b(let|define|denote|where|given by|represented by)\b/i;
@@ -82,6 +84,10 @@ function extractFormulaSignals(rawText: string): FormulaSignal[] {
     }
     if (chemPattern.test(line)) {
       out.push({ kind: "reaction", text: line, confidence: 0.95 });
+      continue;
+    }
+    if (sequencePattern.test(line)) {
+      out.push({ kind: "equation", text: line, confidence: 0.85 });
       continue;
     }
     if (graphPattern.test(line)) {
@@ -122,7 +128,7 @@ export function useActivePageIntelligence({
 }: UseActivePageIntelligenceArgs) {
   const mode = useMemo(() => buildModeProfile(audience, depth), [audience, depth]);
   const payloadKey = `${documentId}:${pageNumber}:${audience}:${depth}`;
-  const pageTruthKey = useMemo(() => buildPageTruthKey(documentId, pageNumber, ctx.pageText || ""), [ctx.pageText, documentId, pageNumber]);
+  const pageTruthKey = useMemo(() => buildPageTruthKey(documentId, pageNumber), [documentId, pageNumber]);
 
   const [status, setStatus] = useState<ActivePageIntelligenceStatus>("idle");
   const [error, setError] = useState<string | null>(null);
