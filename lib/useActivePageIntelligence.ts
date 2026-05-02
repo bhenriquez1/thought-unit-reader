@@ -248,12 +248,15 @@ export function useActivePageIntelligence({
       // receives an empty string and produces no paragraphs. The normalization
       // gate (shouldRenderFullPanel) then shows "Not available" — correct.
       const sourceTextForProcessing = teachingSource.selectedText ?? "";
-      console.log("[TRACE activePageText]", {
+      console.log("[TRACE currentPageSource]", {
+        documentId,
         pageNumber,
+        pageKind: localNormResult.pageKind,
         rawPageTextLength: (snapshot.pageText || "").length,
         selectedTextLength: sourceTextForProcessing.length,
         suppressedReason: teachingSource.suppressedReason,
-        first100: sourceTextForProcessing.slice(0, 100),
+        // First 80 chars of selected text to confirm content matches the active book
+        first80: sourceTextForProcessing.slice(0, 80),
       });
       const parsedModel = processPage(sourceTextForProcessing);
       const localPageModel: PageInsightModel = {
@@ -329,7 +332,27 @@ export function useActivePageIntelligence({
 
       // Use currentPageRef (render-time, not effect-time) so this check is valid
       // even before the new page's primary effect has fired and updated latestRequestRef.
-      if (currentPageRef.current.pageTruthKey !== requestKey) return;
+      if (currentPageRef.current.pageTruthKey !== requestKey) {
+        console.warn("[TRACE staleGuard] blocking stale commit", {
+          requestKey,
+          currentKey: currentPageRef.current.pageTruthKey,
+          requestDocId: documentId,
+          currentDocId: currentPageRef.current.documentId,
+          requestPage: pageNumber,
+          currentPage: currentPageRef.current.pageNumber,
+        });
+        return;
+      }
+
+      // Extra guard: if the model's documentId doesn't match the active document,
+      // the source text came from a different PDF — hard-block the commit.
+      if (localPageModel.documentId !== currentPageRef.current.documentId) {
+        console.warn("[TRACE staleGuard] documentId mismatch — discarding result", {
+          modelDocId: localPageModel.documentId,
+          activeDocId: currentPageRef.current.documentId,
+        });
+        return;
+      }
 
       // [TRACE] temporary pipeline instrumentation — all logs use [TRACE] prefix for easy console filtering
       const _traceValid = (localPageModel.paragraphInsights ?? []).filter(isValidCoreParagraph);
@@ -432,7 +455,34 @@ export function useActivePageIntelligence({
       paragraphInsights: zoneInsights,
     });
     const concepts = extractConceptBlocksCore(adapted);
-    return concepts.length > 0 ? buildHighlightNeighborhoods(concepts, { pageKind: normResult.pageKind }) : [];
+    const neighborhoods = concepts.length > 0 ? buildHighlightNeighborhoods(concepts, { pageKind: normResult.pageKind }) : [];
+
+    // [TRACE sentenceMap] — shows the raw sentence pool feeding the left panel
+    console.log("[TRACE sentenceMap]", {
+      documentId: pageModel.documentId,
+      pageNumber,
+      paragraphCount: (pageModel.paragraphInsights ?? []).length,
+      validCount: validInsights.length,
+      zoneCount: zoneInsights.length,
+      conceptCount: concepts.length,
+      neighborhoodCount: neighborhoods.length,
+      // First sentence of each paragraph in the zone
+      zoneSentences: zoneInsights.slice(0, 4).map((p: any) => (p.cleanedText ?? "").slice(0, 60)),
+    });
+
+    // [TRACE guidedPath] — shows what the left panel will render
+    console.log("[TRACE guidedPath]", {
+      documentId: pageModel.documentId,
+      pageNumber,
+      steps: neighborhoods.map((n) => ({
+        role: n.conceptRole,
+        depth: n.depthLevel,
+        anchor: n.anchor.text.slice(0, 60),
+        supportCount: n.support.length,
+      })),
+    });
+
+    return neighborhoods;
   }, [pageModel, pageNumber, normResult]);
 
   const highlightTargets: HighlightTarget[] = useMemo(() => {

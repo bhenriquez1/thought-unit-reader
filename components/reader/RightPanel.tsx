@@ -123,6 +123,23 @@ export function RightPanel({
   const pageTruth = intelligence.pageTruth;
   const isCurrentPageModel = Boolean(intelligence.isCurrentPage && pageModel && intelligence.status === "ready");
 
+  // [TRACE renderIdentity] — logs what document/page/text is being rendered.
+  // If documentId or pageNumber in pageModel differs from pageTruthKey, you
+  // have a stale render.
+  useEffect(() => {
+    if (isCurrentPageModel && pageModel) {
+      const preview = (pageModel as any).sourceText
+        ? String((pageModel as any).sourceText).slice(0, 60)
+        : pageModel.paragraphInsights?.[0]?.cleanedText?.slice(0, 60) ?? "(no text)";
+      console.log("[TRACE renderIdentity]", {
+        pageTruthKey,
+        modelDocId: pageModel.documentId,
+        modelPage: pageModel.pageNumber,
+        preview,
+      });
+    }
+  }, [isCurrentPageModel, pageModel, pageTruthKey]);
+
   // Hard-reset selected concept block when page/document changes
   const [selectedBlockIndex, setSelectedBlockIndex] = useState(0);
   const renderKey = pageTruthKey;
