@@ -231,26 +231,30 @@ export function buildHighlightNeighborhoods(
 }
 
 function enforceNeighborhoodDepth<T extends HighlightNeighborhood>(items: T[]): T[] {
-  return items
-    .map((item) => {
-      const support = (item.support ?? []).filter((s) => (s.text || "").trim().length >= 24);
-      const additional = (item.additional ?? []).filter((a) => (a.text || "").trim().length >= 24);
-      let depthLevel: T["depthLevel"] = "anchor_only";
-      if (support.length >= 1) depthLevel = "full";
-      else if (additional.length >= 1 || item.trap) depthLevel = "partial";
-      return {
-        ...item,
-        support,
-        additional,
-        depthLevel,
-        priorityScore:
-          item.priorityScore -
-          (depthLevel === "anchor_only" ? 0.45 : depthLevel === "partial" ? 0.15 : 0),
-      };
-    })
-    // anchor_only neighborhoods survive at a lower score so diagram-heavy and
-    // math pages still produce guided anchors instead of showing nothing.
-    .filter((item) => item.depthLevel !== "anchor_only" || item.priorityScore >= 0.6);
+  const mapped = items.map((item) => {
+    const support = (item.support ?? []).filter((s) => (s.text || "").trim().length >= 24);
+    const additional = (item.additional ?? []).filter((a) => (a.text || "").trim().length >= 24);
+    let depthLevel: T["depthLevel"] = "anchor_only";
+    if (support.length >= 1) depthLevel = "full";
+    else if (additional.length >= 1 || item.trap) depthLevel = "partial";
+    return {
+      ...item,
+      support,
+      additional,
+      depthLevel,
+      priorityScore:
+        item.priorityScore -
+        (depthLevel === "anchor_only" ? 0.45 : depthLevel === "partial" ? 0.15 : 0),
+    };
+  });
+
+  // Only suppress anchor_only neighborhoods when deeper alternatives exist on the page.
+  // When ALL neighborhoods are anchor_only, keep them — a real anchor is always better than
+  // the fuzzy keyword-substring fallback that SmartPDFViewer uses when this array is empty.
+  const hasDeep = mapped.some((item) => item.depthLevel === "full" || item.depthLevel === "partial");
+  return mapped.filter(
+    (item) => item.depthLevel !== "anchor_only" || !hasDeep || item.priorityScore >= 0.6,
+  );
 }
 
 /**
