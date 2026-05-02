@@ -248,10 +248,9 @@ function enforceNeighborhoodDepth<T extends HighlightNeighborhood>(items: T[]): 
           (depthLevel === "anchor_only" ? 0.45 : depthLevel === "partial" ? 0.15 : 0),
       };
     })
-    // anchor_only neighborhoods are kept when they have a meaningful priority score so
-    // sparse pages (math theorems, thin prose) still produce one legend entry rather
-    // than falling back to the hardcoded four-tier placeholder.
-    .filter((item) => item.depthLevel !== "anchor_only" || item.priorityScore >= 1.0);
+    // anchor_only neighborhoods survive at a lower score so diagram-heavy and
+    // math pages still produce guided anchors instead of showing nothing.
+    .filter((item) => item.depthLevel !== "anchor_only" || item.priorityScore >= 0.6);
 }
 
 /**

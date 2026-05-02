@@ -71,7 +71,7 @@ export function selectTeachingSource(
     return buildMathTeachingSource(blocks, zoneSummary);
   }
 
-  return buildProseTeachingSource(blocks, zoneSummary);
+  return buildProseTeachingSource(blocks, zoneSummary, pageKind);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -113,7 +113,8 @@ function classifyBlock(paragraph: string): ZonedBlock {
 
 function buildProseTeachingSource(
   blocks: ZonedBlock[],
-  zones: { zone: TextZone; wordCount: number }[]
+  zones: { zone: TextZone; wordCount: number }[],
+  pageKind?: string
 ): TeachingSourceResult {
   // Ordered by teaching authority: mainBody → heading → sidebar (last resort)
   const mainBodyBlocks = blocks.filter((b) => b.zone === "mainBody");
@@ -131,7 +132,12 @@ function buildProseTeachingSource(
   const selectedText = selectedBlocks.map((b) => b.text).join("\n\n");
   const selectedWords = selectedBlocks.reduce((n, b) => n + b.wordCount, 0);
 
-  if (selectedWords < 40) {
+  // Diagram-heavy science/instructional pages often have short but real body text.
+  // Lower the floor so a 25-word paragraph about a cell diagram isn't suppressed.
+  const minWords =
+    pageKind === "scientific_exposition" || pageKind === "instructional_prose" ? 20 : 40;
+
+  if (selectedWords < minWords) {
     return {
       selectedText: "",
       selectedZone,
