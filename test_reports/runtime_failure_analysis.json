@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-04-24T00:56:30.487Z",
+  "generatedAt": "2026-05-02T03:03:59.274Z",
   "cases": [
     {
       "id": "biology_failure_case",
       "rawExtractedPageText": "Chapter 3: Cellular Energetics Overview\n\nThe electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane. Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space. ATP synthase uses the proton gradient to produce ATP from ADP and inorganic phosphate.\n\nStudents often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists. However, the conceptual layer that matters is coupling: redox energy is converted to an electrochemical gradient and then converted again to chemical bond energy in ATP. If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.\n\nA common trap is confusing where ATP is generated and where reducing equivalents are produced. Glycolysis generates ATP and NADH in the cytosol; the Krebs cycle generates most NADH in the matrix; oxidative phosphorylation generates most ATP at the inner membrane. Do not confuse substrate-level phosphorylation with oxidative phosphorylation.\n\nFor example, rotenone blocks complex I and cyanide blocks complex IV, but both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
-      "detectedDomain": "math",
+      "detectedDomain": "general",
       "pageKind": "scientific_exposition",
       "pageClass": "prose",
       "shouldRenderFullPanel": true,
@@ -97,18 +97,25 @@
       ],
       "priorityScoringResults": [
         {
-          "id": "3:anchor",
-          "text": "A common trap is confusing where ATP is generated and where reducing equivalents are produced.",
-          "role": "interpretation",
+          "id": "1:anchor",
+          "text": "Oxygen is absent, therefore If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+          "role": "explanation",
+          "slot": "reason",
+          "score": 0.52
+        },
+        {
+          "id": "2:anchor",
+          "text": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+          "role": "explanation",
           "slot": "reason",
           "score": 0.52
         },
         {
           "id": "3:sup1",
           "text": "Do not confuse substrate-level phosphorylation with oxidative phosphorylation.",
-          "role": "common_mistake",
+          "role": "contrast",
           "slot": "trap",
-          "score": 0.42000000000000004
+          "score": 0.38
         },
         {
           "id": "0:anchor",
@@ -132,13 +139,6 @@
           "score": 0.28
         },
         {
-          "id": "1:anchor",
-          "text": "Oxygen is absent, therefore If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
-          "role": "support",
-          "slot": "support",
-          "score": 0.28
-        },
-        {
           "id": "1:sup0",
           "text": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
           "role": "support",
@@ -153,8 +153,8 @@
           "score": 0.28
         },
         {
-          "id": "2:anchor",
-          "text": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+          "id": "3:anchor",
+          "text": "A common trap is confusing where ATP is generated and where reducing equivalents are produced.",
           "role": "support",
           "slot": "support",
           "score": 0.28
@@ -555,6 +555,43 @@
       ],
       "highlightNeighborhoodsGeneratedForLeftPanel": [
         {
+          "id": "neighborhood-concept-p-0",
+          "conceptId": "concept-p-0",
+          "title": "The Electron Transport Chain Is A",
+          "anchor": {
+            "id": "important-concept-p-0",
+            "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
+            "normalizedText": "the electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane",
+            "sentenceId": "p-0-s0",
+            "tier": "important",
+            "score": 0.92
+          },
+          "support": [
+            {
+              "id": "support-concept-p-0-0",
+              "text": "Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space.",
+              "normalizedText": "electrons from nadh and fadh2 flow through complexes i to iv and this transfer drives proton pumping from the matrix to the intermembrane space",
+              "sentenceId": "p-0-s1",
+              "tier": "support",
+              "score": 0.78
+            }
+          ],
+          "additional": [
+            {
+              "id": "additional-concept-p-0-0",
+              "text": "ATP synthase uses the proton gradient to produce ATP from ADP and inorganic phosphate.",
+              "normalizedText": "atp synthase uses the proton gradient to produce atp from adp and inorganic phosphate",
+              "sentenceId": "p-0-s2",
+              "tier": "additional",
+              "score": 0.52
+            }
+          ],
+          "trap": null,
+          "priorityScore": 16,
+          "conceptRole": "definition",
+          "depthLevel": "full"
+        },
+        {
           "id": "neighborhood-concept-p-1",
           "conceptId": "concept-p-1",
           "title": "Oxygen Is Absent",
@@ -592,41 +629,23 @@
           "depthLevel": "full"
         },
         {
-          "id": "neighborhood-concept-p-0",
-          "conceptId": "concept-p-0",
-          "title": "The Electron Transport Chain Is A",
+          "id": "neighborhood-concept-p-3",
+          "conceptId": "concept-p-3",
+          "title": "Both Reduce Oxidative Atp Production Because",
           "anchor": {
-            "id": "important-concept-p-0",
-            "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
-            "normalizedText": "the electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane",
-            "sentenceId": "p-0-s0",
+            "id": "important-concept-p-3",
+            "text": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+            "normalizedText": "both reduce oxidative atp production because electron flow cannot reach oxygen as the terminal acceptor",
+            "sentenceId": "p-3-s1",
             "tier": "important",
-            "score": 0.92
+            "score": 0.78
           },
-          "support": [
-            {
-              "id": "support-concept-p-0-0",
-              "text": "Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space.",
-              "normalizedText": "electrons from nadh and fadh2 flow through complexes i to iv and this transfer drives proton pumping from the matrix to the intermembrane space",
-              "sentenceId": "p-0-s1",
-              "tier": "support",
-              "score": 0.78
-            }
-          ],
-          "additional": [
-            {
-              "id": "additional-concept-p-0-0",
-              "text": "ATP synthase uses the proton gradient to produce ATP from ADP and inorganic phosphate.",
-              "normalizedText": "atp synthase uses the proton gradient to produce atp from adp and inorganic phosphate",
-              "sentenceId": "p-0-s2",
-              "tier": "additional",
-              "score": 0.52
-            }
-          ],
+          "support": [],
+          "additional": [],
           "trap": null,
-          "priorityScore": 16,
-          "conceptRole": "definition",
-          "depthLevel": "full"
+          "priorityScore": 19.05,
+          "conceptRole": "mechanism",
+          "depthLevel": "anchor_only"
         },
         {
           "id": "neighborhood-concept-p-2",
@@ -745,7 +764,7 @@
         ],
         "_debug": {
           "pageKind": "scientific_exposition",
-          "domain": "math",
+          "domain": "general",
           "shouldRenderFullPanel": true,
           "pageSummaryLength": 170,
           "coreIdeaSource": "pageSummary",
@@ -1382,6 +1401,43 @@
           "depthLevel": "full"
         },
         {
+          "id": "neighborhood-concept-p-0",
+          "conceptId": "concept-p-0",
+          "title": "Key Concept",
+          "anchor": {
+            "id": "important-concept-p-0",
+            "text": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x).",
+            "normalizedText": "if y f g x then dy dx f g x g x",
+            "sentenceId": "p-0-s0",
+            "tier": "important",
+            "score": 0.78
+          },
+          "support": [
+            {
+              "id": "support-concept-p-0-0",
+              "text": "Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x).",
+              "normalizedText": "y f g x therefore dy dx f g x g x",
+              "sentenceId": "p-0-s1",
+              "tier": "support",
+              "score": 0.78
+            }
+          ],
+          "additional": [
+            {
+              "id": "additional-concept-p-0-0",
+              "text": "This identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function.",
+              "normalizedText": "this identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function",
+              "sentenceId": "p-0-s2",
+              "tier": "additional",
+              "score": 0.52
+            }
+          ],
+          "trap": null,
+          "priorityScore": 22,
+          "conceptRole": "definition",
+          "depthLevel": "full"
+        },
+        {
           "id": "neighborhood-concept-p-2",
           "conceptId": "concept-p-2",
           "title": "However, Many Solutions Fail Because",
@@ -1444,43 +1500,6 @@
           "trap": null,
           "priorityScore": 27,
           "conceptRole": "mechanism",
-          "depthLevel": "full"
-        },
-        {
-          "id": "neighborhood-concept-p-0",
-          "conceptId": "concept-p-0",
-          "title": "Key Concept",
-          "anchor": {
-            "id": "important-concept-p-0",
-            "text": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x).",
-            "normalizedText": "if y f g x then dy dx f g x g x",
-            "sentenceId": "p-0-s0",
-            "tier": "important",
-            "score": 0.78
-          },
-          "support": [
-            {
-              "id": "support-concept-p-0-0",
-              "text": "Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x).",
-              "normalizedText": "y f g x therefore dy dx f g x g x",
-              "sentenceId": "p-0-s1",
-              "tier": "support",
-              "score": 0.78
-            }
-          ],
-          "additional": [
-            {
-              "id": "additional-concept-p-0-0",
-              "text": "This identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function.",
-              "normalizedText": "this identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function",
-              "sentenceId": "p-0-s2",
-              "tier": "additional",
-              "score": 0.52
-            }
-          ],
-          "trap": null,
-          "priorityScore": 22,
-          "conceptRole": "definition",
           "depthLevel": "full"
         }
       ],
