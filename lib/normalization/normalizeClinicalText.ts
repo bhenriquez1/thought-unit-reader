@@ -670,15 +670,15 @@ function isDistinctEnough(text: string, existing: string[], threshold: number): 
 function countMathSignals(text: string): number {
   const patterns = [
     /[=<>±∫∑√π∞→≤≥≠∈]/,
-    /\bderivative\b/i, /\bintegral\b/i, /\blimit\b/i,
+    /\bderivative\b/i, /\bintegral\b/i, /\blimits?\b/i,
     /\bfunction\b/i,  /\btheorem\b/i,  /\bproof\b/i,
     /\bdy\/dx\b/i,    /\bf\(x\)\b/i,   /\blim\b/i,
     /\bchain rule\b/i, /\brelated rates\b/i,
     /\bproduct rule\b/i, /\bquotient rule\b/i,
     /\bextrem[au]\b/i, /\bconcavity\b/i, /\bantiderivative\b/i,
     /\bd\/d[txyz]\b/i,
-    // Sequence / series / convergence vocabulary
-    /\bsequence\b/i, /\bconverge[sd]?\b/i, /\bdiverge[sd]?\b/i,
+    // Sequence / series / convergence vocabulary (plural forms included)
+    /\bsequences?\b/i, /\bconverge[sd]?\b/i, /\bdiverge[sd]?\b/i,
     /\bmonoton\w+\b/i, /\bseries\b/i, /\bbounded\b/i,
   ];
   return patterns.reduce((n, p) => n + (p.test(text) ? 1 : 0), 0);

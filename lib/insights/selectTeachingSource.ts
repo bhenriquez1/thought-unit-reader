@@ -67,11 +67,21 @@ export function selectTeachingSource(
 
   const zoneSummary = buildZoneSummary(blocks);
 
-  if (pageKind === "mathematical_exposition") {
+  // Auto-upgrade: if the page was classified as prose/science but the text itself
+  // contains ≥2 formula blocks, treat it as math. This catches sequence/limit pages
+  // that only carry 1 weak vocabulary signal (e.g. "limits") and therefore fail the
+  // countMathSignals ≥ 2 threshold, causing buildProseTeachingSource to exclude formulas.
+  const formulaBlockCount = blocks.filter((b) => b.zone === "formulaBlock").length;
+  const effectivePageKind =
+    pageKind !== "mathematical_exposition" && formulaBlockCount >= 2
+      ? "mathematical_exposition"
+      : pageKind;
+
+  if (effectivePageKind === "mathematical_exposition") {
     return buildMathTeachingSource(blocks, zoneSummary);
   }
 
-  return buildProseTeachingSource(blocks, zoneSummary, pageKind);
+  return buildProseTeachingSource(blocks, zoneSummary, effectivePageKind);
 }
 
 /* -------------------------------------------------------------------------- */

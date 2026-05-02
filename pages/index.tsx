@@ -362,8 +362,9 @@ export default function ThoughtUnitReader() {
 
   const [thoughtUnits, setThoughtUnits] = useState<ThoughtUnit[]>([]);
   const [currentThoughtUnit, setCurrentThoughtUnit] = useState(1);
-  // Live per-page text extracted from PDF.js — Map caches all visited pages.
-  const [pageTextByPage, setPageTextByPage] = useState<Map<number, string>>(() => new Map());
+  // Live per-page text extracted from PDF.js — keyed by "documentId:pageNumber" so two
+  // different books at the same page number can never share entries.
+  const [pageTextByPage, setPageTextByPage] = useState<Map<string, string>>(() => new Map());
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
@@ -701,7 +702,7 @@ export default function ThoughtUnitReader() {
     // when the live text hasn't arrived yet for this page.
     const unitFallback = thoughtUnits?.[currentThoughtUnit - 1]?.text || "";
     const activePageText =
-      pageTextByPage.get(currentPage) || unitFallback;
+      pageTextByPage.get(`${bookId}:${currentPage}`) || unitFallback;
     const nearestSyllabusNode = flattenTocNodes(syllabusToc).find((node) => node.page === currentPage) || null;
     return {
       documentId: bookId,
@@ -2643,7 +2644,7 @@ export default function ThoughtUnitReader() {
                     });
                     setShowFocusCycleModal(true);
                   }}
-                  onPageTextExtracted={(pageNumber, text) => setPageTextByPage((prev) => { const next = new Map(prev); next.set(pageNumber, text); return next; })}
+                  onPageTextExtracted={(pageNumber, text) => setPageTextByPage((prev) => { const next = new Map(prev); next.set(`${bookId}:${pageNumber}`, text); return next; })}
                 />
               </div>
             )}

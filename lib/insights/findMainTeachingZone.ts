@@ -46,6 +46,12 @@ export function findMainTeachingZone(
     const numeric = p as ParagraphInsight & { explanatoryScore?: number; semanticScore?: number };
     const explanatoryScore = EXPLANATORY_TYPES.has(p.paragraphType) ? 1.0 : 0.3;
     const lengthScore = isFormula ? 0.2 : (text.length > 120 ? 0.2 : -0.2);
+    // Definition-primacy bonus: a paragraph whose first sentence directly defines the subject
+    // ("X is a ...", "X is defined as ...", "X refers to ...") should outrank longer comparison
+    // paragraphs. Without this, biology/science pages favor comparison-heavy paragraphs over
+    // short but authoritative definition sentences.
+    const firstSentence = text.slice(0, 180);
+    const isDefinitionLead = /\b(?:is\s+(?:a|an|the|defined|classified|known)|defined\s+as|refers?\s+to|is\s+known\s+as)\b/i.test(firstSentence);
     const zoneScore =
       explanatoryScore * 0.5 +
       Math.min(p.priorityScore / 10, 1.0) * 0.3 +
@@ -53,7 +59,8 @@ export function findMainTeachingZone(
       Math.max(0, numeric.explanatoryScore ?? 0) * 0.2 +
       Math.max(0, numeric.semanticScore ?? 0) * 0.15 +
       (isFormula && isMathPage ? 0.22 : 0) +
-      (isMathExplain && isMathPage ? 0.16 : 0);
+      (isMathExplain && isMathPage ? 0.16 : 0) +
+      (isDefinitionLead ? 0.20 : 0);
     return { p, index, text, isFormula, isMathExplain, zoneScore };
   });
 

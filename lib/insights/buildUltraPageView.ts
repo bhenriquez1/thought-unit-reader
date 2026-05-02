@@ -96,6 +96,10 @@ export function isValidCoreParagraph(p: ParagraphInsight): boolean {
   if (p.paragraphType === "formula" || looksLikeMathFormula(text)) return text.length >= 12;
   // Short math explanation context should survive near formulas.
   if (looksLikeMathExplanation(text)) return text.length >= 35;
+  // Short definition sentences ("X is a ...", "X is defined as ...", "X refers to ...") must
+  // survive the length gate so a one-sentence definition isn't silently dropped before concept
+  // extraction sees it. 40 chars is enough to hold a real definition and exclude stub labels.
+  if (/\b(?:is\s+(?:a|an|the|defined|classified|known|considered)|defined\s+as|refers?\s+to|consists?\s+of|is\s+known\s+as)\b/i.test(text)) return text.length >= 40;
   if (text.length < 80) return false;
   // Reject figure captions, table headers, diagram labels — including letter-indexed ones (Fig. A, Table S1)
   if (/^(figure|fig\.|table|diagram|image|plate|chart|exhibit)\s*[\dA-Za-z]/i.test(text)) return false;
