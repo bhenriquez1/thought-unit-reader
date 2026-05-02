@@ -1428,6 +1428,9 @@ export default function ThoughtUnitReader() {
     setThoughtUnits([]);
     setCurrentThoughtUnit(1);
     setCurrentPage(1);
+    // Clear cached page text so the new document never sees stale text from
+    // a previously loaded PDF. Must happen before the pipeline runs.
+    setPageTextByPage(new Map());
 
     setUploadedFile(file);
     setViewMode("reader");
@@ -1657,6 +1660,7 @@ export default function ThoughtUnitReader() {
       setThoughtUnits([]);
       setFileUrl(null);
       setUploadedFile(null);
+      setPageTextByPage(new Map());
       
       alert(`Failed to process PDF: ${userFriendlyMessage}`);
     }
@@ -1758,7 +1762,14 @@ export default function ThoughtUnitReader() {
   /* =========================================================================
      🔹 Load PDF from Library
   ========================================================================= */
-  const handleLoadPDF = (url: string) => {
+  const handleLoadPDF = (url: string, name?: string) => {
+    // Clear stale per-page text cache so the new document never inherits
+    // text extracted from the previous one. Reset page position too.
+    setPageTextByPage(new Map());
+    setCurrentPage(1);
+    setThoughtUnits([]);
+    setCurrentThoughtUnit(1);
+    if (name) setBookId(name.replace(/\.[Pp][Dd][Ff]$/, "") || "book");
     setFileUrl(url);
     setShowLibrary(false);
     setViewMode("reader");
@@ -3586,7 +3597,7 @@ export default function ThoughtUnitReader() {
                   key={pdf.id}
                   className="flex justify-between items-center mb-2 p-2 hover:bg-gray-700 rounded"
                 >
-                  <span onClick={() => handleLoadPDF(pdf.url)} className="cursor-pointer">
+                  <span onClick={() => handleLoadPDF(pdf.url, pdf.name)} className="cursor-pointer">
                     {pdf.name}
                   </span>
                   <button
