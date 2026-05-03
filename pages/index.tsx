@@ -322,6 +322,14 @@ export default function ThoughtUnitReader() {
   // Gated by navLock + followScroll to prevent observer/scroll feedback loops.
   useEffect(() => {
     console.log(`🔄 Global sync state changed: page=${page}, unit=${unitIndex}, chunk=${activeChunkId}, source=${lastUpdateSource}`);
+    console.log("[TRACE pageSync]", {
+      source: `globalSync:${lastUpdateSource}`,
+      documentId: bookId,
+      visiblePage: page,
+      currentPage,
+      currentThoughtUnit,
+      pageTextWords: (pageTextByPage.get(`${bookId}:${currentPage}`) || "").split(/\s+/).filter(Boolean).length,
+    });
 
     // Hard gate: never process observer callbacks during page hydration
     if (navLockRef.current) {
@@ -723,6 +731,12 @@ export default function ThoughtUnitReader() {
     };
   }, [bookId, currentPage, currentThoughtUnit, pageTextByPage, pdfPageCount, syllabusToc, tableOfContents, thoughtUnits, uploadedFile?.name]);
 
+  // True once PDF.js has delivered ≥50 chars of text for the current page via
+  // onGetTextSuccess. Keyed by the same compound key as pageTextByPage so it
+  // can never be satisfied by text from a different document or page.
+  const activePageTextKey = `${bookId}:${currentPage}`;
+  const pageTextReady = (pageTextByPage.get(activePageTextKey) || "").length > 50;
+
   const {
     payloadKey,
     highlightKey,
@@ -744,6 +758,7 @@ export default function ThoughtUnitReader() {
     documentId: bookId,
     pageNumber: currentPage,
     ctx: activePageContextForInsights,
+    pageTextReady,
     audience: unifiedPanelState.audience,
     depth: unifiedPanelState.depth,
   });
@@ -1432,6 +1447,9 @@ export default function ThoughtUnitReader() {
     // Clear cached page text so the new document never sees stale text from
     // a previously loaded PDF. Must happen before the pipeline runs.
     setPageTextByPage(new Map());
+    // Reset global sync store so stale persisted page from a previous session
+    // cannot override the fresh page-1 state via the global sync subscription.
+    updateSync({ page: 1, unitIndex: 1 }, 'manual');
 
     setUploadedFile(file);
     setViewMode("reader");
@@ -1770,6 +1788,9 @@ export default function ThoughtUnitReader() {
     setCurrentPage(1);
     setThoughtUnits([]);
     setCurrentThoughtUnit(1);
+    // Reset global sync store — prevents a stale persisted page from a previous
+    // session overriding the fresh page-1 state via the global sync subscription.
+    updateSync({ page: 1, unitIndex: 1 }, 'manual');
     if (name) setBookId(name.replace(/\.[Pp][Dd][Ff]$/, "") || "book");
     setFileUrl(url);
     setShowLibrary(false);
@@ -2480,6 +2501,14 @@ export default function ThoughtUnitReader() {
       setCurrentPage(page);
       const unit = pageToUnit(page, pdfPageCount, thoughtUnits.length);
       setCurrentThoughtUnit(unit);
+      console.log("[TRACE pageSync]", {
+        source: reason,
+        documentId: bookId,
+        visiblePage: page,
+        previousPage: currentPage,
+        currentThoughtUnit: unit,
+        pageTextWords: (pageTextByPage.get(`${bookId}:${page}`) || "").split(/\s+/).filter(Boolean).length,
+      });
       
       // Update global sync state
       updateSync({ 

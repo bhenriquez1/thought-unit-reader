@@ -50,6 +50,9 @@ interface UseActivePageIntelligenceArgs {
   documentId: string;
   pageNumber: number;
   ctx: ActivePageContext;
+  /** True once the PDF text layer has delivered ≥50 chars for this page.
+   *  When false the primary effect skips processing and waits for re-fire. */
+  pageTextReady: boolean;
   audience: AudienceMode;
   depth: DepthMode;
 }
@@ -60,8 +63,12 @@ function hashText(text: string): string {
   return String(hash);
 }
 
-function buildPageTruthKey(documentId: string, pageNumber: number): string {
-  return `${documentId}::${pageNumber}`;
+function buildPageTruthKey(documentId: string, pageNumber: number, textReady: boolean): string {
+  // Include text-readiness so the primary effect re-fires when text arrives for an
+  // already-navigated page. Without this, the effect runs once with empty text
+  // (classifies as chapter_title), then never re-runs when the PDF text layer delivers
+  // the actual content — leaving the right panel permanently empty on first visit.
+  return `${documentId}::${pageNumber}::${textReady ? "t" : "f"}`;
 }
 
 function extractFormulaSignals(rawText: string): FormulaSignal[] {
@@ -123,12 +130,16 @@ export function useActivePageIntelligence({
   documentId,
   pageNumber,
   ctx,
+  pageTextReady,
   audience,
   depth,
 }: UseActivePageIntelligenceArgs) {
   const mode = useMemo(() => buildModeProfile(audience, depth), [audience, depth]);
   const payloadKey = `${documentId}:${pageNumber}:${audience}:${depth}`;
-  const pageTruthKey = useMemo(() => buildPageTruthKey(documentId, pageNumber), [documentId, pageNumber]);
+  const pageTruthKey = useMemo(
+    () => buildPageTruthKey(documentId, pageNumber, pageTextReady),
+    [documentId, pageNumber, pageTextReady]
+  );
 
   const [status, setStatus] = useState<ActivePageIntelligenceStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -164,12 +175,23 @@ export function useActivePageIntelligence({
   const currentPageRef = useRef({ documentId, pageNumber, pageTruthKey });
   currentPageRef.current = { documentId, pageNumber, pageTruthKey };
 
-  // Primary effect: fires only when the page identity changes (documentId,
-  // pageNumber, or pageText hash). Does NOT re-run when nearbyText or other
-  // auxiliary ctx fields update.
+  // Primary effect: fires when page identity changes (documentId, pageNumber) OR
+  // when text-readiness flips from false→true (textReady encoded in pageTruthKey).
+  // This ensures the pipeline re-runs after onGetTextSuccess delivers page text,
+  // which arrives asynchronously after navigation.
   useEffect(() => {
     const requestKey = pageTruthKey;
     latestRequestRef.current = requestKey;
+
+    // Page text not yet available — show idle, wait for the "t" key to re-fire.
+    if (!pageTextReady) {
+      setStatus("idle");
+      setPageModel(null);
+      setNormResult(null);
+      setPageTruth(null);
+      return;
+    }
+
     const snapshot = ctxRef.current;
 
     // Synchronous reset — clear all stale state before async work begins
@@ -423,7 +445,7 @@ export function useActivePageIntelligence({
       setStatus("error");
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageTruthKey, documentId, pageNumber]);
+  }, [pageTruthKey, documentId, pageNumber, pageTextReady]);
 
   // Audience/depth tuning effect: only re-runs when audience or depth changes
   // on the SAME page. Skips during active page load to avoid overwriting the
