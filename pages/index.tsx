@@ -705,12 +705,11 @@ export default function ThoughtUnitReader() {
       const nextEntry = tableOfContents[idx + 1];
       return entry.pageNumber <= currentPage && (!nextEntry || nextEntry.pageNumber > currentPage);
     });
-    // Prefer live per-page text from onGetTextSuccess (exact page, extracted from
-    // the rendered PDF text layer). Fall back to thought-unit ratio mapping only
-    // when the live text hasn't arrived yet for this page.
-    const unitFallback = thoughtUnits?.[currentThoughtUnit - 1]?.text || "";
-    const activePageText =
-      pageTextByPage.get(`${bookId}:${currentPage}`) || unitFallback;
+    // Strict binding: only use text that PDF.js has confirmed belongs to this exact
+    // page. The previous unitFallback (thoughtUnits[currentThoughtUnit-1].text) was
+    // feeding chapter-title or wrong-page text into the intelligence pipeline, causing
+    // normalizeClinicalText to classify real content pages as "chapter_title".
+    const activePageText = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
     const nearestSyllabusNode = flattenTocNodes(syllabusToc).find((node) => node.page === currentPage) || null;
     return {
       documentId: bookId,
@@ -736,6 +735,12 @@ export default function ThoughtUnitReader() {
   // can never be satisfied by text from a different document or page.
   const activePageTextKey = `${bookId}:${currentPage}`;
   const pageTextReady = (pageTextByPage.get(activePageTextKey) || "").length > 50;
+  console.log("[TRACE PAGE BINDING]", {
+    currentPage,
+    activePageTextKey,
+    textLength: (pageTextByPage.get(activePageTextKey) || "").length,
+    hasText: pageTextReady,
+  });
 
   const {
     payloadKey,
