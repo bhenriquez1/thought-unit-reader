@@ -32,16 +32,26 @@ const TYPE_PATTERNS: Array<{ type: InsightPageType; patterns: RegExp[] }> = [
   { type: "concept", patterns: [/\b(concept|principle|framework|overview)\b/i] },
 ];
 
+// Short math/formula blocks are preserved even below the 40-char prose minimum.
+// One-line expressions like "lim_{n→∞} aₙ = L" or "f(x) = 3x² + 2" are 15–25 chars
+// and were silently dropped before reaching paragraphInsights. isValidCoreParagraph
+// already has a 12-char gate for formula-type paragraphs, so letting these through
+// here is safe — the downstream filter handles the final quality cut.
+const MATH_SHORT_BLOCK_RE =
+  /[=∫∑∂√π∞±→≤≥≠]|\blim\b|\bf\s*\(\s*[a-zA-Z]\s*\)|\bd\s*\/\s*d[tx]\b|\bdy\s*\/\s*dx\b/i;
+
 function splitIntoParagraphs(pageText: string): string[] {
+  const keep = (p: string) =>
+    !isBoilerplateLine(p) && (p.length > 40 || (p.length >= 15 && MATH_SHORT_BLOCK_RE.test(p)));
   const byBlankLine = pageText
     .split(/\n\s*\n/g)
     .map((p) => p.replace(/\s+/g, " ").trim())
-    .filter((p) => p.length > 40 && !isBoilerplateLine(p));
+    .filter(keep);
   if (byBlankLine.length >= 2) return byBlankLine;
   return pageText
     .split(/\n+/)
     .map((p) => p.replace(/\s+/g, " ").trim())
-    .filter((p) => p.length > 40 && !isBoilerplateLine(p));
+    .filter(keep);
 }
 
 function normalizeParagraph(text: string): string {

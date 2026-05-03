@@ -251,9 +251,12 @@ function enforceNeighborhoodDepth<T extends HighlightNeighborhood>(items: T[]): 
   // Only suppress anchor_only neighborhoods when deeper alternatives exist on the page.
   // When ALL neighborhoods are anchor_only, keep them — a real anchor is always better than
   // the fuzzy keyword-substring fallback that SmartPDFViewer uses when this array is empty.
+  // Threshold lowered from 0.6 → 0.3: sparse pages (math, short prose) were producing
+  // anchor_only neighborhoods with priorityScore ~0.35–0.55 that were being suppressed
+  // even when no deeper neighborhoods existed, leaving the left panel with no highlights.
   const hasDeep = mapped.some((item) => item.depthLevel === "full" || item.depthLevel === "partial");
   return mapped.filter(
-    (item) => item.depthLevel !== "anchor_only" || !hasDeep || item.priorityScore >= 0.6,
+    (item) => item.depthLevel !== "anchor_only" || !hasDeep || item.priorityScore >= 0.3,
   );
 }
 
