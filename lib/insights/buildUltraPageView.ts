@@ -118,7 +118,7 @@ function splitRawSentences(text: string): string[] {
   return text
     .split(/(?<=[.!?])\s+(?=[A-Z"'])/)
     .map((s) => s.trim())
-    .filter((s) => s.length >= 20);
+    .filter((s) => s.length >= 8);
 }
 
 export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelForConcepts {
@@ -139,25 +139,28 @@ export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelFor
     type ScoredText = { text: string; score: number };
     const rawSentences = splitRawSentences(p.cleanedText || p.rawText || "");
     const inputs: ScoredText[] = [
-      p.summary           ? { text: p.summary,  score: p.priorityScore * 3 } : null,
-      ...(p.coreSignals ?? []).map((t, i) => ({ text: t, score: p.priorityScore * (2 - i * 0.25) })),
-      ...(p.takeaways   ?? []).map((t)    => ({ text: t, score: p.priorityScore })),
-      ...(p.traps       ?? []).map((t)    => ({ text: t, score: p.priorityScore * 1.5 })),
-      ...(p.logicChains ?? []).flatMap((lc) => [
-        lc.because ? { text: lc.because, score: p.priorityScore * 2.5 } : null,
-        lc.trap    ? { text: lc.trap,    score: p.priorityScore * 1.8 } : null,
-        (lc.if && lc.then) ? { text: `${lc.if}, therefore ${lc.then}`, score: p.priorityScore * 1.5 } : null,
-      ]),
-      // Raw sentences from cleanedText — ensures all paragraph content is available
-      // even when derived fields (coreSignals, logicChains) are sparse.
-      // Score is lower than derived fields so enriched signals still win anchor selection.
+      // Raw verbatim PDF sentences are the primary anchor pool — they match PDF spans directly.
+      // Scored above AI-enriched fields so the anchor is always findable text, not a rewrite.
       ...rawSentences.map((t, i) => ({
         text: t,
-        score: Math.max(0.5, p.priorityScore * 0.75 - i * 0.1),
+        score: Math.max(0.55, p.priorityScore * 2.0 - i * 0.15),
       })),
+      // AI-enriched fields demoted to support context — verbatim but type-selected, not top-ranked.
+      p.summary           ? { text: p.summary,  score: p.priorityScore * 1.0 } : null,
+      ...(p.traps       ?? []).map((t)    => ({ text: t, score: p.priorityScore * 1.0 })),
+      ...(p.takeaways   ?? []).map((t)    => ({ text: t, score: p.priorityScore * 0.85 })),
+      ...(p.logicChains ?? []).flatMap((lc) => [
+        lc.because ? { text: lc.because, score: p.priorityScore * 0.9 } : null,
+        lc.trap    ? { text: lc.trap,    score: p.priorityScore * 0.8 } : null,
+        // Synthetic if+then concatenations never appear verbatim in the PDF — kept at near-zero
+        // so they fill the pool but never win anchor or primary support selection.
+        (lc.if && lc.then) ? { text: `${lc.if}, therefore ${lc.then}`, score: p.priorityScore * 0.2 } : null,
+      ]),
+      // coreSignals contain a mix of full sentences and regex fragments; scored low so verbatim
+      // raw sentences always win over fragments that fail token-window matching.
+      ...(p.coreSignals ?? []).map((t, i) => ({ text: t, score: Math.max(0.3, p.priorityScore * 0.45 - i * 0.05) })),
       // Cross-paragraph context: for single-sentence paragraphs, add the first sentence
-      // of the next paragraph as a low-score support candidate. This prevents isolated
-      // definition sentences from always producing empty supportSentences.
+      // of the next paragraph as a low-score support candidate.
       ...(rawSentences.length <= 1 && firstRawByIdx[idx + 1]
         ? [{ text: firstRawByIdx[idx + 1]!, score: Math.max(0.3, p.priorityScore * 0.4) }]
         : []),

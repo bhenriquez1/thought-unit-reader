@@ -20,9 +20,9 @@ export type ConceptRole =
 export const ROLE_PRIORITY: Record<ConceptRole, number> = {
   definition:  6,
   mechanism:   5,
-  variation:   4,
+  example:     4,   // worked examples surface before contrasts
   measurement: 3,
-  example:     2,
+  variation:   2,   // contrast/trap-adjacent concepts sort last before detail
   detail:      1,
 };
 
@@ -326,7 +326,7 @@ function selectBestConcepts(concepts: ConceptBlockInput[]): ConceptBlockInput[] 
   const usedIds = new Set<string>();
 
   // First pass: one best from each high-priority role in tier order
-  for (const role of ["definition", "mechanism", "variation"] as ConceptRole[]) {
+  for (const role of ["definition", "mechanism", "example"] as ConceptRole[]) {
     const best = byRole.get(role)?.[0];
     if (best && !usedIds.has(best.id)) {
       selected.push(best);
@@ -402,7 +402,7 @@ function sortConceptsByStrictHierarchy<T extends {
     }
   }
 
-  for (const bucket of [definitions, mechanisms, variations, measurements, examples, details]) {
+  for (const bucket of [definitions, mechanisms, examples, measurements, variations, details]) {
     for (const item of bucket) {
       if (used.has(item)) continue;
       ordered.push(item);

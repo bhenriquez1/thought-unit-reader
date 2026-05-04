@@ -339,9 +339,42 @@ export default function SmartPDFViewer({
           };
         });
 
+        // Build sentence records from DOM spans so strategies 1-5 in the matcher
+        // can anchor to exact PDF text rather than falling back to token-window only.
+        // Group consecutive spans into sentences by detecting terminal punctuation
+        // followed by a capital letter in the next span.
+        const sentenceRecords: import("@/lib/highlights/matchNeighborhoodMemberToText").PageSentenceRecord[] = [];
+        let sBuf = "";
+        let sNormBuf = "";
+        let sStart = 0;
+        for (let si = 0; si < spans.length; si++) {
+          const rawSpan = spans[si].textContent || "";
+          sBuf += (sBuf ? " " : "") + rawSpan;
+          sNormBuf += (sNormBuf ? " " : "") + spanNorm[si];
+          const nextRaw = si + 1 < spans.length ? (spans[si + 1].textContent || "").trimStart() : "";
+          const flushHere = /[.!?]\s*$/.test(rawSpan) && /^[A-Z"'(]/.test(nextRaw);
+          const isLast = si === spans.length - 1;
+          if (flushHere || isLast) {
+            const sentText = sBuf.trim();
+            if (sentText.length >= 8) {
+              sentenceRecords.push({
+                id: `sent-${sentenceRecords.length}`,
+                text: sentText,
+                normalizedText: sNormBuf.trim(),
+                startOffset: sStart,
+                endOffset: offsets[si] + spanNorm[si].length,
+              });
+            }
+            sStart = si + 1 < spans.length ? offsets[si + 1] : offsets[si] + spanNorm[si].length + 1;
+            sBuf = "";
+            sNormBuf = "";
+          }
+        }
+
         const pageTextRecord: PageTextRecord = {
           rawText: concatText,
           normalizedText: concatText,
+          sentences: sentenceRecords.length > 0 ? sentenceRecords : undefined,
         };
 
         const placements: NeighborhoodMemberPlacement[] = [];

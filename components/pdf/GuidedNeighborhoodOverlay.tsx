@@ -200,8 +200,8 @@ export default function GuidedNeighborhoodOverlay({
           title={badge.tooltip || undefined}
           style={{
             position: "absolute",
-            left: badge.x - 10,
-            top: badge.roleLabel ? badge.y - 14 : badge.y - 10,
+            left: Math.max(4, badge.x - 24),
+            top: badge.roleLabel ? badge.y - 22 : badge.y - 18,
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
@@ -213,13 +213,13 @@ export default function GuidedNeighborhoodOverlay({
         >
           <div
             style={{
-              width: 20,
-              height: 20,
+              width: 16,
+              height: 16,
               borderRadius: 999,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 11,
+              fontSize: 9,
               fontWeight: 700,
               color: "white",
               background: BADGE_BG[badge.tier],
