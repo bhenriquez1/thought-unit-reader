@@ -118,6 +118,9 @@ function sentenceScore(sentence: SourceSentence): number {
   if (!startsWithLowValueOpener(cleaned)) score += 1;
   if (/[:;]/.test(cleaned)) score += 1;
   if (/\b(is|are|means|defined|consists|causes|results|leads)\b/i.test(cleaned)) score += 2;
+  // Heavy penalties so example-opening and figure-reference sentences never become anchors.
+  if (/^(for example,?|for instance,?|such as |e\.g\.,|i\.e\.,|to illustrate|consider |one example|another example)/i.test(cleaned.trimStart())) score -= 6;
+  if (/^(figure|fig\.|table|diagram|image|chart|exhibit)\s*[\dA-Za-z]/i.test(cleaned.trimStart())) score -= 8;
   return score;
 }
 
@@ -172,8 +175,18 @@ function inferTitle(
   return inferConceptTitle(cleanSentence(anchor.text), headingText);
 }
 
-function classifyConceptRole(anchorText: string, supportTexts: string[]): ConceptRole {
+function classifyConceptRole(anchorText: string, supportTexts: string[], paragraphText?: string): ConceptRole {
   const lower = anchorText.toLowerCase();
+
+  // Example: check FIRST — a sentence starting with an illustrative opener must never be
+  // classified as "definition" even if "X is a Y" appears later in the same sentence.
+  // Also promote to "example" when the enclosing paragraph opens with an example marker,
+  // regardless of how the individual anchor sentence is phrased.
+  const exampleSentenceStart = /^(for example,?|for instance,?|such as |e\.g\.,|i\.e\.,|to illustrate,?|consider |one example|another example)/i.test(lower.trimStart());
+  const exampleParagraphStart = paragraphText
+    ? /^(for example,?|for instance,?|such as |e\.g\.,|i\.e\.,|to illustrate,?|one example|another example)/i.test(paragraphText.trimStart().toLowerCase())
+    : false;
+  if (exampleSentenceStart || exampleParagraphStart) return "example";
 
   // Definition: explicit definitional copula or structural "is a/the X that/which"
   if (/\b(is defined as|is characterized by|refers to|is called|is known as|is a type of|is described as|is the process of|is the ability to|consists of)\b/.test(lower)) return "definition";
@@ -196,8 +209,8 @@ function classifyConceptRole(anchorText: string, supportTexts: string[]): Concep
   if (/\b(unit of|measured in|is approximately|is equal to|equals approximately|range(s)? from|between \d+ and \d+)\b/i.test(lower)) return "measurement";
   if (/\b(atomic (mass|weight|number)|molecular (weight|mass)|mass number|proton number|neutron number)\b/.test(lower) && /\d/.test(anchorText)) return "measurement";
 
-  // Example: illustrative instance
-  if (/\b(for example|for instance|such as|e\.g\.|i\.e\.|including|just as|consider)\b/.test(lower)) return "example";
+  // Example: mid-sentence illustrative markers (not at sentence start — caught above already)
+  if (/\b(for example|for instance|e\.g\.|i\.e\.|just as)\b/.test(lower)) return "example";
 
   return "detail";
 }
@@ -251,7 +264,7 @@ function buildConceptFromParagraph(
     paragraphIds: [paragraph.id],
     importance: inferImportance(score),
     score,
-    conceptRole: classifyConceptRole(anchorText, support),
+    conceptRole: classifyConceptRole(anchorText, support, paragraph.text),
   };
 }
 
@@ -334,10 +347,15 @@ function selectBestConcepts(concepts: ConceptBlockInput[]): ConceptBlockInput[] 
     }
   }
 
-  // Second pass: fill remaining slots with best available by score
+  // Second pass: fill remaining slots — role tier first, then score within tier.
+  // This prevents a high-scoring example/detail from jumping ahead of a lower-scoring
+  // definition or mechanism that wasn't in the first-pass role list.
   const remaining = [...concepts]
     .filter((c) => !usedIds.has(c.id))
     .sort((a, b) => {
+      const roleA = ROLE_PRIORITY[a.conceptRole ?? "detail"] ?? 0;
+      const roleB = ROLE_PRIORITY[b.conceptRole ?? "detail"] ?? 0;
+      if (roleA !== roleB) return roleB - roleA;
       const diff = b.score - a.score;
       if (Math.abs(diff) > 0.5) return diff;
       const aWords = a.anchorSentence.split(/\s+/).length;
