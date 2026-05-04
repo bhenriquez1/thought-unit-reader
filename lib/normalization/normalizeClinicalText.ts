@@ -169,7 +169,7 @@ export function normalizeClinicalText(
   // Math exposition pages with formula signals always render — formula notation
   // often survives PDF extraction poorly, leaving few canonical statements even
   // on content-rich calculus/physics pages. The concept pipeline handles extraction.
-  if (pageKind === "mathematical_exposition" && (looksLikeFormula(cleanedPageText) || countMathSignals(cleanedPageText) >= 2)) {
+  if (pageKind === "mathematical_exposition" && (looksLikeFormula(cleanedPageText) || countMathSignals(cleanedPageText) >= 1)) {
     console.log("[TRACE normalizeClinicalText]", { pageKind, shouldRenderFullPanel: true, refusalReason: null, canonicalCount: dedupedStatements.length, wordCount: wordCount(cleanedPageText) });
     return {
       pageKind,
@@ -312,8 +312,10 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
 
   // Unambiguous calculus symbols/terms → math without counting
   if (/[∫∑∂∇]|dy\/dx|d[xyz]\/d[xyz]|\b(derivative|integral|calculus|antiderivative|chain rule|related rates)\b/i.test(text)) return "mathematical_exposition";
-  // Weaker signals: 2+ hits catches fragmented PDF extraction (e.g. "lim" + "theorem" on separate lines)
-  if (countMathSignals(text) >= 2) return "mathematical_exposition";
+  // Strong single-word math vocabulary that unambiguously identifies calc/precalc content
+  if (/\b(limits?|sequences?|converge[sd]?|diverge[sd]?|derivatives?|rates?\s+of\s+change|tangent\s+line|slope|instantaneous|antiderivative|differential)\b/i.test(text)) return "mathematical_exposition";
+  // Weaker signals: 1+ hit catches fragmented PDF extraction (e.g. "lim" alone, "theorem" alone)
+  if (countMathSignals(text) >= 1) return "mathematical_exposition";
 
   if (
     /\bpatient\b|\bclinician\b|\bdiagnosis\b|\btreatment\b|\bsymptoms\b|\bclinical\b|\bchief complaint\b/.test(text)

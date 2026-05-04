@@ -232,8 +232,8 @@ export function buildHighlightNeighborhoods(
 
 function enforceNeighborhoodDepth<T extends HighlightNeighborhood>(items: T[]): T[] {
   const mapped = items.map((item) => {
-    const support = (item.support ?? []).filter((s) => (s.text || "").trim().length >= 24);
-    const additional = (item.additional ?? []).filter((a) => (a.text || "").trim().length >= 24);
+    const support = (item.support ?? []).filter((s) => (s.text || "").trim().length >= 16);
+    const additional = (item.additional ?? []).filter((a) => (a.text || "").trim().length >= 16);
     let depthLevel: T["depthLevel"] = "anchor_only";
     if (support.length >= 1) depthLevel = "full";
     else if (additional.length >= 1 || item.trap) depthLevel = "partial";
