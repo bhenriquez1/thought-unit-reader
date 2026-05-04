@@ -56,6 +56,10 @@ export function findMainTeachingZone(
     // Comparison-type penalty: "comparison" paragraphs are trap-adjacent (they contrast/distinguish
     // concepts) and should not outrank primary definition/mechanism paragraphs.
     const isComparisonType = p.paragraphType === "comparison";
+    // Page-position bonus: paragraphs that appear earlier on the page establish context
+    // and should not be evicted by a denser example section further down.
+    // Bonus decays linearly: +0.35 at index 0, zero by index 7.
+    const positionBonus = Math.max(0, 0.35 - index * 0.05);
     const zoneScore =
       explanatoryScore * 0.5 +
       Math.min(p.priorityScore / 10, 1.0) * 0.3 +
@@ -65,7 +69,8 @@ export function findMainTeachingZone(
       (isFormula && isMathPage ? 0.22 : 0) +
       (isMathExplain && isMathPage ? 0.16 : 0) +
       (isDefinitionLead ? 0.45 : 0) +
-      (isComparisonType ? -0.15 : 0);
+      (isComparisonType ? -0.15 : 0) +
+      positionBonus;
     return { p, index, text, isFormula, isMathExplain, zoneScore };
   });
 
@@ -91,6 +96,11 @@ export function findMainTeachingZone(
 
     if (bestNeighbor) chosen.set(bestNeighbor.index, bestNeighbor.p);
   }
+
+  // Hard guarantee: the first paragraph always survives zone selection.
+  // It establishes the page's primary subject and must be visible to concept
+  // extraction even when a later example-dense section scores higher overall.
+  if (paragraphs.length > 0) chosen.set(0, paragraphs[0]);
 
   return [...chosen.entries()]
     .sort((a, b) => a[0] - b[0])

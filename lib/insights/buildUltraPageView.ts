@@ -113,6 +113,43 @@ export function isValidCoreParagraph(p: ParagraphInsight): boolean {
 // Adapter: PageInsightModel → PageModelForConcepts
 // ---------------------------------------------------------------------------
 
+/**
+ * Returns a score bonus for a paragraph based on its position in page reading order.
+ * Intro paragraphs (before the first section heading) get the largest bonus so their
+ * sentences win the anchor competition over higher-density example sections further down.
+ *
+ * Detection: a "section heading" is a short line (< 90 chars) without terminal punctuation
+ * that starts with a capital letter and appears after the first paragraph.
+ */
+function computeStructuralPositionBonus(
+  paragraphs: ParagraphInsight[],
+  idx: number
+): number {
+  if (paragraphs.length === 0) return 0;
+
+  let firstSectionIdx = -1;
+  for (let i = 1; i < paragraphs.length; i++) {
+    const t = (paragraphs[i].cleanedText || paragraphs[i].rawText || "").trim();
+    if (t.length > 0 && t.length < 90 && !/[.!?]$/.test(t) && /^[A-Z]/.test(t)) {
+      firstSectionIdx = i;
+      break;
+    }
+  }
+
+  // Intro zone: everything before the first section heading, or the first 2 paragraphs
+  // when no heading is detected.
+  const introEnd = firstSectionIdx > 0 ? firstSectionIdx : Math.min(2, paragraphs.length);
+
+  if (idx < introEnd) {
+    // +0.50 for the very first paragraph, +0.38 for the second, etc.
+    return 0.50 - idx * 0.12;
+  }
+  if (firstSectionIdx > 0 && idx === firstSectionIdx + 1) {
+    return 0.18; // First content paragraph of the first named section
+  }
+  return 0;
+}
+
 function splitRawSentences(text: string): string[] {
   if (!text) return [];
   return text
@@ -135,6 +172,9 @@ export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelFor
 
   for (const [idx, p] of paragraphs.entries()) {
     const sentenceIds: string[] = [];
+    // Structural position bonus: intro-zone paragraphs get elevated scores so their
+    // sentences win the anchor competition over denser example sections further down.
+    const structBonus = computeStructuralPositionBonus(paragraphs, idx);
 
     type ScoredText = { text: string; score: number };
     const rawSentences = splitRawSentences(p.cleanedText || p.rawText || "");
@@ -143,7 +183,7 @@ export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelFor
       // Scored above AI-enriched fields so the anchor is always findable text, not a rewrite.
       ...rawSentences.map((t, i) => ({
         text: t,
-        score: Math.max(0.55, p.priorityScore * 2.0 - i * 0.15),
+        score: Math.max(0.55, p.priorityScore * 2.0 - i * 0.15 + structBonus),
       })),
       // AI-enriched fields demoted to support context — verbatim but type-selected, not top-ranked.
       p.summary           ? { text: p.summary,  score: p.priorityScore * 1.0 } : null,
@@ -181,7 +221,7 @@ export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelFor
         id: p.id,
         text: p.cleanedText || p.rawText || "",
         sentenceIds,
-        score: p.priorityScore,
+        score: p.priorityScore + structBonus,
       });
     }
   }
