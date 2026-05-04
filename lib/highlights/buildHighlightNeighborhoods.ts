@@ -256,7 +256,11 @@ function enforceNeighborhoodDepth<T extends HighlightNeighborhood>(items: T[]): 
   // even when no deeper neighborhoods existed, leaving the left panel with no highlights.
   const hasDeep = mapped.some((item) => item.depthLevel === "full" || item.depthLevel === "partial");
   return mapped.filter(
-    (item) => item.depthLevel !== "anchor_only" || !hasDeep || item.priorityScore >= 0.3,
+    (item) =>
+      item.conceptRole === "definition" || // Never suppress the structural definition
+      item.depthLevel !== "anchor_only" ||
+      !hasDeep ||
+      item.priorityScore >= 0.3,
   );
 }
 
