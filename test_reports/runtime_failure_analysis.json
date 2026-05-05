@@ -1,12 +1,11 @@
 {
-  "generatedAt": "2026-05-03T18:36:40.734Z",
-  "generatedAt": "2026-05-03T21:16:20.753Z",
+  "generatedAt": "2026-05-05T04:08:22.941Z",
   "cases": [
     {
       "id": "biology_failure_case",
       "rawExtractedPageText": "Chapter 3: Cellular Energetics Overview\n\nThe electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane. Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space. ATP synthase uses the proton gradient to produce ATP from ADP and inorganic phosphate.\n\nStudents often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists. However, the conceptual layer that matters is coupling: redox energy is converted to an electrochemical gradient and then converted again to chemical bond energy in ATP. If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.\n\nA common trap is confusing where ATP is generated and where reducing equivalents are produced. Glycolysis generates ATP and NADH in the cytosol; the Krebs cycle generates most NADH in the matrix; oxidative phosphorylation generates most ATP at the inner membrane. Do not confuse substrate-level phosphorylation with oxidative phosphorylation.\n\nFor example, rotenone blocks complex I and cyanide blocks complex IV, but both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
       "detectedDomain": "general",
-      "pageKind": "scientific_exposition",
+      "pageKind": "mathematical_exposition",
       "pageClass": "prose",
       "shouldRenderFullPanel": true,
       "detectedFormulaSignals": [],
@@ -65,26 +64,26 @@
       "conceptRoleClassification": [
         {
           "id": "concept-p-0",
-          "role": "definition",
-          "score": 16,
-          "anchor": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane."
-        },
-        {
-          "id": "concept-p-1",
           "role": "mechanism",
-          "score": 26,
-          "anchor": "Oxygen is absent, therefore If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses."
+          "score": 15.85,
+          "anchor": "Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space."
         },
         {
           "id": "concept-p-3",
-          "role": "mechanism",
-          "score": 19.5,
+          "role": "example",
+          "score": 18,
           "anchor": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor."
+        },
+        {
+          "id": "concept-p-1",
+          "role": "detail",
+          "score": 29.459999999999997,
+          "anchor": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses."
         },
         {
           "id": "concept-p-2",
           "role": "detail",
-          "score": 8,
+          "score": 8.55,
           "anchor": "A common trap is confusing where ATP is generated and where reducing equivalents are produced."
         }
       ],
@@ -99,17 +98,31 @@
       "priorityScoringResults": [
         {
           "id": "1:anchor",
+          "text": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+          "role": "explanation",
+          "slot": "reason",
+          "score": 0.52
+        },
+        {
+          "id": "1:sup0",
+          "text": "For example, rotenone blocks complex I and cyanide blocks complex IV, but both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+          "role": "explanation",
+          "slot": "reason",
+          "score": 0.52
+        },
+        {
+          "id": "2:sup2",
           "text": "Oxygen is absent, therefore If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
           "role": "explanation",
           "slot": "reason",
           "score": 0.52
         },
         {
-          "id": "2:anchor",
-          "text": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
-          "role": "explanation",
-          "slot": "reason",
-          "score": 0.52
+          "id": "2:sup1",
+          "text": "However, the conceptual layer that matters is coupling: redox energy is converted to an electrochemical gradient and then converted again to chemical bond energy in ATP.",
+          "role": "contrast",
+          "slot": "trap",
+          "score": 0.46
         },
         {
           "id": "3:sup1",
@@ -120,14 +133,14 @@
         },
         {
           "id": "0:anchor",
-          "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
+          "text": "Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space.",
           "role": "support",
           "slot": "support",
           "score": 0.28
         },
         {
           "id": "0:sup0",
-          "text": "Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space.",
+          "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
           "role": "support",
           "slot": "support",
           "score": 0.28
@@ -140,14 +153,14 @@
           "score": 0.28
         },
         {
-          "id": "1:sup0",
+          "id": "2:anchor",
           "text": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
           "role": "support",
           "slot": "support",
           "score": 0.28
         },
         {
-          "id": "1:sup1",
+          "id": "2:sup0",
           "text": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
           "role": "support",
           "slot": "support",
@@ -172,18 +185,18 @@
       "chosenConceptBlockSource": [
         {
           "conceptId": "concept-p-0",
-          "title": "The Electron Transport Chain Is A",
-          "pattern": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane."
-        },
-        {
-          "conceptId": "concept-p-1",
-          "title": "Oxygen Is Absent",
-          "pattern": "Oxygen is absent, therefore If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses."
+          "title": "Electrons From Nadh And Fadh2 Flow",
+          "pattern": "Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space."
         },
         {
           "conceptId": "concept-p-3",
           "title": "Both Reduce Oxidative Atp Production Because",
           "pattern": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor."
+        },
+        {
+          "conceptId": "concept-p-1",
+          "title": "Key Concept",
+          "pattern": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses."
         },
         {
           "conceptId": "concept-p-2",
@@ -197,21 +210,21 @@
           "stepId": "analysis-doc:14:step:1",
           "stepOrder": 1,
           "role": "coreMeaning",
-          "text": "What is The electron transport chain?"
+          "text": "What does Electrons from NADH and FADH2 flow through complexes mean."
         },
         {
           "id": "analysis-doc:14:step:1:mechanism",
           "stepId": "analysis-doc:14:step:1",
           "stepOrder": 1,
           "role": "mechanism",
-          "text": "What does Electrons from NADH and FADH2 flow through complexes cause or lead to."
+          "text": "What does electron transport chain cause or lead to."
         },
         {
           "id": "analysis-doc:14:step:1:distinction",
           "stepId": "analysis-doc:14:step:1",
           "stepOrder": 1,
           "role": "distinction",
-          "text": "What should not be confused with electron transport chain."
+          "text": "What should not be confused with Electrons from NADH and FADH2 flow through complexes."
         },
         {
           "id": "analysis-doc:14:step:1:application",
@@ -225,77 +238,77 @@
           "stepId": "analysis-doc:14:step:1",
           "stepOrder": 1,
           "role": "skimTrap",
-          "text": "What mistake is associated with electron transport chain."
+          "text": "What mistake is associated with Electrons from NADH and FADH2 flow through complexes."
         },
         {
           "id": "analysis-doc:14:step:2:coreMeaning",
           "stepId": "analysis-doc:14:step:2",
           "stepOrder": 2,
           "role": "coreMeaning",
-          "text": "What does Oxygen is absent, therefore If oxygen mean."
+          "text": "What does Both reduce oxidative ATP production because electron flow mean."
         },
         {
           "id": "analysis-doc:14:step:2:mechanism",
           "stepId": "analysis-doc:14:step:2",
           "stepOrder": 2,
           "role": "mechanism",
-          "text": "What does If oxygen cause or lead to."
+          "text": "What does For example, rotenone blocks complex I and cyanide cause or lead to."
         },
         {
           "id": "analysis-doc:14:step:2:distinction",
           "stepId": "analysis-doc:14:step:2",
           "stepOrder": 2,
           "role": "distinction",
-          "text": "What should not be confused with Oxygen is absent, therefore If oxygen."
+          "text": "What should not be confused with Both reduce oxidative ATP production because electron flow."
         },
         {
           "id": "analysis-doc:14:step:2:application",
           "stepId": "analysis-doc:14:step:2",
           "stepOrder": 2,
           "role": "application",
-          "text": "When or how is Students often memorize glycolysis, the Krebs cycle, and applied."
+          "text": "When or how is For example, rotenone blocks complex I and cyanide applied."
         },
         {
           "id": "analysis-doc:14:step:2:skimTrap",
           "stepId": "analysis-doc:14:step:2",
           "stepOrder": 2,
           "role": "skimTrap",
-          "text": "What mistake is associated with Oxygen is absent, therefore If oxygen."
+          "text": "What mistake is associated with Both reduce oxidative ATP production because electron flow."
         },
         {
           "id": "analysis-doc:14:step:3:coreMeaning",
           "stepId": "analysis-doc:14:step:3",
           "stepOrder": 3,
           "role": "coreMeaning",
-          "text": "What does Both reduce oxidative ATP production because electron flow mean."
+          "text": "What does If oxygen mean."
         },
         {
           "id": "analysis-doc:14:step:3:mechanism",
           "stepId": "analysis-doc:14:step:3",
           "stepOrder": 3,
           "role": "mechanism",
-          "text": "What does Both reduce oxidative ATP production because electron flow cause or lead to."
+          "text": "What does Students often memorize glycolysis, the Krebs cycle, and cause or lead to."
         },
         {
           "id": "analysis-doc:14:step:3:distinction",
           "stepId": "analysis-doc:14:step:3",
           "stepOrder": 3,
           "role": "distinction",
-          "text": "What should not be confused with Both reduce oxidative ATP production because electron flow."
+          "text": "What should not be confused with If oxygen."
         },
         {
           "id": "analysis-doc:14:step:3:application",
           "stepId": "analysis-doc:14:step:3",
           "stepOrder": 3,
           "role": "application",
-          "text": "When or how is Both reduce oxidative ATP production because electron flow applied."
+          "text": "When or how is However, the conceptual layer that matters applied."
         },
         {
           "id": "analysis-doc:14:step:3:skimTrap",
           "stepId": "analysis-doc:14:step:3",
           "stepOrder": 3,
           "role": "skimTrap",
-          "text": "What mistake is associated with Both reduce oxidative ATP production because electron flow."
+          "text": "What mistake is associated with If oxygen."
         },
         {
           "id": "analysis-doc:14:step:4:coreMeaning",
@@ -340,24 +353,24 @@
             "stepId": "analysis-doc:14:step:1",
             "stepOrder": 1,
             "role": "coreMeaning",
-            "text": "What is The electron transport chain?",
-            "score": 0.74
+            "text": "What does Electrons from NADH and FADH2 flow through complexes mean?",
+            "score": 0.69
           },
           {
             "id": "analysis-doc:14:step:1:mechanism",
             "stepId": "analysis-doc:14:step:1",
             "stepOrder": 1,
             "role": "mechanism",
-            "text": "What does Electrons from NADH and FADH2 flow through complexes cause or lead to?",
-            "score": 0.69
+            "text": "What does electron transport chain cause or lead to?",
+            "score": 0.74
           },
           {
             "id": "analysis-doc:14:step:1:distinction",
             "stepId": "analysis-doc:14:step:1",
             "stepOrder": 1,
             "role": "distinction",
-            "text": "What should not be confused with electron transport chain?",
-            "score": 0.82
+            "text": "What should not be confused with Electrons from NADH and FADH2 flow through complexes?",
+            "score": 0.7699999999999999
           },
           {
             "id": "analysis-doc:14:step:1:application",
@@ -372,8 +385,8 @@
             "stepId": "analysis-doc:14:step:1",
             "stepOrder": 1,
             "role": "skimTrap",
-            "text": "What mistake is associated with electron transport chain?",
-            "score": 0.74
+            "text": "What mistake is associated with Electrons from NADH and FADH2 flow through complexes?",
+            "score": 0.69
           }
         ],
         "rejected": []
@@ -382,21 +395,21 @@
         "selected": [
           {
             "id": "compression-1-mechanism",
-            "text": "Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space.",
+            "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
             "role": "mechanism",
             "score": 0.8,
             "source": "block_reason"
           },
           {
             "id": "compression-2-mechanism",
-            "text": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+            "text": "For example, rotenone blocks complex I and cyanide blocks complex IV, but both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
             "role": "mechanism",
             "score": 0.8,
             "source": "block_reason"
           },
           {
             "id": "compression-3-mechanism",
-            "text": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+            "text": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
             "role": "mechanism",
             "score": 0.8,
             "source": "block_reason"
@@ -405,7 +418,14 @@
         "rejected": [
           {
             "id": "compression-100-recognition",
-            "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
+            "text": "Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space.",
+            "role": "recognition",
+            "score": 0.76,
+            "source": "block_pattern"
+          },
+          {
+            "id": "compression-100-recognition",
+            "text": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
             "role": "recognition",
             "score": 0.76,
             "source": "block_pattern"
@@ -418,112 +438,119 @@
             "source": "block_pattern"
           },
           {
-            "id": "compression-102-mechanism",
-            "text": "Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space.",
+            "id": "compression-103-mechanism",
+            "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
             "role": "mechanism",
             "score": 0.8,
             "source": "block_reason"
           },
           {
-            "id": "compression-102-mechanism",
-            "text": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+            "id": "compression-103-mechanism",
+            "text": "For example, rotenone blocks complex I and cyanide blocks complex IV, but both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
             "role": "mechanism",
             "score": 0.8,
             "source": "block_reason"
           },
           {
-            "id": "compression-102-mechanism",
-            "text": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+            "id": "compression-103-mechanism",
+            "text": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
             "role": "mechanism",
             "score": 0.8,
             "source": "block_reason"
           },
           {
-            "id": "compression-102-mechanism",
+            "id": "compression-103-mechanism",
             "text": "Glycolysis generates ATP and NADH in the cytosol; the Krebs cycle generates most NADH in the matrix; oxidative phosphorylation generates most ATP at the inner membrane.",
             "role": "mechanism",
             "score": 0.8,
             "source": "block_reason"
           },
           {
-            "id": "compression-106-application",
+            "id": "compression-107-application",
             "text": "ATP synthase uses the proton gradient to produce ATP from ADP and inorganic phosphate.",
             "role": "application",
             "score": 0.78,
             "source": "block_rule"
           },
           {
-            "id": "compression-106-application",
-            "text": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
+            "id": "compression-107-application",
+            "text": "However, the conceptual layer that matters is coupling: redox energy is converted to an electrochemical gradient and then converted again to chemical bond energy in ATP.",
             "role": "application",
             "score": 0.78,
             "source": "block_rule"
           },
           {
-            "id": "compression-106-application",
+            "id": "compression-107-application",
             "text": "Do not confuse substrate level phosphorylation with oxidative phosphorylation.",
             "role": "application",
             "score": 0.78,
             "source": "block_rule"
           },
           {
-            "id": "compression-109-mechanism",
-            "text": "Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space.",
-            "role": "mechanism",
-            "score": 0.8,
-            "source": "block_reason"
-          },
-          {
             "id": "compression-110-mechanism",
-            "text": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+            "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
             "role": "mechanism",
             "score": 0.8,
             "source": "block_reason"
           },
           {
             "id": "compression-111-mechanism",
-            "text": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+            "text": "For example, rotenone blocks complex I and cyanide blocks complex IV, but both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
             "role": "mechanism",
             "score": 0.8,
             "source": "block_reason"
           },
           {
             "id": "compression-112-mechanism",
+            "text": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-113-mechanism",
             "text": "Glycolysis generates ATP and NADH in the cytosol; the Krebs cycle generates most NADH in the matrix; oxidative phosphorylation generates most ATP at the inner membrane.",
             "role": "mechanism",
             "score": 0.8,
             "source": "block_reason"
           },
           {
-            "id": "compression-113-application",
+            "id": "compression-114-application",
             "text": "ATP synthase uses the proton gradient to produce ATP from ADP and inorganic phosphate.",
             "role": "application",
             "score": 0.78,
             "source": "block_rule"
           },
           {
-            "id": "compression-114-application",
-            "text": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
+            "id": "compression-115-application",
+            "text": "However, the conceptual layer that matters is coupling: redox energy is converted to an electrochemical gradient and then converted again to chemical bond energy in ATP.",
             "role": "application",
             "score": 0.78,
             "source": "block_rule"
           },
           {
-            "id": "compression-115-application",
+            "id": "compression-116-application",
             "text": "Do not confuse substrate level phosphorylation with oxidative phosphorylation.",
             "role": "application",
             "score": 0.78,
             "source": "block_rule"
           },
           {
-            "id": "compression-116-recognition",
-            "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
+            "id": "compression-117-recognition",
+            "text": "Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space.",
             "role": "recognition",
             "score": 0.76,
             "source": "block_pattern"
           },
           {
-            "id": "compression-117-recognition",
+            "id": "compression-118-recognition",
+            "text": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+            "role": "recognition",
+            "score": 0.76,
+            "source": "block_pattern"
+          },
+          {
+            "id": "compression-119-recognition",
             "text": "A common trap is confusing where ATP is generated and where reducing equivalents are produced.",
             "role": "recognition",
             "score": 0.76,
@@ -534,21 +561,21 @@
       "compressionSelectedResults": [
         {
           "id": "compression-1-mechanism",
-          "text": "Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space.",
+          "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
           "role": "mechanism",
           "score": 0.8,
           "source": "block_reason"
         },
         {
           "id": "compression-2-mechanism",
-          "text": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+          "text": "For example, rotenone blocks complex I and cyanide blocks complex IV, but both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
           "role": "mechanism",
           "score": 0.8,
           "source": "block_reason"
         },
         {
           "id": "compression-3-mechanism",
-          "text": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+          "text": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
           "role": "mechanism",
           "score": 0.8,
           "source": "block_reason"
@@ -558,21 +585,21 @@
         {
           "id": "neighborhood-concept-p-0",
           "conceptId": "concept-p-0",
-          "title": "The Electron Transport Chain Is A",
+          "title": "Electrons From Nadh And Fadh2 Flow",
           "anchor": {
             "id": "important-concept-p-0",
-            "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
-            "normalizedText": "the electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane",
-            "sentenceId": "p-0-s0",
+            "text": "Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space.",
+            "normalizedText": "electrons from nadh and fadh2 flow through complexes i to iv and this transfer drives proton pumping from the matrix to the intermembrane space",
+            "sentenceId": "p-0-s1",
             "tier": "important",
             "score": 0.92
           },
           "support": [
             {
               "id": "support-concept-p-0-0",
-              "text": "Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space.",
-              "normalizedText": "electrons from nadh and fadh2 flow through complexes i to iv and this transfer drives proton pumping from the matrix to the intermembrane space",
-              "sentenceId": "p-0-s1",
+              "text": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
+              "normalizedText": "the electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane",
+              "sentenceId": "p-0-s0",
               "tier": "support",
               "score": 0.78
             }
@@ -588,44 +615,7 @@
             }
           ],
           "trap": null,
-          "priorityScore": 16,
-          "conceptRole": "definition",
-          "depthLevel": "full"
-        },
-        {
-          "id": "neighborhood-concept-p-1",
-          "conceptId": "concept-p-1",
-          "title": "Oxygen Is Absent",
-          "anchor": {
-            "id": "important-concept-p-1",
-            "text": "Oxygen is absent, therefore If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
-            "normalizedText": "oxygen is absent therefore if oxygen is absent electron transport stalls nadh accumulates and atp yield collapses",
-            "sentenceId": "p-1-s3",
-            "tier": "important",
-            "score": 0.8500000000000001
-          },
-          "support": [
-            {
-              "id": "support-concept-p-1-0",
-              "text": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
-              "normalizedText": "if oxygen is absent electron transport stalls nadh accumulates and atp yield collapses",
-              "sentenceId": "p-1-s0",
-              "tier": "support",
-              "score": 0.78
-            }
-          ],
-          "additional": [
-            {
-              "id": "additional-concept-p-1-0",
-              "text": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
-              "normalizedText": "students often memorize glycolysis the krebs cycle and oxidative phosphorylation as disconnected lists",
-              "sentenceId": "p-1-s1",
-              "tier": "additional",
-              "score": 0.52
-            }
-          ],
-          "trap": null,
-          "priorityScore": 26,
+          "priorityScore": 15.85,
           "conceptRole": "mechanism",
           "depthLevel": "full"
         },
@@ -639,14 +629,60 @@
             "normalizedText": "both reduce oxidative atp production because electron flow cannot reach oxygen as the terminal acceptor",
             "sentenceId": "p-3-s1",
             "tier": "important",
-            "score": 0.78
+            "score": 0.8500000000000001
           },
-          "support": [],
+          "support": [
+            {
+              "id": "support-concept-p-3-0",
+              "text": "For example, rotenone blocks complex I and cyanide blocks complex IV, but both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+              "normalizedText": "for example rotenone blocks complex i and cyanide blocks complex iv but both reduce oxidative atp production because electron flow cannot reach oxygen as the terminal acceptor",
+              "sentenceId": "p-3-s0",
+              "tier": "support",
+              "score": 0.78
+            }
+          ],
           "additional": [],
           "trap": null,
-          "priorityScore": 19.05,
-          "conceptRole": "mechanism",
-          "depthLevel": "anchor_only"
+          "priorityScore": 18,
+          "conceptRole": "example",
+          "depthLevel": "full"
+        },
+        {
+          "id": "neighborhood-concept-p-1",
+          "conceptId": "concept-p-1",
+          "title": "Key Concept",
+          "anchor": {
+            "id": "important-concept-p-1",
+            "text": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+            "normalizedText": "if oxygen is absent electron transport stalls nadh accumulates and atp yield collapses",
+            "sentenceId": "p-1-s2",
+            "tier": "important",
+            "score": 0.78
+          },
+          "support": [
+            {
+              "id": "support-concept-p-1-0",
+              "text": "Oxygen is absent, therefore If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+              "normalizedText": "oxygen is absent therefore if oxygen is absent electron transport stalls nadh accumulates and atp yield collapses",
+              "sentenceId": "p-1-s3",
+              "tier": "support",
+              "score": 0.78
+            }
+          ],
+          "additional": [
+            {
+              "id": "additional-concept-p-1-0",
+              "text": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
+              "normalizedText": "students often memorize glycolysis the krebs cycle and oxidative phosphorylation as disconnected lists",
+              "sentenceId": "p-1-s0",
+              "tier": "additional",
+              "score": 0.52
+            }
+          ],
+          "trap": null,
+          "priorityScore": 29.459999999999997,
+          "conceptRole": "detail",
+          "depthLevel": "full"
         },
         {
           "id": "neighborhood-concept-p-2",
@@ -678,44 +714,44 @@
             "tier": "trap",
             "score": 0.85
           },
-          "priorityScore": 8,
+          "priorityScore": 8.55,
           "conceptRole": "detail",
           "depthLevel": "full"
         }
       ],
       "finalDataObjectConsumedByRightPanel": {
-        "title": "ULTRA – The Electron Transport Chain Is A",
+        "title": "ULTRA – Electrons From Nadh And Fadh2 Flow",
         "subtitle": "STR + PDRM + Surgical Comprehension Engine",
         "coreIdea": "This page develops one core idea through a small set of connected concepts.",
         "blocks": [
           {
             "conceptId": "concept-p-0",
             "ordinal": 1,
-            "title": "The Electron Transport Chain Is A",
-            "pattern": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
-            "surgicalReason": "Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space.",
+            "title": "Electrons From Nadh And Fadh2 Flow",
+            "pattern": "Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space.",
+            "surgicalReason": "The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
             "trap": "",
             "rule": "ATP synthase uses the proton gradient to produce ATP from ADP and inorganic phosphate.",
             "importance": "VERY HIGH"
           },
           {
-            "conceptId": "concept-p-1",
+            "conceptId": "concept-p-3",
             "ordinal": 2,
-            "title": "Oxygen Is Absent",
-            "pattern": "Oxygen is absent, therefore If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
-            "surgicalReason": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
+            "title": "Both Reduce Oxidative Atp Production Because",
+            "pattern": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+            "surgicalReason": "For example, rotenone blocks complex I and cyanide blocks complex IV, but both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
             "trap": "",
-            "rule": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+            "rule": "For example, rotenone blocks complex I and cyanide blocks complex IV, but both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
             "importance": "VERY HIGH"
           },
           {
-            "conceptId": "concept-p-3",
+            "conceptId": "concept-p-1",
             "ordinal": 3,
-            "title": "Both Reduce Oxidative Atp Production Because",
-            "pattern": "Both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
-            "surgicalReason": "",
+            "title": "Key Concept",
+            "pattern": "If oxygen is absent, electron transport stalls, NADH accumulates, and ATP yield collapses.",
+            "surgicalReason": "Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
             "trap": "",
-            "rule": "",
+            "rule": "However, the conceptual layer that matters is coupling: redox energy is converted to an electrochemical gradient and then converted again to chemical bond energy in ATP.",
             "importance": "VERY HIGH"
           },
           {
@@ -730,16 +766,16 @@
           }
         ],
         "miniTest": [
-          "What is The electron transport chain?",
-          "What does Electrons from NADH and FADH2 flow through complexes cause or lead to?",
-          "What should not be confused with electron transport chain?",
+          "What does Electrons from NADH and FADH2 flow through complexes mean?",
+          "What does electron transport chain cause or lead to?",
+          "What should not be confused with Electrons from NADH and FADH2 flow through complexes?",
           "When or how is ATP synthase uses the proton gradient to produce applied?",
-          "What mistake is associated with electron transport chain?"
+          "What mistake is associated with Electrons from NADH and FADH2 flow through complexes?"
         ],
         "compression": [
-          "Rule 1: Electrons from NADH and FADH2 flow through complexes I to IV, and this transfer drives proton pumping from the matrix to the intermembrane space.",
-          "Rule 2: Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists.",
-          "Rule 3: Glycolysis generates ATP and NADH in the cytosol; the Krebs cycle generates most NADH in the matrix; oxidative phosphorylation generates most ATP at the inner membrane."
+          "Rule 1: The electron transport chain is a sequence of redox reactions in the inner mitochondrial membrane.",
+          "Rule 2: For example, rotenone blocks complex I and cyanide blocks complex IV, but both reduce oxidative ATP production because electron flow cannot reach oxygen as the terminal acceptor.",
+          "Rule 3: Students often memorize glycolysis, the Krebs cycle, and oxidative phosphorylation as disconnected lists."
         ],
         "steps": [
           {
@@ -748,12 +784,12 @@
             "roleLabel": "Core"
           },
           {
-            "conceptId": "concept-p-1",
+            "conceptId": "concept-p-3",
             "role": "explanation",
             "roleLabel": "Why"
           },
           {
-            "conceptId": "concept-p-3",
+            "conceptId": "concept-p-1",
             "role": "explanation",
             "roleLabel": "Why"
           },
@@ -764,7 +800,7 @@
           }
         ],
         "_debug": {
-          "pageKind": "scientific_exposition",
+          "pageKind": "mathematical_exposition",
           "domain": "general",
           "shouldRenderFullPanel": true,
           "pageSummaryLength": 170,
@@ -772,29 +808,29 @@
           "conceptCandidates": [
             {
               "id": "concept-p-0",
-              "title": "The Electron Transport Chain Is A",
-              "score": 16,
-              "anchorLen": 98,
-              "role": "definition"
-            },
-            {
-              "id": "concept-p-1",
-              "title": "Oxygen Is Absent",
-              "score": 26,
-              "anchorLen": 118,
+              "title": "Electrons From Nadh And Fadh2 Flow",
+              "score": 15.85,
+              "anchorLen": 145,
               "role": "mechanism"
             },
             {
               "id": "concept-p-3",
               "title": "Both Reduce Oxidative Atp Production Because",
-              "score": 19.5,
+              "score": 18,
               "anchorLen": 104,
-              "role": "mechanism"
+              "role": "example"
+            },
+            {
+              "id": "concept-p-1",
+              "title": "Key Concept",
+              "score": 29.459999999999997,
+              "anchorLen": 90,
+              "role": "detail"
             },
             {
               "id": "concept-p-2",
               "title": "A Common Trap Is Confusing Where",
-              "score": 8,
+              "score": 8.55,
               "anchorLen": 94,
               "role": "detail"
             }
@@ -804,20 +840,20 @@
       "leftRightSourceComparison": {
         "leftConceptIds": [
           "concept-p-0",
-          "concept-p-1",
           "concept-p-3",
+          "concept-p-1",
           "concept-p-2"
         ],
         "rightConceptIds": [
           "concept-p-0",
-          "concept-p-1",
           "concept-p-3",
+          "concept-p-1",
           "concept-p-2"
         ],
         "overlapConceptIds": [
           "concept-p-0",
-          "concept-p-1",
           "concept-p-3",
+          "concept-p-1",
           "concept-p-2"
         ]
       }
@@ -890,26 +926,26 @@
         {
           "id": "concept-p-3",
           "role": "definition",
-          "score": 32,
+          "score": 28,
           "anchor": "Example: When r = 3 cm and dr/dt = 2 cm/s, then dV/dt = 72π cm^3/s."
         },
         {
           "id": "concept-p-2",
           "role": "mechanism",
-          "score": 28,
+          "score": 25,
           "anchor": "However, many solutions fail because they plug in radius values before differentiating, which destroys variable dependence and loses dr/dt."
         },
         {
           "id": "concept-p-0",
           "role": "definition",
-          "score": 22,
-          "anchor": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x)."
+          "score": 20.85,
+          "anchor": "This identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function."
         },
         {
           "id": "concept-p-1",
-          "role": "mechanism",
-          "score": 27,
-          "anchor": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t."
+          "role": "detail",
+          "score": 26.459999999999997,
+          "anchor": "The formula sentence is often copied, but students miss the conceptual anchor: every symbol must be tied to the same instant in time."
         }
       ],
       "crossParagraphReasoningChain": [
@@ -935,36 +971,36 @@
           "score": 0.64
         },
         {
-          "id": "0:sup1",
+          "id": "0:sup2",
           "text": "R = 3 cm and dr/dt = 2 cm/s, therefore dV/dt = 72π cm^3/s.",
           "role": "formula",
           "slot": "pattern",
           "score": 0.64
         },
         {
-          "id": "2:anchor",
+          "id": "2:sup0",
           "text": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x).",
           "role": "formula",
           "slot": "pattern",
           "score": 0.64
         },
         {
-          "id": "3:sup2",
+          "id": "3:sup1",
           "text": "For a sphere with V = (4/3)πr^3, dV/dt = 4πr^2 · dr/dt.",
           "role": "formula",
           "slot": "pattern",
           "score": 0.64
         },
         {
-          "id": "2:sup0",
-          "text": "Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x).",
+          "id": "2:anchor",
+          "text": "This identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function.",
           "role": "formula",
           "slot": "pattern",
           "score": 0.56
         },
         {
           "id": "2:sup1",
-          "text": "This identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function.",
+          "text": "Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x).",
           "role": "formula",
           "slot": "pattern",
           "score": 0.56
@@ -985,34 +1021,34 @@
         },
         {
           "id": "3:anchor",
+          "text": "The formula sentence is often copied, but students miss the conceptual anchor: every symbol must be tied to the same instant in time.",
+          "role": "support",
+          "slot": "support",
+          "score": 0.28
+        },
+        {
+          "id": "3:sup0",
           "text": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t.",
           "role": "support",
           "slot": "support",
           "score": 0.28
         },
         {
-          "id": "3:sup1",
+          "id": "3:sup2",
           "text": "Students miss the conceptual anchor: every symbol must be tied to the same instant in time.",
           "role": "support",
           "slot": "support",
           "score": 0.28
         },
         {
-          "id": "0:sup2",
+          "id": "0:sup0",
           "text": "This numerical step should be last, not first.",
           "role": "support",
           "slot": "support",
           "score": 0.2
         },
         {
-          "id": "3:sup0",
-          "text": "Must be tied to the same instant in time.",
-          "role": "support",
-          "slot": "support",
-          "score": 0.2
-        },
-        {
-          "id": "0:sup0",
+          "id": "0:sup1",
           "text": "Should be last, not first.",
           "role": "support",
           "slot": "support",
@@ -1033,13 +1069,13 @@
         },
         {
           "conceptId": "concept-p-0",
-          "title": "Key Concept",
-          "pattern": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x)."
+          "title": "This Identity States That The Derivative",
+          "pattern": "This identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function."
         },
         {
           "conceptId": "concept-p-1",
-          "title": "In Related Rates",
-          "pattern": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t."
+          "title": "The Formula Sentence Is Often Copied",
+          "pattern": "The formula sentence is often copied, but students miss the conceptual anchor: every symbol must be tied to the same instant in time."
         }
       ],
       "miniTestCandidateList": [
@@ -1055,7 +1091,7 @@
           "stepId": "analysis-doc:27:step:1",
           "stepOrder": 1,
           "role": "mechanism",
-          "text": "What does Should be last, not first cause or lead to."
+          "text": "What does This numerical step cause or lead to."
         },
         {
           "id": "analysis-doc:27:step:1:distinction",
@@ -1069,7 +1105,7 @@
           "stepId": "analysis-doc:27:step:1",
           "stepOrder": 1,
           "role": "application",
-          "text": "When or how is R = 3 cm and dr/dt = 2 applied."
+          "text": "When or how is Should be last, not first applied."
         },
         {
           "id": "analysis-doc:27:step:1:skimTrap",
@@ -1118,70 +1154,70 @@
           "stepId": "analysis-doc:27:step:3",
           "stepOrder": 3,
           "role": "coreMeaning",
-          "text": "What does If y = f(g(x)), then dy/dx = f'(g(x)) mean."
+          "text": "What is derivative of a composite function?"
         },
         {
           "id": "analysis-doc:27:step:3:mechanism",
           "stepId": "analysis-doc:27:step:3",
           "stepOrder": 3,
           "role": "mechanism",
-          "text": "What does Y = f(g(x)), therefore dy/dx = f'(g(x)) · cause or lead to."
+          "text": "What does If y = f(g(x)), then dy/dx = f'(g(x)) cause or lead to."
         },
         {
           "id": "analysis-doc:27:step:3:distinction",
           "stepId": "analysis-doc:27:step:3",
           "stepOrder": 3,
           "role": "distinction",
-          "text": "What should not be confused with If y = f(g(x)), then dy/dx = f'(g(x))."
+          "text": "What should not be confused with This identity states that the derivative of a."
         },
         {
           "id": "analysis-doc:27:step:3:application",
           "stepId": "analysis-doc:27:step:3",
           "stepOrder": 3,
           "role": "application",
-          "text": "When or how is This identity states that the derivative of a applied."
+          "text": "When or how is Y = f(g(x)), therefore dy/dx = f'(g(x)) · applied."
         },
         {
           "id": "analysis-doc:27:step:3:skimTrap",
           "stepId": "analysis-doc:27:step:3",
           "stepOrder": 3,
           "role": "skimTrap",
-          "text": "What mistake is associated with If y = f(g(x)), then dy/dx = f'(g(x))."
+          "text": "What mistake is associated with This identity states that the derivative of a."
         },
         {
           "id": "analysis-doc:27:step:4:coreMeaning",
           "stepId": "analysis-doc:27:step:4",
           "stepOrder": 4,
           "role": "coreMeaning",
-          "text": "What does In related rates, differentiate both sides with respect mean."
+          "text": "What does formula sentence mean."
         },
         {
           "id": "analysis-doc:27:step:4:mechanism",
           "stepId": "analysis-doc:27:step:4",
           "stepOrder": 4,
           "role": "mechanism",
-          "text": "What does Must be tied to the same instant in cause or lead to."
+          "text": "What does In related rates, differentiate both sides with respect cause or lead to."
         },
         {
           "id": "analysis-doc:27:step:4:distinction",
           "stepId": "analysis-doc:27:step:4",
           "stepOrder": 4,
           "role": "distinction",
-          "text": "What should not be confused with In related rates, differentiate both sides with respect."
+          "text": "What should not be confused with formula sentence."
         },
         {
           "id": "analysis-doc:27:step:4:application",
           "stepId": "analysis-doc:27:step:4",
           "stepOrder": 4,
           "role": "application",
-          "text": "When or how is Students miss the conceptual anchor: every symbol applied."
+          "text": "When or how is For a sphere with V = (4/3)πr^3, dV/dt applied."
         },
         {
           "id": "analysis-doc:27:step:4:skimTrap",
           "stepId": "analysis-doc:27:step:4",
           "stepOrder": 4,
           "role": "skimTrap",
-          "text": "What mistake is associated with In related rates, differentiate both sides with respect."
+          "text": "What mistake is associated with formula sentence."
         }
       ],
       "miniTestSelectedResults": {
@@ -1199,8 +1235,8 @@
             "stepId": "analysis-doc:27:step:1",
             "stepOrder": 1,
             "role": "mechanism",
-            "text": "What does Should be last, not first cause or lead to?",
-            "score": 0.69
+            "text": "What does This numerical step cause or lead to?",
+            "score": 0.74
           },
           {
             "id": "analysis-doc:27:step:1:distinction",
@@ -1215,7 +1251,7 @@
             "stepId": "analysis-doc:27:step:1",
             "stepOrder": 1,
             "role": "application",
-            "text": "When or how is R = 3 cm and dr/dt = 2 applied?",
+            "text": "When or how is Should be last, not first applied?",
             "score": 0.69
           },
           {
@@ -1232,22 +1268,22 @@
       "compressionCandidateList": {
         "selected": [
           {
-            "id": "compression-1-recognition",
-            "text": "For a sphere with V = (4/3)πr^3, dV/dt = 4πr^2 · dr/dt.",
-            "role": "recognition",
-            "score": 0.69,
-            "source": "neighborhood_support"
+            "id": "compression-1-mechanism",
+            "text": "This numerical step should be last, not first.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
           },
           {
-            "id": "compression-2-application",
-            "text": "This numerical step should be last, not first.",
-            "role": "application",
-            "score": 0.69,
-            "source": "neighborhood_support"
+            "id": "compression-2-mechanism",
+            "text": "Another trap is mixing partial snapshots from two moments of motion.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
           },
           {
             "id": "compression-3-mechanism",
-            "text": "Another trap is mixing partial snapshots from two moments of motion.",
+            "text": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x).",
             "role": "mechanism",
             "score": 0.8,
             "source": "block_reason"
@@ -1255,28 +1291,42 @@
         ],
         "rejected": [
           {
-            "id": "compression-100-mechanism",
-            "text": "Another trap is mixing partial snapshots from two moments of motion.",
+            "id": "compression-100-recognition",
+            "text": "Example: When r = 3 cm and dr/dt = 2 cm/s, then dV/dt = 72π cm^3/s.",
+            "role": "recognition",
+            "score": 0.76,
+            "source": "block_pattern"
+          },
+          {
+            "id": "compression-100-recognition",
+            "text": "However, many solutions fail because they plug in radius values before differentiating, which destroys variable dependence and loses dr/dt.",
+            "role": "recognition",
+            "score": 0.76,
+            "source": "block_pattern"
+          },
+          {
+            "id": "compression-100-recognition",
+            "text": "This identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function.",
+            "role": "recognition",
+            "score": 0.76,
+            "source": "block_pattern"
+          },
+          {
+            "id": "compression-100-recognition",
+            "text": "The formula sentence is often copied, but students miss the conceptual anchor: every symbol must be tied to the same instant in time.",
+            "role": "recognition",
+            "score": 0.76,
+            "source": "block_pattern"
+          },
+          {
+            "id": "compression-104-mechanism",
+            "text": "This numerical step should be last, not first.",
             "role": "mechanism",
             "score": 0.8,
             "source": "block_reason"
           },
           {
-            "id": "compression-100-mechanism",
-            "text": "Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x).",
-            "role": "mechanism",
-            "score": 0.8,
-            "source": "block_reason"
-          },
-          {
-            "id": "compression-100-mechanism",
-            "text": "Must be tied to the same instant in time.",
-            "role": "mechanism",
-            "score": 0.8,
-            "source": "block_reason"
-          },
-          {
-            "id": "compression-103-mechanism",
+            "id": "compression-104-mechanism",
             "text": "Another trap is mixing partial snapshots from two moments of motion.",
             "role": "mechanism",
             "score": 0.8,
@@ -1284,80 +1334,108 @@
           },
           {
             "id": "compression-104-mechanism",
-            "text": "Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x).",
+            "text": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x).",
             "role": "mechanism",
             "score": 0.8,
             "source": "block_reason"
           },
           {
-            "id": "compression-105-mechanism",
-            "text": "Must be tied to the same instant in time.",
+            "id": "compression-104-mechanism",
+            "text": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t.",
             "role": "mechanism",
             "score": 0.8,
             "source": "block_reason"
           },
           {
-            "id": "compression-106-application",
-            "text": "R = 3 cm and dr/dt = 2 cm/s, therefore dV/dt = 72π cm^3/s.",
+            "id": "compression-108-application",
+            "text": "For a sphere with V = (4/3)πr^3, dV/dt = 4πr^2 · dr/dt.",
             "role": "application",
             "score": 0.78,
             "source": "block_rule"
           },
           {
-            "id": "compression-107-application",
-            "text": "This identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function.",
+            "id": "compression-109-mechanism",
+            "text": "This numerical step should be last, not first.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-110-mechanism",
+            "text": "Another trap is mixing partial snapshots from two moments of motion.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-111-mechanism",
+            "text": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x).",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-112-mechanism",
+            "text": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t.",
+            "role": "mechanism",
+            "score": 0.8,
+            "source": "block_reason"
+          },
+          {
+            "id": "compression-113-application",
+            "text": "For a sphere with V = (4/3)πr^3, dV/dt = 4πr^2 · dr/dt.",
             "role": "application",
             "score": 0.78,
             "source": "block_rule"
           },
           {
-            "id": "compression-108-recognition",
+            "id": "compression-114-recognition",
+            "text": "Example: When r = 3 cm and dr/dt = 2 cm/s, then dV/dt = 72π cm^3/s.",
+            "role": "recognition",
+            "score": 0.76,
+            "source": "block_pattern"
+          },
+          {
+            "id": "compression-115-recognition",
             "text": "However, many solutions fail because they plug in radius values before differentiating, which destroys variable dependence and loses dr/dt.",
             "role": "recognition",
             "score": 0.76,
             "source": "block_pattern"
           },
           {
-            "id": "compression-109-recognition",
-            "text": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t.",
+            "id": "compression-116-recognition",
+            "text": "This identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function.",
             "role": "recognition",
             "score": 0.76,
             "source": "block_pattern"
           },
           {
-            "id": "compression-110-application",
-            "text": "This numerical step should be last, not first.",
-            "role": "application",
-            "score": 0.69,
-            "source": "neighborhood_support"
-          },
-          {
-            "id": "compression-111-recognition",
-            "text": "For a sphere with V = (4/3)πr^3, dV/dt = 4πr^2 · dr/dt.",
+            "id": "compression-117-recognition",
+            "text": "The formula sentence is often copied, but students miss the conceptual anchor: every symbol must be tied to the same instant in time.",
             "role": "recognition",
-            "score": 0.69,
-            "source": "neighborhood_support"
+            "score": 0.76,
+            "source": "block_pattern"
           }
         ]
       },
       "compressionSelectedResults": [
         {
-          "id": "compression-1-recognition",
-          "text": "For a sphere with V = (4/3)πr^3, dV/dt = 4πr^2 · dr/dt.",
-          "role": "recognition",
-          "score": 0.69,
-          "source": "neighborhood_support"
+          "id": "compression-1-mechanism",
+          "text": "This numerical step should be last, not first.",
+          "role": "mechanism",
+          "score": 0.8,
+          "source": "block_reason"
         },
         {
-          "id": "compression-2-application",
-          "text": "This numerical step should be last, not first.",
-          "role": "application",
-          "score": 0.69,
-          "source": "neighborhood_support"
+          "id": "compression-2-mechanism",
+          "text": "Another trap is mixing partial snapshots from two moments of motion.",
+          "role": "mechanism",
+          "score": 0.8,
+          "source": "block_reason"
         },
         {
           "id": "compression-3-mechanism",
-          "text": "Another trap is mixing partial snapshots from two moments of motion.",
+          "text": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x).",
           "role": "mechanism",
           "score": 0.8,
           "source": "block_reason"
@@ -1381,7 +1459,7 @@
               "id": "support-concept-p-3-0",
               "text": "R = 3 cm and dr/dt = 2 cm/s, therefore dV/dt = 72π cm^3/s.",
               "normalizedText": "r 3 cm and dr dt 2 cm s therefore dv dt 72 cm 3 s",
-              "sentenceId": "p-3-s2",
+              "sentenceId": "p-3-s3",
               "tier": "support",
               "score": 0.78
             }
@@ -1389,27 +1467,27 @@
           "additional": [
             {
               "id": "additional-concept-p-3-0",
-              "text": "Should be last, not first.",
-              "normalizedText": "should be last not first",
+              "text": "This numerical step should be last, not first.",
+              "normalizedText": "this numerical step should be last not first",
               "sentenceId": "p-3-s1",
               "tier": "additional",
               "score": 0.52
             }
           ],
           "trap": null,
-          "priorityScore": 32,
+          "priorityScore": 28,
           "conceptRole": "definition",
           "depthLevel": "full"
         },
         {
           "id": "neighborhood-concept-p-0",
           "conceptId": "concept-p-0",
-          "title": "Key Concept",
+          "title": "This Identity States That The Derivative",
           "anchor": {
             "id": "important-concept-p-0",
-            "text": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x).",
-            "normalizedText": "if y f g x then dy dx f g x g x",
-            "sentenceId": "p-0-s0",
+            "text": "This identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function.",
+            "normalizedText": "this identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function",
+            "sentenceId": "p-0-s1",
             "tier": "important",
             "score": 0.78
           },
@@ -1418,7 +1496,7 @@
               "id": "support-concept-p-0-0",
               "text": "Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x).",
               "normalizedText": "y f g x therefore dy dx f g x g x",
-              "sentenceId": "p-0-s1",
+              "sentenceId": "p-0-s2",
               "tier": "support",
               "score": 0.78
             }
@@ -1426,15 +1504,15 @@
           "additional": [
             {
               "id": "additional-concept-p-0-0",
-              "text": "This identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function.",
-              "normalizedText": "this identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function",
-              "sentenceId": "p-0-s2",
+              "text": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x).",
+              "normalizedText": "if y f g x then dy dx f g x g x",
+              "sentenceId": "p-0-s0",
               "tier": "additional",
               "score": 0.52
             }
           ],
           "trap": null,
-          "priorityScore": 22,
+          "priorityScore": 20.85,
           "conceptRole": "definition",
           "depthLevel": "full"
         },
@@ -1462,28 +1540,28 @@
           ],
           "additional": [],
           "trap": null,
-          "priorityScore": 28,
+          "priorityScore": 25,
           "conceptRole": "mechanism",
           "depthLevel": "full"
         },
         {
           "id": "neighborhood-concept-p-1",
           "conceptId": "concept-p-1",
-          "title": "In Related Rates",
+          "title": "The Formula Sentence Is Often Copied",
           "anchor": {
             "id": "important-concept-p-1",
-            "text": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t.",
-            "normalizedText": "in related rates differentiate both sides with respect to time and keep track of which variables depend on t",
-            "sentenceId": "p-1-s0",
+            "text": "The formula sentence is often copied, but students miss the conceptual anchor: every symbol must be tied to the same instant in time.",
+            "normalizedText": "the formula sentence is often copied but students miss the conceptual anchor every symbol must be tied to the same instant in time",
+            "sentenceId": "p-1-s2",
             "tier": "important",
             "score": 0.71
           },
           "support": [
             {
               "id": "support-concept-p-1-0",
-              "text": "Must be tied to the same instant in time.",
-              "normalizedText": "must be tied to the same instant in time",
-              "sentenceId": "p-1-s1",
+              "text": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t.",
+              "normalizedText": "in related rates differentiate both sides with respect to time and keep track of which variables depend on t",
+              "sentenceId": "p-1-s0",
               "tier": "support",
               "score": 0.78
             }
@@ -1493,14 +1571,14 @@
               "id": "additional-concept-p-1-0",
               "text": "For a sphere with V = (4/3)πr^3, dV/dt = 4πr^2 · dr/dt.",
               "normalizedText": "for a sphere with v 4 3 r 3 dv dt 4 r 2 dr dt",
-              "sentenceId": "p-1-s3",
+              "sentenceId": "p-1-s1",
               "tier": "additional",
               "score": 0.52
             }
           ],
           "trap": null,
-          "priorityScore": 27,
-          "conceptRole": "mechanism",
+          "priorityScore": 26.459999999999997,
+          "conceptRole": "detail",
           "depthLevel": "full"
         }
       ],
@@ -1514,9 +1592,9 @@
             "ordinal": 1,
             "title": "Example: When R = 3 Cm",
             "pattern": "R = 3 cm and dr/dt = 2 cm/s, therefore dV/dt = 72π cm^3/s.",
-            "surgicalReason": "Should be last, not first.",
+            "surgicalReason": "This numerical step should be last, not first.",
             "trap": "",
-            "rule": "Should be last, not first.",
+            "rule": "This numerical step should be last, not first.",
             "importance": "VERY HIGH"
           },
           {
@@ -1532,19 +1610,19 @@
           {
             "conceptId": "concept-p-0",
             "ordinal": 3,
-            "title": "Key Concept",
-            "pattern": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x).",
+            "title": "This Identity States That The Derivative",
+            "pattern": "This identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function.",
             "surgicalReason": "Y = f(g(x)), therefore dy/dx = f'(g(x)) · g'(x).",
             "trap": "",
-            "rule": "This identity states that the derivative of a composite function is the derivative of the outer function evaluated at the inner function times the derivative of the inner function.",
+            "rule": "If y = f(g(x)), then dy/dx = f'(g(x)) · g'(x).",
             "importance": "VERY HIGH"
           },
           {
             "conceptId": "concept-p-1",
             "ordinal": 4,
-            "title": "In Related Rates",
-            "pattern": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t.",
-            "surgicalReason": "Must be tied to the same instant in time.",
+            "title": "The Formula Sentence Is Often Copied",
+            "pattern": "The formula sentence is often copied, but students miss the conceptual anchor: every symbol must be tied to the same instant in time.",
+            "surgicalReason": "In related rates, differentiate both sides with respect to time and keep track of which variables depend on t.",
             "trap": "",
             "rule": "For a sphere with V = (4/3)πr^3, dV/dt = 4πr^2 · dr/dt.",
             "importance": "VERY HIGH"
@@ -1552,9 +1630,9 @@
         ],
         "miniTest": [
           "What does Example: When r = 3 cm and dr/dt mean?",
-          "What does Should be last, not first cause or lead to?",
+          "What does This numerical step cause or lead to?",
           "What should not be confused with Example: When r = 3 cm and dr/dt?",
-          "When or how is Should be last, not first applied?",
+          "When or how is This numerical step applied?",
           "What mistake is associated with Example: When r = 3 cm and dr/dt?"
         ],
         "compression": [
@@ -1594,30 +1672,30 @@
             {
               "id": "concept-p-3",
               "title": "Example: When R = 3 Cm",
-              "score": 32,
+              "score": 28,
               "anchorLen": 67,
               "role": "definition"
             },
             {
               "id": "concept-p-2",
               "title": "However, Many Solutions Fail Because",
-              "score": 28,
+              "score": 25,
               "anchorLen": 139,
               "role": "mechanism"
             },
             {
               "id": "concept-p-0",
-              "title": "Key Concept",
-              "score": 22,
-              "anchorLen": 46,
+              "title": "This Identity States That The Derivative",
+              "score": 20.85,
+              "anchorLen": 180,
               "role": "definition"
             },
             {
               "id": "concept-p-1",
-              "title": "In Related Rates",
-              "score": 27,
-              "anchorLen": 110,
-              "role": "mechanism"
+              "title": "The Formula Sentence Is Often Copied",
+              "score": 26.459999999999997,
+              "anchorLen": 133,
+              "role": "detail"
             }
           ]
         }
