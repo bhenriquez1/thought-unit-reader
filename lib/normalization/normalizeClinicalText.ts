@@ -312,10 +312,14 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
 
   // Unambiguous calculus symbols/terms → math without counting
   if (/[∫∑∂∇]|dy\/dx|d[xyz]\/d[xyz]|\b(derivative|integral|calculus|antiderivative|chain rule|related rates)\b/i.test(text)) return "mathematical_exposition";
-  // Strong single-word math vocabulary that unambiguously identifies calc/precalc content
-  if (/\b(limits?|sequences?|converge[sd]?|diverge[sd]?|derivatives?|rates?\s+of\s+change|tangent\s+line|slope|instantaneous|antiderivative|differential)\b/i.test(text)) return "mathematical_exposition";
-  // Weaker signals: 1+ hit catches fragmented PDF extraction (e.g. "lim" alone, "theorem" alone)
-  if (countMathSignals(text) >= 1) return "mathematical_exposition";
+  // Strong single-word math vocabulary that unambiguously identifies calc/precalc content.
+  // "rates of change" removed — it fires on clinical phrases like "rate of bone loss" or
+  // "rate of change in pocket depth". Moved to weak signals (countMathSignals).
+  if (/\b(limits?|sequences?|converge[sd]?|diverge[sd]?|derivatives?|tangent\s+line|slope|instantaneous|antiderivative|differential)\b/i.test(text)) return "mathematical_exposition";
+  // Weaker signals: require ≥3 independent hits to avoid false positives on clinical/science
+  // text. A dental page with "function of treatment", "series of X-rays", "bounded by tissue"
+  // previously hit this gate with a single token. Threshold raised from 1→3.
+  if (countMathSignals(text) >= 3) return "mathematical_exposition";
 
   if (
     /\bpatient\b|\bclinician\b|\bdiagnosis\b|\btreatment\b|\bsymptoms\b|\bclinical\b|\bchief complaint\b/.test(text)

@@ -61,9 +61,39 @@ export function selectTeachingSource(
   }
 
   const paragraphs = rawText.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
-  // Fall back to line-splitting for dense single-block pages
-  const blocks: ZonedBlock[] = (paragraphs.length >= 2 ? paragraphs : rawText.split(/\n/).filter(Boolean))
-    .map(classifyBlock);
+  const byLine = rawText.split(/\n/).map((p) => p.trim()).filter(Boolean);
+
+  // Tier 3: sentence-boundary split for flat PDF text (no newlines).
+  // PDF.js often delivers page text as a single continuous string. Split on
+  // sentence endings and regroup into ~2-3 sentence chunks so classifyBlock
+  // receives multiple blocks instead of one giant mainBody block.
+  let sourceParagraphs: string[];
+  if (paragraphs.length >= 2) {
+    sourceParagraphs = paragraphs;
+  } else if (byLine.length >= 2) {
+    sourceParagraphs = byLine;
+  } else if (rawText.length > 200) {
+    const sentences = rawText
+      .split(/(?<=[.!?])\s+(?=[A-Z"'])/)
+      .map((s) => s.replace(/\s+/g, " ").trim())
+      .filter((s) => s.length >= 20);
+    const chunks: string[] = [];
+    let current = "";
+    for (const s of sentences) {
+      if (current.length > 0 && current.length + s.length > 280) {
+        chunks.push(current);
+        current = s;
+      } else {
+        current = current ? `${current} ${s}` : s;
+      }
+    }
+    if (current) chunks.push(current);
+    sourceParagraphs = chunks.length >= 2 ? chunks : [rawText];
+  } else {
+    sourceParagraphs = [rawText];
+  }
+
+  const blocks: ZonedBlock[] = sourceParagraphs.map(classifyBlock);
 
   const zoneSummary = buildZoneSummary(blocks);
 
