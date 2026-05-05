@@ -17,6 +17,7 @@ import { extractConceptBlocks } from "@/lib/reader/extractConceptBlocks";
 import type { ConceptBlock, ReaderPageView } from "@/lib/reader/types";
 import { buildUltraPageView, type UltraPageView, type UltraConceptBlock } from "@/lib/insights/buildUltraPageView";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
+import { buildUltraNote, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
 
 interface RightPanelProps {
   ctx: ActivePageContext;
@@ -28,6 +29,7 @@ interface RightPanelProps {
   resolveEvidenceId?: (snippet: string) => string | undefined;
   focusedEvidenceId?: string | null;
   onRoleLabelMap?: (map: Map<string, string>) => void;
+  onNoteSaved?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +112,7 @@ function kindMeta(kind: string, shortLabel?: string): { label: string; color: st
 // ---------------------------------------------------------------------------
 
 export function RightPanel({
+  ctx,
   state,
   intelligence,
   guidedPath,
@@ -117,6 +120,7 @@ export function RightPanel({
   resolveEvidenceId,
   focusedEvidenceId,
   onRoleLabelMap,
+  onNoteSaved,
 }: RightPanelProps) {
   const pageTruthKey = intelligence.pageTruthKey;
   const pageModel = intelligence.pageModel;
@@ -408,12 +412,20 @@ export function RightPanel({
 
         {/* ── PRIMARY: ULTRA View ───────────────────────────────────────── */}
         {showUltraView && displayView && (
-          <UltraView
-            view={displayView}
-            selectedBlockIndex={selectedBlockIndex}
-            onSelectBlock={setSelectedBlockIndex}
-            onAnchorClick={(text) => onEvidenceClick?.(text, undefined)}
-          />
+          <>
+            <UltraView
+              view={displayView}
+              selectedBlockIndex={selectedBlockIndex}
+              onSelectBlock={setSelectedBlockIndex}
+              onAnchorClick={(text) => onEvidenceClick?.(text, undefined)}
+            />
+            <GenerateNoteButton
+              view={displayView}
+              bookId={ctx?.documentId ?? ""}
+              pageNumber={ctx?.pageNumber ?? 0}
+              onNoteSaved={onNoteSaved}
+            />
+          </>
         )}
 
         {/* ── SECONDARY: Concept Blocks View (ULTRA unavailable) ────────── */}
@@ -1486,4 +1498,65 @@ function buildSentenceCandidatesFromPageModel(pageModel: any, pageNumber: number
   });
 
   return candidates;
+}
+
+// ---------------------------------------------------------------------------
+// Generate Ultra Note button
+// ---------------------------------------------------------------------------
+
+function GenerateNoteButton({
+  view,
+  bookId,
+  pageNumber,
+  onNoteSaved,
+}: {
+  view: UltraPageView;
+  bookId: string;
+  pageNumber: number;
+  onNoteSaved?: () => void;
+}) {
+  const [saved, setSaved] = useState(false);
+
+  function handleGenerate() {
+    const note = buildUltraNote(
+      bookId,
+      pageNumber,
+      view.title || `Page ${pageNumber}`,
+      view.coreIdea || "",
+      view.blocks.map((b) => ({
+        ordinal: b.ordinal,
+        title: b.title,
+        pattern: b.pattern,
+        surgicalReason: b.surgicalReason,
+        trap: b.trap,
+        rule: b.rule,
+      }))
+    );
+    saveUltraNote(note);
+    setSaved(true);
+    onNoteSaved?.();
+    setTimeout(() => setSaved(false), 2200);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleGenerate}
+      style={{
+        width: "100%",
+        padding: "10px 0",
+        borderRadius: 10,
+        border: saved ? "1px solid rgba(52,211,153,0.5)" : "1px solid rgba(245,200,66,0.25)",
+        background: saved ? "rgba(16,185,129,0.12)" : "rgba(245,200,66,0.07)",
+        color: saved ? "#6ee7b7" : "#fcd34d",
+        fontSize: 12,
+        fontWeight: 700,
+        letterSpacing: "0.06em",
+        cursor: "pointer",
+        transition: "all 0.18s",
+      }}
+    >
+      {saved ? "✓ Note saved to NoteLab" : "⚡ Generate Ultra Note"}
+    </button>
+  );
 }

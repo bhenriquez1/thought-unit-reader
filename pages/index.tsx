@@ -126,6 +126,7 @@ const PatternTrainingHybridReader = dynamic(() => import("@/components/PatternTr
 const NoteLabHybridReader = dynamic(() => import("@/components/NoteLabHybridReader"), { ssr: false });
 const OptimizedPatternView = dynamic(() => import("@/components/OptimizedPatternView"), { ssr: false });
 const OptimizedNoteLabView = dynamic(() => import("@/components/OptimizedNoteLabView"), { ssr: false });
+const UltraNotesList = dynamic(() => import("@/components/notelab/UltraNotesList"), { ssr: false });
 
 type StickyNote = { pageNumber: number; content: string };
 
@@ -416,6 +417,7 @@ export default function ThoughtUnitReader() {
   const [syllabusToc, setSyllabusToc] = useState<TocNode[]>([]);
   const [activeShellTab, setActiveShellTab] = useState<WorkspaceMode>("reader");
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
+  const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
   const [focusSnippet, setFocusSnippet] = useState<string | null>(null);
   const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
   const [guidedPath, setGuidedPath] = useState<RenderGuidedReadingPathResult | null>(null);
@@ -2725,6 +2727,7 @@ export default function ThoughtUnitReader() {
                 onRoleLabelMap={setRoleLabelByConceptId}
                 resolveEvidenceId={resolveEvidenceId}
                 focusedEvidenceId={focusedEvidenceId}
+                onNoteSaved={() => setNoteLabRefreshKey((k) => k + 1)}
                 onEvidenceClick={(snippet, evidenceId) => {
                   setFocusSnippet(null);
                   setFocusedEvidenceId(evidenceId || resolveEvidenceId(snippet) || null);
@@ -2749,12 +2752,22 @@ export default function ThoughtUnitReader() {
 
     if (activeShellTab === "notelab") {
       return (
-        <UnderConstructionPanel
-          icon="🧱"
-          title="NoteLab"
-          subtitle="Board view and connection mapping are in active development."
-          bullets={["Auto Notes", "Manual Notes", "Connection Map", "Smart Recall"]}
-        />
+        <div className="h-full flex flex-col overflow-hidden bg-[rgb(11,18,34)]">
+          <div className="border-b border-white/10 px-4 py-3 flex-shrink-0">
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">NoteLab</div>
+            <div className="mt-0.5 text-[11px] text-slate-500">Generated study notes · saved locally</div>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            <UltraNotesList
+              bookId={bookId}
+              refreshKey={noteLabRefreshKey}
+              onNavigateToPage={(page) => {
+                syncToPage(page);
+                trySwitchShellTab("reader", "reader");
+              }}
+            />
+          </div>
+        </div>
       );
     }
 

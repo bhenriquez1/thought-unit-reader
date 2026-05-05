@@ -501,13 +501,57 @@ export function buildUltraPageView(
 
   const summaryFallback = (() => {
     if (normalizedSummary && normalizedSummary.length >= 30) return normalizedSummary;
-    // Prefer the definition-role concept anchor as the core idea source
-    const definitionConcept = concepts.find((c) => c.conceptRole === "definition");
-    if (definitionConcept) return definitionConcept.anchorSentence;
+
+    // Core idea must come from the highest-priority teaching source:
+    // 1. Heading text (if the page has a section heading)
+    // 2. Definition concept anchor
+    // 3. Mechanism concept anchor
+    // 4. chiefSignalText (domain-scored)
+    // 5. Top concept anchor (last resort)
+    // Examples, named-substance instances, and case studies are excluded.
+
+    // 1. Section heading text from headings array
+    const headingText = page.headings?.[0]?.text?.trim();
+    if (headingText && headingText.length >= 10 && headingText.length <= 120) {
+      // Only use heading if it reads like a real topic, not just "Key Concepts" etc.
+      const isStructuralHeading = /\b(key concepts?|learning objectives?|summary|review|study tips?)\b/i.test(headingText);
+      if (!isStructuralHeading) return headingText;
+    }
+
+    // 2. Definition concept anchor — exclude named-substance/example patterns
+    const isExampleAnchor = (text: string) =>
+      /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+(deficiency|toxicity|poisoning|overdose|exposure)\b/.test(text) ||
+      /\b(for example|for instance|such as|e\.g\.|goiter|rickets|scurvy|pellagra)\b/i.test(text) ||
+      /^(for example,?|for instance,?|to illustrate,?|consider )/i.test(text.trimStart());
+
+    const definitionConcept = concepts.find(
+      (c) => c.conceptRole === "definition" && !isExampleAnchor(c.anchorSentence)
+    );
+    if (definitionConcept) {
+      // Synthesize: if there's also a mechanism, blend definition + mechanism for richer core idea
+      const mechConcept = concepts.find(
+        (c) => c.conceptRole === "mechanism" && !isExampleAnchor(c.anchorSentence) && c.id !== definitionConcept.id
+      );
+      if (mechConcept && definitionConcept.anchorSentence.length + mechConcept.anchorSentence.length <= 300) {
+        return `${definitionConcept.anchorSentence} ${mechConcept.anchorSentence}`;
+      }
+      return definitionConcept.anchorSentence;
+    }
+
+    // 3. Mechanism (if no definition)
+    const mechConcept = concepts.find(
+      (c) => c.conceptRole === "mechanism" && !isExampleAnchor(c.anchorSentence)
+    );
+    if (mechConcept) return mechConcept.anchorSentence;
+
     if (chiefSignalText) return chiefSignalText;
+
+    // 5. Last resort — top concept (skip example/detail anchors if alternatives exist)
     const top = concepts[0];
     if (!top) return "";
-    return top.supportSentences.find((s) => s.length >= 40) ?? top.anchorSentence ?? "";
+    const nonExampleTop = concepts.find((c) => c.conceptRole !== "example" && c.conceptRole !== "detail");
+    const candidate = nonExampleTop ?? top;
+    return candidate.supportSentences.find((s) => s.length >= 40) ?? candidate.anchorSentence ?? "";
   })();
 
   const coreIdea = normalizeLine(
