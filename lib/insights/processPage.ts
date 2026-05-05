@@ -42,7 +42,7 @@ const MATH_SHORT_BLOCK_RE =
 
 function splitIntoParagraphs(pageText: string): string[] {
   const keep = (p: string) =>
-    !isBoilerplateLine(p) && (p.length > 40 || (p.length >= 15 && MATH_SHORT_BLOCK_RE.test(p)));
+    !isBoilerplateLine(p) && (p.length > 40 || (p.length >= 10 && MATH_SHORT_BLOCK_RE.test(p)));
 
   // Tier 1: blank-line split (well-structured PDF extraction)
   const byBlankLine = pageText
