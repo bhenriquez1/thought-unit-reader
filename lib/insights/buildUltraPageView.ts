@@ -371,6 +371,20 @@ function importanceLabel(level: ConceptBlockInput["importance"]): string {
 
 function inferPageTitle(page: PageModelForConcepts, concepts: ConceptBlockInput[]): string {
   if (page.pageTitle?.trim()) return page.pageTitle.trim();
+
+  // Use section heading from the page (strip leading "N.N " section numbers)
+  const headingText = page.headings?.[0]?.text?.trim();
+  if (headingText && headingText.length >= 4) {
+    const stripped = headingText.replace(/^\d+(\.\d+)*\s+/, "").trim();
+    const isGeneric = /^(key concepts?|learning objectives?|summary|review|study tips?|introduction|overview)\b/i.test(stripped);
+    if (!isGeneric && stripped.length >= 4) return stripped;
+  }
+
+  // Prefer definition or mechanism concept title over example/detail
+  const nonExampleConcept = concepts.find(
+    (c) => c.conceptRole === "definition" || c.conceptRole === "mechanism"
+  );
+  if (nonExampleConcept?.title) return nonExampleConcept.title;
   if (concepts[0]?.title) return concepts[0].title;
   return `Page ${page.pageNumber}`;
 }
@@ -502,23 +516,8 @@ export function buildUltraPageView(
   const summaryFallback = (() => {
     if (normalizedSummary && normalizedSummary.length >= 30) return normalizedSummary;
 
-    // Core idea must come from the highest-priority teaching source:
-    // 1. Heading text (if the page has a section heading)
-    // 2. Definition concept anchor
-    // 3. Mechanism concept anchor
-    // 4. chiefSignalText (domain-scored)
-    // 5. Top concept anchor (last resort)
-    // Examples, named-substance instances, and case studies are excluded.
-
-    // 1. Section heading text from headings array
-    const headingText = page.headings?.[0]?.text?.trim();
-    if (headingText && headingText.length >= 10 && headingText.length <= 120) {
-      // Only use heading if it reads like a real topic, not just "Key Concepts" etc.
-      const isStructuralHeading = /\b(key concepts?|learning objectives?|summary|review|study tips?)\b/i.test(headingText);
-      if (!isStructuralHeading) return headingText;
-    }
-
-    // 2. Definition concept anchor — exclude named-substance/example patterns
+    // Core idea priority: definition → mechanism → chiefSignal → top non-example.
+    // Section heading text belongs in the TITLE (inferPageTitle), not the core idea.
     const isExampleAnchor = (text: string) =>
       /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+(deficiency|toxicity|poisoning|overdose|exposure)\b/.test(text) ||
       /\b(for example|for instance|such as|e\.g\.|goiter|rickets|scurvy|pellagra)\b/i.test(text) ||
@@ -538,7 +537,7 @@ export function buildUltraPageView(
       return definitionConcept.anchorSentence;
     }
 
-    // 3. Mechanism (if no definition)
+    // 2. Mechanism (if no definition)
     const mechConcept = concepts.find(
       (c) => c.conceptRole === "mechanism" && !isExampleAnchor(c.anchorSentence)
     );
@@ -546,7 +545,7 @@ export function buildUltraPageView(
 
     if (chiefSignalText) return chiefSignalText;
 
-    // 5. Last resort — top concept (skip example/detail anchors if alternatives exist)
+    // 3. Last resort — top concept (skip example/detail anchors if alternatives exist)
     const top = concepts[0];
     if (!top) return "";
     const nonExampleTop = concepts.find((c) => c.conceptRole !== "example" && c.conceptRole !== "detail");

@@ -1,6 +1,7 @@
 "use client";
 // components/notelab/UltraNotesList.tsx
 // Displays Ultra Notes saved from the right panel's "Generate Ultra Note" button.
+// Notes are grouped by subject folder → book, then sorted newest first.
 
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -8,6 +9,7 @@ import {
   deleteUltraNote,
   formatUltraNoteText,
   type UltraNote,
+  type NoteSubject,
 } from "@/lib/notelab/ultraNoteStore";
 
 interface UltraNotesListProps {
@@ -17,10 +19,21 @@ interface UltraNotesListProps {
   refreshKey?: number;
 }
 
+const SUBJECT_ORDER: NoteSubject[] = ["Biology", "Calculus", "Dental / Clinical", "General Notes"];
+
+const SUBJECT_ICON: Record<NoteSubject, string> = {
+  "Biology": "🧬",
+  "Calculus": "📐",
+  "Dental / Clinical": "🦷",
+  "General Notes": "📝",
+};
+
 export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey }: UltraNotesListProps) {
   const [notes, setNotes] = useState<UltraNote[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [collapsedSubjects, setCollapsedSubjects] = useState<Set<NoteSubject>>(new Set());
+  const [collapsedBooks, setCollapsedBooks] = useState<Set<string>>(new Set());
 
   const reload = useCallback(() => {
     const all = getAllUltraNotes();
@@ -45,6 +58,22 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey }:
     }
   }
 
+  function toggleSubject(subject: NoteSubject) {
+    setCollapsedSubjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(subject)) next.delete(subject); else next.add(subject);
+      return next;
+    });
+  }
+
+  function toggleBook(bookKey: string) {
+    setCollapsedBooks((prev) => {
+      const next = new Set(prev);
+      if (next.has(bookKey)) next.delete(bookKey); else next.add(bookKey);
+      return next;
+    });
+  }
+
   if (notes.length === 0) {
     return (
       <div style={{ padding: "32px 24px", textAlign: "center", color: "rgba(148,163,184,0.7)" }}>
@@ -58,106 +87,187 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey }:
     );
   }
 
+  // Group: subject → bookId → notes (newest first per group)
+  const bySubject = new Map<NoteSubject, Map<string, UltraNote[]>>();
+  for (const note of notes) {
+    const subject: NoteSubject = note.subject ?? "General Notes";
+    if (!bySubject.has(subject)) bySubject.set(subject, new Map());
+    const byBook = bySubject.get(subject)!;
+    if (!byBook.has(note.bookId)) byBook.set(note.bookId, []);
+    byBook.get(note.bookId)!.push(note);
+  }
+
+  const usedSubjects = SUBJECT_ORDER.filter((s) => bySubject.has(s));
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "16px 16px" }}>
-      {notes.map((note) => {
-        const isExpanded = expandedId === note.id;
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 12px" }}>
+      {usedSubjects.map((subject) => {
+        const byBook = bySubject.get(subject)!;
+        const isSubjectCollapsed = collapsedSubjects.has(subject);
+        const totalCount = [...byBook.values()].reduce((n, arr) => n + arr.length, 0);
+
         return (
-          <div
-            key={note.id}
-            style={{
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.08)",
-              background: "rgba(11,20,40,0.7)",
-              overflow: "hidden",
-            }}
-          >
-            {/* Header row */}
+          <div key={subject} style={{ borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden", background: "rgba(8,16,32,0.6)" }}>
+            {/* Subject header */}
             <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "10px 14px",
-                cursor: "pointer",
-                userSelect: "none",
-              }}
-              onClick={() => setExpandedId(isExpanded ? null : note.id)}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", userSelect: "none", background: "rgba(255,255,255,0.04)" }}
+              onClick={() => toggleSubject(subject)}
             >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#fcd34d", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  ⚡ {note.topic}
-                </div>
-                <div style={{ fontSize: 10, color: "rgba(148,163,184,0.7)" }}>
-                  Page {note.pageNumber} · {new Date(note.createdAt).toLocaleDateString()}
-                </div>
-              </div>
-              <span style={{ fontSize: 11, color: "rgba(148,163,184,0.5)", flexShrink: 0 }}>
-                {isExpanded ? "▲" : "▼"}
-              </span>
+              <span style={{ fontSize: 16 }}>{SUBJECT_ICON[subject]}</span>
+              <span style={{ flex: 1, fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.9)" }}>{subject}</span>
+              <span style={{ fontSize: 10, color: "rgba(148,163,184,0.6)" }}>{totalCount} note{totalCount !== 1 ? "s" : ""}</span>
+              <span style={{ fontSize: 10, color: "rgba(148,163,184,0.4)", marginLeft: 4 }}>{isSubjectCollapsed ? "▶" : "▼"}</span>
             </div>
 
-            {/* Expanded body */}
-            {isExpanded && (
-              <div style={{ padding: "0 14px 14px" }}>
-                {/* Core Idea */}
-                <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, background: "rgba(245,200,66,0.06)", border: "1px solid rgba(245,200,66,0.15)" }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#fbbf24", marginBottom: 4 }}>🧠 CORE IDEA</div>
-                  <div style={{ fontSize: 13, color: "rgba(255,255,255,0.9)", lineHeight: 1.6 }}>{note.coreIdea}</div>
-                </div>
+            {!isSubjectCollapsed && [...byBook.entries()].map(([bid, bookNotes]) => {
+              const bookKey = `${subject}:${bid}`;
+              const isBookCollapsed = collapsedBooks.has(bookKey);
+              const bookLabel = bid.length > 32 ? bid.slice(0, 32) + "…" : bid;
 
-                {/* Concept blocks */}
-                {note.concepts.map((c) => (
-                  <div key={c.ordinal} style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "white", marginBottom: 8 }}>🧩 {c.ordinal}️⃣ {c.title}</div>
-                    {c.pattern && <NoteRow label="P — Pattern" text={c.pattern} color="#8fd3ff" />}
-                    {c.surgicalReason && <NoteRow label="⚡ Surgical Reason" text={c.surgicalReason} color="#ffd580" />}
-                    {c.trap && <NoteRow label="❗ Trap" text={c.trap} color="#ff9da1" />}
-                    {c.rule && <NoteRow label="🔥 Rule" text={c.rule} color="#ffb86b" />}
-                  </div>
-                ))}
-
-                {/* Memory shortcuts */}
-                {note.memoryShortcuts.length > 0 && (
-                  <div style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(96,165,250,0.05)", border: "1px solid rgba(96,165,250,0.12)" }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#93c5fd", marginBottom: 6 }}>🧠 MEMORY SHORTCUT</div>
-                    {note.memoryShortcuts.map((s, i) => (
-                      <div key={i} style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", lineHeight: 1.6 }}>👉 {s}</div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Action buttons */}
-                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                  {onNavigateToPage && (
-                    <button
-                      type="button"
-                      onClick={() => onNavigateToPage(note.pageNumber)}
-                      style={actionBtnStyle("#3b82f6")}
+              return (
+                <div key={bid} style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                  {/* Book sub-header (only shown when viewing all books, not filtered to one) */}
+                  {!bookId && (
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 16px", cursor: "pointer", userSelect: "none" }}
+                      onClick={() => toggleBook(bookKey)}
                     >
-                      Go to page {note.pageNumber}
-                    </button>
+                      <span style={{ fontSize: 12 }}>📖</span>
+                      <span style={{ flex: 1, fontSize: 11, color: "rgba(148,163,184,0.8)", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{bookLabel}</span>
+                      <span style={{ fontSize: 10, color: "rgba(148,163,184,0.4)" }}>{isBookCollapsed ? "▶" : "▼"}</span>
+                    </div>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(note)}
-                    style={actionBtnStyle(copiedId === note.id ? "#10b981" : "#6b7280")}
-                  >
-                    {copiedId === note.id ? "✓ Copied" : "Copy text"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(note.id)}
-                    style={actionBtnStyle("#ef4444")}
-                  >
-                    Delete
-                  </button>
+
+                  {(!bookId || !isBookCollapsed) && !isBookCollapsed && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "0 8px 8px" }}>
+                      {bookNotes.map((note) => {
+                        const isExpanded = expandedId === note.id;
+                        return (
+                          <NoteCard
+                            key={note.id}
+                            note={note}
+                            isExpanded={isExpanded}
+                            copiedId={copiedId}
+                            onToggle={() => setExpandedId(isExpanded ? null : note.id)}
+                            onCopy={() => handleCopy(note)}
+                            onDelete={() => handleDelete(note.id)}
+                            onNavigate={onNavigateToPage}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function NoteCard({
+  note,
+  isExpanded,
+  copiedId,
+  onToggle,
+  onCopy,
+  onDelete,
+  onNavigate,
+}: {
+  note: UltraNote;
+  isExpanded: boolean;
+  copiedId: string | null;
+  onToggle: () => void;
+  onCopy: () => void;
+  onDelete: () => void;
+  onNavigate?: (page: number) => void;
+}) {
+  return (
+    <div
+      style={{
+        borderRadius: 10,
+        border: "1px solid rgba(255,255,255,0.07)",
+        background: "rgba(11,20,40,0.7)",
+        overflow: "hidden",
+      }}
+    >
+      {/* Header row */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "10px 14px",
+          cursor: "pointer",
+          userSelect: "none",
+        }}
+        onClick={onToggle}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#fcd34d", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            ⚡ {note.topic}
+          </div>
+          <div style={{ fontSize: 10, color: "rgba(148,163,184,0.7)" }}>
+            Page {note.pageNumber} · {new Date(note.createdAt).toLocaleDateString()}
+          </div>
+        </div>
+        <span style={{ fontSize: 11, color: "rgba(148,163,184,0.5)", flexShrink: 0 }}>
+          {isExpanded ? "▲" : "▼"}
+        </span>
+      </div>
+
+      {/* Expanded body */}
+      {isExpanded && (
+        <div style={{ padding: "0 14px 14px" }}>
+          {/* Core Idea */}
+          <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, background: "rgba(245,200,66,0.06)", border: "1px solid rgba(245,200,66,0.15)" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#fbbf24", marginBottom: 4 }}>🧠 CORE IDEA</div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.9)", lineHeight: 1.6 }}>{note.coreIdea}</div>
+          </div>
+
+          {/* Concept blocks */}
+          {note.concepts.map((c) => (
+            <div key={c.ordinal} style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "white", marginBottom: 8 }}>🧩 {c.ordinal}️⃣ {c.title}</div>
+              {c.pattern && <NoteRow label="P — Pattern" text={c.pattern} color="#8fd3ff" />}
+              {c.surgicalReason && <NoteRow label="⚡ Surgical Reason" text={c.surgicalReason} color="#ffd580" />}
+              {c.trap && <NoteRow label="❗ Trap" text={c.trap} color="#ff9da1" />}
+              {c.rule && <NoteRow label="🔥 Rule" text={c.rule} color="#ffb86b" />}
+            </div>
+          ))}
+
+          {/* Memory shortcuts */}
+          {note.memoryShortcuts.length > 0 && (
+            <div style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(96,165,250,0.05)", border: "1px solid rgba(96,165,250,0.12)" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#93c5fd", marginBottom: 6 }}>🧠 MEMORY SHORTCUT</div>
+              {note.memoryShortcuts.map((s, i) => (
+                <div key={i} style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", lineHeight: 1.6 }}>👉 {s}</div>
+              ))}
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            {onNavigate && (
+              <button
+                type="button"
+                onClick={() => onNavigate(note.pageNumber)}
+                style={actionBtnStyle("#3b82f6")}
+              >
+                Go to page {note.pageNumber}
+              </button>
+            )}
+            <button type="button" onClick={onCopy} style={actionBtnStyle(copiedId === note.id ? "#10b981" : "#6b7280")}>
+              {copiedId === note.id ? "✓ Copied" : "Copy text"}
+            </button>
+            <button type="button" onClick={onDelete} style={actionBtnStyle("#ef4444")}>
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
