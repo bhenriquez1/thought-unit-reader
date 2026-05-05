@@ -127,6 +127,9 @@ function sentenceScore(sentence: SourceSentence): number {
   // Heavy penalties so example-opening and figure-reference sentences never become anchors.
   if (/^(for example,?|for instance,?|such as |e\.g\.,|i\.e\.,|to illustrate|consider |one example|another example)/i.test(cleaned.trimStart())) score -= 6;
   if (/^(figure|fig\.|table|diagram|image|chart|exhibit)\s*[\dA-Za-z]/i.test(cleaned.trimStart())) score -= 8;
+  // Named-substance deficiency/toxicity: "Iodine deficiency causes goiter" is an illustrative
+  // example, not the page's main mechanism. Should score below the general rule it illustrates.
+  if (/^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+(deficiency|toxicity|poisoning|overdose|exposure)\b/.test(cleaned)) score -= 3;
   return score;
 }
 
@@ -183,6 +186,7 @@ function inferTitle(
 
 function classifyConceptRole(anchorText: string, supportTexts: string[], paragraphText?: string): ConceptRole {
   const lower = anchorText.toLowerCase();
+  const anchorTrimmed = anchorText.trim();
 
   // Example: check FIRST — a sentence starting with an illustrative opener must never be
   // classified as "definition" even if "X is a Y" appears later in the same sentence.
@@ -193,6 +197,16 @@ function classifyConceptRole(anchorText: string, supportTexts: string[], paragra
     ? /^(for example,?|for instance,?|such as |e\.g\.,|i\.e\.,|to illustrate,?|one example|another example)/i.test(paragraphText.trimStart().toLowerCase())
     : false;
   if (exampleSentenceStart || exampleParagraphStart) return "example";
+
+  // Named-substance instance: sentence describes a SPECIFIC named substance/organism/element
+  // as an instance of a category rule. These illustrate a general rule and must not
+  // outrank the rule itself. Checked before mechanism so "Iodine deficiency causes goiter"
+  // and "Arsenic is a trace element required in rodents" become "example" not "mechanism".
+  //   Pattern 1: "[Substance] deficiency/toxicity/overdose/exposure ..."
+  //   Pattern 2: "[Substance] is a trace element / mineral / vitamin / toxin ..."
+  const NAMED_DEFICIENCY_RE = /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+(deficiency|toxicity|poisoning|overdose|exposure)\b/;
+  const NAMED_SUBSTANCE_CATEGORY_RE = /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+is (a|an) (trace element|essential element|mineral|vitamin|toxin|metalloid|halogen|noble gas|micro[nN]utrient)\b/i;
+  if (NAMED_DEFICIENCY_RE.test(anchorTrimmed) || NAMED_SUBSTANCE_CATEGORY_RE.test(anchorTrimmed)) return "example";
 
   // Definition: explicit definitional copula or structural "is a/the X that/which"
   if (/\b(is defined as|is characterized by|refers to|is called|is known as|is a type of|is described as|is the process of|is the ability to|consists of)\b/.test(lower)) return "definition";
