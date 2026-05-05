@@ -1518,10 +1518,22 @@ function GenerateNoteButton({
   const [saved, setSaved] = useState(false);
 
   function handleGenerate() {
+    // Strip the "ULTRA – " display prefix so the stored topic is clean
+    const topic = (view.title || `Page ${pageNumber}`).replace(/^ULTRA\s*[–—-]\s*/i, "").trim();
+    const conceptTitles = view.blocks.map((b) => b.title);
+    console.log("[TRACE NOTE_WIRING]", {
+      bookId,
+      currentPage: pageNumber,
+      notePage: pageNumber,
+      topic,
+      coreIdea: view.coreIdea?.slice(0, 80),
+      conceptTitles,
+      source: "rightPanelGenerateUltraNote",
+    });
     const note = buildUltraNote(
       bookId,
       pageNumber,
-      view.title || `Page ${pageNumber}`,
+      topic,
       view.coreIdea || "",
       view.blocks.map((b) => ({
         ordinal: b.ordinal,

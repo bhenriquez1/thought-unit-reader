@@ -220,6 +220,15 @@ function classifyConceptRole(anchorText: string, supportTexts: string[], paragra
   const NAMED_SUBSTANCE_CATEGORY_RE = /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+is (a|an) (trace element|essential element|mineral|vitamin|toxin|metalloid|halogen|noble gas|micro[nN]utrient)\b/i;
   if (NAMED_DEFICIENCY_RE.test(anchorTrimmed) || NAMED_SUBSTANCE_CATEGORY_RE.test(anchorTrimmed)) return "example";
 
+  // Named molecule/element with an observational/abundance fact is NOT a structural definition.
+  // "Water (H₂O) is the most abundant compound found in cells" — this is a measurable fact
+  // about water's prevalence, not a definition of what water IS. Similarly "Arsenic is found
+  // in trace amounts" or "Sodium is primarily an extracellular ion".
+  // Only fires when the sentence lacks formal definitional language (defined as, refers to…).
+  const hasFormalDefinition = /\b(defined as|characterized by|refers to|is called|is known as|consists of|is the process of|is the ability to)\b/.test(lower);
+  const NAMED_MOLECULE_FACT_RE = /^[A-Z][a-z]{1,15}(?:\s*\([A-Za-z0-9₀-₉²³+\-]+\))?\s+is (the |a |an )?(most|least|only|found|abundant|present|common|approximately|often|mainly|primarily|widely|highly|extremely)\b/i;
+  if (NAMED_MOLECULE_FACT_RE.test(anchorTrimmed) && !hasFormalDefinition) return "example";
+
   // Definition: explicit definitional copula or structural "is a/the X that/which"
   if (/\b(is defined as|is characterized by|refers to|is called|is known as|is a type of|is described as|is the process of|is the ability to|consists of)\b/.test(lower)) return "definition";
   if (/\b(defined as|means that|means \w|is (a|an|the) \w+ (that|which|of))\b/.test(lower)) return "definition";

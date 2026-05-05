@@ -1,6 +1,25 @@
 // lib/notelab/ultraNoteStore.ts
 // localStorage-backed store for Ultra Notes generated from the right panel.
 
+export type NoteSubject = "Biology" | "Calculus" | "Dental / Clinical" | "General Notes";
+
+export interface UltraNoteFolder {
+  id: string;
+  name: string;
+  sourceBookId: string;
+  subject: NoteSubject;
+  createdAt: number;
+}
+
+/** Infer subject from bookId or title keywords */
+export function inferSubject(bookId: string): NoteSubject {
+  const lower = bookId.toLowerCase();
+  if (/bio(logy)?|anatomy|physiology|genetics|cell|organism/.test(lower)) return "Biology";
+  if (/calc|math|algebra|geometry|trig|statistic|linear|differential/.test(lower)) return "Calculus";
+  if (/dental|dent|medical|med|clinical|nursing|pharma|patho|histology/.test(lower)) return "Dental / Clinical";
+  return "General Notes";
+}
+
 export interface UltraNoteConcept {
   ordinal: number;
   title: string;
@@ -18,6 +37,7 @@ export interface UltraNote {
   coreIdea: string;
   concepts: UltraNoteConcept[];
   memoryShortcuts: string[];
+  subject: NoteSubject;
   createdAt: number;
 }
 
@@ -89,6 +109,7 @@ export function buildUltraNote(
     coreIdea,
     concepts,
     memoryShortcuts,
+    subject: inferSubject(bookId),
     createdAt: Date.now(),
   };
 }
