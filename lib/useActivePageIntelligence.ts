@@ -470,7 +470,14 @@ export function useActivePageIntelligence({
 
   const highlightNeighborhoods: HighlightNeighborhood[] = useMemo(() => {
     if (!pageModel || !normResult?.shouldRenderFullPanel) return [];
-    const validInsights = (pageModel.paragraphInsights ?? []).filter(isValidCoreParagraph);
+    const validInsights = (pageModel.paragraphInsights ?? []).filter((p, arrayIdx) => {
+      if (isValidCoreParagraph(p)) return true;
+      // Always include the first 2 page-order paragraphs when they have ≥25 chars.
+      // isValidCoreParagraph rejects short paragraphs (< 80 chars without a definitional
+      // phrase), but a 35-char intro like "The diagnosis interview" is essential structural
+      // context that must survive into findMainTeachingZone and concept extraction.
+      return arrayIdx <= 1 && (p.cleanedText || p.rawText || "").trim().length >= 25;
+    });
     const zoneInsights = findMainTeachingZone(validInsights, { pageKind: normResult?.pageKind });
     const adapted = adaptPageInsightModel({
       ...pageModel,

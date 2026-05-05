@@ -190,8 +190,14 @@ function buildMathTeachingSource(
   const explanationCount = mainBodyBlocks.length;
   const stepCount = Math.min(formulaCount + Math.floor(explanationCount / 2), 5);
   const selectedWords = selectedBlocks.reduce((n, b) => n + b.wordCount, 0);
-  // Render if at least one formula block OR enough explanatory prose
-  const canRender = formulaCount >= 1 || selectedWords >= 60;
+  // Count math signals in body text — inline expressions (lim, d/dx, etc.) that don't
+  // form dedicated formulaBlocks (which require mathHits >= 2) still signal math content.
+  const mathBodySignals = mainBodyBlocks.reduce(
+    (n, b) => n + (MATH_SIGNAL_RE.test(b.text) ? 1 : 0), 0
+  );
+  // Render if: at least one formula block, OR enough prose (lowered from 60→30 for math
+  // pages with dense notation), OR body text has ≥2 inline math signal patterns.
+  const canRender = formulaCount >= 1 || selectedWords >= 30 || mathBodySignals >= 2;
 
   const mathPath = { formulaCount, explanationCount, stepCount, canRender };
 
