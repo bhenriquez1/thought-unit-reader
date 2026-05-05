@@ -741,6 +741,11 @@ export default function ThoughtUnitReader() {
     textLength: (pageTextByPage.get(activePageTextKey) || "").length,
     hasText: pageTextReady,
   });
+  // [TRACE LIVE_WIRING] — single snapshot of the full pipeline state for each page.
+  // Used to distinguish: A) deploy/cache miss, B) index wiring, C) hook not rerunning,
+  // D) overlay rect-match failure, E) math extraction failure.
+  // Logs AFTER useActivePageIntelligence so all derived values are available.
+  // Remove once the wiring audit is complete.
 
   const {
     payloadKey,
@@ -759,6 +764,7 @@ export default function ThoughtUnitReader() {
     limitedEvidence,
     priorityHighlights: currentPriorityHighlights,
     normResult: currentNormResult,
+    formulaSignals,
   } = useActivePageIntelligence({
     documentId: bookId,
     pageNumber: currentPage,
@@ -766,6 +772,20 @@ export default function ThoughtUnitReader() {
     pageTextReady,
     audience: unifiedPanelState.audience,
     depth: unifiedPanelState.depth,
+  });
+  console.log("[TRACE LIVE_WIRING]", {
+    deployedCommit: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? process.env.NEXT_PUBLIC_DEPLOYED_COMMIT ?? "unknown",
+    bookId,
+    currentPage,
+    activePageTextLength: (pageTextByPage.get(activePageTextKey) || "").length,
+    pageTextReady,
+    pageKind: currentNormResult?.pageKind ?? null,
+    shouldRenderFullPanel: currentNormResult?.shouldRenderFullPanel ?? null,
+    paragraphInsightsCount: (currentPageModel?.paragraphInsights ?? []).length,
+    highlightNeighborhoodsCount: (highlightNeighborhoods ?? []).length,
+    formulaSignals,
+    pageIntelligenceStatus,
+    isCurrentIntelligencePage,
   });
   const focusIntegrity = focusInterruptions === 0 ? "uninterrupted" : focusInterruptions === 1 ? "interrupted once" : "interrupted multiple times";
   const focusScore = Math.max(0, 100 - (focusInterruptions * 12));
