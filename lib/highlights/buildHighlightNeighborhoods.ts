@@ -257,10 +257,14 @@ function enforceNeighborhoodDepth<T extends HighlightNeighborhood>(items: T[]): 
   const hasDeep = mapped.some((item) => item.depthLevel === "full" || item.depthLevel === "partial");
   return mapped.filter(
     (item) =>
-      item.conceptRole === "definition" || // Never suppress the structural definition
       item.depthLevel !== "anchor_only" ||
       !hasDeep ||
       item.priorityScore >= 0.3,
+    // Definition role is no longer exempt from suppression here — real definition
+    // paragraphs receive a high position bonus (+ 0.50 at idx 0) which lifts their
+    // priorityScore well above the 0.3 threshold. A definition with score < 0.3
+    // after the anchor_only penalty is genuinely thin and should yield to deeper
+    // alternatives, per the strictSelectionRules test expectation.
   );
 }
 

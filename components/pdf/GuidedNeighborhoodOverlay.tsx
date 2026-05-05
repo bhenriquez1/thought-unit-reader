@@ -100,8 +100,9 @@ export default function GuidedNeighborhoodOverlay({
     onReadingPath?.(guided);
   }, [guided, onReadingPath]);
 
-  // Sequential badge entries — one per guided step (not per rect).
-  // Traps use "!" instead of a number. First overlay per neighborhood gets a role label pill.
+  // One badge per neighborhood — the anchor (main_signal) carries a sequential number,
+  // the trap (do_not_confuse) carries "!". Support/additional overlays are highlighted
+  // but carry no badge, keeping the left panel uncluttered. Total capped at 5 badges.
   const badgeEntries = useMemo(() => {
     if (!guided) return [];
     const entries: Array<{
@@ -115,34 +116,45 @@ export default function GuidedNeighborhoodOverlay({
     }> = [];
     let counter = 1;
     for (const neighborhood of guided.neighborhoods) {
-      // Find conceptRole and support text from the source neighborhood
+      if (entries.length >= 5) break; // hard cap: max 5 badges per page
       const sourceNeighborhood = neighborhoods.find((n) => n.id === neighborhood.neighborhoodId);
       const roleLabel =
         conceptRoleLabel(sourceNeighborhood?.conceptRole) ||
         roleLabelByConceptId?.get(neighborhood.conceptId ?? "") ||
         "";
       const supportText = sourceNeighborhood?.support?.[0]?.text ?? "";
-      for (const overlay of neighborhood.overlays) {
-        // extra_context entries (filler, figure captions) get no badge
-        if (overlay.tier === "extra_context") continue;
-        const firstRect = overlay.rects[0];
-        if (!firstRect) continue;
-        const isTrap = overlay.tier === "do_not_confuse";
-        const label = isTrap ? "!" : String(counter++);
-        // Tooltip: show role label + truncated support sentence for anchor badges
-        const tooltipRole = isTrap ? "Trap" : (overlay.tier === "main_signal" ? (roleLabel || "Key concept") : "");
-        const tooltipSupport = overlay.tier === "main_signal" && supportText
+
+      // Only anchor (main_signal) and trap (do_not_confuse) earn a badge.
+      // Support/additional highlights are colored but unlabeled — reduces clutter
+      // so the numbered path stays readable: 1 → 2 → 3 → 4 (→ !).
+      const anchorOverlay = neighborhood.overlays.find((o) => o.tier === "main_signal");
+      const trapOverlay   = neighborhood.overlays.find((o) => o.tier === "do_not_confuse");
+
+      if (anchorOverlay?.rects[0]) {
+        const firstRect = anchorOverlay.rects[0];
+        const tooltipSupport = supportText
           ? `\n${supportText.length > 100 ? supportText.slice(0, 97) + "…" : supportText}`
           : "";
         entries.push({
-          id: `${overlay.id}:badge`,
-          label,
+          id: `${anchorOverlay.id}:badge`,
+          label: String(counter++),
           x: firstRect.x,
           y: firstRect.y,
-          tier: overlay.tier,
-          // Show role label on main_signal anchor and as "Trap" on do_not_confuse
-          roleLabel: (overlay.tier === "main_signal" || isTrap) ? (isTrap ? "Trap" : roleLabel) : "",
-          tooltip: tooltipRole ? `${tooltipRole}${tooltipSupport}` : "",
+          tier: "main_signal",
+          roleLabel,
+          tooltip: `${roleLabel || "Key concept"}${tooltipSupport}`,
+        });
+      }
+
+      if (trapOverlay?.rects[0] && entries.length < 5) {
+        entries.push({
+          id: `${trapOverlay.id}:badge`,
+          label: "!",
+          x: trapOverlay.rects[0].x,
+          y: trapOverlay.rects[0].y,
+          tier: "do_not_confuse",
+          roleLabel: "Trap",
+          tooltip: "Do not confuse",
         });
       }
     }

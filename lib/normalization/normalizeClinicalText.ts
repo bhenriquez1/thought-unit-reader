@@ -305,6 +305,22 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
   if (input.diagramCoverageRatio > 0.7 && words < 35) return "diagram_only";
   if (input.tableCoverageRatio > 0.68 && sentenceCount < 2) return "table_heavy";
 
+  // Outline / key-concepts / chapter-summary page: predominantly short bullet or numbered
+  // lines with no explanatory body prose. Applies universally across biology, dental,
+  // math, and any future book — uses structural signals only, not page numbers or titles.
+  // "Key Concepts", "Chapter Outline", "Study Tips", "Chapter Review" pages all share the
+  // same pattern: > 55% of lines are short phrases (< 85 chars) AND total prose < 130 words.
+  if (rawLines.length >= 5) {
+    const shortPhraseLines = rawLines.filter((l) => {
+      if (l.length < 4 || l.length >= 85) return false;
+      // Short line with no terminal sentence punctuation = likely a bullet/label
+      return !/[.?!]$/.test(l) || /^[\-•*▶►✓→◆]/.test(l) || /^\d+[\.\)]\s/.test(l);
+    });
+    if (shortPhraseLines.length / rawLines.length >= 0.55 && words < 130) {
+      return "insufficient_prose";
+    }
+  }
+
   if (
     /\byes\b\s+\bno\b/.test(text) &&
     /\blast name\b|\bfirst name\b|\bsymptoms\b|\bplease check\b/.test(text)
@@ -313,12 +329,17 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
   // Unambiguous calculus symbols/terms → math without counting
   if (/[∫∑∂∇]|dy\/dx|d[xyz]\/d[xyz]|\b(derivative|integral|calculus|antiderivative|chain rule|related rates)\b/i.test(text)) return "mathematical_exposition";
   // Strong single-word math vocabulary that unambiguously identifies calc/precalc content.
-  // "rates of change" removed — it fires on clinical phrases like "rate of bone loss" or
-  // "rate of change in pocket depth". Moved to weak signals (countMathSignals).
-  if (/\b(limits?|sequences?|converge[sd]?|diverge[sd]?|derivatives?|tangent\s+line|slope|instantaneous|antiderivative|differential)\b/i.test(text)) return "mathematical_exposition";
+  // "rates of change" restored — clinical text uses "rate of bone loss" or "rate of infection",
+  // not the bare phrase "rate of change" which is a calculus term. Also: slope, tangent line,
+  // and instantaneous are essentially never found in clinical/dental prose.
+  if (/\b(limits?|sequences?|converge[sd]?|diverge[sd]?|derivatives?|rates?\s+of\s+change|tangent\s+line|slope|instantaneous|antiderivative|differential)\b/i.test(text)) return "mathematical_exposition";
+  // Strong calculus operator signals — any one hit is conclusive for math classification.
+  // Split from countMathSignals (weak threshold = 3) so calculus pages with a single
+  // lim, d/dx, or f(x) expression are not blocked by the weak-signal gate.
+  if (countStrongMathSignals(text) >= 1) return "mathematical_exposition";
   // Weaker signals: require ≥3 independent hits to avoid false positives on clinical/science
-  // text. A dental page with "function of treatment", "series of X-rays", "bounded by tissue"
-  // previously hit this gate with a single token. Threshold raised from 1→3.
+  // text. "function of treatment", "series of X-rays", "bounded by tissue" each score 1 weak
+  // hit — requiring 3 prevents single-token misclassification.
   if (countMathSignals(text) >= 3) return "mathematical_exposition";
 
   if (
@@ -686,6 +707,30 @@ function countMathSignals(text: string): number {
     // Sequence / series / convergence vocabulary (plural forms included)
     /\bsequences?\b/i, /\bconverge[sd]?\b/i, /\bdiverge[sd]?\b/i,
     /\bmonoton\w+\b/i, /\bseries\b/i, /\bbounded\b/i,
+  ];
+  return patterns.reduce((n, p) => n + (p.test(text) ? 1 : 0), 0);
+}
+
+// Strong (unambiguous) calculus operator signals. Each is essentially never found in
+// clinical, dental, or biology prose. A single hit conclusively identifies a math page.
+// Kept separate from countMathSignals (weak) to preserve the >= 3 false-positive gate
+// while still classifying calculus pages that contain only one operator expression.
+function countStrongMathSignals(text: string): number {
+  const patterns = [
+    /\blim\b/,                // limit operator (e.g. "lim_{x→a}")
+    /dy\/dx/i,                // Leibniz derivative notation
+    /\bd\/d[txyz]\b/i,        // d/dt, d/dx, d/dy operators
+    /\bf'\s*\(/i,             // f'(x) prime notation
+    /\bf\s*\(\s*[a-z]\s*\)/i, // f(x) function application
+    /[∂∇]/,                   // partial / nabla (not in countMathSignals symbols subset)
+    /\bproduct rule\b/i,
+    /\bquotient rule\b/i,
+    /\bantiderivative\b/i,
+    /\brelated rates\b/i,
+    /\btangent\s+line\b/i,    // calculus-specific phrase
+    /\binstantaneous\b/i,     // instantaneous rate / velocity
+    /Δ[xy]\b/,                // delta-x, delta-y (difference quotient notation)
+    /a_n\b/,                  // sequence notation a_n
   ];
   return patterns.reduce((n, p) => n + (p.test(text) ? 1 : 0), 0);
 }
