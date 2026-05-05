@@ -43,15 +43,47 @@ const MATH_SHORT_BLOCK_RE =
 function splitIntoParagraphs(pageText: string): string[] {
   const keep = (p: string) =>
     !isBoilerplateLine(p) && (p.length > 40 || (p.length >= 15 && MATH_SHORT_BLOCK_RE.test(p)));
+
+  // Tier 1: blank-line split (well-structured PDF extraction)
   const byBlankLine = pageText
     .split(/\n\s*\n/g)
     .map((p) => p.replace(/\s+/g, " ").trim())
     .filter(keep);
   if (byBlankLine.length >= 2) return byBlankLine;
-  return pageText
+
+  // Tier 2: single-newline split
+  const byLine = pageText
     .split(/\n+/)
     .map((p) => p.replace(/\s+/g, " ").trim())
     .filter(keep);
+  if (byLine.length >= 2) return byLine;
+
+  // Tier 3: sentence-boundary split for flat PDF text (no newlines at all).
+  // PDF.js often delivers page text as a single continuous string — visual
+  // paragraph breaks are lost. Split on sentence endings and regroup sentences
+  // into ~2-3 sentence chunks to approximate the original paragraph structure.
+  if (pageText.length > 200) {
+    const sentences = pageText
+      .split(/(?<=[.!?])\s+(?=[A-Z"'])/)
+      .map((s) => s.replace(/\s+/g, " ").trim())
+      .filter((s) => s.length >= 20);
+    if (sentences.length >= 2) {
+      const chunks: string[] = [];
+      let current = "";
+      for (const s of sentences) {
+        if (current.length > 0 && current.length + s.length > 280) {
+          if (keep(current)) chunks.push(current);
+          current = s;
+        } else {
+          current = current ? `${current} ${s}` : s;
+        }
+      }
+      if (current && keep(current)) chunks.push(current);
+      if (chunks.length >= 2) return chunks;
+    }
+  }
+
+  return byLine.length > 0 ? byLine : byBlankLine;
 }
 
 function normalizeParagraph(text: string): string {
