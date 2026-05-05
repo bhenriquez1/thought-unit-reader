@@ -257,8 +257,9 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
   const sentenceCount = splitSentences(text).length;
   const headingWords = input.headingLines.join(" ").trim().split(/\s+/).filter(Boolean).length;
 
+  // Front matter: copyright, ISBN, acknowledgements, dedications
   if (
-    /\bcopyright\b|\bisbn\b|\bpermissions\b|\bcontributor\b|\bpublisher\b|\blibrary of congress\b/.test(text)
+    /\bcopyright\b|\bisbn\b|\bpermissions\b|\bcontributor\b|\bpublisher\b|\blibrary of congress\b|\backnowledgments?\b|\bthe authors? (?:thank|wish to thank|would like to thank)\b|\bdedication\b/.test(text)
   ) return "front_matter";
 
   if (
@@ -268,20 +269,40 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
   // Chapter opener: page text starts with "chapter N" and has sparse prose
   if (/^chapter\s+\d+\b/.test(text.trim()) && words < 180 && sentenceCount < 5) return "chapter_title";
 
-  // Overview / summary / learning-objectives pages — always suppress regardless of vocab.
-  // These structural signposts never carry teachable prose dense enough to render.
+  // Overview / summary / learning-objectives pages — structural signposts never carry
+  // dense instructional prose. Includes study tips, chapter review, and chapter interview
+  // pages which list content but don't teach it. Thresholds generous (< 400 words,
+  // < 15 sentences) because some pages list 10–15 bullet-point objectives.
   if (
-    /\b(key concepts?|learning objectives?|chapter overview|unit overview|chapter summary|section summary|objectives?)\b/.test(text) &&
-    words < 250 &&
-    sentenceCount < 7
+    /\b(key concepts?|learning objectives?|chapter overview|unit overview|chapter summary|chapter review|section summary|study tips?|objectives?)\b/.test(text) &&
+    words < 400 &&
+    sentenceCount < 15
   ) return "chapter_title";
 
-  // Numbered section header: "3.2 Photosynthesis" or "Section 4.1 ATP" with sparse prose
+  // Interview / profile / biographical page — conversational narrative, not instructional.
+  // "Meet the Expert", "Words of Wisdom", "Chapter Interview" etc. contain career stories
+  // and personal anecdotes rather than definitions, rules, or mechanisms.
+  // Only suppress when no clear instructional signals are present on the same page.
+  if (
+    /\b(meet (the )?(expert|author|scientist|researcher|clinician|practitioner|professor|dentist)|words of wisdom|chapter interview|featured (scientist|researcher|clinician|dentist)|in (their|her|his) own words|dental assistant spotlight|a day in the life of)\b/i.test(text) &&
+    words < 600 &&
+    !hasInstructionalSignals(text)
+  ) return "insufficient_prose";
+
+  // Numbered section header: "3.2 Photosynthesis" or "Section 4.1 ATP" with sparse prose.
+  // Exception: math section pages (lim, sequences, derivatives, etc.) often have few prose
+  // sentences because formulas and expressions dominate — let them fall through to the
+  // mathematical_exposition classification instead of being suppressed as section_title.
   const firstLine = input.text.trim().split(/\n/).map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+  const pageHasMathContent =
+    /[∫∑∂∇]|\blim\b|dy\/dx/i.test(text) ||
+    countStrongMathSignals(text) >= 1 ||
+    /\b(limits?|sequences?|derivatives?|rates?\s+of\s+change|tangent\s+line|instantaneous)\b/i.test(text);
   if (
     (/^\d+\.\d+(\.\d+)?\s+\S/.test(firstLine) || /^section\s+\d+\.\d+\b/i.test(firstLine)) &&
     words < 150 &&
-    sentenceCount < 4
+    sentenceCount < 4 &&
+    !pageHasMathContent
   ) return "section_title";
 
   // Heading-heavy page: majority of words are in headings, very few complete sentences
