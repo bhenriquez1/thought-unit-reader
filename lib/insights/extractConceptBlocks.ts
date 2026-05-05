@@ -20,8 +20,8 @@ export type ConceptRole =
 export const ROLE_PRIORITY: Record<ConceptRole, number> = {
   definition:  6,
   mechanism:   5,
-  example:     4,   // worked examples surface before contrasts
-  measurement: 3,
+  measurement: 4,   // quantitative rules rank above illustrative examples
+  example:     3,   // examples are support, not the core idea
   variation:   2,   // contrast/trap-adjacent concepts sort last before detail
   detail:      1,
 };
@@ -130,6 +130,13 @@ function sentenceScore(sentence: SourceSentence): number {
   // Named-substance deficiency/toxicity: "Iodine deficiency causes goiter" is an illustrative
   // example, not the page's main mechanism. Should score below the general rule it illustrates.
   if (/^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+(deficiency|toxicity|poisoning|overdose|exposure)\b/.test(cleaned)) score -= 3;
+  // Biographical / interview sentence: personal anecdote or career story, not a teaching rule.
+  if (/^(as a |when i |i (was|have|had|remember|learned|think|believe)|in my (experience|opinion|career|practice))/i.test(cleaned.trimStart())) score -= 5;
+  // Specific named-disease-instance sentence: "goiter", "rickets", "scurvy" etc. used
+  // as named illustrations of a deficiency rule → example, not core mechanism.
+  if (/\b(goiter|rickets|scurvy|pellagra|beriberi|kwashiorkor|marasmus|cretinism)\b/i.test(cleaned)) score -= 3;
+  // Case-study / interview / profile framing — never a core concept anchor.
+  if (/\b(case study|case report|clinical case|interview|profile of|spotlight:|patient story)\b/i.test(cleaned)) score -= 5;
   return score;
 }
 
@@ -197,6 +204,11 @@ function classifyConceptRole(anchorText: string, supportTexts: string[], paragra
     ? /^(for example,?|for instance,?|such as |e\.g\.,|i\.e\.,|to illustrate,?|one example|another example)/i.test(paragraphText.trimStart().toLowerCase())
     : false;
   if (exampleSentenceStart || exampleParagraphStart) return "example";
+
+  // Biographical / interview sentence → always treated as example (not a teaching rule)
+  if (/^(as a |when i |i (was|have|had|remember|learned)|in my (experience|career|practice))/i.test(lower.trimStart())) return "detail";
+  // Named disease instance used as illustration of a deficiency rule
+  if (/\b(goiter|rickets|scurvy|pellagra|beriberi|kwashiorkor|marasmus|cretinism)\b/i.test(lower)) return "example";
 
   // Named-substance instance: sentence describes a SPECIFIC named substance/organism/element
   // as an instance of a category rule. These illustrate a general rule and must not
@@ -358,8 +370,12 @@ function selectBestConcepts(concepts: ConceptBlockInput[]): ConceptBlockInput[] 
   const selected: ConceptBlockInput[] = [];
   const usedIds = new Set<string>();
 
-  // First pass: one best from each high-priority role in tier order
-  for (const role of ["definition", "mechanism", "example"] as ConceptRole[]) {
+  // First pass: one best from each core instructional role.
+  // "example" is intentionally excluded — examples may only enter via the second
+  // pass (after definitions and mechanisms have claimed their slots). This prevents
+  // an illustrative example from becoming the first concept when no definition or
+  // mechanism exists on the page.
+  for (const role of ["definition", "mechanism", "measurement"] as ConceptRole[]) {
     const best = byRole.get(role)?.[0];
     if (best && !usedIds.has(best.id)) {
       selected.push(best);
