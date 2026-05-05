@@ -74,7 +74,7 @@ export interface ConceptBlockInput {
   conceptRole: ConceptRole;
 }
 
-const MAX_BLOCKS = 5;
+const MAX_BLOCKS = 4;
 const MIN_BLOCKS = 2;
 
 // Use canonical signal regexes from dedupeSectionCandidates (TRAP_RE, REASON_RE)
@@ -118,6 +118,12 @@ function sentenceScore(sentence: SourceSentence): number {
   if (!startsWithLowValueOpener(cleaned)) score += 1;
   if (/[:;]/.test(cleaned)) score += 1;
   if (/\b(is|are|means|defined|consists|causes|results|leads)\b/i.test(cleaned)) score += 2;
+  // Decision-path bonus: sentences that carry condition → interpretation → action structure
+  // are the highest-value anchors for clinical and instructional pages because they tell the
+  // reader what to do, not just what exists. Prefer these over purely descriptive sentences.
+  if (/\b(when |if |in (the )?case of |once |after |before )/i.test(cleaned)) score += 2;
+  if (/\b(indicates?|suggests?|confirms?|rules? out|points? to|is consistent with)\b/i.test(cleaned)) score += 2;
+  if (/\b(should|must|requires?|is recommended|is essential|clinician|dentist|therapist|practitioner)\b/i.test(cleaned)) score += 1;
   // Heavy penalties so example-opening and figure-reference sentences never become anchors.
   if (/^(for example,?|for instance,?|such as |e\.g\.,|i\.e\.,|to illustrate|consider |one example|another example)/i.test(cleaned.trimStart())) score -= 6;
   if (/^(figure|fig\.|table|diagram|image|chart|exhibit)\s*[\dA-Za-z]/i.test(cleaned.trimStart())) score -= 8;

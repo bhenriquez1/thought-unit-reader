@@ -9,6 +9,10 @@ const OCR_NUMBER_PREFIX = /^\d{1,4}[\s.):\-]+/;
 const BAD_OPENER_RE =
   /^(when |thus |however |rather than |although |whereas |while |unless |if |because |therefore |yet |but |except |so |now |and |or |also |since |as the |for the )/i;
 
+// Trailing function words that create dangling prepositions or articles at end of label
+const TRAILING_FUNCTION_RE =
+  /\s+(of|a|an|the|with|for|in|to|and|or|by|from|on|at|as|that|which|this|these|those|its|their|into|about|between|within|through|during)$/i;
+
 function titleCase(text: string): string {
   return text
     .trim()
@@ -32,6 +36,27 @@ function trimToLabel(text: string, maxWords = 6): string {
   return words.slice(0, maxWords).join(" ");
 }
 
+/**
+ * Strip trailing prepositions/articles recursively, then stop before any
+ * gerund that introduces a direct object ("Story Conducting A…" → "Story").
+ * This prevents truncated sentence fragments from ending with dangling words.
+ */
+function cleanTrimmedLabel(text: string): string {
+  // Recursive trailing function-word strip
+  let result = text.trim();
+  const seen = new Set<string>();
+  while (!seen.has(result)) {
+    seen.add(result);
+    result = result.replace(TRAILING_FUNCTION_RE, "").trim();
+  }
+  // Stop before a gerund that takes a determiner object: "X Conducting A…" → "X"
+  const gerundCut = result.match(/^(.*?\w)\s+\w+ing\s+(?:a|an|the|this|these|those)\b/i);
+  if (gerundCut?.[1] && wordCount(gerundCut[1]) >= 2) {
+    result = gerundCut[1].trim();
+  }
+  return result;
+}
+
 function isCleanLabel(text: string): boolean {
   const t = text.trim();
   const wc = wordCount(t);
@@ -52,13 +77,13 @@ function tryClean(raw: string): string | null {
   if (BAD_OPENER_RE.test(stripped)) {
     const peeled = stripped.replace(BAD_OPENER_RE, "").trim();
     if (isCleanLabel(peeled)) return peeled;
-    const trimmedPeeled = trimToLabel(peeled, 6);
+    const trimmedPeeled = cleanTrimmedLabel(trimToLabel(peeled, 6));
     if (isCleanLabel(trimmedPeeled)) return trimmedPeeled;
   }
 
-  // Too long — trim and re-check
+  // Too long — trim and clean
   if (wordCount(stripped) > 7) {
-    const trimmed = trimToLabel(stripped, 6);
+    const trimmed = cleanTrimmedLabel(trimToLabel(stripped, 6));
     if (isCleanLabel(trimmed)) return trimmed;
   }
 
@@ -71,24 +96,27 @@ function extractFromAnchor(anchorText: string): string | null {
   // Colon prefix: "Keratinocytes: the surface cells of the epidermis"
   const colonMatch = t.match(/^([^:]{4,55}):/);
   if (colonMatch?.[1]) {
-    const candidate = stripOcrPrefix(colonMatch[1].trim());
+    const candidate = cleanTrimmedLabel(stripOcrPrefix(colonMatch[1].trim()));
     if (isCleanLabel(candidate)) return candidate;
   }
 
-  // First phrase before comma or semicolon
+  // First phrase before comma or semicolon — most reliable boundary
   const firstPhrase = t.split(/[,;]/)[0]?.trim();
   if (firstPhrase && firstPhrase.length >= 6 && !BAD_OPENER_RE.test(firstPhrase)) {
     const wc = wordCount(firstPhrase);
-    if (wc >= 2 && wc <= 7) return firstPhrase;
+    if (wc >= 2 && wc <= 7) {
+      const cleaned = cleanTrimmedLabel(firstPhrase);
+      if (isCleanLabel(cleaned)) return cleaned;
+    }
     if (wc > 7) {
-      const trimmed = trimToLabel(firstPhrase, 6);
+      const trimmed = cleanTrimmedLabel(trimToLabel(firstPhrase, 6));
       if (isCleanLabel(trimmed)) return trimmed;
     }
   }
 
   // First 5 words of anchor if no bad opener
   if (!BAD_OPENER_RE.test(t)) {
-    const trimmed = trimToLabel(t, 5);
+    const trimmed = cleanTrimmedLabel(trimToLabel(t, 5));
     if (isCleanLabel(trimmed)) return trimmed;
   }
 
@@ -108,8 +136,8 @@ export function inferConceptTitle(
   if (headingText?.trim()) {
     const fromHeading = tryClean(headingText.trim());
     if (fromHeading) return titleCase(fromHeading);
-    // Heading exists but is long — trim aggressively
-    const trimmedHeading = trimToLabel(stripOcrPrefix(headingText.trim()), 6);
+    // Heading exists but is long — trim and clean aggressively
+    const trimmedHeading = cleanTrimmedLabel(trimToLabel(stripOcrPrefix(headingText.trim()), 6));
     if (isCleanLabel(trimmedHeading)) return titleCase(trimmedHeading);
   }
 

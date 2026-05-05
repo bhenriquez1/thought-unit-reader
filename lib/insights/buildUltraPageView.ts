@@ -14,6 +14,7 @@ import {
   type PageModelForConcepts,
   type SourceSentence,
   type SourceParagraph,
+  type SourceHeading,
 } from "./extractConceptBlocks";
 import {
   TRAP_RE,
@@ -169,8 +170,34 @@ function splitRawSentences(text: string): string[] {
 export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelForConcepts {
   const allSentences: SourceSentence[] = [];
   const sourceParagraphs: SourceParagraph[] = [];
+  const headingsOut: SourceHeading[] = [];
 
   const paragraphs = pageModel.paragraphInsights ?? [];
+
+  // Detect heading-like paragraphs: short (< 70 chars), no terminal punctuation, ≥ 2 words.
+  // These are section titles that PDF.js extracted as separate blocks. We link each heading
+  // to the following content paragraph so inferConceptTitle can use it as the concept label
+  // instead of falling back to the first-N-words of the anchor sentence.
+  const sortedByPageOrder = [...paragraphs].sort((a, b) => a.paragraphIndex - b.paragraphIndex);
+  const headingIdByParaIdx = new Map<number, string>();
+  const headingParaIdxSet = new Set<number>();
+
+  for (let i = 0; i < sortedByPageOrder.length - 1; i++) {
+    const p = sortedByPageOrder[i];
+    const t = (p.cleanedText || p.rawText || "").trim();
+    const wc = t.split(/\s+/).length;
+    if (t.length >= 4 && t.length < 70 && !/[.!?]$/.test(t) && /^[A-Z]/.test(t) && wc >= 2 && wc <= 8) {
+      const hid = `heading-${p.paragraphIndex}`;
+      headingsOut.push({ id: hid, text: t, level: 1 });
+      headingParaIdxSet.add(p.paragraphIndex);
+      // Link to the immediately following paragraph
+      const next = sortedByPageOrder[i + 1];
+      if (next && !headingParaIdxSet.has(next.paragraphIndex)) {
+        headingIdByParaIdx.set(next.paragraphIndex, hid);
+      }
+    }
+  }
+
   // Pre-compute first raw sentence per paragraph index for cross-paragraph support context.
   // Single-sentence paragraphs (e.g. isolated definitions) get the next paragraph's opening
   // sentence as a low-score support candidate so they can produce non-empty supportSentences.
@@ -179,6 +206,9 @@ export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelFor
   );
 
   for (const [idx, p] of paragraphs.entries()) {
+    // Heading paragraphs only contribute to headingsOut — they are not concept blocks.
+    if (headingParaIdxSet.has(p.paragraphIndex)) continue;
+
     const sentenceIds: string[] = [];
     // Structural position bonus: intro-zone paragraphs get elevated scores so their
     // sentences win the anchor competition over denser example sections further down.
@@ -229,6 +259,7 @@ export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelFor
         id: p.id,
         text: p.cleanedText || p.rawText || "",
         sentenceIds,
+        headingId: headingIdByParaIdx.get(p.paragraphIndex),
         score: p.priorityScore + structBonus,
       });
     }
@@ -239,7 +270,7 @@ export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelFor
     pageNumber: pageModel.pageNumber ?? 0,
     pageTitle: undefined,
     pageSummary: pageModel.topTakeaways?.[0] ?? pageModel.pageSummary ?? undefined,
-    headings: [],
+    headings: headingsOut,
     paragraphs: sourceParagraphs,
     sentences: allSentences,
   };
