@@ -257,6 +257,25 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
   const sentenceCount = splitSentences(text).length;
   const headingWords = input.headingLines.join(" ").trim().split(/\s+/).filter(Boolean).length;
 
+  // Compute these early — shared across multiple checks below.
+  const firstLine = input.text.trim().split(/\n/).map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+  const hasMathContent =
+    /[∫∑∂∇]|\blim\b|dy\/dx/i.test(text) ||
+    countStrongMathSignals(text) >= 1 ||
+    /\b(limits?|sequences?|derivatives?|rates?\s+of\s+change|tangent\s+line|instantaneous|calculus|integral)\b/i.test(text);
+
+  // ── PRIORITY OVERRIDE (runs first, before all suppression gates) ───────────
+  // A page whose first line is a numbered section heading ("2.1 Limits of Sequences",
+  // "3.1 Derivatives and Rates of Change") with math signals or substantial body text
+  // must NEVER be suppressed by any downstream chapter_title / section_title /
+  // insufficient_prose / key-concepts check. Live evidence: page 141 had 2200+ chars,
+  // pageTextReady=true, but was blocked as front matter by the key-concepts gate.
+  if (/^\d+\.\d+(\.\d+)?\s+\S/.test(firstLine)) {
+    if (hasMathContent) return "mathematical_exposition";
+    // Non-math numbered section with ≥ 300 chars of body text → instructional prose
+    if (input.text.length >= 300) return "instructional_prose";
+  }
+
   // Front matter: copyright, ISBN, acknowledgements, dedications
   if (
     /\bcopyright\b|\bisbn\b|\bpermissions\b|\bcontributor\b|\bpublisher\b|\blibrary of congress\b|\backnowledgments?\b|\bthe authors? (?:thank|wish to thank|would like to thank)\b|\bdedication\b/.test(text)
@@ -273,10 +292,12 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
   // dense instructional prose. Includes study tips, chapter review, and chapter interview
   // pages which list content but don't teach it. Thresholds generous (< 400 words,
   // < 15 sentences) because some pages list 10–15 bullet-point objectives.
+  // Exception: math pages that happen to include "objectives" must not be suppressed.
   if (
     /\b(key concepts?|learning objectives?|chapter overview|unit overview|chapter summary|chapter review|section summary|study tips?|objectives?)\b/.test(text) &&
     words < 400 &&
-    sentenceCount < 15
+    sentenceCount < 15 &&
+    !hasMathContent
   ) return "chapter_title";
 
   // Interview / profile / biographical page — conversational narrative, not instructional.
@@ -290,19 +311,13 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
   ) return "insufficient_prose";
 
   // Numbered section header: "3.2 Photosynthesis" or "Section 4.1 ATP" with sparse prose.
-  // Exception: math section pages (lim, sequences, derivatives, etc.) often have few prose
-  // sentences because formulas and expressions dominate — let them fall through to the
-  // mathematical_exposition classification instead of being suppressed as section_title.
-  const firstLine = input.text.trim().split(/\n/).map((l) => l.trim()).find((l) => l.length > 0) ?? "";
-  const pageHasMathContent =
-    /[∫∑∂∇]|\blim\b|dy\/dx/i.test(text) ||
-    countStrongMathSignals(text) >= 1 ||
-    /\b(limits?|sequences?|derivatives?|rates?\s+of\s+change|tangent\s+line|instantaneous)\b/i.test(text);
+  // The priority override above already handles numbered math section pages, so this
+  // gate only fires for non-math pages with truly sparse prose (< 150 words, < 4 sentences).
   if (
     (/^\d+\.\d+(\.\d+)?\s+\S/.test(firstLine) || /^section\s+\d+\.\d+\b/i.test(firstLine)) &&
     words < 150 &&
     sentenceCount < 4 &&
-    !pageHasMathContent
+    !hasMathContent
   ) return "section_title";
 
   // Heading-heavy page: majority of words are in headings, very few complete sentences
