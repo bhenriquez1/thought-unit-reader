@@ -122,29 +122,37 @@ export function isValidCoreParagraph(p: ParagraphInsight): boolean {
  * that starts with a capital letter and appears after the first paragraph.
  */
 function computeStructuralPositionBonus(
-  paragraphs: ParagraphInsight[],
-  idx: number
+  allParagraphs: ParagraphInsight[],
+  p: ParagraphInsight
 ): number {
-  if (paragraphs.length === 0) return 0;
+  if (allParagraphs.length === 0) return 0;
 
-  let firstSectionIdx = -1;
-  for (let i = 1; i < paragraphs.length; i++) {
-    const t = (paragraphs[i].cleanedText || paragraphs[i].rawText || "").trim();
+  // Use original page-order index (set by processPage), not array position in the
+  // filtered list. After isValidCoreParagraph drops short intro paragraphs, array
+  // index 0 may point to a mid-page paragraph — paragraphIndex always reflects
+  // the actual position on the page as split by processPage.
+  const pageIdx = p.paragraphIndex;
+
+  // Sort by original page order to detect first section heading reliably
+  const byPageOrder = [...allParagraphs].sort((a, b) => a.paragraphIndex - b.paragraphIndex);
+  let firstSectionParagraphIdx = -1;
+  for (let i = 1; i < byPageOrder.length; i++) {
+    const t = (byPageOrder[i].cleanedText || byPageOrder[i].rawText || "").trim();
     if (t.length > 0 && t.length < 90 && !/[.!?]$/.test(t) && /^[A-Z]/.test(t)) {
-      firstSectionIdx = i;
+      firstSectionParagraphIdx = byPageOrder[i].paragraphIndex;
       break;
     }
   }
 
   // Intro zone: everything before the first section heading, or the first 2 paragraphs
   // when no heading is detected.
-  const introEnd = firstSectionIdx > 0 ? firstSectionIdx : Math.min(2, paragraphs.length);
+  const introEnd = firstSectionParagraphIdx > 0 ? firstSectionParagraphIdx : 2;
 
-  if (idx < introEnd) {
+  if (pageIdx < introEnd) {
     // +0.50 for the very first paragraph, +0.38 for the second, etc.
-    return 0.50 - idx * 0.12;
+    return 0.50 - pageIdx * 0.12;
   }
-  if (firstSectionIdx > 0 && idx === firstSectionIdx + 1) {
+  if (firstSectionParagraphIdx > 0 && pageIdx === firstSectionParagraphIdx + 1) {
     return 0.18; // First content paragraph of the first named section
   }
   return 0;
@@ -174,7 +182,7 @@ export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelFor
     const sentenceIds: string[] = [];
     // Structural position bonus: intro-zone paragraphs get elevated scores so their
     // sentences win the anchor competition over denser example sections further down.
-    const structBonus = computeStructuralPositionBonus(paragraphs, idx);
+    const structBonus = computeStructuralPositionBonus(paragraphs, p);
 
     type ScoredText = { text: string; score: number };
     const rawSentences = splitRawSentences(p.cleanedText || p.rawText || "");
@@ -395,7 +403,13 @@ export function buildUltraPageView(
   console.log("[TRACE buildUltraPageView:entry]", { pageKind: normResult.pageKind, domain, shouldRenderFullPanel: normResult.shouldRenderFullPanel, mathOverride: !normResult.shouldRenderFullPanel });
 
   // Apply hard filter + teaching zone before concept extraction
-  const validInsights = (pageModel.paragraphInsights ?? []).filter(isValidCoreParagraph);
+  const validInsights = (pageModel.paragraphInsights ?? []).filter((p, arrayIdx) => {
+    if (isValidCoreParagraph(p)) return true;
+    // Always include the first 2 page-order paragraphs when they have ≥25 chars.
+    // Same guard as the left-panel path — short intro paragraphs must survive into
+    // findMainTeachingZone so structural position bonuses can apply to them.
+    return arrayIdx <= 1 && (p.cleanedText || p.rawText || "").trim().length >= 25;
+  });
   const zoneInsights = findMainTeachingZone(validInsights, { pageKind: normResult.pageKind });
   console.log("[TRACE buildUltraPageView:zone]", { validParagraphs: validInsights.length, teachingZoneSize: zoneInsights.length, zoneIsSubset: zoneInsights.length < validInsights.length });
   const page = adaptPageInsightModel({ ...pageModel, paragraphInsights: zoneInsights });
@@ -405,6 +419,31 @@ export function buildUltraPageView(
   if (!concepts.length && zoneInsights.length < validInsights.length) {
     const fallbackPage = adaptPageInsightModel({ ...pageModel, paragraphInsights: validInsights });
     concepts = extractConceptBlocks(fallbackPage);
+  }
+
+  // Math fallback: when concept extraction returns empty on a math-classified page,
+  // synthesize a minimal concept from canonicalStatements rather than returning null.
+  // This fires when paragraphs are too short/noisy after splitting (e.g. limit notation
+  // pages) but normalizeClinicalText already captured usable mathematical statements.
+  if (!concepts.length &&
+      (normResult.pageKind === "mathematical_exposition" || domain === "math") &&
+      normResult.canonicalStatements.length > 0) {
+    const mathFallbackPage: PageModelForConcepts = {
+      documentId: pageModel.documentId ?? "",
+      pageNumber: pageModel.pageNumber ?? 0,
+      sentences: normResult.canonicalStatements.map((s, i) => ({
+        id: `math-stmt-${i}`,
+        text: s.normalizedText,
+        score: s.confidence,
+      })),
+      paragraphs: [{
+        id: "math-fallback",
+        text: normResult.canonicalStatements.map((s) => s.normalizedText).join(" "),
+        sentenceIds: normResult.canonicalStatements.map((_, i) => `math-stmt-${i}`),
+        score: 0.8,
+      }],
+    };
+    concepts = extractConceptBlocks(mathFallbackPage);
   }
 
   console.log("[TRACE buildUltraPageView:concepts]", { conceptCount: concepts.length, returnNull: concepts.length === 0 });
