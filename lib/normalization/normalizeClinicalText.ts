@@ -310,9 +310,14 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
   // math, and any future book — uses structural signals only, not page numbers or titles.
   // "Key Concepts", "Chapter Outline", "Study Tips", "Chapter Review" pages all share the
   // same pattern: > 55% of lines are short phrases (< 85 chars) AND total prose < 130 words.
+  // IMPORTANT: formula lines (=, ∫, lim, dy/dx, etc.) are explicitly excluded from the
+  // "short phrase" count so calculus pages with many inline expressions are not
+  // misclassified as outlines before the math classification gates can run.
+  const FORMULA_LINE_EXEMPT_RE = /[=∫∑∂∇√π∞±→≤≥≠∈Δ]|\blim\b|\bf\s*\(|\bd\/d[txyz]\b|dy\/dx|\ba_n\b/i;
   if (rawLines.length >= 5) {
     const shortPhraseLines = rawLines.filter((l) => {
       if (l.length < 4 || l.length >= 85) return false;
+      if (FORMULA_LINE_EXEMPT_RE.test(l)) return false; // formula lines are not outline bullets
       // Short line with no terminal sentence punctuation = likely a bullet/label
       return !/[.?!]$/.test(l) || /^[\-•*▶►✓→◆]/.test(l) || /^\d+[\.\)]\s/.test(l);
     });
