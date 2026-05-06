@@ -127,6 +127,7 @@ const NoteLabHybridReader = dynamic(() => import("@/components/NoteLabHybridRead
 const OptimizedPatternView = dynamic(() => import("@/components/OptimizedPatternView"), { ssr: false });
 const OptimizedNoteLabView = dynamic(() => import("@/components/OptimizedNoteLabView"), { ssr: false });
 const UltraNotesList = dynamic(() => import("@/components/notelab/UltraNotesList"), { ssr: false });
+const RecallLab = dynamic(() => import("@/components/recalllab/RecallLab"), { ssr: false });
 
 type StickyNote = { pageNumber: number; content: string };
 
@@ -418,6 +419,7 @@ export default function ThoughtUnitReader() {
   const [activeShellTab, setActiveShellTab] = useState<WorkspaceMode>("reader");
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
+  const [recallLabRefreshKey, setRecallLabRefreshKey] = useState(0);
   const [focusSnippet, setFocusSnippet] = useState<string | null>(null);
   const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
   const [guidedPath, setGuidedPath] = useState<RenderGuidedReadingPathResult | null>(null);
@@ -2729,6 +2731,7 @@ export default function ThoughtUnitReader() {
                 resolveEvidenceId={resolveEvidenceId}
                 focusedEvidenceId={focusedEvidenceId}
                 onNoteSaved={() => setNoteLabRefreshKey((k) => k + 1)}
+                onStudySetGenerated={() => setRecallLabRefreshKey((k) => k + 1)}
                 onEvidenceClick={(snippet, evidenceId) => {
                   setFocusSnippet(null);
                   setFocusedEvidenceId(evidenceId || resolveEvidenceId(snippet) || null);
@@ -2743,7 +2746,7 @@ export default function ThoughtUnitReader() {
                 console.log('Whiteboard: Save to NoteLab');
               }}
               onAddToStudy={() => {
-                setViewMode("study");
+                trySwitchShellTab("study", "study");
               }}
             />
           </ErrorBoundary>
@@ -2766,6 +2769,7 @@ export default function ThoughtUnitReader() {
                 syncToPage(page);
                 trySwitchShellTab("reader", "reader");
               }}
+              onCardsGenerated={() => setRecallLabRefreshKey((k) => k + 1)}
             />
           </div>
         </div>
@@ -2832,12 +2836,22 @@ export default function ThoughtUnitReader() {
 
     if (activeShellTab === "study") {
       return (
-        <UnderConstructionPanel
-          icon="🧠"
-          title="Study"
-          subtitle="Execution mode is being rebuilt around syllabus → topic → recall flow."
-          bullets={["Quick Recall", "Application", "Compare", "Focus Sessions"]}
-        />
+        <div className="h-full flex flex-col overflow-hidden bg-[rgb(11,18,34)]">
+          <div className="border-b border-white/10 px-4 py-3 flex-shrink-0">
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400">Recall Lab</div>
+            <div className="mt-0.5 text-[11px] text-slate-500">Memory-engineering layer · flip cards · active recall</div>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            <RecallLab
+              bookId={bookId}
+              refreshKey={recallLabRefreshKey}
+              onNavigateToPage={(page) => {
+                syncToPage(page);
+                trySwitchShellTab("reader", "reader");
+              }}
+            />
+          </div>
+        </div>
       );
     }
 
@@ -2939,14 +2953,14 @@ export default function ThoughtUnitReader() {
           </button>
           <button
             onClick={() => trySwitchShellTab("study", "study")}
-            data-testid="nav-study"
+            data-testid="nav-recalllab"
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${focusState.running ? "opacity-50" : ""} ${
               activeShellTab === "study"
-                ? "bg-blue-500 text-white shadow-lg"
+                ? "bg-indigo-500 text-white shadow-lg"
                 : "text-gray-300 hover:text-white hover:bg-gray-700"
             }`}
           >
-            🧠 Study
+            🎯 Recall Lab
           </button>
           <button
             onClick={() => {
