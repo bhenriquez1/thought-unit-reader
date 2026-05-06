@@ -11,12 +11,14 @@ import {
   type UltraNote,
   type NoteSubject,
 } from "@/lib/notelab/ultraNoteStore";
+import { buildRecallSetFromNote, saveRecallSet } from "@/lib/recalllab/recallStore";
 
 interface UltraNotesListProps {
   bookId?: string;
   onNavigateToPage?: (pageNumber: number) => void;
   /** Increment this to force a re-read from localStorage after a note is saved */
   refreshKey?: number;
+  onCardsGenerated?: () => void;
 }
 
 const SUBJECT_ORDER: NoteSubject[] = ["Biology", "Calculus", "Dental / Clinical", "General Notes"];
@@ -28,7 +30,7 @@ const SUBJECT_ICON: Record<NoteSubject, string> = {
   "General Notes": "📝",
 };
 
-export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey }: UltraNotesListProps) {
+export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, onCardsGenerated }: UltraNotesListProps) {
   const [notes, setNotes] = useState<UltraNote[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -152,6 +154,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey }:
                             onCopy={() => handleCopy(note)}
                             onDelete={() => handleDelete(note.id)}
                             onNavigate={onNavigateToPage}
+                            onCardsGenerated={onCardsGenerated}
                           />
                         );
                       })}
@@ -175,6 +178,7 @@ function NoteCard({
   onCopy,
   onDelete,
   onNavigate,
+  onCardsGenerated,
 }: {
   note: UltraNote;
   isExpanded: boolean;
@@ -183,7 +187,17 @@ function NoteCard({
   onCopy: () => void;
   onDelete: () => void;
   onNavigate?: (page: number) => void;
+  onCardsGenerated?: () => void;
 }) {
+  const [cardsSaved, setCardsSaved] = useState(false);
+
+  function handleGenerateCards() {
+    const set = buildRecallSetFromNote(note);
+    saveRecallSet(set);
+    setCardsSaved(true);
+    onCardsGenerated?.();
+    setTimeout(() => setCardsSaved(false), 2200);
+  }
   return (
     <div
       style={{
@@ -248,8 +262,30 @@ function NoteCard({
             </div>
           )}
 
+          {/* Generate Cards button */}
+          <button
+            type="button"
+            onClick={handleGenerateCards}
+            style={{
+              width: "100%",
+              padding: "8px 0",
+              borderRadius: 8,
+              border: cardsSaved ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(99,102,241,0.2)",
+              background: cardsSaved ? "rgba(99,102,241,0.12)" : "rgba(99,102,241,0.06)",
+              color: cardsSaved ? "#a5b4fc" : "#818cf8",
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: "0.06em",
+              cursor: "pointer",
+              marginBottom: 8,
+              transition: "all 0.18s",
+            }}
+          >
+            {cardsSaved ? "✓ Cards saved to Recall Lab" : "🎯 Generate Cards from Note"}
+          </button>
+
           {/* Action buttons */}
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <div style={{ display: "flex", gap: 8 }}>
             {onNavigate && (
               <button
                 type="button"

@@ -18,6 +18,7 @@ import type { ConceptBlock, ReaderPageView } from "@/lib/reader/types";
 import { buildUltraPageView, type UltraPageView, type UltraConceptBlock } from "@/lib/insights/buildUltraPageView";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { buildUltraNote, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
+import { buildRecallSetFromView, saveRecallSet } from "@/lib/recalllab/recallStore";
 
 interface RightPanelProps {
   ctx: ActivePageContext;
@@ -30,6 +31,7 @@ interface RightPanelProps {
   focusedEvidenceId?: string | null;
   onRoleLabelMap?: (map: Map<string, string>) => void;
   onNoteSaved?: () => void;
+  onStudySetGenerated?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +123,7 @@ export function RightPanel({
   focusedEvidenceId,
   onRoleLabelMap,
   onNoteSaved,
+  onStudySetGenerated,
 }: RightPanelProps) {
   const pageTruthKey = intelligence.pageTruthKey;
   const pageModel = intelligence.pageModel;
@@ -419,12 +422,20 @@ export function RightPanel({
               onSelectBlock={setSelectedBlockIndex}
               onAnchorClick={(text) => onEvidenceClick?.(text, undefined)}
             />
-            <GenerateNoteButton
-              view={displayView}
-              bookId={ctx?.documentId ?? ""}
-              pageNumber={ctx?.pageNumber ?? 0}
-              onNoteSaved={onNoteSaved}
-            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <GenerateNoteButton
+                view={displayView}
+                bookId={ctx?.documentId ?? ""}
+                pageNumber={ctx?.pageNumber ?? 0}
+                onNoteSaved={onNoteSaved}
+              />
+              <GenerateStudySetButton
+                view={displayView}
+                bookId={ctx?.documentId ?? ""}
+                pageNumber={ctx?.pageNumber ?? 0}
+                onStudySetGenerated={onStudySetGenerated}
+              />
+            </div>
           </>
         )}
 
@@ -1569,6 +1580,58 @@ function GenerateNoteButton({
       }}
     >
       {saved ? "✓ Note saved to NoteLab" : "⚡ Generate Ultra Note"}
+    </button>
+  );
+}
+
+function GenerateStudySetButton({
+  view,
+  bookId,
+  pageNumber,
+  onStudySetGenerated,
+}: {
+  view: UltraPageView;
+  bookId: string;
+  pageNumber: number;
+  onStudySetGenerated?: () => void;
+}) {
+  const [saved, setSaved] = useState(false);
+
+  function handleGenerate() {
+    const set = buildRecallSetFromView(view, bookId, pageNumber);
+    saveRecallSet(set);
+    console.log("[TRACE NOTE_WIRING]", {
+      source: "rightPanelGenerateStudySet",
+      bookId,
+      pageNumber,
+      topic: set.topic,
+      cardCount: set.cards.length,
+      subject: set.subject,
+    });
+    setSaved(true);
+    onStudySetGenerated?.();
+    setTimeout(() => setSaved(false), 2200);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleGenerate}
+      style={{
+        flex: 1,
+        padding: "10px 0",
+        borderRadius: 10,
+        border: saved ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(99,102,241,0.25)",
+        background: saved ? "rgba(99,102,241,0.12)" : "rgba(99,102,241,0.07)",
+        color: saved ? "#a5b4fc" : "#818cf8",
+        fontSize: 12,
+        fontWeight: 700,
+        letterSpacing: "0.06em",
+        cursor: "pointer",
+        transition: "all 0.18s",
+      }}
+    >
+      {saved ? "✓ Saved to Recall Lab" : "🎯 Generate Study Set"}
     </button>
   );
 }
