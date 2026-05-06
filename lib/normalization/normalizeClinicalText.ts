@@ -66,6 +66,8 @@ export interface ClinicalNormalizationResult {
   pageKind: PageKind;
   shouldRenderFullPanel: boolean;
   refusalReason?: string | null;
+  /** Which gate inside classifyPageKind fired — e.g. "front_matter", "chapter_title:key_concepts". Null when rendering. */
+  classificationReason?: string | null;
   canonicalStatements: CanonicalStatement[];
   dominantSignal?: string | null;
   coreIdea?: string | null;
@@ -122,11 +124,13 @@ export function normalizeClinicalText(
   });
 
   if (!shouldRenderPageKind(pageKind, cleanedPageText, sentences)) {
-    console.log("[TRACE normalizeClinicalText]", { pageKind, shouldRenderFullPanel: false, refusalReason: refusalReasonForPageKind(pageKind), canonicalCount: 0, wordCount: wordCount(cleanedPageText) });
+    const classificationReason = refusalReasonForPageKind(pageKind);
+    console.log("[TRACE normalizeClinicalText]", { pageKind, shouldRenderFullPanel: false, classificationReason, canonicalCount: 0, wordCount: wordCount(cleanedPageText) });
     return {
       pageKind,
       shouldRenderFullPanel: false,
-      refusalReason: refusalReasonForPageKind(pageKind),
+      refusalReason: classificationReason,
+      classificationReason,
       canonicalStatements: [],
       dominantSignal: null,
       coreIdea: null,
@@ -170,11 +174,12 @@ export function normalizeClinicalText(
   // often survives PDF extraction poorly, leaving few canonical statements even
   // on content-rich calculus/physics pages. The concept pipeline handles extraction.
   if (pageKind === "mathematical_exposition" && (looksLikeFormula(cleanedPageText) || countMathSignals(cleanedPageText) >= 1)) {
-    console.log("[TRACE normalizeClinicalText]", { pageKind, shouldRenderFullPanel: true, refusalReason: null, canonicalCount: dedupedStatements.length, wordCount: wordCount(cleanedPageText) });
+    console.log("[TRACE normalizeClinicalText]", { pageKind, shouldRenderFullPanel: true, classificationReason: null, canonicalCount: dedupedStatements.length, wordCount: wordCount(cleanedPageText) });
     return {
       pageKind,
       shouldRenderFullPanel: true,
       refusalReason: null,
+      classificationReason: null,
       canonicalStatements: dedupedStatements,
       dominantSignal: dedupedStatements[0]?.normalizedText ?? null,
       coreIdea: null,
@@ -192,11 +197,12 @@ export function normalizeClinicalText(
     ? 1
     : MIN_CANONICAL_STATEMENTS;
   if (dedupedStatements.length < minStatements) {
-    console.log("[TRACE normalizeClinicalText]", { pageKind, shouldRenderFullPanel: false, refusalReason: "insufficient_normalized_signal", canonicalCount: dedupedStatements.length, wordCount: wordCount(cleanedPageText) });
+    console.log("[TRACE normalizeClinicalText]", { pageKind, shouldRenderFullPanel: false, classificationReason: "insufficient_normalized_signal", canonicalCount: dedupedStatements.length, wordCount: wordCount(cleanedPageText) });
     return {
       pageKind,
       shouldRenderFullPanel: false,
       refusalReason: "insufficient_normalized_signal",
+      classificationReason: "insufficient_normalized_signal",
       canonicalStatements: [],
       dominantSignal: null,
       coreIdea: null,
@@ -213,11 +219,12 @@ export function normalizeClinicalText(
     return a.normalizedText.length - b.normalizedText.length;
   });
 
-  console.log("[TRACE normalizeClinicalText]", { pageKind, shouldRenderFullPanel: true, refusalReason: null, canonicalCount: ranked.length, wordCount: wordCount(cleanedPageText) });
+  console.log("[TRACE normalizeClinicalText]", { pageKind, shouldRenderFullPanel: true, classificationReason: null, canonicalCount: ranked.length, wordCount: wordCount(cleanedPageText) });
   return {
     pageKind,
     shouldRenderFullPanel: true,
     refusalReason: null,
+    classificationReason: null,
     canonicalStatements: ranked,
     dominantSignal: firstByRoles(ranked, [
       "definition", "clinical_rule", "mathematical_rule", "consequence", "supporting_fact",
@@ -258,35 +265,61 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
   const headingWords = input.headingLines.join(" ").trim().split(/\s+/).filter(Boolean).length;
 
   // Compute these early — shared across multiple checks below.
-  const firstLine = input.text.trim().split(/\n/).map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+  const nonEmptyLines = input.text.trim().split(/\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+  const firstLine = nonEmptyLines[0] ?? "";
+
+  // Scan the first 8 non-empty lines for a numbered section heading.
+  // PDF.js often extracts running chapter headers (e.g. "Chapter 2 | Limits") as the
+  // very first text block, placing the real section heading ("2.1 Limits of Sequences")
+  // on line 3-5. Checking only firstLine caused the override to miss these pages.
+  const hasSectionHeadingEarly = nonEmptyLines.slice(0, 8).some((l) =>
+    /^\d+\.\d+(\.\d+)?\s+\S/.test(l)
+  );
+
   const hasMathContent =
     /[∫∑∂∇]|\blim\b|dy\/dx/i.test(text) ||
     countStrongMathSignals(text) >= 1 ||
     /\b(limits?|sequences?|derivatives?|rates?\s+of\s+change|tangent\s+line|instantaneous|calculus|integral)\b/i.test(text);
 
   // ── PRIORITY OVERRIDE (runs first, before all suppression gates) ───────────
-  // A page whose first line is a numbered section heading ("2.1 Limits of Sequences",
+  // A page with a numbered section heading in its opening lines ("2.1 Limits of Sequences",
   // "3.1 Derivatives and Rates of Change") with math signals or substantial body text
   // must NEVER be suppressed by any downstream chapter_title / section_title /
-  // insufficient_prose / key-concepts check. Live evidence: page 141 had 2200+ chars,
-  // pageTextReady=true, but was blocked as front matter by the key-concepts gate.
-  if (/^\d+\.\d+(\.\d+)?\s+\S/.test(firstLine)) {
+  // insufficient_prose / key-concepts / front_matter check.
+  // Live evidence: page 141 had 2200+ chars, pageTextReady=true, but was blocked because
+  // (a) the running header "Chapter 2 | Limits" was the firstLine so the override missed it,
+  // and (b) an OpenStax footer containing "contributor" triggered the front_matter gate.
+  if (hasSectionHeadingEarly) {
     if (hasMathContent) return "mathematical_exposition";
     // Non-math numbered section with ≥ 300 chars of body text → instructional prose
     if (input.text.length >= 300) return "instructional_prose";
   }
 
-  // Front matter: copyright, ISBN, acknowledgements, dedications
+  // Front matter: copyright, ISBN, acknowledgements, dedications.
+  // Guard: skip if page has substantial prose + math/instructional content — many
+  // open-source textbooks (OpenStax etc.) embed "contributor"/"permissions" in every-page
+  // footers. A page with a real teaching section should never be blocked by a footer word.
+  const hasProsaicContentGuard = input.text.length >= 300 && (hasMathContent || hasInstructionalSignals(text));
   if (
+    !hasProsaicContentGuard &&
     /\bcopyright\b|\bisbn\b|\bpermissions\b|\bcontributor\b|\bpublisher\b|\blibrary of congress\b|\backnowledgments?\b|\bthe authors? (?:thank|wish to thank|would like to thank)\b|\bdedication\b/.test(text)
-  ) return "front_matter";
+  ) {
+    console.log("[TRACE classifyGate]", { gate: "front_matter", firstLine, hasMathContent, words });
+    return "front_matter";
+  }
 
   if (
     /\bchapter outline\b|\bcontents\b|\bpart\b\s+\d+\b/.test(text) && words < 90
-  ) return "chapter_title";
+  ) {
+    console.log("[TRACE classifyGate]", { gate: "chapter_title:outline", firstLine, words });
+    return "chapter_title";
+  }
 
   // Chapter opener: page text starts with "chapter N" and has sparse prose
-  if (/^chapter\s+\d+\b/.test(text.trim()) && words < 180 && sentenceCount < 5) return "chapter_title";
+  if (/^chapter\s+\d+\b/.test(text.trim()) && words < 180 && sentenceCount < 5) {
+    console.log("[TRACE classifyGate]", { gate: "chapter_title:opener", firstLine, words, sentenceCount });
+    return "chapter_title";
+  }
 
   // Overview / summary / learning-objectives pages — structural signposts never carry
   // dense instructional prose. Includes study tips, chapter review, and chapter interview
@@ -298,7 +331,10 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
     words < 400 &&
     sentenceCount < 15 &&
     !hasMathContent
-  ) return "chapter_title";
+  ) {
+    console.log("[TRACE classifyGate]", { gate: "chapter_title:key_concepts", firstLine, words, sentenceCount, hasMathContent });
+    return "chapter_title";
+  }
 
   // Interview / profile / biographical page — conversational narrative, not instructional.
   // "Meet the Expert", "Words of Wisdom", "Chapter Interview" etc. contain career stories
