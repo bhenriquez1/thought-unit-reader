@@ -782,6 +782,7 @@ export default function ThoughtUnitReader() {
     activePageTextLength: (pageTextByPage.get(activePageTextKey) || "").length,
     pageTextReady,
     pageKind: currentNormResult?.pageKind ?? null,
+    classificationReason: currentNormResult?.classificationReason ?? null,
     shouldRenderFullPanel: currentNormResult?.shouldRenderFullPanel ?? null,
     paragraphInsightsCount: (currentPageModel?.paragraphInsights ?? []).length,
     highlightNeighborhoodsCount: (highlightNeighborhoods ?? []).length,
