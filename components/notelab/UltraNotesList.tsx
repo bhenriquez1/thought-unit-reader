@@ -18,7 +18,7 @@ interface UltraNotesListProps {
   onNavigateToPage?: (pageNumber: number) => void;
   /** Increment this to force a re-read from localStorage after a note is saved */
   refreshKey?: number;
-  onCardsGenerated?: () => void;
+  onCardsGenerated?: (setId: string) => void;
 }
 
 const SUBJECT_ORDER: NoteSubject[] = ["Biology", "Calculus", "Dental / Clinical", "General Notes"];
@@ -189,15 +189,15 @@ function NoteCard({
   onCopy: () => void;
   onDelete: () => void;
   onNavigate?: (page: number) => void;
-  onCardsGenerated?: () => void;
+  onCardsGenerated?: (setId: string) => void;
 }) {
   const [cardsSaved, setCardsSaved] = useState(false);
 
   function handleGenerateCards() {
-    const set = buildRecallSetFromNote(note);
+    const set = buildRecallSetFromNote(note, { sourceLabel: "notelab" });
     saveRecallSet(set);
     setCardsSaved(true);
-    onCardsGenerated?.();
+    onCardsGenerated?.(set.id);
     setTimeout(() => setCardsSaved(false), 2200);
   }
   return (

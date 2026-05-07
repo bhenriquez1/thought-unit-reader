@@ -4,8 +4,9 @@
 import { type NoteSubject, type UltraNote, inferSubject } from "@/lib/notelab/ultraNoteStore";
 import type { UltraPageView } from "@/lib/insights/buildUltraPageView";
 
-export type CardType = "core" | "pattern" | "reason" | "rule" | "trap" | "formula" | "memory";
+export type CardType = "core" | "definition" | "rule" | "reason" | "trap" | "contrast" | "formula" | "memory";
 export type CardDifficulty = "easy" | "medium" | "hard";
+export type SourceLabel = "right-panel" | "notelab";
 
 export interface RecallCard {
   id: string;
@@ -21,6 +22,8 @@ export interface RecallCard {
 export interface RecallSet {
   id: string;
   bookId: string;
+  bookTitle?: string;
+  sourceLabel?: SourceLabel;
   pageNumber: number;
   subject: NoteSubject;
   topic: string;
@@ -47,6 +50,8 @@ function saveAll(sets: RecallSet[]): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(sets));
+    // Notify RecallLab components listening for updates
+    window.dispatchEvent(new Event("recall-lab-updated"));
   } catch {}
 }
 
@@ -89,42 +94,78 @@ function card(id: string, type: CardType, front: string, back: string, hint?: st
   return { id, type, front, back, hint, reviewCount: 0, isMissed: false };
 }
 
+export interface BuildRecallSetOpts {
+  bookTitle?: string;
+  sourceLabel?: SourceLabel;
+}
+
 export function buildRecallSetFromView(
   view: UltraPageView,
   bookId: string,
-  pageNumber: number
+  pageNumber: number,
+  opts?: BuildRecallSetOpts
 ): RecallSet {
   const topic = view.title.replace(/^ULTRA\s*[–—-]\s*/i, "").trim() || `Page ${pageNumber}`;
   const cards: RecallCard[] = [];
-  let n = 0;
 
-  if (view.coreIdea) {
-    cards.push(card(`c${++n}`, "core", `What is the core idea of "${topic}"?`, view.coreIdea));
-  }
+  // 1. Core idea card — always created
+  const coreIdea = view.coreIdea || "See page for core idea.";
+  cards.push(card("core-0", "core",
+    `What is the core idea of "${topic}"?`,
+    coreIdea
+  ));
 
+  // 2. Per-concept cards — prioritized: definition → rule → reason → trap
   view.blocks.forEach((block, bi) => {
     const p = `b${bi + 1}`;
+    const title = block.title;
+
+    // Definition / pattern card (the main declarative statement)
     if (block.pattern) {
-      cards.push(card(`${p}-pat`, "pattern", `Pattern for: ${block.title}`, block.pattern));
+      const q = /^(what|define|state)/i.test(title)
+        ? `${title}?`
+        : `Define or state the pattern for: ${title}`;
+      cards.push(card(`${p}-def`, "definition", q, block.pattern));
     }
-    if (block.surgicalReason) {
-      cards.push(card(`${p}-why`, "reason", `Why does "${block.title}" work this way?`, block.surgicalReason, block.pattern || undefined));
+
+    // Rule card
+    if (block.rule && block.rule !== block.pattern) {
+      cards.push(card(`${p}-rule`, "rule",
+        `State the rule for: ${title}`,
+        block.rule,
+        block.pattern || undefined
+      ));
     }
-    if (block.rule) {
-      cards.push(card(`${p}-rule`, "rule", `State the rule for: ${block.title}`, block.rule, block.surgicalReason || undefined));
+
+    // Surgical reason card
+    if (block.surgicalReason && block.surgicalReason !== block.pattern && block.surgicalReason !== block.rule) {
+      cards.push(card(`${p}-why`, "reason",
+        `Why does "${title}" work this way?`,
+        block.surgicalReason,
+        block.pattern || undefined
+      ));
     }
+
+    // Trap / contrast card
     if (block.trap) {
-      cards.push(card(`${p}-trap`, "trap", `⚠️ What is the trap for: ${block.title}?`, block.trap));
+      cards.push(card(`${p}-trap`, "trap",
+        `⚠️ What is the common trap or misconception for: ${title}?`,
+        block.trap
+      ));
     }
   });
 
+  // 3. Memory shortcut cards
   (view.compression ?? []).slice(0, 2).forEach((s, i) => {
     if (s) cards.push(card(`mem-${i}`, "memory", "Complete the memory shortcut:", s));
   });
 
+  const id = `rs-${bookId}-p${pageNumber}-${Date.now()}`;
   return {
-    id: `rs-${bookId}-p${pageNumber}-${Date.now()}`,
+    id,
     bookId,
+    bookTitle: opts?.bookTitle,
+    sourceLabel: opts?.sourceLabel,
     pageNumber,
     subject: inferSubject(bookId),
     topic,
@@ -133,29 +174,55 @@ export function buildRecallSetFromView(
   };
 }
 
-export function buildRecallSetFromNote(note: UltraNote): RecallSet {
+export function buildRecallSetFromNote(note: UltraNote, opts?: BuildRecallSetOpts): RecallSet {
   const cards: RecallCard[] = [];
-  let n = 0;
 
-  if (note.coreIdea) {
-    cards.push(card(`c${++n}`, "core", `What is the core idea of "${note.topic}"?`, note.coreIdea));
-  }
+  // Core idea card — always created
+  const coreIdea = note.coreIdea || "See note for core idea.";
+  cards.push(card("core-0", "core",
+    `What is the core idea of "${note.topic}"?`,
+    coreIdea
+  ));
 
   note.concepts.forEach((c, ci) => {
     const p = `n${ci + 1}`;
-    if (c.pattern) cards.push(card(`${p}-pat`, "pattern", `Pattern for: ${c.title}?`, c.pattern));
-    if (c.surgicalReason) cards.push(card(`${p}-why`, "reason", `Why: ${c.title}?`, c.surgicalReason));
-    if (c.rule) cards.push(card(`${p}-rule`, "rule", `Rule for: ${c.title}?`, c.rule, c.surgicalReason || undefined));
-    if (c.trap) cards.push(card(`${p}-trap`, "trap", `⚠️ Trap for: ${c.title}?`, c.trap));
+    if (c.pattern) {
+      cards.push(card(`${p}-def`, "definition",
+        `Define or state the pattern for: ${c.title}`,
+        c.pattern
+      ));
+    }
+    if (c.rule && c.rule !== c.pattern) {
+      cards.push(card(`${p}-rule`, "rule",
+        `State the rule for: ${c.title}`,
+        c.rule,
+        c.surgicalReason || undefined
+      ));
+    }
+    if (c.surgicalReason && c.surgicalReason !== c.pattern && c.surgicalReason !== c.rule) {
+      cards.push(card(`${p}-why`, "reason",
+        `Why does "${c.title}" work this way?`,
+        c.surgicalReason
+      ));
+    }
+    if (c.trap) {
+      cards.push(card(`${p}-trap`, "trap",
+        `⚠️ What is the trap for: ${c.title}?`,
+        c.trap
+      ));
+    }
   });
 
   note.memoryShortcuts.forEach((s, i) => {
     cards.push(card(`mem-${i}`, "memory", "Complete the memory shortcut:", s));
   });
 
+  const id = `rs-${note.bookId}-p${note.pageNumber}-note-${Date.now()}`;
   return {
-    id: `rs-${note.bookId}-p${note.pageNumber}-note-${Date.now()}`,
+    id,
     bookId: note.bookId,
+    bookTitle: note.bookTitle ?? opts?.bookTitle,
+    sourceLabel: opts?.sourceLabel ?? "notelab",
     pageNumber: note.pageNumber,
     subject: note.subject ?? "General Notes",
     topic: note.topic,
