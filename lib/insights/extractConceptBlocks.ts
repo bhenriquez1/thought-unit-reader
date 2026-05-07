@@ -137,6 +137,12 @@ function sentenceScore(sentence: SourceSentence): number {
   if (/\b(goiter|rickets|scurvy|pellagra|beriberi|kwashiorkor|marasmus|cretinism)\b/i.test(cleaned)) score -= 3;
   // Case-study / interview / profile framing — never a core concept anchor.
   if (/\b(case study|case report|clinical case|interview|profile of|spotlight:|patient story)\b/i.test(cleaned)) score -= 5;
+  // Named molecule with observational/abundance fact: "Water (H2O) is the most abundant..."
+  // These are illustrative examples of a concept, not the concept itself.
+  if (/^[A-Z][a-z]{1,15}(?:\s*\([A-Za-z0-9₀-₉²³+\-]+\))?\s+is (the |a |an )?(most|least|only|found|abundant|present|common|approximately|often|mainly|primarily|widely|highly|extremely)\b/i.test(cleaned.trimStart())) score -= 4;
+  // Named substance category instance: "Iodine is the trace element that..."
+  // Defines the substance (an example), not the page's teaching concept.
+  if (/^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+is (a|an|the) (trace|essential|major|minor|macro|micro|most abundant|only)?\s*(element|mineral|compound|ion|vitamin|electrolyte|metalloid|halogen|nutrient)\b/i.test(cleaned.trimStart())) score -= 4;
   // Math/prose filler openers — high word count but zero informational density.
   // "We indicate this by saying", "In other words", "Notice that", "Here we investigate"
   // score high on generic heuristics but carry no mathematical content.
@@ -302,8 +308,28 @@ function buildConceptFromParagraph(
     .filter((s): s is SourceSentence => Boolean(s));
   if (!sentences.length) return null;
 
-  const anchor = chooseAnchorSentence(sentences);
-  if (!anchor) return null;
+  const rawAnchor = chooseAnchorSentence(sentences);
+  if (!rawAnchor) return null;
+
+  // If the best-scoring sentence is classified as an example, try to find a non-example
+  // anchor from the remaining sentences. This prevents "Water (H2O) is the most abundant..."
+  // or "Iodine is the trace element that..." from claiming the concept anchor slot when a
+  // conceptual rule or definition sentence also exists in the same paragraph.
+  let anchor = rawAnchor;
+  const rawAnchorText = cleanSentence(rawAnchor.text);
+  const rawAnchorRole = classifyConceptRole(rawAnchorText, [], paragraph.text);
+  if (rawAnchorRole === "example" && sentences.length > 1) {
+    const betterAnchor = [...sentences]
+      .filter((s) => s.id !== rawAnchor.id)
+      .sort((a, b) => sentenceScore(b) - sentenceScore(a))
+      .find((s) => {
+        const t = cleanSentence(s.text);
+        if (!isRenderableSentence(t)) return false;
+        const r = classifyConceptRole(t, [], paragraph.text);
+        return r !== "example" && r !== "detail";
+      });
+    if (betterAnchor) anchor = betterAnchor;
+  }
 
   const anchorText = cleanSentence(anchor.text);
   if (!isRenderableSentence(anchorText)) return null;

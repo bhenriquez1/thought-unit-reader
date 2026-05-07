@@ -36,6 +36,7 @@ import { detectPageDomain, type PageDomain } from "./detectPageDomain";
 import { findMainTeachingZone } from "./findMainTeachingZone";
 import { scoreDomainPriority, type DomainPriorityScore } from "./scoreDomainPriority";
 import type { ClinicalPriorityCandidate } from "./scoreClinicalPriority";
+import { inferPageObjective, isExampleOrFiller } from "./inferPageObjective";
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -219,10 +220,18 @@ export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelFor
     const inputs: ScoredText[] = [
       // Raw verbatim PDF sentences are the primary anchor pool — they match PDF spans directly.
       // Scored above AI-enriched fields so the anchor is always findable text, not a rewrite.
-      ...rawSentences.map((t, i) => ({
-        text: t,
-        score: Math.max(0.55, p.priorityScore * 2.0 - i * 0.15 + structBonus),
-      })),
+      // EXCEPTION: math/prose filler openers ("We indicate this by...", "Notice that...", etc.)
+      // are capped at 0.10 regardless of paragraph position, so the -8 penalty in sentenceScore
+      // can fully suppress them without fighting a high position-derived base score.
+      ...rawSentences.map((t, i) => {
+        const isFiller = /^(we (indicate|say|note|see|observe|call|denote|write|have seen|recall that|now turn|now consider)\b|in other words,?|notice that\b|observe that\b|here we\b|it (is|can be) (shown|seen)\b|this (gives|shows|yields)\b|recall (that\b|from\b))/i.test(t.trimStart());
+        return {
+          text: t,
+          score: isFiller
+            ? 0.10
+            : Math.max(0.55, p.priorityScore * 2.0 - i * 0.15 + structBonus),
+        };
+      }),
       // AI-enriched fields demoted to support context — verbatim but type-selected, not top-ranked.
       p.summary           ? { text: p.summary,  score: p.priorityScore * 1.0 } : null,
       ...(p.traps       ?? []).map((t)    => ({ text: t, score: p.priorityScore * 1.0 })),
@@ -426,6 +435,17 @@ export function buildUltraPageView(
   // Detect domain once — drives scoring and coreIdea selection downstream
   const domain = detectPageDomain(rawPageText);
 
+  // Infer page teaching objective BEFORE concept extraction.
+  // This is the top-down constraint: what is this page TRULY TEACHING?
+  // Priority in summaryFallback: pageObjective > normResult.coreIdea > pageSummary > concepts.
+  const pageObjective = inferPageObjective(
+    headingLines,
+    normResult.canonicalStatements ?? [],
+    // ClinicalNormalizationResult includes coreIdea; cast defensively
+    (normResult as unknown as { coreIdea?: string | null }).coreIdea ?? null,
+    domain,
+  );
+
   if (!normResult.shouldRenderFullPanel) {
     // Math pages where formula notation was stripped by PDF extraction may produce
     // few canonical statements yet still contain rich paragraph text. Allow render
@@ -524,44 +544,38 @@ export function buildUltraPageView(
   })();
 
   const summaryFallback = (() => {
-    // Only use pageSummary if it's not itself an example sentence
-    if (normalizedSummary && normalizedSummary.length >= 30) {
-      const isExSummary = (text: string) => {
-        const t = text.trim();
-        if (/^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+(deficiency|toxicity|poisoning|overdose|exposure)\b/.test(t)) return true;
-        if (/\b(goiter|rickets|scurvy|pellagra|beriberi)\b/i.test(t)) return true;
-        if (/^(for example,?|for instance,?)/i.test(text.trimStart())) return true;
-        if (/^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+is (a|an|the) (trace|essential|major|minor|macro|micro|most abundant)\s*(element|mineral|compound|ion|vitamin)\b/i.test(t)) return true;
-        // Math filler — never usable as a core idea
-        if (/^(we (indicate|say|note|observe|denote|call|write|have seen)|in other words,?|notice that\b|observe that\b|here we\b|it (is|can be) (shown|seen)\b|this (gives|shows|yields)\b|recall (that|from)\b)/i.test(text.trimStart())) return true;
-        // Generic template fallback that slipped through
-        if (/^this page (develops|introduces|covers|presents|explains)\b/i.test(t)) return true;
-        return false;
-      };
-      if (!isExSummary(normalizedSummary)) return normalizedSummary;
-    }
-
-    // Core idea priority: definition → mechanism → chiefSignal → top non-example.
-    // Section heading text belongs in the TITLE (inferPageTitle), not the core idea.
-    const isExampleAnchor = (text: string) => {
+    // Shared example/filler guard — used to reject all priority sources uniformly.
+    // isExampleOrFiller from inferPageObjective covers named substances, filler openers,
+    // and worked-example labels. isExampleAnchor extends it for inline example signals.
+    const isExampleAnchor = (text: string): boolean => {
+      if (isExampleOrFiller(text)) return true;
       const trimmed = text.trim();
-      // Named deficiency/toxicity
-      if (/^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+(deficiency|toxicity|poisoning|overdose|exposure)\b/.test(trimmed)) return true;
-      // Named disease used as illustration
-      if (/\b(goiter|rickets|scurvy|pellagra|beriberi|kwashiorkor|marasmus|cretinism)\b/i.test(trimmed)) return true;
-      // Explicit example openers
       if (/\b(for example|for instance|such as|e\.g\.)\b/i.test(trimmed)) return true;
       if (/^(for example,?|for instance,?|to illustrate,?|consider )/i.test(text.trimStart())) return true;
-      // Named element/mineral/compound acting as a category instance — "Iodine is the trace element that..."
-      if (/^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+is (a|an|the) (trace|essential|major|minor|macro|micro|most abundant|only|primarily)?\s*(element|mineral|compound|ion|vitamin|electrolyte|metalloid|halogen|nutrient|toxin)\b/i.test(trimmed)) return true;
-      // Named molecule with observational/abundance fact — "Water is the most abundant compound..."
-      if (/^[A-Z][a-z]{1,15}(?:\s*\([A-Za-z0-9₀-₉²³+\-]+\))?\s+is (the |a |an )?(most|least|only|found|abundant|present|common|approximately|often|mainly|primarily|widely|highly|extremely)\b/i.test(trimmed)) return true;
-      // Math filler — "We indicate this by...", "We say that...", "Notice that", "Observe that"
-      if (/^(we (indicate|say|denote|write|call|define this as|note|observe|recall|have seen)|notice that|observe that|it follows that|this means that|here we|in other words)\b/i.test(text.trimStart().toLowerCase())) return true;
-      // Worked-example labels — structural headers, not core ideas
       if (/^(example|solution|problem|exercise)\s*[\d.:)]*\s*$/i.test(trimmed)) return true;
       return false;
     };
+
+    // PRIORITY 0: Inferred page teaching objective.
+    // This is the "what is this page REALLY TEACHING?" answer built top-down from
+    // the heading topic + highest-confidence canonical statement from normalization.
+    // It is the most trustworthy source because it bypasses sentence ranking entirely.
+    const pageObjText = pageObjective?.teachingStatement;
+    if (pageObjText && pageObjText.length >= 25 && !isExampleAnchor(pageObjText)) return pageObjText;
+
+    // PRIORITY 0.5: normResult.coreIdea from canonical-statement scoring.
+    // normalizeClinicalText independently scores and ranks statements; its coreIdea
+    // reflects the highest-confidence definition/rule on the page.
+    const normCoreIdea =
+      (normResult as unknown as { coreIdea?: string | null }).coreIdea ?? null;
+    if (normCoreIdea && normCoreIdea.length >= 30 && !isExampleAnchor(normCoreIdea)) return normCoreIdea;
+
+    // PRIORITY 1: page.pageSummary (AI-generated)
+    if (normalizedSummary && normalizedSummary.length >= 30 && !isExampleAnchor(normalizedSummary)) {
+      return normalizedSummary;
+    }
+
+    // PRIORITY 2+: concept anchors — definition → mechanism → chiefSignal → top non-example.
 
     const definitionConcept = concepts.find(
       (c) => c.conceptRole === "definition" && !isExampleAnchor(c.anchorSentence)

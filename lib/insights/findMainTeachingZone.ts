@@ -53,6 +53,14 @@ export function findMainTeachingZone(
     // definition scores ~0.35–0.55. Raising to +0.45 closes the gap.
     const firstSentence = text.slice(0, 180);
     const isDefinitionLead = /\b(?:is\s+(?:a|an|the|defined|classified|known)|defined\s+as|refers?\s+to|is\s+known\s+as)\b/i.test(firstSentence);
+    // Named-substance instance sentences must NOT get the definition-lead bonus.
+    // "Iodine is the trace element that..." satisfies isDefinitionLead syntactically but
+    // defines iodine (an example), not the page concept. Giving it +0.45 causes it to
+    // outrank the actual teaching paragraphs ("Matter consists of elements...").
+    const isNamedSubstanceExample =
+      /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+is (a|an|the) (trace|essential|major|minor|macro|micro|most abundant|only)?\s*(element|mineral|compound|ion|vitamin|electrolyte|metalloid|halogen|nutrient)\b/i.test(firstSentence) ||
+      /^[A-Z][a-z]{1,15}(?:\s*\([A-Za-z0-9₀-₉²³+\-]+\))?\s+is (the |a |an )?(most|least|only|found|abundant|present|common|approximately|often|mainly|primarily|widely|highly|extremely)\b/i.test(firstSentence);
+    const definitionLeadBonus = isDefinitionLead && !isNamedSubstanceExample ? 0.45 : 0;
     // Comparison-type penalty: "comparison" paragraphs are trap-adjacent (they contrast/distinguish
     // concepts) and should not outrank primary definition/mechanism paragraphs.
     const isComparisonType = p.paragraphType === "comparison";
@@ -71,7 +79,7 @@ export function findMainTeachingZone(
       Math.max(0, numeric.semanticScore ?? 0) * 0.15 +
       (isFormula && isMathPage ? 0.22 : 0) +
       (isMathExplain && isMathPage ? 0.16 : 0) +
-      (isDefinitionLead ? 0.45 : 0) +
+      definitionLeadBonus +
       (isComparisonType ? -0.15 : 0) +
       positionBonus;
     return { p, index, text, isFormula, isMathExplain, zoneScore };
