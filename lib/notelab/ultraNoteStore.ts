@@ -32,6 +32,7 @@ export interface UltraNoteConcept {
 export interface UltraNote {
   id: string;
   bookId: string;
+  bookTitle?: string;
   pageNumber: number;
   topic: string;
   coreIdea: string;
@@ -94,7 +95,8 @@ export function buildUltraNote(
   pageNumber: number,
   topic: string,
   coreIdea: string,
-  concepts: UltraNoteConcept[]
+  concepts: UltraNoteConcept[],
+  bookTitle?: string
 ): UltraNote {
   const memoryShortcuts = concepts
     .filter((c) => c.rule && c.rule.length > 10)
@@ -104,6 +106,7 @@ export function buildUltraNote(
   return {
     id: `note-${bookId}-p${pageNumber}-${Date.now()}`,
     bookId,
+    bookTitle: bookTitle || undefined,
     pageNumber,
     topic,
     coreIdea,

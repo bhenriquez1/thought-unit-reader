@@ -150,8 +150,8 @@ export function extractPriorityHighlights({
   pageStory,
   narrativePageView,
   maxMain = 2,
-  maxSupport = 4,
-  maxWeak = 2,
+  maxSupport = 3,
+  maxWeak = 1,
   mergeWindowChars = 220,
 }: ExtractPriorityHighlightsInput): ExtractPriorityHighlightsResult {
   // Build a paragraph index from the page text for paragraph-level span anchoring.
