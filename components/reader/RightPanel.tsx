@@ -31,7 +31,7 @@ interface RightPanelProps {
   focusedEvidenceId?: string | null;
   onRoleLabelMap?: (map: Map<string, string>) => void;
   onNoteSaved?: () => void;
-  onStudySetGenerated?: () => void;
+  onStudySetGenerated?: (setId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -433,6 +433,7 @@ export function RightPanel({
               <GenerateStudySetButton
                 view={displayView}
                 bookId={ctx?.documentId ?? ""}
+                bookTitle={ctx?.documentTitle}
                 pageNumber={ctx?.pageNumber ?? 0}
                 onStudySetGenerated={onStudySetGenerated}
               />
@@ -1592,29 +1593,36 @@ function GenerateNoteButton({
 function GenerateStudySetButton({
   view,
   bookId,
+  bookTitle,
   pageNumber,
   onStudySetGenerated,
 }: {
   view: UltraPageView;
   bookId: string;
+  bookTitle?: string;
   pageNumber: number;
-  onStudySetGenerated?: () => void;
+  onStudySetGenerated?: (setId: string) => void;
 }) {
   const [saved, setSaved] = useState(false);
 
   function handleGenerate() {
-    const set = buildRecallSetFromView(view, bookId, pageNumber);
+    const set = buildRecallSetFromView(view, bookId, pageNumber, {
+      bookTitle,
+      sourceLabel: "right-panel",
+    });
     saveRecallSet(set);
     console.log("[TRACE NOTE_WIRING]", {
       source: "rightPanelGenerateStudySet",
       bookId,
+      bookTitle,
       pageNumber,
+      setId: set.id,
       topic: set.topic,
       cardCount: set.cards.length,
       subject: set.subject,
     });
     setSaved(true);
-    onStudySetGenerated?.();
+    onStudySetGenerated?.(set.id);
     setTimeout(() => setSaved(false), 2200);
   }
 

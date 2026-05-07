@@ -420,6 +420,7 @@ export default function ThoughtUnitReader() {
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
   const [recallLabRefreshKey, setRecallLabRefreshKey] = useState(0);
+  const [lastRecallSetId, setLastRecallSetId] = useState<string | null>(null);
   const [focusSnippet, setFocusSnippet] = useState<string | null>(null);
   const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
   const [guidedPath, setGuidedPath] = useState<RenderGuidedReadingPathResult | null>(null);
@@ -2731,7 +2732,7 @@ export default function ThoughtUnitReader() {
                 resolveEvidenceId={resolveEvidenceId}
                 focusedEvidenceId={focusedEvidenceId}
                 onNoteSaved={() => setNoteLabRefreshKey((k) => k + 1)}
-                onStudySetGenerated={() => { setRecallLabRefreshKey((k) => k + 1); trySwitchShellTab("study", "study"); }}
+                onStudySetGenerated={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey((k) => k + 1); trySwitchShellTab("study", "study"); }}
                 onEvidenceClick={(snippet, evidenceId) => {
                   setFocusSnippet(null);
                   setFocusedEvidenceId(evidenceId || resolveEvidenceId(snippet) || null);
@@ -2769,7 +2770,7 @@ export default function ThoughtUnitReader() {
                 syncToPage(page);
                 trySwitchShellTab("reader", "reader");
               }}
-              onCardsGenerated={() => { setRecallLabRefreshKey((k) => k + 1); trySwitchShellTab("study", "study"); }}
+              onCardsGenerated={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey((k) => k + 1); trySwitchShellTab("study", "study"); }}
             />
           </div>
         </div>
@@ -2843,8 +2844,8 @@ export default function ThoughtUnitReader() {
           </div>
           <div className="flex-1 overflow-y-auto">
             <RecallLab
-              bookId={bookId}
               refreshKey={recallLabRefreshKey}
+              lastSetId={lastRecallSetId ?? undefined}
               onNavigateToPage={(page) => {
                 syncToPage(page);
                 trySwitchShellTab("reader", "reader");
