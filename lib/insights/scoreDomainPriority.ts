@@ -51,6 +51,17 @@ function scoreOne(c: ClinicalPriorityCandidate, domain: PageDomain): DomainPrior
       break;
     }
     case "science": {
+      // Named-substance examples must not outscore the conceptual rule they illustrate.
+      // "Iodine is the trace element that..." defines iodine (an example), not the page topic.
+      // "Water (H2O) is the most abundant compound..." is an observational fact, not a rule.
+      // These would otherwise match the definition regex below and get a +0.32 boost.
+      const isNamedSubstanceExample =
+        /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+is (a|an|the) (trace|essential|major|minor|macro|micro|most abundant|only)?\s*(element|mineral|compound|ion|vitamin|electrolyte|metalloid|halogen|nutrient)\b/.test(text) ||
+        /^[A-Z][a-z]{1,15}(?:\s*\([A-Za-z0-9₀-₉²³+\-]+\))?\s+is (the |a |an )?(most|least|only|found|abundant|present|common|mainly|primarily|widely|highly|extremely)\b/.test(text) ||
+        /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+(deficiency|toxicity|poisoning|overdose|exposure)\b/.test(text);
+      if (isNamedSubstanceExample) {
+        score -= 0.08; role = "support"; slot = "support"; break;
+      }
       if (/\bis defined as\b|\brefers? to\b|\bmeans?\b|\bis called\b|\bconsists? of\b|\bcharacterized by\b|\bis the \w+ of\b|\bis an? \w+ (that|which)\b/.test(lower)) {
         score += 0.32; role = "definition"; slot = "pattern";
       } else if (/\bleads? to\b|\bcauses?\b|\bresults? in\b|\bbecause\b|\btherefore\b|\bthus\b|\bconsequently\b/.test(lower)) {
