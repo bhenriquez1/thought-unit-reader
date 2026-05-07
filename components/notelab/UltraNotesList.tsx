@@ -135,7 +135,9 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
                       onClick={() => toggleBook(bookKey)}
                     >
                       <span style={{ fontSize: 12 }}>📖</span>
-                      <span style={{ flex: 1, fontSize: 11, color: "rgba(148,163,184,0.8)", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{bookLabel}</span>
+                      <span style={{ flex: 1, fontSize: 11, color: "rgba(148,163,184,0.8)", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {bookNotes[0]?.bookTitle || bookLabel}
+                      </span>
                       <span style={{ fontSize: 10, color: "rgba(148,163,184,0.4)" }}>{isBookCollapsed ? "▶" : "▼"}</span>
                     </div>
                   )}

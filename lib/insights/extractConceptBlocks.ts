@@ -217,7 +217,8 @@ function classifyConceptRole(anchorText: string, supportTexts: string[], paragra
   //   Pattern 1: "[Substance] deficiency/toxicity/overdose/exposure ..."
   //   Pattern 2: "[Substance] is a trace element / mineral / vitamin / toxin ..."
   const NAMED_DEFICIENCY_RE = /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+(deficiency|toxicity|poisoning|overdose|exposure)\b/;
-  const NAMED_SUBSTANCE_CATEGORY_RE = /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+is (a|an) (trace element|essential element|mineral|vitamin|toxin|metalloid|halogen|noble gas|micro[nN]utrient)\b/i;
+  // "is (a|an|the)" — extended from original "is (a|an)" to catch "Iodine is the trace element that..."
+  const NAMED_SUBSTANCE_CATEGORY_RE = /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+is (a|an|the) (trace|essential|major|minor|macro|micro|most abundant|only|primarily)?\s*(element|mineral|compound|ion|vitamin|electrolyte|metalloid|halogen|nutrient|toxin|noble gas|micro[nN]utrient)\b/i;
   if (NAMED_DEFICIENCY_RE.test(anchorTrimmed) || NAMED_SUBSTANCE_CATEGORY_RE.test(anchorTrimmed)) return "example";
 
   // Named molecule/element with an observational/abundance fact is NOT a structural definition.

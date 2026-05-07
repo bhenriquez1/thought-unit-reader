@@ -426,6 +426,7 @@ export function RightPanel({
               <GenerateNoteButton
                 view={displayView}
                 bookId={ctx?.documentId ?? ""}
+                bookTitle={ctx?.documentTitle}
                 pageNumber={ctx?.pageNumber ?? 0}
                 onNoteSaved={onNoteSaved}
               />
@@ -1518,11 +1519,13 @@ function buildSentenceCandidatesFromPageModel(pageModel: any, pageNumber: number
 function GenerateNoteButton({
   view,
   bookId,
+  bookTitle,
   pageNumber,
   onNoteSaved,
 }: {
   view: UltraPageView;
   bookId: string;
+  bookTitle?: string;
   pageNumber: number;
   onNoteSaved?: () => void;
 }) {
@@ -1534,6 +1537,7 @@ function GenerateNoteButton({
     const conceptTitles = view.blocks.map((b) => b.title);
     console.log("[TRACE NOTE_WIRING]", {
       bookId,
+      bookTitle,
       currentPage: pageNumber,
       notePage: pageNumber,
       topic,
@@ -1553,7 +1557,8 @@ function GenerateNoteButton({
         surgicalReason: b.surgicalReason,
         trap: b.trap,
         rule: b.rule,
-      }))
+      })),
+      bookTitle
     );
     saveUltraNote(note);
     setSaved(true);

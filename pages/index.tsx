@@ -2731,7 +2731,7 @@ export default function ThoughtUnitReader() {
                 resolveEvidenceId={resolveEvidenceId}
                 focusedEvidenceId={focusedEvidenceId}
                 onNoteSaved={() => setNoteLabRefreshKey((k) => k + 1)}
-                onStudySetGenerated={() => setRecallLabRefreshKey((k) => k + 1)}
+                onStudySetGenerated={() => { setRecallLabRefreshKey((k) => k + 1); trySwitchShellTab("study", "study"); }}
                 onEvidenceClick={(snippet, evidenceId) => {
                   setFocusSnippet(null);
                   setFocusedEvidenceId(evidenceId || resolveEvidenceId(snippet) || null);
@@ -2769,7 +2769,7 @@ export default function ThoughtUnitReader() {
                 syncToPage(page);
                 trySwitchShellTab("reader", "reader");
               }}
-              onCardsGenerated={() => setRecallLabRefreshKey((k) => k + 1)}
+              onCardsGenerated={() => { setRecallLabRefreshKey((k) => k + 1); trySwitchShellTab("study", "study"); }}
             />
           </div>
         </div>

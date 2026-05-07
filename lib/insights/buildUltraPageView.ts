@@ -514,14 +514,35 @@ export function buildUltraPageView(
   })();
 
   const summaryFallback = (() => {
-    if (normalizedSummary && normalizedSummary.length >= 30) return normalizedSummary;
+    // Only use pageSummary if it's not itself an example sentence
+    if (normalizedSummary && normalizedSummary.length >= 30) {
+      const isExSummary = (text: string) =>
+        /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+(deficiency|toxicity|poisoning|overdose|exposure)\b/.test(text.trim()) ||
+        /\b(goiter|rickets|scurvy|pellagra|beriberi)\b/i.test(text) ||
+        /^(for example,?|for instance,?)/i.test(text.trimStart()) ||
+        /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+is (a|an|the) (trace|essential|major|minor|macro|micro|most abundant)\s*(element|mineral|compound|ion|vitamin)\b/i.test(text.trim());
+      if (!isExSummary(normalizedSummary)) return normalizedSummary;
+    }
 
     // Core idea priority: definition → mechanism → chiefSignal → top non-example.
     // Section heading text belongs in the TITLE (inferPageTitle), not the core idea.
-    const isExampleAnchor = (text: string) =>
-      /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+(deficiency|toxicity|poisoning|overdose|exposure)\b/.test(text) ||
-      /\b(for example|for instance|such as|e\.g\.|goiter|rickets|scurvy|pellagra)\b/i.test(text) ||
-      /^(for example,?|for instance,?|to illustrate,?|consider )/i.test(text.trimStart());
+    const isExampleAnchor = (text: string) => {
+      const trimmed = text.trim();
+      // Named deficiency/toxicity
+      if (/^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+(deficiency|toxicity|poisoning|overdose|exposure)\b/.test(trimmed)) return true;
+      // Named disease used as illustration
+      if (/\b(goiter|rickets|scurvy|pellagra|beriberi|kwashiorkor|marasmus|cretinism)\b/i.test(trimmed)) return true;
+      // Explicit example openers
+      if (/\b(for example|for instance|such as|e\.g\.)\b/i.test(trimmed)) return true;
+      if (/^(for example,?|for instance,?|to illustrate,?|consider )/i.test(text.trimStart())) return true;
+      // Named element/mineral/compound acting as a category instance — "Iodine is the trace element that..."
+      if (/^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+is (a|an|the) (trace|essential|major|minor|macro|micro|most abundant|only|primarily)?\s*(element|mineral|compound|ion|vitamin|electrolyte|metalloid|halogen|nutrient|toxin)\b/i.test(trimmed)) return true;
+      // Named molecule with observational/abundance fact — "Water is the most abundant compound..."
+      if (/^[A-Z][a-z]{1,15}(?:\s*\([A-Za-z0-9₀-₉²³+\-]+\))?\s+is (the |a |an )?(most|least|only|found|abundant|present|common|approximately|often|mainly|primarily|widely|highly|extremely)\b/i.test(trimmed)) return true;
+      // Math filler — "We indicate this by...", "We say that...", "Notice that", "Observe that"
+      if (/^(we (indicate|say|denote|write|call|define this as)|notice that|observe that|it follows that|this means that)\b/i.test(text.trimStart().toLowerCase())) return true;
+      return false;
+    };
 
     const definitionConcept = concepts.find(
       (c) => c.conceptRole === "definition" && !isExampleAnchor(c.anchorSentence)
