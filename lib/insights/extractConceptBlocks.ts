@@ -137,6 +137,18 @@ function sentenceScore(sentence: SourceSentence): number {
   if (/\b(goiter|rickets|scurvy|pellagra|beriberi|kwashiorkor|marasmus|cretinism)\b/i.test(cleaned)) score -= 3;
   // Case-study / interview / profile framing — never a core concept anchor.
   if (/\b(case study|case report|clinical case|interview|profile of|spotlight:|patient story)\b/i.test(cleaned)) score -= 5;
+  // Math/prose filler openers — high word count but zero informational density.
+  // "We indicate this by saying", "In other words", "Notice that", "Here we investigate"
+  // score high on generic heuristics but carry no mathematical content.
+  if (/^(we (indicate|say|note|see|observe|call|denote|write|have seen|recall that|use the fact|now turn|now consider)\b|in other words,?|notice that\b|observe that\b|here we (investigate|study|consider|explore|look at|turn|examine)\b|the first few terms\b|we now\b|we have (seen|shown|established)\b|it (is|can be) (shown|seen|noted|verified)\b|this (gives|shows|yields|follows)\b|recall (that\b|from\b))/i.test(cleaned.trimStart())) score -= 8;
+  // Worked-example / solution header lines — structural labels, never anchor sentences.
+  if (/^(example\s*[\d.:)]*\s*$|solution[.:]?\s*$|problem\s*[\d.:)]*\s*$|exercise\s*[\d.:)]*\s*$)/i.test(cleaned.trim())) score -= 10;
+  // Math definitional/convergence signals — highest educational value sentences on a math page.
+  if (/\b(is (called|defined as|said to be)|converges? (to|toward)|has (a |no )?limit|limit (exists?|does not exist)|does not converge|diverges?\b|approaches? (a |the )?(value|limit|number|zero)|sequence (converges?|has a|does not))\b/i.test(cleaned)) score += 4;
+  // Explicit section labels that always carry the page's teaching content.
+  if (/^(definition\b|theorem\b|lemma\b|corollary\b|proposition\b)/i.test(cleaned.trimStart())) score += 5;
+  // lim notation with explicit target — definitional formula worth high score.
+  if (/\blim\b.*[=→].*[0-9L∞]|[=→]\s*[0-9L∞]\s*$|n\s*→\s*[∞0-9]/i.test(cleaned)) score += 3;
   return score;
 }
 
@@ -242,6 +254,14 @@ function classifyConceptRole(anchorText: string, supportTexts: string[], paragra
   // Variation / contrast / exception
   if (/\b(unlike|however|in contrast|whereas|although|despite|rather than|on the other hand|except)\b/.test(lower)) return "variation";
   if (/\b(not all|not every|does not|cannot|different from|differs from|distinguished from)\b/.test(lower)) return "variation";
+
+  // Math filler openers — must be checked BEFORE formula detection because a sentence like
+  // "We indicate this by saying lim n→∞ aₙ = L" contains "lim" which would otherwise fire
+  // the formula check below and return "definition". Filler carriers no teaching content.
+  const MATH_FILLER_OPENER_RE = /^(we (indicate|say|note|observe|denote|call|define this as|write|have seen|recall that)|in other words,?|notice that\b|observe that\b|it (is|can be) (shown|seen|noted|verified)\b|here we\b|this (gives|shows|yields|follows)\b|recall (that|from)\b)/i;
+  if (MATH_FILLER_OPENER_RE.test(lower.trimStart())) return "detail";
+  // Worked-example / solution structural labels — never a definition.
+  if (/^(example|solution|problem|exercise)\s*[\d.:)]*\s*$/i.test(anchorTrimmed)) return "example";
 
   // Formula: mathematical relationship — definitional in math context (checked before measurement)
   if (/[=∫∂∑]|lim\b|d\/d[xt]|\\frac|\bintegral\b|\bderivative\b/i.test(anchorText)) return "definition";

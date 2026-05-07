@@ -64,17 +64,33 @@ function scoreOne(c: ClinicalPriorityCandidate, domain: PageDomain): DomainPrior
       break;
     }
     case "math": {
-      // Prefer formula-like text (=, calculus operators, or explicit formula vocabulary)
+      // Math filler — "We indicate this by...", "In other words...", "Notice that..." etc.
+      // These carry no mathematical content and must be suppressed before any other scoring.
+      const isMathFiller = /^(we (indicate|say|note|see|observe|call|denote|write|have seen|recall that)|in other words,?|notice that\b|observe that\b|here we\b|it (is|can be) (shown|seen|noted)\b|this (gives|shows|yields)\b|recall (that|from)\b)/i.test(lower.trimStart());
+      if (isMathFiller) {
+        score -= 0.25; role = "filler"; slot = "support"; break;
+      }
+
+      // Convergence / limit definition language — highest priority on math pages.
+      // "A sequence has a limit when its terms approach a fixed value" is the core idea.
+      const isMathDefinition = /\b(is (called|defined as|said to be)|converges? (to|toward)|has (a |no )?limit\b|limit (exists?|does not exist)|does not converge\b|diverges?\b|approaches? (a |the )?(value|limit|number|zero|fixed)\b|sequence (converges?|has a|does not))\b/i.test(lower);
       const isMathFormula = /[=∫∂∑]|lim\b|d\/d[xt]|\bintegral\b|\bderivative\b|\btheorem\b/i.test(text)
         && /[a-zA-Z0-9]/.test(text.replace(/\s/g, ""));
-      if (isMathFormula) {
-        score += 0.36; role = "formula"; slot = "pattern";
-      } else if (/\bequals?\b|\brepresents?\b|\bthis means\b|\bwhere\b|\bdefined as\b/.test(lower)) {
+
+      if (isMathDefinition) {
+        score += 0.42; role = "definition"; slot = "pattern";
+      } else if (isMathFormula) {
+        score += 0.34; role = "formula"; slot = "pattern";
+      } else if (/\bequals?\b|\brepresents?\b|\bthis means\b|\bwhere\b|\bdefined as\b|\binterpret\b/.test(lower)) {
         score += 0.24; role = "interpretation"; slot = "reason";
       } else if (/\bif\b.*\bthen\b|\bgiven that\b|\bprovided\b|\bfor all\b|\bwhenever\b/.test(lower)) {
         score += 0.22; role = "condition"; slot = "rule";
       }
-      if (/\bdo not\b|\bavoid\b|\bcommon mistake\b|\bconfuse\b|\bnot the same\b/.test(lower)) {
+
+      // Divergence / oscillation / non-existence — valuable contrast/trap content
+      if (/\b(oscillates?\b|does not (exist|converge)\b|no limit\b|diverges?\b|alternates?\b|(-1)\^n\b)\b/i.test(lower)) {
+        score += 0.30; role = "trap"; slot = "trap";
+      } else if (/\bdo not\b|\bavoid\b|\bcommon mistake\b|\bconfuse\b|\bnot the same\b/.test(lower)) {
         score += 0.22; role = "common_mistake"; slot = "trap";
       }
       break;

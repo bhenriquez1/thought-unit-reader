@@ -505,8 +505,18 @@ export function buildUltraPageView(
     const ranked = scoreDomainPriority(allCandidates, domain);
     // For math: prefer formula + interpretation; for others: prefer "pattern" slot
     if (domain === "math") {
-      const formula = ranked.find((s) => s.slot === "pattern" && s.text.length >= 10);
-      const interp  = ranked.find((s) => s.slot === "reason"  && s.text.length >= 20 && s.text !== formula?.text);
+      // Prefer a definition-role sentence (convergence/limit language) as the primary signal.
+      // Only fall back to a bare formula if no definition sentence exists.
+      const defn = ranked.find((s) => s.role === "definition" && s.text.length >= 20);
+      const formula = ranked.find((s) => s.role === "formula" && s.text.length >= 10);
+      const interp  = ranked.find((s) => s.slot === "reason" && s.text.length >= 20 && s.text !== defn?.text && s.text !== formula?.text);
+      if (defn) {
+        // Optionally blend with a complementary formula for richness
+        if (formula && !defn.text.includes(formula.text.slice(0, 10)) && defn.text.length + formula.text.length <= 220) {
+          return `${defn.text} (${formula.text})`;
+        }
+        return defn.text;
+      }
       if (formula && interp) return `${formula.text}: ${interp.text.toLowerCase().replace(/[.!?]+$/, "")}`;
       return formula?.text ?? null;
     }
@@ -516,11 +526,18 @@ export function buildUltraPageView(
   const summaryFallback = (() => {
     // Only use pageSummary if it's not itself an example sentence
     if (normalizedSummary && normalizedSummary.length >= 30) {
-      const isExSummary = (text: string) =>
-        /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+(deficiency|toxicity|poisoning|overdose|exposure)\b/.test(text.trim()) ||
-        /\b(goiter|rickets|scurvy|pellagra|beriberi)\b/i.test(text) ||
-        /^(for example,?|for instance,?)/i.test(text.trimStart()) ||
-        /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+is (a|an|the) (trace|essential|major|minor|macro|micro|most abundant)\s*(element|mineral|compound|ion|vitamin)\b/i.test(text.trim());
+      const isExSummary = (text: string) => {
+        const t = text.trim();
+        if (/^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+(deficiency|toxicity|poisoning|overdose|exposure)\b/.test(t)) return true;
+        if (/\b(goiter|rickets|scurvy|pellagra|beriberi)\b/i.test(t)) return true;
+        if (/^(for example,?|for instance,?)/i.test(text.trimStart())) return true;
+        if (/^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+is (a|an|the) (trace|essential|major|minor|macro|micro|most abundant)\s*(element|mineral|compound|ion|vitamin)\b/i.test(t)) return true;
+        // Math filler — never usable as a core idea
+        if (/^(we (indicate|say|note|observe|denote|call|write|have seen)|in other words,?|notice that\b|observe that\b|here we\b|it (is|can be) (shown|seen)\b|this (gives|shows|yields)\b|recall (that|from)\b)/i.test(text.trimStart())) return true;
+        // Generic template fallback that slipped through
+        if (/^this page (develops|introduces|covers|presents|explains)\b/i.test(t)) return true;
+        return false;
+      };
       if (!isExSummary(normalizedSummary)) return normalizedSummary;
     }
 
@@ -540,7 +557,9 @@ export function buildUltraPageView(
       // Named molecule with observational/abundance fact — "Water is the most abundant compound..."
       if (/^[A-Z][a-z]{1,15}(?:\s*\([A-Za-z0-9₀-₉²³+\-]+\))?\s+is (the |a |an )?(most|least|only|found|abundant|present|common|approximately|often|mainly|primarily|widely|highly|extremely)\b/i.test(trimmed)) return true;
       // Math filler — "We indicate this by...", "We say that...", "Notice that", "Observe that"
-      if (/^(we (indicate|say|denote|write|call|define this as)|notice that|observe that|it follows that|this means that)\b/i.test(text.trimStart().toLowerCase())) return true;
+      if (/^(we (indicate|say|denote|write|call|define this as|note|observe|recall|have seen)|notice that|observe that|it follows that|this means that|here we|in other words)\b/i.test(text.trimStart().toLowerCase())) return true;
+      // Worked-example labels — structural headers, not core ideas
+      if (/^(example|solution|problem|exercise)\s*[\d.:)]*\s*$/i.test(trimmed)) return true;
       return false;
     };
 
