@@ -10,6 +10,7 @@ import { cleanSentence } from "./sentenceCleanup";
 import { isRenderableSentence } from "./isRenderableSentence";
 import {
   extractConceptBlocks,
+  ROLE_PRIORITY,
   type ConceptBlockInput,
   type PageModelForConcepts,
   type SourceSentence,
@@ -52,6 +53,7 @@ export interface UltraConceptBlock {
   trap: string;
   rule: string;
   importance: string;
+  conceptRole?: string;
 }
 
 export interface UltraPageViewStep {
@@ -305,6 +307,15 @@ interface BuiltFields {
 // ---------------------------------------------------------------------------
 // Post-extraction quality gate
 // ---------------------------------------------------------------------------
+
+function enforceEducationalHierarchy(concepts: ConceptBlockInput[]): ConceptBlockInput[] {
+  return [...concepts].sort((a, b) => {
+    const pa = ROLE_PRIORITY[a.conceptRole ?? "detail"] ?? 0;
+    const pb = ROLE_PRIORITY[b.conceptRole ?? "detail"] ?? 0;
+    if (pa !== pb) return pb - pa;
+    return (b.score ?? 0) - (a.score ?? 0);
+  });
+}
 
 function passesConceptQualityGate(
   concept: ConceptBlockInput,
@@ -690,6 +701,10 @@ export function buildUltraPageView(
   // before they enter the right panel. Applied after all fallback paths complete.
   concepts = concepts.filter((c) => passesConceptQualityGate(c, pageObjective, domain));
 
+  // Enforce educational hierarchy: sort by ROLE_PRIORITY descending so that
+  // theorem/definition/mechanism always lead, and example/detail never anchor the list.
+  concepts = enforceEducationalHierarchy(concepts);
+
   console.log("[TRACE buildUltraPageView:concepts]", { conceptCount: concepts.length, returnNull: concepts.length === 0 });
   if (!concepts.length) return null;
 
@@ -800,6 +815,7 @@ export function buildUltraPageView(
       title: c.title,
       ...fields,
       importance: importanceLabel(c.importance),
+      conceptRole: c.conceptRole,
     };
   });
 
@@ -939,13 +955,38 @@ export function buildUltraPageView(
   });
 
   // Apply teaching synthesis when available.
-  // Synthesis fields take highest priority: they are LLM-reasoned abstractions
-  // that supersede heuristic sentence ranking. Concept fields are overlaid per-index
-  // so block structure (conceptId, ordinal, title) is preserved.
+  // Synthesis is the LLM-reasoned professor layer — it supersedes heuristic outputs.
+  // Page-level fields (coreIdea, mechanism, trap, application) replace heuristic equivalents.
+  // Per-concept fields overlay matching blocks by index, preserving structure.
   const synthesis = options?.teachingSynthesis;
+
   const finalCoreIdea = synthesis?.coreIdea && synthesis.coreIdea.length >= 20
     ? synthesis.coreIdea
     : coreIdea;
+
+  // Page-level synthesis fields fed into compression rules
+  const synthesisMechanism = synthesis?.mechanism?.trim() || null;
+  const synthesisRule      = synthesis?.rule?.trim()      || null;
+  const synthesisTrap      = synthesis?.trap?.trim()      || null;
+  const synthesisApp       = synthesis?.application?.trim() || null;
+  const synthesisReasoningFlow = synthesis?.reasoningFlow?.trim() || null;
+
+  const finalCompression = (() => {
+    if (!synthesis) return compression;
+    const extras: string[] = [];
+    if (synthesisMechanism) extras.push(`How: ${synthesisMechanism}`);
+    if (synthesisRule)      extras.push(`Rule: ${synthesisRule}`);
+    if (synthesisTrap)      extras.push(`Trap: ${synthesisTrap}`);
+    if (synthesisApp)       extras.push(`Apply: ${synthesisApp}`);
+    if (synthesisReasoningFlow) extras.push(`Flow: ${synthesisReasoningFlow}`);
+    // Merge synthesis extras with heuristic rules; synthesis takes first positions
+    return [...extras, ...compression].slice(0, 5);
+  })();
+
+  const finalMiniTest = (() => {
+    if (synthesis?.miniTests?.length) return synthesis.miniTests.slice(0, 5);
+    return miniTest;
+  })();
 
   const finalBlocks = synthesis?.concepts?.length
     ? blocks.map((b, i) => {
@@ -953,10 +994,10 @@ export function buildUltraPageView(
         if (!sc) return b;
         return {
           ...b,
-          pattern:        sc.principle?.trim()   || b.pattern,
-          surgicalReason: sc.mechanism?.trim()   || b.surgicalReason,
-          trap:           sc.trap?.trim()        ?? b.trap,
-          rule:           sc.rule?.trim()        || b.rule,
+          pattern:        sc.principle?.trim()  || b.pattern,
+          surgicalReason: sc.mechanism?.trim()  || b.surgicalReason,
+          trap:           sc.trap?.trim()       ?? b.trap,
+          rule:           sc.rule?.trim()       || b.rule,
         };
       })
     : blocks;
@@ -966,8 +1007,8 @@ export function buildUltraPageView(
     subtitle: "STR + PDRM + Surgical Comprehension Engine",
     coreIdea: finalCoreIdea,
     blocks: finalBlocks,
-    miniTest,
-    compression,
+    miniTest: finalMiniTest,
+    compression: finalCompression,
     steps,
     _debug,
   };

@@ -227,13 +227,14 @@ export function RightPanel({
   // blocks are ready. Returns null until complete; triggers re-render when done.
   const teachingSynthesis = useTeachingSynthesis({
     pageTruthKey,
-    pageModel,
+    pageObjective: ultraPageView?.coreIdea,
     domain: (ultraPageView?._debug?.domain) ?? null,
     blocks: ultraPageView?.blocks ?? [],
     enabled: isCurrentPageModel && !!ultraPageView,
   });
 
   // Apply teaching synthesis over heuristic view without re-running the pipeline.
+  // Synthesis is the professor layer — it supersedes heuristic sentence extraction.
   const ultraPageViewWithSynthesis = useMemo((): UltraPageView | null => {
     if (!ultraPageView) return null;
     if (!teachingSynthesis) return ultraPageView;
@@ -242,6 +243,7 @@ export function RightPanel({
       ? teachingSynthesis.coreIdea
       : ultraPageView.coreIdea;
 
+    // Per-concept overlay: synthesis rewrites principle/mechanism/trap/rule
     const finalBlocks = teachingSynthesis.concepts?.length
       ? ultraPageView.blocks.map((b, i) => {
           const sc = teachingSynthesis.concepts[i];
@@ -256,7 +258,30 @@ export function RightPanel({
         })
       : ultraPageView.blocks;
 
-    return { ...ultraPageView, coreIdea: finalCoreIdea, blocks: finalBlocks };
+    // Page-level synthesis fields — prepend to compression so professor reasoning is visible
+    const synthesisLines: string[] = [];
+    if (teachingSynthesis.mechanism?.trim())    synthesisLines.push(`How: ${teachingSynthesis.mechanism.trim()}`);
+    if (teachingSynthesis.rule?.trim())         synthesisLines.push(`Rule: ${teachingSynthesis.rule.trim()}`);
+    if (teachingSynthesis.trap?.trim())         synthesisLines.push(`Trap: ${teachingSynthesis.trap.trim()}`);
+    if (teachingSynthesis.application?.trim())  synthesisLines.push(`Apply: ${teachingSynthesis.application.trim()}`);
+    if (teachingSynthesis.reasoningFlow?.trim()) synthesisLines.push(`Flow: ${teachingSynthesis.reasoningFlow.trim()}`);
+
+    const finalCompression = synthesisLines.length
+      ? [...synthesisLines, ...ultraPageView.compression].slice(0, 5)
+      : ultraPageView.compression;
+
+    // Mini-tests: prefer synthesis questions (domain-specific) over heuristic templates
+    const finalMiniTest = teachingSynthesis.miniTests?.length
+      ? teachingSynthesis.miniTests.slice(0, 5)
+      : ultraPageView.miniTest;
+
+    return {
+      ...ultraPageView,
+      coreIdea: finalCoreIdea,
+      blocks: finalBlocks,
+      compression: finalCompression,
+      miniTest: finalMiniTest,
+    };
   }, [ultraPageView, teachingSynthesis]);
 
   // Re-sort blocks to match badge order (left page physical position order).
