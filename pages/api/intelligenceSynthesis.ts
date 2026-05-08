@@ -1,6 +1,7 @@
 // pages/api/intelligenceSynthesis.ts
-// Educational interpretation endpoint.
-// Uses OpenAI Responses API with Zod structured outputs for reliable JSON.
+// Educational Interpretation Engine — professor layer.
+// Receives structured concept data; returns LLM-reasoned educational output.
+// Uses OpenAI Responses API + Zod structured outputs for schema-enforced JSON.
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
@@ -9,10 +10,9 @@ import {
   buildSystemPrompt,
   buildUserPrompt,
   TeachingSynthesisSchema,
+  type SynthesisInput,
 } from "@/lib/insights/synthesizeTeachingOutput";
-import type { TeachingSynthesis } from "@/lib/insights/synthesizeTeachingOutput";
 import type { PageDomain } from "@/lib/insights/detectPageDomain";
-import type { UltraConceptBlock } from "@/lib/insights/buildUltraPageView";
 
 const apiKey = process.env.OPENAI_API_KEY;
 const openai = new OpenAI({ apiKey });
@@ -31,44 +31,42 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
   }
 
-  const { pageText, domain, extractedConcepts } = (req.body ?? {}) as {
-    pageText?: string;
-    domain?: PageDomain;
-    extractedConcepts?: UltraConceptBlock[];
-  };
+  const body = (req.body ?? {}) as Partial<SynthesisInput>;
 
-  if (!pageText || typeof pageText !== "string" || pageText.trim().length < 30) {
-    return res.status(400).json({ error: "Missing or too-short 'pageText'." });
+  const { domain, pageObjective, rankedConcepts } = body;
+
+  if (!Array.isArray(rankedConcepts) || rankedConcepts.length === 0) {
+    return res.status(400).json({ error: "Missing or empty 'rankedConcepts'." });
   }
 
   const safeDomain: PageDomain = VALID_DOMAINS.includes(domain as PageDomain)
     ? (domain as PageDomain)
     : "general";
 
-  const safeConcepts: UltraConceptBlock[] = Array.isArray(extractedConcepts)
-    ? extractedConcepts.slice(0, 6)
-    : [];
+  const safeInput: SynthesisInput = {
+    domain: safeDomain,
+    pageObjective: typeof pageObjective === "string" ? pageObjective : undefined,
+    rankedConcepts: rankedConcepts.slice(0, 6),
+  };
 
   try {
     const response = await openai.responses.parse({
       model: "gpt-4o-mini",
       temperature: 0.3,
-      max_output_tokens: 1000,
+      max_output_tokens: 1200,
       text: { format: zodTextFormat(TeachingSynthesisSchema, "teaching_synthesis") },
       input: [
         { role: "system", content: buildSystemPrompt(safeDomain) },
-        { role: "user", content: buildUserPrompt(pageText, safeDomain, safeConcepts) },
+        { role: "user", content: buildUserPrompt(safeInput) },
       ],
     });
 
-    const synthesis: TeachingSynthesis | null = response.output_parsed;
+    const synthesis = response.output_parsed;
 
     if (!synthesis) {
       return res.status(500).json({ error: "Model returned no structured output." });
     }
 
-    // Zod validation is already applied by the Responses API parse step,
-    // but run it again to catch any unexpected shape mismatches.
     const validated = TeachingSynthesisSchema.parse(synthesis);
 
     return res.status(200).json(validated);

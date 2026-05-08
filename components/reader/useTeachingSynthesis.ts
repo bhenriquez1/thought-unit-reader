@@ -3,15 +3,14 @@
 // Returns null until synthesis completes; the caller re-renders when it resolves.
 
 import { useEffect, useRef, useState } from "react";
-import type { PageInsightModel } from "@/lib/insights/types";
 import type { PageDomain } from "@/lib/insights/detectPageDomain";
 import type { UltraConceptBlock } from "@/lib/insights/buildUltraPageView";
 import type { TeachingSynthesis } from "@/lib/insights/synthesizeTeachingOutput";
-import { synthesizeTeachingOutput } from "@/lib/insights/synthesizeTeachingOutput";
+import { synthesizeTeachingOutput, buildSynthesisInput } from "@/lib/insights/synthesizeTeachingOutput";
 
 interface UseTeachingSynthesisArgs {
   pageTruthKey: string;
-  pageModel: PageInsightModel | null;
+  pageObjective?: string;  // heading + teaching statement for the page
   domain: PageDomain | null;
   blocks: UltraConceptBlock[];
   enabled: boolean;
@@ -19,7 +18,7 @@ interface UseTeachingSynthesisArgs {
 
 export function useTeachingSynthesis({
   pageTruthKey,
-  pageModel,
+  pageObjective,
   domain,
   blocks,
   enabled,
@@ -30,25 +29,17 @@ export function useTeachingSynthesis({
   useEffect(() => {
     setSynthesis(null);
 
-    if (!enabled || !pageModel || !blocks.length) return;
+    // Require at least one block with a real pattern before calling the LLM.
+    const usableBlocks = blocks.filter((b) => b.pattern && b.pattern.length >= 20);
+    if (!enabled || !usableBlocks.length) return;
 
-    // Reconstruct page text from paragraphInsights
-    const pageText = (pageModel.paragraphInsights ?? [])
-      .map((p) => p.cleanedText || p.rawText || "")
-      .filter(Boolean)
-      .join(" ");
-
-    if (pageText.length < 60) return;
+    const safeDomain = domain ?? "general";
+    const input = buildSynthesisInput(usableBlocks, safeDomain, pageObjective);
 
     const controller = new AbortController();
     abortRef.current = controller;
 
-    synthesizeTeachingOutput(
-      pageText,
-      domain ?? "general",
-      blocks,
-      controller.signal,
-    )
+    synthesizeTeachingOutput(input, controller.signal)
       .then((result) => {
         if (!controller.signal.aborted) setSynthesis(result);
       })
