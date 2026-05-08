@@ -19,6 +19,7 @@ import { buildUltraPageView, type UltraPageView, type UltraConceptBlock } from "
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { buildUltraNote, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, saveRecallSet } from "@/lib/recalllab/recallStore";
+import { useTeachingSynthesis } from "./useTeachingSynthesis";
 
 interface RightPanelProps {
   ctx: ActivePageContext;
@@ -222,32 +223,68 @@ export function RightPanel({
   // pageTruthKey ensures mini test + compression reset immediately on page/doc change
   }, [isCurrentPageModel, pageModel, pageTruthKey, normResult]);
 
+  // Educational Interpretation Engine: fires async LLM synthesis once heuristic
+  // blocks are ready. Returns null until complete; triggers re-render when done.
+  const teachingSynthesis = useTeachingSynthesis({
+    pageTruthKey,
+    pageModel,
+    domain: (ultraPageView?._debug?.domain) ?? null,
+    blocks: ultraPageView?.blocks ?? [],
+    enabled: isCurrentPageModel && !!ultraPageView,
+  });
+
+  // Apply teaching synthesis over heuristic view without re-running the pipeline.
+  const ultraPageViewWithSynthesis = useMemo((): UltraPageView | null => {
+    if (!ultraPageView) return null;
+    if (!teachingSynthesis) return ultraPageView;
+
+    const finalCoreIdea = teachingSynthesis.coreIdea?.length >= 20
+      ? teachingSynthesis.coreIdea
+      : ultraPageView.coreIdea;
+
+    const finalBlocks = teachingSynthesis.concepts?.length
+      ? ultraPageView.blocks.map((b, i) => {
+          const sc = teachingSynthesis.concepts[i];
+          if (!sc) return b;
+          return {
+            ...b,
+            pattern:        sc.principle?.trim()  || b.pattern,
+            surgicalReason: sc.mechanism?.trim()  || b.surgicalReason,
+            trap:           sc.trap?.trim()       ?? b.trap,
+            rule:           sc.rule?.trim()       || b.rule,
+          };
+        })
+      : ultraPageView.blocks;
+
+    return { ...ultraPageView, coreIdea: finalCoreIdea, blocks: finalBlocks };
+  }, [ultraPageView, teachingSynthesis]);
+
   // Re-sort blocks to match badge order (left page physical position order).
   const displayView = useMemo((): UltraPageView | null => {
-    if (!ultraPageView) return null;
+    if (!ultraPageViewWithSynthesis) return null;
     const pageNeighborhoods = guidedPath?.neighborhoods;
-    if (!pageNeighborhoods?.length) return ultraPageView;
+    if (!pageNeighborhoods?.length) return ultraPageViewWithSynthesis;
 
-    const byConceptId = new Map(ultraPageView.blocks.map((b) => [b.conceptId, b]));
+    const byConceptId = new Map(ultraPageViewWithSynthesis.blocks.map((b) => [b.conceptId, b]));
     const ordered: UltraConceptBlock[] = [];
     for (const n of pageNeighborhoods) {
       if (!n.conceptId) continue;
       const block = byConceptId.get(n.conceptId);
       if (block) ordered.push({ ...block, ordinal: ordered.length + 1 });
     }
-    for (const block of ultraPageView.blocks) {
+    for (const block of ultraPageViewWithSynthesis.blocks) {
       if (!ordered.some((b) => b.conceptId === block.conceptId)) {
         ordered.push({ ...block, ordinal: ordered.length + 1 });
       }
     }
-    return { ...ultraPageView, blocks: ordered };
-  }, [ultraPageView, guidedPath]);
+    return { ...ultraPageViewWithSynthesis, blocks: ordered };
+  }, [ultraPageViewWithSynthesis, guidedPath]);
 
   // Emit conceptId → roleLabel map so the left panel can label its badges.
   const roleLabelMap = useMemo((): Map<string, string> => {
-    if (!ultraPageView?.steps) return new Map();
-    return new Map(ultraPageView.steps.map((s) => [s.conceptId, s.roleLabel]));
-  }, [ultraPageView]);
+    if (!ultraPageViewWithSynthesis?.steps) return new Map();
+    return new Map(ultraPageViewWithSynthesis.steps.map((s) => [s.conceptId, s.roleLabel]));
+  }, [ultraPageViewWithSynthesis]);
 
   useEffect(() => {
     onRoleLabelMap?.(roleLabelMap);
