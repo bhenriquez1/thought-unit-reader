@@ -173,6 +173,18 @@ export default function GuidedNeighborhoodOverlay({
         <React.Fragment key={group.neighborhoodId}>
           {group.overlays.map((entry) => {
             const style = TIER_STYLE[entry.tier];
+            const eduTier = (entry.educationalTier ?? 4) as 1|2|3|4;
+            // Tier 1 (theorem/formula): stronger ring + glow shadow; tier 4: minimal ring
+            const borderWidth = entry.tier === "main_signal" && eduTier === 1 ? "2px" : "1px";
+            const boxShadow =
+              entry.tier === "main_signal" && eduTier === 1
+                ? "0 0 0 2px rgba(245,200,66,0.45), 0 0 8px rgba(245,200,66,0.18)"
+                : entry.tier === "main_signal" && eduTier === 2
+                ? "0 0 0 1px rgba(245,200,66,0.32)"
+                : entry.tier === "do_not_confuse"
+                ? "0 0 0 1px rgba(251,146,203,0.35), 0 0 6px rgba(244,114,182,0.14)"
+                : style.boxShadow;
+            const borderRadius = entry.tier === "main_signal" ? (eduTier === 1 ? 5 : 4) : 3;
             return entry.rects.map((rect, ri) => (
               <button
                 key={`${entry.id}-${ri}`}
@@ -190,9 +202,9 @@ export default function GuidedNeighborhoodOverlay({
                   width: rect.width,
                   height: rect.height,
                   background: style.background,
-                  border: `1px solid ${style.border}`,
-                  boxShadow: style.boxShadow,
-                  borderRadius: entry.tier === "main_signal" ? 4 : 3,
+                  border: `${borderWidth} solid ${style.border}`,
+                  boxShadow,
+                  borderRadius,
                   opacity: entry.opacity,
                   pointerEvents: onOverlayClick ? "auto" : "none",
                   cursor: onOverlayClick ? "pointer" : "default",
@@ -279,12 +291,20 @@ function conceptRoleLabel(role?: string): string {
   }
 }
 
+function conceptRoleToEducationalTier(role?: string): 1 | 2 | 3 | 4 {
+  if (role === "theorem" || role === "formula") return 1;
+  if (role === "definition" || role === "mechanism" || role === "contrast") return 2;
+  if (role === "application" || role === "worked_example") return 3;
+  return 4;
+}
+
 function materializeEntries(
   n: HighlightNeighborhood,
   byMemberId: Map<string, HighlightOverlayRect>
 ): GuidedNeighborhoodOverlayEntry[] {
   const entries: GuidedNeighborhoodOverlayEntry[] = [];
   let order = 0;
+  const educationalTier = conceptRoleToEducationalTier(n.conceptRole);
 
   const push = (memberId: string | undefined, tier: GuidedTier, text?: string) => {
     if (!memberId) return;
@@ -299,12 +319,13 @@ function materializeEntries(
       tier,
       rects: overlay.rects,
       confidence: overlay.confidence as MatchConfidence,
-      opacity: tunedOpacity(tier, overlay.displayMode),
-      borderOpacity: tunedBorderOpacity(tier, overlay.displayMode),
-      zIndex: zIndexForTier(tier),
+      opacity: tunedOpacity(tier, overlay.displayMode, educationalTier),
+      borderOpacity: tunedBorderOpacity(tier, overlay.displayMode, educationalTier),
+      zIndex: zIndexForTier(tier, educationalTier),
       overlayLabel: labelForTier(tier),
       sourceMemberId: memberId,
       text,
+      educationalTier,
     });
   };
 
@@ -328,26 +349,27 @@ function inferNeighborhoodPageOrder(
   return first ? Math.round(first.y * 10000 + first.x) : Number.MAX_SAFE_INTEGER;
 }
 
-function tunedOpacity(tier: GuidedTier, mode: HighlightOverlayRect["displayMode"]): number {
-  const base = tier === "main_signal" ? 0.5 : tier === "explains_it" ? 0.38 : tier === "extra_context" ? 0.26 : 0.44;
+// Educational weight multipliers: tier 1 (theorem/formula) = strongest glow,
+// tier 4 (detail/narrative) = faint background annotation.
+const EDU_OPACITY_WEIGHT:  Record<1|2|3|4, number> = { 1: 1.32, 2: 1.0, 3: 0.68, 4: 0.42 };
+const EDU_BORDER_WEIGHT:   Record<1|2|3|4, number> = { 1: 1.22, 2: 1.0, 3: 0.75, 4: 0.48 };
+
+function tunedOpacity(tier: GuidedTier, mode: HighlightOverlayRect["displayMode"], educationalTier: 1|2|3|4 = 4): number {
+  const base = tier === "main_signal" ? 0.50 : tier === "explains_it" ? 0.38 : tier === "extra_context" ? 0.26 : 0.44;
   const mult = mode === "full" ? 1 : mode === "reduced" ? 0.9 : mode === "minimal" ? 0.78 : 0;
-  return clamp(base * mult, 0, 0.64);
+  return clamp(base * EDU_OPACITY_WEIGHT[educationalTier] * mult, 0, 0.74);
 }
 
-function tunedBorderOpacity(tier: GuidedTier, mode: HighlightOverlayRect["displayMode"]): number {
+function tunedBorderOpacity(tier: GuidedTier, mode: HighlightOverlayRect["displayMode"], educationalTier: 1|2|3|4 = 4): number {
   const base = tier === "main_signal" ? 0.78 : tier === "explains_it" ? 0.60 : tier === "extra_context" ? 0.40 : 0.70;
   const mult = mode === "full" ? 1 : mode === "reduced" ? 0.9 : mode === "minimal" ? 0.8 : 0;
-  return clamp(base * mult, 0, 0.9);
+  return clamp(base * EDU_BORDER_WEIGHT[educationalTier] * mult, 0, 0.95);
 }
 
-function zIndexForTier(tier: GuidedTier): number {
-  switch (tier) {
-    case "main_signal":    return 50;
-    case "do_not_confuse": return 45;
-    case "explains_it":    return 40;
-    case "extra_context":  return 35;
-    default:               return 30;
-  }
+function zIndexForTier(tier: GuidedTier, educationalTier: 1|2|3|4 = 4): number {
+  const base = tier === "main_signal" ? 50 : tier === "do_not_confuse" ? 45 : tier === "explains_it" ? 40 : 35;
+  // Tier 1 floats above tier 4 when overlapping
+  return base + (4 - educationalTier);
 }
 
 function labelForTier(tier: GuidedTier): GuidedNeighborhoodOverlayEntry["overlayLabel"] {
