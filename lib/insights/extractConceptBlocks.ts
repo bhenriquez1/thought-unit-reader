@@ -6,24 +6,37 @@ import { cleanSentence } from "./sentenceCleanup";
 import { isRenderableSentence } from "./isRenderableSentence";
 import { TRAP_RE, REASON_RE } from "./dedupeSectionCandidates";
 import { inferConceptTitle } from "./inferConceptTitle";
+import type { PageDomain } from "./detectPageDomain";
 
 export type ConceptImportance = "very_high" | "high" | "medium" | "low";
 
 export type ConceptRole =
-  | "definition"    // "X is defined as", "X is characterized by"
-  | "mechanism"     // "X causes", "X leads to", "because"
-  | "variation"     // "unlike X", "in contrast", "however"
-  | "measurement"   // numbers with units, "unit of", "equal to"
-  | "example"       // "for example", "such as"
-  | "detail";       // everything else
+  | "definition"     // "X is defined as", "X is characterized by"
+  | "theorem"        // "Theorem:", "Lemma:", "Corollary:", math definitional statements
+  | "formula"        // bare notation/formula without attached explanation prose
+  | "mechanism"      // "X causes", "X leads to", "because"
+  | "application"    // "used in", "applied to", "in practice", "clinically"
+  | "measurement"    // numbers with units, "unit of", "equal to"
+  | "contrast"       // "unlike X", "in contrast" as primary signal — trap-adjacent
+  | "worked_example" // "Example N:", "Solution:", structural section headers
+  | "analogy"        // "like", "similar to", "analogous to"
+  | "variation"      // catch-all exception/special-case contrast
+  | "example"        // "for example", "such as"
+  | "detail";        // everything else
 
 export const ROLE_PRIORITY: Record<ConceptRole, number> = {
-  definition:  6,
-  mechanism:   5,
-  measurement: 4,   // quantitative rules rank above illustrative examples
-  example:     3,   // examples are support, not the core idea
-  variation:   2,   // contrast/trap-adjacent concepts sort last before detail
-  detail:      1,
+  theorem:        8,  // theorem statements are the highest educational target
+  formula:        7,  // bare notation — core reference material
+  definition:     6,
+  mechanism:      5,
+  application:    4,  // practical usage more valuable than plain measurement
+  measurement:    3,
+  contrast:       3,  // trap-adjacent — valuable for distinction
+  worked_example: 2,  // clearly below definitions
+  analogy:        2,
+  example:        2,  // examples are support, not the core idea
+  variation:      1,
+  detail:         1,
 };
 
 export interface SourceSentence {
@@ -57,6 +70,7 @@ export interface PageModelForConcepts {
   headings?: SourceHeading[];
   paragraphs?: SourceParagraph[];
   sentences?: SourceSentence[];
+  domain?: PageDomain;
 }
 
 export interface ConceptBlockInput {
@@ -209,9 +223,10 @@ function inferTitle(
   return inferConceptTitle(cleanSentence(anchor.text), headingText);
 }
 
-function classifyConceptRole(anchorText: string, supportTexts: string[], paragraphText?: string): ConceptRole {
+function classifyConceptRole(anchorText: string, supportTexts: string[], paragraphText?: string, domain?: PageDomain): ConceptRole {
   const lower = anchorText.toLowerCase();
   const anchorTrimmed = anchorText.trim();
+  const isMathPage = domain === "math";
 
   // Example: check FIRST — a sentence starting with an illustrative opener must never be
   // classified as "definition" even if "X is a Y" appears later in the same sentence.
@@ -248,29 +263,56 @@ function classifyConceptRole(anchorText: string, supportTexts: string[], paragra
   const NAMED_MOLECULE_FACT_RE = /^[A-Z][a-z]{1,15}(?:\s*\([A-Za-z0-9₀-₉²³+\-]+\))?\s+is (the |a |an )?(most|least|only|found|abundant|present|common|approximately|often|mainly|primarily|widely|highly|extremely)\b/i;
   if (NAMED_MOLECULE_FACT_RE.test(anchorTrimmed) && !hasFormalDefinition) return "example";
 
+  // Math filler openers — must be checked BEFORE all other role detection because a sentence
+  // like "We indicate this by saying lim n→∞ aₙ = L" contains "lim" which would otherwise
+  // fire formula/theorem detection below. Filler carries no teaching content.
+  const MATH_FILLER_OPENER_RE = /^(we (indicate|say|note|observe|denote|call|define this as|write|have seen|recall that)|in other words,?|notice that\b|observe that\b|it (is|can be) (shown|seen|noted|verified)\b|here we\b|this (gives|shows|yields|follows)\b|recall (that|from)\b)/i;
+  if (MATH_FILLER_OPENER_RE.test(lower.trimStart())) return "detail";
+
+  // Worked-example / solution section header — always overrides all other signals.
+  // Short label lines like "Example 3.1" or "Solution." are structural markers, not anchors.
+  if (/^(example\s*[\d.:)]+|solution[.:]?\s*$|problem\s*[\d.:)]+|exercise\s*[\d.:)]+)/i.test(anchorTrimmed)) return "worked_example";
+  // Also catch bare label lines with no trailing content
+  if (/^(example|solution|problem|exercise)\s*[\d.:)]*\s*$/i.test(anchorTrimmed)) return "worked_example";
+
+  // Theorem/lemma/corollary/proposition label — highest educational priority on math pages.
+  // "Theorem 3.2: A sequence {aₙ} converges..." → theorem
+  if (/^(theorem|lemma|corollary|proposition|axiom)\b/i.test(anchorTrimmed)) return "theorem";
+  // On math pages, a "Definition:" label heading is equivalent to a theorem (definitional statement)
+  if (/^(definition\b)/i.test(anchorTrimmed) && isMathPage) return "theorem";
+
+  // Formula: bare mathematical notation — short anchor with symbolic content and no explanation prose.
+  // Longer formula sentences with full prose are "definition". Pure notation ≤8 words → "formula".
+  const hasSymbolicMath = /[=∫∂∑]|lim\b|d\/d[xt]|\\frac/i.test(anchorText);
+  const isShortFormula = hasSymbolicMath && anchorText.split(/\s+/).length <= 8;
+  if (isShortFormula) return "formula";
+
+  // Application: practical/clinical usage framing.
+  if (/\b(used (in|for|to)\b|applied (to|in)\b|in (practice|clinical use|clinical context)\b|clinically\b|in patients?\b)\b/i.test(lower)) return "application";
+
+  // Contrast: "unlike", "in contrast", "however" as THE primary signal (not buried mid-sentence).
+  // Checked before "variation" so the more specific role wins.
+  if (/^(unlike\b|in contrast\b|however\b|although\b|whereas\b|on the other hand\b)/i.test(lower.trimStart())) return "contrast";
+
+  // Analogy: "similar to", "analogous to", "just as", "functions like"
+  if (/\b(similar to\b|analogous to\b|just as\b|like (a|an|the)\b|functions (like|as)\b)\b/i.test(lower)) return "analogy";
+
   // Definition: explicit definitional copula or structural "is a/the X that/which"
   if (/\b(is defined as|is characterized by|refers to|is called|is known as|is a type of|is described as|is the process of|is the ability to|consists of)\b/.test(lower)) return "definition";
   if (/\b(defined as|means that|means \w|is (a|an|the) \w+ (that|which|of))\b/.test(lower)) return "definition";
   if (/\b(is (a|an|the) \w[\w\s]+ (that|which|used|found|located|formed|produced|made))\b/.test(lower)) return "definition";
+  // Math convergence/limit definitional language → definition (not formula — contains prose)
+  if (isMathPage && /\b(is (called|said to be)|converges? (to|toward)|has (a |no )?limit\b|does not converge\b|diverges?\b|approaches? (a |the )?(value|limit|number|zero|fixed)\b)\b/i.test(lower)) return "definition";
+  // Longer formula sentence with explanation → definition (≤8-word bare formula already caught above)
+  if (hasSymbolicMath && /[a-zA-Z]{3,}/.test(anchorText)) return "definition";
 
   // Mechanism: causal / process language including science relational verbs
   if (/\b(causes?|leads? to|results? in|because|therefore|thus|hence|consequently|triggers?|stimulates?|inhibits?|activates?|promotes?|mediates?|drives?|prevents?|allows?)\b/.test(lower)) return "mechanism";
   if (/\b(depends? on|regulated by|controlled by|initiated by|releases?|absorbs?|determines?|identifies?|governs?|regulates?|establishes?|reveals?)\b/.test(lower)) return "mechanism";
 
-  // Variation / contrast / exception
+  // Variation / contrast / exception (mid-sentence contrast — start-of-sentence already caught above)
   if (/\b(unlike|however|in contrast|whereas|although|despite|rather than|on the other hand|except)\b/.test(lower)) return "variation";
   if (/\b(not all|not every|does not|cannot|different from|differs from|distinguished from)\b/.test(lower)) return "variation";
-
-  // Math filler openers — must be checked BEFORE formula detection because a sentence like
-  // "We indicate this by saying lim n→∞ aₙ = L" contains "lim" which would otherwise fire
-  // the formula check below and return "definition". Filler carriers no teaching content.
-  const MATH_FILLER_OPENER_RE = /^(we (indicate|say|note|observe|denote|call|define this as|write|have seen|recall that)|in other words,?|notice that\b|observe that\b|it (is|can be) (shown|seen|noted|verified)\b|here we\b|this (gives|shows|yields|follows)\b|recall (that|from)\b)/i;
-  if (MATH_FILLER_OPENER_RE.test(lower.trimStart())) return "detail";
-  // Worked-example / solution structural labels — never a definition.
-  if (/^(example|solution|problem|exercise)\s*[\d.:)]*\s*$/i.test(anchorTrimmed)) return "example";
-
-  // Formula: mathematical relationship — definitional in math context (checked before measurement)
-  if (/[=∫∂∑]|lim\b|d\/d[xt]|\\frac|\bintegral\b|\bderivative\b/i.test(anchorText)) return "definition";
 
   // Measurement: numeric values with domain units, or quantitative framing
   if (/\b\d+(\.\d+)?\s*(daltons?|da\b|amu|mol\b|kg\b|g\b|cm\b|mm\b|nm\b|km\b|l\b|ml\b|pa\b|kpa\b|hz\b|ev\b|kev\b|mev\b|degrees?|°|%)/i.test(anchorText)) return "measurement";
@@ -301,7 +343,8 @@ function extractTrapCandidates(sentences: SourceSentence[]): string[] {
 function buildConceptFromParagraph(
   paragraph: SourceParagraph,
   sentenceMap: Map<string, SourceSentence>,
-  headingMap: Map<string, SourceHeading>
+  headingMap: Map<string, SourceHeading>,
+  domain?: PageDomain
 ): ConceptBlockInput | null {
   const sentences = paragraph.sentenceIds
     .map((id) => sentenceMap.get(id))
@@ -317,7 +360,7 @@ function buildConceptFromParagraph(
   // conceptual rule or definition sentence also exists in the same paragraph.
   let anchor = rawAnchor;
   const rawAnchorText = cleanSentence(rawAnchor.text);
-  const rawAnchorRole = classifyConceptRole(rawAnchorText, [], paragraph.text);
+  const rawAnchorRole = classifyConceptRole(rawAnchorText, [], paragraph.text, domain);
   if (rawAnchorRole === "example" && sentences.length > 1) {
     const betterAnchor = [...sentences]
       .filter((s) => s.id !== rawAnchor.id)
@@ -325,7 +368,7 @@ function buildConceptFromParagraph(
       .find((s) => {
         const t = cleanSentence(s.text);
         if (!isRenderableSentence(t)) return false;
-        const r = classifyConceptRole(t, [], paragraph.text);
+        const r = classifyConceptRole(t, [], paragraph.text, domain);
         return r !== "example" && r !== "detail";
       });
     if (betterAnchor) anchor = betterAnchor;
@@ -352,7 +395,7 @@ function buildConceptFromParagraph(
     paragraphIds: [paragraph.id],
     importance: inferImportance(score),
     score,
-    conceptRole: classifyConceptRole(anchorText, support, paragraph.text),
+    conceptRole: classifyConceptRole(anchorText, support, paragraph.text, domain),
   };
 }
 
@@ -426,12 +469,12 @@ function selectBestConcepts(concepts: ConceptBlockInput[]): ConceptBlockInput[] 
   const selected: ConceptBlockInput[] = [];
   const usedIds = new Set<string>();
 
-  // First pass: one best from each core instructional role.
-  // "example" is intentionally excluded — examples may only enter via the second
-  // pass (after definitions and mechanisms have claimed their slots). This prevents
-  // an illustrative example from becoming the first concept when no definition or
-  // mechanism exists on the page.
-  for (const role of ["definition", "mechanism", "measurement"] as ConceptRole[]) {
+  // First pass: one best from each core instructional role, ordered by educational value.
+  // "example", "detail", "analogy", "worked_example" are excluded — they may only enter
+  // via the second pass after definitions, theorems, mechanisms have claimed their slots.
+  // This prevents an illustrative example from becoming the first concept when a definition
+  // or theorem exists on the page.
+  for (const role of ["theorem", "formula", "definition", "mechanism", "contrast", "application", "measurement"] as ConceptRole[]) {
     const best = byRole.get(role)?.[0];
     if (best && !usedIds.has(best.id)) {
       selected.push(best);
@@ -489,31 +532,39 @@ function sortConceptsByStrictHierarchy<T extends {
     return (b.score ?? 0) - (a.score ?? 0);
   });
 
-  const definitions = ranked.filter((c) => c.conceptRole === "definition");
-  const mechanisms = ranked.filter((c) => c.conceptRole === "mechanism");
-  const variations = ranked.filter((c) => c.conceptRole === "variation");
-  const measurements = ranked.filter((c) => c.conceptRole === "measurement");
-  const examples = ranked.filter((c) => c.conceptRole === "example");
-  const details = ranked.filter((c) => !c.conceptRole || c.conceptRole === "detail");
+  // Strict hierarchy: theorems/formulas first, then definitions, mechanisms,
+  // application/contrast/measurement, then worked examples and analogies, then the rest.
+  const buckets: ConceptRole[] = [
+    "theorem", "formula", "definition", "mechanism",
+    "application", "contrast", "measurement",
+    "worked_example", "analogy", "variation", "example", "detail",
+  ];
+  const byBucket = new Map<ConceptRole, T[]>();
+  for (const role of buckets) byBucket.set(role, []);
+  for (const item of ranked) {
+    const role = (item.conceptRole ?? "detail") as ConceptRole;
+    const bucket = byBucket.get(role) ?? byBucket.get("detail")!;
+    bucket.push(item);
+  }
 
   const ordered: T[] = [];
   const used = new Set<T>();
 
-  if (definitions.length > 0) {
-    ordered.push(definitions[0]);
-    used.add(definitions[0]);
+  // First: one theorem or formula (the core statement)
+  for (const topRole of ["theorem", "formula"] as ConceptRole[]) {
+    const first = byBucket.get(topRole)?.find((c) => !used.has(c));
+    if (first) { ordered.push(first); used.add(first); break; }
   }
 
-  if (mechanisms.length > 0) {
-    const mech = mechanisms.find((c) => !used.has(c));
-    if (mech) {
-      ordered.push(mech);
-      used.add(mech);
-    }
+  // Second: one definition or mechanism
+  for (const coreRole of ["definition", "mechanism"] as ConceptRole[]) {
+    const first = byBucket.get(coreRole)?.find((c) => !used.has(c));
+    if (first) { ordered.push(first); used.add(first); break; }
   }
 
-  for (const bucket of [definitions, mechanisms, examples, measurements, variations, details]) {
-    for (const item of bucket) {
+  // Then: fill remaining slots in bucket order
+  for (const role of buckets) {
+    for (const item of byBucket.get(role) ?? []) {
       if (used.has(item)) continue;
       ordered.push(item);
       used.add(item);
@@ -527,12 +578,13 @@ export function extractConceptBlocks(page: PageModelForConcepts): ConceptBlockIn
   const paragraphs = page.paragraphs ?? [];
   const sentences  = page.sentences  ?? [];
   const headings   = page.headings   ?? [];
+  const domain     = page.domain;
 
   const sentenceMap = new Map(sentences.map((s) => [s.id, s]));
   const headingMap  = new Map(headings.map((h) => [h.id, h]));
 
   const rawConcepts = paragraphs
-    .map((p) => buildConceptFromParagraph(p, sentenceMap, headingMap))
+    .map((p) => buildConceptFromParagraph(p, sentenceMap, headingMap, domain))
     .filter((c): c is ConceptBlockInput => Boolean(c));
 
   return selectBestConcepts(mergeRelatedConcepts(rawConcepts));

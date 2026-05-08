@@ -19,6 +19,7 @@ export type PageKind =
   | "table_heavy"
   | "front_matter"
   | "chapter_title"
+  | "chapter_intro"
   | "section_title"
   | "image_only"
   | "graph_only"
@@ -313,6 +314,20 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
   ) {
     console.log("[TRACE classifyGate]", { gate: "chapter_title:outline", firstLine, words });
     return "chapter_title";
+  }
+
+  // Chapter intro page: starts with "Chapter N" heading and has sparse-but-real framing prose.
+  // Unlike chapter_title (empty/outline pages that suppress), chapter_intro has enough
+  // content to render a roadmap view. Detected BEFORE chapter_title:opener so richer pages
+  // are promoted rather than suppressed.
+  if (
+    (/^chapter\s+\d+\b/.test(text.trim()) || input.headingLines.some((l) => /^chapter\s+\d+\b/i.test(l))) &&
+    words >= 40 &&
+    words <= 350 &&
+    sentenceCount >= 2
+  ) {
+    console.log("[TRACE classifyGate]", { gate: "chapter_intro", firstLine, words, sentenceCount });
+    return "chapter_intro";
   }
 
   // Chapter opener: page text starts with "chapter N" and has sparse prose

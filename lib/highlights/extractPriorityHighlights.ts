@@ -59,6 +59,11 @@ export type PriorityHighlightBlock = {
   isMerged: boolean;
 };
 
+/** Maps concept anchor text (normalized first 60 chars) → concept role string.
+ * When provided, overrides the story-derived highlight kind for matching candidates.
+ * Populated from extractConceptBlocks output when available in the calling path. */
+export type ConceptAnchorRole = { anchor: string; role: string };
+
 export type ExtractPriorityHighlightsInput = {
   documentId?: string;
   pageNumber: number;
@@ -75,6 +80,10 @@ export type ExtractPriorityHighlightsInput = {
    * candidates are injected as high-priority highlights before the role-map candidates.
    */
   narrativePageView?: NarrativePageView | null;
+  /** Concept role overrides from extractConceptBlocks — maps anchor text to ConceptRole.
+   * When provided, theorem/formula anchors are promoted to main_pattern,
+   * contrast anchors to support_distinction, etc. */
+  conceptAnchorRoles?: ConceptAnchorRole[];
   maxMain?: number;
   maxSupport?: number;
   maxWeak?: number;
@@ -149,6 +158,7 @@ export function extractPriorityHighlights({
   pageModel,
   pageStory,
   narrativePageView,
+  conceptAnchorRoles,
   maxMain = 2,
   maxSupport = 3,
   maxWeak = 1,
@@ -180,6 +190,20 @@ export function extractPriorityHighlights({
   if (pageStory) {
     candidates = buildStoryCandidates(pageStory, pageNumber, pageParagraphIndex);
     usedStory = true;
+    // Apply concept role overrides: when extractConceptBlocks identified a theorem,
+    // formula, contrast, or worked_example anchor, upgrade the highlight kind.
+    if (conceptAnchorRoles?.length) {
+      const roleMap = new Map(
+        conceptAnchorRoles.map((r) => [r.anchor.toLowerCase().slice(0, 60), r.role])
+      );
+      for (const c of candidates) {
+        const key = c.text.toLowerCase().slice(0, 60);
+        const conceptRole = roleMap.get(key);
+        if (!conceptRole) continue;
+        const overrideKind = conceptRoleToHighlightKind(conceptRole);
+        if (overrideKind) c.kind = overrideKind;
+      }
+    }
   }
 
   if (!candidates.length && pageModel) {
@@ -697,6 +721,17 @@ function buildRoleMapCandidates(
   }
 
   return added;
+}
+
+function conceptRoleToHighlightKind(conceptRole: string): SemanticHighlightKind | null {
+  switch (conceptRole) {
+    case "theorem":        return "main_pattern";
+    case "formula":        return "main_mechanism";
+    case "worked_example": return "support_application";
+    case "contrast":       return "support_distinction";
+    case "application":    return "support_application";
+    default:               return null;
+  }
 }
 
 function roleToKindMapping(role: ParagraphRole): { kind: SemanticHighlightKind; priority: PriorityTier; score: number } {

@@ -15,15 +15,21 @@ import { ROLE_PRIORITY } from "@/lib/insights/extractConceptBlocks";
 import type { ConceptBlockInput, ConceptRole } from "@/lib/insights/extractConceptBlocks";
 import { REASON_RE, TRAP_RE, isTooSimilar } from "@/lib/insights/dedupeSectionCandidates";
 
-// Math path: examples are promoted before measurements/rules so worked examples
-// appear at step 3 (after definition → meaning), not buried after quantitative rules.
+// Math path: worked examples are promoted before measurements/rules so they appear
+// at step 3 (after definition → meaning), not buried after quantitative rules.
 const MATH_ROLE_PRIORITY: Record<ConceptRole, number> = {
-  definition:  6,
-  mechanism:   5,
-  example:     4,
-  measurement: 3,
-  variation:   2,
-  detail:      1,
+  theorem:        8,
+  formula:        7,
+  definition:     6,
+  mechanism:      5,
+  worked_example: 4,
+  application:    4,
+  example:        3,
+  contrast:       3,
+  measurement:    3,
+  analogy:        2,
+  variation:      2,
+  detail:         1,
 };
 
 export type HighlightTier = "important" | "support" | "additional" | "trap";
