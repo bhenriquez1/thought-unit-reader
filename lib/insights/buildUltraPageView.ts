@@ -37,6 +37,7 @@ import { findMainTeachingZone } from "./findMainTeachingZone";
 import { scoreDomainPriority, type DomainPriorityScore } from "./scoreDomainPriority";
 import type { ClinicalPriorityCandidate } from "./scoreClinicalPriority";
 import { inferPageObjective, isExampleOrFiller } from "./inferPageObjective";
+import type { TeachingSynthesis } from "./synthesizeTeachingOutput";
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -566,7 +567,10 @@ function buildChapterIntroView(
 
 export function buildUltraPageView(
   pageModel: PageInsightModel,
-  options?: { existingNormResult?: ClinicalNormalizationResult }
+  options?: {
+    existingNormResult?: ClinicalNormalizationResult;
+    teachingSynthesis?: TeachingSynthesis;
+  }
 ): UltraPageView | null {
   // Reconstruct text from paragraphInsights for domain detection and any
   // fallback normalization. NOTE: when existingNormResult is provided we skip
@@ -934,11 +938,34 @@ export function buildUltraPageView(
     compressionCount: compression.length,
   });
 
+  // Apply teaching synthesis when available.
+  // Synthesis fields take highest priority: they are LLM-reasoned abstractions
+  // that supersede heuristic sentence ranking. Concept fields are overlaid per-index
+  // so block structure (conceptId, ordinal, title) is preserved.
+  const synthesis = options?.teachingSynthesis;
+  const finalCoreIdea = synthesis?.coreIdea && synthesis.coreIdea.length >= 20
+    ? synthesis.coreIdea
+    : coreIdea;
+
+  const finalBlocks = synthesis?.concepts?.length
+    ? blocks.map((b, i) => {
+        const sc = synthesis.concepts[i];
+        if (!sc) return b;
+        return {
+          ...b,
+          pattern:        sc.principle?.trim()   || b.pattern,
+          surgicalReason: sc.mechanism?.trim()   || b.surgicalReason,
+          trap:           sc.trap?.trim()        ?? b.trap,
+          rule:           sc.rule?.trim()        || b.rule,
+        };
+      })
+    : blocks;
+
   return {
     title: `ULTRA – ${inferPageTitle(page, concepts)}`,
     subtitle: "STR + PDRM + Surgical Comprehension Engine",
-    coreIdea,
-    blocks,
+    coreIdea: finalCoreIdea,
+    blocks: finalBlocks,
     miniTest,
     compression,
     steps,
