@@ -142,6 +142,7 @@ type CandidateBlock = {
   blockField?: string;
   score: number;
   confidence: number;
+  conceptRole?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -202,6 +203,7 @@ export function extractPriorityHighlights({
         if (!conceptRole) continue;
         const overrideKind = conceptRoleToHighlightKind(conceptRole);
         if (overrideKind) c.kind = overrideKind;
+        c.conceptRole = conceptRole;
       }
     }
   }
@@ -727,8 +729,10 @@ function conceptRoleToHighlightKind(conceptRole: string): SemanticHighlightKind 
   switch (conceptRole) {
     case "theorem":        return "main_pattern";
     case "formula":        return "main_mechanism";
+    case "definition":     return "main_pattern";
+    case "mechanism":      return "main_mechanism";
+    case "contrast":       return "trap_warning";   // oscillation/divergence = trap, not just distinction
     case "worked_example": return "support_application";
-    case "contrast":       return "support_distinction";
     case "application":    return "support_application";
     default:               return null;
   }
@@ -913,6 +917,21 @@ function applyScoreModifiers(c: CandidateBlock): number {
 
   // Fragmentary penalty
   if (c.text.length < 20) score -= 10;
+
+  // Educational significance: concept role is the strongest signal of highlight value.
+  // Theorems and formulas dominate — examples and narratives yield.
+  const roleBonus =
+    c.conceptRole === "theorem"        ? +15 :
+    c.conceptRole === "formula"        ? +12 :
+    c.conceptRole === "definition"     ? +8  :
+    c.conceptRole === "mechanism"      ? +8  :
+    c.conceptRole === "contrast"       ? +6  :  // trap-adjacent
+    c.conceptRole === "application"    ? +2  :
+    c.conceptRole === "worked_example" ? -8  :  // never outrank theorem
+    c.conceptRole === "example"        ? -12 :  // strongly demote inline examples
+    c.conceptRole === "detail"         ? -6  :
+    c.conceptRole === "analogy"        ? -4  : 0;
+  score += roleBonus;
 
   return score;
 }

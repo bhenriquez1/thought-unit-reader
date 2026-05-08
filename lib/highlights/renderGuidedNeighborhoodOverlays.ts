@@ -30,6 +30,8 @@ export interface GuidedNeighborhoodOverlayEntry {
   overlayLabel: "Main Signal" | "Explains It" | "Extra Context" | "Do Not Confuse";
   sourceMemberId?: string;
   text?: string;
+  /** 1=theorem/formula (strongest), 2=definition/mechanism, 3=application/example, 4=detail/narrative */
+  educationalTier?: 1 | 2 | 3 | 4;
 }
 
 export interface GuidedNeighborhoodRenderModel {
