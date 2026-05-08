@@ -5,23 +5,40 @@
 // "What is the author TEACHING?" — producing abstractions that heuristics
 // cannot derive from ranked text alone.
 
+import { z } from "zod";
 import type { PageDomain } from "./detectPageDomain";
 import type { UltraConceptBlock } from "./buildUltraPageView";
 
-export interface TeachingSynthesisConcept {
-  title: string;
-  principle: string;    // → pattern field (abstracted, never copied)
-  mechanism: string;    // → surgicalReason field
-  trap: string | null;  // → trap field
-  rule: string;         // → rule field
-}
+// ---------------------------------------------------------------------------
+// Zod schemas — used by both client and API route for validation
+// ---------------------------------------------------------------------------
 
-export interface TeachingSynthesis {
-  coreIdea: string;
-  teachingObjective: string;
-  examCriticalIdea: string;
-  concepts: TeachingSynthesisConcept[];
-}
+export const TeachingSynthesisConceptSchema = z.object({
+  title: z.string(),
+  role: z.enum(["definition", "theorem", "formula", "mechanism", "contrast", "application", "worked_example", "example", "detail"]),
+  principle: z.string(),   // → pattern field (abstracted, never copied)
+  mechanism: z.string(),   // → surgicalReason field
+  trap: z.string().nullable(),
+  rule: z.string(),        // → rule field
+});
+
+export const TeachingSynthesisSchema = z.object({
+  coreIdea: z.string(),
+  teachingObjective: z.string(),
+  examCriticalIdea: z.string(),
+  concepts: z.array(TeachingSynthesisConceptSchema),
+});
+
+// ---------------------------------------------------------------------------
+// TypeScript types derived from schemas
+// ---------------------------------------------------------------------------
+
+export type TeachingSynthesisConcept = z.infer<typeof TeachingSynthesisConceptSchema>;
+export type TeachingSynthesis = z.infer<typeof TeachingSynthesisSchema>;
+
+// ---------------------------------------------------------------------------
+// Prompt builders (used by the API route)
+// ---------------------------------------------------------------------------
 
 function buildSystemPrompt(domain: PageDomain): string {
   const domainInstructions: Record<PageDomain, string> = {
@@ -34,6 +51,13 @@ function buildSystemPrompt(domain: PageDomain): string {
 
   return `${domainInstructions[domain] ?? domainInstructions.general}
 
+CONCEPT RANKING — order concepts by educational priority:
+  1. definitions and theorems (the foundational rule being taught)
+  2. mechanisms (cause → effect, how/why it works)
+  3. contrasts and traps (what to NOT confuse, common errors)
+  4. applications (real-world or clinical use)
+  5. examples and details (last — never let an example be the primary concept)
+
 CRITICAL RULES — violating any of these makes your output useless:
 1. NEVER copy a sentence verbatim from the source text. Restate every idea in your own words.
 2. IGNORE figure captions, image labels, narrative transitions, and OCR artifacts.
@@ -41,7 +65,7 @@ CRITICAL RULES — violating any of these makes your output useless:
 4. Each concept's "principle" must be a generalized statement, never an example. Abstract from the example to the rule.
 5. If two fields would be identical, make one more specific and one more general — never duplicate.
 6. Keep every field to 1–2 sentences maximum.
-7. Respond ONLY with valid JSON matching the exact schema provided.`;
+7. Assign each concept a "role" that reflects its educational function: definition, theorem, formula, mechanism, contrast, application, worked_example, example, or detail.`;
 }
 
 function buildUserPrompt(
@@ -73,24 +97,14 @@ TASK: Produce an educational interpretation of this page.
 
 ${domainHint[domain] ?? domainHint.general}
 
-Return a JSON object with EXACTLY this structure:
-{
-  "coreIdea": "<1-2 sentence abstracted principle — what this page is TEACHING, not what it says>",
-  "teachingObjective": "<what a student should understand after reading this page>",
-  "examCriticalIdea": "<the one thing most likely to appear on an exam or be misunderstood>",
-  "concepts": [
-    {
-      "title": "<concept name — match the extracted anchors where accurate>",
-      "principle": "<the generalized rule or definition, abstracted from examples>",
-      "mechanism": "<why or how it works — cause/condition → effect/consequence>",
-      "trap": "<common misconception or confusion to avoid, or null>",
-      "rule": "<operational takeaway — what to DO with this knowledge>"
-    }
-  ]
+Rank concepts by educational priority: definitions/theorems first, mechanisms second, contrasts/traps third, applications fourth, examples last. Never let an example be the first or primary concept.
+
+Include ${Math.min(extractedConcepts.length, 4)} concepts total, ordered by educational priority.`;
 }
 
-Include ${Math.min(extractedConcepts.length, 4)} concepts total. The concepts array should correspond to the extracted concept anchors in order.`;
-}
+// ---------------------------------------------------------------------------
+// Client-side fetch (runs in browser, calls the Next.js API route)
+// ---------------------------------------------------------------------------
 
 export async function synthesizeTeachingOutput(
   pageText: string,
@@ -110,7 +124,8 @@ export async function synthesizeTeachingOutput(
     throw new Error(err.error ?? `synthesis failed: ${response.status}`);
   }
 
-  return response.json() as Promise<TeachingSynthesis>;
+  const raw = await response.json();
+  return TeachingSynthesisSchema.parse(raw);
 }
 
 export { buildSystemPrompt, buildUserPrompt };

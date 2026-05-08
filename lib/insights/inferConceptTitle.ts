@@ -126,7 +126,7 @@ function extractFromAnchor(anchorText: string): string | null {
 /**
  * Infers a clean 2–7 word concept label.
  *
- * Priority: headingText → cleaned anchor-derived phrases → "Key Concept" fallback.
+ * Priority: headingText → definition-subject extraction → cleaned anchor phrases → null fallback.
  */
 export function inferConceptTitle(
   anchorText: string,
@@ -141,9 +141,43 @@ export function inferConceptTitle(
     if (isCleanLabel(trimmedHeading)) return titleCase(trimmedHeading);
   }
 
-  // 2. Derive from anchor sentence
+  // 2. Definition-subject pattern: "Atomic number is the number of protons" → "Atomic Number"
+  // Matches: capitalized term (1–4 words) immediately followed by a linking verb.
+  // This fires for biology/chemistry/physics definitional sentences before falling back
+  // to generic phrase extraction which tends to grab clause fragments.
+  const defSubject = extractDefinitionSubject(anchorText);
+  if (defSubject) return titleCase(defSubject);
+
+  // 3. Derive from anchor sentence (generic phrase extraction)
   const fromAnchor = extractFromAnchor(anchorText);
   if (fromAnchor) return titleCase(fromAnchor);
 
   return "Key Concept";
+}
+
+/**
+ * Extracts the grammatical subject from a "Subject is/are/refers to..." sentence.
+ * Returns null if the pattern doesn't match cleanly.
+ *
+ * Examples:
+ *   "Atomic number is the count of protons"  → "Atomic Number"
+ *   "Isotopes are variants of an element"    → "Isotopes"
+ *   "Mass number equals protons plus neutrons" → "Mass Number"
+ */
+function extractDefinitionSubject(text: string): string | null {
+  const t = text.trim();
+  // Match up to 4 capitalized/lowercase words before a copular verb
+  const m = t.match(
+    /^([A-Z][a-zA-Z]*(?:\s+[a-z][a-zA-Z]*){0,3})\s+(?:is\b|are\b|was\b|were\b|refers?\s+to\b|equals?\b|means?\b|defined\s+as\b|describes?\b)/
+  );
+  if (!m) return null;
+  const subject = m[1].trim();
+  const wc = wordCount(subject);
+  // Accept 1–4 word subjects — single-word subjects only when clearly a technical term (capitalized)
+  if (wc === 1 && !/^[A-Z]/.test(subject)) return null;
+  if (wc < 1 || wc > 4) return null;
+  if (BAD_OPENER_RE.test(subject)) return null;
+  // Reject plain pronouns and articles
+  if (/^(the|a|an|this|that|these|those|it|they|he|she|we|you|i)$/i.test(subject)) return null;
+  return subject;
 }
