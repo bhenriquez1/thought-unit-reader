@@ -100,14 +100,32 @@ CONCEPT RANKING — rank concepts in this educational priority order:
   6. worked example (support — illustrates, never leads)
   7. example / detail (lowest — never make an example the primary concept)
 
+TRANSFORMATION EXAMPLES — follow this exact pattern, no exceptions:
+
+BAD: "Water (H2O), another compound…"
+GOOD: "Compounds exhibit emergent properties distinct from their constituent elements."
+
+BAD: "Then a nurse noticed he'd stopped babbling."
+GOOD: "Sudden neurological deterioration after initially stable trauma presentation may indicate delayed internal compromise."
+
+BAD: "Example E1 | What happens to a_n = 1/n as n grows…"
+GOOD: "A sequence converges when its terms approach a fixed limit as n becomes arbitrarily large."
+
+BAD: "Figure 2.2 shows emergent properties."
+GOOD: "Emergent properties arise at higher levels of biological organization and cannot be predicted from component parts alone."
+
+BAD: "The atomic number is 6 for carbon."
+GOOD: "Atomic number uniquely identifies an element by defining its proton count; it is invariant across all isotopes of that element."
+
 CRITICAL RULES — every violation makes the output educationally worthless:
-1. NEVER copy a sentence verbatim. Restate every idea in your own words.
-2. IGNORE figure captions, image labels, OCR artifacts, and narrative transitions.
-3. coreIdea must be an abstracted principle — "Compounds exhibit emergent properties distinct from their elements" NOT "Figure 2.2 shows emergent properties."
-4. principle must be a generalized statement, never a specific example.
-5. surgicalReason ≠ rule — if two fields would be identical, make one the condition and the other the consequence.
+1. NEVER copy a sentence verbatim. Restate every idea using expert conceptual language.
+2. IGNORE figure captions, image labels, OCR artifacts, and narrative story fragments.
+3. coreIdea = an abstracted principle, never a figure reference or example sentence.
+4. principle = generalized rule — abstract FROM the example TO the rule it illustrates.
+5. mechanism ≠ rule — if they would be identical, make mechanism the WHY and rule the WHAT TO DO.
 6. reasoningFlow must use the domain-specific chain format above (A → B → C).
-7. Keep every field to 1–2 sentences maximum.`;
+7. Keep every field to 1–2 sentences maximum.
+8. Write like Ninja Nerd, Pathoma, or a clinical attending — compressed expert cognition, not notes.`;
 }
 
 export function buildUserPrompt(

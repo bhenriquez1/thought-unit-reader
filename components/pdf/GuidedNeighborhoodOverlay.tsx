@@ -13,37 +13,83 @@ import { renderGuidedReadingPath, type RenderGuidedReadingPathResult } from "@/l
 import type { MatchConfidence } from "@/lib/highlights/matchNeighborhoodMemberToText";
 
 // ---------------------------------------------------------------------------
-// Color constants — actual RGBA fills, not Tailwind opacity classes
+// Semantic color palette — one color per EDUCATIONAL ROLE, not just guided tier.
+// theorem/formula = gold | definition = blue | mechanism = teal
+// contrast/trap   = rose | application = purple | example = green
+// analogy = orange | detail/measurement = slate
 // ---------------------------------------------------------------------------
-const TIER_STYLE: Record<GuidedTier, { background: string; border: string; boxShadow: string }> = {
-  main_signal: {
-    background: "rgba(234, 179, 8, 0.42)",
-    border: "rgba(245, 200, 66, 0.72)",
-    boxShadow: "0 0 0 1px rgba(245, 200, 66, 0.22)",
-  },
-  explains_it: {
-    background: "rgba(96, 165, 250, 0.34)",
-    border: "rgba(147, 197, 253, 0.58)",
-    boxShadow: "0 0 0 1px rgba(147, 197, 253, 0.16)",
-  },
-  extra_context: {
-    background: "rgba(226, 232, 240, 0.22)",
-    border: "rgba(203, 213, 225, 0.38)",
-    boxShadow: "0 0 0 1px rgba(203, 213, 225, 0.08)",
-  },
-  do_not_confuse: {
-    background: "rgba(244, 114, 182, 0.38)",
-    border: "rgba(251, 146, 203, 0.64)",
-    boxShadow: "0 0 0 1px rgba(251, 146, 203, 0.18)",
-  },
+const ROLE_RGB: Record<string, [number, number, number]> = {
+  theorem:        [245, 158,  11],  // gold
+  formula:        [245, 158,  11],  // gold
+  definition:     [ 96, 165, 250],  // blue
+  mechanism:      [ 20, 184, 166],  // teal
+  contrast:       [244,  63,  94],  // rose
+  application:    [167, 139, 250],  // purple
+  worked_example: [ 74, 222, 128],  // green (muted — example role)
+  example:        [ 74, 222, 128],  // green
+  analogy:        [251, 146,  60],  // orange
+  measurement:    [148, 163, 184],  // slate
+  variation:      [148, 163, 184],  // slate
+  detail:         [148, 163, 184],  // slate
+};
+const DEFAULT_RGB: [number, number, number] = [96, 165, 250]; // blue fallback
+
+// Opacity factor per guided-reading tier (anchor = brightest, extra_context = dimmest)
+const TIER_ALPHA: Record<GuidedTier, number> = {
+  main_signal:    1.00,
+  explains_it:    0.60,
+  extra_context:  0.35,
+  do_not_confuse: 1.00,  // always rose — handled separately
 };
 
-const BADGE_BG: Record<GuidedTier, string> = {
-  main_signal:    "rgba(161, 98, 7, 0.95)",
-  explains_it:    "rgba(37, 99, 235, 0.95)",
-  extra_context:  "rgba(71, 85, 105, 0.95)",
-  do_not_confuse: "rgba(190, 24, 93, 0.95)",
-};
+function resolveHighlightStyle(
+  tier: GuidedTier,
+  conceptRole: string | undefined,
+  educationalTier: 1|2|3|4,
+): { background: string; border: string; boxShadow: string } {
+  // Traps are always rose regardless of concept role
+  if (tier === "do_not_confuse") {
+    return {
+      background: "rgba(244, 63, 94, 0.36)",
+      border:     "rgba(251, 113, 133, 0.64)",
+      boxShadow:  "0 0 0 1px rgba(244,63,94,0.22), 0 0 6px rgba(244,63,94,0.14)",
+    };
+  }
+
+  const [r, g, b] = ROLE_RGB[conceptRole ?? ""] ?? DEFAULT_RGB;
+  const tierAlpha = TIER_ALPHA[tier];
+  const eduWeight = EDU_OPACITY_WEIGHT[educationalTier];
+
+  const bgA     = clamp(0.34 * tierAlpha * eduWeight, 0, 0.64);
+  const borderA = clamp(0.68 * tierAlpha * eduWeight, 0, 0.90);
+  const glowA   = clamp(0.10 * tierAlpha * eduWeight, 0, 0.26);
+
+  const boxShadow =
+    tier === "main_signal" && educationalTier === 1
+      ? `0 0 0 2px rgba(${r},${g},${b},${(glowA * 1.6).toFixed(2)}), 0 0 9px rgba(${r},${g},${b},${glowA.toFixed(2)})`
+      : tier === "main_signal" && educationalTier === 2
+      ? `0 0 0 1px rgba(${r},${g},${b},${(glowA * 1.2).toFixed(2)})`
+      : `0 0 0 1px rgba(${r},${g},${b},${glowA.toFixed(2)})`;
+
+  return {
+    background: `rgba(${r}, ${g}, ${b}, ${bgA.toFixed(2)})`,
+    border:     `rgba(${r}, ${g}, ${b}, ${borderA.toFixed(2)})`,
+    boxShadow,
+  };
+}
+
+function badgeBgForRole(role?: string): string {
+  switch (role) {
+    case "theorem": case "formula":         return "rgba(161,  98,   7, 0.95)"; // gold
+    case "definition":                       return "rgba( 37,  99, 235, 0.95)"; // blue
+    case "mechanism":                        return "rgba( 13, 148, 136, 0.95)"; // teal
+    case "contrast":                         return "rgba(190,  24,  93, 0.95)"; // rose
+    case "application":                      return "rgba(109,  40, 217, 0.95)"; // purple
+    case "worked_example": case "example":  return "rgba( 22, 163,  74, 0.95)"; // green
+    case "analogy":                          return "rgba(180,  83,   9, 0.95)"; // orange-dark
+    default:                                 return "rgba( 71,  85, 105, 0.95)"; // slate
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -113,6 +159,7 @@ export default function GuidedNeighborhoodOverlay({
       tier: GuidedTier;
       roleLabel: string;
       tooltip: string;
+      conceptRole?: string;
     }> = [];
     let counter = 1;
     for (const neighborhood of guided.neighborhoods) {
@@ -143,6 +190,7 @@ export default function GuidedNeighborhoodOverlay({
           tier: "main_signal",
           roleLabel,
           tooltip: `${roleLabel || "Key concept"}${tooltipSupport}`,
+          conceptRole: sourceNeighborhood?.conceptRole,
         });
       }
 
@@ -172,18 +220,9 @@ export default function GuidedNeighborhoodOverlay({
       {guided.neighborhoods.map((group) => (
         <React.Fragment key={group.neighborhoodId}>
           {group.overlays.map((entry) => {
-            const style = TIER_STYLE[entry.tier];
             const eduTier = (entry.educationalTier ?? 4) as 1|2|3|4;
-            // Tier 1 (theorem/formula): stronger ring + glow shadow; tier 4: minimal ring
+            const style = resolveHighlightStyle(entry.tier, entry.conceptRole, eduTier);
             const borderWidth = entry.tier === "main_signal" && eduTier === 1 ? "2px" : "1px";
-            const boxShadow =
-              entry.tier === "main_signal" && eduTier === 1
-                ? "0 0 0 2px rgba(245,200,66,0.45), 0 0 8px rgba(245,200,66,0.18)"
-                : entry.tier === "main_signal" && eduTier === 2
-                ? "0 0 0 1px rgba(245,200,66,0.32)"
-                : entry.tier === "do_not_confuse"
-                ? "0 0 0 1px rgba(251,146,203,0.35), 0 0 6px rgba(244,114,182,0.14)"
-                : style.boxShadow;
             const borderRadius = entry.tier === "main_signal" ? (eduTier === 1 ? 5 : 4) : 3;
             return entry.rects.map((rect, ri) => (
               <button
@@ -203,7 +242,7 @@ export default function GuidedNeighborhoodOverlay({
                   height: rect.height,
                   background: style.background,
                   border: `${borderWidth} solid ${style.border}`,
-                  boxShadow,
+                  boxShadow: style.boxShadow,
                   borderRadius,
                   opacity: entry.opacity,
                   pointerEvents: onOverlayClick ? "auto" : "none",
@@ -246,7 +285,9 @@ export default function GuidedNeighborhoodOverlay({
               fontSize: 9,
               fontWeight: 700,
               color: "white",
-              background: BADGE_BG[badge.tier],
+              background: badge.tier === "do_not_confuse"
+                ? "rgba(190, 24, 93, 0.95)"
+                : badgeBgForRole(badge.conceptRole),
               boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
             }}
           >
@@ -258,7 +299,9 @@ export default function GuidedNeighborhoodOverlay({
                 fontSize: 7,
                 fontWeight: 700,
                 color: "white",
-                background: BADGE_BG[badge.tier],
+                background: badge.tier === "do_not_confuse"
+                  ? "rgba(190, 24, 93, 0.95)"
+                  : badgeBgForRole(badge.conceptRole),
                 borderRadius: 3,
                 padding: "0px 3px",
                 lineHeight: "11px",
@@ -332,6 +375,7 @@ function materializeEntries(
       sourceMemberId: memberId,
       text,
       educationalTier,
+      conceptRole: n.conceptRole,
     });
   };
 
