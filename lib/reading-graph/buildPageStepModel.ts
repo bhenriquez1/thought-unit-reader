@@ -53,6 +53,8 @@ export interface SupportNeighborhoodInput {
   trap?: string | null;
 }
 
+export type StepModelPageDomain = "math" | "science" | "clinical" | "fiction" | "general";
+
 export interface BuildPageStepModelInput {
   pageKey: string;
   pageTitle?: string | null;
@@ -60,6 +62,7 @@ export interface BuildPageStepModelInput {
   conceptBlocks: ConceptBlockInput[];
   highlightNeighborhoods: HighlightNeighborhoodInput[];
   supportNeighborhoods?: SupportNeighborhoodInput[];
+  domain?: StepModelPageDomain;
 }
 
 export interface PageStepLeftView {
@@ -200,11 +203,11 @@ export function buildPageStepModel(
         importance: cleanNullable(conceptBlock?.importance || importanceForRole(role)),
       },
       miniTest: {
-        coreMeaning: buildCoreMeaningHook(title, anchorText),
-        mechanism: buildMechanismHook(title, conceptBlock?.surgicalReason || supportTexts[0]),
-        distinction: buildDistinctionHook(title, trapText, anchorText),
-        application: buildApplicationHook(title, conceptBlock?.rule || supportTexts[0]),
-        skimTrap: buildSkimTrapHook(title, trapText, anchorText),
+        coreMeaning: buildCoreMeaningHook(title, anchorText, input.domain),
+        mechanism: buildMechanismHook(title, conceptBlock?.surgicalReason || supportTexts[0], input.domain),
+        distinction: buildDistinctionHook(title, trapText, anchorText, input.domain),
+        application: buildApplicationHook(title, conceptBlock?.rule || supportTexts[0], input.domain),
+        skimTrap: buildSkimTrapHook(title, trapText, anchorText, input.domain),
       },
       compression: {
         recognitionHook: cleanNullable(anchorText),
@@ -451,11 +454,45 @@ function extractSubjectPhrase(text: string, maxWords = 8): string {
   return words.slice(0, cutAt).join(" ").replace(/^(The|A|An)\s+/i, "").trim();
 }
 
-function buildPageNativeQuestion(role: string, text: string): string {
+function buildPageNativeQuestion(role: string, text: string, domain?: StepModelPageDomain): string {
   if (!text) return "";
   const stem = (text || "").replace(/[.!?]+$/, "").trim();
   if (!stem) return "";
   const subject = extractSubjectPhrase(stem, 8) || stem.split(/\s+/).slice(0, 8).join(" ");
+
+  // Domain-specific question templates produce more pedagogically precise questions.
+  if (domain === "math") {
+    switch (role) {
+      case "coreMeaning":   return cleanLocal(`What does ${subject} converge to or represent`);
+      case "mechanism":     return cleanLocal(`What condition causes ${subject} to converge or diverge`);
+      case "distinction":   return cleanLocal(`How does ${subject} differ from a divergent sequence`);
+      case "application":   return cleanLocal(`How would you determine whether ${subject} converges`);
+      case "skimTrap":      return cleanLocal(`What common mistake arises when applying ${subject}`);
+      default:              return cleanLocal(stem.split(/\s+/).slice(0, 12).join(" "));
+    }
+  }
+  if (domain === "science") {
+    switch (role) {
+      case "coreMeaning":   return cleanLocal(`What is the role of ${subject} in this process`);
+      case "mechanism":     return cleanLocal(`What causes ${subject} to occur or change`);
+      case "distinction":   return cleanLocal(`How does ${subject} differ from a related concept`);
+      case "application":   return cleanLocal(`Where or how is ${subject} used in practice`);
+      case "skimTrap":      return cleanLocal(`What mistake is commonly made about ${subject}`);
+      default:              return cleanLocal(stem.split(/\s+/).slice(0, 12).join(" "));
+    }
+  }
+  if (domain === "clinical") {
+    switch (role) {
+      case "coreMeaning":   return cleanLocal(`What does ${subject} indicate clinically`);
+      case "mechanism":     return cleanLocal(`Why does ${subject} cause or lead to its effects`);
+      case "distinction":   return cleanLocal(`How does ${subject} differ from a similar condition`);
+      case "application":   return cleanLocal(`What is the next step when ${subject} is present`);
+      case "skimTrap":      return cleanLocal(`What mistake is commonly made about ${subject}`);
+      default:              return cleanLocal(stem.split(/\s+/).slice(0, 12).join(" "));
+    }
+  }
+
+  // General / default templates
   switch (role) {
     case "coreMeaning":   return cleanLocal(`What does ${subject} mean`);
     case "mechanism":     return cleanLocal(`What does ${subject} cause or lead to`);
@@ -466,42 +503,52 @@ function buildPageNativeQuestion(role: string, text: string): string {
   }
 }
 
-function buildCoreMeaningHook(title: string, anchorText: string): string {
-  const q = extractDefinitionQuestion(anchorText);
-  if (q) return q;
-  return buildPageNativeQuestion("coreMeaning", anchorText) || cleanLocal(anchorText);
+function buildCoreMeaningHook(title: string, anchorText: string, domain?: StepModelPageDomain): string {
+  // On non-math domains, regex-based extractors produce more specific questions.
+  // On math domains, the domain-specific templates in buildPageNativeQuestion are more reliable.
+  if (domain !== "math") {
+    const q = extractDefinitionQuestion(anchorText);
+    if (q) return q;
+  }
+  return buildPageNativeQuestion("coreMeaning", anchorText, domain) || cleanLocal(anchorText);
 }
 
-function buildMechanismHook(title: string, mechanismText?: string | null): string | null {
-  const q = extractCausalQuestion(mechanismText || "");
-  if (q) return q;
+function buildMechanismHook(title: string, mechanismText?: string | null, domain?: StepModelPageDomain): string | null {
+  if (domain !== "math") {
+    const q = extractCausalQuestion(mechanismText || "");
+    if (q) return q;
+  }
   if (!mechanismText) return null;
-  return buildPageNativeQuestion("mechanism", mechanismText) || cleanLocal(mechanismText);
+  return buildPageNativeQuestion("mechanism", mechanismText, domain) || cleanLocal(mechanismText);
 }
 
 function buildDistinctionHook(
   title: string,
   trapText?: string | null,
-  anchorText?: string | null
+  anchorText?: string | null,
+  domain?: StepModelPageDomain
 ): string | null {
-  if (trapText) return buildPageNativeQuestion("distinction", trapText) || cleanLocal(trapText);
-  return anchorText ? buildPageNativeQuestion("distinction", anchorText) || null : null;
+  if (trapText) return buildPageNativeQuestion("distinction", trapText, domain) || cleanLocal(trapText);
+  return anchorText ? buildPageNativeQuestion("distinction", anchorText, domain) || null : null;
 }
 
-function buildApplicationHook(title: string, applicationText?: string | null): string | null {
-  const q = extractOperationalQuestion(applicationText || "");
-  if (q) return q;
+function buildApplicationHook(title: string, applicationText?: string | null, domain?: StepModelPageDomain): string | null {
+  if (domain !== "math") {
+    const q = extractOperationalQuestion(applicationText || "");
+    if (q) return q;
+  }
   if (!applicationText) return null;
-  return buildPageNativeQuestion("application", applicationText) || cleanLocal(applicationText);
+  return buildPageNativeQuestion("application", applicationText, domain) || cleanLocal(applicationText);
 }
 
 function buildSkimTrapHook(
   title: string,
   trapText?: string | null,
-  anchorText?: string | null
+  anchorText?: string | null,
+  domain?: StepModelPageDomain
 ): string | null {
-  if (trapText) return buildPageNativeQuestion("skimTrap", trapText) || cleanLocal(trapText);
-  return anchorText ? buildPageNativeQuestion("skimTrap", anchorText) || null : null;
+  if (trapText) return buildPageNativeQuestion("skimTrap", trapText, domain) || cleanLocal(trapText);
+  return anchorText ? buildPageNativeQuestion("skimTrap", anchorText, domain) || null : null;
 }
 
 function isWeakTitle(title: string): boolean {

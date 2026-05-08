@@ -301,6 +301,76 @@ interface BuiltFields {
   rule: string;
 }
 
+// ---------------------------------------------------------------------------
+// Post-extraction quality gate
+// ---------------------------------------------------------------------------
+
+function passesConceptQualityGate(
+  concept: ConceptBlockInput,
+  pageObjective: ReturnType<typeof inferPageObjective>,
+  domain: PageDomain,
+): boolean {
+  void domain; // reserved for future domain-specific gates
+  const anchor = concept.anchorSentence;
+
+  // 1. Must be a real teachable concept — not filler/narration/OCR fragment
+  if (isExampleOrFiller(anchor)) return false;
+  if (anchor.split(/\s+/).length < 5) return false;
+  if (/^(we |this |here |in this |notice |observe )/i.test(anchor.trimStart())) return false;
+
+  // 2. Topic connection — when a clear page topic exists (≥2 key tokens), at least one
+  // token must appear in the anchor or its support sentences.
+  if (pageObjective?.topic) {
+    const topicTokens = pageObjective.topic.toLowerCase().split(/\s+/).filter((t) => t.length > 3);
+    if (topicTokens.length >= 2) {
+      const anchorLower = anchor.toLowerCase();
+      const hasTopicConnection =
+        topicTokens.some((t) => anchorLower.includes(t)) ||
+        concept.supportSentences.some((s) => topicTokens.some((t) => s.toLowerCase().includes(t)));
+      if (!hasTopicConnection) return false;
+    }
+  }
+
+  // 3. Minimal compression — reject overly long narrative sentences that begin with
+  // weak determiners (usually exposition, not the core teachable statement).
+  const wordCount = anchor.split(/\s+/).length;
+  if (wordCount > 45 && /^(the |a |an |this |these |those )/i.test(anchor.trimStart())) return false;
+
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Domain-adaptive STR synthesis helpers
+// ---------------------------------------------------------------------------
+
+function extractConditionResult(anchor: string, supports: string[]): { condition: string; result: string } | null {
+  for (const text of [anchor, ...supports]) {
+    const m = text.match(/\b(when|if)\s+(.{10,80}?),\s+(.{10,})/i);
+    if (m) return { condition: `${m[1]} ${m[2]}`, result: m[3].trim() };
+    const m2 = text.match(/(.{5,40}?)\s+(converges?\s+to|approaches?|equals?)\s+(.{5,})/i);
+    if (m2) return { condition: m2[1].trim(), result: `${m2[2]} ${m2[3]}`.trim() };
+  }
+  return null;
+}
+
+function extractMechConsequence(anchor: string, supports: string[]): { mechanism: string; consequence: string } | null {
+  for (const text of [anchor, ...supports]) {
+    const m = text.match(/(.{10,80}?)\s+(leads?\s+to|causes?|results?\s+in)\s+(.{10,})/i);
+    if (m) return { mechanism: m[1].trim(), consequence: `${m[2]} ${m[3]}`.trim() };
+    const m2 = text.match(/because\s+(.{10,80}?),\s+(.{10,})/i);
+    if (m2) return { mechanism: `because ${m2[1]}`, consequence: m2[2].trim() };
+  }
+  return null;
+}
+
+function extractFindingAction(anchor: string, supports: string[]): { finding: string; action: string } | null {
+  for (const text of [anchor, ...supports]) {
+    const m = text.match(/(.{10,80}?)\s+(indicates?|suggests?|means?|requires?)\s+(.{10,})/i);
+    if (m) return { finding: m[1].trim(), action: `${m[2]} ${m[3]}`.trim() };
+  }
+  return null;
+}
+
 function buildConceptFields(concept: ConceptBlockInput, coreIdea: string, domain: PageDomain): BuiltFields {
   const candidates: SectionCandidate[] = [];
   let seq = 0;
@@ -347,19 +417,40 @@ function buildConceptFields(concept: ConceptBlockInput, coreIdea: string, domain
   const result = dedupeSections(candidates, coreIdea);
 
   const anchorClean = cleanSentence(concept.anchorSentence) || "";
-  const firstSupport = cleanSentence(concept.supportSentences[0] ?? "") || "";
 
-  // Page-native fallbacks: use actual page text, never generic template strings.
-  // Reason/rule must NOT fall back to anchor — an empty field is better than repeating pattern.
   const fallbackPattern = anchorClean || "This concept introduces a central idea on the page.";
-  const pageNativeReason = firstSupport;
-  const pageNativeRule = firstSupport;
+
+  // Domain-adaptive synthesis: produce distinct surgicalReason and rule fields.
+  // Pure copy (firstSupport for both) creates duplication in the right panel.
+  const { surgicalReason: synthesizedReason, rule: synthesizedRule } = (() => {
+    const role = concept.conceptRole;
+    if (domain === "math" || role === "theorem" || role === "formula") {
+      const condResult = extractConditionResult(concept.anchorSentence, concept.supportSentences);
+      if (condResult) return { surgicalReason: condResult.condition, rule: condResult.result };
+    }
+    if (domain === "science") {
+      const mechConseq = extractMechConsequence(concept.anchorSentence, concept.supportSentences);
+      if (mechConseq) return { surgicalReason: mechConseq.mechanism, rule: mechConseq.consequence };
+    }
+    if (domain === "clinical") {
+      const findAction = extractFindingAction(concept.anchorSentence, concept.supportSentences);
+      if (findAction) return { surgicalReason: findAction.finding, rule: findAction.action };
+    }
+    // Fallback: use distinct support sentences for each field to prevent duplication.
+    const distinct = concept.supportSentences
+      .map((s) => cleanSentence(s))
+      .filter((s): s is string => Boolean(s) && s.toLowerCase().slice(0, 60) !== anchorClean.toLowerCase().slice(0, 60));
+    return {
+      surgicalReason: distinct[0] ?? "",
+      rule: distinct[1] ?? distinct[0] ?? "",
+    };
+  })();
 
   return {
     pattern:        normalizeLine(result.selected.pattern?.text ?? fallbackPattern, fallbackPattern),
-    surgicalReason: normalizeLine(result.selected.reason?.text  ?? pageNativeReason, pageNativeReason),
+    surgicalReason: normalizeLine(result.selected.reason?.text  ?? synthesizedReason, synthesizedReason),
     trap:           result.selected.trap?.text ? normalizeLine(result.selected.trap.text, "") : "",
-    rule:           normalizeLine(result.selected.rule?.text    ?? pageNativeRule,   pageNativeRule),
+    rule:           normalizeLine(result.selected.rule?.text    ?? synthesizedRule,   synthesizedRule),
   };
 }
 
@@ -389,13 +480,84 @@ function inferPageTitle(page: PageModelForConcepts, concepts: ConceptBlockInput[
     if (!isGeneric && stripped.length >= 4) return stripped;
   }
 
-  // Prefer definition or mechanism concept title over example/detail
+  // Prefer high-value concept title (theorem > formula > definition > mechanism) over example/detail
   const nonExampleConcept = concepts.find(
-    (c) => c.conceptRole === "definition" || c.conceptRole === "mechanism"
+    (c) => c.conceptRole === "theorem" || c.conceptRole === "formula" ||
+           c.conceptRole === "definition" || c.conceptRole === "mechanism"
   );
   if (nonExampleConcept?.title) return nonExampleConcept.title;
   if (concepts[0]?.title) return concepts[0].title;
   return `Page ${page.pageNumber}`;
+}
+
+// ---------------------------------------------------------------------------
+// Chapter intro view builder
+// ---------------------------------------------------------------------------
+
+function buildChapterIntroView(
+  pageModel: PageInsightModel,
+  normResult: ClinicalNormalizationResult,
+  domain: PageDomain,
+  headingLines: string[],
+): UltraPageView {
+  // Extract chapter title: find "Chapter N" heading, strip the number prefix
+  const chapterHeading = headingLines.find((l) => /^chapter\s+\d+\b/i.test(l.trim())) ?? headingLines[0] ?? "";
+  const chapterTitle = chapterHeading.replace(/^chapter\s+\d+[:\s]*/i, "").trim() || chapterHeading;
+
+  // Build coreIdea from canonical statements
+  const stmts = normResult.canonicalStatements;
+  const topStmt = stmts.find((s) => s.confidence >= 0.45 && !isExampleOrFiller(s.normalizedText));
+  const coreIdea = topStmt
+    ? `This chapter introduces ${chapterTitle.toLowerCase() || "key concepts"} — ${topStmt.normalizedText.charAt(0).toLowerCase()}${topStmt.normalizedText.slice(1)}`
+    : `This chapter introduces ${chapterTitle.toLowerCase() || "concepts"} through foundational ideas explored in the pages ahead.`;
+
+  // Build 2–3 roadmap blocks from canonical statements
+  const roadmapStmts = stmts
+    .filter((s) => !isExampleOrFiller(s.normalizedText) && s.normalizedText.length >= 20)
+    .slice(0, 3);
+
+  const blockTitles = ["Chapter Purpose", "Key Concept Preview", "Real-World Connection"];
+  const blocks: UltraConceptBlock[] = roadmapStmts.map((s, i) => ({
+    conceptId: `chapter-intro-${i}`,
+    ordinal: i + 1,
+    title: blockTitles[i] ?? `Preview ${i + 1}`,
+    pattern: cleanSentence(s.normalizedText) || s.normalizedText,
+    surgicalReason: "",
+    trap: "",
+    rule: "",
+    importance: i === 0 ? "VERY HIGH" : "HIGH",
+  }));
+
+  // Forward-looking mini-test questions
+  const topicPhrase = chapterTitle || "this topic";
+  const miniTest = [
+    `What central idea will ${topicPhrase} explain?`,
+    roadmapStmts[0]
+      ? `Why does understanding "${roadmapStmts[0].normalizedText.slice(0, 60).replace(/\.$/, "")}…" matter?`
+      : `How will the concepts in this chapter connect to each other?`,
+  ];
+
+  // Compression: 2 roadmap bullets
+  const compression = roadmapStmts.slice(0, 2).map((s, i) => `Rule ${i + 1}: ${s.normalizedText}`);
+
+  void domain;
+  return {
+    title: `ULTRA – ${chapterTitle || "Chapter Introduction"}`,
+    subtitle: "Chapter Introduction",
+    coreIdea,
+    blocks,
+    miniTest,
+    compression,
+    steps: blocks.map((b) => ({ conceptId: b.conceptId, role: "main_signal", roleLabel: "Core" })),
+    _debug: {
+      pageKind: normResult.pageKind,
+      domain,
+      shouldRenderFullPanel: true,
+      pageSummaryLength: (pageModel.pageSummary ?? "").length,
+      coreIdeaSource: "pageSummary",
+      conceptCandidates: [],
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -446,6 +608,12 @@ export function buildUltraPageView(
     domain,
   );
 
+  // Chapter intro pages: render a roadmap view instead of the full concept extraction panel.
+  // chapter_title pages (no real prose) continue to return null below.
+  if (normResult.pageKind === "chapter_intro") {
+    return buildChapterIntroView(pageModel, normResult, domain, headingLines);
+  }
+
   if (!normResult.shouldRenderFullPanel) {
     // Math pages where formula notation was stripped by PDF extraction may produce
     // few canonical statements yet still contain rich paragraph text. Allow render
@@ -478,11 +646,13 @@ export function buildUltraPageView(
   const zoneInsights = findMainTeachingZone(validInsights, { pageKind: normResult.pageKind });
   console.log("[TRACE buildUltraPageView:zone]", { validParagraphs: validInsights.length, teachingZoneSize: zoneInsights.length, zoneIsSubset: zoneInsights.length < validInsights.length });
   const page = adaptPageInsightModel({ ...pageModel, paragraphInsights: zoneInsights });
+  page.domain = domain;
   let concepts = extractConceptBlocks(page);
 
   // Fallback: if zone filtering was too aggressive, retry with all valid insights
   if (!concepts.length && zoneInsights.length < validInsights.length) {
     const fallbackPage = adaptPageInsightModel({ ...pageModel, paragraphInsights: validInsights });
+    fallbackPage.domain = domain;
     concepts = extractConceptBlocks(fallbackPage);
   }
 
@@ -496,6 +666,7 @@ export function buildUltraPageView(
     const mathFallbackPage: PageModelForConcepts = {
       documentId: pageModel.documentId ?? "",
       pageNumber: pageModel.pageNumber ?? 0,
+      domain,
       sentences: normResult.canonicalStatements.map((s, i) => ({
         id: `math-stmt-${i}`,
         text: s.normalizedText,
@@ -510,6 +681,10 @@ export function buildUltraPageView(
     };
     concepts = extractConceptBlocks(mathFallbackPage);
   }
+
+  // Post-extraction quality gate: filter out filler, narration, and non-teachable concepts
+  // before they enter the right panel. Applied after all fallback paths complete.
+  concepts = concepts.filter((c) => passesConceptQualityGate(c, pageObjective, domain));
 
   console.log("[TRACE buildUltraPageView:concepts]", { conceptCount: concepts.length, returnNull: concepts.length === 0 });
   if (!concepts.length) return null;
@@ -578,7 +753,7 @@ export function buildUltraPageView(
     // PRIORITY 2+: concept anchors — definition → mechanism → chiefSignal → top non-example.
 
     const definitionConcept = concepts.find(
-      (c) => c.conceptRole === "definition" && !isExampleAnchor(c.anchorSentence)
+      (c) => (c.conceptRole === "theorem" || c.conceptRole === "definition") && !isExampleAnchor(c.anchorSentence)
     );
     if (definitionConcept) {
       // Synthesize: if there's also a mechanism, blend definition + mechanism for richer core idea
@@ -602,7 +777,7 @@ export function buildUltraPageView(
     // 3. Last resort — top concept (skip example/detail anchors if alternatives exist)
     const top = concepts[0];
     if (!top) return "";
-    const nonExampleTop = concepts.find((c) => c.conceptRole !== "example" && c.conceptRole !== "detail");
+    const nonExampleTop = concepts.find((c) => c.conceptRole !== "example" && c.conceptRole !== "detail" && c.conceptRole !== "worked_example" && c.conceptRole !== "analogy");
     const candidate = nonExampleTop ?? top;
     return candidate.supportSentences.find((s) => s.length >= 40) ?? candidate.anchorSentence ?? "";
   })();
@@ -630,6 +805,7 @@ export function buildUltraPageView(
     pageKey: `${page.documentId}:${page.pageNumber}`,
     pageTitle: inferPageTitle(page, concepts),
     pageSummary: page.pageSummary ?? undefined,
+    domain: domain as import("@/lib/reading-graph/buildPageStepModel").StepModelPageDomain,
     conceptBlocks: blocks.map((b, i) => ({
       id: concepts[i].id,
       title: b.title,
