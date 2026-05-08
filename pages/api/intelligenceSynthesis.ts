@@ -1,10 +1,15 @@
 // pages/api/intelligenceSynthesis.ts
 // Educational interpretation endpoint.
-// Accepts extracted page content, returns an LLM-synthesized TeachingSynthesis.
+// Uses OpenAI Responses API with Zod structured outputs for reliable JSON.
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
-import { buildSystemPrompt, buildUserPrompt } from "@/lib/insights/synthesizeTeachingOutput";
+import { zodTextFormat } from "openai/helpers/zod";
+import {
+  buildSystemPrompt,
+  buildUserPrompt,
+  TeachingSynthesisSchema,
+} from "@/lib/insights/synthesizeTeachingOutput";
 import type { TeachingSynthesis } from "@/lib/insights/synthesizeTeachingOutput";
 import type { PageDomain } from "@/lib/insights/detectPageDomain";
 import type { UltraConceptBlock } from "@/lib/insights/buildUltraPageView";
@@ -45,35 +50,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     : [];
 
   try {
-    const completion = await openai.chat.completions.create({
+    const response = await openai.responses.parse({
       model: "gpt-4o-mini",
       temperature: 0.3,
-      max_tokens: 900,
-      response_format: { type: "json_object" },
-      messages: [
+      max_output_tokens: 1000,
+      text: { format: zodTextFormat(TeachingSynthesisSchema, "teaching_synthesis") },
+      input: [
         { role: "system", content: buildSystemPrompt(safeDomain) },
         { role: "user", content: buildUserPrompt(pageText, safeDomain, safeConcepts) },
       ],
     });
 
-    const raw = completion.choices?.[0]?.message?.content?.trim() ?? "";
-    if (!raw) {
-      return res.status(500).json({ error: "Empty response from model." });
+    const synthesis: TeachingSynthesis | null = response.output_parsed;
+
+    if (!synthesis) {
+      return res.status(500).json({ error: "Model returned no structured output." });
     }
 
-    let synthesis: TeachingSynthesis;
-    try {
-      synthesis = JSON.parse(raw) as TeachingSynthesis;
-    } catch {
-      return res.status(500).json({ error: "Model returned invalid JSON." });
-    }
+    // Zod validation is already applied by the Responses API parse step,
+    // but run it again to catch any unexpected shape mismatches.
+    const validated = TeachingSynthesisSchema.parse(synthesis);
 
-    // Validate required fields
-    if (!synthesis.coreIdea || !Array.isArray(synthesis.concepts)) {
-      return res.status(500).json({ error: "Incomplete synthesis response." });
-    }
-
-    return res.status(200).json(synthesis);
+    return res.status(200).json(validated);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("intelligenceSynthesis API error:", msg);

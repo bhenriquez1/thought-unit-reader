@@ -282,12 +282,18 @@ export default function GuidedNeighborhoodOverlay({
 
 function conceptRoleLabel(role?: string): string {
   switch (role) {
-    case "definition":   return "Defines";
-    case "mechanism":    return "Explains";
-    case "variation":    return "Contrasts";
-    case "measurement":  return "Measures";
-    case "example":      return "Example";
-    default:             return "";
+    case "theorem":        return "Theorem";
+    case "formula":        return "Formula";
+    case "definition":     return "Define";
+    case "mechanism":      return "How";
+    case "contrast":       return "Trap";
+    case "application":    return "Apply";
+    case "worked_example": return "Example";
+    case "measurement":    return "Rule";
+    case "variation":      return "Contrast";
+    case "analogy":        return "Analogy";
+    case "example":        return "Example";
+    default:               return "";
   }
 }
 
