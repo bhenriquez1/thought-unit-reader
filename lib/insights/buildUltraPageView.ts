@@ -826,10 +826,23 @@ export function buildUltraPageView(
     return candidate.supportSentences.find((s) => s.length >= 40) ?? candidate.anchorSentence ?? "";
   })();
 
-  const coreIdea = normalizeLine(
-    summaryFallback,
-    "This page develops one core idea through a small set of connected concepts."
-  );
+  // Build a meaningful fallback from heading + strongest non-example concept.
+  // Never emit generic filler — "This page develops one core idea…" tells the student nothing.
+  const headingFallbackText = (() => {
+    const h = page.headings?.[0]?.text?.trim().replace(/^\d+(\.\d+)*\s+/, "") || "";
+    const topTeachable = concepts.find(
+      (c) => c.conceptRole !== "example" && c.conceptRole !== "detail" &&
+             c.conceptRole !== "worked_example" && c.conceptRole !== "analogy"
+    );
+    if (h && topTeachable) {
+      const anchor = topTeachable.anchorSentence.slice(0, 140).replace(/\.$/, "");
+      return `${anchor}.`;
+    }
+    if (h) return `This page introduces ${h.charAt(0).toLowerCase()}${h.slice(1)}.`;
+    if (topTeachable) return topTeachable.anchorSentence;
+    return concepts[0]?.anchorSentence ?? "";
+  })();
+  const coreIdea = normalizeLine(summaryFallback, headingFallbackText);
 
   // Concept blocks — pass domain so field scoring is domain-aware
   const blocks: UltraConceptBlock[] = concepts.map((c, i) => {

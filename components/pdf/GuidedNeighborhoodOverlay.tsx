@@ -45,7 +45,7 @@ const TIER_ALPHA: Record<GuidedTier, number> = {
 function resolveHighlightStyle(
   tier: GuidedTier,
   conceptRole: string | undefined,
-  educationalTier: 1|2|3|4,
+  educationalTier: 1|2|3|4|5,
 ): { background: string; border: string; boxShadow: string } {
   // Traps are always rose regardless of concept role
   if (tier === "do_not_confuse") {
@@ -340,11 +340,12 @@ function conceptRoleLabel(role?: string): string {
   }
 }
 
-function conceptRoleToEducationalTier(role?: string): 1 | 2 | 3 | 4 {
-  if (role === "theorem" || role === "formula") return 1;
+function conceptRoleToEducationalTier(role?: string): 1 | 2 | 3 | 4 | 5 {
+  if (role === "theorem" || role === "formula") return 1;               // strongest glow
   if (role === "definition" || role === "mechanism" || role === "contrast") return 2;
-  if (role === "application" || role === "worked_example") return 3;
-  return 4;
+  if (role === "application") return 3;                                  // practical use — medium
+  if (role === "worked_example" || role === "analogy") return 4;        // illustrative — subdued
+  return 5;                                                               // example / detail — barely visible
 }
 
 function materializeEntries(
@@ -399,27 +400,31 @@ function inferNeighborhoodPageOrder(
   return first ? Math.round(first.y * 10000 + first.x) : Number.MAX_SAFE_INTEGER;
 }
 
-// Educational weight multipliers: tier 1 (theorem/formula) = strongest glow,
-// tier 4 (detail/narrative) = faint background annotation.
-const EDU_OPACITY_WEIGHT:  Record<1|2|3|4, number> = { 1: 1.32, 2: 1.0, 3: 0.68, 4: 0.42 };
-const EDU_BORDER_WEIGHT:   Record<1|2|3|4, number> = { 1: 1.22, 2: 1.0, 3: 0.75, 4: 0.48 };
+// Educational weight multipliers:
+// tier 1 (theorem/formula) = strongest glow
+// tier 2 (definition/mechanism/contrast) = standard
+// tier 3 (application) = medium
+// tier 4 (worked_example/analogy) = subdued — clearly below definitions
+// tier 5 (example/detail/measurement) = barely visible — context only
+const EDU_OPACITY_WEIGHT: Record<1|2|3|4|5, number> = { 1: 1.32, 2: 1.0, 3: 0.68, 4: 0.38, 5: 0.18 };
+const EDU_BORDER_WEIGHT:  Record<1|2|3|4|5, number> = { 1: 1.22, 2: 1.0, 3: 0.75, 4: 0.42, 5: 0.20 };
 
-function tunedOpacity(tier: GuidedTier, mode: HighlightOverlayRect["displayMode"], educationalTier: 1|2|3|4 = 4): number {
+function tunedOpacity(tier: GuidedTier, mode: HighlightOverlayRect["displayMode"], educationalTier: 1|2|3|4|5 = 5): number {
   const base = tier === "main_signal" ? 0.50 : tier === "explains_it" ? 0.38 : tier === "extra_context" ? 0.26 : 0.44;
   const mult = mode === "full" ? 1 : mode === "reduced" ? 0.9 : mode === "minimal" ? 0.78 : 0;
   return clamp(base * EDU_OPACITY_WEIGHT[educationalTier] * mult, 0, 0.74);
 }
 
-function tunedBorderOpacity(tier: GuidedTier, mode: HighlightOverlayRect["displayMode"], educationalTier: 1|2|3|4 = 4): number {
+function tunedBorderOpacity(tier: GuidedTier, mode: HighlightOverlayRect["displayMode"], educationalTier: 1|2|3|4|5 = 5): number {
   const base = tier === "main_signal" ? 0.78 : tier === "explains_it" ? 0.60 : tier === "extra_context" ? 0.40 : 0.70;
   const mult = mode === "full" ? 1 : mode === "reduced" ? 0.9 : mode === "minimal" ? 0.8 : 0;
   return clamp(base * EDU_BORDER_WEIGHT[educationalTier] * mult, 0, 0.95);
 }
 
-function zIndexForTier(tier: GuidedTier, educationalTier: 1|2|3|4 = 4): number {
+function zIndexForTier(tier: GuidedTier, educationalTier: 1|2|3|4|5 = 5): number {
   const base = tier === "main_signal" ? 50 : tier === "do_not_confuse" ? 45 : tier === "explains_it" ? 40 : 35;
-  // Tier 1 floats above tier 4 when overlapping
-  return base + (4 - educationalTier);
+  // Higher priority tiers float above lower ones when overlapping
+  return base + Math.max(0, 5 - educationalTier);
 }
 
 function labelForTier(tier: GuidedTier): GuidedNeighborhoodOverlayEntry["overlayLabel"] {

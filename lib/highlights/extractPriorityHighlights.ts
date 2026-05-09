@@ -161,8 +161,8 @@ export function extractPriorityHighlights({
   narrativePageView,
   conceptAnchorRoles,
   maxMain = 2,
-  maxSupport = 3,
-  maxWeak = 1,
+  maxSupport = 2,
+  maxWeak = 0,
   mergeWindowChars = 220,
 }: ExtractPriorityHighlightsInput): ExtractPriorityHighlightsResult {
   // Build a paragraph index from the page text for paragraph-level span anchoring.
@@ -234,6 +234,24 @@ export function extractPriorityHighlights({
   // ------- Score modifiers -------
   for (const c of candidates) {
     c.score = applyScoreModifiers(c);
+  }
+
+  // ------- Tier downgrade: example/detail never occupy support slots -------
+  // After scoring, demote any candidate whose concept role is illustrative
+  // (example, worked_example, analogy, detail) from "support" → "weak" so
+  // they cannot displace definitions, mechanisms, or traps in the panel.
+  // Traps (trap_warning / trap_boundary) are always kept at their assigned tier.
+  for (const c of candidates) {
+    if (c.priority !== "support") continue;
+    if (c.kind === "trap_warning" || c.kind === "trap_boundary") continue;
+    if (
+      c.conceptRole === "example" ||
+      c.conceptRole === "worked_example" ||
+      c.conceptRole === "analogy" ||
+      c.conceptRole === "detail"
+    ) {
+      c.priority = "weak";
+    }
   }
 
   // ------- Deduplicate -------
@@ -322,7 +340,7 @@ function buildStoryCandidates(
       kind: "main_pattern",
       source: "story_pattern",
       text: clean(patternText),
-      shortLabel: "Important",
+      shortLabel: shortLabelForKind("main_pattern"),
       support: compact([story.patternBlock?.context, ...(story.mainIdeaBlock?.support.slice(0, 1) || [])]),
       evidence: patEvidence,
       blockId: "patternBlock",
@@ -346,7 +364,7 @@ function buildStoryCandidates(
         kind: "main_mechanism",
         source: "story_mechanism",
         text: clean(story.mechanismBlock.text),
-        shortLabel: "Important",
+        shortLabel: shortLabelForKind("main_mechanism"),
         support: story.mechanismBlock.support.slice(0, 3),
         evidence: mechEvidence,
         blockId: "mechanismBlock",
@@ -366,7 +384,7 @@ function buildStoryCandidates(
         kind: "main_mechanism",
         source: "story_mechanism",
         text: clean(story.supportingLogic[0]),
-        shortLabel: "Important",
+        shortLabel: shortLabelForKind("main_mechanism"),
         support: [],
         evidence: [],
         score: BASE_KIND_SCORE.main_mechanism - 6,
@@ -387,7 +405,7 @@ function buildStoryCandidates(
         kind: "support_explanation",
         source: "story_pattern",
         text: clean(story.bottomLineBlock.text),
-        shortLabel: "Important",
+        shortLabel: shortLabelForKind("support_explanation"),
         support: story.bottomLineBlock.support.slice(0, 2),
         evidence: story.bottomLineBlock.evidence.slice(0, 2),
         blockId: "bottomLineBlock",
@@ -406,7 +424,7 @@ function buildStoryCandidates(
       kind: "support_decision",
       source: "story_decision",
       text: clean(story.decisionBlock.action),
-      shortLabel: "Support",
+      shortLabel: shortLabelForKind("support_decision"),
       support: story.decisionBlock.nextSteps.slice(0, 2),
       evidence: compact([story.decisionBlock.threshold]),
       blockId: "decisionBlock",
@@ -424,7 +442,7 @@ function buildStoryCandidates(
       kind: "support_distinction",
       source: "story_distinction",
       text: clean(story.distinctionBlock.text),
-      shortLabel: "Additional",
+      shortLabel: shortLabelForKind("support_distinction"),
       support: story.distinctionBlock.support.slice(0, 2),
       evidence: story.distinctionBlock.evidence.slice(0, 2),
       blockId: "distinctionBlock",
@@ -439,7 +457,7 @@ function buildStoryCandidates(
       kind: "support_distinction",
       source: "story_distinction",
       text: clean(story.comparisonSignals[0]),
-      shortLabel: "Additional",
+      shortLabel: shortLabelForKind("support_distinction"),
       support: story.comparisonSignals.slice(1, 3),
       evidence: [],
       score: BASE_KIND_SCORE.support_distinction - 5,
@@ -455,7 +473,7 @@ function buildStoryCandidates(
       kind: "support_relation",
       source: "story_relation",
       text: clean(story.relationBlock.text),
-      shortLabel: "Additional",
+      shortLabel: shortLabelForKind("support_relation"),
       support: story.relationBlock.support.slice(0, 2),
       evidence: story.relationBlock.evidence.slice(0, 2),
       blockId: "relationBlock",
@@ -470,7 +488,7 @@ function buildStoryCandidates(
       kind: "support_relation",
       source: "story_relation",
       text: clean(story.relationSignals[0]),
-      shortLabel: "Additional",
+      shortLabel: shortLabelForKind("support_relation"),
       support: story.relationSignals.slice(1, 3),
       evidence: [],
       score: BASE_KIND_SCORE.support_relation - 5,
@@ -486,7 +504,7 @@ function buildStoryCandidates(
       kind: "support_application",
       source: "story_application",
       text: clean(story.applicationBlock.text),
-      shortLabel: "Support",
+      shortLabel: shortLabelForKind("support_application"),
       support: story.applicationBlock.support.slice(0, 2),
       evidence: story.applicationBlock.evidence.slice(0, 2),
       blockId: "applicationBlock",
@@ -501,7 +519,7 @@ function buildStoryCandidates(
       kind: "support_application",
       source: "story_application",
       text: clean(story.applySignals[0]),
-      shortLabel: "Support",
+      shortLabel: shortLabelForKind("support_application"),
       support: story.applySignals.slice(1, 3),
       evidence: [],
       score: BASE_KIND_SCORE.support_application - 5,
