@@ -176,6 +176,13 @@ function sentenceScore(sentence: SourceSentence, domain?: PageDomain): number {
   // Named molecule with observational/abundance fact: "Water (H2O) is the most abundant..."
   // These are illustrative examples of a concept, not the concept itself.
   if (/^[A-Z][a-z]{1,15}(?:\s*\([A-Za-z0-9₀-₉²³+\-]+\))?\s+is (the |a |an )?(most|least|only|found|abundant|present|common|approximately|often|mainly|primarily|widely|highly|extremely)\b/i.test(cleaned.trimStart())) score -= 4;
+  // Named molecule + composition: "Water (H₂O) consists of hydrogen and oxygen" — instance fact.
+  if (/^[A-Z][a-z]{1,15}(?:\s*\([A-Za-z0-9₀-₉²³+\-]+\))?\s+(consists?\s+of|is\s+(composed|made)\s+(of|from)|is\s+made\s+up\s+of)\b/i.test(cleaned.trimStart())) score -= 4;
+  // General category principle: "A compound forms when...", "An element is defined as..."
+  // These are page-level teaching statements — more valuable than named-instance sentences.
+  if (/^(a|an) [a-z]{3,20}(?:\s+[a-z]{3,20})? (is|are|forms?|occurs?|results?|arises?|develops?|requires?|exhibits?|consists?|refers?)\b/i.test(cleaned.trimStart())) score += 3;
+  // Math example question opener — "What happens to...", "Find the limit of..." — never an anchor.
+  if (domain === "math" && /^(what (happens|is|are|would|does)\b|determine (whether|if|the)\b|find (the|a|all)\b|show (that|this)\b|prove (that|this)\b|compute\b|calculate\b|consider the (sequence|series)\b|let [a-z]_?\{?n\}?\s*=)/i.test(cleaned.trimStart())) score -= 8;
   // Named substance category instance: "Iodine is the trace element that..."
   // Defines the substance (an example), not the page's teaching concept.
   if (/^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+is (a|an|the) (trace|essential|major|minor|macro|micro|most abundant|only)?\s*(element|mineral|compound|ion|vitamin|electrolyte|metalloid|halogen|nutrient)\b/i.test(cleaned.trimStart())) score -= 4;
@@ -298,6 +305,12 @@ function classifyConceptRole(anchorText: string, supportTexts: string[], paragra
   const NAMED_SUBSTANCE_CATEGORY_RE = /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+is (a|an|the) (trace|essential|major|minor|macro|micro|most abundant|only|primarily)?\s*(element|mineral|compound|ion|vitamin|electrolyte|metalloid|halogen|nutrient|toxin|noble gas|micro[nN]utrient)\b/i;
   if (NAMED_DEFICIENCY_RE.test(anchorTrimmed) || NAMED_SUBSTANCE_CATEGORY_RE.test(anchorTrimmed)) return "example";
 
+  // Named molecule/element + composition fact (even with "consists of"):
+  // "Water (H₂O) consists of hydrogen and oxygen" defines a SPECIFIC MOLECULE, not the
+  // general concept rule. Must fire BEFORE hasFormalDefinition check below.
+  const NAMED_MOLECULE_COMPOSITION_RE = /^[A-Z][a-z]{1,15}(?:\s*\([A-Za-z0-9₀-₉²³+\-]+\))?\s+(consists?\s+of|is\s+(composed|made)\s+(of|from)|is\s+made\s+up\s+of)\b/i;
+  if (NAMED_MOLECULE_COMPOSITION_RE.test(anchorTrimmed)) return "example";
+
   // Named molecule/element with an observational/abundance fact is NOT a structural definition.
   // "Water (H₂O) is the most abundant compound found in cells" — this is a measurable fact
   // about water's prevalence, not a definition of what water IS. Similarly "Arsenic is found
@@ -312,6 +325,10 @@ function classifyConceptRole(anchorText: string, supportTexts: string[], paragra
   // fire formula/theorem detection below. Filler carries no teaching content.
   const MATH_FILLER_OPENER_RE = /^(we (indicate|say|note|observe|denote|call|define this as|write|have seen|recall that)|in other words,?|notice that\b|observe that\b|it (is|can be) (shown|seen|noted|verified)\b|here we\b|this (gives|shows|yields|follows)\b|recall (that|from)\b)/i;
   if (MATH_FILLER_OPENER_RE.test(lower.trimStart())) return "detail";
+
+  // Math example question prompt — "What happens to...", "Find the limit of...", "Let aₙ = ..."
+  // These are problem/exercise prompts inside worked examples, not page-level teaching rules.
+  if (isMathPage && /^(what (happens|is|are|would|does)\b|determine (whether|if|the)\b|find (the|a|all)\b|show (that|this)\b|prove (that|this)\b|compute (the|a)\b|calculate (the|a)\b|consider the (sequence|series|function)\b|let [a-z]_?\{?n\}?\s*=)/i.test(lower.trimStart())) return "worked_example";
 
   // Worked-example / solution section header — always overrides all other signals.
   // Short label lines like "Example 3.1" or "Solution." are structural markers, not anchors.
@@ -496,7 +513,7 @@ function mergeRelatedConcepts(concepts: ConceptBlockInput[]): ConceptBlockInput[
   return out;
 }
 
-function selectBestConcepts(concepts: ConceptBlockInput[]): ConceptBlockInput[] {
+function selectBestConcepts(concepts: ConceptBlockInput[], domain?: PageDomain): ConceptBlockInput[] {
   if (!concepts.length) return [];
 
   // Group by role, sorted by score within each group
@@ -529,8 +546,19 @@ function selectBestConcepts(concepts: ConceptBlockInput[]): ConceptBlockInput[] 
   // Second pass: fill remaining slots — role tier first, then score within tier.
   // This prevents a high-scoring example/detail from jumping ahead of a lower-scoring
   // definition or mechanism that wasn't in the first-pass role list.
+  // Math: once any core concept (definition/theorem/mechanism) was selected, exclude
+  // worked_example and analogy entirely — they may only appear if nothing better exists.
+  const hasCoreSelected = selected.some((c) =>
+    c.conceptRole === "theorem" || c.conceptRole === "formula" ||
+    c.conceptRole === "definition" || c.conceptRole === "mechanism"
+  );
   const remaining = [...concepts]
-    .filter((c) => !usedIds.has(c.id))
+    .filter((c) => {
+      if (usedIds.has(c.id)) return false;
+      if (domain === "math" && hasCoreSelected &&
+          (c.conceptRole === "worked_example" || c.conceptRole === "analogy")) return false;
+      return true;
+    })
     .sort((a, b) => {
       const roleA = ROLE_PRIORITY[a.conceptRole ?? "detail"] ?? 0;
       const roleB = ROLE_PRIORITY[b.conceptRole ?? "detail"] ?? 0;
@@ -631,5 +659,5 @@ export function extractConceptBlocks(page: PageModelForConcepts): ConceptBlockIn
     .map((p) => buildConceptFromParagraph(p, sentenceMap, headingMap, domain))
     .filter((c): c is ConceptBlockInput => Boolean(c));
 
-  return selectBestConcepts(mergeRelatedConcepts(rawConcepts));
+  return selectBestConcepts(mergeRelatedConcepts(rawConcepts), domain);
 }
