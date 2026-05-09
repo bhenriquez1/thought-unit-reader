@@ -32,6 +32,8 @@ export interface GuidedNeighborhoodOverlayEntry {
   text?: string;
   /** 1=theorem/formula (strongest), 2=definition/mechanism, 3=application/example, 4=detail/narrative */
   educationalTier?: 1 | 2 | 3 | 4;
+  /** ConceptRole string — drives semantic highlight color in the overlay renderer */
+  conceptRole?: string;
 }
 
 export interface GuidedNeighborhoodRenderModel {

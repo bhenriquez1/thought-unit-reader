@@ -329,6 +329,12 @@ function passesConceptQualityGate(
   if (isExampleOrFiller(anchor)) return false;
   if (anchor.split(/\s+/).length < 5) return false;
   if (/^(we |this |here |in this |notice |observe )/i.test(anchor.trimStart())) return false;
+  // Reject OCR-style example labels, figure/table captions, section headers
+  if (/^(example\s+[A-Z]?\d|figure\s+\d|table\s+\d|section\s+\d|box\s+\d)/i.test(anchor.trimStart())) return false;
+  // Reject narrative/story fragments — these are prose transitions, not concepts
+  if (/^(then\s+|suddenly\s+|next,?\s+|later,?\s+|meanwhile\s+)/i.test(anchor.trimStart())) return false;
+  // Reject pure pronoun openers with no subject establishment
+  if (/^(he |she |they |it |his |her |their )/i.test(anchor.trimStart())) return false;
 
   // 2. Topic connection — when a clear page topic exists (≥2 key tokens), at least one
   // token must appear in the anchor or its support sentences.
@@ -383,6 +389,18 @@ function extractFindingAction(anchor: string, supports: string[]): { finding: st
   return null;
 }
 
+// Strip OCR labels and figure references from heuristic output before display.
+// Synthesis will fully rewrite these — this ensures the fallback is still readable.
+function sanitizeHeuristicText(text: string): string {
+  return text
+    .replace(/^Example\s+[A-Z0-9]+\s*[|:]\s*/i, "")
+    .replace(/^Figure\s+\d+[.\d]*\s*[—–\-:]\s*/i, "")
+    .replace(/^Table\s+\d+[.\d]*\s*[—–\-:]\s*/i, "")
+    .replace(/^Section\s+[\d.]+\s*[—–\-:]\s*/i, "")
+    .replace(/^Box\s+\d+[.\d]*\s*[—–\-:]\s*/i, "")
+    .trim();
+}
+
 function buildConceptFields(concept: ConceptBlockInput, coreIdea: string, domain: PageDomain): BuiltFields {
   const candidates: SectionCandidate[] = [];
   let seq = 0;
@@ -428,7 +446,7 @@ function buildConceptFields(concept: ConceptBlockInput, coreIdea: string, domain
 
   const result = dedupeSections(candidates, coreIdea);
 
-  const anchorClean = cleanSentence(concept.anchorSentence) || "";
+  const anchorClean = sanitizeHeuristicText(cleanSentence(concept.anchorSentence) || "");
 
   const fallbackPattern = anchorClean || "This concept introduces a central idea on the page.";
 
