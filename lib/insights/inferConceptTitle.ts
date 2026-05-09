@@ -57,16 +57,20 @@ function cleanTrimmedLabel(text: string): string {
   return result;
 }
 
+// Structural noise words that should never be the main word in a concept label
+const STRUCTURAL_NOISE_RE = /^(example|figure|fig|table|box|section|chapter|exercise|problem|solution|introduction|key concept|the function|case \d)/i;
+
 function isCleanLabel(text: string): boolean {
   const t = text.trim();
   const wc = wordCount(t);
-  return (
-    wc >= 2 &&
-    wc <= 7 &&
-    t.length >= 4 &&
-    t.length <= 60 &&
-    !BAD_OPENER_RE.test(t)
-  );
+  if (wc < 2 || wc > 7) return false;
+  if (t.length < 4 || t.length > 60) return false;
+  if (BAD_OPENER_RE.test(t)) return false;
+  // OCR artifact: multiple isolated uppercase single letters ("The Function R S N D")
+  if ((t.match(/\b[A-Z]\b/g) ?? []).length >= 2) return false;
+  // Structural noise labels that are never semantic concepts
+  if (STRUCTURAL_NOISE_RE.test(t)) return false;
+  return true;
 }
 
 function tryClean(raw: string): string | null {
@@ -152,7 +156,12 @@ export function inferConceptTitle(
   const fromAnchor = extractFromAnchor(anchorText);
   if (fromAnchor) return titleCase(fromAnchor);
 
-  return "Key Concept";
+  // 4. Last resort: extract the first 2 meaningful words from the anchor
+  // "Key Concept" is a noise fallback — never use it.
+  const firstMeaningfulWords = anchorText.trim().split(/\s+/).filter((w) => w.length >= 4).slice(0, 2).join(" ");
+  if (firstMeaningfulWords.length >= 4) return titleCase(firstMeaningfulWords);
+
+  return "Core Idea";
 }
 
 /**

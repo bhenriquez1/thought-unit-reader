@@ -368,6 +368,14 @@ function passesConceptQualityGate(
     .filter((w) => !DENSITY_STOPWORDS.test(w)).length;
   if (contentWordCount < 3) return false;
 
+  // Explanation signal: must carry at least one educational signal verb.
+  // Rejects narrative fragments ("They had time, they determined"),
+  // OCR garble ("Certain patients may art and science"), and story prose
+  // that slipped past the pronoun gate.
+  const hasExplanationSignal = /\b(is|are|was|were|causes?|leads?\s+to|results?\s+in|means?|requires?|indicates?|suggests?|defines?|consists?\s+of|involves?|occurs?|produces?|allows?|prevents?|decreases?|increases?|converges?|diverges?|approaches?|depends?\s+on|determines?|generates?|mediates?|regulates?|describes?|characterizes?|refers?\s+to|known\s+as|called|defined\s+as)\b/i.test(anchor);
+  const isImperative = /^(if|when|use|apply|remember|do not|never|always|key:|note:)\b/i.test(anchor.trimStart());
+  if (!hasExplanationSignal && !isImperative) return false;
+
   // 2. Topic connection — when a clear page topic exists (≥2 key tokens), at least one
   // token must appear in the anchor or its support sentences.
   if (pageObjective?.topic) {
