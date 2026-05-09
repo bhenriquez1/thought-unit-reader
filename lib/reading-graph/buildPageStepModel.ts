@@ -87,6 +87,9 @@ export interface PageStepMiniTestHooks {
   distinction?: string | null;
   application?: string | null;
   skimTrap?: string | null;
+  whatHappensIf?: string | null;
+  nextStep?: string | null;
+  compareContrast?: string | null;
 }
 
 export interface PageStepCompressionHooks {
@@ -208,6 +211,9 @@ export function buildPageStepModel(
         distinction: buildDistinctionHook(title, trapText, anchorText, input.domain),
         application: buildApplicationHook(title, conceptBlock?.rule || supportTexts[0], input.domain),
         skimTrap: buildSkimTrapHook(title, trapText, anchorText, input.domain),
+        whatHappensIf: buildPageNativeQuestion("whatHappensIf", anchorText, input.domain) || null,
+        nextStep: buildPageNativeQuestion("nextStep", anchorText, input.domain) || null,
+        compareContrast: buildPageNativeQuestion("compareContrast", trapText || anchorText, input.domain) || null,
       },
       compression: {
         recognitionHook: cleanNullable(anchorText),
@@ -463,43 +469,55 @@ function buildPageNativeQuestion(role: string, text: string, domain?: StepModelP
   // Domain-specific question templates produce more pedagogically precise questions.
   if (domain === "math") {
     switch (role) {
-      case "coreMeaning":   return cleanLocal(`What does ${subject} converge to or represent`);
-      case "mechanism":     return cleanLocal(`What condition causes ${subject} to converge or diverge`);
-      case "distinction":   return cleanLocal(`How does ${subject} differ from a divergent sequence`);
-      case "application":   return cleanLocal(`How would you determine whether ${subject} converges`);
-      case "skimTrap":      return cleanLocal(`What common mistake arises when applying ${subject}`);
-      default:              return cleanLocal(stem.split(/\s+/).slice(0, 12).join(" "));
+      case "coreMeaning":     return cleanLocal(`What does ${subject} converge to or represent`);
+      case "mechanism":       return cleanLocal(`What condition causes ${subject} to converge or diverge`);
+      case "distinction":     return cleanLocal(`How does ${subject} differ from a divergent sequence`);
+      case "application":     return cleanLocal(`How would you determine whether ${subject} converges`);
+      case "skimTrap":        return cleanLocal(`What common mistake arises when applying ${subject}`);
+      case "whatHappensIf":   return cleanLocal(`What happens to the sequence if ${subject} fails`);
+      case "nextStep":        return cleanLocal(`What is the next step after establishing ${subject}`);
+      case "compareContrast": return cleanLocal(`How does ${subject} compare to a divergent counterpart`);
+      default:                return cleanLocal(stem.split(/\s+/).slice(0, 12).join(" "));
     }
   }
   if (domain === "science") {
     switch (role) {
-      case "coreMeaning":   return cleanLocal(`What is the role of ${subject} in this process`);
-      case "mechanism":     return cleanLocal(`What causes ${subject} to occur or change`);
-      case "distinction":   return cleanLocal(`How does ${subject} differ from a related concept`);
-      case "application":   return cleanLocal(`Where or how is ${subject} used in practice`);
-      case "skimTrap":      return cleanLocal(`What mistake is commonly made about ${subject}`);
-      default:              return cleanLocal(stem.split(/\s+/).slice(0, 12).join(" "));
+      case "coreMeaning":     return cleanLocal(`What is the role of ${subject} in this process`);
+      case "mechanism":       return cleanLocal(`What causes ${subject} to occur or change`);
+      case "distinction":     return cleanLocal(`How does ${subject} differ from a related concept`);
+      case "application":     return cleanLocal(`Where or how is ${subject} used in practice`);
+      case "skimTrap":        return cleanLocal(`What mistake is commonly made about ${subject}`);
+      case "whatHappensIf":   return cleanLocal(`What happens if ${subject} is absent or disrupted`);
+      case "nextStep":        return cleanLocal(`What occurs immediately after ${subject}`);
+      case "compareContrast": return cleanLocal(`How does ${subject} differ from a related process`);
+      default:                return cleanLocal(stem.split(/\s+/).slice(0, 12).join(" "));
     }
   }
   if (domain === "clinical") {
     switch (role) {
-      case "coreMeaning":   return cleanLocal(`What does ${subject} indicate clinically`);
-      case "mechanism":     return cleanLocal(`Why does ${subject} cause or lead to its effects`);
-      case "distinction":   return cleanLocal(`How does ${subject} differ from a similar condition`);
-      case "application":   return cleanLocal(`What is the next step when ${subject} is present`);
-      case "skimTrap":      return cleanLocal(`What mistake is commonly made about ${subject}`);
-      default:              return cleanLocal(stem.split(/\s+/).slice(0, 12).join(" "));
+      case "coreMeaning":     return cleanLocal(`What does ${subject} indicate clinically`);
+      case "mechanism":       return cleanLocal(`Why does ${subject} cause or lead to its effects`);
+      case "distinction":     return cleanLocal(`How does ${subject} differ from a similar condition`);
+      case "application":     return cleanLocal(`What is the next step when ${subject} is present`);
+      case "skimTrap":        return cleanLocal(`What mistake is commonly made about ${subject}`);
+      case "whatHappensIf":   return cleanLocal(`What happens if ${subject} is missed or untreated`);
+      case "nextStep":        return cleanLocal(`What is the clinical next step after ${subject} is identified`);
+      case "compareContrast": return cleanLocal(`How does ${subject} differ from a similar diagnosis`);
+      default:                return cleanLocal(stem.split(/\s+/).slice(0, 12).join(" "));
     }
   }
 
   // General / default templates
   switch (role) {
-    case "coreMeaning":   return cleanLocal(`What does ${subject} mean`);
-    case "mechanism":     return cleanLocal(`What does ${subject} cause or lead to`);
-    case "distinction":   return cleanLocal(`What should not be confused with ${subject}`);
-    case "application":   return cleanLocal(`When or how is ${subject} applied`);
-    case "skimTrap":      return cleanLocal(`What mistake is associated with ${subject}`);
-    default:              return cleanLocal(stem.split(/\s+/).slice(0, 12).join(" "));
+    case "coreMeaning":     return cleanLocal(`What does ${subject} mean`);
+    case "mechanism":       return cleanLocal(`What does ${subject} cause or lead to`);
+    case "distinction":     return cleanLocal(`What should not be confused with ${subject}`);
+    case "application":     return cleanLocal(`When or how is ${subject} applied`);
+    case "skimTrap":        return cleanLocal(`What mistake is associated with ${subject}`);
+    case "whatHappensIf":   return cleanLocal(`What happens if ${subject} is absent or fails`);
+    case "nextStep":        return cleanLocal(`What is the next step after ${subject}`);
+    case "compareContrast": return cleanLocal(`What distinguishes ${subject} from a related concept`);
+    default:                return cleanLocal(stem.split(/\s+/).slice(0, 12).join(" "));
   }
 }
 

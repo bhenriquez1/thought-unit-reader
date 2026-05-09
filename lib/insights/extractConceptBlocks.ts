@@ -120,10 +120,32 @@ function hasRuleSignal(text: string): boolean {
 }
 
 
-function sentenceScore(sentence: SourceSentence): number {
+interface DomainBoosts {
+  definitionBonus: number;
+  mechanismBonus: number;
+  clinicalBonus: number;
+  mathFormulaBonus: number;
+  fillerPenalty: number;
+}
+
+function computeDomainBoosts(domain?: PageDomain): DomainBoosts {
+  switch (domain) {
+    case "clinical":
+      return { definitionBonus: 2, mechanismBonus: 4, clinicalBonus: 6, mathFormulaBonus: 0, fillerPenalty: -10 };
+    case "math":
+      return { definitionBonus: 3, mechanismBonus: 2, clinicalBonus: 0, mathFormulaBonus: 6, fillerPenalty: -12 };
+    case "science":
+      return { definitionBonus: 3, mechanismBonus: 5, clinicalBonus: 0, mathFormulaBonus: 0, fillerPenalty: -8 };
+    default:
+      return { definitionBonus: 2, mechanismBonus: 3, clinicalBonus: 0, mathFormulaBonus: 0, fillerPenalty: -8 };
+  }
+}
+
+function sentenceScore(sentence: SourceSentence, domain?: PageDomain): number {
   const cleaned = cleanSentence(sentence.text);
   if (!isRenderableSentence(cleaned)) return -100;
 
+  const boosts = computeDomainBoosts(domain);
   let score = sentence.score ?? 0;
   const len = cleaned.length;
   if (len >= 45 && len <= 220) score += 3;
@@ -169,15 +191,37 @@ function sentenceScore(sentence: SourceSentence): number {
   if (/^(definition\b|theorem\b|lemma\b|corollary\b|proposition\b)/i.test(cleaned.trimStart())) score += 5;
   // lim notation with explicit target — definitional formula worth high score.
   if (/\blim\b.*[=→].*[0-9L∞]|[=→]\s*[0-9L∞]\s*$|n\s*→\s*[∞0-9]/i.test(cleaned)) score += 3;
+
+  // Domain-specific signal boosts — applied after generic scoring so domain signal always
+  // has a chance to lift the right sentences above domain-agnostic competitors.
+  if (boosts.clinicalBonus && /\b(indicates?|suggests?|next step|must|should|diagnos|treat|manage|refer|order|prescribe|admit)\b/i.test(cleaned)) {
+    score += boosts.clinicalBonus;
+  }
+  if (boosts.mathFormulaBonus && /\b(theorem|lemma|corollary|converge|diverge|limit|sequence|series|formula|proof|defined as|if and only if)\b/i.test(cleaned)) {
+    score += boosts.mathFormulaBonus;
+  }
+  if (boosts.mechanismBonus > boosts.definitionBonus) {
+    // Science: elevate process-flow verbs beyond the generic mechanism score
+    if (/\b(produces?|activates?|inhibits?|triggers?|releases?|stimulates?|regulates?|converts?|synthesizes?|degrades?)\b/i.test(cleaned)) {
+      score += boosts.mechanismBonus - 3;
+    }
+  }
+  if (boosts.fillerPenalty < -8) {
+    // Math domain: extra filler penalty for narrative explanatory prose
+    if (/^(we can|this means|note that|recall that|it follows|observe that|in other words|therefore|thus|hence)/i.test(cleaned.trimStart())) {
+      score += boosts.fillerPenalty + 8;
+    }
+  }
+
   return score;
 }
 
-function chooseAnchorSentence(sentences: SourceSentence[]): SourceSentence | null {
+function chooseAnchorSentence(sentences: SourceSentence[], domain?: PageDomain): SourceSentence | null {
   if (!sentences.length) return null;
   const total = sentences.length;
   return (
     [...sentences].sort((a, b) => {
-      const diff = sentenceScore(b) - sentenceScore(a);
+      const diff = sentenceScore(b, domain) - sentenceScore(a, domain);
       if (Math.abs(diff) > 0.5) return diff;
       // Tie-break 1: prefer sentences in the 12–28 word range (highest specificity)
       const aWords = a.text.split(/\s+/).length;
@@ -351,7 +395,7 @@ function buildConceptFromParagraph(
     .filter((s): s is SourceSentence => Boolean(s));
   if (!sentences.length) return null;
 
-  const rawAnchor = chooseAnchorSentence(sentences);
+  const rawAnchor = chooseAnchorSentence(sentences, domain);
   if (!rawAnchor) return null;
 
   // If the best-scoring sentence is classified as an example, try to find a non-example
@@ -364,7 +408,7 @@ function buildConceptFromParagraph(
   if (rawAnchorRole === "example" && sentences.length > 1) {
     const betterAnchor = [...sentences]
       .filter((s) => s.id !== rawAnchor.id)
-      .sort((a, b) => sentenceScore(b) - sentenceScore(a))
+      .sort((a, b) => sentenceScore(b, domain) - sentenceScore(a, domain))
       .find((s) => {
         const t = cleanSentence(s.text);
         if (!isRenderableSentence(t)) return false;
@@ -381,7 +425,7 @@ function buildConceptFromParagraph(
     sentences.filter((s) => s.id !== anchor.id).map((s) => s.text)
   ).slice(0, 3);
 
-  const score = (paragraph.score ?? 0) + sentenceScore(anchor) + Math.min(support.length, 3);
+  const score = (paragraph.score ?? 0) + sentenceScore(anchor, domain) + Math.min(support.length, 3);
 
   return {
     id: `concept-${paragraph.id}`,

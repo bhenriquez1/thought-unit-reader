@@ -19,8 +19,8 @@ export const TeachingSynthesisConceptSchema = z.object({
     "definition", "theorem", "formula", "mechanism",
     "contrast", "application", "worked_example", "example", "detail",
   ]),
-  principle: z.string(),   // the generalized rule — abstracted, never verbatim
-  mechanism: z.string(),   // why/how it works
+  principle: z.string(),               // the generalized rule — abstracted, never verbatim
+  mechanism: z.string(),               // why/how it works
   trap: z.string().nullable(),
   rule: z.string(),        // operational takeaway
   misconception: z.string().nullable(), // "Students often confuse X with Y because..."

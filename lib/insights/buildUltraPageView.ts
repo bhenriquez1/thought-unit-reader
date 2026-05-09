@@ -25,7 +25,7 @@ import {
   type SectionCandidate,
   type SectionKind,
 } from "./dedupeSectionCandidates";
-import { buildCompressionRules, type BuildCompressionRulesInput } from "./buildCompressionRules";
+import { buildCompressionRules, compressToRule, type BuildCompressionRulesInput } from "./buildCompressionRules";
 import { buildPageStepModel } from "@/lib/reading-graph/buildPageStepModel";
 import {
   selectMiniTestQuestions,
@@ -39,6 +39,7 @@ import { scoreDomainPriority, type DomainPriorityScore } from "./scoreDomainPrio
 import type { ClinicalPriorityCandidate } from "./scoreClinicalPriority";
 import { inferPageObjective, isExampleOrFiller } from "./inferPageObjective";
 import type { TeachingSynthesis } from "./synthesizeTeachingOutput";
+import { buildCrossLinkHints, type CrossLinkInput } from "./buildCrossLinkHints";
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -481,11 +482,19 @@ function buildConceptFields(concept: ConceptBlockInput, coreIdea: string, domain
     };
   })();
 
+  const rawPattern = result.selected.pattern?.text ?? fallbackPattern;
+  const rawReason  = result.selected.reason?.text  ?? synthesizedReason;
+  const rawRule    = result.selected.rule?.text    ?? synthesizedRule;
+
+  const compressedPattern = compressToRule(rawPattern, "recognition") ?? rawPattern;
+  const compressedReason  = compressToRule(rawReason,  "mechanism")   ?? rawReason;
+  const compressedRule    = compressToRule(rawRule,     "application") ?? rawRule;
+
   return {
-    pattern:        normalizeLine(result.selected.pattern?.text ?? fallbackPattern, fallbackPattern),
-    surgicalReason: normalizeLine(result.selected.reason?.text  ?? synthesizedReason, synthesizedReason),
+    pattern:        normalizeLine(compressedPattern, fallbackPattern),
+    surgicalReason: normalizeLine(compressedReason,  synthesizedReason),
     trap:           result.selected.trap?.text ? normalizeLine(result.selected.trap.text, "") : "",
-    rule:           normalizeLine(result.selected.rule?.text    ?? synthesizedRule,   synthesizedRule),
+    rule:           normalizeLine(compressedRule,    synthesizedRule),
   };
 }
 
@@ -523,6 +532,29 @@ function inferPageTitle(page: PageModelForConcepts, concepts: ConceptBlockInput[
   if (nonExampleConcept?.title) return nonExampleConcept.title;
   if (concepts[0]?.title) return concepts[0].title;
   return `Page ${page.pageNumber}`;
+}
+
+// ---------------------------------------------------------------------------
+// Concept centrality scoring
+// ---------------------------------------------------------------------------
+
+function extractKeyTerms(text: string): string[] {
+  return text
+    .replace(/[^a-zA-Z\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 5)
+    .map((w) => w.toLowerCase());
+}
+
+function computeConceptCentrality(
+  anchorText: string,
+  allParagraphTexts: string[],
+): number {
+  const keyTerms = extractKeyTerms(anchorText);
+  if (!keyTerms.length) return 0;
+  return allParagraphTexts.filter((p) =>
+    keyTerms.some((t) => p.toLowerCase().includes(t))
+  ).length;
 }
 
 // ---------------------------------------------------------------------------
@@ -734,12 +766,31 @@ export function buildUltraPageView(
   // Core idea: pageSummary → domain chief_signal → support sentence → bare anchor
   const normalizedSummary = page.pageSummary;
 
+  // Collect all paragraph texts for centrality scoring
+  const allParagraphTexts = (page.paragraphs ?? []).map((p) => p.text ?? "").filter(Boolean);
+
   const chiefSignalText = (() => {
     const allCandidates: ClinicalPriorityCandidate[] = concepts.flatMap((c, ci) => [
       { id: `${ci}:anchor`, text: c.anchorSentence },
       ...c.supportSentences.map((s, si) => ({ id: `${ci}:sup${si}`, text: s })),
     ]);
     const ranked = scoreDomainPriority(allCandidates, domain);
+
+    // Apply centrality re-ranking: concepts that recur across paragraphs rank higher.
+    // This prevents a single-paragraph concept from winning over a page-spanning idea.
+    const conceptsWithCentrality = concepts.map((c) => ({
+      ...c,
+      centralityScore: computeConceptCentrality(c.anchorSentence, allParagraphTexts),
+    }));
+    const rolePriorityMap = ROLE_PRIORITY as Record<string, number>;
+    const centralityRanked = [...conceptsWithCentrality].sort((a, b) => {
+      const rolePriorityA = rolePriorityMap[a.conceptRole ?? "detail"] ?? 1;
+      const rolePriorityB = rolePriorityMap[b.conceptRole ?? "detail"] ?? 1;
+      const blendA = rolePriorityA * 2 + a.centralityScore * 0.5 + a.score;
+      const blendB = rolePriorityB * 2 + b.centralityScore * 0.5 + b.score;
+      return blendB - blendA;
+    });
+    const topCentralConcept = centralityRanked[0];
     // For math: prefer formula + interpretation; for others: prefer "pattern" slot
     if (domain === "math") {
       // Prefer a definition-role sentence (convergence/limit language) as the primary signal.
@@ -755,9 +806,13 @@ export function buildUltraPageView(
         return defn.text;
       }
       if (formula && interp) return `${formula.text}: ${interp.text.toLowerCase().replace(/[.!?]+$/, "")}`;
-      return formula?.text ?? null;
+      return formula?.text ?? topCentralConcept?.anchorSentence ?? null;
     }
-    return ranked.find((s) => s.slot === "pattern" && s.text.length >= 40)?.text ?? null;
+    return (
+      ranked.find((s) => s.slot === "pattern" && s.text.length >= 40)?.text ??
+      (topCentralConcept?.centralityScore >= 2 ? topCentralConcept.anchorSentence : null) ??
+      null
+    );
   })();
 
   const summaryFallback = (() => {
@@ -896,7 +951,7 @@ export function buildUltraPageView(
 
   // Mini test: role-balanced selection in step order from shared step model
   const miniTestCandidates: MiniTestQuestionCandidate[] = pageStepResult.steps.flatMap((step) =>
-    (["coreMeaning", "mechanism", "distinction", "application", "skimTrap"] as MiniTestRole[]).map((role) => ({
+    (["coreMeaning", "mechanism", "distinction", "application", "skimTrap", "whatHappensIf", "nextStep", "compareContrast"] as MiniTestRole[]).map((role) => ({
       id: `${step.id}:${role}`,
       stepId: step.id,
       stepOrder: step.order,
@@ -1054,7 +1109,11 @@ export function buildUltraPageView(
     miniTest: finalMiniTest,
     compression: finalCompression,
     steps,
-    crossLinkHints: synthesis?.crossLinkHints?.length ? synthesis.crossLinkHints : [],
+    crossLinkHints: (() => {
+      if (synthesis?.crossLinkHints?.length) return synthesis.crossLinkHints;
+      const crossLinkInputs: CrossLinkInput[] = concepts.map((c) => ({ title: c.title, anchorSentence: c.anchorSentence }));
+      return buildCrossLinkHints(crossLinkInputs, domain);
+    })(),
     _debug,
   };
 }
