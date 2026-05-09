@@ -23,6 +23,8 @@ export const TeachingSynthesisConceptSchema = z.object({
   mechanism: z.string(),   // why/how it works
   trap: z.string().nullable(),
   rule: z.string(),        // operational takeaway
+  misconception: z.string().nullable(), // "Students often confuse X with Y because..."
+  examHook: z.string().nullable(),      // "On DAT/boards/clinical exams, this appears as..."
 });
 
 export const TeachingSynthesisSchema = z.object({
@@ -35,6 +37,8 @@ export const TeachingSynthesisSchema = z.object({
   teachingObjective: z.string(),  // what a student should understand after reading
   examCriticalIdea: z.string(),   // the one thing most likely to be tested or misunderstood
   reasoningFlow: z.string(),      // domain-specific reasoning chain (A → B → C)
+  misconceptionAlert: z.string().nullable(), // single biggest misconception across this whole page
+  crossLinkHints: z.array(z.string()).optional(), // 1-2 concept connections (max 8 words each)
   // Per-concept educational breakdown (ordered by educational priority)
   concepts: z.array(TeachingSynthesisConceptSchema),
   miniTests: z.array(z.string()).optional(),
@@ -91,6 +95,25 @@ GENERAL REASONING CHAIN: concept → mechanism → significance → application 
 
   return `${domainInstructions[domain] ?? domainInstructions.general}
 
+EXPERT TUTOR MINDSET — You think like a senior professor reviewing for exams:
+- You know what students confuse, misremember, or skip
+- You compress ideas to their essence: no redundancy, no filler
+- You connect this concept to what came before and what comes next
+- You flag exam traps before the student sees them
+
+MISCONCEPTION DETECTION:
+For every concept, identify the most common student error. Phrase it as:
+"Students often confuse [X] with [Y] because [reason]."
+or "Do not mistake [A] for [B] — [distinction]."
+If no specific misconception exists, return null.
+
+EXAM FRAMING (domain-specific):
+- Math/DAT: "On DAT this often appears as: [calculation type] or [conceptual question]"
+- Clinical/medical: "Clinically this matters because: [patient impact] or [diagnostic step]"
+- Science/biology: "On boards this is tested as: [application question type]"
+- General: "This is exam-critical because: [why this is high-yield]"
+Return null if the concept is low-yield for exams.
+
 CONCEPT RANKING — rank concepts in this educational priority order:
   1. theorem / core rule (highest — this IS what the page teaches)
   2. definition (foundational — establishes what a term means)
@@ -134,7 +157,7 @@ export function buildUserPrompt(
   const { domain, pageObjective, rankedConcepts } = input;
 
   const conceptList = rankedConcepts.slice(0, 5).map((c, i) =>
-    `${i + 1}. [${c.role}] "${c.title}" (${c.importance}) — "${c.text.slice(0, 100)}"`
+    `${i + 1}. [${c.role.toUpperCase()}] "${c.title}" — "${c.text.slice(0, 100)}"`
   ).join("\n");
 
   const domainHint: Record<PageDomain, string> = {
@@ -160,7 +183,11 @@ TASK: Reason about this page as an expert educator using the ${domain} reasoning
 
 ${domainHint[domain] ?? domainHint.general}
 
-Produce a structured educational interpretation. Order concepts by educational priority (theorem/definition before example/detail). Include ${Math.min(rankedConcepts.length, 4)} concepts.`;
+Produce a structured educational interpretation. Order concepts by educational priority (theorem/definition before example/detail). Include ${Math.min(rankedConcepts.length, 4)} concepts.
+
+For each concept: fill principle, mechanism, trap, rule, misconception, examHook.
+For page level: fill coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, crossLinkHints.
+Keep every field ≤ 2 sentences. Write like a professor, not a textbook.`;
 }
 
 // ---------------------------------------------------------------------------

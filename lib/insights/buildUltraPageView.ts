@@ -54,6 +54,8 @@ export interface UltraConceptBlock {
   rule: string;
   importance: string;
   conceptRole?: string;
+  misconception?: string;   // "Students often confuse X with Y"
+  examHook?: string;        // "On DAT/boards this appears as..."
 }
 
 export interface UltraPageViewStep {
@@ -81,6 +83,7 @@ export interface UltraPageView {
   miniTest: string[];
   compression: string[];
   steps: UltraPageViewStep[];
+  crossLinkHints?: string[];  // ["limit → convergence", "compound → emergent property"]
   _debug?: UltraPageViewDebug;
 }
 
@@ -1036,6 +1039,8 @@ export function buildUltraPageView(
           surgicalReason: sc.mechanism?.trim()  || b.surgicalReason,
           trap:           sc.trap?.trim()       ?? b.trap,
           rule:           sc.rule?.trim()       || b.rule,
+          misconception:  sc.misconception?.trim() || undefined,
+          examHook:       sc.examHook?.trim()      || undefined,
         };
       })
     : blocks;
@@ -1049,6 +1054,7 @@ export function buildUltraPageView(
     miniTest: finalMiniTest,
     compression: finalCompression,
     steps,
+    crossLinkHints: synthesis?.crossLinkHints?.length ? synthesis.crossLinkHints : [],
     _debug,
   };
 }

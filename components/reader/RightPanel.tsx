@@ -257,7 +257,7 @@ export function RightPanel({
       ? teachingSynthesis.coreIdea
       : ultraPageView.coreIdea;
 
-    // Per-concept overlay: synthesis rewrites principle/mechanism/trap/rule
+    // Per-concept overlay: synthesis rewrites principle/mechanism/trap/rule/misconception/examHook
     const finalBlocks = teachingSynthesis.concepts?.length
       ? ultraPageView.blocks.map((b, i) => {
           const sc = teachingSynthesis.concepts[i];
@@ -268,6 +268,8 @@ export function RightPanel({
             surgicalReason: sc.mechanism?.trim()  || b.surgicalReason,
             trap:           sc.trap?.trim()       ?? b.trap,
             rule:           sc.rule?.trim()       || b.rule,
+            misconception:  sc.misconception?.trim() || undefined,
+            examHook:       sc.examHook?.trim()      || undefined,
           };
         })
       : ultraPageView.blocks;
@@ -279,6 +281,7 @@ export function RightPanel({
     if (teachingSynthesis.trap?.trim())         synthesisLines.push(`Trap: ${teachingSynthesis.trap.trim()}`);
     if (teachingSynthesis.application?.trim())  synthesisLines.push(`Apply: ${teachingSynthesis.application.trim()}`);
     if (teachingSynthesis.reasoningFlow?.trim()) synthesisLines.push(`Flow: ${teachingSynthesis.reasoningFlow.trim()}`);
+    if (teachingSynthesis.misconceptionAlert?.trim()) synthesisLines.push(`⚠️ Confuse: ${teachingSynthesis.misconceptionAlert.trim()}`);
 
     const finalCompression = synthesisLines.length
       ? [...synthesisLines, ...ultraPageView.compression].slice(0, 5)
@@ -295,6 +298,9 @@ export function RightPanel({
       blocks: finalBlocks,
       compression: finalCompression,
       miniTest: finalMiniTest,
+      crossLinkHints: teachingSynthesis.crossLinkHints?.length
+        ? teachingSynthesis.crossLinkHints
+        : ultraPageView.crossLinkHints,
     };
   }, [ultraPageView, teachingSynthesis]);
 
@@ -696,6 +702,18 @@ function UltraView({
                 <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#ffb86b]">🔥 Rule</div>
                 <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
               </div>
+              {selectedBlock.misconception && (
+                <div>
+                  <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-rose-400">⚠️ Misconception</div>
+                  <p className="text-[13px] leading-6 text-rose-200/85">{selectedBlock.misconception}</p>
+                </div>
+              )}
+              {selectedBlock.examHook && (
+                <div>
+                  <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-violet-400">🎓 Exam Hook</div>
+                  <p className="text-[13px] leading-6 text-violet-200/85">{selectedBlock.examHook}</p>
+                </div>
+              )}
               <div>
                 <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#c7f59b]">🎯 Importance</div>
                 <p className="text-[14px] leading-6 text-white/90">{selectedBlock.importance}</p>
@@ -719,6 +737,20 @@ function UltraView({
         <PanelSection title="STR Compression">
           <ul className="space-y-2">
             {view.compression.map((line, i) => <BulletLine key={i}>{line}</BulletLine>)}
+          </ul>
+        </PanelSection>
+      )}
+
+      {/* Cross-Link Hints */}
+      {view.crossLinkHints && view.crossLinkHints.length > 0 && (
+        <PanelSection title="Cross-Links">
+          <ul className="space-y-1">
+            {view.crossLinkHints.map((hint, i) => (
+              <li key={i} className="flex items-start gap-2 text-[13px] text-sky-300/80">
+                <span className="mt-0.5 shrink-0 text-sky-500">↗</span>
+                <span>{hint}</span>
+              </li>
+            ))}
           </ul>
         </PanelSection>
       )}
