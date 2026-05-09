@@ -161,7 +161,7 @@ export function extractPriorityHighlights({
   narrativePageView,
   conceptAnchorRoles,
   maxMain = 2,
-  maxSupport = 2,
+  maxSupport = 1,
   maxWeak = 0,
   mergeWindowChars = 220,
 }: ExtractPriorityHighlightsInput): ExtractPriorityHighlightsResult {
@@ -248,7 +248,9 @@ export function extractPriorityHighlights({
       c.conceptRole === "example" ||
       c.conceptRole === "worked_example" ||
       c.conceptRole === "analogy" ||
-      c.conceptRole === "detail"
+      c.conceptRole === "detail" ||
+      c.conceptRole === "variation" ||
+      c.conceptRole === "measurement"
     ) {
       c.priority = "weak";
     }
