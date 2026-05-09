@@ -88,8 +88,8 @@ export interface ConceptBlockInput {
   conceptRole: ConceptRole;
 }
 
-const MAX_BLOCKS = 4;
-const MIN_BLOCKS = 2;
+const MAX_BLOCKS = 3;
+const MIN_BLOCKS = 1;
 
 // Use canonical signal regexes from dedupeSectionCandidates (TRAP_RE, REASON_RE)
 // Keep local lists only for score boosting
