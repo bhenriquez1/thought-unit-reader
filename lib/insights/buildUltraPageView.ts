@@ -75,6 +75,8 @@ export interface UltraPageView {
   title: string;
   subtitle: string;
   coreIdea: string;
+  /** Top-down teaching statement from heading + canonical statements — more reliable than coreIdea for synthesis */
+  teachingStatement?: string;
   blocks: UltraConceptBlock[];
   miniTest: string[];
   compression: string[];
@@ -762,9 +764,14 @@ export function buildUltraPageView(
     const isExampleAnchor = (text: string): boolean => {
       if (isExampleOrFiller(text)) return true;
       const trimmed = text.trim();
+      // Figure/table/box captions — these are NEVER educational principles
+      if (/^(figure|fig\.|table|tab\.|box|plate|chart)\s+[\d.]+/i.test(trimmed)) return true;
       if (/\b(for example|for instance|such as|e\.g\.)\b/i.test(trimmed)) return true;
       if (/^(for example,?|for instance,?|to illustrate,?|consider )/i.test(text.trimStart())) return true;
       if (/^(example|solution|problem|exercise)\s*[\d.:)]*\s*$/i.test(trimmed)) return true;
+      // Narrative/story fragments — not educational signals
+      if (/^(then |suddenly |next,? |later,? |meanwhile )/i.test(text.trimStart())) return true;
+      if (/^(he |she |they |it )\w/i.test(text.trimStart())) return true;
       return false;
     };
 
@@ -1024,6 +1031,7 @@ export function buildUltraPageView(
     title: `ULTRA – ${inferPageTitle(page, concepts)}`,
     subtitle: "STR + PDRM + Surgical Comprehension Engine",
     coreIdea: finalCoreIdea,
+    teachingStatement: pageObjective?.teachingStatement || undefined,
     blocks: finalBlocks,
     miniTest: finalMiniTest,
     compression: finalCompression,

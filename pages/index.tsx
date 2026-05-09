@@ -3237,49 +3237,34 @@ export default function ThoughtUnitReader() {
               legendTiers: legend.entries.map(e => e.tier),
               usingFallback: legend.entries.length === 0,
             });
-            const badgeBg: Record<string, string> = {
-              main_signal:    "rgba(161, 98, 7, 0.95)",
-              explains_it:    "rgba(37, 99, 235, 0.95)",
-              extra_context:  "rgba(71, 85, 105, 0.95)",
-              do_not_confuse: "rgba(190, 24, 93, 0.95)",
-            };
-
-            // Fallback entries shown while guidedPath is loading (brief window on page turn)
-            type LegendEntry = {
-              id: string; tier: string; badge: string;
-              label: string; description: string;
-            };
-            const fallback: LegendEntry[] = [
-              { id: "legend:main_signal",    tier: "main_signal",    badge: "1", label: "Main Signal",    description: "Start here" },
-              { id: "legend:explains_it",    tier: "explains_it",    badge: "2", label: "Explains It",    description: "Then read this" },
-              { id: "legend:extra_context",  tier: "extra_context",  badge: "3", label: "Extra Context",  description: "Then deepen" },
-              { id: "legend:do_not_confuse", tier: "do_not_confuse", badge: "!", label: "Do Not Confuse", description: "Final check" },
+            // Semantic role legend — colors match GuidedNeighborhoodOverlay ROLE_RGB palette
+            type SemanticLegendEntry = { id: string; color: string; label: string; description: string };
+            const semanticLegend: SemanticLegendEntry[] = [
+              { id: "l:theorem",    color: "rgba(245,158, 11,0.92)", label: "Formula / Theorem",  description: "core rule or proof" },
+              { id: "l:definition", color: "rgba( 96,165,250,0.92)", label: "Definition",          description: "what the term means" },
+              { id: "l:mechanism",  color: "rgba( 20,184,166,0.92)", label: "Mechanism",           description: "how or why it works" },
+              { id: "l:trap",       color: "rgba(244, 63, 94,0.92)", label: "Trap",                description: "common misconception" },
+              { id: "l:apply",      color: "rgba(167,139,250,0.92)", label: "Application",         description: "real-world use" },
+              { id: "l:example",    color: "rgba( 74,222,128,0.92)", label: "Example",             description: "illustrates the rule" },
+              { id: "l:detail",     color: "rgba(148,163,184,0.92)", label: "Supporting Detail",   description: "context & background" },
             ];
-            const entries = legend.entries.length > 0 ? legend.entries : fallback;
 
             return (
               <div className="rounded-xl border border-white/10 bg-[rgb(11,18,34)]/90 backdrop-blur-sm px-2.5 py-2">
-                <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-500">Page guide</div>
+                <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-500">Highlight key</div>
                 <div className="space-y-1.5">
-                  {entries.map((entry) => (
+                  {semanticLegend.map((entry) => (
                     <div key={entry.id} className="flex items-center gap-1.5">
                       <span
                         style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          width: 16,
-                          height: 16,
-                          borderRadius: 999,
-                          background: badgeBg[entry.tier] ?? "rgba(100,100,100,0.8)",
-                          fontSize: 9,
-                          fontWeight: 700,
-                          color: "white",
+                          display: "inline-block",
+                          width: 10,
+                          height: 10,
+                          borderRadius: 3,
+                          background: entry.color,
                           flexShrink: 0,
                         }}
-                      >
-                        {entry.badge}
-                      </span>
+                      />
                       <div className="min-w-0">
                         <span className="text-[10px] text-slate-300">{entry.label}</span>
                         <span className="text-[9px] text-slate-500 ml-1">— {entry.description}</span>

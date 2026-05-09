@@ -10,7 +10,8 @@ import { synthesizeTeachingOutput, buildSynthesisInput } from "@/lib/insights/sy
 
 interface UseTeachingSynthesisArgs {
   pageTruthKey: string;
-  pageObjective?: string;  // heading + teaching statement for the page
+  /** teachingStatement from UltraPageView — top-down heading+canonical, NOT the heuristic coreIdea */
+  pageObjective?: string;
   domain: PageDomain | null;
   blocks: UltraConceptBlock[];
   enabled: boolean;

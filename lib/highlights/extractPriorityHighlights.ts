@@ -1172,16 +1172,16 @@ function textSimilarity(a: string, b: string): number {
 
 function shortLabelForKind(kind: SemanticHighlightKind): string {
   switch (kind) {
-    case "main_pattern": return "Important";
-    case "main_mechanism": return "Important";
-    case "support_explanation": return "Support";
-    case "support_distinction": return "Additional";
-    case "support_relation": return "Additional";
-    case "support_decision": return "Support";
-    case "support_application": return "Support";
-    case "trap_warning": return "Warning";
-    case "trap_boundary": return "Warning";
-    case "weak_caveat": return "Note";
+    case "main_pattern":        return "Core Principle";
+    case "main_mechanism":      return "Mechanism";
+    case "support_explanation": return "Definition";
+    case "support_distinction": return "Trap";
+    case "support_relation":    return "Supporting Detail";
+    case "support_decision":    return "Rule";
+    case "support_application": return "Application";
+    case "trap_warning":        return "Trap";
+    case "trap_boundary":       return "Trap";
+    case "weak_caveat":         return "Supporting Detail";
   }
 }
 
