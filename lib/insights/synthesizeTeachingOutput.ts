@@ -146,10 +146,15 @@ export function buildUserPrompt(
   };
 
   return `DOMAIN: ${domain}
-PAGE OBJECTIVE: ${pageObjective ?? "(unknown)"}
+PAGE OBJECTIVE (from heading + highest-confidence canonical statement — use this as your primary anchor):
+${pageObjective ?? "(derive from domain context below)"}
 
 RANKED CONCEPTS (ordered by educational priority — higher role = more important):
 ${conceptList}
+
+⚠️ FIGURE/TABLE/CAPTION RULE: If ANY concept text starts with "Figure", "Table", "Box", "Fig.", or "Example E", that is an OCR artifact — IGNORE THAT TEXT COMPLETELY. Derive the educational principle from the PAGE OBJECTIVE and domain context instead.
+
+⚠️ NARRATIVE RULE: If a concept text reads like a story event ("Then a nurse noticed...", "He suddenly..."), convert it into a clinical/educational signal. Do not copy it.
 
 TASK: Reason about this page as an expert educator using the ${domain} reasoning chain.
 
@@ -186,15 +191,33 @@ export async function synthesizeTeachingOutput(
 // Helper: build SynthesisInput from UltraConceptBlocks
 // ---------------------------------------------------------------------------
 
+function sanitizeConceptText(text: string): string {
+  const t = text.trim();
+  // Figure/table captions are never educational principles — flag them explicitly
+  if (/^(figure|fig\.|table|tab\.|box|plate|chart)\s+[\d.]+/i.test(t)) {
+    return "[figure/table caption — derive principle from page context]";
+  }
+  // Strip "Example E1 |" style prefixes
+  return t.replace(/^(example\s+[A-Z0-9]+\s*[|:]|solution[|:]\s*|problem\s+\d+[|:])\s*/i, "").trim();
+}
+
 export function buildSynthesisInput(
   blocks: UltraConceptBlock[],
   domain: PageDomain,
   pageObjective?: string,
 ): SynthesisInput {
-  const rankedConcepts: SynthesisConceptInput[] = blocks.map((b) => ({
+  // Prioritize substantive educational roles; push examples/details to end
+  const sorted = [...blocks].sort((a, b) => {
+    const highValue = ["theorem", "formula", "definition", "mechanism", "contrast", "application"];
+    const aHigh = highValue.includes(a.conceptRole ?? "") ? 0 : 1;
+    const bHigh = highValue.includes(b.conceptRole ?? "") ? 0 : 1;
+    return aHigh - bHigh;
+  });
+
+  const rankedConcepts: SynthesisConceptInput[] = sorted.slice(0, 5).map((b) => ({
     title: b.title,
     role: b.conceptRole ?? "detail",
-    text: b.pattern,
+    text: sanitizeConceptText(b.pattern),
     mechanism: b.surgicalReason || undefined,
     trap: b.trap || undefined,
     importance: b.importance,

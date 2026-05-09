@@ -99,11 +99,23 @@ const KIND_ROLE: Record<SemanticHighlightKind | string, { label: string; color: 
 
 function kindMeta(kind: string, shortLabel?: string): { label: string; color: string } {
   if (shortLabel && shortLabel !== kind.replace(/_/g, " ")) {
-    const color = shortLabel === "Warning" ? "text-rose-300"
-      : shortLabel === "Important" ? "text-amber-300"
-      : shortLabel === "Support" ? "text-blue-300"
-      : shortLabel === "Additional" ? "text-sky-300"
-      : shortLabel === "Note" ? "text-slate-400"
+    const color =
+      shortLabel === "Core Principle"    ? "text-amber-300"
+      : shortLabel === "Mechanism"       ? "text-teal-300"
+      : shortLabel === "Definition"      ? "text-blue-300"
+      : shortLabel === "Trap"            ? "text-rose-300"
+      : shortLabel === "Rule"            ? "text-violet-300"
+      : shortLabel === "Application"     ? "text-purple-300"
+      : shortLabel === "Formula / Theorem" ? "text-amber-200"
+      : shortLabel === "Clinical Signal" ? "text-emerald-300"
+      : shortLabel === "Example"         ? "text-green-300"
+      : shortLabel === "Supporting Detail" ? "text-slate-400"
+      // legacy labels — keep working during transition
+      : shortLabel === "Warning"         ? "text-rose-300"
+      : shortLabel === "Important"       ? "text-amber-300"
+      : shortLabel === "Support"         ? "text-blue-300"
+      : shortLabel === "Additional"      ? "text-sky-300"
+      : shortLabel === "Note"            ? "text-slate-400"
       : "text-slate-300";
     return { label: shortLabel, color };
   }
@@ -225,9 +237,11 @@ export function RightPanel({
 
   // Educational Interpretation Engine: fires async LLM synthesis once heuristic
   // blocks are ready. Returns null until complete; triggers re-render when done.
+  // Use teachingStatement (top-down heading+canonical) NOT coreIdea (heuristic sentence).
+  // coreIdea can be a figure caption; teachingStatement comes from normalization confidence scores.
   const teachingSynthesis = useTeachingSynthesis({
     pageTruthKey,
-    pageObjective: ultraPageView?.coreIdea,
+    pageObjective: ultraPageView?.teachingStatement,
     domain: (ultraPageView?._debug?.domain) ?? null,
     blocks: ultraPageView?.blocks ?? [],
     enabled: isCurrentPageModel && !!ultraPageView,
