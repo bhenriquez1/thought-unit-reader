@@ -363,7 +363,7 @@ function synthesizeBoundaryRule(trap?: string | null, pattern?: string | null, r
   return src ? compressToRule(src, "boundary") : null;
 }
 
-function compressToRule(text: string, role: CompressionRole): string | null {
+export function compressToRule(text: string, role: CompressionRole): string | null {
   const c = distillClause(text);
   if (!c) return null;
   const stripped = c.replace(/[.!?]+$/, "").trim();

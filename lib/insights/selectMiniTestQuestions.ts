@@ -14,7 +14,10 @@ export type MiniTestRole =
   | "mechanism"
   | "distinction"
   | "application"
-  | "skimTrap";
+  | "skimTrap"
+  | "whatHappensIf"
+  | "nextStep"
+  | "compareContrast";
 
 export interface MiniTestQuestionCandidate {
   id: string;
@@ -66,6 +69,9 @@ export function selectMiniTestQuestions(
     "distinction",
     "application",
     "skimTrap",
+    "whatHappensIf",
+    "nextStep",
+    "compareContrast",
   ];
 
   // Pass 1: one question per role, preferring page-step order when scores are close.
@@ -164,7 +170,10 @@ function scoreQuestionCandidate(
   if (candidate.role === "distinction" && /\bcontrast|distinction|confuse|difference\b/i.test(text)) score += 0.08;
   if (candidate.role === "application" && /\bapply|recognize|use|infer\b/i.test(text))   score += 0.08;
   if (candidate.role === "coreMeaning" && /\bmain|core|central|key\b/i.test(text))       score += 0.06;
-  if (candidate.role === "skimTrap"    && /\bmiss|skim|overlook|misunderstand\b/i.test(text)) score += 0.08;
+  if (candidate.role === "skimTrap"      && /\bmiss|skim|overlook|misunderstand\b/i.test(text)) score += 0.08;
+  if (candidate.role === "whatHappensIf" && /\bhappens?|occurs?|fails?|absent|missing\b/i.test(text)) score += 0.08;
+  if (candidate.role === "nextStep"      && /\bnext|after|step|following|subsequent\b/i.test(text)) score += 0.08;
+  if (candidate.role === "compareContrast" && /\bdiffer|compare|contrast|versus|vs\b/i.test(text)) score += 0.08;
 
   return score;
 }
@@ -247,11 +256,14 @@ function compareCandidates(
 
 function roleRank(role: MiniTestRole): number {
   switch (role) {
-    case "coreMeaning":  return 1;
-    case "mechanism":    return 2;
-    case "distinction":  return 3;
-    case "application":  return 4;
-    case "skimTrap":     return 5;
-    default:             return 99;
+    case "coreMeaning":    return 1;
+    case "mechanism":      return 2;
+    case "distinction":    return 3;
+    case "application":    return 4;
+    case "skimTrap":       return 5;
+    case "whatHappensIf":  return 6;
+    case "nextStep":       return 7;
+    case "compareContrast": return 8;
+    default:               return 99;
   }
 }
