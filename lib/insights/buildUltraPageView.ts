@@ -84,6 +84,7 @@ export interface UltraPageView {
   miniTest: string[];
   compression: string[];
   steps: UltraPageViewStep[];
+  domain?: string;             // drives domain-adaptive field labels in right panel
   crossLinkHints?: string[];  // ["limit → convergence", "compound → emergent property"]
   _debug?: UltraPageViewDebug;
 }
@@ -323,24 +324,49 @@ function enforceEducationalHierarchy(concepts: ConceptBlockInput[]): ConceptBloc
   });
 }
 
+// Stopwords excluded from semantic density calculation
+const DENSITY_STOPWORDS = /^(about|which|these|those|their|where|there|would|could|should|might|being|having|after|before|during|through|within|without|between|among|against|while|since|until|below|above|other|every|often|found|later|again|given|under|large|small|right|great|taken|still|quite|rather|really|simply|mainly|mostly|partly|nearly|almost|though|little|shall|perhaps|beyond|behind|always|never|either|across|along|around|toward|except|toward|finally|already|whether)$/i;
+
 function passesConceptQualityGate(
   concept: ConceptBlockInput,
   pageObjective: ReturnType<typeof inferPageObjective>,
   domain: PageDomain,
 ): boolean {
-  void domain; // reserved for future domain-specific gates
+  void domain;
   const anchor = concept.anchorSentence;
+  const wordCount = anchor.split(/\s+/).length;
 
   // 1. Must be a real teachable concept — not filler/narration/OCR fragment
   if (isExampleOrFiller(anchor)) return false;
-  if (anchor.split(/\s+/).length < 5) return false;
+  if (wordCount < 5) return false;
   if (/^(we |this |here |in this |notice |observe )/i.test(anchor.trimStart())) return false;
-  // Reject OCR-style example labels, figure/table captions, section headers
+  // OCR-style example labels, figure/table captions, section headers
   if (/^(example\s+[A-Z]?\d|figure\s+\d|table\s+\d|section\s+\d|box\s+\d)/i.test(anchor.trimStart())) return false;
-  // Reject narrative/story fragments — these are prose transitions, not concepts
+  // Narrative/story fragments — prose transitions, not teachable concepts
   if (/^(then\s+|suddenly\s+|next,?\s+|later,?\s+|meanwhile\s+)/i.test(anchor.trimStart())) return false;
-  // Reject pure pronoun openers with no subject establishment
+  // Pure pronoun openers with no subject establishment
   if (/^(he |she |they |it |his |her |their )/i.test(anchor.trimStart())) return false;
+
+  // ── Concept Purity Filter ─────────────────────────────────────────────────
+  // Structural noise patterns that produce visually prominent but cognitively
+  // empty concept blocks in the right panel.
+
+  // Author names from major pharmacology/medical/biology textbooks — never a concept
+  if (/\b(katzung|stahl|robbins|goodman|gilman|lehninger|stryer|moore|guyton|harrisons|schwartz|sabiston|tierney|cotran|kumar|fauci|kasper|braunwald|loscalzo|rang|dale|boron|boulpaep)\b/i.test(anchor)) return false;
+  // Academic credentials in short fragments → metadata, not concepts
+  if (/\b(MD|PhD|DO|RN|PharmD|DVM|MPH|MPharm|MBBS|FRCPC)\b/.test(anchor) && wordCount < 12) return false;
+  // "That was where they found..." — narrative transition fragment, not a concept
+  if (/^(that was (where|when|how|what)\b|it was (then|there|at this point)\b|this is (where|when|how|why)\b)/i.test(anchor.trimStart())) return false;
+  // Case report structural labels: "Case 1: Patient presents..."
+  if (/^case\s+\d+\s*[:\s]/i.test(anchor.trimStart()) && wordCount < 15) return false;
+  // Chapter/introduction metadata fragments
+  if (/^(chapter\s+\d|introduction\s+to\b|learning\s+objective|key\s+concept|table\s+of\s+content)/i.test(anchor.trimStart())) return false;
+
+  // Semantic density: at least 3 non-stopword content words (≥5 chars)
+  // Prevents "Example 1 | What Happens" (0 content words) from passing
+  const contentWordCount = (anchor.match(/\b[a-z]{5,}\b/gi) ?? [])
+    .filter((w) => !DENSITY_STOPWORDS.test(w)).length;
+  if (contentWordCount < 3) return false;
 
   // 2. Topic connection — when a clear page topic exists (≥2 key tokens), at least one
   // token must appear in the anchor or its support sentences.
@@ -355,9 +381,7 @@ function passesConceptQualityGate(
     }
   }
 
-  // 3. Minimal compression — reject overly long narrative sentences that begin with
-  // weak determiners (usually exposition, not the core teachable statement).
-  const wordCount = anchor.split(/\s+/).length;
+  // 3. Reject overly long narrative sentences beginning with weak determiners
   if (wordCount > 45 && /^(the |a |an |this |these |those )/i.test(anchor.trimStart())) return false;
 
   return true;
@@ -1109,6 +1133,7 @@ export function buildUltraPageView(
     miniTest: finalMiniTest,
     compression: finalCompression,
     steps,
+    domain,
     crossLinkHints: (() => {
       if (synthesis?.crossLinkHints?.length) return synthesis.crossLinkHints;
       const crossLinkInputs: CrossLinkInput[] = concepts.map((c) => ({ title: c.title, anchorSentence: c.anchorSentence }));

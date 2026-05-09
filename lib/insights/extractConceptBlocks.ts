@@ -183,6 +183,12 @@ function sentenceScore(sentence: SourceSentence, domain?: PageDomain): number {
   if (/^(a|an) [a-z]{3,20}(?:\s+[a-z]{3,20})? (is|are|forms?|occurs?|results?|arises?|develops?|requires?|exhibits?|consists?|refers?)\b/i.test(cleaned.trimStart())) score += 3;
   // Math example question opener — "What happens to...", "Find the limit of..." — never an anchor.
   if (domain === "math" && /^(what (happens|is|are|would|does)\b|determine (whether|if|the)\b|find (the|a|all)\b|show (that|this)\b|prove (that|this)\b|compute\b|calculate\b|consider the (sequence|series)\b|let [a-z]_?\{?n\}?\s*=)/i.test(cleaned.trimStart())) score -= 8;
+  // Fiction/narrative: plot-decisive and consequence-bearing sentences score higher than description.
+  // Decision verbs, consequence chains, and pivotal action carry cognitive weight.
+  if (/\b(decided?|chose|realized|discovered|revealed|escaped|attacked|betrayed|confessed|refused|demanded|admitted|surrendered|understood|knew\s+that|saw\s+that|found\s+out)\b/i.test(cleaned)) score += 2;
+  if (/\b(which\s+(meant|led|caused|forced|allowed|changed)|that\s+(changed|would|could|made)|forcing\s+\w+\s+to|leaving\s+\w+\s+to|this\s+(meant|changed|forced|revealed))\b/i.test(cleaned)) score += 2;
+  // Static description without narrative consequence — deprioritize
+  if (/^(the|a|an) \w+ (was|were|had|looked|seemed|appeared|felt|stood|sat) /i.test(cleaned.trimStart()) && !/\b(suddenly|turned|changed|realized|decided|revealed|forced|meant)\b/i.test(cleaned)) score -= 2;
   // Named substance category instance: "Iodine is the trace element that..."
   // Defines the substance (an example), not the page's teaching concept.
   if (/^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+is (a|an|the) (trace|essential|major|minor|macro|micro|most abundant|only)?\s*(element|mineral|compound|ion|vitamin|electrolyte|metalloid|halogen|nutrient)\b/i.test(cleaned.trimStart())) score -= 4;
@@ -278,6 +284,18 @@ function classifyConceptRole(anchorText: string, supportTexts: string[], paragra
   const lower = anchorText.toLowerCase();
   const anchorTrimmed = anchorText.trim();
   const isMathPage = domain === "math";
+
+  // Fiction/narrative domain: classify by narrative function before generic checks.
+  // Plot turns and character decisions map to "mechanism" (they cause change).
+  // Conflict and motivation map to "contrast" and "definition" respectively.
+  // Pure description maps to "detail".
+  if (domain === "fiction") {
+    if (/\b(decided?|chose|refused|demanded|admitted|surrendered|betrayed|confessed|escaped|attacked|revealed)\b/i.test(lower)) return "mechanism";
+    if (/\b(realized|understood|knew\s+that|discovered|found\s+out|saw\s+that)\b/i.test(lower)) return "definition";
+    if (/\b(unlike|in contrast|however|but\s+\w+|whereas|although|despite)\b/i.test(lower)) return "contrast";
+    if (/\b(because|therefore|which\s+(meant|led|caused|forced)|forcing|leaving\s+\w+\s+to)\b/i.test(lower)) return "mechanism";
+    return "detail";
+  }
 
   // Example: check FIRST — a sentence starting with an illustrative opener must never be
   // classified as "definition" even if "X is a Y" appears later in the same sentence.

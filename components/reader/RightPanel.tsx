@@ -634,6 +634,71 @@ function BulletLine({ children }: { children: React.ReactNode }) {
   return <li className="leading-6 text-[14px] text-white/90">{children}</li>;
 }
 
+// Domain-adaptive right panel field labels and icons.
+// Each domain exposes a different cognitive frame to the user.
+function domainFieldLabels(domain?: string): {
+  pattern: string; reason: string; rule: string; trap: string;
+  patternColor: string; reasonColor: string; ruleColor: string; trapColor: string;
+} {
+  switch (domain) {
+    case "math":
+      return {
+        pattern:      "Concept",
+        reason:       "Condition",
+        rule:         "Result",
+        trap:         "Failure Case",
+        patternColor: "#8fd3ff",
+        reasonColor:  "#ffd580",
+        ruleColor:    "#ffb86b",
+        trapColor:    "#ff9da1",
+      };
+    case "science":
+      return {
+        pattern:      "Trigger",
+        reason:       "Mechanism",
+        rule:         "Outcome",
+        trap:         "Confusion Point",
+        patternColor: "#6ee7b7",
+        reasonColor:  "#ffd580",
+        ruleColor:    "#ffb86b",
+        trapColor:    "#ff9da1",
+      };
+    case "clinical":
+      return {
+        pattern:      "Finding",
+        reason:       "Interpretation",
+        rule:         "Next Step",
+        trap:         "Failure Mode",
+        patternColor: "#93c5fd",
+        reasonColor:  "#fde68a",
+        ruleColor:    "#34d399",
+        trapColor:    "#fca5a5",
+      };
+    case "fiction":
+      return {
+        pattern:      "Plot Turn",
+        reason:       "Motivation",
+        rule:         "Consequence",
+        trap:         "Misdirection",
+        patternColor: "#d8b4fe",
+        reasonColor:  "#fbbf24",
+        ruleColor:    "#fb923c",
+        trapColor:    "#f87171",
+      };
+    default:
+      return {
+        pattern:      "P — Pattern",
+        reason:       "⚡ Surgical Reason",
+        rule:         "🔥 Rule",
+        trap:         "❗ Trap",
+        patternColor: "#8fd3ff",
+        reasonColor:  "#ffd580",
+        ruleColor:    "#ffb86b",
+        trapColor:    "#ff9da1",
+      };
+  }
+}
+
 function UltraView({
   view,
   selectedBlockIndex,
@@ -646,6 +711,7 @@ function UltraView({
   onAnchorClick: (text: string) => void;
 }) {
   const selectedBlock = view.blocks[selectedBlockIndex] ?? view.blocks[0] ?? null;
+  const labels = domainFieldLabels(view.domain ?? view._debug?.domain);
 
   return (
     <div className="space-y-4">
@@ -687,19 +753,19 @@ function UltraView({
             </div>
             <div className="space-y-4">
               <div>
-                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#8fd3ff]">P — Pattern</div>
+                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.patternColor }}>{labels.pattern}</div>
                 <p className="text-[14px] leading-6 text-white/90">{selectedBlock.pattern}</p>
               </div>
               <div>
-                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#ffd580]">⚡ Surgical Reason</div>
+                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
                 <p className="text-[14px] leading-6 text-white/90">{selectedBlock.surgicalReason}</p>
               </div>
               <div>
-                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#ff9da1]">❗ Trap</div>
+                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
                 <p className="text-[14px] leading-6 text-white/90">{selectedBlock.trap}</p>
               </div>
               <div>
-                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#ffb86b]">🔥 Rule</div>
+                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
                 <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
               </div>
               {selectedBlock.misconception && (
