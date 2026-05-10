@@ -41,6 +41,7 @@ import { inferPageObjective, isExampleOrFiller } from "./inferPageObjective";
 import type { TeachingSynthesis } from "./synthesizeTeachingOutput";
 import { buildCrossLinkHints, type CrossLinkInput } from "./buildCrossLinkHints";
 import { buildSRIModel, type SRIModel } from "./buildSRIModel";
+import { normalizeMathTitle, extractMathFields, extractProcedureSteps, buildMathCoreIdea } from "./math/extractMathConcepts";
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -56,8 +57,9 @@ export interface UltraConceptBlock {
   rule: string;
   importance: string;
   conceptRole?: string;
-  misconception?: string;   // "Students often confuse X with Y"
-  examHook?: string;        // "On DAT/boards this appears as..."
+  misconception?: string;    // "Students often confuse X with Y"
+  examHook?: string;         // "On DAT/boards this appears as..."
+  procedureSteps?: string[]; // math/clinical ordered steps
 }
 
 export interface UltraPageViewStep {
@@ -935,17 +937,50 @@ export function buildUltraPageView(
     return concepts[0]?.anchorSentence ?? "";
   })();
   const coreIdea = normalizeLine(summaryFallback, headingFallbackText);
+  // Math override applied after block construction via mathCoreIdeaOverride below
+
+  // Math enhancement — normalize titles, extract condition/result fields, detect procedures
+  const isMathPage = domain === "math";
+  const mathProcedureSteps = isMathPage
+    ? extractProcedureSteps(pageModel.paragraphInsights ?? [])
+    : [];
+  const mathCoreIdeaOverride = isMathPage
+    ? buildMathCoreIdea(pageModel.paragraphInsights ?? [], concepts)
+    : null;
 
   // Concept blocks — pass domain so field scoring is domain-aware
   const blocks: UltraConceptBlock[] = concepts.map((c, i) => {
     const fields = buildConceptFields(c, coreIdea, domain);
+
+    // Math title normalization
+    const title = isMathPage
+      ? normalizeMathTitle(c.title, c.anchorSentence)
+      : c.title;
+
+    // Math field override: extract condition/result from anchor
+    let surgicalReason = fields.surgicalReason;
+    let rule = fields.rule;
+    if (isMathPage && c.anchorSentence) {
+      const mathFields = extractMathFields(c.anchorSentence);
+      if (mathFields.condition && mathFields.condition.length >= 6) surgicalReason = mathFields.condition;
+      if (mathFields.result && mathFields.result.length >= 6)    rule = mathFields.result;
+    }
+
+    // Attach procedure steps to the first concept block on math pages
+    const procedureSteps = (isMathPage && i === 0 && mathProcedureSteps.length >= 2)
+      ? mathProcedureSteps
+      : undefined;
+
     return {
       conceptId: c.id,
       ordinal: i + 1,
-      title: c.title,
+      title,
       ...fields,
+      surgicalReason,
+      rule,
       importance: importanceLabel(c.importance),
       conceptRole: c.conceptRole,
+      procedureSteps,
     };
   });
 
@@ -1137,7 +1172,7 @@ export function buildUltraPageView(
   return {
     title: `ULTRA – ${inferPageTitle(page, concepts)}`,
     subtitle: "STR + PDRM + Surgical Comprehension Engine",
-    coreIdea: finalCoreIdea,
+    coreIdea: (isMathPage && mathCoreIdeaOverride) ? mathCoreIdeaOverride : finalCoreIdea,
     teachingStatement: pageObjective?.teachingStatement || undefined,
     blocks: finalBlocks,
     miniTest: finalMiniTest,
