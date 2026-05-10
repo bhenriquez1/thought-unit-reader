@@ -6,7 +6,7 @@
 // mini test and STR compression so they are page-native, not template-like.
 
 import type { PageInsightModel, ParagraphInsight } from "@/lib/insights/types";
-import { cleanSentence } from "./sentenceCleanup";
+import { cleanSentence, polishExtraction } from "./sentenceCleanup";
 import { isRenderableSentence } from "./isRenderableSentence";
 import {
   extractConceptBlocks,
@@ -43,6 +43,7 @@ import { buildCrossLinkHints, type CrossLinkInput } from "./buildCrossLinkHints"
 import { buildSRIModel, type SRIModel } from "./buildSRIModel";
 import { normalizeMathTitle, extractMathFields, extractMathTransformation, extractMathGiven, extractMathDecision, extractProcedureSteps, buildMathCoreIdea } from "./math/extractMathConcepts";
 import { normalizeScienceTitle, extractScienceMemoryHook, extractScienceExample } from "./science/normalizeScienceTitle";
+import { isFillerSentence } from "./signalClassifier";
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -311,7 +312,8 @@ export function adaptPageInsightModel(pageModel: PageInsightModel): PageModelFor
 
 function normalizeLine(text: string, fallback: string): string {
   const cleaned = cleanSentence(text ?? "");
-  return isRenderableSentence(cleaned) ? cleaned : fallback;
+  const polished = polishExtraction(cleaned);
+  return isRenderableSentence(polished) ? polished : fallback;
 }
 
 interface BuiltFields {
@@ -348,6 +350,7 @@ function passesConceptQualityGate(
 
   // 1. Must be a real teachable concept — not filler/narration/OCR fragment
   if (isExampleOrFiller(anchor)) return false;
+  if (isFillerSentence(anchor)) return false;
   if (wordCount < 5) return false;
   if (/^(we |this |here |in this |notice |observe )/i.test(anchor.trimStart())) return false;
   // OCR-style example labels, figure/table captions, section headers
