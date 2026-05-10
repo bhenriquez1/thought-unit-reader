@@ -751,8 +751,10 @@ const DOMAIN_SRI_OVERRIDES: Record<string, Partial<Record<ReadingDepth, { icon: 
 };
 
 function ReadingMap({ model, domain }: { model: SRIModel; domain?: string }) {
-  const primary  = model.signals.filter(s => !s.isBackground);
-  const bgSignal = model.signals.find(s => s.isBackground);
+  // Only show meaningful reading signals — filter out filler depths
+  const FILLER_DEPTHS = new Set(["skim", "example_only"]);
+  const primary  = model.signals.filter(s => !s.isBackground && !FILLER_DEPTHS.has(s.depth)).slice(0, 5);
+  const bgSignal = model.signals.find(s => s.isBackground && !FILLER_DEPTHS.has(s.depth));
   const domainOverrides = domain ? (DOMAIN_SRI_OVERRIDES[domain] ?? {}) : {};
   const [showBg, setShowBg] = React.useState(false);
 

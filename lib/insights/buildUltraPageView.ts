@@ -975,20 +975,47 @@ export function buildUltraPageView(
       if (mathFields.result && mathFields.result.length >= 6)    rule = mathFields.result;
     }
 
+    // Science field dedup: ensure Mechanism (surgicalReason) ≠ Definition (pattern).
+    // If both fields resolve to the same sentence, find the next distinct support sentence.
+    if (isSciencePage) {
+      const patNorm = fields.pattern.toLowerCase().slice(0, 70);
+      const reasonNorm = surgicalReason.toLowerCase().slice(0, 70);
+      if (patNorm === reasonNorm || (patNorm.length > 20 && reasonNorm.startsWith(patNorm.slice(0, 40)))) {
+        const distinct = (c.supportSentences ?? [])
+          .map((s) => cleanSentence(s) ?? "")
+          .filter((s) => s.length >= 15 && s.toLowerCase().slice(0, 70) !== patNorm);
+        if (distinct[0]) surgicalReason = distinct[0];
+      }
+    }
+
     // Attach procedure steps to the first concept block on math pages
     const procedureSteps = (isMathPage && i === 0 && mathProcedureSteps.length >= 2)
       ? mathProcedureSteps
       : undefined;
 
-    // Math transformation field (symbolic step between condition and result)
-    const transformation = isMathPage
-      ? extractMathTransformation(c.anchorSentence, c.supportSentences ?? []) ?? undefined
-      : undefined;
-
-    // Math given field (input formula/state)
+    // Math given field (input formula/state) — extracted first so transformation can avoid repeating it
     const given = isMathPage
       ? extractMathGiven(c.anchorSentence, c.supportSentences ?? []) ?? undefined
       : undefined;
+
+    // Math transformation field (symbolic step between condition and result).
+    // Strip the Given prefix if present — transformation should explain the *why*, not restate the input.
+    const rawTransformation = isMathPage
+      ? extractMathTransformation(c.anchorSentence, c.supportSentences ?? []) ?? undefined
+      : undefined;
+    const transformation = (() => {
+      if (!rawTransformation) return undefined;
+      if (given) {
+        const givenNorm = given.replace(/\s+/g, "").toLowerCase();
+        const transNorm = rawTransformation.replace(/\s+/g, "").toLowerCase();
+        // If transformation starts with the same formula as given (e.g. "aₙ=1/n → 0"), trim the lhs
+        if (transNorm.startsWith(givenNorm.slice(0, Math.min(givenNorm.length, 12)))) {
+          const arrowIdx = rawTransformation.indexOf("→");
+          if (arrowIdx > 0) return rawTransformation.slice(arrowIdx).trim();
+        }
+      }
+      return rawTransformation;
+    })();
 
     // Math decision field (convergence/divergence verdict)
     const decision = isMathPage
