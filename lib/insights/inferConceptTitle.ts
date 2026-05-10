@@ -7,7 +7,7 @@ const OCR_NUMBER_PREFIX = /^\d{1,4}[\s.):\-]+/;
 
 // Clause/discourse starters — signal a fragment subordinate to something else, not a concept label
 const BAD_OPENER_RE =
-  /^(when |thus |however |rather than |although |whereas |while |unless |if |because |therefore |yet |but |except |so |now |and |or |also |since |as the |for the )/i;
+  /^(when |thus |however |rather than |although |whereas |while |unless |if |because |therefore |yet |but |except |so |now |and |or |also |since |as the |for the |in fact |in other words |as such |moreover |furthermore |in addition |additionally |consequently |nevertheless )/i;
 
 // Trailing function words that create dangling prepositions or articles at end of label
 const TRAILING_FUNCTION_RE =
@@ -60,6 +60,9 @@ function cleanTrimmedLabel(text: string): string {
 // Structural noise words that should never be the main word in a concept label
 const STRUCTURAL_NOISE_RE = /^(example|figure|fig|table|box|section|chapter|exercise|problem|solution|introduction|key concept|the function|case \d)/i;
 
+// Content-poor second words that produce semantically empty 2-word combos ("Water Another")
+const CONTENT_POOR_SECOND_WORD_RE = /^(another|other|such|certain|various|more|less|former|latter|fact|also|only|many|much|few|some|both|each|every|either|neither)$/i;
+
 function isCleanLabel(text: string): boolean {
   const t = text.trim();
   const wc = wordCount(t);
@@ -70,6 +73,11 @@ function isCleanLabel(text: string): boolean {
   if ((t.match(/\b[A-Z]\b/g) ?? []).length >= 2) return false;
   // Structural noise labels that are never semantic concepts
   if (STRUCTURAL_NOISE_RE.test(t)) return false;
+  // Reject 2-word titles where second word is content-poor ("Water Another", "Process Various")
+  if (wc === 2) {
+    const secondWord = t.trim().split(/\s+/)[1] ?? "";
+    if (CONTENT_POOR_SECOND_WORD_RE.test(secondWord)) return false;
+  }
   return true;
 }
 
@@ -157,9 +165,10 @@ export function inferConceptTitle(
   if (fromAnchor) return titleCase(fromAnchor);
 
   // 4. Last resort: extract the first 2 meaningful words from the anchor
-  // "Key Concept" is a noise fallback — never use it.
-  const firstMeaningfulWords = anchorText.trim().split(/\s+/).filter((w) => w.length >= 4).slice(0, 2).join(" ");
-  if (firstMeaningfulWords.length >= 4) return titleCase(firstMeaningfulWords);
+  // Apply cleanTrimmedLabel + content-poor check to avoid garbage like "Water Another".
+  const meaningfulWords = anchorText.trim().split(/\s+/).filter((w) => w.length >= 4);
+  const firstMeaningfulWords = cleanTrimmedLabel(meaningfulWords.slice(0, 2).join(" "));
+  if (isCleanLabel(firstMeaningfulWords)) return titleCase(firstMeaningfulWords);
 
   return "Core Idea";
 }
