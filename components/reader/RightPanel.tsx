@@ -16,6 +16,7 @@ import type { NarrativeSection } from "@/lib/insights/materializeNarrativeSuppor
 import { extractConceptBlocks } from "@/lib/reader/extractConceptBlocks";
 import type { ConceptBlock, ReaderPageView } from "@/lib/reader/types";
 import { buildUltraPageView, type UltraPageView, type UltraConceptBlock } from "@/lib/insights/buildUltraPageView";
+import type { SRIModel, ParagraphSRIAnnotation } from "@/lib/insights/buildSRIModel";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { buildUltraNote, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, saveRecallSet } from "@/lib/recalllab/recallStore";
@@ -699,6 +700,74 @@ function domainFieldLabels(domain?: string): {
   }
 }
 
+// ---------------------------------------------------------------------------
+// SRI Reading Map — paragraph-level reading mode guide
+// ---------------------------------------------------------------------------
+
+const DEPTH_ROW_STYLES: Record<string, { border: string; bg: string }> = {
+  deep_understand: { border: "border-amber-400/30",  bg: "bg-amber-500/5"  },
+  memorize:        { border: "border-indigo-400/30", bg: "bg-indigo-500/5" },
+  clinical_logic:  { border: "border-emerald-400/30",bg: "bg-emerald-500/5"},
+  formula_logic:   { border: "border-blue-400/30",   bg: "bg-blue-500/5"  },
+  exam_trap:       { border: "border-rose-400/35",   bg: "bg-rose-500/7"  },
+  understand:      { border: "border-lime-400/25",   bg: "bg-lime-500/4"  },
+  skim:            { border: "border-white/8",        bg: "bg-white/3"     },
+  example_only:    { border: "border-white/6",        bg: "bg-white/2"     },
+};
+
+function ReadingMap({ model }: { model: SRIModel }) {
+  // Show skimmable + example_only rows collapsed by default
+  const [showAll, setShowAll] = React.useState(false);
+  const lowSalience = new Set(["skim", "example_only"]);
+  const visible = showAll
+    ? model.annotations
+    : model.annotations.filter((a) => !lowSalience.has(a.depth));
+  const hiddenCount = model.annotations.length - visible.length;
+
+  return (
+    <PanelSection title="Reading Map">
+      <div className="mb-3 rounded-lg border border-white/8 bg-white/3 px-3 py-2 text-[12px] text-white/60 italic">
+        {model.summary}
+      </div>
+      <div className="space-y-1.5">
+        {visible.map((a: ParagraphSRIAnnotation) => {
+          const style = DEPTH_ROW_STYLES[a.depth] ?? DEPTH_ROW_STYLES.skim;
+          return (
+            <div
+              key={a.paragraphIndex}
+              className={`flex items-start gap-2.5 rounded-lg border px-3 py-2 ${style.border} ${style.bg}`}
+            >
+              <span className="mt-0.5 shrink-0 text-[14px]" style={{ color: a.color }}>
+                {a.icon}
+              </span>
+              <div className="min-w-0 flex-1">
+                <span
+                  className="mr-2 text-[10px] font-semibold uppercase tracking-[0.13em]"
+                  style={{ color: a.color }}
+                >
+                  {a.depthLabel}
+                </span>
+                <span className="text-[12px] text-white/60 leading-5 line-clamp-2">
+                  {a.text}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="mt-2 text-[11px] text-white/40 hover:text-white/70 transition"
+        >
+          {showAll ? "↑ Collapse background rows" : `↓ Show ${hiddenCount} background / example row${hiddenCount > 1 ? "s" : ""}`}
+        </button>
+      )}
+    </PanelSection>
+  );
+}
+
 function UltraView({
   view,
   selectedBlockIndex,
@@ -805,6 +874,11 @@ function UltraView({
             {view.compression.map((line, i) => <BulletLine key={i}>{line}</BulletLine>)}
           </ul>
         </PanelSection>
+      )}
+
+      {/* SRI Reading Map */}
+      {view.sriModel && view.sriModel.annotations.length > 0 && (
+        <ReadingMap model={view.sriModel} />
       )}
 
       {/* Cross-Link Hints */}

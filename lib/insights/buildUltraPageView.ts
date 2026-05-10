@@ -40,6 +40,7 @@ import type { ClinicalPriorityCandidate } from "./scoreClinicalPriority";
 import { inferPageObjective, isExampleOrFiller } from "./inferPageObjective";
 import type { TeachingSynthesis } from "./synthesizeTeachingOutput";
 import { buildCrossLinkHints, type CrossLinkInput } from "./buildCrossLinkHints";
+import { buildSRIModel, type SRIModel } from "./buildSRIModel";
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -86,6 +87,7 @@ export interface UltraPageView {
   steps: UltraPageViewStep[];
   domain?: string;             // drives domain-adaptive field labels in right panel
   crossLinkHints?: string[];  // ["limit → convergence", "compound → emergent property"]
+  sriModel?: SRIModel;        // paragraph-level reading depth map
   _debug?: UltraPageViewDebug;
 }
 
@@ -1146,6 +1148,11 @@ export function buildUltraPageView(
       if (synthesis?.crossLinkHints?.length) return synthesis.crossLinkHints;
       const crossLinkInputs: CrossLinkInput[] = concepts.map((c) => ({ title: c.title, anchorSentence: c.anchorSentence }));
       return buildCrossLinkHints(crossLinkInputs, domain);
+    })(),
+    sriModel: (() => {
+      const insights = (pageModel.paragraphInsights ?? []).filter((p) => p.paragraphType !== "noise" && (p.cleanedText || p.rawText || "").trim().length > 30);
+      if (insights.length === 0) return undefined;
+      return buildSRIModel(insights, domain);
     })(),
     _debug,
   };
