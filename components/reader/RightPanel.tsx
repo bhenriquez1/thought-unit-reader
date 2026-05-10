@@ -16,7 +16,7 @@ import type { NarrativeSection } from "@/lib/insights/materializeNarrativeSuppor
 import { extractConceptBlocks } from "@/lib/reader/extractConceptBlocks";
 import type { ConceptBlock, ReaderPageView } from "@/lib/reader/types";
 import { buildUltraPageView, type UltraPageView, type UltraConceptBlock } from "@/lib/insights/buildUltraPageView";
-import type { SRIModel, SRISignal } from "@/lib/insights/buildSRIModel";
+import type { SRIModel, SRISignal, ReadingDepth } from "@/lib/insights/buildSRIModel";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { buildUltraNote, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, saveRecallSet } from "@/lib/recalllab/recallStore";
@@ -655,10 +655,10 @@ function domainFieldLabels(domain?: string): {
       };
     case "science":
       return {
-        pattern:      "Trigger",
-        reason:       "Mechanism",
+        pattern:      "🔬 Trigger",
+        reason:       "🧬 Mechanism",
         rule:         "Outcome",
-        trap:         "Confusion Point",
+        trap:         "⚠️ Confusion Point",
         patternColor: "#6ee7b7",
         reasonColor:  "#ffd580",
         ruleColor:    "#ffb86b",
@@ -726,9 +726,34 @@ const SIGNAL_BG: Record<string, string> = {
   example_only:    "bg-white/2",
 };
 
-function ReadingMap({ model }: { model: SRIModel }) {
+const DOMAIN_SRI_OVERRIDES: Record<string, Partial<Record<ReadingDepth, { icon: string; label: string }>>> = {
+  math: {
+    deep_understand: { icon: "🔥", label: "Core Theorem"   },
+    formula_logic:   { icon: "∑",  label: "Formula Logic"  },
+    understand:      { icon: "🔢", label: "Symbolic Logic" },
+    memorize:        { icon: "📌", label: "Formula / Rule" },
+    exam_trap:       { icon: "⚠️", label: "Math Trap"      },
+  },
+  science: {
+    deep_understand: { icon: "🔬", label: "Core Biology"    },
+    understand:      { icon: "🧬", label: "Mechanism"       },
+    memorize:        { icon: "📌", label: "Key Fact"        },
+    exam_trap:       { icon: "⚠️", label: "Confusion Point" },
+    clinical_logic:  { icon: "🔍", label: "Process Logic"   },
+  },
+  clinical: {
+    deep_understand: { icon: "🔍", label: "Finding"        },
+    clinical_logic:  { icon: "🏥", label: "Clinical Logic" },
+    understand:      { icon: "⚕️", label: "Interpretation" },
+    memorize:        { icon: "📋", label: "Protocol"       },
+    exam_trap:       { icon: "❗", label: "Failure Mode"   },
+  },
+};
+
+function ReadingMap({ model, domain }: { model: SRIModel; domain?: string }) {
   const primary  = model.signals.filter(s => !s.isBackground);
   const bgSignal = model.signals.find(s => s.isBackground);
+  const domainOverrides = domain ? (DOMAIN_SRI_OVERRIDES[domain] ?? {}) : {};
   const [showBg, setShowBg] = React.useState(false);
 
   return (
@@ -742,6 +767,9 @@ function ReadingMap({ model }: { model: SRIModel }) {
           const border = SIGNAL_BORDER[sig.depth] ?? SIGNAL_BORDER.skim;
           const bg     = SIGNAL_BG[sig.depth]     ?? SIGNAL_BG.skim;
           const isDominant = idx === 0;
+          const override = domainOverrides[sig.depth as ReadingDepth];
+          const displayIcon  = override?.icon  ?? sig.icon;
+          const displayLabel = override?.label ?? sig.label;
           return (
             <div
               key={sig.depth}
@@ -749,12 +777,12 @@ function ReadingMap({ model }: { model: SRIModel }) {
             >
               {/* Label row */}
               <div className="mb-1 flex items-center gap-1.5">
-                <span className="text-[13px]">{sig.icon}</span>
+                <span className="text-[13px]">{displayIcon}</span>
                 <span
                   className={`text-[10px] font-bold uppercase tracking-[0.14em] ${isDominant ? "text-[11px]" : ""}`}
                   style={{ color: sig.color }}
                 >
-                  {sig.label}
+                  {displayLabel}
                 </span>
                 {sig.count > 1 && (
                   <span className="ml-auto text-[10px] text-white/25">{sig.count}×</span>
@@ -862,10 +890,22 @@ function UltraView({
                 <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
                 <p className="text-[14px] leading-6 text-white/90">{selectedBlock.trap}</p>
               </div>
+              {selectedBlock.transformation && (
+                <div>
+                  <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#60a5fa" }}>⟶ Transformation</div>
+                  <p className="text-[14px] leading-6 text-white/95 font-mono">{selectedBlock.transformation}</p>
+                </div>
+              )}
               <div>
                 <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
                 <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
               </div>
+              {selectedBlock.memoryHook && (
+                <div>
+                  <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#d8b4fe" }}>💡 Memory Hook</div>
+                  <p className="text-[13px] leading-6 text-purple-200/85">{selectedBlock.memoryHook}</p>
+                </div>
+              )}
               {selectedBlock.misconception && (
                 <div>
                   <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-rose-400">⚠️ Misconception</div>
@@ -920,7 +960,7 @@ function UltraView({
 
       {/* SRI Reading Map */}
       {view.sriModel && view.sriModel.signals.length > 0 && (
-        <ReadingMap model={view.sriModel} />
+        <ReadingMap model={view.sriModel} domain={view.domain ?? view._debug?.domain} />
       )}
 
       {/* Cross-Link Hints */}

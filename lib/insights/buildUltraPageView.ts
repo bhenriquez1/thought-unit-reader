@@ -41,7 +41,8 @@ import { inferPageObjective, isExampleOrFiller } from "./inferPageObjective";
 import type { TeachingSynthesis } from "./synthesizeTeachingOutput";
 import { buildCrossLinkHints, type CrossLinkInput } from "./buildCrossLinkHints";
 import { buildSRIModel, type SRIModel } from "./buildSRIModel";
-import { normalizeMathTitle, extractMathFields, extractProcedureSteps, buildMathCoreIdea } from "./math/extractMathConcepts";
+import { normalizeMathTitle, extractMathFields, extractMathTransformation, extractProcedureSteps, buildMathCoreIdea } from "./math/extractMathConcepts";
+import { normalizeScienceTitle, extractScienceMemoryHook } from "./science/normalizeScienceTitle";
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -60,6 +61,8 @@ export interface UltraConceptBlock {
   misconception?: string;    // "Students often confuse X with Y"
   examHook?: string;         // "On DAT/boards this appears as..."
   procedureSteps?: string[]; // math/clinical ordered steps
+  transformation?: string;   // math: symbolic step "aₙ = 1/n → 0 as n → ∞"
+  memoryHook?: string;       // science: analogy/mnemonic sentence
 }
 
 export interface UltraPageViewStep {
@@ -952,10 +955,13 @@ export function buildUltraPageView(
   const blocks: UltraConceptBlock[] = concepts.map((c, i) => {
     const fields = buildConceptFields(c, coreIdea, domain);
 
-    // Math title normalization
+    // Title normalization (math and science)
+    const isSciencePage = domain === "science";
     const title = isMathPage
       ? normalizeMathTitle(c.title, c.anchorSentence)
-      : c.title;
+      : isSciencePage
+        ? normalizeScienceTitle(c.title, c.anchorSentence)
+        : c.title;
 
     // Math field override: extract condition/result from anchor
     let surgicalReason = fields.surgicalReason;
@@ -971,6 +977,16 @@ export function buildUltraPageView(
       ? mathProcedureSteps
       : undefined;
 
+    // Math transformation field (symbolic step between condition and result)
+    const transformation = isMathPage
+      ? extractMathTransformation(c.anchorSentence, c.supportSentences ?? []) ?? undefined
+      : undefined;
+
+    // Science memory hook (analogy/mnemonic sentence)
+    const memoryHook = isSciencePage
+      ? extractScienceMemoryHook(c.anchorSentence, c.supportSentences ?? []) ?? undefined
+      : undefined;
+
     return {
       conceptId: c.id,
       ordinal: i + 1,
@@ -981,6 +997,8 @@ export function buildUltraPageView(
       importance: importanceLabel(c.importance),
       conceptRole: c.conceptRole,
       procedureSteps,
+      transformation,
+      memoryHook,
     };
   });
 

@@ -164,6 +164,55 @@ export function extractMathFields(anchorText: string): Pick<MathFields, "conditi
 }
 
 // ---------------------------------------------------------------------------
+// Transformation field extraction
+// ---------------------------------------------------------------------------
+
+// Matches inline arrow notation: "aₙ = 1/n → 0 as n → ∞"
+const TRANSFORMATION_ARROW_RE = /([a-zA-Zₙ₀₁₂₃₄₅₆₇₈₉\d/_^.]+\s*(?:[=:]|:=)\s*.{2,40}?)\s*→\s*(.{2,40}?)(?:[.;,]|$)/;
+// Matches "approaches / converges to / tends to" with a target value
+const TRANSFORMATION_APPROACH_RE = /\b(?:approaches?|converges?\s+to|tends?\s+to|goes?\s+to)\s+([−-]?[\d∞L∞zero]+(?:\s+as\b.{0,30})?)/i;
+// Simple arrow without assignment
+const SIMPLE_ARROW_RE = /\b([a-zA-Zₙ_^{}\d /]+)\s*→\s*([−\-]?[\d∞zero]+)/;
+
+/**
+ * Extracts a symbolic transformation step for a math concept, e.g. "aₙ = 1/n → 0".
+ * Returns a string if found, or null if no symbolic step is detectable.
+ */
+export function extractMathTransformation(
+  anchorText: string,
+  supportTexts: string[]
+): string | null {
+  const candidates = [anchorText, ...supportTexts];
+
+  for (const text of candidates) {
+    // Try assignment + arrow: "aₙ = 1/n → 0 as n → ∞"
+    const arrowMatch = text.match(TRANSFORMATION_ARROW_RE);
+    if (arrowMatch) {
+      const lhs = arrowMatch[1].trim().replace(/[,;]$/, "");
+      const rhs = arrowMatch[2].trim().replace(/[,;]$/, "");
+      if (lhs.length <= 40 && rhs.length <= 40) return `${lhs} → ${rhs}`;
+    }
+
+    // "approaches / converges to" pattern
+    const approachMatch = text.match(TRANSFORMATION_APPROACH_RE);
+    if (approachMatch) {
+      const target = approachMatch[1].trim().replace(/[,;.]$/, "");
+      return `→ ${target}`;
+    }
+
+    // Simple bare arrow: "x → 0"
+    const simpleMatch = text.match(SIMPLE_ARROW_RE);
+    if (simpleMatch) {
+      const lhs = simpleMatch[1].trim();
+      const rhs = simpleMatch[2].trim();
+      if (lhs.length >= 1 && lhs.length <= 20) return `${lhs} → ${rhs}`;
+    }
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Procedure step detection
 // ---------------------------------------------------------------------------
 
