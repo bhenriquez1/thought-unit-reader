@@ -16,7 +16,7 @@ import type { NarrativeSection } from "@/lib/insights/materializeNarrativeSuppor
 import { extractConceptBlocks } from "@/lib/reader/extractConceptBlocks";
 import type { ConceptBlock, ReaderPageView } from "@/lib/reader/types";
 import { buildUltraPageView, type UltraPageView, type UltraConceptBlock } from "@/lib/insights/buildUltraPageView";
-import type { SRIModel, ParagraphSRIAnnotation } from "@/lib/insights/buildSRIModel";
+import type { SRIModel, SRISignal } from "@/lib/insights/buildSRIModel";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { buildUltraNote, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, saveRecallSet } from "@/lib/recalllab/recallStore";
@@ -644,13 +644,13 @@ function domainFieldLabels(domain?: string): {
   switch (domain) {
     case "math":
       return {
-        pattern:      "Concept",
-        reason:       "Condition",
-        rule:         "Result",
-        trap:         "Failure Case",
+        pattern:      "⚡ Concept",
+        reason:       "📐 Condition",
+        rule:         "→ Result",
+        trap:         "⚠️ Trap",
         patternColor: "#8fd3ff",
         reasonColor:  "#ffd580",
-        ruleColor:    "#ffb86b",
+        ruleColor:    "#34d399",
         trapColor:    "#ff9da1",
       };
     case "science":
@@ -701,68 +701,97 @@ function domainFieldLabels(domain?: string): {
 }
 
 // ---------------------------------------------------------------------------
-// SRI Reading Map — paragraph-level reading mode guide
+// SRI Reading Map — expert pre-read briefing (3-5 signals, not a paragraph log)
 // ---------------------------------------------------------------------------
 
-const DEPTH_ROW_STYLES: Record<string, { border: string; bg: string }> = {
-  deep_understand: { border: "border-amber-400/30",  bg: "bg-amber-500/5"  },
-  memorize:        { border: "border-indigo-400/30", bg: "bg-indigo-500/5" },
-  clinical_logic:  { border: "border-emerald-400/30",bg: "bg-emerald-500/5"},
-  formula_logic:   { border: "border-blue-400/30",   bg: "bg-blue-500/5"  },
-  exam_trap:       { border: "border-rose-400/35",   bg: "bg-rose-500/7"  },
-  understand:      { border: "border-lime-400/25",   bg: "bg-lime-500/4"  },
-  skim:            { border: "border-white/8",        bg: "bg-white/3"     },
-  example_only:    { border: "border-white/6",        bg: "bg-white/2"     },
+const SIGNAL_BORDER: Record<string, string> = {
+  deep_understand: "border-amber-400/35",
+  memorize:        "border-indigo-400/30",
+  clinical_logic:  "border-emerald-400/30",
+  formula_logic:   "border-blue-400/30",
+  exam_trap:       "border-rose-400/40",
+  understand:      "border-lime-400/25",
+  skim:            "border-white/8",
+  example_only:    "border-white/6",
+};
+
+const SIGNAL_BG: Record<string, string> = {
+  deep_understand: "bg-amber-500/6",
+  memorize:        "bg-indigo-500/6",
+  clinical_logic:  "bg-emerald-500/6",
+  formula_logic:   "bg-blue-500/6",
+  exam_trap:       "bg-rose-500/7",
+  understand:      "bg-lime-500/4",
+  skim:            "bg-white/2",
+  example_only:    "bg-white/2",
 };
 
 function ReadingMap({ model }: { model: SRIModel }) {
-  // Show skimmable + example_only rows collapsed by default
-  const [showAll, setShowAll] = React.useState(false);
-  const lowSalience = new Set(["skim", "example_only"]);
-  const visible = showAll
-    ? model.annotations
-    : model.annotations.filter((a) => !lowSalience.has(a.depth));
-  const hiddenCount = model.annotations.length - visible.length;
+  const primary  = model.signals.filter(s => !s.isBackground);
+  const bgSignal = model.signals.find(s => s.isBackground);
+  const [showBg, setShowBg] = React.useState(false);
 
   return (
     <PanelSection title="Reading Map">
-      <div className="mb-3 rounded-lg border border-white/8 bg-white/3 px-3 py-2 text-[12px] text-white/60 italic">
-        {model.summary}
-      </div>
-      <div className="space-y-1.5">
-        {visible.map((a: ParagraphSRIAnnotation) => {
-          const style = DEPTH_ROW_STYLES[a.depth] ?? DEPTH_ROW_STYLES.skim;
+      {/* Page strategy */}
+      <p className="mb-3 text-[11px] italic text-white/45 leading-5">{model.pageStrategy}</p>
+
+      {/* Primary signals — 1 dominant + remaining */}
+      <div className="space-y-2">
+        {primary.map((sig: SRISignal, idx) => {
+          const border = SIGNAL_BORDER[sig.depth] ?? SIGNAL_BORDER.skim;
+          const bg     = SIGNAL_BG[sig.depth]     ?? SIGNAL_BG.skim;
+          const isDominant = idx === 0;
           return (
             <div
-              key={a.paragraphIndex}
-              className={`flex items-start gap-2.5 rounded-lg border px-3 py-2 ${style.border} ${style.bg}`}
+              key={sig.depth}
+              className={`rounded-xl border px-3 py-2.5 ${border} ${bg}`}
             >
-              <span className="mt-0.5 shrink-0 text-[14px]" style={{ color: a.color }}>
-                {a.icon}
-              </span>
-              <div className="min-w-0 flex-1">
+              {/* Label row */}
+              <div className="mb-1 flex items-center gap-1.5">
+                <span className="text-[13px]">{sig.icon}</span>
                 <span
-                  className="mr-2 text-[10px] font-semibold uppercase tracking-[0.13em]"
-                  style={{ color: a.color }}
+                  className={`text-[10px] font-bold uppercase tracking-[0.14em] ${isDominant ? "text-[11px]" : ""}`}
+                  style={{ color: sig.color }}
                 >
-                  {a.depthLabel}
+                  {sig.label}
                 </span>
-                <span className="text-[12px] text-white/60 leading-5 line-clamp-2">
-                  {a.text}
-                </span>
+                {sig.count > 1 && (
+                  <span className="ml-auto text-[10px] text-white/25">{sig.count}×</span>
+                )}
               </div>
+              {/* Primary summary */}
+              <p className={`leading-5 text-white/85 ${isDominant ? "text-[13px]" : "text-[12px]"}`}>
+                {sig.summary}
+              </p>
+              {/* Merged bullets from same-depth paragraphs */}
+              {sig.details.length > 0 && (
+                <ul className="mt-1.5 space-y-0.5">
+                  {sig.details.map((d, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-[11px] text-white/55 leading-5">
+                      <span className="mt-0.5 shrink-0 text-white/30">•</span>
+                      <span>{d}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           );
         })}
       </div>
-      {hiddenCount > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowAll((v) => !v)}
-          className="mt-2 text-[11px] text-white/40 hover:text-white/70 transition"
-        >
-          {showAll ? "↑ Collapse background rows" : `↓ Show ${hiddenCount} background / example row${hiddenCount > 1 ? "s" : ""}`}
-        </button>
+
+      {/* Background signal — always collapsed */}
+      {bgSignal && (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => setShowBg(v => !v)}
+            className="flex w-full items-center gap-2 rounded-lg border border-white/6 bg-white/2 px-3 py-2 text-left text-[11px] text-white/35 transition hover:text-white/55"
+          >
+            <span>{showBg ? "▲" : "▼"}</span>
+            <span className="flex-1">{bgSignal.summary}</span>
+          </button>
+        </div>
       )}
     </PanelSection>
   );
@@ -849,6 +878,19 @@ function UltraView({
                   <p className="text-[13px] leading-6 text-violet-200/85">{selectedBlock.examHook}</p>
                 </div>
               )}
+              {selectedBlock.procedureSteps && selectedBlock.procedureSteps.length >= 2 && (
+                <div>
+                  <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-sky-400">∑ Procedure</div>
+                  <ol className="space-y-1">
+                    {selectedBlock.procedureSteps.map((step, i) => (
+                      <li key={i} className="flex items-start gap-2 text-[13px] text-white/80 leading-5">
+                        <span className="mt-0.5 shrink-0 rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-bold text-sky-300">{i + 1}</span>
+                        <span>{step}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
               <div>
                 <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#c7f59b]">🎯 Importance</div>
                 <p className="text-[14px] leading-6 text-white/90">{selectedBlock.importance}</p>
@@ -877,7 +919,7 @@ function UltraView({
       )}
 
       {/* SRI Reading Map */}
-      {view.sriModel && view.sriModel.annotations.length > 0 && (
+      {view.sriModel && view.sriModel.signals.length > 0 && (
         <ReadingMap model={view.sriModel} />
       )}
 
