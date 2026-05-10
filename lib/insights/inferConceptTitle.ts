@@ -184,16 +184,27 @@ export function inferConceptTitle(
  */
 function extractDefinitionSubject(text: string): string | null {
   const t = text.trim();
+
+  // Comma-relative pattern: "osmosis, which is..." → "Osmosis"
+  const commaRel = t.match(/^([A-Za-z][a-zA-Z\s-]{2,30}),\s+which\s+(?:is\b|are\b|was\b|were\b)/);
+  if (commaRel) {
+    const subj = commaRel[1].trim();
+    if (wordCount(subj) >= 1 && wordCount(subj) <= 4 && !BAD_OPENER_RE.test(subj)
+        && !/^(the|a|an|this|that|these|those|it|they|he|she|we|you|i)$/i.test(subj)) {
+      return subj;
+    }
+  }
+
   // Match up to 4 capitalized/lowercase words before a copular verb
   const m = t.match(
-    /^([A-Z][a-zA-Z]*(?:\s+[a-z][a-zA-Z]*){0,3})\s+(?:is\b|are\b|was\b|were\b|refers?\s+to\b|equals?\b|means?\b|defined\s+as\b|describes?\b)/
+    /^([A-Za-z][a-zA-Z]*(?:\s+[a-zA-Z][a-zA-Z]*){0,3})\s+(?:is\b|are\b|was\b|were\b|refers?\s+to\b|equals?\b|means?\b|defined\s+as\b|describes?\b)/
   );
   if (!m) return null;
   const subject = m[1].trim();
   const wc = wordCount(subject);
-  // Accept 1–4 word subjects — single-word subjects only when clearly a technical term (capitalized)
-  if (wc === 1 && !/^[A-Z]/.test(subject)) return null;
+  // Accept 1–3 word subjects; lowercase allowed if short and non-pronoun
   if (wc < 1 || wc > 4) return null;
+  if (wc === 1 && /^[a-z]/.test(subject) && subject.length < 5) return null; // too short to be meaningful
   if (BAD_OPENER_RE.test(subject)) return null;
   // Reject plain pronouns and articles
   if (/^(the|a|an|this|that|these|those|it|they|he|she|we|you|i)$/i.test(subject)) return null;

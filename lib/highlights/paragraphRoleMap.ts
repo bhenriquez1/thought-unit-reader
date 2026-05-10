@@ -1,4 +1,5 @@
 import type { PageStory } from "@/lib/insights/buildPageStory";
+import type { PageDomain } from "@/lib/insights/detectPageDomain";
 import { isFillerSentence, classifySignal, signalTypeToParagraphRole } from "@/lib/insights/signalClassifier";
 
 // ---------------------------------------------------------------------------
@@ -66,11 +67,13 @@ function paraContains(paraText: string, needle: string, prefixLen = 48): boolean
  * @param story           PageStory for the current page — may be null
  * @param paragraphTexts  Pre-split paragraph strings from splitParagraphs (preferred).
  *                        Falls back to blank-line splitting of pageText.
+ * @param domain          Page domain — used to promote SYMBOLIC_LOGIC on math pages
  */
 export function buildParagraphRoleMap(
   pageText: string,
   story: PageStory | null,
   paragraphTexts?: string[],
+  domain?: PageDomain,
 ): ParagraphRoleBlock[] {
   if (!pageText) return [];
 
@@ -97,7 +100,7 @@ export function buildParagraphRoleMap(
     return paraIndex.map((p, i) => ({
       paragraphIndex: i,
       text: p.text,
-      role: heuristicRole(p.text),
+      role: heuristicRole(p.text, domain),
       start: p.start,
       end: p.end,
     }));
@@ -163,7 +166,7 @@ export function buildParagraphRoleMap(
     return {
       paragraphIndex: i,
       text: p.text,
-      role: heuristicRole(p.text),
+      role: heuristicRole(p.text, domain),
       start: p.start,
       end: p.end,
     };
@@ -174,12 +177,16 @@ export function buildParagraphRoleMap(
 // Heuristic classifier (no story)
 // ---------------------------------------------------------------------------
 
-function heuristicRole(text: string): ParagraphRole {
+function heuristicRole(text: string, domain?: PageDomain): ParagraphRole {
   // Filler sentences always map to low_value — suppress them from highlight pool
   if (isFillerSentence(text)) return "low_value";
 
   // Use signal classifier for signal-type-aware role assignment
   const { type } = classifySignal(text);
+
+  // On math pages, symbolic sentences should surface to primary highlight tier
+  if (type === "SYMBOLIC_LOGIC" && domain === "math") return "decision_rule";
+
   const mappedRole = signalTypeToParagraphRole(type) as ParagraphRole;
   if (mappedRole !== "support_explanation") return mappedRole;
 
