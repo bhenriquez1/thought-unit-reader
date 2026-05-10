@@ -918,6 +918,15 @@ function fallbackKindForParagraph(para: ParagraphInsight): SemanticHighlightKind
 // Score modifiers
 // ---------------------------------------------------------------------------
 
+// Detects math formula-heavy sentences: limit notation, arrow, calculus symbols, etc.
+const MATH_FORMULA_SIGNAL_RE = /(?:lim\b|∞|→|[=]\s*[0-9\-]|∫|∑|∂|lim_{|\\lim|\bsin\b|\bcos\b|\bln\b|\bd[xyz]\/d[xyz]|\^[0-9n]|[±≤≥≠])/;
+// Detects math theorem/definition sentences
+const MATH_THEOREM_SIGNAL_RE = /\b(?:theorem|corollary|lemma|if\b.{5,50}\bthen\b|converges?\s+to|diverges?\s+to|it follows that)\b/i;
+// Detects biology definition sentences
+const BIO_DEFINITION_SIGNAL_RE = /\b(?:is defined as|is called|refers? to|we define|is made (?:of|up of)|consists? of|is (?:a|an) type of|can be described as)\b/i;
+// Detects biology mechanism sentences
+const BIO_MECHANISM_SIGNAL_RE = /\b(?:allows?|enables?|causes?|results? in|leads? to|triggers?|activates?|inhibits?|breaks? down|transports?|synthesizes?|replicates?)\b/i;
+
 function applyScoreModifiers(c: CandidateBlock): number {
   let score = c.score;
   const text = c.text.toLowerCase();
@@ -952,6 +961,18 @@ function applyScoreModifiers(c: CandidateBlock): number {
     c.conceptRole === "detail"         ? -6  :
     c.conceptRole === "analogy"        ? -4  : 0;
   score += roleBonus;
+
+  // Domain-inferred content bonuses (applied when conceptRole didn't already boost)
+  // Math: boost sentences with formula notation or theorem language
+  if (!c.conceptRole || c.conceptRole === "detail") {
+    if (MATH_FORMULA_SIGNAL_RE.test(c.text)) score += 10;
+    else if (MATH_THEOREM_SIGNAL_RE.test(c.text)) score += 8;
+  }
+  // Biology: boost definition/mechanism sentences not already boosted by conceptRole
+  if (!c.conceptRole || c.conceptRole === "detail") {
+    if (BIO_DEFINITION_SIGNAL_RE.test(c.text)) score += 7;
+    else if (BIO_MECHANISM_SIGNAL_RE.test(c.text)) score += 5;
+  }
 
   return score;
 }

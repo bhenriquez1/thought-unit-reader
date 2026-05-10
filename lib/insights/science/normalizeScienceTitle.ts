@@ -72,6 +72,38 @@ export function normalizeScienceTitle(rawTitle: string, anchorText: string): str
   return rawTitle;
 }
 
+// ---------------------------------------------------------------------------
+// Example extraction (concrete instance with numbers or named examples)
+// ---------------------------------------------------------------------------
+
+// Signals that a sentence introduces a concrete example
+const SCIENCE_EXAMPLE_RE =
+  /\b(?:for example|for instance|such as|e\.g\.|consider|one example|like\s+(?:water|salt|oxygen|glucose|hemoglobin|carbon dioxide)|h[₂2]o\b|nacl\b|c[₆6]h[₁1][₂2]o[₆6]\b|\d+:\d+\s+ratio|\d+%\s+of)\b/i;
+
+/**
+ * Finds a concrete example sentence in anchorText or supportTexts.
+ * Returns the first matching sentence trimmed to ≤ 18 words, or null.
+ */
+export function extractScienceExample(
+  anchorText: string,
+  supportTexts: string[]
+): string | null {
+  const candidates = [anchorText, ...supportTexts];
+  for (const text of candidates) {
+    const sentences = text.split(/(?<=[.!?])\s+/);
+    for (const sentence of sentences) {
+      if (SCIENCE_EXAMPLE_RE.test(sentence)) {
+        const words = sentence.trim().split(/\s+/);
+        if (words.length >= 4 && words.length <= 40) {
+          const trimmed = words.slice(0, 18).join(" ").replace(/[.!?,;]$/, "").trim();
+          return trimmed;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 // Patterns that signal an analogy or mnemonic sentence
 const ANALOGY_RE =
   /\b(similar to|just like|think of|analogous to|just as\b|like a\b|like the\b|acts? like|works? like|functions? like|is like|are like|as if|can be compared)\b/i;

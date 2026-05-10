@@ -645,7 +645,7 @@ function domainFieldLabels(domain?: string): {
     case "math":
       return {
         pattern:      "⚡ Concept",
-        reason:       "📐 Condition",
+        reason:       "📥 Given",
         rule:         "→ Result",
         trap:         "⚠️ Trap",
         patternColor: "#8fd3ff",
@@ -655,7 +655,7 @@ function domainFieldLabels(domain?: string): {
       };
     case "science":
       return {
-        pattern:      "🔬 Trigger",
+        pattern:      "📖 Definition",
         reason:       "🧬 Mechanism",
         rule:         "Outcome",
         trap:         "⚠️ Confusion Point",
@@ -837,7 +837,10 @@ function UltraView({
   onAnchorClick: (text: string) => void;
 }) {
   const selectedBlock = view.blocks[selectedBlockIndex] ?? view.blocks[0] ?? null;
-  const labels = domainFieldLabels(view.domain ?? view._debug?.domain);
+  const domain = view.domain ?? view._debug?.domain;
+  const labels = domainFieldLabels(domain);
+  const isMathDomain = domain === "math";
+  const isScienceDomain = domain === "science";
 
   return (
     <div className="space-y-4">
@@ -878,34 +881,100 @@ function UltraView({
               {selectedBlock.ordinal}️⃣ {selectedBlock.title}
             </div>
             <div className="space-y-4">
+              {/* FIELD 1: Concept/Definition/Finding — always first */}
               <div>
                 <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.patternColor }}>{labels.pattern}</div>
                 <p className="text-[14px] leading-6 text-white/90">{selectedBlock.pattern}</p>
               </div>
-              <div>
-                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
-                <p className="text-[14px] leading-6 text-white/90">{selectedBlock.surgicalReason}</p>
-              </div>
-              <div>
-                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
-                <p className="text-[14px] leading-6 text-white/90">{selectedBlock.trap}</p>
-              </div>
-              {selectedBlock.transformation && (
-                <div>
-                  <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#60a5fa" }}>⟶ Transformation</div>
-                  <p className="text-[14px] leading-6 text-white/95 font-mono">{selectedBlock.transformation}</p>
-                </div>
+
+              {/* MATH SCHEMA: Given → Transformation → Result → Decision → Trap → Procedure */}
+              {isMathDomain ? (
+                <>
+                  <div>
+                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
+                    <p className="text-[14px] leading-6 text-white/90">{selectedBlock.given ?? selectedBlock.surgicalReason}</p>
+                  </div>
+                  {selectedBlock.transformation && (
+                    <div>
+                      <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#60a5fa" }}>⟶ Transformation</div>
+                      <p className="text-[14px] leading-6 text-white/95 font-mono">{selectedBlock.transformation}</p>
+                    </div>
+                  )}
+                  <div>
+                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
+                    <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
+                  </div>
+                  {selectedBlock.decision && (
+                    <div>
+                      <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#a78bfa" }}>✓ Decision</div>
+                      <p className="text-[14px] leading-6 text-violet-200/90">{selectedBlock.decision}</p>
+                    </div>
+                  )}
+                  <div>
+                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
+                    <p className="text-[14px] leading-6 text-white/90">{selectedBlock.trap}</p>
+                  </div>
+                  {selectedBlock.procedureSteps && selectedBlock.procedureSteps.length >= 2 && (
+                    <div>
+                      <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-sky-400">∑ Procedure</div>
+                      <ol className="space-y-1">
+                        {selectedBlock.procedureSteps.map((step, i) => (
+                          <li key={i} className="flex items-start gap-2 text-[13px] text-white/80 leading-5">
+                            <span className="mt-0.5 shrink-0 rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-bold text-sky-300">{i + 1}</span>
+                            <span>{step}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+                </>
+              ) : isScienceDomain ? (
+                /* SCIENCE SCHEMA: Mechanism → Example → Confusion Point → Outcome → Memory Hook */
+                <>
+                  <div>
+                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
+                    <p className="text-[14px] leading-6 text-white/90">{selectedBlock.surgicalReason}</p>
+                  </div>
+                  {selectedBlock.example && (
+                    <div>
+                      <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#86efac" }}>🔍 Example</div>
+                      <p className="text-[14px] leading-6 text-green-200/90">{selectedBlock.example}</p>
+                    </div>
+                  )}
+                  <div>
+                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
+                    <p className="text-[14px] leading-6 text-white/90">{selectedBlock.trap}</p>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
+                    <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
+                  </div>
+                  {selectedBlock.memoryHook && (
+                    <div>
+                      <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#d8b4fe" }}>💡 Memory Hook</div>
+                      <p className="text-[13px] leading-6 text-purple-200/85">{selectedBlock.memoryHook}</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* DEFAULT / CLINICAL SCHEMA: Reason → Trap → Rule */
+                <>
+                  <div>
+                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
+                    <p className="text-[14px] leading-6 text-white/90">{selectedBlock.surgicalReason}</p>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
+                    <p className="text-[14px] leading-6 text-white/90">{selectedBlock.trap}</p>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
+                    <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
+                  </div>
+                </>
               )}
-              <div>
-                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
-                <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
-              </div>
-              {selectedBlock.memoryHook && (
-                <div>
-                  <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#d8b4fe" }}>💡 Memory Hook</div>
-                  <p className="text-[13px] leading-6 text-purple-200/85">{selectedBlock.memoryHook}</p>
-                </div>
-              )}
+
+              {/* Shared optional fields — all domains */}
               {selectedBlock.misconception && (
                 <div>
                   <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-rose-400">⚠️ Misconception</div>
@@ -918,7 +987,8 @@ function UltraView({
                   <p className="text-[13px] leading-6 text-violet-200/85">{selectedBlock.examHook}</p>
                 </div>
               )}
-              {selectedBlock.procedureSteps && selectedBlock.procedureSteps.length >= 2 && (
+              {/* procedureSteps for non-math domains */}
+              {!isMathDomain && selectedBlock.procedureSteps && selectedBlock.procedureSteps.length >= 2 && (
                 <div>
                   <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-sky-400">∑ Procedure</div>
                   <ol className="space-y-1">

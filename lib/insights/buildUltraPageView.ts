@@ -41,8 +41,8 @@ import { inferPageObjective, isExampleOrFiller } from "./inferPageObjective";
 import type { TeachingSynthesis } from "./synthesizeTeachingOutput";
 import { buildCrossLinkHints, type CrossLinkInput } from "./buildCrossLinkHints";
 import { buildSRIModel, type SRIModel } from "./buildSRIModel";
-import { normalizeMathTitle, extractMathFields, extractMathTransformation, extractProcedureSteps, buildMathCoreIdea } from "./math/extractMathConcepts";
-import { normalizeScienceTitle, extractScienceMemoryHook } from "./science/normalizeScienceTitle";
+import { normalizeMathTitle, extractMathFields, extractMathTransformation, extractMathGiven, extractMathDecision, extractProcedureSteps, buildMathCoreIdea } from "./math/extractMathConcepts";
+import { normalizeScienceTitle, extractScienceMemoryHook, extractScienceExample } from "./science/normalizeScienceTitle";
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -62,6 +62,9 @@ export interface UltraConceptBlock {
   examHook?: string;         // "On DAT/boards this appears as..."
   procedureSteps?: string[]; // math/clinical ordered steps
   transformation?: string;   // math: symbolic step "aₙ = 1/n → 0 as n → ∞"
+  given?: string;            // math: input formula/state "aₙ = 1/n"
+  decision?: string;         // math: convergence/divergence verdict
+  example?: string;          // science: concrete instance sentence
   memoryHook?: string;       // science: analogy/mnemonic sentence
 }
 
@@ -982,6 +985,21 @@ export function buildUltraPageView(
       ? extractMathTransformation(c.anchorSentence, c.supportSentences ?? []) ?? undefined
       : undefined;
 
+    // Math given field (input formula/state)
+    const given = isMathPage
+      ? extractMathGiven(c.anchorSentence, c.supportSentences ?? []) ?? undefined
+      : undefined;
+
+    // Math decision field (convergence/divergence verdict)
+    const decision = isMathPage
+      ? extractMathDecision(c.anchorSentence, c.supportSentences ?? []) ?? undefined
+      : undefined;
+
+    // Science example field (concrete instance sentence)
+    const example = isSciencePage
+      ? extractScienceExample(c.anchorSentence, c.supportSentences ?? []) ?? undefined
+      : undefined;
+
     // Science memory hook (analogy/mnemonic sentence)
     const memoryHook = isSciencePage
       ? extractScienceMemoryHook(c.anchorSentence, c.supportSentences ?? []) ?? undefined
@@ -998,6 +1016,9 @@ export function buildUltraPageView(
       conceptRole: c.conceptRole,
       procedureSteps,
       transformation,
+      given,
+      decision,
+      example,
       memoryHook,
     };
   });
