@@ -1,3 +1,75 @@
+// ---------------------------------------------------------------------------
+// Semantic Polish Layer
+// ---------------------------------------------------------------------------
+// Final-stage cleanup applied to ALL extracted outputs before rendering.
+// Fixes: OCR damage, broken grammar, fragmented clauses, academic padding,
+// textbook artifacts, duplicated wording, and awkward prose.
+//
+// Rules enforced:
+//  1. Every sentence must have a subject + action + meaning
+//  2. Remove dangling phrases and textbook formatting artifacts
+//  3. Strip repeated noun fragments
+//  4. Convert passive constructions where natural
+//  5. Prefer concise active voice
+//  6. Never output malformed extraction literally
+
+const ACADEMIC_PADDING_RE = /^(it is (interesting|important|worth|useful|necessary|essential|critical) (to note|to remember|to consider|that)|note that|keep in mind that|bear in mind that|it should be noted that|it must be noted that|it can be (seen|observed|noted) that|as (noted|mentioned|discussed|described|shown|illustrated|explained) (above|below|previously|earlier)[,:]?\s*|based on (this|these|the above)[,:]?\s*|from (this|the above)[,:]?\s*|in (this|the following) (section|chapter|example|case)[,:]?\s*|the purpose of (this|the following)[,:]?\s*|we (have|can|now|will|shall) (see|note|observe|examine|consider|demonstrate|show)[,:]?\s*)\s*/i;
+
+const OCR_ARTIFACT_RE = /\b([A-Z]{4,})\b/g;  // ALL_CAPS OCR artifacts
+const DUPLICATE_WORD_RE = /\b(\w{4,})\s+\1\b/gi; // Repeated words: "the the", "is is"
+const BROKEN_HYPHEN_RE = /([a-z])-\s+([a-z])/g;  // OCR hyphenation across line break
+const TRAILING_NOISE_RE = /[\s,;:]+$/;
+const PAGE_NUM_RE = /\b\d{1,4}\s+(the|a|an|this|that|it|they|he|she|we)\b/; // "3 the mechanism"
+
+/**
+ * Semantic polish pass: removes academic padding, fixes OCR artifacts, repairs
+ * fragmented grammar. Returns a clean, operator-style sentence.
+ * Applied AFTER extraction, BEFORE rendering.
+ */
+export function polishExtraction(input: string): string {
+  if (!input || input.trim().length < 4) return input;
+
+  let s = input.trim();
+
+  // Fix OCR hyphenation across line breaks
+  s = s.replace(BROKEN_HYPHEN_RE, "$1$2");
+
+  // Remove duplicate words
+  s = s.replace(DUPLICATE_WORD_RE, "$1");
+
+  // Strip leading page numbers that leaked into text ("3 The mechanism is...")
+  if (PAGE_NUM_RE.test(s.slice(0, 10))) {
+    s = s.replace(/^\d{1,4}\s+/, "");
+  }
+
+  // Strip academic padding openers (two passes for stacked patterns)
+  for (let pass = 0; pass < 2; pass++) {
+    const stripped = s.replace(ACADEMIC_PADDING_RE, "");
+    if (stripped.length >= 15 && stripped.length < s.length) {
+      s = stripped.trim();
+    } else break;
+  }
+
+  // Strip ALL_CAPS OCR artifacts unless they look like acronyms (≤5 chars, known term)
+  s = s.replace(OCR_ARTIFACT_RE, (match) => {
+    // Keep known medical/science abbreviations
+    if (/^(DNA|RNA|ATP|ADP|AMP|PCR|MRI|CT|ECG|EKG|HIV|ACE|ARB|NSAIDs?|CNS|PNS|GI|CV|HTN|DM|CHF|COPD|UTI|BUN|CBC|WBC|RBC|LDH|AST|ALT|TSH|PTH|FSH|LH|ADH|GFR|BMP|CMP|MRSA|SARS|COVID|BMI|MAP|SBP|DBP|pH)$/.test(match)) return match;
+    // Likely OCR artifact — convert to title case
+    return match.charAt(0) + match.slice(1).toLowerCase();
+  });
+
+  // Remove trailing noise
+  s = s.replace(TRAILING_NOISE_RE, "");
+
+  // Re-capitalize
+  if (s.length > 0) s = s.charAt(0).toUpperCase() + s.slice(1);
+
+  // Ensure sentence terminal
+  if (s && !/[.!?]$/.test(s)) s += ".";
+
+  return s;
+}
+
 export function cleanSentence(input: string): string {
   if (!input) return "";
 

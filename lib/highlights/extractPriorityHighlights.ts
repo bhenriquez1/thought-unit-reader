@@ -1,5 +1,6 @@
 import { cleanSentence } from "@/lib/insights/sentenceCleanup";
 import { isRenderableSentence } from "@/lib/insights/isRenderableSentence";
+import { signalScoreAdjustment, isFillerSentence } from "@/lib/insights/signalClassifier";
 import { extractCompleteSentences } from "@/lib/insights/textCleanup";
 import type { PageInsightModel, ParagraphInsight, NarrativePageView } from "@/lib/insights/types";
 import type { PageStory } from "@/lib/insights/buildPageStory";
@@ -918,60 +919,43 @@ function fallbackKindForParagraph(para: ParagraphInsight): SemanticHighlightKind
 // Score modifiers
 // ---------------------------------------------------------------------------
 
-// Detects math formula-heavy sentences: limit notation, arrow, calculus symbols, etc.
-const MATH_FORMULA_SIGNAL_RE = /(?:lim\b|∞|→|[=]\s*[0-9\-]|∫|∑|∂|lim_{|\\lim|\bsin\b|\bcos\b|\bln\b|\bd[xyz]\/d[xyz]|\^[0-9n]|[±≤≥≠])/;
-// Detects math theorem/definition sentences
-const MATH_THEOREM_SIGNAL_RE = /\b(?:theorem|corollary|lemma|if\b.{5,50}\bthen\b|converges?\s+to|diverges?\s+to|it follows that)\b/i;
-// Detects biology definition sentences
-const BIO_DEFINITION_SIGNAL_RE = /\b(?:is defined as|is called|refers? to|we define|is made (?:of|up of)|consists? of|is (?:a|an) type of|can be described as)\b/i;
-// Detects biology mechanism sentences
-const BIO_MECHANISM_SIGNAL_RE = /\b(?:allows?|enables?|causes?|results? in|leads? to|triggers?|activates?|inhibits?|breaks? down|transports?|synthesizes?|replicates?)\b/i;
-
 function applyScoreModifiers(c: CandidateBlock): number {
   let score = c.score;
-  const text = c.text.toLowerCase();
+
+  // Hard filler rejection: sentences classified as filler lose priority regardless of role
+  if (isFillerSentence(c.text)) {
+    score -= 25;
+    return score;
+  }
 
   // Evidence richness
   if (c.evidence.length >= 2) score += 8;
   if (c.support.length >= 2) score += 6;
 
-  // Operator language
-  if (/\bif\b|\bwhen\b|\bbecause\b|\btherefore\b|\brather than\b|\bavoid\b|\bdo not\b/.test(text)) score += 5;
-
   // High confidence
   if (c.confidence >= 0.9) score += 4;
-
-  // Boilerplate penalty
-  if (/^(this page|this section|in this chapter|as mentioned|as discussed|see below|see above)\b/i.test(text)) score -= 20;
 
   // Fragmentary penalty
   if (c.text.length < 20) score -= 10;
 
-  // Educational significance: concept role is the strongest signal of highlight value.
-  // Theorems and formulas dominate — examples and narratives yield.
+  // Concept role — strongest signal for educational significance
   const roleBonus =
     c.conceptRole === "theorem"        ? +15 :
     c.conceptRole === "formula"        ? +12 :
     c.conceptRole === "definition"     ? +8  :
     c.conceptRole === "mechanism"      ? +8  :
-    c.conceptRole === "contrast"       ? +6  :  // trap-adjacent
+    c.conceptRole === "contrast"       ? +6  :
     c.conceptRole === "application"    ? +2  :
-    c.conceptRole === "worked_example" ? -8  :  // never outrank theorem
-    c.conceptRole === "example"        ? -12 :  // strongly demote inline examples
+    c.conceptRole === "worked_example" ? -8  :
+    c.conceptRole === "example"        ? -12 :
     c.conceptRole === "detail"         ? -6  :
     c.conceptRole === "analogy"        ? -4  : 0;
   score += roleBonus;
 
-  // Domain-inferred content bonuses (applied when conceptRole didn't already boost)
-  // Math: boost sentences with formula notation or theorem language
-  if (!c.conceptRole || c.conceptRole === "detail") {
-    if (MATH_FORMULA_SIGNAL_RE.test(c.text)) score += 10;
-    else if (MATH_THEOREM_SIGNAL_RE.test(c.text)) score += 8;
-  }
-  // Biology: boost definition/mechanism sentences not already boosted by conceptRole
-  if (!c.conceptRole || c.conceptRole === "detail") {
-    if (BIO_DEFINITION_SIGNAL_RE.test(c.text)) score += 7;
-    else if (BIO_MECHANISM_SIGNAL_RE.test(c.text)) score += 5;
+  // Signal classifier: operator signal hierarchy on top of concept role.
+  // Applied when no explicit concept role, or when role is detail/unknown.
+  if (!c.conceptRole || c.conceptRole === "detail" || c.conceptRole === "application") {
+    score += signalScoreAdjustment(c.text);
   }
 
   return score;

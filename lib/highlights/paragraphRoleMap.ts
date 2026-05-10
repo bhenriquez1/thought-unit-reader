@@ -1,4 +1,5 @@
 import type { PageStory } from "@/lib/insights/buildPageStory";
+import { isFillerSentence, classifySignal, signalTypeToParagraphRole } from "@/lib/insights/signalClassifier";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -174,14 +175,17 @@ export function buildParagraphRoleMap(
 // ---------------------------------------------------------------------------
 
 function heuristicRole(text: string): ParagraphRole {
+  // Filler sentences always map to low_value — suppress them from highlight pool
+  if (isFillerSentence(text)) return "low_value";
+
+  // Use signal classifier for signal-type-aware role assignment
+  const { type } = classifySignal(text);
+  const mappedRole = signalTypeToParagraphRole(type) as ParagraphRole;
+  if (mappedRole !== "support_explanation") return mappedRole;
+
+  // Fallback to original keyword patterns for explanation subtypes
   const t = text.toLowerCase();
-  if (/\b(do not|avoid|danger|caution|wrong|mistake|pitfall|trap|error|not be confused|never)\b/.test(t))
-    return "trap_warning";
-  if (/\b(should|must|is required|rule|protocol|guideline|criterion|criteria|always|never)\b/.test(t))
-    return "decision_rule";
-  if (/\b(because|mechanism|caused by|results in|leads to|pathway|process|therefore|thus)\b/.test(t))
-    return "support_explanation";
   if (/\b(versus|vs\.|compared|unlike|whereas|distinguishes|contrast|similar to|differ)\b/.test(t))
     return "support_relation";
-  return "low_value";
+  return "support_explanation";
 }
