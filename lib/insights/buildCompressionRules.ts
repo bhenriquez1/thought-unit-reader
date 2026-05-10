@@ -437,10 +437,13 @@ function distillClause(text: string): string {
     .replace(/\s+/g, " ")
     .trim();
   if (!cleaned) return "";
-  const parts = cleaned.split(/\b(?:however|for example|such as|although|rather than|instead|whereas)\b/i);
-  return (parts[0] ?? cleaned)
+  // Split on softening/contrast conjunctions to keep only the core clause
+  const parts = cleaned.split(/\b(?:however|for example|such as|although|rather than|instead|whereas|as well as|in addition to)\b/i);
+  const core = (parts[0] ?? cleaned).trim();
+  return core
     .replace(/^(this page|the page|this concept|this section)\s+(shows|explains|covers|develops)\s+/i, "")
-    .replace(/^(ultimately|in general|overall|therefore)\s+/i, "")
+    // Strip leading discourse openers: "Therefore," / "Thus," / "Hence," / "Consequently,"
+    .replace(/^(therefore|thus|hence|consequently|accordingly|as a result|in fact|in other words|finally|overall|ultimately|in general|in summary)[,;]?\s+/i, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -491,7 +494,11 @@ function isRenderableSentence(text?: string | null): boolean {
   if (!t || t.length < 24) return false;
   if (/[.…]{2,}/.test(t)) return false;
   if (/^[\d\s.,\-:;()]+$/.test(t)) return false;
-  return t.split(/\s+/).length >= 6;
+  const wc = t.split(/\s+/).length;
+  if (wc < 6) return false;
+  // Reject verbatim textbook sentences — too long to convert to a clean rule
+  if (wc > 45) return false;
+  return true;
 }
 
 function normalize(text: string): string {

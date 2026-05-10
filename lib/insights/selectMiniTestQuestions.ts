@@ -150,8 +150,15 @@ function sanitizeQuestion(text: string): string {
 function isRenderableQuestion(text: string): boolean {
   if (!text) return false;
   if (text.length < 20) return false;
-  if (text.split(/\s+/).length < 5) return false;
+  const words = text.split(/\s+/);
+  if (words.length < 5) return false;
   if (/^[\d\s.,\-:;()?!]+$/.test(text)) return false;
+  // Reject questions containing a run of 3+ uppercase words — book title leaked in
+  if ((text.match(/\b[A-Z]{2,}\b/g) ?? []).length >= 3) return false;
+  // Reject questions too long to be useful (>35 words = verbatim textbook sentence)
+  if (words.length > 35) return false;
+  // Reject questions that start with a subordinate clause fragment (no question verb)
+  if (/^(Certain|Some|Most|Many|All|Several|Although|While|Even|Whether)\s+\w+\s+(may|can|could|might|would|will|should)\s+/i.test(text)) return false;
   return true;
 }
 
