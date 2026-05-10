@@ -457,14 +457,23 @@ function extractSubjectPhrase(text: string, maxWords = 8): string {
       /^(is|are|was|were|has|have|can|could|will|would|should|must|means?|determines?|causes?|leads?|refers?|contains?|includes?|represents?|defines?|consists?)\b/i.test(w)
   );
   const cutAt = verbIdx >= 2 && verbIdx <= maxWords ? verbIdx : Math.min(maxWords, words.length);
-  return words.slice(0, cutAt).join(" ").replace(/^(The|A|An)\s+/i, "").trim();
+  let subject = words.slice(0, cutAt).join(" ").replace(/^(The|A|An)\s+/i, "").trim();
+  // Strip trailing modal verbs that belong to the predicate, not the subject
+  subject = subject.replace(/\s+(may|can|could|should|must|will|would|might)\s*$/i, "").trim();
+  // Reject overly long or modal-contaminated subjects
+  if (subject.split(/\s+/).length > 6) subject = subject.split(/\s+/).slice(0, 5).join(" ");
+  if (/\b(may|can|could|should|must|will|would|might)\b/i.test(subject)) return "";
+  return subject;
 }
 
 function buildPageNativeQuestion(role: string, text: string, domain?: StepModelPageDomain): string {
   if (!text) return "";
   const stem = (text || "").replace(/[.!?]+$/, "").trim();
   if (!stem) return "";
-  const subject = extractSubjectPhrase(stem, 8) || stem.split(/\s+/).slice(0, 8).join(" ");
+  const rawSubject = extractSubjectPhrase(stem, 8);
+  // Reject if subject extraction failed or subject is contaminated with modals
+  if (!rawSubject || /\b(may|can|could|should|must|will|would|might)\b/i.test(rawSubject)) return "";
+  const subject = rawSubject || stem.split(/\s+/).slice(0, 5).join(" ");
 
   // Domain-specific question templates produce more pedagogically precise questions.
   if (domain === "math") {

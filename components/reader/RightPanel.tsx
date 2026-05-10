@@ -736,6 +736,7 @@ const DOMAIN_SRI_OVERRIDES: Record<string, Partial<Record<ReadingDepth, { icon: 
   },
   science: {
     deep_understand: { icon: "🔬", label: "Core Biology"    },
+    bio_logic:       { icon: "🧬", label: "Bio Mechanism"   },
     understand:      { icon: "🧬", label: "Mechanism"       },
     memorize:        { icon: "📌", label: "Key Fact"        },
     exam_trap:       { icon: "⚠️", label: "Confusion Point" },

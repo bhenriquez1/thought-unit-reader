@@ -22,6 +22,7 @@ export type ReadingDepth =
   | "understand"       // follow the logic — process, application, comparison
   | "clinical_logic"   // diagnostic mode — next step, finding, interpretation
   | "formula_logic"    // math theorem or formula — derive/apply
+  | "bio_logic"        // biology mechanism/pathway — cellular process, cascade
   | "exam_trap"        // high-alert pitfall — frequently tested confusion
   | "skim"             // context / background — read once, do not dwell
   | "example_only";    // worked example — follow if confused, skip if confident
@@ -31,6 +32,7 @@ export const SRI_META: Record<ReadingDepth, { icon: string; label: string; color
   memorize:        { icon: "📌", label: "Memorize",         color: "#818cf8", salience: 0.9  },
   clinical_logic:  { icon: "🏥", label: "Clinical Logic",   color: "#34d399", salience: 0.88 },
   formula_logic:   { icon: "∑",  label: "Formula Logic",    color: "#60a5fa", salience: 0.85 },
+  bio_logic:       { icon: "🧬", label: "Bio Mechanism",    color: "#34d399", salience: 0.86 },
   exam_trap:       { icon: "⚠️", label: "Exam Trap",        color: "#f87171", salience: 0.95 },
   understand:      { icon: "🧠", label: "Understand",        color: "#a3e635", salience: 0.7  },
   skim:            { icon: "👀", label: "Skim",              color: "#94a3b8", salience: 0.3  },
@@ -64,6 +66,7 @@ const FORMULA_SIGNALS = /\b(theorem|formula|proof|equation|corollary|lemma|deriv
 const CLINICAL_SIGNALS = /\b(diagnosis|presents with|next step|treatment|management|differential|workup|rule out|indicated|contraindicated|first-line|pathophysiology|etiology)\b/i;
 const MECHANISM_SIGNALS = /\b(because|therefore|leads to|results in|causes?|produces?|activates?|inhibits?|blocks?|stimulates?|mechanism)\b/i;
 const DEFINITION_SIGNALS = /\b(is defined as|refers to|is the|is a|are the|consists of|is known as|is characterized by)\b/i;
+const BIO_LOGIC_SIGNALS = /\b(pathway|cascade|receptor|ligand|synthesis|degradation|transcription|translation|replication|mitochondri|chloroplast|membrane|nucleus|ribosome|enzyme|substrate|product|inhibit|activate|signal transduction|feedback|homeostasis|diffusion|osmosis|atp|rna|dna|amino acid|peptide|chromosome)\b/i;
 
 function classifyParagraphDepth(p: ParagraphInsight, domain: PageDomain): ReadingDepth {
   const text = (p.cleanedText || p.rawText || "").trim();
@@ -71,8 +74,9 @@ function classifyParagraphDepth(p: ParagraphInsight, domain: PageDomain): Readin
   if (p.paragraphType === "noise" || text.length < 30) return "skim";
   if ((p.traps && p.traps.length > 0) || TRAP_SIGNALS.test(text)) return "exam_trap";
   if (domain === "clinical" && CLINICAL_SIGNALS.test(text)) return "clinical_logic";
-  if (p.paragraphType === "clinical_reasoning") return "clinical_logic";
+  if (p.paragraphType === "clinical_reasoning" && (domain === "clinical" || domain === "general")) return "clinical_logic";
   if ((domain === "math" || p.paragraphType === "formula") && FORMULA_SIGNALS.test(text)) return "formula_logic";
+  if (domain === "science" && BIO_LOGIC_SIGNALS.test(text) && MECHANISM_SIGNALS.test(text)) return "bio_logic";
   if (p.priorityScore >= 8 && DEFINITION_SIGNALS.test(text)) return "deep_understand";
   if (p.priorityScore >= 8 && MECHANISM_SIGNALS.test(text)) return "deep_understand";
 
@@ -83,7 +87,7 @@ function classifyParagraphDepth(p: ParagraphInsight, domain: PageDomain): Readin
     case "concept":          return p.priorityScore >= 7 ? "deep_understand" : "understand";
     case "signal":           return "memorize";
     case "process":          return MECHANISM_SIGNALS.test(text) ? "understand" : "skim";
-    case "clinical_reasoning": return "clinical_logic";
+    case "clinical_reasoning": return (domain === "clinical" || domain === "general") ? "clinical_logic" : "understand";
     case "comparison":       return "understand";
     case "decision":         return domain === "clinical" ? "clinical_logic" : "understand";
     case "consequence":      return p.priorityScore >= 6 ? "understand" : "skim";
@@ -137,6 +141,7 @@ const DEPTH_PRIORITY: ReadingDepth[] = [
   "exam_trap",
   "deep_understand",
   "formula_logic",
+  "bio_logic",
   "clinical_logic",
   "memorize",
   "understand",
@@ -216,6 +221,7 @@ const DEPTH_SUMMARIES: Record<ReadingDepth, string> = {
   exam_trap:       "Trap-heavy page — study misconceptions as carefully as correct principles.",
   deep_understand: "High-density concept page — read slowly, trace each causal link.",
   formula_logic:   "Math derivation page — follow each step; understand application conditions.",
+  bio_logic:       "Biology mechanism page — trace each pathway step; understand cause and effect.",
   clinical_logic:  "Clinical reasoning page — map each finding to its next step.",
   memorize:        "Key facts page — commit highlighted items to memory.",
   understand:      "Process or application page — follow the logic; don't memorize word-for-word.",

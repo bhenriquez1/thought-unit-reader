@@ -20,6 +20,8 @@ const DUPLICATE_WORD_RE = /\b(\w{4,})\s+\1\b/gi; // Repeated words: "the the", "
 const BROKEN_HYPHEN_RE = /([a-z])-\s+([a-z])/g;  // OCR hyphenation across line break
 const TRAILING_NOISE_RE = /[\s,;:]+$/;
 const PAGE_NUM_RE = /\b\d{1,4}\s+(the|a|an|this|that|it|they|he|she|we)\b/; // "3 the mechanism"
+// Strips book title injected mid-sentence by OCR: "patients may ART AND SCIENCE OF DIAGNOSIS remain"
+const TITLE_INJECTION_RE = /\b(may|can|could|should|must|will|would|might)\b\s+([A-Z]{2,}(?:\s+[A-Z]{2,}){2,})\s*/g;
 
 /**
  * Semantic polish pass: removes academic padding, fixes OCR artifacts, repairs
@@ -30,6 +32,10 @@ export function polishExtraction(input: string): string {
   if (!input || input.trim().length < 4) return input;
 
   let s = input.trim();
+
+  // Strip book-title injections before other passes: "may ART AND SCIENCE OF DIAGNOSIS remain" → "may remain"
+  s = s.replace(TITLE_INJECTION_RE, (_, modal) => modal + " ");
+  s = s.replace(/\s{2,}/g, " ").trim();
 
   // Fix OCR hyphenation across line breaks
   s = s.replace(BROKEN_HYPHEN_RE, "$1$2");

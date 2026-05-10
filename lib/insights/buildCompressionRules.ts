@@ -1,5 +1,6 @@
 // lib/insights/buildCompressionRules.ts
-// v3: stricter anti-dup + true synthesis pass.
+// v4: semantic compression fallback via compressToNote.
+import { compressToNote } from "@/lib/insights/sentenceCleanup";
 //
 // Goals:
 // - current-page only inputs
@@ -381,7 +382,7 @@ export function compressToRule(text: string, role: CompressionRole): string | nu
       // Math: "aₙ → L" / "converges to L" — keep operator notation compact
       const mathM = stripped.match(/\b(converges?\s+to|approaches?)\s+([\d.L∞0-9]+)/i);
       if (mathM) return ensureSentence(truncAtClause(stripped, 10));
-      return ensureSentence(truncAtClause(stripped, 12));
+      return ensureSentence(compressToNote(stripped, "signal") || truncAtClause(stripped, 12));
     }
     case "mechanism": {
       // "X leads to / causes / results in Y" → "X → Y."
@@ -390,15 +391,15 @@ export function compressToRule(text: string, role: CompressionRole): string | nu
       // "Because X, Y" → "X → Y."
       const m2 = stripped.match(/^because\s+(.{4,40}?)[,;]\s+(.{4,40})/i);
       if (m2) return ensureSentence(`${truncW(m2[1], 7)} → ${lowercaseFirst(truncW(m2[2], 7))}`);
-      if (startsWithMechanismSignal(stripped)) return ensureSentence(truncAtClause(stripped, 12));
-      return ensureSentence(truncAtClause(stripped, 12));
+      if (startsWithMechanismSignal(stripped)) return ensureSentence(compressToNote(stripped, "mechanism") || truncAtClause(stripped, 12));
+      return ensureSentence(compressToNote(stripped, "mechanism") || truncAtClause(stripped, 12));
     }
     case "application": {
       // "X can be ignored/negligible" → "Ignore X in this context."
       const m = stripped.match(/^(.{4,40}?)\s+(?:can be|is|are)\s+(?:ignored?|negligible|disregarded?)/i);
       if (m) return ensureSentence(`Ignore ${lowercaseFirst(truncW(m[1], 6))} in this context`);
-      if (startsWithActionSignal(stripped)) return ensureSentence(truncAtClause(stripped, 12));
-      return ensureSentence(truncAtClause(stripped, 12));
+      if (startsWithActionSignal(stripped)) return ensureSentence(compressToNote(stripped, "rule") || truncAtClause(stripped, 12));
+      return ensureSentence(compressToNote(stripped, "signal") || truncAtClause(stripped, 12));
     }
     case "boundary": {
       // "If/when X changes → Y"
@@ -407,8 +408,8 @@ export function compressToRule(text: string, role: CompressionRole): string | nu
       // "X is not / unlike / different from Y" → "X ≠ Y."
       const m2 = stripped.match(/^(.{4,35}?)\s+(?:is not|are not|unlike|different from)\s+(.{4,40})/i);
       if (m2) return ensureSentence(`${truncW(m2[1], 7)} ≠ ${lowercaseFirst(truncW(m2[2], 7))}`);
-      if (/^do not\b/i.test(stripped)) return ensureSentence(truncAtClause(stripped, 12));
-      return ensureSentence(truncAtClause(stripped, 12));
+      if (/^do not\b/i.test(stripped)) return ensureSentence(compressToNote(stripped, "trap") || truncAtClause(stripped, 12));
+      return ensureSentence(compressToNote(stripped, "signal") || truncAtClause(stripped, 12));
     }
   }
 }
@@ -439,7 +440,23 @@ function distillClause(text: string): string {
   if (!cleaned) return "";
   // Split on softening/contrast conjunctions to keep only the core clause
   const parts = cleaned.split(/\b(?:however|for example|such as|although|rather than|instead|whereas|as well as|in addition to)\b/i);
-  const core = (parts[0] ?? cleaned).trim();
+  let core = (parts[0] ?? cleaned).trim();
+
+  // Split on secondary semantic boundaries (clarification phrases) and take the
+  // shorter, more meaningful fragment when both sides are substantial.
+  const secondaryBoundaryRE = /,\s+(?:which means|which is|that is|i\.e\.,?)\s+|;\s+(?:that is|i\.e\.)\s+|\s+—\s+|\s+\(i\.e\.,?\s+/i;
+  const secParts = core.split(secondaryBoundaryRE);
+  if (secParts.length >= 2) {
+    const before = secParts[0].trim();
+    const after = secParts.slice(1).join(" ").trim();
+    // Prefer the shorter side if it's still substantial (≥5 words)
+    if (before.split(/\s+/).length >= 5 && after.split(/\s+/).length >= 5) {
+      core = before.split(/\s+/).length <= after.split(/\s+/).length ? before : after;
+    } else if (before.split(/\s+/).length >= 5) {
+      core = before;
+    }
+  }
+
   return core
     .replace(/^(this page|the page|this concept|this section)\s+(shows|explains|covers|develops)\s+/i, "")
     // Strip leading discourse openers: "Therefore," / "Thus," / "Hence," / "Consequently,"
