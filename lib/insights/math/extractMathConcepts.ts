@@ -213,6 +213,94 @@ export function extractMathTransformation(
 }
 
 // ---------------------------------------------------------------------------
+// Given field extraction (math input formula/state)
+// ---------------------------------------------------------------------------
+
+// Matches variable definitions like "aₙ = 1/n" or "f(x) = x^2 + 1"
+const GIVEN_ASSIGN_RE = /\b([a-zA-Zₙ₀₁₂₃₄₅₆₇₈₉_]{1,6}(?:\([^)]{0,10}\))?)\s*=\s*([^,;.]{2,40}?)(?=[,;.]|$|\s+(?:for|where|with|and|if)\b)/;
+// "Let aₙ = ..." / "Suppose f(x) = ..." / "Consider the sequence aₙ = ..."
+const GIVEN_LET_RE = /\b(?:let|suppose|consider|given that|assume)\s+([a-zA-Zₙ₀₁₂₃₄₅₆₇₈₉_]{1,6}(?:\([^)]{0,10}\))?)\s*=\s*([^,;.]{2,40}?)(?=[,;.]|$)/i;
+
+/**
+ * Extracts the "Given" input state for a math concept (e.g., "aₙ = 1/n").
+ * Returns a compact formula string or null.
+ */
+export function extractMathGiven(
+  anchorText: string,
+  supportTexts: string[]
+): string | null {
+  const candidates = [anchorText, ...supportTexts];
+
+  for (const text of candidates) {
+    // "Let/suppose/consider aₙ = ..." takes priority
+    const letMatch = text.match(GIVEN_LET_RE);
+    if (letMatch) {
+      const lhs = letMatch[1].trim();
+      const rhs = letMatch[2].trim().replace(/[,;.]$/, "");
+      if (rhs.length <= 40) return `${lhs} = ${rhs}`;
+    }
+
+    // Plain assignment: "aₙ = 1/n"
+    const assignMatch = text.match(GIVEN_ASSIGN_RE);
+    if (assignMatch) {
+      const lhs = assignMatch[1].trim();
+      const rhs = assignMatch[2].trim().replace(/[,;.]$/, "");
+      // Filter out prose-like assignments ("convergence is defined as...")
+      if (rhs.length <= 40 && /[0-9n\-\/^∞√∫∑]|lim\b|sin\b|cos\b/.test(rhs)) {
+        return `${lhs} = ${rhs}`;
+      }
+    }
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Decision field extraction (math convergence/divergence verdict)
+// ---------------------------------------------------------------------------
+
+const CONVERGES_RE = /\b(?:the\s+(?:sequence|series|function|limit)\s+)?(?:converges?(?:\s+to\b.{0,30})?|is\s+convergent)\b/i;
+const DIVERGES_RE  = /\b(?:the\s+(?:sequence|series|function|limit)\s+)?(?:diverges?|is\s+divergent|does\s+not\s+converge|does\s+not\s+exist)\b/i;
+const LIMIT_EXISTS_RE = /\blim(?:it)?\s+(?:exists?|is\s+equal\s+to|equals?)\b/i;
+const CONCLUSION_RE = /\b(?:therefore|thus|hence|so|we\s+conclude|it\s+follows\s+that|this\s+(?:means|shows|implies|proves))\b.{0,100}/i;
+
+/**
+ * Extracts the decision/verdict for a math concept (e.g., "The sequence converges to 0").
+ * Prefers explicit conclusion sentences; returns null if none found.
+ */
+export function extractMathDecision(
+  anchorText: string,
+  supportTexts: string[]
+): string | null {
+  const candidates = [anchorText, ...supportTexts];
+
+  for (const text of candidates) {
+    // Explicit conclusion connector
+    const conclusionMatch = text.match(CONCLUSION_RE);
+    if (conclusionMatch) {
+      const s = conclusionMatch[0].trim().replace(/[,;]$/, "");
+      const words = s.split(/\s+/);
+      if (words.length >= 3 && words.length <= 20) return s;
+    }
+  }
+
+  // Second pass: convergence/divergence verdict sentences
+  for (const text of candidates) {
+    const sentences = text.split(/(?<=[.!?])\s+/);
+    for (const sentence of sentences) {
+      if (CONVERGES_RE.test(sentence) || DIVERGES_RE.test(sentence) || LIMIT_EXISTS_RE.test(sentence)) {
+        const words = sentence.trim().split(/\s+/);
+        if (words.length >= 3 && words.length <= 25) {
+          return sentence.trim().replace(/[.!?]$/, "");
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Procedure step detection
 // ---------------------------------------------------------------------------
 
