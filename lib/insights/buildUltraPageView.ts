@@ -34,7 +34,7 @@ import {
   type MiniTestRole,
 } from "./selectMiniTestQuestions";
 import { normalizeClinicalText, type ClinicalNormalizationResult } from "@/lib/normalization/normalizeClinicalText";
-import { detectPageDomain, type PageDomain } from "./detectPageDomain";
+import { detectPageDomain, detectSymbolicDensity, type PageDomain } from "./detectPageDomain";
 import { findMainTeachingZone } from "./findMainTeachingZone";
 import { scoreDomainPriority, type DomainPriorityScore } from "./scoreDomainPriority";
 import type { ClinicalPriorityCandidate } from "./scoreClinicalPriority";
@@ -60,6 +60,7 @@ export interface UltraConceptBlock {
   rule: string;
   importance: string;
   conceptRole?: string;
+  anchorText?: string;       // raw source sentence — used for left-panel scroll sync
   misconception?: string;    // "Students often confuse X with Y"
   examHook?: string;         // "On DAT/boards this appears as..."
   procedureSteps?: string[]; // math/clinical ordered steps
@@ -746,6 +747,7 @@ export function buildUltraPageView(
 
   // Detect domain once — drives scoring and coreIdea selection downstream
   const domain = detectPageDomain(rawPageText);
+  const symbolicDensity = domain === "math" ? detectSymbolicDensity(rawPageText) : "low";
 
   // Infer page teaching objective BEFORE concept extraction.
   // This is the top-down constraint: what is this page TRULY TEACHING?
@@ -1085,6 +1087,7 @@ export function buildUltraPageView(
       rule:           stab(rule)           || rule,
       importance: importanceLabel(c.importance),
       conceptRole: c.conceptRole,
+      anchorText: c.anchorSentence ?? undefined,
       procedureSteps,
       transformation,
       given,
@@ -1104,6 +1107,7 @@ export function buildUltraPageView(
     pageTitle: inferPageTitle(page, concepts),
     pageSummary: page.pageSummary ?? undefined,
     domain: domain as import("@/lib/reading-graph/buildPageStepModel").StepModelPageDomain,
+    symbolicDensity,
     conceptBlocks: dedupedBlocks.map((b, i) => ({
       id: concepts[i]?.id ?? b.conceptId,
       title: b.title,

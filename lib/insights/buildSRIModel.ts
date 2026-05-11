@@ -77,6 +77,8 @@ function classifyParagraphDepth(p: ParagraphInsight, domain: PageDomain): Readin
   if (p.paragraphType === "clinical_reasoning" && (domain === "clinical" || domain === "general")) return "clinical_logic";
   if ((domain === "math" || p.paragraphType === "formula") && FORMULA_SIGNALS.test(text)) return "formula_logic";
   if (domain === "science" && BIO_LOGIC_SIGNALS.test(text) && MECHANISM_SIGNALS.test(text)) return "bio_logic";
+  // Tier 2: strong causal chain on a science page even without full molecular vocabulary
+  if (domain === "science" && /\b(causes?|leads?\s+to|results?\s+in|required\s+for|deficiency\s+(causes?|leads?\s+to|results?\s+in))\b/i.test(text) && text.length >= 60) return "bio_logic";
   if (p.priorityScore >= 8 && DEFINITION_SIGNALS.test(text)) return "deep_understand";
   if (p.priorityScore >= 8 && MECHANISM_SIGNALS.test(text)) return "deep_understand";
 
