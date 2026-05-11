@@ -130,6 +130,128 @@ export const toOperatorSentence = (input: string) => roleSentence(input, "operat
 export const toExpertSentence = (input: string) => roleSentence(input, "expert");
 
 // ---------------------------------------------------------------------------
+// Cognitive Readability Layer
+// ---------------------------------------------------------------------------
+// Called AFTER all extraction and compression, BEFORE render.
+// Guards against broken fragments, converts passive/verbose to active/concise,
+// and enforces per-domain dyslexia-safe sentence constraints.
+
+const ORPHAN_ARROW_RE = /,\s*→|^\s*→\s+\w/;
+const DANGLING_PREDICATE_RE = /^(therefore|thus|hence|so|consequently)\s+(consists?\s+of|is\s+an?\s+\w|are\s+the\s+\w|was\s+)/i;
+const TRAILING_COMMA_RE = /[,;]\s*[.!?]?$/;
+
+// "The clinician identifies X" → "Identify X"
+const AGENT_SUBJECT_RE =
+  /^(?:the\s+)?(?:clinician|physician|provider|nurse|practitioner|student|reader|patient)\s+(?:should\s+|must\s+|can\s+|will\s+)?(identifies?|assesses?|evaluates?|performs?|considers?|examines?|determines?|uses?|applies?|recognizes?|orders?|collects?|gathers?|measures?|monitors?|reviews?|documents?|calculates?|observes?|detects?|manages?|treats?|diagnoses?|prescribes?)\s+/i;
+
+// Math: "when n becomes large" → "as n → ∞"
+const MATH_LARGE_N_RE =
+  /\b(?:when|as|for(?:\s+large)?)\s+n\s+(?:becomes?|gets?|grows?|tends?\s+to|goes?\s+to|approaches?|is\s+very)\s+(?:very\s+)?(?:large|big|great|huge|positive infinity|infinity|∞)/gi;
+
+/**
+ * Returns false if the text is a broken fragment that must not be rendered:
+ * dangling commas, orphan arrows, dangling predicates, or too few content words.
+ */
+export function isFieldRenderable(text: string | null | undefined): boolean {
+  if (!text) return false;
+  const t = text.trim();
+  if (t.length < 8) return false;
+  if (ORPHAN_ARROW_RE.test(t)) return false;
+  if (TRAILING_COMMA_RE.test(t.replace(/[.!?]$/, ""))) return false;
+  if (DANGLING_PREDICATE_RE.test(t)) return false;
+  const contentWords = t
+    .split(/\s+/)
+    .filter(
+      (w) =>
+        w.length > 3 &&
+        !/^(the|a|an|is|are|was|were|of|to|in|and|or|but|for|with|from|that|this|it|its|also|then|thus|when|where|been|have|has)$/i.test(w),
+    );
+  if (contentWords.length < 2) return false;
+  return true;
+}
+
+/**
+ * Stabilizes output text for cognitive readability:
+ * - Strips broken arrow fragments
+ * - Converts agent-subject to imperative (clinical)
+ * - Normalizes math "when n becomes large" → "as n → ∞"
+ * - Clips at clause boundary if > 14 words (non-math)
+ *
+ * Returns "" when the text is irreparably broken (caller should skip or use fallback).
+ */
+export function stabilizeOutput(text: string, domain?: string): string {
+  if (!text) return "";
+  let s = text.trim();
+
+  // 1. Strip broken arrow fragment: ", → cause" → remove the arrow phrase
+  if (ORPHAN_ARROW_RE.test(s)) {
+    s = s.replace(/,\s*→[^.!?]*/g, "").replace(/^\s*→\s*[^.!?]*/, "").trim();
+    if (!isFieldRenderable(s)) return "";
+  }
+
+  // 2. Clinical/general: convert agent-subject to imperative
+  if (!domain || domain === "clinical" || domain === "general") {
+    s = s.replace(AGENT_SUBJECT_RE, (_, verb: string) => {
+      const imp = verb
+        .replace(/ies$/i, "y")
+        .replace(/(?<![aeiou])es$/i, "e")
+        .replace(/(?<=[aeiou])s$/i, "")
+        .replace(/s$/i, "");
+      return imp.charAt(0).toUpperCase() + imp.slice(1).toLowerCase() + " ";
+    });
+  }
+
+  // 3. Math: normalize verbose "when n becomes large" → "as n → ∞"
+  if (domain === "math") {
+    s = s.replace(MATH_LARGE_N_RE, "as n → ∞");
+    s = s.replace(/\bas\s+n\s+→\s+(?:infinity|∞)\b/gi, "as n → ∞");
+  }
+
+  // 4. Strip trailing dangling clause (≤4 words after last comma that isn't a list)
+  const lastComma = s.lastIndexOf(",");
+  if (lastComma > s.length * 0.65) {
+    const trailing = s.slice(lastComma + 1).trim();
+    const trailingWords = trailing.replace(/[.!?]$/, "").split(/\s+/).filter(Boolean);
+    if (trailingWords.length <= 3 && !/\band\b|\bor\b|\bbut\b/i.test(trailing)) {
+      s = s.slice(0, lastComma).trim();
+    }
+  }
+
+  // 5. Word-count cap: ≤ 14 words for non-math (clip at clause boundary)
+  if (domain !== "math") {
+    const words = s.split(/\s+/);
+    if (words.length > 14) {
+      const clauseMatch = s.match(/^(.{20,90}?)(?:[;]\s+|\s+(?:because|which|where|that)\s)/);
+      if (clauseMatch && clauseMatch[1].split(/\s+/).length <= 14) {
+        s = clauseMatch[1].trim();
+      } else {
+        s = words.slice(0, 14).join(" ");
+      }
+    }
+  }
+
+  if (!s) return "";
+  s = s.charAt(0).toUpperCase() + s.slice(1);
+  if (!/[.!?…]$/.test(s)) s += ".";
+  return s;
+}
+
+/**
+ * Compresses text to a ≤ 12-word operator-style one-liner.
+ * Used for "One-line Summary" / page thesis displays.
+ */
+export function compressToOneLine(text: string, domain?: string): string {
+  if (!text) return "";
+  const stabilized = stabilizeOutput(text, domain);
+  if (!stabilized) return "";
+  const words = stabilized.split(/\s+/);
+  if (words.length <= 12) return stabilized;
+  const compressed = compressToNote(stabilized, "signal");
+  if (compressed && compressed.split(/\s+/).length <= 14) return compressed;
+  return words.slice(0, 10).join(" ").replace(/[,;]$/, "") + ".";
+}
+
+// ---------------------------------------------------------------------------
 // Operator note compression
 // ---------------------------------------------------------------------------
 // Applied at display time to convert verbose PDF prose into tighter operator
