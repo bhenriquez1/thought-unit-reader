@@ -63,6 +63,7 @@ export interface BuildPageStepModelInput {
   highlightNeighborhoods: HighlightNeighborhoodInput[];
   supportNeighborhoods?: SupportNeighborhoodInput[];
   domain?: StepModelPageDomain;
+  symbolicDensity?: "high" | "low";
 }
 
 export interface PageStepLeftView {
@@ -206,14 +207,14 @@ export function buildPageStepModel(
         importance: cleanNullable(conceptBlock?.importance || importanceForRole(role)),
       },
       miniTest: {
-        coreMeaning: buildCoreMeaningHook(title, anchorText, input.domain),
-        mechanism: buildMechanismHook(title, conceptBlock?.surgicalReason || supportTexts[0], input.domain),
-        distinction: buildDistinctionHook(title, trapText, anchorText, input.domain),
-        application: buildApplicationHook(title, conceptBlock?.rule || supportTexts[0], input.domain),
-        skimTrap: buildSkimTrapHook(title, trapText, anchorText, input.domain),
-        whatHappensIf: buildPageNativeQuestion("whatHappensIf", anchorText, input.domain) || null,
-        nextStep: buildPageNativeQuestion("nextStep", anchorText, input.domain) || null,
-        compareContrast: buildPageNativeQuestion("compareContrast", trapText || anchorText, input.domain) || null,
+        coreMeaning: buildCoreMeaningHook(title, anchorText, input.domain, input.symbolicDensity),
+        mechanism: buildMechanismHook(title, conceptBlock?.surgicalReason || supportTexts[0], input.domain, input.symbolicDensity),
+        distinction: buildDistinctionHook(title, trapText, anchorText, input.domain, input.symbolicDensity),
+        application: buildApplicationHook(title, conceptBlock?.rule || supportTexts[0], input.domain, input.symbolicDensity),
+        skimTrap: buildSkimTrapHook(title, trapText, anchorText, input.domain, input.symbolicDensity),
+        whatHappensIf: buildPageNativeQuestion("whatHappensIf", anchorText, input.domain, input.symbolicDensity) || null,
+        nextStep: buildPageNativeQuestion("nextStep", anchorText, input.domain, input.symbolicDensity) || null,
+        compareContrast: buildPageNativeQuestion("compareContrast", trapText || anchorText, input.domain, input.symbolicDensity) || null,
       },
       compression: {
         recognitionHook: cleanNullable(anchorText),
@@ -466,7 +467,7 @@ function extractSubjectPhrase(text: string, maxWords = 8): string {
   return subject;
 }
 
-function buildPageNativeQuestion(role: string, text: string, domain?: StepModelPageDomain): string {
+function buildPageNativeQuestion(role: string, text: string, domain?: StepModelPageDomain, symbolicDensity?: "high" | "low"): string {
   if (!text) return "";
   const stem = (text || "").replace(/[.!?]+$/, "").trim();
   if (!stem) return "";
@@ -475,7 +476,27 @@ function buildPageNativeQuestion(role: string, text: string, domain?: StepModelP
   if (!rawSubject || /\b(may|can|could|should|must|will|would|might)\b/i.test(rawSubject)) return "";
   const subject = rawSubject || stem.split(/\s+/).slice(0, 5).join(" ");
 
+  // On high-symbolic-density math pages, reject prose-fragment subjects
+  if (domain === "math" && symbolicDensity === "high") {
+    if (/\bExample\b|\b[Ee]\d\b/i.test(rawSubject)) return "";
+    if (rawSubject.split(/\s+/).length < 2) return "";
+    if (!/[=∑∫→∞αβγ]|lim\b|aₙ|\b[a-z]_n\b/.test(stem) && rawSubject.split(/\s+/).length <= 2) return "";
+  }
+
   // Domain-specific question templates produce more pedagogically precise questions.
+  if (domain === "fiction") {
+    switch (role) {
+      case "coreMeaning":     return cleanLocal(`What did ${subject} do and why did it matter to the scene`);
+      case "mechanism":       return cleanLocal(`What caused ${subject} to change or act`);
+      case "distinction":     return cleanLocal(`How does ${subject} contrast with what came before`);
+      case "application":     return cleanLocal(`What does ${subject} reveal about character or situation`);
+      case "skimTrap":        return cleanLocal(`What assumption does a reader risk making about ${subject}`);
+      case "whatHappensIf":   return cleanLocal(`What changes in the story if ${subject} does not occur`);
+      case "nextStep":        return cleanLocal(`What immediately follows from ${subject}`);
+      case "compareContrast": return cleanLocal(`How does ${subject} differ from the character's earlier state`);
+      default:                return cleanLocal(stem.split(/\s+/).slice(0, 12).join(" "));
+    }
+  }
   if (domain === "math") {
     switch (role) {
       case "coreMeaning":     return cleanLocal(`What does ${subject} converge to or represent`);
@@ -530,52 +551,54 @@ function buildPageNativeQuestion(role: string, text: string, domain?: StepModelP
   }
 }
 
-function buildCoreMeaningHook(title: string, anchorText: string, domain?: StepModelPageDomain): string {
+function buildCoreMeaningHook(title: string, anchorText: string, domain?: StepModelPageDomain, symbolicDensity?: "high" | "low"): string {
   // On non-math domains, regex-based extractors produce more specific questions.
   // On math domains, the domain-specific templates in buildPageNativeQuestion are more reliable.
   if (domain !== "math") {
     const q = extractDefinitionQuestion(anchorText);
     if (q) return q;
   }
-  return buildPageNativeQuestion("coreMeaning", anchorText, domain) || cleanLocal(anchorText);
+  return buildPageNativeQuestion("coreMeaning", anchorText, domain, symbolicDensity) || cleanLocal(anchorText);
 }
 
-function buildMechanismHook(title: string, mechanismText?: string | null, domain?: StepModelPageDomain): string | null {
+function buildMechanismHook(title: string, mechanismText?: string | null, domain?: StepModelPageDomain, symbolicDensity?: "high" | "low"): string | null {
   if (domain !== "math") {
     const q = extractCausalQuestion(mechanismText || "");
     if (q) return q;
   }
   if (!mechanismText) return null;
-  return buildPageNativeQuestion("mechanism", mechanismText, domain) || cleanLocal(mechanismText);
+  return buildPageNativeQuestion("mechanism", mechanismText, domain, symbolicDensity) || cleanLocal(mechanismText);
 }
 
 function buildDistinctionHook(
   title: string,
   trapText?: string | null,
   anchorText?: string | null,
-  domain?: StepModelPageDomain
+  domain?: StepModelPageDomain,
+  symbolicDensity?: "high" | "low"
 ): string | null {
-  if (trapText) return buildPageNativeQuestion("distinction", trapText, domain) || cleanLocal(trapText);
-  return anchorText ? buildPageNativeQuestion("distinction", anchorText, domain) || null : null;
+  if (trapText) return buildPageNativeQuestion("distinction", trapText, domain, symbolicDensity) || cleanLocal(trapText);
+  return anchorText ? buildPageNativeQuestion("distinction", anchorText, domain, symbolicDensity) || null : null;
 }
 
-function buildApplicationHook(title: string, applicationText?: string | null, domain?: StepModelPageDomain): string | null {
+function buildApplicationHook(title: string, applicationText?: string | null, domain?: StepModelPageDomain, symbolicDensity?: "high" | "low"): string | null {
   if (domain !== "math") {
     const q = extractOperationalQuestion(applicationText || "");
     if (q) return q;
   }
   if (!applicationText) return null;
-  return buildPageNativeQuestion("application", applicationText, domain) || cleanLocal(applicationText);
+  return buildPageNativeQuestion("application", applicationText, domain, symbolicDensity) || cleanLocal(applicationText);
 }
 
 function buildSkimTrapHook(
   title: string,
   trapText?: string | null,
   anchorText?: string | null,
-  domain?: StepModelPageDomain
+  domain?: StepModelPageDomain,
+  symbolicDensity?: "high" | "low"
 ): string | null {
-  if (trapText) return buildPageNativeQuestion("skimTrap", trapText, domain) || cleanLocal(trapText);
-  return anchorText ? buildPageNativeQuestion("skimTrap", anchorText, domain) || null : null;
+  if (trapText) return buildPageNativeQuestion("skimTrap", trapText, domain, symbolicDensity) || cleanLocal(trapText);
+  return anchorText ? buildPageNativeQuestion("skimTrap", anchorText, domain, symbolicDensity) || null : null;
 }
 
 function isWeakTitle(title: string): boolean {
