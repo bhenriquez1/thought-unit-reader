@@ -881,17 +881,21 @@ function UltraView({
       {/* Concept blocks — tab selector + detail */}
       <PanelSection title="Concept Blocks">
         {visibleBlocks.length === 0 ? (
-          /* Fallback: no strong concept blocks — show SRI signals as page summary */
-          <div className="rounded-xl border border-white/8 bg-[#0a1428] px-4 py-4 space-y-3">
-            <p className="text-[12px] italic text-white/40">No concept blocks found for this page.</p>
+          /* Fallback: no strong concept blocks — show SRI signals as reading anchor */
+          <div className="rounded-xl border border-white/8 bg-[#0a1428] px-4 py-5 space-y-3">
+            <p className="text-[12px] italic text-white/40 leading-5">
+              No strong concept block found on this page yet — review highlighted source text.
+            </p>
             {view.sriModel && view.sriModel.signals
               .filter((s) => !s.isBackground)
               .slice(0, 3)
               .map((sig, i) => (
-                <div key={i} className="text-[13px] leading-6 text-white/75">
-                  <span className="mr-1.5">{sig.icon}</span>
-                  <span className="font-semibold mr-1" style={{ color: sig.color }}>{sig.label}:</span>
-                  {sig.summary}
+                <div key={i} className="rounded-lg border border-white/6 bg-white/2 px-3 py-2">
+                  <div className="mb-0.5 flex items-center gap-1.5">
+                    <span className="text-[12px]">{sig.icon}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: sig.color }}>{sig.label}</span>
+                  </div>
+                  <p className="text-[12px] leading-5 text-white/70">{sig.summary}</p>
                 </div>
               ))}
           </div>
