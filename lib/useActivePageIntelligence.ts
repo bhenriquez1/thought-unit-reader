@@ -353,6 +353,7 @@ export function useActivePageIntelligence({
         pageClass: localPageClass,
         pageModel: localPageModel,
         pageStory: localPageStory,
+        domain: localPageDomain,
       });
 
       // Use currentPageRef (render-time, not effect-time) so this check is valid
