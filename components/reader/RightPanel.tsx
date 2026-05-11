@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { ActivePageContext, ResolvedPanelPayload, RightPanelState } from "@/lib/readerContracts";
 import { useGuidedHighlightSync } from "@/hooks/useGuidedHighlightSync";
 import { buildGuidedReadView, type GuidedDepth, type GuidedMode, type GuidedRole } from "@/lib/insights/buildGuidedReadView";
-import { compressToNote } from "@/lib/insights/sentenceCleanup";
+import { compressToNote, isFieldRenderable } from "@/lib/insights/sentenceCleanup";
 import type { EvidenceAnchor, OperatorCard } from "@/lib/insights/types";
 import type { ActivePageIntelligenceSnapshot } from "@/lib/useActivePageIntelligence";
 import type { SemanticHighlightKind } from "@/lib/highlights/extractPriorityHighlights";
@@ -847,14 +847,21 @@ function UltraView({
 
   return (
     <div className="space-y-4">
-      {/* ULTRA header + Core Idea */}
+      {/* ULTRA header + Page Thesis */}
       <PanelSection title={view.title}>
         <div className="mb-3 text-[12px] italic text-white/55">{view.subtitle}</div>
-        <div className="rounded-xl border border-amber-400/20 bg-[#0b1830] px-4 py-4">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-300">
-            🚀 Core Idea
+        {/* One-line summary — dyslexia-safe rapid anchor */}
+        {view.oneLineSummary && (
+          <div className="mb-2 rounded-lg border border-amber-400/40 bg-amber-400/8 px-4 py-2">
+            <p className="text-[16px] font-semibold leading-6 text-amber-200">{view.oneLineSummary}</p>
           </div>
-          <p className="text-[15px] leading-7 text-white/95">{view.coreIdea}</p>
+        )}
+        {/* Page thesis — deeper understanding target */}
+        <div className="rounded-xl border border-amber-400/15 bg-[#0b1830] px-4 py-4">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-300">
+            🎯 Page Thesis
+          </div>
+          <p className="text-[14px] leading-6 text-white/90">{view.pageThesis ?? view.coreIdea}</p>
         </div>
       </PanelSection>
 
@@ -884,10 +891,10 @@ function UltraView({
               {selectedBlock.ordinal}️⃣ {selectedBlock.title}
             </div>
             <div className="space-y-4">
-              {/* FIELD 1: Concept/Definition/Finding — always first */}
-              <div>
-                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.patternColor }}>{labels.pattern}</div>
-                <p className="text-[14px] leading-6 text-white/90">{selectedBlock.pattern}</p>
+              {/* FIELD 1: Concept/Definition/Finding — primary signal, highest visual weight */}
+              <div className="rounded-lg border border-white/8 bg-white/3 px-3 py-3">
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.patternColor }}>{labels.pattern}</div>
+                <p className="text-[15px] font-medium leading-6 text-white">{selectedBlock.pattern}</p>
               </div>
 
               {/* MATH SCHEMA: Given → Transformation → Result → Decision → Trap → Procedure */}
@@ -913,10 +920,12 @@ function UltraView({
                       <p className="text-[14px] leading-6 text-violet-200/90">{selectedBlock.decision}</p>
                     </div>
                   )}
-                  <div>
-                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
-                    <p className="text-[14px] leading-6 text-white/90">{selectedBlock.trap}</p>
-                  </div>
+                  {isFieldRenderable(selectedBlock.trap) && (
+                    <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2">
+                      <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
+                      <p className="text-[13px] leading-5 text-rose-200/90">{selectedBlock.trap}</p>
+                    </div>
+                  )}
                   {selectedBlock.procedureSteps && selectedBlock.procedureSteps.length >= 2 && (
                     <div>
                       <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-sky-400">∑ Procedure</div>
@@ -944,14 +953,18 @@ function UltraView({
                       <p className="text-[14px] leading-6 text-green-200/90">{selectedBlock.example}</p>
                     </div>
                   )}
-                  <div>
-                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
-                    <p className="text-[14px] leading-6 text-white/90">{selectedBlock.trap}</p>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
-                    <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
-                  </div>
+                  {isFieldRenderable(selectedBlock.trap) && (
+                    <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2">
+                      <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
+                      <p className="text-[13px] leading-5 text-rose-200/90">{selectedBlock.trap}</p>
+                    </div>
+                  )}
+                  {isFieldRenderable(selectedBlock.rule) && (
+                    <div>
+                      <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
+                      <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
+                    </div>
+                  )}
                   {selectedBlock.memoryHook && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#d8b4fe" }}>💡 Memory Hook</div>
@@ -962,18 +975,24 @@ function UltraView({
               ) : (
                 /* DEFAULT / CLINICAL SCHEMA: Reason → Trap → Rule */
                 <>
-                  <div>
-                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
-                    <p className="text-[14px] leading-6 text-white/90">{selectedBlock.surgicalReason}</p>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
-                    <p className="text-[14px] leading-6 text-white/90">{selectedBlock.trap}</p>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
-                    <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
-                  </div>
+                  {isFieldRenderable(selectedBlock.surgicalReason) && (
+                    <div>
+                      <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
+                      <p className="text-[14px] leading-6 text-white/90">{selectedBlock.surgicalReason}</p>
+                    </div>
+                  )}
+                  {isFieldRenderable(selectedBlock.trap) && (
+                    <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2">
+                      <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
+                      <p className="text-[13px] leading-5 text-rose-200/90">{selectedBlock.trap}</p>
+                    </div>
+                  )}
+                  {isFieldRenderable(selectedBlock.rule) && (
+                    <div>
+                      <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
+                      <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
+                    </div>
+                  )}
                 </>
               )}
 

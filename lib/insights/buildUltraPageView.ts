@@ -6,7 +6,7 @@
 // mini test and STR compression so they are page-native, not template-like.
 
 import type { PageInsightModel, ParagraphInsight } from "@/lib/insights/types";
-import { cleanSentence, polishExtraction } from "./sentenceCleanup";
+import { cleanSentence, polishExtraction, isFieldRenderable, stabilizeOutput, compressToOneLine, compressToNote } from "./sentenceCleanup";
 import { isRenderableSentence } from "./isRenderableSentence";
 import {
   extractConceptBlocks,
@@ -90,6 +90,10 @@ export interface UltraPageView {
   coreIdea: string;
   /** Top-down teaching statement from heading + canonical statements — more reliable than coreIdea for synthesis */
   teachingStatement?: string;
+  /** Deepest understanding target — operator-rewritten single sentence (≤ ~20 words) */
+  pageThesis?: string;
+  /** ≤ 12-word high-yield compression for dyslexia / rapid review */
+  oneLineSummary?: string;
   blocks: UltraConceptBlock[];
   miniTest: string[];
   compression: string[];
@@ -556,6 +560,33 @@ function roleLabelForPageStepRole(role: string): string {
 
 function importanceLabel(level: ConceptBlockInput["importance"]): string {
   return { very_high: "VERY HIGH", high: "HIGH", medium: "MEDIUM", low: "LOW" }[level] ?? "MEDIUM";
+}
+
+// ---------------------------------------------------------------------------
+// Cross-concept semantic deduplication
+// ---------------------------------------------------------------------------
+
+function jaccardWords(a: string, b: string): number {
+  const stopwords = /^(the|a|an|is|are|was|were|of|to|in|and|or|but|for|with|from|that|this|it|its|by|at|on|as|be|not)$/i;
+  const wa = new Set(a.toLowerCase().split(/\s+/).filter((w) => w.length > 3 && !stopwords.test(w)));
+  const wb = new Set(b.toLowerCase().split(/\s+/).filter((w) => w.length > 3 && !stopwords.test(w)));
+  if (wa.size === 0 && wb.size === 0) return 0;
+  const inter = [...wa].filter((w) => wb.has(w)).length;
+  const union = new Set([...wa, ...wb]).size;
+  return union === 0 ? 0 : inter / union;
+}
+
+function deduplicateConceptBlocks(blocks: UltraConceptBlock[]): UltraConceptBlock[] {
+  const kept: UltraConceptBlock[] = [];
+  for (const block of blocks) {
+    const isDuplicate = kept.some((k) => {
+      const titleSim = jaccardWords(k.title, block.title);
+      const patternSim = jaccardWords(k.pattern, block.pattern);
+      return titleSim > 0.65 || patternSim > 0.72;
+    });
+    if (!isDuplicate) kept.push(block);
+  }
+  return kept;
 }
 
 function inferPageTitle(page: PageModelForConcepts, concepts: ConceptBlockInput[]): string {
@@ -1035,13 +1066,19 @@ export function buildUltraPageView(
       ? extractScienceMemoryHook(c.anchorSentence, c.supportSentences ?? []) ?? undefined
       : undefined;
 
+    // Stabilize all prose fields before returning — enforces readability constraints
+    const stab = (text: string | undefined | null) =>
+      text ? (stabilizeOutput(text, domain) || text) : text;
+
     return {
       conceptId: c.id,
       ordinal: i + 1,
       title,
       ...fields,
-      surgicalReason,
-      rule,
+      pattern:        stab(fields.pattern) || fields.pattern,
+      surgicalReason: stab(surgicalReason) || surgicalReason,
+      trap:           stab(fields.trap)    || fields.trap,
+      rule:           stab(rule)           || rule,
       importance: importanceLabel(c.importance),
       conceptRole: c.conceptRole,
       procedureSteps,
@@ -1053,6 +1090,9 @@ export function buildUltraPageView(
     };
   });
 
+  // Cross-concept deduplication: drop blocks that are near-duplicates of an earlier block
+  const dedupedBlocks = deduplicateConceptBlocks(blocks);
+
   // Shared step model: drives mini test and enriches compression candidates.
   // Synthetic neighborhoods are built from concept data so both sides stay in sync.
   const pageStepResult = buildPageStepModel({
@@ -1060,8 +1100,8 @@ export function buildUltraPageView(
     pageTitle: inferPageTitle(page, concepts),
     pageSummary: page.pageSummary ?? undefined,
     domain: domain as import("@/lib/reading-graph/buildPageStepModel").StepModelPageDomain,
-    conceptBlocks: blocks.map((b, i) => ({
-      id: concepts[i].id,
+    conceptBlocks: dedupedBlocks.map((b, i) => ({
+      id: concepts[i]?.id ?? b.conceptId,
       title: b.title,
       pattern: b.pattern,
       surgicalReason: b.surgicalReason,
@@ -1105,8 +1145,8 @@ export function buildUltraPageView(
     pageKey: `${page.documentId}:${page.pageNumber}`,
     pageTitle: inferPageTitle(page, concepts),
     pageSummary: page.pageSummary ?? undefined,
-    conceptBlocks: blocks.map((b, i) => ({
-      id: concepts[i].id,
+    conceptBlocks: dedupedBlocks.map((b, i) => ({
+      id: concepts[i]?.id ?? b.conceptId,
       title: b.title,
       pattern: b.pattern,
       reason: b.surgicalReason,
@@ -1223,7 +1263,7 @@ export function buildUltraPageView(
   })();
 
   const finalBlocks = synthesis?.concepts?.length
-    ? blocks.map((b, i) => {
+    ? dedupedBlocks.map((b, i) => {
         const sc = synthesis.concepts[i];
         if (!sc) return b;
         return {
@@ -1236,13 +1276,24 @@ export function buildUltraPageView(
           examHook:       sc.examHook?.trim()      || undefined,
         };
       })
-    : blocks;
+    : dedupedBlocks;
+
+  // Page Thesis: operator-rewritten deepest understanding target
+  const rawThesisSrc = page.pageSummary || finalCoreIdea;
+  const pageThesis = (() => {
+    const compressed = compressToNote(rawThesisSrc, "signal");
+    const stabilized = stabilizeOutput(compressed || rawThesisSrc, domain);
+    return stabilized || finalCoreIdea;
+  })();
+  const oneLineSummary = compressToOneLine(pageThesis, domain);
 
   return {
     title: `ULTRA – ${inferPageTitle(page, concepts)}`,
     subtitle: "STR + PDRM + Surgical Comprehension Engine",
     coreIdea: (isMathPage && mathCoreIdeaOverride) ? mathCoreIdeaOverride : finalCoreIdea,
     teachingStatement: pageObjective?.teachingStatement || undefined,
+    pageThesis,
+    oneLineSummary,
     blocks: finalBlocks,
     miniTest: finalMiniTest,
     compression: finalCompression,
