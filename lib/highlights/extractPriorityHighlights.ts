@@ -6,6 +6,7 @@ import type { PageInsightModel, ParagraphInsight, NarrativePageView } from "@/li
 import type { PageStory } from "@/lib/insights/buildPageStory";
 import type { PageContentClass } from "@/lib/pdf/classifyPageContent";
 import type { ParagraphRoleBlock, ParagraphRole } from "@/lib/highlights/paragraphRoleMap";
+import type { PageDomain } from "@/lib/insights/detectPageDomain";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -89,6 +90,8 @@ export type ExtractPriorityHighlightsInput = {
   maxSupport?: number;
   maxWeak?: number;
   mergeWindowChars?: number;
+  /** Page domain from detectPageDomain — enables math-specific highlight promotion */
+  domain?: PageDomain;
 };
 
 export type ExtractPriorityHighlightsResult = {
@@ -165,6 +168,7 @@ export function extractPriorityHighlights({
   maxSupport = 1,
   maxWeak = 0,
   mergeWindowChars = 220,
+  domain,
 }: ExtractPriorityHighlightsInput): ExtractPriorityHighlightsResult {
   // Build a paragraph index from the page text for paragraph-level span anchoring.
   // Prefer caller-provided paragraphTexts (already split by splitParagraphs), then
@@ -225,7 +229,7 @@ export function extractPriorityHighlights({
   // Add paragraph-role candidates for paragraphs not already covered by
   // story blocks or narrative-view candidates.
   if (paragraphRoleMap?.length) {
-    const roleCandidates = buildRoleMapCandidates(paragraphRoleMap, candidates, pageNumber);
+    const roleCandidates = buildRoleMapCandidates(paragraphRoleMap, candidates, pageNumber, domain);
     if (roleCandidates.length) candidates = [...candidates, ...roleCandidates];
   }
 
@@ -705,6 +709,7 @@ function buildRoleMapCandidates(
   roleMap: ParagraphRoleBlock[],
   existingCandidates: CandidateBlock[],
   pageNumber: number,
+  domain?: PageDomain,
 ): CandidateBlock[] {
   const added: CandidateBlock[] = [];
 
@@ -724,7 +729,16 @@ function buildRoleMapCandidates(
     });
     if (alreadyCovered) continue;
 
-    const { kind, priority, score } = roleToKindMapping(block.role);
+    let { kind, priority, score } = roleToKindMapping(block.role);
+
+    // On math pages, decision_rule blocks originate from SYMBOLIC_LOGIC paragraphs
+    // (promoted by heuristicRole). Elevate them to the main tier so symbolic math
+    // surfaces as a primary highlight instead of a support block.
+    if (domain === "math" && block.role === "decision_rule") {
+      kind = "main_pattern";
+      priority = "main";
+      score = BASE_KIND_SCORE.main_pattern - 5;
+    }
 
     // Use the first complete sentence as the highlight needle so resolveBlockSpans
     // can locate a precise sentence span instead of a full-paragraph span.
