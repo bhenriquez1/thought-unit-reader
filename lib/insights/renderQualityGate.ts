@@ -42,6 +42,11 @@ export function isWeakTitle(title: string): boolean {
 // ---------------------------------------------------------------------------
 
 const FIELD_ARTIFACT_RE = /\b(Chapter|Cengage|Figure|Table)\b/;
+
+// Dangling connectors at end of a field — sentence was cut mid-clause
+export const BAD_FIELD_ENDING_RE =
+  /\b(of|to|by|with|as|the|a|an|and|or|but|because|therefore)$/i;
+
 const TRAILING_WEAK_WORD_RE =
   /\b(the|a|an|of|to|with|and|or|because|therefore|when|which|since|that|as|for|from|in|at|by)$/i;
 
@@ -57,8 +62,9 @@ export function isWeakField(text: string | undefined | null): boolean {
   if (PUBLISHER_DEBRIS_RE.test(t)) return true;
   if (FIELD_ARTIFACT_RE.test(t)) return true;
   if (TRAILING_WEAK_WORD_RE.test(t)) return true;
+  if (BAD_FIELD_ENDING_RE.test(t)) return true;
   if (LEADING_FRAGMENT_WORDS_RE.test(t)) return true;
-  if (t.split(/\s+/).length < 4) return true;
+  if (t.split(/\s+/).length < 5) return true;
   const isFormula = /[=∫∂∑]|lim\b|d\/d[xt]|\bintegral\b|\bderivative\b/i.test(t);
   if (!isFormula && !/[.!?:)]$/.test(t)) return true;
   return false;

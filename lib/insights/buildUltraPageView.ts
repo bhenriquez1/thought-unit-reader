@@ -50,6 +50,16 @@ import { isFillerSentence } from "./signalClassifier";
 // Output types
 // ---------------------------------------------------------------------------
 
+export interface FictionCard {
+  sceneState: string;         // what state/condition the anchor sentence establishes
+  trigger?: string;           // what caused the scene shift (causal reason)
+  characterAction?: string;   // what the character decided or did
+  consequence?: string;       // what resulted from the action
+  emotionalShift?: string;    // internal emotional/psychological change
+  tension?: string;           // what is at stake or in conflict
+  readerTrap?: string;        // what a skimming reader will likely misread
+}
+
 export interface UltraConceptBlock {
   conceptId: string;
   ordinal: number;
@@ -69,6 +79,7 @@ export interface UltraConceptBlock {
   decision?: string;         // math: convergence/divergence verdict
   example?: string;          // science: concrete instance sentence
   memoryHook?: string;       // science: analogy/mnemonic sentence
+  fictionCard?: FictionCard; // fiction: scene-state structured card
 }
 
 export interface UltraPageViewStep {
@@ -1000,6 +1011,7 @@ export function buildUltraPageView(
 
     // Title normalization (math and science)
     const isSciencePage = domain === "science";
+    const isFictionPage = domain === "fiction";
     const title = isMathPage
       ? normalizeMathTitle(c.title, c.anchorSentence)
       : isSciencePage
@@ -1072,6 +1084,28 @@ export function buildUltraPageView(
       ? extractScienceMemoryHook(c.anchorSentence, c.supportSentences ?? []) ?? undefined
       : undefined;
 
+    // Fiction scene-state card — maps concept fields to narrative dimensions
+    const fictionCard: FictionCard | undefined = isFictionPage && c.anchorSentence ? (() => {
+      const role = c.conceptRole;
+      const isAction = role === "mechanism";
+      const isRevelation = role === "definition";
+      const isContrast = role === "contrast";
+      const trapText = fields.trap && fields.trap.length > 5 ? fields.trap : undefined;
+      return {
+        sceneState: c.anchorSentence,
+        trigger: (isAction || isRevelation) && surgicalReason && surgicalReason.length > 5
+          ? surgicalReason : undefined,
+        characterAction: isAction && fields.pattern && fields.pattern.length > 5
+          ? fields.pattern : undefined,
+        consequence: rule && rule.length > 5 ? rule : undefined,
+        emotionalShift: isRevelation && fields.pattern && fields.pattern.length > 5
+          ? fields.pattern : undefined,
+        tension: isContrast && fields.pattern && fields.pattern.length > 5
+          ? fields.pattern : (trapText ?? undefined),
+        readerTrap: trapText,
+      };
+    })() : undefined;
+
     // Stabilize all prose fields before returning — enforces readability constraints
     const stab = (text: string | undefined | null) =>
       text ? (stabilizeOutput(text, domain) || text) : text;
@@ -1094,6 +1128,7 @@ export function buildUltraPageView(
       decision,
       example,
       memoryHook,
+      fictionCard,
     };
   });
 
