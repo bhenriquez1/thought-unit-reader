@@ -20,6 +20,7 @@ import type { SRIModel, SRISignal, ReadingDepth } from "@/lib/insights/buildSRIM
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { buildUltraNote, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, saveRecallSet } from "@/lib/recalllab/recallStore";
+import { isWeakBlock, isWeakField, isSimilarText } from "@/lib/insights/renderQualityGate";
 import { useTeachingSynthesis } from "./useTeachingSynthesis";
 
 interface RightPanelProps {
@@ -839,11 +840,23 @@ function UltraView({
   onSelectBlock: (i: number) => void;
   onAnchorClick: (text: string) => void;
 }) {
-  const selectedBlock = view.blocks[selectedBlockIndex] ?? view.blocks[0] ?? null;
   const domain = view.domain ?? view._debug?.domain;
   const labels = domainFieldLabels(domain);
   const isMathDomain = domain === "math";
   const isScienceDomain = domain === "science";
+
+  // Filter weak blocks before rendering
+  const visibleBlocks = view.blocks.filter((b) => !isWeakBlock(b, domain));
+  const effectiveIndex = Math.min(selectedBlockIndex, Math.max(0, visibleBlocks.length - 1));
+  const selectedBlock = visibleBlocks[effectiveIndex] ?? null;
+
+  // Prefer teachingStatement when it's distinct from coreIdea (it's more reliable);
+  // if they're near-duplicates, teachingStatement already says the same thing so use it.
+  const rawCoreIdea = view.pageThesis ?? view.coreIdea;
+  const displayCoreIdea =
+    view.teachingStatement && !isSimilarText(rawCoreIdea ?? "", view.teachingStatement)
+      ? rawCoreIdea
+      : (view.teachingStatement ?? rawCoreIdea);
 
   return (
     <div className="space-y-4">
@@ -861,21 +874,38 @@ function UltraView({
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-300">
             🎯 Page Thesis
           </div>
-          <p className="text-[14px] leading-6 text-white/90">{view.pageThesis ?? view.coreIdea}</p>
+          <p className="text-[14px] leading-6 text-white/90">{displayCoreIdea}</p>
         </div>
       </PanelSection>
 
       {/* Concept blocks — tab selector + detail */}
       <PanelSection title="Concept Blocks">
+        {visibleBlocks.length === 0 ? (
+          /* Fallback: no strong concept blocks — show SRI signals as page summary */
+          <div className="rounded-xl border border-white/8 bg-[#0a1428] px-4 py-4 space-y-3">
+            <p className="text-[12px] italic text-white/40">No concept blocks found for this page.</p>
+            {view.sriModel && view.sriModel.signals
+              .filter((s) => !s.isBackground)
+              .slice(0, 3)
+              .map((sig, i) => (
+                <div key={i} className="text-[13px] leading-6 text-white/75">
+                  <span className="mr-1.5">{sig.icon}</span>
+                  <span className="font-semibold mr-1" style={{ color: sig.color }}>{sig.label}:</span>
+                  {sig.summary}
+                </div>
+              ))}
+          </div>
+        ) : (
+        <>
         <div className="mb-4 flex flex-wrap gap-2">
-          {view.blocks.map((block, index) => (
+          {visibleBlocks.map((block, index) => (
             <button
               key={`${block.ordinal}-${block.title}`}
               type="button"
               onClick={() => { onSelectBlock(index); onAnchorClick(block.pattern); }}
               className={[
                 "rounded-full border px-3 py-1.5 text-[12px] transition",
-                index === selectedBlockIndex
+                index === effectiveIndex
                   ? "border-amber-400/40 bg-amber-400/10 text-amber-200"
                   : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10",
               ].join(" ")}
@@ -892,35 +922,41 @@ function UltraView({
             </div>
             <div className="space-y-4">
               {/* FIELD 1: Concept/Definition/Finding — primary signal, highest visual weight */}
-              <div className="rounded-lg border border-white/8 bg-white/3 px-3 py-3">
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.patternColor }}>{labels.pattern}</div>
-                <p className="text-[15px] font-medium leading-6 text-white">{selectedBlock.pattern}</p>
-              </div>
+              {!isWeakField(selectedBlock.pattern) && (
+                <div className="rounded-lg border border-white/8 bg-white/3 px-3 py-3">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.patternColor }}>{labels.pattern}</div>
+                  <p className="text-[15px] font-medium leading-6 text-white">{selectedBlock.pattern}</p>
+                </div>
+              )}
 
               {/* MATH SCHEMA: Given → Transformation → Result → Decision → Trap → Procedure */}
               {isMathDomain ? (
                 <>
-                  <div>
-                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
-                    <p className="text-[14px] leading-6 text-white/90">{selectedBlock.given ?? selectedBlock.surgicalReason}</p>
-                  </div>
-                  {selectedBlock.transformation && (
+                  {!isWeakField(selectedBlock.given ?? selectedBlock.surgicalReason) && (
+                    <div>
+                      <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
+                      <p className="text-[14px] leading-6 text-white/90">{selectedBlock.given ?? selectedBlock.surgicalReason}</p>
+                    </div>
+                  )}
+                  {selectedBlock.transformation && !isWeakField(selectedBlock.transformation) && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#60a5fa" }}>⟶ Transformation</div>
                       <p className="text-[14px] leading-6 text-white/95 font-mono">{selectedBlock.transformation}</p>
                     </div>
                   )}
-                  <div>
-                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
-                    <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
-                  </div>
-                  {selectedBlock.decision && (
+                  {!isWeakField(selectedBlock.rule) && (
+                    <div>
+                      <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
+                      <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
+                    </div>
+                  )}
+                  {selectedBlock.decision && !isWeakField(selectedBlock.decision) && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#a78bfa" }}>✓ Decision</div>
                       <p className="text-[14px] leading-6 text-violet-200/90">{selectedBlock.decision}</p>
                     </div>
                   )}
-                  {isFieldRenderable(selectedBlock.trap) && (
+                  {!isWeakField(selectedBlock.trap) && (
                     <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2">
                       <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
                       <p className="text-[13px] leading-5 text-rose-200/90">{selectedBlock.trap}</p>
@@ -943,29 +979,31 @@ function UltraView({
               ) : isScienceDomain ? (
                 /* SCIENCE SCHEMA: Mechanism → Example → Confusion Point → Outcome → Memory Hook */
                 <>
-                  <div>
-                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
-                    <p className="text-[14px] leading-6 text-white/90">{selectedBlock.surgicalReason}</p>
-                  </div>
-                  {selectedBlock.example && (
+                  {!isWeakField(selectedBlock.surgicalReason) && (
+                    <div>
+                      <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
+                      <p className="text-[14px] leading-6 text-white/90">{selectedBlock.surgicalReason}</p>
+                    </div>
+                  )}
+                  {selectedBlock.example && !isWeakField(selectedBlock.example) && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#86efac" }}>🔍 Example</div>
                       <p className="text-[14px] leading-6 text-green-200/90">{selectedBlock.example}</p>
                     </div>
                   )}
-                  {isFieldRenderable(selectedBlock.trap) && (
+                  {!isWeakField(selectedBlock.trap) && (
                     <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2">
                       <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
                       <p className="text-[13px] leading-5 text-rose-200/90">{selectedBlock.trap}</p>
                     </div>
                   )}
-                  {isFieldRenderable(selectedBlock.rule) && (
+                  {!isWeakField(selectedBlock.rule) && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
                       <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
                     </div>
                   )}
-                  {selectedBlock.memoryHook && (
+                  {selectedBlock.memoryHook && !isWeakField(selectedBlock.memoryHook) && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#d8b4fe" }}>💡 Memory Hook</div>
                       <p className="text-[13px] leading-6 text-purple-200/85">{selectedBlock.memoryHook}</p>
@@ -975,19 +1013,19 @@ function UltraView({
               ) : (
                 /* DEFAULT / CLINICAL SCHEMA: Reason → Trap → Rule */
                 <>
-                  {isFieldRenderable(selectedBlock.surgicalReason) && (
+                  {!isWeakField(selectedBlock.surgicalReason) && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
                       <p className="text-[14px] leading-6 text-white/90">{selectedBlock.surgicalReason}</p>
                     </div>
                   )}
-                  {isFieldRenderable(selectedBlock.trap) && (
+                  {!isWeakField(selectedBlock.trap) && (
                     <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2">
                       <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
                       <p className="text-[13px] leading-5 text-rose-200/90">{selectedBlock.trap}</p>
                     </div>
                   )}
-                  {isFieldRenderable(selectedBlock.rule) && (
+                  {!isWeakField(selectedBlock.rule) && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
                       <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
@@ -997,13 +1035,13 @@ function UltraView({
               )}
 
               {/* Shared optional fields — all domains */}
-              {selectedBlock.misconception && (
+              {selectedBlock.misconception && !isWeakField(selectedBlock.misconception) && (
                 <div>
                   <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-rose-400">⚠️ Misconception</div>
                   <p className="text-[13px] leading-6 text-rose-200/85">{selectedBlock.misconception}</p>
                 </div>
               )}
-              {selectedBlock.examHook && (
+              {selectedBlock.examHook && !isWeakField(selectedBlock.examHook) && (
                 <div>
                   <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-violet-400">🎓 Exam Hook</div>
                   <p className="text-[13px] leading-6 text-violet-200/85">{selectedBlock.examHook}</p>
@@ -1023,18 +1061,22 @@ function UltraView({
                   </ol>
                 </div>
               )}
-              <div>
-                <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#c7f59b]">🎯 Importance</div>
-                <p className="text-[14px] leading-6 text-white/90">{selectedBlock.importance}</p>
-              </div>
+              {!isWeakField(selectedBlock.importance) && (
+                <div>
+                  <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#c7f59b]">🎯 Importance</div>
+                  <p className="text-[14px] leading-6 text-white/90">{selectedBlock.importance}</p>
+                </div>
+              )}
             </div>
           </div>
+        )}
+        </>
         )}
       </PanelSection>
 
       {/* Mini Test */}
       {view.miniTest.length > 0 && (
-        <PanelSection title={`Mini Test · Page ${view.blocks[0] ? String(view.blocks.length) : "—"}`}>
+        <PanelSection title={`Mini Test · Page ${visibleBlocks.length > 0 ? String(visibleBlocks.length) : "—"}`}>
           <ul className="space-y-2">
             {view.miniTest.map((q, i) => <BulletLine key={i}>{q}</BulletLine>)}
           </ul>
