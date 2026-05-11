@@ -254,14 +254,16 @@ export default function SmartPDFViewer({
     if (query.length < 12) return;
     const spans = Array.from(container.querySelectorAll('.react-pdf__Page__textContent span, .textLayer span')) as HTMLElement[];
     if (!spans.length) return;
-    const needle = query.slice(0, 42);
-    const target = spans.find((span) => (span.textContent || "").toLowerCase().includes(needle));
+    const needle42 = query.slice(0, 42);
+    const needle25 = query.slice(0, 25);
+    const target = spans.find((span) => (span.textContent || "").toLowerCase().includes(needle42))
+      ?? spans.find((span) => (span.textContent || "").toLowerCase().includes(needle25));
     if (!target) return;
     target.scrollIntoView({ block: "center", behavior: "smooth" });
-    target.classList.add("bg-yellow-300", "text-black", "rounded", "px-0.5");
+    target.classList.add("bg-yellow-300", "text-black", "rounded", "px-0.5", "ring-2", "ring-yellow-400");
     const timer = window.setTimeout(() => {
-      target.classList.remove("bg-yellow-300", "text-black", "rounded", "px-0.5");
-    }, 1600);
+      target.classList.remove("bg-yellow-300", "text-black", "rounded", "px-0.5", "ring-2", "ring-yellow-400");
+    }, 2200);
     return () => window.clearTimeout(timer);
   }, [focusSnippet, currentPage]);
 

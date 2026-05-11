@@ -290,11 +290,28 @@ function classifyConceptRole(anchorText: string, supportTexts: string[], paragra
   // Conflict and motivation map to "contrast" and "definition" respectively.
   // Pure description maps to "detail".
   if (domain === "fiction") {
-    if (/\b(decided?|chose|refused|demanded|admitted|surrendered|betrayed|confessed|escaped|attacked|revealed)\b/i.test(lower)) return "mechanism";
-    if (/\b(realized|understood|knew\s+that|discovered|found\s+out|saw\s+that)\b/i.test(lower)) return "definition";
-    if (/\b(unlike|in contrast|however|but\s+\w+|whereas|although|despite)\b/i.test(lower)) return "contrast";
-    if (/\b(because|therefore|which\s+(meant|led|caused|forced)|forcing|leaving\s+\w+\s+to)\b/i.test(lower)) return "mechanism";
+    // Plot turn / character decision → mechanism (causes change in scene state)
+    if (/\b(decided?|chose|refused|demanded|admitted|surrendered|betrayed|confessed|escaped|attacked|revealed|forced|ordered|threatened)\b/i.test(lower)) return "mechanism";
+    // Revelation / internal shift → definition (establishes new understood state)
+    if (/\b(realized|understood|knew\s+that|discovered|found\s+out|saw\s+that|recognized|it\s+(was|became)\s+clear|understood\s+now)\b/i.test(lower)) return "definition";
+    // Contrast / narrative tension → contrast
+    if (/\b(unlike|in contrast|however|but\s+\w+|whereas|although|despite|yet\s+\w+|even\s+though)\b/i.test(lower)) return "contrast";
+    // Causation / escalation / consequence → mechanism
+    if (/\b(because|therefore|which\s+(meant|led|caused|forced)|forcing|leaving\s+\w+\s+to|no\s+longer|couldn.?t\s+stop|had\s+no\s+choice|everything\s+changed)\b/i.test(lower)) return "mechanism";
+    // Emotional / physical state change → detail (scene atmosphere)
+    if (/\b(trembled|panicked|froze|screamed|wept|laughed|shook|felt\s+(a|the|cold|hot|sudden)|heart\s+(raced|sank|stopped))\b/i.test(lower)) return "detail";
     return "detail";
+  }
+
+  // Science/biology domain: prioritize causal chains and structure→function statements
+  // before the generic NAMED_DEFICIENCY_RE demotes them to "example".
+  if (domain === "science") {
+    if (/\b(causes?|leads?\s+to|results?\s+in|produces?|triggers?|activates?|inhibits?|promotes?|prevents?|required\s+for|necessary\s+for|functions?\s+to|responsible\s+for|disrupts?|regulates?)\b/i.test(lower))
+      return "mechanism";
+    if (/\b(is\s+(the\s+site\s+of|responsible\s+for|required\s+for|necessary\s+for)|functions?\s+(as|to)|serves?\s+(as|to)|enables?|allows?)\b/i.test(lower))
+      return "definition";
+    if (/^[A-Z][a-z]+(,\s+[a-z]+\s+(and|or)\s+[a-z]+)?\s+(are|is)\s+(a|an|the)?\s*(type|form|class|category|group|kind|example|instance)\b/i.test(anchorTrimmed))
+      return "detail";
   }
 
   // Example: check FIRST — a sentence starting with an illustrative opener must never be
@@ -321,7 +338,11 @@ function classifyConceptRole(anchorText: string, supportTexts: string[], paragra
   const NAMED_DEFICIENCY_RE = /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+(deficiency|toxicity|poisoning|overdose|exposure)\b/;
   // "is (a|an|the)" — extended from original "is (a|an)" to catch "Iodine is the trace element that..."
   const NAMED_SUBSTANCE_CATEGORY_RE = /^[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]+)?\s+is (a|an|the) (trace|essential|major|minor|macro|micro|most abundant|only|primarily)?\s*(element|mineral|compound|ion|vitamin|electrolyte|metalloid|halogen|nutrient|toxin|noble gas|micro[nN]utrient)\b/i;
-  if (NAMED_DEFICIENCY_RE.test(anchorTrimmed) || NAMED_SUBSTANCE_CATEGORY_RE.test(anchorTrimmed)) return "example";
+  // Bio causal sentences ("Iodine deficiency causes thyroid enlargement") are teaching rules,
+  // not examples — skip the NAMED_DEFICIENCY demotion when a causal verb is present.
+  const isBioCausal = domain === "science" &&
+    /\b(causes?|leads?\s+to|results?\s+in|produces?|triggers?|activates?|inhibits?)\b/i.test(lower);
+  if (!isBioCausal && (NAMED_DEFICIENCY_RE.test(anchorTrimmed) || NAMED_SUBSTANCE_CATEGORY_RE.test(anchorTrimmed))) return "example";
 
   // Named molecule/element + composition fact (even with "consists of"):
   // "Water (H₂O) consists of hydrogen and oxygen" defines a SPECIFIC MOLECULE, not the

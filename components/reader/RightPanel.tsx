@@ -906,7 +906,7 @@ function UltraView({
             <button
               key={`${block.ordinal}-${block.title}`}
               type="button"
-              onClick={() => { onSelectBlock(index); onAnchorClick(block.pattern); }}
+              onClick={() => { onSelectBlock(index); onAnchorClick(block.anchorText ?? block.pattern); }}
               className={[
                 "rounded-full border px-3 py-1.5 text-[12px] transition",
                 index === effectiveIndex

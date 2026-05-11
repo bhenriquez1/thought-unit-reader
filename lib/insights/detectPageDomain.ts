@@ -20,3 +20,12 @@ export function detectPageDomain(text: string): PageDomain {
   if (/\b(character|dialogue|plot|narrative|protagonist|antagonist|metaphor|theme|novel|poem|stanza|literary|foreshadow)\b/.test(t)) return "fiction";
   return "general";
 }
+
+export function detectSymbolicDensity(text: string): "high" | "low" {
+  const lines = text.split(/\n/).filter(l => l.trim().length > 0);
+  if (lines.length === 0) return "low";
+  const symbolicLines = lines.filter(l =>
+    /[=∫∂∑∏√±≤≥≠∞→←↔∈∉⊂⊃∪∩]|lim\s*_|d[xyz]\/d[xyz]|\\frac|\\int|\\sum|aₙ|n\s*→\s*∞|\b[a-z]_[n\d]\b/i.test(l)
+  );
+  return (symbolicLines.length / lines.length) >= 0.20 ? "high" : "low";
+}
