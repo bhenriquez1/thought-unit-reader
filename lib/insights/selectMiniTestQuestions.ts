@@ -1,4 +1,5 @@
 // lib/insights/selectMiniTestQuestions.ts
+import { BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "./renderQualityGate";
 //
 // Dedicated Mini Test selection helper.
 // Purpose:
@@ -150,6 +151,9 @@ function sanitizeQuestion(text: string): string {
 function isRenderableQuestion(text: string): boolean {
   if (!text) return false;
   if (text.length < 20) return false;
+  // Reject publisher/copyright boilerplate
+  if (BOILERPLATE_RE.test(text)) return false;
+  if (PUBLISHER_DEBRIS_RE.test(text)) return false;
   // Reject artifact words that signal non-instructional content
   if (/\b(Chapter|Cengage|Figure|Table)\b/.test(text)) return false;
   const words = text.split(/\s+/);

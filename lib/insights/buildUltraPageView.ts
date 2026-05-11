@@ -8,6 +8,7 @@
 import type { PageInsightModel, ParagraphInsight } from "@/lib/insights/types";
 import { cleanSentence, polishExtraction, isFieldRenderable, stabilizeOutput, compressToOneLine, compressToNote } from "./sentenceCleanup";
 import { isRenderableSentence } from "./isRenderableSentence";
+import { BOILERPLATE_RE, PUBLISHER_DEBRIS_RE, isWeakFragment } from "./renderQualityGate";
 import {
   extractConceptBlocks,
   ROLE_PRIORITY,
@@ -119,6 +120,9 @@ function looksLikeMathExplanation(text: string): boolean {
 export function isValidCoreParagraph(p: ParagraphInsight): boolean {
   const text = (p.cleanedText || p.rawText || "").trim();
   if (!text || p.paragraphType === "noise") return false;
+  // Reject publisher/copyright boilerplate before any other check
+  if (BOILERPLATE_RE.test(text)) return false;
+  if (PUBLISHER_DEBRIS_RE.test(text)) return false;
   // Formula paragraphs (by type or by content): bypass length and explanation-signal checks
   if (p.paragraphType === "formula" || looksLikeMathFormula(text)) return text.length >= 12;
   // Short math explanation context should survive near formulas.
@@ -1246,20 +1250,25 @@ export function buildUltraPageView(
   const synthesisReasoningFlow = synthesis?.reasoningFlow?.trim() || null;
 
   const finalCompression = (() => {
-    if (!synthesis) return compression;
-    const extras: string[] = [];
-    if (synthesisMechanism) extras.push(`How: ${synthesisMechanism}`);
-    if (synthesisRule)      extras.push(`Rule: ${synthesisRule}`);
-    if (synthesisTrap)      extras.push(`Trap: ${synthesisTrap}`);
-    if (synthesisApp)       extras.push(`Apply: ${synthesisApp}`);
-    if (synthesisReasoningFlow) extras.push(`Flow: ${synthesisReasoningFlow}`);
-    // Merge synthesis extras with heuristic rules; synthesis takes first positions
-    return [...extras, ...compression].slice(0, 5);
+    const raw = (() => {
+      if (!synthesis) return compression;
+      const extras: string[] = [];
+      if (synthesisMechanism) extras.push(`How: ${synthesisMechanism}`);
+      if (synthesisRule)      extras.push(`Rule: ${synthesisRule}`);
+      if (synthesisTrap)      extras.push(`Trap: ${synthesisTrap}`);
+      if (synthesisApp)       extras.push(`Apply: ${synthesisApp}`);
+      if (synthesisReasoningFlow) extras.push(`Flow: ${synthesisReasoningFlow}`);
+      return [...extras, ...compression];
+    })();
+    // Demote weak fragments and verbatim-long sentences — keep only strong signals
+    return raw.filter((line) => !isWeakFragment(line)).slice(0, 5);
   })();
 
   const finalMiniTest = (() => {
-    if (synthesis?.miniTests?.length) return synthesis.miniTests.slice(0, 5);
-    return miniTest;
+    const raw = synthesis?.miniTests?.length
+      ? synthesis.miniTests.slice(0, 5)
+      : miniTest;
+    return raw.filter((q) => !isWeakFragment(q));
   })();
 
   const finalBlocks = synthesis?.concepts?.length
