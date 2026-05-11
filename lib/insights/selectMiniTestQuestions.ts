@@ -150,6 +150,8 @@ function sanitizeQuestion(text: string): string {
 function isRenderableQuestion(text: string): boolean {
   if (!text) return false;
   if (text.length < 20) return false;
+  // Reject artifact words that signal non-instructional content
+  if (/\b(Chapter|Cengage|Figure|Table)\b/.test(text)) return false;
   const words = text.split(/\s+/);
   if (words.length < 5) return false;
   if (/^[\d\s.,\-:;()?!]+$/.test(text)) return false;
@@ -159,6 +161,10 @@ function isRenderableQuestion(text: string): boolean {
   if (words.length > 35) return false;
   // Reject questions that start with a subordinate clause fragment (no question verb)
   if (/^(Certain|Some|Most|Many|All|Several|Although|While|Even|Whether)\s+\w+\s+(may|can|could|might|would|will|should)\s+/i.test(text)) return false;
+  // Reject broken question stems produced by degenerate subjects
+  if (/^What\s+\w+\s+If\s+/i.test(text)) return false;
+  if (/^What\s+\w+\s+Example\s+\d/i.test(text)) return false;
+  if (/^What\s+\w+\s+(Water|Were|Solution|Introduction|In\s+Fact)\b/i.test(text)) return false;
   return true;
 }
 
