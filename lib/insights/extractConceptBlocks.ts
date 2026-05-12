@@ -4,6 +4,7 @@
 
 import { cleanSentence } from "./sentenceCleanup";
 import { isRenderableSentence } from "./isRenderableSentence";
+import { isValidAnchor } from "./renderQualityGate";
 import { TRAP_RE, REASON_RE } from "./dedupeSectionCandidates";
 import { inferConceptTitle } from "./inferConceptTitle";
 import type { PageDomain } from "./detectPageDomain";
@@ -475,7 +476,7 @@ function buildConceptFromParagraph(
   }
 
   const anchorText = cleanSentence(anchor.text);
-  if (!isRenderableSentence(anchorText)) return null;
+  if (!isValidAnchor(anchorText)) return null;
 
   const support = dedupeSentences(
     sentences.filter((s) => s.id !== anchor.id).map((s) => s.text)
