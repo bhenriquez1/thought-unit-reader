@@ -144,6 +144,24 @@ export function isCompleteThought(text: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// isValidAnchor — hard gate for source anchors before they reach any card,
+// mini-test, STR rule, or Understanding Path highlight. Stricter than
+// isCompleteThought: also enforces publisher exclusions and 8-word minimum.
+// ---------------------------------------------------------------------------
+
+export function isValidAnchor(text: string): boolean {
+  if (!text) return false;
+  const t = text.trim();
+  if (BOILERPLATE_RE.test(t)) return false;
+  if (PUBLISHER_DEBRIS_RE.test(t)) return false;
+  if (/\b(Cengage|Pearson|McGraw.?Hill|Wiley|reserves\s+the\s+right|additional\s+content\s+available)\b/i.test(t)) return false;
+  if (/\b(Chapter|Section|Figure|Table|Page)\s+\d/i.test(t)) return false;
+  if (t.split(/\s+/).length < 8) return false;
+  if (!isCompleteThought(t)) return false;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Verbatim-copy detection — sentences this long are likely straight from the book
 // ---------------------------------------------------------------------------
 
