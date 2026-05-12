@@ -368,6 +368,11 @@ function passesConceptQualityGate(
   const anchor = concept.anchorSentence;
   const wordCount = anchor.split(/\s+/).length;
 
+  // Hard reject: publisher/copyright text must never reach the card layer
+  if (BOILERPLATE_RE.test(anchor)) return false;
+  if (PUBLISHER_DEBRIS_RE.test(anchor)) return false;
+  if (/\b(Cengage|Pearson|McGraw.?Hill|Wiley|reserves\s+the\s+right|additional\s+content\s+available)\b/i.test(anchor)) return false;
+
   // 1. Must be a real teachable concept — not filler/narration/OCR fragment
   if (isExampleOrFiller(anchor)) return false;
   if (isFillerSentence(anchor)) return false;
@@ -1134,6 +1139,29 @@ export function buildUltraPageView(
 
   // Cross-concept deduplication: drop blocks that are near-duplicates of an earlier block
   const dedupedBlocks = deduplicateConceptBlocks(blocks);
+
+  // Math fallback: when the strict anchor gate rejects all blocks, build a
+  // structured card from page formulas so the right panel never shows empty.
+  if (isMathPage && dedupedBlocks.length === 0 && mathProcedureSteps.length >= 1) {
+    const fallbackTitle = inferPageTitle(page, concepts) || "Key Formula";
+    const givenText = mathCoreIdeaOverride || page.pageSummary || mathProcedureSteps[0] || "";
+    dedupedBlocks.push({
+      conceptId: "math-fallback-0",
+      ordinal: 1,
+      title: fallbackTitle,
+      pattern: givenText,
+      surgicalReason: "This formula defines the key relationship on this page.",
+      trap: "Do not confuse the formula's variables with those from related theorems.",
+      rule: mathProcedureSteps[mathProcedureSteps.length - 1] ?? givenText,
+      importance: "high",
+      conceptRole: "formula",
+      anchorText: givenText,
+      procedureSteps: mathProcedureSteps,
+      given: mathProcedureSteps[0] ?? undefined,
+      transformation: mathProcedureSteps[1] ?? undefined,
+      decision: mathProcedureSteps[mathProcedureSteps.length - 1] ?? undefined,
+    });
+  }
 
   // Shared step model: drives mini test and enriches compression candidates.
   // Synthetic neighborhoods are built from concept data so both sides stay in sync.

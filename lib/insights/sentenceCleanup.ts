@@ -76,10 +76,18 @@ export function polishExtraction(input: string): string {
   return s;
 }
 
+export function normalizeAppositive(text: string): string {
+  return text
+    .replace(/,\s+(another|a|an|one|this|that|the\s+same)\s+[a-z]+(?:\s+[a-z]+)?,/gi, ",")
+    .replace(/,\s+(another|a|an|one)\s+[a-z]+(?:\s+[a-z]+)?\.?$/i, ".")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export function cleanSentence(input: string): string {
   if (!input) return "";
 
-  let sentence = input;
+  let sentence = normalizeAppositive(input);
   sentence = sentence.replace(/\n+/g, " ");
   sentence = sentence.replace(/(\w+)-\s+(\w+)/g, "$1$2");
   sentence = sentence.replace(/\s+/g, " ").trim();
