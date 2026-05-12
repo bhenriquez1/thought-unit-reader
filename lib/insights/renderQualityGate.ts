@@ -112,6 +112,38 @@ export function isWeakFragment(text: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// isCompleteThought — strongest gate: rejects outputs that are cognitively
+// incomplete for a struggling reader. Applied to highlights and concept fields.
+// ---------------------------------------------------------------------------
+
+export function isCompleteThought(text: string): boolean {
+  if (isWeakFragment(text)) return false;
+  const t = text.trim();
+
+  // Reject pure noun list: two or more commas, no finite verb
+  // "Rocks, metals, oils, gases" → not a thought
+  const commaCount = (t.match(/,/g) ?? []).length;
+  if (
+    commaCount >= 2 &&
+    !/\b(is|are|was|were|can|will|may|might|could|should|has|have|does|do|did|causes?|leads?|results?|produces?|functions?|enables?|allows?|forms?|represents?|means?|includes?|contains?|consists?)\b/i.test(t)
+  ) return false;
+
+  // Reject conditional fragment without a main clause:
+  // "If it were a bad injury" — no resolved consequence
+  if (/^if\s+(it|he|she|they|this|that|there|the\s+\w+)\b/i.test(t) && !/,\s*\w{3}/.test(t)) return false;
+
+  // Reject template question where the extracted subject is a symbolic expression:
+  // "What condition causes As n → ∞ to converge?"
+  if (/\b(causes?|leads?|makes?|forces?|allows?)\s+(as\s+[a-z]\s*[→→]|lim\s*_|∑|∫|aₙ|[a-z]_n)/i.test(t)) return false;
+
+  // Reject isolated symbolic fragment that is not a full equation:
+  // "As n → ∞" alone — symbolic context without declarative meaning
+  if (/^(as|for|when)\s+[a-z]\s*[→→]\s*[∞\d]/i.test(t) && t.split(/\s+/).length < 7) return false;
+
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Verbatim-copy detection — sentences this long are likely straight from the book
 // ---------------------------------------------------------------------------
 

@@ -474,6 +474,9 @@ function buildPageNativeQuestion(role: string, text: string, domain?: StepModelP
   const rawSubject = extractSubjectPhrase(stem, 8);
   // Reject if subject extraction failed or subject is contaminated with modals
   if (!rawSubject || /\b(may|can|could|should|must|will|would|might)\b/i.test(rawSubject)) return "";
+  // Reject if the extracted subject is a symbolic expression — it cannot stand as a template noun
+  if (/^(as|when|for)\s+[a-z]\s*[→→]/i.test(rawSubject)) return "";
+  if (/^(lim|∑|∫|aₙ|[a-z]_n)\b/.test(rawSubject)) return "";
   const subject = rawSubject || stem.split(/\s+/).slice(0, 5).join(" ");
 
   // On high-symbolic-density math pages, use fixed symbolic templates — subject-extraction
