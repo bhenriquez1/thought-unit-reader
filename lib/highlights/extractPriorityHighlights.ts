@@ -2,6 +2,7 @@ import { cleanSentence } from "@/lib/insights/sentenceCleanup";
 import { isRenderableSentence } from "@/lib/insights/isRenderableSentence";
 import { signalScoreAdjustment, isFillerSentence } from "@/lib/insights/signalClassifier";
 import { extractCompleteSentences } from "@/lib/insights/textCleanup";
+import { isCompleteThought } from "@/lib/insights/renderQualityGate";
 import type { PageInsightModel, ParagraphInsight, NarrativePageView } from "@/lib/insights/types";
 import type { PageStory } from "@/lib/insights/buildPageStory";
 import type { PageContentClass } from "@/lib/pdf/classifyPageContent";
@@ -13,6 +14,17 @@ import type { PageDomain } from "@/lib/insights/detectPageDomain";
 // ---------------------------------------------------------------------------
 
 export type PriorityTier = "main" | "support" | "weak";
+
+// Understanding Path role — what cognitive function this highlight serves for the learner.
+// Used by the left panel to label each highlight and enforce a complete understanding path.
+export type HighlightRole =
+  | "page_thesis"     // the one sentence that explains what the page is about
+  | "core_definition" // key term or concept being defined
+  | "mechanism"       // how or why it works (cause → effect)
+  | "decision_rule"   // what to do with the concept (formula, procedure, clinical action)
+  | "example"         // concrete instance that clarifies the main idea
+  | "trap"            // common misunderstanding or exception
+  | "support";        // secondary context that reinforces without standing alone
 
 export type SemanticHighlightKind =
   | "main_pattern"
@@ -47,6 +59,7 @@ export type PriorityHighlightBlock = {
   id: string;
   priority: PriorityTier;
   kind: SemanticHighlightKind;
+  role: HighlightRole;           // Understanding Path role for left-panel labeling
   source: HighlightSource;
   text: string;
   shortLabel?: string;
@@ -128,6 +141,23 @@ const BASE_KIND_SCORE: Record<SemanticHighlightKind, number> = {
   trap_boundary: 80,
   weak_caveat: 70,
 };
+
+// Map SemanticHighlightKind → HighlightRole for Understanding Path labeling
+function highlightKindToRole(kind: SemanticHighlightKind): HighlightRole {
+  switch (kind) {
+    case "main_pattern":        return "page_thesis";
+    case "main_mechanism":      return "mechanism";
+    case "support_explanation": return "core_definition";
+    case "support_decision":    return "decision_rule";
+    case "support_application": return "example";
+    case "trap_warning":        return "trap";
+    case "trap_boundary":       return "trap";
+    case "support_relation":    return "support";
+    case "support_distinction": return "support";
+    case "weak_caveat":         return "support";
+    default:                    return "support";
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Internal candidate type
@@ -276,6 +306,7 @@ export function extractPriorityHighlights({
       id: c.id,
       priority: c.priority,
       kind: c.kind,
+      role: highlightKindToRole(c.kind),
       source: c.source,
       text: c.text,
       shortLabel: c.shortLabel,
@@ -333,7 +364,7 @@ function buildStoryCandidates(
 
   // ── Main: pattern ──────────────────────────────────────────────────────────
   const patternText = story.patternBlock?.trigger || story.mainIdeaBlock?.text || null;
-  if (patternText && isRenderableSentence(patternText)) {
+  if (patternText && isRenderableSentence(patternText) && isCompleteThought(patternText)) {
     // Enrich text with paragraph evidence so SmartPDFViewer has more words
     // to match, reducing missed anchors on OCR text.
     const patEvidence = pickBestEvidence(
@@ -361,7 +392,7 @@ function buildStoryCandidates(
   // Only emit mechanism if it's clearly distinct from pattern (> 28% different
   // words). If they're near-identical, the pattern block already covers it and
   // emitting both creates duplicate highlights.
-  if (story.mechanismBlock?.text && isRenderableSentence(story.mechanismBlock.text)) {
+  if (story.mechanismBlock?.text && isRenderableSentence(story.mechanismBlock.text) && isCompleteThought(story.mechanismBlock.text)) {
     const patSimilarity = patternText ? textSimilarity(story.mechanismBlock.text, patternText) : 0;
     if (patSimilarity < 0.72) {
       const mechEvidence = pickBestEvidence(story.mechanismBlock.evidence, story.mechanismBlock.text, paragraphIndex);
@@ -1138,6 +1169,7 @@ function mergeAdjacentBlocks(blocks: PriorityHighlightBlock[], windowChars: numb
         id: `${current.id}+${next.id}`,
         priority: current.priority,
         kind: current.kind,
+        role: current.role,
         source: current.source,
         text: cleanSentence(`${current.text} ${next.text}`),
         shortLabel: current.shortLabel,
@@ -1187,7 +1219,7 @@ function clean(text: string): string {
 }
 
 function compact(items: Array<string | null | undefined>): string[] {
-  return items.filter((s): s is string => Boolean(s) && s.length > 0);
+  return items.filter((s): s is string => typeof s === "string" && s.length > 0);
 }
 
 function normalizeForSearch(text: string): string {
