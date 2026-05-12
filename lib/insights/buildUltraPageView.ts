@@ -107,6 +107,10 @@ export interface UltraPageView {
   pageThesis?: string;
   /** ≤ 12-word high-yield compression for dyslexia / rapid review */
   oneLineSummary?: string;
+  /** Why the page thesis matters — from the mechanism concept's surgical reason */
+  whyItMatters?: string;
+  /** Most common misunderstanding on this page — from highest trap/contrast concept */
+  commonTrap?: string;
   blocks: UltraConceptBlock[];
   miniTest: string[];
   compression: string[];
@@ -881,11 +885,23 @@ export function buildUltraPageView(
       centralityScore: computeConceptCentrality(c.anchorSentence, allParagraphTexts),
     }));
     const rolePriorityMap = ROLE_PRIORITY as Record<string, number>;
+    // Build a token set from the page thesis so concepts that directly support
+    // the teaching objective are promoted in the ranking blend.
+    const thesisTokens = new Set(
+      (pageObjective?.teachingStatement || "")
+        .toLowerCase().split(/\W+/).filter((w) => w.length > 3)
+    );
     const centralityRanked = [...conceptsWithCentrality].sort((a, b) => {
       const rolePriorityA = rolePriorityMap[a.conceptRole ?? "detail"] ?? 1;
       const rolePriorityB = rolePriorityMap[b.conceptRole ?? "detail"] ?? 1;
-      const blendA = rolePriorityA * 2 + a.centralityScore * 0.5 + a.score;
-      const blendB = rolePriorityB * 2 + b.centralityScore * 0.5 + b.score;
+      const thesisHitsA = a.anchorSentence.toLowerCase().split(/\W+/)
+        .filter((w) => thesisTokens.has(w)).length;
+      const thesisHitsB = b.anchorSentence.toLowerCase().split(/\W+/)
+        .filter((w) => thesisTokens.has(w)).length;
+      const thesisRelevanceA = thesisTokens.size > 0 ? thesisHitsA / thesisTokens.size : 0;
+      const thesisRelevanceB = thesisTokens.size > 0 ? thesisHitsB / thesisTokens.size : 0;
+      const blendA = rolePriorityA * 2 + a.centralityScore * 0.5 + thesisRelevanceA * 2 + a.score;
+      const blendB = rolePriorityB * 2 + b.centralityScore * 0.5 + thesisRelevanceB * 2 + b.score;
       return blendB - blendA;
     });
     const topCentralConcept = centralityRanked[0];
@@ -1354,14 +1370,36 @@ export function buildUltraPageView(
       })
     : dedupedBlocks;
 
-  // Page Thesis: operator-rewritten deepest understanding target
-  const rawThesisSrc = page.pageSummary || finalCoreIdea;
+  // Page Thesis: operator-rewritten deepest understanding target.
+  // Priority: pageObjective.teachingStatement (highest-confidence canonical teaching rule)
+  // → page.pageSummary → finalCoreIdea.
+  // teachingStatement is already a validated declarative sentence from the source text
+  // and produces a much stronger thesis than compressing a summary.
+  const rawThesisSrc = pageObjective?.teachingStatement || page.pageSummary || finalCoreIdea;
   const pageThesis = (() => {
     const compressed = compressToNote(rawThesisSrc, "signal");
     const stabilized = stabilizeOutput(compressed || rawThesisSrc, domain);
     return stabilized || finalCoreIdea;
   })();
   const oneLineSummary = compressToOneLine(pageThesis, domain);
+
+  // Why this matters: from the highest-ranked mechanism block's surgicalReason.
+  const whyItMatters = (() => {
+    const mech = dedupedBlocks.find(
+      (b) => b.conceptRole === "mechanism" && b.surgicalReason && b.surgicalReason.length >= 20
+    );
+    if (mech?.surgicalReason) return mech.surgicalReason;
+    const anyMech = dedupedBlocks.find((b) => b.conceptRole === "mechanism" && b.pattern?.length >= 20);
+    return anyMech?.pattern ?? undefined;
+  })();
+
+  // Common trap: from the highest-scored contrast/trap block on this page.
+  const commonTrap = (() => {
+    const trapBlock = dedupedBlocks.find(
+      (b) => b.conceptRole === "contrast" && b.trap && b.trap.length >= 15
+    ) ?? dedupedBlocks.find((b) => b.trap && b.trap.length >= 15);
+    return trapBlock?.trap ?? undefined;
+  })();
 
   return {
     title: `ULTRA – ${inferPageTitle(page, concepts)}`,
@@ -1370,6 +1408,8 @@ export function buildUltraPageView(
     teachingStatement: pageObjective?.teachingStatement || undefined,
     pageThesis,
     oneLineSummary,
+    whyItMatters,
+    commonTrap,
     blocks: finalBlocks,
     miniTest: finalMiniTest,
     compression: finalCompression,
