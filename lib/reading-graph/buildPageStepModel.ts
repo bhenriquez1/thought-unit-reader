@@ -474,13 +474,25 @@ function buildPageNativeQuestion(role: string, text: string, domain?: StepModelP
   const rawSubject = extractSubjectPhrase(stem, 8);
   // Reject if subject extraction failed or subject is contaminated with modals
   if (!rawSubject || /\b(may|can|could|should|must|will|would|might)\b/i.test(rawSubject)) return "";
+  // Reject if the extracted subject is a symbolic expression — it cannot stand as a template noun
+  if (/^(as|when|for)\s+[a-z]\s*[→→]/i.test(rawSubject)) return "";
+  if (/^(lim|∑|∫|aₙ|[a-z]_n)\b/.test(rawSubject)) return "";
   const subject = rawSubject || stem.split(/\s+/).slice(0, 5).join(" ");
 
-  // On high-symbolic-density math pages, reject prose-fragment subjects
+  // On high-symbolic-density math pages, use fixed symbolic templates — subject-extraction
+  // is unreliable when most lines are formulas. Fixed questions are more cognitively precise.
   if (domain === "math" && symbolicDensity === "high") {
-    if (/\bExample\b|\b[Ee]\d\b/i.test(rawSubject)) return "";
-    if (rawSubject.split(/\s+/).length < 2) return "";
-    if (!/[=∑∫→∞αβγ]|lim\b|aₙ|\b[a-z]_n\b/.test(stem) && rawSubject.split(/\s+/).length <= 2) return "";
+    switch (role) {
+      case "coreMeaning":     return cleanLocal("Does this sequence converge or diverge");
+      case "mechanism":       return cleanLocal("What condition forces convergence or divergence");
+      case "distinction":     return cleanLocal("How does this differ from a series that diverges");
+      case "application":     return cleanLocal("How would you test whether this converges");
+      case "skimTrap":        return cleanLocal("What makes this appear convergent when it actually diverges");
+      case "whatHappensIf":   return cleanLocal("What happens as n approaches infinity");
+      case "nextStep":        return cleanLocal("What symbolic step justifies this result");
+      case "compareContrast": return cleanLocal("How does this limit compare to its divergent counterpart");
+      default:                return "";
+    }
   }
 
   // Domain-specific question templates produce more pedagogically precise questions.
