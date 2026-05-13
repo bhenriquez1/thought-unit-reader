@@ -20,7 +20,22 @@ import type { SRIModel, SRISignal, ReadingDepth } from "@/lib/insights/buildSRIM
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { buildUltraNote, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, saveRecallSet } from "@/lib/recalllab/recallStore";
-import { isWeakBlock, isWeakField, isSimilarText } from "@/lib/insights/renderQualityGate";
+import { isWeakBlock, isWeakField, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
+
+// Validates a synthesis field before it can replace a heuristic field.
+// Returns the trimmed text if it passes, or null if it should be rejected.
+function validSynthField(text: string | undefined | null, domain: string | null): string | null {
+  if (!text?.trim()) return null;
+  const t = text.trim();
+  if (BOILERPLATE_RE.test(t) || PUBLISHER_DEBRIS_RE.test(t)) return null;
+  // Cross-domain: reject biology/clinical phrasing on math pages
+  if (domain === "math" && /\bbiologically\b|\borganism\b|\bcell\b|\bprotein\b|\bphysiolog/i.test(t)) return null;
+  // Reject vague-opener artifacts regardless of domain
+  if (/^(another\s+(notation|term|way|name|example)|a\s+number\s+of\s+(texts?|books?|authors?)|this\s+(means?|is|refers?)|they\s+(are|were|have)|some\s+(authors?|texts?|books?))\b/i.test(t)) return null;
+  if (t.split(/\s+/).length < 6) return null;
+  if (!isCompleteThought(t)) return null;
+  return t;
+}
 import { useTeachingSynthesis } from "./useTeachingSynthesis";
 
 interface RightPanelProps {
@@ -250,28 +265,57 @@ export function RightPanel({
   });
 
   // Apply teaching synthesis over heuristic view without re-running the pipeline.
-  // Synthesis is the professor layer — it supersedes heuristic sentence extraction.
+  // Synthesis is the professor layer — it supersedes heuristic sentence extraction,
+  // but every synthesis field is validated by validSynthField before replacing a
+  // heuristic value. This prevents cross-domain phrasing, publisher artifacts, and
+  // incomplete sentences from reaching the rendered cards.
   const ultraPageViewWithSynthesis = useMemo((): UltraPageView | null => {
     if (!ultraPageView) return null;
     if (!teachingSynthesis) return ultraPageView;
+
+    const synthDomain: string | null = ultraPageView._debug?.domain ?? null;
+
+    console.log("[TRACE:synthesis]", {
+      domain: synthDomain,
+      symbolicDensity: ultraPageView._debug?.symbolicDensity ?? "n/a",
+      hasSynthesis: true,
+      rawBlockCount: ultraPageView.blocks.length,
+      synthConceptCount: teachingSynthesis.concepts?.length ?? 0,
+    });
 
     const finalCoreIdea = teachingSynthesis.coreIdea?.length >= 20
       ? teachingSynthesis.coreIdea
       : ultraPageView.coreIdea;
 
-    // Per-concept overlay: synthesis rewrites principle/mechanism/trap/rule/misconception/examHook
+    // Per-concept overlay: synthesis rewrites principle/mechanism/trap/rule/misconception/examHook.
+    // Each field is validated before replacing the heuristic value.
     const finalBlocks = teachingSynthesis.concepts?.length
       ? ultraPageView.blocks.map((b, i) => {
           const sc = teachingSynthesis.concepts[i];
           if (!sc) return b;
+
+          const safePattern        = validSynthField(sc.principle,    synthDomain);
+          const safeSurgicalReason = validSynthField(sc.mechanism,    synthDomain);
+          const safeTrap           = validSynthField(sc.trap,         synthDomain);
+          const safeRule           = validSynthField(sc.rule,         synthDomain);
+          const safeMisconception  = validSynthField(sc.misconception, synthDomain);
+          const safeExamHook       = validSynthField(sc.examHook,     synthDomain);
+
+          if (process.env.NODE_ENV !== "production") {
+            if (sc.principle  && !safePattern)        console.log(`[TRACE:synth-rejected] block=${i} field=principle  value="${sc.principle?.slice(0, 70)}"`);
+            if (sc.mechanism  && !safeSurgicalReason) console.log(`[TRACE:synth-rejected] block=${i} field=mechanism  value="${sc.mechanism?.slice(0, 70)}"`);
+            if (sc.trap       && !safeTrap)           console.log(`[TRACE:synth-rejected] block=${i} field=trap       value="${sc.trap?.slice(0, 70)}"`);
+            if (sc.rule       && !safeRule)           console.log(`[TRACE:synth-rejected] block=${i} field=rule       value="${sc.rule?.slice(0, 70)}"`);
+          }
+
           return {
             ...b,
-            pattern:        sc.principle?.trim()  || b.pattern,
-            surgicalReason: sc.mechanism?.trim()  || b.surgicalReason,
-            trap:           sc.trap?.trim()       ?? b.trap,
-            rule:           sc.rule?.trim()       || b.rule,
-            misconception:  sc.misconception?.trim() || undefined,
-            examHook:       sc.examHook?.trim()      || undefined,
+            pattern:        safePattern        ?? b.pattern,
+            surgicalReason: safeSurgicalReason  ?? b.surgicalReason,
+            trap:           safeTrap            ?? b.trap,
+            rule:           safeRule            ?? b.rule,
+            misconception:  safeMisconception   ?? undefined,
+            examHook:       safeExamHook        ?? undefined,
           };
         })
       : ultraPageView.blocks;
@@ -293,6 +337,19 @@ export function RightPanel({
     const finalMiniTest = teachingSynthesis.miniTests?.length
       ? teachingSynthesis.miniTests.slice(0, 5)
       : ultraPageView.miniTest;
+
+    // Wiring proof: if this log shows "Biologically…", "Cengage…", or "Another Notation…"
+    // then validSynthField is not catching it. If this is clean but UI shows bad text,
+    // JSX is rendering from a different source than finalBlocks.
+    console.log("[TRACE RIGHTPANEL FINAL]", {
+      domain: synthDomain,
+      finalBlocks: finalBlocks.map((b) => ({
+        title: b.title,
+        pattern: b.pattern,
+        surgicalReason: b.surgicalReason,
+        trap: b.trap,
+      })),
+    });
 
     return {
       ...ultraPageView,
@@ -850,6 +907,20 @@ function UltraView({
   const effectiveIndex = Math.min(selectedBlockIndex, Math.max(0, visibleBlocks.length - 1));
   const selectedBlock = visibleBlocks[effectiveIndex] ?? null;
 
+  // Wiring verification: confirms the live rendered array and its source
+  console.log("[TRACE RIGHTPANEL FINAL]", {
+    domain,
+    finalBlockCount: visibleBlocks.length,
+    whyItMatters: view.whyItMatters?.slice(0, 60) ?? null,
+    commonTrap: view.commonTrap?.slice(0, 60) ?? null,
+    finalBlocks: visibleBlocks.map((b) => ({
+      title: b.title,
+      pattern: b.pattern?.slice(0, 60),
+      surgicalReason: b.surgicalReason?.slice(0, 60),
+      trap: b.trap?.slice(0, 60),
+    })),
+  });
+
   // Prefer teachingStatement when it's distinct from coreIdea (it's more reliable);
   // if they're near-duplicates, teachingStatement already says the same thing so use it.
   const rawCoreIdea = view.pageThesis ?? view.coreIdea;
@@ -877,6 +948,57 @@ function UltraView({
           <p className="text-[14px] leading-6 text-white/90">{displayCoreIdea}</p>
         </div>
       </PanelSection>
+
+      {/* Page Understanding Model — must precede concept blocks.
+          Answers the four questions a reader needs before diving into cards. */}
+      {(view.whyItMatters || view.commonTrap || visibleBlocks.length > 0) && (
+        <PanelSection title="Page Understanding">
+          <div className="space-y-2">
+            {/* Q1: Main concept — from first strong visible block */}
+            {visibleBlocks[0] && !isWeakField(visibleBlocks[0].pattern) && (
+              <div className="rounded-lg border border-white/8 bg-white/2 px-3 py-2.5">
+                <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-white/40">
+                  1 · Main Concept
+                </div>
+                <p className="text-[13px] leading-5 text-white/80">{visibleBlocks[0].pattern}</p>
+              </div>
+            )}
+            {/* Q2: What makes it work — whyItMatters from mechanism block */}
+            {view.whyItMatters && (
+              <div className="rounded-lg border border-blue-400/15 bg-[#0a1828] px-3 py-2.5">
+                <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-300/70">
+                  2 · Why It Works
+                </div>
+                <p className="text-[13px] leading-5 text-white/75">{view.whyItMatters}</p>
+              </div>
+            )}
+            {/* Q3: Proving example — science domain example field, any domain fallback */}
+            {(() => {
+              const exBlock = visibleBlocks.find(
+                (b) => !isWeakField((b as UltraConceptBlock & { example?: string }).example)
+              );
+              const ex = (exBlock as UltraConceptBlock & { example?: string })?.example;
+              return ex ? (
+                <div className="rounded-lg border border-emerald-400/15 bg-[#0a1820] px-3 py-2.5">
+                  <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-300/70">
+                    3 · Proving Example
+                  </div>
+                  <p className="text-[13px] leading-5 text-white/75">{ex}</p>
+                </div>
+              ) : null;
+            })()}
+            {/* Q4: Common trap — prevents the most predictable misreading */}
+            {view.commonTrap && (
+              <div className="rounded-lg border border-red-400/15 bg-[#1a0a0a] px-3 py-2.5">
+                <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-red-300/70">
+                  4 · Avoid This Mistake
+                </div>
+                <p className="text-[13px] leading-5 text-white/70">{view.commonTrap}</p>
+              </div>
+            )}
+          </div>
+        </PanelSection>
+      )}
 
       {/* Concept blocks — tab selector + detail */}
       <PanelSection title="Concept Blocks">
