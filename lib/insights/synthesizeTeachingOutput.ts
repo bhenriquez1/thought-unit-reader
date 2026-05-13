@@ -148,7 +148,15 @@ CRITICAL RULES — every violation makes the output educationally worthless:
 5. mechanism ≠ rule — if they would be identical, make mechanism the WHY and rule the WHAT TO DO.
 6. reasoningFlow must use the domain-specific chain format above (A → B → C).
 7. Keep every field to 1–2 sentences maximum.
-8. Write like Ninja Nerd, Pathoma, or a clinical attending — compressed expert cognition, not notes.`;
+8. Write like Ninja Nerd, Pathoma, or a clinical attending — compressed expert cognition, not notes.
+
+COGNITIVE COMPRESSION MANDATE — apply to EVERY field, without exception:
+- RELATIONAL over DEFINITIONAL: prefer "X causes Y because Z" over "X is defined as Y."
+- ADD THE WHY: not "ions are charged atoms" → "ions conduct charge because electron gain/loss creates an electrostatic imbalance."
+- TARGET LENGTH: 10–15 words per field. Never exceed 20 words per sentence.
+- SELF-CHECK before writing each field: "Does this sentence tell the reader WHY it matters, not just WHAT it is?" If no → rewrite.
+- COMPRESS MANY SENTENCES into ONE operator-level insight. Prefer conceptual depth over coverage breadth.
+- NEVER REPEAT the Page Thesis idea in compression or mechanism — each field must introduce NEW information.`;
 }
 
 export function buildUserPrompt(

@@ -10,6 +10,7 @@ import type { PageStoryV2, StoryBlockV2 } from "@/lib/insights/buildPageStoryV2"
 import type { ParagraphNote, ReaderRole } from "@/lib/insights/buildParagraphNotes";
 import type { PageStoryV3, ParagraphNoteV3, ReadingStepV3, PageBriefV3 } from "@/lib/insights/buildPageStoryV3";
 import { buildNarrativeBlocks, type NarrativeBlock, type NarrativeBlockType } from "@/lib/insights/buildNarrativeBlocks";
+import { BlockMath } from "@/components/surgeonView2/MathDisplay";
 import { buildShadowRecall, type ShadowRecallModel } from "@/lib/insights/buildShadowRecall";
 import { buildNarrativePageView, type NarrativeBuildResult } from "@/lib/insights/buildNarrativePageView";
 import type { NarrativeSection } from "@/lib/insights/materializeNarrativeSupport";
@@ -929,6 +930,19 @@ function UltraView({
       ? rawCoreIdea
       : (view.teachingStatement ?? rawCoreIdea);
 
+  // Cross-section deduplication: suppress Page Understanding rows that repeat the Page Thesis.
+  // A row is suppressed when its content overlaps ≥60% with the thesis (or adjacent field).
+  // The same content remains visible inside its concept card — only the summary row is hidden.
+  const thesisText = displayCoreIdea ?? "";
+  const suppressMainConcept = !!(visibleBlocks[0]?.pattern) &&
+    isSimilarText(visibleBlocks[0].pattern, thesisText, 0.60);
+  const suppressWhyItMatters = !!(view.whyItMatters) && (
+    isSimilarText(view.whyItMatters, thesisText, 0.60) ||
+    isSimilarText(view.whyItMatters, visibleBlocks[0]?.surgicalReason ?? "", 0.60)
+  );
+  const suppressCommonTrap = !!(view.commonTrap) &&
+    visibleBlocks.some((b) => b.trap && isSimilarText(b.trap, view.commonTrap!, 0.65));
+
   return (
     <div className="space-y-4">
       {/* ULTRA header + Page Thesis */}
@@ -954,8 +968,8 @@ function UltraView({
       {(view.whyItMatters || view.commonTrap || visibleBlocks.length > 0) && (
         <PanelSection title="Page Understanding">
           <div className="space-y-2">
-            {/* Q1: Main concept — from first strong visible block */}
-            {visibleBlocks[0] && !isWeakField(visibleBlocks[0].pattern) && (
+            {/* Q1: Main concept — from first strong visible block; suppressed if it repeats Page Thesis */}
+            {!suppressMainConcept && visibleBlocks[0] && !isWeakField(visibleBlocks[0].pattern) && (
               <div className="rounded-lg border border-white/8 bg-white/2 px-3 py-2.5">
                 <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-white/40">
                   1 · Main Concept
@@ -963,8 +977,8 @@ function UltraView({
                 <p className="text-[13px] leading-5 text-white/80">{visibleBlocks[0].pattern}</p>
               </div>
             )}
-            {/* Q2: What makes it work — whyItMatters from mechanism block */}
-            {view.whyItMatters && (
+            {/* Q2: What makes it work — suppressed if it duplicates Page Thesis or the first card's reason */}
+            {!suppressWhyItMatters && view.whyItMatters && (
               <div className="rounded-lg border border-blue-400/15 bg-[#0a1828] px-3 py-2.5">
                 <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-300/70">
                   2 · Why It Works
@@ -987,8 +1001,8 @@ function UltraView({
                 </div>
               ) : null;
             })()}
-            {/* Q4: Common trap — prevents the most predictable misreading */}
-            {view.commonTrap && (
+            {/* Q4: Common trap — suppressed if a concept card already shows the same trap text */}
+            {!suppressCommonTrap && view.commonTrap && (
               <div className="rounded-lg border border-red-400/15 bg-[#1a0a0a] px-3 py-2.5">
                 <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-red-300/70">
                   4 · Avoid This Mistake
@@ -999,6 +1013,7 @@ function UltraView({
           </div>
         </PanelSection>
       )}
+
 
       {/* Concept blocks — tab selector + detail */}
       <PanelSection title="Concept Blocks">
@@ -1047,11 +1062,23 @@ function UltraView({
               {selectedBlock.ordinal}️⃣ {selectedBlock.title}
             </div>
             <div className="space-y-4">
-              {/* FIELD 1: Concept/Definition/Finding — primary signal, highest visual weight */}
+              {/* FIELD 1: Concept/Definition/Finding — primary signal, highest visual weight.
+                  Formula/theorem blocks on math pages render in native math notation with
+                  a plain-language interpretation below for immediate cognitive grounding. */}
               {!isWeakField(selectedBlock.pattern) && (
                 <div className="rounded-lg border border-white/8 bg-white/3 px-3 py-3">
                   <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.patternColor }}>{labels.pattern}</div>
-                  <p className="text-[15px] font-medium leading-6 text-white">{selectedBlock.pattern}</p>
+                  {isMathDomain && (selectedBlock.conceptRole === "formula" || selectedBlock.conceptRole === "theorem")
+                    ? (
+                      <>
+                        <BlockMath expr={selectedBlock.pattern} sourceSnippet={selectedBlock.pattern} />
+                        {selectedBlock.surgicalReason && !isWeakField(selectedBlock.surgicalReason) && (
+                          <p className="mt-1.5 text-[12px] leading-5 text-white/55 italic">{selectedBlock.surgicalReason}</p>
+                        )}
+                      </>
+                    )
+                    : <p className="text-[15px] font-medium leading-6 text-white">{selectedBlock.pattern}</p>
+                  }
                 </div>
               )}
 
