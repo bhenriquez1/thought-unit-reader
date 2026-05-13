@@ -8,7 +8,7 @@
 import type { PageInsightModel, ParagraphInsight } from "@/lib/insights/types";
 import { cleanSentence, polishExtraction, isFieldRenderable, stabilizeOutput, compressToOneLine, compressToNote } from "./sentenceCleanup";
 import { isRenderableSentence } from "./isRenderableSentence";
-import { BOILERPLATE_RE, PUBLISHER_DEBRIS_RE, isWeakFragment } from "./renderQualityGate";
+import { BOILERPLATE_RE, PUBLISHER_DEBRIS_RE, isWeakFragment, isSimilarText } from "./renderQualityGate";
 import {
   extractConceptBlocks,
   ROLE_PRIORITY,
@@ -352,10 +352,16 @@ interface BuiltFields {
 // Post-extraction quality gate
 // ---------------------------------------------------------------------------
 
-function enforceEducationalHierarchy(concepts: ConceptBlockInput[]): ConceptBlockInput[] {
+function enforceEducationalHierarchy(concepts: ConceptBlockInput[], domain?: string): ConceptBlockInput[] {
   return [...concepts].sort((a, b) => {
-    const pa = ROLE_PRIORITY[a.conceptRole ?? "detail"] ?? 0;
-    const pb = ROLE_PRIORITY[b.conceptRole ?? "detail"] ?? 0;
+    let pa = ROLE_PRIORITY[a.conceptRole ?? "detail"] ?? 0;
+    let pb = ROLE_PRIORITY[b.conceptRole ?? "detail"] ?? 0;
+    // On non-math pages, mechanism (cause→effect) is cognitively superior to bare definition.
+    // Boost it above definition so biology/science/clinical pages surface causal content first.
+    if (domain !== "math") {
+      if (a.conceptRole === "mechanism") pa += 2;
+      if (b.conceptRole === "mechanism") pb += 2;
+    }
     if (pa !== pb) return pb - pa;
     return (b.score ?? 0) - (a.score ?? 0);
   });
@@ -862,7 +868,7 @@ export function buildUltraPageView(
 
   // Enforce educational hierarchy: sort by ROLE_PRIORITY descending so that
   // theorem/definition/mechanism always lead, and example/detail never anchor the list.
-  concepts = enforceEducationalHierarchy(concepts);
+  concepts = enforceEducationalHierarchy(concepts, domain);
 
   console.log("[TRACE buildUltraPageView:concepts]", { conceptCount: concepts.length, returnNull: concepts.length === 0 });
   if (!concepts.length) return null;
@@ -1155,8 +1161,10 @@ export function buildUltraPageView(
     };
   });
 
-  // Cross-concept deduplication: drop blocks that are near-duplicates of an earlier block
-  const dedupedBlocks = deduplicateConceptBlocks(blocks);
+  // Cross-concept deduplication: drop blocks that are near-duplicates of an earlier block.
+  // Cap at 3 — enforceEducationalHierarchy already sorted by role priority so the top 3
+  // are always the highest-value (theorem/formula/definition/mechanism before example/detail).
+  const dedupedBlocks = deduplicateConceptBlocks(blocks).slice(0, 3);
 
   // Math fallback: when the strict anchor gate rejects all blocks, build a
   // structured card from page formulas so the right panel never shows empty.
@@ -1346,8 +1354,13 @@ export function buildUltraPageView(
       if (synthesisReasoningFlow) extras.push(`Flow: ${synthesisReasoningFlow}`);
       return [...extras, ...compression];
     })();
-    // Demote weak fragments and verbatim-long sentences — keep only strong signals
-    return raw.filter((line) => !isWeakFragment(line)).slice(0, 5);
+    // Demote weak fragments and verbatim-long sentences — keep only strong signals.
+    // Also suppress compression lines that repeat the Page Thesis (same idea, different words).
+    const thesisRef = pageObjective?.teachingStatement || page.pageSummary || finalCoreIdea;
+    return raw
+      .filter((line) => !isWeakFragment(line))
+      .filter((line) => !thesisRef || !isSimilarText(line, thesisRef, 0.58))
+      .slice(0, 5);
   })();
 
   const finalMiniTest = (() => {
