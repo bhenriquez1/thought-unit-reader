@@ -91,6 +91,7 @@ export interface UltraPageViewStep {
 export interface UltraPageViewDebug {
   pageKind: string;
   domain: PageDomain;
+  symbolicDensity: "high" | "low";
   shouldRenderFullPanel: boolean;
   pageSummaryLength: number;
   coreIdeaSource: "pageSummary" | "definitionRole" | "chiefSignal" | "supportSentence" | "anchorFallback" | "hardFallback";
@@ -720,6 +721,7 @@ function buildChapterIntroView(
     _debug: {
       pageKind: normResult.pageKind,
       domain,
+      symbolicDensity: "low" as const,
       shouldRenderFullPanel: true,
       pageSummaryLength: (pageModel.pageSummary ?? "").length,
       coreIdeaSource: "pageSummary",
@@ -1294,6 +1296,7 @@ export function buildUltraPageView(
   const _debug: UltraPageViewDebug = {
     pageKind: normResult.pageKind,
     domain,
+    symbolicDensity,
     shouldRenderFullPanel: normResult.shouldRenderFullPanel,
     pageSummaryLength: (pageModel.pageSummary ?? "").length,
     coreIdeaSource,
