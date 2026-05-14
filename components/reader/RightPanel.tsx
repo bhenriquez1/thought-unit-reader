@@ -62,11 +62,131 @@ const DEPTH: GuidedDepth = "standard";
 const MODE: GuidedMode = "insight";
 
 const LOADING_PHASES = [
-  "Reading current page…",
-  "Analyzing paragraph roles…",
-  "Mapping important lines…",
-  "Building operator view…",
+  "Reading page…",
+  "Identifying page type…",
+  "Selecting understanding anchors…",
+  "Writing notes…",
 ];
+
+// Derives a human-readable teaching purpose from available domain/concept data.
+// Used in both the loading skeleton and the ready-state header.
+function derivePageTeachingPurpose(
+  domain: string | null | undefined,
+  pageKind: string | null | undefined,
+  firstConceptRole: string | null | undefined,
+  pageObjectiveText?: string | null,
+): string {
+  if (pageKind === "mathematical_exposition" || domain === "math") {
+    return firstConceptRole === "formula" || firstConceptRole === "theorem"
+      ? "formula / theorem" : "math procedure";
+  }
+  if (domain === "clinical") {
+    return firstConceptRole === "contrast" ? "clinical comparison" : "clinical reasoning";
+  }
+  if (domain === "fiction") return "narrative scene";
+  if (domain === "science") {
+    if (firstConceptRole === "mechanism") return "mechanism page";
+    if (firstConceptRole === "definition") return "concept introduction";
+    return "science principle";
+  }
+  if (firstConceptRole === "contrast") return "comparison page";
+  if (/strateg|approach|how to|tip|method/i.test(pageObjectiveText ?? "")) return "strategy page";
+  if (firstConceptRole === "mechanism") return "mechanism page";
+  if (firstConceptRole === "definition") return "concept introduction";
+  if (firstConceptRole === "application" || firstConceptRole === "worked_example") return "application page";
+  return "concept page";
+}
+
+// Progressive skeleton rendered while the page is being analyzed.
+// Each phase reveals one more skeleton card, communicating that notes are being built live.
+function PageLoadingSkeleton({ phase }: { phase: number }) {
+  const hints = [
+    "Analyzing domain signals…",
+    "Ranking concept candidates…",
+    "Compressing to insight…",
+  ];
+  return (
+    <div className="space-y-3">
+      {/* Cognition status bar */}
+      <div className="rounded-xl border border-emerald-400/20 bg-[#0a1a18] px-4 py-3">
+        <div className="flex items-center gap-2.5 mb-1.5">
+          <span className="relative flex h-2 w-2 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          </span>
+          <span className="text-[12px] font-medium text-emerald-300">
+            {LOADING_PHASES[phase] ?? "Writing notes…"}
+          </span>
+        </div>
+        {phase >= 1 && (
+          <div className="pl-[18px] space-y-0.5 text-[10px] font-mono text-slate-500">
+            {hints.slice(0, phase).map((h, i) => (
+              <div key={i}>→ {h}</div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Skeleton: Page Thesis card */}
+      {phase >= 1 && (
+        <div className="rounded-xl border border-amber-400/15 bg-[#0b1830] px-4 py-4 animate-pulse">
+          <div className="mb-2 h-[9px] w-20 rounded bg-amber-400/20" />
+          <div className="space-y-2">
+            <div className="h-3 w-full rounded bg-white/8" />
+            <div className="h-3 w-[83%] rounded bg-white/8" />
+          </div>
+        </div>
+      )}
+
+      {/* Skeleton: Page Understanding card */}
+      {phase >= 2 && (
+        <div className="rounded-xl border border-white/8 bg-white/2 px-4 py-4 animate-pulse">
+          <div className="mb-3 h-[9px] w-32 rounded bg-white/10" />
+          <div className="space-y-2">
+            {[90, 72].map((w, i) => (
+              <div key={i} className="rounded-lg border border-white/6 px-3 py-2.5">
+                <div className="mb-1.5 h-[7px] w-14 rounded bg-white/8" />
+                <div className="h-2.5 rounded bg-white/6" style={{ width: `${w}%` }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Skeleton: Concept Blocks card */}
+      {phase >= 2 && (
+        <div className="rounded-xl border border-white/8 bg-white/2 px-4 py-4 animate-pulse">
+          <div className="mb-3 h-[9px] w-28 rounded bg-white/10" />
+          <div className="mb-3 flex gap-2">
+            {[1, 2].map(i => (
+              <div key={i} className="h-6 w-20 rounded-full border border-white/10 bg-white/5" />
+            ))}
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-[#0a1428] px-4 py-4 space-y-2.5">
+            <div className="h-3 w-36 rounded bg-white/8" />
+            <div className="h-2.5 w-full rounded bg-white/6" />
+            <div className="h-2.5 w-[78%] rounded bg-white/6" />
+          </div>
+        </div>
+      )}
+
+      {/* Skeleton: Compression rules */}
+      {phase >= 3 && (
+        <div className="rounded-xl border border-white/8 bg-white/2 px-4 py-4 animate-pulse">
+          <div className="mb-2.5 h-[9px] w-24 rounded bg-white/10" />
+          <div className="space-y-2">
+            {[92, 80, 65].map((w, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-white/12" />
+                <div className="h-2.5 rounded bg-white/6" style={{ width: `${w}%` }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Universal color system — matches left highlights exactly.
 // important=amber, support=blue, additional=sky, warning=rose
@@ -468,13 +588,20 @@ export function RightPanel({
   const showV2Operator     = isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && Boolean(storyV2?.signalBlock);
   const showGuidedView     = isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && !showV2Operator && Boolean(guidedView);
 
-  // Header status label
+  // Header status label — shows phase during loading, page teaching purpose when ready
   const headerStatus = intelligence.status === "loading"
     ? LOADING_PHASES[loadingPhase]
     : pageIsNonInstructional
     ? "Not available on this page"
     : (showNarrativePageView || showNarrativeView || showV3View) && v3Brief
     ? v3Brief.pagePurpose
+    : showUltraView && ultraPageView
+    ? derivePageTeachingPurpose(
+        ultraPageView._debug?.domain ?? ultraPageView.domain ?? null,
+        normResult?.pageKind,
+        ultraPageView.blocks[0]?.conceptRole,
+        ultraPageView.teachingStatement,
+      )
     : "Current page · ready";
 
   // [TRACE] temporary rendering decision instrumentation
@@ -1860,17 +1987,7 @@ function inferUnavailablePageLabel(pageKind?: string): string {
 
 function renderTruthFallback(reason: string, status: string, keyMismatch: boolean, loadingPhase = 0) {
   if (status === "loading" || keyMismatch || reason === "loading") {
-    return (
-      <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-2 w-2 shrink-0">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-          </span>
-          <span className="text-sm text-slate-300">{LOADING_PHASES[loadingPhase]}</span>
-        </div>
-      </div>
-    );
+    return <PageLoadingSkeleton phase={loadingPhase} />;
   }
   if (reason === "image_only") return (
     <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300">
