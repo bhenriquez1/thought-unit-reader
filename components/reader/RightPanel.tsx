@@ -908,20 +908,6 @@ function UltraView({
   const effectiveIndex = Math.min(selectedBlockIndex, Math.max(0, visibleBlocks.length - 1));
   const selectedBlock = visibleBlocks[effectiveIndex] ?? null;
 
-  // Wiring verification: confirms the live rendered array and its source
-  console.log("[TRACE RIGHTPANEL FINAL]", {
-    domain,
-    finalBlockCount: visibleBlocks.length,
-    whyItMatters: view.whyItMatters?.slice(0, 60) ?? null,
-    commonTrap: view.commonTrap?.slice(0, 60) ?? null,
-    finalBlocks: visibleBlocks.map((b) => ({
-      title: b.title,
-      pattern: b.pattern?.slice(0, 60),
-      surgicalReason: b.surgicalReason?.slice(0, 60),
-      trap: b.trap?.slice(0, 60),
-    })),
-  });
-
   // Prefer teachingStatement when it's distinct from coreIdea (it's more reliable);
   // if they're near-duplicates, teachingStatement already says the same thing so use it.
   const rawCoreIdea = view.pageThesis ?? view.coreIdea;
@@ -942,6 +928,28 @@ function UltraView({
   );
   const suppressCommonTrap = !!(view.commonTrap) &&
     visibleBlocks.some((b) => b.trap && isSimilarText(b.trap, view.commonTrap!, 0.65));
+
+  // Wiring verification: confirms live rendered array, anchorText wiring to PDF viewer,
+  // and that synthesis did NOT overwrite anchorText (only pattern/mechanism/rule fields).
+  // Filter DevTools: "[TRACE RIGHTPANEL FINAL]"
+  console.log("[TRACE RIGHTPANEL FINAL]", {
+    domain,
+    pageThesis: view.pageThesis?.slice(0, 80) ?? null,
+    finalBlockCount: visibleBlocks.length,
+    whyItMatters: view.whyItMatters?.slice(0, 60) ?? null,
+    commonTrap: view.commonTrap?.slice(0, 60) ?? null,
+    suppressions: { suppressMainConcept, suppressWhyItMatters, suppressCommonTrap },
+    finalBlocks: visibleBlocks.map((b, i) => ({
+      block: i + 1,
+      title: b.title,
+      role: b.conceptRole ?? "unknown",
+      // anchorText = raw PDF source sentence; this is what gets sent to the PDF viewer on click.
+      // It is never overwritten by LLM synthesis (synthesis only touches pattern/mechanism/rule).
+      anchorText: b.anchorText?.slice(0, 80) ?? "(missing — falls back to pattern on click)",
+      anchorLen: b.anchorText?.length ?? 0,
+      pattern: b.pattern?.slice(0, 60),
+    })),
+  });
 
   return (
     <div className="space-y-4">

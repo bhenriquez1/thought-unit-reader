@@ -9,7 +9,7 @@ import { processPage } from "@/lib/insights/processPage";
 import { classifyPageContent, type PageContentClass } from "@/lib/pdf/classifyPageContent";
 import { extractPriorityHighlights, type ExtractPriorityHighlightsResult } from "@/lib/highlights/extractPriorityHighlights";
 import { buildHighlightNeighborhoods, flattenNeighborhoods, type HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
-import { adaptPageInsightModel, isValidCoreParagraph } from "@/lib/insights/buildUltraPageView";
+import { buildUltraPageView, adaptPageInsightModel, isValidCoreParagraph } from "@/lib/insights/buildUltraPageView";
 import { findMainTeachingZone } from "@/lib/insights/findMainTeachingZone";
 import { extractConceptBlocks as extractConceptBlocksCore } from "@/lib/insights/extractConceptBlocks";
 import { buildParagraphRoleMap } from "@/lib/highlights/paragraphRoleMap";
@@ -487,23 +487,68 @@ export function useActivePageIntelligence({
       ...pageModel,
       paragraphInsights: zoneInsights,
     });
-    const concepts = extractConceptBlocksCore(adapted);
-    const neighborhoods = concepts.length > 0 ? buildHighlightNeighborhoods(concepts, { pageKind: normResult.pageKind }) : [];
+    const allConcepts = extractConceptBlocksCore(adapted);
 
-    // [TRACE sentenceMap] — shows the raw sentence pool feeding the left panel
+    // ── Quality-gate alignment ────────────────────────────────────────────────
+    // buildUltraPageView applies passesConceptQualityGate, enforceEducationalHierarchy,
+    // and a hard cap of 3 before producing the right panel's concept blocks. The left
+    // panel must use the SAME filtered set so both panels reference identical source
+    // anchors. We call buildUltraPageView here to get the surviving concept IDs, then
+    // filter allConcepts to match — preserving the raw ConceptBlockInput data (support
+    // sentences, trapCandidates) needed by buildHighlightNeighborhoods.
+    const ultraView = buildUltraPageView(pageModel, { existingNormResult: normResult });
+    const activeIds = new Set(ultraView?.blocks.map(b => b.conceptId) ?? []);
+
+    // If ultraView returned blocks, use only those concepts. Fall back to all concepts
+    // when ultraView returns null (e.g. math fallback / chapter intro paths).
+    const qualifiedConcepts = activeIds.size > 0
+      ? allConcepts.filter(c => activeIds.has(c.id))
+      : allConcepts;
+
+    const neighborhoods = qualifiedConcepts.length > 0
+      ? buildHighlightNeighborhoods(qualifiedConcepts, { pageKind: normResult.pageKind })
+      : [];
+
+    // ── [TRACE ANCHOR SELECTION] ──────────────────────────────────────────────
+    // Verifies: domain, pageThesis, which block produced each anchor, anchorText
+    // sent to the PDF viewer, depth level, and support/trap availability.
+    // Filter in DevTools: "[TRACE ANCHOR SELECTION]"
+    console.log("[TRACE ANCHOR SELECTION]", {
+      page: pageNumber,
+      domain: ultraView?._debug?.domain ?? "unknown",
+      pageThesis: ultraView?.pageThesis?.slice(0, 100) ?? null,
+      totalConcepts: allConcepts.length,
+      qualityFiltered: qualifiedConcepts.length,
+      highlightCount: neighborhoods.length,
+      anchors: neighborhoods.map((n, i) => ({
+        block: i + 1,
+        role: n.conceptRole ?? "detail",
+        title: n.title?.slice(0, 40),
+        anchorText: n.anchor.text.slice(0, 80),
+        anchorLen: n.anchor.text.length,
+        depth: n.depthLevel,
+        supportCount: n.support.length,
+        hasTrap: !!n.trap,
+      })),
+      // LLM synthesis cannot overwrite anchorText — it only affects pattern/mechanism/rule
+      // fields on the UltraConceptBlock display layer. anchorText = c.anchorSentence (raw PDF).
+      synthesisOverwritesAnchors: false,
+    });
+
+    // [TRACE sentenceMap] — raw sentence pool feeding the left panel
     console.log("[TRACE sentenceMap]", {
       documentId: pageModel.documentId,
       pageNumber,
       paragraphCount: (pageModel.paragraphInsights ?? []).length,
       validCount: validInsights.length,
       zoneCount: zoneInsights.length,
-      conceptCount: concepts.length,
+      conceptCount: allConcepts.length,
+      qualifiedCount: qualifiedConcepts.length,
       neighborhoodCount: neighborhoods.length,
-      // First sentence of each paragraph in the zone
       zoneSentences: zoneInsights.slice(0, 4).map((p: any) => (p.cleanedText ?? "").slice(0, 60)),
     });
 
-    // [TRACE guidedPath] — shows what the left panel will render
+    // [TRACE guidedPath] — what the left panel will render
     console.log("[TRACE guidedPath]", {
       documentId: pageModel.documentId,
       pageNumber,
