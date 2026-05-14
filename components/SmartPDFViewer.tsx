@@ -23,6 +23,65 @@ try {
   // react-pdf will surface a clearer error if this fails
 }
 
+// ---------------------------------------------------------------------------
+// focusSnippet matching helpers
+// ---------------------------------------------------------------------------
+
+function normForMatch(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[­​-‍﻿]/g, '')   // zero-width / soft-hyphen
+    .replace(/ﬁ/g, 'fi').replace(/ﬂ/g, 'fl')       // common ligatures
+    .replace(/ﬀ/g, 'ff').replace(/ﬃ/g, 'ffi').replace(/ﬄ/g, 'ffl')
+    .replace(/['']/g, "'").replace(/[""]/g, '"')    // smart quotes
+    .replace(/[–—]/g, '-')                          // dashes
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Finds the best span element in the PDF text layer for the given snippet.
+ * Strategy 1: single-span substring (fast path for short snippets / exact OCR).
+ * Strategy 2: multi-span sliding window — concatenate 4 adjacent spans and check
+ *             if the window contains the first 5 words of the query (handles
+ *             cases where one sentence spans multiple text-run spans).
+ * Strategy 3: token-overlap fallback — find the 4-span window with the highest
+ *             fraction of query words (handles OCR variants / reordered text).
+ */
+function findSpanForSnippet(spans: HTMLElement[], snippet: string): HTMLElement | null {
+  const q = normForMatch(snippet);
+  if (q.length < 8) return null;
+
+  // Strategy 1 — single span substring
+  const n40 = q.slice(0, 40);
+  const n20 = q.slice(0, 20);
+  const hit1 = spans.find(s => normForMatch(s.textContent || '').includes(n40))
+    ?? spans.find(s => normForMatch(s.textContent || '').includes(n20));
+  if (hit1) return hit1;
+
+  // Strategy 2 — multi-span window: first 5 words of the query
+  const firstWords = q.split(/\s+/).slice(0, 5).join(' ');
+  if (firstWords.length >= 10) {
+    for (let i = 0; i < spans.length - 1; i++) {
+      const window = spans.slice(i, i + 4).map(s => normForMatch(s.textContent || '')).join(' ');
+      if (window.includes(firstWords)) return spans[i];
+    }
+  }
+
+  // Strategy 3 — token-overlap across 4-span windows
+  const qWords = q.split(/\s+/).filter(w => w.length > 3);
+  if (qWords.length < 3) return null;
+  let bestSpan: HTMLElement | null = null;
+  let bestScore = 0;
+  for (let i = 0; i < spans.length; i++) {
+    const window = spans.slice(i, i + 4).map(s => normForMatch(s.textContent || '')).join(' ');
+    const overlap = qWords.filter(w => window.includes(w)).length;
+    const score = overlap / qWords.length;
+    if (score > bestScore) { bestScore = score; bestSpan = spans[i]; }
+  }
+  return bestScore >= 0.45 ? bestSpan : null;
+}
+
 /** Outline (TOC) shape bubbled up to the page */
 export type TocItem = {
   title: string;
@@ -250,14 +309,21 @@ export default function SmartPDFViewer({
     if (!focusSnippet) return;
     const container = viewerRef.current;
     if (!container) return;
-    const query = focusSnippet.trim().toLowerCase();
-    if (query.length < 12) return;
-    const spans = Array.from(container.querySelectorAll('.react-pdf__Page__textContent span, .textLayer span')) as HTMLElement[];
+    if (focusSnippet.trim().length < 8) return;
+    const spans = Array.from(container.querySelectorAll(
+      '.react-pdf__Page__textContent span, .textLayer span'
+    )) as HTMLElement[];
     if (!spans.length) return;
-    const needle42 = query.slice(0, 42);
-    const needle25 = query.slice(0, 25);
-    const target = spans.find((span) => (span.textContent || "").toLowerCase().includes(needle42))
-      ?? spans.find((span) => (span.textContent || "").toLowerCase().includes(needle25));
+
+    const target = findSpanForSnippet(spans, focusSnippet);
+
+    console.log("[TRACE focusSnippet]", {
+      snippet: focusSnippet.slice(0, 70),
+      spansSearched: spans.length,
+      matched: !!target,
+      matchedText: target ? (target.textContent || '').slice(0, 50) : null,
+    });
+
     if (!target) return;
     target.scrollIntoView({ block: "center", behavior: "smooth" });
     target.classList.add("bg-yellow-300", "text-black", "rounded", "px-0.5", "ring-2", "ring-yellow-400");
