@@ -505,9 +505,16 @@ export function useActivePageIntelligence({
       ? allConcepts.filter(c => activeIds.has(c.id))
       : allConcepts;
 
-    const neighborhoods = qualifiedConcepts.length > 0
+    const rawNeighborhoods = qualifiedConcepts.length > 0
       ? buildHighlightNeighborhoods(qualifiedConcepts, { pageKind: normResult.pageKind })
       : [];
+
+    // Strategic highlight density: keep ≤3 neighborhoods, anchor-only for blocks 2+.
+    // Block 1 keeps support sentences for context; subsequent blocks show only their
+    // anchor to avoid visual noise — max ~4 highlights total on any page.
+    const neighborhoods = rawNeighborhoods.slice(0, 3).map((n, i) =>
+      i === 0 ? n : { ...n, support: [], additional: [] }
+    );
 
     // ── [TRACE ANCHOR SELECTION] ──────────────────────────────────────────────
     // Verifies: domain, pageThesis, which block produced each anchor, anchorText

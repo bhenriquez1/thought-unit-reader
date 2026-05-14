@@ -71,6 +71,29 @@ export function isWeakField(text: string | undefined | null): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// isDisplayReady — strict display gate for right-panel concept card fields.
+// Stricter than isWeakField: rejects subjectless imperative openers and
+// short fragments that pass the 5-word minimum but still read as broken.
+// ---------------------------------------------------------------------------
+
+// Subjectless imperative/infinitive openers — "Need to satisfy…", "Using X…"
+// These are mid-thought fragments extracted without a proper subject.
+const SUBJECTLESS_OPENER_RE =
+  /^(need(s|ed|ing)?\s+to\b|using\s+(?!the\s+(formula|theorem|rule|fact|following|above))|appl(y|ied|ies|ying)\s+(?!the\s+(?:formula|theorem|rule|fact|following))|satisf\w+\s+(?!the\b|a\b)|requir\w+\s+(?!that\b|a\b|the\b)|consider(ing)?\s+(?!that\b|whether\b|how\b)|given\s+that\b|plug(ging)?\s+in\b|substitut\w+\s+into\b|tak(e|ing)\s+the\b)\b/i;
+
+export function isDisplayReady(text: string | undefined | null): boolean {
+  if (!text?.trim()) return false;
+  const t = text.trim();
+  // Must pass the base field gate first
+  if (isWeakField(t)) return false;
+  // Stricter word count for display — ≥8 words required
+  if (t.split(/\s+/).length < 8) return false;
+  // Reject subjectless imperative/infinitive openers
+  if (SUBJECTLESS_OPENER_RE.test(t)) return false;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // isWeakFragment — stronger sentence-level gate used for compression / mini test
 // ---------------------------------------------------------------------------
 
