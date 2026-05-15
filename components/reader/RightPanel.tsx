@@ -21,7 +21,7 @@ import type { SRIModel, SRISignal, ReadingDepth } from "@/lib/insights/buildSRIM
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { buildUltraNote, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, saveRecallSet } from "@/lib/recalllab/recallStore";
-import { isWeakBlock, isDisplayReady, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
+import { isWeakBlock, isDisplayReady, sanitizeDisplay, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
 
 // Validates a synthesis field before it can replace a heuristic field.
 // Returns the trimmed text if it passes, or null if it should be rejected.
@@ -636,62 +636,62 @@ export function RightPanel({
       )
     : "Current page · ready";
 
-  // [TRACE] temporary rendering decision instrumentation
-  if (process.env.NODE_ENV !== "production") {
-    console.log("[TRACE RightPanel]", {
-      status: intelligence.status,
-      isCurrentPageModel,
-      pageIsNonInstructional,
-      pageKind: normResult?.pageKind,
-      shouldRenderFullPanel: normResult?.shouldRenderFullPanel,
-      showUltraView,
-      showConceptBlocks,
-      showNarrativePageView,
-      showV3View,
-      showV2Map,
-      headerStatus,
-    });
-  }
+  // [WIRE] RightPanel active — always-on, no NODE_ENV gate.
+  // If you see this in production DevTools, the latest build is deployed.
+  // viewSource tells you which render path is active. Bad output from a non-ULTRA path
+  // means the fallback path is bypassing all quality gates.
+  console.log("[WIRE] RightPanel active", {
+    build: "BUILD_WIRING_TEST_v1",
+    status: intelligence.status,
+    isCurrentPageModel,
+    pageIsNonInstructional,
+    pageKind: normResult?.pageKind,
+    shouldRenderFullPanel: normResult?.shouldRenderFullPanel,
+    viewSource: showUltraView ? "ULTRA" : showConceptBlocks ? "ConceptBlocks" : showNarrativePageView ? "NarrativePage" : showNarrativeView ? "Narrative" : showV3View ? "V3" : showV2Map ? "V2Map" : showV2Operator ? "V2Op" : showGuidedView ? "Guided" : "none",
+    showUltraView,
+    showConceptBlocks,
+    ultraPageViewPresent: !!ultraPageView,
+    displayViewPresent: !!displayView,
+    visibleBlockCount: displayView ? displayView.blocks.filter((b) => !isWeakBlock(b, displayView._debug?.domain)).length : 0,
+  });
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col overflow-y-auto border-l border-white/10 bg-[rgb(11,18,34)] break-words whitespace-normal">
-      {/* Header */}
+      {/* Header — BUILD_WIRING_TEST_v1 marker is always visible.
+          If this text does not appear in the deployed app, the build is stale. */}
       <div className="border-b border-white/10 px-4 py-3">
-        <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">Page Notes</div>
+        <div className="flex items-center justify-between">
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">Page Notes</div>
+          <div className="text-[9px] font-mono text-white/20 select-none">BUILD_WIRING_TEST_v1</div>
+        </div>
         <div className="mt-0.5 text-[11px] text-slate-500">{headerStatus}</div>
       </div>
 
       <div className="flex flex-col gap-4 p-4 text-white">
-        {/* ── DEBUG CARD (temporary — remove after diagnosis) ─────────── */}
-        {process.env.NODE_ENV !== "production" && (
-          <div style={{
-            fontSize: 10,
-            fontFamily: "monospace",
-            background: "rgba(0,255,100,0.06)",
-            border: "1px solid rgba(0,255,100,0.18)",
-            borderRadius: 6,
-            padding: "6px 8px",
-            color: "#86efac",
-            lineHeight: 1.6,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-all",
-          }}>
-            {[
-              `isCurrentPage: ${isCurrentPageModel}`,
-              `pageTruthKey: ${pageTruthKey}`,
-              `viewSource: ${showUltraView ? "ULTRA" : showConceptBlocks ? "ConceptBlocks" : showNarrativePageView ? "NarrativePage" : showNarrativeView ? "Narrative" : showV3View ? "V3" : showV2Map ? "V2Map" : showV2Operator ? "V2Op" : showGuidedView ? "Guided" : "none"}`,
-              `blockCount: ${displayView?.blocks.length ?? 0}`,
-              `miniTestCount: ${displayView?.miniTest.length ?? 0}`,
-              `compressionCount: ${displayView?.compression.length ?? 0}`,
-              `pageKind: ${displayView?._debug?.pageKind ?? "—"}`,
-              `domain: ${displayView?._debug?.domain ?? "—"}`,
-              `shouldRender: ${displayView?._debug?.shouldRenderFullPanel ?? "—"}`,
-              `summaryLen: ${displayView?._debug?.pageSummaryLength ?? "—"}`,
-              `coreIdeaSource: ${displayView?._debug?.coreIdeaSource ?? "—"}`,
-              `concepts: ${displayView?._debug?.conceptCandidates.map((c) => `${c.title}(${c.score})`).join(", ") ?? "—"}`,
-            ].join("\n")}
-          </div>
-        )}
+        {/* ── WIRING CARD — always visible in all environments until removed ── */}
+        <div style={{
+          fontSize: 9,
+          fontFamily: "monospace",
+          background: "rgba(0,255,100,0.04)",
+          border: "1px solid rgba(0,255,100,0.12)",
+          borderRadius: 6,
+          padding: "5px 8px",
+          color: "#6ee7b7",
+          lineHeight: 1.7,
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-all",
+          opacity: 0.8,
+        }}>
+          {[
+            `BUILD_WIRING_TEST_v1`,
+            `view: ${showUltraView ? "ULTRA ✓" : showConceptBlocks ? "ConceptBlocks (fallback)" : showNarrativePageView ? "NarrativePage (fallback)" : showNarrativeView ? "Narrative (fallback)" : showV3View ? "V3 (fallback)" : showV2Map ? "V2Map (fallback)" : showV2Operator ? "V2Op (fallback)" : showGuidedView ? "Guided (fallback)" : "none"}`,
+            `status: ${intelligence.status} | page: ${isCurrentPageModel ? "✓ current" : "✗ mismatch"}`,
+            `domain: ${displayView?._debug?.domain ?? "—"} | kind: ${displayView?._debug?.pageKind ?? "—"}`,
+            `blocks: ${displayView?.blocks.length ?? 0} raw → ${displayView ? displayView.blocks.filter((b) => !isWeakBlock(b, displayView._debug?.domain)).length : 0} visible`,
+            `compression: ${displayView?.compression.length ?? 0} | miniTest: ${displayView?.miniTest.length ?? 0}`,
+            `thesis: ${(displayView?.coreIdea ?? "—").slice(0, 50)}`,
+          ].join("\n")}
+        </div>
 
         {/* ── NON-INSTRUCTIONAL PAGE STATE ────────────────────────── */}
         {pageIsNonInstructional && (
@@ -1088,36 +1088,33 @@ function UltraView({
   const suppressCommonTrap = !!(view.commonTrap) &&
     visibleBlocks.some((b) => b.trap && isSimilarText(b.trap, view.commonTrap!, 0.65));
 
-  // ── [TRACE:render-gate] ───────────────────────────────────────────────────
-  // Filter DevTools: "[TRACE:render-gate]"
-  // Shows: active component path, domain, page type, raw vs gated block counts,
-  // per-field quality gate results, suppression flags.
-  // If UI shows bad text but this log shows clean data → JSX is using a wrong source.
-  console.log("[TRACE:render-gate]", {
-    component: "RightPanel.tsx > UltraView (active render path)",
+  // [WIRE] UltraView active — always-on, no NODE_ENV gate.
+  // Filter DevTools: "[WIRE] UltraView"
+  // If you see this in production, UltraView IS the active render path.
+  // If bad text appears but fields show _ready: false → gate IS working, field still rendering → bug in JSX.
+  // If field shows _ready: true but text is bad → sanitizeDisplay() needs a new pattern.
+  console.log("[WIRE] UltraView active", {
+    build: "BUILD_WIRING_TEST_v1",
+    component: "RightPanel.tsx > UltraView",
     domain,
     pageType: view._debug?.pageKind ?? "unknown",
     rawBlocksFromView: view.blocks.length,
     visibleBlocksAfterGate: visibleBlocks.length,
-    displayCoreIdea_ready: isDisplayReady(displayCoreIdea),
-    displayCoreIdea: displayCoreIdea?.slice(0, 80) ?? null,
-    whyItMatters_ready: isDisplayReady(view.whyItMatters),
-    whyItMatters: view.whyItMatters?.slice(0, 60) ?? null,
-    commonTrap_ready: isDisplayReady(view.commonTrap),
-    commonTrap: view.commonTrap?.slice(0, 60) ?? null,
+    thesis_ready: !!sanitizeDisplay(displayCoreIdea),
+    thesis: displayCoreIdea?.slice(0, 80) ?? null,
+    whyItMatters_ready: !!sanitizeDisplay(view.whyItMatters),
+    commonTrap_ready: !!sanitizeDisplay(view.commonTrap),
     suppressions: { suppressMainConcept, suppressWhyItMatters, suppressCommonTrap },
     visibleBlocks: visibleBlocks.map((b, i) => ({
-      block: i + 1,
+      i,
       title: b.title?.slice(0, 40),
       role: b.conceptRole ?? "unknown",
-      pattern_ready: isDisplayReady(b.pattern),
+      pattern_ready: !!sanitizeDisplay(b.pattern),
       pattern: b.pattern?.slice(0, 60),
-      surgicalReason_ready: isDisplayReady(b.surgicalReason),
-      trap_ready: isDisplayReady(b.trap),
-      rule_ready: isDisplayReady(b.rule),
-      anchorText: b.anchorText?.slice(0, 60) ?? "(missing)",
+      surgicalReason_ready: !!sanitizeDisplay(b.surgicalReason),
+      trap_ready: !!sanitizeDisplay(b.trap),
+      rule_ready: !!sanitizeDisplay(b.rule),
     })),
-    synthesisWasApplied: !!view.crossLinkHints,
   });
 
   return (
@@ -1132,7 +1129,7 @@ function UltraView({
           </div>
         )}
         {/* Page thesis — quality-gated: must be a complete thought, ≥8 words, no boilerplate */}
-        {isDisplayReady(displayCoreIdea) && (
+        {sanitizeDisplay(displayCoreIdea) && (
           <div className="rounded-xl border border-amber-400/15 bg-[#0b1830] px-4 py-4">
             <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-300">
               🎯 Page Thesis
@@ -1148,7 +1145,7 @@ function UltraView({
         <PanelSection title="Page Understanding">
           <div className="space-y-2">
             {/* Q1: Main concept — from first strong visible block; suppressed if it repeats Page Thesis */}
-            {!suppressMainConcept && visibleBlocks[0] && isDisplayReady(visibleBlocks[0].pattern) && (
+            {!suppressMainConcept && visibleBlocks[0] && sanitizeDisplay(visibleBlocks[0].pattern) && (
               <div className="rounded-lg border border-white/8 bg-white/2 px-3 py-2.5">
                 <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-white/40">
                   1 · Main Concept
@@ -1157,7 +1154,7 @@ function UltraView({
               </div>
             )}
             {/* Q2: What makes it work — quality-gated + suppressed if duplicate */}
-            {!suppressWhyItMatters && isDisplayReady(view.whyItMatters) && (
+            {!suppressWhyItMatters && sanitizeDisplay(view.whyItMatters) && (
               <div className="rounded-lg border border-blue-400/15 bg-[#0a1828] px-3 py-2.5">
                 <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-300/70">
                   2 · Why It Works
@@ -1168,9 +1165,9 @@ function UltraView({
             {/* Q3: Proving example — science domain example field, any domain fallback */}
             {(() => {
               const exBlock = visibleBlocks.find(
-                (b) => isDisplayReady((b as UltraConceptBlock & { example?: string }).example)
+                (b) => !!sanitizeDisplay((b as UltraConceptBlock & { example?: string }).example)
               );
-              const ex = (exBlock as UltraConceptBlock & { example?: string })?.example;
+              const ex = sanitizeDisplay((exBlock as UltraConceptBlock & { example?: string })?.example);
               return ex ? (
                 <div className="rounded-lg border border-emerald-400/15 bg-[#0a1820] px-3 py-2.5">
                   <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-300/70">
@@ -1181,7 +1178,7 @@ function UltraView({
               ) : null;
             })()}
             {/* Q4: Common trap — quality-gated + suppressed if duplicate */}
-            {!suppressCommonTrap && isDisplayReady(view.commonTrap) && (
+            {!suppressCommonTrap && sanitizeDisplay(view.commonTrap) && (
               <div className="rounded-lg border border-red-400/15 bg-[#1a0a0a] px-3 py-2.5">
                 <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-red-300/70">
                   4 · Avoid This Mistake
@@ -1244,14 +1241,14 @@ function UltraView({
               {/* FIELD 1: Concept/Definition/Finding — primary signal, highest visual weight.
                   Formula/theorem blocks on math pages render in native math notation with
                   a plain-language interpretation below for immediate cognitive grounding. */}
-              {isDisplayReady(selectedBlock.pattern) && (
+              {sanitizeDisplay(selectedBlock.pattern) && (
                 <div className="rounded-lg border border-white/8 bg-white/3 px-3 py-3">
                   <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.patternColor }}>{labels.pattern}</div>
                   {isMathDomain && (selectedBlock.conceptRole === "formula" || selectedBlock.conceptRole === "theorem")
                     ? (
                       <>
                         <BlockMath expr={selectedBlock.pattern} sourceSnippet={selectedBlock.pattern} />
-                        {selectedBlock.surgicalReason && isDisplayReady(selectedBlock.surgicalReason) && (
+                        {selectedBlock.surgicalReason && sanitizeDisplay(selectedBlock.surgicalReason) && (
                           <p className="mt-1.5 text-[12px] leading-5 text-white/55 italic">{selectedBlock.surgicalReason}</p>
                         )}
                       </>
@@ -1264,31 +1261,31 @@ function UltraView({
               {/* MATH SCHEMA: Given → Transformation → Result → Decision → Trap → Procedure */}
               {isMathDomain ? (
                 <>
-                  {isDisplayReady(selectedBlock.given ?? selectedBlock.surgicalReason) && (
+                  {sanitizeDisplay(selectedBlock.given ?? selectedBlock.surgicalReason) && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
                       <p className="text-[14px] leading-6 text-white/90">{selectedBlock.given ?? selectedBlock.surgicalReason}</p>
                     </div>
                   )}
-                  {selectedBlock.transformation && isDisplayReady(selectedBlock.transformation) && (
+                  {selectedBlock.transformation && sanitizeDisplay(selectedBlock.transformation) && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#60a5fa" }}>⟶ Transformation</div>
                       <p className="text-[14px] leading-6 text-white/95 font-mono">{selectedBlock.transformation}</p>
                     </div>
                   )}
-                  {isDisplayReady(selectedBlock.rule) && (
+                  {sanitizeDisplay(selectedBlock.rule) && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
                       <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
                     </div>
                   )}
-                  {selectedBlock.decision && isDisplayReady(selectedBlock.decision) && (
+                  {selectedBlock.decision && sanitizeDisplay(selectedBlock.decision) && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#a78bfa" }}>✓ Decision</div>
                       <p className="text-[14px] leading-6 text-violet-200/90">{selectedBlock.decision}</p>
                     </div>
                   )}
-                  {isDisplayReady(selectedBlock.trap) && (
+                  {sanitizeDisplay(selectedBlock.trap) && (
                     <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2">
                       <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
                       <p className="text-[13px] leading-5 text-rose-200/90">{selectedBlock.trap}</p>
@@ -1311,31 +1308,31 @@ function UltraView({
               ) : isScienceDomain ? (
                 /* SCIENCE SCHEMA: Mechanism → Example → Confusion Point → Outcome → Memory Hook */
                 <>
-                  {isDisplayReady(selectedBlock.surgicalReason) && (
+                  {sanitizeDisplay(selectedBlock.surgicalReason) && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
                       <p className="text-[14px] leading-6 text-white/90">{selectedBlock.surgicalReason}</p>
                     </div>
                   )}
-                  {selectedBlock.example && isDisplayReady(selectedBlock.example) && (
+                  {selectedBlock.example && sanitizeDisplay(selectedBlock.example) && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#86efac" }}>🔍 Example</div>
                       <p className="text-[14px] leading-6 text-green-200/90">{selectedBlock.example}</p>
                     </div>
                   )}
-                  {isDisplayReady(selectedBlock.trap) && (
+                  {sanitizeDisplay(selectedBlock.trap) && (
                     <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2">
                       <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
                       <p className="text-[13px] leading-5 text-rose-200/90">{selectedBlock.trap}</p>
                     </div>
                   )}
-                  {isDisplayReady(selectedBlock.rule) && (
+                  {sanitizeDisplay(selectedBlock.rule) && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
                       <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
                     </div>
                   )}
-                  {selectedBlock.memoryHook && isDisplayReady(selectedBlock.memoryHook) && (
+                  {selectedBlock.memoryHook && sanitizeDisplay(selectedBlock.memoryHook) && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#d8b4fe" }}>💡 Memory Hook</div>
                       <p className="text-[13px] leading-6 text-purple-200/85">{selectedBlock.memoryHook}</p>
@@ -1345,19 +1342,19 @@ function UltraView({
               ) : (
                 /* DEFAULT / CLINICAL SCHEMA: Reason → Trap → Rule */
                 <>
-                  {isDisplayReady(selectedBlock.surgicalReason) && (
+                  {sanitizeDisplay(selectedBlock.surgicalReason) && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
                       <p className="text-[14px] leading-6 text-white/90">{selectedBlock.surgicalReason}</p>
                     </div>
                   )}
-                  {isDisplayReady(selectedBlock.trap) && (
+                  {sanitizeDisplay(selectedBlock.trap) && (
                     <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2">
                       <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
                       <p className="text-[13px] leading-5 text-rose-200/90">{selectedBlock.trap}</p>
                     </div>
                   )}
-                  {isDisplayReady(selectedBlock.rule) && (
+                  {sanitizeDisplay(selectedBlock.rule) && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
                       <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
@@ -1367,13 +1364,13 @@ function UltraView({
               )}
 
               {/* Shared optional fields — all domains */}
-              {selectedBlock.misconception && isDisplayReady(selectedBlock.misconception) && (
+              {selectedBlock.misconception && sanitizeDisplay(selectedBlock.misconception) && (
                 <div>
                   <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-rose-400">⚠️ Misconception</div>
                   <p className="text-[13px] leading-6 text-rose-200/85">{selectedBlock.misconception}</p>
                 </div>
               )}
-              {selectedBlock.examHook && isDisplayReady(selectedBlock.examHook) && (
+              {selectedBlock.examHook && sanitizeDisplay(selectedBlock.examHook) && (
                 <div>
                   <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-violet-400">🎓 Exam Hook</div>
                   <p className="text-[13px] leading-6 text-violet-200/85">{selectedBlock.examHook}</p>
@@ -1393,7 +1390,7 @@ function UltraView({
                   </ol>
                 </div>
               )}
-              {isDisplayReady(selectedBlock.importance) && (
+              {sanitizeDisplay(selectedBlock.importance) && (
                 <div>
                   <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#c7f59b]">🎯 Importance</div>
                   <p className="text-[14px] leading-6 text-white/90">{selectedBlock.importance}</p>
