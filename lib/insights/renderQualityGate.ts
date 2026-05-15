@@ -100,6 +100,44 @@ export function isDisplayReady(text: string | undefined | null): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// sanitizeDisplay — final render-level gate applied immediately before JSX.
+// Extends isDisplayReady with figure-caption and dangling-punctuation checks.
+// Returns the trimmed string to render, or null to suppress the field.
+// ---------------------------------------------------------------------------
+
+// Figure / table captions used as concept title or main idea — should never lead
+const FIGURE_LEAD_RE = /^(figure|fig\.|table|chart|box|plate)\s+[\d.]+/i;
+
+// Dangling clause-ending punctuation — sentence cut before its conclusion
+const DANGLING_END_RE = /[;,]\s*$/;
+
+// Repeated identical phrase within the same string (e.g. "ions are ions are ions")
+function hasInternalRepetition(text: string): boolean {
+  const words = text.toLowerCase().split(/\s+/);
+  if (words.length < 6) return false;
+  // Sliding window: 3-gram appears more than once
+  const seen = new Set<string>();
+  for (let i = 0; i <= words.length - 3; i++) {
+    const gram = words.slice(i, i + 3).join(" ");
+    if (seen.has(gram)) return true;
+    seen.add(gram);
+  }
+  return false;
+}
+
+export function sanitizeDisplay(text: string | undefined | null): string | null {
+  if (!isDisplayReady(text)) return null;
+  const t = (text as string).trim();
+  // Reject figure/table captions — OCR artifact posing as educational content
+  if (FIGURE_LEAD_RE.test(t)) return null;
+  // Reject trailing semicolons or commas — dangling clause
+  if (DANGLING_END_RE.test(t)) return null;
+  // Reject internal repetition
+  if (hasInternalRepetition(t)) return null;
+  return t;
+}
+
+// ---------------------------------------------------------------------------
 // isWeakFragment — stronger sentence-level gate used for compression / mini test
 // ---------------------------------------------------------------------------
 
