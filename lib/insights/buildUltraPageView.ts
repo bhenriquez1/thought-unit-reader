@@ -1417,6 +1417,20 @@ export function buildUltraPageView(
     return trapBlock?.trap ?? undefined;
   })();
 
+  // [WIRE] buildUltraPageView active — fires on every page build.
+  // If you never see this in DevTools, buildUltraPageView is not being called for this page.
+  console.log("[WIRE] buildUltraPageView active", {
+    domain,
+    pageKind: _debug.pageKind,
+    rawBlockCount: blocks.length,
+    finalBlockCount: finalBlocks.length,
+    pageThesis: pageThesis?.slice(0, 80) ?? null,
+    whyItMatters: whyItMatters?.slice(0, 60) ?? null,
+    commonTrap: commonTrap?.slice(0, 60) ?? null,
+    compressionCount: finalCompression.length,
+    miniTestCount: finalMiniTest.length,
+  });
+
   return {
     title: `ULTRA – ${inferPageTitle(page, concepts)}`,
     subtitle: "STR + PDRM + Surgical Comprehension Engine",
