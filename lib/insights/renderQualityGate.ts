@@ -81,6 +81,10 @@ export function isWeakField(text: string | undefined | null): boolean {
 const SUBJECTLESS_OPENER_RE =
   /^(need(s|ed|ing)?\s+to\b|using\s+(?!the\s+(formula|theorem|rule|fact|following|above))|appl(y|ied|ies|ying)\s+(?!the\s+(?:formula|theorem|rule|fact|following))|satisf\w+\s+(?!the\b|a\b)|requir\w+\s+(?!that\b|a\b|the\b)|consider(ing)?\s+(?!that\b|whether\b|how\b)|given\s+that\b|plug(ging)?\s+in\b|substitut\w+\s+into\b|tak(e|ing)\s+the\b)\b/i;
 
+// OCR split-word artifacts: "Se C tion", "Chap ter", "Sec tion 2" — single capital
+// letters surrounded by spaces mid-word, indicating broken character recognition.
+const OCR_SPLIT_WORD_RE = /\b\w{1,4} [A-Z] \w{1,4}\b/;
+
 export function isDisplayReady(text: string | undefined | null): boolean {
   if (!text?.trim()) return false;
   const t = text.trim();
@@ -90,6 +94,8 @@ export function isDisplayReady(text: string | undefined | null): boolean {
   if (t.split(/\s+/).length < 8) return false;
   // Reject subjectless imperative/infinitive openers
   if (SUBJECTLESS_OPENER_RE.test(t)) return false;
+  // Reject OCR split-word garbage ("Se C tion", "Chap ter")
+  if (OCR_SPLIT_WORD_RE.test(t)) return false;
   return true;
 }
 
