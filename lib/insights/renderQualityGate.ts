@@ -138,6 +138,70 @@ export function sanitizeDisplay(text: string | undefined | null): string | null 
 }
 
 // ---------------------------------------------------------------------------
+// renderNoteQualityGate — semantic gate applied per field role before JSX render.
+// Returns the sanitized string to display, or null to suppress.
+//
+// field roles and requirements:
+//   "mechanism" — must have explicit causal language; cannot duplicate pattern
+//   "outcome"   — must have result language; cannot duplicate mechanism
+//   "rule"      — standard sanitize + cross-field dedup
+//   "trap"      — standard sanitize (no extra language requirement)
+//   "pattern"   — standard sanitize + rejects math page-header OCR debris
+//   others      — standard sanitize
+// ---------------------------------------------------------------------------
+
+// Causal language required for mechanism fields — "X causes Y", "X because Y", etc.
+const CAUSAL_LANGUAGE_RE =
+  /\b(causes?|leads?\s+to|because|results?\s+in|allows?|prevents?|explains?\s+why|produces?|triggers?|enables?|drives?|due\s+to|responsible\s+for|makes?\s+\w|generates?|creates?|disrupts?|blocks?|activates?|inhibits?|regulates?|promotes?|converts?|transforms?|increases?|decreases?)\b/i;
+
+// Result language required for outcome fields
+const RESULT_LANGUAGE_RE =
+  /\b(therefore|as\s+a\s+result|this\s+means?|the\s+result|consequently|thus|hence|meaning\s+that|it\s+follows|shows?\s+that|implies?|demonstrates?|indicates?)\b/i;
+
+// Math page-header OCR artifact: "90 Chapter 2 | Limits 2.1 Limits…"
+const MATH_PAGE_HEADER_RE = /^\d{1,3}\s+(Chapter|Section|Appendix|Unit|Module)\b/i;
+
+export type NoteFieldRole = "pattern" | "mechanism" | "outcome" | "trap" | "rule" | "definition" | "example" | "general";
+
+export function renderNoteQualityGate(
+  field: NoteFieldRole,
+  text: string | undefined | null,
+  opts?: {
+    domain?: string | null;
+    otherFields?: (string | undefined | null)[];
+  }
+): string | null {
+  const base = sanitizeDisplay(text);
+  if (!base) return null;
+
+  const { domain, otherFields } = opts ?? {};
+
+  // Reject math page-header OCR debris in any field
+  if (MATH_PAGE_HEADER_RE.test(base)) return null;
+
+  // Cross-field deduplication — reject if ≥60% word overlap with any sibling field
+  if (otherFields?.some((f) => {
+    if (!f) return false;
+    return isSimilarText(base, f.trim(), 0.60);
+  })) return null;
+
+  // Mechanism: must contain explicit causal or explanatory language
+  if (field === "mechanism") {
+    if (!CAUSAL_LANGUAGE_RE.test(base)) return null;
+  }
+
+  // Outcome: must contain result or causal language
+  if (field === "outcome") {
+    if (!RESULT_LANGUAGE_RE.test(base) && !CAUSAL_LANGUAGE_RE.test(base)) return null;
+  }
+
+  // Math domain: extra rejection of page-number headers and chapter markers
+  if (domain === "math" && /^\d{1,3}[\s|]/.test(base)) return null;
+
+  return base;
+}
+
+// ---------------------------------------------------------------------------
 // isWeakFragment — stronger sentence-level gate used for compression / mini test
 // ---------------------------------------------------------------------------
 

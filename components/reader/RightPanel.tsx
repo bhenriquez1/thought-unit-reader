@@ -21,7 +21,7 @@ import type { SRIModel, SRISignal, ReadingDepth } from "@/lib/insights/buildSRIM
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { buildUltraNote, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, saveRecallSet } from "@/lib/recalllab/recallStore";
-import { isWeakBlock, isDisplayReady, sanitizeDisplay, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
+import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
 
 // Validates a synthesis field before it can replace a heuristic field.
 // Returns the trimmed text if it passes, or null if it should be rejected.
@@ -1119,9 +1119,8 @@ function UltraView({
 
   return (
     <div className="space-y-4">
-      {/* ULTRA header + Page Thesis */}
-      <PanelSection title={view.title}>
-        <div className="mb-3 text-[12px] italic text-white/55">{view.subtitle}</div>
+      {/* Page Notes — thesis section */}
+      <PanelSection title="Page Notes">
         {/* One-line summary — dyslexia-safe rapid anchor */}
         {view.oneLineSummary && (
           <div className="mb-2 rounded-lg border border-amber-400/40 bg-amber-400/8 px-4 py-2">
@@ -1139,10 +1138,9 @@ function UltraView({
         )}
       </PanelSection>
 
-      {/* Page Understanding Model — must precede concept blocks.
-          Answers the four questions a reader needs before diving into cards. */}
+      {/* Understand — the four questions a reader needs before concept detail */}
       {(view.whyItMatters || view.commonTrap || visibleBlocks.length > 0) && (
-        <PanelSection title="Page Understanding">
+        <PanelSection title="Understand">
           <div className="space-y-2">
             {/* Q1: Main concept — from first strong visible block; suppressed if it repeats Page Thesis */}
             {!suppressMainConcept && visibleBlocks[0] && sanitizeDisplay(visibleBlocks[0].pattern) && (
@@ -1153,15 +1151,21 @@ function UltraView({
                 <p className="text-[13px] leading-5 text-white/80">{visibleBlocks[0].pattern}</p>
               </div>
             )}
-            {/* Q2: What makes it work — quality-gated + suppressed if duplicate */}
-            {!suppressWhyItMatters && sanitizeDisplay(view.whyItMatters) && (
-              <div className="rounded-lg border border-blue-400/15 bg-[#0a1828] px-3 py-2.5">
-                <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-300/70">
-                  2 · Why It Works
+            {/* Q2: Why it works — requires causal language, cannot duplicate main concept */}
+            {!suppressWhyItMatters && (() => {
+              const v = renderNoteQualityGate("mechanism", view.whyItMatters, {
+                domain,
+                otherFields: [sanitizeDisplay(visibleBlocks[0]?.pattern), sanitizeDisplay(displayCoreIdea)],
+              });
+              return v ? (
+                <div className="rounded-lg border border-blue-400/15 bg-[#0a1828] px-3 py-2.5">
+                  <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-300/70">
+                    2 · Why It Works
+                  </div>
+                  <p className="text-[13px] leading-5 text-white/75">{v}</p>
                 </div>
-                <p className="text-[13px] leading-5 text-white/75">{view.whyItMatters}</p>
-              </div>
-            )}
+              ) : null;
+            })()}
             {/* Q3: Proving example — science domain example field, any domain fallback */}
             {(() => {
               const exBlock = visibleBlocks.find(
@@ -1171,7 +1175,7 @@ function UltraView({
               return ex ? (
                 <div className="rounded-lg border border-emerald-400/15 bg-[#0a1820] px-3 py-2.5">
                   <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-300/70">
-                    3 · Proving Example
+                    3 · What Changes
                   </div>
                   <p className="text-[13px] leading-5 text-white/75">{ex}</p>
                 </div>
@@ -1232,28 +1236,68 @@ function UltraView({
           ))}
         </div>
 
-        {selectedBlock && (
+        {selectedBlock && (() => {
+          // Pre-compute all field values through the semantic quality gate.
+          // Renders use the gate's return value directly so no raw field ever
+          // bypasses the sanitizer. Cross-field dedup prevents the same idea
+          // appearing under multiple labels (definition = mechanism = outcome).
+          const fPattern  = sanitizeDisplay(selectedBlock.pattern);
+          const fGiven    = sanitizeDisplay(selectedBlock.given);
+          const fTrans    = selectedBlock.transformation ? sanitizeDisplay(selectedBlock.transformation) : null;
+          const fTrap     = sanitizeDisplay(selectedBlock.trap);
+          const fDecision = selectedBlock.decision ? sanitizeDisplay(selectedBlock.decision) : null;
+          const fExample  = (selectedBlock as UltraConceptBlock & { example?: string }).example
+            ? sanitizeDisplay((selectedBlock as UltraConceptBlock & { example?: string }).example)
+            : null;
+          const fMemHook  = (selectedBlock as UltraConceptBlock & { memoryHook?: string }).memoryHook
+            ? sanitizeDisplay((selectedBlock as UltraConceptBlock & { memoryHook?: string }).memoryHook)
+            : null;
+
+          // Mechanism field: requires causal language + cannot duplicate pattern
+          const fReason = renderNoteQualityGate("mechanism", selectedBlock.surgicalReason, {
+            domain,
+            otherFields: [fPattern],
+          });
+          // Rule field: cross-field dedup against pattern + mechanism
+          const fRule = renderNoteQualityGate("rule", selectedBlock.rule, {
+            domain,
+            otherFields: [fPattern, fReason],
+          });
+          // Math given: uses mechanism gate with pattern as context
+          const fMathGiven = renderNoteQualityGate("mechanism", selectedBlock.given ?? selectedBlock.surgicalReason, {
+            domain,
+            otherFields: [fPattern],
+          });
+          const fMisc = selectedBlock.misconception
+            ? renderNoteQualityGate("general", selectedBlock.misconception, { domain, otherFields: [fPattern, fTrap] })
+            : null;
+          const fExamHook = selectedBlock.examHook
+            ? renderNoteQualityGate("general", selectedBlock.examHook, { domain, otherFields: [fPattern, fRule] })
+            : null;
+          const fImportance = renderNoteQualityGate("general", selectedBlock.importance, {
+            domain, otherFields: [fPattern, fReason],
+          });
+
+          return (
           <div className="rounded-2xl border border-white/10 bg-[#0a1428] px-4 py-4">
             <div className="mb-3 text-[16px] font-semibold text-white">
               {selectedBlock.ordinal}️⃣ {selectedBlock.title}
             </div>
             <div className="space-y-4">
-              {/* FIELD 1: Concept/Definition/Finding — primary signal, highest visual weight.
-                  Formula/theorem blocks on math pages render in native math notation with
-                  a plain-language interpretation below for immediate cognitive grounding. */}
-              {sanitizeDisplay(selectedBlock.pattern) && (
+              {/* FIELD 1: Concept/Definition/Finding — primary signal, highest visual weight. */}
+              {fPattern && (
                 <div className="rounded-lg border border-white/8 bg-white/3 px-3 py-3">
                   <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.patternColor }}>{labels.pattern}</div>
                   {isMathDomain && (selectedBlock.conceptRole === "formula" || selectedBlock.conceptRole === "theorem")
                     ? (
                       <>
-                        <BlockMath expr={selectedBlock.pattern} sourceSnippet={selectedBlock.pattern} />
-                        {selectedBlock.surgicalReason && sanitizeDisplay(selectedBlock.surgicalReason) && (
-                          <p className="mt-1.5 text-[12px] leading-5 text-white/55 italic">{selectedBlock.surgicalReason}</p>
+                        <BlockMath expr={fPattern} sourceSnippet={fPattern} />
+                        {fReason && (
+                          <p className="mt-1.5 text-[12px] leading-5 text-white/55 italic">{fReason}</p>
                         )}
                       </>
                     )
-                    : <p className="text-[15px] font-medium leading-6 text-white">{selectedBlock.pattern}</p>
+                    : <p className="text-[15px] font-medium leading-6 text-white">{fPattern}</p>
                   }
                 </div>
               )}
@@ -1261,34 +1305,34 @@ function UltraView({
               {/* MATH SCHEMA: Given → Transformation → Result → Decision → Trap → Procedure */}
               {isMathDomain ? (
                 <>
-                  {sanitizeDisplay(selectedBlock.given ?? selectedBlock.surgicalReason) && (
+                  {fMathGiven && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
-                      <p className="text-[14px] leading-6 text-white/90">{selectedBlock.given ?? selectedBlock.surgicalReason}</p>
+                      <p className="text-[14px] leading-6 text-white/90">{fMathGiven}</p>
                     </div>
                   )}
-                  {selectedBlock.transformation && sanitizeDisplay(selectedBlock.transformation) && (
+                  {fTrans && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#60a5fa" }}>⟶ Transformation</div>
-                      <p className="text-[14px] leading-6 text-white/95 font-mono">{selectedBlock.transformation}</p>
+                      <p className="text-[14px] leading-6 text-white/95 font-mono">{fTrans}</p>
                     </div>
                   )}
-                  {sanitizeDisplay(selectedBlock.rule) && (
+                  {fRule && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
-                      <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
+                      <p className="text-[14px] leading-6 text-white/95">{fRule}</p>
                     </div>
                   )}
-                  {selectedBlock.decision && sanitizeDisplay(selectedBlock.decision) && (
+                  {fDecision && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#a78bfa" }}>✓ Decision</div>
-                      <p className="text-[14px] leading-6 text-violet-200/90">{selectedBlock.decision}</p>
+                      <p className="text-[14px] leading-6 text-violet-200/90">{fDecision}</p>
                     </div>
                   )}
-                  {sanitizeDisplay(selectedBlock.trap) && (
+                  {fTrap && (
                     <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2">
                       <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
-                      <p className="text-[13px] leading-5 text-rose-200/90">{selectedBlock.trap}</p>
+                      <p className="text-[13px] leading-5 text-rose-200/90">{fTrap}</p>
                     </div>
                   )}
                   {selectedBlock.procedureSteps && selectedBlock.procedureSteps.length >= 2 && (
@@ -1306,77 +1350,76 @@ function UltraView({
                   )}
                 </>
               ) : isScienceDomain ? (
-                /* SCIENCE SCHEMA: Mechanism → Example → Confusion Point → Outcome → Memory Hook */
+                /* SCIENCE SCHEMA: Mechanism → Example → Trap → Rule → Memory Hook */
                 <>
-                  {sanitizeDisplay(selectedBlock.surgicalReason) && (
+                  {fReason && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
-                      <p className="text-[14px] leading-6 text-white/90">{selectedBlock.surgicalReason}</p>
+                      <p className="text-[14px] leading-6 text-white/90">{fReason}</p>
                     </div>
                   )}
-                  {selectedBlock.example && sanitizeDisplay(selectedBlock.example) && (
+                  {fExample && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#86efac" }}>🔍 Example</div>
-                      <p className="text-[14px] leading-6 text-green-200/90">{selectedBlock.example}</p>
+                      <p className="text-[14px] leading-6 text-green-200/90">{fExample}</p>
                     </div>
                   )}
-                  {sanitizeDisplay(selectedBlock.trap) && (
+                  {fTrap && (
                     <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2">
                       <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
-                      <p className="text-[13px] leading-5 text-rose-200/90">{selectedBlock.trap}</p>
+                      <p className="text-[13px] leading-5 text-rose-200/90">{fTrap}</p>
                     </div>
                   )}
-                  {sanitizeDisplay(selectedBlock.rule) && (
+                  {fRule && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
-                      <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
+                      <p className="text-[14px] leading-6 text-white/95">{fRule}</p>
                     </div>
                   )}
-                  {selectedBlock.memoryHook && sanitizeDisplay(selectedBlock.memoryHook) && (
+                  {fMemHook && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#d8b4fe" }}>💡 Memory Hook</div>
-                      <p className="text-[13px] leading-6 text-purple-200/85">{selectedBlock.memoryHook}</p>
+                      <p className="text-[13px] leading-6 text-purple-200/85">{fMemHook}</p>
                     </div>
                   )}
                 </>
               ) : (
                 /* DEFAULT / CLINICAL SCHEMA: Reason → Trap → Rule */
                 <>
-                  {sanitizeDisplay(selectedBlock.surgicalReason) && (
+                  {fReason && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.reasonColor }}>{labels.reason}</div>
-                      <p className="text-[14px] leading-6 text-white/90">{selectedBlock.surgicalReason}</p>
+                      <p className="text-[14px] leading-6 text-white/90">{fReason}</p>
                     </div>
                   )}
-                  {sanitizeDisplay(selectedBlock.trap) && (
+                  {fTrap && (
                     <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2">
                       <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.trapColor }}>{labels.trap}</div>
-                      <p className="text-[13px] leading-5 text-rose-200/90">{selectedBlock.trap}</p>
+                      <p className="text-[13px] leading-5 text-rose-200/90">{fTrap}</p>
                     </div>
                   )}
-                  {sanitizeDisplay(selectedBlock.rule) && (
+                  {fRule && (
                     <div>
                       <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em]" style={{ color: labels.ruleColor }}>{labels.rule}</div>
-                      <p className="text-[14px] leading-6 text-white/95">{selectedBlock.rule}</p>
+                      <p className="text-[14px] leading-6 text-white/95">{fRule}</p>
                     </div>
                   )}
                 </>
               )}
 
-              {/* Shared optional fields — all domains */}
-              {selectedBlock.misconception && sanitizeDisplay(selectedBlock.misconception) && (
+              {/* Shared optional fields — all domains, rendered from pre-computed gate values */}
+              {fMisc && (
                 <div>
                   <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-rose-400">⚠️ Misconception</div>
-                  <p className="text-[13px] leading-6 text-rose-200/85">{selectedBlock.misconception}</p>
+                  <p className="text-[13px] leading-6 text-rose-200/85">{fMisc}</p>
                 </div>
               )}
-              {selectedBlock.examHook && sanitizeDisplay(selectedBlock.examHook) && (
+              {fExamHook && (
                 <div>
                   <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-violet-400">🎓 Exam Hook</div>
-                  <p className="text-[13px] leading-6 text-violet-200/85">{selectedBlock.examHook}</p>
+                  <p className="text-[13px] leading-6 text-violet-200/85">{fExamHook}</p>
                 </div>
               )}
-              {/* procedureSteps for non-math domains */}
               {!isMathDomain && selectedBlock.procedureSteps && selectedBlock.procedureSteps.length >= 2 && (
                 <div>
                   <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-sky-400">∑ Procedure</div>
@@ -1390,15 +1433,16 @@ function UltraView({
                   </ol>
                 </div>
               )}
-              {sanitizeDisplay(selectedBlock.importance) && (
+              {fImportance && (
                 <div>
                   <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#c7f59b]">🎯 Importance</div>
-                  <p className="text-[14px] leading-6 text-white/90">{selectedBlock.importance}</p>
+                  <p className="text-[14px] leading-6 text-white/90">{fImportance}</p>
                 </div>
               )}
             </div>
           </div>
-        )}
+          );
+        })()}
         </>
         )}
       </PanelSection>
