@@ -25,6 +25,9 @@ import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isC
 
 // Validates a synthesis field before it can replace a heuristic field.
 // Returns the trimmed text if it passes, or null if it should be rejected.
+// NOTE: does NOT call isCompleteThought() — synthesis output is professor-generated text,
+// not textbook extraction. The isWeakFragment verb list rejects legitimate synthesis verbs
+// like "explains", "exhibits", "governs", "determines". Simpler checks are sufficient here.
 function validSynthField(text: string | undefined | null, domain: string | null): string | null {
   if (!text?.trim()) return null;
   const t = text.trim();
@@ -34,7 +37,10 @@ function validSynthField(text: string | undefined | null, domain: string | null)
   // Reject vague-opener artifacts regardless of domain
   if (/^(another\s+(notation|term|way|name|example)|a\s+number\s+of\s+(texts?|books?|authors?)|this\s+(means?|is|refers?)|they\s+(are|were|have)|some\s+(authors?|texts?|books?))\b/i.test(t)) return null;
   if (t.split(/\s+/).length < 6) return null;
-  if (!isCompleteThought(t)) return null;
+  // Must start with a capital letter — synthesis sentences should always be complete
+  if (/^[a-z]/.test(t)) return null;
+  // No dangling punctuation at end
+  if (/[;,]\s*$/.test(t)) return null;
   return t;
 }
 import { useTeachingSynthesis } from "./useTeachingSynthesis";
@@ -1079,6 +1085,15 @@ function UltraView({
     examSignal: string | null;
   } | undefined;
   const hasSynth = !!(synth && (synth.whyItMatters || synth.keyMechanism || synth.commonConfusion || synth.memoryAnchor));
+
+  // [WIRE] _synth state — always-on. Filter DevTools: "[WIRE] _synth"
+  // hasSynth=false + _synth populated → validSynthField rejected all fields (check field values)
+  // _synth=undefined → synthesis not resolved yet OR ultraPageViewWithSynthesis returned early
+  console.log("[WIRE] _synth", {
+    build: "BUILD_WIRING_TEST_v1",
+    hasSynth,
+    _synth: synth ?? "undefined — not yet resolved",
+  });
 
   // Prefer teachingStatement when it's distinct from coreIdea (it's more reliable);
   // if they're near-duplicates, teachingStatement already says the same thing so use it.

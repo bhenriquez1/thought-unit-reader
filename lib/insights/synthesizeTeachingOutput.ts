@@ -38,7 +38,7 @@ export const TeachingSynthesisSchema = z.object({
   examCriticalIdea: z.string(),   // the one thing most likely to be tested or misunderstood
   reasoningFlow: z.string(),      // domain-specific reasoning chain (A → B → C)
   misconceptionAlert: z.string().nullable(), // single biggest misconception across this whole page
-  memoryAnchor: z.string().nullable(),       // mnemonic, analogy, or "think of it like X" (≤15 words)
+  memoryAnchor: z.string().nullish(),        // mnemonic, analogy, or "think of it like X" (≤15 words)
   crossLinkHints: z.array(z.string()).optional(), // 1-2 concept connections (max 8 words each)
   // Per-concept educational breakdown (ordered by educational priority)
   concepts: z.array(TeachingSynthesisConceptSchema),
