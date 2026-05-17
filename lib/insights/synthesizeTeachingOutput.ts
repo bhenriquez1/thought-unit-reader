@@ -38,6 +38,7 @@ export const TeachingSynthesisSchema = z.object({
   examCriticalIdea: z.string(),   // the one thing most likely to be tested or misunderstood
   reasoningFlow: z.string(),      // domain-specific reasoning chain (A → B → C)
   misconceptionAlert: z.string().nullable(), // single biggest misconception across this whole page
+  memoryAnchor: z.string().nullable(),       // mnemonic, analogy, or "think of it like X" (≤15 words)
   crossLinkHints: z.array(z.string()).optional(), // 1-2 concept connections (max 8 words each)
   // Per-concept educational breakdown (ordered by educational priority)
   concepts: z.array(TeachingSynthesisConceptSchema),
@@ -156,7 +157,16 @@ COGNITIVE COMPRESSION MANDATE — apply to EVERY field, without exception:
 - TARGET LENGTH: 10–15 words per field. Never exceed 20 words per sentence.
 - SELF-CHECK before writing each field: "Does this sentence tell the reader WHY it matters, not just WHAT it is?" If no → rewrite.
 - COMPRESS MANY SENTENCES into ONE operator-level insight. Prefer conceptual depth over coverage breadth.
-- NEVER REPEAT the Page Thesis idea in compression or mechanism — each field must introduce NEW information.`;
+- NEVER REPEAT the Page Thesis idea in compression or mechanism — each field must introduce NEW information.
+- memoryAnchor: a single analogy, mnemonic, or "think of it like X" statement ≤15 words. Only write one if a genuinely memorable comparison exists — return null otherwise.
+  GOOD: "Think: higher temperature = faster molecules = more collisions per second."
+  GOOD: "Remember: Na⁺ out, K⁺ in — like a sodium taxi driving potassium home."
+  BAD: "Ions are important to remember for exams."
+
+SENTENCE COMPLETENESS MANDATE — every visible field must be a complete, polished sentence:
+- NEVER output a sentence fragment, dangling clause, or partial thought.
+- Every field must read like a professor explaining the idea to a student preparing for an exam.
+- Self-check: "Could a student understand this page in 10 seconds from these notes?" If no → rewrite.`;
 }
 
 export function buildUserPrompt(
@@ -164,9 +174,13 @@ export function buildUserPrompt(
 ): string {
   const { domain, pageObjective, rankedConcepts } = input;
 
-  const conceptList = rankedConcepts.slice(0, 5).map((c, i) =>
-    `${i + 1}. [${c.role.toUpperCase()}] "${c.title}" — "${c.text.slice(0, 100)}"`
-  ).join("\n");
+  const conceptList = rankedConcepts.slice(0, 5).map((c, i) => {
+    const parts = [`${i + 1}. [${c.role.toUpperCase()}] "${c.title}"`];
+    parts.push(`   TEXT: "${c.text.slice(0, 200)}"`);
+    if (c.mechanism) parts.push(`   WHY: "${c.mechanism.slice(0, 120)}"`);
+    if (c.trap) parts.push(`   TRAP: "${c.trap.slice(0, 80)}"`);
+    return parts.join("\n");
+  }).join("\n\n");
 
   const domainHint: Record<PageDomain, string> = {
     math: "What theorem, definition, or convergence criterion is being taught? State condition and conclusion precisely.",
@@ -194,8 +208,8 @@ ${domainHint[domain] ?? domainHint.general}
 Produce a structured educational interpretation. Order concepts by educational priority (theorem/definition before example/detail). Include ${Math.min(rankedConcepts.length, 4)} concepts.
 
 For each concept: fill principle, mechanism, trap, rule, misconception, examHook.
-For page level: fill coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, crossLinkHints.
-Keep every field ≤ 2 sentences. Write like a professor, not a textbook.`;
+For page level: fill coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, crossLinkHints.
+Keep every field ≤ 2 sentences. Write like a professor preparing students for a high-stakes exam, not a textbook.`;
 }
 
 // ---------------------------------------------------------------------------

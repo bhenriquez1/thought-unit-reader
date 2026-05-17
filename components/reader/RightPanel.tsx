@@ -449,32 +449,26 @@ export function RightPanel({
         })
       : ultraPageView.blocks;
 
-    // Page-level synthesis fields — validate through validSynthField before adding to compression.
-    // Raw synthesis output can contain boilerplate, cross-domain text, or OCR fragments.
-    const synthesisLines: string[] = [];
-    const vMech  = validSynthField(teachingSynthesis.mechanism,          synthDomain);
-    const vRule  = validSynthField(teachingSynthesis.rule,               synthDomain);
-    const vTrap  = validSynthField(teachingSynthesis.trap,               synthDomain);
-    const vApply = validSynthField(teachingSynthesis.application,        synthDomain);
-    const vFlow  = validSynthField(teachingSynthesis.reasoningFlow,      synthDomain);
-    const vAlert = validSynthField(teachingSynthesis.misconceptionAlert,  synthDomain);
-    if (vMech)  synthesisLines.push(`How: ${vMech}`);
-    if (vRule)  synthesisLines.push(`Rule: ${vRule}`);
-    if (vTrap)  synthesisLines.push(`Trap: ${vTrap}`);
-    if (vApply) synthesisLines.push(`Apply: ${vApply}`);
-    if (vFlow)  synthesisLines.push(`Flow: ${vFlow}`);
-    if (vAlert) synthesisLines.push(`⚠️ Confuse: ${vAlert}`);
+    // Page-level synthesis fields — validated and stored for dedicated display sections.
+    // These are surfaced as Study Notes (Why This Matters / Key Mechanism / etc.),
+    // NOT buried in STR Compression bullets.
+    const vMech     = validSynthField(teachingSynthesis.mechanism,         synthDomain);
+    const vTrap     = validSynthField(teachingSynthesis.trap,              synthDomain);
+    const vApply    = validSynthField(teachingSynthesis.application,       synthDomain);
+    const vFlow     = validSynthField(teachingSynthesis.reasoningFlow,     synthDomain);
+    const vAlert    = validSynthField(teachingSynthesis.misconceptionAlert, synthDomain);
+    const vExamIdea = validSynthField(teachingSynthesis.examCriticalIdea,  synthDomain);
+    const vMemory   = validSynthField((teachingSynthesis as any).memoryAnchor, synthDomain);
     console.log("[TRACE:synth-page-fields]", {
       domain: synthDomain,
-      mechanism:  vMech  ? vMech.slice(0, 60)  : `REJECTED: ${teachingSynthesis.mechanism?.slice(0, 60)}`,
-      rule:       vRule  ? vRule.slice(0, 60)  : `REJECTED: ${teachingSynthesis.rule?.slice(0, 60)}`,
-      trap:       vTrap  ? vTrap.slice(0, 60)  : `REJECTED: ${teachingSynthesis.trap?.slice(0, 60)}`,
-      compression_lines: synthesisLines.length,
+      mechanism:   vMech     ? vMech.slice(0, 60)  : `REJECTED: ${teachingSynthesis.mechanism?.slice(0, 60)}`,
+      application: vApply    ? vApply.slice(0, 60) : `REJECTED: ${teachingSynthesis.application?.slice(0, 60)}`,
+      alert:       vAlert    ? vAlert.slice(0, 60) : `REJECTED: ${teachingSynthesis.misconceptionAlert?.slice(0, 60)}`,
+      memoryAnchor: vMemory  ? vMemory.slice(0, 60) : "null",
+      examIdea:    vExamIdea ? vExamIdea.slice(0, 60) : "null",
     });
 
-    const finalCompression = synthesisLines.length
-      ? [...synthesisLines, ...ultraPageView.compression].slice(0, 5)
-      : ultraPageView.compression;
+    const finalCompression = ultraPageView.compression;
 
     // Mini-tests: prefer synthesis questions (domain-specific) over heuristic templates
     const finalMiniTest = teachingSynthesis.miniTests?.length
@@ -489,7 +483,7 @@ export function RightPanel({
       domain: synthDomain,
       rawBlockCount: ultraPageView.blocks.length,
       finalBlockCount: finalBlocks.length,
-      synthesisLinesAdded: synthesisLines.length,
+      synthSections: { whyItMatters: !!vApply, keyMechanism: !!vMech, commonConfusion: !!vAlert, memoryAnchor: !!vMemory },
       coreIdea: finalCoreIdea?.slice(0, 80) ?? null,
       finalBlocks: finalBlocks.map((b, i) => ({
         i,
@@ -501,7 +495,6 @@ export function RightPanel({
         conceptRole: b.conceptRole,
         anchorText: b.anchorText?.slice(0, 60),
       })),
-      synthesisLines: synthesisLines.map((l) => l.slice(0, 80)),
     });
 
     return {
@@ -513,7 +506,16 @@ export function RightPanel({
       crossLinkHints: teachingSynthesis.crossLinkHints?.length
         ? teachingSynthesis.crossLinkHints
         : ultraPageView.crossLinkHints,
-    };
+      // Surfaced synthesis sections — displayed as dedicated Study Notes cards
+      _synth: {
+        whyItMatters:    vApply    ?? null,
+        keyMechanism:    vMech     ?? null,
+        commonConfusion: vAlert ?? vTrap ?? null,
+        memoryAnchor:    vMemory   ?? null,
+        reasoningFlow:   vFlow     ?? null,
+        examSignal:      vExamIdea ?? null,
+      },
+    } as UltraPageView & { _synth: Record<string, string | null> };
   }, [ultraPageView, teachingSynthesis]);
 
   // Re-sort blocks to match badge order (left page physical position order).
@@ -1067,6 +1069,17 @@ function UltraView({
   const effectiveIndex = Math.min(selectedBlockIndex, Math.max(0, visibleBlocks.length - 1));
   const selectedBlock = visibleBlocks[effectiveIndex] ?? null;
 
+  // Surfaced synthesis sections — populated once synthesis resolves
+  const synth = (view as any)._synth as {
+    whyItMatters: string | null;
+    keyMechanism: string | null;
+    commonConfusion: string | null;
+    memoryAnchor: string | null;
+    reasoningFlow: string | null;
+    examSignal: string | null;
+  } | undefined;
+  const hasSynth = !!(synth && (synth.whyItMatters || synth.keyMechanism || synth.commonConfusion || synth.memoryAnchor));
+
   // Prefer teachingStatement when it's distinct from coreIdea (it's more reliable);
   // if they're near-duplicates, teachingStatement already says the same thing so use it.
   const rawCoreIdea = view.pageThesis ?? view.coreIdea;
@@ -1139,10 +1152,59 @@ function UltraView({
       </PanelSection>
 
       {/* Understand — the four questions a reader needs before concept detail */}
-      {(view.whyItMatters || view.commonTrap || visibleBlocks.length > 0) && (
+      {/* Study Notes — 5-section teaching layout (synthesis-driven) */}
+      {hasSynth && synth && (
+        <PanelSection title="Study Notes">
+          <div className="space-y-2">
+            {/* WHY THIS MATTERS — synthesis application */}
+            {synth.whyItMatters && (
+              <div className="rounded-lg border border-blue-400/15 bg-[#0a1828] px-3 py-2.5">
+                <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-300/70">
+                  💡 Why This Matters
+                </div>
+                <p className="text-[13px] leading-5 text-white/85">{synth.whyItMatters}</p>
+              </div>
+            )}
+            {/* KEY MECHANISM — synthesis mechanism with optional logic chain */}
+            {synth.keyMechanism && (
+              <div className="rounded-lg border border-emerald-400/15 bg-[#0a1820] px-3 py-2.5">
+                <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-300/70">
+                  ⚙️ Key Mechanism
+                </div>
+                <p className="text-[13px] leading-5 text-white/85">{synth.keyMechanism}</p>
+                {synth.reasoningFlow?.includes("→") && (
+                  <p className="mt-1.5 text-[11px] font-mono leading-4 text-emerald-300/50">
+                    {synth.reasoningFlow}
+                  </p>
+                )}
+              </div>
+            )}
+            {/* COMMON CONFUSION — synthesis misconceptionAlert */}
+            {synth.commonConfusion && (
+              <div className="rounded-lg border border-red-400/15 bg-[#1a0a0a] px-3 py-2.5">
+                <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-red-300/70">
+                  ⚠️ Common Confusion
+                </div>
+                <p className="text-[13px] leading-5 text-white/85">{synth.commonConfusion}</p>
+              </div>
+            )}
+            {/* QUICK MEMORY — synthesis memoryAnchor */}
+            {synth.memoryAnchor && (
+              <div className="rounded-lg border border-purple-400/15 bg-[#150b25] px-3 py-2.5">
+                <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-purple-300/70">
+                  🧠 Quick Memory
+                </div>
+                <p className="text-[13px] leading-5 text-white/85 italic">{synth.memoryAnchor}</p>
+              </div>
+            )}
+          </div>
+        </PanelSection>
+      )}
+
+      {/* Fallback: heuristic Understand rows — shown while synthesis loads or if synth has no content */}
+      {!hasSynth && (view.whyItMatters || view.commonTrap || visibleBlocks.length > 0) && (
         <PanelSection title="Understand">
           <div className="space-y-2">
-            {/* Q1: Main concept — from first strong visible block; suppressed if it repeats Page Thesis */}
             {!suppressMainConcept && visibleBlocks[0] && sanitizeDisplay(visibleBlocks[0].pattern) && (
               <div className="rounded-lg border border-white/8 bg-white/2 px-3 py-2.5">
                 <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-white/40">
@@ -1151,7 +1213,6 @@ function UltraView({
                 <p className="text-[13px] leading-5 text-white/80">{visibleBlocks[0].pattern}</p>
               </div>
             )}
-            {/* Q2: Why it works — requires causal language, cannot duplicate main concept */}
             {!suppressWhyItMatters && (() => {
               const v = renderNoteQualityGate("mechanism", view.whyItMatters, {
                 domain,
@@ -1166,7 +1227,6 @@ function UltraView({
                 </div>
               ) : null;
             })()}
-            {/* Q3: Proving example — science domain example field, any domain fallback */}
             {(() => {
               const exBlock = visibleBlocks.find(
                 (b) => !!sanitizeDisplay((b as UltraConceptBlock & { example?: string }).example)
@@ -1181,7 +1241,6 @@ function UltraView({
                 </div>
               ) : null;
             })()}
-            {/* Q4: Common trap — quality-gated + suppressed if duplicate */}
             {!suppressCommonTrap && sanitizeDisplay(view.commonTrap) && (
               <div className="rounded-lg border border-red-400/15 bg-[#1a0a0a] px-3 py-2.5">
                 <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-red-300/70">
@@ -1414,10 +1473,10 @@ function UltraView({
                   <p className="text-[13px] leading-6 text-rose-200/85">{fMisc}</p>
                 </div>
               )}
-              {fExamHook && (
+              {(fExamHook ?? synth?.examSignal) && (
                 <div>
-                  <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-violet-400">🎓 Exam Hook</div>
-                  <p className="text-[13px] leading-6 text-violet-200/85">{fExamHook}</p>
+                  <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-violet-400">🎓 Exam Signal</div>
+                  <p className="text-[13px] leading-6 text-violet-200/85">{fExamHook ?? synth?.examSignal}</p>
                 </div>
               )}
               {!isMathDomain && selectedBlock.procedureSteps && selectedBlock.procedureSteps.length >= 2 && (

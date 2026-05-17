@@ -51,9 +51,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const response = await openai.responses.parse({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       temperature: 0.3,
-      max_output_tokens: 1200,
+      max_output_tokens: 1800,
       text: { format: zodTextFormat(TeachingSynthesisSchema, "teaching_synthesis") },
       input: [
         { role: "system", content: buildSystemPrompt(safeDomain) },
