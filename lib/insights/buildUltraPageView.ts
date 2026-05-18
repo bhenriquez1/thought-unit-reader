@@ -1387,11 +1387,25 @@ export function buildUltraPageView(
     : dedupedBlocks;
 
   // Page Thesis: operator-rewritten deepest understanding target.
-  // Priority: pageObjective.teachingStatement (highest-confidence canonical teaching rule)
-  // → page.pageSummary → finalCoreIdea.
-  // teachingStatement is already a validated declarative sentence from the source text
-  // and produces a much stronger thesis than compressing a summary.
-  const rawThesisSrc = pageObjective?.teachingStatement || page.pageSummary || finalCoreIdea;
+  // Priority: pageObjective.teachingStatement → page.pageSummary → finalCoreIdea.
+  // Any candidate must survive the figure/caption/heading rejection gate — a thesis
+  // must be a complete sentence (has a verb), not a label, heading, or OCR fragment.
+  const THESIS_CAPTION_RE = /^(figure|fig\.|table|tab\.|box|plate|chart)\s*[\d.]/i;
+  const THESIS_LABEL_RE = /^(section|chapter|appendix|part|unit)\s+[\d.]+/i;
+  function isThesisCandidate(text: string | undefined): boolean {
+    if (!text?.trim()) return false;
+    const t = text.trim();
+    if (THESIS_CAPTION_RE.test(t) || THESIS_LABEL_RE.test(t)) return false;
+    if (t.split(/\s+/).length < 5) return false;             // too short to be a sentence
+    if (!/[a-z]/i.test(t)) return false;                      // all caps / symbols only
+    // Must contain a verb signal — a bare noun chunk is not a thesis
+    if (!/\b(is|are|was|were|can|does|do|have|has|will|would|should|must|may|might|cause|causes|enables?|allows?|results?|produces?|determines?|explains?|reflects?|represents?|demonstrates?|shows?|indicates?|suggests?|affects?|increases?|decreases?|inhibits?|activates?|requires?|forms?|creates?)\b/i.test(t)) return false;
+    return true;
+  }
+  const rawThesisSrc =
+    (isThesisCandidate(pageObjective?.teachingStatement) ? pageObjective!.teachingStatement : undefined) ||
+    (isThesisCandidate(page.pageSummary) ? page.pageSummary : undefined) ||
+    finalCoreIdea;
   const pageThesis = (() => {
     const compressed = compressToNote(rawThesisSrc, "signal");
     const stabilized = stabilizeOutput(compressed || rawThesisSrc, domain);
