@@ -63,6 +63,13 @@ interface RightPanelProps {
 // Constants
 // ---------------------------------------------------------------------------
 
+// When true: only the synthesis-driven UltraView path renders.
+// All legacy fallbacks (ConceptBlocks, Narrative, V3, V2Map, V2Op, Guided) are suppressed.
+// Pages that can't build an UltraView show a "study synthesis unavailable" message.
+// Heuristic "Understand" section is replaced by a synthesis loading state.
+// Set NEXT_PUBLIC_DEBUG_READER=true to reveal the wiring card in the header.
+const FORCE_SYNTHESIS_ONLY = true;
+
 const ROLE: GuidedRole = "operator";
 const DEPTH: GuidedDepth = "standard";
 const MODE: GuidedMode = "insight";
@@ -107,9 +114,9 @@ function derivePageTeachingPurpose(
 // Each phase reveals one more skeleton card, communicating that notes are being built live.
 function PageLoadingSkeleton({ phase }: { phase: number }) {
   const hints = [
-    "Analyzing domain signals…",
-    "Ranking concept candidates…",
-    "Compressing to insight…",
+    "Analyzing domain and page type…",
+    "Extracting high-yield concepts…",
+    "Building study synthesis…",
   ];
   return (
     <div className="space-y-3">
@@ -176,12 +183,12 @@ function PageLoadingSkeleton({ phase }: { phase: number }) {
         </div>
       )}
 
-      {/* Skeleton: Compression rules */}
+      {/* Skeleton: Mini Test */}
       {phase >= 3 && (
         <div className="rounded-xl border border-white/8 bg-white/2 px-4 py-4 animate-pulse">
-          <div className="mb-2.5 h-[9px] w-24 rounded bg-white/10" />
+          <div className="mb-2.5 h-[9px] w-20 rounded bg-white/10" />
           <div className="space-y-2">
-            {[92, 80, 65].map((w, i) => (
+            {[88, 72].map((w, i) => (
               <div key={i} className="flex items-center gap-2">
                 <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-white/12" />
                 <div className="h-2.5 rounded bg-white/6" style={{ width: `${w}%` }} />
@@ -614,19 +621,19 @@ export function RightPanel({
     ? rawBottomLine
     : null;
 
-  // ULTRA = primary view; concept blocks = secondary; narrative/story = fallbacks
-  // All views gated on !pageIsNonInstructional so no fake output on suppressed pages
+  // ULTRA = the only render path when FORCE_SYNTHESIS_ONLY=true.
+  // Legacy fallbacks are kept in code but suppressed — they bypass all quality gates.
   const showUltraView     = isCurrentPageModel && !pageIsNonInstructional && Boolean(ultraPageView);
-  const showConceptBlocks = isCurrentPageModel && !pageIsNonInstructional && !showUltraView && Boolean(readerPageView);
-  const showNarrativePageView = isCurrentPageModel && !pageIsNonInstructional && !showUltraView && !showConceptBlocks && Boolean(
+  const showConceptBlocks = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && !showUltraView && Boolean(readerPageView);
+  const showNarrativePageView = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && !showUltraView && !showConceptBlocks && Boolean(
     narrativePageView?.narrative.sections.length
   );
   const gate = !showUltraView && !showConceptBlocks;
-  const showNarrativeView  = isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && narrativeBlocks.length > 0;
-  const showV3View         = isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && v3Notes.length > 0;
-  const showV2Map          = isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && !showV3View && v2Notes.length > 0;
-  const showV2Operator     = isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && Boolean(storyV2?.signalBlock);
-  const showGuidedView     = isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && !showV2Operator && Boolean(guidedView);
+  const showNarrativeView  = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && narrativeBlocks.length > 0;
+  const showV3View         = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && v3Notes.length > 0;
+  const showV2Map          = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && !showV3View && v2Notes.length > 0;
+  const showV2Operator     = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && Boolean(storyV2?.signalBlock);
+  const showGuidedView     = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && !showV2Operator && Boolean(guidedView);
 
   // Header status label — shows phase during loading, page teaching purpose when ready
   const headerStatus = intelligence.status === "loading"
@@ -665,41 +672,39 @@ export function RightPanel({
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col overflow-y-auto border-l border-white/10 bg-[rgb(11,18,34)] break-words whitespace-normal">
-      {/* Header — BUILD_WIRING_TEST_v1 marker is always visible.
-          If this text does not appear in the deployed app, the build is stale. */}
+      {/* Header */}
       <div className="border-b border-white/10 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">Page Notes</div>
-          <div className="text-[9px] font-mono text-white/20 select-none">BUILD_WIRING_TEST_v1</div>
-        </div>
+        <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">Page Notes</div>
         <div className="mt-0.5 text-[11px] text-slate-500">{headerStatus}</div>
       </div>
 
       <div className="flex flex-col gap-4 p-4 text-white">
-        {/* ── WIRING CARD — always visible in all environments until removed ── */}
-        <div style={{
-          fontSize: 9,
-          fontFamily: "monospace",
-          background: "rgba(0,255,100,0.04)",
-          border: "1px solid rgba(0,255,100,0.12)",
-          borderRadius: 6,
-          padding: "5px 8px",
-          color: "#6ee7b7",
-          lineHeight: 1.7,
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-all",
-          opacity: 0.8,
-        }}>
-          {[
-            `BUILD_WIRING_TEST_v1`,
-            `view: ${showUltraView ? "ULTRA ✓" : showConceptBlocks ? "ConceptBlocks (fallback)" : showNarrativePageView ? "NarrativePage (fallback)" : showNarrativeView ? "Narrative (fallback)" : showV3View ? "V3 (fallback)" : showV2Map ? "V2Map (fallback)" : showV2Operator ? "V2Op (fallback)" : showGuidedView ? "Guided (fallback)" : "none"}`,
-            `status: ${intelligence.status} | page: ${isCurrentPageModel ? "✓ current" : "✗ mismatch"}`,
-            `domain: ${displayView?._debug?.domain ?? "—"} | kind: ${displayView?._debug?.pageKind ?? "—"}`,
-            `blocks: ${displayView?.blocks.length ?? 0} raw → ${displayView ? displayView.blocks.filter((b) => !isWeakBlock(b, displayView._debug?.domain)).length : 0} visible`,
-            `compression: ${displayView?.compression.length ?? 0} | miniTest: ${displayView?.miniTest.length ?? 0}`,
-            `thesis: ${(displayView?.coreIdea ?? "—").slice(0, 50)}`,
-          ].join("\n")}
-        </div>
+        {/* ── WIRING CARD — dev only, never shown in production studying ── */}
+        {process.env.NEXT_PUBLIC_DEBUG_READER === "true" && (
+          <div style={{
+            fontSize: 9,
+            fontFamily: "monospace",
+            background: "rgba(0,255,100,0.04)",
+            border: "1px solid rgba(0,255,100,0.12)",
+            borderRadius: 6,
+            padding: "5px 8px",
+            color: "#6ee7b7",
+            lineHeight: 1.7,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-all",
+            opacity: 0.8,
+          }}>
+            {[
+              `BUILD_WIRING_TEST_v1`,
+              `view: ${showUltraView ? "ULTRA ✓" : showConceptBlocks ? "ConceptBlocks (fallback)" : showNarrativePageView ? "NarrativePage (fallback)" : showNarrativeView ? "Narrative (fallback)" : showV3View ? "V3 (fallback)" : showV2Map ? "V2Map (fallback)" : showV2Operator ? "V2Op (fallback)" : showGuidedView ? "Guided (fallback)" : "none"}`,
+              `status: ${intelligence.status} | page: ${isCurrentPageModel ? "✓ current" : "✗ mismatch"}`,
+              `domain: ${displayView?._debug?.domain ?? "—"} | kind: ${displayView?._debug?.pageKind ?? "—"}`,
+              `blocks: ${displayView?.blocks.length ?? 0} raw → ${displayView ? displayView.blocks.filter((b) => !isWeakBlock(b, displayView._debug?.domain)).length : 0} visible`,
+              `compression: ${displayView?.compression.length ?? 0} | miniTest: ${displayView?.miniTest.length ?? 0}`,
+              `thesis: ${(displayView?.coreIdea ?? "—").slice(0, 50)}`,
+            ].join("\n")}
+          </div>
+        )}
 
         {/* ── NON-INSTRUCTIONAL PAGE STATE ────────────────────────── */}
         {pageIsNonInstructional && (
@@ -748,6 +753,14 @@ export function RightPanel({
               />
             </div>
           </>
+        )}
+
+        {/* ── SYNTHESIS-ONLY: when ultra view unavailable, show clean unavailable state ── */}
+        {FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && !showUltraView && intelligence.status === "ready" && (
+          <div className="rounded-2xl border border-white/8 bg-[#071224] px-4 py-8 text-center">
+            <p className="text-[13px] text-white/35 italic">Study synthesis unavailable for this page.</p>
+            <p className="mt-1 text-[11px] text-white/20">Try navigating to a content-rich page.</p>
+          </div>
         )}
 
         {/* ── SECONDARY: Concept Blocks View (ULTRA unavailable) ────────── */}
@@ -1216,54 +1229,15 @@ function UltraView({
         </PanelSection>
       )}
 
-      {/* Fallback: heuristic Understand rows — shown while synthesis loads or if synth has no content */}
-      {!hasSynth && (view.whyItMatters || view.commonTrap || visibleBlocks.length > 0) && (
-        <PanelSection title="Understand">
-          <div className="space-y-2">
-            {!suppressMainConcept && visibleBlocks[0] && sanitizeDisplay(visibleBlocks[0].pattern) && (
-              <div className="rounded-lg border border-white/8 bg-white/2 px-3 py-2.5">
-                <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-white/40">
-                  1 · Main Concept
-                </div>
-                <p className="text-[13px] leading-5 text-white/80">{visibleBlocks[0].pattern}</p>
-              </div>
-            )}
-            {!suppressWhyItMatters && (() => {
-              const v = renderNoteQualityGate("mechanism", view.whyItMatters, {
-                domain,
-                otherFields: [sanitizeDisplay(visibleBlocks[0]?.pattern), sanitizeDisplay(displayCoreIdea)],
-              });
-              return v ? (
-                <div className="rounded-lg border border-blue-400/15 bg-[#0a1828] px-3 py-2.5">
-                  <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-300/70">
-                    2 · Why It Works
-                  </div>
-                  <p className="text-[13px] leading-5 text-white/75">{v}</p>
-                </div>
-              ) : null;
-            })()}
-            {(() => {
-              const exBlock = visibleBlocks.find(
-                (b) => !!sanitizeDisplay((b as UltraConceptBlock & { example?: string }).example)
-              );
-              const ex = sanitizeDisplay((exBlock as UltraConceptBlock & { example?: string })?.example);
-              return ex ? (
-                <div className="rounded-lg border border-emerald-400/15 bg-[#0a1820] px-3 py-2.5">
-                  <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-300/70">
-                    3 · What Changes
-                  </div>
-                  <p className="text-[13px] leading-5 text-white/75">{ex}</p>
-                </div>
-              ) : null;
-            })()}
-            {!suppressCommonTrap && sanitizeDisplay(view.commonTrap) && (
-              <div className="rounded-lg border border-red-400/15 bg-[#1a0a0a] px-3 py-2.5">
-                <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-red-300/70">
-                  4 · Avoid This Mistake
-                </div>
-                <p className="text-[13px] leading-5 text-white/70">{view.commonTrap}</p>
-              </div>
-            )}
+      {/* Synthesis loading state — replaces heuristic "Understand" while LLM resolves */}
+      {!hasSynth && (
+        <PanelSection title="Study Notes">
+          <div className="flex flex-col items-center gap-2 py-4">
+            <div className="h-1 w-32 overflow-hidden rounded-full bg-white/8">
+              <div className="h-full w-1/2 animate-pulse rounded-full bg-emerald-400/30" />
+            </div>
+            <p className="text-[12px] text-white/35 italic">Generating study notes…</p>
+            <p className="text-[10px] text-white/20">Analysis takes a few seconds</p>
           </div>
         </PanelSection>
       )}
@@ -1530,19 +1504,8 @@ function UltraView({
         </PanelSection>
       )}
 
-      {/* STR Compression */}
-      {view.compression.length > 0 && (
-        <PanelSection title="STR Compression">
-          <ul className="space-y-2">
-            {view.compression.map((line, i) => <BulletLine key={i}>{line}</BulletLine>)}
-          </ul>
-        </PanelSection>
-      )}
-
-      {/* SRI Reading Map */}
-      {view.sriModel && view.sriModel.signals.length > 0 && (
-        <ReadingMap model={view.sriModel} domain={view.domain ?? view._debug?.domain} />
-      )}
+      {/* STR Compression — hidden in synthesis-only mode; synthesis fields now appear in Study Notes */}
+      {/* Reading Map — hidden; SRI signals are internal metadata, not student-facing study notes */}
 
       {/* Cross-Link Hints */}
       {view.crossLinkHints && view.crossLinkHints.length > 0 && (
