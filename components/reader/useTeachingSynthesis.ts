@@ -12,6 +12,10 @@ interface UseTeachingSynthesisArgs {
   pageTruthKey: string;
   /** teachingStatement from UltraPageView — top-down heading+canonical, NOT the heuristic coreIdea */
   pageObjective?: string;
+  /** Professor's one-sentence governing idea — from UltraPageView.pageThesis */
+  pageThesis?: string;
+  /** AI-generated page summary if available — richest context for synthesis */
+  pageSummary?: string;
   domain: PageDomain | null;
   blocks: UltraConceptBlock[];
   enabled: boolean;
@@ -20,6 +24,8 @@ interface UseTeachingSynthesisArgs {
 export function useTeachingSynthesis({
   pageTruthKey,
   pageObjective,
+  pageThesis,
+  pageSummary,
   domain,
   blocks,
   enabled,
@@ -35,7 +41,7 @@ export function useTeachingSynthesis({
     if (!enabled || !usableBlocks.length) return;
 
     const safeDomain = domain ?? "general";
-    const input = buildSynthesisInput(usableBlocks, safeDomain, pageObjective);
+    const input = buildSynthesisInput(usableBlocks, safeDomain, pageObjective, pageThesis, pageSummary);
 
     const controller = new AbortController();
     abortRef.current = controller;

@@ -393,6 +393,8 @@ export function RightPanel({
   const teachingSynthesis = useTeachingSynthesis({
     pageTruthKey,
     pageObjective: ultraPageView?.teachingStatement,
+    pageThesis:    ultraPageView?.pageThesis ?? undefined,
+    pageSummary:   pageModel?.pageSummary ?? undefined,
     domain: (ultraPageView?._debug?.domain) ?? null,
     blocks: ultraPageView?.blocks ?? [],
     enabled: isCurrentPageModel && !!ultraPageView,
