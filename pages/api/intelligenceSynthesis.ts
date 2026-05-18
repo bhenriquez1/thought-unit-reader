@@ -33,7 +33,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const body = (req.body ?? {}) as Partial<SynthesisInput>;
 
-  const { domain, pageObjective, rankedConcepts } = body;
+  const { domain, pageObjective, pageThesis, pageSummary, rankedConcepts } = body;
 
   if (!Array.isArray(rankedConcepts) || rankedConcepts.length === 0) {
     return res.status(400).json({ error: "Missing or empty 'rankedConcepts'." });
@@ -46,6 +46,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const safeInput: SynthesisInput = {
     domain: safeDomain,
     pageObjective: typeof pageObjective === "string" ? pageObjective : undefined,
+    pageThesis:    typeof pageThesis    === "string" ? pageThesis    : undefined,
+    pageSummary:   typeof pageSummary   === "string" ? pageSummary   : undefined,
     rankedConcepts: rankedConcepts.slice(0, 6),
   };
 
