@@ -425,6 +425,8 @@ export default function ThoughtUnitReader() {
   const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
   const [guidedPath, setGuidedPath] = useState<RenderGuidedReadingPathResult | null>(null);
   const [roleLabelByConceptId, setRoleLabelByConceptId] = useState<Map<string, string>>(new Map());
+  // AI-selected highlight anchors from synthesis — cleared immediately on page change
+  const [synthAiHighlights, setSynthAiHighlights] = useState<string[]>([]);
 
   /* =========================================================================
      🔹 Unified Annotation Store (P0.1) - Shared between Surgeon View + NoteLab
@@ -806,6 +808,7 @@ export default function ThoughtUnitReader() {
     if (activeShellTab !== "reader") return;
     setFocusedEvidenceId(null);
     setFocusSnippet(null);
+    setSynthAiHighlights([]);  // clear AI anchors immediately on page change
     const topSnippet = currentSignals.paragraphSignals?.[0]?.text;
     if (!topSnippet) return;
     const timer = window.setTimeout(() => setFocusSnippet(topSnippet), 0);
@@ -2689,6 +2692,7 @@ export default function ThoughtUnitReader() {
                   focusSnippet={focusSnippet}
                   highlightTargets={highlightTargets}
                   highlightNeighborhoods={highlightNeighborhoods}
+                  aiHighlightTexts={synthAiHighlights}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
                   onReadingPath={setGuidedPath}
@@ -2738,6 +2742,7 @@ export default function ThoughtUnitReader() {
                   setFocusedEvidenceId(evidenceId || resolveEvidenceId(snippet) || null);
                   window.setTimeout(() => setFocusSnippet(snippet), 0);
                 }}
+                onSynthHighlightsReady={(anchors) => setSynthAiHighlights(anchors.map(a => a.text))}
               />
             </div>
 

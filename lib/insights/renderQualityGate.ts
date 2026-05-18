@@ -328,6 +328,9 @@ export function isWeakBlock(
 ): boolean {
   if (isWeakTitle(block.title)) return true;
   if (countStrongCoreFields(block, domain) < 3) return true;
+  // Pattern must be sentence-length — noun phrases like "Chemical Elements" are not teaching notes
+  const patternWords = block.pattern?.trim().split(/\s+/).length ?? 0;
+  if (patternWords < 7) return true;
   return false;
 }
 
