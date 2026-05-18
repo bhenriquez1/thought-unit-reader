@@ -390,7 +390,11 @@ export function RightPanel({
   // blocks are ready. Returns null until complete; triggers re-render when done.
   // Use teachingStatement (top-down heading+canonical) NOT coreIdea (heuristic sentence).
   // coreIdea can be a figure caption; teachingStatement comes from normalization confidence scores.
-  const teachingSynthesis = useTeachingSynthesis({
+  const {
+    synthesis: teachingSynthesis,
+    status: synthStatus,
+    errorMessage: synthErrorMsg,
+  } = useTeachingSynthesis({
     pageTruthKey,
     pageObjective: ultraPageView?.teachingStatement,
     pageThesis:    ultraPageView?.pageThesis ?? undefined,
@@ -738,6 +742,8 @@ export function RightPanel({
                 selectedBlockIndex={selectedBlockIndex}
                 onSelectBlock={setSelectedBlockIndex}
                 onAnchorClick={(text) => onEvidenceClick?.(text, undefined)}
+                synthStatus={synthStatus}
+                synthErrorMsg={synthErrorMsg}
               />
             </UltraViewErrorBoundary>
             <div style={{ display: "flex", gap: 8 }}>
@@ -1110,11 +1116,15 @@ function UltraView({
   selectedBlockIndex,
   onSelectBlock,
   onAnchorClick,
+  synthStatus,
+  synthErrorMsg,
 }: {
   view: UltraPageView;
   selectedBlockIndex: number;
   onSelectBlock: (i: number) => void;
   onAnchorClick: (text: string) => void;
+  synthStatus: import("./useTeachingSynthesis").SynthesisStatus;
+  synthErrorMsg: string | null;
 }) {
   const domain = view.domain ?? view._debug?.domain;
   const labels = domainFieldLabels(domain);
@@ -1281,16 +1291,29 @@ function UltraView({
         </PanelSection>
       )}
 
-      {/* Synthesis loading state — replaces heuristic "Understand" while LLM resolves */}
+      {/* Synthesis loading / error state — shown when hasSynth is false */}
       {!hasSynth && (
         <PanelSection title="Study Notes">
-          <div className="flex flex-col items-center gap-2 py-4">
-            <div className="h-1 w-32 overflow-hidden rounded-full bg-white/8">
-              <div className="h-full w-1/2 animate-pulse rounded-full bg-emerald-400/30" />
+          {synthStatus === "error" ? (
+            <div className="rounded-lg border border-rose-400/20 bg-[#1a0808] px-3 py-3 space-y-1">
+              <p className="text-[12px] font-medium text-rose-300/70">Study synthesis failed — check console/server logs</p>
+              <p className="text-[11px] font-mono text-white/30">{synthErrorMsg ?? "Unknown error"}</p>
+              <p className="text-[10px] text-white/20 italic">Filter DevTools: [SYNTH:error] · Server: [SYNTH:api:]</p>
             </div>
-            <p className="text-[12px] text-white/35 italic">Generating study notes…</p>
-            <p className="text-[10px] text-white/20">Analysis takes a few seconds</p>
-          </div>
+          ) : synthStatus === "success" ? (
+            <div className="rounded-lg border border-amber-400/15 bg-[#1a1208] px-3 py-3 space-y-1">
+              <p className="text-[12px] font-medium text-amber-300/60">Synthesis completed — all fields were filtered</p>
+              <p className="text-[10px] text-white/25 italic">Check [TRACE:synth-page-fields] in console for REJECTED field values.</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2 py-4">
+              <div className="h-1 w-32 overflow-hidden rounded-full bg-white/8">
+                <div className="h-full w-1/2 animate-pulse rounded-full bg-emerald-400/30" />
+              </div>
+              <p className="text-[12px] text-white/35 italic">Generating study notes…</p>
+              <p className="text-[10px] text-white/20">Analysis takes a few seconds</p>
+            </div>
+          )}
         </PanelSection>
       )}
 
@@ -1584,8 +1607,8 @@ function UltraView({
           {[
             `── SYNTHESIS PIPELINE STATE ──`,
             `domain: ${domain ?? "—"} | kind: ${view._debug?.pageKind ?? "—"}`,
-            `_synth hydrated: ${synth !== undefined ? "YES" : "NO — hook returned null"}`,
-            `hasSynth: ${hasSynth} (Study Notes ${hasSynth ? "rendering" : "loading state"})`,
+            `synthStatus: ${synthStatus} | _synth hydrated: ${synth !== undefined ? "YES" : "NO"}`,
+            `hasSynth: ${hasSynth} | ${synthErrorMsg ? "ERR: " + synthErrorMsg.slice(0, 60) : "no error"}`,
             `whyItMatters:    ${synth?.whyItMatters    ? "✓ " + synth.whyItMatters.slice(0, 55)    : "— null"}`,
             `keyMechanism:    ${synth?.keyMechanism    ? "✓ " + synth.keyMechanism.slice(0, 55)    : "— null"}`,
             `commonConfusion: ${synth?.commonConfusion ? "✓ " + synth.commonConfusion.slice(0, 55) : "— null"}`,

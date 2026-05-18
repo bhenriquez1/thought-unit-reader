@@ -51,7 +51,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     rankedConcepts: rankedConcepts.slice(0, 6),
   };
 
+  console.log("[SYNTH:api:request]", {
+    domain: safeDomain,
+    hasPageThesis:    !!safeInput.pageThesis,
+    hasPageSummary:   !!safeInput.pageSummary,
+    hasPageObjective: !!safeInput.pageObjective,
+    pageThesisSnip:   safeInput.pageThesis?.slice(0, 80) ?? null,
+    pageSummarySnip:  safeInput.pageSummary?.slice(0, 80) ?? null,
+    rankedConceptCount: safeInput.rankedConcepts.length,
+    concepts: safeInput.rankedConcepts.map((c, i) => ({ i, role: c.role, title: c.title?.slice(0, 40) })),
+  });
+
   try {
+    console.log("[SYNTH:api:openai-start]", { model: "gpt-4o", maxTokens: 1800 });
     const response = await openai.responses.parse({
       model: "gpt-4o",
       temperature: 0.3,
@@ -70,6 +82,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const validated = TeachingSynthesisSchema.parse(synthesis);
+
+    console.log("[SYNTH:api:success]", {
+      coreIdea:           validated.coreIdea?.slice(0, 80) ?? null,
+      mechanism:          validated.mechanism?.slice(0, 80) ?? null,
+      application:        validated.application?.slice(0, 80) ?? null,
+      misconceptionAlert: validated.misconceptionAlert?.slice(0, 80) ?? null,
+      memoryAnchor:       (validated as any).memoryAnchor?.slice(0, 80) ?? null,
+      conceptCount:       validated.concepts?.length ?? 0,
+    });
 
     return res.status(200).json(validated);
   } catch (err: unknown) {
