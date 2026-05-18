@@ -72,6 +72,8 @@ interface RightPanelProps {
   onRoleLabelMap?: (map: Map<string, string>) => void;
   onNoteSaved?: () => void;
   onStudySetGenerated?: (setId: string) => void;
+  /** Called when synthesis resolves with AI-selected highlight anchors for the left panel */
+  onSynthHighlightsReady?: (anchors: import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[]) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -303,6 +305,7 @@ export function RightPanel({
   onRoleLabelMap,
   onNoteSaved,
   onStudySetGenerated,
+  onSynthHighlightsReady,
 }: RightPanelProps) {
   const pageTruthKey = intelligence.pageTruthKey;
   const pageModel = intelligence.pageModel;
@@ -542,12 +545,13 @@ export function RightPanel({
         : ultraPageView.crossLinkHints,
       // Surfaced synthesis sections — displayed as dedicated Study Notes cards
       _synth: {
-        whyItMatters:    vApply    ?? null,
-        keyMechanism:    vMech     ?? null,
-        commonConfusion: vAlert ?? vTrap ?? null,
-        memoryAnchor:    vMemory   ?? null,
-        reasoningFlow:   vFlow     ?? null,
-        examSignal:      vExamIdea ?? null,
+        whyItMatters:     vApply    ?? null,
+        keyMechanism:     vMech     ?? null,
+        commonConfusion:  vAlert ?? vTrap ?? null,
+        memoryAnchor:     vMemory   ?? null,
+        reasoningFlow:    vFlow     ?? null,
+        examSignal:       vExamIdea ?? null,
+        highlightAnchors: teachingSynthesis.highlightAnchors ?? null,
       },
     } as UltraPageView & { _synth: Record<string, string | null> };
   }, [ultraPageView, teachingSynthesis]);
@@ -582,6 +586,15 @@ export function RightPanel({
   useEffect(() => {
     onRoleLabelMap?.(roleLabelMap);
   }, [roleLabelMap, onRoleLabelMap]);
+
+  // Notify parent with AI-selected highlight anchors when synthesis resolves.
+  // Uses pageTruthKey as a dependency so switching pages clears the anchors immediately.
+  useEffect(() => {
+    const anchors = (ultraPageViewWithSynthesis as any)?._synth?.highlightAnchors;
+    if (anchors?.length && onSynthHighlightsReady) {
+      onSynthHighlightsReady(anchors);
+    }
+  }, [ultraPageViewWithSynthesis, pageTruthKey, onSynthHighlightsReady]);
 
   // Legacy concept blocks — kept for ConceptBlocksView fallback
   const readerPageView = useMemo((): ReaderPageView | null => {

@@ -13,6 +13,14 @@ import type { UltraConceptBlock } from "./buildUltraPageView";
 // Zod schemas — validated at both client and server
 // ---------------------------------------------------------------------------
 
+export const SynthHighlightAnchorSchema = z.object({
+  text: z.string(),         // exact source text span — must be copied verbatim, ≤ 30 words
+  anchorType: z.enum(["thesis", "definition", "mechanism", "formula", "clinicalTrap", "examSignal", "application"]),
+  reason: z.string(),       // ≤ 10 words: why a professor would underline this
+});
+
+export type SynthHighlightAnchor = z.infer<typeof SynthHighlightAnchorSchema>;
+
 export const TeachingSynthesisConceptSchema = z.object({
   title: z.string(),
   role: z.enum([
@@ -41,6 +49,7 @@ export const TeachingSynthesisSchema = z.object({
   crossLinkHints: z.array(z.string()).nullable(), // was .optional() — same reason
   concepts: z.array(TeachingSynthesisConceptSchema),
   miniTests: z.array(z.string()).nullable(),      // was .optional() — same reason
+  highlightAnchors: z.array(SynthHighlightAnchorSchema).nullable(), // 2–4 exact source spans for left-panel
 });
 
 export type TeachingSynthesisConcept = z.infer<typeof TeachingSynthesisConceptSchema>;
@@ -150,7 +159,17 @@ Specific field requirements:
   BAD: "This is important to remember for exams."
 • reasoningFlow: Use the ${domain} chain above in A → B → C format.
 
-SENTENCE COMPLETENESS: Never output a fragment. Self-check: "Could a student read only this field and understand the concept?" If no → rewrite.`;
+SENTENCE COMPLETENESS: Never output a fragment. Self-check: "Could a student read only this field and understand the concept?" If no → rewrite.
+
+─── LEFT-PANEL ANCHOR SELECTION ─────────────────────────────────────────────
+highlightAnchors: select 2–4 exact text spans from the EXTRACTED CONCEPTS below that a professor would underline before an exam.
+Rules:
+• Copy text EXACTLY as it appeared in the source — do not paraphrase or edit.
+• ≤ 30 words per span. Prefer shorter, precise spans.
+• Order by importance: thesis/governing principle first, then mechanism, then trap/signal.
+• Prefer: governing definition, key mechanism, formula, clinical trap, exam signal.
+• Avoid: figure captions, transitional sentences, filler, repeated phrases, OCR fragments.
+• If no extracted concept text is clearly exam-worthy, return null — do NOT invent anchors.`;
 }
 
 export function buildUserPrompt(input: SynthesisInput): string {
@@ -207,11 +226,12 @@ The answer must be about UNDERSTANDING, not about what appears in a figure or wh
 ─── TASK ──────────────────────────────────────────────────────────────────
 Produce a structured educational interpretation for this page.
 
-For page level: coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, crossLinkHints.
+For page level: coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, crossLinkHints, highlightAnchors.
 For each concept (include ${Math.min(rankedConcepts.length, 4)}): principle, mechanism, trap, rule, misconception, examHook.
 
 Every field: complete sentence, ≤20 words, relational not definitional, professor-level language.
-If a concept text is a figure caption: write the PRINCIPLE the figure is illustrating, not the caption.`;
+If a concept text is a figure caption: write the PRINCIPLE the figure is illustrating, not the caption.
+highlightAnchors: copy 2–4 exact spans from EXTRACTED CONCEPTS above that a professor would underline. Return null if none qualify.`;
 }
 
 // ---------------------------------------------------------------------------

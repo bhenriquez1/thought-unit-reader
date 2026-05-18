@@ -31,6 +31,8 @@ interface PureReaderViewProps {
   focusSnippet?: string | null;
   highlightTargets?: HighlightTarget[];
   highlightNeighborhoods?: HighlightNeighborhood[];
+  /** AI-selected anchor texts from synthesis — when present, displayed as a separate highlight tier */
+  aiHighlightTexts?: string[];
   focusedEvidenceId?: string | null;
   onEvidenceFocus?: (id: string) => void;
   onOpenFocusCycle?: () => void;
@@ -53,6 +55,7 @@ export default function PureReaderView({
   focusSnippet,
   highlightTargets,
   highlightNeighborhoods,
+  aiHighlightTexts,
   focusedEvidenceId,
   onEvidenceFocus,
   onOpenFocusCycle,
@@ -61,6 +64,26 @@ export default function PureReaderView({
   // Global zoom store
   const { zoom } = useZoomStore();
   const [isPageChanging, setIsPageChanging] = useState(false);
+
+  // When AI anchors exist, convert them to HighlightTarget[] and suppress heuristic main highlights.
+  // AI anchors take precedence; heuristic "support"/"additional"/"trap" tiers are kept as-is.
+  const effectiveHighlightTargets: HighlightTarget[] | undefined = (() => {
+    if (!aiHighlightTexts?.length) return highlightTargets;
+    const aiTargets: HighlightTarget[] = aiHighlightTexts.map((text, i) => ({
+      id:                   `ai-anchor-${i}`,
+      page:                 currentPage,
+      text,
+      normalizedText:       text.toLowerCase().replace(/­/g, "").replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim(),
+      level:                "important" as const,
+      score:                100 - i,
+      sourceParagraphIndex: 0,
+      kind:                 "definition" as const,
+      evidenceRefId:        `ai-anchor-${i}`,
+    }));
+    // Keep heuristic non-main highlights as secondary context
+    const heuristicSecondary = (highlightTargets ?? []).filter(t => t.level !== "important");
+    return [...aiTargets, ...heuristicSecondary];
+  })();
 
   const navigateToPage = useCallback((page: number) => {
     if (isPageChanging || page === currentPage) return;
@@ -151,7 +174,7 @@ export default function PureReaderView({
           onOutline={onOutline}
           onActiveParagraphChange={onActiveParagraphChange}
           focusSnippet={focusSnippet}
-          highlightTargets={highlightTargets}
+          highlightTargets={effectiveHighlightTargets}
           highlightNeighborhoods={highlightNeighborhoods}
           focusedEvidenceId={focusedEvidenceId}
           onEvidenceFocus={onEvidenceFocus}
