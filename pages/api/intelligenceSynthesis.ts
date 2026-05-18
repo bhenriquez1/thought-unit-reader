@@ -95,7 +95,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json(validated);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("intelligenceSynthesis API error:", msg);
-    return res.status(500).json({ error: "Failed to synthesize teaching output." });
+    const stack = err instanceof Error ? err.stack?.split("\n").slice(0, 4).join(" | ") : undefined;
+    console.error("[SYNTH:api:error]", { message: msg, stack });
+    return res.status(500).json({ error: msg.slice(0, 200) });
   }
 }
