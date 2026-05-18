@@ -730,12 +730,14 @@ export function RightPanel({
         {/* ── PRIMARY: ULTRA View ───────────────────────────────────────── */}
         {showUltraView && displayView && (
           <>
-            <UltraView
-              view={displayView}
-              selectedBlockIndex={selectedBlockIndex}
-              onSelectBlock={setSelectedBlockIndex}
-              onAnchorClick={(text) => onEvidenceClick?.(text, undefined)}
-            />
+            <UltraViewErrorBoundary>
+              <UltraView
+                view={displayView}
+                selectedBlockIndex={selectedBlockIndex}
+                onSelectBlock={setSelectedBlockIndex}
+                onAnchorClick={(text) => onEvidenceClick?.(text, undefined)}
+              />
+            </UltraViewErrorBoundary>
             <div style={{ display: "flex", gap: 8 }}>
               <GenerateNoteButton
                 view={displayView}
@@ -853,6 +855,40 @@ export function RightPanel({
       </div>
     </aside>
   );
+}
+
+// ---------------------------------------------------------------------------
+// UltraView error boundary — catches render crashes without blanking the panel.
+// FORCE_SYNTHESIS_ONLY exposes failures that fallbacks previously masked; this
+// ensures those failures show a clear message rather than a white screen.
+// ---------------------------------------------------------------------------
+
+class UltraViewErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[WIRE] UltraViewErrorBoundary caught", { error: error.message, componentStack: info.componentStack?.slice(0, 300) });
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="rounded-2xl border border-rose-400/20 bg-[#1a0808] px-4 py-6 text-center space-y-1">
+          <p className="text-[13px] text-rose-300/70">Study notes failed to render for this page.</p>
+          <p className="text-[10px] font-mono text-white/20">{this.state.error.message.slice(0, 100)}</p>
+          <p className="text-[11px] text-white/25 italic">Try navigating away and back.</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1099,13 +1135,27 @@ function UltraView({
   } | undefined;
   const hasSynth = !!(synth && (synth.whyItMatters || synth.keyMechanism || synth.commonConfusion || synth.memoryAnchor));
 
-  // [WIRE] _synth state — always-on. Filter DevTools: "[WIRE] _synth"
-  // hasSynth=false + _synth populated → validSynthField rejected all fields (check field values)
-  // _synth=undefined → synthesis not resolved yet OR ultraPageViewWithSynthesis returned early
+  // [WIRE] _synth — always-on synthesis pipeline state.
+  // Filter DevTools: "[WIRE] _synth"
+  // DIAGNOSIS GUIDE:
+  //   hasSynth=true, fields populated → Study Notes will render ✓
+  //   hasSynth=false, _synth has values → validSynthField rejected them (check field content)
+  //   _synth=undefined → synthesis hook returned null (API fail, abort, or usable blocks=0)
+  //   _synth all-null → all page-level synth fields failed validation gate
   console.log("[WIRE] _synth", {
-    build: "BUILD_WIRING_TEST_v1",
     hasSynth,
-    _synth: synth ?? "undefined — not yet resolved",
+    domain,
+    synthPresent: synth !== undefined,
+    fields: synth ? {
+      whyItMatters:    synth.whyItMatters    ? `OK: ${synth.whyItMatters.slice(0, 50)}`    : "null",
+      keyMechanism:    synth.keyMechanism    ? `OK: ${synth.keyMechanism.slice(0, 50)}`    : "null",
+      commonConfusion: synth.commonConfusion ? `OK: ${synth.commonConfusion.slice(0, 50)}` : "null",
+      memoryAnchor:    synth.memoryAnchor    ? `OK: ${synth.memoryAnchor.slice(0, 50)}`    : "null",
+      reasoningFlow:   synth.reasoningFlow   ? `OK: ${synth.reasoningFlow.slice(0, 50)}`   : "null",
+      examSignal:      synth.examSignal      ? `OK: ${synth.examSignal.slice(0, 50)}`      : "null",
+    } : "no _synth on view",
+    visibleBlockCount: visibleBlocks.length,
+    pageThesis: (view.pageThesis ?? view.coreIdea ?? "—").slice(0, 60),
   });
 
   // Prefer teachingStatement when it's distinct from coreIdea (it's more reliable);
@@ -1519,6 +1569,32 @@ function UltraView({
             ))}
           </ul>
         </PanelSection>
+      )}
+
+      {/* ── DEV DIAGNOSTIC OVERLAY — only visible when NEXT_PUBLIC_DEBUG_READER=true ── */}
+      {process.env.NEXT_PUBLIC_DEBUG_READER === "true" && (
+        <div style={{
+          fontSize: 9, fontFamily: "monospace",
+          background: "rgba(0,200,255,0.04)", border: "1px solid rgba(0,200,255,0.12)",
+          borderRadius: 6, padding: "6px 10px", color: "#7dd3fc",
+          lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-all",
+        }}>
+          {[
+            `── SYNTHESIS PIPELINE STATE ──`,
+            `domain: ${domain ?? "—"} | kind: ${view._debug?.pageKind ?? "—"}`,
+            `_synth hydrated: ${synth !== undefined ? "YES" : "NO — hook returned null"}`,
+            `hasSynth: ${hasSynth} (Study Notes ${hasSynth ? "rendering" : "loading state"})`,
+            `whyItMatters:    ${synth?.whyItMatters    ? "✓ " + synth.whyItMatters.slice(0, 55)    : "— null"}`,
+            `keyMechanism:    ${synth?.keyMechanism    ? "✓ " + synth.keyMechanism.slice(0, 55)    : "— null"}`,
+            `commonConfusion: ${synth?.commonConfusion ? "✓ " + synth.commonConfusion.slice(0, 55) : "— null"}`,
+            `memoryAnchor:    ${synth?.memoryAnchor    ? "✓ " + synth.memoryAnchor.slice(0, 55)    : "— null"}`,
+            `reasoningFlow:   ${synth?.reasoningFlow   ? "✓ " + synth.reasoningFlow.slice(0, 55)   : "— null"}`,
+            `examSignal:      ${synth?.examSignal      ? "✓ " + synth.examSignal.slice(0, 55)      : "— null"}`,
+            `── RENDER CONTRACT ──`,
+            `visibleBlocks: ${visibleBlocks.length} | thesis: ${(view.pageThesis ?? view.coreIdea ?? "—").slice(0, 50)}`,
+            `miniTest: ${view.miniTest.length} | crossLinks: ${view.crossLinkHints?.length ?? 0}`,
+          ].join("\n")}
+        </div>
       )}
     </div>
   );
