@@ -1250,8 +1250,8 @@ function UltraView({
 
   return (
     <div className="space-y-4">
-      {/* Page Notes — thesis section */}
-      <PanelSection title="Page Notes">
+      {/* Page Thesis — governing concept for this page */}
+      <PanelSection title="Page Thesis">
         {/* One-line summary — dyslexia-safe rapid anchor */}
         {view.oneLineSummary && (
           <div className="mb-2 rounded-lg border border-amber-400/40 bg-amber-400/8 px-4 py-2">
@@ -1346,8 +1346,8 @@ function UltraView({
       )}
 
 
-      {/* Concept blocks — tab selector + detail */}
-      <PanelSection title="Concept Blocks">
+      {/* Concept blocks — secondary context, only shown after synthesis resolves */}
+      {hasSynth && <PanelSection title="Concept Blocks">
         {visibleBlocks.length === 0 ? (
           /* Fallback: no strong concept blocks — show SRI signals as reading anchor */
           <div className="rounded-xl border border-white/8 bg-[#0a1428] px-4 py-5 space-y-3">
@@ -1596,7 +1596,7 @@ function UltraView({
         })()}
         </>
         )}
-      </PanelSection>
+      </PanelSection>}
 
       {/* Mini Test */}
       {view.miniTest.length > 0 && (

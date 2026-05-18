@@ -1404,21 +1404,23 @@ export function buildUltraPageView(
     if (/^(an?|the)\s+\w+\s+(deficiency|excess|lack|overdose|shortage|toxicity|accumulation)\b/i.test(t)) return false;
     // Reject "An <CapNoun> in/from/of the <noun>..." — too specific, an example not a principle
     if (/^an?\s+[A-Z][a-z]+\s+(in\s+the|from\s+the|of\s+the|causes?\s+the)\b/i.test(t)) return false;
+    // Reject narrative/conditional openers — story beats are not governing principles
+    if (/^(if|when|then|but|after|before|as\s|although|though|since|because|once|until|unless|while|meanwhile|next|suddenly|later|finally|eventually|however|therefore|thus)\b/i.test(t)) return false;
     return true;
   }
   const rawThesisSrc =
     (isThesisCandidate(pageObjective?.teachingStatement) ? pageObjective!.teachingStatement : undefined) ||
     (isThesisCandidate(page.pageSummary ?? undefined) ? (page.pageSummary ?? undefined) : undefined) ||
-    finalCoreIdea;
-  if (rawThesisSrc === finalCoreIdea && !pageObjective?.teachingStatement && !page.pageSummary) {
-    console.log("[THESIS:fallback]", { reason: "no teachingStatement or pageSummary — using finalCoreIdea", finalCoreIdea: finalCoreIdea?.slice(0, 80) });
+    (isThesisCandidate(finalCoreIdea) ? finalCoreIdea : undefined);
+  if (!rawThesisSrc) {
+    console.log("[THESIS:fallback]", { reason: "all candidates failed isThesisCandidate gate", finalCoreIdea: finalCoreIdea?.slice(0, 80) });
   }
   const pageThesis = (() => {
-    const compressed = compressToNote(rawThesisSrc, "signal");
-    const stabilized = stabilizeOutput(compressed || rawThesisSrc, domain);
-    return stabilized || finalCoreIdea;
+    const compressed = rawThesisSrc ? compressToNote(rawThesisSrc, "signal") : undefined;
+    const stabilized = (compressed || rawThesisSrc) ? stabilizeOutput((compressed || rawThesisSrc)!, domain) : undefined;
+    return stabilized || (isThesisCandidate(finalCoreIdea) ? finalCoreIdea : undefined);
   })();
-  const oneLineSummary = compressToOneLine(pageThesis, domain);
+  const oneLineSummary = pageThesis ? compressToOneLine(pageThesis, domain) : undefined;
 
   // Why this matters: from the highest-ranked mechanism block's surgicalReason.
   const whyItMatters = (() => {
