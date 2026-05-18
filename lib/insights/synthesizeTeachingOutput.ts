@@ -1,9 +1,9 @@
 // lib/insights/synthesizeTeachingOutput.ts
-// Educational Interpretation Engine — the "professor layer."
+// Cognitive Teaching Engine — not a summarizer, not a labeler.
 //
-// The extraction pipeline finds the best sentences.
-// This module asks: "What is the author TEACHING?" — and reasons about it
-// like a domain expert, not a sentence copier.
+// The extraction pipeline finds candidate sentences.
+// This module asks: "What would a world-class professor emphasize about this page
+// if they had 2 minutes to teach it?" — then produces that answer.
 
 import { z } from "zod";
 import type { PageDomain } from "./detectPageDomain";
@@ -22,25 +22,23 @@ export const TeachingSynthesisConceptSchema = z.object({
   principle: z.string(),               // the generalized rule — abstracted, never verbatim
   mechanism: z.string(),               // why/how it works
   trap: z.string().nullable(),
-  rule: z.string(),        // operational takeaway
-  misconception: z.string().nullable(), // "Students often confuse X with Y because..."
-  examHook: z.string().nullable(),      // "On DAT/boards/clinical exams, this appears as..."
+  rule: z.string(),                    // operational takeaway
+  misconception: z.string().nullable(),
+  examHook: z.string().nullable(),
 });
 
 export const TeachingSynthesisSchema = z.object({
-  // Page-level educational interpretation
-  coreIdea: z.string(),           // what this page teaches (abstracted principle)
-  mechanism: z.string(),          // how/why — the causal or logical chain
-  rule: z.string(),               // the operational takeaway for the whole page
-  trap: z.string().nullable(),    // most important misconception on the page
-  application: z.string(),        // real-world, clinical, or practical use
-  teachingObjective: z.string(),  // what a student should understand after reading
-  examCriticalIdea: z.string(),   // the one thing most likely to be tested or misunderstood
-  reasoningFlow: z.string(),      // domain-specific reasoning chain (A → B → C)
-  misconceptionAlert: z.string().nullable(), // single biggest misconception across this whole page
-  memoryAnchor: z.string().nullish(),        // mnemonic, analogy, or "think of it like X" (≤15 words)
-  crossLinkHints: z.array(z.string()).optional(), // 1-2 concept connections (max 8 words each)
-  // Per-concept educational breakdown (ordered by educational priority)
+  coreIdea: z.string(),
+  mechanism: z.string(),
+  rule: z.string(),
+  trap: z.string().nullable(),
+  application: z.string(),
+  teachingObjective: z.string(),
+  examCriticalIdea: z.string(),
+  reasoningFlow: z.string(),
+  misconceptionAlert: z.string().nullable(),
+  memoryAnchor: z.string().nullish(),
+  crossLinkHints: z.array(z.string()).optional(),
   concepts: z.array(TeachingSynthesisConceptSchema),
   miniTests: z.array(z.string()).optional(),
 });
@@ -49,171 +47,175 @@ export type TeachingSynthesisConcept = z.infer<typeof TeachingSynthesisConceptSc
 export type TeachingSynthesis = z.infer<typeof TeachingSynthesisSchema>;
 
 // ---------------------------------------------------------------------------
-// Input types — structured concepts, NOT raw page text
+// Input types
 // ---------------------------------------------------------------------------
 
 export interface SynthesisConceptInput {
   title: string;
-  role: string;           // ConceptRole
-  text: string;           // the pattern/anchor sentence
-  mechanism?: string;     // surgicalReason if available
+  role: string;
+  text: string;
+  mechanism?: string;
   trap?: string;
-  importance: string;     // "very_high" | "high" | "medium" | "low"
+  importance: string;
 }
 
 export interface SynthesisInput {
   domain: PageDomain;
-  pageObjective?: string;                 // heading + teaching statement
-  rankedConcepts: SynthesisConceptInput[]; // sorted by educational priority
+  /** Heading + canonical teaching statement — primary anchor for what this page teaches */
+  pageObjective?: string;
+  /** Full page thesis — the professor's one-sentence governing idea */
+  pageThesis?: string;
+  /** AI-generated page summary if available — richest context available */
+  pageSummary?: string;
+  rankedConcepts: SynthesisConceptInput[];
 }
 
 // ---------------------------------------------------------------------------
-// Prompt builders (used by the API route)
+// Prompt builders
 // ---------------------------------------------------------------------------
 
 export function buildSystemPrompt(domain: PageDomain): string {
-  const domainInstructions: Record<PageDomain, string> = {
-    math: `You are a mathematics professor. Focus on: theorems (precise condition → conclusion), convergence/divergence criteria, when a formula applies vs. fails, and common student misconceptions.
-
-MATH REASONING CHAIN: condition → theorem/rule → convergence/result → exception/trap → worked application`,
-
-    science: `You are a biology/chemistry/physics professor. Focus on: mechanisms (cause → effect), the molecular-level principle behind observations, why a process occurs, and what breaks if conditions change.
-
-SCIENCE REASONING CHAIN: cause → mechanism → effect → biological significance → common misconception`,
-
-    clinical: `You are a medical educator. Focus on: clinical significance (what does this finding mean for patient care?), pathophysiology in plain terms, diagnostic reasoning, and the most dangerous mistake a student could make.
-
-CLINICAL REASONING CHAIN: finding → interpretation → pathophysiology → risk → next action → consequence if missed`,
-
-    fiction: `You are a literature educator. Focus on: thematic meaning, character motivation, narrative technique, and the deeper human truth the author is conveying.
-
-LITERARY REASONING CHAIN: event → character motivation → thematic meaning → authorial technique → deeper truth`,
-
-    general: `You are an expert educator. Focus on: the core principle being taught, why it matters, how it works, and what misconceptions to avoid.
-
-GENERAL REASONING CHAIN: concept → mechanism → significance → application → trap`,
+  const domainRole: Record<PageDomain, string> = {
+    math:     "You are a mathematics professor (think: 3Blue1Brown, Gilbert Strang). You make abstract structures intuitive through visual reasoning and precise condition→conclusion statements.",
+    science:  "You are a biology/chemistry/physics professor (think: Ninja Nerd, Khan Academy science). You explain mechanisms causally: what triggers what, why it matters biologically, what breaks if conditions change.",
+    clinical: "You are a medical educator (think: Pathoma, Boards & Beyond). You teach the clinical reasoning chain: finding → interpretation → pathophysiology → consequence → what not to miss.",
+    fiction:  "You are a literature educator. You surface thematic meaning, character motivation, and the human truth the author is conveying — not plot summary.",
+    general:  "You are a world-class expert educator. You identify the governing principle, explain the causal mechanism, and flag the most common student misconception.",
   };
 
-  return `${domainInstructions[domain] ?? domainInstructions.general}
+  const domainChain: Record<PageDomain, string> = {
+    math:     "condition → theorem → result → exception/trap → worked application",
+    science:  "cause → mechanism → effect → biological/chemical significance → common misconception",
+    clinical: "finding → pathophysiology → clinical significance → risk if missed → next action",
+    fiction:  "event → motivation → thematic meaning → authorial technique → deeper truth",
+    general:  "concept → mechanism → significance → application → trap",
+  };
 
-EXPERT TUTOR MINDSET — You think like a senior professor reviewing for exams:
-- You know what students confuse, misremember, or skip
-- You compress ideas to their essence: no redundancy, no filler
-- You connect this concept to what came before and what comes next
-- You flag exam traps before the student sees them
+  return `${domainRole[domain] ?? domainRole.general}
 
-MISCONCEPTION DETECTION:
-For every concept, identify the most common student error. Phrase it as:
-"Students often confuse [X] with [Y] because [reason]."
-or "Do not mistake [A] for [B] — [distinction]."
-If no specific misconception exists, return null.
+PROFESSOR 2-MINUTE TEST — your single most important instruction:
+Before writing any field, ask: "If a world-class professor had 2 minutes to teach this page, what would they emphasize?"
+The answer must be about UNDERSTANDING, not about what figures exist or what sentences appear.
 
-EXAM FRAMING (domain-specific):
-- Math/DAT: "On DAT this often appears as: [calculation type] or [conceptual question]"
-- Clinical/medical: "Clinically this matters because: [patient impact] or [diagnostic step]"
-- Science/biology: "On boards this is tested as: [application question type]"
-- General: "This is exam-critical because: [why this is high-yield]"
-Return null if the concept is low-yield for exams.
+THE GOVERNING QUESTION for every field:
+  "What does a student need to understand, remember, and not confuse about this topic to perform well on a high-stakes exam?"
 
-CONCEPT RANKING — rank concepts in this educational priority order:
-  1. theorem / core rule (highest — this IS what the page teaches)
-  2. definition (foundational — establishes what a term means)
-  3. mechanism (how/why it works — cause → effect)
-  4. contrast / trap (what NOT to confuse — prevents misconceptions)
-  5. application (real-world/clinical use — why it matters)
-  6. worked example (support — illustrates, never leads)
-  7. example / detail (lowest — never make an example the primary concept)
+REASONING CHAIN for ${domain}:
+  ${domainChain[domain] ?? domainChain.general}
 
-TRANSFORMATION EXAMPLES — follow this exact pattern, no exceptions:
+─── WHAT TO IGNORE COMPLETELY ───────────────────────────────────────────────
+These are extraction artifacts — they are NEVER educational output:
+• Figure captions: "Figure 2.2 The emergent properties..." → DISCARD
+• OCR fragments: "Se C tion", "l i m i t", partial words → DISCARD
+• Narrative sentences: "Then a nurse noticed he'd stopped babbling" → TRANSFORM
+• Raw definitions without WHY: "A compound is..." → ADD THE MECHANISM
+• Textbook boilerplate: "In this section we will..." → DISCARD
+• Publisher debris: "Cengage Learning", "rights reserved" → DISCARD
 
-BAD: "Water (H2O), another compound…"
-GOOD: "Compounds exhibit emergent properties distinct from their constituent elements."
+─── TRANSFORMATION STANDARD ────────────────────────────────────────────────
+These are the ONLY acceptable output transformations:
 
-BAD: "Then a nurse noticed he'd stopped babbling."
-GOOD: "Sudden neurological deterioration after initially stable trauma presentation may indicate delayed internal compromise."
+INPUT:  "Figure 2.2 The emergent properties of a compound."
+OUTPUT: "Compounds exhibit emergent properties that cannot be predicted from their constituent elements alone."
 
-BAD: "Example E1 | What happens to a_n = 1/n as n grows…"
-GOOD: "A sequence converges when its terms approach a fixed limit as n becomes arbitrarily large."
+INPUT:  "Water (H₂O), another compound..."
+OUTPUT: "Chemical bonding creates new atomic interactions, giving compounds distinct physical and chemical properties from their elements."
 
-BAD: "Figure 2.2 shows emergent properties."
-GOOD: "Emergent properties arise at higher levels of biological organization and cannot be predicted from component parts alone."
+INPUT:  "Then a nurse noticed he'd stopped babbling."
+OUTPUT: "Sudden neurological deterioration after an initially stable presentation signals possible delayed internal injury."
 
-BAD: "The atomic number is 6 for carbon."
-GOOD: "Atomic number uniquely identifies an element by defining its proton count; it is invariant across all isotopes of that element."
+INPUT:  "Example E1 | What happens to aₙ = 1/n as n grows..."
+OUTPUT: "A sequence converges when its terms approach a fixed finite limit as n increases without bound."
 
-CRITICAL RULES — every violation makes the output educationally worthless:
-1. NEVER copy a sentence verbatim. Restate every idea using expert conceptual language.
-2. IGNORE figure captions, image labels, OCR artifacts, and narrative story fragments.
-3. coreIdea = an abstracted principle, never a figure reference or example sentence.
-4. principle = generalized rule — abstract FROM the example TO the rule it illustrates.
-5. mechanism ≠ rule — if they would be identical, make mechanism the WHY and rule the WHAT TO DO.
-6. reasoningFlow must use the domain-specific chain format above (A → B → C).
-7. Keep every field to 1–2 sentences maximum.
-8. Write like Ninja Nerd, Pathoma, or a clinical attending — compressed expert cognition, not notes.
+INPUT:  "NaCl dissolves in water."
+OUTPUT: "Ionic compounds dissolve in polar solvents because the electrostatic attraction between ions is overcome by ion–dipole interactions."
 
-COGNITIVE COMPRESSION MANDATE — apply to EVERY field, without exception:
-- RELATIONAL over DEFINITIONAL: prefer "X causes Y because Z" over "X is defined as Y."
-- ADD THE WHY: not "ions are charged atoms" → "ions conduct charge because electron gain/loss creates an electrostatic imbalance."
-- TARGET LENGTH: 10–15 words per field. Never exceed 20 words per sentence.
-- SELF-CHECK before writing each field: "Does this sentence tell the reader WHY it matters, not just WHAT it is?" If no → rewrite.
-- COMPRESS MANY SENTENCES into ONE operator-level insight. Prefer conceptual depth over coverage breadth.
-- NEVER REPEAT the Page Thesis idea in compression or mechanism — each field must introduce NEW information.
-- memoryAnchor: a single analogy, mnemonic, or "think of it like X" statement ≤15 words. Only write one if a genuinely memorable comparison exists — return null otherwise.
-  GOOD: "Think: higher temperature = faster molecules = more collisions per second."
-  GOOD: "Remember: Na⁺ out, K⁺ in — like a sodium taxi driving potassium home."
-  BAD: "Ions are important to remember for exams."
+─── OUTPUT REQUIREMENTS ────────────────────────────────────────────────────
+Every field must be:
+1. A complete, polished sentence — never a fragment, never a label
+2. Relational, not definitional: "X causes Y because Z" over "X is defined as..."
+3. 10–20 words per sentence — no longer
+4. Written like Ninja Nerd, Pathoma, or a board-review professor — not a textbook
 
-SENTENCE COMPLETENESS MANDATE — every visible field must be a complete, polished sentence:
-- NEVER output a sentence fragment, dangling clause, or partial thought.
-- Every field must read like a professor explaining the idea to a student preparing for an exam.
-- Self-check: "Could a student understand this page in 10 seconds from these notes?" If no → rewrite.`;
+Specific field requirements:
+• coreIdea: The governing principle — what this page is fundamentally teaching.
+  NOT the figure caption. NOT "this page discusses X." Must be a teachable statement.
+• mechanism: The causal/logical chain — what triggers what, what enables what.
+  Must contain a causal verb (causes, enables, allows, triggers, results in, because...).
+• application: Why a student on a clinical rotation / during an exam must know this.
+• misconceptionAlert: The exact error students make. Phrase as "Do not confuse X with Y because..." or "Students often assume X, but..."
+• memoryAnchor: ONE analogy or mnemonic that makes this visceral. Null if nothing genuinely memorable.
+  GOOD: "Elements are ingredients; compounds are the finished recipe."
+  GOOD: "Na⁺ out, K⁺ in — think sodium as the guard who leaves when potassium enters."
+  BAD: "This is important to remember for exams."
+• reasoningFlow: Use the ${domain} chain above in A → B → C format.
+
+SENTENCE COMPLETENESS: Never output a fragment. Self-check: "Could a student read only this field and understand the concept?" If no → rewrite.`;
 }
 
-export function buildUserPrompt(
-  input: SynthesisInput,
-): string {
-  const { domain, pageObjective, rankedConcepts } = input;
+export function buildUserPrompt(input: SynthesisInput): string {
+  const { domain, pageObjective, pageThesis, pageSummary, rankedConcepts } = input;
 
+  // Build richest possible page context — this is what the model uses to understand the page
+  const pageContextLines: string[] = [];
+  if (pageThesis)     pageContextLines.push(`PAGE THESIS: ${pageThesis}`);
+  if (pageObjective)  pageContextLines.push(`TEACHING STATEMENT: ${pageObjective}`);
+  if (pageSummary && pageSummary !== pageObjective && pageSummary !== pageThesis) {
+    pageContextLines.push(`PAGE SUMMARY: ${pageSummary}`);
+  }
+  const pageContext = pageContextLines.length > 0
+    ? pageContextLines.join("\n")
+    : "(not available — derive from concepts below)";
+
+  // Pass full concept text — no char limits. The model must see the full extracted sentence
+  // to understand what the page is teaching, not truncated fragments.
   const conceptList = rankedConcepts.slice(0, 5).map((c, i) => {
+    const isFigureCaption = /^(figure|fig\.|table|tab\.|box|plate|chart)\s+[\d.]/i.test(c.text);
     const parts = [`${i + 1}. [${c.role.toUpperCase()}] "${c.title}"`];
-    parts.push(`   TEXT: "${c.text.slice(0, 200)}"`);
-    if (c.mechanism) parts.push(`   WHY: "${c.mechanism.slice(0, 120)}"`);
-    if (c.trap) parts.push(`   TRAP: "${c.trap.slice(0, 80)}"`);
+    if (isFigureCaption) {
+      parts.push(`   ⚠ FIGURE CAPTION — do NOT use this text. Derive the principle from PAGE CONTEXT above.`);
+    } else {
+      parts.push(`   TEXT: "${c.text}"`);
+      if (c.mechanism) parts.push(`   WHY: "${c.mechanism}"`);
+      if (c.trap)      parts.push(`   TRAP: "${c.trap}"`);
+    }
     return parts.join("\n");
   }).join("\n\n");
 
-  const domainHint: Record<PageDomain, string> = {
-    math: "What theorem, definition, or convergence criterion is being taught? State condition and conclusion precisely.",
-    science: "What biological/chemical/physical principle explains the mechanism on this page?",
-    clinical: "What clinical principle — finding → action → consequence — should a student remember?",
-    fiction: "What literary or thematic idea is being communicated?",
-    general: "What is the central teachable principle on this page?",
+  const domainQuestion: Record<PageDomain, string> = {
+    math:     "What theorem, definition, or convergence criterion is being taught? State condition → conclusion precisely.",
+    science:  "What biological/chemical/physical mechanism explains the phenomenon on this page? Trace cause → effect.",
+    clinical: "What clinical principle — finding → pathophysiology → consequence — must a student remember for rounds or boards?",
+    fiction:  "What literary or thematic truth is the author conveying through this passage?",
+    general:  "What is the central teachable principle on this page? Why does it matter?",
   };
 
   return `DOMAIN: ${domain}
-PAGE OBJECTIVE (from heading + highest-confidence canonical statement — use this as your primary anchor):
-${pageObjective ?? "(derive from domain context below)"}
 
-RANKED CONCEPTS (ordered by educational priority — higher role = more important):
+─── PAGE CONTEXT (primary anchor — what this page is actually teaching) ───
+${pageContext}
+
+─── EXTRACTED CONCEPTS (WARNING: may contain figure captions or OCR fragments — you must INTERPRET these, not copy them) ───
 ${conceptList}
 
-⚠️ FIGURE/TABLE/CAPTION RULE: If ANY concept text starts with "Figure", "Table", "Box", "Fig.", or "Example E", that is an OCR artifact — IGNORE THAT TEXT COMPLETELY. Derive the educational principle from the PAGE OBJECTIVE and domain context instead.
+─── PROFESSOR 2-MINUTE TEST ───────────────────────────────────────────────
+${domainQuestion[domain] ?? domainQuestion.general}
 
-⚠️ NARRATIVE RULE: If a concept text reads like a story event ("Then a nurse noticed...", "He suddenly..."), convert it into a clinical/educational signal. Do not copy it.
+Ask yourself: "If a world-class professor had 2 minutes to teach this page, what would they say?"
+The answer must be about UNDERSTANDING, not about what appears in a figure or what sentences exist.
 
-TASK: Reason about this page as an expert educator using the ${domain} reasoning chain.
+─── TASK ──────────────────────────────────────────────────────────────────
+Produce a structured educational interpretation for this page.
 
-${domainHint[domain] ?? domainHint.general}
+For page level: coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, crossLinkHints.
+For each concept (include ${Math.min(rankedConcepts.length, 4)}): principle, mechanism, trap, rule, misconception, examHook.
 
-Produce a structured educational interpretation. Order concepts by educational priority (theorem/definition before example/detail). Include ${Math.min(rankedConcepts.length, 4)} concepts.
-
-For each concept: fill principle, mechanism, trap, rule, misconception, examHook.
-For page level: fill coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, crossLinkHints.
-Keep every field ≤ 2 sentences. Write like a professor preparing students for a high-stakes exam, not a textbook.`;
+Every field: complete sentence, ≤20 words, relational not definitional, professor-level language.
+If a concept text is a figure caption: write the PRINCIPLE the figure is illustrating, not the caption.`;
 }
 
 // ---------------------------------------------------------------------------
-// Client-side fetch (browser → Next.js API route)
+// Client-side fetch
 // ---------------------------------------------------------------------------
 
 export async function synthesizeTeachingOutput(
@@ -237,16 +239,19 @@ export async function synthesizeTeachingOutput(
 }
 
 // ---------------------------------------------------------------------------
-// Helper: build SynthesisInput from UltraConceptBlocks
+// Build SynthesisInput from UltraConceptBlocks
 // ---------------------------------------------------------------------------
+
+// Figure caption patterns — these are labels, never educational content
+const FIGURE_CAPTION_RE = /^(figure|fig\.|table|tab\.|box|plate|chart|example\s+[a-z0-9]+\s*[|:])\s*[\d.]/i;
 
 function sanitizeConceptText(text: string): string {
   const t = text.trim();
-  // Figure/table captions are never educational principles — flag them explicitly
-  if (/^(figure|fig\.|table|tab\.|box|plate|chart)\s+[\d.]+/i.test(t)) {
-    return "[figure/table caption — derive principle from page context]";
+  if (FIGURE_CAPTION_RE.test(t)) {
+    // Mark it so buildUserPrompt can flag it for the model
+    return `[FIGURE CAPTION: ${t.slice(0, 80)}]`;
   }
-  // Strip "Example E1 |" style prefixes
+  // Strip "Example E1 |" style prefixes from the beginning
   return t.replace(/^(example\s+[A-Z0-9]+\s*[|:]|solution[|:]\s*|problem\s+\d+[|:])\s*/i, "").trim();
 }
 
@@ -254,13 +259,19 @@ export function buildSynthesisInput(
   blocks: UltraConceptBlock[],
   domain: PageDomain,
   pageObjective?: string,
+  pageThesis?: string,
+  pageSummary?: string,
 ): SynthesisInput {
-  // Prioritize substantive educational roles; push examples/details to end
+  // Prioritize substantive educational roles
+  const ROLE_RANK: Record<string, number> = {
+    theorem: 7, formula: 6, definition: 5, mechanism: 4,
+    contrast: 3, application: 2, worked_example: 1, example: 0, detail: 0,
+  };
+
   const sorted = [...blocks].sort((a, b) => {
-    const highValue = ["theorem", "formula", "definition", "mechanism", "contrast", "application"];
-    const aHigh = highValue.includes(a.conceptRole ?? "") ? 0 : 1;
-    const bHigh = highValue.includes(b.conceptRole ?? "") ? 0 : 1;
-    return aHigh - bHigh;
+    const ra = ROLE_RANK[a.conceptRole ?? ""] ?? 0;
+    const rb = ROLE_RANK[b.conceptRole ?? ""] ?? 0;
+    return rb - ra;
   });
 
   const rankedConcepts: SynthesisConceptInput[] = sorted.slice(0, 5).map((b) => ({
@@ -272,5 +283,5 @@ export function buildSynthesisInput(
     importance: b.importance,
   }));
 
-  return { domain, pageObjective, rankedConcepts };
+  return { domain, pageObjective, pageThesis, pageSummary, rankedConcepts };
 }
