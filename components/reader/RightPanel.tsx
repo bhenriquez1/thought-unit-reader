@@ -28,19 +28,34 @@ import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isC
 // NOTE: does NOT call isCompleteThought() — synthesis output is professor-generated text,
 // not textbook extraction. The isWeakFragment verb list rejects legitimate synthesis verbs
 // like "explains", "exhibits", "governs", "determines". Simpler checks are sufficient here.
-function validSynthField(text: string | undefined | null, domain: string | null): string | null {
+function validSynthField(text: string | undefined | null, domain: string | null, fieldName?: string): string | null {
+  const tag = fieldName ? `[SYNTH:reject:${fieldName}]` : "[SYNTH:reject]";
   if (!text?.trim()) return null;
   const t = text.trim();
-  if (BOILERPLATE_RE.test(t) || PUBLISHER_DEBRIS_RE.test(t)) return null;
-  // Cross-domain: reject biology/clinical phrasing on math pages
-  if (domain === "math" && /\bbiologically\b|\borganism\b|\bcell\b|\bprotein\b|\bphysiolog/i.test(t)) return null;
-  // Reject vague-opener artifacts regardless of domain
-  if (/^(another\s+(notation|term|way|name|example)|a\s+number\s+of\s+(texts?|books?|authors?)|this\s+(means?|is|refers?)|they\s+(are|were|have)|some\s+(authors?|texts?|books?))\b/i.test(t)) return null;
-  if (t.split(/\s+/).length < 6) return null;
-  // Must start with a capital letter — synthesis sentences should always be complete
-  if (/^[a-z]/.test(t)) return null;
-  // No dangling punctuation at end
-  if (/[;,]\s*$/.test(t)) return null;
+  if (BOILERPLATE_RE.test(t) || PUBLISHER_DEBRIS_RE.test(t)) {
+    console.log(tag, "boilerplate/publisher debris →", t.slice(0, 60));
+    return null;
+  }
+  if (domain === "math" && /\bbiologically\b|\borganism\b|\bcell\b|\bprotein\b|\bphysiolog/i.test(t)) {
+    console.log(tag, "cross-domain biology on math page →", t.slice(0, 60));
+    return null;
+  }
+  if (/^(another\s+(notation|term|way|name|example)|a\s+number\s+of\s+(texts?|books?|authors?)|this\s+(means?|is|refers?)|they\s+(are|were|have)|some\s+(authors?|texts?|books?))\b/i.test(t)) {
+    console.log(tag, "vague-opener artifact →", t.slice(0, 60));
+    return null;
+  }
+  if (t.split(/\s+/).length < 6) {
+    console.log(tag, "too short (<6 words) →", t);
+    return null;
+  }
+  if (/^[a-z]/.test(t)) {
+    console.log(tag, "starts lowercase →", t.slice(0, 60));
+    return null;
+  }
+  if (/[;,]\s*$/.test(t)) {
+    console.log(tag, "dangling punctuation →", t.slice(0, 60));
+    return null;
+  }
   return t;
 }
 import { useTeachingSynthesis } from "./useTeachingSynthesis";
@@ -471,13 +486,13 @@ export function RightPanel({
     // Page-level synthesis fields — validated and stored for dedicated display sections.
     // These are surfaced as Study Notes (Why This Matters / Key Mechanism / etc.),
     // NOT buried in STR Compression bullets.
-    const vMech     = validSynthField(teachingSynthesis.mechanism,         synthDomain);
-    const vTrap     = validSynthField(teachingSynthesis.trap,              synthDomain);
-    const vApply    = validSynthField(teachingSynthesis.application,       synthDomain);
-    const vFlow     = validSynthField(teachingSynthesis.reasoningFlow,     synthDomain);
-    const vAlert    = validSynthField(teachingSynthesis.misconceptionAlert, synthDomain);
-    const vExamIdea = validSynthField(teachingSynthesis.examCriticalIdea,  synthDomain);
-    const vMemory   = validSynthField((teachingSynthesis as any).memoryAnchor, synthDomain);
+    const vMech     = validSynthField(teachingSynthesis.mechanism,          synthDomain, "mechanism");
+    const vTrap     = validSynthField(teachingSynthesis.trap,               synthDomain, "trap");
+    const vApply    = validSynthField(teachingSynthesis.application,        synthDomain, "application");
+    const vFlow     = validSynthField(teachingSynthesis.reasoningFlow,      synthDomain, "reasoningFlow");
+    const vAlert    = validSynthField(teachingSynthesis.misconceptionAlert,  synthDomain, "misconceptionAlert");
+    const vExamIdea = validSynthField(teachingSynthesis.examCriticalIdea,   synthDomain, "examCriticalIdea");
+    const vMemory   = validSynthField(teachingSynthesis.memoryAnchor,       synthDomain, "memoryAnchor");
     console.log("[TRACE:synth-page-fields]", {
       domain: synthDomain,
       mechanism:   vMech     ? vMech.slice(0, 60)  : `REJECTED: ${teachingSynthesis.mechanism?.slice(0, 60)}`,

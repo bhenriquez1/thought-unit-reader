@@ -37,10 +37,10 @@ export const TeachingSynthesisSchema = z.object({
   examCriticalIdea: z.string(),
   reasoningFlow: z.string(),
   misconceptionAlert: z.string().nullable(),
-  memoryAnchor: z.string().nullish(),
-  crossLinkHints: z.array(z.string()).optional(),
+  memoryAnchor: z.string().nullable(),           // was .nullish() — OpenAI structured outputs require all fields present
+  crossLinkHints: z.array(z.string()).nullable(), // was .optional() — same reason
   concepts: z.array(TeachingSynthesisConceptSchema),
-  miniTests: z.array(z.string()).optional(),
+  miniTests: z.array(z.string()).nullable(),      // was .optional() — same reason
 });
 
 export type TeachingSynthesisConcept = z.infer<typeof TeachingSynthesisConceptSchema>;
@@ -235,7 +235,17 @@ export async function synthesizeTeachingOutput(
   }
 
   const raw = await response.json();
-  return TeachingSynthesisSchema.parse(raw);
+  try {
+    return TeachingSynthesisSchema.parse(raw);
+  } catch (zodErr) {
+    console.error("[SYNTH:client:zod-parse-fail]", {
+      zodMessage: zodErr instanceof Error ? zodErr.message : String(zodErr),
+      rawKeys: raw && typeof raw === "object" ? Object.keys(raw) : raw,
+      coreIdea: raw?.coreIdea?.slice?.(0, 60) ?? null,
+      mechanism: raw?.mechanism?.slice?.(0, 60) ?? null,
+    });
+    throw zodErr;
+  }
 }
 
 // ---------------------------------------------------------------------------
