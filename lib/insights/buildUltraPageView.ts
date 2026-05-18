@@ -1400,12 +1400,19 @@ export function buildUltraPageView(
     if (!/[a-z]/i.test(t)) return false;                      // all caps / symbols only
     // Must contain a verb signal — a bare noun chunk is not a thesis
     if (!/\b(is|are|was|were|can|does|do|have|has|will|would|should|must|may|might|cause|causes|enables?|allows?|results?|produces?|determines?|explains?|reflects?|represents?|demonstrates?|shows?|indicates?|suggests?|affects?|increases?|decreases?|inhibits?|activates?|requires?|forms?|creates?)\b/i.test(t)) return false;
+    // Reject specificity overfit — single named deficiency/disease sentences are examples, not governing principles
+    if (/^(an?|the)\s+\w+\s+(deficiency|excess|lack|overdose|shortage|toxicity|accumulation)\b/i.test(t)) return false;
+    // Reject "An <CapNoun> in/from/of the <noun>..." — too specific, an example not a principle
+    if (/^an?\s+[A-Z][a-z]+\s+(in\s+the|from\s+the|of\s+the|causes?\s+the)\b/i.test(t)) return false;
     return true;
   }
   const rawThesisSrc =
     (isThesisCandidate(pageObjective?.teachingStatement) ? pageObjective!.teachingStatement : undefined) ||
-    (isThesisCandidate(page.pageSummary) ? page.pageSummary : undefined) ||
+    (isThesisCandidate(page.pageSummary ?? undefined) ? (page.pageSummary ?? undefined) : undefined) ||
     finalCoreIdea;
+  if (rawThesisSrc === finalCoreIdea && !pageObjective?.teachingStatement && !page.pageSummary) {
+    console.log("[THESIS:fallback]", { reason: "no teachingStatement or pageSummary — using finalCoreIdea", finalCoreIdea: finalCoreIdea?.slice(0, 80) });
+  }
   const pageThesis = (() => {
     const compressed = compressToNote(rawThesisSrc, "signal");
     const stabilized = stabilizeOutput(compressed || rawThesisSrc, domain);
