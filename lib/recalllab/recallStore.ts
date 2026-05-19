@@ -115,6 +115,14 @@ export function buildRecallSetFromView(
     coreIdea
   ));
 
+  // 2. Synthesis mini-test cards — OpenAI professor questions take priority over generic prompts
+  if (view.miniTest?.length) {
+    view.miniTest.forEach((q, i) => {
+      if (!q?.trim()) return;
+      cards.push(card(`synth-q${i}`, "definition", q.trim(), coreIdea));
+    });
+  }
+
   // 2. Per-concept cards — prioritized: definition → rule → reason → trap
   view.blocks.forEach((block, bi) => {
     const p = `b${bi + 1}`;

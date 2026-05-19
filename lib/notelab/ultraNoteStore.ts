@@ -29,6 +29,16 @@ export interface UltraNoteConcept {
   rule: string;
 }
 
+/** OpenAI professor-layer study notes — the 6 dedicated teaching sections */
+export interface ProfessorNotes {
+  whyItMatters?: string;
+  keyMechanism?: string;
+  commonConfusion?: string;
+  memoryAnchor?: string;
+  reasoningFlow?: string;
+  examSignal?: string;
+}
+
 export interface UltraNote {
   id: string;
   bookId: string;
@@ -40,6 +50,8 @@ export interface UltraNote {
   memoryShortcuts: string[];
   subject: NoteSubject;
   createdAt: number;
+  /** OpenAI-generated professor teaching notes — present when synthesis resolved */
+  professorNotes?: ProfessorNotes;
 }
 
 const STORAGE_KEY = "ultraNotes_v1";
@@ -96,7 +108,8 @@ export function buildUltraNote(
   topic: string,
   coreIdea: string,
   concepts: UltraNoteConcept[],
-  bookTitle?: string
+  bookTitle?: string,
+  professorNotes?: ProfessorNotes,
 ): UltraNote {
   const memoryShortcuts = concepts
     .filter((c) => c.rule && c.rule.length > 10)
@@ -114,6 +127,7 @@ export function buildUltraNote(
     memoryShortcuts,
     subject: inferSubject(bookId),
     createdAt: Date.now(),
+    professorNotes: professorNotes ?? undefined,
   };
 }
 
@@ -121,10 +135,21 @@ export function formatUltraNoteText(note: UltraNote): string {
   const lines: string[] = [
     `⚡ ULTRA NOTE — ${note.topic} (Page ${note.pageNumber})`,
     ``,
-    `🧠 CORE IDEA`,
+    `🎯 CORE IDEA`,
     note.coreIdea,
     ``,
   ];
+
+  // Professor notes — OpenAI synthesis output (when available)
+  if (note.professorNotes) {
+    const pn = note.professorNotes;
+    if (pn.whyItMatters)    lines.push(`💡 WHY THIS MATTERS\n  ${pn.whyItMatters}`, ``);
+    if (pn.keyMechanism)    lines.push(`⚙️ KEY MECHANISM\n  ${pn.keyMechanism}`, ``);
+    if (pn.commonConfusion) lines.push(`⚠️ COMMON CONFUSION\n  ${pn.commonConfusion}`, ``);
+    if (pn.memoryAnchor)    lines.push(`🧠 MEMORY ANCHOR\n  ${pn.memoryAnchor}`, ``);
+    if (pn.reasoningFlow)   lines.push(`🔗 REASONING FLOW\n  ${pn.reasoningFlow}`, ``);
+    if (pn.examSignal)      lines.push(`🎓 EXAM SIGNAL\n  ${pn.examSignal}`, ``);
+  }
 
   note.concepts.forEach((c) => {
     lines.push(`🧩 ${c.ordinal}️⃣ ${c.title}`);

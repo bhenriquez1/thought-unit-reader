@@ -84,6 +84,8 @@ export interface SynthesisInput {
   pageThesis?: string;
   /** AI-generated page summary if available — richest context available */
   pageSummary?: string;
+  /** Current document page number — used for cross-link estimates */
+  pageNumber?: number;
   rankedConcepts: SynthesisConceptInput[];
 }
 
@@ -188,7 +190,7 @@ Set targetPage to null if you genuinely cannot estimate. Do not guess randomly.`
 }
 
 export function buildUserPrompt(input: SynthesisInput): string {
-  const { domain, pageObjective, pageThesis, pageSummary, rankedConcepts } = input;
+  const { domain, pageObjective, pageThesis, pageSummary, pageNumber, rankedConcepts } = input;
 
   // Build richest possible page context — this is what the model uses to understand the page
   const pageContextLines: string[] = [];
@@ -197,6 +199,7 @@ export function buildUserPrompt(input: SynthesisInput): string {
   if (pageSummary && pageSummary !== pageObjective && pageSummary !== pageThesis) {
     pageContextLines.push(`PAGE SUMMARY: ${pageSummary}`);
   }
+  if (pageNumber)         pageContextLines.push(`CURRENT PAGE NUMBER: ${pageNumber}`);
   const pageContext = pageContextLines.length > 0
     ? pageContextLines.join("\n")
     : "(not available — derive from concepts below)";
@@ -306,6 +309,7 @@ export function buildSynthesisInput(
   pageObjective?: string,
   pageThesis?: string,
   pageSummary?: string,
+  pageNumber?: number,
 ): SynthesisInput {
   // Prioritize substantive educational roles
   const ROLE_RANK: Record<string, number> = {
@@ -328,5 +332,5 @@ export function buildSynthesisInput(
     importance: b.importance,
   }));
 
-  return { domain, pageObjective, pageThesis, pageSummary, rankedConcepts };
+  return { domain, pageObjective, pageThesis, pageSummary, pageNumber, rankedConcepts };
 }

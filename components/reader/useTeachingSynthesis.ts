@@ -27,6 +27,7 @@ interface UseTeachingSynthesisArgs {
   domain: PageDomain | null;
   blocks: UltraConceptBlock[];
   enabled: boolean;
+  pageNumber?: number;
 }
 
 const SYNTHESIS_TIMEOUT_MS = 10_000;
@@ -39,6 +40,7 @@ export function useTeachingSynthesis({
   domain,
   blocks,
   enabled,
+  pageNumber,
 }: UseTeachingSynthesisArgs): UseTeachingSynthesisResult {
   const [synthesis, setSynthesis] = useState<TeachingSynthesis | null>(null);
   const [status, setStatus] = useState<SynthesisStatus>("idle");
@@ -70,7 +72,7 @@ export function useTeachingSynthesis({
     }
 
     const safeDomain = domain ?? "general";
-    const input = buildSynthesisInput(usableBlocks, safeDomain, pageObjective, pageThesis, pageSummary);
+    const input = buildSynthesisInput(usableBlocks, safeDomain, pageObjective, pageThesis, pageSummary, pageNumber);
 
     console.log("[SYNTH:request]", {
       domain: safeDomain,
