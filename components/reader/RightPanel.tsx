@@ -60,6 +60,7 @@ function validSynthField(text: string | undefined | null, domain: string | null,
   return t;
 }
 import { useTeachingSynthesis } from "./useTeachingSynthesis";
+import { buildStudyModel, type CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 
 interface RightPanelProps {
   ctx: ActivePageContext;
@@ -79,6 +80,8 @@ interface RightPanelProps {
   onCrossLinkNavigate?: (page: number) => void;
   /** TOC items for resolving cross-link labels to real page numbers */
   tocItems?: import("@/lib/stores/tocStore").TocItem[];
+  /** Called when synthesis resolves with the full typed study model */
+  onStudyModelReady?: (model: CurrentPageStudyModel) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -313,6 +316,7 @@ export function RightPanel({
   onSynthHighlightsReady,
   onCrossLinkNavigate,
   tocItems,
+  onStudyModelReady,
 }: RightPanelProps) {
   const pageTruthKey = intelligence.pageTruthKey;
   const pageModel = intelligence.pageModel;
@@ -576,7 +580,12 @@ export function RightPanel({
     const resolved = raw.map((link) => {
       const matches = searchTocForTopic(link.label, tocItems);
       const best = matches[0];
-      const tocPage = best && best.score > 0.35 ? best.tocItem.pageNumber : null;
+      const tocPage = best && best.score > 0.5 ? best.tocItem.pageNumber : null;
+      console.log("[CROSSLINK:resolve]", {
+        label: link.label,
+        tocMatches: matches.slice(0, 2).map((m) => ({ page: m.tocItem.pageNumber, score: m.score.toFixed(2) })),
+        resolved: tocPage,
+      });
       return { label: link.label, targetPage: tocPage };
     });
     return {
@@ -587,6 +596,18 @@ export function RightPanel({
       },
     } as UltraPageView & { _synth: Record<string, unknown> };
   }, [ultraPageViewWithSynthesis, tocItems]);
+
+  // Typed study model built when synthesis resolves — shared with all downstream features.
+  const studyModel = useMemo((): CurrentPageStudyModel | null => {
+    const synth = (ultraPageViewWithResolvedLinks as any)?._synth as Record<string, unknown> | undefined;
+    if (!synth || !ultraPageViewWithResolvedLinks) return null;
+    return buildStudyModel(
+      ultraPageViewWithResolvedLinks,
+      synth,
+      ctx?.documentId ?? "",
+      ctx?.pageNumber ?? 0,
+    );
+  }, [ultraPageViewWithResolvedLinks, ctx?.documentId, ctx?.pageNumber]);
 
   // Re-sort blocks to match badge order (left page physical position order).
   const displayView = useMemo((): UltraPageView | null => {
@@ -619,7 +640,7 @@ export function RightPanel({
     onRoleLabelMap?.(roleLabelMap);
   }, [roleLabelMap, onRoleLabelMap]);
 
-  // Notify parent with AI-selected highlight anchors when synthesis resolves.
+  // Notify parent with AI-selected highlight anchors and the full study model when synthesis resolves.
   // Uses pageTruthKey as a dependency so switching pages clears the anchors immediately.
   useEffect(() => {
     const anchors = (ultraPageViewWithResolvedLinks as any)?._synth?.highlightAnchors;
@@ -631,7 +652,17 @@ export function RightPanel({
     if (anchors?.length && onSynthHighlightsReady) {
       onSynthHighlightsReady(anchors);
     }
-  }, [ultraPageViewWithResolvedLinks, pageTruthKey, onSynthHighlightsReady]);
+    if (studyModel && onStudyModelReady) {
+      console.log("[STUDY_MODEL:ready]", {
+        page: studyModel.page,
+        thesis: studyModel.pageThesis.slice(0, 60),
+        anchors: studyModel.highlightAnchors.length,
+        miniTest: studyModel.miniTest.length,
+        crossLinks: studyModel.crossLinks.length,
+      });
+      onStudyModelReady(studyModel);
+    }
+  }, [ultraPageViewWithResolvedLinks, studyModel, pageTruthKey, onSynthHighlightsReady, onStudyModelReady]);
 
   // Legacy concept blocks — kept for ConceptBlocksView fallback
   const readerPageView = useMemo((): ReaderPageView | null => {
@@ -834,6 +865,7 @@ export function RightPanel({
                 bookTitle={ctx?.documentTitle}
                 pageNumber={ctx?.pageNumber ?? 0}
                 onStudySetGenerated={onStudySetGenerated}
+                studyModel={studyModel}
               />
             </div>
           </>
@@ -2672,16 +2704,24 @@ function GenerateStudySetButton({
   bookTitle,
   pageNumber,
   onStudySetGenerated,
+  studyModel,
 }: {
   view: UltraPageView;
   bookId: string;
   bookTitle?: string;
   pageNumber: number;
   onStudySetGenerated?: (setId: string) => void;
+  studyModel?: CurrentPageStudyModel | null;
 }) {
   const [saved, setSaved] = useState(false);
+  const [noSynth, setNoSynth] = useState(false);
 
   function handleGenerate() {
+    if (!studyModel) {
+      setNoSynth(true);
+      setTimeout(() => setNoSynth(false), 2800);
+      return;
+    }
     const set = buildRecallSetFromView(view, bookId, pageNumber, {
       bookTitle,
       sourceLabel: "right-panel",
@@ -2710,9 +2750,9 @@ function GenerateStudySetButton({
         flex: 1,
         padding: "10px 0",
         borderRadius: 10,
-        border: saved ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(99,102,241,0.25)",
-        background: saved ? "rgba(99,102,241,0.12)" : "rgba(99,102,241,0.07)",
-        color: saved ? "#a5b4fc" : "#818cf8",
+        border: saved ? "1px solid rgba(99,102,241,0.5)" : noSynth ? "1px solid rgba(239,68,68,0.4)" : "1px solid rgba(99,102,241,0.25)",
+        background: saved ? "rgba(99,102,241,0.12)" : noSynth ? "rgba(239,68,68,0.08)" : "rgba(99,102,241,0.07)",
+        color: saved ? "#a5b4fc" : noSynth ? "#fca5a5" : "#818cf8",
         fontSize: 12,
         fontWeight: 700,
         letterSpacing: "0.06em",
@@ -2720,7 +2760,7 @@ function GenerateStudySetButton({
         transition: "all 0.18s",
       }}
     >
-      {saved ? "✓ Saved to Recall Lab" : "🎯 Generate Study Set"}
+      {saved ? "✓ Saved to Recall Lab" : noSynth ? "⚠ OpenAI synthesis not ready yet" : "🎯 Generate Study Set"}
     </button>
   );
 }
