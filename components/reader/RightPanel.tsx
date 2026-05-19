@@ -580,13 +580,18 @@ export function RightPanel({
     const resolved = raw.map((link) => {
       const matches = searchTocForTopic(link.label, tocItems);
       const best = matches[0];
+      // Prefer TOC-resolved page (high confidence); fall back to AI's own estimate when
+      // Jaccard score is too low (single-keyword labels score ~0.33 and miss the 0.4 cutoff).
       const tocPage = best && best.score > 0.4 ? best.tocItem.pageNumber : null;
+      const resolvedPage = tocPage ?? (link.targetPage && link.targetPage > 0 ? link.targetPage : null);
       console.log("[CROSSLINK:resolve]", {
         label: link.label,
         tocMatches: matches.slice(0, 2).map((m) => ({ page: m.tocItem.pageNumber, score: m.score.toFixed(2) })),
-        resolved: tocPage,
+        tocPage,
+        aiPage: link.targetPage,
+        resolved: resolvedPage,
       });
-      return { label: link.label, targetPage: tocPage };
+      return { label: link.label, targetPage: resolvedPage };
     });
     return {
       ...ultraPageViewWithSynthesis,
@@ -2676,6 +2681,12 @@ function GenerateNoteButton({
       })),
       bookTitle,
       professorNotes,
+      // OpenAI synthesis extras — only present when studyModel resolved
+      studyModel?.pageThesis ?? undefined,
+      studyModel?.miniTest?.length ? studyModel.miniTest : undefined,
+      studyModel?.crossLinks?.length
+        ? studyModel.crossLinks.map((cl) => ({ label: cl.label, resolvedPage: cl.resolvedPage }))
+        : undefined,
     );
     saveUltraNote(note);
     setSaved(true);
