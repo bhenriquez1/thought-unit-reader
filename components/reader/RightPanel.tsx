@@ -20,6 +20,7 @@ import { buildUltraPageView, type UltraPageView, type UltraConceptBlock } from "
 import type { SRIModel, SRISignal, ReadingDepth } from "@/lib/insights/buildSRIModel";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { buildUltraNote, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
+import { searchTocForTopic } from "@/lib/syllabusParser/coursePlanner";
 import { buildRecallSetFromView, saveRecallSet } from "@/lib/recalllab/recallStore";
 import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
 
@@ -76,6 +77,8 @@ interface RightPanelProps {
   onSynthHighlightsReady?: (anchors: import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[]) => void;
   /** Called when user clicks a cross-link that has an estimated target page */
   onCrossLinkNavigate?: (page: number) => void;
+  /** TOC items for resolving cross-link labels to real page numbers */
+  tocItems?: import("@/lib/stores/tocStore").TocItem[];
 }
 
 // ---------------------------------------------------------------------------
@@ -309,6 +312,7 @@ export function RightPanel({
   onStudySetGenerated,
   onSynthHighlightsReady,
   onCrossLinkNavigate,
+  tocItems,
 }: RightPanelProps) {
   const pageTruthKey = intelligence.pageTruthKey;
   const pageModel = intelligence.pageModel;
@@ -423,6 +427,7 @@ export function RightPanel({
     domain: (ultraPageView?._debug?.domain) ?? null,
     blocks: ultraPageView?.blocks ?? [],
     enabled: isCurrentPageModel && !!ultraPageView,
+    pageNumber: ctx?.pageNumber ?? undefined,
   });
 
   // Apply teaching synthesis over heuristic view without re-running the pipeline.
@@ -560,26 +565,49 @@ export function RightPanel({
     } as UltraPageView & { _synth: Record<string, unknown> };
   }, [ultraPageView, teachingSynthesis]);
 
+  // Resolve cross-link labels to real TOC pages instead of relying on AI page guesses.
+  // OpenAI suggests the concept label; this pass finds the actual document page.
+  const ultraPageViewWithResolvedLinks = useMemo((): UltraPageView | null => {
+    if (!ultraPageViewWithSynthesis) return null;
+    if (!tocItems?.length) return ultraPageViewWithSynthesis;
+    const raw = (ultraPageViewWithSynthesis as any)._synth?.crossLinks as
+      Array<{ label: string; targetPage: number | null }> | null | undefined;
+    if (!raw?.length) return ultraPageViewWithSynthesis;
+    const resolved = raw.map((link) => {
+      const matches = searchTocForTopic(link.label, tocItems);
+      const best = matches[0];
+      const tocPage = best && best.score > 0.35 ? best.tocItem.pageNumber : null;
+      return { label: link.label, targetPage: tocPage };
+    });
+    return {
+      ...ultraPageViewWithSynthesis,
+      _synth: {
+        ...(ultraPageViewWithSynthesis as any)._synth,
+        crossLinks: resolved,
+      },
+    } as UltraPageView & { _synth: Record<string, unknown> };
+  }, [ultraPageViewWithSynthesis, tocItems]);
+
   // Re-sort blocks to match badge order (left page physical position order).
   const displayView = useMemo((): UltraPageView | null => {
-    if (!ultraPageViewWithSynthesis) return null;
+    if (!ultraPageViewWithResolvedLinks) return null;
     const pageNeighborhoods = guidedPath?.neighborhoods;
-    if (!pageNeighborhoods?.length) return ultraPageViewWithSynthesis;
+    if (!pageNeighborhoods?.length) return ultraPageViewWithResolvedLinks;
 
-    const byConceptId = new Map(ultraPageViewWithSynthesis.blocks.map((b) => [b.conceptId, b]));
+    const byConceptId = new Map(ultraPageViewWithResolvedLinks.blocks.map((b) => [b.conceptId, b]));
     const ordered: UltraConceptBlock[] = [];
     for (const n of pageNeighborhoods) {
       if (!n.conceptId) continue;
       const block = byConceptId.get(n.conceptId);
       if (block) ordered.push({ ...block, ordinal: ordered.length + 1 });
     }
-    for (const block of ultraPageViewWithSynthesis.blocks) {
+    for (const block of ultraPageViewWithResolvedLinks.blocks) {
       if (!ordered.some((b) => b.conceptId === block.conceptId)) {
         ordered.push({ ...block, ordinal: ordered.length + 1 });
       }
     }
-    return { ...ultraPageViewWithSynthesis, blocks: ordered };
-  }, [ultraPageViewWithSynthesis, guidedPath]);
+    return { ...ultraPageViewWithResolvedLinks, blocks: ordered };
+  }, [ultraPageViewWithResolvedLinks, guidedPath]);
 
   // Emit conceptId → roleLabel map so the left panel can label its badges.
   const roleLabelMap = useMemo((): Map<string, string> => {
@@ -594,7 +622,7 @@ export function RightPanel({
   // Notify parent with AI-selected highlight anchors when synthesis resolves.
   // Uses pageTruthKey as a dependency so switching pages clears the anchors immediately.
   useEffect(() => {
-    const anchors = (ultraPageViewWithSynthesis as any)?._synth?.highlightAnchors;
+    const anchors = (ultraPageViewWithResolvedLinks as any)?._synth?.highlightAnchors;
     console.log("[HIGHLIGHT:anchors]", {
       count: anchors?.length ?? 0,
       texts: anchors?.map((a: any) => ({ text: a.text?.slice(0, 40), type: a.anchorType })) ?? [],
@@ -603,7 +631,7 @@ export function RightPanel({
     if (anchors?.length && onSynthHighlightsReady) {
       onSynthHighlightsReady(anchors);
     }
-  }, [ultraPageViewWithSynthesis, pageTruthKey, onSynthHighlightsReady]);
+  }, [ultraPageViewWithResolvedLinks, pageTruthKey, onSynthHighlightsReady]);
 
   // Legacy concept blocks — kept for ConceptBlocksView fallback
   const readerPageView = useMemo((): ReaderPageView | null => {
@@ -791,6 +819,14 @@ export function RightPanel({
                 bookTitle={ctx?.documentTitle}
                 pageNumber={ctx?.pageNumber ?? 0}
                 onNoteSaved={onNoteSaved}
+                professorNotes={(displayView as any)?._synth ? {
+                  whyItMatters:    (displayView as any)._synth.whyItMatters    ?? undefined,
+                  keyMechanism:    (displayView as any)._synth.keyMechanism    ?? undefined,
+                  commonConfusion: (displayView as any)._synth.commonConfusion ?? undefined,
+                  memoryAnchor:    (displayView as any)._synth.memoryAnchor    ?? undefined,
+                  reasoningFlow:   (displayView as any)._synth.reasoningFlow   ?? undefined,
+                  examSignal:      (displayView as any)._synth.examSignal      ?? undefined,
+                } : undefined}
               />
               <GenerateStudySetButton
                 view={displayView}
@@ -2553,12 +2589,21 @@ function GenerateNoteButton({
   bookTitle,
   pageNumber,
   onNoteSaved,
+  professorNotes,
 }: {
   view: UltraPageView;
   bookId: string;
   bookTitle?: string;
   pageNumber: number;
   onNoteSaved?: () => void;
+  professorNotes?: {
+    whyItMatters?: string;
+    keyMechanism?: string;
+    commonConfusion?: string;
+    memoryAnchor?: string;
+    reasoningFlow?: string;
+    examSignal?: string;
+  };
 }) {
   const [saved, setSaved] = useState(false);
 
@@ -2589,7 +2634,8 @@ function GenerateNoteButton({
         trap: b.trap,
         rule: b.rule,
       })),
-      bookTitle
+      bookTitle,
+      professorNotes,
     );
     saveUltraNote(note);
     setSaved(true);
