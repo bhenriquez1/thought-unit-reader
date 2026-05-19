@@ -472,12 +472,19 @@ export default function SmartPDFViewer({
         }
 
         setGuidedOverlayData({ neighborhoods: highlightNeighborhoods!, overlays });
-        setOverlayRects([]);
-        return;
+        if (!hasTargets) {
+          setOverlayRects([]);
+          return;
+        }
+        // hasTargets: fall through to also render AI anchor highlights
       }
 
-      // ── FALLBACK: flat highlightTargets path (unchanged) ───────────────────
-      setGuidedOverlayData(null);
+      // ── flat highlightTargets path ─────────────────────────────────────────
+      if (!hasNeighborhoods) setGuidedOverlayData(null);
+      console.log("[HIGHLIGHT:viewer-input]", {
+        targetCount: highlightTargets?.length ?? 0,
+        ids: highlightTargets?.map((t) => t.evidenceRefId) ?? [],
+      });
       function spansForNeedle(needle: string): HTMLElement[] {
         const idx = concatText.indexOf(needle);
         if (idx === -1) return [];
