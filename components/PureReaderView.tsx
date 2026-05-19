@@ -92,7 +92,10 @@ export default function PureReaderView({
           id:                   `ai-anchor-${i}`,
           page:                 currentPage,
           text:                 a.text,
-          normalizedText:       a.text.toLowerCase().replace(/­/g, "").replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim(),
+          // Pass raw text — SmartPDFViewer applies normForMatch() before matching,
+          // which handles ligatures (ﬁ→fi) correctly. Pre-normalizing here would
+          // strip ligatures to nothing before normForMatch can convert them.
+          normalizedText:       a.text,
           level:                "important" as const,
           score:                100 - i,
           sourceParagraphIndex: 0,
@@ -103,7 +106,7 @@ export default function PureReaderView({
           id:                   `ai-anchor-${i}`,
           page:                 currentPage,
           text,
-          normalizedText:       text.toLowerCase().replace(/­/g, "").replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim(),
+          normalizedText:       text,
           level:                "important" as const,
           score:                100 - i,
           sourceParagraphIndex: 0,
