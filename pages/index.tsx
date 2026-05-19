@@ -425,8 +425,9 @@ export default function ThoughtUnitReader() {
   const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
   const [guidedPath, setGuidedPath] = useState<RenderGuidedReadingPathResult | null>(null);
   const [roleLabelByConceptId, setRoleLabelByConceptId] = useState<Map<string, string>>(new Map());
-  // AI-selected highlight anchors from synthesis — cleared immediately on page change
-  const [synthAiHighlights, setSynthAiHighlights] = useState<string[]>([]);
+  // AI-selected highlight anchors from synthesis — cleared immediately on page change.
+  // Full anchor objects (not just strings) so anchorType can drive legend colors.
+  const [synthAiHighlights, setSynthAiHighlights] = useState<import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[]>([]);
 
   // Clear AI highlights immediately when the user navigates to a new page.
   // Without this, stale anchors from the previous page remain until the new synthesis resolves.
@@ -2698,7 +2699,8 @@ export default function ThoughtUnitReader() {
                   focusSnippet={focusSnippet}
                   highlightTargets={highlightTargets}
                   highlightNeighborhoods={highlightNeighborhoods}
-                  aiHighlightTexts={synthAiHighlights}
+                  aiHighlightTexts={synthAiHighlights.map(a => a.text)}
+                aiHighlightAnchors={synthAiHighlights}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
                   onReadingPath={setGuidedPath}
@@ -2748,7 +2750,7 @@ export default function ThoughtUnitReader() {
                   setFocusedEvidenceId(evidenceId || resolveEvidenceId(snippet) || null);
                   window.setTimeout(() => setFocusSnippet(snippet), 0);
                 }}
-                onSynthHighlightsReady={(anchors) => setSynthAiHighlights(anchors.map(a => a.text))}
+                onSynthHighlightsReady={(anchors) => setSynthAiHighlights(anchors)}
                 onCrossLinkNavigate={(page) => setCurrentPage(page)}
               />
             </div>

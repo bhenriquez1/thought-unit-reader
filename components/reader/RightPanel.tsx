@@ -595,6 +595,11 @@ export function RightPanel({
   // Uses pageTruthKey as a dependency so switching pages clears the anchors immediately.
   useEffect(() => {
     const anchors = (ultraPageViewWithSynthesis as any)?._synth?.highlightAnchors;
+    console.log("[HIGHLIGHT:anchors]", {
+      count: anchors?.length ?? 0,
+      texts: anchors?.map((a: any) => ({ text: a.text?.slice(0, 40), type: a.anchorType })) ?? [],
+      pageTruthKey,
+    });
     if (anchors?.length && onSynthHighlightsReady) {
       onSynthHighlightsReady(anchors);
     }
@@ -1210,8 +1215,10 @@ function UltraView({
   });
 
   // When synthesis has resolved, AI coreIdea is the authoritative governing concept.
-  // When synthesis is pending/failed, fall back to heuristic pageThesis.
-  const rawCoreIdea = (hasSynth ? view.coreIdea : null) ?? view.pageThesis ?? view.coreIdea;
+  // Use synthStatus === "success" (not hasSynth) so thesis switches even if Study Notes fields
+  // were all rejected by validSynthField. view.coreIdea is already set to synthesis.coreIdea
+  // when synthesis ran (see finalCoreIdea in ultraPageViewWithSynthesis).
+  const rawCoreIdea = (synthStatus === "success" ? view.coreIdea : null) ?? view.pageThesis ?? view.coreIdea;
   const displayCoreIdea =
     view.teachingStatement && !isSimilarText(rawCoreIdea ?? "", view.teachingStatement)
       ? rawCoreIdea
@@ -1263,8 +1270,8 @@ function UltraView({
     <div className="space-y-4">
       {/* Page Thesis — governing concept for this page */}
       <PanelSection title="Page Thesis">
-        {/* One-line summary — only shown before synthesis resolves; AI coreIdea is the authoritative thesis */}
-        {!hasSynth && view.oneLineSummary && (
+        {/* One-line summary — heuristic compressed anchor. Hidden once synthesis has completed. */}
+        {synthStatus !== "success" && !hasSynth && view.oneLineSummary && (
           <div className="mb-2 rounded-lg border border-amber-400/40 bg-amber-400/8 px-4 py-2">
             <p className="text-[16px] font-semibold leading-6 text-amber-200">{view.oneLineSummary}</p>
           </div>
