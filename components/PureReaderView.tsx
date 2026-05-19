@@ -33,6 +33,8 @@ interface PureReaderViewProps {
   highlightNeighborhoods?: HighlightNeighborhood[];
   /** AI-selected anchor texts from synthesis — when present, displayed as a separate highlight tier */
   aiHighlightTexts?: string[];
+  /** Full anchor objects from synthesis — preferred over aiHighlightTexts; includes anchorType for legend */
+  aiHighlightAnchors?: import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[];
   focusedEvidenceId?: string | null;
   onEvidenceFocus?: (id: string) => void;
   onOpenFocusCycle?: () => void;
@@ -56,6 +58,7 @@ export default function PureReaderView({
   highlightTargets,
   highlightNeighborhoods,
   aiHighlightTexts,
+  aiHighlightAnchors,
   focusedEvidenceId,
   onEvidenceFocus,
   onOpenFocusCycle,
@@ -65,21 +68,49 @@ export default function PureReaderView({
   const { zoom } = useZoomStore();
   const [isPageChanging, setIsPageChanging] = useState(false);
 
+  // Map AI anchor types to ParagraphKind for highlight legend colors.
+  const anchorTypeToKind = (anchorType: string): import("@/lib/readerContracts").ParagraphKind => {
+    switch (anchorType) {
+      case "mechanism":    return "mechanism";
+      case "formula":      return "formula";
+      case "clinicalTrap": return "clinical";
+      case "application":  return "application";
+      default:             return "definition"; // thesis, definition, examSignal
+    }
+  };
+
   // When AI anchors exist, convert them to HighlightTarget[] and suppress heuristic main highlights.
+  // Prefer full anchor objects (aiHighlightAnchors) over plain text (aiHighlightTexts).
   // AI anchors take precedence; heuristic "support"/"additional"/"trap" tiers are kept as-is.
   const effectiveHighlightTargets: HighlightTarget[] | undefined = (() => {
-    if (!aiHighlightTexts?.length) return highlightTargets;
-    const aiTargets: HighlightTarget[] = aiHighlightTexts.map((text, i) => ({
-      id:                   `ai-anchor-${i}`,
-      page:                 currentPage,
-      text,
-      normalizedText:       text.toLowerCase().replace(/­/g, "").replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim(),
-      level:                "important" as const,
-      score:                100 - i,
-      sourceParagraphIndex: 0,
-      kind:                 "definition" as const,
-      evidenceRefId:        `ai-anchor-${i}`,
-    }));
+    const anchors = aiHighlightAnchors?.length ? aiHighlightAnchors : null;
+    const texts   = !anchors && aiHighlightTexts?.length ? aiHighlightTexts : null;
+    if (!anchors && !texts) return highlightTargets;
+
+    const aiTargets: HighlightTarget[] = anchors
+      ? anchors.map((a, i) => ({
+          id:                   `ai-anchor-${i}`,
+          page:                 currentPage,
+          text:                 a.text,
+          normalizedText:       a.text.toLowerCase().replace(/­/g, "").replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim(),
+          level:                "important" as const,
+          score:                100 - i,
+          sourceParagraphIndex: 0,
+          kind:                 anchorTypeToKind(a.anchorType),
+          evidenceRefId:        `ai-anchor-${i}`,
+        }))
+      : texts!.map((text, i) => ({
+          id:                   `ai-anchor-${i}`,
+          page:                 currentPage,
+          text,
+          normalizedText:       text.toLowerCase().replace(/­/g, "").replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim(),
+          level:                "important" as const,
+          score:                100 - i,
+          sourceParagraphIndex: 0,
+          kind:                 "definition" as const,
+          evidenceRefId:        `ai-anchor-${i}`,
+        }));
+
     // Keep heuristic non-main highlights as secondary context
     const heuristicSecondary = (highlightTargets ?? []).filter(t => t.level !== "important");
     return [...aiTargets, ...heuristicSecondary];
