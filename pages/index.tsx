@@ -428,6 +428,12 @@ export default function ThoughtUnitReader() {
   // AI-selected highlight anchors from synthesis — cleared immediately on page change
   const [synthAiHighlights, setSynthAiHighlights] = useState<string[]>([]);
 
+  // Clear AI highlights immediately when the user navigates to a new page.
+  // Without this, stale anchors from the previous page remain until the new synthesis resolves.
+  useEffect(() => {
+    setSynthAiHighlights([]);
+  }, [currentPage]);
+
   /* =========================================================================
      🔹 Unified Annotation Store (P0.1) - Shared between Surgeon View + NoteLab
   ========================================================================= */
@@ -2743,6 +2749,7 @@ export default function ThoughtUnitReader() {
                   window.setTimeout(() => setFocusSnippet(snippet), 0);
                 }}
                 onSynthHighlightsReady={(anchors) => setSynthAiHighlights(anchors.map(a => a.text))}
+                onCrossLinkNavigate={(page) => setCurrentPage(page)}
               />
             </div>
 
