@@ -35,6 +35,13 @@ export const TeachingSynthesisConceptSchema = z.object({
   examHook: z.string().nullable(),
 });
 
+export const SynthCrossLinkSchema = z.object({
+  label:      z.string(),           // display text, e.g. "limit → convergence"
+  targetPage: z.number().nullable(), // estimated document page number, null if unknown
+});
+
+export type SynthCrossLink = z.infer<typeof SynthCrossLinkSchema>;
+
 export const TeachingSynthesisSchema = z.object({
   coreIdea: z.string(),
   mechanism: z.string(),
@@ -47,6 +54,7 @@ export const TeachingSynthesisSchema = z.object({
   misconceptionAlert: z.string().nullable(),
   memoryAnchor: z.string().nullable(),           // was .nullish() — OpenAI structured outputs require all fields present
   crossLinkHints: z.array(z.string()).nullable(), // was .optional() — same reason
+  crossLinks: z.array(SynthCrossLinkSchema).nullable(), // structured cross-links with optional page estimates
   concepts: z.array(TeachingSynthesisConceptSchema),
   miniTests: z.array(z.string()).nullable(),      // was .optional() — same reason
   highlightAnchors: z.array(SynthHighlightAnchorSchema).nullable(), // 2–4 exact source spans for left-panel
@@ -169,7 +177,14 @@ Rules:
 • Order by importance: thesis/governing principle first, then mechanism, then trap/signal.
 • Prefer: governing definition, key mechanism, formula, clinical trap, exam signal.
 • Avoid: figure captions, transitional sentences, filler, repeated phrases, OCR fragments.
-• If no extracted concept text is clearly exam-worthy, return null — do NOT invent anchors.`;
+• If no extracted concept text is clearly exam-worthy, return null — do NOT invent anchors.
+
+─── CROSS-LINK PAGE ESTIMATES ───────────────────────────────────────────────
+crossLinks: structured version of crossLinkHints. For each link, estimate the document
+page number where the related concept is introduced or defined. Base your estimate on:
+• The surrounding page content and where foundational ideas typically appear
+• Relative position (e.g., a prerequisite concept likely appeared earlier)
+Set targetPage to null if you genuinely cannot estimate. Do not guess randomly.`;
 }
 
 export function buildUserPrompt(input: SynthesisInput): string {
@@ -226,7 +241,7 @@ The answer must be about UNDERSTANDING, not about what appears in a figure or wh
 ─── TASK ──────────────────────────────────────────────────────────────────
 Produce a structured educational interpretation for this page.
 
-For page level: coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, crossLinkHints, highlightAnchors.
+For page level: coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, crossLinkHints, crossLinks (structured crossLinkHints with targetPage estimates), highlightAnchors.
 For each concept (include ${Math.min(rankedConcepts.length, 4)}): principle, mechanism, trap, rule, misconception, examHook.
 
 Every field: complete sentence, ≤20 words, relational not definitional, professor-level language.

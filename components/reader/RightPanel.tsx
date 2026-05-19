@@ -74,6 +74,8 @@ interface RightPanelProps {
   onStudySetGenerated?: (setId: string) => void;
   /** Called when synthesis resolves with AI-selected highlight anchors for the left panel */
   onSynthHighlightsReady?: (anchors: import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[]) => void;
+  /** Called when user clicks a cross-link that has an estimated target page */
+  onCrossLinkNavigate?: (page: number) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +308,7 @@ export function RightPanel({
   onNoteSaved,
   onStudySetGenerated,
   onSynthHighlightsReady,
+  onCrossLinkNavigate,
 }: RightPanelProps) {
   const pageTruthKey = intelligence.pageTruthKey;
   const pageModel = intelligence.pageModel;
@@ -552,8 +555,9 @@ export function RightPanel({
         reasoningFlow:    vFlow     ?? null,
         examSignal:       vExamIdea ?? null,
         highlightAnchors: teachingSynthesis.highlightAnchors ?? null,
+      crossLinks:       teachingSynthesis.crossLinks ?? null,
       },
-    } as UltraPageView & { _synth: Record<string, string | null> };
+    } as UltraPageView & { _synth: Record<string, unknown> };
   }, [ultraPageView, teachingSynthesis]);
 
   // Re-sort blocks to match badge order (left page physical position order).
@@ -772,6 +776,7 @@ export function RightPanel({
                 onAnchorClick={(text) => onEvidenceClick?.(text, undefined)}
                 synthStatus={synthStatus}
                 synthErrorMsg={synthErrorMsg}
+                onCrossLinkNavigate={onCrossLinkNavigate}
               />
             </UltraViewErrorBoundary>
             <div style={{ display: "flex", gap: 8 }}>
@@ -1146,6 +1151,7 @@ function UltraView({
   onAnchorClick,
   synthStatus,
   synthErrorMsg,
+  onCrossLinkNavigate,
 }: {
   view: UltraPageView;
   selectedBlockIndex: number;
@@ -1153,6 +1159,7 @@ function UltraView({
   onAnchorClick: (text: string) => void;
   synthStatus: import("./useTeachingSynthesis").SynthesisStatus;
   synthErrorMsg: string | null;
+  onCrossLinkNavigate?: (page: number) => void;
 }) {
   const domain = view.domain ?? view._debug?.domain;
   const labels = domainFieldLabels(domain);
@@ -1174,6 +1181,10 @@ function UltraView({
     examSignal: string | null;
   } | undefined;
   const hasSynth = !!(synth && (synth.whyItMatters || synth.keyMechanism || synth.commonConfusion || synth.memoryAnchor));
+
+  // AI-structured cross-links (with optional page estimates) — populated once synthesis resolves
+  const synthCrossLinks = ((view as any)._synth as any)?.crossLinks as
+    Array<{ label: string; targetPage: number | null }> | null | undefined;
 
   // [WIRE] _synth — always-on synthesis pipeline state.
   // Filter DevTools: "[WIRE] _synth"
@@ -1198,9 +1209,9 @@ function UltraView({
     pageThesis: (view.pageThesis ?? view.coreIdea ?? "—").slice(0, 60),
   });
 
-  // Prefer teachingStatement when it's distinct from coreIdea (it's more reliable);
-  // if they're near-duplicates, teachingStatement already says the same thing so use it.
-  const rawCoreIdea = view.pageThesis ?? view.coreIdea;
+  // When synthesis has resolved, AI coreIdea is the authoritative governing concept.
+  // When synthesis is pending/failed, fall back to heuristic pageThesis.
+  const rawCoreIdea = (hasSynth ? view.coreIdea : null) ?? view.pageThesis ?? view.coreIdea;
   const displayCoreIdea =
     view.teachingStatement && !isSimilarText(rawCoreIdea ?? "", view.teachingStatement)
       ? rawCoreIdea
@@ -1252,8 +1263,8 @@ function UltraView({
     <div className="space-y-4">
       {/* Page Thesis — governing concept for this page */}
       <PanelSection title="Page Thesis">
-        {/* One-line summary — dyslexia-safe rapid anchor */}
-        {view.oneLineSummary && (
+        {/* One-line summary — only shown before synthesis resolves; AI coreIdea is the authoritative thesis */}
+        {!hasSynth && view.oneLineSummary && (
           <div className="mb-2 rounded-lg border border-amber-400/40 bg-amber-400/8 px-4 py-2">
             <p className="text-[16px] font-semibold leading-6 text-amber-200">{view.oneLineSummary}</p>
           </div>
@@ -1610,19 +1621,38 @@ function UltraView({
       {/* STR Compression — hidden in synthesis-only mode; synthesis fields now appear in Study Notes */}
       {/* Reading Map — hidden; SRI signals are internal metadata, not student-facing study notes */}
 
-      {/* Cross-Link Hints */}
-      {view.crossLinkHints && view.crossLinkHints.length > 0 && (
+      {/* Cross-Links — clickable when synthesis provides a page estimate */}
+      {(synthCrossLinks?.length || view.crossLinkHints?.length) ? (
         <PanelSection title="Cross-Links">
           <ul className="space-y-1">
-            {view.crossLinkHints.map((hint, i) => (
-              <li key={i} className="flex items-start gap-2 text-[13px] text-sky-300/80">
-                <span className="mt-0.5 shrink-0 text-sky-500">↗</span>
-                <span>{hint}</span>
-              </li>
-            ))}
+            {synthCrossLinks?.length
+              ? synthCrossLinks.map((link, i) => {
+                  const canNav = !!link.targetPage && !!onCrossLinkNavigate;
+                  return (
+                    <li
+                      key={i}
+                      onClick={canNav ? () => onCrossLinkNavigate!(link.targetPage!) : undefined}
+                      className={`flex items-start gap-2 text-[13px] select-none ${
+                        canNav
+                          ? "cursor-pointer text-sky-300 hover:text-sky-100 underline decoration-dotted"
+                          : "text-sky-300/80"
+                      }`}
+                    >
+                      <span className="mt-0.5 shrink-0 text-sky-500">↗</span>
+                      <span>{link.label}{link.targetPage ? ` · p.${link.targetPage}` : ""}</span>
+                    </li>
+                  );
+                })
+              : view.crossLinkHints?.map((hint, i) => (
+                  <li key={i} className="flex items-start gap-2 text-[13px] text-sky-300/80">
+                    <span className="mt-0.5 shrink-0 text-sky-500">↗</span>
+                    <span>{hint}</span>
+                  </li>
+                ))
+            }
           </ul>
         </PanelSection>
-      )}
+      ) : null}
 
       {/* ── DEV DIAGNOSTIC OVERLAY — only visible when NEXT_PUBLIC_DEBUG_READER=true ── */}
       {process.env.NEXT_PUBLIC_DEBUG_READER === "true" && (
