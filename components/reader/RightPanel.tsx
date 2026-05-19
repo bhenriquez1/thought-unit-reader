@@ -580,7 +580,7 @@ export function RightPanel({
     const resolved = raw.map((link) => {
       const matches = searchTocForTopic(link.label, tocItems);
       const best = matches[0];
-      const tocPage = best && best.score > 0.5 ? best.tocItem.pageNumber : null;
+      const tocPage = best && best.score > 0.4 ? best.tocItem.pageNumber : null;
       console.log("[CROSSLINK:resolve]", {
         label: link.label,
         tocMatches: matches.slice(0, 2).map((m) => ({ page: m.tocItem.pageNumber, score: m.score.toFixed(2) })),
@@ -644,7 +644,7 @@ export function RightPanel({
   // Uses pageTruthKey as a dependency so switching pages clears the anchors immediately.
   useEffect(() => {
     const anchors = (ultraPageViewWithResolvedLinks as any)?._synth?.highlightAnchors;
-    console.log("[HIGHLIGHT:anchors]", {
+    console.log("[HIGHLIGHT:openai]", {
       count: anchors?.length ?? 0,
       texts: anchors?.map((a: any) => ({ text: a.text?.slice(0, 40), type: a.anchorType })) ?? [],
       pageTruthKey,
@@ -858,6 +858,7 @@ export function RightPanel({
                   reasoningFlow:   (displayView as any)._synth.reasoningFlow   ?? undefined,
                   examSignal:      (displayView as any)._synth.examSignal      ?? undefined,
                 } : undefined}
+                studyModel={studyModel}
               />
               <GenerateStudySetButton
                 view={displayView}
@@ -1706,7 +1707,11 @@ function UltraView({
                   return (
                     <li
                       key={i}
-                      onClick={canNav ? () => onCrossLinkNavigate!(link.targetPage!) : undefined}
+                      onClick={canNav ? () => {
+                        console.log("[CROSSLINK:click]", { label: link.label, targetPage: link.targetPage });
+                        console.log("[CROSSLINK:navigate]", { to: link.targetPage });
+                        onCrossLinkNavigate!(link.targetPage!);
+                      } : undefined}
                       className={`flex items-start gap-2 text-[13px] select-none ${
                         canNav
                           ? "cursor-pointer text-sky-300 hover:text-sky-100 underline decoration-dotted"
@@ -2622,6 +2627,7 @@ function GenerateNoteButton({
   pageNumber,
   onNoteSaved,
   professorNotes,
+  studyModel,
 }: {
   view: UltraPageView;
   bookId: string;
@@ -2636,8 +2642,10 @@ function GenerateNoteButton({
     reasoningFlow?: string;
     examSignal?: string;
   };
+  studyModel?: CurrentPageStudyModel | null;
 }) {
   const [saved, setSaved] = useState(false);
+  const synthReady = studyModel !== undefined ? studyModel !== null : true;
 
   function handleGenerate() {
     // Strip the "ULTRA – " display prefix so the stored topic is clean
@@ -2678,22 +2686,23 @@ function GenerateNoteButton({
   return (
     <button
       type="button"
-      onClick={handleGenerate}
+      onClick={synthReady ? handleGenerate : undefined}
+      disabled={!synthReady}
       style={{
         width: "100%",
         padding: "10px 0",
         borderRadius: 10,
-        border: saved ? "1px solid rgba(52,211,153,0.5)" : "1px solid rgba(245,200,66,0.25)",
-        background: saved ? "rgba(16,185,129,0.12)" : "rgba(245,200,66,0.07)",
-        color: saved ? "#6ee7b7" : "#fcd34d",
+        border: saved ? "1px solid rgba(52,211,153,0.5)" : !synthReady ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(245,200,66,0.25)",
+        background: saved ? "rgba(16,185,129,0.12)" : !synthReady ? "rgba(255,255,255,0.03)" : "rgba(245,200,66,0.07)",
+        color: saved ? "#6ee7b7" : !synthReady ? "rgba(255,255,255,0.3)" : "#fcd34d",
         fontSize: 12,
         fontWeight: 700,
         letterSpacing: "0.06em",
-        cursor: "pointer",
+        cursor: synthReady ? "pointer" : "not-allowed",
         transition: "all 0.18s",
       }}
     >
-      {saved ? "✓ Note saved to NoteLab" : "⚡ Generate Ultra Note"}
+      {saved ? "✓ Note saved to NoteLab" : !synthReady ? "⏳ Synthesis loading…" : "⚡ Generate Ultra Note"}
     </button>
   );
 }

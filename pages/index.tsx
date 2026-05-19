@@ -2757,7 +2757,10 @@ export default function ThoughtUnitReader() {
                   setFocusedEvidenceId(evidenceId || resolveEvidenceId(snippet) || null);
                   window.setTimeout(() => setFocusSnippet(snippet), 0);
                 }}
-                onSynthHighlightsReady={(anchors) => setSynthAiHighlights(anchors)}
+                onSynthHighlightsReady={(anchors) => {
+                    console.log("[HIGHLIGHT:parent-state]", { count: anchors.length, texts: anchors.map((a) => a.text.slice(0, 40)) });
+                    setSynthAiHighlights(anchors);
+                  }}
                 onStudyModelReady={(model) => setCurrentPageStudyModel(model)}
                 onCrossLinkNavigate={(page) => setCurrentPage(page)}
                 tocItems={tocItemsForSearch}
