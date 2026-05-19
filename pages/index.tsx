@@ -412,6 +412,11 @@ export default function ThoughtUnitReader() {
   const [speechRate, setSpeechRate] = useState(1.0);
 
   const [tableOfContents, setTableOfContents] = useState<TOCEntry[]>([]);
+  // Convert legacy TOCEntry[] to TocItem[] for cross-link resolution in RightPanel
+  const tocItemsForSearch = useMemo(
+    () => tableOfContents.map((e, i) => ({ id: `toc-${i}`, title: e.title, pageNumber: e.pageNumber, level: 0 as const })),
+    [tableOfContents]
+  );
   const [showTOC] = useState(true);
   const [syllabusFileName, setSyllabusFileName] = useState("");
   const [syllabusPages, setSyllabusPages] = useState<PageTextBundle[]>([]);
@@ -2752,6 +2757,7 @@ export default function ThoughtUnitReader() {
                 }}
                 onSynthHighlightsReady={(anchors) => setSynthAiHighlights(anchors)}
                 onCrossLinkNavigate={(page) => setCurrentPage(page)}
+                tocItems={tocItemsForSearch}
               />
             </div>
 
