@@ -433,11 +433,13 @@ export default function ThoughtUnitReader() {
   // AI-selected highlight anchors from synthesis — cleared immediately on page change.
   // Full anchor objects (not just strings) so anchorType can drive legend colors.
   const [synthAiHighlights, setSynthAiHighlights] = useState<import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[]>([]);
+  // Shared typed study model — emitted by RightPanel when synthesis resolves.
+  const [currentPageStudyModel, setCurrentPageStudyModel] = useState<import("@/lib/insights/currentPageStudyModel").CurrentPageStudyModel | null>(null);
 
-  // Clear AI highlights immediately when the user navigates to a new page.
-  // Without this, stale anchors from the previous page remain until the new synthesis resolves.
+  // Clear stale synthesis state immediately when the user navigates to a new page.
   useEffect(() => {
     setSynthAiHighlights([]);
+    setCurrentPageStudyModel(null);
   }, [currentPage]);
 
   /* =========================================================================
@@ -2756,6 +2758,7 @@ export default function ThoughtUnitReader() {
                   window.setTimeout(() => setFocusSnippet(snippet), 0);
                 }}
                 onSynthHighlightsReady={(anchors) => setSynthAiHighlights(anchors)}
+                onStudyModelReady={(model) => setCurrentPageStudyModel(model)}
                 onCrossLinkNavigate={(page) => setCurrentPage(page)}
                 tocItems={tocItemsForSearch}
               />

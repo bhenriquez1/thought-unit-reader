@@ -497,7 +497,10 @@ export default function SmartPDFViewer({
 
       const rects: OverlayRect[] = [];
       highlightTargets!.forEach((target) => {
-        const words = target.normalizedText.replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+        // Apply ligature/smart-quote normalization before candidate generation so
+        // anchors containing ﬁ/ﬂ match their PDF span equivalents (fi/fl).
+        const baseText = normForMatch(target.normalizedText);
+        const words = baseText.replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
         const candidates = [
           words.slice(0, 8).join(" "),
           words.slice(0, 6).join(" "),
@@ -526,6 +529,12 @@ export default function SmartPDFViewer({
           }
         }
 
+        console.log("[HIGHLIGHT:match]", {
+          id: target.evidenceRefId,
+          matched: matchedSpans.length > 0,
+          needle: candidates[0]?.slice(0, 40) ?? "(none)",
+          kind: target.kind,
+        });
         if (!matchedSpans.length) return;
         const geo = rectFromSpans(matchedSpans.slice(0, 12));
         if (!geo) return;

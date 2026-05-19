@@ -243,6 +243,9 @@ function NoteCard({
             <div style={{ fontSize: 13, color: "rgba(255,255,255,0.9)", lineHeight: 1.6 }}>{note.coreIdea}</div>
           </div>
 
+          {/* Professor Notes — OpenAI synthesis teaching sections */}
+          {note.professorNotes && <ProfessorNotesSection notes={note.professorNotes} />}
+
           {/* Concept blocks */}
           {note.concepts.map((c) => (
             <div key={c.ordinal} style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
@@ -306,6 +309,29 @@ function NoteCard({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ProfessorNotesSection({ notes }: { notes: NonNullable<import("@/lib/notelab/ultraNoteStore").UltraNote["professorNotes"]> }) {
+  const rows: Array<{ icon: string; label: string; text: string; color: string }> = [
+    { icon: "💡", label: "Why This Matters",  text: notes.whyItMatters    ?? "", color: "#fbbf24" },
+    { icon: "⚙️", label: "Key Mechanism",     text: notes.keyMechanism    ?? "", color: "#38bdf8" },
+    { icon: "⚠️", label: "Common Confusion",  text: notes.commonConfusion ?? "", color: "#f87171" },
+    { icon: "🧠", label: "Quick Memory",      text: notes.memoryAnchor    ?? "", color: "#a78bfa" },
+    { icon: "🔗", label: "Reasoning Flow",    text: notes.reasoningFlow   ?? "", color: "#6ee7b7" },
+    { icon: "🎓", label: "Exam Signal",       text: notes.examSignal      ?? "", color: "#fca5a5" },
+  ].filter((r) => r.text.length > 0);
+  if (!rows.length) return null;
+  return (
+    <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, background: "rgba(96,165,250,0.04)", border: "1px solid rgba(96,165,250,0.1)" }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#93c5fd", marginBottom: 8 }}>🧑‍🏫 PROFESSOR NOTES</div>
+      {rows.map((r) => (
+        <div key={r.label} style={{ marginBottom: 6 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: r.color, marginBottom: 2 }}>{r.icon} {r.label}</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", lineHeight: 1.55 }}>{r.text}</div>
+        </div>
+      ))}
     </div>
   );
 }
