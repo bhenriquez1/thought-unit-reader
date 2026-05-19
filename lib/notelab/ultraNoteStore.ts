@@ -52,6 +52,12 @@ export interface UltraNote {
   createdAt: number;
   /** OpenAI-generated professor teaching notes — present when synthesis resolved */
   professorNotes?: ProfessorNotes;
+  /** OpenAI page thesis — authoritative one-sentence governing idea */
+  pageThesis?: string;
+  /** OpenAI synthesis mini-test questions for this page */
+  miniTest?: string[];
+  /** Resolved cross-links from synthesis — label + verified page number */
+  crossLinks?: Array<{ label: string; resolvedPage?: number }>;
 }
 
 const STORAGE_KEY = "ultraNotes_v1";
@@ -110,6 +116,9 @@ export function buildUltraNote(
   concepts: UltraNoteConcept[],
   bookTitle?: string,
   professorNotes?: ProfessorNotes,
+  pageThesis?: string,
+  miniTest?: string[],
+  crossLinks?: Array<{ label: string; resolvedPage?: number }>,
 ): UltraNote {
   const memoryShortcuts = concepts
     .filter((c) => c.rule && c.rule.length > 10)
@@ -128,6 +137,9 @@ export function buildUltraNote(
     subject: inferSubject(bookId),
     createdAt: Date.now(),
     professorNotes: professorNotes ?? undefined,
+    pageThesis: pageThesis || undefined,
+    miniTest: miniTest?.length ? miniTest : undefined,
+    crossLinks: crossLinks?.length ? crossLinks : undefined,
   };
 }
 
@@ -163,6 +175,18 @@ export function formatUltraNoteText(note: UltraNote): string {
   if (note.memoryShortcuts.length > 0) {
     lines.push(`🧠 MEMORY SHORTCUT`);
     note.memoryShortcuts.forEach((s) => lines.push(`👉 ${s}`));
+    lines.push(``);
+  }
+
+  if (note.miniTest?.length) {
+    lines.push(`📝 MINI TEST`);
+    note.miniTest.forEach((q, i) => lines.push(`${i + 1}. ${q}`));
+    lines.push(``);
+  }
+
+  if (note.crossLinks?.length) {
+    lines.push(`🔗 CROSS-LINKS`);
+    note.crossLinks.forEach((cl) => lines.push(`↗ ${cl.label}${cl.resolvedPage ? ` · p.${cl.resolvedPage}` : ""}`));
   }
 
   return lines.join("\n");

@@ -2762,7 +2762,7 @@ export default function ThoughtUnitReader() {
                     setSynthAiHighlights(anchors);
                   }}
                 onStudyModelReady={(model) => setCurrentPageStudyModel(model)}
-                onCrossLinkNavigate={(page) => setCurrentPage(page)}
+                onCrossLinkNavigate={(page) => syncToPage(page, { reason: "TOC_JUMP" })}
                 tocItems={tocItemsForSearch}
               />
             </div>
