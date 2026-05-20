@@ -45,6 +45,7 @@ export type ActivePageIntelligenceSnapshot = {
   storyV3: PageStoryV3 | null;
   priorityHighlights: ExtractPriorityHighlightsResult;
   normResult: ClinicalNormalizationResult | null;
+  pageRole?: string; // from detectPageRole: "cover" | "contents" | "chapter_opener" | "section_opener" | "copyright_frontmatter" | "history_background" | "regular_teaching" | "table_formula" | "image_scan_heavy"
 };
 
 interface UseActivePageIntelligenceArgs {
@@ -674,6 +675,7 @@ export function useActivePageIntelligence({
     highlightNeighborhoods,
     limitedEvidence,
     normResult,
+    pageRole: signals.pageRole ?? undefined,
   };
 }
 
