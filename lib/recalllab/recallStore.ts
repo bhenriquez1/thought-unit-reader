@@ -111,15 +111,29 @@ export function buildRecallSetFromView(
   const topic = view.title.replace(/^ULTRA\s*[–—-]\s*/i, "").trim() || `Page ${pageNumber}`;
   const cards: RecallCard[] = [];
 
-  // 1. Core idea card — always created
-  const coreIdea = view.coreIdea || "See page for core idea.";
+  // OpenAI is the single source of truth when studyModel has resolved.
+  // Fall back to heuristic view fields only when synthesis is not yet available.
+  const thesis = studyModel?.pageThesis || view.coreIdea || "See page for core idea.";
+  const miniTests = studyModel?.miniTest?.length ? studyModel.miniTest : (view.miniTest ?? []);
+  // conceptBlocks from studyModel are already OpenAI-preferred (principle/mechanism mapped)
+  const conceptSource: Array<{ title: string; pattern?: string; surgicalReason?: string; trap?: string; rule?: string }> =
+    studyModel?.conceptBlocks?.length
+      ? studyModel.conceptBlocks.map((b) => ({
+          title:         b.title,
+          pattern:       b.pattern,
+          surgicalReason: b.mechanism,
+          trap:          b.trap,
+          rule:          b.rule,
+        }))
+      : view.blocks;
+
+  // 1. Page thesis card
   cards.push(card("core-0", "core",
     `What is the core idea of "${topic}"?`,
-    coreIdea
+    thesis
   ));
 
-  // 1b. Study Notes cards — from OpenAI synthesis (whyThisMatters, keyMechanism, commonConfusion, examSignal)
-  //     Only generated when studyModel resolves; adds professor-level understanding cards
+  // 2. Study Notes cards — OpenAI professor-layer (whyThisMatters → examSignal)
   if (studyModel?.studyNotes) {
     const sn = studyModel.studyNotes;
     if (sn.whyThisMatters)   cards.push(card("sn-why",  "reason",     `Why does "${topic}" matter clinically or conceptually?`, sn.whyThisMatters));
@@ -128,20 +142,17 @@ export function buildRecallSetFromView(
     if (sn.examSignal)       cards.push(card("sn-exam", "rule",       `What is the exam signal for "${topic}"?`,                sn.examSignal));
   }
 
-  // 2. Synthesis mini-test cards — OpenAI professor questions take priority over generic prompts
-  if (view.miniTest?.length) {
-    view.miniTest.forEach((q, i) => {
-      if (!q?.trim()) return;
-      cards.push(card(`synth-q${i}`, "definition", q.trim(), coreIdea));
-    });
-  }
+  // 3. Mini-test cards — OpenAI professor questions (preferred over heuristic miniTest)
+  miniTests.forEach((q, i) => {
+    if (!q?.trim()) return;
+    cards.push(card(`synth-q${i}`, "definition", q.trim(), thesis));
+  });
 
-  // 2. Per-concept cards — prioritized: definition → rule → reason → trap
-  view.blocks.forEach((block, bi) => {
+  // 4. Per-concept cards from OpenAI-preferred source
+  conceptSource.forEach((block, bi) => {
     const p = `b${bi + 1}`;
     const title = block.title;
 
-    // Definition / pattern card (the main declarative statement)
     if (block.pattern) {
       const q = /^(what|define|state)/i.test(title)
         ? `${title}?`
@@ -149,7 +160,6 @@ export function buildRecallSetFromView(
       cards.push(card(`${p}-def`, "definition", q, block.pattern));
     }
 
-    // Rule card
     if (block.rule && block.rule !== block.pattern) {
       cards.push(card(`${p}-rule`, "rule",
         `State the rule for: ${title}`,
@@ -158,7 +168,6 @@ export function buildRecallSetFromView(
       ));
     }
 
-    // Surgical reason card
     if (block.surgicalReason && block.surgicalReason !== block.pattern && block.surgicalReason !== block.rule) {
       cards.push(card(`${p}-why`, "reason",
         `Why does "${title}" work this way?`,
@@ -167,7 +176,6 @@ export function buildRecallSetFromView(
       ));
     }
 
-    // Trap / contrast card
     if (block.trap) {
       cards.push(card(`${p}-trap`, "trap",
         `⚠️ What is the common trap or misconception for: ${title}?`,
