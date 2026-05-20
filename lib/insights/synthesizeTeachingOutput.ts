@@ -58,6 +58,7 @@ export const TeachingSynthesisSchema = z.object({
   concepts: z.array(TeachingSynthesisConceptSchema),
   miniTests: z.array(z.string()).nullable(),      // was .optional() — same reason
   highlightAnchors: z.array(SynthHighlightAnchorSchema).nullable(), // 2–4 exact source spans for left-panel
+  relatedVideoQueries: z.array(z.string()).nullable(), // 3–5 YouTube search queries for teaching videos
 });
 
 export type TeachingSynthesisConcept = z.infer<typeof TeachingSynthesisConceptSchema>;
@@ -186,7 +187,17 @@ crossLinks: structured version of crossLinkHints. For each link, estimate the do
 page number where the related concept is introduced or defined. Base your estimate on:
 • The surrounding page content and where foundational ideas typically appear
 • Relative position (e.g., a prerequisite concept likely appeared earlier)
-Set targetPage to null if you genuinely cannot estimate. Do not guess randomly.`;
+Set targetPage to null if you genuinely cannot estimate. Do not guess randomly.
+
+─── RELATED TEACHING VIDEO QUERIES ─────────────────────────────────────────
+relatedVideoQueries: Generate 3–5 YouTube search queries a student should type to find
+a professor teaching this exact topic on video. Use known educator brand names where relevant:
+"Ninja Nerd", "Organic Chemistry Tutor", "Boards and Beyond", "Pathoma",
+"3Blue1Brown", "Khan Academy", "Professor Leonard".
+Format: "[Educator name] [topic keyword]"
+Examples: "Ninja Nerd sequence convergence", "3Blue1Brown limits intuition",
+"Pathoma thyroid iodine deficiency", "Boards and Beyond heart failure".
+Return null if the topic is too niche for known educators.`;
 }
 
 export function buildUserPrompt(input: SynthesisInput): string {
@@ -244,7 +255,7 @@ The answer must be about UNDERSTANDING, not about what appears in a figure or wh
 ─── TASK ──────────────────────────────────────────────────────────────────
 Produce a structured educational interpretation for this page.
 
-For page level: coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, crossLinkHints, crossLinks (structured crossLinkHints with targetPage estimates), highlightAnchors.
+For page level: coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, crossLinkHints, crossLinks (structured crossLinkHints with targetPage estimates), highlightAnchors, relatedVideoQueries.
 For each concept (include ${Math.min(rankedConcepts.length, 4)}): principle, mechanism, trap, rule, misconception, examHook.
 
 Every field: complete sentence, ≤20 words, relational not definitional, professor-level language.

@@ -538,8 +538,10 @@ export default function SmartPDFViewer({
 
         console.log("[HIGHLIGHT:match]", {
           id: target.evidenceRefId,
+          text: target.text?.slice(0, 50),
           matched: matchedSpans.length > 0,
           needle: candidates[0]?.slice(0, 40) ?? "(none)",
+          candidatesCount: candidates.length,
           kind: target.kind,
         });
         if (!matchedSpans.length) return;

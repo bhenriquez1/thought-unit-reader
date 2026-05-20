@@ -24,6 +24,7 @@ export type CurrentPageStudyModel = {
   miniTest: string[];
   highlightAnchors: Array<{ text: string; anchorType: string; reason: string }>;
   crossLinks: Array<{ label: string; resolvedPage?: number; confidence?: number }>;
+  relatedVideoQueries?: string[];
 };
 
 export function buildStudyModel(
@@ -72,5 +73,6 @@ export function buildStudyModel(
       label:       cl.label,
       resolvedPage: cl.targetPage ?? undefined,
     })),
+    relatedVideoQueries: (synth.relatedVideoQueries as string[] | null) ?? undefined,
   };
 }
