@@ -111,21 +111,17 @@ export function buildRecallSetFromView(
   const topic = view.title.replace(/^ULTRA\s*[–—-]\s*/i, "").trim() || `Page ${pageNumber}`;
   const cards: RecallCard[] = [];
 
-  // OpenAI is the single source of truth when studyModel has resolved.
-  // Fall back to heuristic view fields only when synthesis is not yet available.
-  const thesis = studyModel?.pageThesis || view.coreIdea || "See page for core idea.";
-  const miniTests = studyModel?.miniTest?.length ? studyModel.miniTest : (view.miniTest ?? []);
-  // conceptBlocks from studyModel are already OpenAI-preferred (principle/mechanism mapped)
+  // OpenAI is the single source of truth. studyModel must be present — callers must gate.
+  const thesis = studyModel?.pageThesis ?? "See page for core idea.";
+  const miniTests = studyModel?.miniTest ?? [];
   const conceptSource: Array<{ title: string; pattern?: string; surgicalReason?: string; trap?: string; rule?: string }> =
-    studyModel?.conceptBlocks?.length
-      ? studyModel.conceptBlocks.map((b) => ({
-          title:         b.title,
-          pattern:       b.pattern,
-          surgicalReason: b.mechanism,
-          trap:          b.trap,
-          rule:          b.rule,
-        }))
-      : view.blocks;
+    (studyModel?.conceptBlocks ?? []).map((b) => ({
+      title:         b.title,
+      pattern:       b.pattern,
+      surgicalReason: b.mechanism,
+      trap:          b.trap,
+      rule:          b.rule,
+    }));
 
   // 1. Page thesis card
   cards.push(card("core-0", "core",
@@ -184,10 +180,7 @@ export function buildRecallSetFromView(
     }
   });
 
-  // 3. Memory shortcut cards
-  (view.compression ?? []).slice(0, 2).forEach((s, i) => {
-    if (s) cards.push(card(`mem-${i}`, "memory", "Complete the memory shortcut:", s));
-  });
+  // No heuristic memory shortcuts — OpenAI study model is the sole source.
 
   const id = `rs-${bookId}-p${pageNumber}-${Date.now()}`;
   return {

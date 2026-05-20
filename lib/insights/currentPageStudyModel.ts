@@ -2,6 +2,8 @@
 // Shared typed model emitted by RightPanel when OpenAI synthesis resolves.
 // All downstream features (highlights, NoteLab, Recall Lab, CrossLinks) read from this.
 
+import type { MiniTestItem } from "@/lib/insights/synthesizeTeachingOutput";
+
 export type CurrentPageStudyModel = {
   page: number;
   bookId: string;
@@ -22,6 +24,7 @@ export type CurrentPageStudyModel = {
     rule?: string;
   }>;
   miniTest: string[];
+  miniTestItems?: MiniTestItem[];
   highlightAnchors: Array<{ text: string; anchorType: string; reason: string }>;
   externalStudyLinks: Array<{ label: string; searchQuery: string; type: string }>;
   relatedVideoQueries?: string[];
@@ -73,6 +76,7 @@ export function buildStudyModel(
       rule:      b.rule ?? undefined,
     })),
     miniTest: (view.miniTest ?? []).filter(Boolean),
+    miniTestItems: (synth.miniTestItems as MiniTestItem[] | null) ?? undefined,
     highlightAnchors: anchors,
     externalStudyLinks: rawExtLinks,
     relatedVideoQueries: (synth.relatedVideoQueries as string[] | null) ?? undefined,
