@@ -20,7 +20,6 @@ import { buildUltraPageView, type UltraPageView, type UltraConceptBlock } from "
 import type { SRIModel, SRISignal, ReadingDepth } from "@/lib/insights/buildSRIModel";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { buildUltraNote, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
-import { searchTocForTopic } from "@/lib/syllabusParser/coursePlanner";
 import { buildRecallSetFromView, saveRecallSet } from "@/lib/recalllab/recallStore";
 import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
 
@@ -552,89 +551,53 @@ export function RightPanel({
       blocks: finalBlocks,
       compression: finalCompression,
       miniTest: finalMiniTest,
-      crossLinkHints: teachingSynthesis.crossLinkHints?.length
-        ? teachingSynthesis.crossLinkHints
-        : ultraPageView.crossLinkHints,
       // Surfaced synthesis sections — displayed as dedicated Study Notes cards
       _synth: {
-        whyItMatters:     vApply    ?? null,
-        keyMechanism:     vMech     ?? null,
-        commonConfusion:  vAlert ?? vTrap ?? null,
-        memoryAnchor:     vMemory   ?? null,
-        reasoningFlow:    vFlow     ?? null,
-        examSignal:       vExamIdea ?? null,
-        highlightAnchors:      teachingSynthesis.highlightAnchors ?? null,
-        crossLinks:            teachingSynthesis.crossLinks ?? null,
-        relatedVideoQueries:   teachingSynthesis.relatedVideoQueries ?? null,
+        whyItMatters:        vApply    ?? null,
+        keyMechanism:        vMech     ?? null,
+        commonConfusion:     vAlert ?? vTrap ?? null,
+        memoryAnchor:        vMemory   ?? null,
+        reasoningFlow:       vFlow     ?? null,
+        examSignal:          vExamIdea ?? null,
+        highlightAnchors:    teachingSynthesis.highlightAnchors ?? null,
+        externalStudyLinks:  teachingSynthesis.externalStudyLinks ?? null,
+        relatedVideoQueries: teachingSynthesis.relatedVideoQueries ?? null,
       },
     } as UltraPageView & { _synth: Record<string, unknown> };
   }, [ultraPageView, teachingSynthesis]);
 
-  // Resolve cross-link labels to real TOC pages instead of relying on AI page guesses.
-  // OpenAI suggests the concept label; this pass finds the actual document page.
-  const ultraPageViewWithResolvedLinks = useMemo((): UltraPageView | null => {
-    if (!ultraPageViewWithSynthesis) return null;
-    if (!tocItems?.length) return ultraPageViewWithSynthesis;
-    const raw = (ultraPageViewWithSynthesis as any)._synth?.crossLinks as
-      Array<{ label: string; targetPage: number | null }> | null | undefined;
-    if (!raw?.length) return ultraPageViewWithSynthesis;
-    const resolved = raw.map((link) => {
-      const matches = searchTocForTopic(link.label, tocItems);
-      const best = matches[0];
-      // Prefer TOC-resolved page (high confidence); fall back to AI's own estimate when
-      // Jaccard score is too low (single-keyword labels score ~0.33 and miss the 0.4 cutoff).
-      const tocPage = best && best.score > 0.4 ? best.tocItem.pageNumber : null;
-      const resolvedPage = tocPage ?? (link.targetPage && link.targetPage > 0 ? link.targetPage : null);
-      console.log("[CROSSLINK:resolve]", {
-        label: link.label,
-        tocMatches: matches.slice(0, 2).map((m) => ({ page: m.tocItem.pageNumber, score: m.score.toFixed(2) })),
-        tocPage,
-        aiPage: link.targetPage,
-        resolved: resolvedPage,
-      });
-      return { label: link.label, targetPage: resolvedPage };
-    });
-    return {
-      ...ultraPageViewWithSynthesis,
-      _synth: {
-        ...(ultraPageViewWithSynthesis as any)._synth,
-        crossLinks: resolved,
-      },
-    } as UltraPageView & { _synth: Record<string, unknown> };
-  }, [ultraPageViewWithSynthesis, tocItems]);
-
   // Typed study model built when synthesis resolves — shared with all downstream features.
   const studyModel = useMemo((): CurrentPageStudyModel | null => {
-    const synth = (ultraPageViewWithResolvedLinks as any)?._synth as Record<string, unknown> | undefined;
-    if (!synth || !ultraPageViewWithResolvedLinks) return null;
+    const synth = (ultraPageViewWithSynthesis as any)?._synth as Record<string, unknown> | undefined;
+    if (!synth || !ultraPageViewWithSynthesis) return null;
     return buildStudyModel(
-      ultraPageViewWithResolvedLinks,
+      ultraPageViewWithSynthesis,
       synth,
       ctx?.documentId ?? "",
       ctx?.pageNumber ?? 0,
     );
-  }, [ultraPageViewWithResolvedLinks, ctx?.documentId, ctx?.pageNumber]);
+  }, [ultraPageViewWithSynthesis, ctx?.documentId, ctx?.pageNumber]);
 
   // Re-sort blocks to match badge order (left page physical position order).
   const displayView = useMemo((): UltraPageView | null => {
-    if (!ultraPageViewWithResolvedLinks) return null;
+    if (!ultraPageViewWithSynthesis) return null;
     const pageNeighborhoods = guidedPath?.neighborhoods;
-    if (!pageNeighborhoods?.length) return ultraPageViewWithResolvedLinks;
+    if (!pageNeighborhoods?.length) return ultraPageViewWithSynthesis;
 
-    const byConceptId = new Map(ultraPageViewWithResolvedLinks.blocks.map((b) => [b.conceptId, b]));
+    const byConceptId = new Map(ultraPageViewWithSynthesis.blocks.map((b) => [b.conceptId, b]));
     const ordered: UltraConceptBlock[] = [];
     for (const n of pageNeighborhoods) {
       if (!n.conceptId) continue;
       const block = byConceptId.get(n.conceptId);
       if (block) ordered.push({ ...block, ordinal: ordered.length + 1 });
     }
-    for (const block of ultraPageViewWithResolvedLinks.blocks) {
+    for (const block of ultraPageViewWithSynthesis.blocks) {
       if (!ordered.some((b) => b.conceptId === block.conceptId)) {
         ordered.push({ ...block, ordinal: ordered.length + 1 });
       }
     }
-    return { ...ultraPageViewWithResolvedLinks, blocks: ordered };
-  }, [ultraPageViewWithResolvedLinks, guidedPath]);
+    return { ...ultraPageViewWithSynthesis, blocks: ordered };
+  }, [ultraPageViewWithSynthesis, guidedPath]);
 
   // Emit conceptId → roleLabel map so the left panel can label its badges.
   const roleLabelMap = useMemo((): Map<string, string> => {
@@ -649,7 +612,7 @@ export function RightPanel({
   // Notify parent with AI-selected highlight anchors and the full study model when synthesis resolves.
   // Uses pageTruthKey as a dependency so switching pages clears the anchors immediately.
   useEffect(() => {
-    const anchors = (ultraPageViewWithResolvedLinks as any)?._synth?.highlightAnchors;
+    const anchors = (ultraPageViewWithSynthesis as any)?._synth?.highlightAnchors;
     console.log("[HIGHLIGHT:openai]", {
       count: anchors?.length ?? 0,
       texts: anchors?.map((a: any) => ({ text: a.text?.slice(0, 40), type: a.anchorType })) ?? [],
@@ -664,12 +627,12 @@ export function RightPanel({
         thesis: studyModel.pageThesis.slice(0, 60),
         anchors: studyModel.highlightAnchors.length,
         miniTest: studyModel.miniTest.length,
-        crossLinks: studyModel.crossLinks.length,
+        externalLinks: studyModel.externalStudyLinks.length,
         videoQueries: studyModel.relatedVideoQueries?.length ?? 0,
       });
       onStudyModelReady(studyModel);
     }
-  }, [ultraPageViewWithResolvedLinks, studyModel, pageTruthKey, onSynthHighlightsReady, onStudyModelReady]);
+  }, [ultraPageViewWithSynthesis, studyModel, pageTruthKey, onSynthHighlightsReady, onStudyModelReady]);
 
   // Legacy concept blocks — kept for ConceptBlocksView fallback
   const readerPageView = useMemo((): ReaderPageView | null => {
@@ -1260,13 +1223,13 @@ function UltraView({
     memoryAnchor: string | null;
     reasoningFlow: string | null;
     examSignal: string | null;
+    externalStudyLinks?: Array<{ label: string; searchQuery: string; type: string }> | null;
     relatedVideoQueries?: string[] | null;
   } | undefined;
   const hasSynth = !!(synth && (synth.whyItMatters || synth.keyMechanism || synth.commonConfusion || synth.memoryAnchor));
 
-  // AI-structured cross-links (with optional page estimates) — populated once synthesis resolves
-  const synthCrossLinks = ((view as any)._synth as any)?.crossLinks as
-    Array<{ label: string; targetPage: number | null }> | null | undefined;
+  // External Study Links — Google Scholar / search queries generated by OpenAI
+  const externalStudyLinks = synth?.externalStudyLinks ?? null;
 
   // Related Teaching Video queries — YouTube search strings generated by OpenAI
   const relatedVideoQueries = synth?.relatedVideoQueries ?? null;
@@ -1708,25 +1671,27 @@ function UltraView({
       {/* STR Compression — hidden in synthesis-only mode; synthesis fields now appear in Study Notes */}
       {/* Reading Map — hidden; SRI signals are internal metadata, not student-facing study notes */}
 
-      {/* Cross-Links — only shown when synthesis has a confident page estimate (targetPage known) */}
-      {synthCrossLinks?.some((l) => l.targetPage != null) ? (
-        <PanelSection title="Cross-Links">
+      {/* External Study Links — Google Scholar / search queries generated by OpenAI */}
+      {externalStudyLinks?.length ? (
+        <PanelSection title="External Study Links">
           <ul className="space-y-1">
-            {synthCrossLinks.map((link, i) => {
-              const canNav = !!link.targetPage && !!onCrossLinkNavigate;
-              if (!canNav) return null; // skip low-confidence links entirely
+            {externalStudyLinks.map((link, i) => {
+              const base = link.type === "textbook-search"
+                ? "https://scholar.google.com/scholar?q="
+                : "https://www.google.com/search?q=";
+              const href = `${base}${encodeURIComponent(link.searchQuery)}`;
+              const icon = link.type === "textbook-search" ? "📖" : link.type === "reference" ? "🔗" : "📄";
               return (
-                <li
-                  key={i}
-                  onClick={() => {
-                    console.log("[CROSSLINK:click]", { label: link.label, targetPage: link.targetPage });
-                    console.log("[CROSSLINK:navigate]", { to: link.targetPage });
-                    onCrossLinkNavigate!(link.targetPage!);
-                  }}
-                  className="flex items-start gap-2 text-[13px] select-none cursor-pointer text-sky-300 hover:text-sky-100 underline decoration-dotted"
-                >
-                  <span className="mt-0.5 shrink-0 text-sky-500">↗</span>
-                  <span>{link.label} · p.{link.targetPage}</span>
+                <li key={i}>
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-start gap-2 text-[13px] text-violet-300 hover:text-violet-100 underline decoration-dotted"
+                  >
+                    <span className="mt-0.5 shrink-0">{icon}</span>
+                    <span>{link.label}</span>
+                  </a>
                 </li>
               );
             })}
@@ -1780,7 +1745,7 @@ function UltraView({
             `examSignal:      ${synth?.examSignal      ? "✓ " + synth.examSignal.slice(0, 55)      : "— null"}`,
             `── RENDER CONTRACT ──`,
             `visibleBlocks: ${visibleBlocks.length} | thesis: ${(view.pageThesis ?? view.coreIdea ?? "—").slice(0, 50)}`,
-            `miniTest: ${view.miniTest.length} | crossLinks: ${view.crossLinkHints?.length ?? 0}`,
+            `miniTest: ${view.miniTest.length} | extLinks: ${externalStudyLinks?.length ?? 0}`,
           ].join("\n")}
         </div>
       )}
@@ -2682,7 +2647,7 @@ function GenerateNoteButton({
       hasStudyModel: !!studyModel,
       pageThesis: studyModel?.pageThesis?.slice(0, 60),
       miniTestCount: studyModel?.miniTest?.length ?? 0,
-      crossLinkCount: studyModel?.crossLinks?.length ?? 0,
+      externalLinkCount: studyModel?.externalStudyLinks?.length ?? 0,
       videoQueryCount: studyModel?.relatedVideoQueries?.length ?? 0,
     });
     console.log("[TRACE NOTE_WIRING]", {
@@ -2713,8 +2678,8 @@ function GenerateNoteButton({
       // OpenAI synthesis extras — only present when studyModel resolved
       studyModel?.pageThesis ?? undefined,
       studyModel?.miniTest?.length ? studyModel.miniTest : undefined,
-      studyModel?.crossLinks?.length
-        ? studyModel.crossLinks.map((cl) => ({ label: cl.label, resolvedPage: cl.resolvedPage }))
+      studyModel?.externalStudyLinks?.length
+        ? studyModel.externalStudyLinks.map((l) => ({ label: l.label }))
         : undefined,
     );
     saveUltraNote(note);

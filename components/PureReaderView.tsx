@@ -85,7 +85,7 @@ export default function PureReaderView({
   const effectiveHighlightTargets: HighlightTarget[] | undefined = (() => {
     const anchors = aiHighlightAnchors?.length ? aiHighlightAnchors : null;
     const texts   = !anchors && aiHighlightTexts?.length ? aiHighlightTexts : null;
-    if (!anchors && !texts) return highlightTargets;
+    if (!anchors && !texts) return []; // No heuristic fallback — OpenAI owns the left panel
 
     const aiTargets: HighlightTarget[] = anchors
       ? anchors.map((a, i) => ({
@@ -114,9 +114,7 @@ export default function PureReaderView({
           evidenceRefId:        `ai-anchor-${i}`,
         }));
 
-    // Keep heuristic non-main highlights as secondary context
-    const heuristicSecondary = (highlightTargets ?? []).filter(t => t.level !== "important");
-    return [...aiTargets, ...heuristicSecondary];
+    return aiTargets; // OpenAI owns the left panel — no heuristic mixing
   })();
 
   const navigateToPage = useCallback((page: number) => {
