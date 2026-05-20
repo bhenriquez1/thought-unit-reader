@@ -23,7 +23,7 @@ export type CurrentPageStudyModel = {
   }>;
   miniTest: string[];
   highlightAnchors: Array<{ text: string; anchorType: string; reason: string }>;
-  crossLinks: Array<{ label: string; resolvedPage?: number; confidence?: number }>;
+  externalStudyLinks: Array<{ label: string; searchQuery: string; type: string }>;
   relatedVideoQueries?: string[];
 };
 
@@ -46,7 +46,7 @@ export function buildStudyModel(
 ): CurrentPageStudyModel {
   const thesis = (view.coreIdea || view.title || "") as string;
   const anchors = (synth.highlightAnchors as Array<{ text: string; anchorType: string; reason: string }> | null) ?? [];
-  const rawCrossLinks = (synth.crossLinks as Array<{ label: string; targetPage: number | null }> | null) ?? [];
+  const rawExtLinks = (synth.externalStudyLinks as Array<{ label: string; searchQuery: string; type: string }> | null) ?? [];
 
   return {
     page,
@@ -69,10 +69,7 @@ export function buildStudyModel(
     })),
     miniTest: (view.miniTest ?? []).filter(Boolean),
     highlightAnchors: anchors,
-    crossLinks: rawCrossLinks.map((cl) => ({
-      label:       cl.label,
-      resolvedPage: cl.targetPage ?? undefined,
-    })),
+    externalStudyLinks: rawExtLinks,
     relatedVideoQueries: (synth.relatedVideoQueries as string[] | null) ?? undefined,
   };
 }

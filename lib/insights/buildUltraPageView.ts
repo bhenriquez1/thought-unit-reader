@@ -1469,7 +1469,6 @@ export function buildUltraPageView(
     steps,
     domain,
     crossLinkHints: (() => {
-      if (synthesis?.crossLinkHints?.length) return synthesis.crossLinkHints;
       const crossLinkInputs: CrossLinkInput[] = concepts.map((c) => ({ title: c.title, anchorSentence: c.anchorSentence }));
       return buildCrossLinkHints(crossLinkInputs, domain);
     })(),
