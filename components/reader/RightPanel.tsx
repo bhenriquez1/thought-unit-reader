@@ -562,6 +562,7 @@ export function RightPanel({
         highlightAnchors:    teachingSynthesis.highlightAnchors ?? null,
         externalStudyLinks:  teachingSynthesis.externalStudyLinks ?? null,
         relatedVideoQueries: teachingSynthesis.relatedVideoQueries ?? null,
+        aiConcepts:          teachingSynthesis.concepts ?? null, // OpenAI-reinterpreted concept blocks
       },
     } as UltraPageView & { _synth: Record<string, unknown> };
   }, [ultraPageView, teachingSynthesis]);
@@ -2660,22 +2661,33 @@ function GenerateNoteButton({
       conceptTitles,
       source: "rightPanelGenerateUltraNote",
     });
+    // OpenAI is the single source of truth when studyModel has resolved.
+    const coreIdea = studyModel?.pageThesis || view.coreIdea || "";
+    const concepts = studyModel?.conceptBlocks?.length
+      ? studyModel.conceptBlocks.map((b, i) => ({
+          ordinal:       i + 1,
+          title:         b.title,
+          pattern:       b.pattern,        // already OpenAI 'principle' when AI concepts available
+          surgicalReason: b.mechanism ?? "",
+          trap:          b.trap ?? "",
+          rule:          b.rule ?? "",
+        }))
+      : view.blocks.map((b) => ({
+          ordinal:       b.ordinal,
+          title:         b.title,
+          pattern:       b.pattern,
+          surgicalReason: b.surgicalReason,
+          trap:          b.trap,
+          rule:          b.rule,
+        }));
     const note = buildUltraNote(
       bookId,
       pageNumber,
       topic,
-      view.coreIdea || "",
-      view.blocks.map((b) => ({
-        ordinal: b.ordinal,
-        title: b.title,
-        pattern: b.pattern,
-        surgicalReason: b.surgicalReason,
-        trap: b.trap,
-        rule: b.rule,
-      })),
+      coreIdea,
+      concepts,
       bookTitle,
       professorNotes,
-      // OpenAI synthesis extras — only present when studyModel resolved
       studyModel?.pageThesis ?? undefined,
       studyModel?.miniTest?.length ? studyModel.miniTest : undefined,
       studyModel?.externalStudyLinks?.length
