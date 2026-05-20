@@ -3,6 +3,7 @@
 
 import { type NoteSubject, type UltraNote, inferSubject } from "@/lib/notelab/ultraNoteStore";
 import type { UltraPageView } from "@/lib/insights/buildUltraPageView";
+import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 
 export type CardType = "core" | "definition" | "rule" | "reason" | "trap" | "contrast" | "formula" | "memory";
 export type CardDifficulty = "easy" | "medium" | "hard";
@@ -97,6 +98,7 @@ function card(id: string, type: CardType, front: string, back: string, hint?: st
 export interface BuildRecallSetOpts {
   bookTitle?: string;
   sourceLabel?: SourceLabel;
+  studyModel?: CurrentPageStudyModel;
 }
 
 export function buildRecallSetFromView(
@@ -105,6 +107,7 @@ export function buildRecallSetFromView(
   pageNumber: number,
   opts?: BuildRecallSetOpts
 ): RecallSet {
+  const { studyModel } = opts ?? {};
   const topic = view.title.replace(/^ULTRA\s*[–—-]\s*/i, "").trim() || `Page ${pageNumber}`;
   const cards: RecallCard[] = [];
 
@@ -114,6 +117,16 @@ export function buildRecallSetFromView(
     `What is the core idea of "${topic}"?`,
     coreIdea
   ));
+
+  // 1b. Study Notes cards — from OpenAI synthesis (whyThisMatters, keyMechanism, commonConfusion, examSignal)
+  //     Only generated when studyModel resolves; adds professor-level understanding cards
+  if (studyModel?.studyNotes) {
+    const sn = studyModel.studyNotes;
+    if (sn.whyThisMatters)   cards.push(card("sn-why",  "reason",     `Why does "${topic}" matter clinically or conceptually?`, sn.whyThisMatters));
+    if (sn.keyMechanism)     cards.push(card("sn-mech", "definition", `What is the key mechanism of "${topic}"?`,               sn.keyMechanism));
+    if (sn.commonConfusion)  cards.push(card("sn-conf", "trap",       `⚠️ What is the common confusion about "${topic}"?`,       sn.commonConfusion));
+    if (sn.examSignal)       cards.push(card("sn-exam", "rule",       `What is the exam signal for "${topic}"?`,                sn.examSignal));
+  }
 
   // 2. Synthesis mini-test cards — OpenAI professor questions take priority over generic prompts
   if (view.miniTest?.length) {
