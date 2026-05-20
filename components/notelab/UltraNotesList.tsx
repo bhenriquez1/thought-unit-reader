@@ -277,13 +277,13 @@ function NoteCard({
             </div>
           )}
 
-          {/* Cross-Links — resolved navigation links */}
+          {/* External Study Links — search queries for deeper understanding */}
           {note.crossLinks && note.crossLinks.length > 0 && (
-            <div style={{ marginBottom: 10, padding: "8px 12px", borderRadius: 8, background: "rgba(56,189,248,0.04)", border: "1px solid rgba(56,189,248,0.1)" }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#7dd3fc", marginBottom: 6 }}>🔗 CROSS-LINKS</div>
+            <div style={{ marginBottom: 10, padding: "8px 12px", borderRadius: 8, background: "rgba(139,92,246,0.04)", border: "1px solid rgba(139,92,246,0.12)" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#c4b5fd", marginBottom: 6 }}>📚 EXTERNAL STUDY LINKS</div>
               {note.crossLinks.map((cl, i) => (
-                <div key={i} style={{ fontSize: 12, color: "rgba(147,197,253,0.85)", lineHeight: 1.6 }}>
-                  ↗ {cl.label}{cl.resolvedPage ? ` · p.${cl.resolvedPage}` : ""}
+                <div key={i} style={{ fontSize: 12, color: "rgba(196,181,253,0.85)", lineHeight: 1.6 }}>
+                  📖 {cl.label}
                 </div>
               ))}
             </div>

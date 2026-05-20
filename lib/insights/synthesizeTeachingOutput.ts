@@ -35,12 +35,13 @@ export const TeachingSynthesisConceptSchema = z.object({
   examHook: z.string().nullable(),
 });
 
-export const SynthCrossLinkSchema = z.object({
-  label:      z.string(),           // display text, e.g. "limit → convergence"
-  targetPage: z.number().nullable(), // estimated document page number, null if unknown
+export const ExternalStudyLinkSchema = z.object({
+  label:       z.string(),                                               // display text, ≤5 words
+  searchQuery: z.string(),                                               // Google / Google Scholar query string
+  type:        z.enum(["textbook-search", "article-search", "reference"]),
 });
 
-export type SynthCrossLink = z.infer<typeof SynthCrossLinkSchema>;
+export type ExternalStudyLink = z.infer<typeof ExternalStudyLinkSchema>;
 
 export const TeachingSynthesisSchema = z.object({
   coreIdea: z.string(),
@@ -52,11 +53,10 @@ export const TeachingSynthesisSchema = z.object({
   examCriticalIdea: z.string(),
   reasoningFlow: z.string(),
   misconceptionAlert: z.string().nullable(),
-  memoryAnchor: z.string().nullable(),           // was .nullish() — OpenAI structured outputs require all fields present
-  crossLinkHints: z.array(z.string()).nullable(), // was .optional() — same reason
-  crossLinks: z.array(SynthCrossLinkSchema).nullable(), // structured cross-links with optional page estimates
+  memoryAnchor: z.string().nullable(),
+  externalStudyLinks: z.array(ExternalStudyLinkSchema).nullable(), // 3–5 Google Scholar / Google search queries
   concepts: z.array(TeachingSynthesisConceptSchema),
-  miniTests: z.array(z.string()).nullable(),      // was .optional() — same reason
+  miniTests: z.array(z.string()).nullable(),
   highlightAnchors: z.array(SynthHighlightAnchorSchema).nullable(), // 2–4 exact source spans for left-panel
   relatedVideoQueries: z.array(z.string()).nullable(), // 3–5 YouTube search queries for teaching videos
 });
@@ -182,12 +182,17 @@ Rules:
 • Avoid: figure captions, transitional sentences, filler, repeated phrases, OCR fragments.
 • If no extracted concept text is clearly exam-worthy, return null — do NOT invent anchors.
 
-─── CROSS-LINK PAGE ESTIMATES ───────────────────────────────────────────────
-crossLinks: structured version of crossLinkHints. For each link, estimate the document
-page number where the related concept is introduced or defined. Base your estimate on:
-• The surrounding page content and where foundational ideas typically appear
-• Relative position (e.g., a prerequisite concept likely appeared earlier)
-Set targetPage to null if you genuinely cannot estimate. Do not guess randomly.
+─── EXTERNAL STUDY LINKS ────────────────────────────────────────────────────
+externalStudyLinks: Generate 3–5 external references a student should search to deepen
+understanding of this exact topic. For each link:
+• label: Concise concept name (≤5 words), e.g. "Limit Convergence", "Thyroid Physiology"
+• searchQuery: A Google or Google Scholar query string that finds the best resource
+  Examples: "sequence convergence epsilon delta proof", "thyroid hormone synthesis iodine"
+• type: one of:
+  - "textbook-search" — for a foundational textbook chapter (query → Google Scholar)
+  - "article-search" — for a review article or tutorial
+  - "reference" — for a specific trusted site (Khan Academy, Wikipedia, MIT OCW)
+Return null if the topic is highly specialized and no reliable search would help.
 
 ─── RELATED TEACHING VIDEO QUERIES ─────────────────────────────────────────
 relatedVideoQueries: Generate 3–5 YouTube search queries a student should type to find
@@ -255,7 +260,7 @@ The answer must be about UNDERSTANDING, not about what appears in a figure or wh
 ─── TASK ──────────────────────────────────────────────────────────────────
 Produce a structured educational interpretation for this page.
 
-For page level: coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, crossLinkHints, crossLinks (structured crossLinkHints with targetPage estimates), highlightAnchors, relatedVideoQueries.
+For page level: coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, externalStudyLinks, highlightAnchors, relatedVideoQueries.
 For each concept (include ${Math.min(rankedConcepts.length, 4)}): principle, mechanism, trap, rule, misconception, examHook.
 
 Every field: complete sentence, ≤20 words, relational not definitional, professor-level language.
