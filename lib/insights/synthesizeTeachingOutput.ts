@@ -43,6 +43,16 @@ export const ExternalStudyLinkSchema = z.object({
 
 export type ExternalStudyLink = z.infer<typeof ExternalStudyLinkSchema>;
 
+export const MiniTestItemSchema = z.object({
+  question:      z.string(),
+  type:          z.enum(["multiple-choice", "short-answer", "application"]),
+  options:       z.array(z.string()).nullable(), // exactly 4 items for multiple-choice, null otherwise
+  correctAnswer: z.string(),                     // MC: exact correct option text; others: model answer
+  explanation:   z.string(),                     // why correct + what to study if wrong
+});
+
+export type MiniTestItem = z.infer<typeof MiniTestItemSchema>;
+
 export const TeachingSynthesisSchema = z.object({
   coreIdea: z.string(),
   mechanism: z.string(),
@@ -54,11 +64,12 @@ export const TeachingSynthesisSchema = z.object({
   reasoningFlow: z.string(),
   misconceptionAlert: z.string().nullable(),
   memoryAnchor: z.string().nullable(),
-  externalStudyLinks: z.array(ExternalStudyLinkSchema).nullable(), // 3–5 Google Scholar / Google search queries
+  externalStudyLinks: z.array(ExternalStudyLinkSchema).nullable(),
   concepts: z.array(TeachingSynthesisConceptSchema),
-  miniTests: z.array(z.string()).nullable(),
-  highlightAnchors: z.array(SynthHighlightAnchorSchema).nullable(), // 2–4 exact source spans for left-panel
-  relatedVideoQueries: z.array(z.string()).nullable(), // 3–5 YouTube search queries for teaching videos
+  miniTests: z.array(z.string()).nullable(),           // legacy — kept for backward compat
+  miniTestItems: z.array(MiniTestItemSchema).nullable(), // structured interactive questions
+  highlightAnchors: z.array(SynthHighlightAnchorSchema).nullable(),
+  relatedVideoQueries: z.array(z.string()).nullable(),
 });
 
 export type TeachingSynthesisConcept = z.infer<typeof TeachingSynthesisConceptSchema>;
@@ -173,14 +184,32 @@ Specific field requirements:
 SENTENCE COMPLETENESS: Never output a fragment. Self-check: "Could a student read only this field and understand the concept?" If no → rewrite.
 
 ─── LEFT-PANEL ANCHOR SELECTION ─────────────────────────────────────────────
-highlightAnchors: select 2–4 exact text spans from the EXTRACTED CONCEPTS below that a professor would underline before an exam.
-Rules:
+highlightAnchors: select 2–4 exact text spans a professor would underline before an exam.
+STRICT PRIORITY ORDER — follow this sequence exactly:
+  1. anchorType "thesis"      — the page's ONE governing concept or principle (always first)
+  2. anchorType "definition"  — the foundational definition or core rule
+  3. anchorType "mechanism"   — cause-effect chain or how/why it works
+  4. anchorType "clinicalTrap"/"application" — only if it is the direct consequence of #1
+
+CRITICAL RULES:
+• NEVER place a clinical example (disease case, patient scenario, iodine deficiency) as
+  the #1 thesis anchor unless the ENTIRE page is exclusively about that example.
+  Clinical examples are type "application" or "clinicalTrap" — always ranked 4th.
 • Copy text EXACTLY as it appeared in the source — do not paraphrase or edit.
 • ≤ 30 words per span. Prefer shorter, precise spans.
-• Order by importance: thesis/governing principle first, then mechanism, then trap/signal.
-• Prefer: governing definition, key mechanism, formula, clinical trap, exam signal.
 • Avoid: figure captions, transitional sentences, filler, repeated phrases, OCR fragments.
-• If no extracted concept text is clearly exam-worthy, return null — do NOT invent anchors.
+• Return null if no text is clearly exam-worthy — do NOT invent anchors.
+
+─── STRUCTURED MINI TEST ────────────────────────────────────────────────────
+miniTestItems: Generate 2–3 structured practice questions testing the governing concept.
+For each item:
+• type: "multiple-choice" | "short-answer" | "application"
+• question: one clear exam-style question — must directly test the governing concept, not a tangential detail
+• options: for multiple-choice: exactly 4 options (A=correct, B/C/D=plausible wrong); null for other types
+• correctAnswer: for MC: the exact correct option text; for short-answer/application: a 1–2 sentence model answer
+• explanation: why this answer is correct and what to study if a student gets it wrong (1–2 sentences)
+Priority: 1 MC on the governing concept, 1 short-answer on mechanism, 1 application/trap if warranted.
+Return null if the page is too brief to generate meaningful questions.
 
 ─── EXTERNAL STUDY LINKS ────────────────────────────────────────────────────
 externalStudyLinks: Generate 3–5 external references a student should search to deepen
@@ -260,7 +289,7 @@ The answer must be about UNDERSTANDING, not about what appears in a figure or wh
 ─── TASK ──────────────────────────────────────────────────────────────────
 Produce a structured educational interpretation for this page.
 
-For page level: coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, externalStudyLinks, highlightAnchors, relatedVideoQueries.
+For page level: coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, externalStudyLinks, highlightAnchors (priority order: thesis → definition → mechanism → application/trap), miniTestItems (2–3 structured questions), relatedVideoQueries.
 For each concept (include ${Math.min(rankedConcepts.length, 4)}): principle, mechanism, trap, rule, misconception, examHook.
 
 Every field: complete sentence, ≤20 words, relational not definitional, professor-level language.
