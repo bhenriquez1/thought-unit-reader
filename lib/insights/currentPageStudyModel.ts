@@ -47,6 +47,10 @@ export function buildStudyModel(
   const thesis = (view.coreIdea || view.title || "") as string;
   const anchors = (synth.highlightAnchors as Array<{ text: string; anchorType: string; reason: string }> | null) ?? [];
   const rawExtLinks = (synth.externalStudyLinks as Array<{ label: string; searchQuery: string; type: string }> | null) ?? [];
+  // OpenAI-reinterpreted concept blocks — preferred over heuristic view.blocks
+  const rawAIConcepts = (synth.aiConcepts as Array<{
+    title: string; principle: string; mechanism: string; trap: string | null; rule: string;
+  }> | null) ?? null;
 
   return {
     page,
@@ -60,10 +64,11 @@ export function buildStudyModel(
       reasoningFlow:   (synth.reasoningFlow  as string | null) ?? null,
       examSignal:      (synth.examSignal     as string | null) ?? null,
     },
-    conceptBlocks: view.blocks.map((b) => ({
+    // Prefer OpenAI-reinterpreted concepts (principle/mechanism) over heuristic view.blocks
+    conceptBlocks: (rawAIConcepts?.length ? rawAIConcepts : view.blocks).map((b: any) => ({
       title:     b.title ?? "",
-      pattern:   b.pattern ?? "",
-      mechanism: b.surgicalReason ?? undefined,
+      pattern:   b.principle ?? b.pattern ?? "",         // OpenAI uses 'principle'; heuristic uses 'pattern'
+      mechanism: b.mechanism ?? b.surgicalReason ?? undefined,
       trap:      b.trap ?? undefined,
       rule:      b.rule ?? undefined,
     })),
