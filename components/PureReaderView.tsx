@@ -212,7 +212,7 @@ export default function PureReaderView({
           onActiveParagraphChange={onActiveParagraphChange}
           focusSnippet={focusSnippet}
           highlightTargets={effectiveHighlightTargets}
-          highlightNeighborhoods={highlightNeighborhoods}
+          highlightNeighborhoods={aiHighlightAnchors?.length ? undefined : highlightNeighborhoods}
           focusedEvidenceId={focusedEvidenceId}
           onEvidenceFocus={onEvidenceFocus}
           isPageChanging={isPageChanging}
