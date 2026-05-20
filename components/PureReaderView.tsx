@@ -114,6 +114,11 @@ export default function PureReaderView({
           evidenceRefId:        `ai-anchor-${i}`,
         }));
 
+    console.log("[HIGHLIGHT:converted]", {
+      source: anchors ? "anchors" : "texts",
+      count: aiTargets.length,
+      kinds: aiTargets.map((t) => t.kind),
+    });
     return aiTargets; // OpenAI owns the left panel — no heuristic mixing
   })();
 

@@ -374,11 +374,17 @@ export default function SmartPDFViewer({
         return;
       }
 
-      // Build span index — shared by both paths
+      // Build span index — shared by both paths.
+      // Apply the same ligature + normalization as normForMatch() so that
+      // concatText indexOf() always finds what normForMatch() produces on the anchor side.
       const spanNorm = spans.map((s) =>
         (s.textContent || "")
           .toLowerCase()
-          .replace(/\u00ad/g, "")
+          .replace(/\u00ad/g, "")                                   // soft hyphen
+          .replace(/\ufb01/g, "fi").replace(/\ufb02/g, "fl")       // fi/fl ligatures
+          .replace(/\ufb00/g, "ff").replace(/\ufb03/g, "ffi").replace(/\ufb04/g, "ffl")
+          .replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"') // smart quotes
+          .replace(/[\u2013\u2014]/g, "-")                         // en/em dash
           .replace(/[^\w\s]/g, " ")
           .replace(/\s+/g, " ")
           .trim(),
