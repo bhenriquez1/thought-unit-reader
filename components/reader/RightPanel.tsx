@@ -61,6 +61,30 @@ function validSynthField(text: string | undefined | null, domain: string | null,
 import { useTeachingSynthesis } from "./useTeachingSynthesis";
 import { buildStudyModel, type CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 
+function structuralPageIcon(role: string): string {
+  switch (role) {
+    case "cover":                return "📕";
+    case "contents":             return "📋";
+    case "chapter_opener":       return "📖";
+    case "section_opener":       return "📑";
+    case "copyright_frontmatter":return "©";
+    case "image_scan_heavy":     return "🖼️";
+    default:                     return "📄";
+  }
+}
+
+function structuralPageLabel(role: string): string {
+  switch (role) {
+    case "cover":                return "Cover page — no study content";
+    case "contents":             return "Table of contents — navigate to a content page";
+    case "chapter_opener":       return "Chapter overview — study notes begin on the next page";
+    case "section_opener":       return "Section opener — study notes begin on the next page";
+    case "copyright_frontmatter":return "Front matter — no instructional content";
+    case "image_scan_heavy":     return "Image-heavy page — insufficient text for synthesis";
+    default:                     return "Structural page — no study content";
+  }
+}
+
 interface RightPanelProps {
   ctx: ActivePageContext;
   state: RightPanelState;
@@ -405,6 +429,12 @@ export function RightPanel({
     normResult !== null &&
     normResult.shouldRenderFullPanel === false;
 
+  const STRUCTURAL_PAGE_ROLES = new Set([
+    "cover", "contents", "chapter_opener", "section_opener",
+    "copyright_frontmatter", "image_scan_heavy",
+  ]);
+  const isStructuralPage = STRUCTURAL_PAGE_ROLES.has(intelligence.pageRole ?? "");
+
   const ultraPageView = useMemo((): UltraPageView | null => {
     if (!isCurrentPageModel || !pageModel) return null;
     // Pass the already-computed normResult so buildUltraPageView does not
@@ -429,7 +459,7 @@ export function RightPanel({
     pageSummary:   pageModel?.pageSummary ?? undefined,
     domain: (ultraPageView?._debug?.domain) ?? null,
     blocks: ultraPageView?.blocks ?? [],
-    enabled: isCurrentPageModel && !!ultraPageView,
+    enabled: isCurrentPageModel && !!ultraPageView && !isStructuralPage,
     pageNumber: ctx?.pageNumber ?? undefined,
   });
 
@@ -697,7 +727,7 @@ export function RightPanel({
 
   // ULTRA = the only render path when FORCE_SYNTHESIS_ONLY=true.
   // Legacy fallbacks are kept in code but suppressed — they bypass all quality gates.
-  const showUltraView     = isCurrentPageModel && !pageIsNonInstructional && Boolean(ultraPageView);
+  const showUltraView     = isCurrentPageModel && !pageIsNonInstructional && !isStructuralPage && Boolean(ultraPageView);
   const showConceptBlocks = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && !showUltraView && Boolean(readerPageView);
   const showNarrativePageView = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && !showUltraView && !showConceptBlocks && Boolean(
     narrativePageView?.narrative.sections.length
@@ -792,8 +822,20 @@ export function RightPanel({
           </div>
         )}
 
+        {isStructuralPage && isCurrentPageModel && (
+          <div className="rounded-2xl border border-white/8 bg-[#071224] px-4 py-8 text-center">
+            <div className="text-3xl mb-3">{structuralPageIcon(intelligence.pageRole ?? "")}</div>
+            <p className="text-[13px] font-semibold text-white/50 mb-1">
+              {structuralPageLabel(intelligence.pageRole ?? "")}
+            </p>
+            <p className="text-[12px] text-white/25 italic">
+              Navigate to a content page to generate study notes, highlights, and recall cards.
+            </p>
+          </div>
+        )}
+
         {/* Loading / gating state */}
-        {!pageIsNonInstructional && renderTruthFallback(pageTruth?.reason || "loading", intelligence.status, !isCurrentPageModel, loadingPhase)}
+        {!pageIsNonInstructional && !isStructuralPage && renderTruthFallback(pageTruth?.reason || "loading", intelligence.status, !isCurrentPageModel, loadingPhase)}
 
         {intelligence.status === "error" && (
           <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">
@@ -832,7 +874,7 @@ export function RightPanel({
                   reasoningFlow:   (displayView as any)._synth.reasoningFlow   ?? undefined,
                   examSignal:      (displayView as any)._synth.examSignal      ?? undefined,
                 } : undefined}
-                studyModel={studyModel}
+                studyModel={isStructuralPage ? null : studyModel}
               />
               <GenerateStudySetButton
                 view={displayView}
@@ -840,7 +882,7 @@ export function RightPanel({
                 bookTitle={ctx?.documentTitle}
                 pageNumber={ctx?.pageNumber ?? 0}
                 onStudySetGenerated={onStudySetGenerated}
-                studyModel={studyModel}
+                studyModel={isStructuralPage ? null : studyModel}
               />
             </div>
           </>
@@ -1242,6 +1284,24 @@ function UltraView({
 
   // Related Teaching Video queries — YouTube search strings generated by OpenAI
   const relatedVideoQueries = synth?.relatedVideoQueries ?? null;
+
+  // Resolved YouTube links — fetched from /api/resolveVideoLinks when synthesis provides queries
+  const [resolvedVideoLinks, setResolvedVideoLinks] = useState<Array<{ query: string; title: string; url: string; channelTitle: string }>>([]);
+
+  useEffect(() => {
+    if (!relatedVideoQueries?.length) { setResolvedVideoLinks([]); return; }
+    const controller = new AbortController();
+    fetch("/api/resolveVideoLinks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ queries: relatedVideoQueries }),
+      signal: controller.signal,
+    })
+      .then((r) => r.json())
+      .then((data) => { if (data.links?.length) setResolvedVideoLinks(data.links); })
+      .catch(() => {}); // fall through to search-link fallback
+    return () => controller.abort();
+  }, [relatedVideoQueries]);
 
   // Interactive Mini Test items — structured questions from OpenAI
   const miniTestItems = synth?.miniTestItems ?? null;
@@ -1721,19 +1781,30 @@ function UltraView({
             return null;
           })()}
           <ul className="space-y-2">
-            {relatedVideoQueries.map((query, i) => (
-              <li key={i}>
-                <a
-                  href={`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-start gap-2 text-[13px] text-red-300 hover:text-red-100 underline decoration-dotted"
-                >
-                  <span className="mt-0.5 shrink-0">▶</span>
-                  <span>{query}</span>
-                </a>
-              </li>
-            ))}
+            {relatedVideoQueries.map((query, i) => {
+              const resolved = resolvedVideoLinks.find((l) => l.query === query);
+              const href = resolved
+                ? resolved.url
+                : `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+              const label = resolved ? resolved.title : query;
+              const sub = resolved ? resolved.channelTitle : null;
+              return (
+                <li key={i}>
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-start gap-2 text-[13px] text-red-300 hover:text-red-100 underline decoration-dotted"
+                  >
+                    <span className="mt-0.5 shrink-0">📺</span>
+                    <span className="flex flex-col min-w-0">
+                      <span>{label}</span>
+                      {sub && <span className="text-[10px] text-slate-500">{sub}</span>}
+                    </span>
+                  </a>
+                </li>
+              );
+            })}
           </ul>
         </PanelSection>
       ) : null}
