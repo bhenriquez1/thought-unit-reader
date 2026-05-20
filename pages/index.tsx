@@ -3250,36 +3250,49 @@ export default function ThoughtUnitReader() {
 
         {/* Floating Action Buttons - Bottom Left Stack */}
         <div className="fixed bottom-[80px] right-6 z-40 flex flex-col gap-3 max-w-[170px] opacity-90">
-          {/* Highlight color legend — always present when highlights are active; dynamic from guided path */}
+          {/* Highlight color legend — dynamic from OpenAI anchor types present on this page */}
           {(() => {
-            const hasHighlights = (highlightNeighborhoods?.length ?? 0) > 0;
-            if (!hasHighlights) return null;
+            if (!synthAiHighlights.length) return null;
 
-            const legend = buildGuidedLegend({ guidedPath });
-            console.log("[TRACE overlayLegend]", {
-              guidedPathExists: Boolean(guidedPath),
-              flatOverlayCount: guidedPath?.flatOverlays?.length ?? 0,
-              legendEntryCount: legend.entries.length,
-              legendTiers: legend.entries.map(e => e.tier),
-              usingFallback: legend.entries.length === 0,
-            });
-            // Semantic role legend — colors match GuidedNeighborhoodOverlay ROLE_RGB palette
-            type SemanticLegendEntry = { id: string; color: string; label: string; description: string };
-            const semanticLegend: SemanticLegendEntry[] = [
-              { id: "l:theorem",    color: "rgba(245,158, 11,0.92)", label: "Formula / Theorem",  description: "core rule or proof" },
-              { id: "l:definition", color: "rgba( 96,165,250,0.92)", label: "Definition",          description: "what the term means" },
-              { id: "l:mechanism",  color: "rgba( 20,184,166,0.92)", label: "Mechanism",           description: "how or why it works" },
-              { id: "l:trap",       color: "rgba(244, 63, 94,0.92)", label: "Trap",                description: "common misconception" },
-              { id: "l:apply",      color: "rgba(167,139,250,0.92)", label: "Application",         description: "real-world use" },
-              { id: "l:example",    color: "rgba( 74,222,128,0.92)", label: "Example",             description: "illustrates the rule" },
-              { id: "l:detail",     color: "rgba(148,163,184,0.92)", label: "Supporting Detail",   description: "context & background" },
-            ];
+            // Colors match PdfEvidenceOverlay.priorityClassName
+            type AnchorLegendDef = { color: string; label: string; description: string };
+            const ANCHOR_LEGEND: Record<string, AnchorLegendDef> = {
+              thesis:       { color: "rgba(251,191, 36,0.85)", label: "Thesis",        description: "governing concept" },
+              definition:   { color: "rgba(251,191, 36,0.85)", label: "Definition",    description: "what the term means" },
+              examSignal:   { color: "rgba(251,191, 36,0.85)", label: "Exam Signal",   description: "high-yield pivot" },
+              mechanism:    { color: "rgba( 96,165,250,0.85)", label: "Mechanism",     description: "how or why it works" },
+              formula:      { color: "rgba(167,139,250,0.85)", label: "Formula",       description: "mathematical/biochemical rule" },
+              clinicalTrap: { color: "rgba(251,113,133,0.85)", label: "Clinical Trap", description: "common error / danger" },
+              application:  { color: "rgba( 45,212,191,0.85)", label: "Application",  description: "applied context" },
+            };
+
+            // Derive unique anchor types present on this page, preserving priority order
+            const priorityOrder = ["thesis", "definition", "mechanism", "formula", "clinicalTrap", "examSignal", "application"];
+            const presentTypes = new Map<string, number>(); // anchorType → count
+            for (const anchor of synthAiHighlights) {
+              presentTypes.set(anchor.anchorType, (presentTypes.get(anchor.anchorType) ?? 0) + 1);
+            }
+            // Merge amber types (thesis/definition/examSignal) into one entry if multiple are present
+            const amberTypes = ["thesis", "definition", "examSignal"].filter((t) => presentTypes.has(t));
+            const nonAmberTypes = ["mechanism", "formula", "clinicalTrap", "application"].filter((t) => presentTypes.has(t));
+            const legendEntries: Array<AnchorLegendDef & { id: string; count: number }> = [];
+            if (amberTypes.length) {
+              const label = amberTypes.length === 1 ? (ANCHOR_LEGEND[amberTypes[0]]?.label ?? amberTypes[0]) : "Thesis / Definition";
+              const count = amberTypes.reduce((s, t) => s + (presentTypes.get(t) ?? 0), 0);
+              legendEntries.push({ id: "amber", color: "rgba(251,191,36,0.85)", label, description: "governing concept", count });
+            }
+            for (const t of nonAmberTypes) {
+              const def = ANCHOR_LEGEND[t];
+              if (def) legendEntries.push({ id: t, ...def, count: presentTypes.get(t) ?? 0 });
+            }
+
+            console.log("[LEGEND:dynamic]", { anchorTypes: [...presentTypes.keys()], entries: legendEntries.length });
 
             return (
               <div className="rounded-xl border border-white/10 bg-[rgb(11,18,34)]/90 backdrop-blur-sm px-2.5 py-2">
                 <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-500">Highlight key</div>
                 <div className="space-y-1.5">
-                  {semanticLegend.map((entry) => (
+                  {legendEntries.map((entry) => (
                     <div key={entry.id} className="flex items-center gap-1.5">
                       <span
                         style={{
@@ -3291,9 +3304,10 @@ export default function ThoughtUnitReader() {
                           flexShrink: 0,
                         }}
                       />
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex items-baseline gap-1">
                         <span className="text-[10px] text-slate-300">{entry.label}</span>
-                        <span className="text-[9px] text-slate-500 ml-1">— {entry.description}</span>
+                        <span className="text-[9px] text-slate-500">— {entry.description}</span>
+                        <span className="text-[9px] text-slate-600 ml-auto">{entry.count}</span>
                       </div>
                     </div>
                   ))}
