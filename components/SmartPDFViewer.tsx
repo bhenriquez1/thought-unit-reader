@@ -493,35 +493,43 @@ export default function SmartPDFViewer({
         texts: highlightTargets?.map((t) => t.text?.slice(0, 40)) ?? [],
       });
 
-      // Locate an anchor in concatText. Uses full text first, then progressive
-      // prefix narrowing to find the START position, but always extends coverage
-      // to the full anchor length — so the whole sentence is highlighted.
+      // Normalize anchor text to match concatText format exactly.
+      // concatText is built from spanNorm which applies [^\w\s] -> " " (strips all punctuation).
+      // normForMatch does NOT strip punctuation, so "substance." would fail to match "substance".
+      // normForConcat applies the same pipeline as spanNorm.
+      function normForConcat(s: string): string {
+        return s
+          .toLowerCase()
+          .replace(/­/g, "")
+          .replace(/ﬁ/g, "fi").replace(/ﬂ/g, "fl")
+          .replace(/ﬀ/g, "ff").replace(/ﬃ/g, "ffi").replace(/ﬄ/g, "ffl")
+          .replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
+          .replace(/[–—]/g, "-")
+          .replace(/[^\w\s]/g, " ")   // KEY: strip all punctuation — matches spanNorm
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+
+      // Locate anchor in concatText. Uses full text for the primary search,
+      // then progressive prefix narrowing to find start + extend to full length.
+      // Suffix fallback is intentionally omitted — suffix-only matches are too
+      // ambiguous and produce misleading partial highlights.
       function locateAnchor(baseText: string): { startIdx: number; endIdx: number } | null {
-        // 1. Full text match
+        // 1. Full text match (highest confidence)
         const fullIdx = concatText.indexOf(baseText);
         if (fullIdx !== -1) return { startIdx: fullIdx, endIdx: fullIdx + baseText.length };
 
-        // 2. Prefix narrowing: find start, extend to full anchor length
-        const words = baseText.replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+        // 2. Prefix narrowing: find START via shorter needle, extend to full anchor length.
+        //    Only use needles covering >= 4 words (don't match on trivially common phrases).
+        const words = baseText.split(" ").filter(Boolean);
         for (const count of [12, 10, 8, 6, 5, 4]) {
           if (count > words.length) continue;
           const needle = words.slice(0, count).join(" ");
-          if (needle.length < 4) continue;
+          if (needle.length < 10) continue; // too short = unreliable
           const needleIdx = concatText.indexOf(needle);
           if (needleIdx !== -1) {
+            // Extend to full anchor length — covers the complete sentence
             return { startIdx: needleIdx, endIdx: Math.min(needleIdx + baseText.length, concatText.length) };
-          }
-        }
-
-        // 3. Suffix search: try last N words (handles OCR noise at start of anchor)
-        for (const count of [6, 5, 4]) {
-          if (count > words.length) continue;
-          const needle = words.slice(-count).join(" ");
-          if (needle.length < 4) continue;
-          const needleIdx = concatText.indexOf(needle);
-          if (needleIdx !== -1) {
-            const startIdx = Math.max(0, needleIdx - (baseText.length - needle.length));
-            return { startIdx, endIdx: needleIdx + needle.length };
           }
         }
         return null;
@@ -536,7 +544,7 @@ export default function SmartPDFViewer({
 
       // Build per-line OverlayRects from matched spans.
       // Groups spans by approximate Y (3px grid) -> one rect per text line.
-      // Suppresses tiny orphan artifacts (too narrow or impossibly tall).
+      // Suppresses tiny orphan artifacts (width < 12 or height > 72).
       function lineRectsFromSpans(
         matched: HTMLElement[],
         targetId: string,
@@ -565,7 +573,6 @@ export default function SmartPDFViewer({
           const width  = right - left;
           const height = Math.max(13, bottom - top);
 
-          // Suppress orphan artifacts
           if (width < 12 || height > 72) {
             console.log("[AI_HIGHLIGHT:orphan-filtered]", { targetId, lineIndex, width: Math.round(width), height: Math.round(height) });
             lineIndex++;
@@ -587,26 +594,29 @@ export default function SmartPDFViewer({
 
       const rects: OverlayRect[] = [];
       highlightTargets!.forEach((target) => {
-        const baseText = normForMatch(target.normalizedText);
+        // Use normForConcat (not normForMatch) so the anchor matches concatText format:
+        // both strip punctuation with [^\w\s]->" ", ensuring "substance." matches "substance".
+        const baseText = normForConcat(target.normalizedText);
         console.log("[AI_HIGHLIGHT:matching]", {
           id: target.evidenceRefId,
           kind: target.kind,
           text: target.text?.slice(0, 60),
           baseText: baseText.slice(0, 60),
+          baseLen: baseText.length,
         });
 
         const location = locateAnchor(baseText);
         if (!location) {
-          // Try support/evidence fallback
+          // Try support/evidence fallback — omit if still no match
           let fallbackLoc: { startIdx: number; endIdx: number } | null = null;
           for (const fb of [...(target.support ?? []), ...(target.evidence ?? [])]) {
             if (!fb || fb.length < 12) continue;
-            fallbackLoc = locateAnchor(normForMatch(fb));
+            fallbackLoc = locateAnchor(normForConcat(fb));
             if (fallbackLoc) break;
           }
           if (!fallbackLoc) {
             console.log("[AI_HIGHLIGHT:failed]", { id: target.evidenceRefId, text: target.text?.slice(0, 60) });
-            return;
+            return; // Skip — no partial misleading highlights
           }
           const fbSpans = spansForRange(fallbackLoc.startIdx, fallbackLoc.endIdx);
           const fbRects = lineRectsFromSpans(fbSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"]);
@@ -619,6 +629,7 @@ export default function SmartPDFViewer({
         const lineRects = lineRectsFromSpans(matchedSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"]);
         console.log("[AI_HIGHLIGHT:matched]", {
           id: target.evidenceRefId, kind: target.kind,
+          text: target.text?.slice(0, 50),
           spanCount: matchedSpans.length, lines: lineRects.length,
         });
         console.log("[AI_HIGHLIGHT:rects]", {
