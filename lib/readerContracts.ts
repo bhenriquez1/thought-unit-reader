@@ -4,7 +4,12 @@ export type AudienceMode = "student" | "clinical" | "expert";
 export type DepthMode = "standard" | "deep";
 export type DensityMode = "condensed" | "expanded";
 
-export type PageRole = "cover" | "contents" | "chapter_opener" | "section_opener" | "copyright_frontmatter" | "history_background" | "regular_teaching" | "table_formula" | "image_scan_heavy";
+export type PageRole =
+  | "cover" | "title_page" | "dedication" | "acknowledgements" | "preface" | "about_authors"
+  | "contents" | "copyright_frontmatter"
+  | "chapter_opener" | "unit_opener" | "section_opener"
+  | "glossary" | "index" | "bibliography" | "appendix"
+  | "history_background" | "regular_teaching" | "table_formula" | "image_scan_heavy";
 
 export type PageType =
   | "diagnostic"

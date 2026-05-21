@@ -20,15 +20,61 @@ const hasAny = (text: string, words: string[]) => words.some((w) => text.include
 
 function detectPageRole(pageText: string, heading: string, formulaCount: number, tableLikeRows: number): PageSignals["pageRole"] {
   const text = pageText.toLowerCase();
-  const lineGroups = text.split(/\n+/).length;
+  const lines = pageText.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const lineGroups = lines.length;
+
+  // Empty / near-empty
   if (!text.trim() || text.trim().length < 120) return "image_scan_heavy";
-  if (/table of contents|\bcontents\b/.test(text)) return "contents";
-  if (/\bhistory of|historical|origin of|milestone|evolution of|timeline\b/.test(text)) return "history_background";
-  if (/all rights reserved|copyright|isbn|published by/.test(text)) return "copyright_frontmatter";
-  if ((/^chapter\s+\d+|^part\s+[ivx\d]+/im).test(pageText) && lineGroups < 12) return "chapter_opener";
-  if ((/^section\s+\d|^unit\s+\d|^module\s+\d/im).test(pageText) && lineGroups < 18) return "section_opener";
-  if ((/^\s*[A-Z][A-Z\s]{6,}$/m).test(pageText) && lineGroups < 10) return "cover";
+
+  // Copyright / legal frontmatter
+  if (/all rights reserved|copyright.*\d{4}|isbn[- ]?\d|published by|printed in/.test(text)) return "copyright_frontmatter";
+
+  // Table of contents — "contents" heading + numbers at line ends
+  if (/^\s*(table of contents|contents)\s*$/im.test(pageText) || (/\btable of contents\b/.test(text) && /\d{1,4}\s*$/.test(text))) return "contents";
+
+  // Glossary — explicit header or dense term: definition pairs
+  if (/^\s*glossary\s*$/im.test(pageText) || (text.includes("glossary") && lines.filter((l) => /^[a-z][a-z\s,'-]{1,40}[:.—]/.test(l.toLowerCase())).length > 4)) return "glossary";
+
+  // Index — explicit header or dense term + page-number column
+  if (/^\s*index\s*$/im.test(pageText) || (text.includes("index") && lines.filter((l) => /\d{1,4}(,\s*\d{1,4})*\s*$/.test(l)).length > lineGroups * 0.4)) return "index";
+
+  // Bibliography / References — explicit header or high citation density
+  if (/^\s*(bibliography|references|works cited)\s*$/im.test(pageText) || lines.filter((l) => /(et al\.|doi:|https?:\/\/|\(\d{4}\))/.test(l)).length > lineGroups * 0.3) return "bibliography";
+
+  // Appendix
+  if (/^\s*appendix\s*[a-z]?\s*[:—]?\s*$/im.test(pageText) && lineGroups < 20) return "appendix";
+
+  // Dedication — very short page with personal dedication phrasing
+  if (lineGroups < 15 && /\bdedicated to\b|\bin loving memory\b|\bto my\b|\bfor my\b/.test(text)) return "dedication";
+
+  // Acknowledgements
+  if (/\backnowledg(e?ment|ement)s?\b/.test(text) && lineGroups < 40) return "acknowledgements";
+
+  // About the author(s)
+  if (/\babout the authors?\b/.test(text) && lineGroups < 35) return "about_authors";
+
+  // Preface / Foreword
+  if (/^\s*(preface|foreword)\s*$/im.test(pageText) && lineGroups < 40) return "preface";
+
+  // Chapter opener — "Chapter N" large heading + sparse body
+  if (/^chapter\s+\d+|^part\s+[ivx\d]+/im.test(pageText) && lineGroups < 12) return "chapter_opener";
+
+  // Unit opener
+  if (/^unit\s+[\divx]+/im.test(pageText) && lineGroups < 15) return "unit_opener";
+
+  // Section / module opener
+  if (/^section\s+\d|^module\s+\d/im.test(pageText) && lineGroups < 18) return "section_opener";
+
+  // Cover — single large all-caps title, very sparse
+  if (/^\s*[A-Z][A-Z\s]{6,}$/m.test(pageText) && lineGroups < 10) return "cover";
+
+  // History / background (non-instructional) — only when no teaching markers present
+  if (/\bhistory of|historical|origin of|milestone|evolution of|timeline\b/.test(text) &&
+      !/definition|mechanism|formula|theorem|therefore|pathophysiology|diagnosis|treatment/.test(text)) return "history_background";
+
+  // Formula / table-heavy page
   if (formulaCount >= 2 || tableLikeRows >= 3 || /equation|formula|identity/.test(heading.toLowerCase())) return "table_formula";
+
   return "regular_teaching";
 }
 
