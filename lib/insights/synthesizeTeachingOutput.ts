@@ -183,30 +183,29 @@ Specific field requirements:
 
 SENTENCE COMPLETENESS: Never output a fragment. Self-check: "Could a student read only this field and understand the concept?" If no → rewrite.
 
-─── LEFT-PANEL STUDY PATHWAY ANCHORS ────────────────────────────────────────
-highlightAnchors: Build a STUDY PATHWAY — 5–9 exact text spans that guide a student
-through the page the way a professor would underline it before an exam.
-Goal: a student reading only the highlighted sentences should understand the full concept.
+─── LEFT-PANEL HIGHLIGHT ANCHORS ────────────────────────────────────────────
+highlightAnchors: Select 2–4 exact verbatim text spans that answer the question:
+"What is this page teaching?" — the sentences a professor would underline on the board.
 
-TARGET COVERAGE — include one span per role when the page has that content:
-  1. anchorType "thesis"       — the governing principle (ALWAYS — the "what" of the page)
-  2. anchorType "definition"   — the core definition or foundational rule (ALWAYS)
-  3. anchorType "mechanism"    — the cause-effect chain or "how/why" it works (ALWAYS if present)
-  4. anchorType "application"  — consequence, real-world use, or clinical implication
-  5. anchorType "clinicalTrap" — the common error, misconception, or exam trap
-  6. anchorType "examSignal"   — the sentence a board question would quote or derive from
-  7. anchorType "formula"      — equation, procedure, or step-by-step rule (if present)
+A student reading ONLY these highlighted sentences must understand the page's core idea.
+Quality > quantity. Two sharp highlights beat six mediocre ones.
 
-PATHWAY RULE: anchors 1–3 are mandatory on any learning page. Anchors 4–7 depend on content.
-Together they form: WHAT it is → HOW it works → WHY it matters → WHAT goes wrong → EXAM HOOK.
+TARGET ROLES — in priority order:
+  1. anchorType "thesis"       — the one sentence that states what this page is about (REQUIRED)
+  2. anchorType "mechanism"    — how/why it works; cause-effect chain (include if present)
+  3. anchorType "clinicalTrap" — the mistake or misconception that trips students up
+  4. anchorType "definition"   — the core definition or rule (include only if distinct from thesis)
+  5. anchorType "examSignal"   — a sentence a board exam would quote or derive from
+  6. anchorType "application"  — real-world consequence or clinical implication
+  7. anchorType "formula"      — equation or procedure (only if central to the page)
 
-CRITICAL RULES:
-• Minimum 5 anchors per learning page. If fewer than 5 qualify, lower your selectivity.
-• NEVER place a clinical patient scenario as the #1 thesis anchor.
-• Copy text EXACTLY as it appeared in the source — verbatim, no paraphrase.
-• ≤ 30 words per span. Prefer a complete grammatical clause over a truncated fragment.
+QUALITY RULES:
+• Copy text EXACTLY as it appears in the source — verbatim, no paraphrase.
+• Each span must be a complete grammatical sentence or clause (≤ 30 words).
 • Prefer sentence-ending spans (with period) — these match the PDF text layer reliably.
-• Avoid: figure captions, transitional sentences ("In this chapter…"), filler, OCR noise.
+• NEVER highlight: figure captions, "In this chapter…" transitions, publisher/copyright text,
+  OCR noise, incomplete fragments, or repeated content from another anchor.
+• Do NOT lower the bar to hit a count. Return 2 sharp anchors rather than 4 weak ones.
 • Return null ONLY if the page has fewer than 3 real instructional sentences.
 
 ─── STRUCTURED MINI TEST ────────────────────────────────────────────────────
@@ -298,12 +297,12 @@ The answer must be about UNDERSTANDING, not about what appears in a figure or wh
 ─── TASK ──────────────────────────────────────────────────────────────────
 Produce a structured educational interpretation for this page.
 
-For page level: coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, externalStudyLinks, highlightAnchors (4–7: thesis → definition → mechanism → application → clinicalTrap → examSignal → formula), miniTestItems (2–3 structured questions), relatedVideoQueries.
+For page level: coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, externalStudyLinks, highlightAnchors (2–4 sharp anchors answering "What is this page teaching?"), miniTestItems (2–3 structured questions), relatedVideoQueries.
 For each concept (include ${Math.min(rankedConcepts.length, 4)}): principle, mechanism, trap, rule, misconception, examHook.
 
 Every field: complete sentence, ≤20 words, relational not definitional, professor-level language.
 If a concept text is a figure caption: write the PRINCIPLE the figure is illustrating, not the caption.
-highlightAnchors: copy 4–7 exact spans (minimum 4) from EXTRACTED CONCEPTS above. Cover: thesis, definition, mechanism, application/trap, examSignal, formula. Return null only if fewer than 3 sentences of real content.`;
+highlightAnchors: 2–4 verbatim spans from the source. Prefer the thesis sentence and mechanism sentence. Return null only if fewer than 3 sentences of real content.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -323,10 +322,10 @@ export function buildStage1SystemPrompt(domain: PageDomain): string {
 
 1. coreIdea — The governing principle in ONE precise, complete sentence (≤20 words). What a professor would write on the board first.
 
-2. highlightAnchors — 4–7 exact verbatim text spans a professor would underline before an exam.
-   TARGET: thesis + definition + mechanism + application/trap + examSignal + formula (if present).
-   Minimum 4 spans per learning page. Copy text EXACTLY (≤30 words each).
-   Return null ONLY if the page has fewer than 3 sentences of real content.
+2. highlightAnchors — 2–4 exact verbatim text spans that answer "What is this page teaching?"
+   TARGET: thesis (required) + mechanism (if present) + clinicalTrap or examSignal (if present).
+   Quality over quantity — 2 sharp highlights beat 5 mediocre ones. Copy text EXACTLY (≤30 words each).
+   NEVER highlight figure captions, filler, or fragments. Return null only if < 3 real sentences.
 
 3. miniTestItems — 2 exam-quality practice questions:
    • Question 1: multiple-choice — 4 options, correct answer is the BEST option.
@@ -342,7 +341,7 @@ export function buildStage1UserPrompt(input: SynthesisInput): string {
   const concepts = rankedConcepts.slice(0, 3).map((c, i) =>
     `${i + 1}. [${c.role.toUpperCase()}] "${c.title}"\n   "${c.text.slice(0, 220)}"`
   ).join("\n\n");
-  return `DOMAIN: ${domain}\n\nPAGE CONTEXT:\n${context || "(derive from concepts below)"}\n\nKEY CONCEPTS:\n${concepts}\n\nExtract: coreIdea, highlightAnchors (4–7, minimum 4), miniTestItems (1 MC + 1 short-answer).`;
+  return `DOMAIN: ${domain}\n\nPAGE CONTEXT:\n${context || "(derive from concepts below)"}\n\nKEY CONCEPTS:\n${concepts}\n\nExtract: coreIdea, highlightAnchors (2–4 sharp verbatim spans — thesis + mechanism + trap/examSignal), miniTestItems (1 MC + 1 short-answer).`;
 }
 
 /** Client-side Stage 1 fetch — fast path. */
