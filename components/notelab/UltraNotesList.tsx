@@ -277,15 +277,40 @@ function NoteCard({
             </div>
           )}
 
-          {/* External Study Links — search queries for deeper understanding */}
-          {note.crossLinks && note.crossLinks.length > 0 && (
+          {/* External Study Links — clickable OpenAI-generated search queries */}
+          {note.externalStudyLinks && note.externalStudyLinks.length > 0 && (
             <div style={{ marginBottom: 10, padding: "8px 12px", borderRadius: 8, background: "rgba(139,92,246,0.04)", border: "1px solid rgba(139,92,246,0.12)" }}>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#c4b5fd", marginBottom: 6 }}>📚 EXTERNAL STUDY LINKS</div>
-              {note.crossLinks.map((cl, i) => (
-                <div key={i} style={{ fontSize: 12, color: "rgba(196,181,253,0.85)", lineHeight: 1.6 }}>
-                  📖 {cl.label}
-                </div>
-              ))}
+              {note.externalStudyLinks.map((l, i) => {
+                const base = l.type === "textbook-search"
+                  ? "https://scholar.google.com/scholar?q="
+                  : "https://www.google.com/search?q=";
+                const href = `${base}${encodeURIComponent(l.searchQuery)}`;
+                const icon = l.type === "textbook-search" ? "📖" : l.type === "reference" ? "🔗" : "📄";
+                return (
+                  <a key={i} href={href} target="_blank" rel="noopener noreferrer"
+                    style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: "#c4b5fd", lineHeight: 1.6, textDecoration: "underline", textDecorationStyle: "dotted", marginBottom: 2 }}>
+                    <span style={{ flexShrink: 0 }}>{icon}</span>
+                    <span>{l.label}</span>
+                  </a>
+                );
+              })}
+            </div>
+          )}
+          {/* Related Teaching Videos — OpenAI-generated YouTube search queries */}
+          {note.relatedVideoQueries && note.relatedVideoQueries.length > 0 && (
+            <div style={{ marginBottom: 10, padding: "8px 12px", borderRadius: 8, background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.12)" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#fca5a5", marginBottom: 6 }}>📺 RELATED TEACHING VIDEOS</div>
+              {note.relatedVideoQueries.map((q, i) => {
+                const href = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+                return (
+                  <a key={i} href={href} target="_blank" rel="noopener noreferrer"
+                    style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: "#fca5a5", lineHeight: 1.6, textDecoration: "underline", textDecorationStyle: "dotted", marginBottom: 2 }}>
+                    <span style={{ flexShrink: 0 }}>▶</span>
+                    <span>{q}</span>
+                  </a>
+                );
+              })}
             </div>
           )}
 
