@@ -898,10 +898,31 @@ export function RightPanel({
                 pageNumber={ctx?.pageNumber}
               />
             </UltraViewErrorBoundary>
-            <div style={{ display: "flex", gap: 8 }}>
-              <ComingSoonButton label="⚡ NoteLab Export" />
-              <ComingSoonButton label="🎯 Recall Lab" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <GenerateNoteButton
+                view={displayView!}
+                bookId={ctx.documentId}
+                bookTitle={ctx.documentTitle}
+                pageNumber={ctx.pageNumber}
+                onNoteSaved={onNoteSaved}
+                studyModel={studyModel}
+              />
+              <GenerateStudySetButton
+                view={displayView!}
+                bookId={ctx.documentId}
+                bookTitle={ctx.documentTitle}
+                pageNumber={ctx.pageNumber}
+                onStudySetGenerated={onStudySetGenerated}
+                studyModel={studyModel}
+              />
             </div>
+            {shadowRecall && (
+              <ShadowRecallSection
+                recall={shadowRecall}
+                open={recallOpen}
+                onToggle={() => setRecallOpen((o) => !o)}
+              />
+            )}
           </>
         )}
 
