@@ -183,25 +183,31 @@ Specific field requirements:
 
 SENTENCE COMPLETENESS: Never output a fragment. Self-check: "Could a student read only this field and understand the concept?" If no → rewrite.
 
-─── LEFT-PANEL ANCHOR SELECTION ─────────────────────────────────────────────
-highlightAnchors: select 4–7 exact text spans a professor would underline before an exam.
-TARGET COVERAGE — include one span per category when the page has that content:
-  1. anchorType "thesis"      — the page's governing concept or principle (ALWAYS include)
-  2. anchorType "definition"  — the foundational definition or core rule (ALWAYS include)
-  3. anchorType "mechanism"   — cause-effect chain or how/why it works (include if present)
-  4. anchorType "application" — major example or real-world consequence (include if present)
-  5. anchorType "clinicalTrap"— common confusion, misconception, or exam trap (include if present)
-  6. anchorType "examSignal"  — a sentence that directly maps to a board/exam question stem
-  7. anchorType "formula"     — equation, procedure, or step-by-step rule (include if present)
+─── LEFT-PANEL STUDY PATHWAY ANCHORS ────────────────────────────────────────
+highlightAnchors: Build a STUDY PATHWAY — 5–9 exact text spans that guide a student
+through the page the way a professor would underline it before an exam.
+Goal: a student reading only the highlighted sentences should understand the full concept.
+
+TARGET COVERAGE — include one span per role when the page has that content:
+  1. anchorType "thesis"       — the governing principle (ALWAYS — the "what" of the page)
+  2. anchorType "definition"   — the core definition or foundational rule (ALWAYS)
+  3. anchorType "mechanism"    — the cause-effect chain or "how/why" it works (ALWAYS if present)
+  4. anchorType "application"  — consequence, real-world use, or clinical implication
+  5. anchorType "clinicalTrap" — the common error, misconception, or exam trap
+  6. anchorType "examSignal"   — the sentence a board question would quote or derive from
+  7. anchorType "formula"      — equation, procedure, or step-by-step rule (if present)
+
+PATHWAY RULE: anchors 1–3 are mandatory on any learning page. Anchors 4–7 depend on content.
+Together they form: WHAT it is → HOW it works → WHY it matters → WHAT goes wrong → EXAM HOOK.
 
 CRITICAL RULES:
-• Minimum 4 anchors per learning page — if fewer than 4 qualify, lower your threshold.
-• NEVER place a clinical example (patient scenario, disease case) as the #1 thesis anchor
-  unless the ENTIRE page is exclusively about that example. Clinical examples → "application" or "clinicalTrap".
-• Copy text EXACTLY as it appeared in the source — do not paraphrase or edit.
-• ≤ 30 words per span. Prefer shorter, precise spans over long paragraphs.
-• Avoid: figure captions, transitional sentences, repeated phrases, OCR fragments.
-• Return null ONLY if the page has fewer than 3 sentences of real content.
+• Minimum 5 anchors per learning page. If fewer than 5 qualify, lower your selectivity.
+• NEVER place a clinical patient scenario as the #1 thesis anchor.
+• Copy text EXACTLY as it appeared in the source — verbatim, no paraphrase.
+• ≤ 30 words per span. Prefer a complete grammatical clause over a truncated fragment.
+• Prefer sentence-ending spans (with period) — these match the PDF text layer reliably.
+• Avoid: figure captions, transitional sentences ("In this chapter…"), filler, OCR noise.
+• Return null ONLY if the page has fewer than 3 real instructional sentences.
 
 ─── STRUCTURED MINI TEST ────────────────────────────────────────────────────
 miniTestItems: Generate 2–3 structured practice questions testing the governing concept.
