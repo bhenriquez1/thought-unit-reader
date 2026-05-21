@@ -899,22 +899,8 @@ export function RightPanel({
               />
             </UltraViewErrorBoundary>
             <div style={{ display: "flex", gap: 8 }}>
-              <GenerateNoteButton
-                view={displayView}
-                bookId={ctx?.documentId ?? ""}
-                bookTitle={ctx?.documentTitle}
-                pageNumber={ctx?.pageNumber ?? 0}
-                onNoteSaved={onNoteSaved}
-                studyModel={isStructuralPage ? null : studyModel}
-              />
-              <GenerateStudySetButton
-                view={displayView}
-                bookId={ctx?.documentId ?? ""}
-                bookTitle={ctx?.documentTitle}
-                pageNumber={ctx?.pageNumber ?? 0}
-                onStudySetGenerated={onStudySetGenerated}
-                studyModel={isStructuralPage ? null : studyModel}
-              />
+              <ComingSoonButton label="⚡ NoteLab Export" />
+              <ComingSoonButton label="🎯 Recall Lab" />
             </div>
           </>
         )}
@@ -2924,6 +2910,33 @@ function buildSentenceCandidatesFromPageModel(pageModel: any, pageNumber: number
 
 // ---------------------------------------------------------------------------
 // Generate Ultra Note button
+// ---------------------------------------------------------------------------
+// Coming Soon placeholder — replaces buttons for frozen features
+
+function ComingSoonButton({ label }: { label: string }) {
+  return (
+    <button
+      type="button"
+      disabled
+      style={{
+        flex: 1,
+        padding: "10px 0",
+        borderRadius: 10,
+        border: "1px solid rgba(255,255,255,0.06)",
+        background: "rgba(255,255,255,0.02)",
+        color: "rgba(255,255,255,0.2)",
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: "0.06em",
+        cursor: "not-allowed",
+      }}
+    >
+      {label}
+      <span style={{ display: "block", fontSize: 9, marginTop: 2, opacity: 0.6 }}>Coming Soon</span>
+    </button>
+  );
+}
+
 // ---------------------------------------------------------------------------
 
 function GenerateNoteButton({
