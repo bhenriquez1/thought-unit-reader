@@ -487,73 +487,145 @@ export default function SmartPDFViewer({
 
       // ── flat highlightTargets path ─────────────────────────────────────────
       if (!hasNeighborhoods) setGuidedOverlayData(null);
-      console.log("[HIGHLIGHT:viewer-input]", {
+      console.log("[AI_HIGHLIGHT:received]", {
         targetCount: highlightTargets?.length ?? 0,
         ids: highlightTargets?.map((t) => t.evidenceRefId) ?? [],
+        texts: highlightTargets?.map((t) => t.text?.slice(0, 40)) ?? [],
       });
-      function spansForNeedle(needle: string): HTMLElement[] {
-        const idx = concatText.indexOf(needle);
-        if (idx === -1) return [];
-        const end = idx + needle.length;
-        return spans.filter((_, i) => offsets[i] + spanNorm[i].length > idx && offsets[i] < end);
+
+      // Locate an anchor in concatText. Uses full text first, then progressive
+      // prefix narrowing to find the START position, but always extends coverage
+      // to the full anchor length — so the whole sentence is highlighted.
+      function locateAnchor(baseText: string): { startIdx: number; endIdx: number } | null {
+        // 1. Full text match
+        const fullIdx = concatText.indexOf(baseText);
+        if (fullIdx !== -1) return { startIdx: fullIdx, endIdx: fullIdx + baseText.length };
+
+        // 2. Prefix narrowing: find start, extend to full anchor length
+        const words = baseText.replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+        for (const count of [12, 10, 8, 6, 5, 4]) {
+          if (count > words.length) continue;
+          const needle = words.slice(0, count).join(" ");
+          if (needle.length < 4) continue;
+          const needleIdx = concatText.indexOf(needle);
+          if (needleIdx !== -1) {
+            return { startIdx: needleIdx, endIdx: Math.min(needleIdx + baseText.length, concatText.length) };
+          }
+        }
+
+        // 3. Suffix search: try last N words (handles OCR noise at start of anchor)
+        for (const count of [6, 5, 4]) {
+          if (count > words.length) continue;
+          const needle = words.slice(-count).join(" ");
+          if (needle.length < 4) continue;
+          const needleIdx = concatText.indexOf(needle);
+          if (needleIdx !== -1) {
+            const startIdx = Math.max(0, needleIdx - (baseText.length - needle.length));
+            return { startIdx, endIdx: needleIdx + needle.length };
+          }
+        }
+        return null;
       }
 
-      function rectFromSpans(matched: HTMLElement[]): { top: number; left: number; width: number; height: number } | null {
-        if (!matched.length) return null;
-        const dr = matched.map((s) => s.getBoundingClientRect());
-        const top    = Math.min(...dr.map((r) => r.top))    - layerRect.top;
-        const left   = Math.min(...dr.map((r) => r.left))   - layerRect.left;
-        const bottom = Math.max(...dr.map((r) => r.bottom)) - layerRect.top;
-        const right  = Math.max(...dr.map((r) => r.right))  - layerRect.left;
-        return { top, left, width: right - left, height: Math.max(14, bottom - top) };
+      // Return all spans whose text overlaps [startIdx, endIdx) in concatText.
+      function spansForRange(startIdx: number, endIdx: number): HTMLElement[] {
+        return spans.filter((_, i) =>
+          offsets[i] + spanNorm[i].length > startIdx && offsets[i] < endIdx
+        );
+      }
+
+      // Build per-line OverlayRects from matched spans.
+      // Groups spans by approximate Y (3px grid) -> one rect per text line.
+      // Suppresses tiny orphan artifacts (too narrow or impossibly tall).
+      function lineRectsFromSpans(
+        matched: HTMLElement[],
+        targetId: string,
+        level: OverlayRect["level"],
+        semanticKind: OverlayRect["semanticKind"],
+      ): OverlayRect[] {
+        if (!matched.length) return [];
+        const byLine = new Map<number, DOMRect[]>();
+        for (const span of matched) {
+          const dr = span.getBoundingClientRect();
+          if (dr.width < 1 || dr.height < 1) continue;
+          const lineKey = Math.round(dr.top / 3) * 3;
+          if (!byLine.has(lineKey)) byLine.set(lineKey, []);
+          byLine.get(lineKey)!.push(dr);
+        }
+
+        const lineRects: OverlayRect[] = [];
+        let lineIndex = 0;
+        const sortedKeys = [...byLine.keys()].sort((a, b) => a - b);
+        for (const key of sortedKeys) {
+          const drs = byLine.get(key)!;
+          const top    = Math.min(...drs.map((r) => r.top))    - layerRect.top;
+          const left   = Math.min(...drs.map((r) => r.left))   - layerRect.left;
+          const bottom = Math.max(...drs.map((r) => r.bottom)) - layerRect.top;
+          const right  = Math.max(...drs.map((r) => r.right))  - layerRect.left;
+          const width  = right - left;
+          const height = Math.max(13, bottom - top);
+
+          // Suppress orphan artifacts
+          if (width < 12 || height > 72) {
+            console.log("[AI_HIGHLIGHT:orphan-filtered]", { targetId, lineIndex, width: Math.round(width), height: Math.round(height) });
+            lineIndex++;
+            continue;
+          }
+          lineRects.push({
+            id: lineIndex === 0 ? targetId : `${targetId}-L${lineIndex}`,
+            level,
+            semanticKind,
+            top,
+            left,
+            width,
+            height: Math.min(height, 36),
+          });
+          lineIndex++;
+        }
+        return lineRects;
       }
 
       const rects: OverlayRect[] = [];
       highlightTargets!.forEach((target) => {
-        // Apply ligature/smart-quote normalization before candidate generation so
-        // anchors containing ﬁ/ﬂ match their PDF span equivalents (fi/fl).
         const baseText = normForMatch(target.normalizedText);
-        const words = baseText.replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
-        const candidates = [
-          words.slice(0, 8).join(" "),
-          words.slice(0, 6).join(" "),
-          words.slice(0, 4).join(" "),
-          words.filter((w) => w.length >= 4).slice(0, 3).join(" "),
-          words.filter((w) => w.length >= 6).slice(0, 3).join(" "),
-          words.filter((w) => w.length >= 5).slice(0, 2).join(" "),
-          words.slice(-4).join(" "),
-        ].filter((n) => n.length >= 4);
-
-        let matchedSpans: HTMLElement[] = [];
-        for (const needle of candidates) {
-          matchedSpans = spansForNeedle(needle);
-          if (matchedSpans.length) break;
-        }
-
-        if (!matchedSpans.length && (target.support?.length || target.evidence?.length)) {
-          for (const fallback of [...(target.support ?? []), ...(target.evidence ?? [])]) {
-            if (!fallback || fallback.length < 12) continue;
-            const fbWords = fallback.toLowerCase().replace(/\u00ad/g, "").replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
-            for (const needle of [fbWords.slice(0, 6).join(" "), fbWords.slice(0, 4).join(" "), fbWords.filter((w) => w.length >= 4).slice(0, 3).join(" ")].filter((n) => n.length >= 4)) {
-              matchedSpans = spansForNeedle(needle);
-              if (matchedSpans.length) break;
-            }
-            if (matchedSpans.length) break;
-          }
-        }
-
-        console.log("[HIGHLIGHT:match]", {
+        console.log("[AI_HIGHLIGHT:matching]", {
           id: target.evidenceRefId,
-          text: target.text?.slice(0, 50),
-          matched: matchedSpans.length > 0,
-          needle: candidates[0]?.slice(0, 40) ?? "(none)",
-          candidatesCount: candidates.length,
           kind: target.kind,
+          text: target.text?.slice(0, 60),
+          baseText: baseText.slice(0, 60),
         });
-        if (!matchedSpans.length) return;
-        const geo = rectFromSpans(matchedSpans.slice(0, 12));
-        if (!geo) return;
-        rects.push({ id: target.evidenceRefId, level: target.level, semanticKind: target.kind as OverlayRect["semanticKind"], ...geo });
+
+        const location = locateAnchor(baseText);
+        if (!location) {
+          // Try support/evidence fallback
+          let fallbackLoc: { startIdx: number; endIdx: number } | null = null;
+          for (const fb of [...(target.support ?? []), ...(target.evidence ?? [])]) {
+            if (!fb || fb.length < 12) continue;
+            fallbackLoc = locateAnchor(normForMatch(fb));
+            if (fallbackLoc) break;
+          }
+          if (!fallbackLoc) {
+            console.log("[AI_HIGHLIGHT:failed]", { id: target.evidenceRefId, text: target.text?.slice(0, 60) });
+            return;
+          }
+          const fbSpans = spansForRange(fallbackLoc.startIdx, fallbackLoc.endIdx);
+          const fbRects = lineRectsFromSpans(fbSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"]);
+          console.log("[AI_HIGHLIGHT:matched]", { id: target.evidenceRefId, via: "fallback", lines: fbRects.length });
+          rects.push(...fbRects);
+          return;
+        }
+
+        const matchedSpans = spansForRange(location.startIdx, location.endIdx);
+        const lineRects = lineRectsFromSpans(matchedSpans, target.evidenceRefId, target.level, target.kind as OverlayRect["semanticKind"]);
+        console.log("[AI_HIGHLIGHT:matched]", {
+          id: target.evidenceRefId, kind: target.kind,
+          spanCount: matchedSpans.length, lines: lineRects.length,
+        });
+        console.log("[AI_HIGHLIGHT:rects]", {
+          id: target.evidenceRefId,
+          rects: lineRects.map((r) => ({ top: Math.round(r.top), left: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height) })),
+        });
+        rects.push(...lineRects);
       });
 
       if (!rects.length && (highlightTargets?.length ?? 0) > 0 && attempts < 10) {
