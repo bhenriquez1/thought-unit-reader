@@ -2,6 +2,10 @@
 // Educational Interpretation Engine — professor layer.
 // Receives structured concept data; returns LLM-reasoned educational output.
 // Uses OpenAI Responses API + Zod structured outputs for schema-enforced JSON.
+//
+// Staged synthesis:
+//   stage=1 → fast path: coreIdea + highlightAnchors + miniTestItems only (~1–3s, 600 tokens)
+//   stage=2 (or unset) → full path: all study fields (~5–15s, 1800 tokens)
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
@@ -10,6 +14,9 @@ import {
   buildSystemPrompt,
   buildUserPrompt,
   TeachingSynthesisSchema,
+  Stage1SynthesisSchema,
+  buildStage1SystemPrompt,
+  buildStage1UserPrompt,
   type SynthesisInput,
 } from "@/lib/insights/synthesizeTeachingOutput";
 import type { PageDomain } from "@/lib/insights/detectPageDomain";
@@ -17,11 +24,12 @@ import type { PageDomain } from "@/lib/insights/detectPageDomain";
 const apiKey = process.env.OPENAI_API_KEY;
 const openai = new OpenAI({ apiKey });
 
-// Pre-build the format object once at module load — if the schema is invalid,
-// this will log [SYNTH:init:SCHEMA_FAIL] at startup instead of silently failing per-request.
-let FORMAT_OBJ: ReturnType<typeof zodTextFormat> | null = null;
+// Pre-build format objects at module load — schema errors surface at startup.
+let FORMAT_FULL: ReturnType<typeof zodTextFormat> | null = null;
+let FORMAT_STAGE1: ReturnType<typeof zodTextFormat> | null = null;
 try {
-  FORMAT_OBJ = zodTextFormat(TeachingSynthesisSchema, "teaching_synthesis");
+  FORMAT_FULL   = zodTextFormat(TeachingSynthesisSchema,  "teaching_synthesis");
+  FORMAT_STAGE1 = zodTextFormat(Stage1SynthesisSchema,    "stage1_synthesis");
   console.log("[SYNTH:init:schema-ok]");
 } catch (schemaErr) {
   console.error("[SYNTH:init:SCHEMA_FAIL]", schemaErr instanceof Error ? schemaErr.message : String(schemaErr));
@@ -37,20 +45,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  // CHECKPOINT 0: API key present
   if (!apiKey) {
-    console.error("[SYNTH:cp0:MISSING_KEY] OPENAI_API_KEY is not set in this environment");
+    console.error("[SYNTH:cp0:MISSING_KEY] OPENAI_API_KEY is not set");
     return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
   }
 
-  // CHECKPOINT 1: schema pre-built successfully at module load
-  if (!FORMAT_OBJ) {
-    console.error("[SYNTH:cp1:SCHEMA_UNINIT] zodTextFormat failed at startup — see [SYNTH:init:SCHEMA_FAIL]");
-    return res.status(500).json({ error: "Schema init failed — see [SYNTH:init:SCHEMA_FAIL] in server log" });
+  if (!FORMAT_FULL || !FORMAT_STAGE1) {
+    console.error("[SYNTH:cp1:SCHEMA_UNINIT]");
+    return res.status(500).json({ error: "Schema init failed" });
   }
 
-  const body = (req.body ?? {}) as Partial<SynthesisInput>;
-  const { domain, pageObjective, pageThesis, pageSummary, rankedConcepts } = body;
+  const body = (req.body ?? {}) as Partial<SynthesisInput> & { stage?: string };
+  const { stage = "2", domain, pageObjective, pageThesis, pageSummary, rankedConcepts } = body;
 
   if (!Array.isArray(rankedConcepts) || rankedConcepts.length === 0) {
     return res.status(400).json({ error: "Missing or empty 'rankedConcepts'." });
@@ -61,15 +67,48 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     : "general";
 
   const safeInput: SynthesisInput = {
-    domain: safeDomain,
+    domain:        safeDomain,
     pageObjective: typeof pageObjective === "string" ? pageObjective : undefined,
     pageThesis:    typeof pageThesis    === "string" ? pageThesis    : undefined,
     pageSummary:   typeof pageSummary   === "string" ? pageSummary   : undefined,
     rankedConcepts: rankedConcepts.slice(0, 6),
   };
 
-  // CHECKPOINT 2: request shape confirmed, before any OpenAI call
-  // apiKeyPrefix confirms WHICH key Render loaded (first 14 chars safe to log)
+  // ── Stage 1: Fast path ─────────────────────────────────────────────────────
+  if (stage === "1") {
+    console.log("[SYNTH:stage1:api-start]", {
+      domain: safeDomain,
+      conceptCount: safeInput.rankedConcepts.length,
+      hasPageThesis: !!safeInput.pageThesis,
+    });
+    try {
+      const response = await openai.responses.parse({
+        model: "gpt-4o",
+        temperature: 0.2,
+        max_output_tokens: 600,
+        text: { format: FORMAT_STAGE1 },
+        input: [
+          { role: "system", content: buildStage1SystemPrompt(safeDomain) },
+          { role: "user",   content: buildStage1UserPrompt(safeInput) },
+        ],
+      });
+      const s1 = response.output_parsed;
+      if (!s1) return res.status(500).json({ error: "Stage 1: no structured output" });
+      const validated = Stage1SynthesisSchema.parse(s1);
+      console.log("[SYNTH:stage1:api-done]", {
+        coreIdea: validated.coreIdea?.slice(0, 60),
+        anchors:  validated.highlightAnchors?.length ?? 0,
+        miniTest: validated.miniTestItems?.length ?? 0,
+      });
+      return res.status(200).json(validated);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[SYNTH:stage1:api-error]", msg);
+      return res.status(500).json({ error: msg.slice(0, 300) });
+    }
+  }
+
+  // ── Stage 2: Full synthesis ─────────────────────────────────────────────────
   console.log("[SYNTH:cp2:request-start]", {
     domain: safeDomain,
     rankedConceptCount: safeInput.rankedConcepts.length,
@@ -77,46 +116,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     hasPageSummary:   !!safeInput.pageSummary,
     hasPageObjective: !!safeInput.pageObjective,
     pageThesisSnip:   safeInput.pageThesis?.slice(0, 80) ?? null,
-    pageSummarySnip:  safeInput.pageSummary?.slice(0, 80) ?? null,
     apiKeyPrefix: apiKey.slice(0, 14) + "...",
     concepts: safeInput.rankedConcepts.map((c, i) => ({ i, role: c.role, title: c.title?.slice(0, 40) })),
   });
 
   try {
-    // CHECKPOINT 3: about to fire OpenAI request
     console.log("[SYNTH:cp3:openai-start]", { model: "gpt-4o", maxTokens: 1800 });
 
     const response = await openai.responses.parse({
       model: "gpt-4o",
       temperature: 0.3,
       max_output_tokens: 1800,
-      text: { format: FORMAT_OBJ },
+      text: { format: FORMAT_FULL },
       input: [
         { role: "system", content: buildSystemPrompt(safeDomain) },
         { role: "user",   content: buildUserPrompt(safeInput) },
       ],
     });
 
-    // CHECKPOINT 4: OpenAI returned — log raw output before Zod parse
     const synthesis = response.output_parsed;
     console.log("[SYNTH:cp4:openai-returned]", {
       hasOutput: !!synthesis,
-      outputKeys: synthesis && typeof synthesis === "object" ? Object.keys(synthesis as object) : null,
       rawSnip: JSON.stringify(synthesis ?? {}).slice(0, 300),
     });
 
     if (!synthesis) {
-      console.error("[SYNTH:cp4:null-output] Model returned no structured output");
+      console.error("[SYNTH:cp4:null-output]");
       return res.status(500).json({ error: "Model returned no structured output." });
     }
 
     const validated = TeachingSynthesisSchema.parse(synthesis);
-
-    // CHECKPOINT 5: full pipeline succeeded
     console.log("[SYNTH:cp5:success]", {
       coreIdea:     validated.coreIdea?.slice(0, 80) ?? null,
       mechanism:    validated.mechanism?.slice(0, 80) ?? null,
-      application:  validated.application?.slice(0, 80) ?? null,
       conceptCount: validated.concepts?.length ?? 0,
       anchorCount:  validated.highlightAnchors?.length ?? 0,
     });
@@ -126,7 +158,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (err: unknown) {
     const msg   = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error ? err.stack   : undefined;
-    // Log full stack (10 frames) so we can identify exact failing line
     console.error("[SYNTH:error]", {
       message: msg,
       stack: stack?.split("\n").slice(0, 10).join(" | "),

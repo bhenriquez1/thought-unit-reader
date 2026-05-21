@@ -298,6 +298,91 @@ highlightAnchors: copy 2–4 exact spans from EXTRACTED CONCEPTS above that a pr
 }
 
 // ---------------------------------------------------------------------------
+// Stage 1 — Fast schema (thesis + highlights + mini-test only)
+// Target: 1–3 s. Renders immediately while Stage 2 processes in background.
+// ---------------------------------------------------------------------------
+
+export const Stage1SynthesisSchema = z.object({
+  coreIdea:        z.string(),
+  highlightAnchors: z.array(SynthHighlightAnchorSchema).nullable(),
+  miniTestItems:   z.array(MiniTestItemSchema).nullable(),
+});
+export type Stage1Synthesis = z.infer<typeof Stage1SynthesisSchema>;
+
+export function buildStage1SystemPrompt(domain: PageDomain): string {
+  return `You are a world-class ${domain} educator. Extract exactly 3 things from the page content provided:
+
+1. coreIdea — The governing principle in ONE precise, complete sentence (≤20 words). What a professor would write on the board first.
+
+2. highlightAnchors — 2–4 exact verbatim text spans a professor would underline before an exam.
+   STRICT PRIORITY: thesis → definition/rule → mechanism → application/trap.
+   Copy text EXACTLY (≤30 words each). Return null if no text qualifies.
+
+3. miniTestItems — 2 exam-quality practice questions:
+   • Question 1: multiple-choice — 4 options, correct answer is the BEST option.
+   • Question 2: short-answer or application — model answer in 1–2 sentences.
+   Include a 1-sentence explanation for each.
+
+Be fast and precise. Do NOT elaborate beyond the schema fields.`;
+}
+
+export function buildStage1UserPrompt(input: SynthesisInput): string {
+  const { domain, pageThesis, pageObjective, rankedConcepts } = input;
+  const context = [pageThesis, pageObjective].filter(Boolean).slice(0, 2).join("\n");
+  const concepts = rankedConcepts.slice(0, 3).map((c, i) =>
+    `${i + 1}. [${c.role.toUpperCase()}] "${c.title}"\n   "${c.text.slice(0, 220)}"`
+  ).join("\n\n");
+  return `DOMAIN: ${domain}\n\nPAGE CONTEXT:\n${context || "(derive from concepts below)"}\n\nKEY CONCEPTS:\n${concepts}\n\nExtract: coreIdea, highlightAnchors (2–4), miniTestItems (1 MC + 1 short-answer).`;
+}
+
+/** Client-side Stage 1 fetch — fast path. */
+export async function synthesizeStage1Output(
+  input: SynthesisInput,
+  signal?: AbortSignal,
+): Promise<Stage1Synthesis> {
+  const response = await fetch("/api/intelligenceSynthesis", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...input, stage: "1" }),
+    signal,
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error ?? `stage1 failed: ${response.status}`);
+  }
+  const raw = await response.json();
+  try {
+    return Stage1SynthesisSchema.parse(raw);
+  } catch (zodErr) {
+    console.error("[SYNTH:stage1:zod-fail]", zodErr instanceof Error ? zodErr.message : String(zodErr));
+    throw zodErr;
+  }
+}
+
+/** Build a valid full TeachingSynthesis stub from Stage 1 results.
+ *  Empty strings for unrequested fields — validSynthField() rejects them so they don't render. */
+export function makeStubFromStage1(stage1: Stage1Synthesis): TeachingSynthesis {
+  return {
+    coreIdea:          stage1.coreIdea,
+    mechanism:         "",
+    rule:              "",
+    trap:              null,
+    application:       "",
+    teachingObjective: "",
+    examCriticalIdea:  "",
+    reasoningFlow:     "",
+    misconceptionAlert: null,
+    memoryAnchor:      null,
+    externalStudyLinks: null,
+    concepts:          [],
+    miniTests:         null,
+    miniTestItems:     stage1.miniTestItems,
+    highlightAnchors:  stage1.highlightAnchors,
+    relatedVideoQueries: null,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Client-side fetch
 // ---------------------------------------------------------------------------
 
@@ -377,5 +462,23 @@ export function buildSynthesisInput(
     importance: b.importance,
   }));
 
-  return { domain, pageObjective, pageThesis, pageSummary, pageNumber, rankedConcepts };
+  // Chunk to high-signal content: if total concept text > 2000 chars, trim lower-priority concepts.
+  // This prevents oversized prompts from causing timeouts on dense pages.
+  const MAX_CONCEPT_CHARS = 2000;
+  const totalChars = rankedConcepts.reduce((s, c) => s + (c.text?.length ?? 0), 0);
+  const chunkedConcepts = totalChars > MAX_CONCEPT_CHARS
+    ? (() => {
+        const result: SynthesisConceptInput[] = [];
+        let chars = 0;
+        for (const c of rankedConcepts) {
+          const len = c.text?.length ?? 0;
+          if (chars + len > MAX_CONCEPT_CHARS && result.length >= 2) break;
+          result.push(c);
+          chars += len;
+        }
+        return result;
+      })()
+    : rankedConcepts;
+
+  return { domain, pageObjective, pageThesis, pageSummary, pageNumber, rankedConcepts: chunkedConcepts };
 }

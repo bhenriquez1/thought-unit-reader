@@ -451,6 +451,8 @@ export function RightPanel({
   const {
     synthesis: teachingSynthesis,
     status: synthStatus,
+    stage1Status,
+    stage2Status,
     errorMessage: synthErrorMsg,
   } = useTeachingSynthesis({
     pageTruthKey,
@@ -840,6 +842,16 @@ export function RightPanel({
         {intelligence.status === "error" && (
           <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">
             Could not build reading path for this page.
+          </div>
+        )}
+
+        {/* Stage 2 background loading indicator — visible briefly after Stage 1 renders */}
+        {stage1Status === "success" && stage2Status === "loading" && (
+          <div className="flex items-center gap-2 px-1 py-1">
+            <div className="h-1 w-20 overflow-hidden rounded-full bg-white/8">
+              <div className="h-full w-1/2 animate-pulse rounded-full bg-indigo-400/35" />
+            </div>
+            <span className="text-[10px] text-white/25 italic">Loading deep analysis…</span>
           </div>
         )}
 
@@ -1472,7 +1484,7 @@ function UltraView({
                 <div className="h-full w-1/2 animate-pulse rounded-full bg-emerald-400/30" />
               </div>
               <p className="text-[12px] text-white/35 italic">Generating study notes…</p>
-              <p className="text-[10px] text-white/20">Analysis takes a few seconds</p>
+              <p className="text-[10px] text-white/20">Stage 1 rendering in ~2s</p>
             </div>
           )}
         </PanelSection>
