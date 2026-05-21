@@ -510,27 +510,49 @@ export default function SmartPDFViewer({
           .trim();
       }
 
-      // Locate anchor in concatText. Uses full text for the primary search,
-      // then progressive prefix narrowing to find start + extend to full length.
-      // Suffix fallback is intentionally omitted — suffix-only matches are too
-      // ambiguous and produce misleading partial highlights.
+      // Locate anchor in concatText. Primary: full text. Fallback: prefix to find START,
+      // then suffix to pin the END — avoids the "estimated endIdx overshoot" problem.
       function locateAnchor(baseText: string): { startIdx: number; endIdx: number } | null {
-        // 1. Full text match (highest confidence)
+        if (baseText.length < 4) return null;
+
+        // 1. Full text match (highest confidence — no estimation needed)
         const fullIdx = concatText.indexOf(baseText);
         if (fullIdx !== -1) return { startIdx: fullIdx, endIdx: fullIdx + baseText.length };
 
-        // 2. Prefix narrowing: find START via shorter needle, extend to full anchor length.
-        //    Only use needles covering >= 4 words (don't match on trivially common phrases).
         const words = baseText.split(" ").filter(Boolean);
-        for (const count of [12, 10, 8, 6, 5, 4]) {
-          if (count > words.length) continue;
-          const needle = words.slice(0, count).join(" ");
-          if (needle.length < 10) continue; // too short = unreliable
-          const needleIdx = concatText.indexOf(needle);
-          if (needleIdx !== -1) {
-            // Extend to full anchor length — covers the complete sentence
-            return { startIdx: needleIdx, endIdx: Math.min(needleIdx + baseText.length, concatText.length) };
+        if (words.length < 3) return null;
+
+        // 2. Prefix + suffix pinning: find start, verify/pin end independently.
+        //    This prevents endIdx from overshooting into adjacent sentences.
+        const maxPrefix = Math.min(8, Math.ceil(words.length * 0.6));
+        const maxSuffix = Math.min(6, Math.floor(words.length * 0.4));
+        const suffixWords = words.slice(-maxSuffix);
+
+        for (const count of [maxPrefix, 6, 5, 4]) {
+          if (count > words.length || count < 3) continue;
+          const prefix = words.slice(0, count).join(" ");
+          if (prefix.length < 10) continue;
+          const startIdx = concatText.indexOf(prefix);
+          if (startIdx === -1) continue;
+
+          // Try to pin the end with the last few words of the anchor.
+          // Search within a 2x window from the prefix end.
+          const searchFrom = startIdx + prefix.length;
+          const searchWindow = concatText.substring(searchFrom, searchFrom + baseText.length * 2);
+          let endIdx = startIdx + baseText.length; // estimated fallback
+
+          for (const sCount of [maxSuffix, 4, 3]) {
+            if (sCount < 2 || sCount > suffixWords.length) continue;
+            const suffix = suffixWords.slice(-sCount).join(" ");
+            if (suffix.length < 6) continue;
+            const suffixOff = searchWindow.indexOf(suffix);
+            if (suffixOff !== -1) {
+              endIdx = searchFrom + suffixOff + suffix.length;
+              break;
+            }
           }
+
+          return { startIdx, endIdx: Math.min(endIdx, concatText.length) };
         }
         return null;
       }

@@ -2990,18 +2990,24 @@ export default function ThoughtUnitReader() {
             🎯 Recall Lab
           </button>
           <button
-            disabled
-            className="px-4 py-2 rounded-lg text-sm font-medium opacity-35 cursor-not-allowed text-gray-400"
-            title="Coming Soon"
+            onClick={() => {
+              if (focusSoftLock && focusState.running) {
+                const ok = window.confirm("Focus Cycle is active. Leave Reader cockpit for DAT Apex?");
+                if (!ok) return;
+              }
+              router.push("/dat-apex");
+            }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700 ${focusState.running ? "opacity-50" : ""}`}
+            title="Open DAT Apex"
           >
-            🎯 DAT Apex <span className="text-[10px] ml-1 opacity-70">Soon</span>
+            🎯 DAT Apex
           </button>
           <button
-            disabled
-            className="px-4 py-2 rounded-lg text-sm font-medium opacity-35 cursor-not-allowed text-gray-400"
-            title="Coming Soon"
+            onClick={() => trySwitchShellTab("elena", "elena")}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-300 hover:text-white hover:bg-gray-700 ${focusState.running ? "opacity-50" : ""}`}
+            title="Elena Mode is under construction."
           >
-            Elena Mode <span className="text-[10px] ml-1 opacity-70">Soon</span>
+            Elena Mode (Under Construction)
           </button>
                   </div>
 
@@ -3353,17 +3359,31 @@ export default function ThoughtUnitReader() {
             </div>
           </button>
           
-          {/* Whiteboard FAB — Coming Soon */}
-          <button
-            disabled
-            className="text-white/30 p-3 rounded-2xl shadow-lg backdrop-blur-xl border border-white/10 cursor-not-allowed bg-[rgba(30,40,70,0.25)]"
-            title="Whiteboard — Coming Soon"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-lg">🎨</span>
-              <span className="text-sm font-medium hidden sm:block">Whiteboard <span className="text-[10px]">Soon</span></span>
-            </div>
-          </button>
+          {/* Whiteboard FAB */}
+          {!showWhiteboardPanel && (
+            <button
+              onClick={() => {
+                setShowWhiteboardPanel(true);
+                if (!wbConcept && thoughtUnits.length > 0) {
+                  const currentConcept = conceptForPage(currentPage, thoughtUnits, pdfPageCount);
+                  if (currentConcept) {
+                    setWbConcept(truncate(currentConcept, 600));
+                    setWbContext(titleForPage(tableOfContents, currentPage));
+                  } else {
+                    setWbConcept("Current page content");
+                    setWbContext(`Page ${currentPage}`);
+                  }
+                }
+              }}
+              className="text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border border-white/20 transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)]"
+              title="Open Whiteboard Explanation"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🎨</span>
+                <span className="text-sm font-medium hidden sm:block">Whiteboard</span>
+              </div>
+            </button>
+          )}
         </div>
 
       {/* Sliding Shadow Recall Panel */}
