@@ -2910,57 +2910,76 @@ function GenerateNoteButton({
   const synthReady = studyModel !== undefined ? studyModel !== null : true;
 
   function handleGenerate() {
-    const topic = (view.title || `Page ${pageNumber}`).replace(/^ULTRA\s*[–—-]\s*/i, "").trim();
-    console.log("[NOTE:create:study-model]", {
-      page: pageNumber,
-      topic,
-      hasStudyModel: !!studyModel,
-      pageThesis: studyModel?.pageThesis?.slice(0, 60),
-      studyNotesKeys: studyModel?.studyNotes ? Object.keys(studyModel.studyNotes).filter(k => !!(studyModel.studyNotes as any)[k]) : [],
-      miniTestCount: studyModel?.miniTest?.length ?? 0,
-      externalLinkCount: studyModel?.externalStudyLinks?.length ?? 0,
-      videoQueryCount: studyModel?.relatedVideoQueries?.length ?? 0,
-      anchorCount: studyModel?.highlightAnchors?.length ?? 0,
-    });
-    // OpenAI is the sole source of truth — studyModel must be present (button disabled otherwise).
-    const coreIdea = studyModel?.pageThesis ?? "";
-    const concepts = (studyModel?.conceptBlocks ?? []).map((b, i) => ({
-      ordinal:        i + 1,
-      title:          b.title,
-      pattern:        b.pattern,
-      surgicalReason: b.mechanism ?? "",
-      trap:           b.trap ?? "",
-      rule:           b.rule ?? "",
-    }));
-    // Build professorNotes from studyModel.studyNotes — the authoritative source
-    const sn = studyModel?.studyNotes;
-    const professorNotes = sn ? {
-      whyItMatters:    sn.whyThisMatters  ?? undefined,
-      keyMechanism:    sn.keyMechanism    ?? undefined,
-      commonConfusion: sn.commonConfusion ?? undefined,
-      memoryAnchor:    sn.quickMemory     ?? undefined,
-      reasoningFlow:   sn.reasoningFlow   ?? undefined,
-      examSignal:      sn.examSignal      ?? undefined,
-    } : undefined;
-    const note = buildUltraNote(
-      bookId,
-      pageNumber,
-      topic,
-      coreIdea,
-      concepts,
-      bookTitle,
-      professorNotes,
-      studyModel?.pageThesis ?? undefined,
-      studyModel?.miniTest?.length ? studyModel.miniTest : undefined,
-      undefined, // crossLinks — legacy, no longer populated
-      studyModel?.externalStudyLinks?.length ? studyModel.externalStudyLinks : undefined,
-      studyModel?.relatedVideoQueries?.length ? studyModel.relatedVideoQueries : undefined,
-      studyModel?.highlightAnchors?.length ? studyModel.highlightAnchors : undefined,
-    );
-    saveUltraNote(note);
-    setSaved(true);
-    onNoteSaved?.();
-    setTimeout(() => setSaved(false), 2200);
+    console.log("[NOTE:click]", { page: pageNumber, synthReady, hasStudyModel: !!studyModel });
+    try {
+      const topic = (view.title || `Page ${pageNumber}`).replace(/^ULTRA\s*[–—-]\s*/i, "").trim();
+      console.log("[NOTE:studyModel-present]", {
+        hasStudyModel: !!studyModel,
+        pageThesis: studyModel?.pageThesis?.slice(0, 60) ?? null,
+        studyNotesPresent: !!studyModel?.studyNotes,
+        studyNotesKeys: studyModel?.studyNotes
+          ? Object.keys(studyModel.studyNotes).filter(k => !!(studyModel.studyNotes as any)[k])
+          : [],
+        conceptBlockCount: studyModel?.conceptBlocks?.length ?? 0,
+        miniTestCount: studyModel?.miniTest?.length ?? 0,
+        externalLinkCount: studyModel?.externalStudyLinks?.length ?? 0,
+        videoQueryCount: studyModel?.relatedVideoQueries?.length ?? 0,
+        anchorCount: studyModel?.highlightAnchors?.length ?? 0,
+      });
+      // OpenAI is the sole source of truth — studyModel must be present (button disabled otherwise).
+      const coreIdea = studyModel?.pageThesis ?? "";
+      const concepts = (studyModel?.conceptBlocks ?? []).map((b, i) => ({
+        ordinal:        i + 1,
+        title:          b.title,
+        pattern:        b.pattern,
+        surgicalReason: b.mechanism ?? "",
+        trap:           b.trap ?? "",
+        rule:           b.rule ?? "",
+      }));
+      // Build professorNotes from studyModel.studyNotes — the authoritative source
+      const sn = studyModel?.studyNotes;
+      const professorNotes = sn ? {
+        whyItMatters:    sn.whyThisMatters  ?? undefined,
+        keyMechanism:    sn.keyMechanism    ?? undefined,
+        commonConfusion: sn.commonConfusion ?? undefined,
+        memoryAnchor:    sn.quickMemory     ?? undefined,
+        reasoningFlow:   sn.reasoningFlow   ?? undefined,
+        examSignal:      sn.examSignal      ?? undefined,
+      } : undefined;
+      console.log("[NOTE:payload]", {
+        topic,
+        coreIdea: coreIdea.slice(0, 80),
+        conceptCount: concepts.length,
+        hasProfessorNotes: !!professorNotes,
+        professorNotesKeys: professorNotes ? Object.keys(professorNotes).filter(k => !!(professorNotes as any)[k]) : [],
+        miniTestCount: studyModel?.miniTest?.length ?? 0,
+        externalLinkCount: studyModel?.externalStudyLinks?.length ?? 0,
+        videoCount: studyModel?.relatedVideoQueries?.length ?? 0,
+        anchorCount: studyModel?.highlightAnchors?.length ?? 0,
+      });
+      const note = buildUltraNote(
+        bookId,
+        pageNumber,
+        topic,
+        coreIdea,
+        concepts,
+        bookTitle,
+        professorNotes,
+        studyModel?.pageThesis ?? undefined,
+        studyModel?.miniTest?.length ? studyModel.miniTest : undefined,
+        undefined, // crossLinks — legacy, no longer populated
+        studyModel?.externalStudyLinks?.length ? studyModel.externalStudyLinks : undefined,
+        studyModel?.relatedVideoQueries?.length ? studyModel.relatedVideoQueries : undefined,
+        studyModel?.highlightAnchors?.length ? studyModel.highlightAnchors : undefined,
+      );
+      saveUltraNote(note);
+      console.log("[NOTE:saved-id]", { id: note.id, page: note.pageNumber, topic: note.topic });
+      setSaved(true);
+      onNoteSaved?.();
+      setTimeout(() => setSaved(false), 2200);
+    } catch (err: any) {
+      console.error("[NOTE:error]", err?.message ?? String(err), err);
+    }
   }
 
   return (
@@ -3006,38 +3025,44 @@ function GenerateStudySetButton({
   const [noSynth, setNoSynth] = useState(false);
 
   function handleGenerate() {
+    console.log("[RECALL:click]", { page: pageNumber, hasStudyModel: !!studyModel });
     if (!studyModel) {
+      console.warn("[RECALL:studyModel-present]", { hasStudyModel: false });
       setNoSynth(true);
       setTimeout(() => setNoSynth(false), 2800);
       return;
     }
-    const set = buildRecallSetFromView(view, bookId, pageNumber, {
-      bookTitle,
-      sourceLabel: "right-panel",
-      studyModel: studyModel ?? undefined,
-    });
-    saveRecallSet(set);
-    const studyNoteCardCount = set.cards.filter((c) => c.id.startsWith("sn-")).length;
-    console.log("[RECALL:create:study-model]", {
-      page: pageNumber,
-      hasStudyModel: !!studyModel,
-      totalCards: set.cards.length,
-      studyNoteCards: studyNoteCardCount,
-      miniTestCards: set.cards.filter((c) => c.id.startsWith("synth-q")).length,
-    });
-    console.log("[TRACE NOTE_WIRING]", {
-      source: "rightPanelGenerateStudySet",
-      bookId,
-      bookTitle,
-      pageNumber,
-      setId: set.id,
-      topic: set.topic,
-      cardCount: set.cards.length,
-      subject: set.subject,
-    });
-    setSaved(true);
-    onStudySetGenerated?.(set.id);
-    setTimeout(() => setSaved(false), 2200);
+    try {
+      console.log("[RECALL:studyModel-present]", {
+        hasStudyModel: true,
+        pageThesis: studyModel.pageThesis?.slice(0, 60),
+        studyNotesKeys: Object.keys(studyModel.studyNotes).filter(k => !!(studyModel.studyNotes as any)[k]),
+        conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
+        miniTestCount: studyModel.miniTest?.length ?? 0,
+        miniTestItemCount: studyModel.miniTestItems?.length ?? 0,
+      });
+      const set = buildRecallSetFromView(view, bookId, pageNumber, {
+        bookTitle,
+        sourceLabel: "right-panel",
+        studyModel,
+      });
+      console.log("[RECALL:payload]", {
+        setId: set.id,
+        topic: set.topic,
+        totalCards: set.cards.length,
+        studyNoteCards: set.cards.filter((c) => c.id.startsWith("sn-")).length,
+        miniTestCards: set.cards.filter((c) => c.id.startsWith("synth-q")).length,
+        conceptCards: set.cards.filter((c) => /^b\d/.test(c.id)).length,
+        cardIds: set.cards.map((c) => c.id),
+      });
+      saveRecallSet(set);
+      console.log("[RECALL:saved-id]", { id: set.id, page: set.pageNumber, cardCount: set.cards.length });
+      setSaved(true);
+      onStudySetGenerated?.(set.id);
+      setTimeout(() => setSaved(false), 2200);
+    } catch (err: any) {
+      console.error("[RECALL:error]", err?.message ?? String(err), err);
+    }
   }
 
   return (
