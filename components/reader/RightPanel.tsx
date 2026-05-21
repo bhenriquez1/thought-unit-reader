@@ -878,14 +878,6 @@ export function RightPanel({
                 bookTitle={ctx?.documentTitle}
                 pageNumber={ctx?.pageNumber ?? 0}
                 onNoteSaved={onNoteSaved}
-                professorNotes={(displayView as any)?._synth ? {
-                  whyItMatters:    (displayView as any)._synth.whyItMatters    ?? undefined,
-                  keyMechanism:    (displayView as any)._synth.keyMechanism    ?? undefined,
-                  commonConfusion: (displayView as any)._synth.commonConfusion ?? undefined,
-                  memoryAnchor:    (displayView as any)._synth.memoryAnchor    ?? undefined,
-                  reasoningFlow:   (displayView as any)._synth.reasoningFlow   ?? undefined,
-                  examSignal:      (displayView as any)._synth.examSignal      ?? undefined,
-                } : undefined}
                 studyModel={isStructuralPage ? null : studyModel}
               />
               <GenerateStudySetButton
@@ -2905,7 +2897,6 @@ function GenerateNoteButton({
   bookTitle,
   pageNumber,
   onNoteSaved,
-  professorNotes,
   studyModel,
 }: {
   view: UltraPageView;
@@ -2913,52 +2904,44 @@ function GenerateNoteButton({
   bookTitle?: string;
   pageNumber: number;
   onNoteSaved?: () => void;
-  professorNotes?: {
-    whyItMatters?: string;
-    keyMechanism?: string;
-    commonConfusion?: string;
-    memoryAnchor?: string;
-    reasoningFlow?: string;
-    examSignal?: string;
-  };
   studyModel?: CurrentPageStudyModel | null;
 }) {
   const [saved, setSaved] = useState(false);
   const synthReady = studyModel !== undefined ? studyModel !== null : true;
 
   function handleGenerate() {
-    // Strip the "ULTRA – " display prefix so the stored topic is clean
     const topic = (view.title || `Page ${pageNumber}`).replace(/^ULTRA\s*[–—-]\s*/i, "").trim();
-    const conceptTitles = view.blocks.map((b) => b.title);
     console.log("[NOTE:create:study-model]", {
       page: pageNumber,
       topic,
       hasStudyModel: !!studyModel,
       pageThesis: studyModel?.pageThesis?.slice(0, 60),
+      studyNotesKeys: studyModel?.studyNotes ? Object.keys(studyModel.studyNotes).filter(k => !!(studyModel.studyNotes as any)[k]) : [],
       miniTestCount: studyModel?.miniTest?.length ?? 0,
       externalLinkCount: studyModel?.externalStudyLinks?.length ?? 0,
       videoQueryCount: studyModel?.relatedVideoQueries?.length ?? 0,
-    });
-    console.log("[TRACE NOTE_WIRING]", {
-      bookId,
-      bookTitle,
-      currentPage: pageNumber,
-      notePage: pageNumber,
-      topic,
-      coreIdea: view.coreIdea?.slice(0, 80),
-      conceptTitles,
-      source: "rightPanelGenerateUltraNote",
+      anchorCount: studyModel?.highlightAnchors?.length ?? 0,
     });
     // OpenAI is the sole source of truth — studyModel must be present (button disabled otherwise).
     const coreIdea = studyModel?.pageThesis ?? "";
     const concepts = (studyModel?.conceptBlocks ?? []).map((b, i) => ({
-      ordinal:       i + 1,
-      title:         b.title,
-      pattern:       b.pattern,
+      ordinal:        i + 1,
+      title:          b.title,
+      pattern:        b.pattern,
       surgicalReason: b.mechanism ?? "",
-      trap:          b.trap ?? "",
-      rule:          b.rule ?? "",
+      trap:           b.trap ?? "",
+      rule:           b.rule ?? "",
     }));
+    // Build professorNotes from studyModel.studyNotes — the authoritative source
+    const sn = studyModel?.studyNotes;
+    const professorNotes = sn ? {
+      whyItMatters:    sn.whyThisMatters  ?? undefined,
+      keyMechanism:    sn.keyMechanism    ?? undefined,
+      commonConfusion: sn.commonConfusion ?? undefined,
+      memoryAnchor:    sn.quickMemory     ?? undefined,
+      reasoningFlow:   sn.reasoningFlow   ?? undefined,
+      examSignal:      sn.examSignal      ?? undefined,
+    } : undefined;
     const note = buildUltraNote(
       bookId,
       pageNumber,
@@ -2969,9 +2952,10 @@ function GenerateNoteButton({
       professorNotes,
       studyModel?.pageThesis ?? undefined,
       studyModel?.miniTest?.length ? studyModel.miniTest : undefined,
-      studyModel?.externalStudyLinks?.length
-        ? studyModel.externalStudyLinks.map((l) => ({ label: l.label }))
-        : undefined,
+      undefined, // crossLinks — legacy, no longer populated
+      studyModel?.externalStudyLinks?.length ? studyModel.externalStudyLinks : undefined,
+      studyModel?.relatedVideoQueries?.length ? studyModel.relatedVideoQueries : undefined,
+      studyModel?.highlightAnchors?.length ? studyModel.highlightAnchors : undefined,
     );
     saveUltraNote(note);
     setSaved(true);
