@@ -921,6 +921,7 @@ export function RightPanel({
                 recall={shadowRecall}
                 open={recallOpen}
                 onToggle={() => setRecallOpen((o) => !o)}
+                miniTestItems={studyModel?.miniTestItems}
               />
             )}
           </>
@@ -1793,16 +1794,7 @@ function UltraView({
         )}
       </PanelSection>}
 
-      {/* Mini Test — interactive (OpenAI structured questions preferred, legacy bullets fallback) */}
-      {miniTestItems?.length ? (
-        <MiniTestPanel items={miniTestItems} bookId={bookId ?? ""} pageNumber={pageNumber ?? 0} />
-      ) : view.miniTest.length > 0 ? (
-        <PanelSection title="Mini Test">
-          <ul className="space-y-2">
-            {view.miniTest.map((q, i) => <BulletLine key={i}>{q}</BulletLine>)}
-          </ul>
-        </PanelSection>
-      ) : null}
+      {/* Mini Test removed from main view — lives in Shadow Recall only */}
 
       {/* STR Compression — hidden in synthesis-only mode; synthesis fields now appear in Study Notes */}
       {/* Reading Map — hidden; SRI signals are internal metadata, not student-facing study notes */}
@@ -2813,10 +2805,12 @@ function ShadowRecallSection({
   recall,
   open,
   onToggle,
+  miniTestItems,
 }: {
   recall: ShadowRecallModel;
   open: boolean;
   onToggle: () => void;
+  miniTestItems?: Array<{ question: string; type: string; options: string[] | null; correctAnswer: string; explanation: string }> | null;
 }) {
   return (
     <div className="rounded-2xl border border-slate-600/30 bg-slate-800/30">
@@ -2825,29 +2819,38 @@ function ShadowRecallSection({
         className="flex w-full items-center justify-between px-4 py-3 text-left"
       >
         <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">
-          Self-test · {recall.pageLabel}
+          🧠 Shadow Recall · {recall.pageLabel}
         </span>
         <span className="text-[10px] text-slate-500">{open ? "▲" : "▼"}</span>
       </button>
       {open && (
         <div className="space-y-3 px-4 pb-4">
-          {/* Prompts */}
-          <div className="space-y-2">
-            {Object.entries(recall.prompts).map(([key, prompt]) => {
-              const revealKey = `${key}Truth` as keyof typeof recall.reveal;
-              const answer = typeof recall.reveal[revealKey] === "string"
-                ? (recall.reveal[revealKey] as string)
-                : null;
-              return (
-                <RecallItem key={key} prompt={prompt} answer={answer ?? ""} />
-              );
-            })}
-          </div>
+          {/* OpenAI structured questions — preferred; shown first */}
+          {miniTestItems?.length ? (
+            <MiniTestPanel
+              items={miniTestItems}
+              bookId=""
+              pageNumber={0}
+            />
+          ) : (
+            /* Heuristic fallback prompts when synthesis not ready */
+            <div className="space-y-2">
+              {Object.entries(recall.prompts).map(([key, prompt]) => {
+                const revealKey = `${key}Truth` as keyof typeof recall.reveal;
+                const answer = typeof recall.reveal[revealKey] === "string"
+                  ? (recall.reveal[revealKey] as string)
+                  : null;
+                return (
+                  <RecallItem key={key} prompt={prompt} answer={answer ?? ""} />
+                );
+              })}
+            </div>
+          )}
           {/* Fast recall cues */}
           {recall.reveal.fastRecallCues.length > 0 && (
             <div className="border-t border-white/5 pt-2">
               <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-500">
-                Fast recall cues
+                Quick recall cues
               </div>
               <ul className="space-y-1">
                 {recall.reveal.fastRecallCues.map((cue, i) => (
