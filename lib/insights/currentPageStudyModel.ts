@@ -25,6 +25,7 @@ export type CurrentPageStudyModel = {
   }>;
   miniTest: string[];
   miniTestItems?: MiniTestItem[];
+  preReadRecallItems?: MiniTestItem[];
   highlightAnchors: Array<{ text: string; anchorType: string; reason: string }>;
   externalStudyLinks: Array<{ label: string; searchQuery: string; type: string }>;
   relatedVideoQueries?: string[];
@@ -77,6 +78,7 @@ export function buildStudyModel(
     })),
     miniTest: (view.miniTest ?? []).filter(Boolean),
     miniTestItems: (synth.miniTestItems as MiniTestItem[] | null) ?? undefined,
+    preReadRecallItems: (synth.preReadRecallItems as MiniTestItem[] | null) ?? undefined,
     highlightAnchors: anchors,
     externalStudyLinks: rawExtLinks,
     relatedVideoQueries: (synth.relatedVideoQueries as string[] | null) ?? undefined,

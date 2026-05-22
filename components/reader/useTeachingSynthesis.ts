@@ -34,6 +34,7 @@ interface UseTeachingSynthesisArgs {
   pageObjective?: string;
   pageThesis?: string;
   pageSummary?: string;
+  pageText?: string;
   domain: PageDomain | null;
   blocks: UltraConceptBlock[];
   enabled: boolean;
@@ -49,6 +50,7 @@ export function useTeachingSynthesis({
   pageObjective,
   pageThesis,
   pageSummary,
+  pageText,
   domain,
   blocks,
   enabled,
@@ -87,7 +89,7 @@ export function useTeachingSynthesis({
     }
 
     const safeDomain = domain ?? "general";
-    const input = buildSynthesisInput(usableBlocks, safeDomain, pageObjective, pageThesis, pageSummary, pageNumber);
+    const input = buildSynthesisInput(usableBlocks, safeDomain, pageObjective, pageThesis, pageSummary, pageNumber, pageText);
 
     console.log("[SYNTH:request]", {
       domain: safeDomain,

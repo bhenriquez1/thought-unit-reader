@@ -56,7 +56,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const body = (req.body ?? {}) as Partial<SynthesisInput> & { stage?: string };
-  const { stage = "2", domain, pageObjective, pageThesis, pageSummary, rankedConcepts } = body;
+  const { stage = "2", domain, pageObjective, pageThesis, pageSummary, pageText, rankedConcepts } = body;
 
   if (!Array.isArray(rankedConcepts) || rankedConcepts.length === 0) {
     return res.status(400).json({ error: "Missing or empty 'rankedConcepts'." });
@@ -71,6 +71,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     pageObjective: typeof pageObjective === "string" ? pageObjective : undefined,
     pageThesis:    typeof pageThesis    === "string" ? pageThesis    : undefined,
     pageSummary:   typeof pageSummary   === "string" ? pageSummary   : undefined,
+    pageText:      typeof pageText      === "string" ? pageText.slice(0, 1500) : undefined,
     rankedConcepts: rankedConcepts.slice(0, 6),
   };
 
