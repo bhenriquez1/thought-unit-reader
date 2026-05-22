@@ -2750,7 +2750,7 @@ export default function ThoughtUnitReader() {
                 onRoleLabelMap={setRoleLabelByConceptId}
                 resolveEvidenceId={resolveEvidenceId}
                 focusedEvidenceId={focusedEvidenceId}
-                onNoteSaved={() => setNoteLabRefreshKey((k) => k + 1)}
+                onNoteSaved={() => { setNoteLabRefreshKey((k) => k + 1); trySwitchShellTab("notelab", "notelab"); }}
                 onStudySetGenerated={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey((k) => k + 1); trySwitchShellTab("study", "study"); }}
                 onEvidenceClick={(snippet, evidenceId) => {
                   setFocusSnippet(null);
