@@ -40,6 +40,8 @@ interface PureReaderViewProps {
   onOpenFocusCycle?: () => void;
   /** Live per-page text extracted from the PDF text layer. Forwarded to SmartPDFViewer. */
   onPageTextExtracted?: (page: number, text: string) => void;
+  /** Synthesis loading status — used to show "Reading page..." overlay until highlights arrive */
+  synthStatus?: "loading" | "ready";
 }
 
 export default function PureReaderView({
@@ -63,6 +65,7 @@ export default function PureReaderView({
   onEvidenceFocus,
   onOpenFocusCycle,
   onPageTextExtracted,
+  synthStatus,
 }: PureReaderViewProps) {
   // Global zoom store
   const { zoom } = useZoomStore();
@@ -199,7 +202,33 @@ export default function PureReaderView({
       </div>
 
       {/* PDF Viewer - FULL WIDTH, no split */}
-      <div className="flex-1 overflow-auto bg-gray-950">
+      <div className="flex-1 overflow-auto bg-gray-950 relative">
+        {synthStatus === "loading" && (
+          <div
+            style={{
+              position: "absolute",
+              top: 12,
+              left: 12,
+              zIndex: 20,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              background: "rgba(10,26,24,0.92)",
+              border: "1px solid rgba(52,211,153,0.3)",
+              borderRadius: 20,
+              padding: "4px 10px",
+              pointerEvents: "none",
+            }}
+          >
+            <span className="relative flex h-1.5 w-1.5 shrink-0">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            </span>
+            <span style={{ fontSize: 11, color: "rgb(110,231,183)", fontWeight: 600, letterSpacing: "0.03em" }}>
+              Reading current page…
+            </span>
+          </div>
+        )}
         <SmartPDFViewer
           fileUrl={fileUrl}
           docId={docId}
