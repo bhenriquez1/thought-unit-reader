@@ -805,6 +805,16 @@ export function RightPanel({
   });
 
   return (
+    <>
+    {/* PreReadRecallDrawer rendered at root — outside scroll container so fixed overlay works correctly */}
+    {shadowRecall && (
+      <PreReadRecallDrawer
+        open={recallOpen}
+        onClose={() => setRecallOpen(false)}
+        recall={shadowRecall}
+        preReadRecallItems={studyModel?.preReadRecallItems}
+      />
+    )}
     <aside className="flex h-full min-h-0 w-full flex-col overflow-y-auto border-l border-white/10 bg-[rgb(11,18,34)] break-words whitespace-normal">
       {/* Header */}
       <div className="border-b border-white/10 px-4 py-3">
@@ -918,20 +928,12 @@ export function RightPanel({
               />
             </div>
             {shadowRecall && (
-              <>
-                <button
-                  onClick={() => setRecallOpen(true)}
-                  className="w-full rounded-xl border border-violet-500/20 bg-violet-900/10 py-2.5 text-[12px] font-bold text-violet-300 hover:bg-violet-800/20 transition-colors"
-                >
-                  🕶 Pre-Read Recall
-                </button>
-                <PreReadRecallDrawer
-                  open={recallOpen}
-                  onClose={() => setRecallOpen(false)}
-                  recall={shadowRecall}
-                  preReadRecallItems={studyModel?.preReadRecallItems}
-                />
-              </>
+              <button
+                onClick={() => setRecallOpen(true)}
+                className="w-full rounded-xl border border-violet-500/20 bg-violet-900/10 py-2.5 text-[12px] font-bold text-violet-300 hover:bg-violet-800/20 transition-colors"
+              >
+                🕶 Pre-Read Recall
+              </button>
             )}
           </>
         )}
@@ -966,20 +968,12 @@ export function RightPanel({
           />
         )}
         {showNarrativePageView && shadowRecall && (
-          <>
-            <button
-              onClick={() => setRecallOpen(true)}
-              className="w-full rounded-xl border border-violet-500/20 bg-violet-900/10 py-2.5 text-[12px] font-bold text-violet-300 hover:bg-violet-800/20 transition-colors"
-            >
-              🕶 Pre-Read Recall
-            </button>
-            <PreReadRecallDrawer
-              open={recallOpen}
-              onClose={() => setRecallOpen(false)}
-              recall={shadowRecall}
-              preReadRecallItems={studyModel?.preReadRecallItems}
-            />
-          </>
+          <button
+            onClick={() => setRecallOpen(true)}
+            className="w-full rounded-xl border border-violet-500/20 bg-violet-900/10 py-2.5 text-[12px] font-bold text-violet-300 hover:bg-violet-800/20 transition-colors"
+          >
+            🕶 Pre-Read Recall
+          </button>
         )}
 
         {/* ── 0b. Narrative View (legacy 3-block fallback) ──────────────── */}
@@ -996,20 +990,12 @@ export function RightPanel({
           />
         )}
         {showNarrativeView && shadowRecall && (
-          <>
-            <button
-              onClick={() => setRecallOpen(true)}
-              className="w-full rounded-xl border border-violet-500/20 bg-violet-900/10 py-2.5 text-[12px] font-bold text-violet-300 hover:bg-violet-800/20 transition-colors"
-            >
-              🕶 Pre-Read Recall
-            </button>
-            <PreReadRecallDrawer
-              open={recallOpen}
-              onClose={() => setRecallOpen(false)}
-              recall={shadowRecall}
-              preReadRecallItems={studyModel?.preReadRecallItems}
-            />
-          </>
+          <button
+            onClick={() => setRecallOpen(true)}
+            className="w-full rounded-xl border border-violet-500/20 bg-violet-900/10 py-2.5 text-[12px] font-bold text-violet-300 hover:bg-violet-800/20 transition-colors"
+          >
+            🕶 Pre-Read Recall
+          </button>
         )}
 
         {/* ── A. V3 Primary View ─────────────────────────────────────────── */}
@@ -1051,6 +1037,7 @@ export function RightPanel({
         )}
       </div>
     </aside>
+    </>
   );
 }
 
@@ -2869,26 +2856,10 @@ function PreReadRecallDrawer({
               title="Pre-Read Recall"
             />
           ) : (
-            <div className="space-y-2">
-              {Object.entries(recall.prompts).map(([key, prompt]) => {
-                const revealKey = `${key}Truth` as keyof typeof recall.reveal;
-                const answer = typeof recall.reveal[revealKey] === "string"
-                  ? (recall.reveal[revealKey] as string)
-                  : null;
-                return <RecallItem key={key} prompt={prompt} answer={answer ?? ""} />;
-              })}
-            </div>
-          )}
-          {recall.reveal.fastRecallCues.length > 0 && (
-            <div className="border-t border-white/5 pt-2">
-              <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-500">
-                Quick recall cues
-              </div>
-              <ul className="space-y-1">
-                {recall.reveal.fastRecallCues.map((cue, i) => (
-                  <li key={i} className="text-xs text-slate-400">· {cue}</li>
-                ))}
-              </ul>
+            <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
+              <div className="text-2xl animate-pulse">🕶</div>
+              <p className="text-[12px] text-slate-400">Generating pre-read questions…</p>
+              <p className="text-[11px] text-slate-600">Questions appear here after synthesis completes.</p>
             </div>
           )}
         </div>
