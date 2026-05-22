@@ -184,20 +184,26 @@ Specific field requirements:
 SENTENCE COMPLETENESS: Never output a fragment. Self-check: "Could a student read only this field and understand the concept?" If no → rewrite.
 
 ─── LEFT-PANEL HIGHLIGHT ANCHORS ────────────────────────────────────────────
-highlightAnchors: Select 2–4 exact verbatim text spans that answer the question:
-"What is this page teaching?" — the sentences a professor would underline on the board.
-
-A student reading ONLY these highlighted sentences must understand the page's core idea.
+highlightAnchors: Select 2–4 exact verbatim text spans that let a student understand the
+page in seconds. A student reading ONLY these highlighted sentences must grasp the core idea.
 Quality > quantity. Two sharp highlights beat six mediocre ones.
 
-TARGET ROLES — in priority order:
-  1. anchorType "thesis"       — the one sentence that states what this page is about (REQUIRED)
-  2. anchorType "mechanism"    — how/why it works; cause-effect chain (include if present)
-  3. anchorType "clinicalTrap" — the mistake or misconception that trips students up
-  4. anchorType "definition"   — the core definition or rule (include only if distinct from thesis)
-  5. anchorType "examSignal"   — a sentence a board exam would quote or derive from
-  6. anchorType "application"  — real-world consequence or clinical implication
+TARGET PATTERN — include one span per role when present:
+  1. anchorType "thesis"       — the sentence that states what this page is about (REQUIRED)
+  2. anchorType "mechanism"    — how/why it works; the cause-effect chain (include when present)
+  3. anchorType "application"  — real-world consequence, clinical implication, or example
+  4. anchorType "clinicalTrap" — the common mistake or misconception (include when present)
+
+Secondary roles (use only if no better anchor fills the slot above):
+  5. anchorType "examSignal"   — sentence a board exam would quote or derive from
+  6. anchorType "definition"   — the core definition (only if distinct and not covered by thesis)
   7. anchorType "formula"      — equation or procedure (only if central to the page)
+
+EXAMPLE — biology page on atomic structure:
+  thesis:      "Element properties depend on atomic structure."
+  mechanism:   "Electrons form a negative cloud around the nucleus because of their rapid motion."
+  application: "Electron arrangement determines bonding behavior and chemical reactivity."
+  clinicalTrap: "Serpentine plant tolerance demonstrates how atomic chemistry translates to biological adaptation."
 
 QUALITY RULES:
 • Copy text EXACTLY as it appears in the source — verbatim, no paraphrase.
