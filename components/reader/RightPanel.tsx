@@ -486,6 +486,7 @@ export function RightPanel({
     pageObjective: ultraPageView?.teachingStatement,
     pageThesis:    ultraPageView?.pageThesis ?? undefined,
     pageSummary:   pageModel?.pageSummary ?? undefined,
+    pageText:      ctx?.pageText ? ctx.pageText.slice(0, 1500) : undefined,
     domain: (ultraPageView?._debug?.domain) ?? null,
     blocks: ultraPageView?.blocks ?? [],
     enabled: isCurrentPageModel && !!ultraPageView && !isStructuralPage,
@@ -917,12 +918,20 @@ export function RightPanel({
               />
             </div>
             {shadowRecall && (
-              <ShadowRecallSection
-                recall={shadowRecall}
-                open={recallOpen}
-                onToggle={() => setRecallOpen((o) => !o)}
-                miniTestItems={studyModel?.miniTestItems}
-              />
+              <>
+                <button
+                  onClick={() => setRecallOpen(true)}
+                  className="w-full rounded-xl border border-violet-500/20 bg-violet-900/10 py-2.5 text-[12px] font-bold text-violet-300 hover:bg-violet-800/20 transition-colors"
+                >
+                  🕶 Pre-Read Recall
+                </button>
+                <PreReadRecallDrawer
+                  open={recallOpen}
+                  onClose={() => setRecallOpen(false)}
+                  recall={shadowRecall}
+                  preReadRecallItems={studyModel?.preReadRecallItems}
+                />
+              </>
             )}
           </>
         )}
@@ -957,11 +966,20 @@ export function RightPanel({
           />
         )}
         {showNarrativePageView && shadowRecall && (
-          <ShadowRecallSection
-            recall={shadowRecall}
-            open={recallOpen}
-            onToggle={() => setRecallOpen((o) => !o)}
-          />
+          <>
+            <button
+              onClick={() => setRecallOpen(true)}
+              className="w-full rounded-xl border border-violet-500/20 bg-violet-900/10 py-2.5 text-[12px] font-bold text-violet-300 hover:bg-violet-800/20 transition-colors"
+            >
+              🕶 Pre-Read Recall
+            </button>
+            <PreReadRecallDrawer
+              open={recallOpen}
+              onClose={() => setRecallOpen(false)}
+              recall={shadowRecall}
+              preReadRecallItems={studyModel?.preReadRecallItems}
+            />
+          </>
         )}
 
         {/* ── 0b. Narrative View (legacy 3-block fallback) ──────────────── */}
@@ -978,11 +996,20 @@ export function RightPanel({
           />
         )}
         {showNarrativeView && shadowRecall && (
-          <ShadowRecallSection
-            recall={shadowRecall}
-            open={recallOpen}
-            onToggle={() => setRecallOpen((o) => !o)}
-          />
+          <>
+            <button
+              onClick={() => setRecallOpen(true)}
+              className="w-full rounded-xl border border-violet-500/20 bg-violet-900/10 py-2.5 text-[12px] font-bold text-violet-300 hover:bg-violet-800/20 transition-colors"
+            >
+              🕶 Pre-Read Recall
+            </button>
+            <PreReadRecallDrawer
+              open={recallOpen}
+              onClose={() => setRecallOpen(false)}
+              recall={shadowRecall}
+              preReadRecallItems={studyModel?.preReadRecallItems}
+            />
+          </>
         )}
 
         {/* ── A. V3 Primary View ─────────────────────────────────────────── */}
@@ -2805,6 +2832,70 @@ function NarrativeBlocksView({
 // ---------------------------------------------------------------------------
 // Shadow recall — page-grounded recall prompts + reveal
 // ---------------------------------------------------------------------------
+
+function PreReadRecallDrawer({
+  open,
+  onClose,
+  recall,
+  preReadRecallItems,
+}: {
+  open: boolean;
+  onClose: () => void;
+  recall: ShadowRecallModel;
+  preReadRecallItems?: Array<{ question: string; type: string; options: string[] | null; correctAnswer: string; explanation: string }> | null;
+}) {
+  if (!open) return null;
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
+      <div className="fixed right-0 top-0 bottom-0 z-50 w-[360px] bg-[#0b1020] border-l border-white/10 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
+          <span className="text-[11px] font-bold uppercase tracking-widest text-violet-300">
+            🕶 Pre-Read Recall · {recall.pageLabel}
+          </span>
+          <button
+            onClick={onClose}
+            className="text-slate-500 hover:text-slate-300 text-xl leading-none"
+          >
+            ×
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {preReadRecallItems?.length ? (
+            <MiniTestPanel
+              items={preReadRecallItems}
+              bookId=""
+              pageNumber={0}
+              title="Pre-Read Recall"
+            />
+          ) : (
+            <div className="space-y-2">
+              {Object.entries(recall.prompts).map(([key, prompt]) => {
+                const revealKey = `${key}Truth` as keyof typeof recall.reveal;
+                const answer = typeof recall.reveal[revealKey] === "string"
+                  ? (recall.reveal[revealKey] as string)
+                  : null;
+                return <RecallItem key={key} prompt={prompt} answer={answer ?? ""} />;
+              })}
+            </div>
+          )}
+          {recall.reveal.fastRecallCues.length > 0 && (
+            <div className="border-t border-white/5 pt-2">
+              <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-500">
+                Quick recall cues
+              </div>
+              <ul className="space-y-1">
+                {recall.reveal.fastRecallCues.map((cue, i) => (
+                  <li key={i} className="text-xs text-slate-400">· {cue}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
 
 function ShadowRecallSection({
   recall,

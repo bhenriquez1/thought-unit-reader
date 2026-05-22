@@ -5,7 +5,7 @@ import { type NoteSubject, type UltraNote, inferSubject } from "@/lib/notelab/ul
 import type { UltraPageView } from "@/lib/insights/buildUltraPageView";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 
-export type CardType = "core" | "definition" | "rule" | "reason" | "trap" | "contrast" | "formula" | "memory";
+export type CardType = "core" | "definition" | "rule" | "reason" | "trap" | "contrast" | "formula" | "memory" | "fill-blank";
 export type CardDifficulty = "easy" | "medium" | "hard";
 export type SourceLabel = "right-panel" | "notelab";
 
@@ -180,7 +180,20 @@ export function buildRecallSetFromView(
     }
   });
 
-  // No heuristic memory shortcuts — OpenAI study model is the sole source.
+  // 5. Fill-in-blank and trap cards from OpenAI miniTestItems
+  if (studyModel?.miniTestItems?.length) {
+    for (const item of studyModel.miniTestItems) {
+      if (item.type !== "fill-in-the-blank" && item.type !== "trap") continue;
+      const cardType: CardType = item.type === "fill-in-the-blank" ? "fill-blank" : "trap";
+      cards.push(card(
+        `synth-${item.type}-p${pageNumber}-${cards.length}`,
+        cardType,
+        item.question,
+        item.correctAnswer,
+        item.explanation || undefined,
+      ));
+    }
+  }
 
   const id = `rs-${bookId}-p${pageNumber}-${Date.now()}`;
   return {
