@@ -2708,6 +2708,7 @@ export default function ThoughtUnitReader() {
                   highlightNeighborhoods={highlightNeighborhoods}
                   aiHighlightTexts={synthAiHighlights.map(a => a.text)}
                 aiHighlightAnchors={synthAiHighlights}
+                  synthStatus={synthAiHighlights.length > 0 ? "ready" : "loading"}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
                   onReadingPath={setGuidedPath}

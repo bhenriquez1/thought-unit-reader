@@ -45,7 +45,7 @@ export type ExternalStudyLink = z.infer<typeof ExternalStudyLinkSchema>;
 
 export const MiniTestItemSchema = z.object({
   question:      z.string(),
-  type:          z.enum(["multiple-choice", "short-answer", "application"]),
+  type:          z.enum(["multiple-choice", "short-answer", "application", "fill-in-the-blank", "trap"]),
   options:       z.array(z.string()).nullable(), // exactly 4 items for multiple-choice, null otherwise
   correctAnswer: z.string(),                     // MC: exact correct option text; others: model answer
   explanation:   z.string(),                     // why correct + what to study if wrong
@@ -214,16 +214,16 @@ QUALITY RULES:
 • Do NOT lower the bar to hit a count. Return 2 sharp anchors rather than 4 weak ones.
 • Return null ONLY if the page has fewer than 3 real instructional sentences.
 
-─── STRUCTURED MINI TEST ────────────────────────────────────────────────────
-miniTestItems: Generate 2–3 structured practice questions testing the governing concept.
-For each item:
-• type: "multiple-choice" | "short-answer" | "application"
-• question: one clear exam-style question — must directly test the governing concept, not a tangential detail
-• options: for multiple-choice: exactly 4 options (A=correct, B/C/D=plausible wrong); null for other types
-• correctAnswer: for MC: the exact correct option text; for short-answer/application: a 1–2 sentence model answer
-• explanation: why this answer is correct and what to study if a student gets it wrong (1–2 sentences)
-Priority: 1 MC on the governing concept, 1 short-answer on mechanism, 1 application/trap if warranted.
-Return null if the page is too brief to generate meaningful questions.
+─── PAGE CHECKPOINT QUESTIONS ───────────────────────────────────────────────
+miniTestItems: Generate 4–5 structured after-reading questions testing the page.
+Use ALL of these types in order:
+  1. type "multiple-choice"    — 4 options (A=correct, B/C/D=plausible wrong); tests governing concept
+  2. type "short-answer"       — 1–2 sentence model answer; tests mechanism or cause-effect
+  3. type "application"        — tests real-world use or clinical implication; model answer 1–2 sentences
+  4. type "fill-in-the-blank"  — phrase with one key term blanked out; correctAnswer = the missing term
+  5. type "trap"               — asks "what is the common mistake?"; correctAnswer = the misconception + correction
+For each: question (clear exam-style), options (MC only, null for others), correctAnswer, explanation (1–2 sentences).
+Return null if the page has fewer than 3 instructional sentences.
 
 ─── EXTERNAL STUDY LINKS ────────────────────────────────────────────────────
 externalStudyLinks: Generate 3–5 external references a student should search to deepen
@@ -303,7 +303,7 @@ The answer must be about UNDERSTANDING, not about what appears in a figure or wh
 ─── TASK ──────────────────────────────────────────────────────────────────
 Produce a structured educational interpretation for this page.
 
-For page level: coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, externalStudyLinks, highlightAnchors (2–4 sharp anchors answering "What is this page teaching?"), miniTestItems (2–3 structured questions), relatedVideoQueries.
+For page level: coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, externalStudyLinks, highlightAnchors (2–4 sharp anchors answering "What is this page teaching?"), miniTestItems (4–5 questions: MCQ + short-answer + application + fill-in-blank + trap), relatedVideoQueries.
 For each concept (include ${Math.min(rankedConcepts.length, 4)}): principle, mechanism, trap, rule, misconception, examHook.
 
 Every field: complete sentence, ≤20 words, relational not definitional, professor-level language.
@@ -333,9 +333,10 @@ export function buildStage1SystemPrompt(domain: PageDomain): string {
    Quality over quantity — 2 sharp highlights beat 5 mediocre ones. Copy text EXACTLY (≤30 words each).
    NEVER highlight figure captions, filler, or fragments. Return null only if < 3 real sentences.
 
-3. miniTestItems — 2 exam-quality practice questions:
-   • Question 1: multiple-choice — 4 options, correct answer is the BEST option.
-   • Question 2: short-answer or application — model answer in 1–2 sentences.
+3. miniTestItems — 3 exam-quality practice questions:
+   • Question 1: multiple-choice — 4 options (A=correct, B/C/D=wrong), tests main concept.
+   • Question 2: short-answer — model answer 1–2 sentences, tests mechanism.
+   • Question 3: fill-in-the-blank or trap — fill-blank: phrase with key term blanked; trap: "what is the common mistake?" with correction.
    Include a 1-sentence explanation for each.
 
 Be fast and precise. Do NOT elaborate beyond the schema fields.`;
@@ -347,7 +348,7 @@ export function buildStage1UserPrompt(input: SynthesisInput): string {
   const concepts = rankedConcepts.slice(0, 3).map((c, i) =>
     `${i + 1}. [${c.role.toUpperCase()}] "${c.title}"\n   "${c.text.slice(0, 220)}"`
   ).join("\n\n");
-  return `DOMAIN: ${domain}\n\nPAGE CONTEXT:\n${context || "(derive from concepts below)"}\n\nKEY CONCEPTS:\n${concepts}\n\nExtract: coreIdea, highlightAnchors (2–4 sharp verbatim spans — thesis + mechanism + trap/examSignal), miniTestItems (1 MC + 1 short-answer).`;
+  return `DOMAIN: ${domain}\n\nPAGE CONTEXT:\n${context || "(derive from concepts below)"}\n\nKEY CONCEPTS:\n${concepts}\n\nExtract: coreIdea, highlightAnchors (2–4 sharp verbatim spans — thesis + mechanism + trap/examSignal), miniTestItems (1 MC + 1 short-answer + 1 fill-blank or trap).`;
 }
 
 /** Client-side Stage 1 fetch — fast path. */

@@ -143,10 +143,10 @@ const DEPTH: GuidedDepth = "standard";
 const MODE: GuidedMode = "insight";
 
 const LOADING_PHASES = [
-  "Reading page…",
-  "Identifying page type…",
-  "Selecting understanding anchors…",
+  "Reading current page…",
+  "Understanding page structure…",
   "Writing notes…",
+  "Generating recall questions…",
 ];
 
 // Derives a human-readable teaching purpose from available domain/concept data.
@@ -1794,7 +1794,10 @@ function UltraView({
         )}
       </PanelSection>}
 
-      {/* Mini Test removed from main view — lives in Shadow Recall only */}
+      {/* Page Checkpoint — after-reading comprehension test (submit-then-reveal) */}
+      {miniTestItems?.length ? (
+        <MiniTestPanel items={miniTestItems} bookId={bookId ?? ""} pageNumber={pageNumber ?? 0} title="Page Checkpoint" />
+      ) : null}
 
       {/* STR Compression — hidden in synthesis-only mode; synthesis fields now appear in Study Notes */}
       {/* Reading Map — hidden; SRI signals are internal metadata, not student-facing study notes */}
@@ -2085,10 +2088,12 @@ function MiniTestPanel({
   items,
   bookId,
   pageNumber,
+  title = "Page Checkpoint",
 }: {
   items: MiniTestItemData[];
   bookId: string;
   pageNumber: number;
+  title?: string;
 }) {
   const [answers, setAnswers] = useState<string[]>(() => Array(items.length).fill(""));
   const [submitted, setSubmitted] = useState(false);
@@ -2152,7 +2157,7 @@ function MiniTestPanel({
     : 0;
 
   return (
-    <PanelSection title="Mini Test">
+    <PanelSection title={title}>
       <div className="space-y-4">
         {items.map((item, i) => {
           const mcGraded = submitted && item.type === "multiple-choice";
@@ -2161,7 +2166,7 @@ function MiniTestPanel({
             <div key={i} className="rounded-xl border border-white/8 bg-slate-900/60 p-3 space-y-2">
               <div className="flex items-start gap-2">
                 <span className="mt-0.5 shrink-0 text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                  {item.type === "multiple-choice" ? "MC" : item.type === "short-answer" ? "SA" : "AP"}
+                  {item.type === "multiple-choice" ? "MC" : item.type === "short-answer" ? "SA" : item.type === "fill-in-the-blank" ? "FIB" : item.type === "trap" ? "TRAP" : "AP"}
                 </span>
                 <p className="text-[13px] leading-5 text-slate-200">{item.question}</p>
               </div>
@@ -2819,7 +2824,7 @@ function ShadowRecallSection({
         className="flex w-full items-center justify-between px-4 py-3 text-left"
       >
         <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">
-          🧠 Shadow Recall · {recall.pageLabel}
+          🕶 Pre-Read Recall · {recall.pageLabel}
         </span>
         <span className="text-[10px] text-slate-500">{open ? "▲" : "▼"}</span>
       </button>
