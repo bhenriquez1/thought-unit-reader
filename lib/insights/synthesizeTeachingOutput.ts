@@ -66,8 +66,9 @@ export const TeachingSynthesisSchema = z.object({
   memoryAnchor: z.string().nullable(),
   externalStudyLinks: z.array(ExternalStudyLinkSchema).nullable(),
   concepts: z.array(TeachingSynthesisConceptSchema),
-  miniTests: z.array(z.string()).nullable(),           // legacy — kept for backward compat
-  miniTestItems: z.array(MiniTestItemSchema).nullable(), // structured interactive questions
+  miniTests: z.array(z.string()).nullable(),             // legacy — kept for backward compat
+  miniTestItems: z.array(MiniTestItemSchema).nullable(), // after-reading Page Checkpoint
+  preReadRecallItems: z.array(MiniTestItemSchema).nullable(), // before-reading diagnostic
   highlightAnchors: z.array(SynthHighlightAnchorSchema).nullable(),
   relatedVideoQueries: z.array(z.string()).nullable(),
 });
@@ -98,6 +99,8 @@ export interface SynthesisInput {
   pageSummary?: string;
   /** Current document page number — used for cross-link estimates */
   pageNumber?: number;
+  /** First ~1500 chars of raw page text — lets OpenAI select verbatim highlight spans */
+  pageText?: string;
   rankedConcepts: SynthesisConceptInput[];
 }
 
@@ -214,8 +217,9 @@ QUALITY RULES:
 • Do NOT lower the bar to hit a count. Return 2 sharp anchors rather than 4 weak ones.
 • Return null ONLY if the page has fewer than 3 real instructional sentences.
 
-─── PAGE CHECKPOINT QUESTIONS ───────────────────────────────────────────────
-miniTestItems: Generate 4–5 structured after-reading questions testing the page.
+─── PAGE CHECKPOINT — AFTER-READING TEST ────────────────────────────────────
+miniTestItems: Generate 4–5 structured after-reading comprehension questions.
+These test whether the student UNDERSTOOD the page after reading it.
 Use ALL of these types in order:
   1. type "multiple-choice"    — 4 options (A=correct, B/C/D=plausible wrong); tests governing concept
   2. type "short-answer"       — 1–2 sentence model answer; tests mechanism or cause-effect
@@ -224,6 +228,18 @@ Use ALL of these types in order:
   5. type "trap"               — asks "what is the common mistake?"; correctAnswer = the misconception + correction
 For each: question (clear exam-style), options (MC only, null for others), correctAnswer, explanation (1–2 sentences).
 Return null if the page has fewer than 3 instructional sentences.
+
+─── PRE-READ RECALL — BEFORE-READING DIAGNOSTIC ─────────────────────────────
+preReadRecallItems: Generate 3–5 questions a student should attempt BEFORE reading the page.
+Goal: activate prior knowledge and surface gaps — NOT test comprehension.
+These are PREDICTION questions based on the topic, not comprehension questions about what the page says.
+  • "multiple-choice"    — 4 options; tests what a student with prior coursework might already know
+  • "short-answer"       — prediction: "What do you think X means/causes?"
+  • "fill-in-the-blank"  — fill in a foundational term from prior courses
+  • "trap"               — "Which common belief about X is actually wrong?"
+  • "application"        — "How would you expect X to behave given Y?"
+correctAnswer: what a student who already knows this topic would say.
+Return null if the page is too introductory to have meaningful prior-knowledge questions.
 
 ─── EXTERNAL STUDY LINKS ────────────────────────────────────────────────────
 externalStudyLinks: Generate 3–5 external references a student should search to deepen
@@ -249,7 +265,7 @@ Return null if the topic is too niche for known educators.`;
 }
 
 export function buildUserPrompt(input: SynthesisInput): string {
-  const { domain, pageObjective, pageThesis, pageSummary, pageNumber, rankedConcepts } = input;
+  const { domain, pageObjective, pageThesis, pageSummary, pageNumber, pageText, rankedConcepts } = input;
 
   // Build richest possible page context — this is what the model uses to understand the page
   const pageContextLines: string[] = [];
@@ -286,10 +302,15 @@ export function buildUserPrompt(input: SynthesisInput): string {
     general:  "What is the central teachable principle on this page? Why does it matter?",
   };
 
+  const rawTextSection = pageText
+    ? `\n─── RAW PAGE TEXT (first 1200 chars — use this to select VERBATIM highlight spans) ───\n${pageText.slice(0, 1200)}`
+    : "";
+
   return `DOMAIN: ${domain}
 
 ─── PAGE CONTEXT (primary anchor — what this page is actually teaching) ───
 ${pageContext}
+${rawTextSection}
 
 ─── EXTRACTED CONCEPTS (WARNING: may contain figure captions or OCR fragments — you must INTERPRET these, not copy them) ───
 ${conceptList}
@@ -317,14 +338,15 @@ highlightAnchors: 2–4 verbatim spans from the source. Prefer the thesis senten
 // ---------------------------------------------------------------------------
 
 export const Stage1SynthesisSchema = z.object({
-  coreIdea:        z.string(),
-  highlightAnchors: z.array(SynthHighlightAnchorSchema).nullable(),
-  miniTestItems:   z.array(MiniTestItemSchema).nullable(),
+  coreIdea:             z.string(),
+  highlightAnchors:     z.array(SynthHighlightAnchorSchema).nullable(),
+  miniTestItems:        z.array(MiniTestItemSchema).nullable(),
+  preReadRecallItems:   z.array(MiniTestItemSchema).nullable(),
 });
 export type Stage1Synthesis = z.infer<typeof Stage1SynthesisSchema>;
 
 export function buildStage1SystemPrompt(domain: PageDomain): string {
-  return `You are a world-class ${domain} educator. Extract exactly 3 things from the page content provided:
+  return `You are a world-class ${domain} educator. Extract exactly 4 things from the page content provided:
 
 1. coreIdea — The governing principle in ONE precise, complete sentence (≤20 words). What a professor would write on the board first.
 
@@ -333,22 +355,32 @@ export function buildStage1SystemPrompt(domain: PageDomain): string {
    Quality over quantity — 2 sharp highlights beat 5 mediocre ones. Copy text EXACTLY (≤30 words each).
    NEVER highlight figure captions, filler, or fragments. Return null only if < 3 real sentences.
 
-3. miniTestItems — 3 exam-quality practice questions:
+3. miniTestItems — 3 after-reading comprehension questions:
    • Question 1: multiple-choice — 4 options (A=correct, B/C/D=wrong), tests main concept.
    • Question 2: short-answer — model answer 1–2 sentences, tests mechanism.
    • Question 3: fill-in-the-blank or trap — fill-blank: phrase with key term blanked; trap: "what is the common mistake?" with correction.
    Include a 1-sentence explanation for each.
 
+4. preReadRecallItems — 2–3 BEFORE-reading prediction questions (activate prior knowledge, not test comprehension):
+   • Question 1: multiple-choice — what might a student with prior coursework already know about this topic?
+   • Question 2: short-answer prediction — "What do you think X means/causes?"
+   • Question 3 (optional): fill-in-the-blank or trap from prior courses.
+   correctAnswer: what a student who already knows this topic would say.
+   Return null if the page is too introductory to have meaningful prior-knowledge questions.
+
 Be fast and precise. Do NOT elaborate beyond the schema fields.`;
 }
 
 export function buildStage1UserPrompt(input: SynthesisInput): string {
-  const { domain, pageThesis, pageObjective, rankedConcepts } = input;
+  const { domain, pageThesis, pageObjective, pageText, rankedConcepts } = input;
   const context = [pageThesis, pageObjective].filter(Boolean).slice(0, 2).join("\n");
   const concepts = rankedConcepts.slice(0, 3).map((c, i) =>
     `${i + 1}. [${c.role.toUpperCase()}] "${c.title}"\n   "${c.text.slice(0, 220)}"`
   ).join("\n\n");
-  return `DOMAIN: ${domain}\n\nPAGE CONTEXT:\n${context || "(derive from concepts below)"}\n\nKEY CONCEPTS:\n${concepts}\n\nExtract: coreIdea, highlightAnchors (2–4 sharp verbatim spans — thesis + mechanism + trap/examSignal), miniTestItems (1 MC + 1 short-answer + 1 fill-blank or trap).`;
+  const rawSection = pageText
+    ? `\nRAW PAGE TEXT (use for verbatim highlight spans):\n${pageText.slice(0, 800)}\n`
+    : "";
+  return `DOMAIN: ${domain}\n\nPAGE CONTEXT:\n${context || "(derive from concepts below)"}${rawSection}\n\nKEY CONCEPTS:\n${concepts}\n\nExtract: coreIdea, highlightAnchors (2–4 sharp verbatim spans — thesis + mechanism + trap/examSignal), miniTestItems (1 MC + 1 short-answer + 1 fill-blank or trap), preReadRecallItems (2–3 before-reading prediction questions, null if too introductory).`;
 }
 
 /** Client-side Stage 1 fetch — fast path. */
@@ -391,9 +423,10 @@ export function makeStubFromStage1(stage1: Stage1Synthesis): TeachingSynthesis {
     memoryAnchor:      null,
     externalStudyLinks: null,
     concepts:          [],
-    miniTests:         null,
-    miniTestItems:     stage1.miniTestItems,
-    highlightAnchors:  stage1.highlightAnchors,
+    miniTests:           null,
+    miniTestItems:       stage1.miniTestItems,
+    preReadRecallItems:  stage1.preReadRecallItems,
+    highlightAnchors:    stage1.highlightAnchors,
     relatedVideoQueries: null,
   };
 }
@@ -456,6 +489,7 @@ export function buildSynthesisInput(
   pageThesis?: string,
   pageSummary?: string,
   pageNumber?: number,
+  pageText?: string,
 ): SynthesisInput {
   // Prioritize substantive educational roles
   const ROLE_RANK: Record<string, number> = {
@@ -496,5 +530,5 @@ export function buildSynthesisInput(
       })()
     : rankedConcepts;
 
-  return { domain, pageObjective, pageThesis, pageSummary, pageNumber, rankedConcepts: chunkedConcepts };
+  return { domain, pageObjective, pageThesis, pageSummary, pageNumber, pageText, rankedConcepts: chunkedConcepts };
 }
