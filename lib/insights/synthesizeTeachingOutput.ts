@@ -187,20 +187,25 @@ Specific field requirements:
 SENTENCE COMPLETENESS: Never output a fragment. Self-check: "Could a student read only this field and understand the concept?" If no → rewrite.
 
 ─── LEFT-PANEL HIGHLIGHT ANCHORS ────────────────────────────────────────────
-highlightAnchors: Select 2–4 exact verbatim text spans that let a student understand the
-page in seconds. A student reading ONLY these highlighted sentences must grasp the core idea.
-Quality > quantity. Two sharp highlights beat six mediocre ones.
+highlightAnchors: Select 2–4 exact verbatim sentences that let a student understand
+the WHOLE PAGE in under 10 seconds.
 
-TARGET PATTERN — include one span per role when present:
-  1. anchorType "thesis"       — the sentence that states what this page is about (REQUIRED)
-  2. anchorType "mechanism"    — how/why it works; the cause-effect chain (include when present)
-  3. anchorType "application"  — real-world consequence, clinical implication, or example
-  4. anchorType "clinicalTrap" — the common mistake or misconception (include when present)
+THE STUDENT TEST (apply before selecting each anchor):
+  Imagine a student reads ONLY these highlights and nothing else.
+  They must be able to answer: "What is this page fundamentally teaching?"
+  If the highlights only answer "what one mechanism does" but NOT "what the page is about" — reject them.
 
-Secondary roles (use only if no better anchor fills the slot above):
-  5. anchorType "examSignal"   — sentence a board exam would quote or derive from
-  6. anchorType "definition"   — the core definition (only if distinct and not covered by thesis)
-  7. anchorType "formula"      — equation or procedure (only if central to the page)
+TARGET PATTERN — select one per role, in priority order:
+  1. anchorType "thesis"       — REQUIRED. The sentence stating what this page is fundamentally about.
+                                  Must answer "What is this page teaching?" — not just define one term.
+  2. anchorType "mechanism"    — How/why the main concept works. The causal chain. Include when present.
+  3. anchorType "application"  — Real-world consequence, clinical implication, or worked example.
+  4. anchorType "clinicalTrap" — The common mistake, contrast, or misconception. Include when present.
+
+Secondary roles (use only if no better anchor fills a slot above):
+  5. anchorType "examSignal"   — Sentence a board exam would quote or derive from.
+  6. anchorType "definition"   — Core definition (only if distinct from thesis).
+  7. anchorType "formula"      — Central equation or procedure.
 
 EXAMPLE — biology page on atomic structure:
   thesis:      "Element properties depend on atomic structure."
@@ -208,14 +213,28 @@ EXAMPLE — biology page on atomic structure:
   application: "Electron arrangement determines bonding behavior and chemical reactivity."
   clinicalTrap: "Serpentine plant tolerance demonstrates how atomic chemistry translates to biological adaptation."
 
-QUALITY RULES:
-• Copy text EXACTLY as it appears in the source — verbatim, no paraphrase.
-• Each span must be a complete grammatical sentence or clause (≤ 30 words).
-• Prefer sentence-ending spans (with period) — these match the PDF text layer reliably.
-• NEVER highlight: figure captions, "In this chapter…" transitions, publisher/copyright text,
-  OCR noise, incomplete fragments, or repeated content from another anchor.
-• Do NOT lower the bar to hit a count. Return 2 sharp anchors rather than 4 weak ones.
-• Return null ONLY if the page has fewer than 3 real instructional sentences.
+QUALITY RULES (if RAW PAGE TEXT is provided, copy spans verbatim from it):
+• VERBATIM: Copy text exactly as it appears in the source — no paraphrase, no summarizing.
+• COMPLETE: Each span must be a complete grammatical sentence or clause (≤ 30 words).
+• SENTENCE-ENDING: Prefer spans that end with a period — these match the PDF text layer reliably.
+• FULL-PAGE PICTURE: The set of 2–4 highlights must TOGETHER convey the page's full teaching.
+  Ask yourself: "Do these cover thesis + mechanism + implication/application?" If not, revise.
+
+REJECT any span that is:
+• A figure caption ("Figure 2.2...", "Table 3.1...", "See Figure...") → DISCARD
+• Filler or boilerplate ("In this chapter...", "We will discuss...") → DISCARD
+• A fragment under 8 words or missing subject/verb → DISCARD
+• Narrower than the page — one isolated step when the page teaches the full process
+• A repeat of information already covered by another selected anchor
+• Publisher debris (copyright, chapter headers, page numbers)
+
+FAILURE MODE (avoid this): selecting a specific mechanism sentence that sounds precise but
+misses the page-level teaching. Example: for a page about evolutionary adaptation, wrong to
+only highlight "Nickel ions inhibit enzyme activity" — right to highlight the sentence explaining
+why this matters for tolerance/adaptation, which is what the page actually teaches.
+
+Do NOT lower the bar to hit a count — return 2 sharp anchors rather than 4 weak ones.
+Return null ONLY if the page has fewer than 3 real instructional sentences.
 
 ─── PAGE CHECKPOINT — AFTER-READING TEST ────────────────────────────────────
 miniTestItems: Generate 4–5 structured after-reading comprehension questions.
@@ -350,10 +369,12 @@ export function buildStage1SystemPrompt(domain: PageDomain): string {
 
 1. coreIdea — The governing principle in ONE precise, complete sentence (≤20 words). What a professor would write on the board first.
 
-2. highlightAnchors — 2–4 exact verbatim text spans that answer "What is this page teaching?"
-   TARGET: thesis (required) + mechanism (if present) + clinicalTrap or examSignal (if present).
-   Quality over quantity — 2 sharp highlights beat 5 mediocre ones. Copy text EXACTLY (≤30 words each).
-   NEVER highlight figure captions, filler, or fragments. Return null only if < 3 real sentences.
+2. highlightAnchors — 2–4 exact verbatim sentences that together answer "What is this page fundamentally teaching?"
+   A student reading ONLY these highlights must grasp the whole page, not just one mechanism.
+   TARGET: thesis (required) + mechanism + application/implication + trap if present.
+   Copy text EXACTLY from source (≤30 words each, complete sentences, prefer period-ending).
+   REJECT: figure captions, filler, isolated fragments, narrow mechanism that misses the page picture.
+   Return null only if < 3 real instructional sentences.
 
 3. miniTestItems — 3 after-reading comprehension questions:
    • Question 1: multiple-choice — 4 options (A=correct, B/C/D=wrong), tests main concept.
