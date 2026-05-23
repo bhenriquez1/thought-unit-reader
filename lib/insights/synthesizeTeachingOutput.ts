@@ -15,7 +15,7 @@ import type { UltraConceptBlock } from "./buildUltraPageView";
 
 export const SynthHighlightAnchorSchema = z.object({
   text: z.string(),         // exact source text span — must be copied verbatim, ≤ 30 words
-  anchorType: z.enum(["thesis", "definition", "mechanism", "formula", "clinicalTrap", "examSignal", "application"]),
+  anchorType: z.enum(["thesis", "mechanism", "application", "trap", "memoryAnchor"]),
   reason: z.string(),       // ≤ 10 words: why a professor would underline this
 });
 
@@ -187,51 +187,67 @@ Specific field requirements:
 SENTENCE COMPLETENESS: Never output a fragment. Self-check: "Could a student read only this field and understand the concept?" If no → rewrite.
 
 ─── LEFT-PANEL HIGHLIGHT ANCHORS ────────────────────────────────────────────
-highlightAnchors: Select 2–4 exact verbatim sentences that let a student understand
-the WHOLE PAGE in under 10 seconds.
+highlightAnchors: Select 2–4 exact verbatim sentences from the page that together let a
+student understand the WHOLE PAGE in under 10 seconds.
 
-THE STUDENT TEST (apply before selecting each anchor):
-  Imagine a student reads ONLY these highlights and nothing else.
-  They must be able to answer: "What is this page fundamentally teaching?"
-  If the highlights only answer "what one mechanism does" but NOT "what the page is about" — reject them.
+7-STEP SELECTION PROCESS (follow in order):
+  1. Read the entire page context and raw text provided.
+  2. Identify the governing thesis — what is this page fundamentally teaching?
+  3. Identify the causal mechanism — how or why does the main concept work?
+  4. Find the best application/example — where do we see this in reality?
+  5. Detect any trap or contrast — what mistake will students make?
+  6. Find the single most testable/memorable fact — what must be remembered?
+  7. Select 2–4 of the above that together give FULL-PAGE comprehension.
 
-TARGET PATTERN — select one per role, in priority order:
-  1. anchorType "thesis"       — REQUIRED. The sentence stating what this page is fundamentally about.
-                                  Must answer "What is this page teaching?" — not just define one term.
-  2. anchorType "mechanism"    — How/why the main concept works. The causal chain. Include when present.
-  3. anchorType "application"  — Real-world consequence, clinical implication, or worked example.
-  4. anchorType "clinicalTrap" — The common mistake, contrast, or misconception. Include when present.
+THE STUDENT TEST (apply before finalizing):
+  Imagine a student reads ONLY your highlights and nothing else.
+  They must answer: "What is this page fundamentally teaching?"
+  If they can answer "what one mechanism does" but NOT "what the page is about" → reject those highlights.
+  If they understand thesis + how + why/implication → accept.
 
-Secondary roles (use only if no better anchor fills a slot above):
-  5. anchorType "examSignal"   — Sentence a board exam would quote or derive from.
-  6. anchorType "definition"   — Core definition (only if distinct from thesis).
-  7. anchorType "formula"      — Central equation or procedure.
+5-COLOR ROLE SYSTEM (select ONE anchor per applicable role):
+  anchorType "thesis"       🟡 Yellow — REQUIRED. The sentence stating what this page is fundamentally about.
+                               Not a definition, not a detail — the governing idea of the page.
+  anchorType "mechanism"    🔵 Blue   — How or why the main concept works. The causal chain.
+  anchorType "application"  🟢 Green  — Real-world consequence, clinical implication, worked example.
+  anchorType "trap"         🩷 Pink   — Common mistake, contrast, misconception, confusion point.
+  anchorType "memoryAnchor" 🟣 Purple — Single most testable/memorable fact. High-yield exam anchor.
 
-EXAMPLE — biology page on atomic structure:
-  thesis:      "Element properties depend on atomic structure."
-  mechanism:   "Electrons form a negative cloud around the nucleus because of their rapid motion."
-  application: "Electron arrangement determines bonding behavior and chemical reactivity."
-  clinicalTrap: "Serpentine plant tolerance demonstrates how atomic chemistry translates to biological adaptation."
+GOLD STANDARD EXAMPLE — Campbell Biology, Elements & Compounds (pages 78–79):
+  🟡 thesis:       "Matter is made up of elements."
+     Why: entire page depends on this; shortest governing concept; immediately orients the student.
+  🔵 mechanism:    "An element is a substance that cannot be broken down to other substances by chemical reactions."
+     Why: this is the conceptual foundation; teaches the distinction; explains the page structure.
+  🟢 application:  "When chemically combined, however, sodium and chlorine form an edible compound."
+     Why: converts abstraction into understanding; explains emergent properties instantly.
+  🟣 memoryAnchor: "Just four elements—oxygen (O), carbon (C), hydrogen (H), and nitrogen (N)—make up approximately 96% of living matter."
+     Why: DAT/AP Biology high-yield exam fact; connects chemistry → biology; extremely testable.
 
-QUALITY RULES (if RAW PAGE TEXT is provided, copy spans verbatim from it):
-• VERBATIM: Copy text exactly as it appears in the source — no paraphrase, no summarizing.
-• COMPLETE: Each span must be a complete grammatical sentence or clause (≤ 30 words).
-• SENTENCE-ENDING: Prefer spans that end with a period — these match the PDF text layer reliably.
-• FULL-PAGE PICTURE: The set of 2–4 highlights must TOGETHER convey the page's full teaching.
-  Ask yourself: "Do these cover thesis + mechanism + implication/application?" If not, revise.
+  WHAT WAS NOT HIGHLIGHTED (and why):
+  ✗ "Rocks, metals, oils, gases…"              → filler, no conceptual value
+  ✗ Long filler examples or paragraph summaries → too broad, no precision
+  ✗ Random narrow details                        → isolated, miss the page picture
+  ✗ Figure captions unless they teach the mechanism
+
+QUALITY RULES (copy verbatim from RAW PAGE TEXT if provided):
+• VERBATIM: Copy text exactly — no paraphrase, no summarizing, no rewording.
+• COMPLETE: Full grammatical sentence or clause (≤ 30 words). Never a fragment.
+• SENTENCE-ENDING: Prefer spans ending with a period — they match the PDF text layer reliably.
+• FULL-PAGE PICTURE: All 2–4 highlights together must cover thesis + mechanism + implication.
+  Ask: "Do these work together as a compressed understanding system?"
 
 REJECT any span that is:
-• A figure caption ("Figure 2.2...", "Table 3.1...", "See Figure...") → DISCARD
-• Filler or boilerplate ("In this chapter...", "We will discuss...") → DISCARD
+• A figure caption ("Figure 2.2...", "See Figure...", "Table 3.1...") → DISCARD
+• Filler/boilerplate ("In this chapter...", "We will discuss...") → DISCARD
 • A fragment under 8 words or missing subject/verb → DISCARD
-• Narrower than the page — one isolated step when the page teaches the full process
-• A repeat of information already covered by another selected anchor
+• Narrower than the page — one step in a process when the page teaches the whole process
+• A repeat of information covered by another selected anchor
 • Publisher debris (copyright, chapter headers, page numbers)
 
-FAILURE MODE (avoid this): selecting a specific mechanism sentence that sounds precise but
-misses the page-level teaching. Example: for a page about evolutionary adaptation, wrong to
-only highlight "Nickel ions inhibit enzyme activity" — right to highlight the sentence explaining
-why this matters for tolerance/adaptation, which is what the page actually teaches.
+FAILURE MODE (avoid): Selecting a precise mechanism sentence that misses the page-level teaching.
+Example (wrong for a page about adaptation): highlighting "Nickel ions inhibit enzyme activity"
+when the page teaches HOW ORGANISMS EVOLVE TOLERANCE — the thesis is the adaptation story,
+not the enzyme mechanism.
 
 Do NOT lower the bar to hit a count — return 2 sharp anchors rather than 4 weak ones.
 Return null ONLY if the page has fewer than 3 real instructional sentences.
