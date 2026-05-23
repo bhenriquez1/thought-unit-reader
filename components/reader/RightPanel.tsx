@@ -144,9 +144,7 @@ const MODE: GuidedMode = "insight";
 
 const LOADING_PHASES = [
   "Reading current page…",
-  "Understanding page structure…",
-  "Writing notes…",
-  "Generating recall questions…",
+  "Writing study notes…",
 ];
 
 // Derives a human-readable teaching purpose from available domain/concept data.
@@ -2026,7 +2024,7 @@ function ConceptBlocksView({
             className="flex w-full items-center justify-between px-4 py-3 text-left"
           >
             <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">
-              Mini Test
+              Page Checkpoint
             </span>
             <span className="text-[10px] text-slate-500">{miniTestOpen ? "▲" : "▼"}</span>
           </button>
@@ -2806,6 +2804,28 @@ function NarrativeBlocksView({
 // Shadow recall — page-grounded recall prompts + reveal
 // ---------------------------------------------------------------------------
 
+function buildFallbackRecallItems(recall: ShadowRecallModel) {
+  type RecallItem = { question: string; type: string; options: string[] | null; correctAnswer: string; explanation: string };
+  const items: RecallItem[] = [];
+  const add = (question: string, type: string, explanation: string) => {
+    if (question && question.trim().length > 10) {
+      items.push({ question: question.trim(), type, options: null, correctAnswer: "", explanation });
+    }
+  };
+  add(recall.prompts.keyConcept,  "short_answer", "Attempt from memory before reading.");
+  add(recall.prompts.mechanism,   "short_answer", "Think about the underlying reason.");
+  add(recall.prompts.testPoint,   "short_answer", "This is likely to appear on an exam.");
+  add(recall.prompts.distinction, "short_answer", "Consider what makes this unique.");
+  add(recall.prompts.studentTrap, "trap",         "This is a common confusion point.");
+  if (!items.length) {
+    items.push({
+      question: `What do you expect to learn from ${recall.pageLabel}?`,
+      type: "short_answer", options: null, correctAnswer: "", explanation: "Predict before reading.",
+    });
+  }
+  return items;
+}
+
 function PreReadRecallDrawer({
   open,
   onClose,
@@ -2834,20 +2854,12 @@ function PreReadRecallDrawer({
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {preReadRecallItems?.length ? (
-            <MiniTestPanel
-              items={preReadRecallItems}
-              bookId=""
-              pageNumber={0}
-              title="Pre-Read Recall"
-            />
-          ) : (
-            <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
-              <div className="text-2xl animate-pulse">🕶</div>
-              <p className="text-[12px] text-slate-400">Generating pre-read questions…</p>
-              <p className="text-[11px] text-slate-600">Questions appear here after synthesis completes.</p>
-            </div>
-          )}
+          <MiniTestPanel
+            items={preReadRecallItems?.length ? preReadRecallItems : buildFallbackRecallItems(recall)}
+            bookId=""
+            pageNumber={0}
+            title="Pre-Read Recall"
+          />
         </div>
       </div>
     </>
