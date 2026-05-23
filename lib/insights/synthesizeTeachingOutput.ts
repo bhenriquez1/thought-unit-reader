@@ -217,8 +217,8 @@ INTERNAL TEST (answer all 7 before finalizing highlights):
                               Not a detail, not a list item — the one idea the whole page builds on.
   anchorType "definition"  🔵 Blue   — Core concept definition — what the key term IS. The foundational meaning.
   anchorType "mechanism"   🟢 Green  — How or why it works. Cause → effect. The causal chain.
-  anchorType "trap"        🩷 Pink   — Common confusion, misconception, contrast, or exam trap.
-  anchorType "application" 🟣 Purple — Real-world use, clinical relevance, experiment, or worked example.
+  anchorType "application" 🩷 Pink   — Real-world use, clinical relevance, experiment, or worked example.
+  anchorType "trap"        🟣 Purple — Common confusion, misconception, contrast, or exam trap.
 
 WHAT GOOD HIGHLIGHTS DO:
   ✓ Compress understanding — the full page in minimal text
@@ -238,18 +238,23 @@ WHAT BAD HIGHLIGHTS ARE:
   ✗ One step in a process when the page teaches the whole process
   ✗ Sentences that are locally "important" but miss the page-level picture
 
-GOLD STANDARD EXAMPLE — Campbell Biology, Elements & Compounds (pages 78–79):
-  🟡 thesis:      "Matter is made up of elements."
-     Why: entire page depends on this; shortest governing concept; immediately orients the student.
-  🔵 definition:  "An element is a substance that cannot be broken down to other substances by chemical reactions."
-     Why: foundational definition; teaches what "element" actually means; the page builds from this.
-  🟢 mechanism:   "When elements combine in fixed ratios, they form compounds with properties different from those of the constituent elements."
-     Why: explains HOW compounds arise — the causal rule that unlocks the rest of the page.
-  🟣 application: "When chemically combined, however, sodium and chlorine form an edible compound."
-     Why: converts abstraction to understanding; shows why mechanism matters in reality.
+ROLE LOGIC (abstract — apply to every page, every book):
+  🟡 thesis:      The shortest sentence that names what the page is fundamentally about.
+     Good if: removing it would make the rest incomprehensible.
+  🔵 definition:  The sentence that pins down what the key term or concept actually IS.
+     Good if: a student who memorized it could correctly define the concept on an exam.
+  🟢 mechanism:   The sentence that explains HOW or WHY — the causal logic or process.
+     Good if: it shows the chain of reasoning, not just a fact.
+  🩷 application: The sentence that shows the concept in a real, concrete, or clinical setting.
+     Good if: it bridges abstract → tangible (example, case, experiment, clinical use).
+  🟣 trap:        The sentence that names a contrast, exception, or common misconception.
+     Good if: students who don't read carefully would get this wrong on an exam.
 
-  NOT highlighted: "Rocks, metals, oils, gases…" → filler. Figure captions → discard.
-  Random narrow details → miss the page picture. Long paragraph summaries → too broad.
+  NOT highlighted: list items without context, figure captions, filler phrases ("in this chapter…"),
+  publisher debris, single numbers without explanation, repeated information.
+
+⚠️ CRITICAL: Derive highlights EXCLUSIVELY from the raw page text provided in the user message.
+   Do NOT invent, paraphrase, or reuse any example phrases from this system prompt.
 
 QUALITY RULES (copy verbatim from RAW PAGE TEXT when provided):
 • VERBATIM: Copy text exactly — no paraphrase, no rewording.
@@ -408,13 +413,12 @@ export function buildStage1SystemPrompt(domain: PageDomain): string {
 
 1. coreIdea — The governing principle in ONE precise, complete sentence (≤20 words). What a professor would write on the board first.
 
-2. highlightAnchors — COGNITIVE RECONSTRUCTION ANCHORS (not annotations). Read the full page
-   first, understand the thesis + mechanism + application + trap holistically, THEN select the
-   minimum 2–4 verbatim spans that together allow a student to mentally rebuild the whole page.
-   INTERNAL TEST: "If the student only saw these tomorrow, could they reconstruct the page?"
-   TARGET: thesis (required) + definition + mechanism + trap/application if present.
-   Copy text EXACTLY from source (≤30 words each, complete sentences, prefer period-ending).
-   REJECT: figure captions, filler, isolated fragments, narrow details that miss the page picture.
+2. highlightAnchors — 2–4 VERBATIM spans from the raw page text ONLY. Never invent text.
+   Read the full page first, then select the minimum set that lets a student reconstruct the page.
+   Roles: thesis(yellow, required) + definition(blue) + mechanism(green) + application(pink) + trap(purple).
+   INTERNAL TEST: "Could the student reconstruct this page from these highlights alone?"
+   Copy text EXACTLY (≤30 words, complete sentences, prefer period-ending).
+   REJECT: figure captions, filler, fragments, anything not found verbatim in the page text.
    Return null only if < 3 real instructional sentences.
 
 3. miniTestItems — 3 after-reading comprehension questions:
