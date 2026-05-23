@@ -3256,21 +3256,21 @@ export default function ThoughtUnitReader() {
             // Colors match PdfEvidenceOverlay.priorityClassName
             type AnchorLegendDef = { color: string; label: string; description: string };
             const ANCHOR_LEGEND: Record<string, AnchorLegendDef> = {
-              thesis:       { color: "rgba(251,191, 36,0.85)", label: "Thesis",         description: "what this page is about" },
-              mechanism:    { color: "rgba( 96,165,250,0.85)", label: "Mechanism",      description: "how or why it works" },
-              application:  { color: "rgba( 52,211,153,0.85)", label: "Application",   description: "real-world example" },
-              trap:         { color: "rgba(244,114,182,0.85)", label: "Trap",           description: "common confusion point" },
-              memoryAnchor: { color: "rgba(167,139,250,0.85)", label: "Memory Anchor",  description: "high-yield fact" },
+              thesis:      { color: "rgba(251,191, 36,0.85)", label: "Thesis",      description: "what this page is about" },
+              definition:  { color: "rgba( 96,165,250,0.85)", label: "Definition",  description: "what the key concept is" },
+              mechanism:   { color: "rgba( 52,211,153,0.85)", label: "Mechanism",   description: "how or why it works" },
+              trap:        { color: "rgba(244,114,182,0.85)", label: "Trap",        description: "common confusion point" },
+              application: { color: "rgba(167,139,250,0.85)", label: "Application", description: "real-world example" },
               // Backward compat aliases (pre-refactor anchor types)
-              definition:   { color: "rgba(251,191, 36,0.85)", label: "Thesis",         description: "what this page is about" },
-              examSignal:   { color: "rgba(251,191, 36,0.85)", label: "Thesis",         description: "what this page is about" },
-              formula:      { color: "rgba(167,139,250,0.85)", label: "Memory Anchor",  description: "high-yield fact" },
-              clinicalTrap: { color: "rgba(244,114,182,0.85)", label: "Trap",           description: "common confusion point" },
+              memoryAnchor: { color: "rgba( 96,165,250,0.85)", label: "Definition",  description: "what the key concept is" },
+              examSignal:   { color: "rgba(251,191, 36,0.85)", label: "Thesis",      description: "what this page is about" },
+              formula:      { color: "rgba( 96,165,250,0.85)", label: "Definition",  description: "what the key concept is" },
+              clinicalTrap: { color: "rgba(244,114,182,0.85)", label: "Trap",        description: "common confusion point" },
             };
 
             // Derive unique anchor types present on this page, preserving priority order
-            const priorityOrder = ["thesis", "mechanism", "application", "trap", "memoryAnchor",
-              "definition", "examSignal", "formula", "clinicalTrap"]; // old types last for compat
+            const priorityOrder = ["thesis", "definition", "mechanism", "trap", "application",
+              "memoryAnchor", "examSignal", "formula", "clinicalTrap"]; // old types last for compat
             const presentTypes = new Map<string, number>(); // anchorType → count
             for (const anchor of synthAiHighlights) {
               presentTypes.set(anchor.anchorType, (presentTypes.get(anchor.anchorType) ?? 0) + 1);
