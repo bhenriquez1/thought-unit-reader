@@ -806,14 +806,24 @@ export function RightPanel({
 
   return (
     <>
-    {/* PreReadRecallDrawer rendered at root — outside scroll container so fixed overlay works correctly */}
+    {/* Shadow Recall — floating trigger at bottom-left of viewport; drawer opens from left.
+        Lives at root level (outside aside) so position:fixed is never clipped by scroll container. */}
     {shadowRecall && (
-      <PreReadRecallDrawer
-        open={recallOpen}
-        onClose={() => setRecallOpen(false)}
-        recall={shadowRecall}
-        preReadRecallItems={studyModel?.preReadRecallItems}
-      />
+      <>
+        <button
+          onClick={() => setRecallOpen(true)}
+          className="fixed bottom-5 left-5 z-50 flex items-center gap-1.5 rounded-full border border-violet-500/30 bg-[#0b1020]/90 px-3.5 py-2 text-[11px] font-bold text-violet-300 shadow-lg backdrop-blur-sm hover:bg-violet-900/40 hover:border-violet-400/50 transition-all"
+          title="Pre-Read Recall — attempt before reading"
+        >
+          🕶 <span className="hidden sm:inline">Shadow Recall</span>
+        </button>
+        <PreReadRecallDrawer
+          open={recallOpen}
+          onClose={() => setRecallOpen(false)}
+          recall={shadowRecall}
+          preReadRecallItems={studyModel?.preReadRecallItems}
+        />
+      </>
     )}
     <aside className="flex h-full min-h-0 w-full flex-col overflow-y-auto border-l border-white/10 bg-[rgb(11,18,34)] break-words whitespace-normal">
       {/* Header */}
@@ -927,14 +937,6 @@ export function RightPanel({
                 studyModel={studyModel}
               />
             </div>
-            {shadowRecall && (
-              <button
-                onClick={() => setRecallOpen(true)}
-                className="w-full rounded-xl border border-violet-500/20 bg-violet-900/10 py-2.5 text-[12px] font-bold text-violet-300 hover:bg-violet-800/20 transition-colors"
-              >
-                🕶 Pre-Read Recall
-              </button>
-            )}
           </>
         )}
 
@@ -967,14 +969,6 @@ export function RightPanel({
             onStepClick={(text) => onEvidenceClick?.(text, undefined)}
           />
         )}
-        {showNarrativePageView && shadowRecall && (
-          <button
-            onClick={() => setRecallOpen(true)}
-            className="w-full rounded-xl border border-violet-500/20 bg-violet-900/10 py-2.5 text-[12px] font-bold text-violet-300 hover:bg-violet-800/20 transition-colors"
-          >
-            🕶 Pre-Read Recall
-          </button>
-        )}
 
         {/* ── 0b. Narrative View (legacy 3-block fallback) ──────────────── */}
         {showNarrativeView && (
@@ -988,14 +982,6 @@ export function RightPanel({
             steps={v3Path}
             onStepClick={(text) => onEvidenceClick?.(text, undefined)}
           />
-        )}
-        {showNarrativeView && shadowRecall && (
-          <button
-            onClick={() => setRecallOpen(true)}
-            className="w-full rounded-xl border border-violet-500/20 bg-violet-900/10 py-2.5 text-[12px] font-bold text-violet-300 hover:bg-violet-800/20 transition-colors"
-          >
-            🕶 Pre-Read Recall
-          </button>
         )}
 
         {/* ── A. V3 Primary View ─────────────────────────────────────────── */}
@@ -2835,10 +2821,10 @@ function PreReadRecallDrawer({
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
-      <div className="fixed right-0 top-0 bottom-0 z-50 w-[360px] bg-[#0b1020] border-l border-white/10 flex flex-col overflow-hidden">
+      <div className="fixed left-0 top-0 bottom-0 z-50 w-[380px] bg-[#0b1020] border-r border-white/10 flex flex-col overflow-hidden shadow-2xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
           <span className="text-[11px] font-bold uppercase tracking-widest text-violet-300">
-            🕶 Pre-Read Recall · {recall.pageLabel}
+            🕶 Shadow Recall · {recall.pageLabel}
           </span>
           <button
             onClick={onClose}
@@ -3046,10 +3032,18 @@ function GenerateNoteButton({
   studyModel?: CurrentPageStudyModel | null;
 }) {
   const [saved, setSaved] = useState(false);
-  const synthReady = studyModel !== undefined ? studyModel !== null : true;
+  // Require Stage 2 completion: studyModel must exist AND have concept blocks populated.
+  // Stage 1 stubs have empty conceptBlocks — clicking before Stage 2 would produce empty notes.
+  const synthReady = !!studyModel && (studyModel.conceptBlocks?.length ?? 0) > 0;
 
   function handleGenerate() {
-    console.log("[NOTE:click]", { page: pageNumber, synthReady, hasStudyModel: !!studyModel });
+    console.log("[NOTE:click]", {
+      page: pageNumber,
+      synthReady,
+      hasStudyModel: !!studyModel,
+      conceptBlockCount: studyModel?.conceptBlocks?.length ?? 0,
+      miniTestItemCount: studyModel?.miniTestItems?.length ?? 0,
+    });
     try {
       const topic = (view.title || `Page ${pageNumber}`).replace(/^ULTRA\s*[–—-]\s*/i, "").trim();
       console.log("[NOTE:studyModel-present]", {
@@ -3140,7 +3134,7 @@ function GenerateNoteButton({
         transition: "all 0.18s",
       }}
     >
-      {saved ? "✓ Note saved to NoteLab" : !synthReady ? "⏳ Synthesis loading…" : "⚡ Generate Ultra Note"}
+      {saved ? "✓ Note saved to NoteLab" : !synthReady ? "⏳ Awaiting Stage 2…" : "⚡ Generate Ultra Note"}
     </button>
   );
 }
@@ -3163,10 +3157,23 @@ function GenerateStudySetButton({
   const [saved, setSaved] = useState(false);
   const [noSynth, setNoSynth] = useState(false);
 
+  // Same guard as GenerateNoteButton — require Stage 2 completion (conceptBlocks populated).
+  const synthReady = !!studyModel && (studyModel.conceptBlocks?.length ?? 0) > 0;
+
   function handleGenerate() {
-    console.log("[RECALL:click]", { page: pageNumber, hasStudyModel: !!studyModel });
-    if (!studyModel) {
-      console.warn("[RECALL:studyModel-present]", { hasStudyModel: false });
+    console.log("[RECALL:click]", {
+      page: pageNumber,
+      hasStudyModel: !!studyModel,
+      conceptBlockCount: studyModel?.conceptBlocks?.length ?? 0,
+      miniTestItemCount: studyModel?.miniTestItems?.length ?? 0,
+      synthReady,
+    });
+    if (!synthReady) {
+      console.warn("[RECALL:not-ready]", {
+        hasStudyModel: !!studyModel,
+        conceptBlocks: studyModel?.conceptBlocks?.length ?? 0,
+        reason: !studyModel ? "no studyModel" : "conceptBlocks empty — Stage 2 not complete",
+      });
       setNoSynth(true);
       setTimeout(() => setNoSynth(false), 2800);
       return;
@@ -3207,22 +3214,47 @@ function GenerateStudySetButton({
   return (
     <button
       type="button"
-      onClick={handleGenerate}
+      onClick={synthReady ? handleGenerate : undefined}
+      disabled={!synthReady && !noSynth}
       style={{
         flex: 1,
         padding: "10px 0",
         borderRadius: 10,
-        border: saved ? "1px solid rgba(99,102,241,0.5)" : noSynth ? "1px solid rgba(239,68,68,0.4)" : "1px solid rgba(99,102,241,0.25)",
-        background: saved ? "rgba(99,102,241,0.12)" : noSynth ? "rgba(239,68,68,0.08)" : "rgba(99,102,241,0.07)",
-        color: saved ? "#a5b4fc" : noSynth ? "#fca5a5" : "#818cf8",
+        border: saved
+          ? "1px solid rgba(99,102,241,0.5)"
+          : noSynth
+          ? "1px solid rgba(239,68,68,0.4)"
+          : !synthReady
+          ? "1px solid rgba(255,255,255,0.08)"
+          : "1px solid rgba(99,102,241,0.25)",
+        background: saved
+          ? "rgba(99,102,241,0.12)"
+          : noSynth
+          ? "rgba(239,68,68,0.08)"
+          : !synthReady
+          ? "rgba(255,255,255,0.03)"
+          : "rgba(99,102,241,0.07)",
+        color: saved
+          ? "#a5b4fc"
+          : noSynth
+          ? "#fca5a5"
+          : !synthReady
+          ? "rgba(255,255,255,0.3)"
+          : "#818cf8",
         fontSize: 12,
         fontWeight: 700,
         letterSpacing: "0.06em",
-        cursor: "pointer",
+        cursor: synthReady ? "pointer" : "not-allowed",
         transition: "all 0.18s",
       }}
     >
-      {saved ? "✓ Saved to Recall Lab" : noSynth ? "⚠ OpenAI synthesis not ready yet" : "🎯 Generate Study Set"}
+      {saved
+        ? "✓ Saved to Recall Lab"
+        : noSynth
+        ? "⚠ Stage 2 synthesis not complete yet"
+        : !synthReady
+        ? "⏳ Synthesis loading…"
+        : "🎯 Generate Study Set"}
     </button>
   );
 }
