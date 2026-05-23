@@ -97,7 +97,6 @@ import ChunkRail from "@/components/ChunkRail";
 import { MultiViewContainer } from "@/components/ViewContainer";
 import { useReaderSync, stableChunkId, analyzeContentDensity } from "@/lib/readerSync";
 import { useUnifiedNavigation } from "@/lib/useUnifiedNavigation";
-import ShadowRecallPanel from "@/components/ShadowRecallPanel";
 import AmbientPlayer from "@/components/focus/AmbientPlayer";
 
 import {
@@ -701,7 +700,6 @@ export default function ThoughtUnitReader() {
 
 
   // 💭 Thought Detection Panel
-  const [showThoughtPanel, setShowThoughtPanel] = useState<boolean>(false);
   const [detectedThoughts, setDetectedThoughts] = useState<Array<{
     id: string;
     text: string;
@@ -3337,19 +3335,6 @@ export default function ThoughtUnitReader() {
             </button>
           )}
 
-          {/* Thought Detection FAB */}
-          {!showThoughtPanel && (
-            <button
-              onClick={() => setShowThoughtPanel(true)}
-              className="text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border border-white/20 transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)]"
-              title="Open Shadow Recall"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-lg">🕶️</span>
-                <span className="text-sm font-medium hidden sm:block">Shadow Recall</span>
-              </div>
-            </button>
-          )}
 
           <button
             className="text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border border-white/20 transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)]"
@@ -3388,100 +3373,6 @@ export default function ThoughtUnitReader() {
           )}
         </div>
 
-      {/* Sliding Shadow Recall Panel */}
-      {showThoughtPanel && (
-        <div className="fixed top-0 left-0 w-full sm:w-[480px] h-full bg-gray-900/95 backdrop-blur-md text-white z-50 flex flex-col shadow-2xl border-r border-gray-700">
-          <div className="flex justify-between items-center p-4 border-b border-gray-700">
-            <h3 className="text-lg font-semibold">🕶️ Shadow Recall</h3>
-            <button
-              onClick={() => setShowThoughtPanel(false)}
-              className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-800"
-            >
-              ✕
-            </button>
-          </div>
-          
-          <div className="flex-1 overflow-auto p-4">
-            <div className="mb-4 p-3 bg-blue-900/30 rounded-lg border border-blue-700/30">
-              <div className="text-sm text-blue-300 mb-1">
-                📖 Page {currentPage} {uploadedFile?.name && `• ${truncate(uploadedFile.name, 30)}`}
-              </div>
-              <div className="text-xs text-gray-400">{titleForPage(tableOfContents, currentPage)}</div>
-            </div>
-
-            <ShadowRecallPanel key={pageTruthKey} pageStory={currentPageStory} pageTruthKey={pageTruthKey} />
-
-            <details className="mt-4 rounded-lg border border-purple-400/30 bg-purple-900/15 p-3">
-              <summary className="cursor-pointer text-xs uppercase tracking-wide text-purple-200">Show evidence details</summary>
-              <div className="mt-3 rounded-lg border border-purple-400/20 bg-purple-900/20 p-3">
-                <p className="text-xs text-slate-300">Classification: {currentPanelPayload.classification.pageType} ({Math.round(currentPanelPayload.classification.confidence * 100)}% confidence)</p>
-                <p className="mt-1 text-xs text-slate-300">High-yield extracted: {(currentSignals.paragraphSignals || []).length} • Suppressed filler: {(currentSignals.rawParagraphSignals || []).filter((p) => p.suppress).length}</p>
-                {limitedEvidence ? <p className="mt-1 text-xs text-amber-200">Weak evidence detected — outputs are conservative.</p> : null}
-              </div>
-              <div className="mt-3 space-y-2">
-                {(currentSignals.paragraphSignals || []).slice(0, 4).map((p, idx) => (
-                  <button key={`${p.index}-${idx}`} onClick={() => setFocusSnippet(p.text)} className="w-full rounded border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-left text-xs text-emerald-100 hover:bg-emerald-500/20">
-                    #{idx + 1} ({p.kind}, exam={p.examSignalScore.toFixed(2)}): {truncate(p.text, 120)}
-                  </button>
-                ))}
-              </div>
-            </details>
-
-            {/* Previous Thoughts */}
-            {detectedThoughts.length > 0 && (
-              <div className="space-y-4">
-                <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2">
-                  💭 Your Recent Thoughts ({detectedThoughts.length})
-                </h4>
-                
-                <div className="space-y-3 max-h-60 overflow-y-auto">
-                  {detectedThoughts.map((thought, index) => (
-                    <div
-                      key={thought.id}
-                      className="p-3 bg-gray-800/50 rounded-lg border border-gray-700/50"
-                    >
-                      {/* Thought metadata */}
-                      <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
-                        <span>
-                          {thought.analysis.thoughtType === 'question' && '❓'}
-                          {thought.analysis.thoughtType === 'insight' && '💡'}
-                          {thought.analysis.thoughtType === 'confusion' && '🤔'}
-                          {thought.analysis.thoughtType === 'connection' && '🔗'}
-                          {thought.analysis.thoughtType === 'reflection' && '🧠'}
-                          {' '}
-                          {thought.analysis.thoughtType}
-                        </span>
-                        <span>
-                          Page {thought.page} • {thought.timestamp.toLocaleTimeString()}
-                        </span>
-                      </div>
-                      
-                      {/* Thought text */}
-                      <div className="text-sm text-gray-200 mb-2">
-                        "{truncate(thought.text, 100)}"
-                      </div>
-                      
-                      {/* Keywords */}
-                      {thought.analysis.keywords.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {thought.analysis.keywords.slice(0, 3).map((keyword: string, keyIndex: number) => (
-                            <span
-                              key={keyIndex}
-                              className="px-2 py-1 bg-blue-900/30 text-blue-200 rounded text-xs"
-                            >
-                              {keyword}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Chapter Absorption Pipeline Panel (feature-flagged) */}
       {isFeatureEnabled('ENABLE_CHAPTER_ABSORPTION') && absorptionState.showPanel && (
