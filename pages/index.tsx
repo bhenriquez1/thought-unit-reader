@@ -3259,17 +3259,17 @@ export default function ThoughtUnitReader() {
               thesis:      { color: "rgba(251,191, 36,0.85)", label: "Thesis",      description: "what this page is about" },
               definition:  { color: "rgba( 96,165,250,0.85)", label: "Definition",  description: "what the key concept is" },
               mechanism:   { color: "rgba( 52,211,153,0.85)", label: "Mechanism",   description: "how or why it works" },
-              trap:        { color: "rgba(244,114,182,0.85)", label: "Trap",        description: "common confusion point" },
-              application: { color: "rgba(167,139,250,0.85)", label: "Application", description: "real-world example" },
-              // Backward compat aliases (pre-refactor anchor types)
+              application: { color: "rgba(244,114,182,0.85)", label: "Application", description: "real-world example" },
+              trap:        { color: "rgba(167,139,250,0.85)", label: "Trap",        description: "common confusion point" },
+              // Backward compat aliases
               memoryAnchor: { color: "rgba( 96,165,250,0.85)", label: "Definition",  description: "what the key concept is" },
               examSignal:   { color: "rgba(251,191, 36,0.85)", label: "Thesis",      description: "what this page is about" },
               formula:      { color: "rgba( 96,165,250,0.85)", label: "Definition",  description: "what the key concept is" },
-              clinicalTrap: { color: "rgba(244,114,182,0.85)", label: "Trap",        description: "common confusion point" },
+              clinicalTrap: { color: "rgba(167,139,250,0.85)", label: "Trap",        description: "common confusion point" },
             };
 
             // Derive unique anchor types present on this page, preserving priority order
-            const priorityOrder = ["thesis", "definition", "mechanism", "trap", "application",
+            const priorityOrder = ["thesis", "definition", "mechanism", "application", "trap",
               "memoryAnchor", "examSignal", "formula", "clinicalTrap"]; // old types last for compat
             const presentTypes = new Map<string, number>(); // anchorType → count
             for (const anchor of synthAiHighlights) {

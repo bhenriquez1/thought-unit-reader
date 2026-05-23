@@ -42,8 +42,8 @@ export default function PdfEvidenceOverlay({
 //   thesis      🟡 amber/yellow — governing idea
 //   definition  🔵 blue         — core concept definition
 //   mechanism   🟢 emerald/green — how/why it works, cause→effect
-//   trap        🩷 rose/pink    — common mistake / confusion / contrast
-//   application 🟣 violet/purple — real-world example / clinical use
+//   application 🩷 rose/pink    — real-world example / clinical use
+//   trap        🟣 violet/purple — common mistake / confusion / contrast
 function priorityClassName(
   level: OverlayRect["level"],
   focused: boolean,
@@ -64,12 +64,12 @@ function priorityClassName(
       ? "bg-emerald-400/68 ring-2 ring-emerald-200/90 shadow-[0_0_0_2px_rgba(52,211,153,0.55)]"
       : "bg-emerald-400/48 ring-1 ring-emerald-300/75";
   }
-  if (kind === "trap") {
+  if (kind === "application") {
     return focused
       ? "bg-pink-400/72 ring-2 ring-pink-200/95 shadow-[0_0_0_2px_rgba(244,114,182,0.60)]"
       : "bg-pink-400/52 ring-1 ring-pink-300/82";
   }
-  if (kind === "application") {
+  if (kind === "trap") {
     return focused
       ? "bg-violet-400/68 ring-2 ring-violet-200/90 shadow-[0_0_0_2px_rgba(167,139,250,0.55)]"
       : "bg-violet-400/48 ring-1 ring-violet-300/75";
@@ -82,8 +82,8 @@ function priorityClassName(
         : "bg-amber-400/56 ring-1 ring-amber-300/88";
     case "trap":
       return focused
-        ? "bg-pink-400/72 ring-2 ring-pink-200/95 shadow-[0_0_0_2px_rgba(244,114,182,0.60)]"
-        : "bg-pink-400/52 ring-1 ring-pink-300/82";
+        ? "bg-violet-400/68 ring-2 ring-violet-200/90 shadow-[0_0_0_2px_rgba(167,139,250,0.55)]"
+        : "bg-violet-400/48 ring-1 ring-violet-300/75";
     case "support":
       return focused
         ? "bg-blue-400/62 ring-2 ring-blue-200/90 shadow-[0_0_0_1px_rgba(96,165,250,0.52)]"
