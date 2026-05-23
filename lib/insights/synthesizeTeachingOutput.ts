@@ -15,7 +15,7 @@ import type { UltraConceptBlock } from "./buildUltraPageView";
 
 export const SynthHighlightAnchorSchema = z.object({
   text: z.string(),         // exact source text span — must be copied verbatim, ≤ 30 words
-  anchorType: z.enum(["thesis", "mechanism", "application", "trap", "memoryAnchor"]),
+  anchorType: z.enum(["thesis", "definition", "mechanism", "trap", "application"]),
   reason: z.string(),       // ≤ 10 words: why a professor would underline this
 });
 
@@ -212,13 +212,13 @@ INTERNAL TEST (answer all 7 before finalizing highlights):
   6. What must be remembered tomorrow?
   7. Could the page be reconstructed from these highlights alone? → If no, revise.
 
-5-COLOR ROLE SYSTEM (select ONE anchor per applicable role, 2–6 total):
-  anchorType "thesis"       🟡 Yellow — REQUIRED. The governing concept of the page.
-                               Not a definition, not a detail — what this page is fundamentally teaching.
-  anchorType "mechanism"    🔵 Blue   — How or why it works. Causality. The logical chain.
-  anchorType "application"  🟢 Green  — Real-world implication, clinical meaning, experiment, or example.
-  anchorType "trap"         🩷 Pink   — Common confusion, misconception, contrast, or DAT trap.
-  anchorType "memoryAnchor" 🟣 Purple — High-yield numerical fact, memorable relationship, compressed recall cue.
+5-COLOR ROLE SYSTEM (select ONE anchor per applicable role, 2–4 total):
+  anchorType "thesis"      🟡 Yellow — REQUIRED. The governing idea — what this page is fundamentally teaching.
+                              Not a detail, not a list item — the one idea the whole page builds on.
+  anchorType "definition"  🔵 Blue   — Core concept definition — what the key term IS. The foundational meaning.
+  anchorType "mechanism"   🟢 Green  — How or why it works. Cause → effect. The causal chain.
+  anchorType "trap"        🩷 Pink   — Common confusion, misconception, contrast, or exam trap.
+  anchorType "application" 🟣 Purple — Real-world use, clinical relevance, experiment, or worked example.
 
 WHAT GOOD HIGHLIGHTS DO:
   ✓ Compress understanding — the full page in minimal text
@@ -239,14 +239,14 @@ WHAT BAD HIGHLIGHTS ARE:
   ✗ Sentences that are locally "important" but miss the page-level picture
 
 GOLD STANDARD EXAMPLE — Campbell Biology, Elements & Compounds (pages 78–79):
-  🟡 thesis:       "Matter is made up of elements."
+  🟡 thesis:      "Matter is made up of elements."
      Why: entire page depends on this; shortest governing concept; immediately orients the student.
-  🔵 mechanism:    "An element is a substance that cannot be broken down to other substances by chemical reactions."
-     Why: conceptual foundation; teaches the distinction; explains the page structure.
-  🟢 application:  "When chemically combined, however, sodium and chlorine form an edible compound."
-     Why: converts abstraction to understanding; explains emergent properties instantly.
-  🟣 memoryAnchor: "Just four elements—oxygen (O), carbon (C), hydrogen (H), and nitrogen (N)—make up approximately 96% of living matter."
-     Why: DAT/AP Biology high-yield exam fact; connects chemistry → biology; extremely testable.
+  🔵 definition:  "An element is a substance that cannot be broken down to other substances by chemical reactions."
+     Why: foundational definition; teaches what "element" actually means; the page builds from this.
+  🟢 mechanism:   "When elements combine in fixed ratios, they form compounds with properties different from those of the constituent elements."
+     Why: explains HOW compounds arise — the causal rule that unlocks the rest of the page.
+  🟣 application: "When chemically combined, however, sodium and chlorine form an edible compound."
+     Why: converts abstraction to understanding; shows why mechanism matters in reality.
 
   NOT highlighted: "Rocks, metals, oils, gases…" → filler. Figure captions → discard.
   Random narrow details → miss the page picture. Long paragraph summaries → too broad.
@@ -412,7 +412,7 @@ export function buildStage1SystemPrompt(domain: PageDomain): string {
    first, understand the thesis + mechanism + application + trap holistically, THEN select the
    minimum 2–4 verbatim spans that together allow a student to mentally rebuild the whole page.
    INTERNAL TEST: "If the student only saw these tomorrow, could they reconstruct the page?"
-   TARGET: thesis (required) + mechanism + application/implication + trap/memory if present.
+   TARGET: thesis (required) + definition + mechanism + trap/application if present.
    Copy text EXACTLY from source (≤30 words each, complete sentences, prefer period-ending).
    REJECT: figure captions, filler, isolated fragments, narrow details that miss the page picture.
    Return null only if < 3 real instructional sentences.

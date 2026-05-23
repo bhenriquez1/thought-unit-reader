@@ -7,7 +7,7 @@ export interface OverlayRect {
   width: number;
   height: number;
   level: "important" | "support" | "additional" | "trap";
-  semanticKind?: "thesis" | "mechanism" | "application" | "trap" | "memoryAnchor";
+  semanticKind?: "thesis" | "definition" | "mechanism" | "trap" | "application";
 }
 
 export default function PdfEvidenceOverlay({
@@ -39,11 +39,11 @@ export default function PdfEvidenceOverlay({
 }
 
 // 5-color semantic highlight palette:
-//   thesis       🟡 amber/yellow — governing concept
-//   mechanism    🔵 blue         — causal chain / how it works
-//   application  🟢 emerald      — real-world example / clinical relevance
-//   trap         🩷 rose/pink    — common mistake / confusion / contrast
-//   memoryAnchor 🟣 violet       — high-yield testable fact
+//   thesis      🟡 amber/yellow — governing idea
+//   definition  🔵 blue         — core concept definition
+//   mechanism   🟢 emerald/green — how/why it works, cause→effect
+//   trap        🩷 rose/pink    — common mistake / confusion / contrast
+//   application 🟣 violet/purple — real-world example / clinical use
 function priorityClassName(
   level: OverlayRect["level"],
   focused: boolean,
@@ -54,12 +54,12 @@ function priorityClassName(
       ? "bg-amber-400/75 ring-2 ring-amber-200/95 shadow-[0_0_0_2px_rgba(251,191,36,0.60)]"
       : "bg-amber-400/56 ring-1 ring-amber-300/88";
   }
-  if (kind === "mechanism") {
+  if (kind === "definition") {
     return focused
       ? "bg-blue-400/68 ring-2 ring-blue-200/90 shadow-[0_0_0_2px_rgba(96,165,250,0.55)]"
       : "bg-blue-400/48 ring-1 ring-blue-300/75";
   }
-  if (kind === "application") {
+  if (kind === "mechanism") {
     return focused
       ? "bg-emerald-400/68 ring-2 ring-emerald-200/90 shadow-[0_0_0_2px_rgba(52,211,153,0.55)]"
       : "bg-emerald-400/48 ring-1 ring-emerald-300/75";
@@ -69,7 +69,7 @@ function priorityClassName(
       ? "bg-pink-400/72 ring-2 ring-pink-200/95 shadow-[0_0_0_2px_rgba(244,114,182,0.60)]"
       : "bg-pink-400/52 ring-1 ring-pink-300/82";
   }
-  if (kind === "memoryAnchor") {
+  if (kind === "application") {
     return focused
       ? "bg-violet-400/68 ring-2 ring-violet-200/90 shadow-[0_0_0_2px_rgba(167,139,250,0.55)]"
       : "bg-violet-400/48 ring-1 ring-violet-300/75";
