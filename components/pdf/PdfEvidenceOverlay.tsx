@@ -7,7 +7,7 @@ export interface OverlayRect {
   width: number;
   height: number;
   level: "important" | "support" | "additional" | "trap";
-  semanticKind?: "clinical" | "mechanism" | "comparison" | "application" | "formula" | "definition";
+  semanticKind?: "thesis" | "mechanism" | "application" | "trap" | "memoryAnchor";
 }
 
 export default function PdfEvidenceOverlay({
@@ -38,40 +38,43 @@ export default function PdfEvidenceOverlay({
   );
 }
 
-// Colors keyed by semanticKind when present (AI anchor types), else by level (heuristic).
-// AI anchor type palette:
-//   thesis / definition  → amber  (governing principle — most important)
-//   mechanism            → blue   (causal chain)
-//   formula              → violet (mathematical/biochemical rule)
-//   clinicalTrap         → rose   (danger / common error)
-//   examSignal / application → teal (exam pivot / applied context)
+// 5-color semantic highlight palette:
+//   thesis       🟡 amber/yellow — governing concept
+//   mechanism    🔵 blue         — causal chain / how it works
+//   application  🟢 emerald      — real-world example / clinical relevance
+//   trap         🩷 rose/pink    — common mistake / confusion / contrast
+//   memoryAnchor 🟣 violet       — high-yield testable fact
 function priorityClassName(
   level: OverlayRect["level"],
   focused: boolean,
   kind?: OverlayRect["semanticKind"],
 ): string {
-  // AI anchor type colors (semanticKind present)
-  if (kind === "clinical") {
+  if (kind === "thesis") {
     return focused
-      ? "bg-rose-400/70 ring-2 ring-rose-200/95 shadow-[0_0_0_2px_rgba(251,113,133,0.60)]"
-      : "bg-rose-400/50 ring-1 ring-rose-300/80";
+      ? "bg-amber-400/75 ring-2 ring-amber-200/95 shadow-[0_0_0_2px_rgba(251,191,36,0.60)]"
+      : "bg-amber-400/56 ring-1 ring-amber-300/88";
   }
   if (kind === "mechanism") {
     return focused
-      ? "bg-blue-400/65 ring-2 ring-blue-200/90 shadow-[0_0_0_2px_rgba(96,165,250,0.55)]"
-      : "bg-blue-400/45 ring-1 ring-blue-300/72";
-  }
-  if (kind === "formula") {
-    return focused
-      ? "bg-violet-400/65 ring-2 ring-violet-200/90 shadow-[0_0_0_2px_rgba(167,139,250,0.55)]"
-      : "bg-violet-400/45 ring-1 ring-violet-300/72";
+      ? "bg-blue-400/68 ring-2 ring-blue-200/90 shadow-[0_0_0_2px_rgba(96,165,250,0.55)]"
+      : "bg-blue-400/48 ring-1 ring-blue-300/75";
   }
   if (kind === "application") {
     return focused
-      ? "bg-teal-400/65 ring-2 ring-teal-200/90 shadow-[0_0_0_2px_rgba(45,212,191,0.55)]"
-      : "bg-teal-400/45 ring-1 ring-teal-300/72";
+      ? "bg-emerald-400/68 ring-2 ring-emerald-200/90 shadow-[0_0_0_2px_rgba(52,211,153,0.55)]"
+      : "bg-emerald-400/48 ring-1 ring-emerald-300/75";
   }
-  // level-based fallback (heuristic highlights + thesis/definition AI anchors)
+  if (kind === "trap") {
+    return focused
+      ? "bg-pink-400/72 ring-2 ring-pink-200/95 shadow-[0_0_0_2px_rgba(244,114,182,0.60)]"
+      : "bg-pink-400/52 ring-1 ring-pink-300/82";
+  }
+  if (kind === "memoryAnchor") {
+    return focused
+      ? "bg-violet-400/68 ring-2 ring-violet-200/90 shadow-[0_0_0_2px_rgba(167,139,250,0.55)]"
+      : "bg-violet-400/48 ring-1 ring-violet-300/75";
+  }
+  // level-based fallback for heuristic highlights (no semanticKind)
   switch (level) {
     case "important":
       return focused
@@ -79,8 +82,8 @@ function priorityClassName(
         : "bg-amber-400/56 ring-1 ring-amber-300/88";
     case "trap":
       return focused
-        ? "bg-rose-400/70 ring-2 ring-rose-200/95 shadow-[0_0_0_2px_rgba(251,113,133,0.60)]"
-        : "bg-rose-400/50 ring-1 ring-rose-300/80";
+        ? "bg-pink-400/72 ring-2 ring-pink-200/95 shadow-[0_0_0_2px_rgba(244,114,182,0.60)]"
+        : "bg-pink-400/52 ring-1 ring-pink-300/82";
     case "support":
       return focused
         ? "bg-blue-400/62 ring-2 ring-blue-200/90 shadow-[0_0_0_1px_rgba(96,165,250,0.52)]"
