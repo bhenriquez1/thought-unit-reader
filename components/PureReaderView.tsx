@@ -74,11 +74,18 @@ export default function PureReaderView({
   // Map AI anchor types to ParagraphKind for highlight legend colors.
   const anchorTypeToKind = (anchorType: string): import("@/lib/readerContracts").ParagraphKind => {
     switch (anchorType) {
+      // New 5-role system
+      case "thesis":       return "thesis";
       case "mechanism":    return "mechanism";
-      case "formula":      return "formula";
-      case "clinicalTrap": return "clinical";
       case "application":  return "application";
-      default:             return "definition"; // thesis, definition, examSignal
+      case "trap":         return "trap";
+      case "memoryAnchor": return "memoryAnchor";
+      // Backward compat for old anchor types (pre-refactor)
+      case "formula":      return "memoryAnchor";
+      case "clinicalTrap": return "trap";
+      case "definition":   return "thesis";
+      case "examSignal":   return "thesis";
+      default:             return "thesis";
     }
   };
 

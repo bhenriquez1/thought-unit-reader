@@ -68,12 +68,15 @@ export interface TocNode {
 
 
 export type ParagraphKind =
-  | "definition"
+  | "thesis"
   | "mechanism"
+  | "application"
+  | "trap"
+  | "memoryAnchor"
+  | "definition"
   | "clinical"
   | "comparison"
   | "formula"
-  | "application"
   | "reference"
   | "filler"
   | "unknown";
