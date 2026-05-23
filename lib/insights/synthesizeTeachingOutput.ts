@@ -187,69 +187,92 @@ Specific field requirements:
 SENTENCE COMPLETENESS: Never output a fragment. Self-check: "Could a student read only this field and understand the concept?" If no → rewrite.
 
 ─── LEFT-PANEL HIGHLIGHT ANCHORS ────────────────────────────────────────────
-highlightAnchors: Select 2–4 exact verbatim sentences from the page that together let a
-student understand the WHOLE PAGE in under 10 seconds.
+highlightAnchors: You are selecting COGNITIVE RECONSTRUCTION ANCHORS — not annotations.
 
-7-STEP SELECTION PROCESS (follow in order):
-  1. Read the entire page context and raw text provided.
+The goal is NOT sentence importance. The goal is: can a student mentally rebuild the full
+page from these 2–6 highlights alone, without rereading?
+
+HOLISTIC PAGE READING (complete ALL steps BEFORE selecting any highlight):
+  1. Read the ENTIRE page context and raw text provided.
   2. Identify the governing thesis — what is this page fundamentally teaching?
   3. Identify the causal mechanism — how or why does the main concept work?
   4. Find the best application/example — where do we see this in reality?
   5. Detect any trap or contrast — what mistake will students make?
   6. Find the single most testable/memorable fact — what must be remembered?
-  7. Select 2–4 of the above that together give FULL-PAGE comprehension.
+  7. Determine how the page sections connect and build on each other.
+  8. Determine WHY the author included each section — what understanding does it build?
+  Only AFTER completing steps 1–8 should you select highlights.
 
-THE STUDENT TEST (apply before finalizing):
-  Imagine a student reads ONLY your highlights and nothing else.
-  They must answer: "What is this page fundamentally teaching?"
-  If they can answer "what one mechanism does" but NOT "what the page is about" → reject those highlights.
-  If they understand thesis + how + why/implication → accept.
+INTERNAL TEST (answer all 7 before finalizing highlights):
+  1. What is this page truly about?
+  2. What mechanism is being taught?
+  3. What relationships between concepts matter?
+  4. What would appear on an exam from this page?
+  5. What would students misunderstand?
+  6. What must be remembered tomorrow?
+  7. Could the page be reconstructed from these highlights alone? → If no, revise.
 
-5-COLOR ROLE SYSTEM (select ONE anchor per applicable role):
-  anchorType "thesis"       🟡 Yellow — REQUIRED. The sentence stating what this page is fundamentally about.
-                               Not a definition, not a detail — the governing idea of the page.
-  anchorType "mechanism"    🔵 Blue   — How or why the main concept works. The causal chain.
-  anchorType "application"  🟢 Green  — Real-world consequence, clinical implication, worked example.
-  anchorType "trap"         🩷 Pink   — Common mistake, contrast, misconception, confusion point.
-  anchorType "memoryAnchor" 🟣 Purple — Single most testable/memorable fact. High-yield exam anchor.
+5-COLOR ROLE SYSTEM (select ONE anchor per applicable role, 2–6 total):
+  anchorType "thesis"       🟡 Yellow — REQUIRED. The governing concept of the page.
+                               Not a definition, not a detail — what this page is fundamentally teaching.
+  anchorType "mechanism"    🔵 Blue   — How or why it works. Causality. The logical chain.
+  anchorType "application"  🟢 Green  — Real-world implication, clinical meaning, experiment, or example.
+  anchorType "trap"         🩷 Pink   — Common confusion, misconception, contrast, or DAT trap.
+  anchorType "memoryAnchor" 🟣 Purple — High-yield numerical fact, memorable relationship, compressed recall cue.
+
+WHAT GOOD HIGHLIGHTS DO:
+  ✓ Compress understanding — the full page in minimal text
+  ✓ Reveal structure — show how the page is organized around an idea
+  ✓ Show causality — expose the mechanism chain
+  ✓ Preserve relationships — how concepts connect to each other
+  ✓ Expose mechanisms — not just what, but how and why
+  ✓ Expose contrasts — what this is and what it is NOT
+  ✓ Preserve memory anchors — the one fact that must survive tomorrow
+
+WHAT BAD HIGHLIGHTS ARE:
+  ✗ Isolated fragments with no page-level relevance
+  ✗ Filler or decorative highlighting
+  ✗ Disconnected facts that don't build understanding
+  ✗ Redundant highlights that repeat each other
+  ✗ Generic definitions without mechanism or relevance
+  ✗ One step in a process when the page teaches the whole process
+  ✗ Sentences that are locally "important" but miss the page-level picture
 
 GOLD STANDARD EXAMPLE — Campbell Biology, Elements & Compounds (pages 78–79):
   🟡 thesis:       "Matter is made up of elements."
      Why: entire page depends on this; shortest governing concept; immediately orients the student.
   🔵 mechanism:    "An element is a substance that cannot be broken down to other substances by chemical reactions."
-     Why: this is the conceptual foundation; teaches the distinction; explains the page structure.
+     Why: conceptual foundation; teaches the distinction; explains the page structure.
   🟢 application:  "When chemically combined, however, sodium and chlorine form an edible compound."
-     Why: converts abstraction into understanding; explains emergent properties instantly.
+     Why: converts abstraction to understanding; explains emergent properties instantly.
   🟣 memoryAnchor: "Just four elements—oxygen (O), carbon (C), hydrogen (H), and nitrogen (N)—make up approximately 96% of living matter."
      Why: DAT/AP Biology high-yield exam fact; connects chemistry → biology; extremely testable.
 
-  WHAT WAS NOT HIGHLIGHTED (and why):
-  ✗ "Rocks, metals, oils, gases…"              → filler, no conceptual value
-  ✗ Long filler examples or paragraph summaries → too broad, no precision
-  ✗ Random narrow details                        → isolated, miss the page picture
-  ✗ Figure captions unless they teach the mechanism
+  NOT highlighted: "Rocks, metals, oils, gases…" → filler. Figure captions → discard.
+  Random narrow details → miss the page picture. Long paragraph summaries → too broad.
 
-QUALITY RULES (copy verbatim from RAW PAGE TEXT if provided):
-• VERBATIM: Copy text exactly — no paraphrase, no summarizing, no rewording.
+QUALITY RULES (copy verbatim from RAW PAGE TEXT when provided):
+• VERBATIM: Copy text exactly — no paraphrase, no rewording.
 • COMPLETE: Full grammatical sentence or clause (≤ 30 words). Never a fragment.
 • SENTENCE-ENDING: Prefer spans ending with a period — they match the PDF text layer reliably.
-• FULL-PAGE PICTURE: All 2–4 highlights together must cover thesis + mechanism + implication.
-  Ask: "Do these work together as a compressed understanding system?"
+• RECONSTRUCTION TEST: Do these highlights together let the student reconstruct the page mentally?
 
 REJECT any span that is:
 • A figure caption ("Figure 2.2...", "See Figure...", "Table 3.1...") → DISCARD
 • Filler/boilerplate ("In this chapter...", "We will discuss...") → DISCARD
 • A fragment under 8 words or missing subject/verb → DISCARD
-• Narrower than the page — one step in a process when the page teaches the whole process
-• A repeat of information covered by another selected anchor
-• Publisher debris (copyright, chapter headers, page numbers)
+• A repeat of information covered by another selected anchor → DISCARD
+• Publisher debris (copyright, chapter headers, page numbers) → DISCARD
+• A narrow local detail when the page teaches the whole process
 
 FAILURE MODE (avoid): Selecting a precise mechanism sentence that misses the page-level teaching.
 Example (wrong for a page about adaptation): highlighting "Nickel ions inhibit enzyme activity"
-when the page teaches HOW ORGANISMS EVOLVE TOLERANCE — the thesis is the adaptation story,
-not the enzyme mechanism.
+when the page teaches HOW ORGANISMS EVOLVE TOLERANCE. The adaptation story is the thesis —
+the enzyme mechanism is one supporting detail.
 
-Do NOT lower the bar to hit a count — return 2 sharp anchors rather than 4 weak ones.
+VISUAL TRUST PRINCIPLE: When the student sees these highlights, they must immediately feel:
+"The AI understood this page." — not "random sentences were marked."
+Quality over quantity. 2 sharp anchors beat 6 weak ones.
 Return null ONLY if the page has fewer than 3 real instructional sentences.
 
 ─── PAGE CHECKPOINT — AFTER-READING TEST ────────────────────────────────────
@@ -385,11 +408,13 @@ export function buildStage1SystemPrompt(domain: PageDomain): string {
 
 1. coreIdea — The governing principle in ONE precise, complete sentence (≤20 words). What a professor would write on the board first.
 
-2. highlightAnchors — 2–4 exact verbatim sentences that together answer "What is this page fundamentally teaching?"
-   A student reading ONLY these highlights must grasp the whole page, not just one mechanism.
-   TARGET: thesis (required) + mechanism + application/implication + trap if present.
+2. highlightAnchors — COGNITIVE RECONSTRUCTION ANCHORS (not annotations). Read the full page
+   first, understand the thesis + mechanism + application + trap holistically, THEN select the
+   minimum 2–4 verbatim spans that together allow a student to mentally rebuild the whole page.
+   INTERNAL TEST: "If the student only saw these tomorrow, could they reconstruct the page?"
+   TARGET: thesis (required) + mechanism + application/implication + trap/memory if present.
    Copy text EXACTLY from source (≤30 words each, complete sentences, prefer period-ending).
-   REJECT: figure captions, filler, isolated fragments, narrow mechanism that misses the page picture.
+   REJECT: figure captions, filler, isolated fragments, narrow details that miss the page picture.
    Return null only if < 3 real instructional sentences.
 
 3. miniTestItems — 3 after-reading comprehension questions:
