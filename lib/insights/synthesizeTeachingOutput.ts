@@ -150,10 +150,10 @@ These are extraction artifacts — they are NEVER educational output:
 These are the ONLY acceptable output transformations:
 
 INPUT:  "Figure 2.2 The emergent properties of a compound."
-OUTPUT: "Compounds exhibit emergent properties that cannot be predicted from their constituent elements alone."
+OUTPUT: "The whole has properties its individual parts do not — emergent behavior cannot be predicted from components alone."
 
 INPUT:  "Water (H₂O), another compound..."
-OUTPUT: "Chemical bonding creates new atomic interactions, giving compounds distinct physical and chemical properties from their elements."
+OUTPUT: "Molecular structure determines function — how parts are arranged dictates how a system behaves."
 
 INPUT:  "Then a nurse noticed he'd stopped babbling."
 OUTPUT: "Sudden neurological deterioration after an initially stable presentation signals possible delayed internal injury."
@@ -162,7 +162,7 @@ INPUT:  "Example E1 | What happens to aₙ = 1/n as n grows..."
 OUTPUT: "A sequence converges when its terms approach a fixed finite limit as n increases without bound."
 
 INPUT:  "NaCl dissolves in water."
-OUTPUT: "Ionic compounds dissolve in polar solvents because the electrostatic attraction between ions is overcome by ion–dipole interactions."
+OUTPUT: "A bond breaks when a stronger competing force is present — this principle underlies dissolution, dissociation, and unbinding."
 
 ─── OUTPUT REQUIREMENTS ────────────────────────────────────────────────────
 Every field must be:

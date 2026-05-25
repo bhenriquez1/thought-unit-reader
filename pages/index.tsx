@@ -2713,9 +2713,9 @@ export default function ThoughtUnitReader() {
                   focusSnippet={focusSnippet}
                   highlightTargets={highlightTargets}
                   highlightNeighborhoods={highlightNeighborhoods}
-                  aiHighlightTexts={synthAiHighlights.map(a => a.text)}
-                aiHighlightAnchors={synthAiHighlights}
-                  synthStatus={synthAiHighlights.length > 0 ? "ready" : "loading"}
+                  aiHighlightTexts={safeHighlightAnchors.map(a => a.text)}
+                  aiHighlightAnchors={safeHighlightAnchors}
+                  synthStatus={safeHighlightAnchors.length > 0 ? "ready" : "loading"}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
                   onReadingPath={setGuidedPath}
@@ -2943,6 +2943,12 @@ export default function ThoughtUnitReader() {
       document.body.style.overflow = prevOverflow;
     };
   }, []);
+
+  // Render-time page guard: only expose highlights when studyModel is for the current page.
+  // Prevents stale-page model from rendering after pageTruthKey clears synthAiHighlights.
+  const safeHighlightAnchors = (currentPageStudyModel?.page === currentPage)
+    ? (currentPageStudyModel.highlightAnchors as import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[])
+    : [];
 
   return (
     <div className={`h-screen overflow-hidden flex flex-col ${themeMode === "dark" ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-900"} ${readingMode === "dyslexia" ? "tracking-wide leading-8" : "leading-6"}`} style={{ fontFamily }}>
@@ -3283,7 +3289,7 @@ export default function ThoughtUnitReader() {
         <div className="fixed bottom-[80px] right-6 z-40 flex flex-col gap-3 max-w-[170px] opacity-90">
           {/* Highlight color legend — dynamic from OpenAI anchor types present on this page */}
           {(() => {
-            if (!synthAiHighlights.length) return null;
+            if (!safeHighlightAnchors.length) return null;
 
             // Colors match PdfEvidenceOverlay.priorityClassName
             type AnchorLegendDef = { color: string; label: string; description: string };
@@ -3304,7 +3310,7 @@ export default function ThoughtUnitReader() {
             const priorityOrder = ["thesis", "definition", "mechanism", "application", "trap",
               "memoryAnchor", "examSignal", "formula", "clinicalTrap"]; // old types last for compat
             const presentTypes = new Map<string, number>(); // anchorType → count
-            for (const anchor of synthAiHighlights) {
+            for (const anchor of safeHighlightAnchors) {
               presentTypes.set(anchor.anchorType, (presentTypes.get(anchor.anchorType) ?? 0) + 1);
             }
             // Build legend entries, deduplicating by color (merge compat aliases into canonical role)

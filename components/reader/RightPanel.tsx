@@ -680,10 +680,6 @@ export function RightPanel({
       texts: anchors?.map((a: any) => ({ text: a.text?.slice(0, 40), type: a.anchorType })) ?? [],
       pageTruthKey,
     });
-    if (anchors?.length && onSynthHighlightsReady) {
-      console.log("[WIRE] anchors→parent", { pageTruthKey, count: anchors.length, types: anchors.map((a: any) => a.anchorType) });
-      onSynthHighlightsReady(anchors, pageTruthKey);
-    }
     if (studyModel && onStudyModelReady) {
       console.log("[WIRE] studyModel→parent", {
         pageTruthKey,
