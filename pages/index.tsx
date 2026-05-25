@@ -2762,13 +2762,19 @@ export default function ThoughtUnitReader() {
                   window.setTimeout(() => setFocusSnippet(snippet), 0);
                 }}
                 onSynthHighlightsReady={(anchors, key) => {
+                    // Kept for Stage 1 fast path (~1-3s): shows anchors immediately before studyModel is ready.
+                    // studyModel will override these at Stage 1/2 completion via onStudyModelReady.
                     const current = pageTruthKeyRef.current;
                     if (key !== current) {
-                      console.warn("[WIRE] rejected stale anchors", { from: key, current, count: anchors.length });
+                      console.warn("[WIRE] rejected stale anchors (fast path)", { from: key, current, count: anchors.length });
                       return;
                     }
-                    console.log("[WIRE] anchors accepted", { key, count: anchors.length, texts: anchors.map((a) => a.text.slice(0, 40)) });
-                    setSynthAiHighlights(anchors);
+                    // Only set if studyModel hasn't already provided authoritative anchors
+                    setSynthAiHighlights((prev) => {
+                      if (prev.length > 0) return prev; // studyModel already set — don't overwrite
+                      console.log("[WIRE] anchors fast-path accepted", { key, count: anchors.length });
+                      return anchors;
+                    });
                   }}
                 onStudyModelReady={(model, key) => {
                     const current = pageTruthKeyRef.current;
@@ -2776,8 +2782,19 @@ export default function ThoughtUnitReader() {
                       console.warn("[WIRE] rejected stale studyModel", { from: key, current });
                       return;
                     }
-                    console.log("[WIRE] studyModel accepted", { key, page: model.page });
+                    console.log("[WIRE] studyModel accepted", {
+                      key,
+                      page: model.page,
+                      anchors: model.highlightAnchors.length,
+                      anchorTypes: model.highlightAnchors.map(a => a.anchorType),
+                    });
                     setCurrentPageStudyModel(model);
+                    // studyModel is the authoritative source — always sync highlights from it.
+                    // This ensures left panel == right panel: same synthesis, same anchors.
+                    if (model.highlightAnchors.length) {
+                      console.log("[WIRE] highlights←studyModel", { count: model.highlightAnchors.length, texts: model.highlightAnchors.map(a => a.text.slice(0, 40)) });
+                      setSynthAiHighlights(model.highlightAnchors as import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[]);
+                    }
                   }}
                 onCrossLinkNavigate={(page) => syncToPage(page, { reason: "TOC_JUMP" })}
                 tocItems={tocItemsForSearch}
