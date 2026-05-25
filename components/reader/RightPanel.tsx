@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { ActivePageContext, ResolvedPanelPayload, RightPanelState } from "@/lib/readerContracts";
+import { deriveRecallItems, type SynthesisForRecall } from "@/lib/insights/deriveRecallItems";
 import { useGuidedHighlightSync } from "@/hooks/useGuidedHighlightSync";
 import { buildGuidedReadView, type GuidedDepth, type GuidedMode, type GuidedRole } from "@/lib/insights/buildGuidedReadView";
 import { compressToNote, isFieldRenderable } from "@/lib/insights/sentenceCleanup";
@@ -622,6 +623,7 @@ export function RightPanel({
         relatedVideoQueries: teachingSynthesis.relatedVideoQueries ?? null,
         aiConcepts:          teachingSynthesis.concepts ?? null, // OpenAI-reinterpreted concept blocks
         miniTestItems:       teachingSynthesis.miniTestItems ?? null,
+        preReadRecallItems:  teachingSynthesis.preReadRecallItems ?? null,
       },
     } as UltraPageView & { _synth: Record<string, unknown> };
   }, [ultraPageView, teachingSynthesis]);
@@ -820,6 +822,13 @@ export function RightPanel({
           onClose={() => setRecallOpen(false)}
           recall={shadowRecall}
           preReadRecallItems={studyModel?.preReadRecallItems}
+          synthForDerive={teachingSynthesis ? {
+            coreIdea:       teachingSynthesis.coreIdea,
+            keyMechanism:   teachingSynthesis.mechanism || null,
+            commonConfusion: teachingSynthesis.misconceptionAlert || teachingSynthesis.trap || null,
+            memoryAnchor:   teachingSynthesis.memoryAnchor || null,
+            examSignal:     teachingSynthesis.examCriticalIdea || null,
+          } : null}
         />
       </>
     )}
@@ -2802,7 +2811,8 @@ function NarrativeBlocksView({
 
 // ---------------------------------------------------------------------------
 // Shadow Recall — left-side drawer only
-// Questions come exclusively from Stage 1 synthesis preReadRecallItems.
+// Primary: Stage 1 preReadRecallItems (~1–3s, page-specific questions from OpenAI).
+// Fallback: derived from synthesis fields (thesis/mechanism/trap) — zero extra AI call.
 // ---------------------------------------------------------------------------
 
 function PreReadRecallDrawer({
@@ -2810,14 +2820,18 @@ function PreReadRecallDrawer({
   onClose,
   recall,
   preReadRecallItems,
+  synthForDerive,
 }: {
   open: boolean;
   onClose: () => void;
   recall: ShadowRecallModel;
   preReadRecallItems?: Array<{ question: string; type: string; options: string[] | null; correctAnswer: string; explanation: string }> | null;
+  synthForDerive?: SynthesisForRecall | null;
 }) {
   if (!open) return null;
-  console.log("[WIRE] ShadowRecall open", { page: recall.pageLabel, questions: preReadRecallItems?.length ?? 0, types: preReadRecallItems?.map(i => i.type) ?? [] });
+  const derived = (!preReadRecallItems?.length && synthForDerive) ? deriveRecallItems(synthForDerive) : null;
+  const items = preReadRecallItems?.length ? preReadRecallItems : derived;
+  console.log("[WIRE] ShadowRecall open", { page: recall.pageLabel, questions: items?.length ?? 0, source: preReadRecallItems?.length ? "stage1" : derived?.length ? "derived" : "loading", types: items?.map(i => i.type) ?? [] });
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
@@ -2834,9 +2848,9 @@ function PreReadRecallDrawer({
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {preReadRecallItems?.length ? (
+          {items?.length ? (
             <MiniTestPanel
-              items={preReadRecallItems}
+              items={items}
               bookId=""
               pageNumber={0}
               title="Pre-Read Recall"
@@ -2848,8 +2862,8 @@ function PreReadRecallDrawer({
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-violet-500" />
               </span>
               <p className="text-[11px] text-slate-400 leading-relaxed max-w-[260px]">
-                Generating recall questions from this page…<br />
-                <span className="text-slate-600">Attempt them before you read.</span>
+                Reading this page…<br />
+                <span className="text-slate-600">Questions appear in ~2s.</span>
               </p>
             </div>
           )}

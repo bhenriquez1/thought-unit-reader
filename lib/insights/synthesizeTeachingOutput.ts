@@ -208,7 +208,6 @@ The left panel guides understanding. The right panel explains. That distinction 
 ⚠️ READ THE RAW CURRENT PAGE FIRST. Derive every highlight verbatim from the raw page
    text provided in the user message. Do NOT copy, adapt, or echo any example phrases,
    template text, or gold standard examples from this system prompt.
-
 ══ 4-STAGE THINKING PROCESS (execute in order — no shortcuts) ══════════════
 
 STAGE 1 — PAGE STRUCTURE ANALYSIS:
