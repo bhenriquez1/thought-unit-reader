@@ -118,13 +118,13 @@ interface RightPanelProps {
   onNoteSaved?: () => void;
   onStudySetGenerated?: (setId: string) => void;
   /** Called when synthesis resolves with AI-selected highlight anchors for the left panel */
-  onSynthHighlightsReady?: (anchors: import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[]) => void;
+  onSynthHighlightsReady?: (anchors: import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[], pageTruthKey: string) => void;
   /** Called when user clicks a cross-link that has an estimated target page */
   onCrossLinkNavigate?: (page: number) => void;
   /** TOC items for resolving cross-link labels to real page numbers */
   tocItems?: import("@/lib/stores/tocStore").TocItem[];
   /** Called when synthesis resolves with the full typed study model */
-  onStudyModelReady?: (model: CurrentPageStudyModel) => void;
+  onStudyModelReady?: (model: CurrentPageStudyModel, pageTruthKey: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -679,18 +679,18 @@ export function RightPanel({
       pageTruthKey,
     });
     if (anchors?.length && onSynthHighlightsReady) {
-      onSynthHighlightsReady(anchors);
+      console.log("[WIRE] anchors→parent", { pageTruthKey, count: anchors.length, types: anchors.map((a: any) => a.anchorType) });
+      onSynthHighlightsReady(anchors, pageTruthKey);
     }
     if (studyModel && onStudyModelReady) {
-      console.log("[STUDY_MODEL:ready]", {
+      console.log("[WIRE] studyModel→parent", {
+        pageTruthKey,
         page: studyModel.page,
         thesis: studyModel.pageThesis.slice(0, 60),
         anchors: studyModel.highlightAnchors.length,
-        miniTest: studyModel.miniTest.length,
-        externalLinks: studyModel.externalStudyLinks.length,
-        videoQueries: studyModel.relatedVideoQueries?.length ?? 0,
+        preReadRecall: (studyModel as any).preReadRecallItems?.length ?? 0,
       });
-      onStudyModelReady(studyModel);
+      onStudyModelReady(studyModel, pageTruthKey);
     }
   }, [ultraPageViewWithSynthesis, studyModel, pageTruthKey, onSynthHighlightsReady, onStudyModelReady]);
 
@@ -2817,6 +2817,7 @@ function PreReadRecallDrawer({
   preReadRecallItems?: Array<{ question: string; type: string; options: string[] | null; correctAnswer: string; explanation: string }> | null;
 }) {
   if (!open) return null;
+  console.log("[WIRE] ShadowRecall open", { page: recall.pageLabel, questions: preReadRecallItems?.length ?? 0, types: preReadRecallItems?.map(i => i.type) ?? [] });
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
