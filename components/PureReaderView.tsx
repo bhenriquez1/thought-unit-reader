@@ -129,7 +129,7 @@ export default function PureReaderView({
 
     // Validate: reject anchors whose text does not appear in the current raw page text.
     // This prevents template/example phrases from the prompt from leaking as highlights.
-    const validated = pageText
+    const validated = (pageText && pageText.length > 0)
       ? aiTargets.filter((t) => {
           const norm = (s: string) =>
             s.toLowerCase()
