@@ -2801,30 +2801,9 @@ function NarrativeBlocksView({
 }
 
 // ---------------------------------------------------------------------------
-// Shadow recall — page-grounded recall prompts + reveal
+// Shadow Recall — left-side drawer only
+// Questions come exclusively from Stage 1 synthesis preReadRecallItems.
 // ---------------------------------------------------------------------------
-
-function buildFallbackRecallItems(recall: ShadowRecallModel) {
-  type RecallItem = { question: string; type: string; options: string[] | null; correctAnswer: string; explanation: string };
-  const items: RecallItem[] = [];
-  const add = (question: string, type: string, explanation: string) => {
-    if (question && question.trim().length > 10) {
-      items.push({ question: question.trim(), type, options: null, correctAnswer: "", explanation });
-    }
-  };
-  add(recall.prompts.keyConcept,  "short_answer", "Attempt from memory before reading.");
-  add(recall.prompts.mechanism,   "short_answer", "Think about the underlying reason.");
-  add(recall.prompts.testPoint,   "short_answer", "This is likely to appear on an exam.");
-  add(recall.prompts.distinction, "short_answer", "Consider what makes this unique.");
-  add(recall.prompts.studentTrap, "trap",         "This is a common confusion point.");
-  if (!items.length) {
-    items.push({
-      question: `What do you expect to learn from ${recall.pageLabel}?`,
-      type: "short_answer", options: null, correctAnswer: "", explanation: "Predict before reading.",
-    });
-  }
-  return items;
-}
 
 function PreReadRecallDrawer({
   open,
@@ -2854,79 +2833,28 @@ function PreReadRecallDrawer({
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          <MiniTestPanel
-            items={preReadRecallItems?.length ? preReadRecallItems : buildFallbackRecallItems(recall)}
-            bookId=""
-            pageNumber={0}
-            title="Pre-Read Recall"
-          />
+          {preReadRecallItems?.length ? (
+            <MiniTestPanel
+              items={preReadRecallItems}
+              bookId=""
+              pageNumber={0}
+              title="Pre-Read Recall"
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-violet-500" />
+              </span>
+              <p className="text-[11px] text-slate-400 leading-relaxed max-w-[260px]">
+                Generating recall questions from this page…<br />
+                <span className="text-slate-600">Attempt them before you read.</span>
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </>
-  );
-}
-
-function ShadowRecallSection({
-  recall,
-  open,
-  onToggle,
-  miniTestItems,
-}: {
-  recall: ShadowRecallModel;
-  open: boolean;
-  onToggle: () => void;
-  miniTestItems?: Array<{ question: string; type: string; options: string[] | null; correctAnswer: string; explanation: string }> | null;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-600/30 bg-slate-800/30">
-      <button
-        onClick={onToggle}
-        className="flex w-full items-center justify-between px-4 py-3 text-left"
-      >
-        <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">
-          🕶 Pre-Read Recall · {recall.pageLabel}
-        </span>
-        <span className="text-[10px] text-slate-500">{open ? "▲" : "▼"}</span>
-      </button>
-      {open && (
-        <div className="space-y-3 px-4 pb-4">
-          {/* OpenAI structured questions — preferred; shown first */}
-          {miniTestItems?.length ? (
-            <MiniTestPanel
-              items={miniTestItems}
-              bookId=""
-              pageNumber={0}
-            />
-          ) : (
-            /* Heuristic fallback prompts when synthesis not ready */
-            <div className="space-y-2">
-              {Object.entries(recall.prompts).map(([key, prompt]) => {
-                const revealKey = `${key}Truth` as keyof typeof recall.reveal;
-                const answer = typeof recall.reveal[revealKey] === "string"
-                  ? (recall.reveal[revealKey] as string)
-                  : null;
-                return (
-                  <RecallItem key={key} prompt={prompt} answer={answer ?? ""} />
-                );
-              })}
-            </div>
-          )}
-          {/* Fast recall cues */}
-          {recall.reveal.fastRecallCues.length > 0 && (
-            <div className="border-t border-white/5 pt-2">
-              <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-500">
-                Quick recall cues
-              </div>
-              <ul className="space-y-1">
-                {recall.reveal.fastRecallCues.map((cue, i) => (
-                  <li key={i} className="text-xs text-slate-400">· {cue}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
   );
 }
 

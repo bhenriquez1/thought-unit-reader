@@ -2723,6 +2723,7 @@ export default function ThoughtUnitReader() {
                     setShowFocusCycleModal(true);
                   }}
                   onPageTextExtracted={(pageNumber, text) => setPageTextByPage((prev) => { const next = new Map(prev); next.set(`${bookId}:${pageNumber}`, text); return next; })}
+                  pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || ""}
                 />
               </div>
             )}

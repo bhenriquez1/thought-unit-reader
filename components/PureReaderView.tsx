@@ -40,6 +40,8 @@ interface PureReaderViewProps {
   onOpenFocusCycle?: () => void;
   /** Live per-page text extracted from the PDF text layer. Forwarded to SmartPDFViewer. */
   onPageTextExtracted?: (page: number, text: string) => void;
+  /** Raw text of the current page — used to validate highlight anchors before rendering */
+  pageText?: string;
   /** Synthesis loading status — used to show "Reading page..." overlay until highlights arrive */
   synthStatus?: "loading" | "ready";
 }
@@ -65,6 +67,7 @@ export default function PureReaderView({
   onEvidenceFocus,
   onOpenFocusCycle,
   onPageTextExtracted,
+  pageText,
   synthStatus,
 }: PureReaderViewProps) {
   // Global zoom store
@@ -124,12 +127,32 @@ export default function PureReaderView({
           evidenceRefId:        `ai-anchor-${i}`,
         }));
 
+    // Validate: reject anchors whose text does not appear in the current raw page text.
+    // This prevents template/example phrases from the prompt from leaking as highlights.
+    const validated = pageText
+      ? aiTargets.filter((t) => {
+          const norm = (s: string) =>
+            s.toLowerCase()
+              .replace(/ﬁ/g, 'fi').replace(/ﬂ/g, 'fl')
+              .replace(/ﬀ/g, 'ff').replace(/ﬃ/g, 'ffi')
+              .replace(/['']/g, "'").replace(/[""]/g, '"')
+              .replace(/[–—]/g, '-').replace(/\s+/g, ' ').trim();
+          const found = norm(pageText).includes(norm(t.text));
+          if (!found) {
+            console.warn("[HIGHLIGHT:rejected] not found in page text:", t.text.slice(0, 60));
+          }
+          return found;
+        })
+      : aiTargets;
+
     console.log("[HIGHLIGHT:converted]", {
       source: anchors ? "anchors" : "texts",
-      count: aiTargets.length,
-      kinds: aiTargets.map((t) => t.kind),
+      total: aiTargets.length,
+      valid: validated.length,
+      rejected: aiTargets.length - validated.length,
+      kinds: validated.map((t) => t.kind),
     });
-    return aiTargets; // OpenAI owns the left panel — no heuristic mixing
+    return validated; // OpenAI owns the left panel — no heuristic mixing
   })();
 
   const navigateToPage = useCallback((page: number) => {
