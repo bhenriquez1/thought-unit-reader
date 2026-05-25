@@ -270,7 +270,10 @@ export default function PureReaderView({
           onOutline={onOutline}
           onActiveParagraphChange={onActiveParagraphChange}
           focusSnippet={focusSnippet}
-          highlightTargets={effectiveHighlightTargets}
+          highlightTargets={(() => {
+            console.log("[WIRE] SmartPDFViewer anchors", { page: currentPage, count: effectiveHighlightTargets?.length ?? 0 });
+            return effectiveHighlightTargets;
+          })()}
           highlightNeighborhoods={aiHighlightAnchors?.length ? undefined : highlightNeighborhoods}
           focusedEvidenceId={focusedEvidenceId}
           onEvidenceFocus={onEvidenceFocus}

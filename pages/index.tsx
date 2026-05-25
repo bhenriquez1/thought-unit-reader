@@ -807,6 +807,10 @@ export default function ThoughtUnitReader() {
     pageIntelligenceStatus,
     isCurrentIntelligencePage,
   });
+  // Ref always reflects the latest pageTruthKey so callbacks can validate against it.
+  const pageTruthKeyRef = useRef(pageTruthKey);
+  useEffect(() => { pageTruthKeyRef.current = pageTruthKey; }, [pageTruthKey]);
+
   const focusIntegrity = focusInterruptions === 0 ? "uninterrupted" : focusInterruptions === 1 ? "interrupted once" : "interrupted multiple times";
   const focusScore = Math.max(0, 100 - (focusInterruptions * 12));
   const focusConsistency = focusScore >= 90 ? "Strong" : focusScore >= 75 ? "Good" : "Needs recovery";
@@ -2757,11 +2761,24 @@ export default function ThoughtUnitReader() {
                   setFocusedEvidenceId(evidenceId || resolveEvidenceId(snippet) || null);
                   window.setTimeout(() => setFocusSnippet(snippet), 0);
                 }}
-                onSynthHighlightsReady={(anchors) => {
-                    console.log("[HIGHLIGHT:parent-state]", { count: anchors.length, texts: anchors.map((a) => a.text.slice(0, 40)) });
+                onSynthHighlightsReady={(anchors, key) => {
+                    const current = pageTruthKeyRef.current;
+                    if (key !== current) {
+                      console.warn("[WIRE] rejected stale anchors", { from: key, current, count: anchors.length });
+                      return;
+                    }
+                    console.log("[WIRE] anchors accepted", { key, count: anchors.length, texts: anchors.map((a) => a.text.slice(0, 40)) });
                     setSynthAiHighlights(anchors);
                   }}
-                onStudyModelReady={(model) => setCurrentPageStudyModel(model)}
+                onStudyModelReady={(model, key) => {
+                    const current = pageTruthKeyRef.current;
+                    if (key !== current) {
+                      console.warn("[WIRE] rejected stale studyModel", { from: key, current });
+                      return;
+                    }
+                    console.log("[WIRE] studyModel accepted", { key, page: model.page });
+                    setCurrentPageStudyModel(model);
+                  }}
                 onCrossLinkNavigate={(page) => syncToPage(page, { reason: "TOC_JUMP" })}
                 tocItems={tocItemsForSearch}
               />
