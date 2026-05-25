@@ -470,10 +470,15 @@ export function buildStage1SystemPrompt(domain: PageDomain): string {
    • Question 3: fill-in-the-blank or trap — fill-blank: phrase with key term blanked; trap: "what is the common mistake?" with correction.
    Include a 1-sentence explanation for each.
 
-4. preReadRecallItems — 2–3 BEFORE-reading prediction questions (activate prior knowledge, not test comprehension):
-   • Question 1: multiple-choice — what might a student with prior coursework already know about this topic?
-   • Question 2: short-answer prediction — "What do you think X means/causes?"
-   • Question 3 (optional): fill-in-the-blank or trap from prior courses.
+4. preReadRecallItems — 2–3 BEFORE-reading prediction questions.
+   Goal: activate prior knowledge — NOT test comprehension of this page.
+   CRITICAL: Questions must name the SPECIFIC concept, term, or mechanism from this page.
+   BAD: "What is the key concept on this page?" — generic, discard.
+   GOOD: "What do you know about how elements differ from compounds?" — specific to this page.
+   GOOD: "What do you predict happens when sodium and chlorine combine?" — page-specific prediction.
+   • Question 1: multiple-choice — 4 options; tests what a prepared student might already know about this topic.
+   • Question 2: short-answer prediction — "What do you predict about [specific concept from this page]?"
+   • Question 3 (optional): fill-in-the-blank or trap from prior courses on the same topic.
    correctAnswer: what a student who already knows this topic would say.
    Return null if the page is too introductory to have meaningful prior-knowledge questions.
 
