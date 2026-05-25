@@ -810,8 +810,11 @@ export default function ThoughtUnitReader() {
   // Ref always reflects the latest pageTruthKey so callbacks can validate against it.
   const pageTruthKeyRef = useRef(pageTruthKey);
   useEffect(() => { pageTruthKeyRef.current = pageTruthKey; }, [pageTruthKey]);
-  // Clear stale highlights immediately when pageTruthKey changes (not just currentPage).
-  useEffect(() => { setSynthAiHighlights([]); }, [pageTruthKey]);
+  // Clear stale synthesis state immediately when pageTruthKey changes (not just currentPage).
+  useEffect(() => {
+    setSynthAiHighlights([]);
+    setCurrentPageStudyModel(null);
+  }, [pageTruthKey]);
 
   const focusIntegrity = focusInterruptions === 0 ? "uninterrupted" : focusInterruptions === 1 ? "interrupted once" : "interrupted multiple times";
   const focusScore = Math.max(0, 100 - (focusInterruptions * 12));
