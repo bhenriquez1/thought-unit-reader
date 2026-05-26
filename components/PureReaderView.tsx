@@ -276,6 +276,7 @@ export default function PureReaderView({
           })()}
           highlightNeighborhoods={undefined}
           highlightKey={`${currentPage}:${effectiveHighlightTargets?.map(t => t.text).join("|") ?? ""}`}
+          authorizedHighlightIds={effectiveHighlightTargets?.map(t => t.evidenceRefId) ?? []}
           focusedEvidenceId={focusedEvidenceId}
           onEvidenceFocus={onEvidenceFocus}
           isPageChanging={isPageChanging}

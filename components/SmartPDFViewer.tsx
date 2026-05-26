@@ -134,6 +134,13 @@ export interface SmartPDFViewerProps {
    * preventing stale rectangles from surviving the async locate+retry window.
    */
   highlightKey?: string;
+  /**
+   * Hard render-time guard: only overlay rects whose id starts with one of these
+   * strings are shown. Any rect whose source anchor is no longer in the current
+   * authorized set is suppressed — even if it survived in overlayRects state.
+   * Pass the evidenceRefIds from the current effectiveHighlightTargets.
+   */
+  authorizedHighlightIds?: string[];
 }
 
 /** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
@@ -207,6 +214,7 @@ export default function SmartPDFViewer({
   onReadingPath,
   roleLabelByConceptId,
   highlightKey,
+  authorizedHighlightIds,
 }: SmartPDFViewerProps) {
   // Stable key root: prefer explicit docId, fall back to fileUrl
   const pageKeyRoot = docId ?? fileUrl;
@@ -1040,7 +1048,24 @@ export default function SmartPDFViewer({
                     />
                   ) : (
                     <PdfEvidenceOverlay
-                      rects={overlayRects}
+                      rects={(() => {
+                        // Hard render-time guard: suppress any rect not in the current authorized set.
+                        // authorizedHighlightIds comes from effectiveHighlightTargets so it always
+                        // reflects the live studyModel anchors — stale rects are invisible even if
+                        // they survived in overlayRects state past a highlightKey change.
+                        if (!authorizedHighlightIds || authorizedHighlightIds.length === 0) {
+                          if (overlayRects.length > 0) {
+                            console.log("[PDF] guard: no authorized IDs — suppressing", overlayRects.length, "rects");
+                          }
+                          return [];
+                        }
+                        const allowed = new Set(authorizedHighlightIds.flatMap(id => [id, ...overlayRects.map(r => r.id).filter(rid => rid.startsWith(id))]));
+                        const guarded = overlayRects.filter(r => allowed.has(r.id));
+                        if (guarded.length !== overlayRects.length) {
+                          console.log("[PDF] guard filtered", overlayRects.length, "→", guarded.length, "rects");
+                        }
+                        return guarded;
+                      })()}
                       focusedId={focusedEvidenceId}
                       onFocus={onEvidenceFocus}
                     />
