@@ -352,6 +352,13 @@ export default function SmartPDFViewer({
       return;
     }
 
+    // Clear stale rects immediately before starting async matching.
+    // Without this, old highlight rectangles persist in state for the entire
+    // retry window (~10 attempts × 140ms) whenever new anchors fail to match
+    // on the first try (e.g. text layer not yet painted).
+    setOverlayRects([]);
+    setGuidedOverlayData(null);
+
     let attempts = 0;
     let cancelled = false;
 
