@@ -7,6 +7,8 @@ import type { MiniTestItem } from "@/lib/insights/synthesizeTeachingOutput";
 export type CurrentPageStudyModel = {
   page: number;
   bookId: string;
+  /** pageTruthKey under which this model was synthesized — used for render-time staleness guard */
+  pageTruthKey?: string;
   pageThesis: string;
   studyNotes: {
     whyThisMatters: string | null;
