@@ -246,6 +246,45 @@ STAGE 3 — RANK ALL CANDIDATE SPANS:
   • Visual importance     — is this what the page's structure is pointing toward?
   Discard the bottom 80% of candidates. Only the top 2–4 survive (5–6 only for dense pages).
 
+  UNIVERSAL SPECIFICITY SCORING (mandatory — applies to every subject):
+  Score each span using these criteria before selecting. Higher = better anchor.
+
+  BOOST (+) — prefer spans with:
+  + Multiple content words — longer specific phrases encode more information than short ones
+  + Rare terms on this page — if a word appears only once on the page, it's high-information
+  + Causal connectors — "causes", "leads to", "results in", "because", "inhibits", "activates",
+    "converts", "depends on", "requires", "triggers", "prevents", "reduces", "increases"
+  + Numbers, thresholds, values — "200 mg", "40%", "pH 7.4", "≤ 3 days", formulas, ratios
+  + Contrast/exception language — "however", "unlike", "not", "except", "whereas", "contrast",
+    "but", "although", "despite", "while X, Y"
+  + Subject-specific named entities — molecule names, disease names, people, places, dates,
+    clinical terms, theorem names, chemical symbols, gene names, legal terms
+
+  PENALIZE (−) — downrank spans with:
+  − Isolated generic nouns with no predicate — "elements", "compounds", "cells", "organisms",
+    "matter", "substances", "structures", "properties", "processes" → LOW VALUE
+  − Topic-announcement sentences — "This chapter discusses...", "In this section we will...",
+    "The following concepts..." → DISCARD
+  − Terms that repeat ≥ 5× as standalone words on the page → low rarity = low specificity
+  − Heading-only text — a title or subheading without a predicate → LOW VALUE
+  − Introductory definitions of universally known concepts ("An element is a substance")
+    unless the page's entire thesis revolves around that specific definition
+
+  SUBJECT GUIDANCE (same universal scoring — subject varies the vocabulary, not the logic):
+  Science/medicine  → prefer: specific mechanism chains, named molecules/diseases, dose thresholds,
+                       causal statements. Avoid: taxonomy lists, broad chapter openers.
+  Math/physics      → prefer: theorem conditions, inequality statements, limit definitions,
+                       worked-step logic ("if ε > 0, there exists δ..."). Avoid: notation intros.
+  Clinical/dental   → prefer: diagnosis rules, contraindications, decision thresholds, traps.
+                       Avoid: anatomy lists without clinical implication.
+  History/social    → prefer: thesis + cause-effect chains + pivotal dates/names + contrasts.
+                       Avoid: neutral chronology without interpretation.
+  General nonfiction → prefer: central claim, mechanism, worked example, misconception.
+                       Avoid: table-of-contents sentences.
+
+  The question every span must answer: "Which source sentence BEST PROVES the right-panel card?"
+  If a span is merely related to the topic instead of proving the mechanism/thesis/trap — DISCARD.
+
 STAGE 4 — SELECT FINAL HIGHLIGHTS (RECONSTRUCTION TEST):
   From your top candidates, keep only spans that together satisfy:
   "Could a student reconstruct the full page from these highlights alone, without rereading?"
@@ -309,6 +348,12 @@ ROLE LOGIC (abstract — apply to every page, every book):
 • A repeat of information covered by another selected anchor → DISCARD
 • Publisher debris (copyright, chapter headers, page numbers) → DISCARD
 • A narrow local detail when the page teaches the whole process
+• A single generic noun without a predicate or causal chain → DISCARD
+  ("Elements", "Compounds", "Cells", "Matter" as standalone anchors = DISCARD)
+• The first sentence of a chapter/section opener that only announces the topic → DISCARD
+  ("Chemistry is the study of...", "In this chapter we examine elements..." = DISCARD)
+• Any span whose sole content word appears ≥ 5 times on this page as a standalone term
+  → prefer a rarer, more specific span from the same page
 
 FAILURE MODE (avoid): Selecting a mechanism sentence that misses the page-level teaching.
 Example (wrong for a page about adaptation): highlighting "Nickel ions inhibit enzyme activity"

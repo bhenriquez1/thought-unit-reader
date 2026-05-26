@@ -13,6 +13,76 @@ import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 import type { HighlightTarget } from '@/lib/readerContracts';
 
+// Universal specificity scorer — subject-agnostic ranking of anchor quality.
+// Higher score = more specific, more informative, better highlight candidate.
+// This is a client-side guard: OpenAI already applies similar logic, but this
+// catches anything that slips through and reorders anchors before rendering.
+function universalSpecificityScore(
+  text: string,
+  pageText: string,
+  anchorType: string
+): number {
+  let score = 0;
+  const lower = text.toLowerCase().trim();
+  const words = lower.split(/\s+/).filter(Boolean);
+
+  // Token length: longer phrases are more specific (cap at 24pts for 12+ words)
+  score += Math.min(words.length * 2, 24);
+
+  // Causal / relational language
+  if (/\b(causes?|caused by|leads? to|results? in|because|therefore|due to|since|thus|hence|produces?|triggers?|inhibits?|activates?|stimulates?|converts?|transforms?|prevents?|blocks?|reduces?|increases?|decreases?|promotes?|requires?|depends? on|is responsible for|accounts? for|underlies?|mediates?)\b/.test(lower)) {
+    score += 8;
+  }
+
+  // Numbers, thresholds, formulas, units
+  if (/\d/.test(text)) score += 6;
+  if (/%|mg|ml|mmol|μg|μmol|≤|≥|>|<|°C|°F|pH\s*\d/.test(text)) score += 4;
+
+  // Contrast / exception language
+  if (/\b(however|but|unlike|not\b|except|contrast|versus|vs\.|differ|whereas|although|despite|while\b|rather than|instead of)\b/.test(lower)) {
+    score += 5;
+  }
+
+  // Internal capitalized words (named entities: molecules, diseases, people, places)
+  const wordTokens = text.trim().split(/\s+/);
+  const internalCaps = wordTokens.slice(1).filter(w => /^[A-Z][a-z]{2,}/.test(w)).length;
+  score += Math.min(internalCaps * 3, 9);
+
+  // Role bonus: mechanism/trap/application carry more instructional weight than generic labels
+  if (anchorType === "mechanism") score += 6;
+  if (anchorType === "trap")      score += 5;
+  if (anchorType === "application") score += 4;
+
+  // Rarity penalty: words that appear many times on the page are low-information
+  if (pageText) {
+    const pageWords = pageText.toLowerCase().split(/\s+/);
+    const freq = new Map<string, number>();
+    for (const w of pageWords) freq.set(w, (freq.get(w) ?? 0) + 1);
+    const avgFreq = words.reduce((s, w) => s + (freq.get(w) ?? 0), 0) / Math.max(words.length, 1);
+    score -= Math.min(Math.floor(avgFreq / 2), 12);
+  }
+
+  // Generic isolated noun penalty
+  if (/^(elements?|compounds?|substances?|cells?|organisms?|matter|materials?|properties|processes?|structures?|functions?|types?|forms?|kinds?|ways?|parts?|units?|levels?|states?|stages?|steps?|phases?|areas?|regions?|concepts?|ideas?|topics?|objects?|systems?|components?|factors?)\.?$/.test(lower)) {
+    score -= 18;
+  }
+
+  // Chapter-opener / topic-announcement penalty
+  if (/^(in this (chapter|section|unit)|this (chapter|section) (discusses?|covers?|introduces?|examines?)|we (will|shall) (discuss|examine|study|explore|learn))/.test(lower)) {
+    score -= 15;
+  }
+
+  // Heading-only penalty: very short + all-caps or ends with colon
+  if (words.length <= 3 && (text === text.toUpperCase() || text.endsWith(':'))) score -= 10;
+
+  // Verb-less fragment penalty
+  if (words.length < 7 && !/\b(is|are|was|were|has|have|had|can|could|will|would|does|do|did|causes?|leads?|results?|produces?|inhibits?|activates?|converts?|triggers?|prevents?|depends?|requires?)\b/.test(lower)) {
+    score -= 6;
+  }
+
+  return score;
+}
+
 interface PureReaderViewProps {
   fileUrl: string | null;
   /** Stable document ID forwarded to SmartPDFViewer for reliable Page keying */
@@ -89,34 +159,51 @@ export default function PureReaderView({
   const effectiveHighlightTargets: HighlightTarget[] = (() => {
     if (!aiHighlightAnchors?.length) return [];
 
-    const aiTargets: HighlightTarget[] = aiHighlightAnchors.map((a, i) => ({
+    // Score and rank by universal specificity before any filtering
+    const scored = aiHighlightAnchors.map((a, i) => ({
+      anchor: a,
+      originalIndex: i,
+      specScore: universalSpecificityScore(a.text, pageText || "", a.anchorType),
+    })).sort((a, b) => b.specScore - a.specScore);
+
+    console.log("[ANCHOR_RANK]", scored.map(s => ({
+      text:      s.anchor.text.slice(0, 70),
+      type:      s.anchor.anchorType,
+      score:     s.specScore,
+    })));
+
+    const aiTargets: HighlightTarget[] = scored.map((s, i) => ({
           id:                   `ai-anchor-${i}`,
           page:                 currentPage,
-          text:                 a.text,
+          text:                 s.anchor.text,
           // Pass raw text — SmartPDFViewer applies normForMatch() before matching,
           // which handles ligatures (ﬁ→fi) correctly. Pre-normalizing here would
           // strip ligatures to nothing before normForMatch can convert them.
-          normalizedText:       a.text,
+          normalizedText:       s.anchor.text,
           level:                "important" as const,
           score:                100 - i,
           sourceParagraphIndex: 0,
-          kind:                 anchorTypeToKind(a.anchorType),
+          kind:                 anchorTypeToKind(s.anchor.anchorType),
           evidenceRefId:        `ai-anchor-${i}`,
         }));
 
     // Validate: reject anchors whose text does not appear in the current raw page text.
     // This prevents template/example phrases from the prompt from leaking as highlights.
-    const validated = (pageText && pageText.length > 0)
+    const norm = (s: string) =>
+      s.toLowerCase()
+        .replace(/ﬁ/g, 'fi').replace(/ﬂ/g, 'fl')
+        .replace(/ﬀ/g, 'ff').replace(/ﬃ/g, 'ffi')
+        .replace(/['']/g, "'").replace(/[""]/g, '"')
+        .replace(/[–—]/g, '-').replace(/\s+/g, ' ').trim();
+    const normedPage = pageText ? norm(pageText) : "";
+
+    const validated = (normedPage.length > 0)
       ? aiTargets.filter((t) => {
-          const norm = (s: string) =>
-            s.toLowerCase()
-              .replace(/ﬁ/g, 'fi').replace(/ﬂ/g, 'fl')
-              .replace(/ﬀ/g, 'ff').replace(/ﬃ/g, 'ffi')
-              .replace(/['']/g, "'").replace(/[""]/g, '"')
-              .replace(/[–—]/g, '-').replace(/\s+/g, ' ').trim();
-          const found = norm(pageText).includes(norm(t.text));
+          const found = normedPage.includes(norm(t.text));
           if (!found) {
-            console.warn("[HIGHLIGHT:rejected] not found in page text:", t.text.slice(0, 60));
+            console.warn("[ANCHOR_REJECTED_GENERIC] not found in page text:", t.text.slice(0, 60));
+          } else {
+            console.log("[ANCHOR_SELECTED]", { text: t.text.slice(0, 70), kind: t.kind, score: scored.find(s => s.anchor.text === t.text)?.specScore });
           }
           return found;
         })
