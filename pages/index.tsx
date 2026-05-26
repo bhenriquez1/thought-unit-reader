@@ -2708,15 +2708,10 @@ export default function ThoughtUnitReader() {
                   fontFamily={fontFamily}
                   onActiveParagraphChange={handleActiveParagraphChange}
                   focusSnippet={focusSnippet}
-                  highlightTargets={highlightTargets}
-                  highlightNeighborhoods={undefined}
-                  aiHighlightTexts={safeHighlightAnchors.map(a => a.text)}
                   aiHighlightAnchors={safeHighlightAnchors}
                   synthStatus={safeHighlightAnchors.length > 0 ? "ready" : "loading"}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
-                  onReadingPath={setGuidedPath}
-                  roleLabelByConceptId={roleLabelByConceptId}
                   onOpenFocusCycle={() => {
                     bindFocusCycleContext({
                       documentId: bookId,
@@ -2763,16 +2758,6 @@ export default function ThoughtUnitReader() {
                   setFocusedEvidenceId(evidenceId || resolveEvidenceId(snippet) || null);
                   window.setTimeout(() => setFocusSnippet(snippet), 0);
                 }}
-                onSynthHighlightsReady={(anchors, key) => {
-                    // studyModel is the authoritative source — do NOT set highlights from the Stage 1 fast path.
-                    // Logging only so we can verify Stage 1 fired correctly.
-                    const current = pageTruthKeyRef.current;
-                    if (key !== current) {
-                      console.warn("[WIRE] rejected stale anchors (fast path)", { from: key, current, count: anchors.length });
-                      return;
-                    }
-                    console.log("[WIRE] anchors fast-path received (studyModel will apply)", { key, count: anchors.length });
-                  }}
                 onStudyModelReady={(model, key) => {
                     const current = pageTruthKeyRef.current;
                     if (key !== current) {

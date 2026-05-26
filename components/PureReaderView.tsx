@@ -12,7 +12,6 @@ import React, { useCallback, useState } from 'react';
 import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 import type { HighlightTarget } from '@/lib/readerContracts';
-import type { HighlightNeighborhood } from '@/lib/highlights/buildHighlightNeighborhoods';
 
 interface PureReaderViewProps {
   fileUrl: string | null;
@@ -29,11 +28,7 @@ interface PureReaderViewProps {
   /** Forwarded to SmartPDFViewer for scroll → active paragraph detection */
   onActiveParagraphChange?: (snippet: string | null) => void;
   focusSnippet?: string | null;
-  highlightTargets?: HighlightTarget[];
-  highlightNeighborhoods?: HighlightNeighborhood[];
-  /** AI-selected anchor texts from synthesis — when present, displayed as a separate highlight tier */
-  aiHighlightTexts?: string[];
-  /** Full anchor objects from synthesis — preferred over aiHighlightTexts; includes anchorType for legend */
+  /** Highlight anchors from currentPageStudyModel — single source of truth */
   aiHighlightAnchors?: import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[];
   focusedEvidenceId?: string | null;
   onEvidenceFocus?: (id: string) => void;
@@ -59,9 +54,6 @@ export default function PureReaderView({
   fontFamily = 'Georgia',
   onActiveParagraphChange,
   focusSnippet,
-  highlightTargets,
-  highlightNeighborhoods,
-  aiHighlightTexts,
   aiHighlightAnchors,
   focusedEvidenceId,
   onEvidenceFocus,
@@ -92,16 +84,12 @@ export default function PureReaderView({
     }
   };
 
-  // When AI anchors exist, convert them to HighlightTarget[] and suppress heuristic main highlights.
-  // Prefer full anchor objects (aiHighlightAnchors) over plain text (aiHighlightTexts).
-  // AI anchors take precedence; heuristic "support"/"additional"/"trap" tiers are kept as-is.
-  const effectiveHighlightTargets: HighlightTarget[] | undefined = (() => {
-    const anchors = aiHighlightAnchors?.length ? aiHighlightAnchors : null;
-    const texts   = !anchors && aiHighlightTexts?.length ? aiHighlightTexts : null;
-    if (!anchors && !texts) return []; // No heuristic fallback — OpenAI owns the left panel
+  // Convert aiHighlightAnchors (from currentPageStudyModel) to HighlightTarget[].
+  // No fallback paths — studyModel is the single source of truth.
+  const effectiveHighlightTargets: HighlightTarget[] = (() => {
+    if (!aiHighlightAnchors?.length) return [];
 
-    const aiTargets: HighlightTarget[] = anchors
-      ? anchors.map((a, i) => ({
+    const aiTargets: HighlightTarget[] = aiHighlightAnchors.map((a, i) => ({
           id:                   `ai-anchor-${i}`,
           page:                 currentPage,
           text:                 a.text,
@@ -113,17 +101,6 @@ export default function PureReaderView({
           score:                100 - i,
           sourceParagraphIndex: 0,
           kind:                 anchorTypeToKind(a.anchorType),
-          evidenceRefId:        `ai-anchor-${i}`,
-        }))
-      : texts!.map((text, i) => ({
-          id:                   `ai-anchor-${i}`,
-          page:                 currentPage,
-          text,
-          normalizedText:       text,
-          level:                "important" as const,
-          score:                100 - i,
-          sourceParagraphIndex: 0,
-          kind:                 "definition" as const,
           evidenceRefId:        `ai-anchor-${i}`,
         }));
 
@@ -146,13 +123,12 @@ export default function PureReaderView({
       : aiTargets;
 
     console.log("[HIGHLIGHT:converted]", {
-      source: anchors ? "anchors" : "texts",
       total: aiTargets.length,
       valid: validated.length,
       rejected: aiTargets.length - validated.length,
       kinds: validated.map((t) => t.kind),
     });
-    return validated; // OpenAI owns the left panel — no heuristic mixing
+    return validated;
   })();
 
   const navigateToPage = useCallback((page: number) => {
