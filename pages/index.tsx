@@ -431,13 +431,11 @@ export default function ThoughtUnitReader() {
   const [roleLabelByConceptId, setRoleLabelByConceptId] = useState<Map<string, string>>(new Map());
   // AI-selected highlight anchors from synthesis — cleared immediately on page change.
   // Full anchor objects (not just strings) so anchorType can drive legend colors.
-  const [synthAiHighlights, setSynthAiHighlights] = useState<import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[]>([]);
   // Shared typed study model — emitted by RightPanel when synthesis resolves.
   const [currentPageStudyModel, setCurrentPageStudyModel] = useState<import("@/lib/insights/currentPageStudyModel").CurrentPageStudyModel | null>(null);
 
   // Clear stale synthesis state immediately when the user navigates to a new page.
   useEffect(() => {
-    setSynthAiHighlights([]);
     setCurrentPageStudyModel(null);
   }, [currentPage]);
 
@@ -812,7 +810,6 @@ export default function ThoughtUnitReader() {
   useEffect(() => { pageTruthKeyRef.current = pageTruthKey; }, [pageTruthKey]);
   // Clear stale synthesis state immediately when pageTruthKey changes (not just currentPage).
   useEffect(() => {
-    setSynthAiHighlights([]);
     setCurrentPageStudyModel(null);
   }, [pageTruthKey]);
 
@@ -829,7 +826,6 @@ export default function ThoughtUnitReader() {
     if (activeShellTab !== "reader") return;
     setFocusedEvidenceId(null);
     setFocusSnippet(null);
-    setSynthAiHighlights([]);  // clear AI anchors immediately on page change
     const topSnippet = currentSignals.paragraphSignals?.[0]?.text;
     if (!topSnippet) return;
     const timer = window.setTimeout(() => setFocusSnippet(topSnippet), 0);
@@ -2698,7 +2694,7 @@ export default function ThoughtUnitReader() {
             {/* Left: PDF Reader */}
             {fileUrl && (
               <div className="h-full w-[68%] min-w-[600px] overflow-y-auto border-r border-gray-700">
-                {console.log("[PDF-PROPS]", { currentPage, studyModelPage: currentPageStudyModel?.page, count: pdfHighlightAnchors.length, texts: pdfHighlightAnchors.map(a => a.text.slice(0, 50)) }) as unknown as null}
+                {console.log("[PDF-PROPS]", { currentPage, studyModelPage: currentPageStudyModel?.page, count: safeHighlightAnchors.length, texts: safeHighlightAnchors.map(a => a.text.slice(0, 50)) }) as unknown as null}
                 <PureReaderView
                   fileUrl={fileUrl}
                   docId={bookId}
@@ -2714,9 +2710,9 @@ export default function ThoughtUnitReader() {
                   focusSnippet={focusSnippet}
                   highlightTargets={highlightTargets}
                   highlightNeighborhoods={undefined}
-                  aiHighlightTexts={pdfHighlightAnchors.map(a => a.text)}
-                  aiHighlightAnchors={pdfHighlightAnchors}
-                  synthStatus={pdfHighlightAnchors.length > 0 ? "ready" : "loading"}
+                  aiHighlightTexts={safeHighlightAnchors.map(a => a.text)}
+                  aiHighlightAnchors={safeHighlightAnchors}
+                  synthStatus={safeHighlightAnchors.length > 0 ? "ready" : "loading"}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
                   onReadingPath={setGuidedPath}
@@ -2948,10 +2944,10 @@ export default function ThoughtUnitReader() {
   // Single source of truth for left-panel highlights: currentPageStudyModel only.
   // Page guard ensures a stale model from a previous page never renders.
   // pageTruthKey is NOT checked here — it is already validated in onStudyModelReady before setCurrentPageStudyModel is called.
-  const pdfHighlightAnchors = (currentPageStudyModel?.page === currentPage)
+  const safeHighlightAnchors = (currentPageStudyModel?.page === currentPage)
     ? (currentPageStudyModel.highlightAnchors as import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[]) ?? []
     : [];
-  console.log("[PDF-HIGHLIGHTS]", { page: currentPage, count: pdfHighlightAnchors.length, texts: pdfHighlightAnchors.map(a => a.text.slice(0, 50)) });
+  console.log("[PDF-HIGHLIGHTS]", { page: currentPage, count: safeHighlightAnchors.length, texts: safeHighlightAnchors.map(a => a.text.slice(0, 50)) });
 
   return (
     <div className={`h-screen overflow-hidden flex flex-col ${themeMode === "dark" ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-900"} ${readingMode === "dyslexia" ? "tracking-wide leading-8" : "leading-6"}`} style={{ fontFamily }}>
@@ -3292,7 +3288,7 @@ export default function ThoughtUnitReader() {
         <div className="fixed bottom-[80px] right-6 z-40 flex flex-col gap-3 max-w-[170px] opacity-90">
           {/* Highlight color legend — dynamic from OpenAI anchor types present on this page */}
           {(() => {
-            if (!pdfHighlightAnchors.length) return null;
+            if (!safeHighlightAnchors.length) return null;
 
             // Colors match PdfEvidenceOverlay.priorityClassName
             type AnchorLegendDef = { color: string; label: string; description: string };
@@ -3313,7 +3309,7 @@ export default function ThoughtUnitReader() {
             const priorityOrder = ["thesis", "definition", "mechanism", "application", "trap",
               "memoryAnchor", "examSignal", "formula", "clinicalTrap"]; // old types last for compat
             const presentTypes = new Map<string, number>(); // anchorType → count
-            for (const anchor of pdfHighlightAnchors) {
+            for (const anchor of safeHighlightAnchors) {
               presentTypes.set(anchor.anchorType, (presentTypes.get(anchor.anchorType) ?? 0) + 1);
             }
             // Build legend entries, deduplicating by color (merge compat aliases into canonical role)
