@@ -2787,6 +2787,7 @@ export default function ThoughtUnitReader() {
                       key,
                       page: model.page,
                       anchors: model.highlightAnchors.length,
+                      anchorTexts: model.highlightAnchors.map(a => a.text.slice(0, 60)),
                       anchorTypes: model.highlightAnchors.map(a => a.anchorType),
                     });
                     // Embed pageTruthKey so the render-time guard can verify this model is current.
