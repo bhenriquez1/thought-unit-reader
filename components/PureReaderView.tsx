@@ -12,6 +12,7 @@ import React, { useCallback, useState } from 'react';
 import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 import type { HighlightTarget } from '@/lib/readerContracts';
+import { groundHighlightAnchors } from '@/lib/highlights/groundHighlightAnchors';
 
 // Universal specificity scorer — subject-agnostic ranking of anchor quality.
 // Higher score = more specific, more informative, better highlight candidate.
@@ -159,11 +160,18 @@ export default function PureReaderView({
   const effectiveHighlightTargets: HighlightTarget[] = (() => {
     if (!aiHighlightAnchors?.length) return [];
 
-    // Score and rank by universal specificity before any filtering
-    const scored = aiHighlightAnchors.map((a, i) => ({
+    // ── Grounding layer ───────────────────────────────────────────────────
+    // Replace semantic/paraphrased anchors with exact PDF source text.
+    // Anchors that cannot be grounded (no exact/normalized/recovered match)
+    // are dropped — a wrong highlight is worse than no highlight.
+    const groundedAnchors = groundHighlightAnchors(aiHighlightAnchors, pageText || "");
+    if (!groundedAnchors.length) return [];
+
+    // Score and rank grounded anchors by universal specificity
+    const scored = groundedAnchors.map((a, i) => ({
       anchor: a,
       originalIndex: i,
-      specScore: universalSpecificityScore(a.text, pageText || "", a.anchorType),
+      specScore: universalSpecificityScore(a.groundedText, pageText || "", a.anchorType),
     })).sort((a, b) => b.specScore - a.specScore);
 
     console.log("[ANCHOR_RANK]", scored.map(s => ({
@@ -175,11 +183,10 @@ export default function PureReaderView({
     const aiTargets: HighlightTarget[] = scored.map((s, i) => ({
           id:                   `ai-anchor-${i}`,
           page:                 currentPage,
-          text:                 s.anchor.text,
-          // Pass raw text — SmartPDFViewer applies normForMatch() before matching,
-          // which handles ligatures (ﬁ→fi) correctly. Pre-normalizing here would
-          // strip ligatures to nothing before normForMatch can convert them.
-          normalizedText:       s.anchor.text,
+          // Use groundedText — exact or recovered from pageText — so SmartPDFViewer
+          // can always locate it in the PDF canvas text layer.
+          text:                 s.anchor.groundedText,
+          normalizedText:       s.anchor.groundedText,
           level:                "important" as const,
           score:                100 - i,
           sourceParagraphIndex: 0,
@@ -203,7 +210,7 @@ export default function PureReaderView({
           if (!found) {
             console.warn("[ANCHOR_REJECTED_GENERIC] not found in page text:", t.text.slice(0, 60));
           } else {
-            console.log("[ANCHOR_SELECTED]", { text: t.text.slice(0, 70), kind: t.kind, score: scored.find(s => s.anchor.text === t.text)?.specScore });
+            console.log("[ANCHOR_SELECTED]", { text: t.text.slice(0, 70), kind: t.kind, score: scored.find(s => s.anchor.groundedText === t.text)?.specScore });
           }
           return found;
         })
