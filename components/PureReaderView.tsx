@@ -274,7 +274,7 @@ export default function PureReaderView({
             console.log("[WIRE] SmartPDFViewer anchors", { page: currentPage, count: effectiveHighlightTargets?.length ?? 0 });
             return effectiveHighlightTargets;
           })()}
-          highlightNeighborhoods={aiHighlightAnchors?.length ? undefined : highlightNeighborhoods}
+          highlightNeighborhoods={undefined}
           focusedEvidenceId={focusedEvidenceId}
           onEvidenceFocus={onEvidenceFocus}
           isPageChanging={isPageChanging}

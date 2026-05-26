@@ -2712,7 +2712,7 @@ export default function ThoughtUnitReader() {
                   onActiveParagraphChange={handleActiveParagraphChange}
                   focusSnippet={focusSnippet}
                   highlightTargets={highlightTargets}
-                  highlightNeighborhoods={highlightNeighborhoods}
+                  highlightNeighborhoods={undefined}
                   aiHighlightTexts={pdfHighlightAnchors.map(a => a.text)}
                   aiHighlightAnchors={pdfHighlightAnchors}
                   synthStatus={pdfHighlightAnchors.length > 0 ? "ready" : "loading"}
@@ -2943,14 +2943,13 @@ export default function ThoughtUnitReader() {
     };
   }, []);
 
-  // Hard render-time guard: only expose highlights when studyModel page AND pageTruthKey match.
-  // Two-key check ensures a model synthesized for a different page or an earlier pageTruthKey
-  // (e.g., before pageText was ready) can never render on the current page.
-  const pdfHighlightAnchors = (
-    currentPageStudyModel?.page === currentPage &&
-    currentPageStudyModel?.pageTruthKey === pageTruthKey
-  ) ? (currentPageStudyModel.highlightAnchors as import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[])
+  // Single source of truth for left-panel highlights: currentPageStudyModel only.
+  // Page guard ensures a stale model from a previous page never renders.
+  // pageTruthKey is NOT checked here — it is already validated in onStudyModelReady before setCurrentPageStudyModel is called.
+  const pdfHighlightAnchors = (currentPageStudyModel?.page === currentPage)
+    ? (currentPageStudyModel.highlightAnchors as import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[]) ?? []
     : [];
+  console.log("[PDF-HIGHLIGHTS]", { page: currentPage, count: pdfHighlightAnchors.length, texts: pdfHighlightAnchors.map(a => a.text.slice(0, 50)) });
 
   return (
     <div className={`h-screen overflow-hidden flex flex-col ${themeMode === "dark" ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-900"} ${readingMode === "dyslexia" ? "tracking-wide leading-8" : "leading-6"}`} style={{ fontFamily }}>
