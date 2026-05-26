@@ -2698,6 +2698,7 @@ export default function ThoughtUnitReader() {
             {/* Left: PDF Reader */}
             {fileUrl && (
               <div className="h-full w-[68%] min-w-[600px] overflow-y-auto border-r border-gray-700">
+                {console.log("[PDF-PROPS]", { currentPage, studyModelPage: currentPageStudyModel?.page, count: pdfHighlightAnchors.length, texts: pdfHighlightAnchors.map(a => a.text.slice(0, 50)) }) as unknown as null}
                 <PureReaderView
                   fileUrl={fileUrl}
                   docId={bookId}
