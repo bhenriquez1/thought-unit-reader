@@ -334,7 +334,9 @@ export default function PureReaderView({
           onActiveParagraphChange={onActiveParagraphChange}
           focusSnippet={focusSnippet}
           highlightTargets={(() => {
-            console.log("[WIRE] SmartPDFViewer anchors", { page: currentPage, count: effectiveHighlightTargets?.length ?? 0, texts: effectiveHighlightTargets?.map(t => t.text?.slice(0, 40)) ?? [] });
+            if (effectiveHighlightTargets.length === 0) {
+              console.log("[LEFT_PANEL_CLEAR] effectiveHighlightTargets empty — zero overlays", { page: currentPage });
+            }
             return effectiveHighlightTargets;
           })()}
           highlightNeighborhoods={undefined}

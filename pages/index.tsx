@@ -2694,7 +2694,7 @@ export default function ThoughtUnitReader() {
             {/* Left: PDF Reader */}
             {fileUrl && (
               <div className="h-full w-[68%] min-w-[600px] overflow-y-auto border-r border-gray-700">
-                {console.log("[PDF-PROPS]", { currentPage, studyModelPage: currentPageStudyModel?.page, count: safeHighlightAnchors.length, texts: safeHighlightAnchors.map(a => a.text.slice(0, 50)) }) as unknown as null}
+                {console.log("[LEFT_PANEL_RENDER]", { page: currentPage, anchorCount: safeHighlightAnchors.length, anchorTexts: safeHighlightAnchors.map(a => a.text.slice(0, 60)) }) as unknown as null}
                 <PureReaderView
                   fileUrl={fileUrl}
                   docId={bookId}
@@ -2926,13 +2926,19 @@ export default function ThoughtUnitReader() {
     };
   }, []);
 
-  // Single source of truth for left-panel highlights: currentPageStudyModel only.
-  // Page guard ensures a stale model from a previous page never renders.
-  // pageTruthKey is NOT checked here — it is already validated in onStudyModelReady before setCurrentPageStudyModel is called.
-  const safeHighlightAnchors = (currentPageStudyModel?.page === currentPage)
-    ? (currentPageStudyModel.highlightAnchors as import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[]) ?? []
-    : [];
-  console.log("[PDF-HIGHLIGHTS]", { page: currentPage, count: safeHighlightAnchors.length, texts: safeHighlightAnchors.map(a => a.text.slice(0, 50)) });
+  // LEFT PANEL SOURCE RULE — single source of truth, zero fallbacks.
+  // Any gap (no model, wrong page, empty anchors) produces ZERO highlights.
+  let safeHighlightAnchors: import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[] = [];
+  if (!currentPageStudyModel) {
+    console.log("[LEFT_PANEL_CLEAR] no studyModel — zero highlights");
+  } else if (currentPageStudyModel.page !== currentPage) {
+    console.log("[LEFT_PANEL_CLEAR] studyModel page mismatch", { modelPage: currentPageStudyModel.page, currentPage });
+  } else if (!currentPageStudyModel.highlightAnchors?.length) {
+    console.log("[LEFT_PANEL_CLEAR] studyModel has no anchors — zero highlights");
+  } else {
+    safeHighlightAnchors = currentPageStudyModel.highlightAnchors as import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[];
+    console.log("[LEFT_PANEL_SOURCE] studyModel only", { page: currentPage, count: safeHighlightAnchors.length, texts: safeHighlightAnchors.map(a => a.text.slice(0, 60)) });
+  }
 
   return (
     <div className={`h-screen overflow-hidden flex flex-col ${themeMode === "dark" ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-900"} ${readingMode === "dyslexia" ? "tracking-wide leading-8" : "leading-6"}`} style={{ fontFamily }}>
