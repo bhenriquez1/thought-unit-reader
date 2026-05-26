@@ -690,7 +690,7 @@ export function RightPanel({
       });
       onStudyModelReady(studyModel, pageTruthKey);
     }
-  }, [ultraPageViewWithSynthesis, studyModel, pageTruthKey, onSynthHighlightsReady, onStudyModelReady]);
+  }, [ultraPageViewWithSynthesis, studyModel, pageTruthKey, onStudyModelReady]);
 
   // Legacy concept blocks — kept for ConceptBlocksView fallback
   const readerPageView = useMemo((): ReaderPageView | null => {

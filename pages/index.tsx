@@ -2713,9 +2713,9 @@ export default function ThoughtUnitReader() {
                   focusSnippet={focusSnippet}
                   highlightTargets={highlightTargets}
                   highlightNeighborhoods={highlightNeighborhoods}
-                  aiHighlightTexts={safeHighlightAnchors.map(a => a.text)}
-                  aiHighlightAnchors={safeHighlightAnchors}
-                  synthStatus={safeHighlightAnchors.length > 0 ? "ready" : "loading"}
+                  aiHighlightTexts={pdfHighlightAnchors.map(a => a.text)}
+                  aiHighlightAnchors={pdfHighlightAnchors}
+                  synthStatus={pdfHighlightAnchors.length > 0 ? "ready" : "loading"}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
                   onReadingPath={setGuidedPath}
@@ -2788,10 +2788,9 @@ export default function ThoughtUnitReader() {
                       anchors: model.highlightAnchors.length,
                       anchorTypes: model.highlightAnchors.map(a => a.anchorType),
                     });
-                    setCurrentPageStudyModel(model);
-                    // studyModel is the sole source — always apply, even if empty (empty clears stale anchors).
-                    console.log("[WIRE] highlights←studyModel", { count: model.highlightAnchors.length, texts: model.highlightAnchors.map(a => a.text.slice(0, 40)) });
-                    setSynthAiHighlights(model.highlightAnchors as import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[]);
+                    // Embed pageTruthKey so the render-time guard can verify this model is current.
+                    setCurrentPageStudyModel({ ...model, pageTruthKey: key });
+                    console.log("[WIRE] highlights←studyModel", { key, count: model.highlightAnchors.length, texts: model.highlightAnchors.map(a => a.text.slice(0, 40)) });
                   }}
                 onCrossLinkNavigate={(page) => syncToPage(page, { reason: "TOC_JUMP" })}
                 tocItems={tocItemsForSearch}
@@ -2944,10 +2943,13 @@ export default function ThoughtUnitReader() {
     };
   }, []);
 
-  // Render-time page guard: only expose highlights when studyModel is for the current page.
-  // Prevents stale-page model from rendering after pageTruthKey clears synthAiHighlights.
-  const safeHighlightAnchors = (currentPageStudyModel?.page === currentPage)
-    ? (currentPageStudyModel.highlightAnchors as import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[])
+  // Hard render-time guard: only expose highlights when studyModel page AND pageTruthKey match.
+  // Two-key check ensures a model synthesized for a different page or an earlier pageTruthKey
+  // (e.g., before pageText was ready) can never render on the current page.
+  const pdfHighlightAnchors = (
+    currentPageStudyModel?.page === currentPage &&
+    currentPageStudyModel?.pageTruthKey === pageTruthKey
+  ) ? (currentPageStudyModel.highlightAnchors as import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[])
     : [];
 
   return (
@@ -3289,7 +3291,7 @@ export default function ThoughtUnitReader() {
         <div className="fixed bottom-[80px] right-6 z-40 flex flex-col gap-3 max-w-[170px] opacity-90">
           {/* Highlight color legend — dynamic from OpenAI anchor types present on this page */}
           {(() => {
-            if (!safeHighlightAnchors.length) return null;
+            if (!pdfHighlightAnchors.length) return null;
 
             // Colors match PdfEvidenceOverlay.priorityClassName
             type AnchorLegendDef = { color: string; label: string; description: string };
@@ -3310,7 +3312,7 @@ export default function ThoughtUnitReader() {
             const priorityOrder = ["thesis", "definition", "mechanism", "application", "trap",
               "memoryAnchor", "examSignal", "formula", "clinicalTrap"]; // old types last for compat
             const presentTypes = new Map<string, number>(); // anchorType → count
-            for (const anchor of safeHighlightAnchors) {
+            for (const anchor of pdfHighlightAnchors) {
               presentTypes.set(anchor.anchorType, (presentTypes.get(anchor.anchorType) ?? 0) + 1);
             }
             // Build legend entries, deduplicating by color (merge compat aliases into canonical role)
