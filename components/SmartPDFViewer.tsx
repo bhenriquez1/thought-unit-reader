@@ -128,6 +128,12 @@ export interface SmartPDFViewerProps {
   onReadingPath?: (path: RenderGuidedReadingPathResult | null) => void;
   /** Maps conceptId → role label ("Core", "Why", "How", "More") for badge role pills. */
   roleLabelByConceptId?: Map<string, string>;
+  /**
+   * Opaque key that changes whenever the highlight source changes (e.g. anchor texts).
+   * SmartPDFViewer immediately clears all overlay rects when this key changes,
+   * preventing stale rectangles from surviving the async locate+retry window.
+   */
+  highlightKey?: string;
 }
 
 /** Convert remote http(s) PDFs to same-origin via /api/proxy-pdf */
@@ -200,6 +206,7 @@ export default function SmartPDFViewer({
   onPageTextExtracted,
   onReadingPath,
   roleLabelByConceptId,
+  highlightKey,
 }: SmartPDFViewerProps) {
   // Stable key root: prefer explicit docId, fall back to fileUrl
   const pageKeyRoot = docId ?? fileUrl;
@@ -227,6 +234,17 @@ export default function SmartPDFViewer({
   useEffect(() => {
     if (guidedOverlayData === null) onReadingPath?.(null);
   }, [guidedOverlayData, onReadingPath]);
+
+  // Force-clear overlay rects whenever the highlight source changes.
+  // This is belt-and-suspenders on top of the per-effect clear: even if the
+  // highlight effect's dependency comparison misses a change, this key-based
+  // clear fires immediately, preventing stale rectangles from staying visible.
+  useEffect(() => {
+    if (highlightKey === undefined) return;
+    console.log("[PDF] clearing stale rects — highlightKey changed", highlightKey);
+    setOverlayRects([]);
+    setGuidedOverlayData(null);
+  }, [highlightKey]);
   const viewerRef = useRef<HTMLDivElement>(null);
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -673,9 +691,11 @@ export default function SmartPDFViewer({
         window.setTimeout(renderRects, 140 + attempts * 40);
         return;
       }
+      console.log("[PDF] rendered rect count", rects.length, "from", highlightTargets?.length ?? 0, "anchors");
       setOverlayRects(rects);
     };
 
+    console.log("[PDF] rebuilding overlay", { page: currentPage, targets: highlightTargets?.length ?? 0, highlightKey });
     window.requestAnimationFrame(renderRects);
     return () => { cancelled = true; };
   }, [highlightTargets, highlightNeighborhoods, currentPage]);
