@@ -169,6 +169,12 @@ export default function PureReaderView({
   // Anchors arrive pre-grounded — text fields contain exact PDF spans.
   // Specificity scoring is a secondary sort (tiebreaker within semantic scores).
   const effectiveHighlightTargets: HighlightTarget[] = (() => {
+    console.log("[AI_ANCHORS_ONLY_MODE]", {
+      source: "aiHighlightAnchors (finalHighlightAnchors from index.tsx)",
+      count: aiHighlightAnchors?.length ?? 0,
+      page: currentPage,
+      pageTruthKey,
+    });
     if (!aiHighlightAnchors?.length) return [];
 
     // Rank by universal specificity (secondary sort — semantic arbitration is primary)

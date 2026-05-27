@@ -709,10 +709,12 @@ export default function SmartPDFViewer({
       setOverlayRects(rects);
     };
 
-    console.log("[PDF] rebuilding overlay", { page: currentPage, targets: highlightTargets?.length ?? 0, highlightKey });
+    console.log("[OVERLAY_SOURCE_USED]", { page: currentPage, targets: highlightTargets?.length ?? 0, highlightKey, overlayVersion });
     window.requestAnimationFrame(renderRects);
     return () => { cancelled = true; };
-  }, [highlightTargets, highlightNeighborhoods, currentPage]);
+  // highlightKey must be in deps so a pageTruthKey change forces a rebuild even when
+  // highlightTargets reference is identical (e.g. both [] after clear + empty new page).
+  }, [highlightTargets, highlightNeighborhoods, currentPage, highlightKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Enhanced PDF loading with robust error handling
   const {

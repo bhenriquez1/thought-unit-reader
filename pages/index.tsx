@@ -483,6 +483,8 @@ export default function ThoughtUnitReader() {
     // Ask OpenAI to score each grounded span's educational centrality.
     // Only grounded PDF spans are sent — OpenAI arbitrates, never invents text.
     const controller = new AbortController();
+    // Capture pageTruthKey at call site — async callback validates staleness before applying results.
+    const capturedKey = pageTruthKey;
 
     (async () => {
       try {
@@ -523,13 +525,19 @@ export default function ThoughtUnitReader() {
           scores:  scored.map(s => ({ text: s.anchor.groundedText.slice(0, 60), score: s.semanticScore })),
         });
 
-        if (!controller.signal.aborted) {
-          setFinalHighlightAnchors(scored.map(s => ({
-            text:       s.anchor.groundedText,
-            anchorType: s.anchor.anchorType as SynthHighlightAnchor["anchorType"],
-            reason:     s.anchor.reason,
-          })));
+        // Staleness check: discard results if the user navigated away while fetch was in flight.
+        if (controller.signal.aborted || pageTruthKeyRef.current !== capturedKey) {
+          console.log("[SEMANTIC_ARBITER_STALE] discarding results — pageTruthKey changed during fetch", {
+            captured: capturedKey, current: pageTruthKeyRef.current,
+          });
+          return;
         }
+        setFinalHighlightAnchors(scored.map(s => ({
+          text:       s.anchor.groundedText,
+          anchorType: s.anchor.anchorType as SynthHighlightAnchor["anchorType"],
+          reason:     s.anchor.reason,
+        })));
+        console.log("[AI_ANCHORS_ONLY_MODE] stage B applied", { page: currentPage, count: scored.length, key: capturedKey });
       } catch (e: unknown) {
         const name = (e as { name?: string })?.name;
         if (name !== "AbortError") {
@@ -914,8 +922,12 @@ export default function ThoughtUnitReader() {
   const pageTruthKeyRef = useRef(pageTruthKey);
   useEffect(() => { pageTruthKeyRef.current = pageTruthKey; }, [pageTruthKey]);
   // Clear stale synthesis state immediately when pageTruthKey changes (not just currentPage).
+  // CRITICAL: also clear finalHighlightAnchors — otherwise stale anchors persist on left panel
+  // until the new studyModel arrives, which can take 2–4 seconds.
   useEffect(() => {
     setCurrentPageStudyModel(null);
+    setFinalHighlightAnchors([]);
+    console.log("[LEFT_PANEL_CLEAR] pageTruthKey changed — cleared finalHighlightAnchors", { pageTruthKey });
   }, [pageTruthKey]);
 
   const focusIntegrity = focusInterruptions === 0 ? "uninterrupted" : focusInterruptions === 1 ? "interrupted once" : "interrupted multiple times";
@@ -2799,7 +2811,14 @@ export default function ThoughtUnitReader() {
             {/* Left: PDF Reader */}
             {fileUrl && (
               <div className="h-full w-[68%] min-w-[600px] overflow-y-auto border-r border-gray-700">
-                {console.log("[LEFT_PANEL_RENDER]", { page: currentPage, anchorCount: finalHighlightAnchors.length, anchorTexts: finalHighlightAnchors.map(a => a.text.slice(0, 60)) }) as unknown as null}
+                {console.log("[LEFT_PANEL_INPUT_SOURCES]", {
+                  source: "finalHighlightAnchors only",
+                  page: currentPage,
+                  anchorCount: finalHighlightAnchors.length,
+                  anchorTexts: finalHighlightAnchors.map(a => a.text.slice(0, 60)),
+                  studyModelPage: currentPageStudyModel?.page ?? null,
+                  pageTruthKey,
+                }) as unknown as null}
                 <PureReaderView
                   fileUrl={fileUrl}
                   docId={bookId}
