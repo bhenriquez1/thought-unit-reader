@@ -2815,6 +2815,7 @@ export default function ThoughtUnitReader() {
                   focusSnippet={focusSnippet}
                   aiHighlightAnchors={finalHighlightAnchors}
                   synthStatus={finalHighlightAnchors.length > 0 ? "ready" : "loading"}
+                  pageTruthKey={pageTruthKey}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
                   onOpenFocusCycle={() => {
@@ -3380,8 +3381,8 @@ export default function ThoughtUnitReader() {
         </div>
       )}
 
-        {/* Floating Action Buttons - Bottom Left Stack */}
-        <div className="fixed bottom-[80px] right-6 z-40 flex flex-col gap-3 max-w-[170px] opacity-90">
+        {/* Utility Rail — docked to left panel bottom-left; never overlaps right panel study content */}
+        <div className="fixed bottom-[80px] left-4 z-40 flex flex-col gap-3 max-w-[160px] opacity-90">
           {/* Highlight color legend — dynamic from OpenAI anchor types present on this page */}
           {(() => {
             if (!finalHighlightAnchors.length) return null;

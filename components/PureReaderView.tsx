@@ -109,6 +109,8 @@ interface PureReaderViewProps {
   pageText?: string;
   /** Synthesis loading status — used to show "Reading page..." overlay until highlights arrive */
   synthStatus?: "loading" | "ready";
+  /** pageTruthKey from pages/index.tsx — baked into highlightKey to force overlay clear on any synthesis change */
+  pageTruthKey?: string;
 }
 
 export default function PureReaderView({
@@ -131,6 +133,7 @@ export default function PureReaderView({
   onPageTextExtracted,
   pageText,
   synthStatus,
+  pageTruthKey,
 }: PureReaderViewProps) {
   // Global zoom store
   const { zoom } = useZoomStore();
@@ -339,7 +342,7 @@ export default function PureReaderView({
             return effectiveHighlightTargets;
           })()}
           highlightNeighborhoods={undefined}
-          highlightKey={`${currentPage}:${effectiveHighlightTargets?.map(t => t.text).join("|") ?? ""}`}
+          highlightKey={`${pageTruthKey ?? ""}:${currentPage}:${effectiveHighlightTargets?.map(t => t.text).join("|") ?? ""}`}
           authorizedHighlightIds={effectiveHighlightTargets?.map(t => t.evidenceRefId) ?? []}
           focusedEvidenceId={focusedEvidenceId}
           onEvidenceFocus={onEvidenceFocus}
