@@ -48,6 +48,8 @@ import { useActivePageIntelligence } from "@/lib/useActivePageIntelligence";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { buildGuidedLegend } from "@/lib/highlights/buildGuidedLegend";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
+import { groundHighlightAnchors } from "@/lib/highlights/groundHighlightAnchors";
+import type { SynthHighlightAnchor } from "@/lib/insights/synthesizeTeachingOutput";
 
 // Cognitive Engine Components (Surgeon View 2.0)
 import {
@@ -439,6 +441,107 @@ export default function ThoughtUnitReader() {
     setCurrentPageStudyModel(null);
   }, [currentPage]);
 
+  // finalHighlightAnchors: grounded + semantically arbitrated anchors for the left panel.
+  // Deterministic grounding fires immediately (synchronous); semantic scoring refines async.
+  const [finalHighlightAnchors, setFinalHighlightAnchors] = useState<SynthHighlightAnchor[]>([]);
+
+  useEffect(() => {
+    const pageText = pageTextByPage.get(`${bookIdRef.current}:${currentPage}`) ?? "";
+
+    // Guard: same rules as [LEFT_PANEL_CLEAR]
+    if (
+      !currentPageStudyModel ||
+      currentPageStudyModel.page !== currentPage ||
+      !currentPageStudyModel.highlightAnchors?.length
+    ) {
+      setFinalHighlightAnchors([]);
+      return;
+    }
+
+    const raw = currentPageStudyModel.highlightAnchors as SynthHighlightAnchor[];
+
+    // ── Stage A: Synchronous grounding ──────────────────────────────────────
+    // Convert semantic anchors to exact PDF spans immediately.
+    // Left panel renders these deterministic results while semantic scoring runs.
+    const grounded = groundHighlightAnchors(raw, pageText);
+    const groundedAnchors: SynthHighlightAnchor[] = grounded.map(a => ({
+      text:       a.groundedText,
+      anchorType: a.anchorType as SynthHighlightAnchor["anchorType"],
+      reason:     a.reason,
+    }));
+    setFinalHighlightAnchors(groundedAnchors);
+    console.log("[LEFT_PANEL_GROUNDED]", {
+      page: currentPage,
+      input: raw.length,
+      grounded: grounded.length,
+      methods: grounded.map(a => a.groundMethod),
+    });
+
+    if (!grounded.length) return;
+
+    // ── Stage B: Async semantic arbitration ─────────────────────────────────
+    // Ask OpenAI to score each grounded span's educational centrality.
+    // Only grounded PDF spans are sent — OpenAI arbitrates, never invents text.
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const resp = await fetch("/api/score-anchors", {
+          method:  "POST",
+          signal:  controller.signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pageThesis:      currentPageStudyModel.pageThesis,
+            keyMechanism:    currentPageStudyModel.studyNotes.keyMechanism,
+            commonConfusion: currentPageStudyModel.studyNotes.commonConfusion,
+            conceptTitles:   currentPageStudyModel.conceptBlocks.slice(0, 3).map(b => b.title),
+            anchors: grounded.map(a => ({
+              text:       a.groundedText,
+              anchorType: a.anchorType,
+            })),
+          }),
+        });
+
+        if (!resp.ok || controller.signal.aborted) return;
+        const { rankings } = await resp.json() as { rankings: Array<{ text: string; semanticScore: number }> };
+
+        // Reject anchors scoring below threshold; sort by semantic score (primary)
+        const SEMANTIC_THRESHOLD = 35;
+        const scored = grounded
+          .map(a => ({
+            anchor:        a,
+            semanticScore: rankings.find(r => r.text === a.groundedText)?.semanticScore ?? 50,
+          }))
+          .filter(s => s.semanticScore >= SEMANTIC_THRESHOLD)
+          .sort((a, b) => b.semanticScore - a.semanticScore);
+
+        console.log("[SEMANTIC_ARBITER_FINAL]", {
+          page:    currentPage,
+          input:   grounded.length,
+          kept:    scored.length,
+          dropped: grounded.length - scored.length,
+          scores:  scored.map(s => ({ text: s.anchor.groundedText.slice(0, 60), score: s.semanticScore })),
+        });
+
+        if (!controller.signal.aborted) {
+          setFinalHighlightAnchors(scored.map(s => ({
+            text:       s.anchor.groundedText,
+            anchorType: s.anchor.anchorType as SynthHighlightAnchor["anchorType"],
+            reason:     s.anchor.reason,
+          })));
+        }
+      } catch (e: unknown) {
+        const name = (e as { name?: string })?.name;
+        if (name !== "AbortError") {
+          console.warn("[SEMANTIC_ARBITER] failed — keeping deterministic grounding", (e as Error)?.message);
+          // Deterministic grounded set already applied — graceful degradation
+        }
+      }
+    })();
+
+    return () => controller.abort();
+  }, [currentPageStudyModel, currentPage, pageTextByPage]);
+
   /* =========================================================================
      🔹 Unified Annotation Store (P0.1) - Shared between Surgeon View + NoteLab
   ========================================================================= */
@@ -594,6 +697,8 @@ export default function ThoughtUnitReader() {
   const [attachments, setAttachments] = useState<string[]>([]);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [bookId, setBookId] = useState<string>("default-book");
+  const bookIdRef = useRef("default-book");
+  useEffect(() => { bookIdRef.current = bookId; }, [bookId]);
   const [rightPanelState, setRightPanelState] = useState<RightPanelState>({
     ...DEFAULT_RIGHT_PANEL_STATE,
     workspaceMode: "reader",
@@ -2694,7 +2799,7 @@ export default function ThoughtUnitReader() {
             {/* Left: PDF Reader */}
             {fileUrl && (
               <div className="h-full w-[68%] min-w-[600px] overflow-y-auto border-r border-gray-700">
-                {console.log("[LEFT_PANEL_RENDER]", { page: currentPage, anchorCount: safeHighlightAnchors.length, anchorTexts: safeHighlightAnchors.map(a => a.text.slice(0, 60)) }) as unknown as null}
+                {console.log("[LEFT_PANEL_RENDER]", { page: currentPage, anchorCount: finalHighlightAnchors.length, anchorTexts: finalHighlightAnchors.map(a => a.text.slice(0, 60)) }) as unknown as null}
                 <PureReaderView
                   fileUrl={fileUrl}
                   docId={bookId}
@@ -2708,8 +2813,8 @@ export default function ThoughtUnitReader() {
                   fontFamily={fontFamily}
                   onActiveParagraphChange={handleActiveParagraphChange}
                   focusSnippet={focusSnippet}
-                  aiHighlightAnchors={safeHighlightAnchors}
-                  synthStatus={safeHighlightAnchors.length > 0 ? "ready" : "loading"}
+                  aiHighlightAnchors={finalHighlightAnchors}
+                  synthStatus={finalHighlightAnchors.length > 0 ? "ready" : "loading"}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
                   onOpenFocusCycle={() => {
@@ -3279,7 +3384,7 @@ export default function ThoughtUnitReader() {
         <div className="fixed bottom-[80px] right-6 z-40 flex flex-col gap-3 max-w-[170px] opacity-90">
           {/* Highlight color legend — dynamic from OpenAI anchor types present on this page */}
           {(() => {
-            if (!safeHighlightAnchors.length) return null;
+            if (!finalHighlightAnchors.length) return null;
 
             // Colors match PdfEvidenceOverlay.priorityClassName
             type AnchorLegendDef = { color: string; label: string; description: string };
@@ -3300,7 +3405,7 @@ export default function ThoughtUnitReader() {
             const priorityOrder = ["thesis", "definition", "mechanism", "application", "trap",
               "memoryAnchor", "examSignal", "formula", "clinicalTrap"]; // old types last for compat
             const presentTypes = new Map<string, number>(); // anchorType → count
-            for (const anchor of safeHighlightAnchors) {
+            for (const anchor of finalHighlightAnchors) {
               presentTypes.set(anchor.anchorType, (presentTypes.get(anchor.anchorType) ?? 0) + 1);
             }
             // Build legend entries, deduplicating by color (merge compat aliases into canonical role)

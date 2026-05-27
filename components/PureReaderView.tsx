@@ -12,7 +12,6 @@ import React, { useCallback, useState } from 'react';
 import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 import type { HighlightTarget } from '@/lib/readerContracts';
-import { groundHighlightAnchors } from '@/lib/highlights/groundHighlightAnchors';
 
 // Universal specificity scorer — subject-agnostic ranking of anchor quality.
 // Higher score = more specific, more informative, better highlight candidate.
@@ -155,23 +154,18 @@ export default function PureReaderView({
     }
   };
 
-  // Convert aiHighlightAnchors (from currentPageStudyModel) to HighlightTarget[].
-  // No fallback paths — studyModel is the single source of truth.
+  // Convert aiHighlightAnchors (grounded + semantically arbitrated in pages/index.tsx)
+  // into HighlightTarget[] for SmartPDFViewer.
+  // Anchors arrive pre-grounded — text fields contain exact PDF spans.
+  // Specificity scoring is a secondary sort (tiebreaker within semantic scores).
   const effectiveHighlightTargets: HighlightTarget[] = (() => {
     if (!aiHighlightAnchors?.length) return [];
 
-    // ── Grounding layer ───────────────────────────────────────────────────
-    // Replace semantic/paraphrased anchors with exact PDF source text.
-    // Anchors that cannot be grounded (no exact/normalized/recovered match)
-    // are dropped — a wrong highlight is worse than no highlight.
-    const groundedAnchors = groundHighlightAnchors(aiHighlightAnchors, pageText || "");
-    if (!groundedAnchors.length) return [];
-
-    // Score and rank grounded anchors by universal specificity
-    const scored = groundedAnchors.map((a, i) => ({
+    // Rank by universal specificity (secondary sort — semantic arbitration is primary)
+    const scored = aiHighlightAnchors.map((a, i) => ({
       anchor: a,
       originalIndex: i,
-      specScore: universalSpecificityScore(a.groundedText, pageText || "", a.anchorType),
+      specScore: universalSpecificityScore(a.text, pageText || "", a.anchorType),
     })).sort((a, b) => b.specScore - a.specScore);
 
     console.log("[ANCHOR_RANK]", scored.map(s => ({
@@ -183,10 +177,8 @@ export default function PureReaderView({
     const aiTargets: HighlightTarget[] = scored.map((s, i) => ({
           id:                   `ai-anchor-${i}`,
           page:                 currentPage,
-          // Use groundedText — exact or recovered from pageText — so SmartPDFViewer
-          // can always locate it in the PDF canvas text layer.
-          text:                 s.anchor.groundedText,
-          normalizedText:       s.anchor.groundedText,
+          text:                 s.anchor.text,  // already grounded in pages/index.tsx
+          normalizedText:       s.anchor.text,
           level:                "important" as const,
           score:                100 - i,
           sourceParagraphIndex: 0,
@@ -210,7 +202,7 @@ export default function PureReaderView({
           if (!found) {
             console.warn("[ANCHOR_REJECTED_GENERIC] not found in page text:", t.text.slice(0, 60));
           } else {
-            console.log("[ANCHOR_SELECTED]", { text: t.text.slice(0, 70), kind: t.kind, score: scored.find(s => s.anchor.groundedText === t.text)?.specScore });
+            console.log("[ANCHOR_SELECTED]", { text: t.text.slice(0, 70), kind: t.kind, score: scored.find(s => s.anchor.text === t.text)?.specScore });
           }
           return found;
         })
