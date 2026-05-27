@@ -12,6 +12,7 @@ import React, { useCallback, useState } from 'react';
 import SmartPDFViewer, { type TocItem } from './SmartPDFViewer';
 import { useZoomStore } from '@/lib/stores/zoomStore';
 import type { HighlightTarget } from '@/lib/readerContracts';
+import type { RenderGuidedReadingPathResult } from '@/lib/highlights/renderGuidedReadingPath';
 
 // Universal specificity scorer — subject-agnostic ranking of anchor quality.
 // Higher score = more specific, more informative, better highlight candidate.
@@ -111,6 +112,10 @@ interface PureReaderViewProps {
   synthStatus?: "loading" | "ready";
   /** pageTruthKey from pages/index.tsx — baked into highlightKey to force overlay clear on any synthesis change */
   pageTruthKey?: string;
+  /** Forwarded to SmartPDFViewer for guided reading path sync */
+  onReadingPath?: (path: RenderGuidedReadingPathResult | null) => void;
+  /** Maps conceptId → role label for badge role pills */
+  roleLabelByConceptId?: Map<string, string>;
 }
 
 export default function PureReaderView({
@@ -134,6 +139,8 @@ export default function PureReaderView({
   pageText,
   synthStatus,
   pageTruthKey,
+  onReadingPath,
+  roleLabelByConceptId,
 }: PureReaderViewProps) {
   // Global zoom store
   const { zoom } = useZoomStore();
@@ -219,6 +226,11 @@ export default function PureReaderView({
     });
     return validated;
   })();
+
+  // Bake pageTruthKey + anchor texts into highlightKey so SmartPDFViewer clears stale
+  // overlays whenever synthesis changes (even if anchorTexts happen to be identical).
+  const highlightKey = `${pageTruthKey ?? ""}:${currentPage}:${effectiveHighlightTargets?.map(t => t.text).join("|") ?? ""}`;
+  const authorizedHighlightIds = effectiveHighlightTargets?.map(t => t.evidenceRefId) ?? [];
 
   const navigateToPage = useCallback((page: number) => {
     if (isPageChanging || page === currentPage) return;
@@ -349,6 +361,8 @@ export default function PureReaderView({
           isPageChanging={isPageChanging}
           onPageRenderComplete={() => setIsPageChanging(false)}
           onPageTextExtracted={onPageTextExtracted}
+          onReadingPath={onReadingPath}
+          roleLabelByConceptId={roleLabelByConceptId}
         />
       </div>
     </div>

@@ -238,21 +238,27 @@ export default function SmartPDFViewer({
     neighborhoods: HighlightNeighborhood[];
     overlays: HighlightOverlayRect[];
   } | null>(null);
+  const [overlayVersion, setOverlayVersion] = useState(0);
   // Clear reading path immediately when guided data goes away (e.g. page turn).
   useEffect(() => {
     if (guidedOverlayData === null) onReadingPath?.(null);
   }, [guidedOverlayData, onReadingPath]);
 
-  // Force-clear overlay rects whenever the highlight source changes.
-  // This is belt-and-suspenders on top of the per-effect clear: even if the
-  // highlight effect's dependency comparison misses a change, this key-based
-  // clear fires immediately, preventing stale rectangles from staying visible.
+  // Hard-clear all overlay state when highlightKey changes.
+  // overlayVersion increment forces the keyed wrapper to unmount+remount, guaranteeing DOM cleanup.
   useEffect(() => {
     if (highlightKey === undefined) return;
-    console.log("[PDF] clearing stale rects — highlightKey changed", highlightKey);
+    console.log("[OVERLAY_CLEAR] highlightKey changed", { highlightKey });
     setOverlayRects([]);
     setGuidedOverlayData(null);
-  }, [highlightKey]);
+    setOverlayVersion(v => v + 1);
+  }, [highlightKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Log overlay renders for debugging.
+  useEffect(() => {
+    if (overlayRects.length > 0) {
+      console.log("[OVERLAY_RENDER]", { count: overlayRects.length, version: overlayVersion, ids: overlayRects.slice(0, 5).map(r => r.id) });
+    }
+  }, [overlayRects, overlayVersion]);
   const viewerRef = useRef<HTMLDivElement>(null);
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -1032,7 +1038,7 @@ export default function SmartPDFViewer({
               )}
 
               {(overlayRects.length > 0 || guidedOverlayData !== null) && (
-                <>
+                <React.Fragment key={`overlay-${highlightKey ?? ""}-${overlayVersion}`}>
                   {/* Dim veil sits below the evidence overlay (z-[19] < z-20).
                       Non-highlighted text recedes; decoded blocks jump forward. */}
                   <div
@@ -1055,14 +1061,14 @@ export default function SmartPDFViewer({
                         // they survived in overlayRects state past a highlightKey change.
                         if (!authorizedHighlightIds || authorizedHighlightIds.length === 0) {
                           if (overlayRects.length > 0) {
-                            console.log("[PDF] guard: no authorized IDs — suppressing", overlayRects.length, "rects");
+                            console.log("[OVERLAY_DOM_CLEANUP] no authorized IDs — suppressing", overlayRects.length, "rects");
                           }
                           return [];
                         }
                         const allowed = new Set(authorizedHighlightIds.flatMap(id => [id, ...overlayRects.map(r => r.id).filter(rid => rid.startsWith(id))]));
                         const guarded = overlayRects.filter(r => allowed.has(r.id));
                         if (guarded.length !== overlayRects.length) {
-                          console.log("[PDF] guard filtered", overlayRects.length, "→", guarded.length, "rects");
+                          console.log("[OVERLAY_DOM_CLEANUP] guard filtered", overlayRects.length, "→", guarded.length, "rects");
                         }
                         return guarded;
                       })()}
@@ -1070,7 +1076,7 @@ export default function SmartPDFViewer({
                       onFocus={onEvidenceFocus}
                     />
                   )}
-                </>
+                </React.Fragment>
               )}
 
               {/* Hidden prefetch: pre-warm react-pdf render cache for page N+1 */}
