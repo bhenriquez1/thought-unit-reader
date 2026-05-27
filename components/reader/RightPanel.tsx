@@ -387,17 +387,27 @@ export function RightPanel({
   const renderKey = pageTruthKey;
   useEffect(() => { setSelectedBlockIndex(0); }, [renderKey]);
 
-  // Cognitive density zoom — persisted in sessionStorage
-  const [rpZoom, setRpZoom] = useState<number>(() => {
-    try { return parseFloat(sessionStorage.getItem("rpZoom") ?? "1.0") || 1.0; } catch { return 1.0; }
+  // Cognitive density zoom — cycles through 4 reading modes, persisted in sessionStorage.
+  // Uses a token map so ALL cards in UltraView scale together, not just the wrapper font-size.
+  const DENSITY_TOKENS = {
+    compact: { cardPadding: "p-3",    headingText: "text-[11px]", bodyText: "text-[12px]", lineHeight: "leading-snug",    space: "space-y-2" },
+    normal:  { cardPadding: "p-4",    headingText: "text-[12px]", bodyText: "text-[13px]", lineHeight: "leading-relaxed", space: "space-y-3" },
+    focus:   { cardPadding: "p-5",    headingText: "text-[14px]", bodyText: "text-[15px]", lineHeight: "leading-7",       space: "space-y-4" },
+    deep:    { cardPadding: "p-6",    headingText: "text-[16px]", bodyText: "text-[17px]", lineHeight: "leading-8",       space: "space-y-5" },
+  } as const;
+  type DensityLevel = keyof typeof DENSITY_TOKENS;
+
+  const [rpZoom, setRpZoom] = useState<DensityLevel>(() => {
+    try { return (sessionStorage.getItem("rpDensity") as DensityLevel) || "normal"; } catch { return "normal"; }
   });
   const cycleZoom = () => {
-    const steps = [0.9, 1.0, 1.15, 1.3];
+    const steps: DensityLevel[] = ["compact", "normal", "focus", "deep"];
     const next = steps[(steps.indexOf(rpZoom) + 1) % steps.length];
     setRpZoom(next);
-    try { sessionStorage.setItem("rpZoom", String(next)); } catch {}
+    try { sessionStorage.setItem("rpDensity", next); } catch {}
   };
-  const zoomLabel = rpZoom === 0.9 ? "Compact" : rpZoom === 1.0 ? "Normal" : rpZoom === 1.15 ? "Focus" : "Deep";
+  const dt = DENSITY_TOKENS[rpZoom];
+  const zoomLabel = rpZoom === "compact" ? "Compact" : rpZoom === "normal" ? "Normal" : rpZoom === "focus" ? "Focus" : "Deep";
 
   // Loading phase cycling
   const [loadingPhase, setLoadingPhase] = useState(0);
@@ -857,7 +867,7 @@ export function RightPanel({
         </button>
       </div>
 
-      <div className="flex flex-col gap-4 p-4 text-white" style={{ fontSize: `${rpZoom}rem`, lineHeight: rpZoom >= 1.15 ? 1.8 : 1.6 }}>
+      <div className="flex flex-col gap-4 p-4 text-white">
         {/* ── WIRING CARD — dev only, never shown in production studying ── */}
         {process.env.NEXT_PUBLIC_DEBUG_READER === "true" && (
           <div style={{
@@ -942,6 +952,7 @@ export function RightPanel({
                 onCrossLinkNavigate={onCrossLinkNavigate}
                 bookId={ctx?.documentId}
                 pageNumber={ctx?.pageNumber}
+                density={dt}
               />
             </UltraViewErrorBoundary>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1308,6 +1319,7 @@ function UltraView({
   onCrossLinkNavigate,
   bookId,
   pageNumber,
+  density,
 }: {
   view: UltraPageView;
   selectedBlockIndex: number;
@@ -1318,7 +1330,9 @@ function UltraView({
   onCrossLinkNavigate?: (page: number) => void;
   bookId?: string;
   pageNumber?: number;
+  density?: { cardPadding: string; headingText: string; bodyText: string; lineHeight: string; space: string };
 }) {
+  const d = density ?? { cardPadding: "p-4", headingText: "text-[12px]", bodyText: "text-[13px]", lineHeight: "leading-relaxed", space: "space-y-3" };
   const domain = view.domain ?? view._debug?.domain;
   const labels = domainFieldLabels(domain);
   const isMathDomain = domain === "math";
@@ -1480,22 +1494,22 @@ function UltraView({
   });
 
   return (
-    <div className="space-y-4">
+    <div className={d.space}>
       {/* Page Thesis — governing concept for this page */}
       <PanelSection title="Page Thesis">
         {/* One-line summary — heuristic compressed anchor. Hidden once synthesis has completed. */}
         {synthStatus !== "success" && !hasSynth && view.oneLineSummary && (
-          <div className="mb-2 rounded-lg border border-amber-400/40 bg-amber-400/8 px-4 py-2">
-            <p className="text-[16px] font-semibold leading-6 text-amber-200">{view.oneLineSummary}</p>
+          <div className={`mb-2 rounded-lg border border-amber-400/40 bg-amber-400/8 ${d.cardPadding}`}>
+            <p className={`${d.bodyText} font-semibold ${d.lineHeight} text-amber-200`}>{view.oneLineSummary}</p>
           </div>
         )}
         {/* Page thesis — quality-gated: must be a complete thought, ≥8 words, no boilerplate */}
         {sanitizeDisplay(displayCoreIdea) && (
-          <div className="rounded-xl border border-amber-400/15 bg-[#0b1830] px-4 py-4">
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-300">
+          <div className={`rounded-xl border border-amber-400/15 bg-[#0b1830] ${d.cardPadding}`}>
+            <div className={`mb-2 ${d.headingText} font-semibold uppercase tracking-[0.16em] text-amber-300`}>
               🎯 Page Thesis
             </div>
-            <p className="text-[14px] leading-6 text-white/90">{displayCoreIdea}</p>
+            <p className={`${d.bodyText} ${d.lineHeight} text-white/90`}>{displayCoreIdea}</p>
           </div>
         )}
       </PanelSection>
@@ -1504,23 +1518,23 @@ function UltraView({
       {/* Study Notes — 5-section teaching layout (synthesis-driven) */}
       {hasSynth && synth && (
         <PanelSection title="Study Notes">
-          <div className="space-y-2">
+          <div className={d.space}>
             {/* WHY THIS MATTERS — synthesis application */}
             {synth.whyItMatters && (
-              <div className="rounded-lg border border-blue-400/15 bg-[#0a1828] px-3 py-2.5">
-                <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-300/70">
+              <div className={`rounded-lg border border-blue-400/15 bg-[#0a1828] ${d.cardPadding}`}>
+                <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-blue-300/70`}>
                   💡 Why This Matters
                 </div>
-                <p className="text-[13px] leading-5 text-white/85">{synth.whyItMatters}</p>
+                <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{synth.whyItMatters}</p>
               </div>
             )}
             {/* KEY MECHANISM — synthesis mechanism with optional logic chain */}
             {synth.keyMechanism && (
-              <div className="rounded-lg border border-emerald-400/15 bg-[#0a1820] px-3 py-2.5">
-                <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-300/70">
+              <div className={`rounded-lg border border-emerald-400/15 bg-[#0a1820] ${d.cardPadding}`}>
+                <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-emerald-300/70`}>
                   ⚙️ Key Mechanism
                 </div>
-                <p className="text-[13px] leading-5 text-white/85">{synth.keyMechanism}</p>
+                <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{synth.keyMechanism}</p>
                 {synth.reasoningFlow?.includes("→") && (
                   <p className="mt-1.5 text-[11px] font-mono leading-4 text-emerald-300/50">
                     {synth.reasoningFlow}
@@ -1530,20 +1544,20 @@ function UltraView({
             )}
             {/* COMMON CONFUSION — synthesis misconceptionAlert */}
             {synth.commonConfusion && (
-              <div className="rounded-lg border border-red-400/15 bg-[#1a0a0a] px-3 py-2.5">
-                <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-red-300/70">
+              <div className={`rounded-lg border border-red-400/15 bg-[#1a0a0a] ${d.cardPadding}`}>
+                <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-red-300/70`}>
                   ⚠️ Common Confusion
                 </div>
-                <p className="text-[13px] leading-5 text-white/85">{synth.commonConfusion}</p>
+                <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{synth.commonConfusion}</p>
               </div>
             )}
             {/* QUICK MEMORY — synthesis memoryAnchor */}
             {synth.memoryAnchor && (
-              <div className="rounded-lg border border-purple-400/15 bg-[#150b25] px-3 py-2.5">
-                <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-purple-300/70">
+              <div className={`rounded-lg border border-purple-400/15 bg-[#150b25] ${d.cardPadding}`}>
+                <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-purple-300/70`}>
                   🧠 Quick Memory
                 </div>
-                <p className="text-[13px] leading-5 text-white/85 italic">{synth.memoryAnchor}</p>
+                <p className={`${d.bodyText} ${d.lineHeight} italic text-white/85`}>{synth.memoryAnchor}</p>
               </div>
             )}
           </div>
