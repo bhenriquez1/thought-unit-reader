@@ -387,6 +387,18 @@ export function RightPanel({
   const renderKey = pageTruthKey;
   useEffect(() => { setSelectedBlockIndex(0); }, [renderKey]);
 
+  // Cognitive density zoom — persisted in sessionStorage
+  const [rpZoom, setRpZoom] = useState<number>(() => {
+    try { return parseFloat(sessionStorage.getItem("rpZoom") ?? "1.0") || 1.0; } catch { return 1.0; }
+  });
+  const cycleZoom = () => {
+    const steps = [0.9, 1.0, 1.15, 1.3];
+    const next = steps[(steps.indexOf(rpZoom) + 1) % steps.length];
+    setRpZoom(next);
+    try { sessionStorage.setItem("rpZoom", String(next)); } catch {}
+  };
+  const zoomLabel = rpZoom === 0.9 ? "Compact" : rpZoom === 1.0 ? "Normal" : rpZoom === 1.15 ? "Focus" : "Deep";
+
   // Loading phase cycling
   const [loadingPhase, setLoadingPhase] = useState(0);
   const loadingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -830,12 +842,22 @@ export function RightPanel({
     )}
     <aside className="flex h-full min-h-0 w-full flex-col overflow-y-auto border-l border-white/10 bg-[rgb(11,18,34)] break-words whitespace-normal">
       {/* Header */}
-      <div className="border-b border-white/10 px-4 py-3">
-        <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">Page Notes</div>
-        <div className="mt-0.5 text-[11px] text-slate-500">{headerStatus}</div>
+      <div className="border-b border-white/10 px-4 py-3 flex items-center justify-between">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">Page Notes</div>
+          <div className="mt-0.5 text-[11px] text-slate-500">{headerStatus}</div>
+        </div>
+        <button
+          onClick={cycleZoom}
+          title={`Cognitive density: ${zoomLabel} — click to cycle`}
+          className="flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-colors"
+        >
+          <span>🔤</span>
+          <span className="font-medium">{zoomLabel}</span>
+        </button>
       </div>
 
-      <div className="flex flex-col gap-4 p-4 text-white">
+      <div className="flex flex-col gap-4 p-4 text-white" style={{ fontSize: `${rpZoom}rem`, lineHeight: rpZoom >= 1.15 ? 1.8 : 1.6 }}>
         {/* ── WIRING CARD — dev only, never shown in production studying ── */}
         {process.env.NEXT_PUBLIC_DEBUG_READER === "true" && (
           <div style={{
@@ -1334,6 +1356,7 @@ function UltraView({
     setResolvedVideoLinks([]);
     setVideoLinksResolved(false);
     if (!relatedVideoQueries?.length) { setVideoLinksResolved(true); return; }
+    console.log("[RELATED_RESOURCES_INPUT]", { type: "video", queries: relatedVideoQueries });
     const controller = new AbortController();
     fetch("/api/resolveVideoLinks", {
       method: "POST",
@@ -1342,8 +1365,12 @@ function UltraView({
       signal: controller.signal,
     })
       .then((r) => r.json())
-      .then((data) => { setResolvedVideoLinks(data.links ?? []); setVideoLinksResolved(true); })
-      .catch(() => { setVideoLinksResolved(true); }); // error = resolved with nothing
+      .then((data) => {
+        console.log("[RELATED_RESOURCES_API_RESULT]", { type: "video", count: (data.links ?? []).length });
+        setResolvedVideoLinks(data.links ?? []);
+        setVideoLinksResolved(true);
+      })
+      .catch(() => { setVideoLinksResolved(true); });
     return () => controller.abort();
   }, [relatedVideoQueries]);
 
@@ -1356,6 +1383,7 @@ function UltraView({
     setResolvedExternalLinks([]);
     setExternalLinksResolved(false);
     if (!externalStudyLinksRaw?.length) { setExternalLinksResolved(true); return; }
+    console.log("[RELATED_RESOURCES_INPUT]", { type: "external", count: externalStudyLinksRaw.length, labels: externalStudyLinksRaw.map(l => l.label) });
     const controller = new AbortController();
     fetch("/api/resolveExternalLinks", {
       method: "POST",
@@ -1364,7 +1392,11 @@ function UltraView({
       signal: controller.signal,
     })
       .then((r) => r.json())
-      .then((data) => { setResolvedExternalLinks(data.resolved ?? []); setExternalLinksResolved(true); })
+      .then((data) => {
+        console.log("[RELATED_RESOURCES_API_RESULT]", { type: "external", count: (data.resolved ?? []).length });
+        setResolvedExternalLinks(data.resolved ?? []);
+        setExternalLinksResolved(true);
+      })
       .catch(() => { setExternalLinksResolved(true); });
     return () => controller.abort();
   }, [externalStudyLinksRaw]);
@@ -1806,50 +1838,70 @@ function UltraView({
       {/* Reading Map — hidden; SRI signals are internal metadata, not student-facing study notes */}
 
       {/* External Study Links — exact Wikipedia/resource URLs resolved by backend */}
-      {externalLinksResolved && resolvedExternalLinks.length > 0 ? (
-        <PanelSection title="External Study Links">
-          <ul className="space-y-1">
-            {resolvedExternalLinks.map((link, i) => (
-              <li key={i}>
-                <a
-                  href={link.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-start gap-2 text-[13px] text-violet-300 hover:text-violet-100 underline decoration-dotted"
-                >
-                  <span className="mt-0.5 shrink-0">{link.source === "wikipedia" ? "📖" : "🔗"}</span>
-                  <span className="flex flex-col min-w-0">
-                    <span>{link.label}</span>
-                    <span className="text-[10px] text-slate-500 truncate">{link.title}</span>
-                  </span>
-                </a>
-              </li>
-            ))}
-          </ul>
+      {externalStudyLinksRaw?.length ? (
+        <PanelSection title="External Reading">
+          {!externalLinksResolved ? (
+            <p className="text-[12px] text-slate-500 italic">Loading resources…</p>
+          ) : resolvedExternalLinks.length > 0 ? (
+            <ul className="space-y-1">
+              {(() => { console.log("[RELATED_RESOURCES_RENDER]", { type: "external", count: resolvedExternalLinks.length }); return null; })()}
+              {resolvedExternalLinks.map((link, i) => (
+                <li key={i}>
+                  <a
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-start gap-2 text-[13px] text-violet-300 hover:text-violet-100 underline decoration-dotted"
+                  >
+                    <span className="mt-0.5 shrink-0">{link.source === "wikipedia" ? "📖" : "🔗"}</span>
+                    <span className="flex flex-col min-w-0">
+                      <span>{link.label}</span>
+                      <span className="text-[10px] text-slate-500 truncate">{link.title}</span>
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[12px] text-slate-500 italic">
+              {(() => { console.log("[RELATED_RESOURCES_EMPTY]", { type: "external" }); return null; })()}
+              No external reading found for this page.
+            </p>
+          )}
         </PanelSection>
       ) : null}
 
       {/* Related Teaching Videos — exact YouTube URLs resolved by backend (no search fallbacks) */}
-      {videoLinksResolved && resolvedVideoLinks.length > 0 ? (
+      {relatedVideoQueries?.length ? (
         <PanelSection title="📺 Related Teaching Videos">
-          <ul className="space-y-2">
-            {resolvedVideoLinks.map((link, i) => (
-              <li key={i}>
-                <a
-                  href={link.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-start gap-2 text-[13px] text-red-300 hover:text-red-100 underline decoration-dotted"
-                >
-                  <span className="mt-0.5 shrink-0">📺</span>
-                  <span className="flex flex-col min-w-0">
-                    <span>{link.title}</span>
-                    <span className="text-[10px] text-slate-500">{link.channelTitle}</span>
-                  </span>
-                </a>
-              </li>
-            ))}
-          </ul>
+          {!videoLinksResolved ? (
+            <p className="text-[12px] text-slate-500 italic">Loading videos…</p>
+          ) : resolvedVideoLinks.length > 0 ? (
+            <ul className="space-y-2">
+              {(() => { console.log("[RELATED_RESOURCES_RENDER]", { type: "video", count: resolvedVideoLinks.length }); return null; })()}
+              {resolvedVideoLinks.map((link, i) => (
+                <li key={i}>
+                  <a
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-start gap-2 text-[13px] text-red-300 hover:text-red-100 underline decoration-dotted"
+                  >
+                    <span className="mt-0.5 shrink-0">📺</span>
+                    <span className="flex flex-col min-w-0">
+                      <span>{link.title}</span>
+                      <span className="text-[10px] text-slate-500">{link.channelTitle}</span>
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[12px] text-slate-500 italic">
+              {(() => { console.log("[RELATED_RESOURCES_EMPTY]", { type: "video" }); return null; })()}
+              No teaching videos found for this page.
+            </p>
+          )}
         </PanelSection>
       ) : null}
 
