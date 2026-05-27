@@ -252,6 +252,21 @@ export default function SmartPDFViewer({
     setOverlayRects([]);
     setGuidedOverlayData(null);
     setOverlayVersion(v => v + 1);
+
+    // [TEXT_LAYER_CLEANUP] — verify no lingering CSS highlight marks on text layer spans.
+    // Our highlights are DOM overlay divs, NOT in-span CSS. This log proves it.
+    const textLayer = document.querySelector('.react-pdf__Page__textContent, .textLayer');
+    const markedSpans = textLayer
+      ? Array.from(textLayer.querySelectorAll('span')).filter(s =>
+          s.classList.contains('bg-yellow-300') || s.classList.contains('ring-2')
+        )
+      : [];
+    console.log("[TEXT_LAYER_CLEANUP]", {
+      highlightKey,
+      textLayerFound: !!textLayer,
+      markedSpansFound: markedSpans.length,
+      // If markedSpans > 0, a focusSnippet highlight didn't clear — not related to overlay persistence.
+    });
   }, [highlightKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // Log overlay renders for debugging.
   useEffect(() => {
