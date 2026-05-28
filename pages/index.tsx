@@ -16,7 +16,7 @@ import { useStudySessionStore } from "@/lib/stores/studySessionStore";
 // Feature flag controlled imports
 import EnhancedHybridReader from "@/components/EnhancedHybridReader";
 import PatternView from "@/components/PatternView";
-import NoteLabView from "@/components/NoteLabView";
+// NoteLabView removed — replaced by UltraNotesList (components/notelab/UltraNotesList.tsx)
 import CleanHybridReader from "@/components/CleanHybridReader";
 import HighlightPopup from "@/components/HighlightPopup";
 import LinkVideoModal from "@/components/LinkVideoModal";
@@ -25,9 +25,7 @@ import NotesList from "@/components/NotesList";
 
 // Integrated components
 import SurgeonView from "@/components/SurgeonView";
-import NoteLabViewEnhanced from "@/components/NoteLabViewEnhanced";
-import StudySessionPanel from "@/components/StudySessionPanel";
-import MemoCardsStudyPanel from "@/components/MemoCardsStudyPanel";
+// NoteLabViewEnhanced, StudySessionPanel, MemoCardsStudyPanel removed — superseded by UltraNotesList + RecallLab
 import TocTree from "@/components/toc/TocTree";
 import SyllabusUploadPanel from "@/components/syllabus/SyllabusUploadPanel";
 import SyllabusStudyLauncher from "@/components/study/SyllabusStudyLauncher";
@@ -2927,15 +2925,17 @@ export default function ThoughtUnitReader() {
             <div className="mt-0.5 text-[11px] text-slate-500">Generated study notes · saved locally</div>
           </div>
           <div className="flex-1 overflow-y-auto">
-            <UltraNotesList
-              bookId={bookId}
-              refreshKey={noteLabRefreshKey}
-              onNavigateToPage={(page) => {
-                syncToPage(page);
-                trySwitchShellTab("reader", "reader");
-              }}
-              onCardsGenerated={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey((k) => k + 1); trySwitchShellTab("study", "study"); }}
-            />
+            <ErrorBoundary onError={(error) => console.error('📝 NoteLab Error:', error.message, error.stack)}>
+              <UltraNotesList
+                bookId={bookId}
+                refreshKey={noteLabRefreshKey}
+                onNavigateToPage={(page) => {
+                  syncToPage(page);
+                  trySwitchShellTab("reader", "reader");
+                }}
+                onCardsGenerated={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey((k) => k + 1); trySwitchShellTab("study", "study"); }}
+              />
+            </ErrorBoundary>
           </div>
         </div>
       );
@@ -3007,14 +3007,16 @@ export default function ThoughtUnitReader() {
             <div className="mt-0.5 text-[11px] text-slate-500">Memory-engineering layer · flip cards · active recall</div>
           </div>
           <div className="flex-1 overflow-y-auto">
-            <RecallLab
-              refreshKey={recallLabRefreshKey}
-              lastSetId={lastRecallSetId ?? undefined}
-              onNavigateToPage={(page) => {
-                syncToPage(page);
-                trySwitchShellTab("reader", "reader");
-              }}
-            />
+            <ErrorBoundary onError={(error) => console.error('🧠 RecallLab Error:', error.message, error.stack)}>
+              <RecallLab
+                refreshKey={recallLabRefreshKey}
+                lastSetId={lastRecallSetId ?? undefined}
+                onNavigateToPage={(page) => {
+                  syncToPage(page);
+                  trySwitchShellTab("reader", "reader");
+                }}
+              />
+            </ErrorBoundary>
           </div>
         </div>
       );
