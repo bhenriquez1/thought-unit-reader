@@ -3180,6 +3180,13 @@ function GenerateStudySetButton({
   const synthReady = !!studyModel && (studyModel.conceptBlocks?.length ?? 0) > 0;
 
   function handleGenerate() {
+    console.log("[RECALL_CLICK]", {
+      page: pageNumber,
+      hasStudyModel: !!studyModel,
+      conceptBlockCount: studyModel?.conceptBlocks?.length ?? 0,
+      miniTestItemCount: studyModel?.miniTestItems?.length ?? 0,
+      synthReady,
+    });
     console.log("[RECALL:click]", {
       page: pageNumber,
       hasStudyModel: !!studyModel,
@@ -3206,10 +3213,27 @@ function GenerateStudySetButton({
         miniTestCount: studyModel.miniTest?.length ?? 0,
         miniTestItemCount: studyModel.miniTestItems?.length ?? 0,
       });
+      console.log("[RECALL_BUILD_START]", {
+        bookId,
+        page: pageNumber,
+        conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
+        miniTestItemCount: studyModel.miniTestItems?.length ?? 0,
+        hasPageThesis: !!studyModel.pageThesis,
+      });
       const set = buildRecallSetFromView(view, bookId, pageNumber, {
         bookTitle,
         sourceLabel: "right-panel",
         studyModel,
+      });
+      const cardTypes = set.cards.reduce<Record<string, number>>((acc, c) => {
+        acc[c.type] = (acc[c.type] ?? 0) + 1;
+        return acc;
+      }, {});
+      console.log("[RECALL_BUILD_RESULT]", {
+        setId: set.id,
+        cardCount: set.cards.length,
+        cardTypes,
+        topic: set.topic,
       });
       console.log("[RECALL:payload]", {
         setId: set.id,
