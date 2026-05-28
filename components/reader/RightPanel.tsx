@@ -3122,7 +3122,9 @@ function GenerateNoteButton({
         studyModel?.relatedVideoQueries?.length ? studyModel.relatedVideoQueries : undefined,
         studyModel?.highlightAnchors?.length ? studyModel.highlightAnchors : undefined,
       );
+      console.log("[ULTRA_NOTE_SAVE_START]", { id: note.id, page: note.pageNumber, topic: note.topic, bookId });
       saveUltraNote(note);
+      console.log("[ULTRA_NOTE_SAVE_SUCCESS]", { id: note.id, page: note.pageNumber, topic: note.topic });
       console.log("[NOTE:saved-id]", { id: note.id, page: note.pageNumber, topic: note.topic });
       setSaved(true);
       onNoteSaved?.();
@@ -3178,6 +3180,13 @@ function GenerateStudySetButton({
   const synthReady = !!studyModel && (studyModel.conceptBlocks?.length ?? 0) > 0;
 
   function handleGenerate() {
+    console.log("[RECALL_CLICK]", {
+      page: pageNumber,
+      hasStudyModel: !!studyModel,
+      conceptBlockCount: studyModel?.conceptBlocks?.length ?? 0,
+      miniTestItemCount: studyModel?.miniTestItems?.length ?? 0,
+      synthReady,
+    });
     console.log("[RECALL:click]", {
       page: pageNumber,
       hasStudyModel: !!studyModel,
@@ -3204,10 +3213,27 @@ function GenerateStudySetButton({
         miniTestCount: studyModel.miniTest?.length ?? 0,
         miniTestItemCount: studyModel.miniTestItems?.length ?? 0,
       });
+      console.log("[RECALL_BUILD_START]", {
+        bookId,
+        page: pageNumber,
+        conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
+        miniTestItemCount: studyModel.miniTestItems?.length ?? 0,
+        hasPageThesis: !!studyModel.pageThesis,
+      });
       const set = buildRecallSetFromView(view, bookId, pageNumber, {
         bookTitle,
         sourceLabel: "right-panel",
         studyModel,
+      });
+      const cardTypes = set.cards.reduce<Record<string, number>>((acc, c) => {
+        acc[c.type] = (acc[c.type] ?? 0) + 1;
+        return acc;
+      }, {});
+      console.log("[RECALL_BUILD_RESULT]", {
+        setId: set.id,
+        cardCount: set.cards.length,
+        cardTypes,
+        topic: set.topic,
       });
       console.log("[RECALL:payload]", {
         setId: set.id,
@@ -3218,7 +3244,9 @@ function GenerateStudySetButton({
         conceptCards: set.cards.filter((c) => /^b\d/.test(c.id)).length,
         cardIds: set.cards.map((c) => c.id),
       });
+      console.log("[RECALL_SAVE_START]", { id: set.id, page: set.pageNumber, cardCount: set.cards.length, bookId });
       saveRecallSet(set);
+      console.log("[RECALL_SAVE_SUCCESS]", { id: set.id, page: set.pageNumber, cardCount: set.cards.length });
       console.log("[RECALL:saved-id]", { id: set.id, page: set.pageNumber, cardCount: set.cards.length });
       setSaved(true);
       onStudySetGenerated?.(set.id);

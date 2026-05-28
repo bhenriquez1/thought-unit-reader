@@ -44,6 +44,18 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
 
   useEffect(() => { reload(); }, [reload, refreshKey]);
 
+  // Reload when saveUltraNote dispatches "note-lab-updated" (mirrors RecallLab's recall-lab-updated pattern)
+  useEffect(() => {
+    const handler = () => {
+      reload();
+      const current = getAllUltraNotes();
+      const count = bookId ? current.filter(n => n.bookId === bookId).length : current.length;
+      console.log("[NOTELAB_STATE_COUNT]", { count, bookId });
+    };
+    window.addEventListener("note-lab-updated", handler);
+    return () => window.removeEventListener("note-lab-updated", handler);
+  }, [reload, bookId]);
+
   function handleDelete(id: string) {
     deleteUltraNote(id);
     reload();

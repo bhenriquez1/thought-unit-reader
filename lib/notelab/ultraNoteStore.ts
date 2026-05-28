@@ -84,8 +84,9 @@ function saveAll(notes: UltraNote[]): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
-  } catch {
-    // localStorage full — silently skip
+    window.dispatchEvent(new Event("note-lab-updated"));
+  } catch (err) {
+    console.error("[NOTE_SAVE_FAIL] localStorage write failed", err);
   }
 }
 
