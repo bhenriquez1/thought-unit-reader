@@ -72,7 +72,11 @@ export default function RecallLab({ onNavigateToPage, refreshKey, lastSetId }: R
 
   // Storage event listener — fires when saveRecallSet dispatches "recall-lab-updated"
   useEffect(() => {
-    const handler = () => setSets(loadSets());
+    const handler = () => {
+      const current = loadSets();
+      setSets(current);
+      console.log("[RECALLLAB_STATE_COUNT]", { count: current.length });
+    };
     window.addEventListener("recall-lab-updated", handler);
     return () => window.removeEventListener("recall-lab-updated", handler);
   }, []);
@@ -83,6 +87,7 @@ export default function RecallLab({ onNavigateToPage, refreshKey, lastSetId }: R
     const current = loadSets();
     setSets(current);
     const found = current.find((s) => s.id === lastSetId);
+    console.log("[RECALLLAB_SELECTED_SET]", { lastSetId, found: !!found, totalSets: current.length });
     if (found) setView({ kind: "session", set: found });
   }, [lastSetId]);
 

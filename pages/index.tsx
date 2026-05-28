@@ -2794,6 +2794,14 @@ export default function ThoughtUnitReader() {
       }
       const activePageContext = activePageContextForInsights;
 
+      // Render-time guard: only pass anchors to the left panel when studyModel's pageTruthKey
+      // matches current pageTruthKey. This eliminates the RAF race — stale anchors are blocked
+      // synchronously at render time before they ever reach SmartPDFViewer.
+      const safeHighlightAnchors =
+        currentPageStudyModel?.pageTruthKey === pageTruthKey
+          ? finalHighlightAnchors
+          : [];
+
       return (
         <div className="h-full flex overflow-hidden" data-testid="expert-view-container">
           <ErrorBoundary
@@ -2810,12 +2818,14 @@ export default function ThoughtUnitReader() {
             {fileUrl && (
               <div className="h-full w-[68%] min-w-[600px] overflow-y-auto border-r border-gray-700">
                 {console.log("[LEFT_PANEL_INPUT_SOURCES]", {
-                  source: "finalHighlightAnchors only",
+                  source: "safeHighlightAnchors (render-time guard)",
                   page: currentPage,
-                  anchorCount: finalHighlightAnchors.length,
-                  anchorTexts: finalHighlightAnchors.map(a => a.text.slice(0, 60)),
-                  studyModelPage: currentPageStudyModel?.page ?? null,
+                  safeCount: safeHighlightAnchors.length,
+                  rawCount: finalHighlightAnchors.length,
+                  safeTexts: safeHighlightAnchors.map(a => a.text.slice(0, 60)),
+                  studyModelPtk: currentPageStudyModel?.pageTruthKey ?? null,
                   pageTruthKey,
+                  ptKeyMatch: currentPageStudyModel?.pageTruthKey === pageTruthKey,
                 }) as unknown as null}
                 <PureReaderView
                   fileUrl={fileUrl}
@@ -2830,8 +2840,8 @@ export default function ThoughtUnitReader() {
                   fontFamily={fontFamily}
                   onActiveParagraphChange={handleActiveParagraphChange}
                   focusSnippet={focusSnippet}
-                  aiHighlightAnchors={finalHighlightAnchors}
-                  synthStatus={finalHighlightAnchors.length > 0 ? "ready" : "loading"}
+                  aiHighlightAnchors={safeHighlightAnchors}
+                  synthStatus={safeHighlightAnchors.length > 0 ? "ready" : "loading"}
                   pageTruthKey={pageTruthKey}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
@@ -3000,6 +3010,7 @@ export default function ThoughtUnitReader() {
     }
 
     if (activeShellTab === "study") {
+      console.log("[RECALL_TAB_OPEN]", { lastRecallSetId, recallLabRefreshKey });
       return (
         <div className="h-full flex flex-col overflow-hidden bg-[rgb(11,18,34)]">
           <div className="border-b border-white/10 px-4 py-3 flex-shrink-0">

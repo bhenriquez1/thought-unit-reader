@@ -51,9 +51,11 @@ function saveAll(sets: RecallSet[]): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(sets));
-    // Notify RecallLab components listening for updates
     window.dispatchEvent(new Event("recall-lab-updated"));
-  } catch {}
+    console.log("[RECALL_EVENT_DISPATCHED]", { setCount: sets.length });
+  } catch (err) {
+    console.error("[RECALL_SAVE_FAIL] localStorage write failed", err);
+  }
 }
 
 export function getAllRecallSets(): RecallSet[] {

@@ -278,10 +278,6 @@ export default function SmartPDFViewer({
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const paragraphScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Tracks the last highlightKey the rebuild effect ran with. When highlightKey changes
-  // (pageTruthKey changed), we skip the RAF to prevent old anchors from painting on
-  // the new page before finalHighlightAnchors is cleared in the next React batch.
-  const prevHighlightKeyRef = useRef<string | undefined>(undefined);
 
   // Scroll → active paragraph detection (no DOM overlays, no IntersectionObserver overhead)
   // Attaches once to the PDF scroll container; debounces at 200 ms.
@@ -385,19 +381,6 @@ export default function SmartPDFViewer({
   }, [focusSnippet, currentPage]);
 
   useEffect(() => {
-    // RAF race guard: if highlightKey changed this render, the highlightKey clear effect
-    // already set overlayRects = []. Skip the RAF entirely — the next render (arriving
-    // within one React batch after setFinalHighlightAnchors([])) will have empty targets
-    // and will run the rebuild cleanly. Without this guard, the RAF fires with stale
-    // old-page highlightTargets on the new page DOM, painting incorrect rects briefly.
-    const keyChangedThisRun = prevHighlightKeyRef.current !== highlightKey;
-    prevHighlightKeyRef.current = highlightKey;
-    if (keyChangedThisRun) {
-      console.log("[OVERLAY_SKIP_RAF] highlightKey changed — skipping rebuild to prevent stale paint", { highlightKey });
-      setOverlayRects([]);
-      return () => {};
-    }
-
     const container = viewerRef.current;
     const hasNeighborhoods = (highlightNeighborhoods?.length ?? 0) > 0;
     const hasTargets = (highlightTargets?.length ?? 0) > 0;
