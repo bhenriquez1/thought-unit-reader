@@ -142,6 +142,15 @@ export default function PureReaderView({
   onReadingPath,
   roleLabelByConceptId,
 }: PureReaderViewProps) {
+  // TRACE: log every prop arriving at PureReaderView boundary
+  console.log("[PURE_READER_PROPS]", {
+    page: currentPage,
+    aiAnchorCount: aiHighlightAnchors?.length ?? 0,
+    aiAnchorTexts: aiHighlightAnchors?.map(a => a.text.slice(0, 60)) ?? [],
+    pageTruthKey: pageTruthKey ?? null,
+    synthStatus,
+    pageTextLen: pageText?.length ?? 0,
+  });
   // Global zoom store
   const { zoom } = useZoomStore();
   const [isPageChanging, setIsPageChanging] = useState(false);

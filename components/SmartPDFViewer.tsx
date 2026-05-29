@@ -402,6 +402,17 @@ export default function SmartPDFViewer({
     const hasNeighborhoods = (highlightNeighborhoods?.length ?? 0) > 0;
     const hasTargets = (highlightTargets?.length ?? 0) > 0;
 
+    // TRACE: log every prop entering SmartPDFViewer overlay rebuild
+    console.log("[SMART_PDF_PROPS]", {
+      page: currentPage,
+      highlightTargetCount: highlightTargets?.length ?? 0,
+      highlightTargetTexts: highlightTargets?.map(t => t.text?.slice(0, 60)) ?? [],
+      highlightKey: highlightKey ?? null,
+      hasNeighborhoods,
+      hasTargets,
+      overlayRectsNow: overlayRects.length,
+    });
+
     console.log("[TRACE overlayNeighborhoods]", {
       pageNumber: currentPage,
       neighborhoodCount: highlightNeighborhoods?.length ?? 0,

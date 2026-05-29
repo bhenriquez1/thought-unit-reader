@@ -83,7 +83,15 @@ function loadAll(): UltraNote[] {
 function saveAll(notes: UltraNote[]): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+    const serialized = JSON.stringify(notes);
+    localStorage.setItem(STORAGE_KEY, serialized);
+    const verify = localStorage.getItem(STORAGE_KEY);
+    console.log("[NOTE_LS_COUNT]", {
+      key: STORAGE_KEY,
+      writtenCount: notes.length,
+      verifiedBytes: verify?.length ?? 0,
+      verifiedCount: verify ? (JSON.parse(verify) as UltraNote[]).length : 0,
+    });
     window.dispatchEvent(new Event("note-lab-updated"));
   } catch (err) {
     console.error("[NOTE_SAVE_FAIL] localStorage write failed", err);

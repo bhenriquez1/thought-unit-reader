@@ -55,11 +55,20 @@ function loadSets(): RecallSet[] {
 
 export default function RecallLab({ onNavigateToPage, refreshKey, lastSetId }: RecallLabProps) {
   // Lazy init from localStorage — avoids empty-flash on first mount after card generation
-  const [sets, setSets] = useState<RecallSet[]>(() => loadSets());
+  const [sets, setSets] = useState<RecallSet[]>(() => {
+    const all = loadSets();
+    console.log("[RECALLLAB_MOUNT]", {
+      setsInStorage: all.length,
+      lastSetId: lastSetId ?? null,
+      setIds: all.slice(0, 5).map(s => s.id),
+    });
+    return all;
+  });
   const [view, setView] = useState<View>(() => {
     if (lastSetId) {
       const all = loadSets();
       const found = all.find((s) => s.id === lastSetId);
+      console.log("[RECALLLAB_INIT_VIEW]", { lastSetId, found: !!found, totalSets: all.length });
       if (found) return { kind: "session", set: found };
     }
     return { kind: "dashboard" };
@@ -67,7 +76,9 @@ export default function RecallLab({ onNavigateToPage, refreshKey, lastSetId }: R
 
   // Reload when refreshKey changes (set was added while mounted)
   useEffect(() => {
-    setSets(loadSets());
+    const current = loadSets();
+    console.log("[RECALLLAB_REFRESHKEY]", { refreshKey, setsInStorage: current.length });
+    setSets(current);
   }, [refreshKey]);
 
   // Storage event listener — fires when saveRecallSet dispatches "recall-lab-updated"
