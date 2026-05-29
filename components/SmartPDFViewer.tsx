@@ -682,10 +682,10 @@ export default function SmartPDFViewer({
             id: lineIndex === 0 ? targetId : `${targetId}-L${lineIndex}`,
             level,
             semanticKind,
-            top,
+            top: top - 1,                    // shift up 1px for marker-swipe feel
             left,
             width,
-            height: Math.min(height, 36),
+            height: Math.min(height + 3, 40), // inflate 3px for marker-swipe feel
           });
           lineIndex++;
         }
