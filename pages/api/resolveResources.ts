@@ -136,13 +136,64 @@ async function isUrlReachable(url: string): Promise<boolean> {
   }
 }
 
-// ── YouTube channel search URL builder ────────────────────────────────────
+// ── YouTube channel IDs (needed for channelId filter in YouTube search API) ──
+const YOUTUBE_CHANNEL_IDS: Record<string, string> = {
+  "@NinjaNerdNation":    "UC6QYFutt9cluQ3uSM963_KQ",
+  "@osmosis":            "UCNI0qbn7X6mMd8V9UcDiO-A",
+  "@khanacademy":        "UC4a-Gbdw7vOaccHmFo40b9g",
+  "@BoardsBeyond":       "UCcoMpPC8OkNnwHCNRLKXLiA",
+  "@thecrashcourse":     "UCX6b17PVsYBQ0ip5gyeme-Q",
+  "@armandohasudungan":  "UCesEknt3SRX9R9W_f93Tb7g",
+};
+
+// ── Resolve one video to an actual YouTube URL via YouTube Data API v3 ─────
+
+interface YouTubeVideoResult {
+  videoId: string;
+  title: string;
+  channelTitle: string;
+}
+
+async function resolveVideoViaYouTubeApi(
+  channelHandle: string,
+  searchQuery: string,
+  apiKey: string
+): Promise<YouTubeVideoResult | null> {
+  const channelId = YOUTUBE_CHANNEL_IDS[channelHandle];
+  const params = new URLSearchParams({
+    part: "snippet",
+    type: "video",
+    maxResults: "1",
+    q: searchQuery,
+    key: apiKey,
+    ...(channelId ? { channelId } : {}),
+  });
+  try {
+    const resp = await fetch(
+      `https://www.googleapis.com/youtube/v3/search?${params}`,
+      { signal: AbortSignal.timeout(4500) }
+    );
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const item = data.items?.[0];
+    if (!item) return null;
+    return {
+      videoId:      item.id.videoId,
+      title:        item.snippet.title,
+      channelTitle: item.snippet.channelTitle,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ── YouTube channel search URL builder (fallback when no API key) ──────────
 
 function buildVideoSearchUrl(handle: string, query: string): string {
-  if (!handle.startsWith("@")) {
-    return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+  if (handle.startsWith("@")) {
+    return `https://www.youtube.com/${handle}/search?query=${encodeURIComponent(query)}`;
   }
-  return `https://www.youtube.com/${handle}/search?query=${encodeURIComponent(query)}`;
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
 }
 
 // ── Handler ────────────────────────────────────────────────────────────────
@@ -214,17 +265,39 @@ Score each 50–100. Prioritize most directly relevant to the specific mechanism
       .filter((a): a is NonNullable<typeof a> => a !== null)
       .map(a => ({ title: a.title, url: a.url, source: a.source, reason: a.reason, score: a.score }));
 
-    // Build video search URLs — channel-specific search (no hallucinated video IDs)
-    const videos: ResolvedVideo[] = data.videos.map(v => ({
-      channel:          v.channel,
-      channelHandle:    v.channelHandle,
-      videoTitle:       v.videoTitle,
-      searchUrl:        buildVideoSearchUrl(v.channelHandle, v.searchQuery),
-      reason:           v.reason,
-      timestampSeconds: v.timestampSeconds,
-      timestampLabel:   v.timestampLabel,
-      score:            v.score,
-    }));
+    // Resolve videos — use YouTube API when key present for exact video IDs + timestamp links
+    const youtubeApiKey = process.env.YOUTUBE_API_KEY;
+    const videoResults = await Promise.all(
+      data.videos.map(async (v) => {
+        let searchUrl = buildVideoSearchUrl(v.channelHandle, v.searchQuery);
+        let videoTitle = v.videoTitle;
+
+        if (youtubeApiKey) {
+          const resolved = await resolveVideoViaYouTubeApi(v.channelHandle, v.searchQuery, youtubeApiKey);
+          if (resolved) {
+            videoTitle = resolved.title;
+            // Add timestamp deep-link if the AI provided a timestamp
+            const tParam = v.timestampSeconds ? `&t=${Math.floor(v.timestampSeconds)}s` : "";
+            searchUrl = `https://www.youtube.com/watch?v=${resolved.videoId}${tParam}`;
+            console.log("[RESOURCES:video-resolved]", { channel: v.channel, videoId: resolved.videoId, timestamp: v.timestampLabel });
+          } else {
+            console.log("[RESOURCES:video-fallback]", { channel: v.channel, query: v.searchQuery });
+          }
+        }
+
+        return {
+          channel:          v.channel,
+          channelHandle:    v.channelHandle,
+          videoTitle,
+          searchUrl,
+          reason:           v.reason,
+          timestampSeconds: v.timestampSeconds,
+          timestampLabel:   v.timestampLabel,
+          score:            v.score,
+        } satisfies ResolvedVideo;
+      })
+    );
+    const videos: ResolvedVideo[] = videoResults;
 
     console.log("[RESOURCES:done]", {
       articlesValidated: articles.length,

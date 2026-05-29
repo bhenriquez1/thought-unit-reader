@@ -239,6 +239,9 @@ export default function SmartPDFViewer({
     overlays: HighlightOverlayRect[];
   } | null>(null);
   const [overlayVersion, setOverlayVersion] = useState(0);
+  // Increments after every successful page render (including zoom-triggered re-renders).
+  // Adding it to the rebuild effect deps ensures overlay rects recompute at the new scale.
+  const [pageRenderKey, setPageRenderKey] = useState(0);
   // Tracks the highlightKey for which the rebuild effect last ran.
   // Prevents redundant RAF fires when highlightTargets reference changes
   // but content (encoded in highlightKey) is identical — harmless dedup.
@@ -762,7 +765,9 @@ export default function SmartPDFViewer({
     return () => { cancelled = true; };
   // highlightKey must be in deps so a pageTruthKey change forces a rebuild even when
   // highlightTargets reference is identical (e.g. both [] after clear + empty new page).
-  }, [highlightTargets, highlightNeighborhoods, currentPage, highlightKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // pageRenderKey fires after every successful page render (including zoom changes) so
+  // overlay rects are recomputed at the correct scale. effectiveZoom is a safety net.
+  }, [highlightTargets, highlightNeighborhoods, currentPage, highlightKey, effectiveZoom, pageRenderKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Enhanced PDF loading with robust error handling
   const {
@@ -1061,7 +1066,7 @@ export default function SmartPDFViewer({
                     <div className="text-red-400">Failed to render page {currentPage}</div>
                   </div>
                 }
-                onRenderSuccess={() => onPageRenderComplete?.(currentPage)}
+                onRenderSuccess={() => { setPageRenderKey(k => k + 1); onPageRenderComplete?.(currentPage); }}
                 onRenderError={(error) => {
                   console.error(`SmartPDFViewer: Page ${currentPage} render error:`, error);
                 }}
