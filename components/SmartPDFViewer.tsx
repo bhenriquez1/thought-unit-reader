@@ -246,7 +246,6 @@ export default function SmartPDFViewer({
     if (highlightKey === undefined) return;
     console.log("[OVERLAY_CLEAR] highlightKey changed", { highlightKey });
     setOverlayRects([]);
-    setGuidedOverlayData(null);
     setOverlayVersion(v => v + 1);
 
     // [TEXT_LAYER_CLEANUP] — verify no lingering CSS highlight marks on text layer spans.
