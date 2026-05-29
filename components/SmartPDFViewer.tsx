@@ -8,10 +8,7 @@ import { useReaderSync } from "@/lib/readerSync";
 import { usePDFLoading } from "@/lib/pdfLoadingManager";
 import type { HighlightTarget } from "@/lib/readerContracts";
 import PdfEvidenceOverlay, { type OverlayRect } from "@/components/pdf/PdfEvidenceOverlay";
-import GuidedNeighborhoodOverlay from "@/components/pdf/GuidedNeighborhoodOverlay";
 import type { HighlightNeighborhood } from "@/lib/highlights/buildHighlightNeighborhoods";
-import { matchNeighborhoodMemberToText, type NeighborhoodMember, type PageTextRecord } from "@/lib/highlights/matchNeighborhoodMemberToText";
-import { buildHighlightRects, type TextItemRect, type NeighborhoodMemberPlacement, type HighlightOverlayRect } from "@/lib/highlights/buildHighlightRects";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 
 // Keep react-pdf CSS imports in pages/_app.tsx (do not import here).
@@ -234,22 +231,14 @@ export default function SmartPDFViewer({
   const [showToolbar, setShowToolbar] = useState<boolean>(true);
   const [highlightPulse, setHighlightPulse] = useState<boolean>(false);
   const [overlayRects, setOverlayRects] = useState<OverlayRect[]>([]);
-  const [guidedOverlayData, setGuidedOverlayData] = useState<{
-    neighborhoods: HighlightNeighborhood[];
-    overlays: HighlightOverlayRect[];
-  } | null>(null);
   const [overlayVersion, setOverlayVersion] = useState(0);
   // Increments after every successful page render (including zoom-triggered re-renders).
   // Adding it to the rebuild effect deps ensures overlay rects recompute at the new scale.
   const [pageRenderKey, setPageRenderKey] = useState(0);
-  // Tracks the highlightKey for which the rebuild effect last ran.
-  // Prevents redundant RAF fires when highlightTargets reference changes
-  // but content (encoded in highlightKey) is identical — harmless dedup.
-  const prevRebuildKeyRef = useRef<string | undefined>(undefined);
-  // Clear reading path immediately when guided data goes away (e.g. page turn).
-  useEffect(() => {
-    if (guidedOverlayData === null) onReadingPath?.(null);
-  }, [guidedOverlayData, onReadingPath]);
+  // Tracks both highlightKey and pageRenderKey for the last rebuild run.
+  // Prevents redundant RAF fires when neither content nor scale has changed.
+  // pageRenderKey MUST be included: after zoom the key is unchanged but rect positions move.
+  const prevRebuildRef = useRef<{ key: string | undefined; renderKey: number }>({ key: undefined, renderKey: -1 });
 
   // Hard-clear all overlay state when highlightKey changes.
   // overlayVersion increment forces the keyed wrapper to unmount+remount, guaranteeing DOM cleanup.
@@ -410,28 +399,30 @@ export default function SmartPDFViewer({
       hasTargets,
     });
 
-    if (!container || (!hasNeighborhoods && !hasTargets)) {
+    if (!container || !hasTargets) {
       setOverlayRects([]);
-      setGuidedOverlayData(null);
       return;
     }
 
-    // Dedup: skip RAF when highlightKey hasn't changed. This prevents redundant
-    // rebuilds when only the highlightTargets reference changes (new array, same
-    // content) — which happens on every PureReaderView render. The highlightKey
-    // already encodes all anchor texts, so an unchanged key means unchanged content.
-    if (highlightKey !== undefined && highlightKey === prevRebuildKeyRef.current) {
-      console.log("[OVERLAY_DEDUP] highlightKey unchanged — skipping rebuild", { highlightKey: highlightKey.slice(-60) });
+    // Dedup: skip RAF when neither content (highlightKey) nor scale (pageRenderKey) changed.
+    // highlightKey encodes all anchor texts — unchanged key = same content.
+    // pageRenderKey increments after every page render including zoom, so zoom always
+    // triggers a rebuild even when anchor texts haven't changed (rect positions moved).
+    if (
+      highlightKey !== undefined &&
+      highlightKey === prevRebuildRef.current.key &&
+      pageRenderKey === prevRebuildRef.current.renderKey
+    ) {
+      console.log("[OVERLAY_DEDUP] key+renderKey unchanged — skipping rebuild", { highlightKey: highlightKey.slice(-60) });
       return;
     }
-    prevRebuildKeyRef.current = highlightKey;
+    prevRebuildRef.current = { key: highlightKey, renderKey: pageRenderKey };
 
     // Clear stale rects immediately before starting async matching.
     // Without this, old highlight rectangles persist in state for the entire
     // retry window (~10 attempts × 140ms) whenever new anchors fail to match
     // on the first try (e.g. text layer not yet painted).
     setOverlayRects([]);
-    setGuidedOverlayData(null);
 
     let attempts = 0;
     let cancelled = false;
@@ -475,99 +466,7 @@ export default function SmartPDFViewer({
       for (const t of spanNorm) { offsets.push(cursor); cursor += t.length + 1; }
       const concatText = spanNorm.join(" ");
 
-      // ── NEIGHBORHOOD PATH ──────────────────────────────────────────────────
-      if (hasNeighborhoods) {
-        // Build TextItemRect[] — each span gets DOM coords + text offsets
-        const textItems: TextItemRect[] = spans.map((span, i) => {
-          const dr = span.getBoundingClientRect();
-          return {
-            id: `span-${i}`,
-            pageNumber: currentPage,
-            text: span.textContent || "",
-            normalizedText: spanNorm[i],
-            startOffset: offsets[i],
-            endOffset: offsets[i] + spanNorm[i].length,
-            x: dr.left - layerRect.left,
-            y: dr.top - layerRect.top,
-            width: dr.width,
-            height: Math.max(12, dr.height),
-          };
-        });
-
-        // Build sentence records from DOM spans so strategies 1-5 in the matcher
-        // can anchor to exact PDF text rather than falling back to token-window only.
-        // Group consecutive spans into sentences by detecting terminal punctuation
-        // followed by a capital letter in the next span.
-        const sentenceRecords: import("@/lib/highlights/matchNeighborhoodMemberToText").PageSentenceRecord[] = [];
-        let sBuf = "";
-        let sNormBuf = "";
-        let sStart = 0;
-        for (let si = 0; si < spans.length; si++) {
-          const rawSpan = spans[si].textContent || "";
-          sBuf += (sBuf ? " " : "") + rawSpan;
-          sNormBuf += (sNormBuf ? " " : "") + spanNorm[si];
-          const nextRaw = si + 1 < spans.length ? (spans[si + 1].textContent || "").trimStart() : "";
-          const flushHere = /[.!?]\s*$/.test(rawSpan) && /^[A-Z"'(]/.test(nextRaw);
-          const isLast = si === spans.length - 1;
-          if (flushHere || isLast) {
-            const sentText = sBuf.trim();
-            if (sentText.length >= 8) {
-              sentenceRecords.push({
-                id: `sent-${sentenceRecords.length}`,
-                text: sentText,
-                normalizedText: sNormBuf.trim(),
-                startOffset: sStart,
-                endOffset: offsets[si] + spanNorm[si].length,
-              });
-            }
-            sStart = si + 1 < spans.length ? offsets[si + 1] : offsets[si] + spanNorm[si].length + 1;
-            sBuf = "";
-            sNormBuf = "";
-          }
-        }
-
-        const pageTextRecord: PageTextRecord = {
-          rawText: concatText,
-          normalizedText: concatText,
-          sentences: sentenceRecords.length > 0 ? sentenceRecords : undefined,
-        };
-
-        const placements: NeighborhoodMemberPlacement[] = [];
-
-        for (const n of highlightNeighborhoods!) {
-          const members: Array<{ line: typeof n.anchor; kind: NeighborhoodMember["kind"] }> = [
-            { line: n.anchor,    kind: "anchor"     },
-            ...n.support.map((l) => ({ line: l, kind: "support"    as const })),
-            ...n.additional.map((l) => ({ line: l, kind: "additional" as const })),
-            ...(n.trap ? [{ line: n.trap, kind: "trap" as const }] : []),
-          ];
-
-          for (const { line, kind } of members) {
-            const member: NeighborhoodMember = { id: line.id, text: line.text, kind, sentenceId: line.sentenceId };
-            const result = matchNeighborhoodMemberToText(member, pageTextRecord);
-            placements.push({ memberId: line.id, kind, text: line.text, candidate: result.best });
-          }
-        }
-
-        const { overlays } = buildHighlightRects({ pageNumber: currentPage, placements, textItemRects: textItems });
-
-        const hasVisible = overlays.some((o) => o.rects.length > 0 && o.displayMode !== "hidden");
-        if (!hasVisible && attempts < 10) {
-          attempts += 1;
-          window.setTimeout(renderRects, 140 + attempts * 40);
-          return;
-        }
-
-        setGuidedOverlayData({ neighborhoods: highlightNeighborhoods!, overlays });
-        if (!hasTargets) {
-          setOverlayRects([]);
-          return;
-        }
-        // hasTargets: fall through to also render AI anchor highlights
-      }
-
-      // ── flat highlightTargets path ─────────────────────────────────────────
-      if (!hasNeighborhoods) setGuidedOverlayData(null);
+      // ── OpenAI anchor highlights (only active highlight system) ─────────────
       console.log("[AI_HIGHLIGHT:received]", {
         targetCount: highlightTargets?.length ?? 0,
         ids: highlightTargets?.map((t) => t.evidenceRefId) ?? [],
@@ -1092,7 +991,7 @@ export default function SmartPDFViewer({
                 />
               )}
 
-              {(overlayRects.length > 0 || guidedOverlayData !== null) && (
+              {overlayRects.length > 0 && (
                 <React.Fragment key={`overlay-${highlightKey ?? ""}-${overlayVersion}`}>
                   {/* Dim veil sits below the evidence overlay (z-[19] < z-20).
                       Non-highlighted text recedes; decoded blocks jump forward. */}
@@ -1100,37 +999,28 @@ export default function SmartPDFViewer({
                     className="pointer-events-none absolute inset-0 z-[19] bg-slate-900/20"
                     aria-hidden
                   />
-                  {guidedOverlayData ? (
-                    <GuidedNeighborhoodOverlay
-                      neighborhoods={guidedOverlayData.neighborhoods}
-                      overlayRects={guidedOverlayData.overlays}
-                      onReadingPath={onReadingPath}
-                      roleLabelByConceptId={roleLabelByConceptId}
-                    />
-                  ) : (
-                    <PdfEvidenceOverlay
-                      rects={(() => {
-                        // Hard render-time guard: suppress any rect not in the current authorized set.
-                        // authorizedHighlightIds comes from effectiveHighlightTargets so it always
-                        // reflects the live studyModel anchors — stale rects are invisible even if
-                        // they survived in overlayRects state past a highlightKey change.
-                        if (!authorizedHighlightIds || authorizedHighlightIds.length === 0) {
-                          if (overlayRects.length > 0) {
-                            console.log("[OVERLAY_DOM_CLEANUP] no authorized IDs — suppressing", overlayRects.length, "rects");
-                          }
-                          return [];
+                  <PdfEvidenceOverlay
+                    rects={(() => {
+                      // Hard render-time guard: suppress any rect not in the current authorized set.
+                      // authorizedHighlightIds comes from effectiveHighlightTargets so it always
+                      // reflects the live studyModel anchors — stale rects are invisible even if
+                      // they survived in overlayRects state past a highlightKey change.
+                      if (!authorizedHighlightIds || authorizedHighlightIds.length === 0) {
+                        if (overlayRects.length > 0) {
+                          console.log("[OVERLAY_DOM_CLEANUP] no authorized IDs — suppressing", overlayRects.length, "rects");
                         }
-                        const allowed = new Set(authorizedHighlightIds.flatMap(id => [id, ...overlayRects.map(r => r.id).filter(rid => rid.startsWith(id))]));
-                        const guarded = overlayRects.filter(r => allowed.has(r.id));
-                        if (guarded.length !== overlayRects.length) {
-                          console.log("[OVERLAY_DOM_CLEANUP] guard filtered", overlayRects.length, "→", guarded.length, "rects");
-                        }
-                        return guarded;
-                      })()}
-                      focusedId={focusedEvidenceId}
-                      onFocus={onEvidenceFocus}
-                    />
-                  )}
+                        return [];
+                      }
+                      const allowed = new Set(authorizedHighlightIds.flatMap(id => [id, ...overlayRects.map(r => r.id).filter(rid => rid.startsWith(id))]));
+                      const guarded = overlayRects.filter(r => allowed.has(r.id));
+                      if (guarded.length !== overlayRects.length) {
+                        console.log("[OVERLAY_DOM_CLEANUP] guard filtered", overlayRects.length, "→", guarded.length, "rects");
+                      }
+                      return guarded;
+                    })()}
+                    focusedId={focusedEvidenceId}
+                    onFocus={onEvidenceFocus}
+                  />
                 </React.Fragment>
               )}
 

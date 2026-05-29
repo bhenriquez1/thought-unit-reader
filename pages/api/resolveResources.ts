@@ -21,7 +21,7 @@ const openai = new OpenAI({ apiKey });
 
 const ArticleRecSchema = z.object({
   title:   z.string(),          // exact page/article title
-  url:     z.string(),          // exact URL on the trusted source
+  url:     z.string(),          // exact URL, with #fragment anchor when a specific section matches
   source:  z.string(),          // "NIH ODS", "MedlinePlus", "NCBI Bookshelf", etc.
   reason:  z.string(),          // ≤ 12 words: why directly relevant
   score:   z.number().int(),    // 0–100
@@ -103,11 +103,19 @@ Priority order:
 9. AAP (pediatrics) — healthychildren.org or aap.org
 10. University medical school pages (e.g., lecturio.com, amboss.com public pages)
 
-Provide EXACT real URLs that exist on those sites. NIH ODS factsheet URLs follow the pattern:
-https://ods.od.nih.gov/factsheets/[Nutrient]-HealthProfessional/
-MedlinePlus encyclopedia: https://medlineplus.gov/ency/article/[number].htm
-NCBI Bookshelf: https://www.ncbi.nlm.nih.gov/books/NBK[number]/
-Merck Manual: https://www.merckmanuals.com/professional/[section]/[topic]
+Provide EXACT real URLs that exist on those sites. Include section anchors (#fragment) whenever you know the specific section.
+
+URL patterns:
+- NIH ODS: https://ods.od.nih.gov/factsheets/[Nutrient]-HealthProfessional/
+- MedlinePlus encyclopedia: https://medlineplus.gov/ency/article/[number].htm
+- MedlinePlus topic: https://medlineplus.gov/[topic].html
+- NCBI Bookshelf: https://www.ncbi.nlm.nih.gov/books/NBK[number]/ — append #[anchor] for section (e.g. NBK507254/#_article-30305_s3_)
+- Merck Manual: https://www.merckmanuals.com/professional/[section]/[topic] — append #v[number] for section anchor when known
+
+Section anchor examples:
+- For a thyroid/iodine topic on NCBI Bookshelf, link to the thyroid synthesis section directly
+- For a cardiovascular drug on Merck Manual, link to the mechanism-of-action section
+- When unsure of the anchor, omit it — a correct base URL is better than a broken anchor
 
 VIDEO SOURCES (use ONLY these channels — in priority order):
 1. Ninja Nerd — @NinjaNerdNation — excellent medical physiology and pathology
@@ -125,7 +133,9 @@ Score videos 50–100 based on how directly they cover the exact mechanism.`;
 
 async function isUrlReachable(url: string): Promise<boolean> {
   try {
-    const res = await fetch(url, {
+    // Validate only the base URL (strip #fragment) — servers don't return 404 for bad anchors
+    const baseUrl = url.split("#")[0];
+    const res = await fetch(baseUrl, {
       method: "HEAD",
       signal: AbortSignal.timeout(3500),
       headers: { "User-Agent": "Mozilla/5.0 (compatible; resource-validator/1.0)" },

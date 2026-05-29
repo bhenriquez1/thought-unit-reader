@@ -1648,8 +1648,21 @@ function UltraView({
 
           return (
           <div className="rounded-2xl border border-white/10 bg-[#0a1428] px-4 py-4">
-            <div className="mb-3 text-[16px] font-semibold text-white">
-              {selectedBlock.ordinal}️⃣ {selectedBlock.title}
+            <div className="mb-3 flex items-start justify-between gap-2">
+              <div className="text-[16px] font-semibold text-white leading-snug">
+                {selectedBlock.ordinal}️⃣ {selectedBlock.title}
+              </div>
+              {(selectedBlock.anchorText || selectedBlock.pattern) && (
+                <button
+                  type="button"
+                  onClick={() => onAnchorClick(selectedBlock.anchorText ?? selectedBlock.pattern)}
+                  className="shrink-0 flex items-center gap-1 rounded-lg border border-amber-400/30 bg-amber-400/8 px-2 py-1 text-[11px] font-medium text-amber-300 hover:bg-amber-400/18 transition-colors"
+                  title="Jump to this text in the PDF"
+                >
+                  <span>↗</span>
+                  <span>Focus</span>
+                </button>
+              )}
             </div>
             <div className="space-y-4">
               {/* FIELD 1: Concept/Definition/Finding — primary signal, highest visual weight. */}
@@ -1861,7 +1874,10 @@ function UltraView({
             <p className="text-[12px] text-slate-500 italic">Finding videos…</p>
           ) : resolvedResources.videos.length > 0 ? (
             <ul className="space-y-2">
-              {resolvedResources.videos.map((v, i) => (
+              {resolvedResources.videos.map((v, i) => {
+                const isDirectVideo = v.searchUrl.includes("youtube.com/watch?v=");
+                const hasTimestamp  = isDirectVideo && v.timestampSeconds != null && v.timestampSeconds > 0;
+                return (
                 <li key={i} className="rounded-lg border border-white/8 bg-white/3 p-2.5">
                   <a
                     href={v.searchUrl}
@@ -1873,14 +1889,24 @@ function UltraView({
                       <span className="text-[12px] font-medium text-red-200 group-hover:text-red-100 leading-snug">{v.videoTitle}</span>
                       <span className="shrink-0 rounded bg-red-900/60 px-1.5 py-0.5 text-[10px] font-semibold text-red-300">{v.score}%</span>
                     </div>
-                    <span className="text-[10px] text-slate-400">{v.channel}</span>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] text-slate-400">{v.channel}</span>
+                      {isDirectVideo ? (
+                        <span className="rounded bg-green-900/50 px-1 py-px text-[9px] font-semibold text-green-400">▶ Direct</span>
+                      ) : (
+                        <span className="rounded bg-slate-700/60 px-1 py-px text-[9px] font-semibold text-slate-400">Search</span>
+                      )}
+                    </div>
                     <span className="text-[11px] text-slate-300 italic mt-0.5">{v.reason}</span>
-                    {v.timestampLabel && (
-                      <span className="text-[10px] text-slate-500 mt-0.5">⏱ ~{v.timestampLabel} for this topic</span>
+                    {hasTimestamp && (
+                      <span className="mt-1 inline-flex items-center gap-1 rounded bg-red-900/40 px-1.5 py-0.5 text-[10px] font-medium text-red-300">
+                        ⏱ {v.timestampLabel} — jumps to this topic
+                      </span>
                     )}
                   </a>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           ) : (
             <p className="text-[12px] text-slate-500 italic">No video recommendations found for this page.</p>
