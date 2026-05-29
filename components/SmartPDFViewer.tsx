@@ -239,6 +239,10 @@ export default function SmartPDFViewer({
     overlays: HighlightOverlayRect[];
   } | null>(null);
   const [overlayVersion, setOverlayVersion] = useState(0);
+  // Tracks the highlightKey for which the rebuild effect last ran.
+  // Prevents redundant RAF fires when highlightTargets reference changes
+  // but content (encoded in highlightKey) is identical — harmless dedup.
+  const prevRebuildKeyRef = useRef<string | undefined>(undefined);
   // Clear reading path immediately when guided data goes away (e.g. page turn).
   useEffect(() => {
     if (guidedOverlayData === null) onReadingPath?.(null);
@@ -408,6 +412,16 @@ export default function SmartPDFViewer({
       setGuidedOverlayData(null);
       return;
     }
+
+    // Dedup: skip RAF when highlightKey hasn't changed. This prevents redundant
+    // rebuilds when only the highlightTargets reference changes (new array, same
+    // content) — which happens on every PureReaderView render. The highlightKey
+    // already encodes all anchor texts, so an unchanged key means unchanged content.
+    if (highlightKey !== undefined && highlightKey === prevRebuildKeyRef.current) {
+      console.log("[OVERLAY_DEDUP] highlightKey unchanged — skipping rebuild", { highlightKey: highlightKey.slice(-60) });
+      return;
+    }
+    prevRebuildKeyRef.current = highlightKey;
 
     // Clear stale rects immediately before starting async matching.
     // Without this, old highlight rectangles persist in state for the entire
@@ -721,6 +735,15 @@ export default function SmartPDFViewer({
         console.log("[AI_HIGHLIGHT:rects]", {
           id: target.evidenceRefId,
           rects: lineRects.map((r) => ({ top: Math.round(r.top), left: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height) })),
+        });
+        lineRects.forEach((r, rIdx) => {
+          console.log("[OVERLAY_RECT_SOURCE]", {
+            anchorId: target.evidenceRefId,
+            text: target.text?.slice(0, 50),
+            rectIndex: rIdx,
+            page: currentPage,
+            highlightKey: (highlightKey ?? "").slice(-40),
+          });
         });
         rects.push(...lineRects);
       });
