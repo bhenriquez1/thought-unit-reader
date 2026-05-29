@@ -1851,9 +1851,9 @@ function UltraView({
       {/* STR Compression — hidden in synthesis-only mode; synthesis fields now appear in Study Notes */}
       {/* Reading Map — hidden; SRI signals are internal metadata, not student-facing study notes */}
 
-      {/* External Study Links — exact Wikipedia/resource URLs resolved by backend */}
+      {/* Related Reading — exact Wikipedia URLs resolved by backend; falls back to Wikipedia search */}
       {externalStudyLinksRaw?.length ? (
-        <PanelSection title="External Reading">
+        <PanelSection title="📖 Related Reading">
           {!externalLinksResolved ? (
             <p className="text-[12px] text-slate-500 italic">Loading resources…</p>
           ) : resolvedExternalLinks.length > 0 ? (
@@ -1867,7 +1867,7 @@ function UltraView({
                     rel="noopener noreferrer"
                     className="flex items-start gap-2 text-[13px] text-violet-300 hover:text-violet-100 underline decoration-dotted"
                   >
-                    <span className="mt-0.5 shrink-0">{link.source === "wikipedia" ? "📖" : "🔗"}</span>
+                    <span className="mt-0.5 shrink-0">📖</span>
                     <span className="flex flex-col min-w-0">
                       <span>{link.label}</span>
                       <span className="text-[10px] text-slate-500 truncate">{link.title}</span>
@@ -1877,17 +1877,29 @@ function UltraView({
               ))}
             </ul>
           ) : (
-            <p className="text-[12px] text-slate-500 italic">
-              {(() => { console.log("[RELATED_RESOURCES_EMPTY]", { type: "external" }); return null; })()}
-              No external reading found for this page.
-            </p>
+            <ul className="space-y-1">
+              {(() => { console.log("[RELATED_RESOURCES_FALLBACK]", { type: "external", queries: externalStudyLinksRaw.length }); return null; })()}
+              {externalStudyLinksRaw.map((link, i) => (
+                <li key={i}>
+                  <a
+                    href={`https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(link.searchQuery)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-start gap-2 text-[13px] text-violet-300 hover:text-violet-100 underline decoration-dotted"
+                  >
+                    <span className="mt-0.5 shrink-0">🔍</span>
+                    <span>{link.label}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
           )}
         </PanelSection>
       ) : null}
 
-      {/* Related Teaching Videos — exact YouTube URLs resolved by backend (no search fallbacks) */}
+      {/* Related Videos — exact YouTube URLs when API key present; falls back to YouTube search */}
       {relatedVideoQueries?.length ? (
-        <PanelSection title="📺 Related Teaching Videos">
+        <PanelSection title="📺 Related Videos">
           {!videoLinksResolved ? (
             <p className="text-[12px] text-slate-500 italic">Loading videos…</p>
           ) : resolvedVideoLinks.length > 0 ? (
@@ -1911,10 +1923,22 @@ function UltraView({
               ))}
             </ul>
           ) : (
-            <p className="text-[12px] text-slate-500 italic">
-              {(() => { console.log("[RELATED_RESOURCES_EMPTY]", { type: "video" }); return null; })()}
-              No teaching videos found for this page.
-            </p>
+            <ul className="space-y-2">
+              {(() => { console.log("[RELATED_RESOURCES_FALLBACK]", { type: "video", queries: relatedVideoQueries.length }); return null; })()}
+              {relatedVideoQueries.map((query, i) => (
+                <li key={i}>
+                  <a
+                    href={`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-start gap-2 text-[13px] text-red-300 hover:text-red-100 underline decoration-dotted"
+                  >
+                    <span className="mt-0.5 shrink-0">📺</span>
+                    <span>{query}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
           )}
         </PanelSection>
       ) : null}
