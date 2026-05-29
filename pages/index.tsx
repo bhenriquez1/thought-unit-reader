@@ -47,6 +47,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import { buildGuidedLegend } from "@/lib/highlights/buildGuidedLegend";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
 import { groundHighlightAnchors } from "@/lib/highlights/groundHighlightAnchors";
+import { sanitizeHighlightAnchors } from "@/lib/highlights/sanitizeHighlightAnchors";
 import type { SynthHighlightAnchor } from "@/lib/insights/synthesizeTeachingOutput";
 
 // Cognitive Engine Components (Surgeon View 2.0)
@@ -456,7 +457,9 @@ export default function ThoughtUnitReader() {
       return;
     }
 
-    const raw = currentPageStudyModel.highlightAnchors as SynthHighlightAnchor[];
+    const raw = sanitizeHighlightAnchors(
+      currentPageStudyModel.highlightAnchors as SynthHighlightAnchor[]
+    );
 
     // ── Stage A: Synchronous grounding ──────────────────────────────────────
     // Convert semantic anchors to exact PDF spans immediately.
@@ -2884,8 +2887,17 @@ export default function ThoughtUnitReader() {
                 onRoleLabelMap={setRoleLabelByConceptId}
                 resolveEvidenceId={resolveEvidenceId}
                 focusedEvidenceId={focusedEvidenceId}
-                onNoteSaved={() => { setNoteLabRefreshKey((k) => k + 1); trySwitchShellTab("notelab", "notelab"); }}
-                onStudySetGenerated={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey((k) => k + 1); trySwitchShellTab("study", "study"); }}
+                onNoteSaved={() => {
+                  console.log("[NOTELAB_CALLBACK]", { bookId, page: currentPage });
+                  setNoteLabRefreshKey((k) => k + 1);
+                  trySwitchShellTab("notelab", "notelab");
+                }}
+                onStudySetGenerated={(setId) => {
+                  console.log("[RECALLLAB_CALLBACK]", { setId, bookId, page: currentPage });
+                  setLastRecallSetId(setId);
+                  setRecallLabRefreshKey((k) => k + 1);
+                  trySwitchShellTab("study", "study");
+                }}
                 onEvidenceClick={(snippet, evidenceId) => {
                   setFocusSnippet(null);
                   setFocusedEvidenceId(evidenceId || resolveEvidenceId(snippet) || null);
