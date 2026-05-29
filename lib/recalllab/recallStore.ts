@@ -50,7 +50,15 @@ function loadAll(): RecallSet[] {
 function saveAll(sets: RecallSet[]): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sets));
+    const serialized = JSON.stringify(sets);
+    localStorage.setItem(STORAGE_KEY, serialized);
+    const verify = localStorage.getItem(STORAGE_KEY);
+    console.log("[RECALL_LS_COUNT]", {
+      key: STORAGE_KEY,
+      writtenCount: sets.length,
+      verifiedBytes: verify?.length ?? 0,
+      verifiedCount: verify ? (JSON.parse(verify) as RecallSet[]).length : 0,
+    });
     window.dispatchEvent(new Event("recall-lab-updated"));
     console.log("[RECALL_EVENT_DISPATCHED]", { setCount: sets.length });
   } catch (err) {
