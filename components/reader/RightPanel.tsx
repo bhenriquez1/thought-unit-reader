@@ -1357,63 +1357,35 @@ function UltraView({
   } | undefined;
   const hasSynth = !!(synth && (synth.whyItMatters || synth.keyMechanism || synth.commonConfusion || synth.memoryAnchor));
 
-  // Raw OpenAI outputs — search queries to be resolved to exact URLs by the backend
-  const externalStudyLinksRaw = synth?.externalStudyLinks ?? null;
-  const relatedVideoQueries   = synth?.relatedVideoQueries ?? null;
+  // ── Specific resource recommendations — AI-resolved exact articles + channel-targeted videos ──
+  type ResolvedArticle = { title: string; url: string; source: string; reason: string; score: number };
+  type ResolvedVideo   = { channel: string; channelHandle: string; videoTitle: string; searchUrl: string; reason: string; timestampSeconds: number | null; timestampLabel: string | null; score: number };
 
-  // Resolved exact YouTube video URLs — fetched from /api/resolveVideoLinks
-  // Empty = not yet resolved OR no API key. We show nothing until resolved.
-  const [resolvedVideoLinks, setResolvedVideoLinks]     = useState<Array<{ query: string; title: string; url: string; channelTitle: string }>>([]);
-  const [videoLinksResolved, setVideoLinksResolved]     = useState(false);
+  const [resolvedResources, setResolvedResources] = useState<{ articles: ResolvedArticle[]; videos: ResolvedVideo[]; resolved: boolean }>({ articles: [], videos: [], resolved: false });
 
   useEffect(() => {
-    setResolvedVideoLinks([]);
-    setVideoLinksResolved(false);
-    if (!relatedVideoQueries?.length) { setVideoLinksResolved(true); return; }
-    console.log("[RELATED_RESOURCES_INPUT]", { type: "video", queries: relatedVideoQueries });
+    setResolvedResources({ articles: [], videos: [], resolved: false });
+    const thesis = (view.pageThesis ?? view.coreIdea ?? "").trim();
+    if (!thesis || !hasSynth) { setResolvedResources(r => ({ ...r, resolved: true })); return; }
     const controller = new AbortController();
-    fetch("/api/resolveVideoLinks", {
+    const conceptTitles = view.blocks.map(b => b.title).filter(Boolean).slice(0, 5);
+    const anchorTexts   = view.blocks.map(b => b.anchorText).filter((t): t is string => !!t).slice(0, 4);
+    console.log("[RESOURCES_INPUT]", { thesis: thesis.slice(0, 60), mechanism: synth?.keyMechanism?.slice(0, 50), concepts: conceptTitles.length });
+    fetch("/api/resolveResources", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ queries: relatedVideoQueries }),
+      body: JSON.stringify({ pageThesis: thesis, keyMechanism: synth?.keyMechanism ?? null, conceptTitles, anchorTexts }),
       signal: controller.signal,
     })
-      .then((r) => r.json())
-      .then((data) => {
-        console.log("[RELATED_RESOURCES_API_RESULT]", { type: "video", count: (data.links ?? []).length });
-        setResolvedVideoLinks(data.links ?? []);
-        setVideoLinksResolved(true);
+      .then(r => r.json())
+      .then(data => {
+        console.log("[RESOURCES_RESULT]", { articles: (data.articles ?? []).length, videos: (data.videos ?? []).length });
+        setResolvedResources({ articles: data.articles ?? [], videos: data.videos ?? [], resolved: true });
       })
-      .catch(() => { setVideoLinksResolved(true); });
+      .catch(() => setResolvedResources(r => ({ ...r, resolved: true })));
     return () => controller.abort();
-  }, [relatedVideoQueries]);
-
-  // Resolved exact external study links — fetched from /api/resolveExternalLinks (Wikipedia API)
-  // Empty = not yet resolved OR nothing could be resolved. We show nothing until resolved.
-  const [resolvedExternalLinks, setResolvedExternalLinks] = useState<Array<{ label: string; url: string; title: string; source: string }>>([]);
-  const [externalLinksResolved, setExternalLinksResolved] = useState(false);
-
-  useEffect(() => {
-    setResolvedExternalLinks([]);
-    setExternalLinksResolved(false);
-    if (!externalStudyLinksRaw?.length) { setExternalLinksResolved(true); return; }
-    console.log("[RELATED_RESOURCES_INPUT]", { type: "external", count: externalStudyLinksRaw.length, labels: externalStudyLinksRaw.map(l => l.label) });
-    const controller = new AbortController();
-    fetch("/api/resolveExternalLinks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ links: externalStudyLinksRaw }),
-      signal: controller.signal,
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        console.log("[RELATED_RESOURCES_API_RESULT]", { type: "external", count: (data.resolved ?? []).length });
-        setResolvedExternalLinks(data.resolved ?? []);
-        setExternalLinksResolved(true);
-      })
-      .catch(() => { setExternalLinksResolved(true); });
-    return () => controller.abort();
-  }, [externalStudyLinksRaw]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.coreIdea, view.pageThesis, hasSynth]);
 
   // Interactive Mini Test items — structured questions from OpenAI
   const miniTestItems = synth?.miniTestItems ?? null;
@@ -1851,94 +1823,67 @@ function UltraView({
       {/* STR Compression — hidden in synthesis-only mode; synthesis fields now appear in Study Notes */}
       {/* Reading Map — hidden; SRI signals are internal metadata, not student-facing study notes */}
 
-      {/* Related Reading — exact Wikipedia URLs resolved by backend; falls back to Wikipedia search */}
-      {externalStudyLinksRaw?.length ? (
+      {/* ── Related Reading — AI-selected exact articles from NIH/MedlinePlus/NCBI/OpenStax ── */}
+      {hasSynth ? (
         <PanelSection title="📖 Related Reading">
-          {!externalLinksResolved ? (
-            <p className="text-[12px] text-slate-500 italic">Loading resources…</p>
-          ) : resolvedExternalLinks.length > 0 ? (
-            <ul className="space-y-1">
-              {(() => { console.log("[RELATED_RESOURCES_RENDER]", { type: "external", count: resolvedExternalLinks.length }); return null; })()}
-              {resolvedExternalLinks.map((link, i) => (
-                <li key={i}>
+          {!resolvedResources.resolved ? (
+            <p className="text-[12px] text-slate-500 italic">Finding resources…</p>
+          ) : resolvedResources.articles.length > 0 ? (
+            <ul className="space-y-2">
+              {resolvedResources.articles.map((a, i) => (
+                <li key={i} className="rounded-lg border border-white/8 bg-white/3 p-2.5">
                   <a
-                    href={link.url}
+                    href={a.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-start gap-2 text-[13px] text-violet-300 hover:text-violet-100 underline decoration-dotted"
+                    className="group flex flex-col gap-0.5"
                   >
-                    <span className="mt-0.5 shrink-0">📖</span>
-                    <span className="flex flex-col min-w-0">
-                      <span>{link.label}</span>
-                      <span className="text-[10px] text-slate-500 truncate">{link.title}</span>
-                    </span>
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-[12px] font-medium text-violet-200 group-hover:text-violet-100 leading-snug">{a.title}</span>
+                      <span className="shrink-0 rounded bg-violet-900/60 px-1.5 py-0.5 text-[10px] font-semibold text-violet-300">{a.score}%</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400">{a.source}</span>
+                    <span className="text-[11px] text-slate-300 italic mt-0.5">{a.reason}</span>
                   </a>
                 </li>
               ))}
             </ul>
           ) : (
-            <ul className="space-y-1">
-              {(() => { console.log("[RELATED_RESOURCES_FALLBACK]", { type: "external", queries: externalStudyLinksRaw.length }); return null; })()}
-              {externalStudyLinksRaw.map((link, i) => (
-                <li key={i}>
-                  <a
-                    href={`https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(link.searchQuery)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-start gap-2 text-[13px] text-violet-300 hover:text-violet-100 underline decoration-dotted"
-                  >
-                    <span className="mt-0.5 shrink-0">🔍</span>
-                    <span>{link.label}</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
+            <p className="text-[12px] text-slate-500 italic">No reading resources found for this page.</p>
           )}
         </PanelSection>
       ) : null}
 
-      {/* Related Videos — exact YouTube URLs when API key present; falls back to YouTube search */}
-      {relatedVideoQueries?.length ? (
+      {/* ── Related Videos — AI-selected specific channel videos from Ninja Nerd / Osmosis / Khan ── */}
+      {hasSynth ? (
         <PanelSection title="📺 Related Videos">
-          {!videoLinksResolved ? (
-            <p className="text-[12px] text-slate-500 italic">Loading videos…</p>
-          ) : resolvedVideoLinks.length > 0 ? (
+          {!resolvedResources.resolved ? (
+            <p className="text-[12px] text-slate-500 italic">Finding videos…</p>
+          ) : resolvedResources.videos.length > 0 ? (
             <ul className="space-y-2">
-              {(() => { console.log("[RELATED_RESOURCES_RENDER]", { type: "video", count: resolvedVideoLinks.length }); return null; })()}
-              {resolvedVideoLinks.map((link, i) => (
-                <li key={i}>
+              {resolvedResources.videos.map((v, i) => (
+                <li key={i} className="rounded-lg border border-white/8 bg-white/3 p-2.5">
                   <a
-                    href={link.url}
+                    href={v.searchUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-start gap-2 text-[13px] text-red-300 hover:text-red-100 underline decoration-dotted"
+                    className="group flex flex-col gap-0.5"
                   >
-                    <span className="mt-0.5 shrink-0">📺</span>
-                    <span className="flex flex-col min-w-0">
-                      <span>{link.title}</span>
-                      <span className="text-[10px] text-slate-500">{link.channelTitle}</span>
-                    </span>
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-[12px] font-medium text-red-200 group-hover:text-red-100 leading-snug">{v.videoTitle}</span>
+                      <span className="shrink-0 rounded bg-red-900/60 px-1.5 py-0.5 text-[10px] font-semibold text-red-300">{v.score}%</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400">{v.channel}</span>
+                    <span className="text-[11px] text-slate-300 italic mt-0.5">{v.reason}</span>
+                    {v.timestampLabel && (
+                      <span className="text-[10px] text-slate-500 mt-0.5">⏱ ~{v.timestampLabel} for this topic</span>
+                    )}
                   </a>
                 </li>
               ))}
             </ul>
           ) : (
-            <ul className="space-y-2">
-              {(() => { console.log("[RELATED_RESOURCES_FALLBACK]", { type: "video", queries: relatedVideoQueries.length }); return null; })()}
-              {relatedVideoQueries.map((query, i) => (
-                <li key={i}>
-                  <a
-                    href={`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-start gap-2 text-[13px] text-red-300 hover:text-red-100 underline decoration-dotted"
-                  >
-                    <span className="mt-0.5 shrink-0">📺</span>
-                    <span>{query}</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
+            <p className="text-[12px] text-slate-500 italic">No video recommendations found for this page.</p>
           )}
         </PanelSection>
       ) : null}
@@ -1964,7 +1909,7 @@ function UltraView({
             `examSignal:      ${synth?.examSignal      ? "✓ " + synth.examSignal.slice(0, 55)      : "— null"}`,
             `── RENDER CONTRACT ──`,
             `visibleBlocks: ${visibleBlocks.length} | thesis: ${(view.pageThesis ?? view.coreIdea ?? "—").slice(0, 50)}`,
-            `miniTest: ${view.miniTest.length} | extLinks: ${externalStudyLinksRaw?.length ?? 0}`,
+            `miniTest: ${view.miniTest.length} | resources: ${resolvedResources.articles.length}a ${resolvedResources.videos.length}v`,
           ].join("\n")}
         </div>
       )}
