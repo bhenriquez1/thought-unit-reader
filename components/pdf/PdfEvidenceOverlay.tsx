@@ -28,8 +28,15 @@ export default function PdfEvidenceOverlay({
             key={rect.id}
             type="button"
             onClick={() => onFocus?.(rect.id)}
-            className={`pointer-events-auto absolute rounded-sm transition-colors ${priorityClassName(rect.level, focused, rect.semanticKind)}`}
-            style={{ top: rect.top, left: rect.left, width: rect.width, height: rect.height }}
+            className={`pointer-events-auto absolute transition-colors ${focused ? focusedRingClass(rect.level, rect.semanticKind) : ""}`}
+            style={{
+              top: rect.top,
+              left: rect.left,
+              width: rect.width,
+              height: rect.height,
+              borderRadius: "3px",
+              backgroundColor: markerColor(rect.semanticKind, rect.level, focused),
+            }}
             aria-label="Evidence highlight"
           />
         );
@@ -38,61 +45,27 @@ export default function PdfEvidenceOverlay({
   );
 }
 
-// 5-color semantic highlight palette:
-//   thesis      🟡 amber/yellow — governing idea
-//   definition  🔵 blue         — core concept definition
-//   mechanism   🟢 emerald/green — how/why it works, cause→effect
-//   application 🩷 rose/pink    — real-world example / clinical use
-//   trap        🟣 violet/purple — common mistake / confusion / contrast
-function priorityClassName(
-  level: OverlayRect["level"],
-  focused: boolean,
-  kind?: OverlayRect["semanticKind"],
-): string {
-  if (kind === "thesis") {
-    return focused
-      ? "bg-amber-400/75 ring-2 ring-amber-200/95 shadow-[0_0_0_2px_rgba(251,191,36,0.60)]"
-      : "bg-amber-400/56 ring-1 ring-amber-300/88";
-  }
-  if (kind === "definition") {
-    return focused
-      ? "bg-blue-400/68 ring-2 ring-blue-200/90 shadow-[0_0_0_2px_rgba(96,165,250,0.55)]"
-      : "bg-blue-400/48 ring-1 ring-blue-300/75";
-  }
-  if (kind === "mechanism") {
-    return focused
-      ? "bg-emerald-400/68 ring-2 ring-emerald-200/90 shadow-[0_0_0_2px_rgba(52,211,153,0.55)]"
-      : "bg-emerald-400/48 ring-1 ring-emerald-300/75";
-  }
-  if (kind === "application") {
-    return focused
-      ? "bg-pink-400/72 ring-2 ring-pink-200/95 shadow-[0_0_0_2px_rgba(244,114,182,0.60)]"
-      : "bg-pink-400/52 ring-1 ring-pink-300/82";
-  }
-  if (kind === "trap") {
-    return focused
-      ? "bg-violet-400/68 ring-2 ring-violet-200/90 shadow-[0_0_0_2px_rgba(167,139,250,0.55)]"
-      : "bg-violet-400/48 ring-1 ring-violet-300/75";
-  }
-  // level-based fallback for heuristic highlights (no semanticKind)
-  switch (level) {
-    case "important":
-      return focused
-        ? "bg-amber-400/75 ring-2 ring-amber-200/95 shadow-[0_0_0_2px_rgba(251,191,36,0.60)]"
-        : "bg-amber-400/56 ring-1 ring-amber-300/88";
-    case "trap":
-      return focused
-        ? "bg-violet-400/68 ring-2 ring-violet-200/90 shadow-[0_0_0_2px_rgba(167,139,250,0.55)]"
-        : "bg-violet-400/48 ring-1 ring-violet-300/75";
-    case "support":
-      return focused
-        ? "bg-blue-400/62 ring-2 ring-blue-200/90 shadow-[0_0_0_1px_rgba(96,165,250,0.52)]"
-        : "bg-blue-400/42 ring-1 ring-blue-300/72";
-    case "additional":
-      return focused
-        ? "bg-sky-400/50 ring-2 ring-sky-100/80"
-        : "bg-sky-400/32 ring-1 ring-sky-200/62";
-    default:
-      return "bg-yellow-300/40";
-  }
+// Inline marker background — semi-transparent fill, no border-bottom, no underline.
+// Unfocused: fill only, no ring (ring on thin rects looks like underline, not marker).
+// Focused: fill + ring + glow for click feedback.
+function markerColor(kind?: OverlayRect["semanticKind"], level?: OverlayRect["level"], focused?: boolean): string {
+  if (kind === "thesis")      return focused ? "rgba(251,191,36,0.62)"  : "rgba(251,191,36,0.40)";
+  if (kind === "definition")  return focused ? "rgba(96,165,250,0.58)"  : "rgba(96,165,250,0.36)";
+  if (kind === "mechanism")   return focused ? "rgba(52,211,153,0.58)"  : "rgba(52,211,153,0.36)";
+  if (kind === "application") return focused ? "rgba(244,114,182,0.60)" : "rgba(244,114,182,0.38)";
+  if (kind === "trap")        return focused ? "rgba(167,139,250,0.58)" : "rgba(167,139,250,0.36)";
+  // level fallback
+  if (level === "support")    return focused ? "rgba(96,165,250,0.55)"  : "rgba(96,165,250,0.33)";
+  if (level === "additional") return focused ? "rgba(56,189,248,0.50)"  : "rgba(56,189,248,0.28)";
+  if (level === "trap")       return focused ? "rgba(167,139,250,0.58)" : "rgba(167,139,250,0.36)";
+  return focused ? "rgba(251,191,36,0.62)" : "rgba(251,191,36,0.40)";
+}
+
+function focusedRingClass(level: OverlayRect["level"], kind?: OverlayRect["semanticKind"]): string {
+  if (kind === "thesis"      || level === "important")   return "ring-2 ring-amber-300/80 shadow-[0_0_8px_rgba(251,191,36,0.55)]";
+  if (kind === "definition"  || level === "support")     return "ring-2 ring-blue-300/80 shadow-[0_0_8px_rgba(96,165,250,0.50)]";
+  if (kind === "mechanism")   return "ring-2 ring-emerald-300/80 shadow-[0_0_8px_rgba(52,211,153,0.50)]";
+  if (kind === "application") return "ring-2 ring-pink-300/80 shadow-[0_0_8px_rgba(244,114,182,0.50)]";
+  if (kind === "trap"        || level === "trap")        return "ring-2 ring-violet-300/80 shadow-[0_0_8px_rgba(167,139,250,0.50)]";
+  return "ring-2 ring-amber-300/80";
 }
