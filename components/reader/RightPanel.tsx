@@ -3054,6 +3054,13 @@ function GenerateNoteButton({
   const synthReady = !!studyModel && (studyModel.conceptBlocks?.length ?? 0) > 0;
 
   function handleGenerate() {
+    console.log("[ULTRA_NOTE_CLICK]", {
+      page: pageNumber,
+      synthReady,
+      hasStudyModel: !!studyModel,
+      conceptBlockCount: studyModel?.conceptBlocks?.length ?? 0,
+      miniTestItemCount: studyModel?.miniTestItems?.length ?? 0,
+    });
     console.log("[NOTE:click]", {
       page: pageNumber,
       synthReady,
