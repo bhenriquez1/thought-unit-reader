@@ -944,11 +944,7 @@ export default function ThoughtUnitReader() {
     if (activeShellTab !== "reader") return;
     setFocusedEvidenceId(null);
     setFocusSnippet(null);
-    const topSnippet = currentSignals.paragraphSignals?.[0]?.text;
-    if (!topSnippet) return;
-    const timer = window.setTimeout(() => setFocusSnippet(topSnippet), 0);
-    return () => window.clearTimeout(timer);
-  }, [activeShellTab, currentPage, currentSignals.paragraphSignals, highlightKey]);
+  }, [activeShellTab, currentPage]);
 
   /* =========================================================================
      🔹 Surgeon View: Text Selection Handler
