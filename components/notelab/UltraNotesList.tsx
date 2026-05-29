@@ -39,7 +39,14 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
 
   const reload = useCallback(() => {
     const all = getAllUltraNotes();
-    setNotes(bookId ? all.filter((n) => n.bookId === bookId) : all);
+    const filtered = bookId ? all.filter((n) => n.bookId === bookId) : all;
+    console.log("[NOTELAB_RELOAD]", {
+      totalInStorage: all.length,
+      bookId: bookId ?? null,
+      filteredCount: filtered.length,
+      bookIds: [...new Set(all.map(n => n.bookId))],
+    });
+    setNotes(filtered);
   }, [bookId]);
 
   useEffect(() => { reload(); }, [reload, refreshKey]);
