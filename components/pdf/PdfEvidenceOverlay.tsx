@@ -10,6 +10,15 @@ export interface OverlayRect {
   semanticKind?: "thesis" | "definition" | "mechanism" | "trap" | "application";
 }
 
+// Only thesis and mechanism appear in the persistent PDF overlay.
+// definition, application, trap → right panel only, never painted on the PDF.
+function shouldRender(rect: OverlayRect): boolean {
+  if (rect.semanticKind === "thesis" || rect.semanticKind === "mechanism") return true;
+  // Level-only fallback: important with no kind → treat as thesis
+  if (!rect.semanticKind && rect.level === "important") return true;
+  return false;
+}
+
 export default function PdfEvidenceOverlay({
   rects,
   focusedId,
@@ -21,21 +30,22 @@ export default function PdfEvidenceOverlay({
 }) {
   return (
     <div className="pointer-events-none absolute inset-0 z-20">
-      {rects.map((rect) => {
+      {rects.filter(shouldRender).map((rect) => {
         const focused = focusedId === rect.id;
+        const isThesis = rect.semanticKind === "thesis" || (!rect.semanticKind && rect.level === "important");
         return (
           <button
             key={rect.id}
             type="button"
             onClick={() => onFocus?.(rect.id)}
-            className={`pointer-events-auto absolute transition-colors ${focused ? focusedRingClass(rect.level, rect.semanticKind) : ""}`}
+            className={`pointer-events-auto absolute transition-colors ${focused ? focusedRingClass(isThesis) : ""}`}
             style={{
               top: rect.top,
               left: rect.left,
               width: rect.width,
               height: rect.height,
               borderRadius: "3px",
-              backgroundColor: markerColor(rect.semanticKind, rect.level, focused),
+              backgroundColor: markerColor(isThesis, focused),
             }}
             aria-label="Evidence highlight"
           />
@@ -45,27 +55,16 @@ export default function PdfEvidenceOverlay({
   );
 }
 
-// Inline marker background — semi-transparent fill, no border-bottom, no underline.
-// Unfocused: fill only, no ring (ring on thin rects looks like underline, not marker).
-// Focused: fill + ring + glow for click feedback.
-function markerColor(kind?: OverlayRect["semanticKind"], level?: OverlayRect["level"], focused?: boolean): string {
-  if (kind === "thesis")      return focused ? "rgba(251,191,36,0.62)"  : "rgba(251,191,36,0.40)";
-  if (kind === "definition")  return focused ? "rgba(96,165,250,0.58)"  : "rgba(96,165,250,0.36)";
-  if (kind === "mechanism")   return focused ? "rgba(52,211,153,0.58)"  : "rgba(52,211,153,0.36)";
-  if (kind === "application") return focused ? "rgba(244,114,182,0.60)" : "rgba(244,114,182,0.38)";
-  if (kind === "trap")        return focused ? "rgba(167,139,250,0.58)" : "rgba(167,139,250,0.36)";
-  // level fallback
-  if (level === "support")    return focused ? "rgba(96,165,250,0.55)"  : "rgba(96,165,250,0.33)";
-  if (level === "additional") return focused ? "rgba(56,189,248,0.50)"  : "rgba(56,189,248,0.28)";
-  if (level === "trap")       return focused ? "rgba(167,139,250,0.58)" : "rgba(167,139,250,0.36)";
-  return focused ? "rgba(251,191,36,0.62)" : "rgba(251,191,36,0.40)";
+// Two-color scheme only:
+//   Thesis / high-yield statement → light pink
+//   Mechanism / cause-effect      → light green
+// All other semantic kinds are filtered out above and never reach here.
+function markerColor(isThesis: boolean, focused?: boolean): string {
+  if (isThesis) return focused ? "rgba(249,168,212,0.70)" : "rgba(249,168,212,0.45)";
+  return focused ? "rgba(134,239,172,0.68)" : "rgba(134,239,172,0.42)";
 }
 
-function focusedRingClass(level: OverlayRect["level"], kind?: OverlayRect["semanticKind"]): string {
-  if (kind === "thesis"      || level === "important")   return "ring-2 ring-amber-300/80 shadow-[0_0_8px_rgba(251,191,36,0.55)]";
-  if (kind === "definition"  || level === "support")     return "ring-2 ring-blue-300/80 shadow-[0_0_8px_rgba(96,165,250,0.50)]";
-  if (kind === "mechanism")   return "ring-2 ring-emerald-300/80 shadow-[0_0_8px_rgba(52,211,153,0.50)]";
-  if (kind === "application") return "ring-2 ring-pink-300/80 shadow-[0_0_8px_rgba(244,114,182,0.50)]";
-  if (kind === "trap"        || level === "trap")        return "ring-2 ring-violet-300/80 shadow-[0_0_8px_rgba(167,139,250,0.50)]";
-  return "ring-2 ring-amber-300/80";
+function focusedRingClass(isThesis: boolean): string {
+  if (isThesis) return "ring-2 ring-pink-300/80 shadow-[0_0_8px_rgba(249,168,212,0.55)]";
+  return "ring-2 ring-green-300/80 shadow-[0_0_8px_rgba(134,239,172,0.55)]";
 }
