@@ -120,10 +120,11 @@ Section anchor examples:
 VIDEO SOURCES (use ONLY these channels — in priority order):
 1. Ninja Nerd — @NinjaNerdNation — excellent medical physiology and pathology
 2. Osmosis — @osmosis — clear disease mechanism animations
-3. Khan Academy — @khanacademy — solid science and pre-med content
-4. Boards & Beyond — @BoardsBeyond — board-focused medical content
-5. Crash Course — @thecrashcourse — accessible science overviews
-6. Armando Hasudungan — @armandohasudungan — hand-drawn medical diagrams
+3. Armando Hasudungan — @armandohasudungan — hand-drawn medical diagrams
+4. Khan Academy — @khanacademy — solid science and pre-med content
+5. Medicosis Perfectionalis — @MedicosisPerfectionalis — high-yield med school concepts
+6. Boards & Beyond — @BoardsBeyond — board-focused medical content
+7. Crash Course — @thecrashcourse — accessible science overviews
 
 For each video: recommend the MOST SPECIFIC video on that channel covering this exact topic.
 If you know the approximate timestamp where the specific mechanism/concept is explained, provide it.
@@ -148,12 +149,13 @@ async function isUrlReachable(url: string): Promise<boolean> {
 
 // ── YouTube channel IDs (needed for channelId filter in YouTube search API) ──
 const YOUTUBE_CHANNEL_IDS: Record<string, string> = {
-  "@NinjaNerdNation":    "UC6QYFutt9cluQ3uSM963_KQ",
-  "@osmosis":            "UCNI0qbn7X6mMd8V9UcDiO-A",
-  "@khanacademy":        "UC4a-Gbdw7vOaccHmFo40b9g",
-  "@BoardsBeyond":       "UCcoMpPC8OkNnwHCNRLKXLiA",
-  "@thecrashcourse":     "UCX6b17PVsYBQ0ip5gyeme-Q",
-  "@armandohasudungan":  "UCesEknt3SRX9R9W_f93Tb7g",
+  "@NinjaNerdNation":          "UC6QYFutt9cluQ3uSM963_KQ",
+  "@osmosis":                  "UCNI0qbn7X6mMd8V9UcDiO-A",
+  "@khanacademy":              "UC4a-Gbdw7vOaccHmFo40b9g",
+  "@BoardsBeyond":             "UCcoMpPC8OkNnwHCNRLKXLiA",
+  "@thecrashcourse":           "UCX6b17PVsYBQ0ip5gyeme-Q",
+  "@armandohasudungan":        "UCesEknt3SRX9R9W_f93Tb7g",
+  "@MedicosisPerfectionalis":  "UCawHPSNMIGSJeS4C-H66Mdg",
 };
 
 // ── Resolve one video to an actual YouTube URL via YouTube Data API v3 ─────

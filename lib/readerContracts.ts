@@ -107,6 +107,12 @@ export interface HighlightTarget {
   /** Groups this target with other members of the same concept neighborhood */
   neighborhoodId?: string;
   neighborhoodTitle?: string;
+  /** Full concept span bounds for multi-sentence highlighting.
+   *  spanStart: first 8-10 verbatim words of the concept span.
+   *  spanEnd: last 8-10 verbatim words of the concept span.
+   *  When both are present, SmartPDFViewer highlights all text between them. */
+  spanStart?: string;
+  spanEnd?: string;
 }
 
 export interface ParagraphSignal {
