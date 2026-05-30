@@ -308,17 +308,6 @@ export default function PureReaderView({
           </button>
         </div>
 
-        {/* Focus Cycle */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onOpenFocusCycle}
-            className="px-3 py-1 bg-purple-700 hover:bg-purple-600 rounded text-sm"
-            title="Open Focus Cycle"
-          >
-            ⏱ Focus Cycle
-          </button>
-        </div>
-
         {/* Mode indicator */}
         <div className="text-xs text-gray-500">
           📖 Reader Mode
