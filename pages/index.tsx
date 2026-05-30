@@ -469,6 +469,8 @@ export default function ThoughtUnitReader() {
       text:       a.groundedText,
       anchorType: a.anchorType as SynthHighlightAnchor["anchorType"],
       reason:     a.reason,
+      spanStart:  a.spanStart ?? null,
+      spanEnd:    a.spanEnd ?? null,
     }));
     setFinalHighlightAnchors(groundedAnchors);
     console.log("[LEFT_PANEL_GROUNDED]", {
@@ -537,6 +539,8 @@ export default function ThoughtUnitReader() {
           text:       s.anchor.groundedText,
           anchorType: s.anchor.anchorType as SynthHighlightAnchor["anchorType"],
           reason:     s.anchor.reason,
+          spanStart:  s.anchor.spanStart ?? null,
+          spanEnd:    s.anchor.spanEnd ?? null,
         })));
         console.log("[AI_ANCHORS_ONLY_MODE] stage B applied", { page: currentPage, count: scored.length, key: capturedKey });
       } catch (e: unknown) {
