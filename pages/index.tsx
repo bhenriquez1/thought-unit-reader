@@ -3209,90 +3209,102 @@ export default function ThoughtUnitReader() {
           </div>
         )}
 
-        <div className="flex items-center gap-2 rounded-2xl border border-purple-300/40 bg-white/10 backdrop-blur-md shadow-[0_0_20px_rgba(139,92,246,0.25)] px-3 py-1.5">
-          {/* Clickable timer pill — click to expand/collapse all controls */}
+        {/* Focus Cycle — pill + popup anchored below it */}
+        <div className="relative">
           <button
             onClick={() => setShowFocusControls((v) => !v)}
-            className={`rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors ${
+            className={`rounded-2xl border px-4 py-1.5 text-sm font-semibold backdrop-blur-md shadow-[0_0_20px_rgba(139,92,246,0.25)] transition-colors ${
               focusState.mode === "focus"
-                ? "bg-purple-500/40 text-purple-100 hover:bg-purple-500/60"
-                : "bg-emerald-500/40 text-emerald-100 hover:bg-emerald-500/60"
+                ? "border-purple-300/40 bg-purple-500/30 text-purple-100 hover:bg-purple-500/50"
+                : "border-emerald-300/40 bg-emerald-500/25 text-emerald-100 hover:bg-emerald-500/45"
             }`}
-            title={showFocusControls ? "Collapse Focus Cycle controls" : "Expand Focus Cycle controls"}
           >
             {focusModeLabel} — <span className="font-mono">{String(Math.floor(focusState.time / 60)).padStart(2, "0")}:{String(focusState.time % 60).padStart(2, "0")}</span>
-            <span className="ml-1.5 text-[10px] opacity-60">{showFocusControls ? "▲" : "▼"}</span>
+            <span className="ml-2 text-[10px] opacity-50">{showFocusControls ? "▲" : "▼"}</span>
           </button>
 
-          {/* Expanded controls — only visible when pill is clicked */}
-          {showFocusControls && (<>
-            <span className="text-[10px] text-slate-300">Integrity: {focusIntegrity}</span>
-            <button
-              onClick={() =>
-                setFocusState((prev) => ({
-                  ...prev,
-                  running: !prev.running,
-                  mode: prev.running ? prev.mode : prev.mode || "focus",
-                  time: prev.time,
-                }))
-              }
-              className="text-xs rounded bg-purple-600 px-2 py-1 hover:bg-purple-500"
-            >
-              {focusState.running ? "Pause" : "Start"}
-            </button>
-            <button
-              onClick={() => {
-                setCycleCount(0);
-                setFocusInterruptions(0);
-                setFocusInterruptionLabel(null);
-                setFocusState({ mode: "focus", time: focusSettings.focus, running: false });
-              }}
-              className="text-xs rounded bg-slate-700 px-2 py-1 hover:bg-slate-600"
-            >
-              Reset
-            </button>
-            <button
-              onClick={() => document.documentElement.requestFullscreen?.()}
-              className="text-xs rounded bg-slate-700 px-2 py-1 hover:bg-slate-600"
-            >
-              Full Screen
-            </button>
-            <label className="text-[10px] text-slate-300 inline-flex items-center gap-1">
-              <input type="checkbox" checked={focusSoftLock} onChange={(e) => setFocusSoftLock(e.target.checked)} />
-              Soft lock
-            </label>
-            <input
-              value={Math.round(focusSettings.focus / 60)}
-              onChange={(e) => setFocusSettings((prev) => ({ ...prev, focus: Math.max(5, Number(e.target.value || 25)) * 60 }))}
-              className="w-12 rounded bg-black/30 px-1 py-0.5 text-[10px]"
-              title="Focus minutes"
-            />
-            <input
-              value={Math.round(focusSettings.shortBreak / 60)}
-              onChange={(e) => setFocusSettings((prev) => ({ ...prev, shortBreak: Math.max(1, Number(e.target.value || 5)) * 60 }))}
-              className="w-12 rounded bg-black/30 px-1 py-0.5 text-[10px]"
-              title="Short break minutes"
-            />
-            <input
-              value={Math.round(focusSettings.longBreak / 60)}
-              onChange={(e) => setFocusSettings((prev) => ({ ...prev, longBreak: Math.max(5, Number(e.target.value || 15)) * 60 }))}
-              className="w-12 rounded bg-black/30 px-1 py-0.5 text-[10px]"
-              title="Long break minutes"
-            />
-            <input
-              value={ambientUrl}
-              onChange={(e) => setAmbientUrl(e.target.value)}
-              placeholder="Ambient YouTube URL"
-              className="w-40 rounded bg-black/30 px-2 py-1 text-[10px]"
-            />
-            <button
-              onClick={() => setShowAmbientPanel((prev) => !prev)}
-              disabled={!ambientEmbedUrl}
-              className="text-xs rounded bg-emerald-700 px-2 py-1 hover:bg-emerald-600 disabled:opacity-50"
-            >
-              {showAmbientPanel ? "Hide Ambient" : "Ambient"}
-            </button>
-          </>)}
+          {/* Floating popup — positioned directly below the pill */}
+          {showFocusControls && (
+            <div className="absolute left-1/2 top-full mt-2 z-50 -translate-x-1/2 w-72 rounded-xl border border-purple-300/30 bg-gray-900/95 backdrop-blur-md shadow-2xl p-4 flex flex-col gap-3">
+
+              {/* Timer status */}
+              <div className="flex items-center justify-between">
+                <span className={`text-xs font-semibold ${focusState.mode === "focus" ? "text-purple-300" : "text-emerald-300"}`}>
+                  {focusModeLabel} — <span className="font-mono text-white">{String(Math.floor(focusState.time / 60)).padStart(2, "0")}:{String(focusState.time % 60).padStart(2, "0")}</span>
+                </span>
+                <span className="text-[10px] text-slate-400">{focusIntegrity}</span>
+              </div>
+
+              {/* Primary actions */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setFocusState((prev) => ({ ...prev, running: !prev.running, mode: prev.running ? prev.mode : prev.mode || "focus", time: prev.time }))}
+                  className={`flex-1 rounded-lg py-1.5 text-sm font-semibold transition-colors ${focusState.running ? "bg-slate-600 hover:bg-slate-500 text-white" : "bg-purple-600 hover:bg-purple-500 text-white"}`}
+                >
+                  {focusState.running ? "Pause" : "Start"}
+                </button>
+                <button
+                  onClick={() => { setCycleCount(0); setFocusInterruptions(0); setFocusInterruptionLabel(null); setFocusState({ mode: "focus", time: focusSettings.focus, running: false }); }}
+                  className="rounded-lg px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors"
+                >
+                  Reset
+                </button>
+                <button
+                  onClick={() => document.documentElement.requestFullscreen?.()}
+                  className="rounded-lg px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors"
+                  title="Full Screen"
+                >
+                  ⛶
+                </button>
+              </div>
+
+              {/* Soft lock */}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={focusSoftLock} onChange={(e) => setFocusSoftLock(e.target.checked)} className="accent-purple-400" />
+                <span className="text-xs text-slate-300">Soft lock (block tab-switch while running)</span>
+              </label>
+
+              {/* Timer durations */}
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: "Focus", key: "focus" as const, min: 5, fallback: 25 },
+                  { label: "Break", key: "shortBreak" as const, min: 1, fallback: 5 },
+                  { label: "Long break", key: "longBreak" as const, min: 5, fallback: 15 },
+                ].map(({ label, key, min, fallback }) => (
+                  <label key={key} className="flex flex-col gap-0.5">
+                    <span className="text-[10px] text-slate-400">{label} min</span>
+                    <input
+                      type="number"
+                      value={Math.round(focusSettings[key] / 60)}
+                      onChange={(e) => setFocusSettings((prev) => ({ ...prev, [key]: Math.max(min, Number(e.target.value || fallback)) * 60 }))}
+                      className="w-full rounded bg-black/40 border border-white/10 px-2 py-1 text-xs text-white text-center"
+                    />
+                  </label>
+                ))}
+              </div>
+
+              {/* Ambient / YouTube */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] text-slate-400">Ambient / Lo-fi YouTube URL</span>
+                <div className="flex gap-2">
+                  <input
+                    value={ambientUrl}
+                    onChange={(e) => setAmbientUrl(e.target.value)}
+                    placeholder="https://youtube.com/watch?v=…"
+                    className="flex-1 min-w-0 rounded-lg bg-black/40 border border-white/10 px-2 py-1 text-[11px] text-white placeholder:text-slate-500"
+                  />
+                  <button
+                    onClick={() => setShowAmbientPanel((prev) => !prev)}
+                    disabled={!ambientEmbedUrl}
+                    className="shrink-0 rounded-lg px-3 py-1 text-xs bg-emerald-800 hover:bg-emerald-700 disabled:opacity-40 text-white transition-colors"
+                  >
+                    {showAmbientPanel ? "Hide" : "Play"}
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          )}
         </div>
         {focusInterruptionLabel ? <span className="text-xs text-amber-300">{focusInterruptionLabel}</span> : null}
 
