@@ -17,6 +17,11 @@ export const SynthHighlightAnchorSchema = z.object({
   text: z.string(),         // exact source text span — must be copied verbatim, ≤ 30 words
   anchorType: z.enum(["thesis", "definition", "mechanism", "trap", "application"]),
   reason: z.string(),       // ≤ 10 words: why a professor would underline this
+  // Full concept span bounds: first 8-10 verbatim words of the concept span start,
+  // and last 8-10 verbatim words of the concept span end.
+  // When provided, the highlight covers the entire span from spanStart to spanEnd.
+  spanStart: z.string().optional(), // first 8-10 verbatim words from where concept begins
+  spanEnd: z.string().optional(),   // last 8-10 verbatim words where concept ends
 });
 
 export type SynthHighlightAnchor = z.infer<typeof SynthHighlightAnchorSchema>;
@@ -476,7 +481,7 @@ For each concept (include ${Math.min(rankedConcepts.length, 4)}): principle, mec
 
 Every field: complete sentence, ≤20 words, relational not definitional, professor-level language.
 If a concept text is a figure caption: write the PRINCIPLE the figure is illustrating, not the caption.
-highlightAnchors: 2–4 verbatim spans from the source. Prefer the thesis sentence and mechanism sentence. Return null only if fewer than 3 sentences of real content.`;
+highlightAnchors: 2–4 verbatim spans from the source. Prefer the thesis sentence and mechanism sentence. For each anchor also set spanStart (first 8-10 verbatim words of the full concept span) and spanEnd (last 8-10 verbatim words of the full concept span) — this enables full multi-sentence concept highlighting. Return null only if fewer than 3 sentences of real content.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -504,8 +509,14 @@ export function buildStage1SystemPrompt(domain: PageDomain): string {
      Stage 3: Rank candidates by comprehension value, exam relevance, explanatory power, mechanism density.
      Stage 4: Keep top 2–4. RECONSTRUCTION TEST: "Could the student rebuild the page from these alone?"
    Roles: thesis(yellow, REQUIRED) + definition(blue) + mechanism(green) + application(pink) + trap(purple).
-   Copy text EXACTLY (≤30 words, complete sentences, prefer period-ending). Never invent text.
-   REJECT: figure captions, filler, fragments, anything not verbatim in the page text.
+   For text: copy a SHORT identifier (≤30 words, verbatim). Never invent text.
+   IMPORTANT: Also set spanStart and spanEnd for the FULL concept span:
+     - spanStart: first 8-10 verbatim words of where the concept begins in the source text
+     - spanEnd: last 8-10 verbatim words of where the concept ends in the source text
+     Example: if the full concept is "Iodine is an essential ingredient in thyroid hormone synthesis...condition called goiter."
+       spanStart = "Iodine is an essential ingredient in thyroid"
+       spanEnd = "enlarged thyroid gland, a condition called goiter."
+   REJECT text: figure captions, filler, fragments, anything not verbatim in the page text.
    Return null only if < 3 real instructional sentences.
 
 3. miniTestItems — 3 after-reading comprehension questions:

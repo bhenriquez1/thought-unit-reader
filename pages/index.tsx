@@ -2897,6 +2897,9 @@ export default function ThoughtUnitReader() {
                 onEvidenceClick={(snippet, evidenceId) => {
                   setFocusSnippet(null);
                   setFocusedEvidenceId(evidenceId || resolveEvidenceId(snippet) || null);
+                  // Auto-zoom to 1.5 on Focus click so the target paragraph fills the screen.
+                  const { zoom: currentZoom, setZoom } = useZoomStore.getState();
+                  if (currentZoom < 1.5) setZoom(1.5);
                   window.setTimeout(() => setFocusSnippet(snippet), 0);
                 }}
                 onStudyModelReady={(model, key) => {

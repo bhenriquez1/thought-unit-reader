@@ -604,9 +604,29 @@ export default function SmartPDFViewer({
           text: target.text?.slice(0, 60),
           baseText: baseText.slice(0, 60),
           baseLen: baseText.length,
+          hasSpanBounds: !!(target.spanStart && target.spanEnd),
         });
 
-        const location = locateAnchor(baseText);
+        // Full span highlighting: when spanStart + spanEnd are provided, locate the full
+        // concept span rather than just the short identifier text. This highlights everything
+        // from the concept's opening words to its closing words (multi-sentence spans).
+        let location: { startIdx: number; endIdx: number } | null = null;
+        if (target.spanStart && target.spanEnd) {
+          const startLoc = locateAnchor(normForConcat(target.spanStart));
+          const endLoc   = locateAnchor(normForConcat(target.spanEnd));
+          if (startLoc && endLoc && endLoc.endIdx > startLoc.startIdx) {
+            location = { startIdx: startLoc.startIdx, endIdx: endLoc.endIdx };
+            console.log("[AI_HIGHLIGHT:span-range]", {
+              id:       target.evidenceRefId,
+              spanStart: target.spanStart.slice(0, 40),
+              spanEnd:   target.spanEnd.slice(0, 40),
+              chars:     endLoc.endIdx - startLoc.startIdx,
+            });
+          }
+        }
+        if (!location) {
+          location = locateAnchor(baseText);
+        }
         if (!location) {
           // Try support/evidence fallback — omit if still no match
           let fallbackLoc: { startIdx: number; endIdx: number } | null = null;
