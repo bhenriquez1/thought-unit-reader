@@ -3221,13 +3221,10 @@ export default function ThoughtUnitReader() {
         )}
 
         <div className="flex items-center gap-2 rounded-2xl border border-purple-300/40 bg-white/10 backdrop-blur-md shadow-[0_0_20px_rgba(139,92,246,0.25)] px-3 py-1.5">
-          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+          <span className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${
             focusState.mode === "focus" ? "bg-purple-500/40 text-purple-100" : "bg-emerald-500/40 text-emerald-100"
           }`}>
-            {focusModeLabel}
-          </span>
-          <span className="rounded-xl bg-black/30 px-3 py-1.5 font-mono text-sm text-purple-100">
-            {String(Math.floor(focusState.time / 60)).padStart(2, "0")}:{String(focusState.time % 60).padStart(2, "0")}
+            {focusModeLabel} — <span className="font-mono">{String(Math.floor(focusState.time / 60)).padStart(2, "0")}:{String(focusState.time % 60).padStart(2, "0")}</span>
           </span>
           <span className="text-[10px] text-slate-300">Integrity: {focusIntegrity}</span>
           <button
