@@ -610,27 +610,57 @@ export async function synthesizeTeachingOutput(
   input: SynthesisInput,
   signal?: AbortSignal,
 ): Promise<TeachingSynthesis> {
-  const response = await fetch("/api/intelligenceSynthesis", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-    signal,
+  console.log("[STAGE2_REQUEST]", {
+    domain: input.domain,
+    conceptCount: input.rankedConcepts.length,
+    pageThesisLen: input.pageThesis?.length ?? 0,
+    concepts: input.rankedConcepts.map((c) => ({ role: c.role, titleLen: c.title?.length ?? 0, textLen: c.text?.length ?? 0 })),
   });
+
+  let response: Response;
+  try {
+    response = await fetch("/api/intelligenceSynthesis", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+      signal,
+    });
+  } catch (fetchErr: any) {
+    // Network error or AbortError — distinguish them clearly
+    const isAbort = fetchErr?.name === "AbortError" || signal?.aborted;
+    console.error(isAbort ? "[STAGE2_ABORTED]" : "[STAGE2_NETWORK_ERROR]", fetchErr?.message ?? String(fetchErr));
+    throw fetchErr;
+  }
+
+  console.log("[STAGE2_RESPONSE]", { status: response.status, ok: response.ok });
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
+    console.error("[STAGE2_API_ERROR]", { status: response.status, error: err.error ?? "(no error field)" });
     throw new Error(err.error ?? `synthesis failed: ${response.status}`);
   }
 
-  const raw = await response.json();
+  let raw: unknown;
   try {
-    return TeachingSynthesisSchema.parse(raw);
+    raw = await response.json();
+    console.log("[STAGE2_PARSE]", {
+      keys: raw && typeof raw === "object" ? Object.keys(raw as object) : typeof raw,
+      coreIdea: (raw as any)?.coreIdea?.slice?.(0, 60) ?? null,
+      conceptCount: (raw as any)?.concepts?.length ?? 0,
+    });
+  } catch (jsonErr) {
+    console.error("[STAGE2_JSON_DECODE_FAIL]", jsonErr instanceof Error ? jsonErr.message : String(jsonErr));
+    throw jsonErr;
+  }
+
+  try {
+    const validated = TeachingSynthesisSchema.parse(raw);
+    console.log("[STAGE2_SAVE]", { coreIdea: validated.coreIdea?.slice(0, 60), conceptCount: validated.concepts?.length ?? 0 });
+    return validated;
   } catch (zodErr) {
-    console.error("[SYNTH:client:zod-parse-fail]", {
+    console.error("[STAGE2_ZOD_FAIL]", {
       zodMessage: zodErr instanceof Error ? zodErr.message : String(zodErr),
-      rawKeys: raw && typeof raw === "object" ? Object.keys(raw) : raw,
-      coreIdea: raw?.coreIdea?.slice?.(0, 60) ?? null,
-      mechanism: raw?.mechanism?.slice?.(0, 60) ?? null,
+      rawKeys: raw && typeof raw === "object" ? Object.keys(raw as object) : raw,
     });
     throw zodErr;
   }
