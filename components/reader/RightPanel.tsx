@@ -1867,7 +1867,7 @@ function UltraView({
         </PanelSection>
       ) : null}
 
-      {/* ── Related Videos — AI-selected specific channel videos from Ninja Nerd / Osmosis / Khan ── */}
+      {/* ── Related Videos — relevance-first ranked across all educational creators ── */}
       {hasSynth ? (
         <PanelSection title="📺 Related Videos">
           {!resolvedResources.resolved ? (
@@ -1877,33 +1877,52 @@ function UltraView({
               {resolvedResources.videos.map((v, i) => {
                 const isDirectVideo = v.searchUrl.includes("youtube.com/watch?v=");
                 const hasTimestamp  = isDirectVideo && v.timestampSeconds != null && v.timestampSeconds > 0;
+                // Build timestamp deep-link URL (ensure t= param is present for direct links)
+                const watchUrl = hasTimestamp && v.timestampSeconds
+                  ? (() => {
+                      try {
+                        const u = new URL(v.searchUrl);
+                        u.searchParams.set("t", `${Math.floor(v.timestampSeconds)}s`);
+                        return u.toString();
+                      } catch { return v.searchUrl; }
+                    })()
+                  : v.searchUrl;
                 return (
-                <li key={i} className="rounded-lg border border-white/8 bg-white/3 p-2.5">
-                  <a
-                    href={v.searchUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="group flex flex-col gap-0.5"
-                  >
+                <li key={i} className="rounded-lg border border-white/10 bg-white/4 p-2.5">
+                  <div className="flex flex-col gap-1.5">
+                    {/* Title row */}
                     <div className="flex items-start justify-between gap-2">
-                      <span className="text-[12px] font-medium text-red-200 group-hover:text-red-100 leading-snug">{v.videoTitle}</span>
-                      <span className="shrink-0 rounded bg-red-900/60 px-1.5 py-0.5 text-[10px] font-semibold text-red-300">{v.score}%</span>
+                      <span className="text-[12px] font-semibold text-red-100 leading-snug">{v.videoTitle}</span>
+                      <span className="shrink-0 rounded bg-red-900/60 px-1.5 py-0.5 text-[10px] font-bold text-red-300">{v.score}</span>
                     </div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[10px] text-slate-400">{v.channel}</span>
+                    {/* Creator row */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-medium text-slate-300">{v.channel}</span>
                       {isDirectVideo ? (
-                        <span className="rounded bg-green-900/50 px-1 py-px text-[9px] font-semibold text-green-400">▶ Direct</span>
+                        <span className="rounded bg-emerald-900/50 px-1 py-px text-[9px] font-semibold text-emerald-400">▶ verified</span>
                       ) : (
-                        <span className="rounded bg-slate-700/60 px-1 py-px text-[9px] font-semibold text-slate-400">Search</span>
+                        <span className="rounded bg-slate-700/60 px-1 py-px text-[9px] text-slate-400">search</span>
                       )}
                     </div>
-                    <span className="text-[11px] text-slate-300 italic mt-0.5">{v.reason}</span>
-                    {hasTimestamp && (
-                      <span className="mt-1 inline-flex items-center gap-1 rounded bg-red-900/40 px-1.5 py-0.5 text-[10px] font-medium text-red-300">
-                        ⏱ {v.timestampLabel} — jumps to this topic
-                      </span>
-                    )}
-                  </a>
+                    {/* Why relevant */}
+                    <p className="text-[11px] text-slate-400 italic leading-snug">{v.reason}</p>
+                    {/* Timestamp + Watch button */}
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {hasTimestamp && (
+                        <span className="inline-flex items-center gap-1 rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+                          ⏱ {v.timestampLabel}
+                        </span>
+                      )}
+                      <a
+                        href={watchUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-auto inline-flex items-center gap-1 rounded bg-red-700 hover:bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors"
+                      >
+                        ▶ Watch{hasTimestamp ? " at timestamp" : ""}
+                      </a>
+                    </div>
+                  </div>
                 </li>
                 );
               })}

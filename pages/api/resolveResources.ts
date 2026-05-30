@@ -1,13 +1,13 @@
 // pages/api/resolveResources.ts
 // AI-powered specific resource resolver.
-// Returns exact article URLs from trusted educational sources and channel-specific
-// video recommendations — never generic search result pages.
+// Returns exact article URLs from trusted educational sources and the most relevant
+// educational videos — relevance-first, not channel-first.
 //
 // Articles: NIH, MedlinePlus, NCBI Bookshelf, Merck Manual, OpenStax, CDC, NIDDK, ADA, AAP
-// Videos:   Ninja Nerd, Osmosis, Khan Academy, Boards & Beyond, Crash Course, Armando Hasudungan
+// Videos:   Any educational creator — ranked by concept match, not creator prestige.
 //
 // Article URLs are validated via HEAD request; unresolvable URLs are omitted silently.
-// Videos without a YouTube API key → channel-specific search URL (never generic YouTube search).
+// Videos: YouTube API resolves exact videoId + timestamp deep-link when key is present.
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
@@ -117,18 +117,35 @@ Section anchor examples:
 - For a cardiovascular drug on Merck Manual, link to the mechanism-of-action section
 - When unsure of the anchor, omit it — a correct base URL is better than a broken anchor
 
-VIDEO SOURCES (use ONLY these channels — in priority order):
-1. Ninja Nerd — @NinjaNerdNation — excellent medical physiology and pathology
-2. Osmosis — @osmosis — clear disease mechanism animations
-3. Armando Hasudungan — @armandohasudungan — hand-drawn medical diagrams
-4. Khan Academy — @khanacademy — solid science and pre-med content
-5. Medicosis Perfectionalis — @MedicosisPerfectionalis — high-yield med school concepts
-6. Boards & Beyond — @BoardsBeyond — board-focused medical content
-7. Crash Course — @thecrashcourse — accessible science overviews
+VIDEO SOURCES — RELEVANCE-FIRST RANKING:
+Do NOT pick videos based on creator prestige. Pick the video that best explains THIS SPECIFIC concept.
 
-For each video: recommend the MOST SPECIFIC video on that channel covering this exact topic.
-If you know the approximate timestamp where the specific mechanism/concept is explained, provide it.
-Score videos 50–100 based on how directly they cover the exact mechanism.`;
+Ranking factors (must all be considered when scoring 0–100):
+  1. Concept match (40%) — Does the video title/description directly match the exact mechanism or topic?
+  2. Educational quality (20%) — Clear explanation, good visuals, appropriate depth for med/dental students
+  3. Timestamp relevance (20%) — Can you provide a timestamp where the specific concept is discussed?
+  4. Engagement / authority (10%) — Views, likes, subscriber count signal quality
+  5. Creator reputation (10%) — Is the creator known for accuracy in this subject area?
+
+ANY educational creator may be recommended. Examples (not exhaustive):
+- Ninja Nerd (@NinjaNerdNation) — physiology, pathology, mechanisms
+- Osmosis (@osmosis) — disease animations, pharmacology
+- Khan Academy (@khanacademy) — science, pre-med, biochemistry
+- Armando Hasudungan (@armandohasudungan) — hand-drawn immunology, hematology, microbiology
+- Medicosis Perfectionalis (@MedicosisPerfectionalis) — high-yield med school concepts
+- Professor Leonard (@ProfessorLeonard) — calculus, differential equations, mathematics
+- MIT OpenCourseWare (@mitocw) — university-level science and engineering
+- Boards & Beyond (@BoardsBeyond) — board-focused medical content
+- Crash Course (@thecrashcourse) — accessible science overviews
+- University lecture channels (e.g., @StanfordMedicine, @UCBerkeleyOfficial)
+- Specialty clinical channels when most relevant to the topic
+
+IMPORTANT VIDEO RULES:
+- Recommend the MOST SPECIFIC video covering the exact mechanism — not a general topic overview
+- Provide channelHandle as the YouTube @handle (e.g. "@NinjaNerdNation")
+- If you know the timestamp where the specific concept is explained, always provide it
+- A highly-relevant video from a lesser-known creator beats a general video from a famous creator
+- Score: 90–100 = perfect match on exact mechanism; 70–89 = strong match; 50–69 = partial match`;
 
 // ── URL validation ─────────────────────────────────────────────────────────
 
@@ -235,9 +252,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 Return:
 - 2–3 article recommendations from the approved sources above (EXACT real URLs)
-- 2–3 video recommendations from the approved channels above
+- 3–4 video recommendations ranked by relevance to the specific mechanism above
 
-Score each 50–100. Prioritize most directly relevant to the specific mechanism described.`;
+For videos: apply the relevance-first ranking factors. Provide timestamps wherever possible.
+Score each 0–100. Best match on the exact mechanism scores highest regardless of creator.`;
 
   try {
     const response = await openai.responses.parse({
