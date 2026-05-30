@@ -18,6 +18,10 @@ export type RawAnchor = {
   text: string;
   anchorType: string;
   reason: string;
+  // Full concept span bounds — carried through grounding (via the ...anchor spread)
+  // so multi-sentence highlighting survives to SmartPDFViewer.
+  spanStart?: string | null;
+  spanEnd?: string | null;
 };
 
 export type GroundedAnchor = RawAnchor & {
