@@ -811,8 +811,7 @@ export default function ThoughtUnitReader() {
 
   // 📑 TOC Panel control (like whiteboard)
   const [showTOCPanel, setShowTOCPanel] = useState<boolean>(false);
-  const [showFocusCycleModal, setShowFocusCycleModal] = useState(false);
-  const bindFocusCycleContext = useFocusCycleStore((state) => state.bindContext);
+  const [showFocusControls, setShowFocusControls] = useState(false);
 
 
   // 💭 Thought Detection Panel
@@ -2848,17 +2847,7 @@ export default function ThoughtUnitReader() {
                   pageTruthKey={pageTruthKey}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
-                  onOpenFocusCycle={() => {
-                    bindFocusCycleContext({
-                      documentId: bookId,
-                      page: currentPage,
-                      sectionId: tableOfContents.find((entry, idx) => {
-                        const nextEntry = tableOfContents[idx + 1];
-                        return entry.pageNumber <= currentPage && (!nextEntry || nextEntry.pageNumber > currentPage);
-                      })?.title || null,
-                    });
-                    setShowFocusCycleModal(true);
-                  }}
+                  onOpenFocusCycle={undefined}
                   onPageTextExtracted={(pageNumber, text) => setPageTextByPage((prev) => { const next = new Map(prev); next.set(`${bookId}:${pageNumber}`, text); return next; })}
                   pageText={pageTextByPage.get(`${bookId}:${currentPage}`) || ""}
                 />
@@ -3221,77 +3210,89 @@ export default function ThoughtUnitReader() {
         )}
 
         <div className="flex items-center gap-2 rounded-2xl border border-purple-300/40 bg-white/10 backdrop-blur-md shadow-[0_0_20px_rgba(139,92,246,0.25)] px-3 py-1.5">
-          <span className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${
-            focusState.mode === "focus" ? "bg-purple-500/40 text-purple-100" : "bg-emerald-500/40 text-emerald-100"
-          }`}>
+          {/* Clickable timer pill — click to expand/collapse all controls */}
+          <button
+            onClick={() => setShowFocusControls((v) => !v)}
+            className={`rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors ${
+              focusState.mode === "focus"
+                ? "bg-purple-500/40 text-purple-100 hover:bg-purple-500/60"
+                : "bg-emerald-500/40 text-emerald-100 hover:bg-emerald-500/60"
+            }`}
+            title={showFocusControls ? "Collapse Focus Cycle controls" : "Expand Focus Cycle controls"}
+          >
             {focusModeLabel} — <span className="font-mono">{String(Math.floor(focusState.time / 60)).padStart(2, "0")}:{String(focusState.time % 60).padStart(2, "0")}</span>
-          </span>
-          <span className="text-[10px] text-slate-300">Integrity: {focusIntegrity}</span>
-          <button
-            onClick={() =>
-              setFocusState((prev) => ({
-                ...prev,
-                running: !prev.running,
-                mode: prev.running ? prev.mode : prev.mode || "focus",
-                time: prev.time,
-              }))
-            }
-            className="text-xs rounded bg-purple-600 px-2 py-1 hover:bg-purple-500"
-          >
-            {focusState.running ? "Pause" : "Start"}
+            <span className="ml-1.5 text-[10px] opacity-60">{showFocusControls ? "▲" : "▼"}</span>
           </button>
-          <button
-            onClick={() => {
-              setCycleCount(0);
-              setFocusInterruptions(0);
-              setFocusInterruptionLabel(null);
-              setFocusState({ mode: "focus", time: focusSettings.focus, running: false });
-            }}
-            className="text-xs rounded bg-slate-700 px-2 py-1 hover:bg-slate-600"
-          >
-            Reset
-          </button>
-          <button
-            onClick={() => document.documentElement.requestFullscreen?.()}
-            className="text-xs rounded bg-slate-700 px-2 py-1 hover:bg-slate-600"
-          >
-            Full Screen
-          </button>
-          <label className="text-[10px] text-slate-300 inline-flex items-center gap-1">
-            <input type="checkbox" checked={focusSoftLock} onChange={(e) => setFocusSoftLock(e.target.checked)} />
-            Soft lock
-          </label>
-          <input
-            value={Math.round(focusSettings.focus / 60)}
-            onChange={(e) => setFocusSettings((prev) => ({ ...prev, focus: Math.max(5, Number(e.target.value || 25)) * 60 }))}
-            className="w-12 rounded bg-black/30 px-1 py-0.5 text-[10px]"
-            title="Focus minutes"
-          />
-          <input
-            value={Math.round(focusSettings.shortBreak / 60)}
-            onChange={(e) => setFocusSettings((prev) => ({ ...prev, shortBreak: Math.max(1, Number(e.target.value || 5)) * 60 }))}
-            className="w-12 rounded bg-black/30 px-1 py-0.5 text-[10px]"
-            title="Short break minutes"
-          />
-          <input
-            value={Math.round(focusSettings.longBreak / 60)}
-            onChange={(e) => setFocusSettings((prev) => ({ ...prev, longBreak: Math.max(5, Number(e.target.value || 15)) * 60 }))}
-            className="w-12 rounded bg-black/30 px-1 py-0.5 text-[10px]"
-            title="Long break minutes"
-          />
-          <input
-            value={ambientUrl}
-            onChange={(e) => setAmbientUrl(e.target.value)}
-            placeholder="Ambient YouTube URL"
-            className="w-40 rounded bg-black/30 px-2 py-1 text-[10px]"
-          />
-          <button
-            onClick={() => setShowAmbientPanel((prev) => !prev)}
-            disabled={!ambientEmbedUrl}
-            className="text-xs rounded bg-emerald-700 px-2 py-1 hover:bg-emerald-600 disabled:opacity-50"
-          >
-            {showAmbientPanel ? "Hide Ambient" : "Ambient"}
-          </button>
+
+          {/* Expanded controls — only visible when pill is clicked */}
+          {showFocusControls && (<>
+            <span className="text-[10px] text-slate-300">Integrity: {focusIntegrity}</span>
+            <button
+              onClick={() =>
+                setFocusState((prev) => ({
+                  ...prev,
+                  running: !prev.running,
+                  mode: prev.running ? prev.mode : prev.mode || "focus",
+                  time: prev.time,
+                }))
+              }
+              className="text-xs rounded bg-purple-600 px-2 py-1 hover:bg-purple-500"
+            >
+              {focusState.running ? "Pause" : "Start"}
+            </button>
+            <button
+              onClick={() => {
+                setCycleCount(0);
+                setFocusInterruptions(0);
+                setFocusInterruptionLabel(null);
+                setFocusState({ mode: "focus", time: focusSettings.focus, running: false });
+              }}
+              className="text-xs rounded bg-slate-700 px-2 py-1 hover:bg-slate-600"
+            >
+              Reset
+            </button>
+            <button
+              onClick={() => document.documentElement.requestFullscreen?.()}
+              className="text-xs rounded bg-slate-700 px-2 py-1 hover:bg-slate-600"
+            >
+              Full Screen
+            </button>
+            <label className="text-[10px] text-slate-300 inline-flex items-center gap-1">
+              <input type="checkbox" checked={focusSoftLock} onChange={(e) => setFocusSoftLock(e.target.checked)} />
+              Soft lock
+            </label>
+            <input
+              value={Math.round(focusSettings.focus / 60)}
+              onChange={(e) => setFocusSettings((prev) => ({ ...prev, focus: Math.max(5, Number(e.target.value || 25)) * 60 }))}
+              className="w-12 rounded bg-black/30 px-1 py-0.5 text-[10px]"
+              title="Focus minutes"
+            />
+            <input
+              value={Math.round(focusSettings.shortBreak / 60)}
+              onChange={(e) => setFocusSettings((prev) => ({ ...prev, shortBreak: Math.max(1, Number(e.target.value || 5)) * 60 }))}
+              className="w-12 rounded bg-black/30 px-1 py-0.5 text-[10px]"
+              title="Short break minutes"
+            />
+            <input
+              value={Math.round(focusSettings.longBreak / 60)}
+              onChange={(e) => setFocusSettings((prev) => ({ ...prev, longBreak: Math.max(5, Number(e.target.value || 15)) * 60 }))}
+              className="w-12 rounded bg-black/30 px-1 py-0.5 text-[10px]"
+              title="Long break minutes"
+            />
+            <input
+              value={ambientUrl}
+              onChange={(e) => setAmbientUrl(e.target.value)}
+              placeholder="Ambient YouTube URL"
+              className="w-40 rounded bg-black/30 px-2 py-1 text-[10px]"
+            />
+            <button
+              onClick={() => setShowAmbientPanel((prev) => !prev)}
+              disabled={!ambientEmbedUrl}
+              className="text-xs rounded bg-emerald-700 px-2 py-1 hover:bg-emerald-600 disabled:opacity-50"
+            >
+              {showAmbientPanel ? "Hide Ambient" : "Ambient"}
+            </button>
+          </>)}
         </div>
         {focusInterruptionLabel ? <span className="text-xs text-amber-300">{focusInterruptionLabel}</span> : null}
 
@@ -3405,25 +3406,6 @@ export default function ThoughtUnitReader() {
       )}
       {showAmbientPanel && ambientUrl && <AmbientPlayer url={ambientUrl} onClose={() => setShowAmbientPanel(false)} />}
 
-      {showFocusCycleModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-          <div className="w-full max-w-3xl bg-gray-900 border border-gray-700 rounded-xl shadow-2xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h3 className="text-lg font-semibold text-white">Focus Cycle</h3>
-                <p className="text-sm text-gray-400">Comprehension → consolidation → recall workflow</p>
-              </div>
-              <button
-                onClick={() => setShowFocusCycleModal(false)}
-                className="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm text-white"
-              >
-                Close
-              </button>
-            </div>
-            <FocusCycleCard onClosePrompts={() => setShowFocusCycleModal(false)} />
-          </div>
-        </div>
-      )}
 
         {/* Utility Rail — docked to left panel bottom-left; never overlaps right panel study content */}
         <div className="fixed bottom-[80px] left-4 z-40 flex flex-col gap-3 max-w-[160px] opacity-90">

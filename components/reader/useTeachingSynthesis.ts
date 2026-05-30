@@ -41,9 +41,9 @@ interface UseTeachingSynthesisArgs {
   pageNumber?: number;
 }
 
-const STAGE1_TIMEOUT_MS       = 8_000;
-const STAGE2_TIMEOUT_MS       = 22_000;
-const STAGE2_RETRY_TIMEOUT_MS = 15_000;
+const STAGE1_TIMEOUT_MS       = 15_000;  // math pages with theorem/formula notation need extra time
+const STAGE2_TIMEOUT_MS       = 35_000;
+const STAGE2_RETRY_TIMEOUT_MS = 20_000;
 
 export function useTeachingSynthesis({
   pageTruthKey,
@@ -70,7 +70,15 @@ export function useTeachingSynthesis({
     setStage2Status("idle");
     setErrorMessage(null);
 
-    const usableBlocks = blocks.filter((b) => b.pattern && b.pattern.length >= 20);
+    // Math blocks often have short formula patterns (e.g. "lim f(x) = L").
+    // Accept them when the pattern is ≥6 chars AND the title provides context,
+    // OR when the pattern alone is ≥20 chars.
+    const usableBlocks = blocks.filter((b) => {
+      const patLen = b.pattern?.length ?? 0;
+      if (patLen >= 20) return true;
+      if (domain === "math" && patLen >= 6 && (b.title?.length ?? 0) >= 4) return true;
+      return false;
+    });
 
     console.log("[SYNTH:lifecycle]", {
       enabled,
