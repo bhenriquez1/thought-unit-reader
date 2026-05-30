@@ -20,8 +20,10 @@ export const SynthHighlightAnchorSchema = z.object({
   // Full concept span bounds: first 8-10 verbatim words of the concept span start,
   // and last 8-10 verbatim words of the concept span end.
   // When provided, the highlight covers the entire span from spanStart to spanEnd.
-  spanStart: z.string().optional(), // first 8-10 verbatim words from where concept begins
-  spanEnd: z.string().optional(),   // last 8-10 verbatim words where concept ends
+  // MUST be .nullable() (not .optional()) — OpenAI structured-output strict mode
+  // requires every property to be required or nullable; .optional() makes zodTextFormat throw.
+  spanStart: z.string().nullable(), // first 8-10 verbatim words from where concept begins
+  spanEnd: z.string().nullable(),   // last 8-10 verbatim words where concept ends
 });
 
 export type SynthHighlightAnchor = z.infer<typeof SynthHighlightAnchorSchema>;

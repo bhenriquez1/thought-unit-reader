@@ -209,8 +209,8 @@ export default function PureReaderView({
           sourceParagraphIndex: 0,
           kind:                 anchorTypeToKind(s.anchor.anchorType),
           evidenceRefId:        `ai-anchor-${i}`,
-          spanStart:            s.anchor.spanStart,
-          spanEnd:              s.anchor.spanEnd,
+          spanStart:            s.anchor.spanStart ?? undefined,
+          spanEnd:              s.anchor.spanEnd ?? undefined,
         }));
 
     // Validate: reject anchors whose text does not appear in the current raw page text.
