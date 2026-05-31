@@ -66,6 +66,28 @@ export function useTeachingSynthesis({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  // Keep a ref for values that MUST NOT re-trigger synthesis when they change.
+  // Background book extraction updates pageText/enabled/domain on every extracted
+  // page, which previously caused enabled to flicker and abort Stage 1 mid-flight.
+  // Reading from refs inside the effect avoids that — only pageTruthKey and
+  // blocks.length>0 control when synthesis starts.
+  const enabledRef      = useRef(enabled);
+  const domainRef       = useRef(domain);
+  const blocksRef       = useRef(blocks);
+  const pageObjectiveRef = useRef(pageObjective);
+  const pageThesisRef   = useRef(pageThesis);
+  const pageSummaryRef  = useRef(pageSummary);
+  const pageTextRef     = useRef(pageText);
+  const pageNumberRef   = useRef(pageNumber);
+  useEffect(() => { enabledRef.current = enabled; },       [enabled]);
+  useEffect(() => { domainRef.current = domain; },         [domain]);
+  useEffect(() => { blocksRef.current = blocks; },         [blocks]);
+  useEffect(() => { pageObjectiveRef.current = pageObjective; }, [pageObjective]);
+  useEffect(() => { pageThesisRef.current = pageThesis; }, [pageThesis]);
+  useEffect(() => { pageSummaryRef.current = pageSummary; }, [pageSummary]);
+  useEffect(() => { pageTextRef.current = pageText; },     [pageText]);
+  useEffect(() => { pageNumberRef.current = pageNumber; }, [pageNumber]);
+
   useEffect(() => {
     setSynthesis(null);
     setStatus("idle");
@@ -73,43 +95,58 @@ export function useTeachingSynthesis({
     setStage2Status("idle");
     setErrorMessage(null);
 
+    // Read live values from refs — not from the effect closure.
+    // This means a mid-extraction enabled/domain/pageText update never restarts synthesis.
+    const _enabled   = enabledRef.current;
+    const _domain    = domainRef.current;
+    const _blocks    = blocksRef.current;
+
     // Math blocks often have short formula patterns (e.g. "lim f(x) = L").
-    // Accept them when the pattern is ≥6 chars AND the title provides context,
-    // OR when the pattern alone is ≥20 chars.
-    const usableBlocks = blocks.filter((b) => {
+    const usableBlocks = _blocks.filter((b) => {
       const patLen = b.pattern?.length ?? 0;
       if (patLen >= 20) return true;
-      if (domain === "math" && patLen >= 6 && (b.title?.length ?? 0) >= 4) return true;
+      if (_domain === "math" && patLen >= 6 && (b.title?.length ?? 0) >= 4) return true;
       return false;
     });
 
     console.log("[SYNTH:lifecycle]", {
-      enabled,
+      enabled: _enabled,
       pageTruthKey,
       usableBlockCount: usableBlocks.length,
-      totalBlocks: blocks.length,
-      domain,
-      hasPageThesis:    !!pageThesis,
-      hasPageSummary:   !!pageSummary,
-      hasPageObjective: !!pageObjective,
+      totalBlocks: _blocks.length,
+      domain: _domain,
+      hasPageThesis:    !!pageThesisRef.current,
+      hasPageSummary:   !!pageSummaryRef.current,
+      hasPageObjective: !!pageObjectiveRef.current,
     });
 
-    if (!enabled || !usableBlocks.length) {
-      console.log("[SYNTH:skip]", { reason: !enabled ? "disabled" : "no usable blocks" });
+    if (!_enabled || !usableBlocks.length) {
+      console.log("[SYNTH:skip]", { reason: !_enabled ? "disabled" : "no usable blocks" });
       return;
     }
 
-    const safeDomain = domain ?? "general";
-    const input = buildSynthesisInput(usableBlocks, safeDomain, pageObjective, pageThesis, pageSummary, pageNumber, pageText);
+    const safeDomain = _domain ?? "general";
+    const input = buildSynthesisInput(
+      usableBlocks, safeDomain,
+      pageObjectiveRef.current, pageThesisRef.current,
+      pageSummaryRef.current, pageNumberRef.current, pageTextRef.current,
+    );
 
-    console.log("[SYNTH:request]", {
-      domain: safeDomain,
+    const inputCharCount =
+      (pageTextRef.current?.length ?? 0) +
+      input.rankedConcepts.reduce((s, c) => s + (c.text?.length ?? 0), 0);
+
+    console.log("[SYNTH_INPUT]", {
+      page: pageNumberRef.current ?? null,
+      charCount: inputCharCount,
       conceptCount: input.rankedConcepts.length,
-      pageThesis:    input.pageThesis?.slice(0, 80) ?? "(none)",
-      pageSummary:   input.pageSummary?.slice(0, 80) ?? "(none)",
-      pageObjective: input.pageObjective?.slice(0, 80) ?? "(none)",
-      concepts: input.rankedConcepts.map((c, i) => ({ i, role: c.role, title: c.title?.slice(0, 40) })),
+      pageTextChars: pageTextRef.current?.length ?? 0,
+      pageTruthKey,
     });
+
+    if (inputCharCount > 50_000) {
+      console.error("[SYNTH_INPUT] PAYLOAD TOO LARGE — book text leaked into synthesis", { inputCharCount });
+    }
 
     const mainCtrl = new AbortController();
     abortRef.current = mainCtrl;
@@ -117,14 +154,18 @@ export function useTeachingSynthesis({
 
     async function runStages() {
       // ── STAGE 1: Fast ──────────────────────────────────────────────────────
-      console.log("[SYNTH:stage1:start]", { pageTruthKey, conceptCount: input.rankedConcepts.length });
+      console.log("[SYNTH_STAGE1_START]", { pageTruthKey, page: pageNumberRef.current, conceptCount: input.rankedConcepts.length });
       setStage1Status("loading");
       setStatus("loading");
 
       const s1Ctrl = new AbortController();
-      mainSignal.addEventListener("abort", () => s1Ctrl.abort(), { once: true });
+      mainSignal.addEventListener("abort", () => {
+        console.warn("[SYNTH_ABORT_REASON]", { stage: 1, reason: "pageTruthKey changed — new page navigation" });
+        s1Ctrl.abort();
+      }, { once: true });
       const s1Timer = setTimeout(() => {
-        console.warn("[SYNTH:stage1:timeout]");
+        console.warn("[SYNTH:stage1:timeout]", { elapsed: STAGE1_TIMEOUT_MS });
+        console.warn("[SYNTH_ABORT_REASON]", { stage: 1, reason: `Stage 1 timeout after ${STAGE1_TIMEOUT_MS}ms` });
         s1Ctrl.abort();
       }, STAGE1_TIMEOUT_MS);
 
@@ -133,7 +174,8 @@ export function useTeachingSynthesis({
         const s1 = await synthesizeStage1Output(input, s1Ctrl.signal);
         clearTimeout(s1Timer);
         if (mainSignal.aborted) return;
-        console.log("[SYNTH:stage1:done]", {
+        console.log("[SYNTH_STAGE1_DONE]", {
+          page: pageNumberRef.current,
           coreIdea: s1.coreIdea?.slice(0, 60),
           anchors:  s1.highlightAnchors?.length ?? 0,
           miniTest: s1.miniTestItems?.length ?? 0,
@@ -146,7 +188,8 @@ export function useTeachingSynthesis({
         clearTimeout(s1Timer);
         if (mainSignal.aborted) return;
         const isAbort = s1Ctrl.signal.aborted || err?.name === "AbortError";
-        console.error(isAbort ? "[SYNTH:stage1:timeout]" : "[SYNTH:stage1:error]", err?.message ?? String(err));
+        const label = isAbort ? "[SYNTH:stage1:timeout]" : "[SYNTH:stage1:error]";
+        console.error(label, err?.message ?? String(err));
         setStage1Status("error");
         setStatus("error");
         setErrorMessage(isAbort
@@ -158,11 +201,14 @@ export function useTeachingSynthesis({
       if (!stage1Succeeded || mainSignal.aborted) return;
 
       // ── STAGE 2: Background full synthesis ─────────────────────────────────
-      console.log("[SYNTH:stage2:start]", { conceptCount: input.rankedConcepts.length });
+      console.log("[SYNTH_STAGE2_START]", { page: pageNumberRef.current, conceptCount: input.rankedConcepts.length });
       setStage2Status("loading");
 
       const s2Ctrl = new AbortController();
-      mainSignal.addEventListener("abort", () => s2Ctrl.abort(), { once: true });
+      mainSignal.addEventListener("abort", () => {
+        console.warn("[SYNTH_ABORT_REASON]", { stage: 2, reason: "pageTruthKey changed — new page navigation" });
+        s2Ctrl.abort();
+      }, { once: true });
       const s2Timer = setTimeout(() => {
         console.warn("[SYNTH:stage2:timeout]");
         s2Ctrl.abort();
@@ -172,7 +218,8 @@ export function useTeachingSynthesis({
         const s2 = await synthesizeTeachingOutput(input, s2Ctrl.signal);
         clearTimeout(s2Timer);
         if (mainSignal.aborted) return;
-        console.log("[SYNTH:stage2:done]", {
+        console.log("[SYNTH_STAGE2_DONE]", {
+          page: pageNumberRef.current,
           coreIdea:     s2.coreIdea?.slice(0, 60),
           mechanism:    s2.mechanism?.slice(0, 60),
           conceptCount: s2.concepts?.length ?? 0,
@@ -186,7 +233,6 @@ export function useTeachingSynthesis({
 
         const isS2Timeout = s2Ctrl.signal.aborted && !mainSignal.aborted;
         if (isS2Timeout) {
-          // One retry with top-2 concepts only
           console.log("[SYNTH:stage2:retry]", { reducedConcepts: 2 });
           const reducedInput = { ...input, rankedConcepts: input.rankedConcepts.slice(0, 2) };
           const retryCtrl  = new AbortController();
@@ -202,12 +248,10 @@ export function useTeachingSynthesis({
             clearTimeout(retryTimer);
             console.warn("[SYNTH:stage2:retry-failed]");
             setStage2Status("error");
-            // Stage 1 stub remains — no user-visible error for stage 2 failure
           }
         } else {
           console.warn("[SYNTH:stage2:error]", err?.message ?? String(err));
           setStage2Status("error");
-          // Stage 1 stub remains
         }
       }
     }
@@ -215,12 +259,15 @@ export function useTeachingSynthesis({
     runStages();
 
     return () => {
+      console.warn("[SYNTH_ABORT_REASON]", { reason: "effect cleanup — pageTruthKey changed or blocks cleared" });
       mainCtrl.abort();
       abortRef.current = null;
     };
-  // Re-fire only when page identity changes or blocks become available
+  // Only pageTruthKey and blocks presence control synthesis restarts.
+  // enabled/domain/pageText/pageSummary changes (e.g. from background extraction)
+  // are read from refs inside the effect and do NOT abort an in-flight Stage 1.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageTruthKey, enabled, blocks.length > 0]);
+  }, [pageTruthKey, blocks.length > 0]);
 
   return { synthesis, status, stage1Status, stage2Status, errorMessage };
 }
