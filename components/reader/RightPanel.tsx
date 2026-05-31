@@ -1540,15 +1540,12 @@ function UltraView({
       {!hasSynth && (
         <PanelSection title="Study Notes">
           {synthStatus === "error" ? (
-            <div className="rounded-lg border border-rose-400/20 bg-[#1a0808] px-3 py-3 space-y-1">
-              <p className="text-[12px] font-medium text-rose-300/70">Study synthesis failed — check console/server logs</p>
-              <p className="text-[11px] font-mono text-white/30">{synthErrorMsg ?? "Unknown error"}</p>
-              <p className="text-[10px] text-white/20 italic">Filter DevTools: [SYNTH:error] · Server: [SYNTH:api:]</p>
+            <div className="rounded-lg border border-white/8 bg-white/2 px-3 py-3">
+              <p className="text-[12px] text-white/40">Could not generate notes. Try another page.</p>
             </div>
           ) : synthStatus === "success" ? (
-            <div className="rounded-lg border border-amber-400/15 bg-[#1a1208] px-3 py-3 space-y-1">
-              <p className="text-[12px] font-medium text-amber-300/60">Synthesis completed — all fields were filtered</p>
-              <p className="text-[10px] text-white/25 italic">Check [TRACE:synth-page-fields] in console for REJECTED field values.</p>
+            <div className="rounded-lg border border-white/8 bg-white/2 px-3 py-3">
+              <p className="text-[12px] text-white/40">Analyzing page…</p>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2 py-4">

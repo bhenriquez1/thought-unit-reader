@@ -49,6 +49,8 @@ import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuide
 import { groundHighlightAnchors } from "@/lib/highlights/groundHighlightAnchors";
 import { sanitizeHighlightAnchors } from "@/lib/highlights/sanitizeHighlightAnchors";
 import type { SynthHighlightAnchor } from "@/lib/insights/synthesizeTeachingOutput";
+import { buildUltraNote, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
+import { buildRecallSetFromView, saveRecallSet } from "@/lib/recalllab/recallStore";
 
 // Cognitive Engine Components (Surgeon View 2.0)
 import {
@@ -756,16 +758,29 @@ export default function ThoughtUnitReader() {
       setFocusState((prev) => {
         if (prev.time > 1) return { ...prev, time: prev.time - 1 };
         if (prev.mode === "focus") {
-          const nextCycle = cycleCount + 1;
-          setCycleCount(nextCycle);
-          if (nextCycle % 4 === 0) return { mode: "long_break", time: focusSettings.longBreak, running: true };
-          return { mode: "short_break", time: focusSettings.shortBreak, running: true };
+          setCycleCount((c) => c + 1);
+          // Stop at 0 — session summary modal shown via effect
+          return { mode: "focus", time: 0, running: false };
         }
+        // Break ends → auto-restart focus
         return { mode: "focus", time: focusSettings.focus, running: true };
       });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [focusState.running, focusSettings, cycleCount]);
+  }, [focusState.running, focusSettings]);
+
+  // Show session summary when a focus phase completes (time hits 0)
+  useEffect(() => {
+    if (focusState.mode === "focus" && focusState.time === 0 && !focusState.running) {
+      setShowSessionSummary(true);
+    }
+  }, [focusState.mode, focusState.time, focusState.running]);
+
+  // Track pages visited during active focus sessions
+  useEffect(() => {
+    if (!focusState.running || focusState.mode !== "focus") return;
+    setSessionPagesVisited((prev) => new Set([...prev, currentPage]));
+  }, [currentPage, focusState.running, focusState.mode]);
 
   useEffect(() => {
     if (!focusState.running) return;
@@ -812,6 +827,10 @@ export default function ThoughtUnitReader() {
   // 📑 TOC Panel control (like whiteboard)
   const [showTOCPanel, setShowTOCPanel] = useState<boolean>(false);
   const [showFocusControls, setShowFocusControls] = useState(false);
+  const [showSessionSummary, setShowSessionSummary] = useState(false);
+  const [sessionPagesVisited, setSessionPagesVisited] = useState<Set<number>>(new Set());
+  const [sessionNotesCount, setSessionNotesCount] = useState(0);
+  const [sessionCardsCount, setSessionCardsCount] = useState(0);
 
 
   // 💭 Thought Detection Panel
@@ -948,6 +967,52 @@ export default function ThoughtUnitReader() {
     setFocusedEvidenceId(null);
     setFocusSnippet(null);
   }, [activeShellTab, currentPage]);
+
+  // Programmatically save current page to NoteLab (used by Focus Cycle session summary)
+  const sendCurrentPageToNoteLab = useCallback(() => {
+    const sm = currentPageStudyModel;
+    if (!sm || (sm.conceptBlocks?.length ?? 0) === 0) return;
+    const topic = `Page ${currentPage}`;
+    const coreIdea = sm.pageThesis ?? "";
+    const concepts = (sm.conceptBlocks ?? []).map((b, i) => ({
+      ordinal: i + 1, title: b.title, pattern: b.pattern,
+      surgicalReason: b.mechanism ?? "", trap: b.trap ?? "", rule: b.rule ?? "",
+    }));
+    const sn = sm.studyNotes;
+    const professorNotes = sn ? {
+      whyItMatters: sn.whyThisMatters ?? undefined, keyMechanism: sn.keyMechanism ?? undefined,
+      commonConfusion: sn.commonConfusion ?? undefined, memoryAnchor: sn.quickMemory ?? undefined,
+      reasoningFlow: sn.reasoningFlow ?? undefined, examSignal: sn.examSignal ?? undefined,
+    } : undefined;
+    const note = buildUltraNote(
+      bookId, currentPage, topic, coreIdea, concepts,
+      uploadedFile?.name, professorNotes, sm.pageThesis ?? undefined,
+      sm.miniTest?.length ? sm.miniTest : undefined, undefined,
+      sm.externalStudyLinks?.length ? sm.externalStudyLinks : undefined,
+      sm.relatedVideoQueries?.length ? sm.relatedVideoQueries : undefined,
+      sm.highlightAnchors?.length ? sm.highlightAnchors : undefined,
+    );
+    saveUltraNote(note);
+    setSessionNotesCount((n) => n + 1);
+    setNoteLabRefreshKey((k) => k + 1);
+  }, [currentPageStudyModel, currentPage, bookId, uploadedFile]);
+
+  // Programmatically save current page to Recall Lab (used by Focus Cycle session summary)
+  const sendCurrentPageToRecallLab = useCallback(() => {
+    const sm = currentPageStudyModel;
+    if (!sm || (sm.conceptBlocks?.length ?? 0) === 0) return;
+    // buildRecallSetFromView only uses view.title — pass minimal object
+    const minView = { title: `Page ${currentPage}` } as import("@/lib/insights/buildUltraPageView").UltraPageView;
+    const set = buildRecallSetFromView(minView, bookId, currentPage, {
+      bookTitle: uploadedFile?.name,
+      sourceLabel: "right-panel",
+      studyModel: sm,
+    });
+    saveRecallSet(set);
+    setLastRecallSetId(set.id);
+    setSessionCardsCount((n) => n + 1);
+    setRecallLabRefreshKey((k) => k + 1);
+  }, [currentPageStudyModel, currentPage, bookId, uploadedFile]);
 
   /* =========================================================================
      🔹 Surgeon View: Text Selection Handler
@@ -2878,11 +2943,13 @@ export default function ThoughtUnitReader() {
                 focusedEvidenceId={focusedEvidenceId}
                 onNoteSaved={() => {
                   console.log("[NOTELAB_CALLBACK]", { bookId, page: currentPage });
+                  setSessionNotesCount((n) => n + 1);
                   setNoteLabRefreshKey((k) => k + 1);
                   trySwitchShellTab("notelab", "notelab");
                 }}
                 onStudySetGenerated={(setId) => {
                   console.log("[RECALLLAB_CALLBACK]", { setId, bookId, page: currentPage });
+                  setSessionCardsCount((n) => n + 1);
                   setLastRecallSetId(setId);
                   setRecallLabRefreshKey((k) => k + 1);
                   trySwitchShellTab("study", "study");
@@ -3244,7 +3311,7 @@ export default function ThoughtUnitReader() {
                   {focusState.running ? "Pause" : "Start"}
                 </button>
                 <button
-                  onClick={() => { setCycleCount(0); setFocusInterruptions(0); setFocusInterruptionLabel(null); setFocusState({ mode: "focus", time: focusSettings.focus, running: false }); }}
+                  onClick={() => { setCycleCount(0); setFocusInterruptions(0); setFocusInterruptionLabel(null); setFocusState({ mode: "focus", time: focusSettings.focus, running: false }); setSessionPagesVisited(new Set()); setSessionNotesCount(0); setSessionCardsCount(0); }}
                   className="rounded-lg px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors"
                 >
                   Reset
@@ -3832,6 +3899,77 @@ export default function ThoughtUnitReader() {
             setShowLinkModal(false);
           }}
         />
+      )}
+
+      {/* Focus Cycle — Session Summary Modal */}
+      {showSessionSummary && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-80 rounded-2xl border border-purple-300/30 bg-gray-900/98 shadow-2xl p-6 flex flex-col gap-4">
+            <div className="text-center">
+              <div className="text-2xl mb-1">🎯</div>
+              <h2 className="text-base font-bold text-white">Focus Session Complete</h2>
+              <p className="text-[11px] text-slate-400 mt-0.5">{Math.round(focusSettings.focus / 60)} min · {focusIntegrity}</p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-lg bg-white/5 p-2">
+                <div className="text-xl font-bold text-purple-300">{sessionPagesVisited.size}</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">Pages<br/>studied</div>
+              </div>
+              <div className="rounded-lg bg-white/5 p-2">
+                <div className="text-xl font-bold text-emerald-300">{sessionNotesCount}</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">Notes<br/>saved</div>
+              </div>
+              <div className="rounded-lg bg-white/5 p-2">
+                <div className="text-xl font-bold text-amber-300">{sessionCardsCount}</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">Recall<br/>cards</div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    sendCurrentPageToNoteLab();
+                    setShowSessionSummary(false);
+                    trySwitchShellTab("notelab", "notelab");
+                  }}
+                  disabled={!currentPageStudyModel || (currentPageStudyModel.conceptBlocks?.length ?? 0) === 0}
+                  className="rounded-lg py-2 text-xs font-semibold bg-emerald-700/80 hover:bg-emerald-600/80 disabled:opacity-40 text-white transition-colors"
+                >
+                  Save to NoteLab
+                </button>
+                <button
+                  onClick={() => {
+                    sendCurrentPageToRecallLab();
+                    setShowSessionSummary(false);
+                    trySwitchShellTab("study", "study");
+                  }}
+                  disabled={!currentPageStudyModel || (currentPageStudyModel.conceptBlocks?.length ?? 0) === 0}
+                  className="rounded-lg py-2 text-xs font-semibold bg-amber-700/80 hover:bg-amber-600/80 disabled:opacity-40 text-white transition-colors"
+                >
+                  Save to Recall Lab
+                </button>
+              </div>
+              <button
+                onClick={() => {
+                  setShowSessionSummary(false);
+                  const isLong = cycleCount % 4 === 0;
+                  setFocusState({ mode: isLong ? "long_break" : "short_break", time: isLong ? focusSettings.longBreak : focusSettings.shortBreak, running: true });
+                }}
+                className="rounded-lg py-2 text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white transition-colors"
+              >
+                Take a Break
+              </button>
+              <button
+                onClick={() => setShowSessionSummary(false)}
+                className="rounded-lg py-1.5 text-xs text-slate-400 hover:text-white transition-colors"
+              >
+                End Session
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Surgeon View: Highlight Action Menu */}
