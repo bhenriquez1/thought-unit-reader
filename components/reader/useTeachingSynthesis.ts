@@ -26,6 +26,7 @@ import {
   makeStubFromStage1,
   buildSynthesisInput,
 } from "@/lib/insights/synthesizeTeachingOutput";
+import { cleanActivePageText, cleanThesisLine } from "@/lib/insights/cleanActivePageText";
 
 export type SynthesisStatus = "idle" | "loading" | "success" | "error";
 
@@ -121,7 +122,7 @@ export function useTeachingSynthesis({
       console.log("[SYNTH:skip]", { reason: "disabled", pageTruthKey });
       return;
     }
-    const hasBlocksOrText = blocks.length > 0 || (pageText?.length ?? 0) >= 200;
+    const hasBlocksOrText = blocks.length > 0 || (pageText?.length ?? 0) > 500;
     if (!hasBlocksOrText) {
       console.log("[SYNTH:skip]", { reason: "no blocks and insufficient page text", pageTruthKey });
       return;
@@ -132,7 +133,15 @@ export function useTeachingSynthesis({
 
     const _domain = domainRef.current;
     const _blocks = blocksRef.current;
-    const _pageText = pageTextRef.current ?? "";
+
+    // Clean the active page text BEFORE anything reads it: strip page numbers,
+    // UNIT/chapter running headers, and copyright/footer debris that would
+    // otherwise pollute the Page Thesis. Body text, headings, math lines kept.
+    const _pageText = cleanActivePageText(pageTextRef.current);
+    // Thesis/objective carried as context can themselves be header debris
+    // (e.g. "30 UNIT ONE The Chemistry of Life") — clean them too.
+    const _pageThesis    = cleanThesisLine(pageThesisRef.current);
+    const _pageObjective = cleanThesisLine(pageObjectiveRef.current);
 
     // Math blocks often have short formula patterns (e.g. "lim f(x) = L").
     const usableBlocks = _blocks.filter((b) => {
@@ -142,15 +151,17 @@ export function useTeachingSynthesis({
       return false;
     });
 
-    const hasEnoughText = _pageText.length >= 200;
+    // Text-first fallback threshold: page must have enough CLEAN body text to be
+    // worth synthesizing from text alone.
+    const hasEnoughText = _pageText.length > 500;
 
     console.log("[SYNTH_PREFLIGHT]", {
       page: pageNumberRef.current ?? null,
-      activePageTextChars: _pageText.length,
-      textPreview: _pageText.slice(0, 100) || null,
+      charCount: _pageText.length,
       blockCount: _blocks.length,
       usableBlockCount: usableBlocks.length,
-      skipReason: !usableBlocks.length && !hasEnoughText ? "no blocks and insufficient text" : null,
+      textPreview: _pageText.slice(0, 100) || null,
+      skipReason: !usableBlocks.length && !hasEnoughText ? "no usable blocks and insufficient clean text" : null,
     });
 
     if (!usableBlocks.length && !hasEnoughText) {
@@ -166,12 +177,12 @@ export function useTeachingSynthesis({
     if (usableBlocks.length > 0) {
       input = buildSynthesisInput(
         usableBlocks, safeDomain,
-        pageObjectiveRef.current, pageThesisRef.current,
+        _pageObjective, _pageThesis,
         pageSummaryRef.current, pageNumberRef.current, _pageText || undefined,
       );
     } else {
-      // Text-first fallback: derive 1–3 synthetic concept inputs from page text segments.
-      // Splits the text into up to 3 chunks, picks the longest ones as concepts.
+      // Text-first fallback: derive 1–3 synthetic concept inputs from CLEAN page
+      // text segments. Splits the text into up to 3 chunks, longest first.
       const chunkSize = Math.ceil(_pageText.length / 3);
       const chunks = [
         _pageText.slice(0, chunkSize),
@@ -195,8 +206,8 @@ export function useTeachingSynthesis({
 
       input = {
         domain: safeDomain,
-        pageObjective: pageObjectiveRef.current,
-        pageThesis: pageThesisRef.current,
+        pageObjective: _pageObjective,
+        pageThesis: _pageThesis,
         pageSummary: pageSummaryRef.current,
         pageNumber: pageNumberRef.current,
         pageText: _pageText.slice(0, 1500) || undefined,
@@ -211,8 +222,8 @@ export function useTeachingSynthesis({
     console.log("[SYNTH_INPUT]", {
       page: pageNumberRef.current ?? null,
       charCount: inputCharCount,
+      textPreview: _pageText.slice(0, 100) || null,
       conceptCount: input.rankedConcepts.length,
-      pageTextChars: _pageText.length,
       pageTruthKey,
     });
     if (inputCharCount > 50_000) {
@@ -309,13 +320,13 @@ export function useTeachingSynthesis({
             if (mainSignal.aborted) return;
             setSynthesis(retry);
             setStage2Status("success");
-          } catch {
+          } catch (retryErr: any) {
             clearTimeout(retryTimer);
-            console.warn("[SYNTH:stage2:retry-failed]");
+            console.error("[SYNTH_STAGE2_ERROR]", { page: pageNumberRef.current, phase: "retry", message: retryErr?.message ?? String(retryErr) });
             setStage2Status("error");
           }
         } else {
-          console.warn("[SYNTH:stage2:error]", err?.message ?? String(err));
+          console.error("[SYNTH_STAGE2_ERROR]", { page: pageNumberRef.current, phase: "initial", message: err?.message ?? String(err) });
           setStage2Status("error");
         }
       }
@@ -324,7 +335,7 @@ export function useTeachingSynthesis({
     runStages();
   // enabled + blocks/text readiness drive starts; startedKeyRef guards against repeats.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageTruthKey, enabled, blocks.length > 0, (pageText?.length ?? 0) >= 200]);
+  }, [pageTruthKey, enabled, blocks.length > 0, (pageText?.length ?? 0) > 500]);
 
   return { synthesis, status, stage1Status, stage2Status, errorMessage };
 }
