@@ -197,9 +197,9 @@ export function useTeachingSynthesis({
         importance: i === 0 ? "high" : "medium",
       }));
 
-      console.log("[SYNTH:text-fallback]", {
+      console.log("[SYNTH_FORCE_TEXT_FALLBACK]", {
         page: pageNumberRef.current ?? null,
-        pageTextChars: _pageText.length,
+        charCount: _pageText.length,
         syntheticConceptCount: syntheticConcepts.length,
         pageTruthKey,
       });
