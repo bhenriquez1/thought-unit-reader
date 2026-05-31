@@ -24,6 +24,15 @@ import type { PageDomain } from "@/lib/insights/detectPageDomain";
 const apiKey = process.env.OPENAI_API_KEY;
 const openai = new OpenAI({ apiKey });
 
+// CRITICAL: Stage 2 (max_output_tokens 1800, gpt-4o) routinely takes 15–30s.
+// The platform default serverless timeout is 10s (Vercel Hobby) / 15s (Pro), which
+// kills the function before OpenAI returns — Stage 1 (600 tokens, ~3s) survives but
+// Stage 2 never resolves. Raising maxDuration is the root-cause fix for "Stage 2 stuck".
+export const config = {
+  maxDuration: 60,
+  api: { bodyParser: { sizeLimit: "1mb" } },
+};
+
 // Pre-build format objects at module load — schema errors surface at startup.
 let FORMAT_FULL: ReturnType<typeof zodTextFormat> | null = null;
 let FORMAT_STAGE1: ReturnType<typeof zodTextFormat> | null = null;
@@ -82,6 +91,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       conceptCount: safeInput.rankedConcepts.length,
       hasPageThesis: !!safeInput.pageThesis,
     });
+    const s1Start = Date.now();
     try {
       const response = await openai.responses.parse({
         model: "gpt-4o",
@@ -93,10 +103,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           { role: "user",   content: buildStage1UserPrompt(safeInput) },
         ],
       });
+      console.log("[SYNTH:stage1:openai-elapsed-ms]", Date.now() - s1Start);
       const s1 = response.output_parsed;
       if (!s1) return res.status(500).json({ error: "Stage 1: no structured output" });
       const validated = Stage1SynthesisSchema.parse(s1);
       console.log("[SYNTH:stage1:api-done]", {
+        elapsedMs: Date.now() - s1Start,
         coreIdea: validated.coreIdea?.slice(0, 60),
         anchors:  validated.highlightAnchors?.length ?? 0,
         miniTest: validated.miniTestItems?.length ?? 0,
@@ -104,7 +116,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json(validated);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error("[SYNTH:stage1:api-error]", msg);
+      console.error("[SYNTH:stage1:api-error]", { elapsedMs: Date.now() - s1Start, msg });
       return res.status(500).json({ error: msg.slice(0, 300) });
     }
   }
@@ -121,6 +133,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     concepts: safeInput.rankedConcepts.map((c, i) => ({ i, role: c.role, title: c.title?.slice(0, 40) })),
   });
 
+  const s2Start = Date.now();
   try {
     console.log("[SYNTH:cp3:openai-start]", { model: "gpt-4o", maxTokens: 1800 });
 
@@ -137,6 +150,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const synthesis = response.output_parsed;
     console.log("[SYNTH:cp4:openai-returned]", {
+      elapsedMs: Date.now() - s2Start,
       hasOutput: !!synthesis,
       rawSnip: JSON.stringify(synthesis ?? {}).slice(0, 300),
     });
@@ -160,6 +174,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const msg   = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error ? err.stack   : undefined;
     console.error("[SYNTH:error]", {
+      elapsedMs: Date.now() - s2Start,
       message: msg,
       stack: stack?.split("\n").slice(0, 10).join(" | "),
     });
