@@ -71,6 +71,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: "Missing or empty 'rankedConcepts'." });
   }
 
+  // Measure received payload — confirms server gets ONE page, not the whole book.
+  const receivedChars =
+    (typeof pageText === "string" ? pageText.length : 0) +
+    (typeof pageSummary === "string" ? pageSummary.length : 0) +
+    (typeof pageThesis === "string" ? pageThesis.length : 0) +
+    (typeof pageObjective === "string" ? pageObjective.length : 0) +
+    rankedConcepts.reduce((s: number, c: any) => s + (typeof c?.text === "string" ? c.text.length : 0), 0);
+  console.log("[SYNTH:received]", {
+    stage,
+    page: (body as any).pageNumber ?? null,
+    receivedChars,
+    pageTextChars: typeof pageText === "string" ? pageText.length : 0,
+    conceptCount: rankedConcepts.length,
+  });
+  if (receivedChars > 50_000) {
+    console.error("[SYNTH:PAYLOAD_TOO_LARGE] book-level text reached the API — synthesis should be page-scoped", { receivedChars });
+  }
+
   const safeDomain: PageDomain = VALID_DOMAINS.includes(domain as PageDomain)
     ? (domain as PageDomain)
     : "general";

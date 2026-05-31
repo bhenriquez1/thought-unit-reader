@@ -41,9 +41,12 @@ interface UseTeachingSynthesisArgs {
   pageNumber?: number;
 }
 
-const STAGE1_TIMEOUT_MS       = 15_000;  // math pages with theorem/formula notation need extra time
-const STAGE2_TIMEOUT_MS       = 35_000;
-const STAGE2_RETRY_TIMEOUT_MS = 20_000;
+// Stage 1 must survive main-thread contention during large full-book extraction
+// (a 1000+ page upload can keep the event loop busy for tens of seconds). 25s gives
+// the small Stage 1 request headroom to resolve even while the book is still parsing.
+const STAGE1_TIMEOUT_MS       = 25_000;
+const STAGE2_TIMEOUT_MS       = 40_000;
+const STAGE2_RETRY_TIMEOUT_MS = 25_000;
 
 export function useTeachingSynthesis({
   pageTruthKey,

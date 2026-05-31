@@ -98,6 +98,15 @@ export async function extractTextFromPdf(file: File): Promise<string> {
           console.log(`📄 Processed ${i}/${doc.numPages} pages, ${totalCharsExtracted} characters extracted`);
         }
 
+        // Yield the event loop every 25 pages so pending work (in-flight fetch
+        // continuations, React renders, the page-synthesis request) is not starved
+        // by a long full-book extraction. Without this, a 1000+ page book can keep
+        // the main thread busy long enough that the Stage 1 synthesis fetch aborts
+        // on its timeout before its response handler ever runs.
+        if (i % 25 === 0) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        }
+
       } catch (pageError) {
         console.warn(`⚠️ Failed to process page ${i}:`, pageError);
         pages.push(`[Page ${i} could not be processed]`);
