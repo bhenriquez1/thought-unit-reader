@@ -496,6 +496,14 @@ export function RightPanel({
   // blocks are ready. Returns null until complete; triggers re-render when done.
   // Use teachingStatement (top-down heading+canonical) NOT coreIdea (heuristic sentence).
   // coreIdea can be a figure caption; teachingStatement comes from normalization confidence scores.
+  //
+  // CRITICAL: enabled does NOT require !!ultraPageView. buildUltraPageView returns null when
+  // the heuristic concept pipeline finds 0 usable concepts (e.g. running-header-only pages,
+  // suppressed source text). In those cases we still have raw ctx.pageText (4000+ chars) and
+  // synthesis must start from that. The !!ultraPageView gate was the root cause of
+  // "[WIRE] _synth synthPresent:false" on pages with readable text but weak heuristic blocks.
+  const synthEnabled = isCurrentPageModel && !isStructuralPage &&
+    (!!ultraPageView || (ctx?.pageText?.length ?? 0) > 500);
   const {
     synthesis: teachingSynthesis,
     status: synthStatus,
@@ -507,10 +515,11 @@ export function RightPanel({
     pageObjective: ultraPageView?.teachingStatement,
     pageThesis:    ultraPageView?.pageThesis ?? undefined,
     pageSummary:   pageModel?.pageSummary ?? undefined,
-    pageText:      ctx?.pageText ? ctx.pageText.slice(0, 1500) : undefined,
+    // Pass full pageText — cleaner + synthesis hook slices to 1500 internally.
+    pageText:      ctx?.pageText ?? undefined,
     domain: (ultraPageView?._debug?.domain) ?? null,
     blocks: ultraPageView?.blocks ?? [],
-    enabled: isCurrentPageModel && !!ultraPageView && !isStructuralPage,
+    enabled: synthEnabled,
     pageNumber: ctx?.pageNumber ?? undefined,
   });
 
@@ -519,28 +528,45 @@ export function RightPanel({
   // but every synthesis field is validated by validSynthField before replacing a
   // heuristic value. This prevents cross-domain phrasing, publisher artifacts, and
   // incomplete sentences from reaching the rendered cards.
+  //
+  // When ultraPageView is null (0 heuristic concepts) but synthesis ran via text-fallback,
+  // we build a minimal scaffold view so _synth can be attached and studyModel produced.
   const ultraPageViewWithSynthesis = useMemo((): UltraPageView | null => {
-    if (!ultraPageView) return null;
-    if (!teachingSynthesis) return ultraPageView;
+    if (!ultraPageView && !teachingSynthesis) return null;
 
-    const synthDomain: string | null = ultraPageView._debug?.domain ?? null;
+    // Text-fallback scaffold: synthesis ran but heuristic pipeline produced no view.
+    // Build a minimal UltraPageView so _synth can be attached and studyModel built.
+    const baseView: UltraPageView = ultraPageView ?? {
+      title:       ctx?.sectionTitle ?? ctx?.chapterTitle ?? `Page ${ctx?.pageNumber ?? ""}`,
+      subtitle:    "",
+      coreIdea:    teachingSynthesis?.coreIdea ?? "",
+      blocks:      [],
+      miniTest:    [],
+      compression: [],
+      steps:       [],
+    };
+
+    if (!teachingSynthesis) return baseView;
+
+    const synthDomain: string | null = baseView._debug?.domain ?? null;
 
     console.log("[TRACE:synthesis]", {
       domain: synthDomain,
-      symbolicDensity: ultraPageView._debug?.symbolicDensity ?? "n/a",
+      symbolicDensity: baseView._debug?.symbolicDensity ?? "n/a",
       hasSynthesis: true,
-      rawBlockCount: ultraPageView.blocks.length,
+      rawBlockCount: baseView.blocks.length,
       synthConceptCount: teachingSynthesis.concepts?.length ?? 0,
+      textFallback: !ultraPageView,
     });
 
     const finalCoreIdea = teachingSynthesis.coreIdea?.length >= 20
       ? teachingSynthesis.coreIdea
-      : ultraPageView.coreIdea;
+      : baseView.coreIdea;
 
     // Per-concept overlay: synthesis rewrites principle/mechanism/trap/rule/misconception/examHook.
     // Each field is validated before replacing the heuristic value.
     const finalBlocks = teachingSynthesis.concepts?.length
-      ? ultraPageView.blocks.map((b, i) => {
+      ? baseView.blocks.map((b, i) => {
           const sc = teachingSynthesis.concepts[i];
           if (!sc) return b;
 
@@ -576,7 +602,7 @@ export function RightPanel({
             examHook:       safeExamHook        ?? undefined,
           };
         })
-      : ultraPageView.blocks;
+      : baseView.blocks;
 
     // Page-level synthesis fields — validated and stored for dedicated display sections.
     // These are surfaced as Study Notes (Why This Matters / Key Mechanism / etc.),
@@ -597,12 +623,12 @@ export function RightPanel({
       examIdea:    vExamIdea ? vExamIdea.slice(0, 60) : "null",
     });
 
-    const finalCompression = ultraPageView.compression;
+    const finalCompression = baseView.compression;
 
     // Mini-tests: prefer synthesis questions (domain-specific) over heuristic templates
     const finalMiniTest = teachingSynthesis.miniTests?.length
       ? teachingSynthesis.miniTests.slice(0, 5)
-      : ultraPageView.miniTest;
+      : baseView.miniTest;
 
     // Wiring verification: if this log shows "Cengage…", "Se C tion…", or cross-domain text,
     // then validSynthField is not catching it. If log is clean but UI shows bad text,
@@ -610,8 +636,9 @@ export function RightPanel({
     console.log("[TRACE RIGHTPANEL FINAL]", {
       component: "RightPanel.tsx > ultraPageViewWithSynthesis",
       domain: synthDomain,
-      rawBlockCount: ultraPageView.blocks.length,
+      rawBlockCount: baseView.blocks.length,
       finalBlockCount: finalBlocks.length,
+      textFallback: !ultraPageView,
       synthSections: { whyItMatters: !!vApply, keyMechanism: !!vMech, commonConfusion: !!vAlert, memoryAnchor: !!vMemory },
       coreIdea: finalCoreIdea?.slice(0, 80) ?? null,
       finalBlocks: finalBlocks.map((b, i) => ({
@@ -626,8 +653,8 @@ export function RightPanel({
       })),
     });
 
-    return {
-      ...ultraPageView,
+    const result = {
+      ...baseView,
       coreIdea: finalCoreIdea,
       blocks: finalBlocks,
       compression: finalCompression,
@@ -648,7 +675,16 @@ export function RightPanel({
         preReadRecallItems:  teachingSynthesis.preReadRecallItems ?? null,
       },
     } as UltraPageView & { _synth: Record<string, unknown> };
-  }, [ultraPageView, teachingSynthesis]);
+    console.log("[SYNTH_ATTACHED]", {
+      hasSynth: true,
+      page: ctx?.pageNumber ?? null,
+      textFallback: !ultraPageView,
+      coreIdea: finalCoreIdea?.slice(0, 60) ?? null,
+      whyItMatters: !!vApply,
+      keyMechanism: !!vMech,
+    });
+    return result;
+  }, [ultraPageView, teachingSynthesis, ctx?.pageNumber, ctx?.sectionTitle, ctx?.chapterTitle]);
 
   // Typed study model built when synthesis resolves — shared with all downstream features.
   const studyModel = useMemo((): CurrentPageStudyModel | null => {
@@ -703,11 +739,11 @@ export function RightPanel({
       pageTruthKey,
     });
     if (studyModel && onStudyModelReady) {
-      console.log("[WIRE] studyModel→parent", {
+      console.log("[WIRE] studyModel accepted", {
         pageTruthKey,
         page: studyModel.page,
-        thesis: studyModel.pageThesis.slice(0, 60),
-        anchors: studyModel.highlightAnchors.length,
+        thesis: studyModel.pageThesis?.slice(0, 60),
+        anchors: studyModel.highlightAnchors?.length ?? 0,
         preReadRecall: (studyModel as any).preReadRecallItems?.length ?? 0,
       });
       onStudyModelReady(studyModel, pageTruthKey);
