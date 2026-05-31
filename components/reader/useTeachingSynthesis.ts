@@ -7,6 +7,14 @@
 // STAGE 2 (background, ~5–15s): full study notes, concept blocks, videos, links
 //   → Fills in progressively. On timeout: retries once with reduced context.
 //   → Stage 2 failure is non-blocking — Stage 1 content stays visible.
+//
+// ABORT MODEL (critical):
+//   - Synthesis is aborted ONLY when pageTruthKey changes (real page navigation).
+//   - Background full-book extraction updates `enabled`/`pageText`/`blocks` many
+//     times per second; those updates must NEVER abort an in-flight request.
+//   - Effect A (deps: [pageTruthKey]) resets state + aborts the old page's request.
+//   - Effect B (deps: [pageTruthKey, enabled, blocksReady]) STARTS synthesis once
+//     per page when ready. It never aborts on cleanup, so enabled flicker is safe.
 
 import { useEffect, useRef, useState } from "react";
 import type { PageDomain } from "@/lib/insights/detectPageDomain";
@@ -64,42 +72,65 @@ export function useTeachingSynthesis({
   const [stage1Status, setStage1Status] = useState<SynthesisStatus>("idle");
   const [stage2Status, setStage2Status] = useState<SynthesisStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Abort controller for the in-flight request; aborted ONLY on page change.
   const abortRef = useRef<AbortController | null>(null);
+  // The pageTruthKey we've already started synthesis for — prevents duplicate runs
+  // when enabled/blocks re-fire Effect B for the same page.
+  const startedKeyRef = useRef<string | null>(null);
 
-  // Keep a ref for values that MUST NOT re-trigger synthesis when they change.
-  // Background book extraction updates pageText/enabled/domain on every extracted
-  // page, which previously caused enabled to flicker and abort Stage 1 mid-flight.
-  // Reading from refs inside the effect avoids that — only pageTruthKey and
-  // blocks.length>0 control when synthesis starts.
-  const enabledRef      = useRef(enabled);
-  const domainRef       = useRef(domain);
-  const blocksRef       = useRef(blocks);
+  // Live refs for the non-identity inputs. buildSynthesisInput reads these so that
+  // a value arriving slightly after Stage 1 starts is still picked up, without
+  // those values being effect dependencies (which would cause aborts/restarts).
+  const domainRef        = useRef(domain);
+  const blocksRef        = useRef(blocks);
   const pageObjectiveRef = useRef(pageObjective);
-  const pageThesisRef   = useRef(pageThesis);
-  const pageSummaryRef  = useRef(pageSummary);
-  const pageTextRef     = useRef(pageText);
-  const pageNumberRef   = useRef(pageNumber);
-  useEffect(() => { enabledRef.current = enabled; },       [enabled]);
-  useEffect(() => { domainRef.current = domain; },         [domain]);
-  useEffect(() => { blocksRef.current = blocks; },         [blocks]);
-  useEffect(() => { pageObjectiveRef.current = pageObjective; }, [pageObjective]);
-  useEffect(() => { pageThesisRef.current = pageThesis; }, [pageThesis]);
-  useEffect(() => { pageSummaryRef.current = pageSummary; }, [pageSummary]);
-  useEffect(() => { pageTextRef.current = pageText; },     [pageText]);
-  useEffect(() => { pageNumberRef.current = pageNumber; }, [pageNumber]);
+  const pageThesisRef    = useRef(pageThesis);
+  const pageSummaryRef   = useRef(pageSummary);
+  const pageTextRef      = useRef(pageText);
+  const pageNumberRef    = useRef(pageNumber);
+  domainRef.current        = domain;
+  blocksRef.current        = blocks;
+  pageObjectiveRef.current = pageObjective;
+  pageThesisRef.current    = pageThesis;
+  pageSummaryRef.current   = pageSummary;
+  pageTextRef.current      = pageText;
+  pageNumberRef.current    = pageNumber;
 
+  // ── Effect A: page identity changed → reset + abort old request ────────────
   useEffect(() => {
     setSynthesis(null);
     setStatus("idle");
     setStage1Status("idle");
     setStage2Status("idle");
     setErrorMessage(null);
+    startedKeyRef.current = null;
+    return () => {
+      if (abortRef.current) {
+        console.warn("[SYNTH_ABORT_REASON]", { reason: "pageTruthKey changed — new page navigation", pageTruthKey });
+        abortRef.current.abort();
+        abortRef.current = null;
+      }
+    };
+  }, [pageTruthKey]);
 
-    // Read live values from refs — not from the effect closure.
-    // This means a mid-extraction enabled/domain/pageText update never restarts synthesis.
-    const _enabled   = enabledRef.current;
-    const _domain    = domainRef.current;
-    const _blocks    = blocksRef.current;
+  // ── Effect B: start synthesis once per page when enabled + blocks ready ─────
+  // No abort in this effect's cleanup — enabled/blocks flicker must not kill a run.
+  useEffect(() => {
+    if (!enabled) {
+      console.log("[SYNTH:skip]", { reason: "disabled", pageTruthKey });
+      return;
+    }
+    if (!(blocks.length > 0)) {
+      console.log("[SYNTH:skip]", { reason: "no blocks yet", pageTruthKey });
+      return;
+    }
+    if (startedKeyRef.current === pageTruthKey) {
+      return; // already started for this page — do not restart on flicker
+    }
+
+    const _domain = domainRef.current;
+    const _blocks = blocksRef.current;
 
     // Math blocks often have short formula patterns (e.g. "lim f(x) = L").
     const usableBlocks = _blocks.filter((b) => {
@@ -109,19 +140,9 @@ export function useTeachingSynthesis({
       return false;
     });
 
-    console.log("[SYNTH:lifecycle]", {
-      enabled: _enabled,
-      pageTruthKey,
-      usableBlockCount: usableBlocks.length,
-      totalBlocks: _blocks.length,
-      domain: _domain,
-      hasPageThesis:    !!pageThesisRef.current,
-      hasPageSummary:   !!pageSummaryRef.current,
-      hasPageObjective: !!pageObjectiveRef.current,
-    });
-
-    if (!_enabled || !usableBlocks.length) {
-      console.log("[SYNTH:skip]", { reason: !_enabled ? "disabled" : "no usable blocks" });
+    if (!usableBlocks.length) {
+      // Don't mark as started — allow a later render (more/better blocks) to start.
+      console.log("[SYNTH:skip]", { reason: "no usable blocks", totalBlocks: _blocks.length, pageTruthKey });
       return;
     }
 
@@ -143,28 +164,25 @@ export function useTeachingSynthesis({
       pageTextChars: pageTextRef.current?.length ?? 0,
       pageTruthKey,
     });
-
     if (inputCharCount > 50_000) {
-      console.error("[SYNTH_INPUT] PAYLOAD TOO LARGE — book text leaked into synthesis", { inputCharCount });
+      console.error("[SYNTH_INPUT] PAYLOAD TOO LARGE — book text leaked into synthesis", { inputCharCount, page: pageNumberRef.current });
     }
 
+    // Mark started and create the request controller (aborted only by Effect A).
+    startedKeyRef.current = pageTruthKey;
     const mainCtrl = new AbortController();
     abortRef.current = mainCtrl;
     const mainSignal = mainCtrl.signal;
 
     async function runStages() {
-      // ── STAGE 1: Fast ──────────────────────────────────────────────────────
-      console.log("[SYNTH_STAGE1_START]", { pageTruthKey, page: pageNumberRef.current, conceptCount: input.rankedConcepts.length });
+      // ── STAGE 1 ──────────────────────────────────────────────────────────
+      console.log("[SYNTH_STAGE1_START]", { page: pageNumberRef.current, pageTruthKey, conceptCount: input.rankedConcepts.length });
       setStage1Status("loading");
       setStatus("loading");
 
       const s1Ctrl = new AbortController();
-      mainSignal.addEventListener("abort", () => {
-        console.warn("[SYNTH_ABORT_REASON]", { stage: 1, reason: "pageTruthKey changed — new page navigation" });
-        s1Ctrl.abort();
-      }, { once: true });
+      mainSignal.addEventListener("abort", () => s1Ctrl.abort(), { once: true });
       const s1Timer = setTimeout(() => {
-        console.warn("[SYNTH:stage1:timeout]", { elapsed: STAGE1_TIMEOUT_MS });
         console.warn("[SYNTH_ABORT_REASON]", { stage: 1, reason: `Stage 1 timeout after ${STAGE1_TIMEOUT_MS}ms` });
         s1Ctrl.abort();
       }, STAGE1_TIMEOUT_MS);
@@ -188,8 +206,7 @@ export function useTeachingSynthesis({
         clearTimeout(s1Timer);
         if (mainSignal.aborted) return;
         const isAbort = s1Ctrl.signal.aborted || err?.name === "AbortError";
-        const label = isAbort ? "[SYNTH:stage1:timeout]" : "[SYNTH:stage1:error]";
-        console.error(label, err?.message ?? String(err));
+        console.error("[SYNTH_STAGE1_ERROR]", { isAbort, message: err?.message ?? String(err), page: pageNumberRef.current });
         setStage1Status("error");
         setStatus("error");
         setErrorMessage(isAbort
@@ -200,17 +217,14 @@ export function useTeachingSynthesis({
 
       if (!stage1Succeeded || mainSignal.aborted) return;
 
-      // ── STAGE 2: Background full synthesis ─────────────────────────────────
+      // ── STAGE 2 ──────────────────────────────────────────────────────────
       console.log("[SYNTH_STAGE2_START]", { page: pageNumberRef.current, conceptCount: input.rankedConcepts.length });
       setStage2Status("loading");
 
       const s2Ctrl = new AbortController();
-      mainSignal.addEventListener("abort", () => {
-        console.warn("[SYNTH_ABORT_REASON]", { stage: 2, reason: "pageTruthKey changed — new page navigation" });
-        s2Ctrl.abort();
-      }, { once: true });
+      mainSignal.addEventListener("abort", () => s2Ctrl.abort(), { once: true });
       const s2Timer = setTimeout(() => {
-        console.warn("[SYNTH:stage2:timeout]");
+        console.warn("[SYNTH_ABORT_REASON]", { stage: 2, reason: `Stage 2 timeout after ${STAGE2_TIMEOUT_MS}ms` });
         s2Ctrl.abort();
       }, STAGE2_TIMEOUT_MS);
 
@@ -257,17 +271,9 @@ export function useTeachingSynthesis({
     }
 
     runStages();
-
-    return () => {
-      console.warn("[SYNTH_ABORT_REASON]", { reason: "effect cleanup — pageTruthKey changed or blocks cleared" });
-      mainCtrl.abort();
-      abortRef.current = null;
-    };
-  // Only pageTruthKey and blocks presence control synthesis restarts.
-  // enabled/domain/pageText/pageSummary changes (e.g. from background extraction)
-  // are read from refs inside the effect and do NOT abort an in-flight Stage 1.
+  // enabled + blocks readiness drive starts; startedKeyRef guards against repeats.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageTruthKey, blocks.length > 0]);
+  }, [pageTruthKey, enabled, blocks.length > 0]);
 
   return { synthesis, status, stage1Status, stage2Status, errorMessage };
 }
