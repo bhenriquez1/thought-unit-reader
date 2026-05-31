@@ -3828,9 +3828,20 @@ export default function ThoughtUnitReader() {
           {focusModeLabel} — <span style={{ fontFamily: "monospace" }}>{String(Math.floor(focusState.time / 60)).padStart(2, "0")}:{String(focusState.time % 60).padStart(2, "0")}</span>
           <span style={{ marginLeft: 8, fontSize: 10, opacity: 0.5 }}>{showFocusControls ? "▲" : "▼"}</span>
         </button>
+      </div>
 
-        {/* Popup: fixed below the pill, cannot be clipped by any parent */}
-        {showFocusControls && (
+      {/* Popup: rendered as a SIBLING of the pill — NOT nested inside the pill
+          wrapper. The pill wrapper has transform:translateX(-50%), and a transform
+          ancestor becomes the containing block for position:fixed descendants,
+          which previously shrank this popup to a tiny bar. As a top-level sibling
+          its position:fixed resolves against the viewport. */}
+      {showFocusControls && (
+        <>
+          {/* click-catcher to close on outside click */}
+          <div
+            onClick={() => setShowFocusControls(false)}
+            style={{ position: "fixed", inset: 0, zIndex: 190 }}
+          />
           <div
             style={{
               position: "fixed",
@@ -3937,8 +3948,8 @@ export default function ThoughtUnitReader() {
               <div style={{ fontSize: 11, color: "#fbbf24", textAlign: "center" }}>{focusInterruptionLabel}</div>
             )}
           </div>
-        )}
-      </div>
+        </>
+      )}
 
       {/* Focus Cycle — Session Summary Modal */}
       {showSessionSummary && (

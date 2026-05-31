@@ -266,7 +266,14 @@ export default function SmartPDFViewer({
   // Log overlay renders for debugging.
   useEffect(() => {
     if (overlayRects.length > 0) {
-      console.log("[OVERLAY_RENDER]", { count: overlayRects.length, version: overlayVersion, ids: overlayRects.slice(0, 5).map(r => r.id) });
+      console.log("[OVERLAY_RENDER]", {
+        count: overlayRects.length,
+        version: overlayVersion,
+        ids: overlayRects.slice(0, 8).map(r => r.id),
+        kinds: overlayRects.slice(0, 8).map(r => r.semanticKind ?? r.level),
+      });
+    } else {
+      console.log("[OVERLAY_RENDER]", { count: 0, version: overlayVersion, note: "no rects — left panel empty" });
     }
   }, [overlayRects, overlayVersion]);
   const viewerRef = useRef<HTMLDivElement>(null);
