@@ -559,12 +559,24 @@ export async function synthesizeStage1Output(
   input: SynthesisInput,
   signal?: AbortSignal,
 ): Promise<Stage1Synthesis> {
+  const body = JSON.stringify({ ...input, stage: "1" });
+  const m = measureSynthesisPayload(input);
+  // Payload diagnostics — confirm we send ONE page (~1–5K chars), not the whole book (millions).
+  console.log("[SYNTH] page number", m.page);
+  console.log("[SYNTH] character count", m.totalChars, { bodyBytes: body.length, pageText: m.pageTextChars, concepts: m.conceptChars, summary: m.summaryChars });
+  console.log("[SYNTH] token estimate", m.tokenEstimate);
+  if (m.totalChars > 50_000) {
+    console.error("[SYNTH] PAYLOAD TOO LARGE — book-level text leaked into synthesis input", m);
+  }
+  console.log("[SYNTH] request started", { stage: 1, page: m.page });
+  const t0 = Date.now();
   const response = await fetch("/api/intelligenceSynthesis", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...input, stage: "1" }),
+    body,
     signal,
   });
+  console.log("[SYNTH] request completed", { stage: 1, page: m.page, ms: Date.now() - t0, status: response.status });
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err.error ?? `stage1 failed: ${response.status}`);
@@ -610,6 +622,15 @@ export async function synthesizeTeachingOutput(
   input: SynthesisInput,
   signal?: AbortSignal,
 ): Promise<TeachingSynthesis> {
+  const body = JSON.stringify(input);
+  const m = measureSynthesisPayload(input);
+  console.log("[SYNTH] page number", m.page);
+  console.log("[SYNTH] character count", m.totalChars, { bodyBytes: body.length, pageText: m.pageTextChars, concepts: m.conceptChars, summary: m.summaryChars });
+  console.log("[SYNTH] token estimate", m.tokenEstimate);
+  if (m.totalChars > 50_000) {
+    console.error("[SYNTH] PAYLOAD TOO LARGE — book-level text leaked into synthesis input", m);
+  }
+  console.log("[SYNTH] request started", { stage: 2, page: m.page });
   console.log("[STAGE2_REQUEST]", {
     domain: input.domain,
     conceptCount: input.rankedConcepts.length,
@@ -617,14 +638,16 @@ export async function synthesizeTeachingOutput(
     concepts: input.rankedConcepts.map((c) => ({ role: c.role, titleLen: c.title?.length ?? 0, textLen: c.text?.length ?? 0 })),
   });
 
+  const t0 = Date.now();
   let response: Response;
   try {
     response = await fetch("/api/intelligenceSynthesis", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body,
       signal,
     });
+    console.log("[SYNTH] request completed", { stage: 2, page: m.page, ms: Date.now() - t0, status: response.status });
   } catch (fetchErr: any) {
     // Network error or AbortError — distinguish them clearly
     const isAbort = fetchErr?.name === "AbortError" || signal?.aborted;
@@ -732,4 +755,31 @@ export function buildSynthesisInput(
     : rankedConcepts;
 
   return { domain, pageObjective, pageThesis, pageSummary, pageNumber, pageText, rankedConcepts: chunkedConcepts };
+}
+
+/** Estimate token count from char count — rough 4 chars/token heuristic. */
+function estimateTokens(chars: number): number {
+  return Math.ceil(chars / 4);
+}
+
+/** Measure the exact payload that will be sent to the synthesis API.
+ *  This is the single source of truth for "are we sending one page or the whole book?". */
+export function measureSynthesisPayload(input: SynthesisInput) {
+  const conceptChars = input.rankedConcepts.reduce((s, c) => s + (c.text?.length ?? 0) + (c.title?.length ?? 0) + (c.mechanism?.length ?? 0), 0);
+  const pageTextChars = input.pageText?.length ?? 0;
+  const summaryChars = input.pageSummary?.length ?? 0;
+  const thesisChars = input.pageThesis?.length ?? 0;
+  const objectiveChars = input.pageObjective?.length ?? 0;
+  const totalChars = conceptChars + pageTextChars + summaryChars + thesisChars + objectiveChars;
+  return {
+    page: input.pageNumber ?? null,
+    conceptCount: input.rankedConcepts.length,
+    pageTextChars,
+    summaryChars,
+    thesisChars,
+    objectiveChars,
+    conceptChars,
+    totalChars,
+    tokenEstimate: estimateTokens(totalChars),
+  };
 }
