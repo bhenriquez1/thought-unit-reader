@@ -3845,7 +3845,7 @@ export default function ThoughtUnitReader() {
           <div
             style={{
               position: "fixed",
-              top: 132,
+              top: 156,
               left: "50%",
               transform: "translateX(-50%)",
               zIndex: 200,
