@@ -142,7 +142,7 @@ export function useTeachingSynthesis({
     // Clean the active page text BEFORE anything reads it: strip page numbers,
     // UNIT/chapter running headers, and copyright/footer debris that would
     // otherwise pollute the Page Thesis. Body text, headings, math lines kept.
-    const _pageText = cleanActivePageText(pageTextRef.current);
+    const _pageText = cleanActivePageText(pageTextRef.current, "synth");
     // Thesis/objective carried as context can themselves be header debris
     // (e.g. "30 UNIT ONE The Chemistry of Life") — clean them too.
     const _pageThesis    = cleanThesisLine(pageThesisRef.current);

@@ -14,6 +14,8 @@
 // Universal — no subject hardcoding. Scoring uses term overlap, numbers, causal language,
 // role keywords, and sentence quality signals.
 
+import { cleanActivePageText, isLikelyHeaderLine } from "@/lib/insights/cleanActivePageText";
+
 export type RawAnchor = {
   text: string;
   anchorType: string;
@@ -89,7 +91,15 @@ function splitIntoSentences(text: string): string[] {
     .map(s => s.replace(/\s+/g, ' ').trim())
     .filter(s => {
       const wc = s.split(/\s+/).length;
-      return wc >= 5 && wc <= 60 && s.length >= 25;
+      if (wc < 5 || wc > 60 || s.length < 25) return false;
+      // Body-only: never offer running headers / titles / page-number lines as
+      // recovery candidates. This is what stops "The Chemical Context of Life 29"
+      // from being selected as a thesis anchor.
+      if (isLikelyHeaderLine(s)) {
+        console.log("[ANCHOR_REJECTED_HEADER]", { text: s.slice(0, 80) });
+        return false;
+      }
+      return true;
     });
 
   return candidates;
@@ -153,26 +163,39 @@ export function groundHighlightAnchors(
     return anchors.map(a => ({ ...a, groundedText: a.text, groundMethod: "exact" as const, confidence: 1.0 }));
   }
 
-  const normedPage = normText(pageText);
-  const sentences = splitIntoSentences(pageText);
+  // Text hygiene FIRST: strip the leading running header / title + page-number prefix
+  // ("The Chemical Context of Life 29 ...") before splitting into candidate sentences.
+  // Cleaning before the split keeps the body sentence intact ("Just four elements...")
+  // rather than rejecting the whole header+body sentence wholesale. The body text is
+  // still verbatim in the real PDF layer, so SmartPDFViewer can locate the highlight.
+  const cleanedPage = cleanActivePageText(pageText, "ground");
+  const normedPage = normText(cleanedPage);
+  const sentences = splitIntoSentences(cleanedPage);
   const grounded: GroundedAnchor[] = [];
 
   for (const anchor of anchors) {
     const normedAnchor = normText(anchor.text);
+    const anchorIsHeader = isLikelyHeaderLine(anchor.text);
 
     // ── Stage 1: Exact substring match (case-sensitive) ──────────────────
-    if (pageText.includes(anchor.text)) {
-      console.log("[GROUND_ANCHOR_EXACT]", { text: anchor.text.slice(0, 70) });
+    // Skip exact/normalized echo when the anchor text itself is a header artifact —
+    // force semantic recovery to a clean body sentence instead.
+    if (!anchorIsHeader && cleanedPage.includes(anchor.text)) {
+      console.log("[ANCHOR_SELECTED_BODY]", { text: anchor.text.slice(0, 70), kind: anchor.anchorType, score: 1.0, method: "exact" });
       grounded.push({ ...anchor, groundedText: anchor.text, groundMethod: "exact", confidence: 1.0 });
       continue;
     }
 
     // ── Stage 2: Normalized match (ligatures, smart quotes, dashes, whitespace)
-    if (normedAnchor.length >= 10 && normedPage.includes(normedAnchor)) {
-      console.log("[GROUND_ANCHOR_NORMALIZED]", { text: anchor.text.slice(0, 70) });
+    if (!anchorIsHeader && normedAnchor.length >= 10 && normedPage.includes(normedAnchor)) {
+      console.log("[ANCHOR_SELECTED_BODY]", { text: anchor.text.slice(0, 70), kind: anchor.anchorType, score: 0.95, method: "normalized" });
       // Keep anchor.text — SmartPDFViewer's normForMatch will find it via normalized comparison
       grounded.push({ ...anchor, groundedText: anchor.text, groundMethod: "normalized", confidence: 0.95 });
       continue;
+    }
+
+    if (anchorIsHeader) {
+      console.log("[ANCHOR_REJECTED_HEADER]", { text: anchor.text.slice(0, 80), note: "anchor text is a header — recovering body sentence" });
     }
 
     // ── Stage 3: Semantic sentence recovery ──────────────────────────────
@@ -195,12 +218,21 @@ export function groundHighlightAnchors(
     // containing "iodine", "deficiency", "goiter" while rejecting weak matches.
     const RECOVERY_THRESHOLD = 0.45;
 
+    // Final guard: never accept a recovered sentence that is itself a header.
+    // (splitIntoSentences already filters these, but guard the result defensively.)
+    if (bestSentence !== null && isLikelyHeaderLine(bestSentence)) {
+      console.log("[ANCHOR_REJECTED_HEADER]", { text: bestSentence.slice(0, 80), note: "recovered candidate was a header" });
+      bestSentence = null;
+      bestScore = 0;
+    }
+
     if (bestSentence !== null && bestScore >= RECOVERY_THRESHOLD) {
-      console.log("[GROUND_ANCHOR_RECOVERED]", {
-        anchor:     anchor.text.slice(0, 70),
-        recovered:  bestSentence.slice(0, 70),
-        confidence: Math.round(bestScore * 100) / 100,
-        type:       anchor.anchorType,
+      console.log("[ANCHOR_SELECTED_BODY]", {
+        text:   bestSentence.slice(0, 70),
+        kind:   anchor.anchorType,
+        score:  Math.round(bestScore * 100) / 100,
+        method: "recovered",
+        from:   anchor.text.slice(0, 50),
       });
       grounded.push({
         ...anchor,
