@@ -51,15 +51,12 @@ interface UseTeachingSynthesisArgs {
   pageNumber?: number;
 }
 
-// Stage 1 must survive main-thread contention during large full-book extraction
-// (a 1000+ page upload can keep the event loop busy for tens of seconds). 25s gives
-// the small Stage 1 request headroom to resolve even while the book is still parsing.
-const STAGE1_TIMEOUT_MS       = 25_000;
-// Stage 2 carries the study notes. Keep it tight so the panel resolves (notes or a
-// clean degrade) within the 10–15s budget instead of hanging up to 40s. Stage 1
-// content (thesis, highlights, mini-test) is already visible, so an aggressive Stage 2
-// timeout never blanks the panel — it just bounds how long "refining notes" can run.
-const STAGE2_TIMEOUT_MS       = 18_000;
+// Stage 1 is page-text-first and now returns the full study card (thesis + study fields).
+// 12s gives gpt-4o headroom; if it times out, the local fallback attaches.
+const STAGE1_TIMEOUT_MS       = 12_000;
+// Stage 2 enriches an already-visible Stage 1 result — non-blocking timeout.
+// If it times out, Stage 1 notes remain on screen.
+const STAGE2_TIMEOUT_MS       = 20_000;
 const STAGE2_RETRY_TIMEOUT_MS = 12_000;
 
 export function useTeachingSynthesis({
@@ -180,17 +177,39 @@ export function useTeachingSynthesis({
 
     const safeDomain = _domain ?? "general";
 
-    let input: ReturnType<typeof buildSynthesisInput>;
+    // ── Stage 1 input: page-text-first, independent of heuristic block pipeline ──
+    // Stage 1 never waits for usableBlocks. Page text IS the primary source.
+    // An empty rankedConcepts array is accepted by the server when pageText is present.
+    const stage1Input = {
+      domain:         safeDomain,
+      pageObjective:  _pageObjective,
+      pageThesis:     _pageThesis,
+      pageSummary:    pageSummaryRef.current,
+      pageNumber:     pageNumberRef.current,
+      pageText:       _pageText.slice(0, 1500) || undefined,
+      rankedConcepts: [] as ReturnType<typeof buildSynthesisInput>["rankedConcepts"],
+    };
+
+    console.log("[SYNTH_FALLBACK_PAGE_TEXT]", {
+      page: pageNumberRef.current ?? null,
+      charCount: _pageText.length,
+      textPreview: _pageText.slice(0, 100) || null,
+      pageTruthKey,
+    });
+
+    // ── Stage 2 input: enrich with concept blocks if the heuristic pipeline found any ──
+    // When blocks exist, they give Stage 2 richer concept context for deeper study fields.
+    // When blocks are absent, Stage 2 uses synthetic text chunks as before.
+    let stage2Input: ReturnType<typeof buildSynthesisInput>;
 
     if (usableBlocks.length > 0) {
-      input = buildSynthesisInput(
+      stage2Input = buildSynthesisInput(
         usableBlocks, safeDomain,
         _pageObjective, _pageThesis,
         pageSummaryRef.current, pageNumberRef.current, _pageText || undefined,
       );
     } else {
-      // Text-first fallback: derive 1–3 synthetic concept inputs from CLEAN page
-      // text segments. Splits the text into up to 3 chunks, longest first.
+      // Text-fallback: derive synthetic concept chunks for Stage 2 context.
       const chunkSize = Math.ceil(_pageText.length / 3);
       const chunks = [
         _pageText.slice(0, chunkSize),
@@ -205,38 +224,25 @@ export function useTeachingSynthesis({
         importance: i === 0 ? "high" : "medium",
       }));
 
-      console.log("[SYNTH_FORCE_TEXT_FALLBACK]", {
-        page: pageNumberRef.current ?? null,
-        charCount: _pageText.length,
-        syntheticConceptCount: syntheticConcepts.length,
-        pageTruthKey,
-      });
-
-      input = {
-        domain: safeDomain,
-        pageObjective: _pageObjective,
-        pageThesis: _pageThesis,
-        pageSummary: pageSummaryRef.current,
-        pageNumber: pageNumberRef.current,
-        pageText: _pageText.slice(0, 1500) || undefined,
+      stage2Input = {
+        domain:         safeDomain,
+        pageObjective:  _pageObjective,
+        pageThesis:     _pageThesis,
+        pageSummary:    pageSummaryRef.current,
+        pageNumber:     pageNumberRef.current,
+        pageText:       _pageText.slice(0, 1500) || undefined,
         rankedConcepts: syntheticConcepts,
       };
     }
 
-    const inputCharCount =
-      (_pageText.length) +
-      input.rankedConcepts.reduce((s, c) => s + (c.text?.length ?? 0), 0);
-
     console.log("[SYNTH_INPUT]", {
-      page: pageNumberRef.current ?? null,
-      charCount: inputCharCount,
-      textPreview: _pageText.slice(0, 100) || null,
-      conceptCount: input.rankedConcepts.length,
+      page:          pageNumberRef.current ?? null,
+      textChars:     _pageText.length,
+      textPreview:   _pageText.slice(0, 100) || null,
+      stage1Concepts: 0,
+      stage2Concepts: stage2Input.rankedConcepts.length,
       pageTruthKey,
     });
-    if (inputCharCount > 50_000) {
-      console.error("[SYNTH_INPUT] PAYLOAD TOO LARGE — book text leaked into synthesis", { inputCharCount, page: pageNumberRef.current });
-    }
 
     // Mark started and create the request controller (aborted only by Effect A).
     startedKeyRef.current = pageTruthKey;
@@ -247,7 +253,7 @@ export function useTeachingSynthesis({
     async function runStages() {
       // ── STAGE 1 ──────────────────────────────────────────────────────────
       synthStartMsRef.current = Date.now();
-      console.log("[SYNTH_STAGE1_START]", { page: pageNumberRef.current, pageTruthKey, conceptCount: input.rankedConcepts.length, charCount: _pageText.length });
+      console.log("[SYNTH_STAGE1_START]", { page: pageNumberRef.current, pageTruthKey, mode: "page-text-first", charCount: _pageText.length });
       setStage1Status("loading");
       setStatus("loading");
 
@@ -260,15 +266,19 @@ export function useTeachingSynthesis({
 
       let stage1Succeeded = false;
       try {
-        const s1 = await synthesizeStage1Output(input, s1Ctrl.signal);
+        const s1 = await synthesizeStage1Output(stage1Input, s1Ctrl.signal);
         clearTimeout(s1Timer);
         if (mainSignal.aborted) return;
         console.log("[SYNTH_STAGE1_DONE]", {
-          page: pageNumberRef.current,
-          elapsedMs: Date.now() - synthStartMsRef.current,
-          coreIdea: s1.coreIdea?.slice(0, 60),
-          anchors:  s1.highlightAnchors?.length ?? 0,
-          miniTest: s1.miniTestItems?.length ?? 0,
+          page:           pageNumberRef.current,
+          elapsedMs:      Date.now() - synthStartMsRef.current,
+          coreIdea:       s1.coreIdea?.slice(0, 60),
+          whyThisMatters: !!s1.whyThisMatters,
+          keyMechanism:   !!s1.keyMechanism,
+          commonConfusion: !!s1.commonConfusion,
+          quickMemory:    !!s1.quickMemory,
+          anchors:        s1.highlightAnchors?.length ?? 0,
+          miniTest:       s1.miniTestItems?.length ?? 0,
         });
         setStage1Status("success");
         setSynthesis(makeStubFromStage1(s1));
@@ -311,7 +321,7 @@ export function useTeachingSynthesis({
       if (!stage1Succeeded || mainSignal.aborted) return;
 
       // ── STAGE 2 ──────────────────────────────────────────────────────────
-      console.log("[SYNTH_STAGE2_START]", { page: pageNumberRef.current, conceptCount: input.rankedConcepts.length, elapsedMs: Date.now() - synthStartMsRef.current });
+      console.log("[SYNTH_STAGE2_START]", { page: pageNumberRef.current, conceptCount: stage2Input.rankedConcepts.length, elapsedMs: Date.now() - synthStartMsRef.current });
       setStage2Status("loading");
 
       const s2Ctrl = new AbortController();
@@ -322,7 +332,7 @@ export function useTeachingSynthesis({
       }, STAGE2_TIMEOUT_MS);
 
       try {
-        const s2 = await synthesizeTeachingOutput(input, s2Ctrl.signal);
+        const s2 = await synthesizeTeachingOutput(stage2Input, s2Ctrl.signal);
         clearTimeout(s2Timer);
         if (mainSignal.aborted) return;
         console.log("[SYNTH_STAGE2_DONE]", {
@@ -342,7 +352,7 @@ export function useTeachingSynthesis({
         const isS2Timeout = s2Ctrl.signal.aborted && !mainSignal.aborted;
         if (isS2Timeout) {
           console.log("[SYNTH:stage2:retry]", { reducedConcepts: 2 });
-          const reducedInput = { ...input, rankedConcepts: input.rankedConcepts.slice(0, 2) };
+          const reducedInput = { ...stage2Input, rankedConcepts: stage2Input.rankedConcepts.slice(0, 2) };
           const retryCtrl  = new AbortController();
           mainSignal.addEventListener("abort", () => retryCtrl.abort(), { once: true });
           const retryTimer = setTimeout(() => retryCtrl.abort(), STAGE2_RETRY_TIMEOUT_MS);
