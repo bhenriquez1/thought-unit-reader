@@ -497,13 +497,14 @@ export function RightPanel({
   // Use teachingStatement (top-down heading+canonical) NOT coreIdea (heuristic sentence).
   // coreIdea can be a figure caption; teachingStatement comes from normalization confidence scores.
   //
-  // CRITICAL: enabled does NOT require !!ultraPageView. buildUltraPageView returns null when
-  // the heuristic concept pipeline finds 0 usable concepts (e.g. running-header-only pages,
-  // suppressed source text). In those cases we still have raw ctx.pageText (4000+ chars) and
-  // synthesis must start from that. The !!ultraPageView gate was the root cause of
-  // "[WIRE] _synth synthPresent:false" on pages with readable text but weak heuristic blocks.
-  const synthEnabled = isCurrentPageModel && !isStructuralPage &&
-    (!!ultraPageView || (ctx?.pageText?.length ?? 0) > 500);
+  // CRITICAL: enabled is driven ONLY by active page text + structural gate — NOT by
+  // isCurrentPageModel. isCurrentPageModel requires status==="ready" && pageModel &&
+  // pageTruth.canRenderRightPanel!==false; on sparse/suppressed pages those are false,
+  // which previously blocked synthesis entirely even though ctx.pageText had 4000+ chars.
+  // RightPanel is keyed by pageTruthKey (remounts per page) so ctx.pageText is always the
+  // active page. This is the root-cause fix for "[WIRE] _synth synthPresent:false".
+  const hasUsablePageText = (ctx?.pageText?.length ?? 0) > 500;
+  const synthEnabled = !isStructuralPage && (!!ultraPageView || hasUsablePageText);
   const {
     synthesis: teachingSynthesis,
     status: synthStatus,
@@ -811,7 +812,11 @@ export function RightPanel({
 
   // ULTRA = the only render path when FORCE_SYNTHESIS_ONLY=true.
   // Legacy fallbacks are kept in code but suppressed — they bypass all quality gates.
-  const showUltraView     = isCurrentPageModel && !pageIsNonInstructional && !isStructuralPage && Boolean(ultraPageView);
+  // Synthesis-scaffold path: when ultraPageView is null but synthesis attached _synth
+  // (text-fallback page), render the UltraView from the scaffold so study notes show.
+  const hasSynthScaffold = Boolean((ultraPageViewWithSynthesis as any)?._synth) && !ultraPageView;
+  const showUltraView     = !isStructuralPage && !pageIsNonInstructional &&
+    ((isCurrentPageModel && Boolean(ultraPageView)) || hasSynthScaffold);
   const showConceptBlocks = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && !showUltraView && Boolean(readerPageView);
   const showNarrativePageView = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && !showUltraView && !showConceptBlocks && Boolean(
     narrativePageView?.narrative.sections.length

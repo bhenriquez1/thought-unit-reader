@@ -615,6 +615,66 @@ export function makeStubFromStage1(stage1: Stage1Synthesis): TeachingSynthesis {
 }
 
 // ---------------------------------------------------------------------------
+// Local (no-network) fallback synthesis.
+//
+// When the OpenAI Stage 1 path fails or aborts but the active page has readable
+// text, we still want the right panel to show SOMETHING and the study model /
+// highlights to build. This derives a minimal TeachingSynthesis directly from
+// the page text — no network. coreIdea is the page thesis (or first sentence),
+// highlightAnchors are the two most substantive verbatim sentences, and a couple
+// of concepts come from the longest sentences. Clearly degraded, but it
+// guarantees `_synth` attaches so the student can study today.
+// ---------------------------------------------------------------------------
+export function makeLocalFallbackSynthesis(
+  pageText: string,
+  pageThesis?: string,
+): TeachingSynthesis | null {
+  const text = (pageText ?? "").trim();
+  if (text.length < 80) return null;
+
+  // Split into sentences; keep substantive ones.
+  const sentences = text
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 30 && /[a-zA-Z]/.test(s));
+
+  const firstSentence = sentences[0] ?? text.slice(0, 160);
+  const coreIdea = (pageThesis && pageThesis.trim().length >= 12)
+    ? pageThesis.trim()
+    : firstSentence.slice(0, 200);
+
+  // Two most substantive sentences become verbatim highlight anchors.
+  const ranked = [...sentences].sort((a, b) => b.length - a.length).slice(0, 2);
+  const highlightAnchors: SynthHighlightAnchor[] = ranked.map((s, i) => ({
+    text: s.slice(0, 220),
+    anchorType: i === 0 ? "thesis" : "definition",
+    reason: "Key sentence on this page",
+    spanStart: null,
+    spanEnd: null,
+  }));
+
+  return {
+    coreIdea,
+    mechanism:          "",
+    rule:               "",
+    trap:               null,
+    application:        "",
+    teachingObjective:  "",
+    examCriticalIdea:   "",
+    reasoningFlow:      "",
+    misconceptionAlert: null,
+    memoryAnchor:       null,
+    externalStudyLinks: null,
+    concepts:           [],
+    miniTests:           null,
+    miniTestItems:       null,
+    preReadRecallItems:  null,
+    highlightAnchors:    highlightAnchors.length ? highlightAnchors : null,
+    relatedVideoQueries: null,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Client-side fetch
 // ---------------------------------------------------------------------------
 
