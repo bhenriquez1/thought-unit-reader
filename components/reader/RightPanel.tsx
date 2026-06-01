@@ -766,6 +766,19 @@ export function RightPanel({
       texts: anchors?.map((a: any) => ({ text: a.text?.slice(0, 40), type: a.anchorType })) ?? [],
       pageTruthKey,
     });
+    // Proof of what is actually rendered in the right panel at this moment.
+    // Correlate with [RIGHT_PANEL_SOURCE] to confirm openai_stage1/openai_stage2/fallback.
+    console.log("[RIGHT_PANEL_RENDER]", {
+      page:              studyModel?.page ?? null,
+      hasStudyModel:     !!studyModel,
+      pageThesis:        studyModel?.pageThesis?.slice(0, 100) ?? null,
+      conceptBlockCount: studyModel?.conceptBlocks?.length ?? 0,
+      conceptTitles:     studyModel?.conceptBlocks?.map(b => b.title.slice(0, 40)) ?? [],
+      studyFieldCount:   studyModel ? Object.values(studyModel.studyNotes).filter(Boolean).length : 0,
+      whyThisMatters:    studyModel?.studyNotes?.whyThisMatters?.slice(0, 80) ?? null,
+      keyMechanism:      studyModel?.studyNotes?.keyMechanism?.slice(0, 80) ?? null,
+      commonConfusion:   studyModel?.studyNotes?.commonConfusion?.slice(0, 80) ?? null,
+    });
     if (studyModel && onStudyModelReady) {
       console.log("[WIRE] studyModel accepted", {
         pageTruthKey,

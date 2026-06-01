@@ -287,7 +287,7 @@ export function useTeachingSynthesis({
             commonConfusion: s1.commonConfusion === null,
           },
         });
-        console.log("[RIGHT_PANEL_SOURCE]", { source: "openai", stage: 1, page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current });
+        console.log("[RIGHT_PANEL_SOURCE]", { source: "openai_stage1", page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current });
         // Raw Stage 1 output — proves exactly what OpenAI returned before any mapping
         console.log("[SYNTH_STAGE1_RAW]", {
           page:            pageNumberRef.current,
@@ -343,7 +343,7 @@ export function useTeachingSynthesis({
             message:  (err as Error)?.message?.slice(0, 100) ?? "unknown",
             charCount: _pageText.length,
           });
-          console.log("[RIGHT_PANEL_SOURCE]", { source: "fallback", stage: 1, page: pageNumberRef.current, reason: isAbort ? "abort" : "error" });
+          console.log("[RIGHT_PANEL_SOURCE]", { source: "fallback", page: pageNumberRef.current, reason: isAbort ? "stage1-abort" : "stage1-error" });
           console.log("[SYNTH_LOCAL_FALLBACK]", {
             page: pageNumberRef.current,
             reason: isAbort ? "stage1-abort" : "stage1-error",
@@ -395,7 +395,7 @@ export function useTeachingSynthesis({
           conceptCount: s2.concepts?.length ?? 0,
           anchorCount:  s2.highlightAnchors?.length ?? 0,
         });
-        console.log("[RIGHT_PANEL_SOURCE]", { source: "openai", stage: 2, page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current });
+        console.log("[RIGHT_PANEL_SOURCE]", { source: "openai_stage2", page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current });
         console.log("[SYNTH_STAGE2_DONE]", {
           page: pageNumberRef.current,
           elapsedMs: Date.now() - synthStartMsRef.current,
@@ -403,6 +403,18 @@ export function useTeachingSynthesis({
           mechanism:    s2.mechanism?.slice(0, 60),
           conceptCount: s2.concepts?.length ?? 0,
           anchorCount:  s2.highlightAnchors?.length ?? 0,
+        });
+        // Log BEFORE applying — proves what Stage 2 returned before merge.
+        console.log("[STAGE2_APPLY]", {
+          page:              pageNumberRef.current,
+          conceptBlockCount: s2.concepts?.length ?? 0,
+          studyFieldCount:   [s2.mechanism, s2.application, s2.misconceptionAlert, s2.memoryAnchor, s2.trap].filter(Boolean).length,
+          coreIdea:          s2.coreIdea?.slice(0, 80) ?? null,
+          mechanism:         s2.mechanism?.slice(0, 80) ?? null,
+          application:       s2.application?.slice(0, 80) ?? null,
+          misconceptionAlert:s2.misconceptionAlert?.slice(0, 80) ?? null,
+          memoryAnchor:      s2.memoryAnchor?.slice(0, 80) ?? null,
+          elapsedMs:         Date.now() - synthStartMsRef.current,
         });
         // Merge Stage 2 into Stage 1 — never discard a non-null Stage 1 study field
         // with a null/empty Stage 2 value. Stage 2 enriches; Stage 1 remains the floor.
@@ -456,13 +468,13 @@ export function useTeachingSynthesis({
             clearTimeout(retryTimer);
             console.error("[SYNTH_STAGE2_ERROR]", { page: pageNumberRef.current, phase: "retry", message: retryErr?.message ?? String(retryErr) });
             console.log("[OPENAI_STAGE2_FALLBACK_USED]", { source: "fallback", page: pageNumberRef.current, reason: "Stage 2 retry also failed — keeping Stage 1 content", message: (retryErr as Error)?.message?.slice(0, 100) ?? "unknown" });
-            console.log("[RIGHT_PANEL_SOURCE]", { source: "stage1-retained", stage: "2-retry-failed", page: pageNumberRef.current });
+            console.log("[RIGHT_PANEL_SOURCE]", { source: "openai_stage1", page: pageNumberRef.current, note: "stage2-retry-failed, stage1 retained" });
             setStage2Status("error");
           }
         } else {
           console.error("[SYNTH_STAGE2_ERROR]", { page: pageNumberRef.current, phase: "initial", message: err?.message ?? String(err) });
           console.log("[OPENAI_STAGE2_FALLBACK_USED]", { source: "fallback", page: pageNumberRef.current, reason: "Stage 2 failed — keeping Stage 1 content", message: (err as Error)?.message?.slice(0, 100) ?? "unknown" });
-          console.log("[RIGHT_PANEL_SOURCE]", { source: "stage1-retained", stage: 2, page: pageNumberRef.current, note: "Stage 2 failed, Stage 1 OpenAI content preserved" });
+          console.log("[RIGHT_PANEL_SOURCE]", { source: "openai_stage1", page: pageNumberRef.current, note: "stage2-failed, stage1 retained" });
           setStage2Status("error");
         }
       }
