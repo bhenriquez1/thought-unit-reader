@@ -1624,8 +1624,14 @@ function UltraView({
               <p className="text-[12px] text-white/40">Could not generate notes. Try another page.</p>
             </div>
           ) : synthStatus === "success" ? (
-            <div className="rounded-lg border border-white/8 bg-white/2 px-3 py-3">
-              <p className="text-[12px] text-white/40">Analyzing page…</p>
+            /* Stage 1 is done — thesis, highlights, and mini-test are already shown above.
+               Stage 2 is refining the deep notes; show progress, not a static "Analyzing". */
+            <div className="flex flex-col items-center gap-2 py-4">
+              <div className="h-1 w-32 overflow-hidden rounded-full bg-white/8">
+                <div className="h-full w-2/3 animate-pulse rounded-full bg-indigo-400/35" />
+              </div>
+              <p className="text-[12px] text-white/40 italic">Stage 1 ready · deepening study notes…</p>
+              <p className="text-[10px] text-white/20">Highlights and thesis are ready now</p>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2 py-4">

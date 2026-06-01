@@ -55,8 +55,12 @@ interface UseTeachingSynthesisArgs {
 // (a 1000+ page upload can keep the event loop busy for tens of seconds). 25s gives
 // the small Stage 1 request headroom to resolve even while the book is still parsing.
 const STAGE1_TIMEOUT_MS       = 25_000;
-const STAGE2_TIMEOUT_MS       = 40_000;
-const STAGE2_RETRY_TIMEOUT_MS = 25_000;
+// Stage 2 carries the study notes. Keep it tight so the panel resolves (notes or a
+// clean degrade) within the 10–15s budget instead of hanging up to 40s. Stage 1
+// content (thesis, highlights, mini-test) is already visible, so an aggressive Stage 2
+// timeout never blanks the panel — it just bounds how long "refining notes" can run.
+const STAGE2_TIMEOUT_MS       = 18_000;
+const STAGE2_RETRY_TIMEOUT_MS = 12_000;
 
 export function useTeachingSynthesis({
   pageTruthKey,
