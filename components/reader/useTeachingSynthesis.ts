@@ -16,7 +16,7 @@
 //   - Effect B (deps: [pageTruthKey, enabled, blocksReady]) STARTS synthesis once
 //     per page when ready. It never aborts on cleanup, so enabled flicker is safe.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PageDomain } from "@/lib/insights/detectPageDomain";
 import type { UltraConceptBlock } from "@/lib/insights/buildUltraPageView";
 import type { TeachingSynthesis } from "@/lib/insights/synthesizeTeachingOutput";
@@ -24,7 +24,6 @@ import {
   synthesizeTeachingOutput,
   synthesizeStage1Output,
   makeStubFromStage1,
-  makeLocalFallbackSynthesis,
   buildSynthesisInput,
 } from "@/lib/insights/synthesizeTeachingOutput";
 import { cleanActivePageText, cleanThesisLine } from "@/lib/insights/cleanActivePageText";
@@ -37,6 +36,8 @@ export interface UseTeachingSynthesisResult {
   stage1Status: SynthesisStatus;
   stage2Status: SynthesisStatus;
   errorMessage: string | null;
+  /** Re-trigger synthesis for the current page (e.g. after a network failure). */
+  retry: () => void;
 }
 
 interface UseTeachingSynthesisArgs {
@@ -75,6 +76,8 @@ export function useTeachingSynthesis({
   const [stage1Status, setStage1Status] = useState<SynthesisStatus>("idle");
   const [stage2Status, setStage2Status] = useState<SynthesisStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Incremented by retry() — Effect B re-runs, startedKeyRef guard cleared first.
+  const [retryCount,   setRetryCount]   = useState(0);
 
   // Abort controller for the in-flight request; aborted ONLY on page change.
   const abortRef = useRef<AbortController | null>(null);
@@ -101,6 +104,19 @@ export function useTeachingSynthesis({
   pageSummaryRef.current   = pageSummary;
   pageTextRef.current      = pageText;
   pageNumberRef.current    = pageNumber;
+
+  // Re-trigger synthesis for the current page (e.g. after a network failure).
+  // Clears startedKeyRef so Effect B's guard allows a fresh run.
+  const retry = useCallback(() => {
+    setSynthesis(null);
+    setStatus("idle");
+    setStage1Status("idle");
+    setStage2Status("idle");
+    setErrorMessage(null);
+    startedKeyRef.current = null;
+    synthStartMsRef.current = 0;
+    setRetryCount(c => c + 1);
+  }, []);
 
   // ── Effect A: page identity changed → reset + abort old request ────────────
   useEffect(() => {
@@ -331,39 +347,22 @@ export function useTeachingSynthesis({
         const isAbort = s1Ctrl.signal.aborted || err?.name === "AbortError";
         console.error("[SYNTH_STAGE1_ERROR]", { isAbort, message: err?.message ?? String(err), page: pageNumberRef.current });
 
-        // Local fallback: Stage 1 (network) failed but we have clean page text.
-        // Build a minimal synthesis from the page itself so _synth still attaches
-        // and the student can study today. Clearly degraded, never null-on-text.
-        const localFallback = makeLocalFallbackSynthesis(_pageText, _pageThesis);
-        if (localFallback) {
-          console.log("[OPENAI_STAGE1_FALLBACK_USED]", {
-            source:   "fallback",
-            page:     pageNumberRef.current,
-            reason:   isAbort ? "stage1-timeout-or-abort" : "stage1-network-error",
-            message:  (err as Error)?.message?.slice(0, 100) ?? "unknown",
-            charCount: _pageText.length,
-          });
-          console.log("[RIGHT_PANEL_SOURCE]", { source: "fallback", page: pageNumberRef.current, reason: isAbort ? "stage1-abort" : "stage1-error" });
-          console.log("[SYNTH_LOCAL_FALLBACK]", {
-            page: pageNumberRef.current,
-            reason: isAbort ? "stage1-abort" : "stage1-error",
-            charCount: _pageText.length,
-            anchors: localFallback.highlightAnchors?.length ?? 0,
-            coreIdea: localFallback.coreIdea?.slice(0, 60),
-          });
-          setSynthesis(localFallback);
-          setStage1Status("success");
-          setStatus("success");
-          // No Stage 2 from a local fallback — page text is all we have.
-          setStage2Status("idle");
-          return;
-        }
-
+        // Fallback disabled — OpenAI is the sole source of study notes.
+        // Log what would have been shown so we can diagnose quality separately.
+        console.log("[OPENAI_STAGE1_FALLBACK_USED]", {
+          source:    "suppressed",
+          page:      pageNumberRef.current,
+          reason:    isAbort ? "stage1-timeout-or-abort" : "stage1-network-error",
+          message:   (err as Error)?.message?.slice(0, 100) ?? "unknown",
+          charCount: _pageText.length,
+          note:      "fallback disabled — showing error UI instead",
+        });
+        console.log("[RIGHT_PANEL_SOURCE]", { source: "none", page: pageNumberRef.current, reason: "stage1-failed-no-fallback" });
         setStage1Status("error");
         setStatus("error");
         setErrorMessage(isAbort
-          ? "Synthesis timed out — try a different page or reload."
-          : (err?.message ?? "Stage 1 synthesis failed"));
+          ? "OpenAI synthesis timed out — retry to try again."
+          : "OpenAI synthesis failed — retry to try again.");
         return;
       }
 
@@ -482,8 +481,9 @@ export function useTeachingSynthesis({
 
     runStages();
   // enabled + blocks/text readiness drive starts; startedKeyRef guards against repeats.
+  // retryCount triggers re-runs after explicit user retry.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageTruthKey, enabled, blocks.length > 0, (pageText?.length ?? 0) > 500]);
+  }, [pageTruthKey, enabled, blocks.length > 0, (pageText?.length ?? 0) > 500, retryCount]);
 
-  return { synthesis, status, stage1Status, stage2Status, errorMessage };
+  return { synthesis, status, stage1Status, stage2Status, errorMessage, retry };
 }

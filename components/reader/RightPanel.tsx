@@ -508,6 +508,7 @@ export function RightPanel({
     stage1Status,
     stage2Status,
     errorMessage: synthErrorMsg,
+    retry: retrySynthesis,
   } = useTeachingSynthesis({
     pageTruthKey,
     pageObjective: ultraPageView?.teachingStatement,
@@ -1632,14 +1633,20 @@ function UltraView({
       {/* Synthesis loading / error state — shown when hasSynth is false */}
       {!hasSynth && (
         <PanelSection title="Study Notes">
-          {synthTimedOut ? (
-            <div className="rounded-lg border border-amber-400/20 bg-amber-900/15 px-3 py-3 space-y-1">
-              <p className="text-[12px] font-semibold text-amber-300">Analysis is taking longer than expected.</p>
-              <p className="text-[11px] text-amber-200/55">Check your connection, then navigate away and back to retry.</p>
-            </div>
-          ) : synthStatus === "error" ? (
-            <div className="rounded-lg border border-white/8 bg-white/2 px-3 py-3">
-              <p className="text-[12px] text-white/40">Could not generate notes. Try another page.</p>
+          {synthTimedOut || synthStatus === "error" ? (
+            <div className="rounded-lg border border-red-400/20 bg-red-900/10 px-3 py-4 space-y-3">
+              <p className="text-[12px] font-semibold text-red-300">
+                {synthTimedOut ? "OpenAI synthesis timed out." : "OpenAI synthesis failed."}
+              </p>
+              <p className="text-[11px] text-red-200/50 leading-[1.6]">
+                {synthErrorMsg ?? "Could not generate study notes from this page."}
+              </p>
+              <button
+                onClick={retrySynthesis}
+                className="mt-1 rounded-md border border-red-400/30 bg-red-900/20 px-3 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-900/35 hover:text-red-200 transition-colors"
+              >
+                Retry OpenAI synthesis
+              </button>
             </div>
           ) : synthStatus === "success" ? (
             /* Stage 1 is done — thesis, highlights, and mini-test are already shown above.
