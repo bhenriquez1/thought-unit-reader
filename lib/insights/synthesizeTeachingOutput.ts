@@ -514,10 +514,12 @@ All prose fields are ONE complete sentence, ≤20 words, relational not definiti
 
 2. whyThisMatters — Why must a student know this? (exam, clinical, real-world impact.)
    Phrase: "This matters because..." or "Students who understand this can..."
-   Null only if the page is purely structural (table of contents, cover, index).
+   MANDATORY on content pages. Return null ONLY for table of contents, cover, or index pages.
+   If OpenAI provides text, derive from it. Do NOT return null for any page with body sentences.
 
 3. keyMechanism — The causal chain on this page. Must use a causal verb: causes, enables, triggers, results in, depends on, because, leads to.
-   Null only if the page has no mechanism at all (pure vocabulary list).
+   MANDATORY on content pages. Return null ONLY if the page is a pure vocabulary list with zero causal relationships.
+   If any sentence has a causal word, use it. Do NOT return null for any page with explanatory prose.
 
 4. commonConfusion — The exact student mistake on this topic.
    Phrase: "Students often confuse X with Y because Z" or "Do not confuse X with Y — Z."

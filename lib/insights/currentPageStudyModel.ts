@@ -3,7 +3,7 @@
 // All downstream features (highlights, NoteLab, Recall Lab, CrossLinks) read from this.
 
 import type { MiniTestItem } from "@/lib/insights/synthesizeTeachingOutput";
-import { cleanThesisLine } from "@/lib/insights/cleanActivePageText";
+import { cleanThesisLine, isLikelyHeaderLine } from "@/lib/insights/cleanActivePageText";
 
 export type CurrentPageStudyModel = {
   page: number;
@@ -65,7 +65,8 @@ function buildAnchorCandidates(
     { text: (synth.keyMechanism    as string | null) ?? "", anchorType: "mechanism",   reason: "Key mechanism" },
     { text: (synth.commonConfusion as string | null) ?? "", anchorType: "trap",        reason: "Common confusion" },
     ...conceptBlocks.slice(0, 3).map((b) => ({
-      text: b.pattern || b.title || "",
+      // Use only the pattern/principle text — never b.title which is a heading, not body prose.
+      text: b.pattern || "",
       anchorType: "definition" as const,
       reason: b.title ? `Concept: ${b.title.slice(0, 40)}` : "Concept block",
     })),
@@ -76,10 +77,27 @@ function buildAnchorCandidates(
     .map((a) => ({ ...a, text: (cleanThesisLine(a.text) ?? "").trim() }))
     .filter((a) => a.text.length >= 12);
 
+  // Reject any candidate that looks like a running header, chapter title, or
+  // title-only line — these must never paint on the left panel as highlights.
+  const headerRejected: Array<{ text: string; anchorType: string }> = [];
+  const bodyOnly = cleaned.filter((a) => {
+    if (isLikelyHeaderLine(a.text)) {
+      headerRejected.push({ text: a.text.slice(0, 80), anchorType: a.anchorType });
+      return false;
+    }
+    return true;
+  });
+  if (headerRejected.length > 0) {
+    console.log("[ANCHOR_REJECTED_TITLE_OR_HEADER]", {
+      rejectedCount: headerRejected.length,
+      rejected: headerRejected,
+    });
+  }
+
   // Dedupe by normalized prefix so the same idea isn't sent under two roles.
   const seen = new Set<string>();
   const deduped: AnchorCandidate[] = [];
-  for (const a of cleaned) {
+  for (const a of bodyOnly) {
     const key = a.text.toLowerCase().replace(/\s+/g, " ").slice(0, 50);
     if (seen.has(key)) continue;
     seen.add(key);
