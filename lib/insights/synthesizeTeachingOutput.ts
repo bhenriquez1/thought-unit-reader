@@ -62,10 +62,10 @@ export type MiniTestItem = z.infer<typeof MiniTestItemSchema>;
 
 export const TeachingSynthesisSchema = z.object({
   coreIdea: z.string(),
-  mechanism: z.string(),
+  mechanism: z.string().nullable(),
   rule: z.string(),
   trap: z.string().nullable(),
-  application: z.string(),
+  application: z.string().nullable(),
   teachingObjective: z.string(),
   examCriticalIdea: z.string(),
   reasoningFlow: z.string(),
@@ -618,10 +618,10 @@ export function makeStubFromStage1(stage1: Stage1Synthesis): TeachingSynthesis {
     // keyMechanism   → synth.mechanism   → _synth.keyMechanism
     // commonConfusion→ synth.misconceptionAlert + synth.trap → _synth.commonConfusion
     // quickMemory    → synth.memoryAnchor → _synth.memoryAnchor
-    mechanism:          stage1.keyMechanism    ?? "",
+    mechanism:          stage1.keyMechanism    ?? null,
     rule:               "",
     trap:               stage1.commonConfusion ?? null,
-    application:        stage1.whyThisMatters  ?? "",
+    application:        stage1.whyThisMatters  ?? null,
     teachingObjective:  "",
     examCriticalIdea:   "",
     reasoningFlow:      "",

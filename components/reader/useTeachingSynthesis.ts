@@ -365,7 +365,23 @@ export function useTeachingSynthesis({
           conceptCount: s2.concepts?.length ?? 0,
           anchorCount:  s2.highlightAnchors?.length ?? 0,
         });
-        setSynthesis(s2);
+        // Merge Stage 2 into Stage 1 — never discard a non-null Stage 1 study field
+        // with a null/empty Stage 2 value. Stage 2 enriches; Stage 1 remains the floor.
+        setSynthesis(prev => {
+          if (!prev) return s2;
+          return {
+            ...s2,
+            mechanism:          s2.mechanism          || prev.mechanism,
+            application:        s2.application        || prev.application,
+            misconceptionAlert: s2.misconceptionAlert ?? prev.misconceptionAlert,
+            memoryAnchor:       s2.memoryAnchor       ?? prev.memoryAnchor,
+            trap:               s2.trap               ?? prev.trap,
+            // Keep Stage 1 highlights/test items if Stage 2 didn't return any
+            highlightAnchors:   s2.highlightAnchors   ?? prev.highlightAnchors,
+            miniTestItems:      s2.miniTestItems       ?? prev.miniTestItems,
+            preReadRecallItems: s2.preReadRecallItems  ?? prev.preReadRecallItems,
+          };
+        });
         setStage2Status("success");
       } catch (err: any) {
         clearTimeout(s2Timer);
@@ -382,7 +398,20 @@ export function useTeachingSynthesis({
             const retry = await synthesizeTeachingOutput(reducedInput, retryCtrl.signal);
             clearTimeout(retryTimer);
             if (mainSignal.aborted) return;
-            setSynthesis(retry);
+            setSynthesis(prev => {
+              if (!prev) return retry;
+              return {
+                ...retry,
+                mechanism:          retry.mechanism          || prev.mechanism,
+                application:        retry.application        || prev.application,
+                misconceptionAlert: retry.misconceptionAlert ?? prev.misconceptionAlert,
+                memoryAnchor:       retry.memoryAnchor       ?? prev.memoryAnchor,
+                trap:               retry.trap               ?? prev.trap,
+                highlightAnchors:   retry.highlightAnchors   ?? prev.highlightAnchors,
+                miniTestItems:      retry.miniTestItems       ?? prev.miniTestItems,
+                preReadRecallItems: retry.preReadRecallItems  ?? prev.preReadRecallItems,
+              };
+            });
             setStage2Status("success");
           } catch (retryErr: any) {
             clearTimeout(retryTimer);
