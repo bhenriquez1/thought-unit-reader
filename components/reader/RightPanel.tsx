@@ -61,6 +61,7 @@ function validSynthField(text: string | undefined | null, domain: string | null,
 }
 import { useTeachingSynthesis } from "./useTeachingSynthesis";
 import { buildStudyModel, type CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
+import { cleanThesisLine } from "@/lib/insights/cleanActivePageText";
 
 function structuralPageIcon(role: string): string {
   switch (role) {
@@ -524,6 +525,29 @@ export function RightPanel({
     pageNumber: ctx?.pageNumber ?? undefined,
   });
 
+  // 30-second UI timeout: if synthesis is still loading after 30s, show a visible error.
+  // Resets whenever the page changes or synthesis finishes.
+  const [synthTimedOut, setSynthTimedOut] = useState(false);
+  const synthUiTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    setSynthTimedOut(false);
+    if (synthUiTimeoutRef.current) { clearTimeout(synthUiTimeoutRef.current); synthUiTimeoutRef.current = null; }
+    if (synthStatus === "loading") {
+      synthUiTimeoutRef.current = setTimeout(() => {
+        console.warn("[SYNTH_UI_TIMEOUT]", {
+          page: ctx?.pageNumber,
+          synthStatus,
+          stage1Status,
+          stage2Status,
+          elapsedMs: 30_000,
+          message: "Synthesis still loading after 30s — showing timeout UI",
+        });
+        setSynthTimedOut(true);
+      }, 30_000);
+    }
+    return () => { if (synthUiTimeoutRef.current) { clearTimeout(synthUiTimeoutRef.current); synthUiTimeoutRef.current = null; } };
+  }, [synthStatus, pageTruthKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Apply teaching synthesis over heuristic view without re-running the pipeline.
   // Synthesis is the professor layer — it supersedes heuristic sentence extraction,
   // but every synthesis field is validated by validSynthField before replacing a
@@ -537,7 +561,9 @@ export function RightPanel({
 
     // Text-fallback scaffold: synthesis ran but heuristic pipeline produced no view.
     // Build a minimal UltraPageView so _synth can be attached and studyModel built.
-    const baseView: UltraPageView = ultraPageView ?? {
+    // Clean pageThesis + coreIdea to strip running-header debris before display
+    // (e.g. "The Chemical Context of Life 29" → "The Chemical Context of Life").
+    const rawBaseView: UltraPageView = ultraPageView ?? {
       title:       ctx?.sectionTitle ?? ctx?.chapterTitle ?? `Page ${ctx?.pageNumber ?? ""}`,
       subtitle:    "",
       coreIdea:    teachingSynthesis?.coreIdea ?? "",
@@ -545,6 +571,11 @@ export function RightPanel({
       miniTest:    [],
       compression: [],
       steps:       [],
+    };
+    const baseView: UltraPageView = {
+      ...rawBaseView,
+      pageThesis: rawBaseView.pageThesis ? (cleanThesisLine(rawBaseView.pageThesis) ?? rawBaseView.pageThesis) : rawBaseView.pageThesis,
+      coreIdea:   rawBaseView.coreIdea   ? (cleanThesisLine(rawBaseView.coreIdea)   ?? rawBaseView.coreIdea)   : rawBaseView.coreIdea,
     };
 
     if (!teachingSynthesis) return baseView;
@@ -990,6 +1021,7 @@ export function RightPanel({
                 onAnchorClick={(text) => onEvidenceClick?.(text, undefined)}
                 synthStatus={synthStatus}
                 synthErrorMsg={synthErrorMsg}
+                synthTimedOut={synthTimedOut}
                 onCrossLinkNavigate={onCrossLinkNavigate}
                 bookId={ctx?.documentId}
                 pageNumber={ctx?.pageNumber}
@@ -1357,6 +1389,7 @@ function UltraView({
   onAnchorClick,
   synthStatus,
   synthErrorMsg,
+  synthTimedOut,
   onCrossLinkNavigate,
   bookId,
   pageNumber,
@@ -1368,6 +1401,7 @@ function UltraView({
   onAnchorClick: (text: string) => void;
   synthStatus: import("./useTeachingSynthesis").SynthesisStatus;
   synthErrorMsg: string | null;
+  synthTimedOut?: boolean;
   onCrossLinkNavigate?: (page: number) => void;
   bookId?: string;
   pageNumber?: number;
@@ -1580,7 +1614,12 @@ function UltraView({
       {/* Synthesis loading / error state — shown when hasSynth is false */}
       {!hasSynth && (
         <PanelSection title="Study Notes">
-          {synthStatus === "error" ? (
+          {synthTimedOut ? (
+            <div className="rounded-lg border border-amber-400/20 bg-amber-900/15 px-3 py-3 space-y-1">
+              <p className="text-[12px] font-semibold text-amber-300">Analysis is taking longer than expected.</p>
+              <p className="text-[11px] text-amber-200/55">Check your connection, then navigate away and back to retry.</p>
+            </div>
+          ) : synthStatus === "error" ? (
             <div className="rounded-lg border border-white/8 bg-white/2 px-3 py-3">
               <p className="text-[12px] text-white/40">Could not generate notes. Try another page.</p>
             </div>
