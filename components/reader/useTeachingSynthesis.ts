@@ -253,6 +253,7 @@ export function useTeachingSynthesis({
     async function runStages() {
       // ── STAGE 1 ──────────────────────────────────────────────────────────
       synthStartMsRef.current = Date.now();
+      console.log("[OPENAI_STAGE1_START]", { page: pageNumberRef.current, charCount: _pageText.length, mode: "page-text-first" });
       console.log("[SYNTH_STAGE1_START]", { page: pageNumberRef.current, pageTruthKey, mode: "page-text-first", charCount: _pageText.length });
       setStage1Status("loading");
       setStatus("loading");
@@ -269,6 +270,24 @@ export function useTeachingSynthesis({
         const s1 = await synthesizeStage1Output(stage1Input, s1Ctrl.signal);
         clearTimeout(s1Timer);
         if (mainSignal.aborted) return;
+        // Log raw OpenAI output AND which fields will be filled from pageText (vs came from OpenAI)
+        console.log("[OPENAI_STAGE1_DONE]", {
+          source:          "openai",
+          page:            pageNumberRef.current,
+          elapsedMs:       Date.now() - synthStartMsRef.current,
+          coreIdea:        s1.coreIdea?.slice(0, 100),
+          whyThisMatters:  s1.whyThisMatters?.slice(0, 100) ?? null,
+          keyMechanism:    s1.keyMechanism?.slice(0, 100) ?? null,
+          commonConfusion: s1.commonConfusion?.slice(0, 100) ?? null,
+          quickMemory:     s1.quickMemory?.slice(0, 100) ?? null,
+          // Which fields OpenAI left null — these will be filled from pageText sentences
+          filledFromPageText: {
+            whyThisMatters:  s1.whyThisMatters  === null,
+            keyMechanism:    s1.keyMechanism    === null,
+            commonConfusion: s1.commonConfusion === null,
+          },
+        });
+        console.log("[RIGHT_PANEL_SOURCE]", { source: "openai", stage: 1, page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current });
         // Raw Stage 1 output — proves exactly what OpenAI returned before any mapping
         console.log("[SYNTH_STAGE1_RAW]", {
           page:            pageNumberRef.current,
@@ -317,6 +336,14 @@ export function useTeachingSynthesis({
         // and the student can study today. Clearly degraded, never null-on-text.
         const localFallback = makeLocalFallbackSynthesis(_pageText, _pageThesis);
         if (localFallback) {
+          console.log("[OPENAI_STAGE1_FALLBACK_USED]", {
+            source:   "fallback",
+            page:     pageNumberRef.current,
+            reason:   isAbort ? "stage1-timeout-or-abort" : "stage1-network-error",
+            message:  (err as Error)?.message?.slice(0, 100) ?? "unknown",
+            charCount: _pageText.length,
+          });
+          console.log("[RIGHT_PANEL_SOURCE]", { source: "fallback", stage: 1, page: pageNumberRef.current, reason: isAbort ? "abort" : "error" });
           console.log("[SYNTH_LOCAL_FALLBACK]", {
             page: pageNumberRef.current,
             reason: isAbort ? "stage1-abort" : "stage1-error",
@@ -343,6 +370,7 @@ export function useTeachingSynthesis({
       if (!stage1Succeeded || mainSignal.aborted) return;
 
       // ── STAGE 2 ──────────────────────────────────────────────────────────
+      console.log("[OPENAI_STAGE2_START]", { page: pageNumberRef.current, conceptCount: stage2Input.rankedConcepts.length, elapsedMs: Date.now() - synthStartMsRef.current });
       console.log("[SYNTH_STAGE2_START]", { page: pageNumberRef.current, conceptCount: stage2Input.rankedConcepts.length, elapsedMs: Date.now() - synthStartMsRef.current });
       setStage2Status("loading");
 
@@ -357,6 +385,17 @@ export function useTeachingSynthesis({
         const s2 = await synthesizeTeachingOutput(stage2Input, s2Ctrl.signal);
         clearTimeout(s2Timer);
         if (mainSignal.aborted) return;
+        console.log("[OPENAI_STAGE2_DONE]", {
+          source:       "openai",
+          page:         pageNumberRef.current,
+          elapsedMs:    Date.now() - synthStartMsRef.current,
+          coreIdea:     s2.coreIdea?.slice(0, 80),
+          mechanism:    s2.mechanism?.slice(0, 80) ?? null,
+          application:  s2.application?.slice(0, 80) ?? null,
+          conceptCount: s2.concepts?.length ?? 0,
+          anchorCount:  s2.highlightAnchors?.length ?? 0,
+        });
+        console.log("[RIGHT_PANEL_SOURCE]", { source: "openai", stage: 2, page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current });
         console.log("[SYNTH_STAGE2_DONE]", {
           page: pageNumberRef.current,
           elapsedMs: Date.now() - synthStartMsRef.current,
@@ -416,10 +455,14 @@ export function useTeachingSynthesis({
           } catch (retryErr: any) {
             clearTimeout(retryTimer);
             console.error("[SYNTH_STAGE2_ERROR]", { page: pageNumberRef.current, phase: "retry", message: retryErr?.message ?? String(retryErr) });
+            console.log("[OPENAI_STAGE2_FALLBACK_USED]", { source: "fallback", page: pageNumberRef.current, reason: "Stage 2 retry also failed — keeping Stage 1 content", message: (retryErr as Error)?.message?.slice(0, 100) ?? "unknown" });
+            console.log("[RIGHT_PANEL_SOURCE]", { source: "stage1-retained", stage: "2-retry-failed", page: pageNumberRef.current });
             setStage2Status("error");
           }
         } else {
           console.error("[SYNTH_STAGE2_ERROR]", { page: pageNumberRef.current, phase: "initial", message: err?.message ?? String(err) });
+          console.log("[OPENAI_STAGE2_FALLBACK_USED]", { source: "fallback", page: pageNumberRef.current, reason: "Stage 2 failed — keeping Stage 1 content", message: (err as Error)?.message?.slice(0, 100) ?? "unknown" });
+          console.log("[RIGHT_PANEL_SOURCE]", { source: "stage1-retained", stage: 2, page: pageNumberRef.current, note: "Stage 2 failed, Stage 1 OpenAI content preserved" });
           setStage2Status("error");
         }
       }
