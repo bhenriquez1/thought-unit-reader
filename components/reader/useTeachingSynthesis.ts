@@ -24,6 +24,7 @@ import {
   synthesizeTeachingOutput,
   synthesizeStage1Output,
   makeStubFromStage1,
+  makeLocalFallbackSynthesis,
   buildSynthesisInput,
 } from "@/lib/insights/synthesizeTeachingOutput";
 import { cleanActivePageText, cleanThesisLine } from "@/lib/insights/cleanActivePageText";
@@ -269,6 +270,27 @@ export function useTeachingSynthesis({
         if (mainSignal.aborted) return;
         const isAbort = s1Ctrl.signal.aborted || err?.name === "AbortError";
         console.error("[SYNTH_STAGE1_ERROR]", { isAbort, message: err?.message ?? String(err), page: pageNumberRef.current });
+
+        // Local fallback: Stage 1 (network) failed but we have clean page text.
+        // Build a minimal synthesis from the page itself so _synth still attaches
+        // and the student can study today. Clearly degraded, never null-on-text.
+        const localFallback = makeLocalFallbackSynthesis(_pageText, _pageThesis);
+        if (localFallback) {
+          console.log("[SYNTH_LOCAL_FALLBACK]", {
+            page: pageNumberRef.current,
+            reason: isAbort ? "stage1-abort" : "stage1-error",
+            charCount: _pageText.length,
+            anchors: localFallback.highlightAnchors?.length ?? 0,
+            coreIdea: localFallback.coreIdea?.slice(0, 60),
+          });
+          setSynthesis(localFallback);
+          setStage1Status("success");
+          setStatus("success");
+          // No Stage 2 from a local fallback — page text is all we have.
+          setStage2Status("idle");
+          return;
+        }
+
         setStage1Status("error");
         setStatus("error");
         setErrorMessage(isAbort
