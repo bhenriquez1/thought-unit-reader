@@ -60,7 +60,7 @@ export function cleanActivePageText(raw: string | undefined | null, tag?: string
   const original = raw;
 
   let t = raw
-    .replace(/\u00A0/g, " ")  // non-breaking space
+    .replace(/ /g, " ")  // non-breaking space
     .replace(/[ \t]+/g, " ")
     .trim();
 

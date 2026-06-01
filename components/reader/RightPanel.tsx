@@ -35,26 +35,32 @@ function validSynthField(text: string | undefined | null, domain: string | null,
   const t = text.trim();
   if (BOILERPLATE_RE.test(t) || PUBLISHER_DEBRIS_RE.test(t)) {
     console.log(tag, "boilerplate/publisher debris →", t.slice(0, 60));
+    console.log("[SYNTH_FIELD_REJECTED]", { field: fieldName ?? "unknown", reason: "boilerplate/publisher debris", value: t.slice(0, 80) });
     return null;
   }
   if (domain === "math" && /\bbiologically\b|\borganism\b|\bcell\b|\bprotein\b|\bphysiolog/i.test(t)) {
     console.log(tag, "cross-domain biology on math page →", t.slice(0, 60));
+    console.log("[SYNTH_FIELD_REJECTED]", { field: fieldName ?? "unknown", reason: "cross-domain biology on math page", value: t.slice(0, 80) });
     return null;
   }
   if (/^(another\s+(notation|term|way|name|example)|a\s+number\s+of\s+(texts?|books?|authors?)|this\s+(means?|is|refers?)|they\s+(are|were|have)|some\s+(authors?|texts?|books?))\b/i.test(t)) {
     console.log(tag, "vague-opener artifact →", t.slice(0, 60));
+    console.log("[SYNTH_FIELD_REJECTED]", { field: fieldName ?? "unknown", reason: "vague-opener artifact", value: t.slice(0, 80) });
     return null;
   }
   if (t.split(/\s+/).length < 6) {
     console.log(tag, "too short (<6 words) →", t);
+    console.log("[SYNTH_FIELD_REJECTED]", { field: fieldName ?? "unknown", reason: "too short (<6 words)", value: t.slice(0, 80) });
     return null;
   }
   if (/^[a-z]/.test(t)) {
     console.log(tag, "starts lowercase →", t.slice(0, 60));
+    console.log("[SYNTH_FIELD_REJECTED]", { field: fieldName ?? "unknown", reason: "starts lowercase", value: t.slice(0, 80) });
     return null;
   }
   if (/[;,]\s*$/.test(t)) {
     console.log(tag, "dangling punctuation →", t.slice(0, 60));
+    console.log("[SYNTH_FIELD_REJECTED]", { field: fieldName ?? "unknown", reason: "dangling punctuation", value: t.slice(0, 80) });
     return null;
   }
   return t;
@@ -1472,6 +1478,15 @@ function UltraView({
   //   hasSynth=false, _synth has values → validSynthField rejected them (check field content)
   //   _synth=undefined → synthesis hook returned null (API fail, abort, or usable blocks=0)
   //   _synth all-null → all page-level synth fields failed validation gate
+  // Final render state — proves what UltraView actually has available to display
+  console.log("[RIGHT_PANEL_RENDER_FIELDS]", {
+    hasSynth,
+    synthPresent: synth !== undefined,
+    whyItMatters:    synth?.whyItMatters    ?? null,
+    keyMechanism:    synth?.keyMechanism    ?? null,
+    commonConfusion: synth?.commonConfusion ?? null,
+    memoryAnchor:    synth?.memoryAnchor    ?? null,
+  });
   console.log("[WIRE] _synth", {
     hasSynth,
     domain,
