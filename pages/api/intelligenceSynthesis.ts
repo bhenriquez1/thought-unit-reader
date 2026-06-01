@@ -67,8 +67,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const body = (req.body ?? {}) as Partial<SynthesisInput> & { stage?: string };
   const { stage = "2", domain, pageObjective, pageThesis, pageSummary, pageText, rankedConcepts } = body;
 
-  if (!Array.isArray(rankedConcepts) || rankedConcepts.length === 0) {
-    return res.status(400).json({ error: "Missing or empty 'rankedConcepts'." });
+  if (!Array.isArray(rankedConcepts)) {
+    return res.status(400).json({ error: "'rankedConcepts' must be an array." });
+  }
+  // Stage 1 is page-text-first: allow empty rankedConcepts when pageText is present.
+  // Stage 2 requires at least some content to synthesize from.
+  if (rankedConcepts.length === 0 && stage !== "1" && !pageText) {
+    return res.status(400).json({ error: "Stage 2 requires rankedConcepts or pageText." });
   }
 
   // Measure received payload — confirms server gets ONE page, not the whole book.
@@ -114,7 +119,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const response = await openai.responses.parse({
         model: "gpt-4o",
         temperature: 0.2,
-        max_output_tokens: 600,
+        max_output_tokens: 1000,  // expanded: study fields add ~400 tokens
         text: { format: FORMAT_STAGE1 },
         input: [
           { role: "system", content: buildStage1SystemPrompt(safeDomain) },
@@ -126,10 +131,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!s1) return res.status(500).json({ error: "Stage 1: no structured output" });
       const validated = Stage1SynthesisSchema.parse(s1);
       console.log("[SYNTH:stage1:api-done]", {
-        elapsedMs: Date.now() - s1Start,
-        coreIdea: validated.coreIdea?.slice(0, 60),
-        anchors:  validated.highlightAnchors?.length ?? 0,
-        miniTest: validated.miniTestItems?.length ?? 0,
+        elapsedMs:      Date.now() - s1Start,
+        coreIdea:       validated.coreIdea?.slice(0, 60),
+        whyThisMatters: !!validated.whyThisMatters,
+        keyMechanism:   !!validated.keyMechanism,
+        commonConfusion: !!validated.commonConfusion,
+        anchors:        validated.highlightAnchors?.length ?? 0,
+        miniTest:       validated.miniTestItems?.length ?? 0,
       });
       return res.status(200).json(validated);
     } catch (err: unknown) {

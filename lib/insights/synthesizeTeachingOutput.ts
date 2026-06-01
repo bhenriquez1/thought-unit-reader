@@ -491,67 +491,78 @@ highlightAnchors: 2–4 verbatim spans from the source. Prefer the thesis senten
 // Target: 1–3 s. Renders immediately while Stage 2 processes in background.
 // ---------------------------------------------------------------------------
 
+// Stage 1 returns the FULL study card so Study Notes render immediately — no Stage 2 wait.
 export const Stage1SynthesisSchema = z.object({
-  coreIdea:             z.string(),
-  highlightAnchors:     z.array(SynthHighlightAnchorSchema).nullable(),
-  miniTestItems:        z.array(MiniTestItemSchema).nullable(),
-  preReadRecallItems:   z.array(MiniTestItemSchema).nullable(),
+  coreIdea:           z.string(),
+  // Study note fields — these four are what makes hasSynth=true and renders Study Notes.
+  // Returning them from Stage 1 means the panel shows notes within ~3–8s, not 15–30s.
+  whyThisMatters:     z.string().nullable(),
+  keyMechanism:       z.string().nullable(),
+  commonConfusion:    z.string().nullable(),
+  quickMemory:        z.string().nullable(),
+  highlightAnchors:   z.array(SynthHighlightAnchorSchema).nullable(),
+  miniTestItems:      z.array(MiniTestItemSchema).nullable(),
+  preReadRecallItems: z.array(MiniTestItemSchema).nullable(),
 });
 export type Stage1Synthesis = z.infer<typeof Stage1SynthesisSchema>;
 
 export function buildStage1SystemPrompt(domain: PageDomain): string {
-  return `You are a world-class ${domain} educator. Extract exactly 4 things from the page content provided:
+  return `You are a world-class ${domain} educator. From the page text provided, extract these 8 things fast.
+All prose fields are ONE complete sentence, ≤20 words, relational not definitional.
 
-1. coreIdea — The governing principle in ONE precise, complete sentence (≤20 words). What a professor would write on the board first.
+1. coreIdea — Governing principle. What a professor writes on the board first. Never a fragment.
 
-2. highlightAnchors — 2–4 COGNITIVE RECONSTRUCTION ANCHORS (verbatim from page text only).
-   Execute in order before selecting:
-     Stage 1: Scan page structure — headings, bold terms, definitions, equations, examples, tables, contrasts.
-     Stage 2: Map roles — thesis / definition / mechanism / application / trap.
-     Stage 3: Rank candidates by comprehension value, exam relevance, explanatory power, mechanism density.
-     Stage 4: Keep top 2–4. RECONSTRUCTION TEST: "Could the student rebuild the page from these alone?"
-   Roles: thesis(yellow, REQUIRED) + definition(blue) + mechanism(green) + application(pink) + trap(purple).
-   For text: copy a SHORT identifier (≤30 words, verbatim). Never invent text.
-   IMPORTANT: Also set spanStart and spanEnd for the FULL concept span:
-     - spanStart: first 8-10 verbatim words of where the concept begins in the source text
-     - spanEnd: last 8-10 verbatim words of where the concept ends in the source text
-     Example: if the full concept is "Iodine is an essential ingredient in thyroid hormone synthesis...condition called goiter."
-       spanStart = "Iodine is an essential ingredient in thyroid"
-       spanEnd = "enlarged thyroid gland, a condition called goiter."
-   REJECT text: figure captions, filler, fragments, anything not verbatim in the page text.
-   Return null only if < 3 real instructional sentences.
+2. whyThisMatters — Why must a student know this? (exam, clinical, real-world impact.)
+   Phrase: "This matters because..." or "Students who understand this can..."
+   Null only if the page is purely structural (table of contents, cover, index).
 
-3. miniTestItems — 3 after-reading comprehension questions:
-   • Question 1: multiple-choice — 4 options (A=correct, B/C/D=wrong), tests main concept.
-   • Question 2: short-answer — model answer 1–2 sentences, tests mechanism.
-   • Question 3: fill-in-the-blank or trap — fill-blank: phrase with key term blanked; trap: "what is the common mistake?" with correction.
-   Include a 1-sentence explanation for each.
+3. keyMechanism — The causal chain on this page. Must use a causal verb: causes, enables, triggers, results in, depends on, because, leads to.
+   Null only if the page has no mechanism at all (pure vocabulary list).
 
-4. preReadRecallItems — 2–3 BEFORE-reading prediction questions.
-   Goal: activate prior knowledge — NOT test comprehension of this page.
-   CRITICAL: Questions must name the SPECIFIC concept, term, or mechanism from this page.
-   BAD: "What is the key concept on this page?" — generic, discard.
-   GOOD: "What do you know about how elements differ from compounds?" — specific to this page.
-   GOOD: "What do you predict happens when sodium and chlorine combine?" — page-specific prediction.
-   • Question 1: multiple-choice — 4 options; tests what a prepared student might already know about this topic.
-   • Question 2: short-answer prediction — "What do you predict about [specific concept from this page]?"
-   • Question 3 (optional): fill-in-the-blank or trap from prior courses on the same topic.
-   correctAnswer: what a student who already knows this topic would say.
-   Return null if the page is too introductory to have meaningful prior-knowledge questions.
+4. commonConfusion — The exact student mistake on this topic.
+   Phrase: "Students often confuse X with Y because Z" or "Do not confuse X with Y — Z."
+   Null only if no plausible confusion exists.
 
-Be fast and precise. Do NOT elaborate beyond the schema fields.`;
+5. quickMemory — ONE analogy or mnemonic that makes this visceral and memorable.
+   GOOD: "Elements are ingredients; compounds are the finished recipe."
+   BAD: "Remember this for the exam." Null if nothing genuinely memorable applies.
+
+6. highlightAnchors — 2–4 VERBATIM spans from the page text only.
+   Steps: scan structure (headings/bold/definitions/equations/contrasts) → map roles (thesis/definition/mechanism/application/trap) → rank by comprehension value → keep top 2–4.
+   REQUIRED: spanStart and spanEnd — first/last 8–10 verbatim words of the full concept span.
+   REJECT: figure captions, fragments <8 words, filler. Return null if <3 real instructional sentences.
+
+7. miniTestItems — 3 after-reading questions:
+   Q1: multiple-choice (4 options, A=correct). Q2: short-answer (tests mechanism). Q3: fill-in-blank or trap.
+   Each needs a 1-sentence explanation.
+
+8. preReadRecallItems — 2–3 BEFORE-reading prediction questions specific to this page's exact topic.
+   BAD: "What is the key concept?" GOOD: "What do you predict happens when sodium and chlorine combine?"
+   Return null if the page is too introductory.
+
+Speed is critical — output study notes from page text immediately. Do not elaborate beyond the schema.`;
 }
 
 export function buildStage1UserPrompt(input: SynthesisInput): string {
   const { domain, pageThesis, pageObjective, pageText, rankedConcepts } = input;
-  const context = [pageThesis, pageObjective].filter(Boolean).slice(0, 2).join("\n");
-  const concepts = rankedConcepts.slice(0, 3).map((c, i) =>
-    `${i + 1}. [${c.role.toUpperCase()}] "${c.title}"\n   "${c.text.slice(0, 220)}"`
-  ).join("\n\n");
-  const rawSection = pageText
-    ? `\nRAW PAGE TEXT (use for verbatim highlight spans):\n${pageText.slice(0, 800)}\n`
+  // Page text is the primary input — Stage 1 is page-text-first.
+  // Thesis and supplementary concepts are additional context only.
+  const contextLines = [pageThesis, pageObjective].filter(Boolean);
+  const contextSection = contextLines.length
+    ? `PAGE CONTEXT:\n${contextLines.join("\n")}\n\n`
     : "";
-  return `DOMAIN: ${domain}\n\nPAGE CONTEXT:\n${context || "(derive from concepts below)"}${rawSection}\n\nKEY CONCEPTS:\n${concepts}\n\nExtract: coreIdea, highlightAnchors (2–4 sharp verbatim spans — thesis + mechanism + trap/examSignal), miniTestItems (1 MC + 1 short-answer + 1 fill-blank or trap), preReadRecallItems (2–3 before-reading prediction questions, null if too introductory).`;
+  const rawSection = pageText
+    ? `PAGE TEXT (primary — extract all 8 fields from this verbatim source):\n${pageText.slice(0, 1400)}`
+    : "(no page text — derive from key concepts below)";
+  // Supplementary concept context — only included when concepts were passed
+  const conceptsSection = rankedConcepts.length
+    ? `\n\nSUPPLEMENTARY CONCEPTS (context only — do not copy verbatim into study fields):\n${
+        rankedConcepts.slice(0, 3).map((c, i) =>
+          `${i + 1}. [${c.role.toUpperCase()}] "${c.title}": "${c.text.slice(0, 180)}"`
+        ).join("\n")
+      }`
+    : "";
+  return `DOMAIN: ${domain}\n\n${contextSection}${rawSection}${conceptsSection}\n\nExtract all 8 fields. Output study notes immediately from page text — do not wait for concept blocks or heuristics.`;
 }
 
 /** Client-side Stage 1 fetch — fast path. */
@@ -590,22 +601,34 @@ export async function synthesizeStage1Output(
   }
 }
 
-/** Build a valid full TeachingSynthesis stub from Stage 1 results.
- *  Empty strings for unrequested fields — validSynthField() rejects them so they don't render. */
+/** Build a full TeachingSynthesis from Stage 1 results.
+ *
+ * Stage 1 now returns the complete study card (thesis + 4 study fields + anchors).
+ * This stub populates ALL fields that hasSynth checks so Study Notes render immediately
+ * — the panel never sits on "Analyzing page..." waiting for Stage 2.
+ *
+ * Stage 2 replaces this stub when it completes; until then the student has real notes.
+ * If Stage 2 fails entirely, Stage 1 notes remain — the panel never reverts to blank.
+ */
 export function makeStubFromStage1(stage1: Stage1Synthesis): TeachingSynthesis {
   return {
-    coreIdea:          stage1.coreIdea,
-    mechanism:         "",
-    rule:              "",
-    trap:              null,
-    application:       "",
-    teachingObjective: "",
-    examCriticalIdea:  "",
-    reasoningFlow:     "",
-    misconceptionAlert: null,
-    memoryAnchor:      null,
+    coreIdea:           stage1.coreIdea,
+    // Map Stage 1 study fields → TeachingSynthesis fields that RightPanel reads via _synth.
+    // whyThisMatters → synth.application → _synth.whyItMatters
+    // keyMechanism   → synth.mechanism   → _synth.keyMechanism
+    // commonConfusion→ synth.misconceptionAlert + synth.trap → _synth.commonConfusion
+    // quickMemory    → synth.memoryAnchor → _synth.memoryAnchor
+    mechanism:          stage1.keyMechanism    ?? "",
+    rule:               "",
+    trap:               stage1.commonConfusion ?? null,
+    application:        stage1.whyThisMatters  ?? "",
+    teachingObjective:  "",
+    examCriticalIdea:   "",
+    reasoningFlow:      "",
+    misconceptionAlert: stage1.commonConfusion ?? null,
+    memoryAnchor:       stage1.quickMemory     ?? null,
     externalStudyLinks: null,
-    concepts:          [],
+    concepts:           [],
     miniTests:           null,
     miniTestItems:       stage1.miniTestItems,
     preReadRecallItems:  stage1.preReadRecallItems,
