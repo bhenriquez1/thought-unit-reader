@@ -281,7 +281,7 @@ export function useTeachingSynthesis({
           anchors:         s1.highlightAnchors?.length ?? 0,
           miniTest:        s1.miniTestItems?.length ?? 0,
         });
-        const stub = makeStubFromStage1(s1);
+        const stub = makeStubFromStage1(s1, _pageText);
         // Mapped stub — proves what fields makeStubFromStage1 wrote to TeachingSynthesis
         console.log("[SYNTH_STAGE1_FIELDS]", {
           page:               pageNumberRef.current,

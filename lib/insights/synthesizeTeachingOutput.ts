@@ -610,29 +610,69 @@ export async function synthesizeStage1Output(
  * Stage 2 replaces this stub when it completes; until then the student has real notes.
  * If Stage 2 fails entirely, Stage 1 notes remain — the panel never reverts to blank.
  */
-export function makeStubFromStage1(stage1: Stage1Synthesis): TeachingSynthesis {
+
+// Fill null Stage 1 fields with best-matching sentences from the active page text.
+// Called only when OpenAI returns null for one or more study fields — guarantees
+// hasSynth has at least something to validate.
+function fillStage1FieldsFromText(s1: Stage1Synthesis, pageText: string): Stage1Synthesis {
+  if (!pageText || pageText.length < 60) return s1;
+  const sentences = pageText
+    .split(/(?<=[.!?])\s+/)
+    .map(s => s.trim())
+    .filter(s => s.length >= 25 && /[a-zA-Z]{4}/.test(s));
+  if (sentences.length === 0) return s1;
+  const causalRe   = /\b(causes?|leads?\s+to|results?\s+in|because|due\s+to|produces?|triggers?|enables?|prevents?|converts?)\b/i;
+  const contrastRe = /\b(however|unlike|not\b|except|contrast|mistake|caution|differ|whereas|but\b)\b/i;
   return {
-    coreIdea:           stage1.coreIdea,
+    ...s1,
+    whyThisMatters:  s1.whyThisMatters  ?? sentences[1] ?? sentences[0] ?? null,
+    keyMechanism:    s1.keyMechanism    ?? sentences.find(s => causalRe.test(s))   ?? sentences[2] ?? null,
+    commonConfusion: s1.commonConfusion ?? sentences.find(s => contrastRe.test(s)) ?? null,
+    quickMemory:     s1.quickMemory     ?? null, // too context-specific to derive mechanically
+  };
+}
+
+// Build 1 temporary concept block from Stage 1 data so studyModel.conceptBlocks.length > 0
+// is true immediately after Stage 1. Stage 2 replaces this with AI-reinterpreted blocks.
+function buildStage1ConceptBlocks(s1: Stage1Synthesis): TeachingSynthesis['concepts'] {
+  if (!s1.coreIdea) return [];
+  return [{
+    title:         "Core Concept",
+    role:          "definition" as const,
+    principle:     s1.coreIdea,
+    mechanism:     s1.keyMechanism    ?? "",
+    trap:          s1.commonConfusion ?? null,
+    rule:          s1.whyThisMatters  ?? "",
+    misconception: s1.commonConfusion ?? null,
+    examHook:      null,
+  }];
+}
+
+export function makeStubFromStage1(stage1: Stage1Synthesis, pageText?: string): TeachingSynthesis {
+  // Fill any null study fields from page text before building the stub.
+  const filled = pageText ? fillStage1FieldsFromText(stage1, pageText) : stage1;
+  return {
+    coreIdea:           filled.coreIdea,
     // Map Stage 1 study fields → TeachingSynthesis fields that RightPanel reads via _synth.
     // whyThisMatters → synth.application → _synth.whyItMatters
     // keyMechanism   → synth.mechanism   → _synth.keyMechanism
     // commonConfusion→ synth.misconceptionAlert + synth.trap → _synth.commonConfusion
     // quickMemory    → synth.memoryAnchor → _synth.memoryAnchor
-    mechanism:          stage1.keyMechanism    ?? null,
+    mechanism:          filled.keyMechanism    ?? null,
     rule:               "",
-    trap:               stage1.commonConfusion ?? null,
-    application:        stage1.whyThisMatters  ?? null,
+    trap:               filled.commonConfusion ?? null,
+    application:        filled.whyThisMatters  ?? null,
     teachingObjective:  "",
     examCriticalIdea:   "",
     reasoningFlow:      "",
-    misconceptionAlert: stage1.commonConfusion ?? null,
-    memoryAnchor:       stage1.quickMemory     ?? null,
+    misconceptionAlert: filled.commonConfusion ?? null,
+    memoryAnchor:       filled.quickMemory     ?? null,
     externalStudyLinks: null,
-    concepts:           [],
+    concepts:           buildStage1ConceptBlocks(filled),
     miniTests:           null,
-    miniTestItems:       stage1.miniTestItems,
-    preReadRecallItems:  stage1.preReadRecallItems,
-    highlightAnchors:    stage1.highlightAnchors,
+    miniTestItems:       filled.miniTestItems,
+    preReadRecallItems:  filled.preReadRecallItems,
+    highlightAnchors:    filled.highlightAnchors,
     relatedVideoQueries: null,
   };
 }
@@ -678,10 +718,10 @@ export function makeLocalFallbackSynthesis(
 
   return {
     coreIdea,
-    mechanism:          "",
+    mechanism:          sentences[1]?.slice(0, 200) ?? null,
     rule:               "",
     trap:               null,
-    application:        "",
+    application:        sentences[2]?.slice(0, 200) ?? null,
     teachingObjective:  "",
     examCriticalIdea:   "",
     reasoningFlow:      "",
