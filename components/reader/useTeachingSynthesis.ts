@@ -80,6 +80,8 @@ export function useTeachingSynthesis({
   // The pageTruthKey we've already started synthesis for — prevents duplicate runs
   // when enabled/blocks re-fire Effect B for the same page.
   const startedKeyRef = useRef<string | null>(null);
+  // Wall-clock ms when Stage 1 started — used to log elapsed time at each stage.
+  const synthStartMsRef = useRef<number>(0);
 
   // Live refs for the non-identity inputs. buildSynthesisInput reads these so that
   // a value arriving slightly after Stage 1 starts is still picked up, without
@@ -107,6 +109,7 @@ export function useTeachingSynthesis({
     setStage2Status("idle");
     setErrorMessage(null);
     startedKeyRef.current = null;
+    synthStartMsRef.current = 0;
     return () => {
       if (abortRef.current) {
         console.warn("[SYNTH_ABORT_REASON]", { reason: "pageTruthKey changed — new page navigation", pageTruthKey });
@@ -239,7 +242,8 @@ export function useTeachingSynthesis({
 
     async function runStages() {
       // ── STAGE 1 ──────────────────────────────────────────────────────────
-      console.log("[SYNTH_STAGE1_START]", { page: pageNumberRef.current, pageTruthKey, conceptCount: input.rankedConcepts.length });
+      synthStartMsRef.current = Date.now();
+      console.log("[SYNTH_STAGE1_START]", { page: pageNumberRef.current, pageTruthKey, conceptCount: input.rankedConcepts.length, charCount: _pageText.length });
       setStage1Status("loading");
       setStatus("loading");
 
@@ -257,6 +261,7 @@ export function useTeachingSynthesis({
         if (mainSignal.aborted) return;
         console.log("[SYNTH_STAGE1_DONE]", {
           page: pageNumberRef.current,
+          elapsedMs: Date.now() - synthStartMsRef.current,
           coreIdea: s1.coreIdea?.slice(0, 60),
           anchors:  s1.highlightAnchors?.length ?? 0,
           miniTest: s1.miniTestItems?.length ?? 0,
@@ -302,7 +307,7 @@ export function useTeachingSynthesis({
       if (!stage1Succeeded || mainSignal.aborted) return;
 
       // ── STAGE 2 ──────────────────────────────────────────────────────────
-      console.log("[SYNTH_STAGE2_START]", { page: pageNumberRef.current, conceptCount: input.rankedConcepts.length });
+      console.log("[SYNTH_STAGE2_START]", { page: pageNumberRef.current, conceptCount: input.rankedConcepts.length, elapsedMs: Date.now() - synthStartMsRef.current });
       setStage2Status("loading");
 
       const s2Ctrl = new AbortController();
@@ -318,6 +323,7 @@ export function useTeachingSynthesis({
         if (mainSignal.aborted) return;
         console.log("[SYNTH_STAGE2_DONE]", {
           page: pageNumberRef.current,
+          elapsedMs: Date.now() - synthStartMsRef.current,
           coreIdea:     s2.coreIdea?.slice(0, 60),
           mechanism:    s2.mechanism?.slice(0, 60),
           conceptCount: s2.concepts?.length ?? 0,
