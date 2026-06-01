@@ -269,6 +269,28 @@ export function useTeachingSynthesis({
         const s1 = await synthesizeStage1Output(stage1Input, s1Ctrl.signal);
         clearTimeout(s1Timer);
         if (mainSignal.aborted) return;
+        // Raw Stage 1 output — proves exactly what OpenAI returned before any mapping
+        console.log("[SYNTH_STAGE1_RAW]", {
+          page:            pageNumberRef.current,
+          elapsedMs:       Date.now() - synthStartMsRef.current,
+          coreIdea:        s1.coreIdea?.slice(0, 100),
+          whyThisMatters:  s1.whyThisMatters?.slice(0, 100) ?? null,
+          keyMechanism:    s1.keyMechanism?.slice(0, 100) ?? null,
+          commonConfusion: s1.commonConfusion?.slice(0, 100) ?? null,
+          quickMemory:     s1.quickMemory?.slice(0, 100) ?? null,
+          anchors:         s1.highlightAnchors?.length ?? 0,
+          miniTest:        s1.miniTestItems?.length ?? 0,
+        });
+        const stub = makeStubFromStage1(s1);
+        // Mapped stub — proves what fields makeStubFromStage1 wrote to TeachingSynthesis
+        console.log("[SYNTH_STAGE1_FIELDS]", {
+          page:               pageNumberRef.current,
+          mechanism:          stub.mechanism?.slice(0, 100) ?? null,
+          application:        stub.application?.slice(0, 100) ?? null,
+          misconceptionAlert: stub.misconceptionAlert?.slice(0, 100) ?? null,
+          memoryAnchor:       stub.memoryAnchor?.slice(0, 100) ?? null,
+          trap:               stub.trap?.slice(0, 100) ?? null,
+        });
         console.log("[SYNTH_STAGE1_DONE]", {
           page:           pageNumberRef.current,
           elapsedMs:      Date.now() - synthStartMsRef.current,
@@ -281,7 +303,7 @@ export function useTeachingSynthesis({
           miniTest:       s1.miniTestItems?.length ?? 0,
         });
         setStage1Status("success");
-        setSynthesis(makeStubFromStage1(s1));
+        setSynthesis(stub);
         setStatus("success");
         stage1Succeeded = true;
       } catch (err: any) {
