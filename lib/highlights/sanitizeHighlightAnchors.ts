@@ -29,6 +29,14 @@ function isContaminatedAnchor(text: string): boolean {
   // Two or more Title-Cased/ALL-CAPS words, then a standalone number, then more text
   if (/^(?:[A-Z][A-Za-z]* ){2,}\d{1,3} [A-Z]/.test(text)) return true;
 
+  // Short title-only line: 1–6 words, no sentence punctuation, mostly Title-Cased.
+  // Catches concept headings like "Core Concept", "Cell Structure", "Key Mechanism".
+  const hasSentencePunct = /[.!?:;]/.test(text.trim());
+  if (words.length >= 1 && words.length <= 6 && !hasSentencePunct) {
+    const titleCase = words.filter(w => /^[A-Z][A-Za-z''-]*$/.test(w) || /^[A-Z]{2,}$/.test(w)).length;
+    if (titleCase / words.length >= 0.7) return true;
+  }
+
   return false;
 }
 
@@ -48,6 +56,11 @@ export function sanitizeHighlightAnchors<T extends RawAnchorLike>(anchors: T[]):
     console.log("[ANCHOR_SANITIZE_REJECT]", {
       rejectedCount: rejected.length,
       keptCount: kept.length,
+      rejected,
+    });
+    console.log("[ANCHOR_REJECTED_TITLE_OR_HEADER]", {
+      source: "sanitizeHighlightAnchors",
+      rejectedCount: rejected.length,
       rejected,
     });
   }
