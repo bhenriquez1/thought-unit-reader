@@ -269,18 +269,19 @@ export function classifyPageKind(input: PageClassificationInput): PageKind {
   const nonEmptyLines = input.text.trim().split(/\n/).map((l) => l.trim()).filter((l) => l.length > 0);
   const firstLine = nonEmptyLines[0] ?? "";
 
-  // Scan the first 8 non-empty lines for a numbered section heading.
+  // Scan the first 12 non-empty lines for a numbered section heading.
   // PDF.js often extracts running chapter headers (e.g. "Chapter 2 | Limits") as the
   // very first text block, placing the real section heading ("2.1 Limits of Sequences")
-  // on line 3-5. Checking only firstLine caused the override to miss these pages.
-  const hasSectionHeadingEarly = nonEmptyLines.slice(0, 8).some((l) =>
-    /^\d+\.\d+(\.\d+)?\s+\S/.test(l)
-  );
+  // on line 3-8. OpenStax pages can have up to 4 header/footer lines before real content.
+  const hasSectionHeadingEarly =
+    nonEmptyLines.slice(0, 12).some((l) => /^\d+\.\d+(\.\d+)?\s+\S/.test(l)) ||
+    // Also catch when a section number appears anywhere in the first 600 characters
+    /^\d+\.\d+(\.\d+)?\s+\S/m.test(input.text.slice(0, 600));
 
   const hasMathContent =
-    /[∫∑∂∇]|\blim\b|dy\/dx/i.test(text) ||
+    /[∫∑∂∇√π]|\blim\b|dy\/dx|\bsin\b|\bcos\b|\btan\b/i.test(text) ||
     countStrongMathSignals(text) >= 1 ||
-    /\b(limits?|sequences?|derivatives?|rates?\s+of\s+change|tangent\s+line|instantaneous|calculus|integral)\b/i.test(text);
+    /\b(limits?|sequences?|derivatives?|rates?\s+of\s+change|tangent\s+line|instantaneous|calculus|integral|theorem|formula|equation|function|polynomial|convergence|divergence|vector|matrix|probability|statistics|algebra|geometry|logarithm|exponent|trigonometry)\b/i.test(text);
 
   // ── PRIORITY OVERRIDE (runs first, before all suppression gates) ───────────
   // A page with a numbered section heading in its opening lines ("2.1 Limits of Sequences",

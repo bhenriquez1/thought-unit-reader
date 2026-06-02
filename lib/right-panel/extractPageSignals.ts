@@ -26,8 +26,21 @@ function detectPageRole(pageText: string, heading: string, formulaCount: number,
   // Empty / near-empty
   if (!text.trim() || text.trim().length < 120) return "image_scan_heavy";
 
-  // Copyright / legal frontmatter
-  if (/all rights reserved|copyright.*\d{4}|isbn[- ]?\d|published by|printed in/.test(text)) return "copyright_frontmatter";
+  // Copyright / legal frontmatter — only when no substantive instructional content is present.
+  // OpenStax and similar OER books embed copyright/contributor lines in page footers, so we
+  // guard against false positives: if the page has math symbols, section headings, or
+  // instructional vocabulary it is a content page regardless of footer boilerplate.
+  const copyrightHit = /all rights reserved|copyright.*\d{4}|isbn[- ]?\d|published by|printed in/.test(text);
+  if (copyrightHit) {
+    const hasMathOrInstructional =
+      /[∫∑∂∇√π±≤≥≠→←⇒⟹]|dy\/dx|\blim\b|\bsin\b|\bcos\b|\btan\b/i.test(pageText) ||
+      /\b(derivative|integral|theorem|formula|equation|solution|function|calculus|proof|differentiate|integrate|slope|tangent|gradient|polynomial|exponent|logarithm|vector|matrix|determinant)\b/i.test(text) ||
+      /^\d+\.\d+(\.\d+)?\s+\S/m.test(pageText) ||
+      /\b(example|figure|graph|diagram|exercise|problem|step)\s*\d/i.test(text) ||
+      formulaCount >= 1 ||
+      lines.length >= 20;
+    if (!hasMathOrInstructional) return "copyright_frontmatter";
+  }
 
   // Table of contents — "contents" heading + numbers at line ends
   if (/^\s*(table of contents|contents)\s*$/im.test(pageText) || (/\btable of contents\b/.test(text) && /\d{1,4}\s*$/.test(text))) return "contents";
