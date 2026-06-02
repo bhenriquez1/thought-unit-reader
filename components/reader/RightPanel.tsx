@@ -472,7 +472,10 @@ export function RightPanel({
     "cover", "title_page", "dedication", "acknowledgements", "preface", "about_authors",
     "copyright_frontmatter",
     // Navigation / structural
-    "contents", "chapter_opener", "unit_opener", "section_opener",
+    // NOTE: "chapter_opener" intentionally excluded — chapter intro pages often carry
+    // real body text. shouldRenderFullPanel (from normalizeClinicalText) is the
+    // authoritative gate; if a page has extractable prose, let synthesis run.
+    "contents", "unit_opener", "section_opener",
     // Back matter
     "glossary", "index", "bibliography", "appendix",
     // Unrenderable

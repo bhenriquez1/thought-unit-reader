@@ -449,60 +449,37 @@ export default function ThoughtUnitReader() {
   useEffect(() => {
     const pageText = pageTextByPage.get(`${bookIdRef.current}:${currentPage}`) ?? "";
 
-    // Guard: same rules as [LEFT_PANEL_CLEAR]
+    // ── Single source rule ──────────────────────────────────────────────────
+    // Only studyModel.highlightAnchors may drive PDF highlights.
+    // No emergency fallback, no OCR/FCN/legacy paths. If Right Panel has not
+    // produced a studyModel yet (or synthesis failed), show zero highlights.
+    console.log("[LEFT_PANEL_OLD_HIGHLIGHTS_DISABLED]", {
+      message: "All fallback/OCR/FCN/legacy highlight paths are disabled",
+      source:  "studyModel.highlightAnchors only",
+    });
+
     if (
       !currentPageStudyModel ||
       currentPageStudyModel.page !== currentPage ||
       !currentPageStudyModel.highlightAnchors?.length
     ) {
-      // ── Emergency fallback ─────────────────────────────────────────────────
-      // When OpenAI synthesis fails or hasn't resolved yet, derive 2 basic
-      // sentence anchors from the raw page text so the PDF is never completely
-      // blank. These bypass the study-model pipeline and are clearly logged.
-      // The right panel still shows "OpenAI synthesis failed — retry".
-      if (pageText.length > 300) {
-        const sentences = pageText
-          .split(/(?<=[.!?])\s+/)
-          .map((s) => s.trim())
-          .filter((s) =>
-            s.length >= 50 &&
-            s.length <= 280 &&
-            /[a-zA-Z]{4,}/.test(s) &&
-            !/^[A-Z\s\d,.\-–—]{6,}$/.test(s) // reject all-caps header lines
-          )
-          .sort((a, b) => b.length - a.length);
-
-        if (sentences.length >= 2) {
-          const emergencyAnchors: SynthHighlightAnchor[] = sentences.slice(0, 2).map((s, i) => ({
-            text:       s.slice(0, 200),
-            anchorType: (i === 0 ? "thesis" : "definition") as SynthHighlightAnchor["anchorType"],
-            reason:     "Emergency fallback — AI synthesis unavailable",
-            spanStart:  null,
-            spanEnd:    null,
-          }));
-          const grounded = groundHighlightAnchors(emergencyAnchors, pageText);
-          if (grounded.length) {
-            const groundedFallback: SynthHighlightAnchor[] = grounded.map((a) => ({
-              text:       a.groundedText,
-              anchorType: a.anchorType as SynthHighlightAnchor["anchorType"],
-              reason:     a.reason,
-              spanStart:  a.spanStart ?? null,
-              spanEnd:    a.spanEnd ?? null,
-            }));
-            setFinalHighlightAnchors(groundedFallback);
-            console.log("[LEFT_PANEL_FALLBACK]", {
-              page:   currentPage,
-              count:  groundedFallback.length,
-              reason: !currentPageStudyModel ? "no-studyModel" : "no-anchors",
-              texts:  groundedFallback.map((a) => a.text.slice(0, 60)),
-            });
-            return;
-          }
-        }
-      }
       setFinalHighlightAnchors([]);
+      console.log("[OVERLAY_EMPTY_BECAUSE_NO_STUDYMODEL]", {
+        page:   currentPage,
+        reason: !currentPageStudyModel
+          ? "no-studyModel"
+          : currentPageStudyModel.page !== currentPage
+          ? "page-mismatch"
+          : "no-anchors",
+      });
       return;
     }
+
+    console.log("[RIGHT_PANEL_STUDYMODEL_READY]", {
+      page:        currentPage,
+      anchorCount: currentPageStudyModel.highlightAnchors.length,
+      pageThesis:  currentPageStudyModel.pageThesis?.slice(0, 60),
+    });
 
     const raw = sanitizeHighlightAnchors(
       currentPageStudyModel.highlightAnchors as SynthHighlightAnchor[]
@@ -2910,27 +2887,39 @@ export default function ThoughtUnitReader() {
       }
       const activePageContext = activePageContextForInsights;
 
-      // Render-time guard: only pass anchors to the left panel when anchors are fresh.
-      // PRIMARY: studyModel pageTruthKey must match → pass AI-grounded anchors.
-      // FALLBACK: no studyModel (OpenAI failed) → pass emergency text anchors from finalHighlightAnchors.
-      //   (Emergency anchors are cleared and re-derived by the grounding effect on every page change,
-      //   so there is no stale-anchor risk when studyModel is null.)
-      // Hard gate: chapter openers, image-only pages, and sparse pages must never show highlights.
-      // This gate sits at render time so it catches BOTH the studyModel path AND the emergency
-      // fallback — whichever produced anchors, they are zeroed before the PDF viewer sees them.
+      // Single source rule: only studyModel.highlightAnchors (grounded + semantically scored)
+      // may drive PDF highlights. No emergency fallback, no OCR/legacy paths.
+      // Gate 1 — normalization: image-only / front-matter / truly sparse pages → []
+      // Gate 2 — studyModel: not ready / stale key / no anchors → []
       const highlightsSuppressed = !currentNormResult?.shouldRenderFullPanel;
-      if (highlightsSuppressed) {
-        console.log("[HIGHLIGHT_GATE] suppressed by normalization", {
-          page: currentPage, pageKind: currentNormResult?.pageKind ?? "unknown",
+      const studyModelReady =
+        !highlightsSuppressed &&
+        !!currentPageStudyModel &&
+        currentPageStudyModel.pageTruthKey === pageTruthKey &&
+        finalHighlightAnchors.length > 0;
+
+      const safeHighlightAnchors = studyModelReady ? finalHighlightAnchors : [];
+
+      if (studyModelReady) {
+        console.log("[OVERLAY_FROM_STUDYMODEL_ONLY]", {
+          page:   currentPage,
+          count:  safeHighlightAnchors.length,
+          types:  safeHighlightAnchors.map(a => a.anchorType),
+        });
+        console.log("[LEFT_PANEL_RECEIVED_RP_ANCHORS]", {
+          page:   currentPage,
+          count:  safeHighlightAnchors.length,
+          texts:  safeHighlightAnchors.map(a => a.text.slice(0, 60)),
+        });
+      } else {
+        console.log("[OVERLAY_EMPTY_BECAUSE_NO_STUDYMODEL]", {
+          page:             currentPage,
+          suppressed:       highlightsSuppressed,
+          studyModelExists: !!currentPageStudyModel,
+          keyMatch:         currentPageStudyModel?.pageTruthKey === pageTruthKey,
+          anchorCount:      finalHighlightAnchors.length,
         });
       }
-      const safeHighlightAnchors = highlightsSuppressed
-        ? []
-        : currentPageStudyModel?.pageTruthKey === pageTruthKey
-          ? finalHighlightAnchors           // PRIMARY: AI study model anchors
-          : !currentPageStudyModel
-            ? finalHighlightAnchors         // FALLBACK: emergency text anchors
-            : [];                           // STALE: studyModel key mismatch
 
       return (
         <div className="h-full flex overflow-hidden" data-testid="expert-view-container">
