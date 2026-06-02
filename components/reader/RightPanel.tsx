@@ -1709,6 +1709,14 @@ function UltraView({
                   <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{claudeEnrichment.expertView}</p>
                 </div>
               )}
+              {claudeEnrichment.expertTrap && (
+                <div className={`rounded-lg border border-red-400/20 bg-[#1a0500] ${d.cardPadding}`}>
+                  <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-red-300/70`}>
+                    ⚠️ Expert Trap
+                  </div>
+                  <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{claudeEnrichment.expertTrap}</p>
+                </div>
+              )}
               {claudeEnrichment.formulaRule && (
                 <div className={`rounded-lg border border-violet-400/15 bg-[#0e0020] ${d.cardPadding}`}>
                   <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-violet-300/70`}>

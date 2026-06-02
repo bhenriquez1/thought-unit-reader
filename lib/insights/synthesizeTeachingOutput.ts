@@ -33,7 +33,7 @@ export type PageType = z.infer<typeof PageTypeSchema>;
 
 export const SynthHighlightAnchorSchema = z.object({
   text: z.string(),         // exact source text span — must be copied verbatim, ≤ 30 words
-  anchorType: z.enum(["thesis", "definition", "mechanism", "trap", "application"]),
+  anchorType: z.enum(["thesis", "definition", "mechanism", "trap", "application", "formula", "example_step", "conclusion"]),
   reason: z.string(),       // ≤ 10 words: why a professor would underline this
   // Full concept span bounds: first 8-10 verbatim words of the concept span start,
   // and last 8-10 verbatim words of the concept span end.

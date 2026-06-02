@@ -1,4 +1,5 @@
 import type { ActivePageContext, PageSignals } from "@/lib/readerContracts";
+import { stripClassificationFooter } from "@/lib/pdf/stripClassificationFooter";
 import {
   APPLICATION_WORDS,
   CASE_WORDS,
@@ -19,7 +20,7 @@ import { suppressFiller, selectTopSignals } from "@/lib/fillerFilter";
 const hasAny = (text: string, words: string[]) => words.some((w) => text.includes(w));
 
 function detectPageRole(pageText: string, heading: string, formulaCount: number, tableLikeRows: number): PageSignals["pageRole"] {
-  const text = pageText.toLowerCase();
+  const text = stripClassificationFooter(pageText).toLowerCase();
   const lines = pageText.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   const lineGroups = lines.length;
 

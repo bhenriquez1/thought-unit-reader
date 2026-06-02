@@ -522,14 +522,16 @@ export function useTeachingSynthesis({
       setSynthesis(prev => {
         if (prev?.coreIdea) {
           enrichmentInput = {
-            pageType:        (prev as any).pageType ?? "mixed",
-            pageThesis:      prev.coreIdea,
-            whyThisMatters:  prev.application ?? null,
-            keyMechanism:    prev.mechanism   ?? null,
-            commonConfusion: prev.misconceptionAlert ?? prev.trap ?? null,
-            conceptTitles:   (prev.concepts ?? []).map((c: any) => c.title).filter(Boolean).slice(0, 5),
-            domain:          safeDomain,
-            pageNumber:      pageNumberRef.current,
+            pageType:                (prev as any).pageType ?? "mixed",
+            pageThesis:              prev.coreIdea,
+            whyThisMatters:          prev.application ?? null,
+            keyMechanism:            prev.mechanism   ?? null,
+            commonConfusion:         prev.misconceptionAlert ?? prev.trap ?? null,
+            conceptTitles:           (prev.concepts ?? []).map((c: any) => c.title).filter(Boolean).slice(0, 5),
+            domain:                  safeDomain,
+            pageNumber:              pageNumberRef.current,
+            // Pass grounded anchor texts so Claude can suggest better ones if needed
+            groundedAnchorCandidates: (prev.highlightAnchors ?? []).map((a: any) => a.text).filter(Boolean).slice(0, 6),
           };
         }
         return prev; // no state change — read-only snapshot
@@ -547,11 +549,13 @@ export function useTeachingSynthesis({
       mainSignal.addEventListener("abort", () => s3Ctrl.abort(), { once: true });
 
       try {
-        console.log("[CLAUDE_STAGE3_START]", { page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const _anchorCount = (enrichmentInput as any)?.groundedAnchorCandidates?.length ?? 0;
+        console.log("[CLAUDE_EXPERT_START]", { page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current, anchorCandidates: _anchorCount });
         const enrichment = await fetchClaudeEnrichment(enrichmentInput, s3Ctrl.signal);
         if (mainSignal.aborted) return;
-        const hasAnyField = !!(enrichment.deepInsight || enrichment.alternativeExplanation || enrichment.subjectConnection || enrichment.expertView || enrichment.formulaRule || enrichment.workedExampleLogic || enrichment.practiceCheckpoint);
-        console.log("[CLAUDE_STAGE3_DONE]", {
+        const hasAnyField = !!(enrichment.deepInsight || enrichment.alternativeExplanation || enrichment.subjectConnection || enrichment.expertView || enrichment.expertTrap || enrichment.formulaRule || enrichment.workedExampleLogic || enrichment.practiceCheckpoint);
+        console.log("[CLAUDE_EXPERT_DONE]", {
           page:                   pageNumberRef.current,
           elapsedMs:              Date.now() - synthStartMsRef.current,
           hasAnyField,
@@ -559,12 +563,14 @@ export function useTeachingSynthesis({
           alternativeExplanation: enrichment.alternativeExplanation?.slice(0, 80) ?? null,
           subjectConnection:      enrichment.subjectConnection?.slice(0, 80) ?? null,
           expertView:             enrichment.expertView?.slice(0, 80) ?? null,
+          expertTrap:             enrichment.expertTrap?.slice(0, 80) ?? null,
+          betterAnchorCount:      enrichment.betterAnchors?.length ?? 0,
         });
         if (hasAnyField) setClaudeEnrichment(enrichment);
         setStage3Status("success");
       } catch (err: any) {
         if (mainSignal.aborted) return;
-        console.error("[CLAUDE_STAGE3_ERROR]", { page: pageNumberRef.current, message: err?.message ?? String(err) });
+        console.error("[CLAUDE_EXPERT_ERROR]", { page: pageNumberRef.current, message: err?.message ?? String(err) });
         setStage3Status("error");
       }
     }

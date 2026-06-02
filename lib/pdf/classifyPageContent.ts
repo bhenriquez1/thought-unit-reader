@@ -1,3 +1,5 @@
+import { stripClassificationFooter } from "./stripClassificationFooter";
+
 export type PageContentClass =
   | "prose"
   | "prose_with_headings"
@@ -10,7 +12,7 @@ export type PageContentClass =
   | "copyright_frontmatter";
 
 export function classifyPageContent(pageText: string): PageContentClass {
-  const text = (pageText || "").trim();
+  const text = stripClassificationFooter((pageText || "")).trim();
   if (!text) return "image_only";
 
   const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
