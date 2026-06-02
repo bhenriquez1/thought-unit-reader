@@ -10,6 +10,24 @@ import type { PageDomain } from "./detectPageDomain";
 import type { UltraConceptBlock } from "./buildUltraPageView";
 
 // ---------------------------------------------------------------------------
+// Page type — classified by OpenAI in Stage 1, flows through to Stage 2 and anchor pipeline.
+// Drives which study fields matter and which anchor patterns to prefer/reject.
+// ---------------------------------------------------------------------------
+
+export const PageTypeSchema = z.enum([
+  "definition",         // primary purpose is defining key terms/concepts
+  "mechanism",          // explains how/why (causal chains, processes, derivations)
+  "math_example",       // worked problems, formulas, theorems, proofs
+  "clinical",           // diagnosis, treatment, pathophysiology, patient care
+  "comparison",         // compares/contrasts two or more concepts or entities
+  "figure_table",       // dominated by figures, tables, or visual data
+  "case_study",         // narrative case or scenario driving the lesson
+  "review_checkpoint",  // review questions, summaries, objectives, checkpoints
+  "mixed",              // multiple types present, none dominant
+]);
+export type PageType = z.infer<typeof PageTypeSchema>;
+
+// ---------------------------------------------------------------------------
 // Zod schemas — validated at both client and server
 // ---------------------------------------------------------------------------
 
@@ -61,6 +79,7 @@ export const MiniTestItemSchema = z.object({
 export type MiniTestItem = z.infer<typeof MiniTestItemSchema>;
 
 export const TeachingSynthesisSchema = z.object({
+  pageType: PageTypeSchema.nullable(),  // from Stage 1; Stage 2 re-confirms or inherits
   coreIdea: z.string(),
   mechanism: z.string().nullable(),
   rule: z.string(),
@@ -476,14 +495,21 @@ Ask yourself: "If a world-class professor had 2 minutes to teach this page, what
 The answer must be about UNDERSTANDING, not about what appears in a figure or what sentences exist.
 
 ─── TASK ──────────────────────────────────────────────────────────────────
-Produce a structured educational interpretation for this page.
+Produce a structured educational interpretation for this page. Works for ANY subject.
 
-For page level: coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, externalStudyLinks, highlightAnchors (2–4 sharp anchors answering "What is this page teaching?"), miniTestItems (4–5 questions: MCQ + short-answer + application + fill-in-blank + trap), relatedVideoQueries.
+FIRST: Set pageType — classify what kind of page this is (definition/mechanism/math_example/clinical/comparison/figure_table/case_study/review_checkpoint/mixed). This drives concept block priorities and anchor selection.
+
+For page level: pageType, coreIdea, mechanism, rule, trap, application, teachingObjective, examCriticalIdea, reasoningFlow, misconceptionAlert, memoryAnchor, externalStudyLinks, highlightAnchors, miniTestItems, relatedVideoQueries.
 For each concept (include ${Math.min(rankedConcepts.length, 4)}): principle, mechanism, trap, rule, misconception, examHook.
 
 Every field: complete sentence, ≤20 words, relational not definitional, professor-level language.
 If a concept text is a figure caption: write the PRINCIPLE the figure is illustrating, not the caption.
-highlightAnchors: 2–4 verbatim spans from the source. Prefer the thesis sentence and mechanism sentence. For each anchor also set spanStart (first 8-10 verbatim words of the full concept span) and spanEnd (last 8-10 verbatim words of the full concept span) — this enables full multi-sentence concept highlighting. Return null only if fewer than 3 sentences of real content.`;
+highlightAnchors: 2–4 VERBATIM spans from the source. Adapt to pageType:
+• "review_checkpoint" → return null (never highlight review questions)
+• "math_example" → prefer formula/theorem statement + key logical step
+• "figure_table" → prefer explanatory body sentence, not the figure label
+• Others → prefer definition, mechanism, causal, or contrast sentences
+For each anchor set spanStart + spanEnd (first/last 8–10 verbatim words). Return null if fewer than 3 real instructional sentences.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -493,6 +519,7 @@ highlightAnchors: 2–4 verbatim spans from the source. Prefer the thesis senten
 
 // Stage 1 returns the FULL study card so Study Notes render immediately — no Stage 2 wait.
 export const Stage1SynthesisSchema = z.object({
+  pageType:           PageTypeSchema,             // classify first — drives all field generation
   coreIdea:           z.string(),
   // Study note fields — these four are what makes hasSynth=true and renders Study Notes.
   // Returning them from Stage 1 means the panel shows notes within ~3–8s, not 15–30s.
@@ -506,43 +533,86 @@ export const Stage1SynthesisSchema = z.object({
 });
 export type Stage1Synthesis = z.infer<typeof Stage1SynthesisSchema>;
 
-export function buildStage1SystemPrompt(domain: PageDomain): string {
-  return `You are a world-class ${domain} educator. From the page text provided, extract these 8 things fast.
-All prose fields are ONE complete sentence, ≤20 words, relational not definitional.
+export function buildStage1SystemPrompt(_domain: PageDomain): string {
+  return `You are a universal academic educator. Given any textbook page — biology, chemistry, math, history, business, medicine, dental, law, or any other subject — classify the page type first, then generate structured study output.
 
-1. coreIdea — Governing principle. What a professor writes on the board first. Never a fragment.
+STEP 1 — CLASSIFY THE PAGE TYPE (required first field: pageType):
+Read the full page text. Identify the single best type:
+• "definition"         — primary purpose: defines key terms or concepts
+• "mechanism"          — explains how/why: causal chains, processes, derivations, proofs
+• "math_example"       — worked problems, formulas, theorems, step-by-step derivations
+• "clinical"           — diagnosis, treatment, pathophysiology, patient care, clinical rules
+• "comparison"         — compares or contrasts two or more concepts, structures, or approaches
+• "figure_table"       — dominated by figures, diagrams, tables, or visual data with labels
+• "case_study"         — narrative case or scenario driving a lesson
+• "review_checkpoint"  — review questions, learning objectives, summaries, checkpoints
+• "mixed"              — multiple types present without a single dominant type
 
-2. whyThisMatters — Why must a student know this? (exam, clinical, real-world impact.)
-   Phrase: "This matters because..." or "Students who understand this can..."
-   MANDATORY on content pages. Return null ONLY for table of contents, cover, or index pages.
-   If OpenAI provides text, derive from it. Do NOT return null for any page with body sentences.
+STEP 2 — GENERATE 8 STUDY FIELDS (universal for any subject):
 
-3. keyMechanism — The causal chain on this page. Must use a causal verb: causes, enables, triggers, results in, depends on, because, leads to.
-   MANDATORY on content pages. Return null ONLY if the page is a pure vocabulary list with zero causal relationships.
-   If any sentence has a causal word, use it. Do NOT return null for any page with explanatory prose.
+pageType — already set in Step 1.
 
-4. commonConfusion — The exact student mistake on this topic.
-   Phrase: "Students often confuse X with Y because Z" or "Do not confuse X with Y — Z."
-   Null only if no plausible confusion exists.
+coreIdea — The single governing principle this page teaches.
+  Works for ANY subject: a math theorem, a biological law, a historical thesis, a business principle.
+  ONE complete sentence. Not a title. Not a fragment. Not a restatement of the chapter heading.
+  Ask: "If a professor had one sentence to explain what this page teaches, what would they write on the board?"
 
-5. quickMemory — ONE analogy or mnemonic that makes this visceral and memorable.
-   GOOD: "Elements are ingredients; compounds are the finished recipe."
-   BAD: "Remember this for the exam." Null if nothing genuinely memorable applies.
+whyThisMatters — Why a student MUST know this for exams, professional practice, or real-world use.
+  ONE sentence. Phrase: "This matters because..." or "Understanding this enables..."
+  MANDATORY for all content pages. Null ONLY for structural pages: table of contents, index, cover page.
 
-6. highlightAnchors — 2–4 VERBATIM spans from the page text only.
-   Steps: scan structure (headings/bold/definitions/equations/contrasts) → map roles (thesis/definition/mechanism/application/trap) → rank by comprehension value → keep top 2–4.
-   REQUIRED: spanStart and spanEnd — first/last 8–10 verbatim words of the full concept span.
-   REJECT: figure captions, fragments <8 words, filler. Return null if <3 real instructional sentences.
+keyMechanism — The causal chain, logical proof, or step-by-step reasoning on this page.
+  Must use a causal/logical verb: causes, enables, leads to, because, therefore, results in, depends on, follows from, requires, produces, prevents.
+  • Math pages: the logical chain ("if X then Y follows because Z")
+  • Biology/chemistry: the molecular or physiological chain
+  • Clinical: the pathophysiological chain (finding → mechanism → consequence)
+  • History/business: the cause → effect → consequence chain
+  • Comparison pages: what makes the two things different and WHY that difference matters
+  MANDATORY for all content pages with any explanatory sentence. Null ONLY if the page is a pure vocabulary list with zero causal content.
 
-7. miniTestItems — 3 after-reading questions:
-   Q1: multiple-choice (4 options, A=correct). Q2: short-answer (tests mechanism). Q3: fill-in-blank or trap.
-   Each needs a 1-sentence explanation.
+commonConfusion — The exact misconception students make on this topic.
+  Phrase: "Students often confuse X with Y because..." or "Do not assume X — actually..."
+  Must be a real, specific error — not a generic "this can be tricky."
+  Null only if genuinely no confusion exists for this specific topic.
 
-8. preReadRecallItems — 2–3 BEFORE-reading prediction questions specific to this page's exact topic.
-   BAD: "What is the key concept?" GOOD: "What do you predict happens when sodium and chlorine combine?"
-   Return null if the page is too introductory.
+quickMemory — ONE analogy, mnemonic, or memorable pattern. Visceral and subject-specific.
+  BAD: "This is important for the exam." GOOD: "An ionic bond is like velcro — polar opposites grip each other and release in water."
+  Null if nothing genuinely memorable applies to this specific page.
 
-Speed is critical — output study notes from page text immediately. Do not elaborate beyond the schema.`;
+highlightAnchors — 2–4 VERBATIM spans from the current page text ONLY. Never paraphrase.
+  UNIVERSAL SELECTION RULES (apply to any subject):
+  PREFER:
+  • Definition sentences (X is defined as Y because Z)
+  • Mechanism/causal sentences (X causes Y by doing Z)
+  • Formula statements with context (the formula F=ma states that force equals...)
+  • Contrast sentences (unlike X, Y does Z because...)
+  • Worked step showing key logic (substituting values gives... therefore...)
+  • Clinical/exam rules (when X is present, always suspect Y)
+  • Conclusion sentences that summarize the page's central lesson
+  REJECT ALWAYS:
+  • Chapter or section titles (e.g. "2.1 Chemical Elements")
+  • Running headers/footers/page numbers
+  • Figure labels or table titles ("Figure 2.2 The structure of...")
+  • Checkpoint question stems ("Review: What is...?", "Test yourself:")
+  • Standalone labels or bold terms without a predicate
+  • Filler sentences ("In this section we will...")
+  ADAPT BY PAGE TYPE:
+  • "review_checkpoint" → return null (never highlight review questions)
+  • "math_example" → prefer formula/theorem statement + the step showing key logic
+  • "figure_table" → prefer the explanatory body sentence about the figure, NOT the label
+  • "comparison" → prefer the contrast sentence(s) that name the key difference
+  spanStart + spanEnd REQUIRED: first/last 8–10 verbatim words of each span.
+  Minimum span: ≥8 words. Must end with a period. Return null if fewer than 3 real instructional sentences exist.
+
+miniTestItems — 3 after-reading comprehension questions.
+  Q1: multiple-choice (4 options, A=correct). Q2: short-answer (tests mechanism or logic). Q3: trap.
+  Adapt to subject — math questions should test reasoning, not just recall.
+
+preReadRecallItems — 2–3 BEFORE-reading prediction questions based on this page's topic.
+  Goal: activate prior knowledge, not test comprehension.
+  Null for structural or purely introductory pages.
+
+Speed is critical. Classify the page type first, then generate all fields from the page text immediately.`;
 }
 
 export function buildStage1UserPrompt(input: SynthesisInput): string {
@@ -654,6 +724,7 @@ export function makeStubFromStage1(stage1: Stage1Synthesis, pageText?: string): 
   // Fill any null study fields from page text before building the stub.
   const filled = pageText ? fillStage1FieldsFromText(stage1, pageText) : stage1;
   return {
+    pageType:           filled.pageType,          // flows to anchor pipeline for page-type-aware filtering
     coreIdea:           filled.coreIdea,
     // Map Stage 1 study fields → TeachingSynthesis fields that RightPanel reads via _synth.
     // whyThisMatters → synth.application → _synth.whyItMatters
@@ -719,6 +790,7 @@ export function makeLocalFallbackSynthesis(
   }));
 
   return {
+    pageType:           "mixed" as const,
     coreIdea,
     mechanism:          sentences[1]?.slice(0, 200) ?? null,
     rule:               "",

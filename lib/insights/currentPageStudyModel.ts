@@ -2,7 +2,7 @@
 // Shared typed model emitted by RightPanel when OpenAI synthesis resolves.
 // All downstream features (highlights, NoteLab, Recall Lab, CrossLinks) read from this.
 
-import type { MiniTestItem } from "@/lib/insights/synthesizeTeachingOutput";
+import type { MiniTestItem, PageType } from "@/lib/insights/synthesizeTeachingOutput";
 import { cleanThesisLine, isLikelyHeaderLine } from "@/lib/insights/cleanActivePageText";
 
 export type CurrentPageStudyModel = {
@@ -58,6 +58,16 @@ function buildAnchorCandidates(
   conceptBlocks: Array<{ title: string; pattern: string }>,
 ): AnchorCandidate[] {
   const aiAnchors = (synth.highlightAnchors as AnchorCandidate[] | null) ?? [];
+  const pageType = (synth.pageType as PageType | null) ?? null;
+
+  // review_checkpoint pages must show zero AI highlights — questions should not be highlighted.
+  if (pageType === "review_checkpoint") {
+    console.log("[ANCHOR_REJECTED_TITLE_OR_HEADER]", {
+      rejectedCount: "all",
+      reason: "pageType=review_checkpoint — no highlights on review/checkpoint pages",
+    });
+    return aiAnchors.slice(0, 0); // empty — left panel shows no anchors
+  }
 
   const fieldCandidates: AnchorCandidate[] = [
     { text: thesis,                                       anchorType: "thesis",      reason: "Page thesis" },
@@ -108,6 +118,7 @@ function buildAnchorCandidates(
   const candidates = deduped.slice(0, 8);
 
   console.log("[STUDYMODEL_ANCHORS]", {
+    pageType,
     count: candidates.length,
     aiAnchorCount: aiAnchors.length,
     texts: candidates.map((a) => a.text.slice(0, 60)),
