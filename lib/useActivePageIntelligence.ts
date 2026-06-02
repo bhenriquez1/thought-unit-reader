@@ -24,6 +24,7 @@ import type { PageInsightModel } from "@/lib/insights/types";
 import type { PageStory } from "@/lib/insights/buildPageStory";
 import { normalizeClinicalText, type ClinicalNormalizationResult } from "@/lib/normalization/normalizeClinicalText";
 import { selectTeachingSource } from "@/lib/insights/selectTeachingSource";
+import { derivePageViewType, type PageViewType } from "@/lib/pdf/pageViewType";
 import {
   makeModelCacheKey, makeAnchorCacheKey,
   getModelCacheEntry, setModelCacheEntry,
@@ -671,72 +672,38 @@ export function useActivePageIntelligence({
 
   const highlightTargets: HighlightTarget[] = useMemo(() => {
     if (!normResult?.shouldRenderFullPanel) return [];
-    // Primary: neighborhood-derived highlights in concept-cluster order
-    if (highlightNeighborhoods.length > 0) {
-      return flattenNeighborhoods(highlightNeighborhoods).map((line, index) => {
-        // Extract conceptId from id prefix (e.g. "important-concept-p-0" → neighborhoodId "neighborhood-concept-p-0")
-        const neighborhoodId = highlightNeighborhoods.find((n) =>
-          n.anchor.id === line.id ||
-          n.support.some((s) => s.id === line.id) ||
-          n.additional.some((a) => a.id === line.id) ||
-          n.trap?.id === line.id
-        )?.id;
-        const neighborhoodTitle = highlightNeighborhoods.find((n) => n.id === neighborhoodId)?.title;
-        return {
-          id: line.id,
-          page: pageNumber,
-          text: line.text,
-          normalizedText: line.normalizedText,
-          level: line.tier,
-          score: line.score,
-          sourceParagraphIndex: index,
-          kind: line.tier === "trap" ? "clinical" : line.tier === "important" ? "mechanism" : "application",
-          evidenceRefId: line.sentenceId ?? line.id,
-          neighborhoodId,
-          neighborhoodTitle,
-        } satisfies HighlightTarget;
+    // Neighborhoods are the single authoritative highlight source.
+    // When empty (chapter opener, sparse page, no concepts) → zero highlights. No fallbacks.
+    if (highlightNeighborhoods.length === 0) {
+      console.log("[HIGHLIGHT_GATE] neighborhoods empty — returning zero highlights", {
+        page: pageNumber,
+        shouldRenderFullPanel: normResult?.shouldRenderFullPanel,
       });
+      return [];
     }
-
-    // Fallback: priority highlights from extractPriorityHighlights pipeline
-    const priorityItems = priorityHighlights.pageNumber === pageNumber
-      ? priorityHighlights.all
-      : [];
-    const priority = priorityItems.map((item, index) => ({
-      id: `priority-${item.id}`,
-      page: pageNumber,
-      text: item.text,
-      normalizedText: item.text
-        .toLowerCase()
-        .replace(/\u00ad/g, "")
-        .replace(/[^\w\s]/g, " ")
-        .replace(/\s+/g, " ")
-        .trim(),
-      level: item.kind.startsWith("trap") ? "trap"
-        : item.priority === "main" ? "important"
-        : item.priority === "support" ? "support"
-        : "additional",
-      score: item.confidence,
-      sourceParagraphIndex: index,
-      kind: item.kind.startsWith("trap") ? "clinical"
-        : (item.kind === "main_mechanism" || item.kind === "main_pattern") ? "mechanism"
-        : (item.kind === "support_distinction" || item.kind === "support_relation" || item.kind === "weak_caveat") ? "comparison"
-        : "application",
-      evidenceRefId: item.id,
-      support: item.support?.length ? item.support : undefined,
-      evidence: item.evidence?.length ? item.evidence : undefined,
-    } satisfies HighlightTarget));
-
-    if (priority.length) {
-      const dominant = priority.filter((t) => t.level === "important").slice(0, 3);
-      const traps    = priority.filter((t) => t.level === "trap").slice(0, 2);
-      const subdued  = priority.filter((t) => t.level === "support").slice(0, 3);
-      const faint    = priority.filter((t) => t.level === "additional").slice(0, 2);
-      return [...dominant, ...traps, ...subdued, ...faint];
-    }
-    const derived = deriveHighlightTargets(signals, pageNumber, audience, limitedEvidence);
-    return derived.filter((t) => t.level !== "additional").slice(0, 4);
-  }, [pageModel, signals, pageNumber, audience, limitedEvidence, priorityHighlights]);
+    return flattenNeighborhoods(highlightNeighborhoods).map((line, index) => {
+      const neighborhoodId = highlightNeighborhoods.find((n) =>
+        n.anchor.id === line.id ||
+        n.support.some((s) => s.id === line.id) ||
+        n.additional.some((a) => a.id === line.id) ||
+        n.trap?.id === line.id
+      )?.id;
+      const neighborhoodTitle = highlightNeighborhoods.find((n) => n.id === neighborhoodId)?.title;
+      return {
+        id: line.id,
+        page: pageNumber,
+        text: line.text,
+        normalizedText: line.normalizedText,
+        level: line.tier,
+        score: line.score,
+        sourceParagraphIndex: index,
+        kind: line.tier === "trap" ? "clinical" : line.tier === "important" ? "mechanism" : "application",
+        evidenceRefId: line.sentenceId ?? line.id,
+        neighborhoodId,
+        neighborhoodTitle,
+      } satisfies HighlightTarget;
+    });
+  }, [highlightNeighborhoods, pageNumber, normResult]);
 
   const highlightKey = `${documentId}:${pageNumber}`;
   const isCurrentPage = Boolean(
@@ -775,6 +742,7 @@ export function useActivePageIntelligence({
     normResult,
     confidence,
     pageRole: signals.pageRole ?? undefined,
+    pageViewType: derivePageViewType(pageClass, normResult),
   };
 }
 
