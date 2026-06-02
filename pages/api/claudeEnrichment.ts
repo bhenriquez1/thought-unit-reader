@@ -31,6 +31,10 @@ export interface ClaudeEnrichmentOutput {
   alternativeExplanation: string | null;
   subjectConnection:      string | null;
   expertView:             string | null;
+  // Math-specific fields — null unless domain is math/calculus
+  formulaRule:            string | null;
+  workedExampleLogic:     string | null;
+  practiceCheckpoint:     string | null;
 }
 
 const SYSTEM_PROMPT = `You are an Expert Reviewer for a student study tool.
@@ -63,10 +67,21 @@ Your role is to ENRICH, not replace. Add exactly 4 fields:
    Ask: "What does a professor watch for when a student misunderstands this concept?"
    One sentence. Actionable for exam preparation.
 
+For MATH/CALCULUS pages only (domain === "math" or pageType contains "math"), also add:
+5. formulaRule — The core formula, rule, or theorem on this page stated as a precise, testable rule.
+   One sentence. Include the formula name and what it computes or guarantees.
+
+6. workedExampleLogic — The logical steps a student should follow when solving a problem of this type.
+   One sentence. Focus on the decision sequence, not mechanical steps.
+
+7. practiceCheckpoint — One targeted question a student can answer to verify they understood this page.
+   Phrase as a question. Specific to this page's content.
+
 Rules:
-- Every field is ONE complete sentence (≤25 words). Never a fragment.
-- All four fields must be substantively different from each other and from the OpenAI fields.
+- Every field is ONE complete sentence (≤30 words). Never a fragment.
+- All fields must be substantively different from each other and from the OpenAI fields.
 - Null is acceptable only if the field genuinely cannot be derived from the provided content.
+- formulaRule, workedExampleLogic, practiceCheckpoint must be null for non-math pages.
 - Do NOT mention "OpenAI", "the primary analysis", or "the study tool" in any field.
 - Works for any academic subject — never hardcode biology, dental, or calculus examples.
 
@@ -75,7 +90,10 @@ Output JSON only. No markdown. Schema:
   "deepInsight": "string or null",
   "alternativeExplanation": "string or null",
   "subjectConnection": "string or null",
-  "expertView": "string or null"
+  "expertView": "string or null",
+  "formulaRule": "string or null",
+  "workedExampleLogic": "string or null",
+  "practiceCheckpoint": "string or null"
 }`;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -146,6 +164,7 @@ Output JSON only.`;
       return res.status(200).json({
         deepInsight: null, alternativeExplanation: null,
         subjectConnection: null, expertView: null,
+        formulaRule: null, workedExampleLogic: null, practiceCheckpoint: null,
       } satisfies ClaudeEnrichmentOutput);
     }
 
@@ -154,6 +173,9 @@ Output JSON only.`;
       alternativeExplanation: typeof parsed.alternativeExplanation === "string" ? parsed.alternativeExplanation : null,
       subjectConnection:      typeof parsed.subjectConnection      === "string" ? parsed.subjectConnection      : null,
       expertView:             typeof parsed.expertView             === "string" ? parsed.expertView             : null,
+      formulaRule:            typeof parsed.formulaRule            === "string" ? parsed.formulaRule            : null,
+      workedExampleLogic:     typeof parsed.workedExampleLogic     === "string" ? parsed.workedExampleLogic     : null,
+      practiceCheckpoint:     typeof parsed.practiceCheckpoint     === "string" ? parsed.practiceCheckpoint     : null,
     };
 
     console.log("[CLAUDE_ENRICHMENT_DONE]", {
@@ -172,6 +194,7 @@ Output JSON only.`;
     return res.status(200).json({
       deepInsight: null, alternativeExplanation: null,
       subjectConnection: null, expertView: null,
+      formulaRule: null, workedExampleLogic: null, practiceCheckpoint: null,
     } satisfies ClaudeEnrichmentOutput);
   }
 }

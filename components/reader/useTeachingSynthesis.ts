@@ -550,7 +550,7 @@ export function useTeachingSynthesis({
         console.log("[CLAUDE_STAGE3_START]", { page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current });
         const enrichment = await fetchClaudeEnrichment(enrichmentInput, s3Ctrl.signal);
         if (mainSignal.aborted) return;
-        const hasAnyField = !!(enrichment.deepInsight || enrichment.alternativeExplanation || enrichment.subjectConnection || enrichment.expertView);
+        const hasAnyField = !!(enrichment.deepInsight || enrichment.alternativeExplanation || enrichment.subjectConnection || enrichment.expertView || enrichment.formulaRule || enrichment.workedExampleLogic || enrichment.practiceCheckpoint);
         console.log("[CLAUDE_STAGE3_DONE]", {
           page:                   pageNumberRef.current,
           elapsedMs:              Date.now() - synthStartMsRef.current,

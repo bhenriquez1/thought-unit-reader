@@ -1709,6 +1709,30 @@ function UltraView({
                   <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{claudeEnrichment.expertView}</p>
                 </div>
               )}
+              {claudeEnrichment.formulaRule && (
+                <div className={`rounded-lg border border-violet-400/15 bg-[#0e0020] ${d.cardPadding}`}>
+                  <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-violet-300/70`}>
+                    📐 Formula / Rule
+                  </div>
+                  <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{claudeEnrichment.formulaRule}</p>
+                </div>
+              )}
+              {claudeEnrichment.workedExampleLogic && (
+                <div className={`rounded-lg border border-sky-400/15 bg-[#001520] ${d.cardPadding}`}>
+                  <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-sky-300/70`}>
+                    🧮 Worked Example Logic
+                  </div>
+                  <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{claudeEnrichment.workedExampleLogic}</p>
+                </div>
+              )}
+              {claudeEnrichment.practiceCheckpoint && (
+                <div className={`rounded-lg border border-green-400/15 bg-[#001500] ${d.cardPadding}`}>
+                  <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-green-300/70`}>
+                    ✅ Practice Checkpoint
+                  </div>
+                  <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{claudeEnrichment.practiceCheckpoint}</p>
+                </div>
+              )}
             </div>
           )}
         </PanelSection>
