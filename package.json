@@ -19,6 +19,7 @@
     "postinstall": "npm run setup:pdf-worker"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.100.1",
     "@headlessui/react": "^1.7.19",
     "@heroicons/react": "^2.1.1",
     "@radix-ui/react-dialog": "^1.1.14",
