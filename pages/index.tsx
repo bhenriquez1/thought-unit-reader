@@ -455,6 +455,51 @@ export default function ThoughtUnitReader() {
       currentPageStudyModel.page !== currentPage ||
       !currentPageStudyModel.highlightAnchors?.length
     ) {
+      // ── Emergency fallback ─────────────────────────────────────────────────
+      // When OpenAI synthesis fails or hasn't resolved yet, derive 2 basic
+      // sentence anchors from the raw page text so the PDF is never completely
+      // blank. These bypass the study-model pipeline and are clearly logged.
+      // The right panel still shows "OpenAI synthesis failed — retry".
+      if (pageText.length > 300) {
+        const sentences = pageText
+          .split(/(?<=[.!?])\s+/)
+          .map((s) => s.trim())
+          .filter((s) =>
+            s.length >= 50 &&
+            s.length <= 280 &&
+            /[a-zA-Z]{4,}/.test(s) &&
+            !/^[A-Z\s\d,.\-–—]{6,}$/.test(s) // reject all-caps header lines
+          )
+          .sort((a, b) => b.length - a.length);
+
+        if (sentences.length >= 2) {
+          const emergencyAnchors: SynthHighlightAnchor[] = sentences.slice(0, 2).map((s, i) => ({
+            text:       s.slice(0, 200),
+            anchorType: (i === 0 ? "thesis" : "definition") as SynthHighlightAnchor["anchorType"],
+            reason:     "Emergency fallback — AI synthesis unavailable",
+            spanStart:  null,
+            spanEnd:    null,
+          }));
+          const grounded = groundHighlightAnchors(emergencyAnchors, pageText);
+          if (grounded.length) {
+            const groundedFallback: SynthHighlightAnchor[] = grounded.map((a) => ({
+              text:       a.groundedText,
+              anchorType: a.anchorType as SynthHighlightAnchor["anchorType"],
+              reason:     a.reason,
+              spanStart:  a.spanStart ?? null,
+              spanEnd:    a.spanEnd ?? null,
+            }));
+            setFinalHighlightAnchors(groundedFallback);
+            console.log("[LEFT_PANEL_FALLBACK]", {
+              page:   currentPage,
+              count:  groundedFallback.length,
+              reason: !currentPageStudyModel ? "no-studyModel" : "no-anchors",
+              texts:  groundedFallback.map((a) => a.text.slice(0, 60)),
+            });
+            return;
+          }
+        }
+      }
       setFinalHighlightAnchors([]);
       return;
     }
@@ -2861,13 +2906,17 @@ export default function ThoughtUnitReader() {
       }
       const activePageContext = activePageContextForInsights;
 
-      // Render-time guard: only pass anchors to the left panel when studyModel's pageTruthKey
-      // matches current pageTruthKey. This eliminates the RAF race — stale anchors are blocked
-      // synchronously at render time before they ever reach SmartPDFViewer.
+      // Render-time guard: only pass anchors to the left panel when anchors are fresh.
+      // PRIMARY: studyModel pageTruthKey must match → pass AI-grounded anchors.
+      // FALLBACK: no studyModel (OpenAI failed) → pass emergency text anchors from finalHighlightAnchors.
+      //   (Emergency anchors are cleared and re-derived by the grounding effect on every page change,
+      //   so there is no stale-anchor risk when studyModel is null.)
       const safeHighlightAnchors =
         currentPageStudyModel?.pageTruthKey === pageTruthKey
-          ? finalHighlightAnchors
-          : [];
+          ? finalHighlightAnchors           // PRIMARY: AI study model anchors
+          : !currentPageStudyModel
+            ? finalHighlightAnchors         // FALLBACK: emergency text anchors (no pageTruthKey check needed — cleared on every page change)
+            : [];                           // STALE: studyModel exists but key mismatch — block
 
       return (
         <div className="h-full flex overflow-hidden" data-testid="expert-view-container">
@@ -3135,11 +3184,11 @@ export default function ThoughtUnitReader() {
     };
   }, []);
 
-  // LEFT PANEL SOURCE RULE — single source of truth, zero fallbacks.
-  // Any gap (no model, wrong page, empty anchors) produces ZERO highlights.
+  // LEFT PANEL SOURCE RULE — OpenAI study model is primary; emergency text fallback when AI fails.
+  // studyModel present → AI anchors. studyModel absent → emergency text anchors (or zero if no text).
   let safeHighlightAnchors: import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[] = [];
   if (!currentPageStudyModel) {
-    console.log("[LEFT_PANEL_CLEAR] no studyModel — zero highlights");
+    console.log("[LEFT_PANEL_CLEAR] no studyModel — emergency fallback may apply (see [LEFT_PANEL_FALLBACK])");
   } else if (currentPageStudyModel.page !== currentPage) {
     console.log("[LEFT_PANEL_CLEAR] studyModel page mismatch", { modelPage: currentPageStudyModel.page, currentPage });
   } else if (!currentPageStudyModel.highlightAnchors?.length) {
