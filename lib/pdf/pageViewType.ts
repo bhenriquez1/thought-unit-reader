@@ -18,11 +18,9 @@ export function derivePageViewType(
 ): PageViewType {
   const pageKind = normResult?.pageKind ?? "insufficient_prose";
 
-  if (
-    pageKind === "chapter_title" ||
-    pageKind === "chapter_intro" ||
-    pageKind === "section_title"
-  ) return "chapter_opener";
+  // chapter_title and section_title = empty/outline pages → suppress
+  // chapter_intro = has real body prose → allow extraction (content_page)
+  if (pageKind === "chapter_title" || pageKind === "section_title") return "chapter_opener";
 
   if (
     pageKind === "image_only" ||
