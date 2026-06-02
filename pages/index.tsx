@@ -962,6 +962,10 @@ export default function ThoughtUnitReader() {
     limitedEvidence,
     priorityHighlights: currentPriorityHighlights,
     normResult: currentNormResult,
+    storyV2: currentPageStoryV2,
+    storyV3: currentPageStoryV3,
+    pageRole: currentPageRole,
+    confidence: currentConfidence,
     formulaSignals,
   } = useActivePageIntelligence({
     documentId: bookId,
@@ -2983,8 +2987,11 @@ export default function ThoughtUnitReader() {
                   pageTruth: currentPageTruth,
                   pageModel: currentPageModel,
                   story: currentPageStory,
+                  storyV2: currentPageStoryV2,
+                  storyV3: currentPageStoryV3,
                   priorityHighlights: currentPriorityHighlights,
                   normResult: currentNormResult,
+                  pageRole: currentPageRole,
                 }}
                 guidedPath={guidedPath}
                 onRoleLabelMap={setRoleLabelByConceptId}
