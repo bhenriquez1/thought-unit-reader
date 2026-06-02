@@ -224,6 +224,12 @@ export function useTeachingSynthesis({
       pageTruthKey,
     });
 
+    console.log("[RP_SOURCE_TEXT]", {
+      page:     pageNumberRef.current ?? null,
+      charCount: _pageText.length,
+      first500: _pageText.slice(0, 500) || null,
+    });
+
     // ── Stage 2 input: enrich with concept blocks if the heuristic pipeline found any ──
     // When blocks exist, they give Stage 2 richer concept context for deeper study fields.
     // When blocks are absent, Stage 2 uses synthetic text chunks as before.
@@ -282,6 +288,14 @@ export function useTeachingSynthesis({
       synthStartMsRef.current = Date.now();
       console.log("[OPENAI_STAGE1_START]", { page: pageNumberRef.current, charCount: _pageText.length, mode: "page-text-first" });
       console.log("[SYNTH_STAGE1_START]", { page: pageNumberRef.current, pageTruthKey, mode: "page-text-first", charCount: _pageText.length });
+      console.log("[OPENAI_STAGE1_INPUT]", {
+        page:          pageNumberRef.current ?? null,
+        domain:        stage1Input.domain,
+        pageThesis:    stage1Input.pageThesis?.slice(0, 100) ?? null,
+        pageObjective: stage1Input.pageObjective?.slice(0, 80) ?? null,
+        pageTextChars: stage1Input.pageText?.length ?? 0,
+        pageTextFirst200: stage1Input.pageText?.slice(0, 200) ?? null,
+      });
       setStage1Status("loading");
       setStatus("loading");
 
@@ -315,6 +329,12 @@ export function useTeachingSynthesis({
           },
         });
         console.log("[RIGHT_PANEL_SOURCE]", { source: "openai_stage1", page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current });
+        console.log("[RP_PAGE_CLASSIFICATION]", {
+          page:     pageNumberRef.current ?? null,
+          pageType: s1.pageType ?? null,
+          coreIdea: s1.coreIdea?.slice(0, 80) ?? null,
+          elapsedMs: Date.now() - synthStartMsRef.current,
+        });
         // Raw Stage 1 output — proves exactly what OpenAI returned before any mapping
         console.log("[SYNTH_STAGE1_RAW]", {
           page:            pageNumberRef.current,

@@ -124,6 +124,11 @@ function buildAnchorCandidates(
     texts: candidates.map((a) => a.text.slice(0, 60)),
     sourceFields: candidates.map((a) => a.anchorType),
   });
+  console.log("[LEFT_PANEL_ANCHORS_FROM_RP]", {
+    pageType,
+    count:   candidates.length,
+    anchors: candidates.map((a) => ({ type: a.anchorType, text: a.text.slice(0, 80) })),
+  });
 
   return candidates;
 }
