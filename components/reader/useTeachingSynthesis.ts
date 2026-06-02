@@ -27,6 +27,8 @@ import {
   buildSynthesisInput,
 } from "@/lib/insights/synthesizeTeachingOutput";
 import { cleanActivePageText, cleanThesisLine } from "@/lib/insights/cleanActivePageText";
+import { fetchClaudeEnrichment } from "@/lib/insights/claudeEnrichmentClient";
+import type { ClaudeEnrichmentOutput } from "@/lib/insights/claudeEnrichmentClient";
 
 export type SynthesisStatus = "idle" | "loading" | "success" | "error";
 
@@ -35,9 +37,12 @@ export interface UseTeachingSynthesisResult {
   status: SynthesisStatus;        // panel-level: "success" as soon as stage1 done
   stage1Status: SynthesisStatus;
   stage2Status: SynthesisStatus;
+  stage3Status: SynthesisStatus;
   errorMessage: string | null;
   /** Re-trigger synthesis for the current page (e.g. after a network failure). */
   retry: () => void;
+  /** Claude enrichment fields — available after Stage 3 completes. */
+  claudeEnrichment: ClaudeEnrichmentOutput | null;
 }
 
 interface UseTeachingSynthesisArgs {
@@ -71,11 +76,13 @@ export function useTeachingSynthesis({
   enabled,
   pageNumber,
 }: UseTeachingSynthesisArgs): UseTeachingSynthesisResult {
-  const [synthesis,    setSynthesis]    = useState<TeachingSynthesis | null>(null);
-  const [status,       setStatus]       = useState<SynthesisStatus>("idle");
-  const [stage1Status, setStage1Status] = useState<SynthesisStatus>("idle");
-  const [stage2Status, setStage2Status] = useState<SynthesisStatus>("idle");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [synthesis,        setSynthesis]        = useState<TeachingSynthesis | null>(null);
+  const [status,           setStatus]           = useState<SynthesisStatus>("idle");
+  const [stage1Status,     setStage1Status]     = useState<SynthesisStatus>("idle");
+  const [stage2Status,     setStage2Status]     = useState<SynthesisStatus>("idle");
+  const [stage3Status,     setStage3Status]     = useState<SynthesisStatus>("idle");
+  const [claudeEnrichment, setClaudeEnrichment] = useState<ClaudeEnrichmentOutput | null>(null);
+  const [errorMessage,     setErrorMessage]     = useState<string | null>(null);
   // Incremented by retry() — Effect B re-runs, startedKeyRef guard cleared first.
   const [retryCount,   setRetryCount]   = useState(0);
 
@@ -112,6 +119,8 @@ export function useTeachingSynthesis({
     setStatus("idle");
     setStage1Status("idle");
     setStage2Status("idle");
+    setStage3Status("idle");
+    setClaudeEnrichment(null);
     setErrorMessage(null);
     startedKeyRef.current = null;
     synthStartMsRef.current = 0;
@@ -124,6 +133,8 @@ export function useTeachingSynthesis({
     setStatus("idle");
     setStage1Status("idle");
     setStage2Status("idle");
+    setStage3Status("idle");
+    setClaudeEnrichment(null);
     setErrorMessage(null);
     startedKeyRef.current = null;
     synthStartMsRef.current = 0;
@@ -477,13 +488,73 @@ export function useTeachingSynthesis({
           setStage2Status("error");
         }
       }
+
+      // ── STAGE 3 (Claude enrichment) ──────────────────────────────────────
+      // Fires after Stage 2 resolves (success or failure). Uses the latest
+      // synthesis snapshot to build the enrichment input. Non-blocking — Stage
+      // 1/2 content is already visible. Aborted on page change via mainSignal.
+      if (mainSignal.aborted) return;
+      setStage3Status("loading");
+
+      // Read the current synthesis state via a one-shot functional update so we
+      // don't need synthesis in the effect dependency array.
+      let enrichmentInput: Parameters<typeof fetchClaudeEnrichment>[0] | null = null;
+      setSynthesis(prev => {
+        if (prev?.coreIdea) {
+          enrichmentInput = {
+            pageType:        (prev as any).pageType ?? "mixed",
+            pageThesis:      prev.coreIdea,
+            whyThisMatters:  prev.application ?? null,
+            keyMechanism:    prev.mechanism   ?? null,
+            commonConfusion: prev.misconceptionAlert ?? prev.trap ?? null,
+            conceptTitles:   (prev.concepts ?? []).map((c: any) => c.title).filter(Boolean).slice(0, 5),
+            domain:          safeDomain,
+            pageNumber:      pageNumberRef.current,
+          };
+        }
+        return prev; // no state change — read-only snapshot
+      });
+
+      // Wait a tick so the functional update above has committed before we read enrichmentInput.
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+
+      if (!enrichmentInput || mainSignal.aborted) {
+        setStage3Status("error");
+        return;
+      }
+
+      const s3Ctrl = new AbortController();
+      mainSignal.addEventListener("abort", () => s3Ctrl.abort(), { once: true });
+
+      try {
+        console.log("[CLAUDE_STAGE3_START]", { page: pageNumberRef.current, elapsedMs: Date.now() - synthStartMsRef.current });
+        const enrichment = await fetchClaudeEnrichment(enrichmentInput, s3Ctrl.signal);
+        if (mainSignal.aborted) return;
+        const hasAnyField = !!(enrichment.deepInsight || enrichment.alternativeExplanation || enrichment.subjectConnection || enrichment.expertView);
+        console.log("[CLAUDE_STAGE3_DONE]", {
+          page:                   pageNumberRef.current,
+          elapsedMs:              Date.now() - synthStartMsRef.current,
+          hasAnyField,
+          deepInsight:            enrichment.deepInsight?.slice(0, 80) ?? null,
+          alternativeExplanation: enrichment.alternativeExplanation?.slice(0, 80) ?? null,
+          subjectConnection:      enrichment.subjectConnection?.slice(0, 80) ?? null,
+          expertView:             enrichment.expertView?.slice(0, 80) ?? null,
+        });
+        if (hasAnyField) setClaudeEnrichment(enrichment);
+        setStage3Status("success");
+      } catch (err: any) {
+        if (mainSignal.aborted) return;
+        console.error("[CLAUDE_STAGE3_ERROR]", { page: pageNumberRef.current, message: err?.message ?? String(err) });
+        setStage3Status("error");
+      }
     }
 
     runStages();
+
   // enabled + blocks/text readiness drive starts; startedKeyRef guards against repeats.
   // retryCount triggers re-runs after explicit user retry.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageTruthKey, enabled, blocks.length > 0, (pageText?.length ?? 0) > 500, retryCount]);
 
-  return { synthesis, status, stage1Status, stage2Status, errorMessage, retry };
+  return { synthesis, status, stage1Status, stage2Status, stage3Status, errorMessage, retry, claudeEnrichment };
 }

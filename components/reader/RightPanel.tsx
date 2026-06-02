@@ -507,8 +507,10 @@ export function RightPanel({
     status: synthStatus,
     stage1Status,
     stage2Status,
+    stage3Status,
     errorMessage: synthErrorMsg,
     retry: retrySynthesis,
+    claudeEnrichment,
   } = useTeachingSynthesis({
     pageTruthKey,
     pageObjective: ultraPageView?.teachingStatement,
@@ -1036,6 +1038,9 @@ export function RightPanel({
                 bookId={ctx?.documentId}
                 pageNumber={ctx?.pageNumber}
                 density={dt}
+                claudeEnrichment={claudeEnrichment}
+                stage3Status={stage3Status}
+                retrySynthesis={retrySynthesis}
               />
             </UltraViewErrorBoundary>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1404,6 +1409,9 @@ function UltraView({
   bookId,
   pageNumber,
   density,
+  claudeEnrichment,
+  stage3Status,
+  retrySynthesis,
 }: {
   view: UltraPageView;
   selectedBlockIndex: number;
@@ -1416,6 +1424,9 @@ function UltraView({
   bookId?: string;
   pageNumber?: number;
   density?: { cardPadding: string; headingText: string; bodyText: string; lineHeight: string; space: string };
+  claudeEnrichment?: import("@/lib/insights/claudeEnrichmentClient").ClaudeEnrichmentOutput | null;
+  stage3Status?: import("./useTeachingSynthesis").SynthesisStatus;
+  retrySynthesis?: () => void;
 }) {
   const d = density ?? { cardPadding: "p-4", headingText: "text-[12px]", bodyText: "text-[13px]", lineHeight: "leading-relaxed", space: "space-y-3" };
   const domain = view.domain ?? view._debug?.domain;
@@ -1627,6 +1638,55 @@ function UltraView({
               </div>
             )}
           </div>
+        </PanelSection>
+      )}
+
+      {/* Expert View — Claude Stage 3 enrichment, shown after Stage 1/2 resolve */}
+      {hasSynth && (claudeEnrichment || stage3Status === "loading") && (
+        <PanelSection title="Expert View">
+          {stage3Status === "loading" && !claudeEnrichment ? (
+            <div className="flex flex-col items-center gap-2 py-3">
+              <div className="h-1 w-24 overflow-hidden rounded-full bg-white/8">
+                <div className="h-full w-1/2 animate-pulse rounded-full bg-amber-400/30" />
+              </div>
+              <p className="text-[11px] text-white/30 italic">Expert analysis loading…</p>
+            </div>
+          ) : claudeEnrichment && (
+            <div className={d.space}>
+              {claudeEnrichment.deepInsight && (
+                <div className={`rounded-lg border border-amber-400/15 bg-[#1a1200] ${d.cardPadding}`}>
+                  <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-amber-300/70`}>
+                    🔬 Deep Insight
+                  </div>
+                  <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{claudeEnrichment.deepInsight}</p>
+                </div>
+              )}
+              {claudeEnrichment.alternativeExplanation && (
+                <div className={`rounded-lg border border-cyan-400/15 bg-[#001820] ${d.cardPadding}`}>
+                  <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-cyan-300/70`}>
+                    🔄 Alternative Explanation
+                  </div>
+                  <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{claudeEnrichment.alternativeExplanation}</p>
+                </div>
+              )}
+              {claudeEnrichment.subjectConnection && (
+                <div className={`rounded-lg border border-teal-400/15 bg-[#001a18] ${d.cardPadding}`}>
+                  <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-teal-300/70`}>
+                    🔗 Subject Connection
+                  </div>
+                  <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{claudeEnrichment.subjectConnection}</p>
+                </div>
+              )}
+              {claudeEnrichment.expertView && (
+                <div className={`rounded-lg border border-orange-400/15 bg-[#1a0e00] ${d.cardPadding}`}>
+                  <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-orange-300/70`}>
+                    🎓 Expert View
+                  </div>
+                  <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{claudeEnrichment.expertView}</p>
+                </div>
+              )}
+            </div>
+          )}
         </PanelSection>
       )}
 
