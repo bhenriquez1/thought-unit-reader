@@ -653,6 +653,27 @@ export function RightPanel({
       memoryAnchor: vMemory  ? vMemory.slice(0, 60) : "null",
       examIdea:    vExamIdea ? vExamIdea.slice(0, 60) : "null",
     });
+    console.log("[RP_SELECTED_FIELDS]", {
+      domain: synthDomain,
+      selected: {
+        mechanism:          vMech     ? vMech.slice(0, 80)     : null,
+        trap:               vTrap     ? vTrap.slice(0, 80)     : null,
+        application:        vApply    ? vApply.slice(0, 80)    : null,
+        reasoningFlow:      vFlow     ? vFlow.slice(0, 80)     : null,
+        misconceptionAlert: vAlert    ? vAlert.slice(0, 80)    : null,
+        examCriticalIdea:   vExamIdea ? vExamIdea.slice(0, 80) : null,
+        memoryAnchor:       vMemory   ? vMemory.slice(0, 80)   : null,
+      },
+      rejectedFields: [
+        !vMech     && teachingSynthesis.mechanism          ? "mechanism"          : null,
+        !vTrap     && teachingSynthesis.trap               ? "trap"               : null,
+        !vApply    && teachingSynthesis.application        ? "application"        : null,
+        !vFlow     && teachingSynthesis.reasoningFlow      ? "reasoningFlow"      : null,
+        !vAlert    && teachingSynthesis.misconceptionAlert ? "misconceptionAlert" : null,
+        !vExamIdea && teachingSynthesis.examCriticalIdea   ? "examCriticalIdea"   : null,
+        !vMemory   && teachingSynthesis.memoryAnchor       ? "memoryAnchor"       : null,
+      ].filter(Boolean),
+    });
 
     const finalCompression = baseView.compression;
 

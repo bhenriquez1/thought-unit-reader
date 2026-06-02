@@ -46,6 +46,20 @@ const TRAILING_PAGE_NUMBER_RE = /\s+\d{1,4}\s*$/;
 const FOOTER_DEBRIS_RE =
   /\b(?:Copyright\b[^.]*\.?|©\s*\d{0,4}[^.]*\.?|All rights reserved[^.]*\.?|Cengage Learning[^.]*\.?|Pearson Education[^.]*\.?|McGraw[-\s]?Hill[^.]*\.?|ISBN[-\s:]*[\dX\- ]+|Printed in (?:the )?U\.?S\.?A?\.?|No part of this (?:work|book)[^.]*\.?|may not be (?:copied|scanned|duplicated)[^.]*\.?)/gi;
 
+// Figure / table caption fragments: "Figure 3.2 The ATP structure." — a number followed
+// by an optional short title phrase. Only strips when followed by a terminal period so
+// we don't accidentally eat mid-sentence "see Figure 3.2" references.
+const FIGURE_CAPTION_RE =
+  /\b(?:Figure|FIGURE|Fig\.|Table|TABLE|Photo|PHOTO|Illustration|ILLUSTRATION)\s+\d+[\.\-]?\d*(?:\s+[A-Z▲►][^.?!]{0,140})?[.]/g;
+
+// Checkpoint / review section markers — these are section headings, NOT body prose.
+const CHECKPOINT_MARKER_RE =
+  /\b(?:Check(?:\s+Your)?\s+Understanding|Concept\s+Check|Review\s+Questions?|Chapter\s+(?:Summary|Review)|Self[\s-]?Test|Quick\s+Check|Think\s+About\s+It|Critical\s+Thinking|Did\s+You\s+Know\??)\b[^.]*\./gi;
+
+// All-caps callout/sidebar labels that prefix a box element, not body prose.
+const CALLOUT_LABEL_RE =
+  /\b(?:KEY\s+CONCEPTS?|LEARNING\s+OBJECTIVES?|DID\s+YOU\s+KNOW|QUICK\s+CHECK|KEY\s+TERMS?|IMPORTANT\s+TERMS?)\b\s*/g;
+
 /**
  * Clean a single active page's raw text for synthesis or anchor grounding.
  * Strips page numbers, UNIT/chapter/title running headers, and copyright/footer debris.
@@ -77,6 +91,34 @@ export function cleanActivePageText(raw: string | undefined | null, tag?: string
 
   // Strip a trailing bare page number.
   t = t.replace(TRAILING_PAGE_NUMBER_RE, "");
+
+  // \u2500\u2500 Second pass: non-instructional fragments \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  // Strip figure/table captions, checkpoint markers, and callout labels that
+  // appear inline after PDF text joining. Collect removed spans for diagnostics.
+  const rejectedFragments: Array<{ reason: string; fragment: string }> = [];
+
+  t = t.replace(FIGURE_CAPTION_RE, (match) => {
+    rejectedFragments.push({ reason: "figure/table caption", fragment: match.slice(0, 80) });
+    return " ";
+  });
+
+  t = t.replace(CHECKPOINT_MARKER_RE, (match) => {
+    rejectedFragments.push({ reason: "checkpoint/review marker", fragment: match.slice(0, 80) });
+    return " ";
+  });
+
+  t = t.replace(CALLOUT_LABEL_RE, (match) => {
+    rejectedFragments.push({ reason: "callout/sidebar label", fragment: match.slice(0, 60) });
+    return " ";
+  });
+
+  if (tag && rejectedFragments.length > 0) {
+    console.log("[RP_REJECTED_SOURCE]", {
+      tag,
+      count: rejectedFragments.length,
+      fragments: rejectedFragments,
+    });
+  }
 
   const cleaned = t.replace(/[ \t]+/g, " ").trim();
 

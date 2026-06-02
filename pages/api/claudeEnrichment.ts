@@ -108,6 +108,17 @@ Concept Titles: ${body.conceptTitles.length ? body.conceptTitles.join(", ") : "(
 Add deepInsight, alternativeExplanation, subjectConnection, and expertView.
 Output JSON only.`;
 
+  console.log("[CLAUDE_ENRICH_INPUT]", {
+    page:            body.pageNumber ?? null,
+    domain:          body.domain,
+    pageType:        body.pageType,
+    pageThesis:      body.pageThesis.slice(0, 120),
+    whyThisMatters:  body.whyThisMatters?.slice(0, 80) ?? null,
+    keyMechanism:    body.keyMechanism?.slice(0, 80) ?? null,
+    commonConfusion: body.commonConfusion?.slice(0, 80) ?? null,
+    conceptTitles:   body.conceptTitles,
+  });
+
   try {
     const client = new Anthropic({ apiKey });
     const message = await client.messages.create({
@@ -118,6 +129,11 @@ Output JSON only.`;
     });
 
     const raw = message.content[0]?.type === "text" ? message.content[0].text.trim() : "";
+    console.log("[CLAUDE_ENRICH_OUTPUT]", {
+      page:    body.pageNumber ?? null,
+      rawLen:  raw.length,
+      rawPreview: raw.slice(0, 200),
+    });
 
     // Strip markdown code fences if present
     const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
