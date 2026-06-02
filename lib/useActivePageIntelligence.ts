@@ -24,6 +24,12 @@ import type { PageInsightModel } from "@/lib/insights/types";
 import type { PageStory } from "@/lib/insights/buildPageStory";
 import { normalizeClinicalText, type ClinicalNormalizationResult } from "@/lib/normalization/normalizeClinicalText";
 import { selectTeachingSource } from "@/lib/insights/selectTeachingSource";
+import {
+  makeModelCacheKey, makeAnchorCacheKey,
+  getModelCacheEntry, setModelCacheEntry,
+  getAnchorCacheEntry, setAnchorCacheEntry,
+  computePageConfidence, cacheStats,
+} from "@/lib/insights/studyModelCache";
 
 export type ActivePageIntelligenceStatus = "idle" | "loading" | "ready" | "error";
 
@@ -161,6 +167,7 @@ export function useActivePageIntelligence({
   const [formulaSignals, setFormulaSignals] = useState<FormulaSignal[]>([]);
   const [priorityHighlights, setPriorityHighlights] = useState<ExtractPriorityHighlightsResult>({ pageNumber, main: [], support: [], weak: [], all: [], stats: { candidatesSeen: 0, candidatesAccepted: 0, blocksMerged: 0, spansResolved: 0, usedStory: false, usedFallback: false } });
   const [normResult, setNormResult] = useState<ClinicalNormalizationResult | null>(null);
+  const [confidence, setConfidence] = useState<number>(0);
   const latestRequestRef = useRef<string>("");
   // Always holds the latest ctx so the page-processing effect reads current
   // values without ctx itself being a dependency (avoids spurious re-runs
@@ -191,6 +198,7 @@ export function useActivePageIntelligence({
       setPageModel(null);
       setNormResult(null);
       setPageTruth(null);
+      setConfidence(0);
       return;
     }
 
@@ -214,8 +222,38 @@ export function useActivePageIntelligence({
     setPriorityHighlights({ pageNumber, main: [], support: [], weak: [], all: [], stats: { candidatesSeen: 0, candidatesAccepted: 0, blocksMerged: 0, spansResolved: 0, usedStory: false, usedFallback: false } });
     setNormResult(null);
 
+    setConfidence(0);
+
     Promise.resolve().then(() => {
       if (latestRequestRef.current !== requestKey) return;
+
+      // ── Cache check ────────────────────────────────────────────────────────
+      const textForHash = (snapshot.pageText || "").slice(0, 4000);
+      const textHash = hashText(textForHash);
+      const modelKey = makeModelCacheKey(documentId, pageNumber, textHash);
+      const cached = getModelCacheEntry(modelKey);
+      if (cached) {
+        console.log("[STUDYMODEL_CACHE_HIT]", {
+          page:       pageNumber,
+          documentId,
+          pageKind:   cached.normResult.pageKind,
+          confidence: cached.confidence,
+          ageMs:      Date.now() - cached.timestamp,
+          cacheSize:  cacheStats(),
+        });
+        setPageModel(cached.pageModel);
+        setNormResult(cached.normResult);
+        setPageClass(cached.pageClass);
+        setConfidence(cached.confidence);
+        setStatus("ready");
+        return;
+      }
+      console.log("[STUDYMODEL_CACHE_MISS]", {
+        page:      pageNumber,
+        documentId,
+        textLen:   (snapshot.pageText || "").length,
+        cacheSize: cacheStats(),
+      });
 
       const localSignals = extractPageSignals(snapshot, {
         minYield: 1,
@@ -431,6 +469,38 @@ export function useActivePageIntelligence({
         sourceWasFiltered: teachingSource.suppressedReason === null && sourceTextForProcessing.length < (snapshot.pageText || "").length,
       });
 
+      // ── Confidence + cache store ───────────────────────────────────────────
+      const localConfidence = computePageConfidence(localPageModel, localNormResult);
+      if (localConfidence < 0.5) {
+        console.log("[LOW_CONFIDENCE_PAGE]", {
+          page:       pageNumber,
+          documentId,
+          pageKind:   localNormResult.pageKind,
+          confidence: localConfidence,
+          paragraphs: (localPageModel.paragraphInsights ?? []).length,
+          reason:     !localNormResult.shouldRenderFullPanel
+            ? "panel_suppressed"
+            : teachingSource.suppressedReason ?? "sparse_content",
+        });
+      }
+      setModelCacheEntry(modelKey, {
+        pageModel:   localPageModel,
+        normResult:  localNormResult,
+        pageClass:   localPageClass,
+        confidence:  localConfidence,
+        textHash,
+        timestamp:   Date.now(),
+        generatedBy: "local_nlp",
+      });
+      console.log("[STUDYMODEL_STORED]", {
+        page:        pageNumber,
+        documentId,
+        pageKind:    localNormResult.pageKind,
+        confidence:  localConfidence,
+        cacheSize:   cacheStats(),
+        generatedBy: "local_nlp",
+      });
+
       setSignals(localSignals);
       setClassification(localClassification);
       setPanelPayloads(localPayloads);
@@ -443,6 +513,7 @@ export function useActivePageIntelligence({
       setPageTruth(localPageTruth);
       setPriorityHighlights(localHighlights);
       setNormResult(localNormResult);
+      setConfidence(localConfidence);
       setStatus("ready");
     }).catch((err: unknown) => {
       if (latestRequestRef.current !== requestKey) return;
@@ -475,6 +546,23 @@ export function useActivePageIntelligence({
 
   const highlightNeighborhoods: HighlightNeighborhood[] = useMemo(() => {
     if (!pageModel || !normResult?.shouldRenderFullPanel) return [];
+
+    // Check anchor cache — prevents highlights from changing on back-navigation
+    const anchorKey = makeAnchorCacheKey(
+      pageModel.documentId ?? documentId,
+      pageModel.pageNumber ?? pageNumber,
+      pageModel.requestKey ?? "",
+    );
+    const cachedAnchors = getAnchorCacheEntry(anchorKey);
+    if (cachedAnchors) {
+      console.log("[ANCHOR_CACHE_HIT]", {
+        page:  pageNumber,
+        count: cachedAnchors.length,
+        roles: cachedAnchors.map(n => n.conceptRole ?? "detail"),
+      });
+      return cachedAnchors;
+    }
+    console.log("[ANCHOR_CACHE_MISS]", { page: pageNumber });
     const validInsights = (pageModel.paragraphInsights ?? []).filter((p, arrayIdx) => {
       if (isValidCoreParagraph(p)) return true;
       // Always include the first 2 page-order paragraphs when they have ≥25 chars.
@@ -568,8 +656,18 @@ export function useActivePageIntelligence({
       })),
     });
 
+    // Store in anchor cache — stable across back-navigation
+    if (anchorKey) {
+      setAnchorCacheEntry(anchorKey, neighborhoods);
+      console.log("[ANCHOR_STORED]", {
+        page:  pageNumber,
+        count: neighborhoods.length,
+        roles: neighborhoods.map(n => n.conceptRole ?? "detail"),
+      });
+    }
+
     return neighborhoods;
-  }, [pageModel, pageNumber, normResult]);
+  }, [pageModel, pageNumber, normResult, documentId]);
 
   const highlightTargets: HighlightTarget[] = useMemo(() => {
     if (!normResult?.shouldRenderFullPanel) return [];
@@ -675,6 +773,7 @@ export function useActivePageIntelligence({
     highlightNeighborhoods,
     limitedEvidence,
     normResult,
+    confidence,
     pageRole: signals.pageRole ?? undefined,
   };
 }
