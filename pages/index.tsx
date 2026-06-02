@@ -2915,12 +2915,22 @@ export default function ThoughtUnitReader() {
       // FALLBACK: no studyModel (OpenAI failed) → pass emergency text anchors from finalHighlightAnchors.
       //   (Emergency anchors are cleared and re-derived by the grounding effect on every page change,
       //   so there is no stale-anchor risk when studyModel is null.)
-      const safeHighlightAnchors =
-        currentPageStudyModel?.pageTruthKey === pageTruthKey
+      // Hard gate: chapter openers, image-only pages, and sparse pages must never show highlights.
+      // This gate sits at render time so it catches BOTH the studyModel path AND the emergency
+      // fallback — whichever produced anchors, they are zeroed before the PDF viewer sees them.
+      const highlightsSuppressed = !currentNormResult?.shouldRenderFullPanel;
+      if (highlightsSuppressed) {
+        console.log("[HIGHLIGHT_GATE] suppressed by normalization", {
+          page: currentPage, pageKind: currentNormResult?.pageKind ?? "unknown",
+        });
+      }
+      const safeHighlightAnchors = highlightsSuppressed
+        ? []
+        : currentPageStudyModel?.pageTruthKey === pageTruthKey
           ? finalHighlightAnchors           // PRIMARY: AI study model anchors
           : !currentPageStudyModel
-            ? finalHighlightAnchors         // FALLBACK: emergency text anchors (no pageTruthKey check needed — cleared on every page change)
-            : [];                           // STALE: studyModel exists but key mismatch — block
+            ? finalHighlightAnchors         // FALLBACK: emergency text anchors
+            : [];                           // STALE: studyModel key mismatch
 
       return (
         <div className="h-full flex overflow-hidden" data-testid="expert-view-container">
