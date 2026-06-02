@@ -23,7 +23,17 @@ export function classifyPageContent(pageText: string): PageContentClass {
   const headingLike = lines.filter((line) => /^[A-Z][A-Z\s\-]{5,}$/.test(line)).length;
   const boilerplateHits = lines.filter((line) => /all rights reserved|copyright|isbn|published by|permissions|edition|library of congress|contributor/i.test(line)).length;
 
-  if (boilerplateHits >= 2 && sentenceCount < 3) return "copyright_frontmatter";
+  // Guard: never classify as copyright_frontmatter if the page has math/instructional content.
+  // Calculus pages have low sentenceCount (formulas don't end with .!?) and OpenStax pages
+  // have contributor/permissions in footers — so they falsely hit this gate without the guard.
+  const hasMathOrInstructional =
+    /[∫∑∂∇√π±≤≥≠→←⇒⟹]|dy\/dx|\blim\b|\bsin\b|\bcos\b|\btan\b/i.test(text) ||
+    /\b(derivative|integral|theorem|formula|equation|solution|function|calculus|proof|differentiate|integrate|interval|domain|range|slope|tangent|gradient|polynomial|exponent|logarithm|vector|matrix|determinant)\b/i.test(text) ||
+    /^\d+\.\d+(\.\d+)?\s+\S/m.test(text) ||
+    /\b(example|figure|graph|diagram|exercise|problem|step)\s*\d/i.test(text) ||
+    /[a-zA-Z]\s*[=\^\/]\s*[a-zA-Z0-9\(]/.test(text);
+
+  if (boilerplateHits >= 2 && sentenceCount < 3 && !hasMathOrInstructional) return "copyright_frontmatter";
   if (words.length < 25) return "sparse_text";
   if (sentenceCount === 0 && words.length < 80) return "failed_sparse";
   if (blankLike >= 3 || labelValue >= 5) return "form_page";
