@@ -204,22 +204,7 @@ export default function PureReaderView({
       score:     s.specScore,
     })));
 
-    const aiTargets: HighlightTarget[] = scored.map((s, i) => ({
-          id:                   `ai-anchor-${i}`,
-          page:                 currentPage,
-          text:                 s.anchor.text,  // already grounded in pages/index.tsx
-          normalizedText:       s.anchor.text,
-          level:                "important" as const,
-          score:                100 - i,
-          sourceParagraphIndex: 0,
-          kind:                 anchorTypeToKind(s.anchor.anchorType),
-          evidenceRefId:        `ai-anchor-${i}`,
-          spanStart:            s.anchor.spanStart ?? undefined,
-          spanEnd:              s.anchor.spanEnd ?? undefined,
-        }));
-
-    // Validate: reject anchors whose text does not appear in the current raw page text.
-    // This prevents template/example phrases from the prompt from leaking as highlights.
+    // Normalizer shared by span guard + text validation
     const norm = (s: string) =>
       s.toLowerCase()
         .replace(/ﬁ/g, 'fi').replace(/ﬂ/g, 'fl')
@@ -227,6 +212,39 @@ export default function PureReaderView({
         .replace(/['']/g, "'").replace(/[""]/g, '"')
         .replace(/[–—]/g, '-').replace(/\s+/g, ' ').trim();
     const normedPage = pageText ? norm(pageText) : "";
+
+    // Span guard: if spanStart..spanEnd covers > 250 chars in the page text, clear the span
+    // so the highlight renders from anchor.text only (prevents formula-heavy pages turning fully pink).
+    const SPAN_CHAR_MAX = 250;
+    const aiTargets: HighlightTarget[] = scored.map((s, i) => {
+      let spanStart: string | undefined = s.anchor.spanStart ?? undefined;
+      let spanEnd:   string | undefined = s.anchor.spanEnd   ?? undefined;
+
+      if (spanStart && spanEnd && normedPage.length > 0) {
+        const si = normedPage.indexOf(norm(spanStart));
+        const ei = si >= 0 ? normedPage.indexOf(norm(spanEnd), si) : -1;
+        const spanLen = ei >= 0 ? (ei - si + norm(spanEnd).length) : 0;
+        if (spanLen > SPAN_CHAR_MAX) {
+          console.log("[SPAN_GUARD_TRIM]", { text: s.anchor.text.slice(0, 50), spanLen, max: SPAN_CHAR_MAX });
+          spanStart = undefined;
+          spanEnd   = undefined;
+        }
+      }
+
+      return {
+        id:                   `ai-anchor-${i}`,
+        page:                 currentPage,
+        text:                 s.anchor.text,  // already grounded in pages/index.tsx
+        normalizedText:       s.anchor.text,
+        level:                "important" as const,
+        score:                100 - i,
+        sourceParagraphIndex: 0,
+        kind:                 anchorTypeToKind(s.anchor.anchorType),
+        evidenceRefId:        `ai-anchor-${i}`,
+        spanStart,
+        spanEnd,
+      };
+    });
 
     const validated = (normedPage.length > 0)
       ? aiTargets.filter((t) => {
@@ -298,11 +316,12 @@ export default function PureReaderView({
     { kind: "trap",        color: "#fca5a5", bg: "rgba(252,165,165,0.15)",  label: "Confusion / Trap",     abbr: "TRAP" },
   ];
 
-  console.log("[LEFT_LEGEND_RENDER]", {
+  console.log("[SINGLE_LEGEND_RENDER]", {
     page: currentPage,
     hasHighlights,
     usedKinds: [...usedKinds],
     totalAnchors: effectiveHighlightTargets.length,
+    source: "PureReaderView-left-sidebar (single canonical legend)",
   });
 
   return (

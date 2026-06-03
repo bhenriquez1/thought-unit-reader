@@ -291,6 +291,98 @@ const COMPREHENSION_PROMPTS = [
 ] as const;
 
 
+// ---------------------------------------------------------------------------
+// Highlight budget — enforces coverage and per-type limits before left panel render.
+// Prevents calculus/dense pages from painting every formula line.
+// ---------------------------------------------------------------------------
+
+const ANCHOR_TYPE_MAX: Record<string, number> = {
+  thesis:       2,
+  definition:   3,
+  mechanism:    2,
+  application:  2,
+  trap:         2,
+  formula:      2, // math alias — key rules only
+  example_step: 1, // one worked step max
+  conclusion:   1, // one conclusion max
+};
+
+const BUDGET_TOTAL_MAX       = 6;
+const BUDGET_COVERAGE_TARGET = 0.20; // 20% of page text
+const BUDGET_COVERAGE_MAX    = 0.25; // hard cap 25%
+
+type BudgetAnchor = { text: string; anchorType: string; reason: string; spanStart: string | null; spanEnd: string | null };
+
+function applyHighlightBudget<T extends BudgetAnchor>(
+  anchors: T[],
+  pageText: string,
+  isMathPage: boolean,
+  page: number,
+): T[] {
+  if (!anchors.length) return anchors;
+
+  const pageLen = pageText.length;
+
+  console.log("[HIGHLIGHT_BUDGET_INPUT]", {
+    page,
+    inputCount:  anchors.length,
+    isMathPage,
+    pageTextLen: pageLen,
+    types: anchors.map(a => a.anchorType),
+  });
+
+  // For math pages, prioritize definition > conclusion > trap > example_step > mechanism
+  // (don't highlight every formula line — only the rule, one step, the conclusion, and traps)
+  const mathPriority = ["definition", "formula", "conclusion", "thesis", "trap", "example_step", "mechanism", "application"];
+  const candidates = isMathPage
+    ? [...anchors].sort((a, b) => {
+        const ai = mathPriority.indexOf(a.anchorType);
+        const bi = mathPriority.indexOf(b.anchorType);
+        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+      })
+    : anchors;
+
+  const typeCounts: Record<string, number> = {};
+  const result: T[] = [];
+  let coverageChars = 0;
+  const dropped: Array<{ type: string; reason: string; text: string }> = [];
+
+  for (const anchor of candidates) {
+    const type   = anchor.anchorType;
+    const limit  = ANCHOR_TYPE_MAX[type] ?? 1;
+    const count  = typeCounts[type] ?? 0;
+
+    if (result.length >= BUDGET_TOTAL_MAX) {
+      dropped.push({ type, reason: "total-max", text: anchor.text.slice(0, 50) });
+      continue;
+    }
+    if (count >= limit) {
+      dropped.push({ type, reason: `type-limit(${limit})`, text: anchor.text.slice(0, 50) });
+      continue;
+    }
+    const spanLen = anchor.text.length;
+    if (pageLen > 0 && result.length >= 2 && (coverageChars + spanLen) / pageLen > BUDGET_COVERAGE_MAX) {
+      dropped.push({ type, reason: "coverage-max", text: anchor.text.slice(0, 50) });
+      continue;
+    }
+
+    typeCounts[type] = count + 1;
+    coverageChars   += spanLen;
+    result.push(anchor);
+  }
+
+  const coveragePct = pageLen > 0 ? ((coverageChars / pageLen) * 100).toFixed(1) : "n/a";
+
+  if (dropped.length > 0) {
+    console.log("[HIGHLIGHT_BUDGET_DROP]", { page, droppedCount: dropped.length, dropped });
+  }
+  console.log("[HIGHLIGHT_BUDGET_FINAL]", { page, finalCount: result.length, types: result.map(a => a.anchorType) });
+  console.log("[HIGHLIGHT_COVERAGE]", { page, coveragePct: `${coveragePct}%`, coverageChars, pageTextLen: pageLen, target: `${BUDGET_COVERAGE_TARGET * 100}%`, max: `${BUDGET_COVERAGE_MAX * 100}%` });
+
+  return result;
+}
+
+
 export default function ThoughtUnitReader() {
   const router = useRouter();
   /* =========================================================================
@@ -2898,7 +2990,14 @@ export default function ThoughtUnitReader() {
         currentPageStudyModel.pageTruthKey === pageTruthKey &&
         finalHighlightAnchors.length > 0;
 
-      const safeHighlightAnchors = studyModelReady ? finalHighlightAnchors : [];
+      const safeHighlightAnchors = (() => {
+        if (!studyModelReady) return [];
+        const pageTextForBudget = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
+        const isMathPage = finalHighlightAnchors.some(
+          a => a.anchorType === "formula" || a.anchorType === "example_step" || a.anchorType === "conclusion"
+        );
+        return applyHighlightBudget(finalHighlightAnchors, pageTextForBudget, isMathPage, currentPage);
+      })();
 
       if (studyModelReady) {
         console.log("[OVERLAY_FROM_STUDYMODEL_ONLY]", {
@@ -3462,73 +3561,8 @@ export default function ThoughtUnitReader() {
 
 
         {/* Utility Rail — docked to left panel bottom-left; never overlaps right panel study content */}
+        {/* Legend removed: canonical Highlight Key is in PureReaderView left sidebar */}
         <div className="fixed bottom-[80px] left-4 z-40 flex flex-col gap-3 max-w-[160px] opacity-90">
-          {/* Highlight color legend — dynamic from OpenAI anchor types present on this page */}
-          {(() => {
-            if (!finalHighlightAnchors.length) return null;
-
-            // Colors match PdfEvidenceOverlay.priorityClassName
-            type AnchorLegendDef = { color: string; label: string; description: string };
-            const ANCHOR_LEGEND: Record<string, AnchorLegendDef> = {
-              thesis:      { color: "rgba(251,191, 36,0.85)", label: "Thesis",      description: "what this page is about" },
-              definition:  { color: "rgba( 96,165,250,0.85)", label: "Definition",  description: "what the key concept is" },
-              mechanism:   { color: "rgba( 52,211,153,0.85)", label: "Mechanism",   description: "how or why it works" },
-              application: { color: "rgba(244,114,182,0.85)", label: "Application", description: "real-world example" },
-              trap:        { color: "rgba(167,139,250,0.85)", label: "Trap",        description: "common confusion point" },
-              // Backward compat aliases
-              memoryAnchor: { color: "rgba( 96,165,250,0.85)", label: "Definition",  description: "what the key concept is" },
-              examSignal:   { color: "rgba(251,191, 36,0.85)", label: "Thesis",      description: "what this page is about" },
-              formula:      { color: "rgba( 96,165,250,0.85)", label: "Definition",  description: "what the key concept is" },
-              clinicalTrap: { color: "rgba(167,139,250,0.85)", label: "Trap",        description: "common confusion point" },
-            };
-
-            // Derive unique anchor types present on this page, preserving priority order
-            const priorityOrder = ["thesis", "definition", "mechanism", "application", "trap",
-              "memoryAnchor", "examSignal", "formula", "clinicalTrap"]; // old types last for compat
-            const presentTypes = new Map<string, number>(); // anchorType → count
-            for (const anchor of finalHighlightAnchors) {
-              presentTypes.set(anchor.anchorType, (presentTypes.get(anchor.anchorType) ?? 0) + 1);
-            }
-            // Build legend entries, deduplicating by color (merge compat aliases into canonical role)
-            const seenColors = new Set<string>();
-            const legendEntries: Array<AnchorLegendDef & { id: string; count: number }> = [];
-            for (const t of priorityOrder) {
-              if (!presentTypes.has(t)) continue;
-              const def = ANCHOR_LEGEND[t];
-              if (!def || seenColors.has(def.color)) continue;
-              seenColors.add(def.color);
-              legendEntries.push({ id: t, ...def, count: presentTypes.get(t) ?? 0 });
-            }
-
-            console.log("[LEGEND:dynamic]", { anchorTypes: [...presentTypes.keys()], entries: legendEntries.length });
-
-            return (
-              <div className="rounded-xl border border-white/10 bg-[rgb(11,18,34)]/90 backdrop-blur-sm px-2.5 py-2">
-                <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-500">Highlight key</div>
-                <div className="space-y-1.5">
-                  {legendEntries.map((entry) => (
-                    <div key={entry.id} className="flex items-center gap-1.5">
-                      <span
-                        style={{
-                          display: "inline-block",
-                          width: 10,
-                          height: 10,
-                          borderRadius: 3,
-                          background: entry.color,
-                          flexShrink: 0,
-                        }}
-                      />
-                      <div className="min-w-0 flex items-baseline gap-1">
-                        <span className="text-[10px] text-slate-300">{entry.label}</span>
-                        <span className="text-[9px] text-slate-500">— {entry.description}</span>
-                        <span className="text-[9px] text-slate-600 ml-auto">{entry.count}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
           {/* Chapter Absorption FAB (feature-flagged) */}
           {isFeatureEnabled('ENABLE_CHAPTER_ABSORPTION') && smartTOC.length > 0 && !absorptionState.showPanel && (
             <button
