@@ -2920,6 +2920,13 @@ export default function ThoughtUnitReader() {
           texts:  safeHighlightAnchors.map(a => a.text.slice(0, 60)),
           source: "right_panel_study_model",
         });
+        console.log("[FINAL_MODEL_TO_LEFT_PANEL]", {
+          page:         currentPage,
+          anchorCount:  safeHighlightAnchors.length,
+          conceptCount: currentPageStudyModel?.conceptBlocks?.length ?? 0,
+          pageThesis:   currentPageStudyModel?.pageThesis?.slice(0, 60) ?? null,
+          kinds:        safeHighlightAnchors.map(a => a.anchorType),
+        });
       } else {
         console.log("[OVERLAY_EMPTY_BECAUSE_NO_STUDYMODEL]", {
           page:             currentPage,

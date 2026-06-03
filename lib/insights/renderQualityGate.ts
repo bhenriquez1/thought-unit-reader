@@ -327,6 +327,13 @@ export function isWeakBlock(
   domain?: string
 ): boolean {
   if (isWeakTitle(block.title)) return true;
+  // Synthesis-derived blocks (built directly from OpenAI concepts, no heuristic base) use a
+  // lighter gate — we trust the synthesis pipeline's output quality. Just require the title
+  // to be valid and the principle/pattern to have meaningful content.
+  if (block.synthDerived) {
+    const patternLen = block.pattern?.trim().split(/\s+/).length ?? 0;
+    return patternLen < 3;
+  }
   if (countStrongCoreFields(block, domain) < 3) return true;
   // Pattern must be sentence-length — noun phrases like "Chemical Elements" are not teaching notes
   const patternWords = block.pattern?.trim().split(/\s+/).length ?? 0;

@@ -290,13 +290,20 @@ export default function PureReaderView({
   const hasHighlights = effectiveHighlightTargets.length > 0;
   const usedKinds = new Set(effectiveHighlightTargets.map(t => t.kind as string));
 
-  const HIGHLIGHT_KEY_ENTRIES: Array<{ kind: string; dot: string; label: string }> = [
-    { kind: "thesis",      dot: "#fde047", label: "Core Idea"         },
-    { kind: "definition",  dot: "#93c5fd", label: "Definition / Key Term" },
-    { kind: "mechanism",   dot: "#86efac", label: "Mechanism"         },
-    { kind: "application", dot: "#c084fc", label: "Example / Evidence" },
-    { kind: "trap",        dot: "#fca5a5", label: "Confusion / Trap"  },
+  const HIGHLIGHT_KEY_ENTRIES: Array<{ kind: string; color: string; bg: string; label: string; abbr: string }> = [
+    { kind: "thesis",      color: "#fde047", bg: "rgba(253,224,71,0.15)",   label: "Core Idea",            abbr: "CORE" },
+    { kind: "definition",  color: "#93c5fd", bg: "rgba(147,197,253,0.15)",  label: "Definition / Term",    abbr: "DEF"  },
+    { kind: "mechanism",   color: "#86efac", bg: "rgba(134,239,172,0.15)",  label: "Mechanism / Function", abbr: "FCN"  },
+    { kind: "application", color: "#c084fc", bg: "rgba(192,132,252,0.15)",  label: "Example / Evidence",   abbr: "EX"   },
+    { kind: "trap",        color: "#fca5a5", bg: "rgba(252,165,165,0.15)",  label: "Confusion / Trap",     abbr: "TRAP" },
   ];
+
+  console.log("[LEFT_LEGEND_RENDER]", {
+    page: currentPage,
+    hasHighlights,
+    usedKinds: [...usedKinds],
+    totalAnchors: effectiveHighlightTargets.length,
+  });
 
   return (
     <div className="h-full flex flex-col bg-gray-900" data-testid="pure-reader-view">
@@ -335,24 +342,37 @@ export default function PureReaderView({
       <div className="flex flex-1 min-h-0">
 
         {/* ── Highlight Key sidebar ───────────────────────────────────────── */}
-        <div className="flex flex-col w-[120px] shrink-0 bg-[#0d1117] border-r border-white/8 py-3 px-2 gap-1 overflow-hidden">
-          <span className="text-[9px] font-bold uppercase tracking-widest text-white/30 mb-1 pl-0.5">
+        <div className="flex flex-col w-[136px] shrink-0 bg-[#0d1117] border-r border-white/8 py-4 px-2.5 gap-2 overflow-hidden">
+          <span className="text-[9px] font-bold uppercase tracking-widest text-white/30 mb-0.5 px-0.5">
             Highlight Key
           </span>
-          {HIGHLIGHT_KEY_ENTRIES.map(entry => (
-            <div
-              key={entry.kind}
-              className={`flex items-center gap-1.5 transition-opacity ${
-                hasHighlights && !usedKinds.has(entry.kind) ? "opacity-25" : "opacity-100"
-              }`}
-            >
-              <span
-                className="h-2.5 w-2.5 rounded-full shrink-0 border border-white/10"
-                style={{ background: entry.dot }}
-              />
-              <span className="text-[10px] text-white/60 leading-tight">{entry.label}</span>
-            </div>
-          ))}
+          {HIGHLIGHT_KEY_ENTRIES.map(entry => {
+            const active = !hasHighlights || usedKinds.has(entry.kind);
+            return (
+              <div
+                key={entry.kind}
+                className="flex items-start gap-2 transition-opacity"
+                style={{ opacity: active ? 1 : 0.22 }}
+              >
+                {/* Color swatch with abbreviation badge */}
+                <span
+                  className="shrink-0 flex items-center justify-center rounded-sm text-[7px] font-bold mt-0.5"
+                  style={{
+                    width: 28,
+                    height: 16,
+                    background: entry.bg,
+                    border: `1px solid ${entry.color}55`,
+                    color: entry.color,
+                    letterSpacing: "0.05em",
+                    fontFamily: "ui-monospace, SFMono-Regular, monospace",
+                  }}
+                >
+                  {entry.abbr}
+                </span>
+                <span className="text-[10.5px] text-white/65 leading-tight">{entry.label}</span>
+              </div>
+            );
+          })}
         </div>
 
         {/* ── PDF Viewer column ───────────────────────────────────────────── */}

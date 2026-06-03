@@ -599,43 +599,82 @@ export function RightPanel({
 
     // Per-concept overlay: synthesis rewrites principle/mechanism/trap/rule/misconception/examHook.
     // Each field is validated before replacing the heuristic value.
+    // When baseView.blocks = [] (heuristic found nothing) but synthesis returned concepts,
+    // build UltraConceptBlocks directly from synthesis so Concept Blocks section is populated.
+    console.log("[CONCEPT_BLOCK_INPUT]", {
+      page: ctx?.pageNumber ?? null,
+      baseBlockCount: baseView.blocks.length,
+      synthConceptCount: teachingSynthesis.concepts?.length ?? 0,
+      textFallback: !ultraPageView,
+      domain: synthDomain,
+    });
+
     const finalBlocks = teachingSynthesis.concepts?.length
-      ? baseView.blocks.map((b, i) => {
-          const sc = teachingSynthesis.concepts[i];
-          if (!sc) return b;
+      ? baseView.blocks.length > 0
+        // ── Overlay path: heuristic blocks exist, synthesis enriches them ──
+        ? baseView.blocks.map((b, i) => {
+            const sc = teachingSynthesis.concepts[i];
+            if (!sc) return b;
 
-          const safeTitle          = validSynthField(sc.title,       synthDomain);
-          const safePattern        = validSynthField(sc.principle,    synthDomain);
-          const safeSurgicalReason = validSynthField(sc.mechanism,    synthDomain);
-          const safeTrap           = validSynthField(sc.trap,         synthDomain);
-          const safeRule           = validSynthField(sc.rule,         synthDomain);
-          const safeMisconception  = validSynthField(sc.misconception, synthDomain);
-          const safeExamHook       = validSynthField(sc.examHook,     synthDomain);
+            const safeTitle          = validSynthField(sc.title,       synthDomain);
+            const safePattern        = validSynthField(sc.principle,    synthDomain);
+            const safeSurgicalReason = validSynthField(sc.mechanism,    synthDomain);
+            const safeTrap           = validSynthField(sc.trap,         synthDomain);
+            const safeRule           = validSynthField(sc.rule,         synthDomain);
+            const safeMisconception  = validSynthField(sc.misconception, synthDomain);
+            const safeExamHook       = validSynthField(sc.examHook,     synthDomain);
 
-          console.log(`[TRACE:synth-block-${i}]`, {
-            domain: synthDomain,
-            heuristicTitle: b.title,
-            synthTitle: sc.title ?? null,
-            safeTitle: safeTitle ?? "REJECTED",
-            heuristicPattern: b.pattern?.slice(0, 60),
-            synthPrinciple: sc.principle?.slice(0, 60) ?? null,
-            safePattern: safePattern ? safePattern.slice(0, 60) : "REJECTED",
-            safeSurgicalReason: safeSurgicalReason ? safeSurgicalReason.slice(0, 60) : "REJECTED",
-            safeTrap: safeTrap ? safeTrap.slice(0, 60) : "REJECTED",
-            safeRule: safeRule ? safeRule.slice(0, 60) : "REJECTED",
-          });
+            console.log(`[TRACE:synth-block-${i}]`, {
+              domain: synthDomain,
+              heuristicTitle: b.title,
+              synthTitle: sc.title ?? null,
+              safeTitle: safeTitle ?? "REJECTED",
+              heuristicPattern: b.pattern?.slice(0, 60),
+              synthPrinciple: sc.principle?.slice(0, 60) ?? null,
+              safePattern: safePattern ? safePattern.slice(0, 60) : "REJECTED",
+              safeSurgicalReason: safeSurgicalReason ? safeSurgicalReason.slice(0, 60) : "REJECTED",
+              safeTrap: safeTrap ? safeTrap.slice(0, 60) : "REJECTED",
+              safeRule: safeRule ? safeRule.slice(0, 60) : "REJECTED",
+            });
 
-          return {
-            ...b,
-            title:          safeTitle           ?? b.title,
-            pattern:        safePattern        ?? b.pattern,
-            surgicalReason: safeSurgicalReason  ?? b.surgicalReason,
-            trap:           safeTrap            ?? b.trap,
-            rule:           safeRule            ?? b.rule,
-            misconception:  safeMisconception   ?? undefined,
-            examHook:       safeExamHook        ?? undefined,
-          };
-        })
+            return {
+              ...b,
+              title:          safeTitle           ?? b.title,
+              pattern:        safePattern        ?? b.pattern,
+              surgicalReason: safeSurgicalReason  ?? b.surgicalReason,
+              trap:           safeTrap            ?? b.trap,
+              rule:           safeRule            ?? b.rule,
+              misconception:  safeMisconception   ?? undefined,
+              examHook:       safeExamHook        ?? undefined,
+            };
+          })
+        // ── Build path: no heuristic blocks, construct directly from synthesis concepts ──
+        : teachingSynthesis.concepts.slice(0, 4).map((sc, i) => {
+            const safeTitle     = validSynthField(sc.title,        synthDomain) ?? sc.title ?? `Concept ${i + 1}`;
+            const safePattern   = validSynthField(sc.principle,    synthDomain) ?? sc.principle ?? "";
+            const safeMechanism = validSynthField(sc.mechanism,    synthDomain) ?? sc.mechanism ?? "";
+            const safeTrap      = validSynthField(sc.trap,         synthDomain) ?? sc.trap ?? "";
+            const safeRule      = validSynthField(sc.rule,         synthDomain) ?? sc.rule ?? "";
+            const block = {
+              conceptId:      `synth-${i}`,
+              ordinal:        i + 1,
+              title:          safeTitle,
+              pattern:        safePattern,
+              surgicalReason: safeMechanism,
+              trap:           safeTrap,
+              rule:           safeRule,
+              importance:     "high",
+              misconception:  sc.misconception ?? undefined,
+              examHook:       sc.examHook ?? undefined,
+              synthDerived:   true as const,
+            };
+            console.log(`[CONCEPT_BLOCK_READY]`, {
+              index: i, title: block.title?.slice(0, 50),
+              pattern: block.pattern?.slice(0, 70),
+              mechanism: block.surgicalReason?.slice(0, 60),
+            });
+            return block;
+          })
       : baseView.blocks;
 
     // Page-level synthesis fields — validated and stored for dedicated display sections.
@@ -1459,7 +1498,16 @@ function UltraView({
   const isScienceDomain = domain === "science";
 
   // Filter weak blocks before rendering
+  const rejectedBlocks = view.blocks.filter((b) => isWeakBlock(b, domain));
   const visibleBlocks = view.blocks.filter((b) => !isWeakBlock(b, domain));
+  if (rejectedBlocks.length > 0) {
+    console.log("[CONCEPT_BLOCK_REJECTED]", {
+      page: pageNumber ?? null,
+      rejectedCount: rejectedBlocks.length,
+      visibleCount: visibleBlocks.length,
+      rejected: rejectedBlocks.map(b => ({ title: b.title?.slice(0, 40), synthDerived: !!(b as any).synthDerived })),
+    });
+  }
   const effectiveIndex = Math.min(selectedBlockIndex, Math.max(0, visibleBlocks.length - 1));
   const selectedBlock = visibleBlocks[effectiveIndex] ?? null;
 

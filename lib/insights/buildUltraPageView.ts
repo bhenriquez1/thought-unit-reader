@@ -80,6 +80,7 @@ export interface UltraConceptBlock {
   example?: string;          // science: concrete instance sentence
   memoryHook?: string;       // science: analogy/mnemonic sentence
   fictionCard?: FictionCard; // fiction: scene-state structured card
+  synthDerived?: boolean;    // true when block was built directly from synthesis concepts (no heuristic base)
 }
 
 export interface UltraPageViewStep {
