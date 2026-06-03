@@ -5,7 +5,7 @@ import { type NoteSubject, type UltraNote, inferSubject } from "@/lib/notelab/ul
 import type { UltraPageView } from "@/lib/insights/buildUltraPageView";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 
-export type CardType = "core" | "definition" | "rule" | "reason" | "trap" | "contrast" | "formula" | "memory" | "fill-blank";
+export type CardType = "core" | "definition" | "rule" | "reason" | "trap" | "contrast" | "formula" | "memory" | "fill-blank" | "cause-effect" | "application";
 export type CardDifficulty = "easy" | "medium" | "hard";
 export type SourceLabel = "right-panel" | "notelab";
 
@@ -190,11 +190,32 @@ export function buildRecallSetFromView(
     }
   });
 
-  // 5. Fill-in-blank and trap cards from OpenAI miniTestItems
+  // 5. Cause-effect card — from reasoningFlow A → B → C chain
+  const reasoningFlow = studyModel?.studyNotes?.reasoningFlow;
+  if (reasoningFlow && reasoningFlow.includes("→")) {
+    const nodes = reasoningFlow.split(/\s*→\s*/).map((n) => n.trim()).filter(Boolean);
+    if (nodes.length >= 2) {
+      cards.push(card(
+        "sn-flow", "cause-effect",
+        `Trace the cause-effect chain for "${topic}":`,
+        nodes.join(" → "),
+      ));
+    }
+  }
+
+  // 6. Application / checkpoint cards from miniTestItems (multiple-choice + short-answer)
   if (studyModel?.miniTestItems?.length) {
     for (const item of studyModel.miniTestItems) {
-      if (item.type !== "fill-in-the-blank" && item.type !== "trap") continue;
-      const cardType: CardType = item.type === "fill-in-the-blank" ? "fill-blank" : "trap";
+      let cardType: CardType;
+      if (item.type === "fill-in-the-blank") {
+        cardType = "fill-blank";
+      } else if (item.type === "trap") {
+        cardType = "trap";
+      } else if (item.type === "multiple-choice" || item.type === "short-answer") {
+        cardType = "application";
+      } else {
+        continue;
+      }
       cards.push(card(
         `synth-${item.type}-p${pageNumber}-${cards.length}`,
         cardType,

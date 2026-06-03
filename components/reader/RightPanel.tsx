@@ -20,7 +20,7 @@ import type { ConceptBlock, ReaderPageView } from "@/lib/reader/types";
 import { buildUltraPageView, type UltraPageView, type UltraConceptBlock } from "@/lib/insights/buildUltraPageView";
 import type { SRIModel, SRISignal, ReadingDepth } from "@/lib/insights/buildSRIModel";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
-import { buildUltraNote, saveUltraNote, inferSubject } from "@/lib/notelab/ultraNoteStore";
+import { buildNoteFromStudyModel, saveUltraNote, inferSubject } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, saveRecallSet, type RecallCard, type CardType } from "@/lib/recalllab/recallStore";
 import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
 
@@ -3518,66 +3518,9 @@ function GenerateNoteButton({
     });
     try {
       const topic = (view.title || `Page ${pageNumber}`).replace(/^ULTRA\s*[–—-]\s*/i, "").trim();
-      console.log("[NOTE:studyModel-present]", {
-        hasStudyModel: !!studyModel,
-        pageThesis: studyModel?.pageThesis?.slice(0, 60) ?? null,
-        studyNotesPresent: !!studyModel?.studyNotes,
-        studyNotesKeys: studyModel?.studyNotes
-          ? Object.keys(studyModel.studyNotes).filter(k => !!(studyModel.studyNotes as any)[k])
-          : [],
-        conceptBlockCount: studyModel?.conceptBlocks?.length ?? 0,
-        miniTestCount: studyModel?.miniTest?.length ?? 0,
-        externalLinkCount: studyModel?.externalStudyLinks?.length ?? 0,
-        videoQueryCount: studyModel?.relatedVideoQueries?.length ?? 0,
-        anchorCount: studyModel?.highlightAnchors?.length ?? 0,
-      });
-      // OpenAI is the sole source of truth — studyModel must be present (button disabled otherwise).
-      const coreIdea = studyModel?.pageThesis ?? "";
-      const concepts = (studyModel?.conceptBlocks ?? []).map((b, i) => ({
-        ordinal:        i + 1,
-        title:          b.title,
-        pattern:        b.pattern,
-        surgicalReason: b.mechanism ?? "",
-        trap:           b.trap ?? "",
-        rule:           b.rule ?? "",
-      }));
-      // Build professorNotes from studyModel.studyNotes — the authoritative source
-      const sn = studyModel?.studyNotes;
-      const professorNotes = sn ? {
-        whyItMatters:    sn.whyThisMatters  ?? undefined,
-        keyMechanism:    sn.keyMechanism    ?? undefined,
-        commonConfusion: sn.commonConfusion ?? undefined,
-        memoryAnchor:    sn.quickMemory     ?? undefined,
-        reasoningFlow:   sn.reasoningFlow   ?? undefined,
-        examSignal:      sn.examSignal      ?? undefined,
-      } : undefined;
-      console.log("[NOTE:payload]", {
-        topic,
-        coreIdea: coreIdea.slice(0, 80),
-        conceptCount: concepts.length,
-        hasProfessorNotes: !!professorNotes,
-        professorNotesKeys: professorNotes ? Object.keys(professorNotes).filter(k => !!(professorNotes as any)[k]) : [],
-        miniTestCount: studyModel?.miniTest?.length ?? 0,
-        externalLinkCount: studyModel?.externalStudyLinks?.length ?? 0,
-        videoCount: studyModel?.relatedVideoQueries?.length ?? 0,
-        anchorCount: studyModel?.highlightAnchors?.length ?? 0,
-      });
-      const note = buildUltraNote(
-        bookId,
-        pageNumber,
-        topic,
-        coreIdea,
-        concepts,
-        bookTitle,
-        professorNotes,
-        studyModel?.pageThesis ?? undefined,
-        studyModel?.miniTest?.length ? studyModel.miniTest : undefined,
-        undefined, // crossLinks — legacy, no longer populated
-        studyModel?.externalStudyLinks?.length ? studyModel.externalStudyLinks : undefined,
-        studyModel?.relatedVideoQueries?.length ? studyModel.relatedVideoQueries : undefined,
-        studyModel?.highlightAnchors?.length ? studyModel.highlightAnchors : undefined,
-      );
-      console.log("[ULTRA_NOTE_SAVE_START]", { id: note.id, page: note.pageNumber, topic: note.topic, bookId });
+      // PageBrain is the sole source of truth — build note directly from StudyModel.
+      const note = buildNoteFromStudyModel(studyModel!, { bookId, pageNumber, topic, bookTitle });
+      console.log("[ULTRA_NOTE_SAVE_START]", { id: note.id, page: note.pageNumber, topic: note.topic, sectionCount: note.sections?.length ?? 0, bookId });
       saveUltraNote(note);
       console.log("[ULTRA_NOTE_SAVE_SUCCESS]", { id: note.id, page: note.pageNumber, topic: note.topic });
       console.log("[NOTE:saved-id]", { id: note.id, page: note.pageNumber, topic: note.topic });
@@ -3608,7 +3551,7 @@ function GenerateNoteButton({
         transition: "all 0.18s",
       }}
     >
-      {saved ? "✓ Note saved to NoteLab" : !synthReady ? "⏳ Awaiting Stage 2…" : "⚡ Generate Ultra Note"}
+      {saved ? "✓ Note saved to NoteLab" : !synthReady ? "Notes unavailable — page has no extractable content" : "⚡ Save to NoteLab"}
     </button>
   );
 }
@@ -3746,10 +3689,10 @@ function GenerateStudySetButton({
       {saved
         ? "✓ Saved to Recall Lab"
         : noSynth
-        ? "⚠ Stage 2 synthesis not complete yet"
+        ? "Notes and recall cards are unavailable because this page does not contain enough extractable instructional content."
         : !synthReady
-        ? "⏳ Synthesis loading…"
-        : "🎯 Generate Study Set"}
+        ? "Recall cards unavailable — page has no extractable content"
+        : "🎯 Save to Recall Lab"}
     </button>
   );
 }
