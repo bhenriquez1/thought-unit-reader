@@ -48,11 +48,6 @@ function validSynthField(text: string | undefined | null, domain: string | null,
     console.log("[SYNTH_FIELD_REJECTED]", { field: fieldName ?? "unknown", reason: "vague-opener artifact", value: t.slice(0, 80) });
     return null;
   }
-  if (/[;,]\s*$/.test(t)) {
-    console.log(tag, "dangling punctuation →", t.slice(0, 60));
-    console.log("[SYNTH_FIELD_REJECTED]", { field: fieldName ?? "unknown", reason: "dangling punctuation", value: t.slice(0, 80) });
-    return null;
-  }
   return t;
 }
 import { useTeachingSynthesis } from "./useTeachingSynthesis";
@@ -3504,9 +3499,7 @@ function GenerateNoteButton({
   studyModel?: CurrentPageStudyModel | null;
 }) {
   const [saved, setSaved] = useState(false);
-  // Require Stage 2 completion: studyModel must exist AND have concept blocks populated.
-  // Stage 1 stubs have empty conceptBlocks — clicking before Stage 2 would produce empty notes.
-  const synthReady = !!studyModel && !!studyModel.pageThesis;
+  const synthReady = !!studyModel;
 
   function handleGenerate() {
     console.log("[ULTRA_NOTE_CLICK]", {
@@ -3638,8 +3631,7 @@ function GenerateStudySetButton({
   const [saved, setSaved] = useState(false);
   const [noSynth, setNoSynth] = useState(false);
 
-  // Same guard as GenerateNoteButton — require Stage 2 completion (conceptBlocks populated).
-  const synthReady = !!studyModel && !!studyModel.pageThesis;
+  const synthReady = !!studyModel;
 
   function handleGenerate() {
     console.log("[RECALL_CLICK]", {
@@ -3657,11 +3649,7 @@ function GenerateStudySetButton({
       synthReady,
     });
     if (!synthReady) {
-      console.warn("[RECALL:not-ready]", {
-        hasStudyModel: !!studyModel,
-        conceptBlocks: studyModel?.conceptBlocks?.length ?? 0,
-        reason: !studyModel ? "no studyModel" : "conceptBlocks empty — Stage 2 not complete",
-      });
+      console.warn("[RECALL:not-ready]", { reason: "no studyModel" });
       setNoSynth(true);
       setTimeout(() => setNoSynth(false), 2800);
       return;
