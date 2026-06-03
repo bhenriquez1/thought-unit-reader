@@ -20,8 +20,8 @@ import type { ConceptBlock, ReaderPageView } from "@/lib/reader/types";
 import { buildUltraPageView, type UltraPageView, type UltraConceptBlock } from "@/lib/insights/buildUltraPageView";
 import type { SRIModel, SRISignal, ReadingDepth } from "@/lib/insights/buildSRIModel";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
-import { buildNoteFromStudyModel, saveUltraNote, inferSubject } from "@/lib/notelab/ultraNoteStore";
-import { buildRecallSetFromView, saveRecallSet, type RecallCard, type CardType } from "@/lib/recalllab/recallStore";
+import { buildNoteFromStudyModel, saveUltraNote, getAllUltraNotes, inferSubject } from "@/lib/notelab/ultraNoteStore";
+import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, type RecallCard, type CardType } from "@/lib/recalllab/recallStore";
 import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
 
 // Validates a synthesis field before it can replace a heuristic field.
@@ -1008,8 +1008,13 @@ export function RightPanel({
   }, [isCurrentPageModel, pageModel, intelligence.storyV3]);
 
   const shadowRecall = useMemo((): ShadowRecallModel | null => {
-    if (!isCurrentPageModel || !pageModel) return null;
-    return buildShadowRecall(pageModel, intelligence.storyV3 ?? undefined);
+    if (!isCurrentPageModel || !pageModel) {
+      console.log("[SHADOW_RECALL_RENDER]", { visible: false, reason: !isCurrentPageModel ? "not current page model" : "no pageModel" });
+      return null;
+    }
+    const sr = buildShadowRecall(pageModel, intelligence.storyV3 ?? undefined);
+    console.log("[SHADOW_RECALL_RENDER]", { visible: true, pageLabel: sr.pageLabel });
+    return sr;
   }, [isCurrentPageModel, pageModel, intelligence.storyV3]);
 
   const [recallOpen, setRecallOpen] = useState(false);
@@ -1098,7 +1103,7 @@ export function RightPanel({
       <>
         <button
           onClick={() => setRecallOpen(true)}
-          className="fixed bottom-5 left-5 z-50 flex items-center gap-1.5 rounded-full border border-violet-500/30 bg-[#0b1020]/90 px-3.5 py-2 text-[11px] font-bold text-violet-300 shadow-lg backdrop-blur-sm hover:bg-violet-900/40 hover:border-violet-400/50 transition-all"
+          className="fixed bottom-5 left-5 z-[60] flex items-center gap-1.5 rounded-full border border-violet-500/30 bg-[#0b1020]/90 px-3.5 py-2 text-[11px] font-bold text-violet-300 shadow-lg backdrop-blur-sm hover:bg-violet-900/40 hover:border-violet-400/50 transition-all"
           title="Pre-Read Recall — attempt before reading"
         >
           🕶 <span className="hidden sm:inline">Shadow Recall</span>
@@ -3509,26 +3514,41 @@ function GenerateNoteButton({
       conceptBlockCount: studyModel?.conceptBlocks?.length ?? 0,
       miniTestItemCount: studyModel?.miniTestItems?.length ?? 0,
     });
-    console.log("[NOTE:click]", {
-      page: pageNumber,
-      synthReady,
-      hasStudyModel: !!studyModel,
-      conceptBlockCount: studyModel?.conceptBlocks?.length ?? 0,
-      miniTestItemCount: studyModel?.miniTestItems?.length ?? 0,
-    });
     try {
       const topic = (view.title || `Page ${pageNumber}`).replace(/^ULTRA\s*[–—-]\s*/i, "").trim();
+      if (!studyModel) { console.warn("[NOTE_SAVE_ERROR]", { reason: "studyModel null at save time" }); return; }
+
+      console.log("[NOTE_SAVE_START]", {
+        page: pageNumber, bookId, topic,
+        sectionCount: 0,
+        conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
+        hasThesis: !!studyModel.pageThesis,
+      });
+
       // PageBrain is the sole source of truth — build note directly from StudyModel.
-      const note = buildNoteFromStudyModel(studyModel!, { bookId, pageNumber, topic, bookTitle });
-      console.log("[ULTRA_NOTE_SAVE_START]", { id: note.id, page: note.pageNumber, topic: note.topic, sectionCount: note.sections?.length ?? 0, bookId });
+      const note = buildNoteFromStudyModel(studyModel, { bookId, pageNumber, topic, bookTitle });
+
       saveUltraNote(note);
-      console.log("[ULTRA_NOTE_SAVE_SUCCESS]", { id: note.id, page: note.pageNumber, topic: note.topic });
-      console.log("[NOTE:saved-id]", { id: note.id, page: note.pageNumber, topic: note.topic });
+
+      // Verify the note actually persisted before navigating.
+      const persisted = getAllUltraNotes().find((n) => n.id === note.id);
+      if (!persisted) {
+        console.error("[NOTE_SAVE_ERROR]", { reason: "note not found in storage after save", id: note.id, storageKey: "ultraNotes_v1" });
+        return;
+      }
+
+      console.log("[NOTE_SAVE_SUCCESS]", {
+        id: note.id, page: note.pageNumber, topic: note.topic,
+        sectionCount: note.sections?.length ?? 0,
+        storageKey: "ultraNotes_v1",
+        bookId,
+      });
+
       setSaved(true);
       onNoteSaved?.();
       setTimeout(() => setSaved(false), 2200);
     } catch (err: any) {
-      console.error("[NOTE:error]", err?.message ?? String(err), err);
+      console.error("[NOTE_SAVE_ERROR]", { reason: err?.message ?? String(err) });
     }
   }
 
@@ -3584,68 +3604,54 @@ function GenerateStudySetButton({
       miniTestItemCount: studyModel?.miniTestItems?.length ?? 0,
       synthReady,
     });
-    console.log("[RECALL:click]", {
-      page: pageNumber,
-      hasStudyModel: !!studyModel,
-      conceptBlockCount: studyModel?.conceptBlocks?.length ?? 0,
-      miniTestItemCount: studyModel?.miniTestItems?.length ?? 0,
-      synthReady,
-    });
     if (!synthReady) {
-      console.warn("[RECALL:not-ready]", { reason: "no studyModel" });
+      console.warn("[RECALL_SAVE_ERROR]", { reason: "no studyModel" });
       setNoSynth(true);
       setTimeout(() => setNoSynth(false), 2800);
       return;
     }
     try {
-      console.log("[RECALL:studyModel-present]", {
-        hasStudyModel: true,
-        pageThesis: studyModel.pageThesis?.slice(0, 60),
-        studyNotesKeys: Object.keys(studyModel.studyNotes).filter(k => !!(studyModel.studyNotes as any)[k]),
-        conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
-        miniTestCount: studyModel.miniTest?.length ?? 0,
-        miniTestItemCount: studyModel.miniTestItems?.length ?? 0,
-      });
-      console.log("[RECALL_BUILD_START]", {
-        bookId,
-        page: pageNumber,
+      console.log("[RECALL_SAVE_START]", {
+        bookId, page: pageNumber,
+        hasThesis: !!studyModel.pageThesis,
         conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
         miniTestItemCount: studyModel.miniTestItems?.length ?? 0,
-        hasPageThesis: !!studyModel.pageThesis,
+        storageKey: "recallSets_v1",
       });
+
       const set = buildRecallSetFromView(view, bookId, pageNumber, {
         bookTitle,
         sourceLabel: "right-panel",
         studyModel,
       });
+
+      saveRecallSet(set);
+
+      // Verify persistence before navigating.
+      const persisted = getAllRecallSets().find((s) => s.id === set.id);
+      if (!persisted) {
+        console.error("[RECALL_SAVE_ERROR]", { reason: "set not found in storage after save", id: set.id, storageKey: "recallSets_v1" });
+        return;
+      }
+
       const cardTypes = set.cards.reduce<Record<string, number>>((acc, c) => {
         acc[c.type] = (acc[c.type] ?? 0) + 1;
         return acc;
       }, {});
-      console.log("[RECALL_BUILD_RESULT]", {
-        setId: set.id,
+      console.log("[RECALL_SAVE_SUCCESS]", {
+        id: set.id, page: set.pageNumber,
         cardCount: set.cards.length,
         cardTypes,
         topic: set.topic,
+        storageKey: "recallSets_v1",
+        bookId,
       });
-      console.log("[RECALL:payload]", {
-        setId: set.id,
-        topic: set.topic,
-        totalCards: set.cards.length,
-        studyNoteCards: set.cards.filter((c) => c.id.startsWith("sn-")).length,
-        miniTestCards: set.cards.filter((c) => c.id.startsWith("synth-q")).length,
-        conceptCards: set.cards.filter((c) => /^b\d/.test(c.id)).length,
-        cardIds: set.cards.map((c) => c.id),
-      });
-      console.log("[RECALL_SAVE_START]", { id: set.id, page: set.pageNumber, cardCount: set.cards.length, bookId });
-      saveRecallSet(set);
-      console.log("[RECALL_SAVE_SUCCESS]", { id: set.id, page: set.pageNumber, cardCount: set.cards.length });
-      console.log("[RECALL:saved-id]", { id: set.id, page: set.pageNumber, cardCount: set.cards.length });
+
       setSaved(true);
       onStudySetGenerated?.(set.id);
       setTimeout(() => setSaved(false), 2200);
     } catch (err: any) {
-      console.error("[RECALL:error]", err?.message ?? String(err), err);
+      console.error("[RECALL_SAVE_ERROR]", { reason: err?.message ?? String(err) });
     }
   }
 
