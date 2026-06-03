@@ -2906,10 +2906,12 @@ export default function ThoughtUnitReader() {
           count:  safeHighlightAnchors.length,
           types:  safeHighlightAnchors.map(a => a.anchorType),
         });
-        console.log("[LEFT_PANEL_RECEIVED_RP_ANCHORS]", {
+        console.log("[LEFT_PANEL_RENDER]", {
           page:   currentPage,
           count:  safeHighlightAnchors.length,
+          kinds:  safeHighlightAnchors.map(a => a.anchorType),
           texts:  safeHighlightAnchors.map(a => a.text.slice(0, 60)),
+          source: "right_panel_study_model",
         });
       } else {
         console.log("[OVERLAY_EMPTY_BECAUSE_NO_STUDYMODEL]", {

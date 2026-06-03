@@ -24,8 +24,11 @@ function detectPageRole(pageText: string, heading: string, formulaCount: number,
   const lines = pageText.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   const lineGroups = lines.length;
 
-  // Empty / near-empty
-  if (!text.trim() || text.trim().length < 120) return "image_scan_heavy";
+  // Empty / near-empty — only fire image_scan_heavy when the ORIGINAL (pre-strip)
+  // page text is also short. Pages with >500 chars of raw text always have enough
+  // instructional content to run synthesis; figures/tables/formulas coexist with text.
+  const originalLength = pageText.trim().length;
+  if ((!text.trim() || text.trim().length < 120) && originalLength < 500) return "image_scan_heavy";
 
   // Copyright / legal frontmatter — only when no substantive instructional content is present.
   // OpenStax and similar OER books embed copyright/contributor lines in page footers, so we

@@ -542,8 +542,22 @@ export function useActivePageIntelligence({
 
   const limitedEvidence =
     classification.confidence < 0.35 ||
-    (ctx.pageText || "").trim().length < 120 ||
+    (ctx.pageText || "").trim().length < 500 ||
     ["cover", "contents", "chapter_opener", "section_opener", "copyright_frontmatter", "image_scan_heavy"].includes(signals.pageRole || "");
+
+  // [PAGE_CLASSIFY] diagnostic — logs classification reason for every page so
+  // image-heavy / copyright false-positives are immediately visible in the console.
+  console.log("[PAGE_CLASSIFY]", {
+    page:       pageNumber,
+    textLength: (ctx.pageText || "").trim().length,
+    pageRole:   signals.pageRole ?? "unknown",
+    shouldRenderFullPanel: normResult?.shouldRenderFullPanel ?? null,
+    reason:     !normResult?.shouldRenderFullPanel
+      ? (normResult?.classificationReason ?? "shouldRenderFullPanel=false")
+      : signals.pageRole && signals.pageRole !== "regular_teaching" && signals.pageRole !== "table_formula"
+        ? `pageRole=${signals.pageRole}`
+        : "content_page",
+  });
 
   const highlightNeighborhoods: HighlightNeighborhood[] = useMemo(() => {
     if (!pageModel || !normResult?.shouldRenderFullPanel) return [];

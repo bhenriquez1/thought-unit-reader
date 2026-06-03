@@ -62,7 +62,7 @@ function buildAnchorCandidates(
 
   // review_checkpoint pages must show zero AI highlights — questions should not be highlighted.
   if (pageType === "review_checkpoint") {
-    console.log("[ANCHOR_REJECTED_TITLE_OR_HEADER]", {
+    console.log("[ANCHOR_REJECTED_HEADER]", {
       rejectedCount: "all",
       reason: "pageType=review_checkpoint — no highlights on review/checkpoint pages",
     });
@@ -98,7 +98,7 @@ function buildAnchorCandidates(
     return true;
   });
   if (headerRejected.length > 0) {
-    console.log("[ANCHOR_REJECTED_TITLE_OR_HEADER]", {
+    console.log("[ANCHOR_REJECTED_HEADER]", {
       rejectedCount: headerRejected.length,
       rejected: headerRejected,
     });
@@ -117,17 +117,12 @@ function buildAnchorCandidates(
   // Cap candidates — grounding + semantic arbitration narrow to the final 3–5.
   const candidates = deduped.slice(0, 8);
 
-  console.log("[STUDYMODEL_ANCHORS]", {
+  console.log("[ANCHORS_FROM_RIGHT_PANEL]", {
     pageType,
-    count: candidates.length,
+    count:        candidates.length,
     aiAnchorCount: aiAnchors.length,
-    texts: candidates.map((a) => a.text.slice(0, 60)),
-    sourceFields: candidates.map((a) => a.anchorType),
-  });
-  console.log("[LEFT_PANEL_ANCHORS_FROM_RP]", {
-    pageType,
-    count:   candidates.length,
-    anchors: candidates.map((a) => ({ type: a.anchorType, text: a.text.slice(0, 80) })),
+    texts:        candidates.map((a) => a.text.slice(0, 80)),
+    kinds:        candidates.map((a) => a.anchorType),
   });
 
   return candidates;
@@ -171,6 +166,18 @@ export function buildStudyModel(
   // field becomes a PDF highlight — the visual pathway mirrors the right-panel brain.
   const cleanThesis = cleanThesisLine(thesis) ?? thesis;
   const highlightAnchors = buildAnchorCandidates(cleanThesis, synth, conceptBlocks);
+
+  console.log("[RIGHT_MODEL_READY]", {
+    page,
+    fields: {
+      pageThesis:       cleanThesis?.slice(0, 80),
+      whyThisMatters:   (synth.whyItMatters   as string | null)?.slice(0, 60) ?? null,
+      keyMechanism:     (synth.keyMechanism   as string | null)?.slice(0, 60) ?? null,
+      commonConfusion:  (synth.commonConfusion as string | null)?.slice(0, 60) ?? null,
+      conceptCount:     conceptBlocks.length,
+      anchorCount:      highlightAnchors.length,
+    },
+  });
 
   return {
     page,

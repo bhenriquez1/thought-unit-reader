@@ -153,14 +153,32 @@ export function cleanThesisLine(raw: string | undefined | null): string | undefi
 const KEYWORD_HEADER_RE =
   /\b(?:CHAPTER|UNIT|SECTION|MODULE|PART|APPENDIX|LESSON)\b\s*\d/i;
 
+// Section-number heading: "2.1 Limits of Sequences", "3.1.2 The Chain Rule"
+// These are section titles — the heading itself should not be a highlight anchor;
+// the body text below it should be.
+const SECTION_NUMBER_HEADING_RE = /^\d+\.\d+(\.\d+)?\s+[A-Z]/;
+
+// Concept/Example/Definition/Theorem label lines: "Concept 2.2", "Example 3.1", "Figure 4.2"
+// These are structural labels, never body evidence.
+const STRUCTURAL_LABEL_RE =
+  /^(?:Concept|Example|Definition|Theorem|Lemma|Corollary|Proposition|Figure|Table|Box|Exhibit|Case|Step)\s+\d+/i;
+
+// Copyright / footer fragment that somehow survived earlier stripping
+const FOOTER_LINE_RE =
+  /all rights reserved|copyright\s*©?|\bisbn\b|published by|printed in|access for free|openstax\.org|cengage\.|mcgraw.?hill|pearson|www\.\S+\.\w{2,}/i;
+
 /**
  * True when a candidate line/sentence looks like a running header, chapter/unit
- * title, page-number artifact, or title-only line rather than body prose.
+ * title, section number, structural label, page-number artifact, footer line, or
+ * title-only line rather than body prose.
  *
  * Heuristics (any one triggers):
  *  - explicit CHAPTER/UNIT/SECTION + number marker
+ *  - section number heading ("2.1 Limits of Sequences")
+ *  - structural label ("Concept 2.2", "Example 3.1", "Figure 4.2")
+ *  - footer/copyright fragment
  *  - title-case phrase with an embedded standalone page number ("Title Words 29 Body")
- *  - very short line dominated by Title-Case words with no sentence punctuation (title-only)
+ *  - very short line dominated by Title-Case words with no sentence punctuation
  *  - line is mostly digits / a bare page number
  */
 export function isLikelyHeaderLine(text: string): boolean {
@@ -168,6 +186,9 @@ export function isLikelyHeaderLine(text: string): boolean {
   if (!t) return true;
 
   if (KEYWORD_HEADER_RE.test(t)) return true;
+  if (SECTION_NUMBER_HEADING_RE.test(t)) return true;
+  if (STRUCTURAL_LABEL_RE.test(t)) return true;
+  if (FOOTER_LINE_RE.test(t)) return true;
 
   // Title phrase + embedded page number + body start, e.g. "Cellular Respiration 412 During..."
   if (/^(?:(?:[A-Z][A-Za-z'’-]+|of|the|and|in|on|to|for|with|a|an|&)\s+){1,9}\d{1,4}\s+[A-Z]/.test(t)) {
