@@ -49,7 +49,7 @@ import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuide
 import { groundHighlightAnchors } from "@/lib/highlights/groundHighlightAnchors";
 import { sanitizeHighlightAnchors } from "@/lib/highlights/sanitizeHighlightAnchors";
 import type { SynthHighlightAnchor } from "@/lib/insights/synthesizeTeachingOutput";
-import { buildUltraNote, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
+import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, saveRecallSet } from "@/lib/recalllab/recallStore";
 
 // Cognitive Engine Components (Surgeon View 2.0)
@@ -1089,30 +1089,18 @@ export default function ThoughtUnitReader() {
   // Programmatically save current page to NoteLab (used by Focus Cycle session summary)
   const sendCurrentPageToNoteLab = useCallback(() => {
     const sm = currentPageStudyModel;
-    if (!sm || (sm.conceptBlocks?.length ?? 0) === 0) return;
+    if (!sm) return;
     const topic = `Page ${currentPage}`;
-    const coreIdea = sm.pageThesis ?? "";
-    const concepts = (sm.conceptBlocks ?? []).map((b, i) => ({
-      ordinal: i + 1, title: b.title, pattern: b.pattern,
-      surgicalReason: b.mechanism ?? "", trap: b.trap ?? "", rule: b.rule ?? "",
-    }));
-    const sn = sm.studyNotes;
-    const professorNotes = sn ? {
-      whyItMatters: sn.whyThisMatters ?? undefined, keyMechanism: sn.keyMechanism ?? undefined,
-      commonConfusion: sn.commonConfusion ?? undefined, memoryAnchor: sn.quickMemory ?? undefined,
-      reasoningFlow: sn.reasoningFlow ?? undefined, examSignal: sn.examSignal ?? undefined,
-    } : undefined;
-    const note = buildUltraNote(
-      bookId, currentPage, topic, coreIdea, concepts,
-      uploadedFile?.name, professorNotes, sm.pageThesis ?? undefined,
-      sm.miniTest?.length ? sm.miniTest : undefined, undefined,
-      sm.externalStudyLinks?.length ? sm.externalStudyLinks : undefined,
-      sm.relatedVideoQueries?.length ? sm.relatedVideoQueries : undefined,
-      sm.highlightAnchors?.length ? sm.highlightAnchors : undefined,
-    );
-    saveUltraNote(note);
-    setSessionNotesCount((n) => n + 1);
-    setNoteLabRefreshKey((k) => k + 1);
+    console.log("[NOTE_SAVE_START]", { page: currentPage, bookId, topic, source: "focus-cycle", hasThesis: !!sm.pageThesis });
+    try {
+      const note = buildNoteFromStudyModel(sm, { bookId, pageNumber: currentPage, topic, bookTitle: uploadedFile?.name });
+      saveUltraNote(note);
+      console.log("[NOTE_SAVE_SUCCESS]", { id: note.id, page: note.pageNumber, sectionCount: note.sections?.length ?? 0, source: "focus-cycle", storageKey: "ultraNotes_v1" });
+      setSessionNotesCount((n) => n + 1);
+      setNoteLabRefreshKey((k) => k + 1);
+    } catch (err: any) {
+      console.error("[NOTE_SAVE_ERROR]", { reason: err?.message ?? String(err), source: "focus-cycle" });
+    }
   }, [currentPageStudyModel, currentPage, bookId, uploadedFile]);
 
   // Programmatically save current page to Recall Lab (used by Focus Cycle session summary)
@@ -3130,13 +3118,15 @@ export default function ThoughtUnitReader() {
                 resolveEvidenceId={resolveEvidenceId}
                 focusedEvidenceId={focusedEvidenceId}
                 onNoteSaved={() => {
-                  console.log("[NOTELAB_CALLBACK]", { bookId, page: currentPage });
+                  // Called by GenerateNoteButton only after save is verified — navigate is safe.
+                  console.log("[NAV_AFTER_SAVE]", { destination: "notelab", bookId, page: currentPage, storageKey: "ultraNotes_v1" });
                   setSessionNotesCount((n) => n + 1);
                   setNoteLabRefreshKey((k) => k + 1);
                   trySwitchShellTab("notelab", "notelab");
                 }}
                 onStudySetGenerated={(setId) => {
-                  console.log("[RECALLLAB_CALLBACK]", { setId, bookId, page: currentPage });
+                  // Called by GenerateStudySetButton only after save is verified — navigate is safe.
+                  console.log("[NAV_AFTER_SAVE]", { destination: "study", setId, bookId, page: currentPage, storageKey: "recallSets_v1" });
                   setSessionCardsCount((n) => n + 1);
                   setLastRecallSetId(setId);
                   setRecallLabRefreshKey((k) => k + 1);
