@@ -59,6 +59,82 @@ import { useTeachingSynthesis } from "./useTeachingSynthesis";
 import { buildStudyModel, type CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import { cleanThesisLine } from "@/lib/insights/cleanActivePageText";
 
+// ---------------------------------------------------------------------------
+// Chapter / Unit / Section overview panel — shown when the page is a chapter
+// opener or unit opener without enough body text for full synthesis.
+// ---------------------------------------------------------------------------
+
+function ChapterPreviewPanel({ ctx, pageRole }: { ctx: ActivePageContext; pageRole: string }) {
+  const chapterTitle = ctx.chapterTitle ?? ctx.sectionTitle ?? null;
+  const displayTitle = chapterTitle ?? (pageRole === "unit_opener" ? "Unit Overview" : "Chapter Overview");
+
+  const pageText = ctx.pageText ?? "";
+  // Extract first 2 non-trivial sentences as the overview blurb
+  const rawSentences = pageText.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 30);
+  const blurb = rawSentences.slice(0, 2).join(" ").trim();
+
+  // Extract recurring capitalized words as key concept candidates
+  const tokenRe = /\b([A-Z][a-z]{3,})\b/g;
+  const freqMap = new Map<string, number>();
+  let m: RegExpExecArray | null;
+  const STOP = new Set(["This","These","That","When","Where","What","They","There","Their","After","About","Some","More","Most","With","From","Into","Over","Each"]);
+  while ((m = tokenRe.exec(pageText)) !== null) {
+    const w = m[1];
+    if (!STOP.has(w)) freqMap.set(w, (freqMap.get(w) ?? 0) + 1);
+  }
+  const keyConcepts = [...freqMap.entries()]
+    .filter(([, n]) => n >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([w]) => w);
+
+  const roleLabel =
+    pageRole === "chapter_opener" ? "Chapter Overview" :
+    pageRole === "unit_opener"    ? "Unit Overview"    :
+    pageRole === "section_opener" ? "Section Overview" : "Overview";
+
+  return (
+    <div className="rounded-2xl border border-amber-400/20 bg-[#0d1520] p-5 space-y-4">
+      {/* Header */}
+      <div className="flex items-start gap-3">
+        <span className="text-2xl shrink-0 mt-0.5">📖</span>
+        <div>
+          <div className="text-[9px] font-bold uppercase tracking-widest text-amber-400/60 mb-0.5">{roleLabel}</div>
+          <p className="text-[14px] font-semibold text-white/90 leading-snug">{displayTitle}</p>
+        </div>
+      </div>
+
+      {/* Overview blurb */}
+      {blurb && (
+        <div>
+          <div className="text-[9px] font-bold uppercase tracking-widest text-white/25 mb-1.5">Overview</div>
+          <p className="text-[12.5px] text-white/60 leading-[1.65] line-clamp-4">{blurb}</p>
+        </div>
+      )}
+
+      {/* Key concepts */}
+      {keyConcepts.length > 0 && (
+        <div>
+          <div className="text-[9px] font-bold uppercase tracking-widest text-white/25 mb-2">Key Concepts Detected</div>
+          <div className="flex flex-wrap gap-1.5">
+            {keyConcepts.map(c => (
+              <span key={c} className="px-2.5 py-0.5 rounded-full bg-indigo-500/12 border border-indigo-400/20 text-[11px] text-indigo-200/65 capitalize">{c}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Navigation hint */}
+      <div className="pt-3 border-t border-white/6">
+        <p className="text-[11px] text-white/28 italic leading-[1.5]">
+          Limited extraction available — this is a {roleLabel.toLowerCase()} page.
+          Navigate to the next content page to generate full study notes, highlights, and recall cards.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function structuralPageIcon(role: string): string {
   switch (role) {
     case "cover":                 return "📕";
@@ -1044,30 +1120,65 @@ export function RightPanel({
 
         {/* ── NON-INSTRUCTIONAL PAGE STATE ────────────────────────── */}
         {pageIsNonInstructional && (
-          <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-5 flex flex-col gap-2">
-            <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
-              {inferUnavailablePageLabel(normResult?.pageKind)}
+          <div className="rounded-2xl border border-white/8 bg-[#071224] px-5 py-6 space-y-2.5">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🚫</span>
+              <div className="text-[11px] font-bold uppercase tracking-widest text-white/35">
+                {inferUnavailablePageLabel(normResult?.pageKind)}
+              </div>
             </div>
-            <div className="text-sm text-slate-500">
-              Structured page intelligence is not available on this page.
-            </div>
+            <p className="text-[12.5px] text-white/45 leading-[1.6]">
+              Instructional synthesis unavailable for this page.
+            </p>
+            <p className="text-[12px] text-white/28 italic">
+              Navigate to a content-rich textbook page to generate study notes, highlights, and recall cards.
+            </p>
           </div>
         )}
 
-        {isStructuralPage && isCurrentPageModel && (
-          <div className="rounded-2xl border border-white/8 bg-[#071224] px-4 py-8 text-center">
-            <div className="text-3xl mb-3">{structuralPageIcon(intelligence.pageRole ?? "")}</div>
-            <p className="text-[13px] font-semibold text-white/50 mb-1">
-              {structuralPageLabel(intelligence.pageRole ?? "")}
-            </p>
-            <p className="text-[12px] text-white/25 italic">
-              Navigate to a content page to generate study notes, highlights, and recall cards.
-            </p>
-          </div>
-        )}
+        {isStructuralPage && isCurrentPageModel && (() => {
+          const role = intelligence.pageRole ?? "";
+          const isOverviewRole = role === "unit_opener" || role === "section_opener";
+          const isFrontMatterRole = ["cover","title_page","dedication","acknowledgements","preface","about_authors","copyright_frontmatter","contents","glossary","index","bibliography","appendix"].includes(role);
+
+          if (isOverviewRole) {
+            return <ChapterPreviewPanel ctx={ctx} pageRole={role} />;
+          }
+
+          if (isFrontMatterRole) {
+            return (
+              <div className="rounded-2xl border border-white/8 bg-[#071224] px-5 py-7 space-y-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-2xl">{structuralPageIcon(role)}</span>
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-white/30">Structural Page</div>
+                    <p className="text-[13px] font-semibold text-white/55">{structuralPageLabel(role)}</p>
+                  </div>
+                </div>
+                <p className="text-[12px] text-white/30 italic pl-0.5">
+                  Instructional synthesis unavailable for this page type.
+                  Navigate to a content-rich textbook page to generate study notes, highlights, and recall cards.
+                </p>
+              </div>
+            );
+          }
+
+          return (
+            <div className="rounded-2xl border border-white/8 bg-[#071224] px-4 py-8 text-center">
+              <div className="text-3xl mb-3">{structuralPageIcon(role)}</div>
+              <p className="text-[13px] font-semibold text-white/50 mb-1">{structuralPageLabel(role)}</p>
+              <p className="text-[12px] text-white/25 italic">Navigate to a content page to generate study notes, highlights, and recall cards.</p>
+            </div>
+          );
+        })()}
 
         {/* Loading / gating state */}
-        {!pageIsNonInstructional && !isStructuralPage && renderTruthFallback(pageTruth?.reason || "loading", intelligence.status, !isCurrentPageModel, loadingPhase)}
+        {/* ── CHAPTER OPENER: show preview panel when synthesis has not produced results ── */}
+        {intelligence.pageRole === "chapter_opener" && isCurrentPageModel && !showUltraView && (
+          <ChapterPreviewPanel ctx={ctx} pageRole="chapter_opener" />
+        )}
+
+        {!pageIsNonInstructional && !isStructuralPage && intelligence.pageRole !== "chapter_opener" && renderTruthFallback(pageTruth?.reason || "loading", intelligence.status, !isCurrentPageModel, loadingPhase)}
 
         {intelligence.status === "error" && (
           <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">

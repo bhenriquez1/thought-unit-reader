@@ -117,6 +117,12 @@ Output JSON only. No markdown. Schema:
 }`;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  // Diagnostic: confirm the env variable name is correct in Render / .env.local
+  console.log("[CLAUDE_ENV_CHECK]", {
+    ANTHROPIC_API_KEY_loaded: Boolean(process.env.ANTHROPIC_API_KEY),
+    note: "If false — add/rename the env variable to ANTHROPIC_API_KEY in Render and redeploy",
+  });
+
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "Method Not Allowed" });
