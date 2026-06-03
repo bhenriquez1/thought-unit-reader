@@ -1,5 +1,8 @@
 // lib/notelab/ultraNoteStore.ts
 // localStorage-backed store for Ultra Notes generated from the right panel.
+// Primary entry point: buildNoteFromStudyModel — consumes PageBrain directly.
+
+import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 
 export type NoteSubject = "Biology" | "Calculus" | "Dental / Clinical" | "General Notes";
 
@@ -39,6 +42,12 @@ export interface ProfessorNotes {
   examSignal?: string;
 }
 
+/** One named section in a PageBrain-sourced structured note */
+export interface NoteSection {
+  label: string;
+  content: string;
+}
+
 export interface UltraNote {
   id: string;
   bookId: string;
@@ -50,6 +59,8 @@ export interface UltraNote {
   memoryShortcuts: string[];
   subject: NoteSubject;
   createdAt: number;
+  /** Structured PageBrain sections — present when note was built via buildNoteFromStudyModel */
+  sections?: NoteSection[];
   /** OpenAI-generated professor teaching notes — present when synthesis resolved */
   professorNotes?: ProfessorNotes;
   /** OpenAI page thesis — authoritative one-sentence governing idea */
@@ -164,38 +175,169 @@ export function buildUltraNote(
   };
 }
 
+/**
+ * Primary NoteLab entry point — builds a structured note directly from PageBrain.
+ * Produces 6 explicit sections matching the cognitive architecture:
+ *   1. Page Thesis  2. Key Mechanisms  3. Definitions
+ *   4. Confusions & Traps  5. Exam Signals  6. Summary
+ *
+ * All content comes from the same StudyModel that powers the right panel and
+ * left-panel highlights — NoteLab is a different view of the same brain.
+ */
+export function buildNoteFromStudyModel(
+  model: CurrentPageStudyModel,
+  opts: { bookId: string; pageNumber: number; topic: string; bookTitle?: string },
+): UltraNote {
+  const { bookId, pageNumber, topic, bookTitle } = opts;
+  const sn = model.studyNotes;
+  const sections: NoteSection[] = [];
+
+  // 1. Page Thesis — governing idea for this page
+  if (model.pageThesis) {
+    sections.push({ label: "Page Thesis", content: model.pageThesis });
+  }
+
+  // 2. Key Mechanisms — studyNotes.keyMechanism + per-concept mechanism fields
+  const mechanisms = [
+    sn.keyMechanism,
+    ...model.conceptBlocks.map((b) => b.mechanism).filter(Boolean),
+  ].filter((v): v is string => !!v);
+  if (mechanisms.length) {
+    sections.push({ label: "Key Mechanisms", content: mechanisms.join("  ·  ") });
+  }
+
+  // 3. Definitions — one per concept block (title: pattern)
+  const defs = model.conceptBlocks
+    .filter((b) => b.pattern)
+    .map((b) => `${b.title}: ${b.pattern}`);
+  if (defs.length) {
+    sections.push({ label: "Definitions", content: defs.join("\n") });
+  }
+
+  // 4. Confusions & Traps — studyNotes.commonConfusion + per-concept traps
+  const traps = [
+    sn.commonConfusion,
+    ...model.conceptBlocks.map((b) => b.trap).filter(Boolean),
+  ].filter((v): v is string => !!v);
+  if (traps.length) {
+    sections.push({ label: "Confusions & Traps", content: traps.join("  ·  ") });
+  }
+
+  // 5. Exam Signals — examSignal + concept rules
+  const signals = [
+    sn.examSignal,
+    ...model.conceptBlocks.map((b) => b.rule).filter(Boolean),
+  ].filter((v): v is string => !!v);
+  if (signals.length) {
+    sections.push({ label: "Exam Signals", content: signals.join("  ·  ") });
+  }
+
+  // 6. Summary — student-friendly synthesis from thesis + why it matters + quick memory
+  const summaryParts = [model.pageThesis, sn.whyThisMatters, sn.quickMemory].filter(Boolean);
+  if (summaryParts.length) {
+    sections.push({ label: "Summary", content: summaryParts.slice(0, 2).join(" ") });
+  }
+
+  const concepts: UltraNoteConcept[] = model.conceptBlocks.map((b, i) => ({
+    ordinal:        i + 1,
+    title:          b.title,
+    pattern:        b.pattern,
+    surgicalReason: b.mechanism ?? "",
+    trap:           b.trap ?? "",
+    rule:           b.rule ?? "",
+  }));
+
+  const memoryShortcuts = concepts
+    .filter((c) => c.rule && c.rule.length > 10)
+    .map((c) => `${c.title}: ${c.rule}`)
+    .slice(0, 3);
+
+  const professorNotes: ProfessorNotes = {
+    whyItMatters:    sn.whyThisMatters  ?? undefined,
+    keyMechanism:    sn.keyMechanism    ?? undefined,
+    commonConfusion: sn.commonConfusion ?? undefined,
+    memoryAnchor:    sn.quickMemory     ?? undefined,
+    reasoningFlow:   sn.reasoningFlow   ?? undefined,
+    examSignal:      sn.examSignal      ?? undefined,
+  };
+
+  console.log("[NOTE_FROM_PAGEBRAIN]", {
+    page: pageNumber,
+    sectionCount: sections.length,
+    sectionLabels: sections.map((s) => s.label),
+    conceptCount: concepts.length,
+    hasReasoningFlow: !!sn.reasoningFlow,
+  });
+
+  return {
+    id:               `note-${bookId}-p${pageNumber}-${Date.now()}`,
+    bookId,
+    bookTitle:        bookTitle || undefined,
+    pageNumber,
+    topic,
+    coreIdea:         model.pageThesis,
+    concepts,
+    memoryShortcuts,
+    sections,
+    subject:          inferSubject(bookId),
+    createdAt:        Date.now(),
+    professorNotes,
+    pageThesis:       model.pageThesis,
+    miniTest:         model.miniTest?.length           ? model.miniTest           : undefined,
+    externalStudyLinks: model.externalStudyLinks?.length ? model.externalStudyLinks : undefined,
+    relatedVideoQueries: model.relatedVideoQueries?.length ? model.relatedVideoQueries : undefined,
+    highlightAnchors: model.highlightAnchors?.length   ? model.highlightAnchors   : undefined,
+  };
+}
+
 export function formatUltraNoteText(note: UltraNote): string {
   const lines: string[] = [
-    `⚡ ULTRA NOTE — ${note.topic} (Page ${note.pageNumber})`,
-    ``,
-    `🎯 CORE IDEA`,
-    note.coreIdea,
+    `⚡ STUDY NOTE — ${note.topic} (Page ${note.pageNumber})`,
     ``,
   ];
 
-  // Professor notes — OpenAI synthesis output (when available)
-  if (note.professorNotes) {
-    const pn = note.professorNotes;
-    if (pn.whyItMatters)    lines.push(`💡 WHY THIS MATTERS\n  ${pn.whyItMatters}`, ``);
-    if (pn.keyMechanism)    lines.push(`⚙️ KEY MECHANISM\n  ${pn.keyMechanism}`, ``);
-    if (pn.commonConfusion) lines.push(`⚠️ COMMON CONFUSION\n  ${pn.commonConfusion}`, ``);
-    if (pn.memoryAnchor)    lines.push(`🧠 MEMORY ANCHOR\n  ${pn.memoryAnchor}`, ``);
-    if (pn.reasoningFlow)   lines.push(`🔗 REASONING FLOW\n  ${pn.reasoningFlow}`, ``);
-    if (pn.examSignal)      lines.push(`🎓 EXAM SIGNAL\n  ${pn.examSignal}`, ``);
+  // PageBrain structured sections (present on notes built via buildNoteFromStudyModel)
+  if (note.sections?.length) {
+    const SECTION_ICONS: Record<string, string> = {
+      "Page Thesis":       "🎯",
+      "Key Mechanisms":    "⚙️",
+      "Definitions":       "📖",
+      "Confusions & Traps": "⚠️",
+      "Exam Signals":      "🎓",
+      "Summary":           "📝",
+    };
+    for (const sec of note.sections) {
+      const icon = SECTION_ICONS[sec.label] ?? "•";
+      lines.push(`${icon} ${sec.label.toUpperCase()}`);
+      lines.push(`  ${sec.content.replace(/\n/g, "\n  ")}`);
+      lines.push(``);
+    }
+  } else {
+    // Legacy format — notes saved before PageBrain sections were introduced
+    lines.push(`🎯 CORE IDEA`, note.coreIdea, ``);
+    if (note.professorNotes) {
+      const pn = note.professorNotes;
+      if (pn.whyItMatters)    lines.push(`💡 WHY THIS MATTERS\n  ${pn.whyItMatters}`, ``);
+      if (pn.keyMechanism)    lines.push(`⚙️ KEY MECHANISM\n  ${pn.keyMechanism}`, ``);
+      if (pn.commonConfusion) lines.push(`⚠️ COMMON CONFUSION\n  ${pn.commonConfusion}`, ``);
+      if (pn.memoryAnchor)    lines.push(`🧠 MEMORY ANCHOR\n  ${pn.memoryAnchor}`, ``);
+      if (pn.reasoningFlow)   lines.push(`🔗 REASONING FLOW\n  ${pn.reasoningFlow}`, ``);
+      if (pn.examSignal)      lines.push(`🎓 EXAM SIGNAL\n  ${pn.examSignal}`, ``);
+    }
+    note.concepts.forEach((c) => {
+      lines.push(`🧩 ${c.ordinal}️⃣ ${c.title}`);
+      if (c.pattern)        lines.push(`P — Pattern\n  ${c.pattern}`);
+      if (c.surgicalReason) lines.push(`⚡ Surgical Reason\n  ${c.surgicalReason}`);
+      if (c.trap)           lines.push(`❗ Trap\n  ${c.trap}`);
+      if (c.rule)           lines.push(`🔥 Rule\n  ${c.rule}`);
+      lines.push(``);
+    });
   }
 
-  note.concepts.forEach((c) => {
-    lines.push(`🧩 ${c.ordinal}️⃣ ${c.title}`);
-    if (c.pattern) lines.push(`P — Pattern\n  ${c.pattern}`);
-    if (c.surgicalReason) lines.push(`⚡ Surgical Reason\n  ${c.surgicalReason}`);
-    if (c.trap) lines.push(`❗ Trap\n  ${c.trap}`);
-    if (c.rule) lines.push(`🔥 Rule\n  ${c.rule}`);
-    lines.push(``);
-  });
-
-  if (note.memoryShortcuts.length > 0) {
-    lines.push(`🧠 MEMORY SHORTCUT`);
-    note.memoryShortcuts.forEach((s) => lines.push(`👉 ${s}`));
+  // Memory shortcuts — derived from concept rules, shown in both formats
+  if (note.memoryShortcuts?.length) {
+    lines.push(`🧠 MEMORY SHORTCUTS`);
+    note.memoryShortcuts.forEach((s) => lines.push(`  👉 ${s}`));
     lines.push(``);
   }
 
