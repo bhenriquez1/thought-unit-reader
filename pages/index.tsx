@@ -2906,7 +2906,14 @@ export default function ThoughtUnitReader() {
           count:  safeHighlightAnchors.length,
           types:  safeHighlightAnchors.map(a => a.anchorType),
         });
-        console.log("[LEFT_PANEL_RENDER]", {
+        console.log("[FINAL_STUDY_MODEL_READY]", {
+          page:          currentPage,
+          pageThesis:    currentPageStudyModel?.pageThesis?.slice(0, 80),
+          anchorCount:   safeHighlightAnchors.length,
+          studyTip:      currentPageStudyModel?.studyNotes?.quickMemory?.slice(0, 80) ?? null,
+          conceptCount:  currentPageStudyModel?.conceptBlocks?.length ?? 0,
+        });
+        console.log("[LEFT_PANEL_FROM_FINAL_MODEL]", {
           page:   currentPage,
           count:  safeHighlightAnchors.length,
           kinds:  safeHighlightAnchors.map(a => a.anchorType),
@@ -2964,6 +2971,7 @@ export default function ThoughtUnitReader() {
                   aiHighlightAnchors={safeHighlightAnchors}
                   synthStatus={safeHighlightAnchors.length > 0 ? "ready" : "loading"}
                   pageTruthKey={pageTruthKey}
+                  studyTip={currentPageStudyModel?.studyNotes?.quickMemory ?? null}
                   focusedEvidenceId={focusedEvidenceId}
                   onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
                   onOpenFocusCycle={undefined}

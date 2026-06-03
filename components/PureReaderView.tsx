@@ -116,6 +116,8 @@ interface PureReaderViewProps {
   onReadingPath?: (path: RenderGuidedReadingPathResult | null) => void;
   /** Maps conceptId → role label for badge role pills */
   roleLabelByConceptId?: Map<string, string>;
+  /** Quick memory / study tip from right-panel study model — shown as footer in left panel */
+  studyTip?: string | null;
 }
 
 export default function PureReaderView({
@@ -141,6 +143,7 @@ export default function PureReaderView({
   pageTruthKey,
   onReadingPath,
   roleLabelByConceptId,
+  studyTip,
 }: PureReaderViewProps) {
   // TRACE: log every prop arriving at PureReaderView boundary
   console.log("[PURE_READER_PROPS]", {
@@ -158,15 +161,17 @@ export default function PureReaderView({
   // Map AI anchor types to ParagraphKind for highlight legend colors.
   const anchorTypeToKind = (anchorType: string): import("@/lib/readerContracts").ParagraphKind => {
     switch (anchorType) {
-      // Current 5-role system
       case "thesis":       return "thesis";
       case "definition":   return "definition";
       case "mechanism":    return "mechanism";
       case "trap":         return "trap";
       case "application":  return "application";
-      // Backward compat for old anchor types
+      // Math-specific anchor types
+      case "formula":      return "definition";    // formula = key term / rule (blue)
+      case "example_step": return "application";   // worked step = evidence (purple)
+      case "conclusion":   return "thesis";        // conclusion = core idea (yellow)
+      // Backward compat
       case "memoryAnchor": return "definition";
-      case "formula":      return "definition";
       case "clinicalTrap": return "trap";
       case "examSignal":   return "thesis";
       default:             return "thesis";
@@ -281,6 +286,18 @@ export default function PureReaderView({
     );
   }
 
+  // ── Highlight Key legend entries ──────────────────────────────────────────
+  const hasHighlights = effectiveHighlightTargets.length > 0;
+  const usedKinds = new Set(effectiveHighlightTargets.map(t => t.kind as string));
+
+  const HIGHLIGHT_KEY_ENTRIES: Array<{ kind: string; dot: string; label: string }> = [
+    { kind: "thesis",      dot: "#fde047", label: "Core Idea"         },
+    { kind: "definition",  dot: "#93c5fd", label: "Definition / Key Term" },
+    { kind: "mechanism",   dot: "#86efac", label: "Mechanism"         },
+    { kind: "application", dot: "#c084fc", label: "Example / Evidence" },
+    { kind: "trap",        dot: "#fca5a5", label: "Confusion / Trap"  },
+  ];
+
   return (
     <div className="h-full flex flex-col bg-gray-900" data-testid="pure-reader-view">
       {/* Minimal Toolbar - Only essential reading controls */}
@@ -314,62 +331,101 @@ export default function PureReaderView({
         </div>
       </div>
 
-      {/* PDF Viewer - FULL WIDTH, no split */}
-      <div className="flex-1 overflow-auto bg-gray-950 relative">
-        {synthStatus === "loading" && (
-          <div
-            style={{
-              position: "absolute",
-              top: 12,
-              left: 12,
-              zIndex: 20,
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              background: "rgba(10,26,24,0.92)",
-              border: "1px solid rgba(52,211,153,0.3)",
-              borderRadius: 20,
-              padding: "4px 10px",
-              pointerEvents: "none",
-            }}
-          >
-            <span className="relative flex h-1.5 w-1.5 shrink-0">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            </span>
-            <span style={{ fontSize: 11, color: "rgb(110,231,183)", fontWeight: 600, letterSpacing: "0.03em" }}>
-              Reading current page…
-            </span>
+      {/* Body: Highlight Key sidebar + PDF Viewer column */}
+      <div className="flex flex-1 min-h-0">
+
+        {/* ── Highlight Key sidebar ───────────────────────────────────────── */}
+        <div className="flex flex-col w-[120px] shrink-0 bg-[#0d1117] border-r border-white/8 py-3 px-2 gap-1 overflow-hidden">
+          <span className="text-[9px] font-bold uppercase tracking-widest text-white/30 mb-1 pl-0.5">
+            Highlight Key
+          </span>
+          {HIGHLIGHT_KEY_ENTRIES.map(entry => (
+            <div
+              key={entry.kind}
+              className={`flex items-center gap-1.5 transition-opacity ${
+                hasHighlights && !usedKinds.has(entry.kind) ? "opacity-25" : "opacity-100"
+              }`}
+            >
+              <span
+                className="h-2.5 w-2.5 rounded-full shrink-0 border border-white/10"
+                style={{ background: entry.dot }}
+              />
+              <span className="text-[10px] text-white/60 leading-tight">{entry.label}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* ── PDF Viewer column ───────────────────────────────────────────── */}
+        <div className="flex flex-col flex-1 min-w-0">
+          <div className="flex-1 overflow-auto bg-gray-950 relative min-h-0">
+            {synthStatus === "loading" && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 12,
+                  left: 12,
+                  zIndex: 20,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "rgba(10,26,24,0.92)",
+                  border: "1px solid rgba(52,211,153,0.3)",
+                  borderRadius: 20,
+                  padding: "4px 10px",
+                  pointerEvents: "none",
+                }}
+              >
+                <span className="relative flex h-1.5 w-1.5 shrink-0">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                </span>
+                <span style={{ fontSize: 11, color: "rgb(110,231,183)", fontWeight: 600, letterSpacing: "0.03em" }}>
+                  Reading current page…
+                </span>
+              </div>
+            )}
+            <SmartPDFViewer
+              fileUrl={fileUrl}
+              docId={docId}
+              currentPage={currentPage}
+              scale={zoom}
+              onPageChange={navigateToPage}
+              onPageCount={onPageCount}
+              onTextSelect={onTextSelect}
+              onOutline={onOutline}
+              onActiveParagraphChange={onActiveParagraphChange}
+              focusSnippet={focusSnippet}
+              highlightTargets={(() => {
+                if (effectiveHighlightTargets.length === 0) {
+                  console.log("[LEFT_PANEL_CLEAR] effectiveHighlightTargets empty — zero overlays", { page: currentPage });
+                }
+                return effectiveHighlightTargets;
+              })()}
+              highlightNeighborhoods={undefined}
+              highlightKey={`${pageTruthKey ?? ""}:${currentPage}:${effectiveHighlightTargets?.map(t => t.text).join("|") ?? ""}`}
+              authorizedHighlightIds={effectiveHighlightTargets?.map(t => t.evidenceRefId) ?? []}
+              focusedEvidenceId={focusedEvidenceId}
+              onEvidenceFocus={onEvidenceFocus}
+              isPageChanging={isPageChanging}
+              onPageRenderComplete={() => setIsPageChanging(false)}
+              onPageTextExtracted={onPageTextExtracted}
+              onReadingPath={onReadingPath}
+              roleLabelByConceptId={roleLabelByConceptId}
+            />
           </div>
-        )}
-        <SmartPDFViewer
-          fileUrl={fileUrl}
-          docId={docId}
-          currentPage={currentPage}
-          scale={zoom}
-          onPageChange={navigateToPage}
-          onPageCount={onPageCount}
-          onTextSelect={onTextSelect}
-          onOutline={onOutline}
-          onActiveParagraphChange={onActiveParagraphChange}
-          focusSnippet={focusSnippet}
-          highlightTargets={(() => {
-            if (effectiveHighlightTargets.length === 0) {
-              console.log("[LEFT_PANEL_CLEAR] effectiveHighlightTargets empty — zero overlays", { page: currentPage });
-            }
-            return effectiveHighlightTargets;
-          })()}
-          highlightNeighborhoods={undefined}
-          highlightKey={`${pageTruthKey ?? ""}:${currentPage}:${effectiveHighlightTargets?.map(t => t.text).join("|") ?? ""}`}
-          authorizedHighlightIds={effectiveHighlightTargets?.map(t => t.evidenceRefId) ?? []}
-          focusedEvidenceId={focusedEvidenceId}
-          onEvidenceFocus={onEvidenceFocus}
-          isPageChanging={isPageChanging}
-          onPageRenderComplete={() => setIsPageChanging(false)}
-          onPageTextExtracted={onPageTextExtracted}
-          onReadingPath={onReadingPath}
-          roleLabelByConceptId={roleLabelByConceptId}
-        />
+
+          {/* ── Study Tip footer ─────────────────────────────────────────── */}
+          {studyTip && (
+            <div className="shrink-0 flex items-start gap-2 px-3 py-2 bg-[#0d1a12] border-t border-emerald-900/40">
+              <span className="text-[11px] shrink-0 mt-0.5">💡</span>
+              <p className="text-[11px] text-emerald-300/80 leading-[1.55]">
+                <span className="font-semibold text-emerald-300/90">Study Tip: </span>
+                {studyTip}
+              </p>
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   );

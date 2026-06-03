@@ -10,25 +10,21 @@ export interface OverlayRect {
   semanticKind?: "thesis" | "definition" | "mechanism" | "trap" | "application";
 }
 
-// application is the only right-panel-only kind — it's a contextual usage example, not a foundational highlight.
-// definition, mechanism, thesis, and trap are all surfaced on the PDF with distinct colors.
-const RIGHT_PANEL_ONLY = new Set(["application"]);
-
+// All study-model anchor kinds render on the PDF — left panel is driven by right panel only.
 function shouldRender(rect: OverlayRect): boolean {
   const kind = rect.semanticKind as string | undefined;
-  if (kind && RIGHT_PANEL_ONLY.has(kind)) return false;
-  if (kind === "definition" || kind === "mechanism" || kind === "thesis" || kind === "trap") return true;
-  // Unknown/other kinds: show only if level is meaningful
+  if (kind && kind in KIND_CONFIG) return true;
   return rect.level === "important" || rect.level === "support";
 }
 
-// ── 4-category color config ────────────────────────────────────────────────
-//   🟦 Definition  (blue)   — foundational term being introduced
-//   🟩 Function    (green)  — mechanism / cause-effect chain
-//   🟨 Limitation  (yellow) — clinical warning, caveat, or primary claim
-//   🟥 Trap        (red)    — exam trap / high-yield distinction
+// ── 5-category color config ────────────────────────────────────────────────
+//   🟨 thesis      (yellow)  — core idea / page thesis / key concept
+//   🟦 definition  (blue)    — foundational term / formula / rule
+//   🟩 mechanism   (green)   — mechanism / process / cause-effect chain
+//   🟪 application (purple)  — example / evidence / worked step / application
+//   🟥 trap        (red)     — exam trap / confusion / misconception
 
-type SemanticKind = "definition" | "mechanism" | "thesis" | "trap";
+type SemanticKind = "thesis" | "definition" | "mechanism" | "application" | "trap";
 
 interface KindConfig {
   label:       string;
@@ -40,6 +36,14 @@ interface KindConfig {
 }
 
 const KIND_CONFIG: Record<SemanticKind, KindConfig> = {
+  thesis: {
+    label:      "CORE",
+    bgNormal:   "rgba(253,224,71,0.28)",
+    bgFocused:  "rgba(253,224,71,0.55)",
+    ringClass:  "ring-2 ring-yellow-300/80 shadow-[0_0_8px_rgba(253,224,71,0.55)]",
+    badgeBg:    "rgba(113,63,18,0.88)",
+    badgeColor: "#fde047",
+  },
   definition: {
     label:      "DEF",
     bgNormal:   "rgba(147,197,253,0.35)",
@@ -56,13 +60,13 @@ const KIND_CONFIG: Record<SemanticKind, KindConfig> = {
     badgeBg:    "rgba(20,83,45,0.88)",
     badgeColor: "#86efac",
   },
-  thesis: {
-    label:      "LIM",
-    bgNormal:   "rgba(253,224,71,0.28)",
-    bgFocused:  "rgba(253,224,71,0.55)",
-    ringClass:  "ring-2 ring-yellow-300/80 shadow-[0_0_8px_rgba(253,224,71,0.55)]",
-    badgeBg:    "rgba(113,63,18,0.88)",
-    badgeColor: "#fde047",
+  application: {
+    label:      "EX",
+    bgNormal:   "rgba(192,132,252,0.30)",
+    bgFocused:  "rgba(192,132,252,0.58)",
+    ringClass:  "ring-2 ring-purple-300/80 shadow-[0_0_8px_rgba(192,132,252,0.55)]",
+    badgeBg:    "rgba(88,28,135,0.88)",
+    badgeColor: "#e9d5ff",
   },
   trap: {
     label:      "TRAP",
@@ -76,11 +80,11 @@ const KIND_CONFIG: Record<SemanticKind, KindConfig> = {
 
 const FALLBACK_CONFIG: KindConfig = {
   label:      "",
-  bgNormal:   "rgba(249,168,212,0.38)",
-  bgFocused:  "rgba(249,168,212,0.65)",
-  ringClass:  "ring-2 ring-pink-300/80 shadow-[0_0_8px_rgba(249,168,212,0.55)]",
-  badgeBg:    "",
-  badgeColor: "",
+  bgNormal:   "rgba(253,224,71,0.28)",
+  bgFocused:  "rgba(253,224,71,0.55)",
+  ringClass:  "ring-2 ring-yellow-300/80 shadow-[0_0_8px_rgba(253,224,71,0.55)]",
+  badgeBg:    "rgba(113,63,18,0.88)",
+  badgeColor: "#fde047",
 };
 
 function getConfig(rect: OverlayRect): KindConfig {
