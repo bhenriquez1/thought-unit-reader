@@ -167,16 +167,23 @@ export function buildStudyModel(
   const cleanThesis = cleanThesisLine(thesis) ?? thesis;
   const highlightAnchors = buildAnchorCandidates(cleanThesis, synth, conceptBlocks);
 
-  console.log("[RIGHT_MODEL_READY]", {
+  // PageBrain ready — all cognitive fields assembled.
+  // Architecture: Right Panel (PageBrain) = source of truth.
+  //               Left Panel = visual cortex — uses PageBrain.highlightTargets only.
+  console.log("[PAGE_BRAIN_READY]", {
     page,
     fields: {
-      pageThesis:       cleanThesis?.slice(0, 80),
-      whyThisMatters:   (synth.whyItMatters   as string | null)?.slice(0, 60) ?? null,
-      keyMechanism:     (synth.keyMechanism   as string | null)?.slice(0, 60) ?? null,
-      commonConfusion:  (synth.commonConfusion as string | null)?.slice(0, 60) ?? null,
-      conceptCount:     conceptBlocks.length,
-      anchorCount:      highlightAnchors.length,
+      pageThesis:          cleanThesis?.slice(0, 60) ?? null,
+      whyThisMatters:      !!((synth.whyItMatters   as string | null)),
+      keyMechanism:        !!((synth.keyMechanism   as string | null)),
+      commonConfusion:     !!((synth.commonConfusion as string | null)),
+      quickMemory:         !!((synth.memoryAnchor   as string | null)),
+      conceptBlocks:       conceptBlocks.length,
+      conceptMap:          !!((synth.reasoningFlow  as string | null)?.includes("→")),
+      checkpointQuestions: !!((synth.miniTestItems  as unknown[] | null)?.length),
+      highlightTargets:    highlightAnchors.length,
     },
+    leftPanelSource: "PageBrain.highlightTargets (highlightAnchors) — right panel drives left panel",
   });
 
   return {

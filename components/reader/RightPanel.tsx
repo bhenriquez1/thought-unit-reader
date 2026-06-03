@@ -135,6 +135,56 @@ function ChapterPreviewPanel({ ctx, pageRole }: { ctx: ActivePageContext; pageRo
   );
 }
 
+// ---------------------------------------------------------------------------
+// Concept Map — visual A → B → C reasoning chain from synthesis reasoningFlow.
+// This is the right panel's causal skeleton made visible.
+// ---------------------------------------------------------------------------
+
+function ConceptMapSection({
+  reasoningFlow,
+  crossLinkHints,
+  density,
+}: {
+  reasoningFlow: string;
+  crossLinkHints?: string[];
+  density?: { cardPadding: string; headingText: string; bodyText: string };
+}) {
+  const d = density ?? { cardPadding: "p-4", headingText: "text-[12px]", bodyText: "text-[12px]" };
+  const nodes = reasoningFlow.split(/\s*→\s*/).map(n => n.trim()).filter(Boolean);
+  if (nodes.length < 2) return null;
+
+  return (
+    <div className={`rounded-xl border border-emerald-400/12 bg-[#071a12] ${d.cardPadding}`}>
+      <div className={`${d.headingText} font-bold uppercase tracking-[0.14em] text-emerald-300/60 mb-3`}>
+        🗺️ Concept Map
+      </div>
+      {/* Reasoning chain — wraps naturally on narrow panels */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {nodes.map((node, i) => (
+          <React.Fragment key={i}>
+            <div className="rounded-md border border-emerald-400/18 bg-emerald-500/8 px-2.5 py-1 max-w-[140px]">
+              <p className="text-[11px] text-emerald-200/80 leading-tight">{node}</p>
+            </div>
+            {i < nodes.length - 1 && (
+              <span className="text-emerald-400/45 text-[14px] font-bold shrink-0 leading-none">→</span>
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+      {crossLinkHints && crossLinkHints.length > 0 && (
+        <div className="mt-3 pt-2 border-t border-white/5">
+          <div className={`${d.headingText} font-bold uppercase tracking-[0.14em] text-white/20 mb-1.5`}>Cross-Links</div>
+          <div className="flex flex-wrap gap-1.5">
+            {crossLinkHints.slice(0, 3).map((hint, i) => (
+              <span key={i} className="text-[10px] text-white/35 bg-white/4 rounded px-2 py-0.5">{hint}</span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function structuralPageIcon(role: string): string {
   switch (role) {
     case "cover":                 return "📕";
@@ -1788,18 +1838,13 @@ function UltraView({
                 <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{synth.whyItMatters}</p>
               </div>
             )}
-            {/* KEY MECHANISM — synthesis mechanism with optional logic chain */}
+            {/* KEY MECHANISM — synthesis mechanism */}
             {synth.keyMechanism && (
               <div className={`rounded-lg border border-emerald-400/15 bg-[#0a1820] ${d.cardPadding}`}>
                 <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-emerald-300/70`}>
                   ⚙️ Key Mechanism
                 </div>
                 <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{synth.keyMechanism}</p>
-                {synth.reasoningFlow?.includes("→") && (
-                  <p className="mt-1.5 text-[11px] font-mono leading-4 text-emerald-300/50">
-                    {synth.reasoningFlow}
-                  </p>
-                )}
               </div>
             )}
             {/* COMMON CONFUSION — synthesis misconceptionAlert */}
@@ -1821,6 +1866,19 @@ function UltraView({
               </div>
             )}
           </div>
+        </PanelSection>
+      )}
+
+      {/* ── CONCEPT MAP — reasoningFlow visualised as a causal A→B→C chain ──
+           Shown after Study Notes so the student sees the full reasoning skeleton
+           before the detailed concept blocks. Left panel green highlights map to this. */}
+      {hasSynth && synth?.reasoningFlow && (
+        <PanelSection title="Concept Map">
+          <ConceptMapSection
+            reasoningFlow={synth.reasoningFlow}
+            crossLinkHints={view.crossLinkHints}
+            density={d}
+          />
         </PanelSection>
       )}
 

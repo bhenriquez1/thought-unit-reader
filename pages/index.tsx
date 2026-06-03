@@ -3000,6 +3000,23 @@ export default function ThoughtUnitReader() {
       })();
 
       if (studyModelReady) {
+        // Architecture confirmation: Right Panel (PageBrain) = cognitive source of truth.
+        // Left Panel = visual cortex — driven exclusively by PageBrain.highlightTargets.
+        console.log("[PAGE_BRAIN_DRIVES_LEFT_PANEL]", {
+          page:            currentPage,
+          source:          "PageBrain.highlightTargets → safeHighlightAnchors → PureReaderView",
+          anchorCount:     safeHighlightAnchors.length,
+          anchorTypes:     safeHighlightAnchors.map(a => a.anchorType),
+          pageBrainFields: {
+            pageThesis:      currentPageStudyModel?.pageThesis ? "✓" : "✗",
+            whyThisMatters:  currentPageStudyModel?.studyNotes?.whyThisMatters ? "✓" : "✗",
+            keyMechanism:    currentPageStudyModel?.studyNotes?.keyMechanism ? "✓" : "✗",
+            commonConfusion: currentPageStudyModel?.studyNotes?.commonConfusion ? "✓" : "✗",
+            quickMemory:     currentPageStudyModel?.studyNotes?.quickMemory ? "✓" : "✗",
+            conceptBlocks:   currentPageStudyModel?.conceptBlocks?.length ?? 0,
+            highlightTargets: safeHighlightAnchors.length,
+          },
+        });
         console.log("[OVERLAY_FROM_STUDYMODEL_ONLY]", {
           page:   currentPage,
           count:  safeHighlightAnchors.length,
