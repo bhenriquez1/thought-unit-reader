@@ -23,6 +23,7 @@ import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuide
 import { buildNoteFromStudyModel, saveUltraNote, getAllUltraNotes, inferSubject } from "@/lib/notelab/ultraNoteStore";
 import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, type RecallCard, type CardType } from "@/lib/recalllab/recallStore";
 import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
+import StudySpeechPanel from "@/components/reader/StudySpeechPanel";
 
 // Validates a synthesis field before it can replace a heuristic field.
 // Returns the trimmed text if it passes, or null if it should be rejected.
@@ -1284,6 +1285,12 @@ export function RightPanel({
                 onStudySetGenerated={onStudySetGenerated}
                 studyModel={studyModel}
               />
+              {studyModel && (
+                <StudySpeechPanel
+                  studyModel={studyModel}
+                  pageNumber={ctx.pageNumber}
+                />
+              )}
             </div>
           </>
         )}
