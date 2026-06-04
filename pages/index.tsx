@@ -576,7 +576,7 @@ export default function ThoughtUnitReader() {
       const STRUCTURAL_ROLES_STATIC = new Set([
         "cover", "title_page", "dedication", "acknowledgements", "preface", "about_authors",
         "copyright_frontmatter", "contents", "unit_opener", "section_opener", "chapter_opener",
-        "glossary", "index", "bibliography", "appendix", "image_scan_heavy",
+        "glossary", "index", "bibliography", "appendix", "image_scan_heavy", "learning_objectives",
       ]);
       if (pageRole && STRUCTURAL_ROLES_STATIC.has(pageRole)) {
         console.log("[NON_INSTRUCTIONAL_SKIP]", {
@@ -618,7 +618,7 @@ export default function ThoughtUnitReader() {
       "cover", "title_page", "dedication", "acknowledgements", "preface", "about_authors",
       "copyright_frontmatter", "contents", "unit_opener", "section_opener",
       "glossary", "index", "bibliography", "appendix", "image_scan_heavy",
-      "chapter_opener",
+      "chapter_opener", "learning_objectives",
     ]);
 
     // AI evidence: if OpenAI produced anchors, this page is instructional.

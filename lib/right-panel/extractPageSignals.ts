@@ -82,6 +82,17 @@ function detectPageRole(pageText: string, heading: string, formulaCount: number,
   const hasInstructionalVocab = /\b(define|definition|element|compound|molecule|cell|organism|function|mechanism|example|figure|table|section|key|concept|essential|trace|synthesis|process|structure|property)\b/i.test(pageText);
   if (/^chapter\s+\d+|^part\s+[ivx\d]+/im.test(pageText) && lineGroups < 12 && !hasInstructionalVocab) return "chapter_opener";
 
+  // Learning objectives / Key concepts overview — non-instructional structural pages.
+  // Fires when the page is dominated by an objectives/concepts list (3+ bullet items)
+  // and does NOT contain active instructional prose (mechanisms, formulas, worked examples).
+  const bulletCount = lines.filter(l => /^[-•*]\s/.test(l) || /^\d+[.)]\s/.test(l)).length;
+  if (
+    /^\s*(learning\s+objectives?|chapter\s+objectives?|section\s+objectives?|key\s+concepts?|core\s+concepts?|big\s+ideas?|overview\s+&?\s+objectives?|by\s+the\s+end\s+of\s+this|after\s+(reading|studying|completing)\s+this|you\s+will\s+(be\s+able|understand|learn|know))\s*[:\n]/im.test(pageText) &&
+    bulletCount >= 3 &&
+    formulaCount === 0 &&
+    !hasAny(text, MECHANISM_WORDS)
+  ) return "learning_objectives";
+
   // Unit opener
   if (/^unit\s+[\divx]+/im.test(pageText) && lineGroups < 15) return "unit_opener";
 
