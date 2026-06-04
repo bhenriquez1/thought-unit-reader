@@ -1,15 +1,69 @@
 // lib/insights/currentPageStudyModel.ts
 // Shared typed model emitted by RightPanel when OpenAI synthesis resolves.
 // All downstream features (highlights, NoteLab, Recall Lab, CrossLinks) read from this.
+//
+// Data contract:
+//   Right Panel = brain (builds this model)
+//   Left Panel  = visual cortex (reads ONLY visualAnchors — no other highlight source)
+//   NoteLab / Recall Lab = consume pageThesis, studyNotes, conceptBlocks
 
 import type { MiniTestItem, PageType } from "@/lib/insights/synthesizeTeachingOutput";
 import { cleanThesisLine, isLikelyHeaderLine } from "@/lib/insights/cleanActivePageText";
+
+// ---------------------------------------------------------------------------
+// VisualAnchor — the final left-panel highlight contract.
+// Built by buildStudyModel from AI anchor output; consumed by left panel only.
+// Left-panel rule: if visualAnchors is empty, render zero highlights.
+// ---------------------------------------------------------------------------
+
+export type VisualAnchorRole =
+  | "coreIdea"        // thesis / governing idea
+  | "definition"      // term definition or concept pattern
+  | "mechanism"       // causal chain / how/why
+  | "exampleEvidence" // worked example or application
+  | "keyDetail"       // important supporting detail / formula
+  | "confusionTrap";  // common mistake or misconception
+
+export type VisualAnchor = {
+  exactText:  string;          // verbatim span as it appears on the page
+  role:       VisualAnchorRole;
+  reason:     string;          // one-line rationale from AI
+  priority:   number;          // 1 = highest; ascending — determines render order
+  spanStart?: string;          // optional PDF span boundary
+  spanEnd?:   string;
+};
+
+// Role priority — determines render order and budget arbitration.
+const ROLE_PRIORITY: Record<VisualAnchorRole, number> = {
+  coreIdea:        1,
+  mechanism:       2,
+  definition:      3,
+  confusionTrap:   4,
+  exampleEvidence: 5,
+  keyDetail:       6,
+};
+
+function anchorTypeToVisualRole(anchorType: string): VisualAnchorRole {
+  switch (anchorType) {
+    case "thesis":       return "coreIdea";
+    case "definition":   return "definition";
+    case "mechanism":    return "mechanism";
+    case "application":  return "exampleEvidence";
+    case "trap":         return "confusionTrap";
+    case "formula":      return "keyDetail";
+    case "example_step": return "exampleEvidence";
+    case "conclusion":   return "keyDetail";
+    default:             return "keyDetail";
+  }
+}
 
 export type CurrentPageStudyModel = {
   page: number;
   bookId: string;
   /** pageTruthKey under which this model was synthesized — used for render-time staleness guard */
   pageTruthKey?: string;
+  /** OpenAI page type classification — used for non-instructional skip in left panel */
+  pageType?: string;
   pageThesis: string;
   studyNotes: {
     whyThisMatters: string | null;
@@ -29,7 +83,10 @@ export type CurrentPageStudyModel = {
   miniTest: string[];
   miniTestItems?: MiniTestItem[];
   preReadRecallItems?: MiniTestItem[];
+  /** AI anchor candidates — kept for backward compat; visualAnchors is the left-panel contract */
   highlightAnchors: Array<{ text: string; anchorType: string; reason: string }>;
+  /** Final left-panel highlight contract — sorted by priority, built from AI output only */
+  visualAnchors: VisualAnchor[];
   externalStudyLinks: Array<{ label: string; searchQuery: string; type: string }>;
   relatedVideoQueries?: string[];
 };
@@ -38,20 +95,6 @@ type AnchorCandidate = { text: string; anchorType: string; reason: string; spanS
 
 // Build 3–5 anchor candidates so the left panel (the "visual pathway") reflects the
 // full right-panel brain — not just the one or two verbatim spans the model returned.
-//
-// Sources, in priority order:
-//   1. synth.highlightAnchors — AI's verbatim spans (already grounded-quality)
-//   2. Page Thesis            → anchorType "thesis"
-//   3. Why This Matters       → anchorType "application"
-//   4. Key Mechanism          → anchorType "mechanism"
-//   5. Common Confusion       → anchorType "trap"
-//   6. Concept Blocks         → anchorType "definition" (one per block)
-//
-// Every derived candidate is cleaned of running-header/page-number debris first.
-// These are CANDIDATES: groundHighlightAnchors() recovers the verbatim page sentence
-// for each (or drops it), so prose study fields still produce grounded PDF spans when
-// the exact page text supports them. Returning many candidates here is what prevents
-// the "only one generic anchor" failure — grounding/arbitration trims to the real set.
 function buildAnchorCandidates(
   thesis: string,
   synth: Record<string, unknown>,
@@ -66,29 +109,25 @@ function buildAnchorCandidates(
       rejectedCount: "all",
       reason: "pageType=review_checkpoint — no highlights on review/checkpoint pages",
     });
-    return aiAnchors.slice(0, 0); // empty — left panel shows no anchors
+    return [];
   }
 
   const fieldCandidates: AnchorCandidate[] = [
-    { text: thesis,                                       anchorType: "thesis",      reason: "Page thesis" },
+    { text: thesis,                                        anchorType: "thesis",      reason: "Page thesis" },
     { text: (synth.whyItMatters    as string | null) ?? "", anchorType: "application", reason: "Why this matters" },
     { text: (synth.keyMechanism    as string | null) ?? "", anchorType: "mechanism",   reason: "Key mechanism" },
     { text: (synth.commonConfusion as string | null) ?? "", anchorType: "trap",        reason: "Common confusion" },
     ...conceptBlocks.slice(0, 3).map((b) => ({
-      // Use only the pattern/principle text — never b.title which is a heading, not body prose.
       text: b.pattern || "",
       anchorType: "definition" as const,
       reason: b.title ? `Concept: ${b.title.slice(0, 40)}` : "Concept block",
     })),
   ];
 
-  // Clean debris and drop empties/too-short before deduping.
   const cleaned: AnchorCandidate[] = [...aiAnchors, ...fieldCandidates]
     .map((a) => ({ ...a, text: (cleanThesisLine(a.text) ?? "").trim() }))
     .filter((a) => a.text.length >= 12);
 
-  // Reject any candidate that looks like a running header, chapter title, or
-  // title-only line — these must never paint on the left panel as highlights.
   const headerRejected: Array<{ text: string; anchorType: string }> = [];
   const bodyOnly = cleaned.filter((a) => {
     if (isLikelyHeaderLine(a.text)) {
@@ -98,13 +137,9 @@ function buildAnchorCandidates(
     return true;
   });
   if (headerRejected.length > 0) {
-    console.log("[ANCHOR_REJECTED_HEADER]", {
-      rejectedCount: headerRejected.length,
-      rejected: headerRejected,
-    });
+    console.log("[ANCHOR_REJECTED_HEADER]", { rejectedCount: headerRejected.length, rejected: headerRejected });
   }
 
-  // Dedupe by normalized prefix so the same idea isn't sent under two roles.
   const seen = new Set<string>();
   const deduped: AnchorCandidate[] = [];
   for (const a of bodyOnly) {
@@ -114,17 +149,14 @@ function buildAnchorCandidates(
     deduped.push(a);
   }
 
-  // Cap candidates — grounding + semantic arbitration narrow to the final 3–5.
   const candidates = deduped.slice(0, 8);
-
   console.log("[ANCHORS_FROM_RIGHT_PANEL]", {
     pageType,
-    count:        candidates.length,
+    count:         candidates.length,
     aiAnchorCount: aiAnchors.length,
-    texts:        candidates.map((a) => a.text.slice(0, 80)),
-    kinds:        candidates.map((a) => a.anchorType),
+    texts:         candidates.map((a) => a.text.slice(0, 80)),
+    kinds:         candidates.map((a) => a.anchorType),
   });
-
   return candidates;
 }
 
@@ -147,31 +179,43 @@ export function buildStudyModel(
 ): CurrentPageStudyModel {
   const thesis = (view.coreIdea || view.title || "") as string;
   const rawExtLinks = (synth.externalStudyLinks as Array<{ label: string; searchQuery: string; type: string }> | null) ?? [];
-  // OpenAI-reinterpreted concept blocks — preferred over heuristic view.blocks
   const rawAIConcepts = (synth.aiConcepts as Array<{
     title: string; principle: string; mechanism: string; trap: string | null; rule: string;
   }> | null) ?? null;
 
   const conceptBlocks = (rawAIConcepts?.length ? rawAIConcepts : view.blocks).map((b: any) => ({
     title:     b.title ?? "",
-    pattern:   b.principle ?? b.pattern ?? "",         // OpenAI uses 'principle'; heuristic uses 'pattern'
+    pattern:   b.principle ?? b.pattern ?? "",
     mechanism: b.mechanism ?? b.surgicalReason ?? undefined,
     trap:      b.trap ?? undefined,
     rule:      b.rule ?? undefined,
   }));
 
-  // Build 3–5 grounded-quality anchor candidates from thesis + study notes + concept
-  // blocks, not just the model's verbatim spans. The left-panel grounding layer recovers
-  // the exact page sentence for each candidate (or drops it), so every supported study
-  // field becomes a PDF highlight — the visual pathway mirrors the right-panel brain.
   const cleanThesis = cleanThesisLine(thesis) ?? thesis;
   const highlightAnchors = buildAnchorCandidates(cleanThesis, synth, conceptBlocks);
 
-  // PageBrain ready — all cognitive fields assembled.
-  // Architecture: Right Panel (PageBrain) = source of truth.
-  //               Left Panel = visual cortex — uses PageBrain.highlightTargets only.
+  // Build visualAnchors — the final left-panel highlight contract.
+  // Sourced exclusively from AI anchor output; sorted by role priority.
+  // Left panel uses ONLY this — no score-anchors, no universalSpecificityScore, no fallbacks.
+  const visualAnchors: VisualAnchor[] = highlightAnchors
+    .map((a) => {
+      const role = anchorTypeToVisualRole(a.anchorType);
+      return {
+        exactText: a.text,
+        role,
+        reason:    a.reason,
+        priority:  ROLE_PRIORITY[role] ?? 6,
+        spanStart: (a as any).spanStart ?? undefined,
+        spanEnd:   (a as any).spanEnd   ?? undefined,
+      };
+    })
+    .sort((a, b) => a.priority - b.priority);
+
+  const pageType = (synth.pageType as string | null) ?? undefined;
+
   console.log("[PAGE_BRAIN_READY]", {
     page,
+    pageType,
     fields: {
       pageThesis:          cleanThesis?.slice(0, 60) ?? null,
       whyThisMatters:      !!((synth.whyItMatters   as string | null)),
@@ -183,12 +227,20 @@ export function buildStudyModel(
       checkpointQuestions: !!((synth.miniTestItems  as unknown[] | null)?.length),
       highlightTargets:    highlightAnchors.length,
     },
-    leftPanelSource: "PageBrain.highlightTargets (highlightAnchors) — right panel drives left panel",
+    leftPanelSource: "PageBrain.visualAnchors — right panel drives left panel",
+  });
+
+  console.log("[FINAL_MODEL_VISUAL_ANCHORS]", {
+    page,
+    count:   visualAnchors.length,
+    roles:   visualAnchors.map((a) => a.role),
+    topText: visualAnchors[0]?.exactText.slice(0, 80) ?? null,
   });
 
   return {
     page,
     bookId,
+    pageType,
     pageThesis: cleanThesis,
     studyNotes: {
       whyThisMatters:  (synth.whyItMatters   as string | null) ?? null,
@@ -200,9 +252,10 @@ export function buildStudyModel(
     },
     conceptBlocks,
     miniTest: (view.miniTest ?? []).filter(Boolean),
-    miniTestItems: (synth.miniTestItems as MiniTestItem[] | null) ?? undefined,
+    miniTestItems:      (synth.miniTestItems      as MiniTestItem[] | null) ?? undefined,
     preReadRecallItems: (synth.preReadRecallItems as MiniTestItem[] | null) ?? undefined,
     highlightAnchors,
+    visualAnchors,
     externalStudyLinks: rawExtLinks,
     relatedVideoQueries: (synth.relatedVideoQueries as string[] | null) ?? undefined,
   };

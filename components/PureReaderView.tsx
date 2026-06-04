@@ -191,18 +191,24 @@ export default function PureReaderView({
     });
     if (!aiHighlightAnchors?.length) return [];
 
-    // Rank by universal specificity (secondary sort — semantic arbitration is primary)
+    // Anchors arrive pre-prioritized by visualAnchors.priority from buildStudyModel.
+    // universalSpecificityScore is BLOCKED — left panel uses finalStudyModel order only.
+    // Preserve arrival order (priority 1=first → highest in descending sort).
+    console.log("[LEFT_PANEL_BLOCKED_LEGACY_FALLBACK]", {
+      blocked: "universalSpecificityScore",
+      reason:  "left panel uses finalStudyModel.visualAnchors priority order only",
+      page:    currentPage,
+    });
+    console.log("[LEFT_PANEL_USING_FINAL_MODEL_ONLY]", {
+      page:   currentPage,
+      count:  aiHighlightAnchors.length,
+      source: "finalStudyModel.visualAnchors via aiHighlightAnchors prop",
+    });
     const scored = aiHighlightAnchors.map((a, i) => ({
-      anchor: a,
+      anchor:        a,
       originalIndex: i,
-      specScore: universalSpecificityScore(a.text, pageText || "", a.anchorType),
-    })).sort((a, b) => b.specScore - a.specScore);
-
-    console.log("[ANCHOR_RANK]", scored.map(s => ({
-      text:      s.anchor.text.slice(0, 70),
-      type:      s.anchor.anchorType,
-      score:     s.specScore,
-    })));
+      specScore:     aiHighlightAnchors.length - i, // preserve arrival order — highest first
+    }));
 
     // Normalizer shared by span guard + text validation
     const norm = (s: string) =>
