@@ -592,11 +592,8 @@ export function RightPanel({
     // Front matter
     "cover", "title_page", "dedication", "acknowledgements", "preface", "about_authors",
     "copyright_frontmatter",
-    // Navigation / structural
-    // NOTE: "chapter_opener" intentionally excluded — chapter intro pages often carry
-    // real body text. shouldRenderFullPanel (from normalizeClinicalText) is the
-    // authoritative gate; if a page has extractable prose, let synthesis run.
-    "contents", "unit_opener", "section_opener",
+    // Navigation / structural — chapter_opener blocks synthesis; content begins on next page
+    "contents", "unit_opener", "section_opener", "chapter_opener",
     // Back matter
     "glossary", "index", "bibliography", "appendix",
     // Unrenderable
@@ -1103,33 +1100,26 @@ export function RightPanel({
       <button
         onClick={() => {
           console.log("[SHADOW_RECALL_OPEN]", { hasData: !!shadowRecall, page: ctx?.pageNumber ?? null });
-          if (shadowRecall) setRecallOpen(true);
+          setRecallOpen(true);
         }}
-        className={`fixed bottom-5 left-5 z-[60] flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-[11px] font-bold shadow-lg backdrop-blur-sm transition-all ${
-          shadowRecall
-            ? "border-violet-500/30 bg-[#0b1020]/90 text-violet-300 hover:bg-violet-900/40 hover:border-violet-400/50 cursor-pointer"
-            : "border-violet-500/15 bg-[#0b1020]/60 text-violet-300/40 cursor-not-allowed"
-        }`}
-        title={shadowRecall ? "Pre-Read Recall — attempt before reading" : "Pre-Read Recall — awaiting synthesis"}
-        disabled={!shadowRecall}
+        className="fixed bottom-5 left-5 z-[60] flex items-center gap-1.5 rounded-full border border-violet-500/30 bg-[#0b1020]/90 px-3.5 py-2 text-[11px] font-bold text-violet-300 shadow-lg backdrop-blur-sm transition-all hover:bg-violet-900/40 hover:border-violet-400/50 cursor-pointer"
+        title="Pre-Read Recall"
       >
         🕶 <span className="hidden sm:inline">Shadow Recall</span>
       </button>
-      {shadowRecall && (
-        <PreReadRecallDrawer
-          open={recallOpen}
-          onClose={() => setRecallOpen(false)}
-          recall={shadowRecall}
-          preReadRecallItems={studyModel?.preReadRecallItems}
-          synthForDerive={teachingSynthesis ? {
-            coreIdea:       teachingSynthesis.coreIdea,
-            keyMechanism:   teachingSynthesis.mechanism || null,
-            commonConfusion: teachingSynthesis.misconceptionAlert || teachingSynthesis.trap || null,
-            memoryAnchor:   teachingSynthesis.memoryAnchor || null,
-            examSignal:     teachingSynthesis.examCriticalIdea || null,
-          } : null}
-        />
-      )}
+      <PreReadRecallDrawer
+        open={recallOpen}
+        onClose={() => setRecallOpen(false)}
+        recall={shadowRecall}
+        preReadRecallItems={studyModel?.preReadRecallItems}
+        synthForDerive={teachingSynthesis ? {
+          coreIdea:       teachingSynthesis.coreIdea,
+          keyMechanism:   teachingSynthesis.mechanism || null,
+          commonConfusion: teachingSynthesis.misconceptionAlert || teachingSynthesis.trap || null,
+          memoryAnchor:   teachingSynthesis.memoryAnchor || null,
+          examSignal:     teachingSynthesis.examCriticalIdea || null,
+        } : null}
+      />
     </>
     <aside className="flex h-full min-h-0 w-full flex-col overflow-y-auto border-l border-white/10 bg-[rgb(11,18,34)] break-words whitespace-normal">
       {/* Header */}
@@ -1196,47 +1186,26 @@ export function RightPanel({
 
         {isStructuralPage && isCurrentPageModel && (() => {
           const role = intelligence.pageRole ?? "";
-          const isOverviewRole = role === "unit_opener" || role === "section_opener";
-          const isFrontMatterRole = ["cover","title_page","dedication","acknowledgements","preface","about_authors","copyright_frontmatter","contents","glossary","index","bibliography","appendix"].includes(role);
-
-          if (isOverviewRole) {
-            return <ChapterPreviewPanel ctx={ctx} pageRole={role} />;
-          }
-
-          if (isFrontMatterRole) {
-            return (
-              <div className="rounded-2xl border border-white/8 bg-[#071224] px-5 py-7 space-y-3">
-                <div className="flex items-center gap-2.5">
-                  <span className="text-2xl">{structuralPageIcon(role)}</span>
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-white/30">Structural Page</div>
-                    <p className="text-[13px] font-semibold text-white/55">{structuralPageLabel(role)}</p>
-                  </div>
-                </div>
-                <p className="text-[12px] text-white/30 italic pl-0.5">
-                  Instructional synthesis unavailable for this page type.
-                  Navigate to a content-rich textbook page to generate study notes, highlights, and recall cards.
-                </p>
-              </div>
-            );
-          }
-
+          const icon = structuralPageIcon(role);
+          const label = structuralPageLabel(role);
           return (
-            <div className="rounded-2xl border border-white/8 bg-[#071224] px-4 py-8 text-center">
-              <div className="text-3xl mb-3">{structuralPageIcon(role)}</div>
-              <p className="text-[13px] font-semibold text-white/50 mb-1">{structuralPageLabel(role)}</p>
-              <p className="text-[12px] text-white/25 italic">Navigate to a content page to generate study notes, highlights, and recall cards.</p>
+            <div className="rounded-2xl border border-amber-400/15 bg-[#0d1520] px-5 py-7 space-y-3">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl shrink-0">{icon}</span>
+                <div>
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-amber-400/50 mb-0.5">Overview</div>
+                  <p className="text-[13px] font-semibold text-white/70 leading-snug">{label}</p>
+                </div>
+              </div>
+              <p className="text-[12px] text-white/35 italic leading-relaxed">
+                Navigate to a content page to generate study notes, highlights, and recall cards.
+              </p>
             </div>
           );
         })()}
 
         {/* Loading / gating state */}
-        {/* ── CHAPTER OPENER: show preview panel when synthesis has not produced results ── */}
-        {intelligence.pageRole === "chapter_opener" && isCurrentPageModel && !showUltraView && (
-          <ChapterPreviewPanel ctx={ctx} pageRole="chapter_opener" />
-        )}
-
-        {!pageIsNonInstructional && !isStructuralPage && intelligence.pageRole !== "chapter_opener" && renderTruthFallback(pageTruth?.reason || "loading", intelligence.status, !isCurrentPageModel, loadingPhase)}
+        {!pageIsNonInstructional && !isStructuralPage && renderTruthFallback(pageTruth?.reason || "loading", intelligence.status, !isCurrentPageModel, loadingPhase)}
 
         {intelligence.status === "error" && (
           <div className="rounded-2xl border border-rose-500/30 bg-rose-900/20 p-4 text-sm text-rose-100">
@@ -3349,11 +3318,31 @@ function PreReadRecallDrawer({
 }: {
   open: boolean;
   onClose: () => void;
-  recall: ShadowRecallModel;
+  recall: ShadowRecallModel | null;
   preReadRecallItems?: Array<{ question: string; type: string; options: string[] | null; correctAnswer: string; explanation: string }> | null;
   synthForDerive?: SynthesisForRecall | null;
 }) {
   if (!open) return null;
+  if (!recall) {
+    return (
+      <>
+        <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
+        <div className="fixed left-0 top-0 bottom-0 z-50 w-[380px] bg-[#0b1020] border-r border-white/10 flex flex-col overflow-hidden shadow-2xl">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-violet-300">🕶 Shadow Recall</span>
+            <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-xl leading-none">×</button>
+          </div>
+          <div className="flex flex-col items-center justify-center gap-4 flex-1 p-6 text-center">
+            <span className="text-3xl">🕶</span>
+            <p className="text-[13px] font-semibold text-violet-300/70">Synthesis Loading</p>
+            <p className="text-[12px] text-slate-500 leading-relaxed max-w-[260px]">
+              Shadow Recall questions appear once the page study model is ready. Navigate to a content page and wait a few seconds.
+            </p>
+          </div>
+        </div>
+      </>
+    );
+  }
   const derived = (!preReadRecallItems?.length && synthForDerive) ? deriveRecallItems(synthForDerive) : null;
   const items = preReadRecallItems?.length ? preReadRecallItems : derived;
   console.log("[WIRE] ShadowRecall open", { page: recall.pageLabel, questions: items?.length ?? 0, source: preReadRecallItems?.length ? "stage1" : derived?.length ? "derived" : "loading", types: items?.map(i => i.type) ?? [] });
@@ -3512,6 +3501,7 @@ function GenerateNoteButton({
   studyModel?: CurrentPageStudyModel | null;
 }) {
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const synthReady = !!studyModel;
 
   function handleGenerate() {
@@ -3524,9 +3514,9 @@ function GenerateNoteButton({
     });
     try {
       const topic = (view.title || `Page ${pageNumber}`).replace(/^ULTRA\s*[–—-]\s*/i, "").trim();
-      if (!studyModel) { console.warn("[NOTE_SAVE_ERROR]", { reason: "studyModel null at save time" }); return; }
+      if (!studyModel) { console.warn("[NOTELAB_SAVE_ERROR]", { reason: "studyModel null at save time" }); return; }
 
-      console.log("[NOTE_SAVE_START]", {
+      console.log("[NOTELAB_SAVE_START]", {
         page: pageNumber, bookId, topic,
         sectionCount: 0,
         conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
@@ -3541,11 +3531,11 @@ function GenerateNoteButton({
       // Verify the note actually persisted before navigating.
       const persisted = getAllUltraNotes().find((n) => n.id === note.id);
       if (!persisted) {
-        console.error("[NOTE_SAVE_ERROR]", { reason: "note not found in storage after save", id: note.id, storageKey: "ultraNotes_v1" });
+        console.error("[NOTELAB_SAVE_ERROR]", { reason: "note not found in storage after save", id: note.id, storageKey: "ultraNotes_v1" });
         return;
       }
 
-      console.log("[NOTE_SAVE_SUCCESS]", {
+      console.log("[NOTELAB_SAVE_SUCCESS]", {
         id: note.id, page: note.pageNumber, topic: note.topic,
         sectionCount: note.sections?.length ?? 0,
         storageKey: "ultraNotes_v1",
@@ -3553,10 +3543,14 @@ function GenerateNoteButton({
       });
 
       setSaved(true);
+      setSaveError(null);
       onNoteSaved?.();
       setTimeout(() => setSaved(false), 2200);
     } catch (err: any) {
-      console.error("[NOTE_SAVE_ERROR]", { reason: err?.message ?? String(err) });
+      const msg = err?.message ?? String(err);
+      console.error("[NOTELAB_SAVE_ERROR]", { reason: msg });
+      setSaveError(msg.slice(0, 80));
+      setTimeout(() => setSaveError(null), 3000);
     }
   }
 
@@ -3569,9 +3563,27 @@ function GenerateNoteButton({
         width: "100%",
         padding: "10px 0",
         borderRadius: 10,
-        border: saved ? "1px solid rgba(52,211,153,0.5)" : !synthReady ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(245,200,66,0.25)",
-        background: saved ? "rgba(16,185,129,0.12)" : !synthReady ? "rgba(255,255,255,0.03)" : "rgba(245,200,66,0.07)",
-        color: saved ? "#6ee7b7" : !synthReady ? "rgba(255,255,255,0.3)" : "#fcd34d",
+        border: saved
+          ? "1px solid rgba(52,211,153,0.5)"
+          : saveError
+          ? "1px solid rgba(239,68,68,0.45)"
+          : !synthReady
+          ? "1px solid rgba(255,255,255,0.08)"
+          : "1px solid rgba(245,200,66,0.25)",
+        background: saved
+          ? "rgba(16,185,129,0.12)"
+          : saveError
+          ? "rgba(239,68,68,0.08)"
+          : !synthReady
+          ? "rgba(255,255,255,0.03)"
+          : "rgba(245,200,66,0.07)",
+        color: saved
+          ? "#6ee7b7"
+          : saveError
+          ? "#fca5a5"
+          : !synthReady
+          ? "rgba(255,255,255,0.3)"
+          : "#fcd34d",
         fontSize: 12,
         fontWeight: 700,
         letterSpacing: "0.06em",
@@ -3579,7 +3591,13 @@ function GenerateNoteButton({
         transition: "all 0.18s",
       }}
     >
-      {saved ? "✓ Note saved to NoteLab" : !synthReady ? "Notes unavailable — page has no extractable content" : "⚡ Save to NoteLab"}
+      {saved
+        ? "✓ Note saved to NoteLab"
+        : saveError
+        ? `✗ Save failed — ${saveError}`
+        : !synthReady
+        ? "Notes unavailable — page has no extractable content"
+        : "⚡ Save to NoteLab"}
     </button>
   );
 }
@@ -3601,6 +3619,7 @@ function GenerateStudySetButton({
 }) {
   const [saved, setSaved] = useState(false);
   const [noSynth, setNoSynth] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const synthReady = !!studyModel;
 
@@ -3656,10 +3675,14 @@ function GenerateStudySetButton({
       });
 
       setSaved(true);
+      setSaveError(null);
       onStudySetGenerated?.(set.id);
       setTimeout(() => setSaved(false), 2200);
     } catch (err: any) {
-      console.error("[RECALL_SAVE_ERROR]", { reason: err?.message ?? String(err) });
+      const msg = err?.message ?? String(err);
+      console.error("[RECALL_SAVE_ERROR]", { reason: msg });
+      setSaveError(msg.slice(0, 80));
+      setTimeout(() => setSaveError(null), 3000);
     }
   }
 
@@ -3674,6 +3697,8 @@ function GenerateStudySetButton({
         borderRadius: 10,
         border: saved
           ? "1px solid rgba(99,102,241,0.5)"
+          : saveError
+          ? "1px solid rgba(239,68,68,0.45)"
           : noSynth
           ? "1px solid rgba(239,68,68,0.4)"
           : !synthReady
@@ -3681,6 +3706,8 @@ function GenerateStudySetButton({
           : "1px solid rgba(99,102,241,0.25)",
         background: saved
           ? "rgba(99,102,241,0.12)"
+          : saveError
+          ? "rgba(239,68,68,0.08)"
           : noSynth
           ? "rgba(239,68,68,0.08)"
           : !synthReady
@@ -3688,6 +3715,8 @@ function GenerateStudySetButton({
           : "rgba(99,102,241,0.07)",
         color: saved
           ? "#a5b4fc"
+          : saveError
+          ? "#fca5a5"
           : noSynth
           ? "#fca5a5"
           : !synthReady
@@ -3702,6 +3731,8 @@ function GenerateStudySetButton({
     >
       {saved
         ? "✓ Saved to Recall Lab"
+        : saveError
+        ? `✗ Save failed — ${saveError}`
         : noSynth
         ? "Notes and recall cards are unavailable because this page does not contain enough extractable instructional content."
         : !synthReady

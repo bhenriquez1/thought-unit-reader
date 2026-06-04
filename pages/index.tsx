@@ -552,6 +552,20 @@ export default function ThoughtUnitReader() {
     // ── No studyModel or stale page ────────────────────────────────────────
     if (!currentPageStudyModel || currentPageStudyModel.page !== currentPage) {
       setFinalHighlightAnchors([]);
+      const pageRole = currentPageRoleRef.current;
+      const STRUCTURAL_ROLES_STATIC = new Set([
+        "cover", "title_page", "dedication", "acknowledgements", "preface", "about_authors",
+        "copyright_frontmatter", "contents", "unit_opener", "section_opener", "chapter_opener",
+        "glossary", "index", "bibliography", "appendix", "image_scan_heavy",
+      ]);
+      if (pageRole && STRUCTURAL_ROLES_STATIC.has(pageRole)) {
+        console.log("[NON_INSTRUCTIONAL_SKIP]", {
+          page:     currentPage,
+          reason:   "structural page — synthesis blocked, no study model",
+          pageRole,
+          visualAnchorCountAfterSkip: 0,
+        });
+      }
       return;
     }
 

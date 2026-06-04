@@ -96,9 +96,7 @@ type AnchorCandidate = { text: string; anchorType: string; reason: string; spanS
 // Build 3–5 anchor candidates so the left panel (the "visual pathway") reflects the
 // full right-panel brain — not just the one or two verbatim spans the model returned.
 function buildAnchorCandidates(
-  thesis: string,
   synth: Record<string, unknown>,
-  conceptBlocks: Array<{ title: string; pattern: string }>,
 ): AnchorCandidate[] {
   const aiAnchors = (synth.highlightAnchors as AnchorCandidate[] | null) ?? [];
   const pageType = (synth.pageType as PageType | null) ?? null;
@@ -112,19 +110,9 @@ function buildAnchorCandidates(
     return [];
   }
 
-  const fieldCandidates: AnchorCandidate[] = [
-    { text: thesis,                                        anchorType: "thesis",      reason: "Page thesis" },
-    { text: (synth.whyItMatters    as string | null) ?? "", anchorType: "application", reason: "Why this matters" },
-    { text: (synth.keyMechanism    as string | null) ?? "", anchorType: "mechanism",   reason: "Key mechanism" },
-    { text: (synth.commonConfusion as string | null) ?? "", anchorType: "trap",        reason: "Common confusion" },
-    ...conceptBlocks.slice(0, 3).map((b) => ({
-      text: b.pattern || "",
-      anchorType: "definition" as const,
-      reason: b.title ? `Concept: ${b.title.slice(0, 40)}` : "Concept block",
-    })),
-  ];
-
-  const cleaned: AnchorCandidate[] = [...aiAnchors, ...fieldCandidates]
+  // Use ONLY AI anchors — no thesis/study-notes/concept-block fallbacks.
+  // Left panel contract: visualAnchors comes exclusively from what the AI returned.
+  const cleaned: AnchorCandidate[] = [...aiAnchors]
     .map((a) => ({ ...a, text: (cleanThesisLine(a.text) ?? "").trim() }))
     .filter((a) => a.text.length >= 12);
 
@@ -192,7 +180,7 @@ export function buildStudyModel(
   }));
 
   const cleanThesis = cleanThesisLine(thesis) ?? thesis;
-  const highlightAnchors = buildAnchorCandidates(cleanThesis, synth, conceptBlocks);
+  const highlightAnchors = buildAnchorCandidates(synth);
 
   // Build visualAnchors — the final left-panel highlight contract.
   // Sourced exclusively from AI anchor output; sorted by role priority.
