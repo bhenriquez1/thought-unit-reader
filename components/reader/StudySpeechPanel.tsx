@@ -1,22 +1,21 @@
 // components/reader/StudySpeechPanel.tsx
-// Compact Study Speech panel — reads the PageBrain (CurrentPageStudyModel) aloud.
-// Uses the browser WebSpeech API; no API key required.
-// Segment-by-segment playback matching the finalStudyModel structure.
+// Study Speech — reads PageBrain aloud.
+// Primary: OpenAI TTS via /api/tts (server-side, key never exposed).
+// Fallback: browser speechSynthesis.
 
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import {
   buildSpeechScript,
   STUDY_SPEECH_MODES,
+  formulaToSpeech,
   type StudySpeechMode,
   type SpeechSegment,
 } from "@/lib/speech/studySpeechEngine";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Role colour map — segment label chips
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Role colour map ──────────────────────────────────────────────────────────
 
 const ROLE_COLOR: Record<string, { border: string; text: string; bg: string }> = {
   thesis:          { border: "rgba(251,191,36,0.35)",  text: "#fbbf24", bg: "rgba(251,191,36,0.07)" },
@@ -28,454 +27,307 @@ const ROLE_COLOR: Record<string, { border: string; text: string; bg: string }> =
   visualAnchor:    { border: "rgba(167,243,208,0.30)", text: "#6ee7b7", bg: "rgba(167,243,208,0.05)"},
   reasoningFlow:   { border: "rgba(216,180,254,0.30)", text: "#d8b4fe", bg: "rgba(216,180,254,0.05)"},
 };
-
 function roleStyle(role: string) {
   return ROLE_COLOR[role] ?? { border: "rgba(255,255,255,0.12)", text: "#94a3b8", bg: "rgba(255,255,255,0.04)" };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// WebSpeech availability check (SSR-safe)
-// ─────────────────────────────────────────────────────────────────────────────
+const OPENAI_VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"] as const;
+type OAIVoice = typeof OPENAI_VOICES[number];
 
-function isSpeechAvailable(): boolean {
-  return typeof window !== "undefined" && "speechSynthesis" in window;
+// ── Text builder ─────────────────────────────────────────────────────────────
+
+function buildSpeechText(
+  segments: SpeechSegment[],
+  mode: StudySpeechMode,
+  model: CurrentPageStudyModel,
+  activePageText: string,
+  fromSegIdx?: number,
+): string {
+  const segs = fromSegIdx !== undefined ? segments.slice(fromSegIdx) : segments;
+  let text = segs.map(s => s.text).filter(Boolean).join(". ").trim();
+
+  // Fallback chain: if segment text is too sparse, use activePageText
+  if (text.length < 20 && activePageText) {
+    text = formulaToSpeech(activePageText.slice(0, 4000));
+  }
+
+  return text.slice(0, 4000);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// StudySpeechPanel
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
   studyModel: CurrentPageStudyModel;
   pageNumber: number;
+  activePageText?: string;
 }
 
-export default function StudySpeechPanel({ studyModel, pageNumber }: Props) {
-  const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<StudySpeechMode>("study");
-  const [speed, setSpeed] = useState(1.0);
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [voiceIdx, setVoiceIdx] = useState(0);
+// ── Main component ───────────────────────────────────────────────────────────
 
-  // Playback state
-  const [playing, setPlaying]     = useState(false);
-  const [segIdx, setSegIdx]       = useState(0);
-  const [segments, setSegments]   = useState<SpeechSegment[]>([]);
+export default function StudySpeechPanel({ studyModel, pageNumber, activePageText = "" }: Props) {
+  const [open, setOpen]       = useState(false);
+  const [mode, setMode]       = useState<StudySpeechMode>("study");
+  const [voice, setVoice]     = useState<OAIVoice>("alloy");
+  const [speed, setSpeed]     = useState(1.0);
+  const [segments, setSegments] = useState<SpeechSegment[]>([]);
+  const [segIdx, setSegIdx]   = useState(0);
 
-  // Stable refs to avoid stale closures in callbacks
-  const playingRef   = useRef(playing);
-  const segIdxRef    = useRef(segIdx);
-  const speedRef     = useRef(speed);
-  const voiceIdxRef  = useRef(voiceIdx);
-  const segmentsRef  = useRef(segments);
-  const cancelledRef = useRef(false);
+  type PlayState = "idle" | "loading" | "playing" | "error";
+  const [playState, setPlayState] = useState<PlayState>("idle");
+  const [errorMsg, setErrorMsg]   = useState<string | null>(null);
 
-  useEffect(() => { playingRef.current   = playing;   }, [playing]);
-  useEffect(() => { segIdxRef.current    = segIdx;    }, [segIdx]);
-  useEffect(() => { speedRef.current     = speed;     }, [speed]);
-  useEffect(() => { voiceIdxRef.current  = voiceIdx;  }, [voiceIdx]);
-  useEffect(() => { segmentsRef.current  = segments;  }, [segments]);
+  // Active audio element ref — so we can stop/pause
+  const audioRef  = useRef<HTMLAudioElement | null>(null);
+  const blobUrlRef = useRef<string | null>(null);
 
-  // Rebuild segments whenever model, mode, or page changes
+  // Rebuild segments on model/mode/page change
   useEffect(() => {
     const next = buildSpeechScript(studyModel, mode);
     setSegments(next);
-    segmentsRef.current = next;
-    // If currently playing, stop and reset
-    if (playing) stopAll();
     setSegIdx(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    stopAudio();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studyModel, mode, pageNumber]);
 
-  // Load voices (WebSpeech voices load async on first call)
-  useEffect(() => {
-    if (!isSpeechAvailable()) return;
-    const load = () => {
-      const available = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith("en"));
-      if (available.length > 0) setVoices(available);
-    };
-    load();
-    window.speechSynthesis.onvoiceschanged = load;
-    return () => { window.speechSynthesis.onvoiceschanged = null; };
-  }, []);
+  // ── Audio helpers ──────────────────────────────────────────────────────────
 
-  // ── Playback engine ────────────────────────────────────────────────────────
-
-  function stopAll() {
-    cancelledRef.current = true;
-    if (isSpeechAvailable()) window.speechSynthesis.cancel();
-    setPlaying(false);
+  function stopAudio() {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current = null;
+    }
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    setPlayState("idle");
   }
 
-  const speakSegment = useCallback((idx: number): void => {
-    const segs = segmentsRef.current;
-    if (cancelledRef.current || idx >= segs.length) {
-      setPlaying(false);
-      setSegIdx(0);
+  useEffect(() => () => stopAudio(), []);
+
+  // ── Browser speech fallback ─────────────────────────────────────────────────
+
+  function playBrowserSpeech(text: string) {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      setPlayState("error");
+      setErrorMsg("Speech not available in this browser.");
+      return;
+    }
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.rate = speed;
+    utt.onstart = () => {
+      console.log("[SPEECH_START]", { source: "browser", charCount: text.length });
+      setPlayState("playing");
+    };
+    utt.onend = () => {
+      console.log("[SPEECH_END]", { source: "browser" });
+      setPlayState("idle");
+    };
+    utt.onerror = (e) => {
+      if (e.error !== "interrupted") {
+        console.warn("[SPEECH_ERROR]", { source: "browser", error: e.error });
+        setPlayState("error");
+        setErrorMsg(`Browser speech error: ${e.error}`);
+      }
+    };
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utt);
+  }
+
+  // ── Main play ──────────────────────────────────────────────────────────────
+
+  async function play(fromIdx = 0) {
+    console.log("[SPEECH_PLAY_CLICK]", { mode, fromIdx, segmentCount: segments.length, pageNumber });
+    stopAudio();
+    setErrorMsg(null);
+
+    const speechText = buildSpeechText(segments, mode, studyModel, activePageText, fromIdx);
+    if (!speechText.trim()) {
+      setErrorMsg("No text to read for this mode.");
       return;
     }
 
-    const seg = segs[idx];
-    setSegIdx(idx);
+    console.log("[SPEECH_TEXT_READY]", { charCount: speechText.length, mode, preview: speechText.slice(0, 80) });
+    setPlayState("loading");
 
-    const utt = new SpeechSynthesisUtterance(seg.text);
-    utt.rate   = Math.max(0.5, Math.min(3.0, speedRef.current * seg.rateModifier));
-    utt.pitch  = seg.role === "commonConfusion" ? 0.85
-               : seg.role === "examSignal"      ? 0.90
-               : 1.0;
-    utt.volume = 1.0;
+    try {
+      console.log("[OPENAI_SPEECH_START]", { charCount: speechText.length, voice });
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ script: speechText, voice, format: "mp3", return: "json" }),
+      });
 
-    const available = voicesRef.current;
-    if (available.length > 0) {
-      utt.voice = available[voiceIdxRef.current % available.length] ?? null;
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`TTS API ${res.status}: ${err.slice(0, 120)}`);
+      }
+
+      const data = await res.json();
+
+      // OpenAI returned real audio
+      if (data.audioBase64) {
+        console.log("[OPENAI_SPEECH_DONE]", { bytes: data.audioBase64.length });
+        const bytes = Uint8Array.from(atob(data.audioBase64), c => c.charCodeAt(0));
+        const blob  = new Blob([bytes], { type: data.mimeType || "audio/mpeg" });
+        const url   = URL.createObjectURL(blob);
+        blobUrlRef.current = url;
+        const audio = new Audio(url);
+        audio.playbackRate = speed;
+        audioRef.current = audio;
+        audio.onplay  = () => { console.log("[SPEECH_AUDIO_PLAY]", { mode }); setPlayState("playing"); };
+        audio.onended = () => { console.log("[SPEECH_AUDIO_END]", { mode }); setPlayState("idle"); URL.revokeObjectURL(url); blobUrlRef.current = null; };
+        audio.onerror = () => { console.warn("[SPEECH_ERROR]", { source: "openai-audio", mode }); setPlayState("error"); setErrorMsg("Audio playback failed."); };
+        await audio.play();
+        return;
+      }
+
+      // Server signalled browser speech fallback
+      if (data.useBrowserSpeech) {
+        console.log("[OPENAI_SPEECH_DONE]", { useBrowserFallback: true });
+        playBrowserSpeech(data.script || speechText);
+        return;
+      }
+
+      throw new Error("Unexpected TTS API response");
+
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn("[OPENAI_SPEECH_ERROR]", { error: message });
+      // Fallback to browser speech
+      playBrowserSpeech(speechText);
     }
-
-    utt.onend = () => {
-      if (cancelledRef.current) return;
-      const next = idx + 1;
-      if (next < segmentsRef.current.length) {
-        // Short gap between segments for natural pacing
-        setTimeout(() => speakSegment(next), 180);
-      } else {
-        setPlaying(false);
-        setSegIdx(0);
-      }
-    };
-
-    utt.onerror = (ev) => {
-      if (ev.error !== "interrupted") {
-        console.warn("[SPEECH_ERROR]", ev.error);
-        setPlaying(false);
-      }
-    };
-
-    window.speechSynthesis.speak(utt);
-  }, []);
-
-  // Keep a stable ref to speakSegment
-  const speakRef = useRef(speakSegment);
-  useEffect(() => { speakRef.current = speakSegment; }, [speakSegment]);
-
-  // Keep voices ref for the utt.voice assignment inside speakSegment
-  const voicesRef = useRef(voices);
-  useEffect(() => { voicesRef.current = voices; }, [voices]);
-
-  function play(fromIdx?: number) {
-    if (!isSpeechAvailable() || segments.length === 0) return;
-    cancelledRef.current = false;
-    window.speechSynthesis.cancel();
-    setPlaying(true);
-    const start = fromIdx ?? segIdx;
-    speakRef.current(start);
   }
 
   function pause() {
-    if (!isSpeechAvailable()) return;
-    if (playing) {
+    if (audioRef.current && !audioRef.current.paused) {
+      audioRef.current.pause();
+      setPlayState("idle");
+    } else if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.pause();
-      setPlaying(false);
-    }
-  }
-
-  function resume() {
-    if (!isSpeechAvailable()) return;
-    if (!playing) {
-      window.speechSynthesis.resume();
-      setPlaying(true);
+      setPlayState("idle");
     }
   }
 
   function stop() {
-    stopAll();
+    stopAudio();
     setSegIdx(0);
   }
 
-  // Stop on unmount
-  useEffect(() => () => stopAll(), []);
-
   // ── Derived ────────────────────────────────────────────────────────────────
 
-  const currentSeg  = segments[segIdx] ?? null;
-  const hasSpeech   = isSpeechAvailable();
-  const hasContent  = segments.length > 0;
+  const isPlaying  = playState === "playing";
+  const isLoading  = playState === "loading";
+  const hasContent = segments.length > 0 || activePageText.length > 20;
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div
-      style={{
-        borderRadius: 12,
-        border: "1px solid rgba(255,255,255,0.07)",
-        background: "rgba(255,255,255,0.02)",
-        overflow: "hidden",
-      }}
-    >
-      {/* ── Header row ── */}
+    <div style={{ borderRadius: 12, border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)", overflow: "hidden" }}>
+      {/* Header */}
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          width: "100%",
-          padding: "8px 12px",
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          textAlign: "left",
-        }}
+        style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 12px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}
       >
         <span style={{ fontSize: 13 }}>🎧</span>
-        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "#94a3b8", textTransform: "uppercase" }}>
-          Study Speech
-        </span>
-        {playing && currentSeg && (
-          <span
-            style={{
-              marginLeft: "auto",
-              fontSize: 10,
-              color: roleStyle(currentSeg.role).text,
-              fontWeight: 600,
-              opacity: 0.85,
-            }}
-          >
-            ▶ {currentSeg.label}
-          </span>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "#94a3b8", textTransform: "uppercase" }}>Study Speech</span>
+        {isPlaying && (
+          <span style={{ marginLeft: "auto", fontSize: 10, color: "#a5b4fc", fontWeight: 600 }}>▶ Playing…</span>
         )}
-        <span style={{ marginLeft: playing ? undefined : "auto", fontSize: 10, color: "#475569" }}>
-          {open ? "▲" : "▼"}
-        </span>
+        {isLoading && (
+          <span style={{ marginLeft: "auto", fontSize: 10, color: "#fbbf24", fontWeight: 600 }}>⟳ Loading…</span>
+        )}
+        <span style={{ marginLeft: (isPlaying || isLoading) ? undefined : "auto", fontSize: 10, color: "#475569" }}>{open ? "▲" : "▼"}</span>
       </button>
 
-      {/* ── Expanded body ── */}
       {open && (
         <div style={{ padding: "0 12px 12px", display: "flex", flexDirection: "column", gap: 10 }}>
 
-          {!hasSpeech && (
-            <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
-              Web Speech is not available in this browser.
-            </p>
+          {/* Mode tabs */}
+          <div style={{ display: "flex", gap: 4 }}>
+            {STUDY_SPEECH_MODES.map(m => (
+              <button key={m.id} type="button" onClick={() => { setMode(m.id); stop(); }} title={m.description}
+                style={{ flex: 1, padding: "4px 0", borderRadius: 6, border: mode === m.id ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(255,255,255,0.07)", background: mode === m.id ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)", color: mode === m.id ? "#a5b4fc" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+              >{m.label}</button>
+            ))}
+          </div>
+
+          {/* Controls row */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {!isPlaying && !isLoading ? (
+              <button type="button" disabled={!hasContent} onClick={() => play(segIdx)}
+                style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.4)", background: hasContent ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)", color: hasContent ? "#a5b4fc" : "#475569", fontSize: 12, fontWeight: 700, cursor: hasContent ? "pointer" : "not-allowed" }}
+              >▶ Play</button>
+            ) : isLoading ? (
+              <button type="button" onClick={stop}
+                style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(251,191,36,0.4)", background: "rgba(251,191,36,0.08)", color: "#fbbf24", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+              >⟳ Loading…</button>
+            ) : (
+              <button type="button" onClick={pause}
+                style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(251,191,36,0.4)", background: "rgba(251,191,36,0.08)", color: "#fbbf24", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+              >⏸ Pause</button>
+            )}
+            <button type="button" onClick={stop}
+              style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", color: "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+            >■ Stop</button>
+
+            {/* Speed */}
+            <div style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: "auto" }}>
+              <span style={{ fontSize: 10, color: "#64748b", whiteSpace: "nowrap" }}>{speed.toFixed(1)}×</span>
+              <input type="range" min={0.5} max={2.5} step={0.1} value={speed}
+                onChange={e => { const v = Number(e.target.value); setSpeed(v); if (audioRef.current) audioRef.current.playbackRate = v; }}
+                style={{ width: 60, accentColor: "#818cf8" }} title="Playback speed" />
+            </div>
+          </div>
+
+          {/* Voice selector */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 10, color: "#475569", flexShrink: 0 }}>Voice:</span>
+            <select value={voice} onChange={e => setVoice(e.target.value as OAIVoice)}
+              style={{ flex: 1, fontSize: 10, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6, color: "#94a3b8", padding: "3px 6px", cursor: "pointer" }}
+            >
+              {OPENAI_VOICES.map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
+
+          {/* Error */}
+          {errorMsg && (
+            <p style={{ fontSize: 11, color: "#fca5a5", margin: 0 }}>⚠ {errorMsg}</p>
           )}
 
-          {hasSpeech && (
-            <>
-              {/* Mode tabs */}
-              <div style={{ display: "flex", gap: 4 }}>
-                {STUDY_SPEECH_MODES.map(m => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => { setMode(m.id); stop(); }}
-                    title={m.description}
-                    style={{
-                      flex: 1,
-                      padding: "4px 0",
-                      borderRadius: 6,
-                      border: mode === m.id
-                        ? "1px solid rgba(99,102,241,0.5)"
-                        : "1px solid rgba(255,255,255,0.07)",
-                      background: mode === m.id
-                        ? "rgba(99,102,241,0.12)"
-                        : "rgba(255,255,255,0.03)",
-                      color: mode === m.id ? "#a5b4fc" : "#64748b",
-                      fontSize: 10,
-                      fontWeight: 700,
-                      letterSpacing: "0.04em",
-                      cursor: "pointer",
-                      transition: "all 0.15s",
-                    }}
+          {/* Segment list */}
+          {segments.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 200, overflowY: "auto" }}>
+              {segments.map((seg, i) => {
+                const s = roleStyle(seg.role);
+                const isActive = i === segIdx;
+                return (
+                  <button key={seg.id} type="button"
+                    onClick={() => { setSegIdx(i); stop(); setTimeout(() => play(i), 80); }}
+                    style={{ display: "flex", alignItems: "flex-start", gap: 7, textAlign: "left", background: isActive ? s.bg : "transparent", border: isActive ? `1px solid ${s.border}` : "1px solid transparent", borderRadius: 7, padding: "4px 7px", cursor: "pointer" }}
                   >
-                    {m.label}
+                    <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.05em", color: s.text, textTransform: "uppercase", paddingTop: 1, flexShrink: 0, minWidth: 52 }}>
+                      {isActive && isPlaying ? "▶ " : ""}{seg.label}
+                    </span>
+                    <span style={{ fontSize: 11, color: isActive ? "#e2e8f0" : "#64748b", lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const }}>
+                      {seg.rawText}
+                    </span>
                   </button>
-                ))}
-              </div>
+                );
+              })}
+            </div>
+          )}
 
-              {/* Playback controls */}
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                {!playing ? (
-                  <button
-                    type="button"
-                    disabled={!hasContent}
-                    onClick={() => play()}
-                    style={{
-                      padding: "6px 14px",
-                      borderRadius: 8,
-                      border: "1px solid rgba(99,102,241,0.4)",
-                      background: hasContent ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)",
-                      color: hasContent ? "#a5b4fc" : "#475569",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      cursor: hasContent ? "pointer" : "not-allowed",
-                    }}
-                  >
-                    ▶ Play
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={pause}
-                    style={{
-                      padding: "6px 14px",
-                      borderRadius: 8,
-                      border: "1px solid rgba(251,191,36,0.4)",
-                      background: "rgba(251,191,36,0.08)",
-                      color: "#fbbf24",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      cursor: "pointer",
-                    }}
-                  >
-                    ⏸ Pause
-                  </button>
-                )}
-
-                {!playing && segIdx > 0 && (
-                  <button
-                    type="button"
-                    onClick={resume}
-                    style={{
-                      padding: "6px 12px",
-                      borderRadius: 8,
-                      border: "1px solid rgba(52,211,153,0.3)",
-                      background: "rgba(52,211,153,0.06)",
-                      color: "#34d399",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: "pointer",
-                    }}
-                  >
-                    ▶ Resume
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={stop}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: 8,
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    background: "rgba(255,255,255,0.03)",
-                    color: "#64748b",
-                    fontSize: 11,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
-                >
-                  ■ Stop
-                </button>
-
-                {/* Speed control */}
-                <div style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: "auto" }}>
-                  <span style={{ fontSize: 10, color: "#64748b", whiteSpace: "nowrap" }}>
-                    {speed.toFixed(1)}×
-                  </span>
-                  <input
-                    type="range"
-                    min={0.5}
-                    max={2.5}
-                    step={0.1}
-                    value={speed}
-                    onChange={e => setSpeed(Number(e.target.value))}
-                    style={{ width: 60, accentColor: "#818cf8" }}
-                    title="Playback speed"
-                  />
-                </div>
-              </div>
-
-              {/* Voice selector (only if multiple voices available) */}
-              {voices.length > 1 && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontSize: 10, color: "#475569", flexShrink: 0 }}>Voice:</span>
-                  <select
-                    value={voiceIdx}
-                    onChange={e => setVoiceIdx(Number(e.target.value))}
-                    style={{
-                      flex: 1,
-                      fontSize: 10,
-                      background: "rgba(255,255,255,0.04)",
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      borderRadius: 6,
-                      color: "#94a3b8",
-                      padding: "3px 6px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {voices.map((v, i) => (
-                      <option key={v.voiceURI} value={i}>
-                        {v.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Segment list — clickable to jump */}
-              {segments.length > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 200, overflowY: "auto" }}>
-                  {segments.map((seg, i) => {
-                    const s   = roleStyle(seg.role);
-                    const isActive = i === segIdx;
-                    return (
-                      <button
-                        key={seg.id}
-                        type="button"
-                        onClick={() => { stop(); setTimeout(() => play(i), 80); }}
-                        style={{
-                          display: "flex",
-                          alignItems: "flex-start",
-                          gap: 7,
-                          textAlign: "left",
-                          background: isActive ? s.bg : "transparent",
-                          border: isActive
-                            ? `1px solid ${s.border}`
-                            : "1px solid transparent",
-                          borderRadius: 7,
-                          padding: "4px 7px",
-                          cursor: "pointer",
-                          transition: "all 0.12s",
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: 9,
-                            fontWeight: 700,
-                            letterSpacing: "0.05em",
-                            color: s.text,
-                            textTransform: "uppercase",
-                            paddingTop: 1,
-                            flexShrink: 0,
-                            minWidth: 52,
-                          }}
-                        >
-                          {isActive && playing ? "▶ " : ""}{seg.label}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: isActive ? "#e2e8f0" : "#64748b",
-                            lineHeight: 1.4,
-                            overflow: "hidden",
-                            display: "-webkit-box",
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: "vertical" as const,
-                          }}
-                        >
-                          {seg.rawText}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {segments.length === 0 && (
-                <p style={{ fontSize: 11, color: "#475569", margin: 0 }}>
-                  No content available for this mode on the current page.
-                </p>
-              )}
-            </>
+          {segments.length === 0 && activePageText.length < 20 && (
+            <p style={{ fontSize: 11, color: "#475569", margin: 0 }}>No content available yet — synthesis in progress.</p>
+          )}
+          {segments.length === 0 && activePageText.length >= 20 && (
+            <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>Reading active page text ({activePageText.length} chars).</p>
           )}
         </div>
       )}
