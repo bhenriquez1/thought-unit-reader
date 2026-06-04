@@ -73,8 +73,14 @@ function detectPageRole(pageText: string, heading: string, formulaCount: number,
   // Preface / Foreword
   if (/^\s*(preface|foreword)\s*$/im.test(pageText) && lineGroups < 40) return "preface";
 
-  // Chapter opener — "Chapter N" large heading + sparse body
-  if (/^chapter\s+\d+|^part\s+[ivx\d]+/im.test(pageText) && lineGroups < 12) return "chapter_opener";
+  // Chapter opener — "Chapter N" / "Part N" large heading + sparse body.
+  // Guards: (1) lineGroups < 12 prevents firing on content pages that happen
+  // to have a running header containing "Chapter 2"; (2) if the page contains
+  // known instructional vocabulary (definition, element, cell, compound, mechanism,
+  // function, table, figure, example) it is a content page even if a chapter
+  // heading appears at the top as a running header.
+  const hasInstructionalVocab = /\b(define|definition|element|compound|molecule|cell|organism|function|mechanism|example|figure|table|section|key|concept|essential|trace|synthesis|process|structure|property)\b/i.test(pageText);
+  if (/^chapter\s+\d+|^part\s+[ivx\d]+/im.test(pageText) && lineGroups < 12 && !hasInstructionalVocab) return "chapter_opener";
 
   // Unit opener
   if (/^unit\s+[\divx]+/im.test(pageText) && lineGroups < 15) return "unit_opener";
