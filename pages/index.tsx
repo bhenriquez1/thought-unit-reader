@@ -50,8 +50,8 @@ import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuide
 import { groundHighlightAnchors } from "@/lib/highlights/groundHighlightAnchors";
 import { sanitizeHighlightAnchors } from "@/lib/highlights/sanitizeHighlightAnchors";
 import type { SynthHighlightAnchor } from "@/lib/insights/synthesizeTeachingOutput";
-import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote } from "@/lib/notelab/ultraNoteStore";
-import { buildRecallSetFromView, saveRecallSet } from "@/lib/recalllab/recallStore";
+import { buildNoteFromStudyModel, buildUltraNote, saveUltraNote, getAllUltraNotes } from "@/lib/notelab/ultraNoteStore";
+import { buildRecallSetFromView, saveRecallSet, getAllRecallSets } from "@/lib/recalllab/recallStore";
 
 // Cognitive Engine Components (Surgeon View 2.0)
 import {
@@ -529,6 +529,26 @@ export default function ThoughtUnitReader() {
   // Full anchor objects (not just strings) so anchorType can drive legend colors.
   // Shared typed study model — emitted by RightPanel when synthesis resolves.
   const [currentPageStudyModel, setCurrentPageStudyModel] = useState<import("@/lib/insights/currentPageStudyModel").CurrentPageStudyModel | null>(null);
+
+  // DIAGNOSTIC: [NOTELAB_RESTORE] / [RECALLLAB_RESTORE] — on mount, report how many records
+  // exist in localStorage. Run once. After page refresh this proves persistence works or doesn't.
+  useEffect(() => {
+    const notes = getAllUltraNotes();
+    console.log("[NOTELAB_RESTORE]", {
+      recordsFound: notes.length,
+      storageKey:   "ultraNotes_v1",
+      destination:  "localStorage",
+      sampleTopics: notes.slice(0, 3).map(n => `p${n.pageNumber}: ${n.topic?.slice(0, 40) ?? "(no topic)"}`),
+    });
+    const recallSets = getAllRecallSets();
+    console.log("[RECALLLAB_RESTORE]", {
+      recordsFound: recallSets.length,
+      storageKey:   "recallSets_v1",
+      destination:  "localStorage",
+      totalCards:   recallSets.reduce((s, r) => s + r.cards.length, 0),
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Clear stale synthesis state immediately when the user navigates to a new page.
   useEffect(() => {
