@@ -39,7 +39,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                             process.env.OPENAI_API_KEY.length > 20;
 
   if (!hasValidOpenAIKey) {
-    // Fallback: Return instructions to use Butler speech synthesis
+    // DIAGNOSTIC: key missing or invalid — browser fallback will fire
+    console.log("[OPENAI_SPEECH_SKIP]", {
+      reason:       "OPENAI_API_KEY missing or invalid",
+      hasKey:       !!process.env.OPENAI_API_KEY,
+      keyPrefix:    process.env.OPENAI_API_KEY ? process.env.OPENAI_API_KEY.slice(0, 7) + "…" : null,
+      fallback:     "browser-speech",
+      scriptChars:  script.length,
+      voice,
+    });
     console.log("🎵 OpenAI TTS not available, falling back to Butler speech synthesis");
     
     // Process text with Butler speech engine for smart content selection
@@ -112,6 +120,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const fmt = (format || "mp3").toLowerCase() as NonNullable<Body["format"]>;
     const mime = FORMAT_TO_MIME[fmt] || "audio/mpeg";
 
+    console.log("[OPENAI_SPEECH_START]", { scriptChars: script.length, voice, format: fmt });
+
     // Generate audio with OpenAI (Node SDK v5)
     const speech = await openai.audio.speech.create({
       model: "tts-1", // or "gpt-4o-mini-tts" if enabled for your org
@@ -122,6 +132,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     const buffer = Buffer.from(await speech.arrayBuffer());
+    console.log("[OPENAI_SPEECH_DONE]", { audioBytes: buffer.length, mimeType: mime, provider: "openai" });
 
     // If client asked JSON, return base64 + mime (handy for fetch(...).json())
     const wantsJSON =
@@ -137,8 +148,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.setHeader("Cache-Control", "no-store");
     return res.status(200).send(buffer);
   } catch (err: any) {
+    console.error("[OPENAI_SPEECH_ERROR]", { error: err?.message ?? String(err), fallback: "browser-speech" });
     console.error("TTS API error:", err?.message || err);
-    
+
     // Fallback to Butler speech synthesis on error
     console.log("🎵 OpenAI TTS failed, falling back to Butler speech synthesis");
     

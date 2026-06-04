@@ -645,6 +645,27 @@ export function RightPanel({
     pageNumber: ctx?.pageNumber ?? undefined,
   });
 
+  // ── DIAGNOSTIC: [SYNTH_GATE] — fires every time synthEnabled or synthStatus changes ──
+  // Answers: "Why is synthesis running/blocked on this page?"
+  useEffect(() => {
+    console.log("[SYNTH_GATE]", {
+      page:                   ctx?.pageNumber ?? null,
+      pageRole:               intelligence.pageRole ?? null,
+      pageType:               (teachingSynthesis as any)?.pageType ?? null,
+      shouldRenderFullPanel:  normResult?.shouldRenderFullPanel ?? null,
+      pageIsNonInstructional,
+      isStructuralPage,
+      synthEnabled,
+      synthStatus,
+      stage1Status,
+      hasUsablePageText,
+      ctxPageTextLength:      ctx?.pageText?.length ?? 0,
+      ultraPageViewPresent:   !!ultraPageView,
+      pageTruthKey,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageTruthKey, synthEnabled, synthStatus]);
+
   // 30-second UI timeout: if synthesis is still loading after 30s, show a visible error.
   // Resets whenever the page changes or synthesis finishes.
   const [synthTimedOut, setSynthTimedOut] = useState(false);
@@ -963,6 +984,20 @@ export function RightPanel({
       keyMechanism:      studyModel?.studyNotes?.keyMechanism?.slice(0, 80) ?? null,
       commonConfusion:   studyModel?.studyNotes?.commonConfusion?.slice(0, 80) ?? null,
     });
+    // ── DIAGNOSTIC: [FINAL_STUDY_MODEL] — proof the model exists and what it contains ──
+    console.log("[FINAL_STUDY_MODEL]", {
+      page:                  studyModel?.page ?? null,
+      thesisExists:          !!studyModel?.pageThesis,
+      thesisPreview:         studyModel?.pageThesis?.slice(0, 80) ?? null,
+      conceptBlocks:         studyModel?.conceptBlocks?.length ?? 0,
+      visualAnchors:         studyModel?.visualAnchors?.length ?? 0,
+      highlightAnchors:      studyModel?.highlightAnchors?.length ?? 0,
+      studyNotesPopulated:   studyModel ? Object.values(studyModel.studyNotes).filter(Boolean).length : 0,
+      checkpoints:           studyModel?.miniTestItems?.length ?? 0,
+      preReadRecall:         studyModel?.preReadRecallItems?.length ?? 0,
+      willCallOnStudyModelReady: !!(studyModel && onStudyModelReady),
+    });
+
     if (studyModel && onStudyModelReady) {
       console.log("[WIRE] studyModel accepted", {
         pageTruthKey,
@@ -1100,6 +1135,19 @@ export function RightPanel({
       <button
         onClick={() => {
           console.log("[SHADOW_RECALL_OPEN]", { hasData: !!shadowRecall, page: ctx?.pageNumber ?? null });
+          // DIAGNOSTIC: [SHADOW_RECALL_SOURCE] — which objects are populated when drawer opens?
+          console.log("[SHADOW_RECALL_SOURCE]", {
+            hasStudyModel:       !!studyModel,
+            studyModelPage:      studyModel?.page ?? null,
+            hasShadowRecall:     !!shadowRecall,
+            shadowRecallNullReason: !shadowRecall
+              ? (!isCurrentPageModel ? "isCurrentPageModel=false" : !pageModel ? "pageModel=null" : "unknown")
+              : null,
+            isCurrentPageModel,
+            pageModelPresent:    !!pageModel,
+            intelligenceStatus:  intelligence.status,
+            pageNumber:          ctx?.pageNumber ?? null,
+          });
           setRecallOpen(true);
         }}
         className="fixed bottom-5 left-5 z-[60] flex items-center gap-1.5 rounded-full border border-violet-500/30 bg-[#0b1020]/90 px-3.5 py-2 text-[11px] font-bold text-violet-300 shadow-lg backdrop-blur-sm transition-all hover:bg-violet-900/40 hover:border-violet-400/50 cursor-pointer"
