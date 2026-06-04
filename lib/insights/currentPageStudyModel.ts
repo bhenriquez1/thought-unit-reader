@@ -97,6 +97,7 @@ type AnchorCandidate = { text: string; anchorType: string; reason: string; spanS
 // full right-panel brain — not just the one or two verbatim spans the model returned.
 function buildAnchorCandidates(
   synth: Record<string, unknown>,
+  thesis: string,
 ): AnchorCandidate[] {
   const aiAnchors = (synth.highlightAnchors as AnchorCandidate[] | null) ?? [];
   const pageType = (synth.pageType as PageType | null) ?? null;
@@ -110,9 +111,16 @@ function buildAnchorCandidates(
     return [];
   }
 
-  // Use ONLY AI anchors — no thesis/study-notes/concept-block fallbacks.
-  // Left panel contract: visualAnchors comes exclusively from what the AI returned.
-  const cleaned: AnchorCandidate[] = [...aiAnchors]
+  // Primary source: AI's highlightAnchors (2–4 verbatim spans from the page).
+  // Minimal fallback: when AI returns null/empty, use the page thesis as a single coreIdea anchor
+  // so the left panel always has at least one highlight on instructional content pages.
+  const sourceAnchors: AnchorCandidate[] = aiAnchors.length > 0
+    ? aiAnchors
+    : thesis && thesis.length >= 12
+      ? [{ text: thesis, anchorType: "thesis", reason: "Page thesis — AI returned no highlight anchors" }]
+      : [];
+
+  const cleaned: AnchorCandidate[] = [...sourceAnchors]
     .map((a) => ({ ...a, text: (cleanThesisLine(a.text) ?? "").trim() }))
     .filter((a) => a.text.length >= 12);
 
@@ -180,7 +188,7 @@ export function buildStudyModel(
   }));
 
   const cleanThesis = cleanThesisLine(thesis) ?? thesis;
-  const highlightAnchors = buildAnchorCandidates(synth);
+  const highlightAnchors = buildAnchorCandidates(synth, cleanThesis);
 
   // Build visualAnchors — the final left-panel highlight contract.
   // Sourced exclusively from AI anchor output; sorted by role priority.

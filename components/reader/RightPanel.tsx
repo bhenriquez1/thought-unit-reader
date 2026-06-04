@@ -592,14 +592,15 @@ export function RightPanel({
     // Front matter
     "cover", "title_page", "dedication", "acknowledgements", "preface", "about_authors",
     "copyright_frontmatter",
-    // Navigation / structural — chapter_opener blocks synthesis; content begins on next page
-    "contents", "unit_opener", "section_opener", "chapter_opener",
+    // Navigation / structural — chapter_opener, learning_objectives block synthesis
+    "contents", "unit_opener", "section_opener", "chapter_opener", "learning_objectives",
     // Back matter
     "glossary", "index", "bibliography", "appendix",
     // Unrenderable
     "image_scan_heavy",
   ]);
   const isStructuralPage = STRUCTURAL_PAGE_ROLES.has(intelligence.pageRole ?? "");
+
 
   const ultraPageView = useMemo((): UltraPageView | null => {
     if (!isCurrentPageModel || !pageModel) return null;
@@ -665,6 +666,10 @@ export function RightPanel({
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageTruthKey, synthEnabled, synthStatus]);
+
+  // OpenAI itself confirmed non-instructional — secondary gate for pages heuristics miss.
+  // "review_checkpoint" covers: review questions, learning objectives, summaries, checkpoints.
+  const openAIConfirmsNonInstructional = teachingSynthesis?.pageType === "review_checkpoint";
 
   // 30-second UI timeout: if synthesis is still loading after 30s, show a visible error.
   // Resets whenever the page changes or synthesis finishes.
@@ -998,7 +1003,10 @@ export function RightPanel({
       willCallOnStudyModelReady: !!(studyModel && onStudyModelReady),
     });
 
-    if (studyModel && onStudyModelReady) {
+    // Block emit for structural/non-instructional pages — left panel must not receive
+    // a study model for chapter openers, learning objectives, or review checkpoint pages.
+    const blockEmit = isStructuralPage || openAIConfirmsNonInstructional;
+    if (studyModel && onStudyModelReady && !blockEmit) {
       console.log("[WIRE] studyModel accepted", {
         pageTruthKey,
         page: studyModel.page,
@@ -1007,6 +1015,13 @@ export function RightPanel({
         preReadRecall: (studyModel as any).preReadRecallItems?.length ?? 0,
       });
       onStudyModelReady(studyModel, pageTruthKey);
+    } else if (blockEmit && studyModel) {
+      console.log("[SYNTH_BLOCKED]", {
+        reason: isStructuralPage ? "structural page role" : "openAI review_checkpoint",
+        pageRole: intelligence.pageRole ?? null,
+        pageType: teachingSynthesis?.pageType ?? null,
+        page: studyModel.page,
+      });
     }
   }, [ultraPageViewWithSynthesis, studyModel, pageTruthKey, onStudyModelReady]);
 
@@ -1078,19 +1093,22 @@ export function RightPanel({
   // Legacy fallbacks are kept in code but suppressed — they bypass all quality gates.
   // Synthesis-scaffold path: when ultraPageView is null but synthesis attached _synth
   // (text-fallback page), render the UltraView from the scaffold so study notes show.
+  // Combined non-instructional gate — heuristic OR OpenAI confirmation.
+  const pageBlocked = isStructuralPage || pageIsNonInstructional || openAIConfirmsNonInstructional;
+
   const hasSynthScaffold = Boolean((ultraPageViewWithSynthesis as any)?._synth) && !ultraPageView;
-  const showUltraView     = !isStructuralPage && !pageIsNonInstructional &&
+  const showUltraView     = !pageBlocked &&
     ((isCurrentPageModel && Boolean(ultraPageView)) || hasSynthScaffold);
-  const showConceptBlocks = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && !showUltraView && Boolean(readerPageView);
-  const showNarrativePageView = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && !showUltraView && !showConceptBlocks && Boolean(
+  const showConceptBlocks = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageBlocked && !showUltraView && Boolean(readerPageView);
+  const showNarrativePageView = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageBlocked && !showUltraView && !showConceptBlocks && Boolean(
     narrativePageView?.narrative.sections.length
   );
   const gate = !showUltraView && !showConceptBlocks;
-  const showNarrativeView  = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && narrativeBlocks.length > 0;
-  const showV3View         = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && v3Notes.length > 0;
-  const showV2Map          = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && !showV3View && v2Notes.length > 0;
-  const showV2Operator     = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && Boolean(storyV2?.signalBlock);
-  const showGuidedView     = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && gate && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && !showV2Operator && Boolean(guidedView);
+  const showNarrativeView  = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageBlocked && gate && !showNarrativePageView && narrativeBlocks.length > 0;
+  const showV3View         = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageBlocked && gate && !showNarrativePageView && !showNarrativeView && v3Notes.length > 0;
+  const showV2Map          = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageBlocked && gate && !showNarrativePageView && !showNarrativeView && !showV3View && v2Notes.length > 0;
+  const showV2Operator     = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageBlocked && gate && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && Boolean(storyV2?.signalBlock);
+  const showGuidedView     = !FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageBlocked && gate && !showNarrativePageView && !showNarrativeView && !showV3View && !showV2Map && !showV2Operator && Boolean(guidedView);
 
   // Header status label — shows phase during loading, page teaching purpose when ready
   const headerStatus = intelligence.status === "loading"
@@ -1232,10 +1250,13 @@ export function RightPanel({
           </div>
         )}
 
-        {isStructuralPage && isCurrentPageModel && (() => {
-          const role = intelligence.pageRole ?? "";
+        {(isStructuralPage || openAIConfirmsNonInstructional) && (() => {
+          const role = openAIConfirmsNonInstructional && !isStructuralPage
+            ? "review_checkpoint"
+            : (intelligence.pageRole ?? "");
           const icon = structuralPageIcon(role);
-          const label = structuralPageLabel(role);
+          const label = isStructuralPage ? structuralPageLabel(role)
+            : "Review / checkpoint page — navigate to a content page to generate study notes.";
           return (
             <div className="rounded-2xl border border-amber-400/15 bg-[#0d1520] px-5 py-7 space-y-3">
               <div className="flex items-center gap-3">
@@ -3371,36 +3392,20 @@ function PreReadRecallDrawer({
   synthForDerive?: SynthesisForRecall | null;
 }) {
   if (!open) return null;
-  if (!recall) {
-    return (
-      <>
-        <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
-        <div className="fixed left-0 top-0 bottom-0 z-50 w-[380px] bg-[#0b1020] border-r border-white/10 flex flex-col overflow-hidden shadow-2xl">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
-            <span className="text-[11px] font-bold uppercase tracking-widest text-violet-300">🕶 Shadow Recall</span>
-            <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-xl leading-none">×</button>
-          </div>
-          <div className="flex flex-col items-center justify-center gap-4 flex-1 p-6 text-center">
-            <span className="text-3xl">🕶</span>
-            <p className="text-[13px] font-semibold text-violet-300/70">Synthesis Loading</p>
-            <p className="text-[12px] text-slate-500 leading-relaxed max-w-[260px]">
-              Shadow Recall questions appear once the page study model is ready. Navigate to a content page and wait a few seconds.
-            </p>
-          </div>
-        </div>
-      </>
-    );
-  }
+
+  // Derive recall items from synthesis data — works even when pageModel (heuristic) is null.
+  // Priority: preReadRecallItems (Stage 1 AI) > derived from synthForDerive > empty state.
   const derived = (!preReadRecallItems?.length && synthForDerive) ? deriveRecallItems(synthForDerive) : null;
   const items = preReadRecallItems?.length ? preReadRecallItems : derived;
-  console.log("[WIRE] ShadowRecall open", { page: recall.pageLabel, questions: items?.length ?? 0, source: preReadRecallItems?.length ? "stage1" : derived?.length ? "derived" : "loading", types: items?.map(i => i.type) ?? [] });
+  const pageLabel = recall?.pageLabel ?? "This Page";
+  console.log("[WIRE] ShadowRecall open", { page: pageLabel, recallNull: !recall, questions: items?.length ?? 0, source: preReadRecallItems?.length ? "stage1" : derived?.length ? "derived" : "empty", types: items?.map(i => i.type) ?? [] });
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
       <div className="fixed left-0 top-0 bottom-0 z-50 w-[380px] bg-[#0b1020] border-r border-white/10 flex flex-col overflow-hidden shadow-2xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
           <span className="text-[11px] font-bold uppercase tracking-widest text-violet-300">
-            🕶 Shadow Recall · {recall.pageLabel}
+            🕶 Shadow Recall · {pageLabel}
           </span>
           <button
             onClick={onClose}

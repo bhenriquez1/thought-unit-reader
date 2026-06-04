@@ -7,7 +7,7 @@ export type DensityMode = "condensed" | "expanded";
 export type PageRole =
   | "cover" | "title_page" | "dedication" | "acknowledgements" | "preface" | "about_authors"
   | "contents" | "copyright_frontmatter"
-  | "chapter_opener" | "unit_opener" | "section_opener"
+  | "chapter_opener" | "unit_opener" | "section_opener" | "learning_objectives"
   | "glossary" | "index" | "bibliography" | "appendix"
   | "history_background" | "regular_teaching" | "table_formula" | "image_scan_heavy";
 

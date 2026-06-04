@@ -80,13 +80,19 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   const audioRef  = useRef<HTMLAudioElement | null>(null);
   const blobUrlRef = useRef<string | null>(null);
 
-  // Rebuild segments on model/mode/page change
+  // Stop audio only on page navigation — NOT on studyModel/mode changes.
+  // Stage 2 synthesis updates studyModel mid-playback; calling stopAudio() there
+  // triggers window.speechSynthesis.cancel() and causes "browser speech canceled" errors.
   useEffect(() => {
-    const next = buildSpeechScript(studyModel, mode);
-    setSegments(next);
     setSegIdx(0);
     stopAudio();
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageNumber]);
+
+  // Rebuild segments when model or mode changes — without stopping audio.
+  useEffect(() => {
+    const next = buildSpeechScript(studyModel, mode);
+    setSegments(next);
   }, [studyModel, mode, pageNumber]);
 
   // ── Audio helpers ──────────────────────────────────────────────────────────
