@@ -561,15 +561,24 @@ export default function ThoughtUnitReader() {
     const pageRole = currentPageRoleRef.current;
 
     // ── Page classification ────────────────────────────────────────────────
+    const conceptBlockCount = currentPageStudyModel.conceptBlocks?.length ?? 0;
     console.log("[PAGE_CLASSIFY]", {
       page:              currentPage,
       pageType:          pageType ?? "unknown",
       pageRole:          pageRole ?? "unknown",
       visualAnchorCount: visualAnchors.length,
+      conceptBlockCount,
       pageThesis:        currentPageStudyModel.pageThesis?.slice(0, 60) ?? null,
     });
 
-    // ── Non-instructional skip ─────────────────────────────────────────────
+    // ── Non-instructional skip (two-tier) ──────────────────────────────────
+    // Tier 1 — OpenAI's own pageType classification: always trusted.
+    //   review_checkpoint / overview → no highlights regardless of local signals.
+    // Tier 2 — local heuristic pageRole (chapter_opener, cover, contents…):
+    //   trusted ONLY when AI itself found zero anchors. If OpenAI returned
+    //   visualAnchors (meaning it sees instructional content), the local
+    //   classifier is wrong — likely a stale ref from the previous page or a
+    //   running-header false-positive. Showing AI highlights is always correct.
     const NON_INSTRUCTIONAL_TYPES = new Set(["review_checkpoint", "overview"]);
     const NON_INSTRUCTIONAL_ROLES = new Set([
       "cover", "title_page", "dedication", "acknowledgements", "preface", "about_authors",
@@ -577,16 +586,59 @@ export default function ThoughtUnitReader() {
       "glossary", "index", "bibliography", "appendix", "image_scan_heavy",
       "chapter_opener",
     ]);
-    if (NON_INSTRUCTIONAL_TYPES.has(pageType ?? "") || NON_INSTRUCTIONAL_ROLES.has(pageRole ?? "")) {
+
+    // AI evidence: if OpenAI produced anchors, this page is instructional.
+    const aiConfirmsInstructional = visualAnchors.length > 0;
+
+    console.log("[CLASSIFIER_EVIDENCE]", {
+      page:                currentPage,
+      pageType,
+      pageRole,
+      aiConfirmsInstructional,
+      visualAnchorCountBeforeSkip: visualAnchors.length,
+      conceptBlockCount,
+      willCheckOpenAIType:  NON_INSTRUCTIONAL_TYPES.has(pageType ?? ""),
+      willCheckLocalRole:   !aiConfirmsInstructional && NON_INSTRUCTIONAL_ROLES.has(pageRole ?? ""),
+    });
+
+    // Tier 1: always respect OpenAI's own type
+    if (NON_INSTRUCTIONAL_TYPES.has(pageType ?? "")) {
       console.log("[NON_INSTRUCTIONAL_SKIP]", {
         page:     currentPage,
+        reason:   "OpenAI pageType confirmed non-instructional",
         pageType: pageType ?? "none",
         pageRole: pageRole ?? "none",
-        message:  "Chapter overview — navigate to a content page.",
+        visualAnchorCountAfterSkip: 0,
       });
       setFinalHighlightAnchors([]);
       return;
     }
+
+    // Tier 2: local classifier only when AI found nothing
+    if (!aiConfirmsInstructional && NON_INSTRUCTIONAL_ROLES.has(pageRole ?? "")) {
+      console.log("[NON_INSTRUCTIONAL_SKIP]", {
+        page:     currentPage,
+        reason:   "local pageRole + AI found zero anchors",
+        pageType: pageType ?? "none",
+        pageRole: pageRole ?? "none",
+        visualAnchorCountAfterSkip: 0,
+      });
+      setFinalHighlightAnchors([]);
+      return;
+    }
+
+    // If AI has anchors but local classifier fired chapter_opener — override logged here
+    if (aiConfirmsInstructional && NON_INSTRUCTIONAL_ROLES.has(pageRole ?? "")) {
+      console.log("[PAGE_CLASSIFY_REASON]", {
+        page:    currentPage,
+        verdict: "instructional — AI anchors override stale local pageRole",
+        pageRole,
+        anchorCount: visualAnchors.length,
+        note:    "local pageRole may be stale from previous page or running-header false-positive",
+      });
+    }
+
+    console.log("[VISUAL_ANCHOR_COUNT_BEFORE_SKIP]", { page: currentPage, count: visualAnchors.length });
 
     // ── Empty visualAnchors — no highlights, no fallback ───────────────────
     if (!visualAnchors.length) {
@@ -628,6 +680,13 @@ export default function ThoughtUnitReader() {
       groundedCount:     grounded.length,
       groundMethods:     grounded.map((a) => a.groundMethod),
       blockedLegacy:     ["score-anchors", "universalSpecificityScore", "highlightNeighborhoods", "priorityHighlights"],
+    });
+
+    console.log("[VISUAL_ANCHOR_COUNT_AFTER_SKIP]", {
+      page:          currentPage,
+      inputAnchors:  visualAnchors.length,
+      groundedCount: grounded.length,
+      finalCount:    groundedAnchors.length,
     });
 
     setFinalHighlightAnchors(groundedAnchors);
