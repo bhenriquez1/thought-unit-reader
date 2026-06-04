@@ -534,141 +534,102 @@ export default function ThoughtUnitReader() {
     setCurrentPageStudyModel(null);
   }, [currentPage]);
 
-  // finalHighlightAnchors: grounded + semantically arbitrated anchors for the left panel.
-  // Deterministic grounding fires immediately (synchronous); semantic scoring refines async.
+  // finalHighlightAnchors: grounded visualAnchors from finalStudyModel — left panel source.
+  // Pipeline: finalStudyModel.visualAnchors → sanitize → ground → budget → render.
+  // Blocked paths: /api/score-anchors, universalSpecificityScore, highlightNeighborhoods,
+  //                priorityHighlights, localStorage highlights.
+  // Rule: if visualAnchors is empty, render zero highlights — no fallback.
   const [finalHighlightAnchors, setFinalHighlightAnchors] = useState<SynthHighlightAnchor[]>([]);
+
+  // Ref mirrors currentPageRole (declared later via useActivePageIntelligence) so the
+  // finalHighlightAnchors effect can read it without a TDZ TypeScript error.
+  const currentPageRoleRef = useRef<string | null>(null);
 
   useEffect(() => {
     const pageText = pageTextByPage.get(`${bookIdRef.current}:${currentPage}`) ?? "";
 
-    // ── Single source rule ──────────────────────────────────────────────────
-    // Only studyModel.highlightAnchors may drive PDF highlights.
-    // No emergency fallback, no OCR/FCN/legacy paths. If Right Panel has not
-    // produced a studyModel yet (or synthesis failed), show zero highlights.
-    console.log("[LEFT_PANEL_OLD_HIGHLIGHTS_DISABLED]", {
-      message: "All fallback/OCR/FCN/legacy highlight paths are disabled",
-      source:  "studyModel.highlightAnchors only",
-    });
-
-    if (
-      !currentPageStudyModel ||
-      currentPageStudyModel.page !== currentPage ||
-      !currentPageStudyModel.highlightAnchors?.length
-    ) {
+    // ── No studyModel or stale page ────────────────────────────────────────
+    if (!currentPageStudyModel || currentPageStudyModel.page !== currentPage) {
       setFinalHighlightAnchors([]);
-      console.log("[OVERLAY_EMPTY_BECAUSE_NO_STUDYMODEL]", {
-        page:   currentPage,
-        reason: !currentPageStudyModel
-          ? "no-studyModel"
-          : currentPageStudyModel.page !== currentPage
-          ? "page-mismatch"
-          : "no-anchors",
-      });
       return;
     }
 
-    console.log("[RIGHT_PANEL_STUDYMODEL_READY]", {
-      page:        currentPage,
-      anchorCount: currentPageStudyModel.highlightAnchors.length,
-      pageThesis:  currentPageStudyModel.pageThesis?.slice(0, 60),
+    const pageType   = currentPageStudyModel.pageType ?? null;
+    const visualAnchors = currentPageStudyModel.visualAnchors ?? [];
+
+    const pageRole = currentPageRoleRef.current;
+
+    // ── Page classification ────────────────────────────────────────────────
+    console.log("[PAGE_CLASSIFY]", {
+      page:              currentPage,
+      pageType:          pageType ?? "unknown",
+      pageRole:          pageRole ?? "unknown",
+      visualAnchorCount: visualAnchors.length,
+      pageThesis:        currentPageStudyModel.pageThesis?.slice(0, 60) ?? null,
     });
 
-    const raw = sanitizeHighlightAnchors(
-      currentPageStudyModel.highlightAnchors as SynthHighlightAnchor[]
-    );
+    // ── Non-instructional skip ─────────────────────────────────────────────
+    const NON_INSTRUCTIONAL_TYPES = new Set(["review_checkpoint", "overview"]);
+    const NON_INSTRUCTIONAL_ROLES = new Set([
+      "cover", "title_page", "dedication", "acknowledgements", "preface", "about_authors",
+      "copyright_frontmatter", "contents", "unit_opener", "section_opener",
+      "glossary", "index", "bibliography", "appendix", "image_scan_heavy",
+      "chapter_opener",
+    ]);
+    if (NON_INSTRUCTIONAL_TYPES.has(pageType ?? "") || NON_INSTRUCTIONAL_ROLES.has(pageRole ?? "")) {
+      console.log("[NON_INSTRUCTIONAL_SKIP]", {
+        page:     currentPage,
+        pageType: pageType ?? "none",
+        pageRole: pageRole ?? "none",
+        message:  "Chapter overview — navigate to a content page.",
+      });
+      setFinalHighlightAnchors([]);
+      return;
+    }
 
-    // ── Stage A: Synchronous grounding ──────────────────────────────────────
-    // Convert semantic anchors to exact PDF spans immediately.
-    // Left panel renders these deterministic results while semantic scoring runs.
-    const grounded = groundHighlightAnchors(raw, pageText);
-    const groundedAnchors: SynthHighlightAnchor[] = grounded.map(a => ({
+    // ── Empty visualAnchors — no highlights, no fallback ───────────────────
+    if (!visualAnchors.length) {
+      console.log("[LEFT_PANEL_BLOCKED_LEGACY_FALLBACK]", {
+        page:    currentPage,
+        reason:  "visualAnchors empty — rendering zero highlights; all legacy paths blocked",
+        blocked: ["score-anchors", "universalSpecificityScore", "highlightNeighborhoods", "priorityHighlights"],
+      });
+      setFinalHighlightAnchors([]);
+      return;
+    }
+
+    // ── Ground visualAnchors against PDF text ──────────────────────────────
+    // Allowed: sanitize + ground + budget.
+    // Blocked: /api/score-anchors, universalSpecificityScore, all legacy fallbacks.
+    const rawForGrounding = visualAnchors.map((a) => ({
+      text:       a.exactText,
+      anchorType: a.role,
+      reason:     a.reason,
+      spanStart:  a.spanStart ?? null,
+      spanEnd:    a.spanEnd   ?? null,
+    })) as SynthHighlightAnchor[];
+
+    const sanitized = sanitizeHighlightAnchors(rawForGrounding);
+    const grounded  = groundHighlightAnchors(sanitized, pageText);
+
+    const groundedAnchors: SynthHighlightAnchor[] = grounded.map((a) => ({
       text:       a.groundedText,
       anchorType: a.anchorType as SynthHighlightAnchor["anchorType"],
       reason:     a.reason,
       spanStart:  a.spanStart ?? null,
-      spanEnd:    a.spanEnd ?? null,
+      spanEnd:    a.spanEnd   ?? null,
     }));
-    setFinalHighlightAnchors(groundedAnchors);
-    console.log("[LEFT_PANEL_GROUNDED]", {
-      page: currentPage,
-      input: raw.length,
-      grounded: grounded.length,
-      methods: grounded.map(a => a.groundMethod),
+
+    console.log("[LEFT_PANEL_USING_FINAL_MODEL_ONLY]", {
+      page:              currentPage,
+      source:            "finalStudyModel.visualAnchors → sanitize → ground → budget",
+      inputCount:        visualAnchors.length,
+      groundedCount:     grounded.length,
+      groundMethods:     grounded.map((a) => a.groundMethod),
+      blockedLegacy:     ["score-anchors", "universalSpecificityScore", "highlightNeighborhoods", "priorityHighlights"],
     });
 
-    if (!grounded.length) return;
-
-    // ── Stage B: Async semantic arbitration ─────────────────────────────────
-    // Ask OpenAI to score each grounded span's educational centrality.
-    // Only grounded PDF spans are sent — OpenAI arbitrates, never invents text.
-    const controller = new AbortController();
-    // Capture pageTruthKey at call site — async callback validates staleness before applying results.
-    const capturedKey = pageTruthKey;
-
-    (async () => {
-      try {
-        const resp = await fetch("/api/score-anchors", {
-          method:  "POST",
-          signal:  controller.signal,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            pageThesis:      currentPageStudyModel.pageThesis,
-            keyMechanism:    currentPageStudyModel.studyNotes.keyMechanism,
-            commonConfusion: currentPageStudyModel.studyNotes.commonConfusion,
-            conceptTitles:   currentPageStudyModel.conceptBlocks.slice(0, 3).map(b => b.title),
-            anchors: grounded.map(a => ({
-              text:       a.groundedText,
-              anchorType: a.anchorType,
-            })),
-          }),
-        });
-
-        if (!resp.ok || controller.signal.aborted) return;
-        const { rankings } = await resp.json() as { rankings: Array<{ text: string; semanticScore: number }> };
-
-        // Reject anchors scoring below threshold; sort by semantic score (primary)
-        const SEMANTIC_THRESHOLD = 35;
-        const scored = grounded
-          .map(a => ({
-            anchor:        a,
-            semanticScore: rankings.find(r => r.text === a.groundedText)?.semanticScore ?? 50,
-          }))
-          .filter(s => s.semanticScore >= SEMANTIC_THRESHOLD)
-          .sort((a, b) => b.semanticScore - a.semanticScore);
-
-        console.log("[SEMANTIC_ARBITER_FINAL]", {
-          page:    currentPage,
-          input:   grounded.length,
-          kept:    scored.length,
-          dropped: grounded.length - scored.length,
-          scores:  scored.map(s => ({ text: s.anchor.groundedText.slice(0, 60), score: s.semanticScore })),
-        });
-
-        // Staleness check: discard results if the user navigated away while fetch was in flight.
-        if (controller.signal.aborted || pageTruthKeyRef.current !== capturedKey) {
-          console.log("[SEMANTIC_ARBITER_STALE] discarding results — pageTruthKey changed during fetch", {
-            captured: capturedKey, current: pageTruthKeyRef.current,
-          });
-          return;
-        }
-        setFinalHighlightAnchors(scored.map(s => ({
-          text:       s.anchor.groundedText,
-          anchorType: s.anchor.anchorType as SynthHighlightAnchor["anchorType"],
-          reason:     s.anchor.reason,
-          spanStart:  s.anchor.spanStart ?? null,
-          spanEnd:    s.anchor.spanEnd ?? null,
-        })));
-        console.log("[AI_ANCHORS_ONLY_MODE] stage B applied", { page: currentPage, count: scored.length, key: capturedKey });
-      } catch (e: unknown) {
-        const name = (e as { name?: string })?.name;
-        if (name !== "AbortError") {
-          console.warn("[SEMANTIC_ARBITER] failed — keeping deterministic grounding", (e as Error)?.message);
-          // Deterministic grounded set already applied — graceful degradation
-        }
-      }
-    })();
-
-    return () => controller.abort();
+    setFinalHighlightAnchors(groundedAnchors);
   }, [currentPageStudyModel, currentPage, pageTextByPage]);
 
   /* =========================================================================
@@ -1044,6 +1005,8 @@ export default function ThoughtUnitReader() {
     audience: unifiedPanelState.audience,
     depth: unifiedPanelState.depth,
   });
+  // Keep ref in sync so the finalHighlightAnchors effect can read pageRole without TDZ issues.
+  currentPageRoleRef.current = currentPageRole ?? null;
   console.log("[TRACE LIVE_WIRING]", {
     deployedCommit: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? process.env.NEXT_PUBLIC_DEPLOYED_COMMIT ?? "unknown",
     bookId,
