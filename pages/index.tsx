@@ -37,6 +37,7 @@ import PureTocView from "@/components/PureTocView";
 import PureSurgeonView from "@/components/PureSurgeonView";
 import PureNoteLabView from "@/components/PureNoteLabView";
 import FocusCycleCard from "@/components/FocusCycleCard";
+import StudySpeechPanel from "@/components/reader/StudySpeechPanel";
 import { RightPanel } from "@/components/reader/RightPanel";
 import type { ActivePageContext, RightPanelState as UnifiedRightPanelState, TocNode } from "@/lib/readerContracts";
 import { splitParagraphs } from "@/lib/textNormalize";
@@ -894,6 +895,7 @@ export default function ThoughtUnitReader() {
   // ✅ Auto-whiteboard control + data
   const [autoWhiteboard, setAutoWhiteboard] = useState<boolean>(false);
   const [showWhiteboardPanel, setShowWhiteboardPanel] = useState<boolean>(false);
+  const [showSpeechPanel, setShowSpeechPanel] = useState<boolean>(false);
   const [wbConcept, setWbConcept] = useState<string>("");
   const [wbContext, setWbContext] = useState<string>("");
   const [wbStickyNotes, setWbStickyNotes] = useState<StickyNote[]>([]);
@@ -3555,14 +3557,63 @@ export default function ThoughtUnitReader() {
 
 
           <button
-            className="text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border border-white/20 transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)]"
-            title="Speech mode is coming soon"
+            onClick={() => setShowSpeechPanel(p => !p)}
+            className={`text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 ${
+              showSpeechPanel
+                ? "bg-[rgba(99,102,241,0.45)] border-indigo-400/60"
+                : "bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)] border-white/20"
+            }`}
+            title="Study Speech — read the PageBrain aloud"
           >
             <div className="flex items-center gap-2">
-              <span className="text-lg">🎤</span>
-              <span className="text-sm font-medium hidden sm:block">Speech (Soon)</span>
+              <span className="text-lg">🎧</span>
+              <span className="text-sm font-medium hidden sm:block">Speech</span>
             </div>
           </button>
+
+          {/* Study Speech floating panel */}
+          {showSpeechPanel && currentPageStudyModel && (
+            <div
+              style={{
+                position: "fixed",
+                bottom: 88,
+                left: 16,
+                width: 340,
+                maxHeight: "calc(100vh - 120px)",
+                overflowY: "auto",
+                zIndex: 55,
+                borderRadius: 16,
+                boxShadow: "0 8px 32px rgba(0,0,0,0.55)",
+                border: "1px solid rgba(99,102,241,0.3)",
+                background: "#0d1424",
+              }}
+            >
+              <StudySpeechPanel
+                studyModel={currentPageStudyModel}
+                pageNumber={currentPage}
+              />
+            </div>
+          )}
+          {showSpeechPanel && !currentPageStudyModel && (
+            <div
+              style={{
+                position: "fixed",
+                bottom: 88,
+                left: 16,
+                width: 300,
+                zIndex: 55,
+                borderRadius: 16,
+                padding: "14px 16px",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.55)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                background: "#0d1424",
+              }}
+            >
+              <p style={{ fontSize: 12, color: "#64748b", margin: 0 }}>
+                🎧 Study Speech — waiting for page synthesis to complete…
+              </p>
+            </div>
+          )}
           
           {/* Whiteboard FAB */}
           {!showWhiteboardPanel && (
