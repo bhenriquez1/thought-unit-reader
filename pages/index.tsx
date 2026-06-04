@@ -3650,6 +3650,7 @@ export default function ThoughtUnitReader() {
               <StudySpeechPanel
                 studyModel={currentPageStudyModel}
                 pageNumber={currentPage}
+                activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
               />
             </div>
           )}

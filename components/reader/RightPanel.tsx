@@ -1099,15 +1099,23 @@ export function RightPanel({
     <>
     {/* Shadow Recall — floating trigger at bottom-left of viewport; drawer opens from left.
         Lives at root level (outside aside) so position:fixed is never clipped by scroll container. */}
-    {shadowRecall && (
-      <>
-        <button
-          onClick={() => setRecallOpen(true)}
-          className="fixed bottom-5 left-5 z-[60] flex items-center gap-1.5 rounded-full border border-violet-500/30 bg-[#0b1020]/90 px-3.5 py-2 text-[11px] font-bold text-violet-300 shadow-lg backdrop-blur-sm hover:bg-violet-900/40 hover:border-violet-400/50 transition-all"
-          title="Pre-Read Recall — attempt before reading"
-        >
-          🕶 <span className="hidden sm:inline">Shadow Recall</span>
-        </button>
+    <>
+      <button
+        onClick={() => {
+          console.log("[SHADOW_RECALL_OPEN]", { hasData: !!shadowRecall, page: ctx?.pageNumber ?? null });
+          if (shadowRecall) setRecallOpen(true);
+        }}
+        className={`fixed bottom-5 left-5 z-[60] flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-[11px] font-bold shadow-lg backdrop-blur-sm transition-all ${
+          shadowRecall
+            ? "border-violet-500/30 bg-[#0b1020]/90 text-violet-300 hover:bg-violet-900/40 hover:border-violet-400/50 cursor-pointer"
+            : "border-violet-500/15 bg-[#0b1020]/60 text-violet-300/40 cursor-not-allowed"
+        }`}
+        title={shadowRecall ? "Pre-Read Recall — attempt before reading" : "Pre-Read Recall — awaiting synthesis"}
+        disabled={!shadowRecall}
+      >
+        🕶 <span className="hidden sm:inline">Shadow Recall</span>
+      </button>
+      {shadowRecall && (
         <PreReadRecallDrawer
           open={recallOpen}
           onClose={() => setRecallOpen(false)}
@@ -1121,8 +1129,8 @@ export function RightPanel({
             examSignal:     teachingSynthesis.examCriticalIdea || null,
           } : null}
         />
-      </>
-    )}
+      )}
+    </>
     <aside className="flex h-full min-h-0 w-full flex-col overflow-y-auto border-l border-white/10 bg-[rgb(11,18,34)] break-words whitespace-normal">
       {/* Header */}
       <div className="border-b border-white/10 px-4 py-3 flex items-center justify-between">
