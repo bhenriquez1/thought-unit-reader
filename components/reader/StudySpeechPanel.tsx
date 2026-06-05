@@ -60,11 +60,13 @@ interface Props {
   studyModel: CurrentPageStudyModel;
   pageNumber: number;
   activePageText?: string;
+  /** Called when a speech segment with evidenceRefId starts playing — drives PDF focus */
+  onEvidenceFocus?: (id: string | null) => void;
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export default function StudySpeechPanel({ studyModel, pageNumber, activePageText = "" }: Props) {
+export default function StudySpeechPanel({ studyModel, pageNumber, activePageText = "", onEvidenceFocus }: Props) {
   const [open, setOpen]       = useState(false);
   const [mode, setMode]       = useState<StudySpeechMode>("study");
   const [voice, setVoice]     = useState<OAIVoice>("alloy");
@@ -77,12 +79,14 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   const [errorMsg, setErrorMsg]   = useState<string | null>(null);
 
   // Active audio element ref — so we can stop/pause
-  const audioRef  = useRef<HTMLAudioElement | null>(null);
+  const audioRef   = useRef<HTMLAudioElement | null>(null);
   const blobUrlRef = useRef<string | null>(null);
+  // Tracks which provider is currently playing — suppresses false browser errors
+  const providerRef = useRef<"openai" | "browser" | null>(null);
+  // Abort flag for sequential highlights playback
+  const abortRef   = useRef(false);
 
   // Stop audio only on page navigation — NOT on studyModel/mode changes.
-  // Stage 2 synthesis updates studyModel mid-playback; calling stopAudio() there
-  // triggers window.speechSynthesis.cancel() and causes "browser speech canceled" errors.
   useEffect(() => {
     setSegIdx(0);
     stopAudio();
@@ -98,6 +102,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   // ── Audio helpers ──────────────────────────────────────────────────────────
 
   function stopAudio() {
+    abortRef.current = true;
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = "";
@@ -107,41 +112,115 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
       URL.revokeObjectURL(blobUrlRef.current);
       blobUrlRef.current = null;
     }
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+    // Only cancel browser synthesis if it was the active provider
+    if (providerRef.current === "browser" && typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
+    providerRef.current = null;
     setPlayState("idle");
   }
 
   useEffect(() => () => stopAudio(), []);
 
+  // ── TTS fetch helper — returns Promise<"done" | "browser"> ─────────────────
+
+  async function fetchAndPlayAudio(text: string): Promise<"done" | "browser"> {
+    const res = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ script: text, voice, format: "mp3", return: "json" }),
+    });
+    if (!res.ok) throw new Error(`TTS API ${res.status}`);
+    const data = await res.json();
+
+    if (data.audioBase64) {
+      console.log("[OPENAI_SPEECH_DONE]", { provider: data.provider ?? "openai", bytes: data.audioBase64.length });
+      const bytes = Uint8Array.from(atob(data.audioBase64), c => c.charCodeAt(0));
+      const blob  = new Blob([bytes], { type: data.mimeType || "audio/mpeg" });
+      const url   = URL.createObjectURL(blob);
+      blobUrlRef.current = url;
+      const audio = new Audio(url);
+      audio.playbackRate = speed;
+      audioRef.current   = audio;
+      providerRef.current = "openai";
+      return new Promise((resolve, reject) => {
+        audio.onplay  = () => { console.log("[SPEECH_AUDIO_PLAY]", { mode }); setPlayState("playing"); };
+        audio.onended = () => { console.log("[SPEECH_AUDIO_END]", { mode }); URL.revokeObjectURL(url); blobUrlRef.current = null; resolve("done"); };
+        audio.onerror = () => { console.warn("[SPEECH_ERROR]", { source: "openai-audio", mode }); reject(new Error("Audio playback failed")); };
+        audio.play().catch(reject);
+      });
+    }
+
+    if (data.useBrowserSpeech) {
+      console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: data.fallbackReason ?? "openai-unavailable" });
+      return "browser";
+    }
+
+    throw new Error("Unexpected TTS response");
+  }
+
   // ── Browser speech fallback ─────────────────────────────────────────────────
 
-  function playBrowserSpeech(text: string) {
+  function playBrowserSpeech(text: string, onDone?: () => void) {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       setPlayState("error");
       setErrorMsg("Speech not available in this browser.");
+      onDone?.();
       return;
     }
+    providerRef.current = "browser";
     const utt = new SpeechSynthesisUtterance(text);
-    utt.rate = speed;
-    utt.onstart = () => {
-      console.log("[SPEECH_START]", { source: "browser", charCount: text.length });
-      setPlayState("playing");
-    };
-    utt.onend = () => {
-      console.log("[SPEECH_END]", { source: "browser" });
-      setPlayState("idle");
-    };
+    utt.rate  = speed;
+    utt.onstart = () => { console.log("[SPEECH_AUDIO_PLAY]", { source: "browser", charCount: text.length }); setPlayState("playing"); };
+    utt.onend   = () => { console.log("[SPEECH_AUDIO_END]", { source: "browser" }); setPlayState("idle"); onDone?.(); };
     utt.onerror = (e) => {
-      if (e.error !== "interrupted") {
-        console.warn("[SPEECH_ERROR]", { source: "browser", error: e.error });
-        setPlayState("error");
-        setErrorMsg(`Browser speech error: ${e.error}`);
-      }
+      // "canceled" fires when speechSynthesis.cancel() is called intentionally — not an error
+      if (e.error === "canceled" || e.error === "interrupted") return;
+      if (providerRef.current !== "browser") return; // OpenAI took over
+      console.warn("[SPEECH_ERROR]", { source: "browser", error: e.error });
+      setPlayState("error");
+      setErrorMsg(`Speech error: ${e.error}`);
+      onDone?.();
     };
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utt);
+  }
+
+  // ── Per-segment sequential playback (highlights mode) ─────────────────────
+
+  async function playHighlightsSequential(segs: SpeechSegment[], fromIdx: number) {
+    abortRef.current = false;
+    setPlayState("loading");
+
+    for (let i = fromIdx; i < segs.length; i++) {
+      if (abortRef.current) break;
+      const seg = segs[i];
+      setSegIdx(i);
+      if (seg.evidenceRefId) onEvidenceFocus?.(seg.evidenceRefId);
+
+      console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: seg.text.length, voice, evidenceRefId: seg.evidenceRefId });
+      try {
+        const result = await fetchAndPlayAudio(seg.text);
+        if (result === "browser") {
+          // Browser fallback: play synchronously with promise
+          await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve));
+        }
+        // Small pause between segments
+        if (!abortRef.current && i < segs.length - 1) {
+          await new Promise((r) => setTimeout(r, 250));
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i });
+        console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
+        await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve));
+      }
+    }
+
+    if (!abortRef.current) {
+      setPlayState("idle");
+      onEvidenceFocus?.(null);
+    }
   }
 
   // ── Main play ──────────────────────────────────────────────────────────────
@@ -149,7 +228,17 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   async function play(fromIdx = 0) {
     console.log("[SPEECH_PLAY_CLICK]", { mode, fromIdx, segmentCount: segments.length, pageNumber });
     stopAudio();
+    abortRef.current = false;
     setErrorMsg(null);
+
+    // Highlights mode: per-segment sequential playback with PDF focus
+    if (mode === "highlights") {
+      const segsToPlay = segments.length > 0 ? segments : buildSpeechScript(studyModel, "highlights");
+      if (!segsToPlay.length) { setErrorMsg("No highlight anchors to read."); return; }
+      console.log("[SPEECH_SOURCE]", { mode: "highlights", source: "finalStudyModel.visualAnchors", itemCount: segsToPlay.length, charCount: segsToPlay.reduce((n, s) => n + s.text.length, 0) });
+      playHighlightsSequential(segsToPlay, fromIdx);
+      return;
+    }
 
     const speechText = buildSpeechText(segments, mode, studyModel, activePageText, fromIdx);
     if (!speechText.trim()) {
@@ -158,62 +247,34 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
     }
 
     console.log("[SPEECH_TEXT_READY]", { charCount: speechText.length, mode, preview: speechText.slice(0, 80) });
+    console.log("[SPEECH_SOURCE]", { mode, source: "finalStudyModel.studyNotes", itemCount: segments.length, charCount: speechText.length });
+
+    // Focus first segment's evidenceRefId if available
+    const firstSeg = segments[fromIdx];
+    if (firstSeg?.evidenceRefId) onEvidenceFocus?.(firstSeg.evidenceRefId);
+
     setPlayState("loading");
+    console.log("[OPENAI_SPEECH_START]", { charCount: speechText.length, voice });
 
     try {
-      console.log("[OPENAI_SPEECH_START]", { charCount: speechText.length, voice });
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Accept": "application/json" },
-        body: JSON.stringify({ script: speechText, voice, format: "mp3", return: "json" }),
-      });
-
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`TTS API ${res.status}: ${err.slice(0, 120)}`);
+      const result = await fetchAndPlayAudio(speechText);
+      if (result === "browser") {
+        playBrowserSpeech(speechText);
       }
-
-      const data = await res.json();
-
-      // OpenAI returned real audio
-      if (data.audioBase64) {
-        console.log("[OPENAI_SPEECH_DONE]", { bytes: data.audioBase64.length });
-        const bytes = Uint8Array.from(atob(data.audioBase64), c => c.charCodeAt(0));
-        const blob  = new Blob([bytes], { type: data.mimeType || "audio/mpeg" });
-        const url   = URL.createObjectURL(blob);
-        blobUrlRef.current = url;
-        const audio = new Audio(url);
-        audio.playbackRate = speed;
-        audioRef.current = audio;
-        audio.onplay  = () => { console.log("[SPEECH_AUDIO_PLAY]", { mode }); setPlayState("playing"); };
-        audio.onended = () => { console.log("[SPEECH_AUDIO_END]", { mode }); setPlayState("idle"); URL.revokeObjectURL(url); blobUrlRef.current = null; };
-        audio.onerror = () => { console.warn("[SPEECH_ERROR]", { source: "openai-audio", mode }); setPlayState("error"); setErrorMsg("Audio playback failed."); };
-        await audio.play();
-        return;
-      }
-
-      // Server signalled browser speech fallback
-      if (data.useBrowserSpeech) {
-        console.log("[OPENAI_SPEECH_DONE]", { useBrowserFallback: true });
-        playBrowserSpeech(data.script || speechText);
-        return;
-      }
-
-      throw new Error("Unexpected TTS API response");
-
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.warn("[OPENAI_SPEECH_ERROR]", { error: message });
-      // Fallback to browser speech
+      console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
       playBrowserSpeech(speechText);
     }
   }
 
   function pause() {
+    abortRef.current = true;
     if (audioRef.current && !audioRef.current.paused) {
       audioRef.current.pause();
       setPlayState("idle");
-    } else if (typeof window !== "undefined" && "speechSynthesis" in window) {
+    } else if (providerRef.current === "browser" && typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.pause();
       setPlayState("idle");
     }
@@ -222,6 +283,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   function stop() {
     stopAudio();
     setSegIdx(0);
+    onEvidenceFocus?.(null);
   }
 
   // ── Derived ────────────────────────────────────────────────────────────────

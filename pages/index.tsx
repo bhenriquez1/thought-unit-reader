@@ -688,32 +688,35 @@ export default function ThoughtUnitReader() {
     // ── Ground visualAnchors against PDF text ──────────────────────────────
     // Allowed: sanitize + ground + budget.
     // Blocked: /api/score-anchors, universalSpecificityScore, all legacy fallbacks.
+    // Pass VisualAnchor.id through as evidenceRefId so left-panel overlay, speech, and
+    // focusedEvidenceId all share the same stable ID (e.g. "va-0", "va-1").
     const rawForGrounding = visualAnchors.map((a) => ({
-      text:       a.exactText,
-      anchorType: a.role,
-      reason:     a.reason,
-      spanStart:  a.spanStart ?? null,
-      spanEnd:    a.spanEnd   ?? null,
-    })) as SynthHighlightAnchor[];
+      text:          a.exactText,
+      anchorType:    a.role,
+      reason:        a.reason,
+      spanStart:     a.spanStart ?? null,
+      spanEnd:       a.spanEnd   ?? null,
+      evidenceRefId: a.id,
+    })) as (SynthHighlightAnchor & { evidenceRefId: string })[];
 
     const sanitized = sanitizeHighlightAnchors(rawForGrounding);
     const grounded  = groundHighlightAnchors(sanitized, pageText);
 
-    const groundedAnchors: SynthHighlightAnchor[] = grounded.map((a) => ({
-      text:       a.groundedText,
-      anchorType: a.anchorType as SynthHighlightAnchor["anchorType"],
-      reason:     a.reason,
-      spanStart:  a.spanStart ?? null,
-      spanEnd:    a.spanEnd   ?? null,
+    const groundedAnchors = grounded.map((a) => ({
+      text:          a.groundedText,
+      anchorType:    a.anchorType as SynthHighlightAnchor["anchorType"],
+      reason:        a.reason,
+      spanStart:     a.spanStart ?? null,
+      spanEnd:       a.spanEnd   ?? null,
+      evidenceRefId: (a as any).evidenceRefId as string | undefined,
     }));
 
-    console.log("[LEFT_PANEL_USING_FINAL_MODEL_ONLY]", {
-      page:              currentPage,
-      source:            "finalStudyModel.visualAnchors → sanitize → ground → budget",
-      inputCount:        visualAnchors.length,
-      groundedCount:     grounded.length,
-      groundMethods:     grounded.map((a) => a.groundMethod),
-      blockedLegacy:     ["score-anchors", "universalSpecificityScore", "highlightNeighborhoods", "priorityHighlights"],
+    console.log("[LEFT_PANEL_SOURCE]", {
+      source:        "finalStudyModel.visualAnchors",
+      page:          currentPage,
+      count:         groundedAnchors.length,
+      ids:           groundedAnchors.map((a) => a.evidenceRefId),
+      groundMethods: grounded.map((a) => a.groundMethod),
     });
 
     console.log("[VISUAL_ANCHOR_COUNT_AFTER_SKIP]", {
@@ -723,7 +726,7 @@ export default function ThoughtUnitReader() {
       finalCount:    groundedAnchors.length,
     });
 
-    setFinalHighlightAnchors(groundedAnchors);
+    setFinalHighlightAnchors(groundedAnchors as SynthHighlightAnchor[]);
   }, [currentPageStudyModel, currentPage, pageTextByPage]);
 
   /* =========================================================================
@@ -3206,14 +3209,14 @@ export default function ThoughtUnitReader() {
                     }
                     console.log("[WIRE] studyModel accepted", {
                       key,
-                      page: model.page,
-                      anchors: model.highlightAnchors.length,
-                      anchorTexts: model.highlightAnchors.map(a => a.text.slice(0, 60)),
-                      anchorTypes: model.highlightAnchors.map(a => a.anchorType),
+                      page:          model.page,
+                      visualAnchors: model.visualAnchors.length,
+                      ids:           model.visualAnchors.map(a => a.id),
+                      roles:         model.visualAnchors.map(a => a.role),
                     });
                     // Embed pageTruthKey so the render-time guard can verify this model is current.
                     setCurrentPageStudyModel({ ...model, pageTruthKey: key });
-                    console.log("[WIRE] highlights←studyModel", { key, count: model.highlightAnchors.length, texts: model.highlightAnchors.map(a => a.text.slice(0, 40)) });
+                    console.log("[WIRE] highlights←studyModel", { key, source: "visualAnchors", count: model.visualAnchors.length, texts: model.visualAnchors.map(a => a.exactText.slice(0, 40)) });
                   }}
                 onCrossLinkNavigate={(page) => syncToPage(page, { reason: "TOC_JUMP" })}
                 tocItems={tocItemsForSearch}
@@ -3370,20 +3373,6 @@ export default function ThoughtUnitReader() {
       document.body.style.overflow = prevOverflow;
     };
   }, []);
-
-  // LEFT PANEL SOURCE RULE — OpenAI study model is primary; emergency text fallback when AI fails.
-  // studyModel present → AI anchors. studyModel absent → emergency text anchors (or zero if no text).
-  let safeHighlightAnchors: import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[] = [];
-  if (!currentPageStudyModel) {
-    console.log("[LEFT_PANEL_CLEAR] no studyModel — emergency fallback may apply (see [LEFT_PANEL_FALLBACK])");
-  } else if (currentPageStudyModel.page !== currentPage) {
-    console.log("[LEFT_PANEL_CLEAR] studyModel page mismatch", { modelPage: currentPageStudyModel.page, currentPage });
-  } else if (!currentPageStudyModel.highlightAnchors?.length) {
-    console.log("[LEFT_PANEL_CLEAR] studyModel has no anchors — zero highlights");
-  } else {
-    safeHighlightAnchors = currentPageStudyModel.highlightAnchors as import("@/lib/insights/synthesizeTeachingOutput").SynthHighlightAnchor[];
-    console.log("[LEFT_PANEL_SOURCE] studyModel only", { page: currentPage, count: safeHighlightAnchors.length, texts: safeHighlightAnchors.map(a => a.text.slice(0, 60)) });
-  }
 
   return (
     <div className={`h-screen overflow-hidden flex flex-col ${themeMode === "dark" ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-900"} ${readingMode === "dyslexia" ? "tracking-wide leading-8" : "leading-6"}`} style={{ fontFamily }}>
@@ -3685,6 +3674,7 @@ export default function ThoughtUnitReader() {
                 studyModel={currentPageStudyModel}
                 pageNumber={currentPage}
                 activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
+                onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
               />
             </div>
           )}

@@ -237,8 +237,11 @@ export default function PureReaderView({
         }
       }
 
+      // Use the anchor's own evidenceRefId (from VisualAnchor.id) when present.
+      // This keeps left-panel overlay, speech, and focusedEvidenceId in sync.
+      const anchorId = (s.anchor as any).evidenceRefId ?? `ai-anchor-${i}`;
       return {
-        id:                   `ai-anchor-${i}`,
+        id:                   anchorId,
         page:                 currentPage,
         text:                 s.anchor.text,  // already grounded in pages/index.tsx
         normalizedText:       s.anchor.text,
@@ -246,7 +249,7 @@ export default function PureReaderView({
         score:                100 - i,
         sourceParagraphIndex: 0,
         kind:                 anchorTypeToKind(s.anchor.anchorType),
-        evidenceRefId:        `ai-anchor-${i}`,
+        evidenceRefId:        anchorId,
         spanStart,
         spanEnd,
       };
