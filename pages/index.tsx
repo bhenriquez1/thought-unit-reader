@@ -569,24 +569,20 @@ export default function ThoughtUnitReader() {
   useEffect(() => {
     const pageText = pageTextByPage.get(`${bookIdRef.current}:${currentPage}`) ?? "";
 
-    // ── No studyModel or stale page ────────────────────────────────────────
-    if (!currentPageStudyModel || currentPageStudyModel.page !== currentPage) {
+    // ── No studyModel (loading) — keep existing highlights until new model arrives ──
+    if (!currentPageStudyModel) {
+      console.log("[HIGHLIGHT_PERSIST]", {
+        page:          currentPage,
+        reason:        "study-model-loading",
+        existingCount: finalHighlightAnchors.length,
+      });
+      return;
+    }
+
+    // ── Stale model for wrong page — clear ─────────────────────────────────
+    if (currentPageStudyModel.page !== currentPage) {
       setFinalHighlightAnchors([]);
-      console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: !currentPageStudyModel ? "no-study-model" : "stale-page", modelPage: currentPageStudyModel?.page });
-      const pageRole = currentPageRoleRef.current;
-      const STRUCTURAL_ROLES_STATIC = new Set([
-        "cover", "title_page", "dedication", "acknowledgements", "preface", "about_authors",
-        "copyright_frontmatter", "contents", "unit_opener", "section_opener", "chapter_opener",
-        "glossary", "index", "bibliography", "appendix", "image_scan_heavy", "learning_objectives",
-      ]);
-      if (pageRole && STRUCTURAL_ROLES_STATIC.has(pageRole)) {
-        console.log("[NON_INSTRUCTIONAL_SKIP]", {
-          page:     currentPage,
-          reason:   "structural page — synthesis blocked, no study model",
-          pageRole,
-          visualAnchorCountAfterSkip: 0,
-        });
-      }
+      console.log("[HIGHLIGHT_CLEARED]", { page: currentPage, reason: "stale-page", modelPage: currentPageStudyModel.page });
       return;
     }
 
@@ -689,7 +685,25 @@ export default function ThoughtUnitReader() {
     console.log("[HIGHLIGHT_GROUND_START]", { page: currentPage, inputCount: visualAnchors.length, ids: visualAnchors.map(a => a.id), source: "finalStudyModel.visualAnchors" });
     const sanitized = sanitizeHighlightAnchors(rawForGrounding);
     const grounded  = groundHighlightAnchors(sanitized, pageText);
-    console.log("[HIGHLIGHT_GROUND_DONE]", { page: currentPage, groundedCount: grounded.length, methods: grounded.map(a => a.groundMethod) });
+    console.log("[LEFT_PANEL_GROUND_RESULT]", {
+      page:         currentPage,
+      inputCount:   visualAnchors.length,
+      groundedCount: grounded.length,
+      failedCount:  visualAnchors.length - grounded.length,
+      failedTexts:  visualAnchors
+        .filter(a => !grounded.find(g => g.groundedText?.toLowerCase().includes(a.exactText.toLowerCase().slice(0, 20))))
+        .map(a => a.exactText.slice(0, 60)),
+      groundMethods: grounded.map(g => g.groundMethod),
+      source: "groundHighlightAnchors",
+    });
+    if (grounded.length === 0 && visualAnchors.length > 0) {
+      console.warn("[LEFT_PANEL_GROUND_FAILED]", {
+        page:        currentPage,
+        reason:      "all anchors failed grounding — pageText may be empty or anchors are paraphrased",
+        pageTextLen: pageText.length,
+        anchorTexts: visualAnchors.map(a => a.exactText.slice(0, 60)),
+      });
+    }
 
     const groundedAnchors = grounded.map((a) => ({
       text:          a.groundedText,
@@ -3026,22 +3040,17 @@ export default function ThoughtUnitReader() {
       }
       const activePageContext = activePageContextForInsights;
 
-      // Single source rule: only finalStudyModel.visualAnchors may drive PDF highlights.
-      // Gate 1 — normalization gate: suppressed only when AI has NOT confirmed instructional
-      //   content (no finalHighlightAnchors). Once AI produced anchors, those override local norm.
-      // Gate 2 — studyModel: not ready / stale key / no anchors → []
-      const aiConfirmsInstructional = finalHighlightAnchors.length > 0 &&
-        currentPageStudyModel?.page === currentPage;
-      const highlightsSuppressed = !aiConfirmsInstructional && !currentNormResult?.shouldRenderFullPanel;
-      const studyModelReady =
-        !highlightsSuppressed &&
-        !!currentPageStudyModel &&
-        currentPageStudyModel.pageTruthKey === pageTruthKey &&
-        finalHighlightAnchors.length > 0;
-
+      // Left Panel source: finalStudyModel.visualAnchors only.
+      // Non-instructional filtering is handled in the grounding effect.
+      // Render-time rule: if we have grounded anchors, show them — no extra gating.
       const safeHighlightAnchors = (() => {
-        if (!studyModelReady) {
-          console.log("[HIGHLIGHT_RENDERED]", { page: currentPage, count: 0, suppressed: highlightsSuppressed, studyModelReady, finalCount: finalHighlightAnchors.length });
+        if (!finalHighlightAnchors.length) {
+          console.log("[HIGHLIGHT_RENDERED]", {
+            page:        currentPage,
+            count:       0,
+            reason:      "no-grounded-anchors",
+            hasModel:    !!currentPageStudyModel,
+          });
           return [];
         }
         const pageTextForBudget = pageTextByPage.get(`${bookId}:${currentPage}`) || "";
@@ -3049,64 +3058,22 @@ export default function ThoughtUnitReader() {
           a => a.anchorType === "formula" || a.anchorType === "example_step" || a.anchorType === "conclusion"
         );
         const budgeted = applyHighlightBudget(finalHighlightAnchors, pageTextForBudget, isMathPage, currentPage);
-        console.log("[HIGHLIGHT_BUDGET_FINAL]", { page: currentPage, prebudget: finalHighlightAnchors.length, postbudget: budgeted.length, ids: (budgeted as any[]).map((a: any) => a.evidenceRefId) });
-        console.log("[HIGHLIGHT_RENDERED]", { page: currentPage, count: budgeted.length, source: "finalStudyModel.visualAnchors", firstTexts: budgeted.slice(0, 3).map(a => a.text?.slice(0, 60)) });
+        console.log("[HIGHLIGHT_RENDERED]", {
+          page:       currentPage,
+          count:      budgeted.length,
+          ids:        (budgeted as any[]).map(a => (a as any).evidenceRefId),
+          source:     "finalStudyModel.visualAnchors",
+          firstTexts: budgeted.slice(0, 3).map(a => a.text?.slice(0, 60)),
+        });
         return budgeted;
       })();
 
-      if (studyModelReady) {
-        // Architecture confirmation: Right Panel (PageBrain) = cognitive source of truth.
-        // Left Panel = visual cortex — driven exclusively by PageBrain.highlightTargets.
-        console.log("[PAGE_BRAIN_DRIVES_LEFT_PANEL]", {
-          page:            currentPage,
-          source:          "PageBrain.highlightTargets → safeHighlightAnchors → PureReaderView",
-          anchorCount:     safeHighlightAnchors.length,
-          anchorTypes:     safeHighlightAnchors.map(a => a.anchorType),
-          pageBrainFields: {
-            pageThesis:      currentPageStudyModel?.pageThesis ? "✓" : "✗",
-            whyThisMatters:  currentPageStudyModel?.studyNotes?.whyThisMatters ? "✓" : "✗",
-            keyMechanism:    currentPageStudyModel?.studyNotes?.keyMechanism ? "✓" : "✗",
-            commonConfusion: currentPageStudyModel?.studyNotes?.commonConfusion ? "✓" : "✗",
-            quickMemory:     currentPageStudyModel?.studyNotes?.quickMemory ? "✓" : "✗",
-            conceptBlocks:   currentPageStudyModel?.conceptBlocks?.length ?? 0,
-            highlightTargets: safeHighlightAnchors.length,
-          },
-        });
-        console.log("[OVERLAY_FROM_STUDYMODEL_ONLY]", {
-          page:   currentPage,
-          count:  safeHighlightAnchors.length,
-          types:  safeHighlightAnchors.map(a => a.anchorType),
-        });
-        console.log("[FINAL_STUDY_MODEL_READY]", {
-          page:          currentPage,
-          pageThesis:    currentPageStudyModel?.pageThesis?.slice(0, 80),
-          anchorCount:   safeHighlightAnchors.length,
-          studyTip:      currentPageStudyModel?.studyNotes?.quickMemory?.slice(0, 80) ?? null,
-          conceptCount:  currentPageStudyModel?.conceptBlocks?.length ?? 0,
-        });
-        console.log("[LEFT_PANEL_FROM_FINAL_MODEL]", {
-          page:   currentPage,
-          count:  safeHighlightAnchors.length,
-          kinds:  safeHighlightAnchors.map(a => a.anchorType),
-          texts:  safeHighlightAnchors.map(a => a.text.slice(0, 60)),
-          source: "right_panel_study_model",
-        });
-        console.log("[FINAL_MODEL_TO_LEFT_PANEL]", {
-          page:         currentPage,
-          anchorCount:  safeHighlightAnchors.length,
-          conceptCount: currentPageStudyModel?.conceptBlocks?.length ?? 0,
-          pageThesis:   currentPageStudyModel?.pageThesis?.slice(0, 60) ?? null,
-          kinds:        safeHighlightAnchors.map(a => a.anchorType),
-        });
-      } else {
-        console.log("[OVERLAY_EMPTY_BECAUSE_NO_STUDYMODEL]", {
-          page:             currentPage,
-          suppressed:       highlightsSuppressed,
-          studyModelExists: !!currentPageStudyModel,
-          keyMatch:         currentPageStudyModel?.pageTruthKey === pageTruthKey,
-          anchorCount:      finalHighlightAnchors.length,
-        });
-      }
+      console.log("[LEFT_PANEL_SOURCE]", {
+        source:     "finalStudyModel.visualAnchors",
+        page:       currentPage,
+        count:      safeHighlightAnchors.length,
+        firstTexts: safeHighlightAnchors.slice(0, 3).map(a => a.text?.slice(0, 60)),
+      });
 
       return (
         <div className="h-full flex overflow-hidden" data-testid="expert-view-container">
@@ -3690,6 +3657,9 @@ export default function ThoughtUnitReader() {
                 onEvidenceFocus={(id) => {
                   if (id) console.log("[LEFT_PANEL_FOCUS_EVIDENCE]", { evidenceRefId: id, source: "speech", page: currentPage });
                   setFocusedEvidenceId(id);
+                }}
+                onSnippetFocus={(snippet) => {
+                  setFocusSnippet(snippet);
                 }}
               />
             </div>

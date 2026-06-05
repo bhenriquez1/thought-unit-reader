@@ -62,11 +62,13 @@ interface Props {
   activePageText?: string;
   /** Called when a speech segment with evidenceRefId starts playing — drives PDF focus */
   onEvidenceFocus?: (id: string | null) => void;
+  /** Called in Full Page mode with the current sentence text — drives focusSnippet scroll */
+  onSnippetFocus?: (snippet: string | null) => void;
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export default function StudySpeechPanel({ studyModel, pageNumber, activePageText = "", onEvidenceFocus }: Props) {
+export default function StudySpeechPanel({ studyModel, pageNumber, activePageText = "", onEvidenceFocus, onSnippetFocus }: Props) {
   const [open, setOpen]       = useState(false);
   const [mode, setMode]       = useState<StudySpeechMode>("study");
   const [voice, setVoice]     = useState<OAIVoice>("alloy");
@@ -93,8 +95,26 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageNumber]);
 
+  // Full Page mode: sentence count for progress display
+  const [fpSentences, setFpSentences] = useState<string[]>([]);
+  useEffect(() => {
+    if (mode === "fullPage" && activePageText) {
+      const sents = activePageText
+        .split(/(?<=[.!?])\s+(?=[A-Z"'])/)
+        .map(s => s.trim())
+        .filter(s => s.length >= 15);
+      setFpSentences(sents);
+    } else {
+      setFpSentences([]);
+    }
+  }, [mode, activePageText]);
+
   // Rebuild segments when model or mode changes — without stopping audio.
   useEffect(() => {
+    if (mode === "fullPage") {
+      setSegments([]); // fullPage reads sentences directly, no pre-built segments
+      return;
+    }
     const next = buildSpeechScript(studyModel, mode);
     setSegments(next);
   }, [studyModel, mode, pageNumber]);
@@ -191,6 +211,44 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
     window.speechSynthesis.speak(utt);
   }
 
+  // ── Full Page: sentence-by-sentence playback ──────────────────────────────
+
+  async function playFullPageSequential(sentences: string[], fromIdx: number) {
+    abortRef.current = false;
+    setPlayState("loading");
+
+    for (let i = fromIdx; i < sentences.length; i++) {
+      if (abortRef.current) break;
+      const raw = sentences[i];
+      const text = formulaToSpeech(raw).slice(0, 500);
+      setSegIdx(i);
+
+      console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: text.length, totalSentences: sentences.length });
+      onSnippetFocus?.(raw);
+
+      try {
+        const result = await fetchAndPlayAudio(text);
+        if (abortRef.current) break;
+        if (result === "browser") {
+          await new Promise<void>((resolve) => playBrowserSpeech(text, resolve));
+        }
+        if (!abortRef.current && i < sentences.length - 1) {
+          await new Promise((r) => setTimeout(r, 150));
+        }
+      } catch (err: unknown) {
+        if (abortRef.current) break;
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i, mode: "fullPage" });
+        await new Promise<void>((resolve) => playBrowserSpeech(text, resolve));
+      }
+    }
+
+    if (!abortRef.current) {
+      setPlayState("idle");
+      onSnippetFocus?.(null);
+    }
+  }
+
   // ── Per-segment sequential playback (highlights mode) ─────────────────────
 
   async function playHighlightsSequential(segs: SpeechSegment[], fromIdx: number) {
@@ -241,6 +299,18 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
     stopAudio();
     abortRef.current = false;
     setErrorMsg(null);
+
+    // Full Page mode: sentence-by-sentence through activePageText
+    if (mode === "fullPage") {
+      const sents = fpSentences.length > 0 ? fpSentences : activePageText
+        .split(/(?<=[.!?])\s+(?=[A-Z"'])/)
+        .map(s => s.trim())
+        .filter(s => s.length >= 15);
+      if (!sents.length) { setErrorMsg("No page text available."); return; }
+      console.log("[SPEECH_SOURCE]", { mode: "fullPage", source: "activePageText", sentenceCount: sents.length, charCount: activePageText.length });
+      playFullPageSequential(sents, fromIdx);
+      return;
+    }
 
     // Highlights mode: per-segment sequential playback with PDF focus
     if (mode === "highlights") {
@@ -405,10 +475,19 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
             </div>
           )}
 
-          {segments.length === 0 && activePageText.length < 20 && (
+          {/* Full Page mode progress */}
+          {mode === "fullPage" && fpSentences.length > 0 && (
+            <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
+              {isPlaying || isLoading
+                ? `Sentence ${segIdx + 1} of ${fpSentences.length}`
+                : `${fpSentences.length} sentences · click ▶ Play to start`}
+            </p>
+          )}
+
+          {segments.length === 0 && mode !== "fullPage" && activePageText.length < 20 && (
             <p style={{ fontSize: 11, color: "#475569", margin: 0 }}>No content available yet — synthesis in progress.</p>
           )}
-          {segments.length === 0 && activePageText.length >= 20 && (
+          {segments.length === 0 && mode !== "fullPage" && activePageText.length >= 20 && (
             <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>Reading active page text ({activePageText.length} chars).</p>
           )}
         </div>

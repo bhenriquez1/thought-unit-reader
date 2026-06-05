@@ -10,9 +10,10 @@ import type { CurrentPageStudyModel, VisualAnchorRole } from "@/lib/insights/cur
 
 export type StudySpeechMode =
   | "study"      // Thesis + study notes (why/mech/confusion/exam)
-  | "highlights" // Visual anchors only, priority order
+  | "highlights" // Visual anchors only, Right Panel field order
   | "full"       // Thesis + notes + concept blocks + anchors
-  | "focus";     // Thesis only (single sentence overview)
+  | "focus"      // Thesis only (single sentence overview)
+  | "fullPage";  // Whole page text sentence-by-sentence
 
 export type SpeechSegmentRole =
   | "thesis"
@@ -309,6 +310,7 @@ export interface ModeInfo {
 export const STUDY_SPEECH_MODES: ModeInfo[] = [
   { id: "focus",      label: "Focus",      description: "Core idea only" },
   { id: "study",      label: "Study",      description: "Thesis + all study notes" },
-  { id: "highlights", label: "Highlights", description: "Key anchors, priority order" },
+  { id: "highlights", label: "Highlights", description: "Key anchors, Right Panel order" },
   { id: "full",       label: "Full",       description: "All content + concept blocks" },
+  { id: "fullPage",   label: "Full Page",  description: "Whole page text sentence-by-sentence" },
 ];
