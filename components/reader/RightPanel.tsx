@@ -1311,6 +1311,9 @@ export function RightPanel({
                 claudeEnrichment={claudeEnrichment}
                 stage3Status={stage3Status}
                 retrySynthesis={retrySynthesis}
+                studyModel={studyModel}
+                focusedEvidenceId={focusedEvidenceId}
+                onEvidenceClick={onEvidenceClick}
               />
             </UltraViewErrorBoundary>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1682,6 +1685,9 @@ function UltraView({
   claudeEnrichment,
   stage3Status,
   retrySynthesis,
+  studyModel,
+  focusedEvidenceId,
+  onEvidenceClick,
 }: {
   view: UltraPageView;
   selectedBlockIndex: number;
@@ -1697,6 +1703,12 @@ function UltraView({
   claudeEnrichment?: import("@/lib/insights/claudeEnrichmentClient").ClaudeEnrichmentOutput | null;
   stage3Status?: import("./useTeachingSynthesis").SynthesisStatus;
   retrySynthesis?: () => void;
+  /** Study model from the parent — used to find visualAnchor IDs for card click-to-focus */
+  studyModel?: CurrentPageStudyModel | null;
+  /** Currently focused anchor ID — highlights the matching study card */
+  focusedEvidenceId?: string | null;
+  /** Called when a study card is clicked — focuses the matching left-panel highlight */
+  onEvidenceClick?: (snippet: string, evidenceId?: string) => void;
 }) {
   const d = density ?? { cardPadding: "p-4", headingText: "text-[12px]", bodyText: "text-[13px]", lineHeight: "leading-relaxed", space: "space-y-3" };
   const domain = view.domain ?? view._debug?.domain;
@@ -1872,48 +1884,90 @@ function UltraView({
 
       {/* Understand — the four questions a reader needs before concept detail */}
       {/* Study Notes — 5-section teaching layout (synthesis-driven) */}
-      {hasSynth && synth && (
+      {hasSynth && synth && (() => {
+        // Helper: find the first visualAnchor for a given sourceField, used for card click-to-focus.
+        const cardAnchor = (field: string) =>
+          studyModel?.visualAnchors.find(a => a.sourceField === field) ?? null;
+
+        return (
         <PanelSection title="Study Notes">
           <div className={d.space}>
             {/* WHY THIS MATTERS — synthesis application */}
-            {synth.whyItMatters && (
-              <div className={`rounded-lg border border-blue-400/15 bg-[#0a1828] ${d.cardPadding}`}>
+            {synth.whyItMatters && (() => {
+              const anchor = cardAnchor("whyThisMatters");
+              const isFocused = anchor ? focusedEvidenceId === anchor.id : false;
+              return (
+              <div
+                className={`rounded-lg border ${isFocused ? "border-blue-400/50" : "border-blue-400/15"} bg-[#0a1828] ${d.cardPadding} transition-colors`}
+                style={{ cursor: anchor ? "pointer" : undefined }}
+                onClick={anchor ? () => { onEvidenceClick?.(anchor.exactText, anchor.id); } : undefined}
+                title={anchor ? "Click to focus left-panel highlight" : undefined}
+              >
                 <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-blue-300/70`}>
                   💡 Why This Matters
                 </div>
                 <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{synth.whyItMatters}</p>
               </div>
-            )}
+              );
+            })()}
             {/* KEY MECHANISM — synthesis mechanism */}
-            {synth.keyMechanism && (
-              <div className={`rounded-lg border border-emerald-400/15 bg-[#0a1820] ${d.cardPadding}`}>
+            {synth.keyMechanism && (() => {
+              const anchor = cardAnchor("keyMechanism");
+              const isFocused = anchor ? focusedEvidenceId === anchor.id : false;
+              return (
+              <div
+                className={`rounded-lg border ${isFocused ? "border-emerald-400/50" : "border-emerald-400/15"} bg-[#0a1820] ${d.cardPadding} transition-colors`}
+                style={{ cursor: anchor ? "pointer" : undefined }}
+                onClick={anchor ? () => { onEvidenceClick?.(anchor.exactText, anchor.id); } : undefined}
+                title={anchor ? "Click to focus left-panel highlight" : undefined}
+              >
                 <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-emerald-300/70`}>
                   ⚙️ Key Mechanism
                 </div>
                 <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{synth.keyMechanism}</p>
               </div>
-            )}
+              );
+            })()}
             {/* COMMON CONFUSION — synthesis misconceptionAlert */}
-            {synth.commonConfusion && (
-              <div className={`rounded-lg border border-red-400/15 bg-[#1a0a0a] ${d.cardPadding}`}>
+            {synth.commonConfusion && (() => {
+              const anchor = cardAnchor("commonConfusion");
+              const isFocused = anchor ? focusedEvidenceId === anchor.id : false;
+              return (
+              <div
+                className={`rounded-lg border ${isFocused ? "border-red-400/50" : "border-red-400/15"} bg-[#1a0a0a] ${d.cardPadding} transition-colors`}
+                style={{ cursor: anchor ? "pointer" : undefined }}
+                onClick={anchor ? () => { onEvidenceClick?.(anchor.exactText, anchor.id); } : undefined}
+                title={anchor ? "Click to focus left-panel highlight" : undefined}
+              >
                 <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-red-300/70`}>
                   ⚠️ Common Confusion
                 </div>
                 <p className={`${d.bodyText} ${d.lineHeight} text-white/85`}>{synth.commonConfusion}</p>
               </div>
-            )}
+              );
+            })()}
             {/* QUICK MEMORY — synthesis memoryAnchor */}
-            {synth.memoryAnchor && (
-              <div className={`rounded-lg border border-purple-400/15 bg-[#150b25] ${d.cardPadding}`}>
+            {synth.memoryAnchor && (() => {
+              const anchor = cardAnchor("quickMemory");
+              const isFocused = anchor ? focusedEvidenceId === anchor.id : false;
+              return (
+              <div
+                className={`rounded-lg border ${isFocused ? "border-purple-400/50" : "border-purple-400/15"} bg-[#150b25] ${d.cardPadding} transition-colors`}
+                style={{ cursor: anchor ? "pointer" : undefined }}
+                onClick={anchor ? () => { onEvidenceClick?.(anchor.exactText, anchor.id); } : undefined}
+                title={anchor ? "Click to focus left-panel highlight" : undefined}
+              >
                 <div className={`mb-0.5 ${d.headingText} font-bold uppercase tracking-[0.14em] text-purple-300/70`}>
                   🧠 Quick Memory
                 </div>
                 <p className={`${d.bodyText} ${d.lineHeight} italic text-white/85`}>{synth.memoryAnchor}</p>
               </div>
-            )}
+              );
+            })()}
           </div>
         </PanelSection>
-      )}
+        );
+      })()}
 
       {/* ── CONCEPT MAP — reasoningFlow visualised as a causal A→B→C chain ──
            Shown after Study Notes so the student sees the full reasoning skeleton
