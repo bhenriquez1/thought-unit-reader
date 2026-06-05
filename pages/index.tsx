@@ -513,9 +513,19 @@ export default function ThoughtUnitReader() {
     [tableOfContents]
   );
   const [showTOC] = useState(true);
-  const [syllabusFileName, setSyllabusFileName] = useState("");
-  const [syllabusPages, setSyllabusPages] = useState<PageTextBundle[]>([]);
-  const [syllabusToc, setSyllabusToc] = useState<TocNode[]>([]);
+  const [syllabusFileName, setSyllabusFileName] = useState(() => {
+    try { return localStorage.getItem("syllabus_fileName") ?? ""; } catch { return ""; }
+  });
+  const [syllabusPages, setSyllabusPages] = useState<PageTextBundle[]>(() => {
+    try { return JSON.parse(localStorage.getItem("syllabus_pages") ?? "[]"); } catch { return []; }
+  });
+  const [syllabusToc, setSyllabusToc] = useState<TocNode[]>(() => {
+    try { return JSON.parse(localStorage.getItem("syllabus_toc") ?? "[]"); } catch { return []; }
+  });
+  // Pages studied via the one-brain pipeline: noteLab saved or recallLab saved
+  const [syllabusStudiedPages, setSyllabusStudiedPages] = useState<Set<number>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("syllabus_studiedPages") ?? "[]") as number[]); } catch { return new Set(); }
+  });
   const [activeShellTab, setActiveShellTab] = useState<WorkspaceMode>("reader");
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
@@ -1139,10 +1149,16 @@ export default function ThoughtUnitReader() {
   const focusScore = Math.max(0, 100 - (focusInterruptions * 12));
   const focusConsistency = focusScore >= 90 ? "Strong" : focusScore >= 75 ? "Good" : "Needs recovery";
   const ambientEmbedUrl = useMemo(() => toYouTubeEmbed(ambientUrl), [ambientUrl]);
+  // Resolve a snippet to its visualAnchor id — used by RightPanel card clicks and speech focus.
+  // Source: currentPageStudyModel.visualAnchors (the canonical left-panel highlight contract).
   const resolveEvidenceId = useCallback((snippet: string) => {
+    const anchors = currentPageStudyModel?.visualAnchors ?? [];
     const needle = snippet.toLowerCase().replace(/\s+/g, " ").slice(0, 48);
-    return highlightTargets.find((target) => target.normalizedText.includes(needle) || needle.includes(target.normalizedText.slice(0, 32)))?.evidenceRefId;
-  }, [highlightTargets]);
+    return anchors.find((a) => {
+      const hay = a.exactText.toLowerCase().replace(/\s+/g, " ");
+      return hay.includes(needle) || needle.includes(hay.slice(0, 32));
+    })?.id;
+  }, [currentPageStudyModel]);
 
   useEffect(() => {
     if (activeShellTab !== "reader") return;
@@ -1162,6 +1178,13 @@ export default function ThoughtUnitReader() {
       const persisted = getAllUltraNotes().find((n) => n.id === note.id);
       console.log("[NOTELAB_SAVE_VERIFY]", { id: note.id, found: !!persisted, storageKey: "ultraNotes_v1" });
       console.log("[NOTELAB_SAVE_SUCCESS]", { id: note.id, page: note.pageNumber, sectionCount: note.sections?.length ?? 0, source: "focus-cycle", storageKey: "ultraNotes_v1", destination: "NoteLab" });
+      setSyllabusStudiedPages((prev) => {
+        const next = new Set(prev);
+        next.add(currentPage);
+        try { localStorage.setItem("syllabus_studiedPages", JSON.stringify([...next])); } catch { /* ignore */ }
+        return next;
+      });
+      console.log("[SYLLABUS_SAVE_STATUS]", { page: currentPage, event: "notelab_saved", bookId, syllabusTocNodes: syllabusToc.length, totalStudied: syllabusStudiedPages.size + 1 });
       setSessionNotesCount((n) => n + 1);
       setNoteLabRefreshKey((k) => k + 1);
     } catch (err: any) {
@@ -1172,7 +1195,7 @@ export default function ThoughtUnitReader() {
   // Programmatically save current page to Recall Lab (used by Focus Cycle session summary)
   const sendCurrentPageToRecallLab = useCallback(() => {
     const sm = currentPageStudyModel;
-    if (!sm || (sm.conceptBlocks?.length ?? 0) === 0) return;
+    if (!sm) return;
     console.log("[RECALLLAB_SAVE_START]", { page: currentPage, bookId, source: "focus-cycle", destination: "RecallLab", storageKey: "recallSets_v1" });
     try {
       const minView = { title: `Page ${currentPage}` } as import("@/lib/insights/buildUltraPageView").UltraPageView;
@@ -1185,6 +1208,13 @@ export default function ThoughtUnitReader() {
       const persisted = getAllRecallSets().find((s) => s.id === set.id);
       console.log("[RECALLLAB_SAVE_VERIFY]", { id: set.id, found: !!persisted, storageKey: "recallSets_v1" });
       console.log("[RECALLLAB_SAVE_SUCCESS]", { id: set.id, page: currentPage, cardCount: set.cards?.length ?? 0, source: "focus-cycle", storageKey: "recallSets_v1", destination: "RecallLab" });
+      setSyllabusStudiedPages((prev) => {
+        const next = new Set(prev);
+        next.add(currentPage);
+        try { localStorage.setItem("syllabus_studiedPages", JSON.stringify([...next])); } catch { /* ignore */ }
+        return next;
+      });
+      console.log("[SYLLABUS_SAVE_STATUS]", { page: currentPage, event: "recalllab_saved", bookId, syllabusTocNodes: syllabusToc.length, totalStudied: syllabusStudiedPages.size + 1 });
       setLastRecallSetId(set.id);
       setSessionCardsCount((n) => n + 1);
       setRecallLabRefreshKey((k) => k + 1);
@@ -2963,6 +2993,17 @@ export default function ThoughtUnitReader() {
     setSyllabusFileName(result.fileName);
     setSyllabusPages(result.pages);
     setSyllabusToc(result.toc);
+    try {
+      localStorage.setItem("syllabus_fileName", result.fileName);
+      localStorage.setItem("syllabus_pages", JSON.stringify(result.pages));
+      localStorage.setItem("syllabus_toc", JSON.stringify(result.toc));
+    } catch { /* quota exceeded — ignore */ }
+    console.log("[SYLLABUS_SOURCE]", {
+      fileName:  result.fileName,
+      tocNodes:  result.toc.length,
+      pageCount: result.pages.length,
+      source:    "SyllabusUploadPanel.onParsed",
+    });
   }, []);
 
   const handleStudyTopic = useCallback((node: TocNode) => {
