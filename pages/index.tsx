@@ -1152,15 +1152,17 @@ export default function ThoughtUnitReader() {
     const sm = currentPageStudyModel;
     if (!sm) return;
     const topic = `Page ${currentPage}`;
-    console.log("[NOTE_SAVE_START]", { page: currentPage, bookId, topic, source: "focus-cycle", hasThesis: !!sm.pageThesis });
+    console.log("[NOTELAB_SAVE_START]", { page: currentPage, bookId, topic, source: "focus-cycle", hasThesis: !!sm.pageThesis, destination: "NoteLab" });
     try {
       const note = buildNoteFromStudyModel(sm, { bookId, pageNumber: currentPage, topic, bookTitle: uploadedFile?.name });
       saveUltraNote(note);
-      console.log("[NOTE_SAVE_SUCCESS]", { id: note.id, page: note.pageNumber, sectionCount: note.sections?.length ?? 0, source: "focus-cycle", storageKey: "ultraNotes_v1" });
+      const persisted = getAllUltraNotes().find((n) => n.id === note.id);
+      console.log("[NOTELAB_SAVE_VERIFY]", { id: note.id, found: !!persisted, storageKey: "ultraNotes_v1" });
+      console.log("[NOTELAB_SAVE_SUCCESS]", { id: note.id, page: note.pageNumber, sectionCount: note.sections?.length ?? 0, source: "focus-cycle", storageKey: "ultraNotes_v1", destination: "NoteLab" });
       setSessionNotesCount((n) => n + 1);
       setNoteLabRefreshKey((k) => k + 1);
     } catch (err: any) {
-      console.error("[NOTE_SAVE_ERROR]", { reason: err?.message ?? String(err), source: "focus-cycle" });
+      console.error("[NOTELAB_SAVE_ERROR]", { reason: err?.message ?? String(err), source: "focus-cycle" });
     }
   }, [currentPageStudyModel, currentPage, bookId, uploadedFile]);
 
@@ -1168,17 +1170,24 @@ export default function ThoughtUnitReader() {
   const sendCurrentPageToRecallLab = useCallback(() => {
     const sm = currentPageStudyModel;
     if (!sm || (sm.conceptBlocks?.length ?? 0) === 0) return;
-    // buildRecallSetFromView only uses view.title — pass minimal object
-    const minView = { title: `Page ${currentPage}` } as import("@/lib/insights/buildUltraPageView").UltraPageView;
-    const set = buildRecallSetFromView(minView, bookId, currentPage, {
-      bookTitle: uploadedFile?.name,
-      sourceLabel: "right-panel",
-      studyModel: sm,
-    });
-    saveRecallSet(set);
-    setLastRecallSetId(set.id);
-    setSessionCardsCount((n) => n + 1);
-    setRecallLabRefreshKey((k) => k + 1);
+    console.log("[RECALLLAB_SAVE_START]", { page: currentPage, bookId, source: "focus-cycle", destination: "RecallLab", storageKey: "recallSets_v1" });
+    try {
+      const minView = { title: `Page ${currentPage}` } as import("@/lib/insights/buildUltraPageView").UltraPageView;
+      const set = buildRecallSetFromView(minView, bookId, currentPage, {
+        bookTitle: uploadedFile?.name,
+        sourceLabel: "right-panel",
+        studyModel: sm,
+      });
+      saveRecallSet(set);
+      const persisted = getAllRecallSets().find((s) => s.id === set.id);
+      console.log("[RECALLLAB_SAVE_VERIFY]", { id: set.id, found: !!persisted, storageKey: "recallSets_v1" });
+      console.log("[RECALLLAB_SAVE_SUCCESS]", { id: set.id, page: currentPage, cardCount: set.cards?.length ?? 0, source: "focus-cycle", storageKey: "recallSets_v1", destination: "RecallLab" });
+      setLastRecallSetId(set.id);
+      setSessionCardsCount((n) => n + 1);
+      setRecallLabRefreshKey((k) => k + 1);
+    } catch (err: any) {
+      console.error("[RECALLLAB_SAVE_ERROR]", { reason: err?.message ?? String(err), source: "focus-cycle" });
+    }
   }, [currentPageStudyModel, currentPage, bookId, uploadedFile]);
 
   /* =========================================================================
@@ -3674,7 +3683,10 @@ export default function ThoughtUnitReader() {
                 studyModel={currentPageStudyModel}
                 pageNumber={currentPage}
                 activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
-                onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
+                onEvidenceFocus={(id) => {
+                  if (id) console.log("[LEFT_PANEL_FOCUS_EVIDENCE]", { evidenceRefId: id, source: "speech", page: currentPage });
+                  setFocusedEvidenceId(id);
+                }}
               />
             </div>
           )}

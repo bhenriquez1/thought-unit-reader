@@ -146,8 +146,13 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
       return new Promise((resolve, reject) => {
         audio.onplay  = () => { console.log("[SPEECH_AUDIO_PLAY]", { mode }); setPlayState("playing"); };
         audio.onended = () => { console.log("[SPEECH_AUDIO_END]", { mode }); URL.revokeObjectURL(url); blobUrlRef.current = null; resolve("done"); };
-        audio.onerror = () => { console.warn("[SPEECH_ERROR]", { source: "openai-audio", mode }); reject(new Error("Audio playback failed")); };
-        audio.play().catch(reject);
+        audio.onerror = () => {
+          // stopAudio() clears src which fires onerror — treat as clean stop, not failure
+          if (abortRef.current) { resolve("done"); return; }
+          console.warn("[SPEECH_ERROR]", { source: "openai-audio", mode });
+          reject(new Error("Audio playback failed"));
+        };
+        audio.play().catch((e) => { if (abortRef.current) resolve("done"); else reject(e); });
       });
     }
 
@@ -196,13 +201,18 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
       if (abortRef.current) break;
       const seg = segs[i];
       setSegIdx(i);
-      if (seg.evidenceRefId) onEvidenceFocus?.(seg.evidenceRefId);
+
+      console.log("[SPEECH_SEGMENT_START]", { segIdx: i, id: seg.id, evidenceRefId: seg.evidenceRefId, charCount: seg.text.length, role: seg.role });
+      if (seg.evidenceRefId) {
+        console.log("[LEFT_PANEL_FOCUS_EVIDENCE]", { evidenceRefId: seg.evidenceRefId, segIdx: i, source: "speech-segment" });
+        onEvidenceFocus?.(seg.evidenceRefId);
+      }
 
       console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: seg.text.length, voice, evidenceRefId: seg.evidenceRefId });
       try {
         const result = await fetchAndPlayAudio(seg.text);
+        if (abortRef.current) break; // user stopped during fetch
         if (result === "browser") {
-          // Browser fallback: play synchronously with promise
           await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve));
         }
         // Small pause between segments
@@ -210,6 +220,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
           await new Promise((r) => setTimeout(r, 250));
         }
       } catch (err: unknown) {
+        if (abortRef.current) break; // user stopped — not an OpenAI failure, no fallback
         const message = err instanceof Error ? err.message : String(err);
         console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i });
         console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
@@ -258,10 +269,12 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
 
     try {
       const result = await fetchAndPlayAudio(speechText);
+      if (abortRef.current) return; // user stopped during fetch
       if (result === "browser") {
         playBrowserSpeech(speechText);
       }
     } catch (err: unknown) {
+      if (abortRef.current) return; // user stopped — not an OpenAI failure, no fallback
       const message = err instanceof Error ? err.message : String(err);
       console.warn("[OPENAI_SPEECH_ERROR]", { error: message });
       console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
@@ -281,6 +294,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   }
 
   function stop() {
+    console.log("[SPEECH_STOP_USER]", { mode, segIdx, playState });
     stopAudio();
     setSegIdx(0);
     onEvidenceFocus?.(null);
