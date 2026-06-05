@@ -74,13 +74,26 @@ function detectPageRole(pageText: string, heading: string, formulaCount: number,
   if (/^\s*(preface|foreword)\s*$/im.test(pageText) && lineGroups < 40) return "preface";
 
   // Chapter opener — "Chapter N" / "Part N" large heading + sparse body.
-  // Guards: (1) lineGroups < 12 prevents firing on content pages that happen
-  // to have a running header containing "Chapter 2"; (2) if the page contains
-  // known instructional vocabulary (definition, element, cell, compound, mechanism,
-  // function, table, figure, example) it is a content page even if a chapter
-  // heading appears at the top as a running header.
   const hasInstructionalVocab = /\b(define|definition|element|compound|molecule|cell|organism|function|mechanism|example|figure|table|section|key|concept|essential|trace|synthesis|process|structure|property)\b/i.test(pageText);
   if (/^chapter\s+\d+|^part\s+[ivx\d]+/im.test(pageText) && lineGroups < 12 && !hasInstructionalVocab) return "chapter_opener";
+
+  // Universal instructional body check — book-agnostic; works for any subject/discipline.
+  // A page has an instructional body if it has real paragraphs (not just titles/headings).
+  // "bodyLines" = lines long enough to be prose, not one-word section numbers.
+  const bodyLines = lines.filter(l => l.length > 45);
+  const bodyCharCount = bodyLines.join(" ").length;
+  // Figure/table captions are also instructional proof
+  const figureCaptionCount = lines.filter(l => /^(figure|fig\.?|table|plate|diagram)\s*[\d.]/i.test(l)).length;
+  // Instructional sentences end with punctuation and have actual words
+  const instructionalSentenceCount = lines.filter(l =>
+    l.length > 60 && /[.!?]$/.test(l)
+  ).length;
+  // Any of these signals = real instructional content, regardless of heading
+  const hasInstructionalBody =
+    bodyLines.length >= 3 ||
+    bodyCharCount > 500 ||
+    figureCaptionCount > 0 ||
+    instructionalSentenceCount >= 2;
 
   // Learning objectives / Key concepts overview — non-instructional structural pages.
   // Fires when the page is dominated by an objectives/concepts list (3+ bullet items)
@@ -90,14 +103,25 @@ function detectPageRole(pageText: string, heading: string, formulaCount: number,
     /^\s*(learning\s+objectives?|chapter\s+objectives?|section\s+objectives?|key\s+concepts?|core\s+concepts?|big\s+ideas?|overview\s+&?\s+objectives?|by\s+the\s+end\s+of\s+this|after\s+(reading|studying|completing)\s+this|you\s+will\s+(be\s+able|understand|learn|know))\s*[:\n]/im.test(pageText) &&
     bulletCount >= 3 &&
     formulaCount === 0 &&
-    !hasAny(text, MECHANISM_WORDS)
+    !hasAny(text, MECHANISM_WORDS) &&
+    !hasInstructionalBody
   ) return "learning_objectives";
 
-  // Unit opener
-  if (/^unit\s+[\divx]+/im.test(pageText) && lineGroups < 15) return "unit_opener";
+  // Unit opener — only truly sparse pages (no instructional body content)
+  if (
+    /^unit\s+[\divx]+/im.test(pageText) &&
+    lineGroups < 12 &&
+    !hasInstructionalBody
+  ) return "unit_opener";
 
-  // Section / module opener
-  if (/^section\s+\d|^module\s+\d/im.test(pageText) && lineGroups < 18) return "section_opener";
+  // Section / module opener — only when the page has no instructional body content.
+  // A page can have a section heading AND real instructional text — that is a content page.
+  // Block only: section heading alone, few lines, no body paragraphs, no figure captions.
+  if (
+    /^section\s+\d|^module\s+\d/im.test(pageText) &&
+    lineGroups < 13 &&
+    !hasInstructionalBody
+  ) return "section_opener";
 
   // Cover — single large all-caps title, very sparse
   if (/^\s*[A-Z][A-Z\s]{6,}$/m.test(pageText) && lineGroups < 10) return "cover";
@@ -131,7 +155,24 @@ export function extractPageSignals(ctx: ActivePageContext, options?: { minYield?
     options?.minYield ?? 0,
   );
 
-  const pageRole = detectPageRole(pageText, ctx.sectionTitle || "", formulaLines.length, lines.filter((line) => /\s{2,}|\|/.test(line)).length);
+  const tableLikeRowCount = lines.filter((line) => /\s{2,}|\|/.test(line)).length;
+  const pageRole = detectPageRole(pageText, ctx.sectionTitle || "", formulaLines.length, tableLikeRowCount);
+
+  // Log classification result with universal body metrics — no book-specific logic
+  const _bodyLines = lines.filter(l => l.length > 45);
+  const _figureCaptionCount = lines.filter(l => /^(figure|fig\.?|table|plate|diagram)\s*[\d.]/i.test(l)).length;
+  const _instructionalSentenceCount = lines.filter(l => l.length > 60 && /[.!?]$/.test(l)).length;
+  const BLOCKED_ROLES_SET = new Set(["chapter_opener", "section_opener", "unit_opener", "learning_objectives", "cover", "title_page", "contents", "glossary", "index", "bibliography", "appendix", "copyright_frontmatter", "image_scan_heavy"]);
+  console.log("[PAGE_CLASSIFY]", {
+    page:                     ctx.pageNumber,
+    pageRole,
+    reason:                   BLOCKED_ROLES_SET.has(pageRole ?? "") ? "blocked-structural" : "instructional",
+    bodyTextChars:            _bodyLines.join(" ").length,
+    instructionalSentenceCount: _instructionalSentenceCount,
+    figureCaptionCount:       _figureCaptionCount,
+    lineGroups:               lines.length,
+    blocked:                  BLOCKED_ROLES_SET.has(pageRole ?? ""),
+  });
 
   return {
     questionCount: (pageText.match(/\?/g) || []).length,
@@ -139,7 +180,7 @@ export function extractPageSignals(ctx: ActivePageContext, options?: { minYield?
     headingCount: lines.filter((line) => line.length < 90 && /^(chapter|unit|module|week|section|introduction|overview|summary)/i.test(line)).length,
     formulaCount: formulaLines.length,
     equationLineCount: formulaLines.filter((line) => line.includes("=")).length,
-    tableLikeRowCount: lines.filter((line) => /\s{2,}|\|/.test(line)).length,
+    tableLikeRowCount,
     citationCount: (pageText.match(/(et al\.|doi|\(\d{4}\)|\[[0-9,\- ]+\])/gi) || []).length,
     bulletCount: (pageText.match(/(^|\n)\s*[-•*]/g) || []).length,
     hasDiagnosticWords: hasAny(text, DIAGNOSTIC_WORDS),
