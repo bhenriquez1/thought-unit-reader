@@ -56,23 +56,25 @@ function findSpanForSnippet(spans: HTMLElement[], snippet: string): HTMLElement 
     ?? spans.find(s => normForMatch(s.textContent || '').includes(n20));
   if (hit1) return hit1;
 
-  // Strategy 2 — multi-span window: first 5 words of the query
+  // Strategy 2 — multi-span window: first 5 words of the query.
+  // Window increased from 4 → 10 spans because PDF text layers often split one
+  // sentence across 10–20 individual word/character spans.
   const firstWords = q.split(/\s+/).slice(0, 5).join(' ');
   if (firstWords.length >= 10) {
     for (let i = 0; i < spans.length - 1; i++) {
-      const window = spans.slice(i, i + 4).map(s => normForMatch(s.textContent || '')).join(' ');
-      if (window.includes(firstWords)) return spans[i];
+      const win = spans.slice(i, i + 10).map(s => normForMatch(s.textContent || '')).join(' ');
+      if (win.includes(firstWords)) return spans[i];
     }
   }
 
-  // Strategy 3 — token-overlap across 4-span windows
+  // Strategy 3 — token-overlap across 10-span windows
   const qWords = q.split(/\s+/).filter(w => w.length > 3);
   if (qWords.length < 3) return null;
   let bestSpan: HTMLElement | null = null;
   let bestScore = 0;
   for (let i = 0; i < spans.length; i++) {
-    const window = spans.slice(i, i + 4).map(s => normForMatch(s.textContent || '')).join(' ');
-    const overlap = qWords.filter(w => window.includes(w)).length;
+    const win = spans.slice(i, i + 10).map(s => normForMatch(s.textContent || '')).join(' ');
+    const overlap = qWords.filter(w => win.includes(w)).length;
     const score = overlap / qWords.length;
     if (score > bestScore) { bestScore = score; bestSpan = spans[i]; }
   }
@@ -365,6 +367,11 @@ export default function SmartPDFViewer({
 
     const target = findSpanForSnippet(spans, focusSnippet);
 
+    console.log("[FOCUSSNIPPET_MATCH]", {
+      snippet:       focusSnippet.slice(0, 60),
+      matched:       !!target,
+      spansSearched: spans.length,
+    });
     console.log("[TRACE focusSnippet]", {
       snippet: focusSnippet.slice(0, 70),
       spansSearched: spans.length,

@@ -99,11 +99,27 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   const [fpSentences, setFpSentences] = useState<string[]>([]);
   useEffect(() => {
     if (mode === "fullPage" && activePageText) {
-      const sents = activePageText
-        .split(/(?<=[.!?])\s+(?=[A-Z"'])/)
-        .map(s => s.trim())
-        .filter(s => s.length >= 15);
-      setFpSentences(sents);
+      // Two-pass split:
+      // 1. Split on sentence-ending punctuation followed by whitespace.
+      // 2. Merge continuations that start with lowercase (e.g. after abbreviations
+      //    like "Fig.", "No.", "e.g.") so medical/chemistry text is not over-split.
+      const ABBREV_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Ms|Prof|et\s+al|etc|approx|dept|dept|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.\s*$/i;
+      const raw = activePageText.split(/(?<=[.!?…])\s+/);
+      const merged: string[] = [];
+      for (const chunk of raw) {
+        const t = chunk.trim();
+        if (!t) continue;
+        if (
+          merged.length > 0 &&
+          /^[a-z"'(0-9]/.test(t) &&
+          !ABBREV_RE.test(merged[merged.length - 1])
+        ) {
+          merged[merged.length - 1] += " " + t;
+        } else {
+          merged.push(t);
+        }
+      }
+      setFpSentences(merged.filter((s) => s.length >= 20));
     } else {
       setFpSentences([]);
     }
@@ -302,10 +318,20 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
 
     // Full Page mode: sentence-by-sentence through activePageText
     if (mode === "fullPage") {
-      const sents = fpSentences.length > 0 ? fpSentences : activePageText
-        .split(/(?<=[.!?])\s+(?=[A-Z"'])/)
-        .map(s => s.trim())
-        .filter(s => s.length >= 15);
+      // Use pre-computed fpSentences (two-pass splitter); fall back to simple split.
+      const sents = fpSentences.length > 0 ? fpSentences : (() => {
+        const ABBREV_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Ms|Prof|et\s+al|etc)\.\s*$/i;
+        const raw = activePageText.split(/(?<=[.!?…])\s+/);
+        const merged: string[] = [];
+        for (const chunk of raw) {
+          const t = chunk.trim();
+          if (!t) continue;
+          if (merged.length > 0 && /^[a-z"'(0-9]/.test(t) && !ABBREV_RE.test(merged[merged.length - 1])) {
+            merged[merged.length - 1] += " " + t;
+          } else { merged.push(t); }
+        }
+        return merged.filter((s) => s.length >= 20);
+      })();
       if (!sents.length) { setErrorMsg("No page text available."); return; }
       console.log("[SPEECH_SOURCE]", { mode: "fullPage", source: "activePageText", sentenceCount: sents.length, charCount: activePageText.length });
       playFullPageSequential(sents, fromIdx);
@@ -321,34 +347,61 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
       return;
     }
 
-    const speechText = buildSpeechText(segments, mode, studyModel, activePageText, fromIdx);
-    if (!speechText.trim()) {
+    // study | full | focus — sequential per-segment, fires onEvidenceFocus per step.
+    // This gives the same Left Panel eye guidance as highlights mode.
+    const segsToPlay = segments.length > 0 ? segments : buildSpeechScript(studyModel, mode);
+    if (!segsToPlay.length) {
       setErrorMsg("No text to read for this mode.");
       return;
     }
 
-    console.log("[SPEECH_TEXT_READY]", { charCount: speechText.length, mode, preview: speechText.slice(0, 80) });
-    console.log("[SPEECH_SOURCE]", { mode, source: "finalStudyModel.studyNotes", itemCount: segments.length, charCount: speechText.length });
+    console.log("[SPEECH_SOURCE]", {
+      mode,
+      source: "finalStudyModel.studyNotes",
+      itemCount: segsToPlay.length,
+      charCount: segsToPlay.reduce((n, s) => n + s.text.length, 0),
+    });
 
-    // Focus first segment's evidenceRefId if available
-    const firstSeg = segments[fromIdx];
-    if (firstSeg?.evidenceRefId) onEvidenceFocus?.(firstSeg.evidenceRefId);
-
+    abortRef.current = false;
     setPlayState("loading");
-    console.log("[OPENAI_SPEECH_START]", { charCount: speechText.length, voice });
 
-    try {
-      const result = await fetchAndPlayAudio(speechText);
-      if (abortRef.current) return; // user stopped during fetch
-      if (result === "browser") {
-        playBrowserSpeech(speechText);
+    for (let i = fromIdx; i < segsToPlay.length; i++) {
+      if (abortRef.current) break;
+      const seg = segsToPlay[i];
+      setSegIdx(i);
+
+      if (seg.evidenceRefId) {
+        onEvidenceFocus?.(seg.evidenceRefId);
+        console.log("[SPEECH_EYE_FOCUS]", {
+          segIdx: i, mode, evidenceRefId: seg.evidenceRefId, role: seg.role,
+        });
       }
-    } catch (err: unknown) {
-      if (abortRef.current) return; // user stopped — not an OpenAI failure, no fallback
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn("[OPENAI_SPEECH_ERROR]", { error: message });
-      console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
-      playBrowserSpeech(speechText);
+      console.log("[SPEECH_SEGMENT_START]", {
+        segIdx: i, mode, role: seg.role, charCount: seg.text.length,
+      });
+      console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: seg.text.length, voice });
+
+      try {
+        const result = await fetchAndPlayAudio(formulaToSpeech(seg.text).slice(0, 500));
+        if (abortRef.current) break;
+        if (result === "browser") {
+          await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve));
+        }
+        if (!abortRef.current && i < segsToPlay.length - 1) {
+          await new Promise((r) => setTimeout(r, 250));
+        }
+      } catch (err: unknown) {
+        if (abortRef.current) break;
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i, mode });
+        console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
+        await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve));
+      }
+    }
+
+    if (!abortRef.current) {
+      setPlayState("idle");
+      onEvidenceFocus?.(null);
     }
   }
 

@@ -16,6 +16,8 @@ import { type NoteSubject } from "@/lib/notelab/ultraNoteStore";
 
 interface RecallLabProps {
   onNavigateToPage?: (pageNumber: number) => void;
+  /** When provided, only sets for this book are shown */
+  bookId?: string;
   /** Increment to trigger a data reload from localStorage */
   refreshKey?: number;
   /** If set, auto-open this set in a recall session immediately */
@@ -49,14 +51,15 @@ const SOURCE_LABEL: Record<string, { label: string; color: string }> = {
 
 type View = { kind: "dashboard" } | { kind: "session"; set: RecallSet };
 
-function loadSets(): RecallSet[] {
-  return getAllRecallSets();
+function loadSets(bookId?: string): RecallSet[] {
+  const all = getAllRecallSets();
+  return bookId ? all.filter((s) => s.bookId === bookId) : all;
 }
 
-export default function RecallLab({ onNavigateToPage, refreshKey, lastSetId }: RecallLabProps) {
+export default function RecallLab({ onNavigateToPage, bookId, refreshKey, lastSetId }: RecallLabProps) {
   // Lazy init from localStorage — avoids empty-flash on first mount after card generation
   const [sets, setSets] = useState<RecallSet[]>(() => {
-    const all = loadSets();
+    const all = loadSets(bookId);
     console.log("[RECALLLAB_MOUNT]", {
       setsInStorage: all.length,
       lastSetId: lastSetId ?? null,
@@ -66,7 +69,7 @@ export default function RecallLab({ onNavigateToPage, refreshKey, lastSetId }: R
   });
   const [view, setView] = useState<View>(() => {
     if (lastSetId) {
-      const all = loadSets();
+      const all = loadSets(bookId);
       const found = all.find((s) => s.id === lastSetId);
       console.log("[RECALLLAB_INIT_VIEW]", { lastSetId, found: !!found, totalSets: all.length });
       if (found) return { kind: "session", set: found };
@@ -76,7 +79,7 @@ export default function RecallLab({ onNavigateToPage, refreshKey, lastSetId }: R
 
   // Reload when refreshKey changes (set was added while mounted)
   useEffect(() => {
-    const current = loadSets();
+    const current = loadSets(bookId);
     console.log("[RECALLLAB_REFRESHKEY]", { refreshKey, setsInStorage: current.length });
     setSets(current);
   }, [refreshKey]);
@@ -84,7 +87,7 @@ export default function RecallLab({ onNavigateToPage, refreshKey, lastSetId }: R
   // Storage event listener — fires when saveRecallSet dispatches "recall-lab-updated"
   useEffect(() => {
     const handler = () => {
-      const current = loadSets();
+      const current = loadSets(bookId);
       setSets(current);
       console.log("[RECALLLAB_STATE_COUNT]", { count: current.length });
     };
@@ -95,7 +98,7 @@ export default function RecallLab({ onNavigateToPage, refreshKey, lastSetId }: R
   // When lastSetId changes (new set generated), auto-open it
   useEffect(() => {
     if (!lastSetId) return;
-    const current = loadSets();
+    const current = loadSets(bookId);
     setSets(current);
     const found = current.find((s) => s.id === lastSetId);
     console.log("[RECALLLAB_SELECTED_SET]", { lastSetId, found: !!found, totalSets: current.length });
@@ -104,7 +107,7 @@ export default function RecallLab({ onNavigateToPage, refreshKey, lastSetId }: R
 
   function handleDelete(id: string) {
     deleteRecallSet(id);
-    setSets(loadSets());
+    setSets(loadSets(bookId));
     if (view.kind === "session" && view.set.id === id) {
       setView({ kind: "dashboard" });
     }
@@ -115,7 +118,7 @@ export default function RecallLab({ onNavigateToPage, refreshKey, lastSetId }: R
     return (
       <RecallSession
         set={view.set}
-        onClose={() => { setView({ kind: "dashboard" }); setSets(loadSets()); }}
+        onClose={() => { setView({ kind: "dashboard" }); setSets(loadSets(bookId)); }}
         onNavigateToPage={onNavigateToPage}
       />
     );

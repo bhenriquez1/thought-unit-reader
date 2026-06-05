@@ -2,7 +2,7 @@
 // Converts CurrentPageStudyModel → ordered speech segments.
 // Used exclusively by StudySpeechPanel — no direct PDF/paragraph dependency.
 
-import type { CurrentPageStudyModel, VisualAnchorRole } from "@/lib/insights/currentPageStudyModel";
+import type { CurrentPageStudyModel, VisualAnchorRole, VisualAnchorSourceField } from "@/lib/insights/currentPageStudyModel";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -172,6 +172,15 @@ const ANCHOR_ROLE_RATE: Record<VisualAnchorRole, number> = {
   confusionTrap:   0.85,
 };
 
+// Returns the id of the first visualAnchor whose sourceField matches — used to
+// attach an evidenceRefId to study/full mode segments so per-segment eye guidance works.
+function anchorForField(
+  anchors: CurrentPageStudyModel["visualAnchors"],
+  field: VisualAnchorSourceField,
+): string | undefined {
+  return anchors.find((a) => a.sourceField === field)?.id;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main builder
 // ─────────────────────────────────────────────────────────────────────────────
@@ -244,12 +253,19 @@ export function buildSpeechScript(
     return segments;
   }
 
-  // ── Study + Full: study notes ─────────────────────────────────────────────
-  const sn = model.studyNotes;
-  push("why",  "whyThisMatters",  "Why This Matters",  sn.whyThisMatters  ?? "", 1.00);
-  push("mech", "keyMechanism",    "Key Mechanism",     sn.keyMechanism    ?? "", 0.92);
-  push("conf", "commonConfusion", "Common Confusion",  sn.commonConfusion ? `Watch out. ${sn.commonConfusion}` : "", 0.88);
-  push("exam", "examSignal",      "Exam Signal",       sn.examSignal      ?? "", 0.90);
+  // ── Study + Full: study notes — each segment carries evidenceRefId so the
+  // per-segment sequential loop in StudySpeechPanel can focus the matching
+  // left-panel highlight while that note is being spoken.
+  const sn      = model.studyNotes;
+  const anchors = model.visualAnchors;
+  push("why",  "whyThisMatters",  "Why This Matters",  sn.whyThisMatters  ?? "", 1.00,
+       anchorForField(anchors, "whyThisMatters"));
+  push("mech", "keyMechanism",    "Key Mechanism",     sn.keyMechanism    ?? "", 0.92,
+       anchorForField(anchors, "keyMechanism"));
+  push("conf", "commonConfusion", "Common Confusion",  sn.commonConfusion ? `Watch out. ${sn.commonConfusion}` : "", 0.88,
+       anchorForField(anchors, "commonConfusion"));
+  push("exam", "examSignal",      "Exam Signal",       sn.examSignal      ?? "", 0.90,
+       anchorForField(anchors, "pageThesis"));
 
   if (mode === "study") return segments;
 

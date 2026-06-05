@@ -741,6 +741,14 @@ export default function ThoughtUnitReader() {
     });
 
     setFinalHighlightAnchors(groundedAnchors as SynthHighlightAnchor[]);
+    console.log("[HIGHLIGHT_SOURCE_AUDIT]", {
+      page:                       currentPage,
+      source:                     "ONLY finalStudyModel.visualAnchors",
+      legacyHighlightTargets:     "removed",
+      legacyHighlightNeighborhoods: "removed",
+      legacyPriorityHighlights:   "not-passed-to-render",
+      finalAnchors:               groundedAnchors.length,
+    });
   }, [currentPageStudyModel, currentPage, pageTextByPage]);
 
   /* =========================================================================
@@ -1099,9 +1107,6 @@ export default function ThoughtUnitReader() {
     pageTruthKey,
     status: pageIntelligenceStatus,
     isCurrentPage: isCurrentIntelligencePage,
-    highlightTargets,
-    highlightNeighborhoods,
-    limitedEvidence,
     priorityHighlights: currentPriorityHighlights,
     normResult: currentNormResult,
     storyV2: currentPageStoryV2,
@@ -1129,7 +1134,7 @@ export default function ThoughtUnitReader() {
     classificationReason: currentNormResult?.classificationReason ?? null,
     shouldRenderFullPanel: currentNormResult?.shouldRenderFullPanel ?? null,
     paragraphInsightsCount: (currentPageModel?.paragraphInsights ?? []).length,
-    highlightNeighborhoodsCount: (highlightNeighborhoods ?? []).length,
+    highlightNeighborhoodsCount: 0, // legacy var removed — highlight source is now ONLY finalStudyModel.visualAnchors
     formulaSignals,
     pageIntelligenceStatus,
     isCurrentIntelligencePage,
@@ -3352,6 +3357,7 @@ export default function ThoughtUnitReader() {
           <div className="flex-1 overflow-y-auto">
             <ErrorBoundary onError={(error) => console.error('🧠 RecallLab Error:', error.message, error.stack)}>
               <RecallLab
+                bookId={bookId}
                 refreshKey={recallLabRefreshKey}
                 lastSetId={lastRecallSetId ?? undefined}
                 onNavigateToPage={(page) => {
