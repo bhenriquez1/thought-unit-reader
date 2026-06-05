@@ -90,29 +90,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
     
-    const wantsJSON =
-      req.headers.accept?.includes("application/json") ||
-      (typeof req.query.return === "string" && req.query.return.toLowerCase() === "json");
+    console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", fallbackReason: "openai-key-missing", scriptChars: script.length });
 
-    if (wantsJSON) {
-      return res.status(200).json({ 
-        useBrowserSpeech: true,
-        script: processedScript,
-        originalScript: script,
-        butlerAnalysis,
-        voice,
-        message: "Using Butler speech synthesis with smart content selection and natural delivery"
-      });
-    }
-
-    // Return a simple response indicating browser speech should be used
-    return res.status(200).json({ 
+    return res.status(200).json({
       useBrowserSpeech: true,
+      provider: "browser",
+      fallbackReason: "openai-key-missing",
       script: processedScript,
-      originalScript: script,
-      butlerAnalysis,
       voice,
-      message: "Using Butler speech synthesis with intelligent content filtering and natural flow"
     });
   }
 
@@ -140,7 +125,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       (typeof req.query.return === "string" && req.query.return.toLowerCase() === "json");
 
     if (wantsJSON) {
-      return res.status(200).json({ audioBase64: buffer.toString("base64"), mimeType: mime });
+      return res.status(200).json({ audioBase64: buffer.toString("base64"), mimeType: mime, provider: "openai" });
     }
 
     res.setHeader("Content-Type", mime);
@@ -194,28 +179,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
     
-    const wantsJSON =
-      req.headers.accept?.includes("application/json") ||
-      (typeof req.query.return === "string" && req.query.return.toLowerCase() === "json");
+    console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", fallbackReason: "openai-error", scriptChars: script.length });
 
-    if (wantsJSON) {
-      return res.status(200).json({ 
-        useBrowserSpeech: true,
-        script: processedScript,
-        originalScript: script,
-        butlerAnalysis,
-        voice,
-        message: "OpenAI TTS unavailable, using Butler speech synthesis with smart content selection"
-      });
-    }
-
-    return res.status(200).json({ 
+    return res.status(200).json({
       useBrowserSpeech: true,
+      provider: "browser",
+      fallbackReason: "openai-error",
       script: processedScript,
-      originalScript: script,
-      butlerAnalysis,
       voice,
-      message: "Using Butler speech synthesis with intelligent content filtering and natural delivery"
     });
   }
 }

@@ -24,13 +24,26 @@ export type VisualAnchorRole =
   | "keyDetail"       // important supporting detail / formula
   | "confusionTrap";  // common mistake or misconception
 
+export type VisualAnchorSourceField =
+  | "pageThesis"
+  | "whyThisMatters"
+  | "keyMechanism"
+  | "commonConfusion"
+  | "quickMemory"
+  | "conceptBlock"
+  | "conceptMap";
+
 export type VisualAnchor = {
-  exactText:  string;          // verbatim span as it appears on the page
-  role:       VisualAnchorRole;
-  reason:     string;          // one-line rationale from AI
-  priority:   number;          // 1 = highest; ascending — determines render order
-  spanStart?: string;          // optional PDF span boundary
-  spanEnd?:   string;
+  /** Stable ID shared across left panel overlay, speech segment, and focusedEvidenceId */
+  id:          string;
+  /** Which right-panel field this anchor proves — used by speech engine */
+  sourceField: VisualAnchorSourceField;
+  exactText:   string;          // verbatim span as it appears on the page
+  role:        VisualAnchorRole;
+  reason:      string;          // one-line rationale from AI
+  priority:    number;          // 1 = highest; ascending — determines render order
+  spanStart?:  string;          // optional PDF span boundary
+  spanEnd?:    string;
 };
 
 // Role priority — determines render order and budget arbitration.
@@ -42,6 +55,20 @@ const ROLE_PRIORITY: Record<VisualAnchorRole, number> = {
   exampleEvidence: 5,
   keyDetail:       6,
 };
+
+function anchorTypeToSourceField(anchorType: string): VisualAnchorSourceField {
+  switch (anchorType) {
+    case "thesis":       return "pageThesis";
+    case "mechanism":    return "keyMechanism";
+    case "definition":   return "keyMechanism";
+    case "formula":      return "keyMechanism";
+    case "trap":         return "commonConfusion";
+    case "application":  return "whyThisMatters";
+    case "example_step": return "whyThisMatters";
+    case "conclusion":   return "pageThesis";
+    default:             return "pageThesis";
+  }
+}
 
 function anchorTypeToVisualRole(anchorType: string): VisualAnchorRole {
   switch (anchorType) {
@@ -194,15 +221,17 @@ export function buildStudyModel(
   // Sourced exclusively from AI anchor output; sorted by role priority.
   // Left panel uses ONLY this — no score-anchors, no universalSpecificityScore, no fallbacks.
   const visualAnchors: VisualAnchor[] = highlightAnchors
-    .map((a) => {
+    .map((a, i) => {
       const role = anchorTypeToVisualRole(a.anchorType);
       return {
-        exactText: a.text,
+        id:          `va-${i}`,
+        sourceField: anchorTypeToSourceField(a.anchorType),
+        exactText:   a.text,
         role,
-        reason:    a.reason,
-        priority:  ROLE_PRIORITY[role] ?? 6,
-        spanStart: (a as any).spanStart ?? undefined,
-        spanEnd:   (a as any).spanEnd   ?? undefined,
+        reason:      a.reason,
+        priority:    ROLE_PRIORITY[role] ?? 6,
+        spanStart:   (a as any).spanStart ?? undefined,
+        spanEnd:     (a as any).spanEnd   ?? undefined,
       };
     })
     .sort((a, b) => a.priority - b.priority);

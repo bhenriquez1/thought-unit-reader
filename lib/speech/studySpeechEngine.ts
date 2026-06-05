@@ -35,6 +35,8 @@ export interface SpeechSegment {
   rawText: string;
   /** Rate modifier relative to user speed: 0.85 (slow/careful) – 1.05 (normal) */
   rateModifier: number;
+  /** Links to VisualAnchor.id — used to focus matching PDF highlight while speaking */
+  evidenceRefId?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,6 +187,7 @@ export function buildSpeechScript(
     label: string,
     rawText: string,
     rateModifier: number,
+    evidenceRefId?: string,
   ): void {
     const trimmed = rawText?.trim();
     if (!trimmed || trimmed.length < 8) return;
@@ -195,6 +198,7 @@ export function buildSpeechScript(
       rawText: trimmed,
       text: formulaToSpeech(trimmed),
       rateModifier,
+      ...(evidenceRefId ? { evidenceRefId } : {}),
     });
   }
 
@@ -203,16 +207,24 @@ export function buildSpeechScript(
 
   if (mode === "focus") return segments;
 
-  // ── Highlight mode: only visual anchors ───────────────────────────────────
+  // ── Highlight mode: only visual anchors, one segment per anchor ───────────
   if (mode === "highlights") {
-    model.visualAnchors.forEach((anchor, i) => {
+    model.visualAnchors.forEach((anchor) => {
       push(
-        `anchor-${i}`,
+        anchor.id,
         "visualAnchor",
         ANCHOR_ROLE_LABEL[anchor.role] ?? "Key Point",
         anchor.exactText,
         ANCHOR_ROLE_RATE[anchor.role] ?? 0.95,
+        anchor.id,
       );
+    });
+    const totalChars = segments.reduce((n, s) => n + s.text.length, 0);
+    console.log("[SPEECH_SOURCE]", {
+      mode,
+      source: "finalStudyModel.visualAnchors",
+      itemCount: model.visualAnchors.length,
+      charCount: totalChars,
     });
     return segments;
   }
@@ -249,16 +261,24 @@ export function buildSpeechScript(
     );
   });
 
-  model.visualAnchors.slice(0, 6).forEach((anchor, i) => {
+  model.visualAnchors.slice(0, 6).forEach((anchor) => {
     push(
-      `anchor-full-${i}`,
+      anchor.id,
       "visualAnchor",
       ANCHOR_ROLE_LABEL[anchor.role] ?? "Key Point",
       anchor.exactText,
       ANCHOR_ROLE_RATE[anchor.role] ?? 0.95,
+      anchor.id,
     );
   });
 
+  const totalChars = segments.reduce((n, s) => n + s.text.length, 0);
+  console.log("[SPEECH_SOURCE]", {
+    mode,
+    source: mode === "full" ? "finalStudyModel.visualAnchors + studyNotes + conceptBlocks" : "finalStudyModel.studyNotes",
+    itemCount: segments.length,
+    charCount: totalChars,
+  });
   return segments;
 }
 
