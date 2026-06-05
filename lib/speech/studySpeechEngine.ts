@@ -207,9 +207,23 @@ export function buildSpeechScript(
 
   if (mode === "focus") return segments;
 
-  // ── Highlight mode: only visual anchors, one segment per anchor ───────────
+  // ── Highlight mode: only visual anchors, Right Panel field order ─────────
+  // Order matches what the student sees in the Right Panel: thesis → whyThisMatters
+  // → keyMechanism → commonConfusion → quickMemory → conceptBlock → conceptMap.
+  const FIELD_SPEECH_ORDER: Record<string, number> = {
+    pageThesis:      1,
+    whyThisMatters:  2,
+    keyMechanism:    3,
+    commonConfusion: 4,
+    quickMemory:     5,
+    conceptBlock:    6,
+    conceptMap:      7,
+  };
   if (mode === "highlights") {
-    model.visualAnchors.forEach((anchor) => {
+    const sortedAnchors = [...model.visualAnchors].sort(
+      (a, b) => (FIELD_SPEECH_ORDER[a.sourceField] ?? 99) - (FIELD_SPEECH_ORDER[b.sourceField] ?? 99),
+    );
+    sortedAnchors.forEach((anchor) => {
       push(
         anchor.id,
         "visualAnchor",

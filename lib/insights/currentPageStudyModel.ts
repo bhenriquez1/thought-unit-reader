@@ -220,12 +220,16 @@ export function buildStudyModel(
   // Build visualAnchors — the final left-panel highlight contract.
   // Sourced exclusively from AI anchor output; sorted by role priority.
   // Left panel uses ONLY this — no score-anchors, no universalSpecificityScore, no fallbacks.
+  // IDs assigned post-sort with per-field counters so they are stable across re-renders
+  // and map 1-to-1 to the Right Panel sourceField that owns each anchor.
+  const fieldCounters = new Map<string, number>();
   const visualAnchors: VisualAnchor[] = highlightAnchors
-    .map((a, i) => {
+    .map((a) => {
       const role = anchorTypeToVisualRole(a.anchorType);
+      const sourceField = anchorTypeToSourceField(a.anchorType);
       return {
-        id:          `va-${i}`,
-        sourceField: anchorTypeToSourceField(a.anchorType),
+        id:          "" as string, // assigned after sort
+        sourceField,
         exactText:   a.text,
         role,
         reason:      a.reason,
@@ -234,7 +238,12 @@ export function buildStudyModel(
         spanEnd:     (a as any).spanEnd   ?? undefined,
       };
     })
-    .sort((a, b) => a.priority - b.priority);
+    .sort((a, b) => a.priority - b.priority)
+    .map((anchor) => {
+      const n = (fieldCounters.get(anchor.sourceField) ?? 0) + 1;
+      fieldCounters.set(anchor.sourceField, n);
+      return { ...anchor, id: `va-p${page}-${anchor.sourceField}-${n}` };
+    });
 
   const pageType = (synth.pageType as string | null) ?? undefined;
 
