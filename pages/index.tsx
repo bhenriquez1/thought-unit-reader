@@ -38,6 +38,7 @@ import PureSurgeonView from "@/components/PureSurgeonView";
 import PureNoteLabView from "@/components/PureNoteLabView";
 import FocusCycleCard from "@/components/FocusCycleCard";
 import StudySpeechPanel from "@/components/reader/StudySpeechPanel";
+import PodcastLab from "@/components/reader/PodcastLab";
 import { RightPanel } from "@/components/reader/RightPanel";
 import type { ActivePageContext, RightPanelState as UnifiedRightPanelState, TocNode } from "@/lib/readerContracts";
 import { splitParagraphs } from "@/lib/textNormalize";
@@ -987,7 +988,7 @@ export default function ThoughtUnitReader() {
   }, [focusState.running]);
 
   const trySwitchShellTab = useCallback((tab: WorkspaceMode, nextViewMode?: WorkspaceMode) => {
-    const isProtected = !["reader", "toc", "syllabus"].includes(tab);
+    const isProtected = !["reader", "toc", "syllabus", "podcast"].includes(tab);
     if (focusSoftLock && focusState.running && isProtected) {
       const ok = window.confirm("Focus Cycle is active. Leave Reader cockpit and pause focus session?");
       if (!ok) return;
@@ -3375,6 +3376,18 @@ export default function ThoughtUnitReader() {
       );
     }
 
+    if (activeShellTab === "podcast") {
+      return (
+        <PodcastLab
+          studyModel={currentPageStudyModel}
+          pageNumber={currentPage}
+          bookId={bookId}
+          activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
+          onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
+        />
+      );
+    }
+
     // Fallback - should never reach here if all viewModes are handled
     return (
       <div className="h-full flex items-center justify-center bg-gray-900 text-white">
@@ -3470,6 +3483,17 @@ export default function ThoughtUnitReader() {
             }`}
           >
             🎯 Recall Lab
+          </button>
+          <button
+            onClick={() => trySwitchShellTab("podcast", "podcast")}
+            data-testid="nav-podcast"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${focusState.running ? "opacity-50" : ""} ${
+              activeShellTab === "podcast"
+                ? "bg-violet-600 text-white shadow-lg"
+                : "text-gray-300 hover:text-white hover:bg-gray-700"
+            }`}
+          >
+            🎙️ PodcastLab
           </button>
           <button
             onClick={() => {
