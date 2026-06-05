@@ -3631,6 +3631,14 @@ function GenerateNoteButton({
       });
 
       // PageBrain is the sole source of truth — build note directly from StudyModel.
+      console.log("[NOTELAB_SOURCE]", {
+        source:            "finalStudyModel",
+        page:              pageNumber,
+        hasThesis:         !!studyModel.pageThesis,
+        studyNotesCount:   Object.values(studyModel.studyNotes).filter(Boolean).length,
+        conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
+        visualAnchorCount: studyModel.visualAnchors?.length ?? 0,
+      });
       const note = buildNoteFromStudyModel(studyModel, { bookId, pageNumber, topic, bookTitle });
 
       saveUltraNote(note);
@@ -3748,6 +3756,14 @@ function GenerateStudySetButton({
         destination: "RecallLab",
       });
 
+      console.log("[RECALLLAB_SOURCE]", {
+        source:            "finalStudyModel",
+        page:              pageNumber,
+        hasThesis:         !!studyModel.pageThesis,
+        studyNotesCount:   Object.values(studyModel.studyNotes).filter(Boolean).length,
+        conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
+        miniTestItemCount: studyModel.miniTestItems?.length ?? 0,
+      });
       const set = buildRecallSetFromView(view, bookId, pageNumber, {
         bookTitle,
         sourceLabel: "right-panel",
