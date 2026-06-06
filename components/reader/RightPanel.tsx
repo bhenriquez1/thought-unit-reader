@@ -1337,6 +1337,28 @@ export function RightPanel({
           </>
         )}
 
+        {/* ── STAGE 1 BUTTONS: show from finalStudyModel even when Stage 2 UltraView unavailable ── */}
+        {!pageBlocked && isCurrentPageModel && !!studyModel && !showUltraView && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 0 8px 0" }}>
+            <GenerateNoteButton
+              view={{ title: `Page ${ctx.pageNumber}`, blocks: [], domain: "", teachingStatement: "" } as any}
+              bookId={ctx.documentId}
+              bookTitle={ctx.documentTitle}
+              pageNumber={ctx.pageNumber}
+              onNoteSaved={onNoteSaved}
+              studyModel={studyModel}
+            />
+            <GenerateStudySetButton
+              view={{ title: `Page ${ctx.pageNumber}`, blocks: [], domain: "", teachingStatement: "" } as any}
+              bookId={ctx.documentId}
+              bookTitle={ctx.documentTitle}
+              pageNumber={ctx.pageNumber}
+              onStudySetGenerated={onStudySetGenerated}
+              studyModel={studyModel}
+            />
+          </div>
+        )}
+
         {/* ── SYNTHESIS-ONLY: when ultra view unavailable, show clean unavailable state ── */}
         {FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && !showUltraView && intelligence.status === "ready" && (
           <div className="rounded-2xl border border-white/8 bg-[#071224] px-4 py-8 text-center">

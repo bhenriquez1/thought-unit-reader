@@ -144,16 +144,20 @@ export default function PodcastLab({
   const abortRef     = useRef(false);
   const audioRef     = useRef<HTMLAudioElement | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioCacheRef = useRef<Map<string, Blob>>(new Map());
+  const [audioReady, setAudioReady] = useState(false);
 
   const cfg = STUDIO_CONFIG[mode];
 
-  // Wipe script when page or mode changes
+  // Wipe script and audio cache when page or mode changes
   useEffect(() => {
     setScript(null);
     setGenError(null);
     setPlayState("idle");
     setSegIdx(0);
     setQuizCountdown(null);
+    setAudioReady(false);
+    audioCacheRef.current.clear();
     abortRef.current = true;
   }, [pageNumber, bookId, mode]);
 
@@ -222,12 +226,51 @@ export default function PodcastLab({
       console.log("[PODCAST_SCRIPT_CREATED]", {
         page: pageNumber, mode, segments: data.totalSegments, estimatedMinutes: data.estimatedMinutes,
       });
+      prebufferAllSegments(data.segments, mode);
     } catch (err: any) {
       setGenError(err?.message ?? "Failed to generate script");
     } finally {
       setGenerating(false);
     }
-  }, [studyModel, pageNumber, bookId, mode, activePageText]);
+  }, [studyModel, pageNumber, bookId, mode, activePageText]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Audio blob fetch (single segment, no playback) ────────────────────
+  const fetchAudioBlob = useCallback(async (text: string, voice: string): Promise<Blob | null> => {
+    try {
+      const res  = await fetch("/api/tts", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ script: text, voice }),
+      });
+      const data = await res.json();
+      if (data.audioBase64) {
+        const bytes = Uint8Array.from(atob(data.audioBase64), (c) => c.charCodeAt(0));
+        return new Blob([bytes], { type: data.mimeType ?? "audio/mpeg" });
+      }
+    } catch { /* ignore */ }
+    return null;
+  }, []);
+
+  // ── Pre-buffer: generate all segment audio in parallel after script ready ──
+  const prebufferAllSegments = useCallback(async (seg: PodcastSegment[], modeId: PodcastMode) => {
+    const modeInfo = PODCAST_MODES.find((m) => m.id === modeId)!;
+    setAudioReady(false);
+    console.log("[PODCAST_AUDIO_CLIP_CREATED]", { event: "prebuffer-start", segments: seg.length, mode: modeId });
+
+    await Promise.all(
+      seg.map(async (s, i) => {
+        const voice = s.speaker === "guest" ? modeInfo.guestVoice : modeInfo.hostVoice;
+        const blob  = await fetchAudioBlob(formulaToSpeech(s.text).slice(0, 500), voice);
+        if (blob) {
+          audioCacheRef.current.set(s.id, blob);
+          console.log("[PODCAST_AUDIO_CLIP_CREATED]", { event: "cached", segIdx: i, segId: s.id, speaker: s.speaker });
+        }
+      })
+    );
+
+    setAudioReady(true);
+    console.log("[PODCAST_AUDIO_CLIP_CREATED]", { event: "prebuffer-done", cachedCount: audioCacheRef.current.size, totalSegments: seg.length });
+  }, [fetchAudioBlob]);
 
   // ── TTS playback ───────────────────────────────────────────────────────
   const stop = useCallback(() => {
@@ -241,7 +284,27 @@ export default function PodcastLab({
     onEvidenceFocus?.(null);
   }, [onEvidenceFocus]);
 
-  const fetchAndPlayAudio = useCallback(async (text: string, voice: string): Promise<void> => {
+  const playBlob = useCallback(async (blob: Blob): Promise<void> => {
+    const url   = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    await new Promise<void>((resolve) => {
+      audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
+      audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+      audio.play().catch(() => resolve());
+    });
+  }, []);
+
+  const fetchAndPlayAudio = useCallback(async (text: string, voice: string, segmentId?: string): Promise<void> => {
+    // Use pre-buffered audio if available (zero latency path)
+    if (segmentId && audioCacheRef.current.has(segmentId)) {
+      const cached = audioCacheRef.current.get(segmentId)!;
+      console.log("[PODCAST_TURN_SEQUENCE]", { event: "play-cached", segmentId, fetchMode: "cached" });
+      if (!abortRef.current) await playBlob(cached);
+      return;
+    }
+
+    // Live fetch fallback (first play before pre-buffer completes)
     try {
       const res = await fetch("/api/tts", {
         method:  "POST",
@@ -264,19 +327,12 @@ export default function PodcastLab({
       if (data.audioBase64) {
         const bytes = Uint8Array.from(atob(data.audioBase64), (c) => c.charCodeAt(0));
         const blob  = new Blob([bytes], { type: data.mimeType ?? "audio/mpeg" });
-        const url   = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audioRef.current = audio;
-        await new Promise<void>((resolve) => {
-          audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
-          audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
-          audio.play().catch(() => resolve());
-        });
+        if (!abortRef.current) await playBlob(blob);
       }
     } catch {
       // silent — continue to next segment
     }
-  }, []);
+  }, [playBlob]);
 
   const runCountdown = useCallback((seconds: number): Promise<void> =>
     new Promise<void>((resolve) => {
@@ -333,7 +389,7 @@ export default function PodcastLab({
       if (abortRef.current) break;
 
       const voice = seg.speaker === "guest" ? modeInfo.guestVoice : modeInfo.hostVoice;
-      await fetchAndPlayAudio(formulaToSpeech(seg.text).slice(0, 500), voice);
+      await fetchAndPlayAudio(formulaToSpeech(seg.text).slice(0, 500), voice, seg.id);
 
       if (abortRef.current) break;
     }

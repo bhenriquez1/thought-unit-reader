@@ -100,8 +100,13 @@ function localFallback(concept: string, context: string): {
 }
 
 /** Try the new route first, then the legacy one (back-compat) */
-async function postExplain(concept: string, context: string): Promise<Response> {
-  const body = JSON.stringify({ concept, context });
+async function postExplain(
+  concept: string,
+  context: string,
+  studyModel?: object | null,
+  pageText?: string,
+): Promise<Response> {
+  const body = JSON.stringify({ concept, context, studyModel: studyModel ?? null, pageText: pageText ?? "" });
 
   // New route
   const r1 = await fetch("/api/whiteboard-explain", {
@@ -125,10 +130,12 @@ async function postExplain(concept: string, context: string): Promise<Response> 
 /** Get steps + narration only (no audio resolution). */
 export async function generateWhiteboardExplanation(
   concept: string,
-  context: string
+  context: string,
+  studyModel?: object | null,
+  pageText?: string,
 ): Promise<{ steps: WhiteboardStep[]; narrationScript: string }> {
   try {
-    const res = await postExplain(concept, context);
+    const res = await postExplain(concept, context, studyModel, pageText);
     if (!res.ok) {
       const fb = localFallback(concept, context);
       return { steps: fb.steps, narrationScript: fb.narrationScript };
@@ -153,10 +160,12 @@ export async function generateWhiteboardExplanation(
  */
 export async function generateWhiteboardExplanationWithAudio(
   concept: string,
-  context: string
+  context: string,
+  studyModel?: object | null,
+  pageText?: string,
 ): Promise<WhiteboardResult> {
   try {
-    const res = await postExplain(concept, context);
+    const res = await postExplain(concept, context, studyModel, pageText);
     if (!res.ok) {
       const fb = localFallback(concept, context);
       return { steps: fb.steps, narrationScript: fb.narrationScript, audioBlob: null };
