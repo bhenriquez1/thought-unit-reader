@@ -8,6 +8,7 @@ import OpenAI from "openai";
 import { buildPodcastPrompt, parsePodcastResponse, buildLocalPodcastScript } from "@/lib/podcast/podcastEngine";
 import type { PodcastBuildContext } from "@/lib/podcast/podcastEngine";
 import type { PodcastMode, PodcastScript } from "@/lib/podcast/podcastTypes";
+import { MODE_THEMES } from "@/lib/podcast/podcastTypes";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
@@ -95,26 +96,49 @@ export default async function handler(
   }
 
   try {
+    const theme = MODE_THEMES[mode];
     const userPrompt = buildPodcastPrompt(context, mode);
+
+    console.log("[PODCAST_MODE_STYLE]", {
+      page:      context.pageNumber,
+      mode,
+      badge:     theme.badge,
+      hostName:  theme.hostName,
+      hostRole:  theme.hostRole,
+      guestName: theme.guestName,
+      guestRole: theme.guestRole,
+    });
 
     console.log("[PODCAST_EXTERNAL_VERIFY]", {
       page:   context.pageNumber,
       mode,
-      note:   "External verification segments will cite trusted sources by name if mode includes clinical or cross-reference context.",
+      note:   "External verification segments cite trusted sources by name for clinical/cross-reference modes.",
     });
+
+    const systemPrompt = [
+      `You are an award-winning educational podcast producer writing REALISTIC, natural-sounding academic dialogue.`,
+      `This episode uses the "${theme.badge}" format with two named speakers:`,
+      `  - ${theme.hostName} (${theme.hostRole}) → use speaker="host"`,
+      `  - ${theme.guestName} (${theme.guestRole}) → use speaker="guest"`,
+      ``,
+      `CRITICAL RULES for realistic dialogue:`,
+      `1. Keep each segment to 1–2 sentences max — short conversational turns, not lectures.`,
+      `2. Use the speaker's NAME naturally in the text (e.g. "${theme.hostName}: Here's the thing..." or "${theme.guestName}: Wait—").`,
+      `3. Use natural reactions to start turns: "Exactly.", "Right, so—", "Good catch.", "Hold on—", "That's the trap.", "And here's where it gets interesting:", "I want you to catch this:"`,
+      `4. When referencing a highlight anchor, the speaker should quote or paraphrase the exact text.`,
+      `5. Alternate speakers naturally — avoid 3+ consecutive segments from the same speaker.`,
+      `6. NO bullet points, NO headers, NO markdown in the text field. Pure spoken natural language only.`,
+      ``,
+      `Always return valid JSON only — no explanation outside the JSON object.`,
+      `Format: { "segments": [ { "id": "seg-0", "type": "intro", "speaker": "host", "text": "..." }, ... ] }`,
+    ].join("\n");
 
     const completion = await openai.chat.completions.create({
       model:       "gpt-4o-mini",
-      temperature: 0.55,
-      max_tokens:  1800,
+      temperature: 0.65,
+      max_tokens:  2000,
       messages: [
-        {
-          role: "system",
-          content:
-            "You are an expert academic podcast writer. You generate conversational, educational podcast scripts from study materials. " +
-            "Always return valid JSON only — no markdown, no explanation outside the JSON object. " +
-            'Format: { "segments": [ { "id": "seg-0", "type": "intro", "speaker": "host", "text": "..." }, ... ] }',
-        },
+        { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
@@ -122,6 +146,23 @@ export default async function handler(
 
     const raw = JSON.parse(completion.choices[0]?.message?.content ?? "{}");
     const script = parsePodcastResponse(raw, context, mode);
+
+    const turnSequence = script.segments.map((s, idx) => ({
+      idx,
+      speaker: s.speaker,
+      type: s.type,
+      chars: s.text.length,
+      hasAnchor: !!s.anchorId,
+    }));
+    console.log("[PODCAST_TURN_SEQUENCE]", {
+      page:         context.pageNumber,
+      mode,
+      totalTurns:   script.totalSegments,
+      hostTurns:    script.segments.filter(s => s.speaker === "host").length,
+      guestTurns:   script.segments.filter(s => s.speaker === "guest").length,
+      anchorTurns:  script.segments.filter(s => !!s.anchorId).length,
+      sequence:     turnSequence.slice(0, 8),
+    });
 
     console.log("[PODCAST_SCRIPT_CREATED]", {
       page:      context.pageNumber,

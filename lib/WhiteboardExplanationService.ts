@@ -1,6 +1,30 @@
 // lib/WhiteboardExplanationService.ts
 // CLIENT-SAFE: do NOT import the OpenAI SDK here. Call your API routes instead.
 
+export type WhiteboardDrawType =
+  | "flow"        // boxes connected by arrows (cause→effect chains, pipelines)
+  | "sketch"      // free-text annotation over a blank canvas
+  | "equation"    // styled equation / formula box
+  | "timeline"    // horizontal timeline with labeled events
+  | "table"       // grid of labeled cells
+  | "anatomy"     // labeled diagram (like flow but with more nodes)
+  | "graph"       // bar or dot graph with labeled axes
+  | "comparison"; // two-column side-by-side
+
+export interface DiagramNode {
+  id: string;
+  label: string;
+  /** Optional absolute position override (0..1 normalized). If absent, auto-layout applies. */
+  nx?: number; // 0..1 fraction of canvas width
+  ny?: number; // 0..1 fraction of canvas height
+}
+
+export interface DiagramArrow {
+  from: string;   // node id
+  to: string;     // node id
+  label?: string; // optional edge label
+}
+
 /** A single whiteboard action the renderer understands */
 export type WhiteboardStep = {
   type: "draw" | "erase" | "text" | "image";
@@ -11,6 +35,14 @@ export type WhiteboardStep = {
   title?: string;
   description?: string;
   visualPrompt?: string;
+
+  /** Armando diagram fields — populated by whiteboardFromStudyModel */
+  drawType?: WhiteboardDrawType;
+  nodes?: DiagramNode[];
+  arrows?: DiagramArrow[];
+  labels?: string[];         // free annotation labels (for anatomy, etc.)
+  evidenceRefId?: string;    // visualAnchor.id to focus when this step plays
+  spokenLine?: string;       // the line the narrator reads for this step
 };
 
 export type WhiteboardResponse = {

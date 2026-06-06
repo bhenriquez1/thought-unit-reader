@@ -365,14 +365,242 @@ export default function Whiteboard({
     ctx.restore();
   }
 
+  // ── Armando diagram primitives ────────────────────────────────────────
+
+  function drawRoundedRect(
+    ctx: CanvasRenderingContext2D,
+    x: number, y: number, w: number, h: number, r: number,
+    fill: string, stroke: string, lineWidth = 1.5
+  ) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+  }
+
+  function drawArrow(
+    ctx: CanvasRenderingContext2D,
+    x1: number, y1: number, x2: number, y2: number,
+    color: string, label?: string
+  ) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    // arrowhead
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+    const hs = 9;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - hs * Math.cos(angle - 0.35), y2 - hs * Math.sin(angle - 0.35));
+    ctx.lineTo(x2 - hs * Math.cos(angle + 0.35), y2 - hs * Math.sin(angle + 0.35));
+    ctx.closePath();
+    ctx.fill();
+    if (label) {
+      ctx.font = "11px Arial";
+      ctx.fillStyle = color;
+      ctx.textAlign = "center";
+      ctx.fillText(label, (x1 + x2) / 2, (y1 + y2) / 2 - 6);
+    }
+    ctx.restore();
+  }
+
+  function drawNodeLabel(
+    ctx: CanvasRenderingContext2D,
+    text: string, cx: number, cy: number, maxWidth: number
+  ) {
+    ctx.font = "bold 13px Arial";
+    ctx.fillStyle = "#1e293b";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    // simple word wrap for long labels
+    const words = text.split(/\s+/);
+    let line = "";
+    const lines: string[] = [];
+    for (const w of words) {
+      const test = line ? `${line} ${w}` : w;
+      if (ctx.measureText(test).width > maxWidth - 12 && line) {
+        lines.push(line);
+        line = w;
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+    const lineH = 16;
+    const startY = cy - ((lines.length - 1) * lineH) / 2;
+    lines.forEach((l, i) => ctx.fillText(l, cx, startY + i * lineH));
+  }
+
+  function drawFlowDiagram(
+    ctx: CanvasRenderingContext2D,
+    nodes: Array<{ id: string; label: string; nx?: number; ny?: number }>,
+    arrows: Array<{ from: string; to: string; label?: string }>,
+    p: number // reveal progress 0..1
+  ) {
+    if (!nodes.length) return;
+    const NW = 150, NH = 50, GAP = 48;
+    const totalW = nodes.length * NW + (nodes.length - 1) * GAP;
+    const startX = Math.max(PADDING_X, (CANVAS_W - totalW) / 2);
+    const baseY = 190;
+
+    // Compute positions
+    const pos: Record<string, { cx: number; cy: number }> = {};
+    nodes.forEach((n, i) => {
+      const cx = n.nx != null ? n.nx * CANVAS_W : startX + i * (NW + GAP) + NW / 2;
+      const cy = n.ny != null ? n.ny * CANVAS_H : baseY;
+      pos[n.id] = { cx, cy };
+    });
+
+    const visibleNodes = Math.ceil(nodes.length * Math.max(p, 0.15));
+
+    // Draw arrows first (behind boxes)
+    arrows.forEach((a) => {
+      const from = pos[a.from];
+      const to = pos[a.to];
+      if (!from || !to) return;
+      const fromIdx = nodes.findIndex((n) => n.id === a.from);
+      if (fromIdx + 1 >= visibleNodes) return;
+      drawArrow(ctx, from.cx + NW / 2, from.cy, to.cx - NW / 2, to.cy, "#64748b", a.label);
+    });
+
+    // Draw boxes
+    nodes.slice(0, visibleNodes).forEach((n) => {
+      const { cx, cy } = pos[n.id];
+      const alpha = clamp(p * nodes.length - nodes.findIndex((nn) => nn.id === n.id), 0, 1);
+      ctx.save();
+      ctx.globalAlpha = easeOutCubic(alpha);
+      drawRoundedRect(ctx, cx - NW / 2, cy - NH / 2, NW, NH, 8, "#dbeafe", "#3b82f6", 1.8);
+      drawNodeLabel(ctx, n.label, cx, cy, NW);
+      ctx.restore();
+    });
+  }
+
+  function drawComparisonDiagram(
+    ctx: CanvasRenderingContext2D,
+    nodes: Array<{ id: string; label: string }>,
+    descriptionText: string,
+    p: number
+  ) {
+    const colW = (CANVAS_W - PADDING_X * 2 - 40) / 2;
+    const colH = 160;
+    const topY = 140;
+    const alpha = easeOutCubic(p);
+
+    const cols = nodes.slice(0, 2);
+    cols.forEach((n, i) => {
+      const x = PADDING_X + i * (colW + 40);
+      const isLeft = i === 0;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      const fill = isLeft ? "#fef2f2" : "#f0fdf4";
+      const stroke = isLeft ? "#ef4444" : "#22c55e";
+      drawRoundedRect(ctx, x, topY, colW, colH, 10, fill, stroke, 2);
+      ctx.font = "bold 14px Arial";
+      ctx.fillStyle = stroke;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillText(n.label, x + colW / 2, topY + 12);
+      ctx.restore();
+    });
+
+    // Divider
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.4;
+    ctx.strokeStyle = "#94a3b8";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(CANVAS_W / 2, topY - 10);
+    ctx.lineTo(CANVAS_W / 2, topY + colH + 10);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // Description text below
+    if (descriptionText) {
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.85;
+      ctx.font = "14px Arial";
+      ctx.fillStyle = "#374151";
+      ctx.textAlign = "center";
+      const words = descriptionText.split(/\s+/);
+      let line = "";
+      let y = topY + colH + 20;
+      for (const w of words) {
+        const test = line ? `${line} ${w}` : w;
+        if (ctx.measureText(test).width > CANVAS_W - PADDING_X * 2 && line) {
+          ctx.fillText(line, CANVAS_W / 2, y);
+          line = w;
+          y += 20;
+          if (y > CANVAS_H - 20) break;
+        } else {
+          line = test;
+        }
+      }
+      if (line) ctx.fillText(line, CANVAS_W / 2, y);
+      ctx.restore();
+    }
+  }
+
+  function drawTableDiagram(
+    ctx: CanvasRenderingContext2D,
+    nodes: Array<{ id: string; label: string }>,
+    p: number
+  ) {
+    if (!nodes.length) return;
+    const rows = Math.ceil(nodes.length / 2);
+    const cellW = (CANVAS_W - PADDING_X * 2) / 2;
+    const cellH = 48;
+    const startY = 130;
+    const alpha = easeOutCubic(p);
+
+    nodes.slice(0, Math.ceil(nodes.length * Math.max(p, 0.2))).forEach((n, i) => {
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const x = PADDING_X + col * cellW;
+      const y = startY + row * cellH;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      drawRoundedRect(ctx, x + 2, y + 2, cellW - 4, cellH - 4, 6,
+        col === 0 ? "#f8fafc" : "#f1f5f9",
+        col === 0 ? "#6366f1" : "#94a3b8", 1.2);
+      ctx.font = col === 0 ? "bold 13px Arial" : "13px Arial";
+      ctx.fillStyle = col === 0 ? "#312e81" : "#374151";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(n.label.slice(0, 30), x + cellW / 2, y + cellH / 2);
+      ctx.restore();
+    });
+  }
+
   // Baseline draw (called every frame)
   const drawStep = (ctx: CanvasRenderingContext2D, progressWithinStep: number) => {
     const canvas = ctx.canvas;
     const step = steps[currentStepIndex] || { title: "", description: "" };
+    const drawType = (step as any).drawType as string | undefined;
+    const stepNodes = (step as any).nodes as Array<{ id: string; label: string; nx?: number; ny?: number }> | undefined;
+    const stepArrows = (step as any).arrows as Array<{ from: string; to: string; label?: string }> | undefined;
 
     // bg
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = drawType ? "#f8fafc" : "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Title fade-in
@@ -384,7 +612,7 @@ export default function Whiteboard({
     const titleAlpha = easeOutCubic(Math.min(1, (progressWithinStep * stepMs) / TITLE_FADE_MS));
     ctx.save();
     ctx.globalAlpha = titleAlpha;
-    ctx.fillStyle = "#111827";
+    ctx.fillStyle = drawType ? "#1e3a5f" : "#111827";
     ctx.fillText(title, PADDING_X, TITLE_Y);
     ctx.restore();
 
@@ -392,21 +620,41 @@ export default function Whiteboard({
     const underlineP = Math.min(1, (progressWithinStep * stepMs) / UNDERLINE_MS);
     drawScribbleUnderline(ctx, PADDING_X, TITLE_Y + 6, titleWidth + 8, underlineP);
 
-    // Description — animated word reveal
-    const desc = step.description || "";
-    ctx.font = "18px Arial";
-    ctx.fillStyle = "#1f2937";
-    const words = desc.trim().length ? desc.trim().split(/\s+/) : [];
+    // Diagram reveal progress (slightly delayed so title paints first)
+    const diagMs = Math.max(MIN_STEP_MS * 0.8, stepMs * 0.85);
+    const diagP = isPlaying ? clamp((progressWithinStep * stepMs - 300) / diagMs, 0, 1) : 1;
 
-    // reveal pacing: most of the step duration
-    const revealMs = Math.max(MIN_STEP_MS * 0.8, stepMs * 0.9);
-    const revealRatio = isPlaying ? clamp((progressWithinStep * stepMs) / revealMs, 0, 1) : 1;
-    const visibleWords = Math.max(0, Math.floor(words.length * revealRatio));
+    if (drawType === "flow" || drawType === "anatomy") {
+      drawFlowDiagram(ctx, stepNodes ?? [], stepArrows ?? [], diagP);
+    } else if (drawType === "comparison") {
+      drawComparisonDiagram(ctx, stepNodes ?? [], step.description ?? "", diagP);
+    } else if (drawType === "table") {
+      drawTableDiagram(ctx, stepNodes ?? [], diagP);
+    } else {
+      // Text-based rendering (original behaviour)
+      const desc = step.description || "";
+      ctx.font = "18px Arial";
+      ctx.fillStyle = "#1f2937";
+      const words = desc.trim().length ? desc.trim().split(/\s+/) : [];
+      const revealMs = Math.max(MIN_STEP_MS * 0.8, stepMs * 0.9);
+      const revealRatio = isPlaying ? clamp((progressWithinStep * stepMs) / revealMs, 0, 1) : 1;
+      const visibleWords = Math.max(0, Math.floor(words.length * revealRatio));
+      drawWrappedWords(ctx, words, visibleWords, PADDING_X, DESC_Y, CANVAS_W - 2 * PADDING_X, DESC_LINE_H);
+    }
 
-    drawWrappedWords(ctx, words, visibleWords, PADDING_X, DESC_Y, CANVAS_W - 2 * PADDING_X, DESC_LINE_H);
+    // Step index badge (bottom-right)
+    if (drawType) {
+      ctx.save();
+      ctx.globalAlpha = 0.45;
+      ctx.font = "11px Arial";
+      ctx.fillStyle = "#64748b";
+      ctx.textAlign = "right";
+      ctx.fillText(`${currentStepIndex + 1} / ${steps.length}  [${drawType}]`, CANVAS_W - PADDING_X, CANVAS_H - 12);
+      ctx.restore();
+    }
 
     // Visual prompt hint
-    if ((step as any).visualPrompt) {
+    if ((step as any).visualPrompt && !drawType) {
       ctx.font = "italic 16px Arial";
       ctx.fillStyle = "#6b7280";
       ctx.fillText(`(Draw: ${(step as any).visualPrompt})`, PADDING_X, canvas.height - 24);
@@ -611,6 +859,21 @@ export default function Whiteboard({
     ttsStartRef.current = null;
     clearTtsTimer();
   };
+
+  // Log animation state on step change
+  useEffect(() => {
+    if (!steps.length) return;
+    const step = steps[currentStepIndex] as any;
+    console.log("[WHITEBOARD_ANIMATION_STATE]", {
+      stepIdx:       currentStepIndex,
+      title:         step?.title ?? null,
+      drawType:      step?.drawType ?? "text",
+      nodes:         step?.nodes?.length ?? 0,
+      arrows:        step?.arrows?.length ?? 0,
+      evidenceRefId: step?.evidenceRefId ?? null,
+      isPlaying,
+    });
+  }, [currentStepIndex, steps, isPlaying]);
 
   /** Manual step nav */
   const prevStep = () =>
