@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 
 export interface OverlayRect {
   id: string;
@@ -105,6 +105,28 @@ export default function PdfEvidenceOverlay({
   focusedId?: string | null;
   onFocus?: (id: string) => void;
 }) {
+  const rectRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+
+  // Scroll focused highlight into view when focusedId changes
+  useEffect(() => {
+    if (!focusedId) return;
+    const el = rectRefs.current.get(focusedId);
+    if (el) {
+      console.log("[PDF_FOCUS_RECEIVED]", { focusedId, scrolled: true });
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else {
+      console.log("[PDF_FOCUS_RECEIVED]", { focusedId, scrolled: false, note: "rect not in current page DOM" });
+    }
+  }, [focusedId]);
+
+  // Log when highlight rects are rendered
+  useEffect(() => {
+    const visible = rects.filter(shouldRender);
+    if (visible.length > 0) {
+      console.log("[HIGHLIGHT_RENDERED]", { count: visible.length, ids: visible.map(r => r.id), focusedId: focusedId ?? null });
+    }
+  }, [rects, focusedId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="pointer-events-none absolute inset-0 z-20" style={{ overflow: "visible" }}>
       {rects.filter(shouldRender).map((rect) => {
@@ -114,6 +136,7 @@ export default function PdfEvidenceOverlay({
           <button
             key={rect.id}
             type="button"
+            ref={(el) => { if (el) rectRefs.current.set(rect.id, el); else rectRefs.current.delete(rect.id); }}
             onClick={() => onFocus?.(rect.id)}
             className={`pointer-events-auto absolute transition-colors ${focused ? cfg.ringClass : ""}`}
             style={{

@@ -278,6 +278,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
 
       console.log("[SPEECH_SEGMENT_START]", { segIdx: i, id: seg.id, evidenceRefId: seg.evidenceRefId, charCount: seg.text.length, role: seg.role });
       if (seg.evidenceRefId) {
+        console.log("[SPEECH_SEGMENT_FOCUS]", { evidenceRefId: seg.evidenceRefId, segIdx: i, totalSegs: segs.length, source: "speech-highlights-mode" });
         console.log("[LEFT_PANEL_FOCUS_EVIDENCE]", { evidenceRefId: seg.evidenceRefId, segIdx: i, source: "speech-segment" });
         onEvidenceFocus?.(seg.evidenceRefId);
       }
@@ -343,6 +344,12 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
       const segsToPlay = segments.length > 0 ? segments : buildSpeechScript(studyModel, "highlights");
       if (!segsToPlay.length) { setErrorMsg("No highlight anchors to read."); return; }
       console.log("[SPEECH_SOURCE]", { mode: "highlights", source: "finalStudyModel.visualAnchors", itemCount: segsToPlay.length, charCount: segsToPlay.reduce((n, s) => n + s.text.length, 0) });
+      console.log("[SPEECH_EYE_GUIDE_SOURCE]", {
+        mode: "highlights",
+        segmentCount: segsToPlay.length,
+        evidenceRefIds: segsToPlay.map((s) => s.evidenceRefId ?? null),
+        note: "each evidenceRefId will drive focusedEvidenceId → PDF rect scroll",
+      });
       playHighlightsSequential(segsToPlay, fromIdx);
       return;
     }

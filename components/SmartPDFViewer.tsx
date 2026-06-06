@@ -485,6 +485,12 @@ export default function SmartPDFViewer({
         ids: highlightTargets?.map((t) => t.evidenceRefId) ?? [],
         texts: highlightTargets?.map((t) => t.text?.slice(0, 40)) ?? [],
       });
+      console.log("[PDF_HIGHLIGHT_LAYER]", {
+        source: "finalStudyModel.visualAnchors via aiHighlightAnchors",
+        targetCount: highlightTargets?.length ?? 0,
+        ids: highlightTargets?.map((t) => t.evidenceRefId) ?? [],
+        page: currentPage,
+      });
 
       // Normalize anchor text to match concatText format exactly.
       // concatText is built from spanNorm which applies [^\w\s] -> " " (strips all punctuation).

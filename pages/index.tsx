@@ -125,6 +125,8 @@ import {
   type ChapterAbsorptionConfig
 } from "@/lib/chapterAbsorptionPipeline";
 import { type SmartTOCEntry } from "@/lib/tocParser";
+import { parseSyllabus } from "@/lib/syllabusParser/parser";
+import { generateCoursePlan, type StudyDay } from "@/lib/syllabusParser/coursePlanner";
 
 // Lazy-load to keep SSR clean with performance optimizations
 const SmartPDFViewer = dynamic(() => import("@/components/SmartPDFViewer"), { ssr: false });
@@ -529,6 +531,9 @@ export default function ThoughtUnitReader() {
   const [syllabusStudiedPages, setSyllabusStudiedPages] = useState<Set<number>>(() => {
     try { return new Set(JSON.parse(localStorage.getItem("syllabus_studiedPages") ?? "[]") as number[]); } catch { return new Set(); }
   });
+  const [syllabusStudyPlan, setSyllabusStudyPlan] = useState<StudyDay[]>(() => {
+    try { return JSON.parse(localStorage.getItem("syllabus_plan") ?? "[]"); } catch { return []; }
+  });
   const [activeShellTab, setActiveShellTab] = useState<WorkspaceMode>("reader");
   const [rightPanelResetKey, setRightPanelResetKey] = useState(0);
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
@@ -588,6 +593,19 @@ export default function ThoughtUnitReader() {
         page:          currentPage,
         reason:        "study-model-loading",
         existingCount: finalHighlightAnchors.length,
+      });
+      return;
+    }
+
+    // ── Page text not yet extracted — wait; don't run semantic-only grounding ──
+    // Grounding with empty pageText would set semantic text that SmartPDFViewer
+    // can't locate in the PDF, so highlights wouldn't appear. Wait for real text.
+    if (pageText.length < 30) {
+      console.log("[LEFT_PANEL_GROUND_WAITING_FOR_TEXT]", {
+        page:        currentPage,
+        pageTextLen: pageText.length,
+        anchorCount: currentPageStudyModel.visualAnchors?.length ?? 0,
+        note:        "skipping grounding — waiting for PDF text extraction",
       });
       return;
     }
@@ -3017,6 +3035,61 @@ export default function ThoughtUnitReader() {
       pageCount: result.pages.length,
       source:    "SyllabusUploadPanel.onParsed",
     });
+
+    // ── Generate CollegeCal-style study plan ──────────────────────────────
+    let plan: StudyDay[] = [];
+    try {
+      // Try full parse → course plan (requires parseable blocks in the syllabus)
+      const allText = result.pages.map((p) => p.text ?? "").join("\n");
+      const parsed  = parseSyllabus(allText);
+      console.log("[SYLLABUS_MAPPING_RESULT]", {
+        blocks:    parsed.blocks.length,
+        courseTitle: parsed.metadata?.courseTitle ?? null,
+        source:    "parseSyllabus",
+      });
+
+      if (parsed.blocks.length > 0) {
+        // Convert syllabusToc (TocNode[]) into TocItem[] for coursePlanner
+        const tocItems = result.toc.map((n) => ({
+          id:         n.id,
+          title:      n.title,
+          pageNumber: n.page,
+          level:      n.kind === "chapter" ? 0 : n.kind === "section" ? 1 : 2,
+        }));
+        const coursePlan = generateCoursePlan(parsed, tocItems);
+        plan = coursePlan.studySchedule;
+        console.log("[SYLLABUS_PLAN_CREATED]", {
+          source:        "generateCoursePlan",
+          scheduleDays:  plan.length,
+          coverage:      coursePlan.coverage,
+        });
+      } else {
+        throw new Error("no syllabus blocks parsed");
+      }
+    } catch {
+      // Fallback: create one entry per TOC node
+      const today = new Date();
+      plan = result.toc.slice(0, 30).map((n, i) => ({
+        date:             new Date(today.getTime() + i * 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+        blockId:          n.id,
+        topics:           [n.title],
+        pages:            [{ start: n.page, end: n.page + 10 }],
+        estimatedMinutes: 30,
+        isExamDay:        n.kind === "exam",
+      }));
+      console.log("[SYLLABUS_PLAN_CREATED]", {
+        source:       "toc-fallback",
+        scheduleDays: plan.length,
+      });
+    }
+
+    setSyllabusStudyPlan(plan);
+    try {
+      localStorage.setItem("syllabus_plan", JSON.stringify(plan));
+      console.log("[SYLLABUS_SAVE_STATUS]", { saved: true, key: "syllabus_plan", days: plan.length });
+    } catch {
+      console.log("[SYLLABUS_SAVE_STATUS]", { saved: false, reason: "localStorage quota exceeded" });
+    }
   }, []);
 
   const handleStudyTopic = useCallback((node: TocNode) => {
@@ -3339,6 +3412,52 @@ export default function ThoughtUnitReader() {
                 <div className="rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-300">
                   <span className="font-medium text-white">Loaded syllabus:</span> {syllabusFileName}
                 </div>
+
+                {/* ── CollegeCal-style study plan ── */}
+                {syllabusStudyPlan.length > 0 && (
+                  <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3">
+                    <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-indigo-400">Study Plan · {syllabusStudyPlan.length} sessions</div>
+                    <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+                      {syllabusStudyPlan.map((day, idx) => {
+                        const isStudied = day.pages.some((p) => syllabusStudiedPages.has(p.start));
+                        const label = day.topics[0] ?? `Session ${idx + 1}`;
+                        const targetPage = day.pages[0]?.start ?? 1;
+                        const weekNum = idx + 1;
+                        return (
+                          <button
+                            key={day.blockId ?? idx}
+                            onClick={() => {
+                              if (targetPage) handleSyllabusNodeClick({ id: day.blockId, title: label, page: targetPage, kind: day.isExamDay ? "exam" : "topic" });
+                            }}
+                            className={`w-full text-left rounded-lg px-3 py-2 text-sm transition-colors ${
+                              day.isExamDay
+                                ? "bg-rose-900/40 border border-rose-500/30 hover:bg-rose-900/60"
+                                : isStudied
+                                ? "bg-emerald-900/30 border border-emerald-500/20 hover:bg-emerald-900/50"
+                                : "bg-slate-800/60 border border-white/5 hover:bg-slate-700/60"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-medium text-white truncate">{label}</span>
+                              <span className={`shrink-0 text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded ${
+                                day.isExamDay ? "bg-rose-500/40 text-rose-200" :
+                                isStudied ? "bg-emerald-500/40 text-emerald-200" : "bg-slate-600/60 text-slate-400"
+                              }`}>
+                                {day.isExamDay ? "Exam" : isStudied ? "Done" : `Wk ${weekNum}`}
+                              </span>
+                            </div>
+                            <div className="mt-0.5 flex gap-3 text-[10px] text-slate-400">
+                              <span>{day.date}</span>
+                              {targetPage > 0 && <span>p.{targetPage}</span>}
+                              <span>~{day.estimatedMinutes}min</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <SyllabusStudyLauncher toc={syllabusToc} onStudyTopic={handleStudyTopic} />
                 <TocTree
                   toc={syllabusToc}
