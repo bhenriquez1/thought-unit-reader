@@ -35,6 +35,12 @@ interface WhiteboardProps {
   /** Optional parent-controlled playback speed (overrides internal control if provided) */
   playbackSpeed?: number;
 
+  /**
+   * When provided, the whiteboard jumps to this step index instead of auto-advancing.
+   * Used by PodcastLab to sync the canvas with audio segments.
+   */
+  controlledStepIndex?: number;
+
   /** 🔐 Persistence (optional). If omitted, overlay still works in-memory. */
   lessonId?: string;   // e.g. document id or slug
   userId?: string;     // current user id (if available)
@@ -78,8 +84,15 @@ export default function Whiteboard({
   enableDrawing = true,
   concept = "",
   context = "",
+  controlledStepIndex,
 }: WhiteboardProps) {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
+
+  useEffect(() => {
+    if (controlledStepIndex == null) return;
+    setCurrentStepIndex(Math.max(0, Math.min(steps.length - 1, controlledStepIndex)));
+  }, [controlledStepIndex, steps.length]);
+
   const [isPlaying, setIsPlaying] = useState(false);
 
   // Internal speed UI (used when parent doesn't provide playbackSpeed)
