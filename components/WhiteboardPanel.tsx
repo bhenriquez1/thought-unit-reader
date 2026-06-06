@@ -46,6 +46,9 @@ type Props = {
 
   /** Optional: max cached entries in-memory + localStorage mirror */
   cacheSize?: number; // default 20
+
+  /** When provided, skip API and display these steps directly (finalStudyModel-driven path) */
+  prebuiltSteps?: WhiteboardStep[];
 };
 
 /** In-memory LRU-ish cache (oldest evicted on overflow) */
@@ -67,6 +70,7 @@ export default function WhiteboardPanel({
   currentPage,
   containsDiagramOrFormula = defaultDiagramHeuristic,
   cacheSize = 20,
+  prebuiltSteps,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [steps, setSteps] = useState<WhiteboardStep[]>([]);
@@ -192,8 +196,18 @@ export default function WhiteboardPanel({
     return tryLocalRestore();
   };
 
+  /** Sync prebuiltSteps → state when provided (finalStudyModel-driven, no API call) */
+  useEffect(() => {
+    if (!prebuiltSteps || prebuiltSteps.length === 0) return;
+    setSteps(prebuiltSteps);
+    setNarrationScript(prebuiltSteps.map((s) => s.description ?? "").join(" "));
+    setAudioBlob(null);
+    setLoading(false);
+  }, [prebuiltSteps]);
+
   /** Core generate call (with cache + state wiring) */
   const runGenerate = useCallback(async () => {
+    if (prebuiltSteps && prebuiltSteps.length > 0) return; // prebuilt takes precedence
     if (!effectiveConcept || !effectiveContext) return;
 
     // rate-limit: 1 call / 3s

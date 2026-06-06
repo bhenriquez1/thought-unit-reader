@@ -30,6 +30,8 @@ import TocTree from "@/components/toc/TocTree";
 import SyllabusUploadPanel from "@/components/syllabus/SyllabusUploadPanel";
 import SyllabusStudyLauncher from "@/components/study/SyllabusStudyLauncher";
 import UnderConstructionPanel from "@/components/UnderConstructionPanel";
+import WhiteboardPanel from "@/components/WhiteboardPanel";
+import { buildWhiteboardStepsFromStudyModel } from "@/lib/insights/whiteboardFromStudyModel";
 
 // Pure View components (Strict Mode Separation - V1)
 import PureReaderView from "@/components/PureReaderView";
@@ -750,6 +752,11 @@ export default function ThoughtUnitReader() {
       finalAnchors:               groundedAnchors.length,
     });
   }, [currentPageStudyModel, currentPage, pageTextByPage]);
+
+  const whiteboardSteps = useMemo(
+    () => currentPageStudyModel ? buildWhiteboardStepsFromStudyModel(currentPageStudyModel) : [],
+    [currentPageStudyModel],
+  );
 
   /* =========================================================================
      🔹 Unified Annotation Store (P0.1) - Shared between Surgeon View + NoteLab
@@ -3974,11 +3981,12 @@ export default function ThoughtUnitReader() {
             </button>
           </div>
           <div className="flex-1 overflow-auto p-4">
-            <UnderConstructionPanel
-              icon="🎨"
-              title="Whiteboard"
-              subtitle="Whiteboard is intentionally disabled while extraction-first workflows are being stabilized."
-              bullets={["Explain-on-page", "Diagram sketching", "Voice walkthrough", "Sticky synthesis notes"]}
+            <WhiteboardPanel
+              concept={currentPageStudyModel?.pageThesis ?? ""}
+              context={currentPageStudyModel?.studyNotes?.keyMechanism ?? ""}
+              prebuiltSteps={whiteboardSteps}
+              lessonTitle={uploadedFile?.name ?? "Page Whiteboard"}
+              currentPage={currentPage}
             />
           </div>
         </div>
