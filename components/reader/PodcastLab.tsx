@@ -6,7 +6,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import type { PodcastMode, PodcastScript, PodcastSegment } from "@/lib/podcast/podcastTypes";
-import { PODCAST_MODES, SEGMENT_COLORS, SEGMENT_LABELS } from "@/lib/podcast/podcastTypes";
+import { PODCAST_MODES, SEGMENT_COLORS, SEGMENT_LABELS, MODE_THEMES } from "@/lib/podcast/podcastTypes";
 import { getAllUltraNotes } from "@/lib/notelab/ultraNoteStore";
 import { getAllRecallSets } from "@/lib/recalllab/recallStore";
 import { formulaToSpeech } from "@/lib/speech/studySpeechEngine";
@@ -39,8 +39,8 @@ const STUDIO_CONFIG: Record<PodcastMode, {
     bg: "from-slate-50 via-blue-50 to-indigo-50",
     textClass: "text-slate-800",
     accentClass: "bg-blue-600",
-    hostLabel: "Professor",
-    guestLabel: "Student",
+    hostLabel: MODE_THEMES.page_review.hostName,
+    guestLabel: MODE_THEMES.page_review.guestName,
     headerTitle: "Page Review Studio",
     headerSubtitle: "Whiteboard-first concept walk-through",
     isDark: false,
@@ -49,8 +49,8 @@ const STUDIO_CONFIG: Record<PodcastMode, {
     bg: "from-gray-950 via-gray-900 to-red-950",
     textClass: "text-white",
     accentClass: "bg-red-600",
-    hostLabel: "Prof. Carter",
-    guestLabel: "Dr. Elena",
+    hostLabel: MODE_THEMES.exam_cram.hostName,
+    guestLabel: MODE_THEMES.exam_cram.guestName,
     headerTitle: "DAT Review Studio",
     headerSubtitle: "High-yield exam prep · dense review",
     isDark: true,
@@ -59,8 +59,8 @@ const STUDIO_CONFIG: Record<PodcastMode, {
     bg: "from-indigo-950 via-purple-900 to-pink-950",
     textClass: "text-white",
     accentClass: "bg-yellow-400",
-    hostLabel: "Host",
-    guestLabel: "Contestant",
+    hostLabel: MODE_THEMES.quiz_podcast.hostName,
+    guestLabel: MODE_THEMES.quiz_podcast.guestName,
     headerTitle: "Recall Challenge Studio",
     headerSubtitle: "Game show study session",
     isDark: true,
@@ -69,8 +69,8 @@ const STUDIO_CONFIG: Record<PodcastMode, {
     bg: "from-slate-950 via-slate-900 to-slate-800",
     textClass: "text-white",
     accentClass: "bg-green-500",
-    hostLabel: "Advocate",
-    guestLabel: "Challenger",
+    hostLabel: MODE_THEMES.debate.hostName,
+    guestLabel: MODE_THEMES.debate.guestName,
     headerTitle: "Avrrio Rounds Studio",
     headerSubtitle: "Evidence-backed debate",
     isDark: true,
@@ -79,8 +79,8 @@ const STUDIO_CONFIG: Record<PodcastMode, {
     bg: "from-teal-950 via-teal-900 to-cyan-950",
     textClass: "text-white",
     accentClass: "bg-cyan-400",
-    hostLabel: "Attending",
-    guestLabel: "Resident",
+    hostLabel: MODE_THEMES.clinical.hostName,
+    guestLabel: MODE_THEMES.clinical.guestName,
     headerTitle: "Clinical Conference Room",
     headerSubtitle: "Symptom → Mechanism → Diagnosis → Treatment",
     isDark: true,
