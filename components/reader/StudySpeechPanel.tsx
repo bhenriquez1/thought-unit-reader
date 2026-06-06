@@ -54,6 +54,25 @@ function buildSpeechText(
   return text.slice(0, 4000);
 }
 
+// ── Naturalize speech for flowing, natural TTS ───────────────────────────────
+
+function naturalizeSpeech(text: string): string {
+  let out = text;
+  out = out.replace(/\s*;\s*/g, ", ");
+  out = out.replace(/\s*:\s*/g, " — ");
+  out = out.replace(/\(\s*/g, ", ");
+  out = out.replace(/\s*\)/g, ",");
+  out = out.replace(/\s*\/\s*/g, " or ");
+  out = out.replace(/&/g, "and");
+  out = out.replace(/\betc\.\s*/gi, "and so on. ");
+  out = out.replace(/\be\.g\.\s*/gi, "for example, ");
+  out = out.replace(/\bi\.e\.\s*/gi, "that is, ");
+  out = out.replace(/\bvs\.\s*/gi, "versus ");
+  out = out.replace(/\bFig\.\s*(\d)/gi, "Figure $1");
+  out = out.replace(/[ \t]{2,}/g, " ").trim();
+  return out;
+}
+
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -99,6 +118,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   const [fpSentences, setFpSentences] = useState<string[]>([]);
   useEffect(() => {
     if (mode === "fullPage" && activePageText) {
+      console.log("[SPEECH_FULL_PAGE_SOURCE]", { charCount: activePageText.length, preview: activePageText.slice(0, 80) });
       // Two-pass split:
       // 1. Split on sentence-ending punctuation followed by whitespace.
       // 2. Merge continuations that start with lowercase (e.g. after abbreviations
@@ -119,7 +139,9 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
           merged.push(t);
         }
       }
-      setFpSentences(merged.filter((s) => s.length >= 20));
+      const sents = merged.filter((s) => s.length >= 20);
+      console.log("[SPEECH_FULL_PAGE_SENTENCES]", { count: sents.length, first: sents[0]?.slice(0, 60) });
+      setFpSentences(sents);
     } else {
       setFpSentences([]);
     }
@@ -236,7 +258,8 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
     for (let i = fromIdx; i < sentences.length; i++) {
       if (abortRef.current) break;
       const raw = sentences[i];
-      const text = formulaToSpeech(raw).slice(0, 500);
+      const text = naturalizeSpeech(formulaToSpeech(raw)).slice(0, 500);
+      console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: text.length, preview: text.slice(0, 60) });
       setSegIdx(i);
 
       console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: text.length, totalSentences: sentences.length });
@@ -334,6 +357,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
         return merged.filter((s) => s.length >= 20);
       })();
       if (!sents.length) { setErrorMsg("No page text available."); return; }
+      console.log("[SPEECH_FULL_PAGE_START]", { sentenceCount: sents.length, fromIdx, firstSentence: sents[0]?.slice(0, 80) });
       console.log("[SPEECH_SOURCE]", { mode: "fullPage", source: "activePageText", sentenceCount: sents.length, charCount: activePageText.length });
       playFullPageSequential(sents, fromIdx);
       return;
