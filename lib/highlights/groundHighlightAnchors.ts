@@ -91,7 +91,7 @@ function splitIntoSentences(text: string): string[] {
     .map(s => s.replace(/\s+/g, ' ').trim())
     .filter(s => {
       const wc = s.split(/\s+/).length;
-      if (wc < 5 || wc > 60 || s.length < 25) return false;
+      if (wc < 5 || wc > 30 || s.length < 25) return false;
       // Body-only: never offer running headers / titles / page-number lines as
       // recovery candidates. This is what stops "The Chemical Context of Life 29"
       // from being selected as a thesis anchor.

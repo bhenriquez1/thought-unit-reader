@@ -264,8 +264,7 @@ export function buildSpeechScript(
        anchorForField(anchors, "keyMechanism"));
   push("conf", "commonConfusion", "Common Confusion",  sn.commonConfusion ? `Watch out. ${sn.commonConfusion}` : "", 0.88,
        anchorForField(anchors, "commonConfusion"));
-  push("exam", "examSignal",      "Exam Signal",       sn.examSignal      ?? "", 0.90,
-       anchorForField(anchors, "pageThesis"));
+  push("exam", "examSignal",      "Exam Signal",       sn.examSignal      ?? "", 0.90);
 
   if (mode === "study") return segments;
 
