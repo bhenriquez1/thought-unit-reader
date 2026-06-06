@@ -7,7 +7,6 @@ import type { CurrentPageStudyModel, VisualAnchor } from "@/lib/insights/current
 import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
 import type { RecallSet } from "@/lib/recalllab/recallStore";
 import type { PodcastMode, PodcastScript, PodcastSegment } from "./podcastTypes";
-import { MODE_THEMES } from "./podcastTypes";
 
 export interface PodcastBuildContext {
   pageNumber: number;
@@ -22,106 +21,38 @@ export interface PodcastBuildContext {
 // Prompt builder — called by /api/podcast-script (server-side).
 // ---------------------------------------------------------------------------
 
-function modeInstructions(mode: PodcastMode): string {
-  const theme = MODE_THEMES[mode];
-  const H = theme.hostName;
-  const G = theme.guestName;
+function modeInstructions(mode: PodcastMode, hasGuest: boolean): string {
+  const guestNote = hasGuest
+    ? `Use "host" for the main speaker and "guest" for a curious co-host who asks follow-up questions.`
+    : `Use only "host" as the speaker.`;
 
   switch (mode) {
     case "page_review":
-      return `MODE: Page Review Studio.
-SPEAKERS: "${H}" (${theme.hostRole}) and "${G}" (${theme.guestRole}). Alternate naturally.
-Use speaker="host" for ${H} and speaker="guest" for ${G}.
-
-Generate 9–11 segments:
-1. Intro: ${H} sets the scene in 1-2 sentences. ${G} reacts briefly ("Got it", "So we're on page…").
-2. Thesis walkthrough: ${H} explains the main idea. ${G} asks "What does that actually mean for us?"
-3-5. Each Right Panel note as a short back-and-forth: ${H} states the note, ${G} responds with "Wait—" or "So that means…" or "Exactly, and…"
-6. Evidence moment: ${H} says "The page literally states:" and quotes the highlight. ${G}: "I can see that highlighted."
-7-8. NoteLab expansion if available, with ${G} connecting to prior knowledge.
-9. Confusion check: ${G} raises the common confusion. ${H} corrects it cleanly.
-10. Outro: ${H} summarizes in one sentence. ${G}: "Perfect. Moving on."
-
-Dialogue rules: Short turns (1-2 sentences). Use natural starts: "Right,", "So—", "Exactly.", "Good catch.", "Hold on—", "And that's where students slip up.", "The key phrase is…"`;
+      return `MODE: Page Review. ${guestNote}
+Generate 8–10 segments: start with an intro, read and explain the page content, walk through each Right Panel study note conversationally, use highlight evidence moments to anchor the explanation, expand with any NoteLab notes, end with an outro. Keep it educational but conversational.`;
 
     case "exam_cram":
-      return `MODE: Exam Cram — high-yield rapid review.
-SPEAKERS: "${H}" and "${G}" alternating as co-hosts, both using speaker="host" and speaker="guest".
-
-Generate 11–13 segments:
-1. Rapid intro: "Okay, let's go. Page ${"{pageNumber}"}. Thesis—" and immediately state it.
-2-4. High-yield fact drops: Each note as a rapid 1-sentence statement + 1-sentence drill: "If X, think Y."
-5. Mechanism drill: state mechanism, then "${G}: What's the step after that?" — short answer.
-6-7. Confusion flag: "${H}: Common mistake—" then the confusion. "${G}: And the correct answer is?"
-8-9. Two recall quiz breaks: "${H}: Quick—" question, pause, "${G}: The answer:" reveal.
-10. Memory anchor: 1 mnemonic or shortcut.
-11. Exam signal: "If you see this in a vignette, the answer is…"
-12-13. Rapid outro + hardest point repeat.
-
-Dialogue rules: Fast pace. No filler. Start segments with: "Rapid—", "Quick—", "That's a trap.", "Board loves this.", "Don't forget:", "The answer is always…"`;
+      return `MODE: Exam Cram. ${guestNote}
+Generate 10–12 segments: dense and focused. Prioritize the thesis, mechanism, and common confusion. Insert 2–3 recall quiz breaks drawn from RecallLab cards. No long transitions — cut straight to facts. End with "exam signals" if available.`;
 
     case "clinical":
-      return `MODE: Clinical Conference Room.
-SPEAKERS: "${H}" (${theme.hostRole}) and "${G}" (${theme.guestRole}). Formal but conversational, like an attending teaching at bedside.
-
-Generate 9–11 segments:
-1. Case intro: "${H}: Let's talk about what we're seeing on page ${"{pageNumber}"}." ${G}: "Is this the mechanism behind…?"
-2. Concept contextualization: ${H} explains the core concept in clinical terms. No jargon without explanation.
-3-5. Each Right Panel note mapped to a clinical scenario: "So if our patient has X, we'd expect to see…"
-6. Evidence anchor: ${H} cites the highlight: "The literature says—and I want you to remember this verbatim—"
-7. Diagnosis/treatment application: ${G}: "How would this change our management?" ${H}: specific answer.
-8. Common confusion in clinical context: "Residents often confuse this with…" — then the distinction.
-9. Attending pearl: ${H} gives a clinical memory aid or rule of thumb.
-10. External verify: ${H} references a clinical guideline or author by name (e.g., "As Harrison's puts it…").
-11. Outro: "${G}: So the take-home is…?" ${H}: one clean sentence.
-
-Dialogue rules: ${G} should ask genuine clinical questions. Start ${G} turns with: "So in practice,", "If the patient presents with,", "What about the case where,", "I've seen attendings say…"`;
+      return `MODE: Real-World Application. ${guestNote}
+Generate 8–10 segments: start with the page concept, then connect each Right Panel note to a concrete real-world scenario or application in the field. For the highlight evidence, explain what a practitioner or expert would observe or use in practice. If the page has a "common confusion," address it from an applied diagnostic or analytical angle. Add an external verification segment citing a trusted source (textbook authors, domain experts, foundational papers) by name.`;
 
     case "debate":
-      return `MODE: Avrrio Rounds Studio — evidence-based debate.
-SPEAKERS: "${H}" (${theme.hostRole}) and "${G}" (${theme.guestRole}). Both confident, pushing back respectfully.
-
-Generate 13–16 segments:
-1. ${H} opens: sets the central claim from the page thesis. Confident.
-2. ${G} challenges: "But isn't that the same as…?" or "Wait — doesn't that contradict…?"
-3. ${H} rebuts with evidence from the highlights: cites anchor text directly.
-4. ${G}: "Okay but what about the common confusion here?" — raises the confusion note.
-5. ${H}: "That's exactly the trap." — explains the correct distinction.
-6. ${G}: "So your position is that…?" — forces ${H} to commit.
-7-9. Each concept block gets a challenge-rebuttal pair.
-10. ${G}: "Show me the evidence." ${H} quotes a highlight anchor.
-11. Recall quiz segment: ${G} poses a challenge question to the listener. ${H} reveals answer.
-12-14. Building to consensus: "So we both agree that…" — synthesis.
-15. Outro: ${H} and ${G} state the one sentence both sides agree on.
-
-Dialogue rules: Short punchy turns. ${G} starts challenges with: "But—", "Hold on.", "I'd push back on that.", "Isn't that just…", "The problem with that argument is…"`;
+      return `MODE: Debate / Host & Guest. Use BOTH "host" and "guest" speakers alternating.
+Generate 12–15 segments: host presents the concept; guest challenges with a "but what about…" or "isn't that the same as…" question; host answers with evidence from the highlights; guest connects to the bigger picture; together they arrive at a conclusion. Include a recall quiz segment near the end.`;
 
     case "quiz_podcast":
-      return `MODE: Recall Challenge — game show format.
-SPEAKERS: "${H}" (Host) and "${G}" (Contestant). Energetic and fun but academic.
-
-Generate 11–14 segments:
-1. ${H} opens with game-show energy: "Welcome back to the Recall Challenge! Page ${"{pageNumber}"} — let's go!"
-2. ${H} explains the concept quickly (1-2 sentences). ${G}: "Got it."
-3. ${H}: "First question—" poses a question from the Right Panel or RecallLab. (type: recall_quiz)
-4. ${G}: attempts an answer ("Is it…?"). Pause, suspense.
-5. ${H}: "The answer is—" reveals correct answer with brief explanation.
-6. Segue: ${H} explains next concept. ${G}: "So this relates to the first one by…?"
-7. ${H}: "Bonus question—" harder question.
-8. ${G} answers. ${H} gives feedback: "Exactly right!" or "Good try — the key distinction is…"
-9-11. Repeat question-answer pattern for remaining study notes.
-12. ${H}: "Lightning round! No explanations." 2-3 rapid-fire Q&As.
-13. ${G}: "Which one was hardest?" ${H} reviews the most important concept.
-14. Outro: ${H}: "That's the Recall Challenge for page ${"{pageNumber}"}. Review your anchors and run those cards!"
-
-Dialogue rules: ${H} uses game-show phrasing. Start quiz segments with: "Question—", "Alright—", "Here's a tough one:", "Category: [study note field]—"`;
+      return `MODE: Quiz Podcast. ${guestNote}
+Generate 10–12 segments alternating: explain a concept → ask a quiz question → reveal the answer → explain the next concept → repeat. Draw quiz questions primarily from RecallLab cards; if none are available, generate questions from the Right Panel notes. End with a quick review of the hardest question.`;
   }
 }
 
 export function buildPodcastPrompt(ctx: PodcastBuildContext, mode: PodcastMode): string {
   const { studyModel, pageText, noteLab, recallLab, pageNumber, bookId } = ctx;
   const sn = studyModel.studyNotes;
-  const hasGuest = true; // all modes now have two named speakers
+  const hasGuest = mode === "debate" || mode === "clinical" || mode === "quiz_podcast";
 
   const pageSnippet = pageText.slice(0, 700).trim();
   const anchors = studyModel.visualAnchors.slice(0, 5);
@@ -174,22 +105,19 @@ export function buildPodcastPrompt(ctx: PodcastBuildContext, mode: PodcastMode):
     });
   }
 
-  const theme = MODE_THEMES[mode];
   lines.push(
     "",
     "=== INSTRUCTIONS ===",
-    modeInstructions(mode).replace(/\$\{pageNumber\}/g, String(pageNumber)),
+    modeInstructions(mode, hasGuest),
     "",
     'Return ONLY a JSON object: { "segments": [...] }',
-    `Each segment: { id, type, speaker, text, sourceField?, anchorId?, recallCardId?, noteLabel?, externalTopic? }`,
+    "Each segment: { id, type, speaker, text, sourceField?, anchorId?, recallCardId?, noteLabel?, externalTopic? }",
     `type must be one of: intro | page_reading | right_panel_note | highlight_evidence | notelab_expansion | recall_quiz | external_verify | outro`,
     `speaker must be one of: host | guest | narrator`,
-    `Named speakers: speaker="host" means ${theme.hostName} (${theme.hostRole}), speaker="guest" means ${theme.guestName} (${theme.guestRole}).`,
-    `Use their NAMES naturally in the text (e.g. "${theme.hostName}: So here's the thing..." or "${theme.guestName}: Wait—").`,
     "anchorId must exactly match one of the visualAnchor ids listed above when referencing a highlight.",
     "recallCardId must exactly match one of the RecallLab card ids listed above when quizzing.",
-    "text must be 1–2 natural spoken sentences only — short turns, not lectures.",
-    "Use natural transitions and reactions between speakers. Do not include markdown formatting.",
+    "text should be 1–3 natural spoken sentences per segment — not bullet points, not headers.",
+    "Do not include markdown formatting in text fields.",
   );
 
   return lines.join("\n");
@@ -282,82 +210,64 @@ export function buildLocalPodcastScript(
   const segments: PodcastSegment[] = [];
   let i = 0;
 
-  const theme = MODE_THEMES[mode];
-  const H = theme.hostName;
-  const G = theme.guestName;
-
   const firstAnchor: VisualAnchor | undefined = studyModel.visualAnchors[0];
   const recallCards = recallLab.flatMap((r) => r.cards).slice(0, 3);
   const noteSection = noteLab.flatMap((n) => n.sections ?? []).slice(0, 2);
 
   // Intro
   segments.push(seg(i++, "intro", "host",
-    `${H}: Alright — page ${pageNumber}. The thesis here: ${studyModel.pageThesis}`));
-  segments.push(seg(i++, "intro", "guest",
-    `${G}: Got it. So what's the "why" behind this?`));
+    `Welcome to page ${pageNumber}. Today we're covering: ${studyModel.pageThesis}.`));
 
-  // Why it matters
+  // Thesis
   if (sn.whyThisMatters) {
     segments.push(seg(i++, "right_panel_note", "host",
-      `${H}: Good question. ${sn.whyThisMatters}`, { sourceField: "whyThisMatters" }));
-    segments.push(seg(i++, "right_panel_note", "guest",
-      `${G}: Right — so it's about the bigger picture, not just memorizing a fact.`));
+      `Why does this matter? ${sn.whyThisMatters}`, { sourceField: "whyThisMatters" }));
   }
 
   // Mechanism
   if (sn.keyMechanism) {
     segments.push(seg(i++, "right_panel_note", "host",
-      `${H}: Here's the mechanism you need to know. ${sn.keyMechanism}`, { sourceField: "keyMechanism" }));
-    segments.push(seg(i++, "right_panel_note", "guest",
-      `${G}: And if I missed that step, the whole chain breaks down.`));
+      `Here's the key mechanism: ${sn.keyMechanism}`, { sourceField: "keyMechanism" }));
   }
 
   // Highlight evidence
   if (firstAnchor) {
     segments.push(seg(i++, "highlight_evidence", "host",
-      `${H}: The page literally says — and I want you to highlight this — "${firstAnchor.exactText}"`,
+      `The page states directly: "${firstAnchor.exactText}"`,
       { anchorId: firstAnchor.id, sourceField: firstAnchor.sourceField }));
-    segments.push(seg(i++, "highlight_evidence", "guest",
-      `${G}: I can see that highlighted in the left panel. That's the anchor.`));
   }
 
   // Common confusion
   if (sn.commonConfusion) {
-    segments.push(seg(i++, "right_panel_note", "guest",
-      `${G}: Wait — I've seen students confuse this with something else.`, { sourceField: "commonConfusion" }));
     segments.push(seg(i++, "right_panel_note", "host",
-      `${H}: Exactly — that's the trap. ${sn.commonConfusion}`, { sourceField: "commonConfusion" }));
+      `Common confusion alert: ${sn.commonConfusion}`, { sourceField: "commonConfusion" }));
   }
 
   // NoteLab expansion
   if (noteSection.length > 0) {
     segments.push(seg(i++, "notelab_expansion", "host",
-      `${H}: You actually saved a note on this. ${noteSection[0].label}: ${noteSection[0].content.slice(0, 140)}`,
+      `From your saved notes — ${noteSection[0].label}: ${noteSection[0].content.slice(0, 180)}`,
       { noteLabel: noteSection[0].label }));
   }
 
-  // Recall quiz break
+  // Recall quiz break (if cards exist and mode calls for it)
   if (recallCards.length > 0 && (mode === "exam_cram" || mode === "quiz_podcast")) {
     const c = recallCards[0];
     segments.push(seg(i++, "recall_quiz", "host",
-      `${H}: Quick quiz — ${c.front}`, { recallCardId: c.id }));
-    segments.push(seg(i++, "recall_quiz", "guest",
-      `${G}: Is it…? (pause)`, { recallCardId: c.id }));
+      `Quiz break: ${c.front}`, { recallCardId: c.id }));
     segments.push(seg(i++, "recall_quiz", "host",
-      `${H}: The answer: ${c.back}`, { recallCardId: c.id }));
+      `The answer: ${c.back}`, { recallCardId: c.id }));
   }
 
   // Memory anchor
   if (sn.quickMemory) {
     segments.push(seg(i++, "right_panel_note", "host",
-      `${H}: Memory anchor — ${sn.quickMemory}`, { sourceField: "quickMemory" }));
+      `Memory anchor: ${sn.quickMemory}`, { sourceField: "quickMemory" }));
   }
 
   // Outro
-  segments.push(seg(i++, "outro", "guest",
-    `${G}: So what's the one-line takeaway?`));
   segments.push(seg(i++, "outro", "host",
-    `${H}: Page ${pageNumber}: ${studyModel.pageThesis?.slice(0, 80) ?? "review your highlights and run the Recall cards."}. That's the one.`));
+    `That's page ${pageNumber}. Review your highlights, check your NoteLab notes, and run the Recall cards before moving on.`));
 
   const wordCount = segments.reduce((n, s) => n + s.text.split(/\s+/).length, 0);
 
