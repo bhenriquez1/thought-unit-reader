@@ -1337,8 +1337,8 @@ export function RightPanel({
           </>
         )}
 
-        {/* ── STAGE 1 BUTTONS: show from finalStudyModel even when Stage 2 UltraView unavailable ── */}
-        {!pageBlocked && isCurrentPageModel && !!studyModel && !showUltraView && (
+        {/* ── STAGE 1 BUTTONS: show NoteLab + RecallLab as soon as studyModel is ready, even before Stage 2 UltraView ── */}
+        {!pageBlocked && isCurrentPageModel && !!studyModel && !showUltraView && ctx && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 0 8px 0" }}>
             <GenerateNoteButton
               view={{ title: `Page ${ctx.pageNumber}`, blocks: [], domain: "", teachingStatement: "" } as any}

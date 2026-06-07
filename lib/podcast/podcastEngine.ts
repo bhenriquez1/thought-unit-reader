@@ -18,41 +18,204 @@ export interface PodcastBuildContext {
 }
 
 // ---------------------------------------------------------------------------
+// Subject type detection — inferred from page text and study model.
+// ---------------------------------------------------------------------------
+
+type SubjectType =
+  | "biology" | "anatomy" | "physiology" | "chemistry" | "organic_chemistry"
+  | "physics" | "calculus" | "statistics" | "medicine" | "dentistry"
+  | "history" | "psychology" | "business" | "law" | "computer_science" | "general";
+
+export function detectSubjectType(pageText: string, studyModel: CurrentPageStudyModel): SubjectType {
+  const combined = (pageText + " " + studyModel.pageThesis + " " + Object.values(studyModel.studyNotes).filter(Boolean).join(" ")).toLowerCase();
+
+  if (/\b(diagnosis|pathophysiology|treatment|symptom|prognosis|contraindication|dosage|pharmacology|medication|clinical|patient|disease|syndrome|etiology|complication|differential)\b/.test(combined)) return "medicine";
+  if (/\b(tooth|dental|caries|pulp|enamel|dentin|occlusion|periodontal|extraction|crown|root canal|dat exam|dat prep)\b/.test(combined)) return "dentistry";
+  if (/\b(derivative|integral|limit|convergence|epsilon|delta|calculus|differentiation|antiderivative|riemann|theorem|proof|diverge|series|sequence)\b/.test(combined)) return "calculus";
+  if (/\b(p-value|hypothesis|regression|variance|standard deviation|t-test|anova|chi-square|confidence interval|sample size|correlation|probability distribution|null hypothesis)\b/.test(combined)) return "statistics";
+  if (/\b(newton|force|momentum|velocity|acceleration|quantum|thermodynamics|entropy|electromagnetic|wavelength|frequency|kinetic energy|potential energy|coulomb|ohm|ampere|voltage)\b/.test(combined)) return "physics";
+  if (/\b(reaction|reagent|organic|carbonyl|ester|aldehyde|ketone|alkene|alkyne|benzene|aromatic|stereochemistry|nucleophile|electrophile|mechanism|sn1|sn2|e1|e2)\b/.test(combined)) return "organic_chemistry";
+  if (/\b(molecule|atom|element|compound|bond|ion|acid|base|oxidation|reduction|mole|stoichiometry|periodic table|electron|proton|neutron|ph|buffer|equilibrium|entropy|enthalpy)\b/.test(combined)) return "chemistry";
+  if (/\b(cell|dna|rna|protein|enzyme|receptor|membrane|mitosis|meiosis|evolution|genetics|chromosome|atp|metabolism|photosynthesis|ecosystem|organism|species)\b/.test(combined)) return "biology";
+  if (/\b(muscle|nerve|bone|organ|tissue|skeleton|artery|vein|neuron|brain|spinal|anatomical|dissect|cadaver|innervate|ligament|tendon)\b/.test(combined)) return "anatomy";
+  if (/\b(homeostasis|hormone|gland|feedback|endocrine|nervous system|digestion|cardiovascular|respiratory|renal|immune|lymphatic|reflex|blood pressure|cardiac output)\b/.test(combined)) return "physiology";
+  if (/\b(algorithm|data structure|recursion|complexity|programming|function|variable|class|object|binary|loop|array|sort|graph|tree|compiler|database|api)\b/.test(combined)) return "computer_science";
+  if (/\b(historical|century|war|civilization|empire|revolution|democracy|colonialism|treaty|ideology|economy|trade route|industrialization)\b/.test(combined)) return "history";
+  if (/\b(behavior|cognition|perception|memory|motivation|personality|disorder|therapy|neuroscience|stimulus|response|conditioning|social|emotion)\b/.test(combined)) return "psychology";
+  if (/\b(market|supply|demand|revenue|profit|cost|management|strategy|accounting|finance|economics|investment|entrepreneur|organization|leadership)\b/.test(combined)) return "business";
+  if (/\b(statute|regulation|contract|liability|tort|constitutional|precedent|plaintiff|defendant|jurisdiction|counsel|amendment|legal|court)\b/.test(combined)) return "law";
+
+  return "general";
+}
+
+// Subject-aware speaker names
+function speakerNames(subject: SubjectType): { host: string; guest: string } {
+  switch (subject) {
+    case "medicine":
+    case "physiology": return { host: "Dr. Rivera", guest: "Resident" };
+    case "dentistry":  return { host: "Dr. Chen", guest: "Student" };
+    case "calculus":
+    case "statistics":
+    case "physics":    return { host: "Professor", guest: "Student" };
+    case "biology":
+    case "anatomy":
+    case "chemistry":
+    case "organic_chemistry": return { host: "Instructor", guest: "Student" };
+    case "history":    return { host: "Historian A", guest: "Historian B" };
+    case "psychology": return { host: "Dr. Patel", guest: "Student" };
+    case "business":   return { host: "Professor", guest: "Analyst" };
+    case "law":        return { host: "Professor", guest: "Law Student" };
+    default:           return { host: "Host", guest: "Guest" };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Prompt builder — called by /api/podcast-script (server-side).
 // ---------------------------------------------------------------------------
 
-function modeInstructions(mode: PodcastMode, hasGuest: boolean): string {
+function modeInstructions(mode: PodcastMode, hasGuest: boolean, subject: SubjectType): string {
+  const { host, guest } = speakerNames(subject);
   const guestNote = hasGuest
-    ? `Use "host" for the main speaker and "guest" for a curious co-host who asks follow-up questions.`
-    : `Use only "host" as the speaker.`;
+    ? `Use "${host}" for the main speaker and "${guest}" for a curious co-host who asks follow-up questions.`
+    : `Use only "${host}" as the speaker.`;
+
+  // Subject-specific context for each mode
+  const subjectContext: Partial<Record<SubjectType, string>> = {
+    medicine: "Use clinical reasoning. Frame explanation as: finding → mechanism → consequence → what not to miss.",
+    dentistry: "Frame as DAT exam prep. Connect concepts to clinical dentistry and board exam relevance.",
+    calculus: "Frame as a math lecture. Use precise condition → theorem → proof structure. Include worked examples.",
+    statistics: "Frame around data interpretation. Connect to research design and significance testing.",
+    physics: "Frame around physical laws. Use F=ma style notation expanded verbally. Include real-world applications.",
+    organic_chemistry: "Frame around reaction mechanisms. Use nucleophile/electrophile language. Explain why bonds form or break.",
+    chemistry: "Frame around atomic and molecular principles. Connect structure to function.",
+    biology: "Frame around evolutionary purpose and molecular mechanisms. Explain why, not just what.",
+    anatomy: "Frame around clinical relevance. Connect structure to function to pathology.",
+    physiology: "Frame around homeostatic mechanisms and feedback loops.",
+    history: "Frame as historical analysis. Argue causation, not just chronology.",
+    psychology: "Frame around evidence-based psychological mechanisms and real-world behavioral examples.",
+    business: "Frame around strategic decision-making and real-world case applications.",
+    law: "Frame around legal reasoning: rule → application → exception → exam trap.",
+    computer_science: "Frame around algorithmic thinking and computational complexity.",
+  };
+  const subjectNote = subjectContext[subject] ?? "Adapt to the subject matter on this page.";
 
   switch (mode) {
     case "page_review":
-      return `MODE: Page Review. ${guestNote}
-Generate 8–10 segments: start with an intro, read and explain the page content, walk through each Right Panel study note conversationally, use highlight evidence moments to anchor the explanation, expand with any NoteLab notes, end with an outro. Keep it educational but conversational.`;
+      return `MODE: Page Review (Professor Walkthrough). ${guestNote}
+${subjectNote}
+Generate 8–10 segments structured as a professor's 2-minute explanation:
+1. Open with what the page fundamentally teaches (not a list — a thesis statement)
+2. Walk through the mechanism: what causes what, and why it matters
+3. Give a concrete real-world or clinical example
+4. Flag the most common student misconception
+5. End with a memory anchor or takeaway
+Voice: educational, flowing, like a professor talking to a student — not reading bullet points.
+Each segment should be 2–4 natural spoken sentences. No headers, no bullets.`;
 
     case "exam_cram":
-      return `MODE: Exam Cram. ${guestNote}
-Generate 10–12 segments: dense and focused. Prioritize the thesis, mechanism, and common confusion. Insert 2–3 recall quiz breaks drawn from RecallLab cards. No long transitions — cut straight to facts. End with "exam signals" if available.`;
+      return `MODE: Exam Cram (High-Yield Review). ${guestNote}
+${subjectNote}
+Generate 10–12 high-yield segments:
+1. State the exam-critical idea first — what would appear on a board exam
+2. For each Right Panel study note: compress to one HIGH YIELD statement
+3. Insert 2–3 recall quiz breaks: ask the question, pause, reveal answer
+4. Flag the trap — what students get wrong and why the correct answer is what it is
+5. End with "This WILL appear on the exam because…"
+Voice: urgent, focused, like a board-review coach. Short, punchy sentences.
+Each segment: 1–2 sentences maximum. No fluff.`;
 
     case "clinical":
+      // Subject-adaptive: clinical framing varies by subject
+      if (subject === "medicine" || subject === "physiology" || subject === "anatomy") {
+        return `MODE: Clinical Conference. Use BOTH "${host}" and "${guest}" speakers alternating.
+Present as a real patient case discussion:
+Segment 1 (${guest}): Present the patient — symptoms, vitals, labs, relevant history
+Segment 2 (${host}): What's the differential diagnosis? Walk through most likely → less likely
+Segment 3 (${host}): Key mechanism — the pathophysiology that explains this presentation
+Segment 4 (${host}): Diagnosis and treatment rationale — why this treatment for this mechanism
+Segment 5 (${guest}): Ask "What would we miss if we didn't know this?" — common pitfall
+Segment 6 (${host}): Exam pearl — what a board question on this would test
+Generate 8–10 total segments. Real patient voices, not textbook narration.`;
+      }
+      if (subject === "dentistry") {
+        return `MODE: Dental Clinical Case. Use BOTH "${host}" and "${guest}" speakers alternating.
+Present as a dental patient case:
+Segment 1 (${guest}): Present the case — chief complaint, relevant findings, radiograph description
+Segment 2 (${host}): Differential diagnosis from DAT perspective
+Segment 3 (${host}): Mechanism — what's happening at the tissue/molecular level
+Segment 4 (${host}): Treatment plan and rationale
+Segment 5 (${guest}): "What would the DAT ask about this?" — exam angle
+Generate 8–10 total segments.`;
+      }
+      if (subject === "organic_chemistry" || subject === "chemistry") {
+        return `MODE: Real-World Application. ${guestNote}
+${subjectNote}
+Generate 8–10 segments connecting each concept to a real application:
+• Drug metabolism, industrial synthesis, environmental chemistry, or materials science
+• For each mechanism, explain what happens in the real world when this reaction occurs
+• Include a "practitioner perspective" segment: how a chemist would use this knowledge`;
+      }
       return `MODE: Real-World Application. ${guestNote}
-Generate 8–10 segments: start with the page concept, then connect each Right Panel note to a concrete real-world scenario or application in the field. For the highlight evidence, explain what a practitioner or expert would observe or use in practice. If the page has a "common confusion," address it from an applied diagnostic or analytical angle. Add an external verification segment citing a trusted source (textbook authors, domain experts, foundational papers) by name.`;
+${subjectNote}
+Generate 8–10 segments connecting this page's concepts to concrete real-world scenarios:
+• Start with the core concept as it appears in practice
+• For each Right Panel note, give a specific real-world scenario where it applies
+• If there's a common confusion, address it from an applied/analytical angle
+• End with an external verification citing a trusted source by name`;
 
     case "debate":
-      return `MODE: Debate / Host & Guest. Use BOTH "host" and "guest" speakers alternating.
-Generate 12–15 segments: host presents the concept; guest challenges with a "but what about…" or "isn't that the same as…" question; host answers with evidence from the highlights; guest connects to the bigger picture; together they arrive at a conclusion. Include a recall quiz segment near the end.`;
+      if (subject === "history") {
+        return `MODE: Historical Debate. Use BOTH "${host}" and "${guest}" speakers alternating.
+Structure:
+${host}: "The primary cause of [topic] was [factor A]. Here's the evidence…"
+${guest}: "I'd argue [factor B] played a larger role. Consider that…"
+${host}: "The page specifically addresses this: [cite highlight evidence]"
+${guest}: "But that interpretation misses [counterpoint]…"
+${host}: "So the synthesis is: both factors interacted because…"
+Generate 12–15 segments. Each speaker makes a genuine argument — not a softball exchange.
+The debate should reach a real conclusion, not just state opposing views.`;
+      }
+      return `MODE: Evidence Debate. Use BOTH "${host}" and "${guest}" speakers alternating.
+Structure:
+${host}: Presents the central concept clearly
+${guest}: Challenges with "But why does that happen?" or "Isn't that the same as X?"
+${host}: Responds with highlight evidence from the page (cite directly)
+${guest}: Digs deeper — "What would happen if [condition changed]?"
+${host}: Connects to the bigger picture — why this principle matters beyond this page
+Together: arrive at a memorable conclusion the student can recall on an exam
+Generate 12–15 segments. Each exchange must advance understanding — no agreement theater.
+Include one recall quiz segment near the end.`;
 
     case "quiz_podcast":
+      if (subject === "dentistry" || subject === "medicine") {
+        return `MODE: Board Exam Quiz Show. ${guestNote}
+${subjectNote}
+Generate 10–12 segments alternating:
+1. Explain a high-yield concept (1–2 sentences)
+2. Ask a board-style question: "Which of the following is most likely…" or "What is the mechanism of…"
+3. After a dramatic pause: reveal the answer and explain WHY the correct answer is correct AND why the wrong answers are wrong
+Repeat for each key concept.
+End with: "The hardest question on this page would be…" and walk through it slowly.
+Voice: quiz show energy — build suspense before revealing answers.`;
+      }
       return `MODE: Quiz Podcast. ${guestNote}
-Generate 10–12 segments alternating: explain a concept → ask a quiz question → reveal the answer → explain the next concept → repeat. Draw quiz questions primarily from RecallLab cards; if none are available, generate questions from the Right Panel notes. End with a quick review of the hardest question.`;
+${subjectNote}
+Generate 10–12 segments alternating:
+1. Explain a concept (1–2 sentences)
+2. Ask a question testing understanding — not recall, but reasoning
+3. Reveal the answer with explanation: why correct + what the wrong answer would assume
+Repeat for each key concept.
+End with the hardest question on this page and a full walkthrough.
+Voice: engaging, like a game show — build curiosity before revealing answers.`;
   }
 }
 
 export function buildPodcastPrompt(ctx: PodcastBuildContext, mode: PodcastMode): string {
   const { studyModel, pageText, noteLab, recallLab, pageNumber, bookId } = ctx;
   const sn = studyModel.studyNotes;
+  const subject = detectSubjectType(pageText, studyModel);
   const hasGuest = mode === "debate" || mode === "clinical" || mode === "quiz_podcast";
+  console.log("[PODCAST_SUBJECT_DETECTED]", { subject, mode, page: pageNumber });
 
   const pageSnippet = pageText.slice(0, 700).trim();
   const anchors = studyModel.visualAnchors.slice(0, 5);
@@ -108,7 +271,7 @@ export function buildPodcastPrompt(ctx: PodcastBuildContext, mode: PodcastMode):
   lines.push(
     "",
     "=== INSTRUCTIONS ===",
-    modeInstructions(mode, hasGuest),
+    modeInstructions(mode, hasGuest, subject),
     "",
     'Return ONLY a JSON object: { "segments": [...] }',
     "Each segment: { id, type, speaker, text, sourceField?, anchorId?, recallCardId?, noteLabel?, externalTopic? }",
