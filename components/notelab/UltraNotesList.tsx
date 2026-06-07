@@ -63,8 +63,8 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
     return () => window.removeEventListener("note-lab-updated", handler);
   }, [reload, bookId]);
 
-  function handleDelete(id: string) {
-    deleteUltraNote(id);
+  async function handleDelete(id: string) {
+    await deleteUltraNote(id);
     reload();
   }
 

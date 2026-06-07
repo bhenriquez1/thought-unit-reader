@@ -105,8 +105,8 @@ export default function RecallLab({ onNavigateToPage, bookId, refreshKey, lastSe
     if (found) setView({ kind: "session", set: found });
   }, [lastSetId]);
 
-  function handleDelete(id: string) {
-    deleteRecallSet(id);
+  async function handleDelete(id: string) {
+    await deleteRecallSet(id);
     setSets(loadSets(bookId));
     if (view.kind === "session" && view.set.id === id) {
       setView({ kind: "dashboard" });
@@ -435,7 +435,7 @@ function RecallSession({
   const missedInSession = localSet.cards.filter((c) => c.isMissed).length;
 
   function rate(difficulty: CardDifficulty) {
-    updateCardDifficulty(localSet.id, card.id, difficulty);
+    void updateCardDifficulty(localSet.id, card.id, difficulty);
     setLocalSet((prev) => ({
       ...prev,
       cards: prev.cards.map((c) =>
