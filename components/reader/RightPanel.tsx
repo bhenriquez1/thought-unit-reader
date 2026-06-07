@@ -20,8 +20,8 @@ import type { ConceptBlock, ReaderPageView } from "@/lib/reader/types";
 import { buildUltraPageView, type UltraPageView, type UltraConceptBlock } from "@/lib/insights/buildUltraPageView";
 import type { SRIModel, SRISignal, ReadingDepth } from "@/lib/insights/buildSRIModel";
 import type { RenderGuidedReadingPathResult } from "@/lib/highlights/renderGuidedReadingPath";
-import { buildNoteFromStudyModel, saveUltraNote, getAllUltraNotes, inferSubject } from "@/lib/notelab/ultraNoteStore";
-import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, type RecallCard, type CardType } from "@/lib/recalllab/recallStore";
+import { buildNoteFromStudyModel, saveUltraNote, getAllUltraNotes, isUltraNotePersisted, inferSubject } from "@/lib/notelab/ultraNoteStore";
+import { buildRecallSetFromView, saveRecallSet, getAllRecallSets, isRecallSetPersisted, type RecallCard, type CardType } from "@/lib/recalllab/recallStore";
 import { isWeakBlock, sanitizeDisplay, renderNoteQualityGate, isSimilarText, isCompleteThought, BOILERPLATE_RE, PUBLISHER_DEBRIS_RE } from "@/lib/insights/renderQualityGate";
 
 // Validates a synthesis field before it can replace a heuristic field.
@@ -1294,43 +1294,31 @@ export function RightPanel({
 
         {/* ── PRIMARY: ULTRA View ───────────────────────────────────────── */}
         {showUltraView && displayView && (
-          <UltraViewErrorBoundary>
-            <UltraView
-              view={displayView}
-              selectedBlockIndex={selectedBlockIndex}
-              onSelectBlock={setSelectedBlockIndex}
-              onAnchorClick={(text) => onEvidenceClick?.(text, undefined)}
-              synthStatus={synthStatus}
-              synthErrorMsg={synthErrorMsg}
-              synthTimedOut={synthTimedOut}
-              onCrossLinkNavigate={onCrossLinkNavigate}
-              bookId={ctx?.documentId}
-              pageNumber={ctx?.pageNumber}
-              density={dt}
-              claudeEnrichment={claudeEnrichment}
-              stage3Status={stage3Status}
-              retrySynthesis={retrySynthesis}
-              studyModel={studyModel}
-              focusedEvidenceId={focusedEvidenceId}
-              onEvidenceClick={onEvidenceClick}
-            />
-          </UltraViewErrorBoundary>
-        )}
-
-        {/* ── SAVE BUTTONS: shown whenever studyModel has any content, regardless of intelligence status.
-            Gate: pageThesis OR any studyNote OR any conceptBlock — never requires isCurrentPageModel. ── */}
-        {(() => {
-          const hasPageThesis      = !!studyModel?.pageThesis;
-          const hasStudyNotes      = !!(studyModel?.studyNotes?.whyThisMatters || studyModel?.studyNotes?.keyMechanism || studyModel?.studyNotes?.commonConfusion);
-          const hasConceptBlocks   = (studyModel?.conceptBlocks?.length ?? 0) > 0;
-          const showSaveButtons    = !pageBlocked && !!ctx && (hasPageThesis || hasStudyNotes || hasConceptBlocks);
-          if (!showSaveButtons) return null;
-          console.log("[NOTELAB_BUTTON_VISIBLE]", { page: ctx.pageNumber, bookId: ctx.documentId, hasPageThesis, hasStudyNotes, hasConceptBlocks });
-          console.log("[RECALLLAB_BUTTON_VISIBLE]", { page: ctx.pageNumber, bookId: ctx.documentId, hasPageThesis, hasStudyNotes, hasConceptBlocks });
-          return (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 0 8px 0" }}>
+          <>
+            <UltraViewErrorBoundary>
+              <UltraView
+                view={displayView}
+                selectedBlockIndex={selectedBlockIndex}
+                onSelectBlock={setSelectedBlockIndex}
+                onAnchorClick={(text) => onEvidenceClick?.(text, undefined)}
+                synthStatus={synthStatus}
+                synthErrorMsg={synthErrorMsg}
+                synthTimedOut={synthTimedOut}
+                onCrossLinkNavigate={onCrossLinkNavigate}
+                bookId={ctx?.documentId}
+                pageNumber={ctx?.pageNumber}
+                density={dt}
+                claudeEnrichment={claudeEnrichment}
+                stage3Status={stage3Status}
+                retrySynthesis={retrySynthesis}
+                studyModel={studyModel}
+                focusedEvidenceId={focusedEvidenceId}
+                onEvidenceClick={onEvidenceClick}
+              />
+            </UltraViewErrorBoundary>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <GenerateNoteButton
-                view={displayView ?? ({ title: `Page ${ctx.pageNumber}`, blocks: [], domain: "", teachingStatement: "" } as any)}
+                view={displayView!}
                 bookId={ctx.documentId}
                 bookTitle={ctx.documentTitle}
                 pageNumber={ctx.pageNumber}
@@ -1338,7 +1326,7 @@ export function RightPanel({
                 studyModel={studyModel}
               />
               <GenerateStudySetButton
-                view={displayView ?? ({ title: `Page ${ctx.pageNumber}`, blocks: [], domain: "", teachingStatement: "" } as any)}
+                view={displayView!}
                 bookId={ctx.documentId}
                 bookTitle={ctx.documentTitle}
                 pageNumber={ctx.pageNumber}
@@ -1346,8 +1334,8 @@ export function RightPanel({
                 studyModel={studyModel}
               />
             </div>
-          );
-        })()}
+          </>
+        )}
 
         {/* ── SYNTHESIS-ONLY: when ultra view unavailable, show clean unavailable state ── */}
         {FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && !showUltraView && intelligence.status === "ready" && (
@@ -3625,84 +3613,36 @@ function GenerateNoteButton({
   const synthReady = !!studyModel;
 
   async function handleGenerate() {
-    console.log("[GENERATE_ULTRA_NOTE_CLICK]", {
-      page: pageNumber, bookId,
-      hasStudyModel: !!studyModel,
-      synthReady,
-    });
-
-    if (!studyModel) {
-      console.warn("[ULTRA_NOTE_SAVE_ERROR]", { reason: "studyModel null at click time", page: pageNumber, bookId });
-      return;
-    }
-    if (saving) return;
-
+    console.log("[NOTE_SAVE_KEY]", { storageKey: "ultraNotes_v1", page: pageNumber, bookId, hasStudyModel: !!studyModel });
+    if (!studyModel || saving) return;
     setSaving(true);
     setSaveError(null);
     try {
       const topic = (view.title || `Page ${pageNumber}`).replace(/^ULTRA\s*[–—-]\s*/i, "").trim();
-
-      console.log("[ULTRA_NOTE_BUILD_START]", {
-        page: pageNumber, bookId, topic,
-        conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
-        studyNotesCount:   Object.values(studyModel.studyNotes).filter(Boolean).length,
-      });
-
       const note = buildNoteFromStudyModel(studyModel, { bookId, pageNumber, topic, bookTitle });
 
-      console.log("[ULTRA_NOTE_PAYLOAD_READY]", {
-        id: note.id, bookId: note.bookId, page: note.pageNumber, topic: note.topic,
-        sectionCount: note.sections?.length ?? 0,
-        conceptCount: note.concepts?.length ?? 0,
-        hasThesis: !!note.pageThesis,
-      });
-      console.log("[NOTELAB_WRITE_KEY]", { storageKey: "ultraNotes_v1", noteId: note.id });
-
-      console.log("[ULTRA_NOTE_SAVE_START]", { id: note.id, page: pageNumber, bookId });
       await saveUltraNote(note);
 
-      const persisted = getAllUltraNotes().find((n) => n.id === note.id);
-      if (!persisted) {
-        throw new Error(`Note ${note.id} not found in storage after save — possible quota or schema issue`);
-      }
-      console.log("[NOTELAB_READ_KEY]", { storageKey: "ultraNotes_v1", noteId: note.id, found: true });
-      console.log("[ULTRA_NOTE_SAVE_SUCCESS]", {
-        id: note.id, page: note.pageNumber, bookId, topic: note.topic,
-        sectionCount: note.sections?.length ?? 0,
-      });
+      const persisted = await isUltraNotePersisted(note.id);
+      if (!persisted) throw new Error("Note not found in storage after save");
 
-      console.log("[NOTELAB_SAVE_SUCCESS]", { id: note.id, page: pageNumber, bookId });
+      console.log("[NOTE_READ_KEY]", { storageKey: "ultraNotes_v1", noteId: note.id });
+      console.log("[NOTE_SAVE_SUCCESS]", { id: note.id, page: pageNumber, bookId, topic: note.topic });
+      console.log("[NOTE_READ_AFTER_SAVE_SUCCESS]", { noteId: note.id, found: true });
 
       setSaved(true);
       setSaveError(null);
-      console.log("[ULTRA_NOTE_NAVIGATE_AFTER_SAVE]", { destination: "notelab", noteId: note.id });
       onNoteSaved?.();
       setTimeout(() => setSaved(false), 2200);
     } catch (err: any) {
       const msg = err?.message ?? String(err);
-      console.error("[ULTRA_NOTE_SAVE_ERROR]", { reason: msg, page: pageNumber, bookId });
+      console.error("[NOTE_SAVE_ERROR]", { reason: msg, page: pageNumber, bookId });
       setSaveError(msg.slice(0, 80));
       setTimeout(() => setSaveError(null), 4000);
     } finally {
       setSaving(false);
     }
   }
-
-  const label = saved
-    ? "✓ Note saved to NoteLab"
-    : saveError
-    ? `✗ ${saveError}`
-    : saving
-    ? "Saving…"
-    : "⚡ Generate Ultra Note";
-
-  const sub = saved
-    ? `p.${pageNumber} · open NoteLab to review`
-    : saveError
-    ? "Try again"
-    : saving
-    ? "Writing to NoteLab…"
-    : `from AI Study Model · p.${pageNumber}`;
 
   return (
     <button
@@ -3711,7 +3651,7 @@ function GenerateNoteButton({
       disabled={!synthReady || saving}
       style={{
         width: "100%",
-        padding: "10px 14px",
+        padding: "10px 0",
         borderRadius: 10,
         border: saved
           ? "1px solid rgba(52,211,153,0.5)"
@@ -3719,36 +3659,37 @@ function GenerateNoteButton({
           ? "1px solid rgba(239,68,68,0.45)"
           : !synthReady
           ? "1px solid rgba(255,255,255,0.08)"
-          : "1px solid rgba(245,200,66,0.30)",
+          : "1px solid rgba(245,200,66,0.25)",
         background: saved
           ? "rgba(16,185,129,0.12)"
           : saveError
           ? "rgba(239,68,68,0.08)"
           : !synthReady
           ? "rgba(255,255,255,0.03)"
-          : "rgba(245,200,66,0.08)",
+          : "rgba(245,200,66,0.07)",
         color: saved
           ? "#6ee7b7"
           : saveError
           ? "#fca5a5"
           : !synthReady
-          ? "rgba(255,255,255,0.25)"
+          ? "rgba(255,255,255,0.3)"
           : "#fcd34d",
+        fontSize: 12,
+        fontWeight: 700,
+        letterSpacing: "0.06em",
         cursor: synthReady && !saving ? "pointer" : "not-allowed",
         transition: "all 0.18s",
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        textAlign: "left" as const,
       }}
     >
-      <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>
-        {saved ? "✓" : saveError ? "✗" : "📝"}
-      </span>
-      <span style={{ flex: 1 }}>
-        <span style={{ display: "block", fontSize: 12, fontWeight: 700, letterSpacing: "0.04em" }}>{label}</span>
-        <span style={{ display: "block", fontSize: 10, opacity: 0.55, marginTop: 1 }}>{sub}</span>
-      </span>
+      {saving
+        ? "Saving…"
+        : saved
+        ? "✓ Note saved to NoteLab"
+        : saveError
+        ? `✗ Save failed — ${saveError}`
+        : !synthReady
+        ? "Notes unavailable — page has no extractable content"
+        : "⚡ Save to NoteLab"}
     </button>
   );
 }
@@ -3775,49 +3716,33 @@ function GenerateStudySetButton({
   const synthReady = !!studyModel;
 
   async function handleGenerate() {
-    console.log("[GENERATE_STUDY_SET_CLICK]", { page: pageNumber, bookId, hasStudyModel: !!studyModel, synthReady });
-    if (!studyModel) {
-      console.warn("[STUDY_SET_SAVE_ERROR]", { reason: "studyModel null at click time", page: pageNumber, bookId });
-      return;
-    }
-    if (saving) return;
+    console.log("[RECALL_SAVE_KEY]", { storageKey: "recallSets_v1", page: pageNumber, bookId, hasStudyModel: !!studyModel });
+    if (!studyModel || saving) return;
     setSaving(true);
     setSaveError(null);
     try {
-      const topic = view.title.replace(/^ULTRA\s*[–—-]\s*/i, "").trim() || `Page ${pageNumber}`;
-      const conceptBlockCount = studyModel.conceptBlocks?.length ?? 0;
-      const hasThesis = !!studyModel.pageThesis;
-      console.log("[STUDY_SET_BUILD_START]", { page: pageNumber, bookId, topic, conceptBlockCount, hasThesis });
-
       const set = buildRecallSetFromView(view, bookId, pageNumber, {
         bookTitle,
         sourceLabel: "right-panel",
         studyModel,
       });
 
-      const cardCount = set.cards.length;
-      console.log("[STUDY_SET_PAYLOAD_READY]", { id: set.id, bookId, page: pageNumber, topic: set.topic, cardCount });
-      console.log("[RECALLLAB_WRITE_KEY]", { storageKey: "recallSets_v1", setId: set.id });
-      console.log("[STUDY_SET_SAVE_START]", { id: set.id, page: pageNumber, bookId });
-
       await saveRecallSet(set);
 
-      const persisted = getAllRecallSets().find((s) => s.id === set.id);
-      if (!persisted) {
-        throw new Error(`Study set not found in storage after save — id=${set.id}`);
-      }
+      const persisted = await isRecallSetPersisted(set.id);
+      if (!persisted) throw new Error("Study set not found in storage after save");
 
-      console.log("[RECALLLAB_READ_KEY]", { storageKey: "recallSets_v1", setId: set.id, found: true });
-      console.log("[STUDY_SET_SAVE_SUCCESS]", { id: set.id, page: pageNumber, bookId, cardCount, topic: set.topic });
+      console.log("[RECALL_READ_KEY]", { storageKey: "recallSets_v1", setId: set.id });
+      console.log("[RECALL_SAVE_SUCCESS]", { id: set.id, page: pageNumber, bookId, cardCount: set.cards.length, topic: set.topic });
+      console.log("[RECALL_READ_AFTER_SAVE_SUCCESS]", { setId: set.id, found: true });
 
       setSaved(true);
       setSaveError(null);
-      console.log("[STUDY_SET_NAVIGATE_AFTER_SAVE]", { destination: "recall", setId: set.id });
       onStudySetGenerated?.(set.id);
       setTimeout(() => setSaved(false), 2200);
     } catch (err: any) {
       const msg = err?.message ?? String(err);
-      console.error("[STUDY_SET_SAVE_ERROR]", { reason: msg, page: pageNumber, bookId });
+      console.error("[RECALL_SAVE_ERROR]", { reason: msg, page: pageNumber, bookId });
       setSaveError(msg.slice(0, 80));
       setTimeout(() => setSaveError(null), 4000);
     } finally {
@@ -3825,30 +3750,14 @@ function GenerateStudySetButton({
     }
   }
 
-  const label = saved
-    ? "✓ Study Set saved to Recall Lab"
-    : saveError
-    ? `✗ ${saveError}`
-    : saving
-    ? "Saving…"
-    : "🎯 Generate Study Set";
-
-  const sub = saved
-    ? `p.${pageNumber} · open Recall Lab to study`
-    : saveError
-    ? "Try again"
-    : saving
-    ? "Building recall cards…"
-    : `from AI Study Model · p.${pageNumber}`;
-
   return (
     <button
       type="button"
       onClick={synthReady && !saving ? handleGenerate : undefined}
       disabled={!synthReady || saving}
       style={{
-        width: "100%",
-        padding: "10px 14px",
+        flex: 1,
+        padding: "10px 0",
         borderRadius: 10,
         border: saved
           ? "1px solid rgba(99,102,241,0.5)"
@@ -3856,36 +3765,37 @@ function GenerateStudySetButton({
           ? "1px solid rgba(239,68,68,0.45)"
           : !synthReady
           ? "1px solid rgba(255,255,255,0.08)"
-          : "1px solid rgba(99,102,241,0.30)",
+          : "1px solid rgba(99,102,241,0.25)",
         background: saved
           ? "rgba(99,102,241,0.12)"
           : saveError
           ? "rgba(239,68,68,0.08)"
           : !synthReady
           ? "rgba(255,255,255,0.03)"
-          : "rgba(99,102,241,0.08)",
+          : "rgba(99,102,241,0.07)",
         color: saved
           ? "#a5b4fc"
           : saveError
           ? "#fca5a5"
           : !synthReady
-          ? "rgba(255,255,255,0.25)"
+          ? "rgba(255,255,255,0.3)"
           : "#818cf8",
+        fontSize: 12,
+        fontWeight: 700,
+        letterSpacing: "0.06em",
         cursor: synthReady && !saving ? "pointer" : "not-allowed",
         transition: "all 0.18s",
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        textAlign: "left" as const,
       }}
     >
-      <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>
-        {saved ? "✓" : saveError ? "✗" : "🃏"}
-      </span>
-      <span style={{ flex: 1 }}>
-        <span style={{ display: "block", fontSize: 12, fontWeight: 700, letterSpacing: "0.04em" }}>{label}</span>
-        <span style={{ display: "block", fontSize: 10, opacity: 0.55, marginTop: 1 }}>{sub}</span>
-      </span>
+      {saving
+        ? "Saving…"
+        : saved
+        ? "✓ Saved to Recall Lab"
+        : saveError
+        ? `✗ Save failed — ${saveError}`
+        : !synthReady
+        ? "Recall cards unavailable — page has no extractable content"
+        : "🎯 Save to Recall Lab"}
     </button>
   );
 }

@@ -35,12 +35,6 @@ interface WhiteboardProps {
   /** Optional parent-controlled playback speed (overrides internal control if provided) */
   playbackSpeed?: number;
 
-  /**
-   * When provided, the whiteboard jumps to this step index instead of auto-advancing.
-   * Used by PodcastLab to sync the canvas with audio segments.
-   */
-  controlledStepIndex?: number;
-
   /** 🔐 Persistence (optional). If omitted, overlay still works in-memory. */
   lessonId?: string;   // e.g. document id or slug
   userId?: string;     // current user id (if available)
@@ -62,21 +56,9 @@ const TITLE_Y = 40;
 const DESC_Y = 80;
 const DESC_LINE_H = 26;
 
-const TITLE_FADE_MS = 450;
-const UNDERLINE_MS  = 600;
-const MIN_STEP_MS   = 1200;
-
-// Colored-pencil palette — medical/dental teaching board
-const MARKER = [
-  "#1d4ed8", // deep blue  — primary concept
-  "#b91c1c", // deep red   — danger / trap
-  "#15803d", // deep green — result / solution
-  "#b45309", // amber      — example / detail
-  "#7c3aed", // purple     — secondary concept
-  "#0369a1", // sky blue   — related
-];
-// Paper-like warm background
-const PAPER_BG = "#fefce8";
+const TITLE_FADE_MS = 450; // fade in title at the start of each step
+const UNDERLINE_MS  = 600; // scribble underline draw time
+const MIN_STEP_MS   = 1200; // minimum step length for animation
 
 /* ------------------------------------------------------------------ */
 /* Component                                                          */
@@ -96,15 +78,8 @@ export default function Whiteboard({
   enableDrawing = true,
   concept = "",
   context = "",
-  controlledStepIndex,
 }: WhiteboardProps) {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
-
-  useEffect(() => {
-    if (controlledStepIndex == null) return;
-    setCurrentStepIndex(Math.max(0, Math.min(steps.length - 1, controlledStepIndex)));
-  }, [controlledStepIndex, steps.length]);
-
   const [isPlaying, setIsPlaying] = useState(false);
 
   // Internal speed UI (used when parent doesn't provide playbackSpeed)
@@ -377,739 +352,26 @@ export default function Whiteboard({
     ctx.restore();
   }
 
-  // ── Armando diagram primitives ────────────────────────────────────────
-
-  function drawRoundedRect(
-    ctx: CanvasRenderingContext2D,
-    x: number, y: number, w: number, h: number, r: number,
-    fill: string, stroke: string, lineWidth = 1.5
-  ) {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.closePath();
-    ctx.fillStyle = fill;
-    ctx.fill();
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = lineWidth;
-    ctx.stroke();
-  }
-
-  function drawArrow(
-    ctx: CanvasRenderingContext2D,
-    x1: number, y1: number, x2: number, y2: number,
-    color: string, label?: string
-  ) {
-    ctx.save();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2.2;
-    // Slight curve — more hand-drawn feel
-    const mx = (x1 + x2) / 2;
-    const my = (y1 + y2) / 2 - 6;
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.quadraticCurveTo(mx, my, x2, y2);
-    ctx.stroke();
-    // Bold arrowhead
-    const angle = Math.atan2(y2 - my, x2 - mx);
-    const hs = 11;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(x2, y2);
-    ctx.lineTo(x2 - hs * Math.cos(angle - 0.38), y2 - hs * Math.sin(angle - 0.38));
-    ctx.lineTo(x2 - hs * Math.cos(angle + 0.38), y2 - hs * Math.sin(angle + 0.38));
-    ctx.closePath();
-    ctx.fill();
-    if (label) {
-      ctx.font = "bold 11px Georgia, serif";
-      ctx.fillStyle = color;
-      ctx.textAlign = "center";
-      ctx.fillText(label, (x1 + x2) / 2, (y1 + y2) / 2 - 10);
-    }
-    ctx.restore();
-  }
-
-  // Radial anatomy-style arrow from a center point outward to a labeled structure
-  function drawLabeledArrow(
-    ctx: CanvasRenderingContext2D,
-    cx: number, cy: number,
-    tx: number, ty: number,
-    label: string, color: string, p: number
-  ) {
-    const alpha = easeOutCubic(p);
-    // Interpolate tip position based on reveal progress
-    const ex = cx + (tx - cx) * p;
-    const ey = cy + (ty - cy) * p;
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    // Arrow shaft
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(ex, ey);
-    ctx.stroke();
-    // Arrowhead at tip
-    if (p > 0.7) {
-      const angle = Math.atan2(ty - cy, tx - cx);
-      const hs = 10;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(ex, ey);
-      ctx.lineTo(ex - hs * Math.cos(angle - 0.4), ey - hs * Math.sin(angle - 0.4));
-      ctx.lineTo(ex - hs * Math.cos(angle + 0.4), ey - hs * Math.sin(angle + 0.4));
-      ctx.closePath();
-      ctx.fill();
-    }
-    // Label — offset outward past the tip
-    if (p > 0.85) {
-      const lx = tx + (tx - cx) / Math.hypot(tx - cx, ty - cy) * 10;
-      const ly = ty + (ty - cy) / Math.hypot(tx - cx, ty - cy) * 10;
-      ctx.font = "bold 12px Georgia, serif";
-      ctx.fillStyle = color;
-      ctx.textAlign = lx < CANVAS_W / 2 ? "right" : "left";
-      ctx.textBaseline = "middle";
-      const lines = label.split(/\s*\/\s*|\s*\n\s*/);
-      lines.forEach((line, i) => ctx.fillText(line, lx, ly + i * 14 - ((lines.length - 1) * 7)));
-    }
-    ctx.restore();
-  }
-
-  function drawNodeLabel(
-    ctx: CanvasRenderingContext2D,
-    text: string, cx: number, cy: number, maxWidth: number
-  ) {
-    ctx.font = "bold 13px Arial";
-    ctx.fillStyle = "#1e293b";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    // simple word wrap for long labels
-    const words = text.split(/\s+/);
-    let line = "";
-    const lines: string[] = [];
-    for (const w of words) {
-      const test = line ? `${line} ${w}` : w;
-      if (ctx.measureText(test).width > maxWidth - 12 && line) {
-        lines.push(line);
-        line = w;
-      } else {
-        line = test;
-      }
-    }
-    if (line) lines.push(line);
-    const lineH = 16;
-    const startY = cy - ((lines.length - 1) * lineH) / 2;
-    lines.forEach((l, i) => ctx.fillText(l, cx, startY + i * lineH));
-  }
-
-  function drawFlowDiagram(
-    ctx: CanvasRenderingContext2D,
-    nodes: Array<{ id: string; label: string; nx?: number; ny?: number }>,
-    arrows: Array<{ from: string; to: string; label?: string }>,
-    p: number // reveal progress 0..1
-  ) {
-    if (!nodes.length) return;
-    const NW = 150, NH = 50, GAP = 48;
-    const totalW = nodes.length * NW + (nodes.length - 1) * GAP;
-    const startX = Math.max(PADDING_X, (CANVAS_W - totalW) / 2);
-    const baseY = 190;
-
-    // Compute positions
-    const pos: Record<string, { cx: number; cy: number }> = {};
-    nodes.forEach((n, i) => {
-      const cx = n.nx != null ? n.nx * CANVAS_W : startX + i * (NW + GAP) + NW / 2;
-      const cy = n.ny != null ? n.ny * CANVAS_H : baseY;
-      pos[n.id] = { cx, cy };
-    });
-
-    const visibleNodes = Math.ceil(nodes.length * Math.max(p, 0.15));
-
-    // Draw arrows first (behind boxes)
-    arrows.forEach((a) => {
-      const from = pos[a.from];
-      const to = pos[a.to];
-      if (!from || !to) return;
-      const fromIdx = nodes.findIndex((n) => n.id === a.from);
-      if (fromIdx + 1 >= visibleNodes) return;
-      drawArrow(ctx, from.cx + NW / 2, from.cy, to.cx - NW / 2, to.cy, "#64748b", a.label);
-    });
-
-    // Draw boxes — colored-marker style, one color per node
-    nodes.slice(0, visibleNodes).forEach((n, idx) => {
-      const { cx, cy } = pos[n.id];
-      const alpha = clamp(p * nodes.length - nodes.findIndex((nn) => nn.id === n.id), 0, 1);
-      const strokeColor = MARKER[idx % MARKER.length];
-      // Light tint fill from stroke color
-      ctx.save();
-      ctx.globalAlpha = easeOutCubic(alpha);
-      drawRoundedRect(ctx, cx - NW / 2, cy - NH / 2, NW, NH, 8, `${strokeColor}18`, strokeColor, 2.2);
-      ctx.font = "bold 13px Georgia, serif";
-      ctx.fillStyle = strokeColor;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      const words = n.label.split(/\s+/);
-      let line = "";
-      const lines: string[] = [];
-      for (const w of words) {
-        const test = line ? `${line} ${w}` : w;
-        if (ctx.measureText(test).width > NW - 12 && line) { lines.push(line); line = w; }
-        else line = test;
-      }
-      if (line) lines.push(line);
-      const lineH = 16;
-      const startY = cy - ((lines.length - 1) * lineH) / 2;
-      lines.forEach((l, i) => ctx.fillText(l, cx, startY + i * lineH));
-      ctx.restore();
-    });
-  }
-
-  function drawComparisonDiagram(
-    ctx: CanvasRenderingContext2D,
-    nodes: Array<{ id: string; label: string }>,
-    descriptionText: string,
-    p: number
-  ) {
-    const colW = (CANVAS_W - PADDING_X * 2 - 40) / 2;
-    const colH = 160;
-    const topY = 140;
-    const alpha = easeOutCubic(p);
-
-    const cols = nodes.slice(0, 2);
-    cols.forEach((n, i) => {
-      const x = PADDING_X + i * (colW + 40);
-      const isLeft = i === 0;
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      const fill = isLeft ? "#fef2f2" : "#f0fdf4";
-      const stroke = isLeft ? "#ef4444" : "#22c55e";
-      drawRoundedRect(ctx, x, topY, colW, colH, 10, fill, stroke, 2);
-      ctx.font = "bold 14px Arial";
-      ctx.fillStyle = stroke;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-      ctx.fillText(n.label, x + colW / 2, topY + 12);
-      ctx.restore();
-    });
-
-    // Divider
-    ctx.save();
-    ctx.globalAlpha = alpha * 0.4;
-    ctx.strokeStyle = "#94a3b8";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(CANVAS_W / 2, topY - 10);
-    ctx.lineTo(CANVAS_W / 2, topY + colH + 10);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-
-    // Description text below
-    if (descriptionText) {
-      ctx.save();
-      ctx.globalAlpha = alpha * 0.85;
-      ctx.font = "14px Arial";
-      ctx.fillStyle = "#374151";
-      ctx.textAlign = "center";
-      const words = descriptionText.split(/\s+/);
-      let line = "";
-      let y = topY + colH + 20;
-      for (const w of words) {
-        const test = line ? `${line} ${w}` : w;
-        if (ctx.measureText(test).width > CANVAS_W - PADDING_X * 2 && line) {
-          ctx.fillText(line, CANVAS_W / 2, y);
-          line = w;
-          y += 20;
-          if (y > CANVAS_H - 20) break;
-        } else {
-          line = test;
-        }
-      }
-      if (line) ctx.fillText(line, CANVAS_W / 2, y);
-      ctx.restore();
-    }
-  }
-
-  function drawTableDiagram(
-    ctx: CanvasRenderingContext2D,
-    nodes: Array<{ id: string; label: string }>,
-    p: number
-  ) {
-    if (!nodes.length) return;
-    const rows = Math.ceil(nodes.length / 2);
-    const cellW = (CANVAS_W - PADDING_X * 2) / 2;
-    const cellH = 48;
-    const startY = 130;
-    const alpha = easeOutCubic(p);
-
-    nodes.slice(0, Math.ceil(nodes.length * Math.max(p, 0.2))).forEach((n, i) => {
-      const col = i % 2;
-      const row = Math.floor(i / 2);
-      const x = PADDING_X + col * cellW;
-      const y = startY + row * cellH;
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      drawRoundedRect(ctx, x + 2, y + 2, cellW - 4, cellH - 4, 6,
-        col === 0 ? "#f8fafc" : "#f1f5f9",
-        col === 0 ? "#6366f1" : "#94a3b8", 1.2);
-      ctx.font = col === 0 ? "bold 13px Arial" : "13px Arial";
-      ctx.fillStyle = col === 0 ? "#312e81" : "#374151";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(n.label.slice(0, 30), x + cellW / 2, y + cellH / 2);
-      ctx.restore();
-    });
-  }
-
-  function drawAxisDiagram(
-    ctx: CanvasRenderingContext2D,
-    nodes: Array<{ id: string; label: string; nx?: number; ny?: number }>,
-    _arrows: Array<{ from: string; to: string; label?: string }>,
-    p: number
-  ) {
-    const AXIS_X  = PADDING_X + 50;
-    const AXIS_Y  = CANVAS_H - 55;
-    const AXIS_W  = CANVAS_W - AXIS_X - PADDING_X - 20;
-    const AXIS_H  = AXIS_Y - 95;
-    const alpha   = easeOutCubic(p);
-
-    // Parse nodes into data points and optional limit
-    const dataPoints: Array<{ xv: number; yv: number }> = [];
-    let limitValue: number | null = null;
-    let limitLabel = "";
-
-    for (const n of nodes) {
-      const lb = (n.label || "").trim();
-      // Limit node: "L=2" or "L=∞"
-      const limitM = lb.match(/^L\s*=\s*(.+)$/i);
-      if (limitM) {
-        const lv = parseFloat(limitM[1]);
-        if (!isNaN(lv)) limitValue = lv;
-        limitLabel = limitM[1].trim();
-        continue;
-      }
-      // Data point: "x=1, y=0.5" or "n=2, a=0.25" or "1, 0.5"
-      const ptM = lb.match(/[xn]\s*=\s*([\d.+-]+)[,\s]+[ya]\s*=\s*([\d.+-]+)/i)
-               ?? lb.match(/([\d.+-]+)\s*,\s*([\d.+-]+)/);
-      if (ptM) {
-        const xv = parseFloat(ptM[1]);
-        const yv = parseFloat(ptM[2]);
-        if (!isNaN(xv) && !isNaN(yv)) dataPoints.push({ xv, yv });
-      }
-    }
-
-    // Draw axes
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = "#374151";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(AXIS_X, AXIS_Y - AXIS_H);
-    ctx.lineTo(AXIS_X, AXIS_Y);
-    ctx.lineTo(AXIS_X + AXIS_W, AXIS_Y);
-    ctx.stroke();
-    // Arrow heads
-    ctx.fillStyle = "#374151";
-    ctx.beginPath(); // Y arrow
-    ctx.moveTo(AXIS_X, AXIS_Y - AXIS_H - 6);
-    ctx.lineTo(AXIS_X - 4, AXIS_Y - AXIS_H + 8);
-    ctx.lineTo(AXIS_X + 4, AXIS_Y - AXIS_H + 8);
-    ctx.fill();
-    ctx.beginPath(); // X arrow
-    ctx.moveTo(AXIS_X + AXIS_W + 6, AXIS_Y);
-    ctx.lineTo(AXIS_X + AXIS_W - 8, AXIS_Y - 4);
-    ctx.lineTo(AXIS_X + AXIS_W - 8, AXIS_Y + 4);
-    ctx.fill();
-    ctx.restore();
-
-    if (dataPoints.length === 0) {
-      ctx.save();
-      ctx.globalAlpha = alpha * 0.6;
-      ctx.font = "13px Arial";
-      ctx.fillStyle = "#6b7280";
-      ctx.textAlign = "center";
-      ctx.fillText("(no data points parsed)", CANVAS_W / 2, CANVAS_H / 2);
-      ctx.restore();
-      return;
-    }
-
-    const sorted   = [...dataPoints].sort((a, b) => a.xv - b.xv);
-    const xMin     = sorted[0].xv;
-    const xMax     = sorted[sorted.length - 1].xv;
-    const allY     = sorted.map((d) => d.yv);
-    if (limitValue !== null) allY.push(limitValue);
-    const yMin     = Math.min(0, ...allY);
-    const yMax     = Math.max(...allY);
-    const xRange   = Math.max(xMax - xMin, 1);
-    const yRange   = Math.max(yMax - yMin, 1);
-
-    const toX = (xv: number) => AXIS_X + ((xv - xMin) / xRange) * AXIS_W;
-    const toY = (yv: number) => AXIS_Y - ((yv - yMin) / yRange) * AXIS_H;
-
-    // Dashed limit line
-    if (limitValue !== null) {
-      const ly = toY(limitValue);
-      ctx.save();
-      ctx.globalAlpha = alpha * 0.65;
-      ctx.strokeStyle = "#ef4444";
-      ctx.lineWidth   = 1.5;
-      ctx.setLineDash([6, 4]);
-      ctx.beginPath();
-      ctx.moveTo(AXIS_X, ly);
-      ctx.lineTo(AXIS_X + AXIS_W, ly);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.font      = "bold 12px Arial";
-      ctx.fillStyle = "#ef4444";
-      ctx.textAlign = "right";
-      ctx.fillText(`L = ${limitLabel}`, AXIS_X + AXIS_W, ly - 5);
-      ctx.restore();
-    }
-
-    // Curve through points (bezier)
-    const visCount  = Math.max(1, Math.ceil(sorted.length * Math.max(p, 0.1)));
-    const visible   = sorted.slice(0, visCount);
-    if (visible.length >= 2) {
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.strokeStyle = "#3b82f6";
-      ctx.lineWidth   = 2.5;
-      ctx.beginPath();
-      ctx.moveTo(toX(visible[0].xv), toY(visible[0].yv));
-      for (let i = 1; i < visible.length; i++) {
-        const prev = visible[i - 1];
-        const curr = visible[i];
-        const cpx  = (toX(prev.xv) + toX(curr.xv)) / 2;
-        ctx.bezierCurveTo(cpx, toY(prev.yv), cpx, toY(curr.yv), toX(curr.xv), toY(curr.yv));
-      }
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // Dots + labels
-    visible.forEach((pt, i) => {
-      const cx       = toX(pt.xv);
-      const cy       = toY(pt.yv);
-      const dotAlpha = clamp(p * sorted.length - i, 0, 1);
-      ctx.save();
-      ctx.globalAlpha = easeOutCubic(dotAlpha);
-      ctx.fillStyle   = "#3b82f6";
-      ctx.beginPath();
-      ctx.arc(cx, cy, 5, 0, Math.PI * 2);
-      ctx.fill();
-      if (sorted.length <= 10 || i % 2 === 0) {
-        ctx.font      = "11px Arial";
-        ctx.fillStyle = "#1f2937";
-        ctx.textAlign = "center";
-        ctx.fillText(`(${pt.xv},${Math.round(pt.yv * 100) / 100})`, cx, cy - 10);
-      }
-      ctx.restore();
-    });
-
-    // X-axis tick labels
-    ctx.save();
-    ctx.globalAlpha = alpha * 0.7;
-    ctx.font        = "11px Arial";
-    ctx.fillStyle   = "#6b7280";
-    ctx.textAlign   = "center";
-    const tickCount = Math.min(sorted.length, 6);
-    for (let t = 0; t <= tickCount; t++) {
-      const xv = xMin + (t / tickCount) * xRange;
-      const cx = toX(xv);
-      ctx.fillText(String(Math.round(xv * 10) / 10), cx, AXIS_Y + 16);
-    }
-    ctx.restore();
-  }
-
-  // ── History timeline ─────────────────────────────────────────────────────────
-  // Horizontal axis with events alternating above/below, colored dots, dashed leaders.
-  function drawTimeline(
-    ctx: CanvasRenderingContext2D,
-    nodes: Array<{ id: string; label: string; nx?: number; ny?: number }>,
-    _arrows: Array<{ from: string; to: string; label?: string }>,
-    p: number
-  ) {
-    if (!nodes.length) return;
-    const TL_Y  = CANVAS_H / 2 + 10;
-    const TL_X1 = PADDING_X + 30;
-    const TL_X2 = CANVAS_W - PADDING_X - 30;
-    const TL_W  = TL_X2 - TL_X1;
-    const alpha = easeOutCubic(p);
-
-    // Axis line reveals left→right
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = "#374151";
-    ctx.lineWidth   = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(TL_X1, TL_Y);
-    ctx.lineTo(TL_X1 + TL_W * Math.min(p * 1.3, 1), TL_Y);
-    ctx.stroke();
-    if (p > 0.75) {
-      ctx.fillStyle = "#374151";
-      ctx.beginPath();
-      ctx.moveTo(TL_X2 + 8, TL_Y);
-      ctx.lineTo(TL_X2 - 6, TL_Y - 5);
-      ctx.lineTo(TL_X2 - 6, TL_Y + 5);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.restore();
-
-    const visibleNodes = Math.max(1, Math.ceil(nodes.length * Math.max(p, 0.15)));
-    nodes.slice(0, visibleNodes).forEach((n, i) => {
-      const x      = TL_X1 + (nodes.length > 1 ? (i / (nodes.length - 1)) * TL_W : TL_W / 2);
-      const above  = i % 2 === 0;
-      const labelCY = TL_Y + (above ? -58 : 58);
-      const na     = easeOutCubic(clamp(p * nodes.length - i, 0, 1));
-      const color  = MARKER[i % MARKER.length];
-
-      ctx.save();
-      ctx.globalAlpha = na;
-      // Tick
-      ctx.strokeStyle = color; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(x, TL_Y - 7); ctx.lineTo(x, TL_Y + 7); ctx.stroke();
-      // Dot
-      ctx.fillStyle = color;
-      ctx.beginPath(); ctx.arc(x, TL_Y, 5, 0, Math.PI * 2); ctx.fill();
-      // Dashed leader
-      ctx.strokeStyle = color; ctx.lineWidth = 1;
-      ctx.setLineDash([3, 3]);
-      ctx.beginPath();
-      ctx.moveTo(x, above ? TL_Y - 8 : TL_Y + 8);
-      ctx.lineTo(x, above ? labelCY + 10 : labelCY - 10);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      // Label word-wrap
-      ctx.font = "bold 11px Georgia, serif";
-      const words = n.label.split(/\s+/);
-      const lines: string[] = [];
-      let cur = "";
-      for (const w of words) {
-        const test = cur ? `${cur} ${w}` : w;
-        if (ctx.measureText(test).width > 90 && cur) { lines.push(cur); cur = w; }
-        else cur = test;
-      }
-      if (cur) lines.push(cur);
-      ctx.fillStyle = color; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      lines.forEach((l, li) => ctx.fillText(l, x, labelCY + li * 14 - ((lines.length - 1) * 7)));
-      ctx.restore();
-    });
-  }
-
-  // ── Biology cycle (circular flow) ────────────────────────────────────────────
-  // Nodes placed in a ring; curved arrows connecting each step around the cycle.
-  function drawCycleDiagram(
-    ctx: CanvasRenderingContext2D,
-    nodes: Array<{ id: string; label: string; nx?: number; ny?: number }>,
-    arrows: Array<{ from: string; to: string; label?: string }>,
-    p: number
-  ) {
-    if (!nodes.length) return;
-    const CX = CANVAS_W / 2, CY = CANVAS_H / 2 + 8;
-    const RADIUS = 148, NW = 108, NH = 40;
-
-    const pos: Record<string, { cx: number; cy: number }> = {};
-    nodes.forEach((n, i) => {
-      if (n.nx != null && n.ny != null) {
-        pos[n.id] = { cx: n.nx * CANVAS_W, cy: n.ny * CANVAS_H };
-      } else {
-        const angle = (i / nodes.length) * Math.PI * 2 - Math.PI / 2;
-        pos[n.id] = { cx: CX + RADIUS * Math.cos(angle), cy: CY + RADIUS * Math.sin(angle) };
-      }
-    });
-
-    const visibleNodes = Math.max(1, Math.ceil(nodes.length * Math.max(p, 0.15)));
-    const arrowList = arrows.length > 0 ? arrows :
-      nodes.map((n, i) => ({ from: n.id, to: nodes[(i + 1) % nodes.length].id, label: undefined as string | undefined }));
-
-    arrowList.forEach((a, ai) => {
-      const from = pos[a.from], to = pos[a.to];
-      if (!from || !to) return;
-      const fromIdx = nodes.findIndex(n => n.id === a.from);
-      if (fromIdx + 1 > visibleNodes) return;
-      const ap    = easeOutCubic(clamp(p * nodes.length - ai, 0, 1));
-      const color = MARKER[ai % MARKER.length];
-      const midX  = (from.cx + to.cx) / 2, midY = (from.cy + to.cy) / 2;
-      const cpX   = CX + (midX - CX) * 1.5, cpY = CY + (midY - CY) * 1.5;
-      ctx.save();
-      ctx.globalAlpha = ap;
-      ctx.strokeStyle = color; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(from.cx, from.cy); ctx.quadraticCurveTo(cpX, cpY, to.cx, to.cy); ctx.stroke();
-      const angle = Math.atan2(to.cy - cpY, to.cx - cpX), hs = 10;
-      ctx.fillStyle = color;
-      ctx.beginPath(); ctx.moveTo(to.cx, to.cy);
-      ctx.lineTo(to.cx - hs * Math.cos(angle - 0.38), to.cy - hs * Math.sin(angle - 0.38));
-      ctx.lineTo(to.cx - hs * Math.cos(angle + 0.38), to.cy - hs * Math.sin(angle + 0.38));
-      ctx.closePath(); ctx.fill();
-      if (a.label) {
-        ctx.font = "10px Georgia, serif"; ctx.fillStyle = color; ctx.textAlign = "center";
-        ctx.fillText(a.label, midX + (cpX - midX) * 0.4, midY + (cpY - midY) * 0.4 - 7);
-      }
-      ctx.restore();
-    });
-
-    nodes.slice(0, visibleNodes).forEach((n, i) => {
-      const { cx, cy } = pos[n.id];
-      const na    = easeOutCubic(clamp(p * nodes.length - i, 0, 1));
-      const color = MARKER[i % MARKER.length];
-      ctx.save(); ctx.globalAlpha = na;
-      drawRoundedRect(ctx, cx - NW / 2, cy - NH / 2, NW, NH, 8, `${color}1a`, color, 2);
-      ctx.font = "bold 12px Georgia, serif"; ctx.fillStyle = color;
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      const words = n.label.split(/\s+/); let line = ""; const lines: string[] = [];
-      for (const w of words) {
-        const test = line ? `${line} ${w}` : w;
-        if (ctx.measureText(test).width > NW - 12 && line) { lines.push(line); line = w; } else line = test;
-      }
-      if (line) lines.push(line);
-      lines.forEach((l, li) => ctx.fillText(l, cx, cy + li * 15 - ((lines.length - 1) * 7.5)));
-      ctx.restore();
-    });
-  }
-
-  // ── Anatomy / medicine sketch ────────────────────────────────────────────────
-  // Central oval (main concept) with labeled arrows radiating to surrounding structures.
-  // Uses nx/ny node positions if set; otherwise places nodes in a radial pattern.
-  function drawAnatomySketch(
-    ctx: CanvasRenderingContext2D,
-    nodes: Array<{ id: string; label: string; nx?: number; ny?: number }>,
-    arrows: Array<{ from: string; to: string; label?: string }>,
-    p: number
-  ) {
-    if (!nodes.length) return;
-
-    const CX = CANVAS_W / 2;
-    const CY = CANVAS_H / 2 + 10;
-
-    // Identify the "root" node — first node, or the one that arrows mostly originate from
-    const rootId = arrows.length > 0
-      ? (arrows.reduce((acc, a) => { acc[a.from] = (acc[a.from] ?? 0) + 1; return acc; }, {} as Record<string, number>))
-        ? Object.entries(
-            arrows.reduce((acc, a) => { acc[a.from] = (acc[a.from] ?? 0) + 1; return acc; }, {} as Record<string, number>)
-          ).sort((a, b) => b[1] - a[1])[0]?.[0] ?? nodes[0].id
-        : nodes[0].id
-      : nodes[0].id;
-
-    const rootNode   = nodes.find(n => n.id === rootId) ?? nodes[0];
-    const otherNodes = nodes.filter(n => n.id !== rootNode.id);
-
-    // Positions — use nx/ny if set, else radial
-    const pos: Record<string, { cx: number; cy: number }> = {};
-    pos[rootNode.id] = { cx: CX, cy: CY };
-
-    const RADIUS = 155;
-    otherNodes.forEach((n, i) => {
-      if (n.nx != null && n.ny != null) {
-        pos[n.id] = { cx: n.nx * CANVAS_W, cy: n.ny * CANVAS_H };
-      } else {
-        const angle = (i / Math.max(otherNodes.length, 1)) * Math.PI * 2 - Math.PI / 2;
-        pos[n.id] = { cx: CX + RADIUS * Math.cos(angle), cy: CY + RADIUS * Math.sin(angle) };
-      }
-    });
-
-    // Draw arrows first
-    const arrowReveal = Math.max(p, 0);
-    arrows.forEach((a, ai) => {
-      const from = pos[a.from];
-      const to   = pos[a.to];
-      if (!from || !to) return;
-      const ap = clamp(arrowReveal * arrows.length - ai, 0, 1);
-      drawLabeledArrow(ctx, from.cx, from.cy, to.cx, to.cy, a.label ?? "", MARKER[ai % MARKER.length], ap);
-    });
-
-    // Draw root node as oval
-    const rootAlpha = easeOutCubic(Math.min(1, p * 2));
-    ctx.save();
-    ctx.globalAlpha = rootAlpha;
-    ctx.strokeStyle = MARKER[0];
-    ctx.lineWidth   = 2.5;
-    ctx.fillStyle   = `${MARKER[0]}1a`;
-    const RW = 110, RH = 44;
-    ctx.beginPath();
-    ctx.ellipse(CX, CY, RW / 2, RH / 2, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.font        = "bold 13px Georgia, serif";
-    ctx.fillStyle   = MARKER[0];
-    ctx.textAlign   = "center";
-    ctx.textBaseline = "middle";
-    // Word-wrap root label
-    const rWords = rootNode.label.split(/\s+/);
-    let rLine = "";
-    const rLines: string[] = [];
-    for (const w of rWords) {
-      const test = rLine ? `${rLine} ${w}` : w;
-      if (ctx.measureText(test).width > RW - 12 && rLine) { rLines.push(rLine); rLine = w; }
-      else rLine = test;
-    }
-    if (rLine) rLines.push(rLine);
-    rLines.forEach((l, i) => ctx.fillText(l, CX, CY + i * 15 - ((rLines.length - 1) * 7.5)));
-    ctx.restore();
-
-    // Draw surrounding nodes as light labeled circles
-    otherNodes.forEach((n, i) => {
-      const { cx, cy } = pos[n.id];
-      const ni = i + 1;
-      const na = easeOutCubic(clamp(p * (nodes.length) - ni, 0, 1));
-      const color = MARKER[(ni) % MARKER.length];
-      ctx.save();
-      ctx.globalAlpha = na;
-      ctx.fillStyle   = `${color}22`;
-      ctx.strokeStyle = color;
-      ctx.lineWidth   = 1.8;
-      ctx.beginPath();
-      ctx.arc(cx, cy, 28, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.font        = "bold 11px Georgia, serif";
-      ctx.fillStyle   = color;
-      ctx.textAlign   = "center";
-      ctx.textBaseline = "middle";
-      const nWords = n.label.split(/\s+/);
-      let nLine = "";
-      const nLines: string[] = [];
-      for (const w of nWords) {
-        const test = nLine ? `${nLine} ${w}` : w;
-        if (ctx.measureText(test).width > 44 && nLine) { nLines.push(nLine); nLine = w; }
-        else nLine = test;
-      }
-      if (nLine) nLines.push(nLine);
-      nLines.forEach((l, li) => ctx.fillText(l, cx, cy + li * 13 - ((nLines.length - 1) * 6.5)));
-      ctx.restore();
-    });
-  }
-
   // Baseline draw (called every frame)
   const drawStep = (ctx: CanvasRenderingContext2D, progressWithinStep: number) => {
     const canvas = ctx.canvas;
     const step = steps[currentStepIndex] || { title: "", description: "" };
-    const drawType = (step as any).drawType as string | undefined;
-    const stepNodes = (step as any).nodes as Array<{ id: string; label: string; nx?: number; ny?: number }> | undefined;
-    const stepArrows = (step as any).arrows as Array<{ from: string; to: string; label?: string }> | undefined;
 
-    // bg — warm paper for diagram steps, clean white for text-only
+    // bg
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = drawType ? PAPER_BG : "#ffffff";
+    ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Title fade-in
     const title = step.title || `Step ${currentStepIndex + 1}`;
-    ctx.font = "bold 22px Georgia, serif";
+    ctx.font = "bold 22px Arial";
     const titleWidth = Math.min(CANVAS_W - 2 * PADDING_X, ctx.measureText(title).width);
 
     const stepMs = stepWindowMs();
     const titleAlpha = easeOutCubic(Math.min(1, (progressWithinStep * stepMs) / TITLE_FADE_MS));
     ctx.save();
     ctx.globalAlpha = titleAlpha;
-    ctx.fillStyle = drawType ? "#1e3a5f" : "#111827";
+    ctx.fillStyle = "#111827";
     ctx.fillText(title, PADDING_X, TITLE_Y);
     ctx.restore();
 
@@ -1117,49 +379,21 @@ export default function Whiteboard({
     const underlineP = Math.min(1, (progressWithinStep * stepMs) / UNDERLINE_MS);
     drawScribbleUnderline(ctx, PADDING_X, TITLE_Y + 6, titleWidth + 8, underlineP);
 
-    // Diagram reveal progress (slightly delayed so title paints first)
-    const diagMs = Math.max(MIN_STEP_MS * 0.8, stepMs * 0.85);
-    const diagP = isPlaying ? clamp((progressWithinStep * stepMs - 300) / diagMs, 0, 1) : 1;
+    // Description — animated word reveal
+    const desc = step.description || "";
+    ctx.font = "18px Arial";
+    ctx.fillStyle = "#1f2937";
+    const words = desc.trim().length ? desc.trim().split(/\s+/) : [];
 
-    if (drawType === "anatomy") {
-      drawAnatomySketch(ctx, stepNodes ?? [], stepArrows ?? [], diagP);
-    } else if (drawType === "cycle") {
-      drawCycleDiagram(ctx, stepNodes ?? [], stepArrows ?? [], diagP);
-    } else if (drawType === "timeline") {
-      drawTimeline(ctx, stepNodes ?? [], stepArrows ?? [], diagP);
-    } else if (drawType === "flow") {
-      drawFlowDiagram(ctx, stepNodes ?? [], stepArrows ?? [], diagP);
-    } else if (drawType === "comparison") {
-      drawComparisonDiagram(ctx, stepNodes ?? [], step.description ?? "", diagP);
-    } else if (drawType === "table") {
-      drawTableDiagram(ctx, stepNodes ?? [], diagP);
-    } else if (drawType === "graph") {
-      drawAxisDiagram(ctx, stepNodes ?? [], stepArrows ?? [], diagP);
-    } else {
-      // Text-based rendering (original behaviour)
-      const desc = step.description || "";
-      ctx.font = "18px Georgia, serif";
-      ctx.fillStyle = "#1f2937";
-      const words = desc.trim().length ? desc.trim().split(/\s+/) : [];
-      const revealMs = Math.max(MIN_STEP_MS * 0.8, stepMs * 0.9);
-      const revealRatio = isPlaying ? clamp((progressWithinStep * stepMs) / revealMs, 0, 1) : 1;
-      const visibleWords = Math.max(0, Math.floor(words.length * revealRatio));
-      drawWrappedWords(ctx, words, visibleWords, PADDING_X, DESC_Y, CANVAS_W - 2 * PADDING_X, DESC_LINE_H);
-    }
+    // reveal pacing: most of the step duration
+    const revealMs = Math.max(MIN_STEP_MS * 0.8, stepMs * 0.9);
+    const revealRatio = isPlaying ? clamp((progressWithinStep * stepMs) / revealMs, 0, 1) : 1;
+    const visibleWords = Math.max(0, Math.floor(words.length * revealRatio));
 
-    // Step index badge (bottom-right)
-    if (drawType) {
-      ctx.save();
-      ctx.globalAlpha = 0.45;
-      ctx.font = "11px Arial";
-      ctx.fillStyle = "#64748b";
-      ctx.textAlign = "right";
-      ctx.fillText(`${currentStepIndex + 1} / ${steps.length}  [${drawType}]`, CANVAS_W - PADDING_X, CANVAS_H - 12);
-      ctx.restore();
-    }
+    drawWrappedWords(ctx, words, visibleWords, PADDING_X, DESC_Y, CANVAS_W - 2 * PADDING_X, DESC_LINE_H);
 
     // Visual prompt hint
-    if ((step as any).visualPrompt && !drawType) {
+    if ((step as any).visualPrompt) {
       ctx.font = "italic 16px Arial";
       ctx.fillStyle = "#6b7280";
       ctx.fillText(`(Draw: ${(step as any).visualPrompt})`, PADDING_X, canvas.height - 24);
@@ -1365,21 +599,6 @@ export default function Whiteboard({
     clearTtsTimer();
   };
 
-  // Log animation state on step change
-  useEffect(() => {
-    if (!steps.length) return;
-    const step = steps[currentStepIndex] as any;
-    console.log("[WHITEBOARD_ANIMATION_STATE]", {
-      stepIdx:       currentStepIndex,
-      title:         step?.title ?? null,
-      drawType:      step?.drawType ?? "text",
-      nodes:         step?.nodes?.length ?? 0,
-      arrows:        step?.arrows?.length ?? 0,
-      evidenceRefId: step?.evidenceRefId ?? null,
-      isPlaying,
-    });
-  }, [currentStepIndex, steps, isPlaying]);
-
   /** Manual step nav */
   const prevStep = () =>
     setCurrentStepIndex((i) => Math.max(0, i - 1));
@@ -1550,20 +769,33 @@ export default function Whiteboard({
   /* Render                                                              */
   /* ------------------------------------------------------------------ */
 
-  console.log("[WHITEBOARD_LAYOUT]", { stepCount: steps.length, canvasW: CANVAS_W, canvasH: CANVAS_H, enableDrawing });
-
   return (
-    <div className="flex flex-col items-center gap-4 w-full">
-      <div className="relative" style={{ width: CANVAS_W, height: CANVAS_H, maxWidth: "100%", overflow: "hidden" }}>
+    <div className="flex flex-col items-center gap-4" style={{ width: "100%" }}>
+      <div
+        className="relative"
+        style={{
+          width: "100%",
+          maxWidth: CANVAS_W,
+          aspectRatio: `${CANVAS_W} / ${CANVAS_H}`,
+          overflow: "hidden",
+        }}
+      >
         {/* Main whiteboard canvas */}
         <canvas
           ref={canvasRef}
           width={CANVAS_W}
           height={CANVAS_H}
           className="border rounded bg-white shadow-sm"
-          style={{ position: 'absolute', zIndex: 1 }}
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            zIndex: 1,
+          }}
         />
-        
+
         {/* Interactive drawing canvas overlay */}
         {enableDrawing && (
           <canvas
@@ -1571,11 +803,15 @@ export default function Whiteboard({
             width={CANVAS_W}
             height={CANVAS_H}
             className="border rounded shadow-sm"
-            style={{ 
-              position: 'absolute', 
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: "100%",
               zIndex: 2,
-              background: 'transparent',
-              pointerEvents: drawingMode ? 'auto' : 'none'
+              background: "transparent",
+              pointerEvents: drawingMode ? "auto" : "none",
             }}
           />
         )}
