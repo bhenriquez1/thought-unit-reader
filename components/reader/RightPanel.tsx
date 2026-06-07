@@ -1317,32 +1317,37 @@ export function RightPanel({
           </UltraViewErrorBoundary>
         )}
 
-        {/* ── UNIFIED SAVE BUTTONS: shown whenever studyModel is truthy, regardless of showUltraView.
-            Old ultraPageView-gated paths removed — single source of truth is studyModel. ── */}
-        {!pageBlocked && isCurrentPageModel && !!studyModel && ctx && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 0 8px 0" }}>
-            {console.log("[NOTELAB_ACTIVE_SAVE_PATH]", { bookId: ctx.documentId, pageNumber: ctx.pageNumber, studyModelPresent: !!studyModel, hasConceptBlocks: studyModel?.conceptBlocks?.length ?? 0 }) as any}
-            {console.log("[NOTELAB_OLD_PATH_BLOCKED]", { reason: "removed-ultraPageView-gate" }) as any}
-            {console.log("[RECALLLAB_ACTIVE_SAVE_PATH]", { bookId: ctx.documentId, pageNumber: ctx.pageNumber, studyModelPresent: !!studyModel }) as any}
-            {console.log("[RECALLLAB_OLD_PATH_BLOCKED]", { reason: "removed" }) as any}
-            <GenerateNoteButton
-              view={displayView ?? ({ title: `Page ${ctx.pageNumber}`, blocks: [], domain: "", teachingStatement: "" } as any)}
-              bookId={ctx.documentId}
-              bookTitle={ctx.documentTitle}
-              pageNumber={ctx.pageNumber}
-              onNoteSaved={onNoteSaved}
-              studyModel={studyModel}
-            />
-            <GenerateStudySetButton
-              view={displayView ?? ({ title: `Page ${ctx.pageNumber}`, blocks: [], domain: "", teachingStatement: "" } as any)}
-              bookId={ctx.documentId}
-              bookTitle={ctx.documentTitle}
-              pageNumber={ctx.pageNumber}
-              onStudySetGenerated={onStudySetGenerated}
-              studyModel={studyModel}
-            />
-          </div>
-        )}
+        {/* ── SAVE BUTTONS: shown whenever studyModel has any content, regardless of intelligence status.
+            Gate: pageThesis OR any studyNote OR any conceptBlock — never requires isCurrentPageModel. ── */}
+        {(() => {
+          const hasPageThesis      = !!studyModel?.pageThesis;
+          const hasStudyNotes      = !!(studyModel?.studyNotes?.whyThisMatters || studyModel?.studyNotes?.keyMechanism || studyModel?.studyNotes?.commonConfusion);
+          const hasConceptBlocks   = (studyModel?.conceptBlocks?.length ?? 0) > 0;
+          const showSaveButtons    = !pageBlocked && !!ctx && (hasPageThesis || hasStudyNotes || hasConceptBlocks);
+          if (!showSaveButtons) return null;
+          console.log("[NOTELAB_BUTTON_VISIBLE]", { page: ctx.pageNumber, bookId: ctx.documentId, hasPageThesis, hasStudyNotes, hasConceptBlocks });
+          console.log("[RECALLLAB_BUTTON_VISIBLE]", { page: ctx.pageNumber, bookId: ctx.documentId, hasPageThesis, hasStudyNotes, hasConceptBlocks });
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 0 8px 0" }}>
+              <GenerateNoteButton
+                view={displayView ?? ({ title: `Page ${ctx.pageNumber}`, blocks: [], domain: "", teachingStatement: "" } as any)}
+                bookId={ctx.documentId}
+                bookTitle={ctx.documentTitle}
+                pageNumber={ctx.pageNumber}
+                onNoteSaved={onNoteSaved}
+                studyModel={studyModel}
+              />
+              <GenerateStudySetButton
+                view={displayView ?? ({ title: `Page ${ctx.pageNumber}`, blocks: [], domain: "", teachingStatement: "" } as any)}
+                bookId={ctx.documentId}
+                bookTitle={ctx.documentTitle}
+                pageNumber={ctx.pageNumber}
+                onStudySetGenerated={onStudySetGenerated}
+                studyModel={studyModel}
+              />
+            </div>
+          );
+        })()}
 
         {/* ── SYNTHESIS-ONLY: when ultra view unavailable, show clean unavailable state ── */}
         {FORCE_SYNTHESIS_ONLY && isCurrentPageModel && !pageIsNonInstructional && !showUltraView && intelligence.status === "ready" && (
