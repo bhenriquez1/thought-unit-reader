@@ -3615,56 +3615,56 @@ function GenerateNoteButton({
   studyModel?: CurrentPageStudyModel | null;
 }) {
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const synthReady = !!studyModel;
 
   function handleGenerate() {
-    console.log("[ULTRA_NOTE_CLICK]", {
+    console.log("[NOTELAB_NEW_BUTTON_CLICKED]", {
       page: pageNumber,
-      synthReady,
       hasStudyModel: !!studyModel,
       conceptBlockCount: studyModel?.conceptBlocks?.length ?? 0,
+      hasThesis: !!studyModel?.pageThesis,
       miniTestItemCount: studyModel?.miniTestItems?.length ?? 0,
     });
+
+    if (!studyModel) {
+      console.warn("[NOTELAB_SAVE_FAILED]", { reason: "studyModel null at click time" });
+      return;
+    }
+
+    console.log("[NOTELAB_STUDY_MODEL_FOUND]", {
+      source:            "finalStudyModel",
+      page:              pageNumber,
+      bookId,
+      hasThesis:         !!studyModel.pageThesis,
+      studyNotesCount:   Object.values(studyModel.studyNotes).filter(Boolean).length,
+      conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
+      visualAnchorCount: studyModel.visualAnchors?.length ?? 0,
+    });
+
+    setSaving(true);
     try {
       const topic = (view.title || `Page ${pageNumber}`).replace(/^ULTRA\s*[–—-]\s*/i, "").trim();
-      if (!studyModel) { console.warn("[NOTELAB_SAVE_ERROR]", { reason: "studyModel null at save time" }); return; }
-
-      console.log("[NOTELAB_SAVE_START]", {
-        page: pageNumber, bookId, topic,
-        sectionCount: 0,
-        conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
-        hasThesis: !!studyModel.pageThesis,
-      });
-
-      // PageBrain is the sole source of truth — build note directly from StudyModel.
-      console.log("[NOTELAB_SOURCE]", {
-        source:            "finalStudyModel",
-        page:              pageNumber,
-        hasThesis:         !!studyModel.pageThesis,
-        studyNotesCount:   Object.values(studyModel.studyNotes).filter(Boolean).length,
-        conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
-        visualAnchorCount: studyModel.visualAnchors?.length ?? 0,
-      });
       const note = buildNoteFromStudyModel(studyModel, { bookId, pageNumber, topic, bookTitle });
-
-      console.log("[NOTELAB_BOOKID_MATCH]", { saveBookId: bookId, displayBookId: bookId, match: true });
       saveUltraNote(note);
 
-      // Verify the note actually persisted before navigating.
       const persisted = getAllUltraNotes().find((n) => n.id === note.id);
       if (!persisted) {
-        console.error("[NOTELAB_SAVE_ERROR]", { reason: "note not found in storage after save", id: note.id, storageKey: "ultraNotes_v1" });
+        console.error("[NOTELAB_SAVE_FAILED]", { reason: "note not found in storage after save", id: note.id, storageKey: "ultraNotes_v1" });
+        setSaveError("Save failed — not persisted");
+        setTimeout(() => setSaveError(null), 3000);
         return;
       }
-      console.log("[NOTELAB_SAVE_VERIFY]", { id: note.id, found: true, storageKey: "ultraNotes_v1" });
-      console.log("[NOTELAB_VISIBLE_AFTER_SAVE]", { bookId, pageNumber, noteId: note.id });
 
-      console.log("[NOTELAB_SAVE_SUCCESS]", {
-        id: note.id, page: note.pageNumber, topic: note.topic,
+      console.log("[NOTELAB_NOTE_CREATED]", {
+        id:           note.id,
+        page:         note.pageNumber,
+        topic:        note.topic,
         sectionCount: note.sections?.length ?? 0,
-        storageKey: "ultraNotes_v1",
+        conceptCount: (note as any).concepts?.length ?? 0,
         bookId,
+        storageKey:   "ultraNotes_v1",
       });
 
       setSaved(true);
@@ -3673,20 +3673,38 @@ function GenerateNoteButton({
       setTimeout(() => setSaved(false), 2200);
     } catch (err: any) {
       const msg = err?.message ?? String(err);
-      console.error("[NOTELAB_SAVE_ERROR]", { reason: msg });
+      console.error("[NOTELAB_SAVE_FAILED]", { reason: msg });
       setSaveError(msg.slice(0, 80));
       setTimeout(() => setSaveError(null), 3000);
+    } finally {
+      setSaving(false);
     }
   }
+
+  const label = saved
+    ? "✓ Note saved to NoteLab"
+    : saveError
+    ? `✗ ${saveError}`
+    : saving
+    ? "Saving…"
+    : "⚡ Generate Ultra Note";
+
+  const sub = saved
+    ? `p.${pageNumber} · open NoteLab to review`
+    : saveError
+    ? "Try again"
+    : saving
+    ? "Writing to NoteLab…"
+    : `from AI Study Model · p.${pageNumber}`;
 
   return (
     <button
       type="button"
-      onClick={synthReady ? handleGenerate : undefined}
-      disabled={!synthReady}
+      onClick={synthReady && !saving ? handleGenerate : undefined}
+      disabled={!synthReady || saving}
       style={{
         width: "100%",
-        padding: "10px 0",
+        padding: "10px 14px",
         borderRadius: 10,
         border: saved
           ? "1px solid rgba(52,211,153,0.5)"
@@ -3694,35 +3712,36 @@ function GenerateNoteButton({
           ? "1px solid rgba(239,68,68,0.45)"
           : !synthReady
           ? "1px solid rgba(255,255,255,0.08)"
-          : "1px solid rgba(245,200,66,0.25)",
+          : "1px solid rgba(245,200,66,0.30)",
         background: saved
           ? "rgba(16,185,129,0.12)"
           : saveError
           ? "rgba(239,68,68,0.08)"
           : !synthReady
           ? "rgba(255,255,255,0.03)"
-          : "rgba(245,200,66,0.07)",
+          : "rgba(245,200,66,0.08)",
         color: saved
           ? "#6ee7b7"
           : saveError
           ? "#fca5a5"
           : !synthReady
-          ? "rgba(255,255,255,0.3)"
+          ? "rgba(255,255,255,0.25)"
           : "#fcd34d",
-        fontSize: 12,
-        fontWeight: 700,
-        letterSpacing: "0.06em",
-        cursor: synthReady ? "pointer" : "not-allowed",
+        cursor: synthReady && !saving ? "pointer" : "not-allowed",
         transition: "all 0.18s",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        textAlign: "left" as const,
       }}
     >
-      {saved
-        ? "✓ Note saved to NoteLab"
-        : saveError
-        ? `✗ Save failed — ${saveError}`
-        : !synthReady
-        ? "Notes unavailable — page has no extractable content"
-        : "⚡ Save to NoteLab"}
+      <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>
+        {saved ? "✓" : saveError ? "✗" : "📝"}
+      </span>
+      <span style={{ flex: 1 }}>
+        <span style={{ display: "block", fontSize: 12, fontWeight: 700, letterSpacing: "0.04em" }}>{label}</span>
+        <span style={{ display: "block", fontSize: 10, opacity: 0.55, marginTop: 1 }}>{sub}</span>
+      </span>
     </button>
   );
 }
@@ -3743,49 +3762,49 @@ function GenerateStudySetButton({
   studyModel?: CurrentPageStudyModel | null;
 }) {
   const [saved, setSaved] = useState(false);
-  const [noSynth, setNoSynth] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const synthReady = !!studyModel;
 
   function handleGenerate() {
-    if (!synthReady) {
-      console.warn("[RECALLLAB_SAVE_ERROR]", { reason: "no studyModel" });
-      setNoSynth(true);
-      setTimeout(() => setNoSynth(false), 2800);
+    console.log("[RECALLLAB_NEW_BUTTON_CLICKED]", {
+      page: pageNumber,
+      hasStudyModel: !!studyModel,
+      hasThesis: !!studyModel?.pageThesis,
+      conceptBlockCount: studyModel?.conceptBlocks?.length ?? 0,
+      miniTestItemCount: studyModel?.miniTestItems?.length ?? 0,
+    });
+
+    if (!studyModel) {
+      console.warn("[RECALLLAB_SAVE_FAILED]", { reason: "studyModel null at click time" });
       return;
     }
-    try {
-      console.log("[RECALLLAB_SAVE_START]", {
-        bookId, page: pageNumber,
-        hasThesis: !!studyModel.pageThesis,
-        conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
-        miniTestItemCount: studyModel.miniTestItems?.length ?? 0,
-        storageKey: "recallSets_v1",
-        destination: "RecallLab",
-      });
 
-      console.log("[RECALLLAB_SOURCE]", {
-        source:            "finalStudyModel",
-        page:              pageNumber,
-        hasThesis:         !!studyModel.pageThesis,
-        studyNotesCount:   Object.values(studyModel.studyNotes).filter(Boolean).length,
-        conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
-        miniTestItemCount: studyModel.miniTestItems?.length ?? 0,
-      });
+    console.log("[RECALLLAB_STUDY_MODEL_FOUND]", {
+      source:            "finalStudyModel",
+      page:              pageNumber,
+      bookId,
+      hasThesis:         !!studyModel.pageThesis,
+      studyNotesCount:   Object.values(studyModel.studyNotes).filter(Boolean).length,
+      conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
+      miniTestItemCount: studyModel.miniTestItems?.length ?? 0,
+    });
+
+    setSaving(true);
+    try {
       const set = buildRecallSetFromView(view, bookId, pageNumber, {
         bookTitle,
         sourceLabel: "right-panel",
         studyModel,
       });
-
-      console.log("[RECALLLAB_BOOKID_MATCH]", { saveBookId: bookId, match: true });
       saveRecallSet(set);
 
-      // Verify persistence before navigating.
       const persisted = getAllRecallSets().find((s) => s.id === set.id);
       if (!persisted) {
-        console.error("[RECALLLAB_SAVE_ERROR]", { reason: "set not found in storage after save", id: set.id, storageKey: "recallSets_v1" });
+        console.error("[RECALLLAB_SAVE_FAILED]", { reason: "set not found in storage after save", id: set.id, storageKey: "recallSets_v1" });
+        setSaveError("Save failed — not persisted");
+        setTimeout(() => setSaveError(null), 3000);
         return;
       }
 
@@ -3793,16 +3812,14 @@ function GenerateStudySetButton({
         acc[c.type] = (acc[c.type] ?? 0) + 1;
         return acc;
       }, {});
-      console.log("[RECALLLAB_SAVE_VERIFY]", { id: set.id, found: true, storageKey: "recallSets_v1" });
-      console.log("[RECALLLAB_VISIBLE_AFTER_SAVE]", { bookId, pageNumber, setId: set.id });
-      console.log("[RECALLLAB_SAVE_SUCCESS]", {
-        id: set.id, page: set.pageNumber,
+      console.log("[RECALLLAB_CARDS_CREATED]", {
+        id:        set.id,
+        page:      set.pageNumber,
         cardCount: set.cards.length,
         cardTypes,
-        topic: set.topic,
-        storageKey: "recallSets_v1",
+        topic:     set.topic,
         bookId,
-        destination: "RecallLab",
+        storageKey: "recallSets_v1",
       });
 
       setSaved(true);
@@ -3811,64 +3828,75 @@ function GenerateStudySetButton({
       setTimeout(() => setSaved(false), 2200);
     } catch (err: any) {
       const msg = err?.message ?? String(err);
-      console.error("[RECALLLAB_SAVE_ERROR]", { reason: msg });
+      console.error("[RECALLLAB_SAVE_FAILED]", { reason: msg });
       setSaveError(msg.slice(0, 80));
       setTimeout(() => setSaveError(null), 3000);
+    } finally {
+      setSaving(false);
     }
   }
+
+  const label = saved
+    ? "✓ Study Set saved to Recall Lab"
+    : saveError
+    ? `✗ ${saveError}`
+    : saving
+    ? "Saving…"
+    : "🎯 Generate Study Set";
+
+  const sub = saved
+    ? `p.${pageNumber} · open Recall Lab to study`
+    : saveError
+    ? "Try again"
+    : saving
+    ? "Building recall cards…"
+    : `from AI Study Model · p.${pageNumber}`;
 
   return (
     <button
       type="button"
-      onClick={synthReady ? handleGenerate : undefined}
-      disabled={!synthReady && !noSynth}
+      onClick={synthReady && !saving ? handleGenerate : undefined}
+      disabled={!synthReady || saving}
       style={{
-        flex: 1,
-        padding: "10px 0",
+        width: "100%",
+        padding: "10px 14px",
         borderRadius: 10,
         border: saved
           ? "1px solid rgba(99,102,241,0.5)"
           : saveError
           ? "1px solid rgba(239,68,68,0.45)"
-          : noSynth
-          ? "1px solid rgba(239,68,68,0.4)"
           : !synthReady
           ? "1px solid rgba(255,255,255,0.08)"
-          : "1px solid rgba(99,102,241,0.25)",
+          : "1px solid rgba(99,102,241,0.30)",
         background: saved
           ? "rgba(99,102,241,0.12)"
           : saveError
           ? "rgba(239,68,68,0.08)"
-          : noSynth
-          ? "rgba(239,68,68,0.08)"
           : !synthReady
           ? "rgba(255,255,255,0.03)"
-          : "rgba(99,102,241,0.07)",
+          : "rgba(99,102,241,0.08)",
         color: saved
           ? "#a5b4fc"
           : saveError
           ? "#fca5a5"
-          : noSynth
-          ? "#fca5a5"
           : !synthReady
-          ? "rgba(255,255,255,0.3)"
+          ? "rgba(255,255,255,0.25)"
           : "#818cf8",
-        fontSize: 12,
-        fontWeight: 700,
-        letterSpacing: "0.06em",
-        cursor: synthReady ? "pointer" : "not-allowed",
+        cursor: synthReady && !saving ? "pointer" : "not-allowed",
         transition: "all 0.18s",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        textAlign: "left" as const,
       }}
     >
-      {saved
-        ? "✓ Saved to Recall Lab"
-        : saveError
-        ? `✗ Save failed — ${saveError}`
-        : noSynth
-        ? "Notes and recall cards are unavailable because this page does not contain enough extractable instructional content."
-        : !synthReady
-        ? "Recall cards unavailable — page has no extractable content"
-        : "🎯 Save to Recall Lab"}
+      <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>
+        {saved ? "✓" : saveError ? "✗" : "🃏"}
+      </span>
+      <span style={{ flex: 1 }}>
+        <span style={{ display: "block", fontSize: 12, fontWeight: 700, letterSpacing: "0.04em" }}>{label}</span>
+        <span style={{ display: "block", fontSize: 10, opacity: 0.55, marginTop: 1 }}>{sub}</span>
+      </span>
     </button>
   );
 }
