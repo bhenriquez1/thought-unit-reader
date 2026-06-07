@@ -3,15 +3,13 @@
 // NoteLab, RecallLab, and page text into a structured podcast.
 // Each mode renders in its own studio environment.
 
-import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import type { PodcastMode, PodcastScript, PodcastSegment } from "@/lib/podcast/podcastTypes";
 import { PODCAST_MODES, SEGMENT_COLORS, SEGMENT_LABELS, MODE_THEMES } from "@/lib/podcast/podcastTypes";
 import { getAllUltraNotes } from "@/lib/notelab/ultraNoteStore";
 import { getAllRecallSets } from "@/lib/recalllab/recallStore";
 import { formulaToSpeech } from "@/lib/speech/studySpeechEngine";
-import { buildWhiteboardStepsFromStudyModel } from "@/lib/insights/whiteboardFromStudyModel";
-import Whiteboard from "@/components/Whiteboard";
 
 interface Props {
   studyModel: CurrentPageStudyModel | null;
@@ -98,22 +96,6 @@ function clinicalStep(seg: PodcastSegment): number {
 
 const CLINICAL_STEPS = ["Symptom", "Mechanism", "Diagnosis", "Treatment"];
 
-// Maps segment sourceField/type → whiteboard step index
-// Matches the order from buildWhiteboardStepsFromStudyModel:
-//   0=pageThesis, 1=whyThisMatters, 2=keyMechanism, 3=commonConfusion, 4+=conceptBlocks
-function sourceFieldToWbStep(seg: PodcastSegment): number {
-  if (seg.sourceField === "whyThisMatters")  return 1;
-  if (seg.sourceField === "keyMechanism")    return 2;
-  if (seg.sourceField === "commonConfusion") return 3;
-  if (seg.sourceField === "quickMemory")     return 3;
-  if (seg.type === "intro")                  return 0;
-  if (seg.type === "page_reading")           return 0;
-  if (seg.type === "highlight_evidence")     return 2;
-  if (seg.type === "right_panel_note")       return 4;
-  if (seg.type === "notelab_expansion")      return 4;
-  return -1;
-}
-
 function speakerColor(speaker: string, isDark: boolean): string {
   if (isDark) {
     if (speaker === "host")  return "text-blue-300";
@@ -139,12 +121,16 @@ export default function PodcastLab({
   const [playState, setPlayState]   = useState<PlayState>("idle");
   const [segIdx, setSegIdx]         = useState(0);
   const [quizCountdown, setQuizCountdown] = useState<number | null>(null);
-  const [reviewStepIdx, setReviewStepIdx] = useState(0);
+  const [showTranscript, setShowTranscript] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
+  const [elapsed, setElapsed] = useState(0);          // seconds elapsed in current segment
+  const [segDuration, setSegDuration] = useState(0);  // estimated duration of current segment
 
   const abortRef     = useRef(false);
   const audioRef     = useRef<HTMLAudioElement | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioCacheRef = useRef<Map<string, Blob>>(new Map());
+  const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [audioReady, setAudioReady] = useState(false);
 
   const cfg = STUDIO_CONFIG[mode];
@@ -157,19 +143,16 @@ export default function PodcastLab({
     setSegIdx(0);
     setQuizCountdown(null);
     setAudioReady(false);
+    setElapsed(0);
+    setSegDuration(0);
     audioCacheRef.current.clear();
     abortRef.current = true;
   }, [pageNumber, bookId, mode]);
 
   useEffect(() => () => {
     if (countdownRef.current) clearInterval(countdownRef.current);
+    if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
   }, []);
-
-  // Whiteboard steps for Page Review
-  const wbSteps = useMemo(
-    () => (studyModel ? buildWhiteboardStepsFromStudyModel(studyModel) : []),
-    [studyModel],
-  );
 
   // Source counts (stable — called at render, not inside effects)
   const noteLabCount = studyModel
@@ -199,6 +182,8 @@ export default function PodcastLab({
       noteLab: noteLab.length, recallLab: recallLab.length,
       pageTextChars: activePageText.length,
     });
+    console.log("[PODCAST_MODE_STYLE]", { mode, title: STUDIO_CONFIG[mode].headerTitle, subtitle: STUDIO_CONFIG[mode].headerSubtitle });
+    console.log("[PODCAST_ADAPTIVE_MODE]", { mode, pageTextPreview: activePageText.slice(0, 80) });
 
     try {
       const res = await fetch("/api/podcast-script", {
@@ -270,6 +255,7 @@ export default function PodcastLab({
 
     setAudioReady(true);
     console.log("[PODCAST_AUDIO_CLIP_CREATED]", { event: "prebuffer-done", cachedCount: audioCacheRef.current.size, totalSegments: seg.length });
+    console.log("[PODCAST_AUDIO_PLAYER_READY]", { mode: modeId, segments: seg.length, cachedCount: audioCacheRef.current.size });
   }, [fetchAudioBlob]);
 
   // ── TTS playback ───────────────────────────────────────────────────────
@@ -279,7 +265,10 @@ export default function PodcastLab({
     audioRef.current = null;
     if (typeof window !== "undefined") window.speechSynthesis?.cancel();
     if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+    if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
     setQuizCountdown(null);
+    setElapsed(0);
+    setSegDuration(0);
     setPlayState("idle");
     onEvidenceFocus?.(null);
   }, [onEvidenceFocus]);
@@ -363,6 +352,16 @@ export default function PodcastLab({
       const seg = script.segments[i];
       setSegIdx(i);
 
+      // Estimate segment duration from word count (avg 140 wpm)
+      const wordCount = seg.text.trim().split(/\s+/).length;
+      const estDuration = Math.round((wordCount / 140) * 60);
+      setSegDuration(estDuration);
+      setElapsed(0);
+      if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+      elapsedTimerRef.current = setInterval(() => {
+        setElapsed(prev => prev + 1);
+      }, 1000);
+
       if (seg.anchorId) {
         onEvidenceFocus?.(seg.anchorId);
         console.log("[PODCAST_SEGMENT_START]", {
@@ -375,12 +374,6 @@ export default function PodcastLab({
         });
       }
 
-      // Sync whiteboard step in Page Review
-      if (mode === "page_review") {
-        const wbIdx = sourceFieldToWbStep(seg);
-        if (wbIdx >= 0) setReviewStepIdx(wbIdx);
-      }
-
       // Quiz countdown before quiz segments
       if (mode === "quiz_podcast" && seg.type === "recall_quiz" && !abortRef.current) {
         await runCountdown(5);
@@ -389,16 +382,20 @@ export default function PodcastLab({
       if (abortRef.current) break;
 
       const voice = seg.speaker === "guest" ? modeInfo.guestVoice : modeInfo.hostVoice;
+      if (audioRef.current) audioRef.current.playbackRate = playbackSpeed;
       await fetchAndPlayAudio(formulaToSpeech(seg.text).slice(0, 500), voice, seg.id);
 
+      if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
       if (abortRef.current) break;
     }
 
     if (!abortRef.current) {
       setPlayState("idle");
+      setElapsed(0);
+      setSegDuration(0);
       onEvidenceFocus?.(null);
     }
-  }, [script, mode, onEvidenceFocus, fetchAndPlayAudio, runCountdown]);
+  }, [script, mode, playbackSpeed, onEvidenceFocus, fetchAndPlayAudio, runCountdown]);
 
   const handlePlay = useCallback(() => {
     if (playState === "playing") { stop(); }
@@ -418,6 +415,13 @@ export default function PodcastLab({
   const borderClass = cfg.isDark ? "border-white/10" : "border-slate-200";
   const mutedText   = cfg.isDark ? "text-white/40"  : "text-slate-400";
   const bodyText    = cfg.isDark ? "text-white/90"  : "text-slate-800";
+
+  // Progress bar: fraction through the script by segment count
+  const progressFraction = script ? (segIdx + (elapsed / Math.max(segDuration, 1))) / script.totalSegments : 0;
+  const clampedProgress = Math.min(1, Math.max(0, progressFraction));
+
+  // Format seconds as m:ss
+  const formatTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
   return (
     <div className={`h-full flex flex-col bg-gradient-to-b ${cfg.bg} ${cfg.textClass} overflow-hidden`}>
@@ -528,130 +532,218 @@ export default function PodcastLab({
       )}
 
       {/* Scrollable area */}
-      <div className="flex-1 overflow-y-auto">
-
-        {/* Page Review: animated whiteboard synced to audio */}
-        {mode === "page_review" && studyModel && wbSteps.length > 0 && (
-          <div className="mx-3 mb-1 rounded-xl overflow-hidden border border-blue-200 shadow-lg bg-white" style={{ height: 300 }}>
-            <div className="flex items-center justify-between px-3 py-1.5 bg-blue-600 text-white">
-              <span className="text-[10px] font-bold uppercase tracking-widest">Live Whiteboard</span>
-              {playState === "playing" && (
-                <span className="flex items-center gap-1.5 text-[10px] text-blue-100">
-                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                  Step {Math.min(reviewStepIdx + 1, wbSteps.length)} of {wbSteps.length}
-                </span>
-              )}
-            </div>
-            <div style={{ height: 264 }}>
-              <Whiteboard
-                steps={wbSteps}
-                concept={studyModel.pageThesis ?? ""}
-                context=""
-                baseStepDurationMs={5000}
-                enableDrawing={false}
-                controlledStepIndex={playState === "playing" ? reviewStepIdx : undefined}
-              />
-            </div>
-          </div>
-        )}
+      <div className="flex-1 overflow-y-auto flex flex-col">
 
         {/* Quiz countdown */}
         {mode === "quiz_podcast" && quizCountdown !== null && (
-          <div className="mx-3 mb-3 rounded-xl bg-yellow-400 text-indigo-950 flex items-center justify-center gap-3 py-4">
+          <div className="mx-3 mt-3 rounded-xl bg-yellow-400 text-indigo-950 flex items-center justify-center gap-3 py-4 shrink-0">
             <span className="text-3xl font-black tabular-nums">{quizCountdown}</span>
             <span className="text-[13px] font-bold">Get ready to answer…</span>
           </div>
         )}
 
-        {/* Script */}
+        {/* ── Audio Player ──────────────────────────────────────────────── */}
         {script && (
-          <>
-            {/* Playback bar */}
-            <div className={`px-3 py-2 border-t border-b ${borderClass} flex items-center gap-3`}>
+          <div className={`mx-3 mt-3 rounded-2xl border ${borderClass} ${cfg.isDark ? "bg-white/5" : "bg-white/70"} p-4 shrink-0`}>
+
+            {/* Now playing info */}
+            <div className="mb-3 text-center">
+              <div className={`text-[11px] font-bold uppercase tracking-widest ${mutedText} mb-0.5`}>
+                {cfg.headerTitle}
+              </div>
+              {currentSeg && (
+                <div className={`text-[13px] font-semibold leading-tight ${bodyText}`}>
+                  {currentSeg.speaker === "host" ? cfg.hostLabel
+                    : currentSeg.speaker === "guest" ? cfg.guestLabel : "Narrator"}
+                  {" · "}
+                  <span className={`font-normal ${mutedText}`}>{SEGMENT_LABELS[currentSeg.type]}</span>
+                  {mode === "exam_cram" && (currentSeg.type === "right_panel_note" || currentSeg.type === "highlight_evidence") && (
+                    <span className="ml-1.5 px-1.5 py-0.5 rounded text-[8px] font-black bg-red-600 text-white tracking-widest align-middle">HIGH YIELD</span>
+                  )}
+                </div>
+              )}
+              {!currentSeg && (
+                <div className={`text-[13px] ${bodyText}`}>
+                  {script.totalSegments} segments · ~{script.estimatedMinutes} min
+                </div>
+              )}
+            </div>
+
+            {/* Progress bar */}
+            <div
+              className={`relative h-1.5 rounded-full mb-2 overflow-hidden ${cfg.isDark ? "bg-white/10" : "bg-slate-200"}`}
+              onClick={(e) => {
+                if (!script) return;
+                const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                const fraction = (e.clientX - rect.left) / rect.width;
+                const targetIdx = Math.floor(fraction * script.totalSegments);
+                handleSegmentClick(Math.max(0, Math.min(script.totalSegments - 1, targetIdx)));
+              }}
+              style={{ cursor: "pointer" }}
+            >
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${cfg.accentClass}`}
+                style={{ width: `${clampedProgress * 100}%` }}
+              />
+            </div>
+
+            {/* Time / segment counter */}
+            <div className={`flex justify-between text-[9px] ${mutedText} mb-4`}>
+              <span>{playState === "playing" ? formatTime(elapsed) : "0:00"}</span>
+              <span>{segIdx + 1} / {script.totalSegments}</span>
+              <span>~{formatTime(script.estimatedMinutes * 60)}</span>
+            </div>
+
+            {/* Controls row */}
+            <div className="flex items-center justify-center gap-4 mb-3">
+              {/* Prev segment */}
+              <button
+                onClick={() => handleSegmentClick(Math.max(0, segIdx - 1))}
+                disabled={segIdx === 0}
+                title="Previous segment"
+                className={`w-9 h-9 rounded-full flex items-center justify-center transition-all disabled:opacity-30 ${
+                  cfg.isDark ? "bg-white/10 hover:bg-white/20 text-white" : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                }`}
+              >
+                ⏮
+              </button>
+
+              {/* Rewind 10s (jump back 1 segment as proxy) */}
+              <button
+                onClick={() => handleSegmentClick(Math.max(0, segIdx - 1))}
+                title="Skip back"
+                className={`w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold transition-all ${
+                  cfg.isDark ? "bg-white/10 hover:bg-white/20 text-white" : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                }`}
+              >
+                ⟨10
+              </button>
+
+              {/* Large Play / Pause */}
               <button
                 onClick={handlePlay}
-                className={`px-4 py-1.5 rounded-lg text-[12px] font-semibold transition-all text-white ${
+                className={`w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold shadow-lg transition-all text-white ${
                   playState === "playing" ? "bg-red-600 hover:bg-red-500" : `${cfg.accentClass} hover:opacity-90`
                 }`}
               >
-                {playState === "playing" ? "⏹ Stop" : "▶ Play"}
+                {playState === "playing" ? "⏸" : "▶"}
               </button>
-              <div className={`text-[10px] ${mutedText}`}>
-                {playState === "playing"
-                  ? `Playing ${segIdx + 1} / ${script.totalSegments}`
-                  : `${script.totalSegments} segments · ~${script.estimatedMinutes} min`}
-              </div>
+
+              {/* Forward 10s (jump forward 1 segment as proxy) */}
               <button
-                onClick={() => { setScript(null); setGenError(null); }}
-                className={`ml-auto text-[10px] ${mutedText} hover:opacity-80 transition-colors`}
+                onClick={() => handleSegmentClick(Math.min((script?.totalSegments ?? 1) - 1, segIdx + 1))}
+                title="Skip forward"
+                className={`w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold transition-all ${
+                  cfg.isDark ? "bg-white/10 hover:bg-white/20 text-white" : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                }`}
               >
-                Regenerate
+                10⟩
+              </button>
+
+              {/* Next segment */}
+              <button
+                onClick={() => handleSegmentClick(Math.min((script?.totalSegments ?? 1) - 1, segIdx + 1))}
+                disabled={!script || segIdx >= script.totalSegments - 1}
+                title="Next segment"
+                className={`w-9 h-9 rounded-full flex items-center justify-center transition-all disabled:opacity-30 ${
+                  cfg.isDark ? "bg-white/10 hover:bg-white/20 text-white" : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                }`}
+              >
+                ⏭
               </button>
             </div>
 
-            {/* Active segment banner */}
-            {playState === "playing" && currentSeg && (
-              <div className={`mx-3 mt-2 px-3 py-2 rounded-xl border ${
-                cfg.isDark ? "bg-blue-900/30 border-blue-500/30" : "bg-blue-50 border-blue-300"
-              }`}>
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="animate-pulse w-1.5 h-1.5 rounded-full bg-blue-400" />
-                  <span className={`text-[9px] font-bold uppercase tracking-widest ${speakerColor(currentSeg.speaker, cfg.isDark)}`}>
-                    {currentSeg.speaker === "host" ? cfg.hostLabel
-                      : currentSeg.speaker === "guest" ? cfg.guestLabel : "NARRATOR"}
-                  </span>
-                  <span className={`text-[9px] ${mutedText}`}>{SEGMENT_LABELS[currentSeg.type]}</span>
-                  {mode === "exam_cram" && (currentSeg.type === "right_panel_note" || currentSeg.type === "highlight_evidence") && (
-                    <span className="ml-auto px-1.5 py-0.5 rounded text-[8px] font-black bg-red-600 text-white tracking-widest">HIGH YIELD</span>
-                  )}
-                </div>
-                <p className={`text-[12px] leading-relaxed ${bodyText}`}>{currentSeg.text}</p>
-              </div>
-            )}
-
-            {/* Segment list */}
-            <div className="px-3 py-2 space-y-1.5">
-              {script.segments.map((seg, idx) => {
-                const isActive       = playState === "playing" && idx === segIdx;
-                const isHighYield    = mode === "exam_cram" && (seg.type === "right_panel_note" || seg.type === "highlight_evidence");
-                const isDebateAnchor = mode === "debate" && !!seg.anchorId && isActive;
-                return (
+            {/* Speed + secondary controls */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                {[0.75, 1, 1.25, 1.5].map((s) => (
                   <button
-                    key={seg.id}
-                    onClick={() => handleSegmentClick(idx)}
-                    className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all ${
-                      isActive
-                        ? cfg.isDark ? "bg-blue-900/40 border-blue-500/50 shadow-sm" : "bg-blue-100 border-blue-400"
-                        : cfg.isDark ? "bg-white/4 border-white/8 hover:bg-white/8" : "bg-white/60 border-slate-200 hover:bg-white/90"
-                    } ${SEGMENT_COLORS[seg.type]} ${isDebateAnchor ? "ring-2 ring-green-500/60" : ""}`}
+                    key={s}
+                    onClick={() => {
+                      setPlaybackSpeed(s);
+                      if (audioRef.current) audioRef.current.playbackRate = s;
+                    }}
+                    className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-all ${
+                      playbackSpeed === s
+                        ? `${cfg.accentClass} text-white`
+                        : cfg.isDark
+                          ? "bg-white/10 text-white/60 hover:bg-white/20"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
                   >
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className={`text-[9px] font-bold uppercase tracking-widest ${speakerColor(seg.speaker, cfg.isDark)}`}>
-                        {seg.speaker === "host" ? cfg.hostLabel
-                          : seg.speaker === "guest" ? cfg.guestLabel : "NARRATOR"}
-                      </span>
-                      <span className={`text-[9px] uppercase tracking-wide ${mutedText}`}>
-                        {SEGMENT_LABELS[seg.type]}
-                      </span>
-                      {isHighYield && (
-                        <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-red-600 text-white tracking-widest">HIGH YIELD</span>
-                      )}
-                      {seg.anchorId && (
-                        <span className="ml-auto text-[9px] text-amber-400/60">⚓ {seg.anchorId}</span>
-                      )}
-                      {seg.recallCardId && !seg.anchorId && (
-                        <span className="ml-auto text-[9px] text-purple-400/60">📋 Quiz</span>
-                      )}
-                    </div>
-                    <p className={`text-[12px] leading-relaxed ${isActive ? bodyText : mutedText} line-clamp-3`}>
-                      {seg.text}
-                    </p>
+                    {s}×
                   </button>
-                );
-              })}
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowTranscript((v) => !v)}
+                  className={`px-2.5 py-1 rounded text-[10px] font-medium transition-all ${
+                    showTranscript
+                      ? `${cfg.accentClass} text-white`
+                      : cfg.isDark ? "bg-white/10 text-white/60 hover:bg-white/20" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  ≡ Transcript
+                </button>
+                <button
+                  onClick={() => { setScript(null); setGenError(null); }}
+                  className={`text-[10px] ${mutedText} hover:opacity-80 transition-colors`}
+                >
+                  Regenerate
+                </button>
+              </div>
             </div>
-          </>
+          </div>
         )}
+
+        {/* ── Transcript / Segment list ───────────────────────────────── */}
+        {script && showTranscript && (
+          <div className="px-3 py-2 space-y-1.5 mt-1">
+            {script.segments.map((seg, idx) => {
+              const isActive       = playState === "playing" && idx === segIdx;
+              const isHighYield    = mode === "exam_cram" && (seg.type === "right_panel_note" || seg.type === "highlight_evidence");
+              const isDebateAnchor = mode === "debate" && !!seg.anchorId && isActive;
+              return (
+                <button
+                  key={seg.id}
+                  onClick={() => handleSegmentClick(idx)}
+                  className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all ${
+                    isActive
+                      ? cfg.isDark ? "bg-blue-900/40 border-blue-500/50 shadow-sm" : "bg-blue-100 border-blue-400"
+                      : cfg.isDark ? "bg-white/4 border-white/8 hover:bg-white/8" : "bg-white/60 border-slate-200 hover:bg-white/90"
+                  } ${SEGMENT_COLORS[seg.type]} ${isDebateAnchor ? "ring-2 ring-green-500/60" : ""}`}
+                >
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className={`text-[9px] font-bold uppercase tracking-widest ${speakerColor(seg.speaker, cfg.isDark)}`}>
+                      {seg.speaker === "host" ? cfg.hostLabel
+                        : seg.speaker === "guest" ? cfg.guestLabel : "NARRATOR"}
+                    </span>
+                    <span className={`text-[9px] uppercase tracking-wide ${mutedText}`}>
+                      {SEGMENT_LABELS[seg.type]}
+                    </span>
+                    {isHighYield && (
+                      <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-red-600 text-white tracking-widest">HIGH YIELD</span>
+                    )}
+                    {seg.anchorId && (
+                      <span className="ml-auto text-[9px] text-amber-400/60">⚓ {seg.anchorId}</span>
+                    )}
+                    {seg.recallCardId && !seg.anchorId && (
+                      <span className="ml-auto text-[9px] text-purple-400/60">📋 Quiz</span>
+                    )}
+                  </div>
+                  <p className={`text-[12px] leading-relaxed ${isActive ? bodyText : mutedText} line-clamp-3`}>
+                    {seg.text}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Spacer so content doesn't crowd the bottom */}
+        <div className="flex-1" />
       </div>
 
       {/* Empty state */}

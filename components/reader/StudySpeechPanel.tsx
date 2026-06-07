@@ -45,14 +45,24 @@ function splitIntoSentences(text: string): string[] {
 }
 
 function naturalizeSpeech(text: string): string {
-  return text
-    // semicolons → brief pause (comma)
+  console.log("[SPEECH_NATURALIZE_INPUT]", { charCount: text.length, preview: text.slice(0, 60) });
+
+  let out = text
+    // OCR: ellipsis / suspension dots → natural pause
+    .replace(/\.{2,}/g, ", ")
+    // OCR: hard hyphen at line break (broken word like "con-\ntext") → rejoin
+    .replace(/-\s*\n\s*/g, "")
+    // OCR: bare line breaks (not paragraph breaks) → space
+    .replace(/([^\n])\n([^\n])/g, "$1 $2")
+    // OCR: multiple spaces / tabs → single space
+    .replace(/[ \t]{2,}/g, " ")
+    // Semicolons → brief pause (comma)
     .replace(/;\s*/g, ", ")
-    // colon introducing explanation → em-dash pause
+    // Colon introducing explanation → em-dash pause
     .replace(/:\s+/g, " — ")
-    // parenthetical aside → commas
+    // Parenthetical aside → commas
     .replace(/\s*\(([^)]{1,80})\)\s*/g, ", $1, ")
-    // expand common abbreviations to spoken forms
+    // Expand common abbreviations to spoken forms
     .replace(/\betc\.\b/gi, "and so on")
     .replace(/\be\.g\.\b/gi, "for example")
     .replace(/\bi\.e\.\b/gi, "that is")
@@ -60,6 +70,18 @@ function naturalizeSpeech(text: string): string {
     .replace(/\bapprox\.\b/gi, "approximately")
     .replace(/\s{2,}/g, " ")
     .trim();
+
+  // Split very long runs (>300 chars with no sentence boundary) at a comma
+  if (out.length > 300 && !/[.!?]/.test(out)) {
+    const commaIdx = out.indexOf(", ", 150);
+    if (commaIdx > 0) {
+      console.log("[SPEECH_PAUSE_CLEANUP]", { action: "split-long-run", at: commaIdx, totalChars: out.length });
+      out = out.slice(0, commaIdx + 1) + " " + out.slice(commaIdx + 2);
+    }
+  }
+
+  console.log("[SPEECH_NATURALIZE_OUTPUT]", { charCount: out.length, preview: out.slice(0, 60) });
+  return out;
 }
 
 // ── Role colour map ──────────────────────────────────────────────────────────
