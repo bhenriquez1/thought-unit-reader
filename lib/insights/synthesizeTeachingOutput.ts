@@ -552,10 +552,22 @@ STEP 2 — GENERATE 8 STUDY FIELDS (universal for any subject):
 
 pageType — already set in Step 1.
 
-coreIdea — The single governing principle this page teaches.
-  Works for ANY subject: a math theorem, a biological law, a historical thesis, a business principle.
-  ONE complete sentence. Not a title. Not a fragment. Not a restatement of the chapter heading.
+coreIdea — The single governing principle this page teaches. ONE complete sentence.
+  MUST include: (1) the central concept by name, (2) what it does or how it works, (3) why it matters or what it enables.
   Ask: "If a professor had one sentence to explain what this page teaches, what would they write on the board?"
+  NEVER use these as the thesis:
+    ✗ A chapter/section title ("Pharmacology", "Limits of Sequences")
+    ✗ A definition fragment ("X is defined as Y")
+    ✗ The first sentence of the page automatically
+    ✗ A generic statement ("This page introduces an important concept")
+    ✗ A restatement of the heading without substance
+  ALWAYS write a full explanatory thesis:
+    ✓ Biology: "This page explains that living organisms are built from chemical elements, and that trace elements such as iodine are critical because even tiny deficiencies disrupt biological function."
+    ✓ Math: "This page teaches that a sequence converges only when its terms approach a fixed value as n grows, while oscillating or unbounded behavior signals divergence."
+    ✓ Clinical: "This page introduces pharmacology by showing how drugs interact with biological systems, using aspirin overdose to illustrate how understanding drug effects drives treatment decisions."
+    ✓ History: "This page argues that the industrial revolution accelerated urbanization not just through economic growth but by creating social conditions that made rural life unsustainable."
+  For case studies / examples / tables / figures: summarize the lesson the example teaches, not just what the example shows.
+  For math worked examples: state what rule or insight the worked problem demonstrates.
 
 whyThisMatters — Why a student MUST know this for exams, professional practice, or real-world use.
   ONE sentence. Phrase: "This matters because..." or "Understanding this enables..."

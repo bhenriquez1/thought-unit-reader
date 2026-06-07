@@ -48,7 +48,7 @@ function loadAll(): RecallSet[] {
 }
 
 function saveAll(sets: RecallSet[]): void {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined") throw new Error("saveAll called outside browser");
   try {
     const serialized = JSON.stringify(sets);
     localStorage.setItem(STORAGE_KEY, serialized);
@@ -62,7 +62,8 @@ function saveAll(sets: RecallSet[]): void {
     window.dispatchEvent(new Event("recall-lab-updated"));
     console.log("[RECALL_EVENT_DISPATCHED]", { setCount: sets.length });
   } catch (err) {
-    console.error("[RECALL_SAVE_FAIL] localStorage write failed", err);
+    console.error("[RECALLLAB_SAVE_ERROR]", { stage: "localStorage.setItem", error: String(err) });
+    throw err;
   }
 }
 

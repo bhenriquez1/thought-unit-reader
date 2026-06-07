@@ -92,7 +92,7 @@ function loadAll(): UltraNote[] {
 }
 
 function saveAll(notes: UltraNote[]): void {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined") throw new Error("saveAll called outside browser");
   try {
     const serialized = JSON.stringify(notes);
     localStorage.setItem(STORAGE_KEY, serialized);
@@ -105,7 +105,8 @@ function saveAll(notes: UltraNote[]): void {
     });
     window.dispatchEvent(new Event("note-lab-updated"));
   } catch (err) {
-    console.error("[NOTE_SAVE_FAIL] localStorage write failed", err);
+    console.error("[NOTELAB_SAVE_ERROR]", { stage: "localStorage.setItem", error: String(err) });
+    throw err;
   }
 }
 
