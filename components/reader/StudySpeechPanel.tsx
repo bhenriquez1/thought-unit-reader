@@ -138,34 +138,52 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   const [fpSentences, setFpSentences] = useState<string[]>([]);
   useEffect(() => {
     if (mode === "fullPage" && activePageText) {
-      console.log("[SPEECH_FULL_PAGE_SOURCE]", { charCount: activePageText.length, preview: activePageText.slice(0, 80) });
+      // Source is the raw page text extracted top-to-bottom, left-to-right by SmartPDFViewer.
+      console.log("[SPEECH_FULL_PAGE_SOURCE]", {
+        page: pageNumber,
+        firstChars: activePageText.slice(0, 120),
+        source: "currentPageTextTopToBottom",
+      });
       // Two-pass split:
       // 1. Split on sentence-ending punctuation followed by whitespace.
-      // 2. Merge continuations that start with lowercase (e.g. after abbreviations
-      //    like "Fig.", "No.", "e.g.") so medical/chemistry text is not over-split.
-      const ABBREV_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Ms|Prof|et\s+al|etc|approx|dept|dept|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.\s*$/i;
+      // 2. Merge continuations that start with lowercase (abbreviation guard).
+      // 3. Merge short heading-like chunks (< 30 chars, no terminal punct) forward
+      //    so "Concept 2.1." attaches to the sentence that follows it.
+      const ABBREV_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Ms|Prof|et\s+al|etc|approx|dept|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.\s*$/i;
       const raw = activePageText.split(/(?<=[.!?…])\s+/);
       const merged: string[] = [];
       for (const chunk of raw) {
         const t = chunk.trim();
         if (!t) continue;
-        if (
-          merged.length > 0 &&
-          /^[a-z"'(0-9]/.test(t) &&
-          !ABBREV_RE.test(merged[merged.length - 1])
-        ) {
+        const isLowercaseContinuation = merged.length > 0 && /^[a-z"'(0-9]/.test(t) && !ABBREV_RE.test(merged[merged.length - 1]);
+        if (isLowercaseContinuation) {
           merged[merged.length - 1] += " " + t;
         } else {
           merged.push(t);
         }
       }
-      const sents = merged.filter((s) => s.length >= 20);
-      console.log("[SPEECH_FULL_PAGE_SENTENCES]", { count: sents.length, first: sents[0]?.slice(0, 60) });
+      // Second pass: merge short heading-like chunks forward (e.g. "Concept 2.1." → prepend to next)
+      const withHeadings: string[] = [];
+      for (let i = 0; i < merged.length; i++) {
+        const s = merged[i];
+        const isShortHeading = s.length < 30 && !/[!?]$/.test(s);
+        if (isShortHeading && i + 1 < merged.length) {
+          merged[i + 1] = s + " " + merged[i + 1];
+        } else {
+          withHeadings.push(s);
+        }
+      }
+      const sents = withHeadings.filter((s) => s.length >= 10);
+      console.log("[SPEECH_FULL_PAGE_SENTENCES]", { count: sents.length, first: sents[0]?.slice(0, 80) });
+      console.log("[SPEECH_FULL_PAGE_START_ANCHOR]", {
+        expectedStart: activePageText.slice(0, 80),
+        actualStart: sents[0]?.slice(0, 80) ?? null,
+      });
       setFpSentences(sents);
     } else {
       setFpSentences([]);
     }
-  }, [mode, activePageText]);
+  }, [mode, activePageText, pageNumber]);
 
   // Rebuild segments when model or mode changes — without stopping audio.
   useEffect(() => {
@@ -384,7 +402,14 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
             merged[merged.length - 1] += " " + t;
           } else { merged.push(t); }
         }
-        return merged.filter((s) => s.length >= 20);
+        const withHeadings: string[] = [];
+        for (let i = 0; i < merged.length; i++) {
+          const s = merged[i];
+          if (s.length < 30 && !/[!?]$/.test(s) && i + 1 < merged.length) {
+            merged[i + 1] = s + " " + merged[i + 1];
+          } else { withHeadings.push(s); }
+        }
+        return withHeadings.filter((s) => s.length >= 10);
       })();
       if (!sents.length) { setErrorMsg("No page text available."); return; }
       console.log("[SPEECH_FULL_PAGE_START]", { sentenceCount: sents.length, fromIdx, firstSentence: sents[0]?.slice(0, 80) });

@@ -4084,26 +4084,42 @@ export default function ThoughtUnitReader() {
         </div>
       )}
 
-      {/* Sliding Whiteboard Panel */}
+      {/* Centered Whiteboard Modal */}
       {showWhiteboardPanel && (
-        <div className="fixed top-0 right-0 w-full sm:w-[480px] h-full bg-gray-900/95 backdrop-blur-md text-white z-50 flex flex-col shadow-2xl border-l border-gray-700">
-          <div className="flex justify-between items-center p-4 border-b border-gray-700">
-            <h3 className="text-lg font-semibold">🎨 Whiteboard</h3>
-            <button
-              onClick={() => setShowWhiteboardPanel(false)}
-              className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-800"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="flex-1 overflow-auto p-4">
-            <WhiteboardPanel
-              concept={currentPageStudyModel?.pageThesis ?? ""}
-              context={currentPageStudyModel?.studyNotes?.keyMechanism ?? ""}
-              prebuiltSteps={whiteboardSteps}
-              lessonTitle={uploadedFile?.name ?? "Page Whiteboard"}
-              currentPage={currentPage}
-            />
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.78)" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowWhiteboardPanel(false); }}
+        >
+          {(console.log("[WHITEBOARD_CENTERED_MODAL]", {
+            page: currentPage,
+            hasStudyModel: !!currentPageStudyModel,
+            pageTextChars: (pageTextByPage.get(`${bookId}:${currentPage}`) ?? "").length,
+          }) as any) && null}
+          <div
+            className="relative bg-[#0d1424] text-white rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-700/60"
+            style={{ width: "min(94vw, 1120px)", height: "min(88vh, 740px)" }}
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-700/60 shrink-0">
+              <span className="text-sm font-semibold tracking-wide text-gray-200">Whiteboard</span>
+              <button
+                onClick={() => setShowWhiteboardPanel(false)}
+                className="text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-gray-700/60 text-lg leading-none"
+                aria-label="Close whiteboard"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-5">
+              <WhiteboardPanel
+                concept={currentPageStudyModel?.pageThesis ?? ""}
+                context={currentPageStudyModel?.studyNotes?.keyMechanism ?? ""}
+                studyModel={currentPageStudyModel as any}
+                pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
+                lessonTitle={uploadedFile?.name ?? "Page Whiteboard"}
+                currentPage={currentPage}
+              />
+            </div>
           </div>
         </div>
       )}
