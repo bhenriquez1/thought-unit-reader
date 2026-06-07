@@ -13,10 +13,16 @@ type StepPayload = {
   sourceField?: string | null;
 };
 
+type DiagramNode = { id: string; label: string; nx?: number; ny?: number };
+type DiagramArrow = { from: string; to: string; label?: string };
+
 type Step = {
   title: string;
   content: string;
   type?: "text" | "draw" | "erase" | "image";
+  drawType?: "flow" | "anatomy" | "comparison" | "table" | "graph" | "equation" | "timeline";
+  nodes?: DiagramNode[];
+  arrows?: DiagramArrow[];
   payload?: StepPayload;
 };
 
@@ -181,18 +187,30 @@ export default async function handler(
     const drawStyle = subjectDrawingStyle(subject);
     const modelCtx  = buildModelContext(studyModel);
 
+    const mathGraphInstructions = subject === "mathematics"
+      ? ' For sequences/series/functions use drawType "graph" with ≥5 nodes whose labels are "x=N, y=V" (or "n=N, a=V") data points plus an optional "L=VALUE" node for the limit.'
+      : "";
+
     const system = [
       "You are a universal visual teaching engine. Produce a whiteboard animation plan as strict JSON:",
-      '{ "steps":[{ "title": string, "content": string, "type": "text"|"draw"|"erase"|"image",',
-      '  "payload": { "text"?: string, "prompt"?: string, "anchorId"?: string|null, "sourceField"?: string|null } }],',
-      '  "narrationScript": string }',
+      '{ "steps":[{',
+      '  "title": string, "content": string,',
+      '  "type": "text"|"draw"|"erase"|"image",',
+      '  "drawType"?: "flow"|"anatomy"|"comparison"|"table"|"graph"|"equation"|"timeline",',
+      '  "nodes"?: [{"id": string, "label": string, "nx"?: number, "ny"?: number}],',
+      '  "arrows"?: [{"from": string, "to": string, "label"?: string}],',
+      '  "payload"?: {"text"?: string, "prompt"?: string, "anchorId"?: string|null, "sourceField"?: string|null}',
+      '}], "narrationScript": string }',
       "Rules:",
       "- 3–5 teaching steps. Each step has a single clear teaching action.",
       "- Do NOT invent new concepts — only visualize what is already in the study model below.",
-      "- For 'draw' steps: " + drawStyle,
-      "- For each step, set anchorId and sourceField to the matching ANCHOR ID from the model context if one exists; else null.",
+      "- For 'draw' steps set drawType and provide nodes/arrows: " + drawStyle,
+      "  flow/anatomy: nodes are process steps/parts, arrows connect them in order.",
+      "  comparison: exactly 2 nodes (the two entities being compared).",
+      "  table: alternating key-value nodes (term, definition, term, definition...).",
+      "  graph: data-point nodes with labels 'x=N, y=V' (at least 5 points) plus optional 'L=VALUE' limit node." + mathGraphInstructions,
+      "- Set anchorId/sourceField to the matching ANCHOR ID from model context if one exists; else null.",
       "- narrationScript: a single fluent paragraph narrating all steps for text-to-speech.",
-      "- Be subject-agnostic: adapt your visual metaphors to the actual domain detected from the content.",
     ].join(" ");
 
     const user = [
@@ -241,12 +259,16 @@ export default async function handler(
     try {
       const j   = JSON.parse(rawContent || "{}");
       const arr = Array.isArray(j.steps) ? j.steps : [];
+      const VALID_DRAW_TYPES = ["flow", "anatomy", "comparison", "table", "graph", "equation", "timeline"];
       steps = arr
         .map((s: any) => ({
-          title:   String(s?.title   ?? "").trim(),
-          content: String(s?.content ?? s?.description ?? "").trim(),
-          type:    (["text", "draw", "erase", "image"].includes(s?.type) ? s.type : "text") as Step["type"],
-          payload: s?.payload ?? {},
+          title:    String(s?.title   ?? "").trim(),
+          content:  String(s?.content ?? s?.description ?? "").trim(),
+          type:     (["text", "draw", "erase", "image"].includes(s?.type) ? s.type : "text") as Step["type"],
+          drawType: VALID_DRAW_TYPES.includes(s?.drawType) ? s.drawType : undefined,
+          nodes:    Array.isArray(s?.nodes) ? s.nodes : undefined,
+          arrows:   Array.isArray(s?.arrows) ? s.arrows : undefined,
+          payload:  s?.payload ?? {},
         }))
         .filter((s: Step) => s.title || s.content)
         .slice(0, 6);

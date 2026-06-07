@@ -240,6 +240,9 @@ export default function WhiteboardPanel({
         title:       String(s?.title ?? "").trim(),
         description: String(s?.content ?? s?.description ?? "").trim(),
         type:        s?.type ?? "text",
+        drawType:    s?.drawType ?? undefined,
+        nodes:       Array.isArray(s?.nodes) ? s.nodes : undefined,
+        arrows:      Array.isArray(s?.arrows) ? s.arrows : undefined,
         payload:     s?.payload ?? {},
       }));
       const narration: string = data.narrationScript ?? newSteps.map((s) => `${s.title}: ${s.description}`).join(" ");
@@ -247,6 +250,28 @@ export default function WhiteboardPanel({
       setSteps(newSteps);
       setNarrationScript(narration);
       setAudioBlob(null);
+
+      // Fetch OpenAI TTS for the narration so useAIVoice becomes true
+      if (narration && !data.aiDisabled) {
+        fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ script: narration.slice(0, 3000), voice: "alloy", format: "mp3", return: "json" }),
+        })
+          .then((r) => r.json())
+          .then((tts) => {
+            if (tts?.audioBase64 && !tts?.useBrowserSpeech) {
+              const mime = tts.mimeType || "audio/mpeg";
+              const bin = atob(tts.audioBase64);
+              const arr = new Uint8Array(bin.length);
+              for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+              const blob = new Blob([arr], { type: mime });
+              setAudioBlob(blob);
+              console.log("[WHITEBOARD_TTS_READY]", { narrationChars: narration.length, mimeType: mime });
+            }
+          })
+          .catch((err) => console.warn("[WHITEBOARD_TTS_ERROR]", err));
+      }
 
       console.log("[WHITEBOARD_DIAGRAM_STEPS_READY]", {
         page: currentPage ?? null,

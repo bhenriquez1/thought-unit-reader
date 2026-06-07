@@ -15,6 +15,7 @@ import {
   type SpeechSegment,
 } from "@/lib/speech/studySpeechEngine";
 import { normalizeFormulasForSpeech } from "@/lib/speech/formulaNormalization";
+import { normalizeDropCaps } from "@/lib/insights/cleanActivePageText";
 
 // ── Sentence splitter ────────────────────────────────────────────────────────
 const ABBREV_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Mrs|Ms|Prof|et\s+al|etc|approx|dept|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec|St|Avg|avg|max|min)\.\s*$/i;
@@ -150,7 +151,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
       // 3. Merge short heading-like chunks (< 30 chars, no terminal punct) forward
       //    so "Concept 2.1." attaches to the sentence that follows it.
       const ABBREV_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Ms|Prof|et\s+al|etc|approx|dept|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.\s*$/i;
-      const raw = activePageText.split(/(?<=[.!?…])\s+/);
+      const raw = normalizeDropCaps(activePageText).split(/(?<=[.!?…])\s+/);
       const merged: string[] = [];
       for (const chunk of raw) {
         const t = chunk.trim();
