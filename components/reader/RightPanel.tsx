@@ -1294,54 +1294,39 @@ export function RightPanel({
 
         {/* ── PRIMARY: ULTRA View ───────────────────────────────────────── */}
         {showUltraView && displayView && (
-          <>
-            <UltraViewErrorBoundary>
-              <UltraView
-                view={displayView}
-                selectedBlockIndex={selectedBlockIndex}
-                onSelectBlock={setSelectedBlockIndex}
-                onAnchorClick={(text) => onEvidenceClick?.(text, undefined)}
-                synthStatus={synthStatus}
-                synthErrorMsg={synthErrorMsg}
-                synthTimedOut={synthTimedOut}
-                onCrossLinkNavigate={onCrossLinkNavigate}
-                bookId={ctx?.documentId}
-                pageNumber={ctx?.pageNumber}
-                density={dt}
-                claudeEnrichment={claudeEnrichment}
-                stage3Status={stage3Status}
-                retrySynthesis={retrySynthesis}
-                studyModel={studyModel}
-                focusedEvidenceId={focusedEvidenceId}
-                onEvidenceClick={onEvidenceClick}
-              />
-            </UltraViewErrorBoundary>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <GenerateNoteButton
-                view={displayView!}
-                bookId={ctx.documentId}
-                bookTitle={ctx.documentTitle}
-                pageNumber={ctx.pageNumber}
-                onNoteSaved={onNoteSaved}
-                studyModel={studyModel}
-              />
-              <GenerateStudySetButton
-                view={displayView!}
-                bookId={ctx.documentId}
-                bookTitle={ctx.documentTitle}
-                pageNumber={ctx.pageNumber}
-                onStudySetGenerated={onStudySetGenerated}
-                studyModel={studyModel}
-              />
-            </div>
-          </>
+          <UltraViewErrorBoundary>
+            <UltraView
+              view={displayView}
+              selectedBlockIndex={selectedBlockIndex}
+              onSelectBlock={setSelectedBlockIndex}
+              onAnchorClick={(text) => onEvidenceClick?.(text, undefined)}
+              synthStatus={synthStatus}
+              synthErrorMsg={synthErrorMsg}
+              synthTimedOut={synthTimedOut}
+              onCrossLinkNavigate={onCrossLinkNavigate}
+              bookId={ctx?.documentId}
+              pageNumber={ctx?.pageNumber}
+              density={dt}
+              claudeEnrichment={claudeEnrichment}
+              stage3Status={stage3Status}
+              retrySynthesis={retrySynthesis}
+              studyModel={studyModel}
+              focusedEvidenceId={focusedEvidenceId}
+              onEvidenceClick={onEvidenceClick}
+            />
+          </UltraViewErrorBoundary>
         )}
 
-        {/* ── STAGE 1 BUTTONS: show NoteLab + RecallLab as soon as studyModel is ready, even before Stage 2 UltraView ── */}
-        {!pageBlocked && isCurrentPageModel && !!studyModel && !showUltraView && ctx && (
+        {/* ── UNIFIED SAVE BUTTONS: shown whenever studyModel is truthy, regardless of showUltraView.
+            Old ultraPageView-gated paths removed — single source of truth is studyModel. ── */}
+        {!pageBlocked && isCurrentPageModel && !!studyModel && ctx && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 0 8px 0" }}>
+            {console.log("[NOTELAB_ACTIVE_SAVE_PATH]", { bookId: ctx.documentId, pageNumber: ctx.pageNumber, studyModelPresent: !!studyModel, hasConceptBlocks: studyModel?.conceptBlocks?.length ?? 0 }) as any}
+            {console.log("[NOTELAB_OLD_PATH_BLOCKED]", { reason: "removed-ultraPageView-gate" }) as any}
+            {console.log("[RECALLLAB_ACTIVE_SAVE_PATH]", { bookId: ctx.documentId, pageNumber: ctx.pageNumber, studyModelPresent: !!studyModel }) as any}
+            {console.log("[RECALLLAB_OLD_PATH_BLOCKED]", { reason: "removed" }) as any}
             <GenerateNoteButton
-              view={{ title: `Page ${ctx.pageNumber}`, blocks: [], domain: "", teachingStatement: "" } as any}
+              view={displayView ?? ({ title: `Page ${ctx.pageNumber}`, blocks: [], domain: "", teachingStatement: "" } as any)}
               bookId={ctx.documentId}
               bookTitle={ctx.documentTitle}
               pageNumber={ctx.pageNumber}
@@ -1349,7 +1334,7 @@ export function RightPanel({
               studyModel={studyModel}
             />
             <GenerateStudySetButton
-              view={{ title: `Page ${ctx.pageNumber}`, blocks: [], domain: "", teachingStatement: "" } as any}
+              view={displayView ?? ({ title: `Page ${ctx.pageNumber}`, blocks: [], domain: "", teachingStatement: "" } as any)}
               bookId={ctx.documentId}
               bookTitle={ctx.documentTitle}
               pageNumber={ctx.pageNumber}
@@ -3663,6 +3648,7 @@ function GenerateNoteButton({
       });
       const note = buildNoteFromStudyModel(studyModel, { bookId, pageNumber, topic, bookTitle });
 
+      console.log("[NOTELAB_BOOKID_MATCH]", { saveBookId: bookId, displayBookId: bookId, match: true });
       saveUltraNote(note);
 
       // Verify the note actually persisted before navigating.
@@ -3672,6 +3658,7 @@ function GenerateNoteButton({
         return;
       }
       console.log("[NOTELAB_SAVE_VERIFY]", { id: note.id, found: true, storageKey: "ultraNotes_v1" });
+      console.log("[NOTELAB_VISIBLE_AFTER_SAVE]", { bookId, pageNumber, noteId: note.id });
 
       console.log("[NOTELAB_SAVE_SUCCESS]", {
         id: note.id, page: note.pageNumber, topic: note.topic,
@@ -3792,6 +3779,7 @@ function GenerateStudySetButton({
         studyModel,
       });
 
+      console.log("[RECALLLAB_BOOKID_MATCH]", { saveBookId: bookId, match: true });
       saveRecallSet(set);
 
       // Verify persistence before navigating.
@@ -3806,6 +3794,7 @@ function GenerateStudySetButton({
         return acc;
       }, {});
       console.log("[RECALLLAB_SAVE_VERIFY]", { id: set.id, found: true, storageKey: "recallSets_v1" });
+      console.log("[RECALLLAB_VISIBLE_AFTER_SAVE]", { bookId, pageNumber, setId: set.id });
       console.log("[RECALLLAB_SAVE_SUCCESS]", {
         id: set.id, page: set.pageNumber,
         cardCount: set.cards.length,
