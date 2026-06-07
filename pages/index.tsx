@@ -2086,28 +2086,9 @@ export default function ThoughtUnitReader() {
         }
       }, 500); // Wait for outline extraction to complete first
 
-      // Whiteboard auto-detect
-      const matches = detectWhiteboardSections(parsedUnits);
-      if (autoWhiteboard && matches.length > 0) {
-        const firstIdx = matches[0];
-
-        const conceptText =
-          unitToString((parsedUnits as any[])[firstIdx]) || normalized[firstIdx]?.text || "";
-
-        lastDetectedUnitRef.current = conceptText;
-
-        const contextTitle =
-          chapters?.[Math.min(firstIdx, Math.max(0, chapters.length - 1))]?.title ||
-          chapters?.[0]?.title ||
-          "Detected diagram/formula";
-
-        setWbConcept(truncate(conceptText, 600));
-        setWbContext(contextTitle);
-        setWbStickyNotes([]);
-        setShowWhiteboardPanel(true);
-      } else {
-        setShowWhiteboardPanel(false);
-      }
+      // Whiteboard auto-detect — legacy concept seeding removed; source is now Study Model only
+      console.log("[WHITEBOARD_LEGACY_BLOCKED]", { reason: "detectWhiteboardSections disabled — study model is source" });
+      setShowWhiteboardPanel(false);
 
       // ✅ Success - clear loading state
       setPdfParsingState({
@@ -2989,16 +2970,8 @@ export default function ThoughtUnitReader() {
         unitIndex: unit 
       }, reason === 'SCROLL' ? 'pdf' : 'manual');
       
-      // Auto-whiteboard trigger
-      if (autoWhiteboard) {
-        const seed = conceptForPage(page, thoughtUnits, pdfPageCount);
-        if (seed) {
-          setWbConcept(truncate(seed, 600));
-          const title = titleForPage(tableOfContents, page);
-          setWbContext(title);
-          setShowWhiteboardPanel(true);
-        }
-      }
+      // Auto-whiteboard trigger — legacy concept seeding removed; study model is source
+      console.log("[WHITEBOARD_LEGACY_BLOCKED]", { reason: "conceptForPage disabled on page nav — study model is source", page });
       
       console.log(`📄 Navigation successful: page ${page}, unit ${unit}`);
       
@@ -3883,17 +3856,9 @@ export default function ThoughtUnitReader() {
           {!showWhiteboardPanel && (
             <button
               onClick={() => {
+                console.log("[WHITEBOARD_LEGACY_BLOCKED]", { reason: "FAB conceptForPage seeding removed — study model is source", page: currentPage });
+                console.log("[WHITEBOARD_CLEAR_STALE]", { page: currentPage, hasStudyModel: !!currentPageStudyModel });
                 setShowWhiteboardPanel(true);
-                if (!wbConcept && thoughtUnits.length > 0) {
-                  const currentConcept = conceptForPage(currentPage, thoughtUnits, pdfPageCount);
-                  if (currentConcept) {
-                    setWbConcept(truncate(currentConcept, 600));
-                    setWbContext(titleForPage(tableOfContents, currentPage));
-                  } else {
-                    setWbConcept("Current page content");
-                    setWbContext(`Page ${currentPage}`);
-                  }
-                }
               }}
               className="text-white p-3 rounded-2xl shadow-lg backdrop-blur-xl border border-white/20 transition-all transform hover:-translate-y-0.5 active:scale-95 duration-150 bg-[rgba(30,40,70,0.55)] hover:bg-[rgba(60,80,140,0.7)]"
               title="Open Whiteboard Explanation"
@@ -4111,7 +4076,17 @@ export default function ThoughtUnitReader() {
               </button>
             </div>
             <div className="flex-1 overflow-auto p-5">
+              {(console.log("[WHITEBOARD_SOURCE]", {
+                page: currentPage,
+                bookId,
+                hasStudyModel: !!currentPageStudyModel,
+                pageThesis: currentPageStudyModel?.pageThesis?.slice(0, 60) ?? null,
+                hasKeyMechanism: !!currentPageStudyModel?.studyNotes?.keyMechanism,
+                conceptBlockCount: currentPageStudyModel?.conceptBlocks?.length ?? 0,
+                pageTextChars: (pageTextByPage.get(`${bookId}:${currentPage}`) ?? "").length,
+              }) as any) && null}
               <WhiteboardPanel
+                key={`wb-${bookId ?? "book"}-p${currentPage}`}
                 concept={currentPageStudyModel?.pageThesis ?? ""}
                 context={currentPageStudyModel?.studyNotes?.keyMechanism ?? ""}
                 studyModel={currentPageStudyModel as any}

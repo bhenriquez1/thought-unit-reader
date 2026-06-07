@@ -50,17 +50,28 @@ function detectSubjectHint(text: string): Subject {
 }
 
 function subjectDrawingStyle(subject: Subject): string {
+  const base = "Draw like a teacher at a whiteboard — simple lines, colored arrows, labeled boxes. Mechanisms first. No text slides.";
   switch (subject) {
-    case "biology":     return "Draw labeled biological diagrams: cells, organelles, pathways, cycles. Use arrows for processes and flows.";
-    case "dentistry":   return "Draw labeled dental/oral anatomy diagrams: tooth cross-sections, jaw structures, procedure steps.";
-    case "medicine":    return "Draw clinical diagrams: anatomy cross-sections, pathways, mechanism-of-action flowcharts, symptom→treatment trees.";
-    case "chemistry":   return "Draw structural formulas, reaction arrows, electron orbitals, energy diagrams, and pH scales.";
-    case "physics":     return "Draw free-body diagrams, circuit schematics, wave forms, vector arrows, and field lines.";
-    case "mathematics": return "Draw number lines, coordinate planes, geometric proofs, function graphs, and step-by-step equation work.";
-    case "law":         return "Draw flowcharts for legal reasoning: rule → elements → analysis → conclusion. Show precedent trees.";
-    case "cs":          return "Draw flowcharts, data-structure diagrams (stacks, trees, graphs), UML, or pseudocode step breakdowns.";
-    case "history":     return "Draw timelines, maps with annotations, cause-and-effect chains, and political/social hierarchy trees.";
-    default:            return "Draw clear diagrams with labeled parts, arrows for relationships, and a simple 2–4 element layout.";
+    case "biology":
+      return base + " Biology: draw cell/organ diagrams with labeled arrows showing cause→effect pathways. Show molecule → reaction → product chains. Use flow diagrams for cycles (e.g. ATP synthesis, cell cycle). Colored arrows show direction of process.";
+    case "dentistry":
+      return base + " Dental: draw tooth cross-section diagrams (enamel/dentin/pulp/root layers) with labels and arrows. Show retention/support relationships with directional arrows. Draw procedure steps as numbered flow steps. Show before→after for clinical scenarios.";
+    case "medicine":
+      return base + " Medicine: draw symptom→mechanism→treatment flow trees. Show pathophysiology chains (pathogen → tissue damage → clinical sign). Draw anatomy cross-sections with labeled structures and arrow pointing to affected area. Use flow diagrams for diagnosis algorithms.";
+    case "chemistry":
+      return base + " Chemistry: draw reaction arrows showing electron flow, structural formula transformations, energy diagrams (reactants → transition state → products). Show orbital shapes where relevant.";
+    case "physics":
+      return base + " Physics: draw free-body diagrams with labeled force arrows, circuit schematics with component labels, wave forms with amplitude/period labeled, field lines with direction arrows.";
+    case "mathematics":
+      return base + " Math: draw coordinate axes with plotted sequence/function points. Show convergence by plotting terms approaching a limit line. Draw geometric proofs with labeled vertices. For each step of a derivation, show the transformation as a flow: equation → operation → result.";
+    case "law":
+      return base + " Law: draw rule→elements→analysis→conclusion flowcharts. Show how facts satisfy each element. Use comparison columns for competing arguments.";
+    case "cs":
+      return base + " CS: draw data structure diagrams (nodes, pointers, stacks), algorithm flowcharts with decision diamonds, or system architecture boxes with labeled arrows.";
+    case "history":
+      return base + " History: draw cause→effect chains with labeled arrows, timelines with key events, political/social hierarchy trees.";
+    default:
+      return base + " Use labeled boxes connected by arrows. Mechanisms first — show cause→effect. Add a comparison step if two things are contrasted.";
   }
 }
 
@@ -192,7 +203,8 @@ export default async function handler(
       : "";
 
     const system = [
-      "You are a universal visual teaching engine. Produce a whiteboard animation plan as strict JSON:",
+      "You are a visual teaching engine in the style of Armando Hasudungan — you draw to teach, not write to explain.",
+      "Produce a whiteboard animation plan as strict JSON:",
       '{ "steps":[{',
       '  "title": string, "content": string,',
       '  "type": "text"|"draw"|"erase"|"image",',
@@ -202,15 +214,17 @@ export default async function handler(
       '  "payload"?: {"text"?: string, "prompt"?: string, "anchorId"?: string|null, "sourceField"?: string|null}',
       '}], "narrationScript": string }',
       "Rules:",
-      "- 3–5 teaching steps. Each step has a single clear teaching action.",
-      "- Do NOT invent new concepts — only visualize what is already in the study model below.",
-      "- For 'draw' steps set drawType and provide nodes/arrows: " + drawStyle,
-      "  flow/anatomy: nodes are process steps/parts, arrows connect them in order.",
-      "  comparison: exactly 2 nodes (the two entities being compared).",
-      "  table: alternating key-value nodes (term, definition, term, definition...).",
-      "  graph: data-point nodes with labels 'x=N, y=V' (at least 5 points) plus optional 'L=VALUE' limit node." + mathGraphInstructions,
-      "- Set anchorId/sourceField to the matching ANCHOR ID from model context if one exists; else null.",
-      "- narrationScript: a single fluent paragraph narrating all steps for text-to-speech.",
+      "- 3–5 steps. Each step draws ONE teaching idea — mechanism, relationship, or comparison.",
+      "- DRAW, do not write paragraphs. Use type 'draw' with drawType + nodes/arrows for every step that teaches a process or structure.",
+      "- Do NOT invent concepts — only visualize what is in the study model below.",
+      "- Mechanisms first: step 1 should always show the core cause→effect chain.",
+      "- Drawing styles: " + drawStyle,
+      "  flow/anatomy: nodes=process steps or anatomical parts, arrows=direction of process/signal.",
+      "  comparison: exactly 2 nodes (what is contrasted). Use for misconception vs. reality.",
+      "  table: alternating term/definition nodes. Use for vocabulary or classification.",
+      "  graph: nodes are data points labeled 'x=N, y=V' (minimum 5 points). Include 'L=VALUE' node if there is a limit." + mathGraphInstructions,
+      "- Set anchorId/sourceField to matching ANCHOR ID from model context if available; else null.",
+      "- narrationScript: one fluent paragraph the teacher speaks while drawing — conversational, not formal.",
     ].join(" ");
 
     const user = [
