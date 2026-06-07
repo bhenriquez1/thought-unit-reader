@@ -126,6 +126,10 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   const [playState, setPlayState] = useState<PlayState>("idle");
   const [errorMsg, setErrorMsg]   = useState<string | null>(null);
 
+  // Eye Guide: tracks the snippet currently being spoken
+  const [eyeText, setEyeText]   = useState<string | null>(null);
+  const [eyeRole, setEyeRole]   = useState<string | null>(null);
+
   // Active audio element ref — so we can stop/pause
   const audioRef   = useRef<HTMLAudioElement | null>(null);
   const blobUrlRef = useRef<string | null>(null);
@@ -221,6 +225,8 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
     }
     providerRef.current = null;
     setPlayState("idle");
+    setEyeText(null);
+    setEyeRole(null);
   }
 
   useEffect(() => () => stopAudio(), []);
@@ -317,6 +323,8 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
       const text = naturalizeSpeech(formulaToSpeech(fNorm)).slice(0, 500);
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: text.length, preview: text.slice(0, 60) });
       setSegIdx(i);
+      setEyeText(raw.slice(0, 160));
+      setEyeRole("fullPage");
 
       console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: text.length, totalSentences: sentences.length });
       onSnippetFocus?.(raw);
@@ -356,6 +364,8 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
       setSegIdx(i);
 
       console.log("[SPEECH_SEGMENT_START]", { segIdx: i, id: seg.id, evidenceRefId: seg.evidenceRefId, charCount: seg.text.length, role: seg.role });
+      setEyeText(seg.text.slice(0, 160));
+      setEyeRole(seg.role ?? "highlights");
       if (seg.evidenceRefId) {
         console.log("[SPEECH_SEGMENT_FOCUS]", { evidenceRefId: seg.evidenceRefId, segIdx: i, totalSegs: segs.length, source: "speech-highlights-mode" });
         console.log("[LEFT_PANEL_FOCUS_EVIDENCE]", { evidenceRefId: seg.evidenceRefId, segIdx: i, source: "speech-segment" });
@@ -470,6 +480,8 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
       const seg = segsToPlay[i];
       setSegIdx(i);
 
+      setEyeText(seg.text.slice(0, 160));
+      setEyeRole(seg.role ?? mode);
       if (seg.evidenceRefId) {
         onEvidenceFocus?.(seg.evidenceRefId);
         console.log("[SPEECH_EYE_FOCUS]", {
@@ -526,6 +538,8 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
     console.log("[SPEECH_STOP_USER]", { mode, segIdx, playState });
     stopAudio();
     setSegIdx(0);
+    setEyeText(null);
+    setEyeRole(null);
     onEvidenceFocus?.(null);
   }
 
@@ -539,6 +553,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
 
   return (
     <div style={{ borderRadius: 12, border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)", overflow: "hidden" }}>
+      <style>{`@keyframes eyePulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.3;transform:scale(0.7)} }`}</style>
       {/* Header */}
       <button
         type="button"
@@ -620,6 +635,24 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
           {errorMsg && (
             <p style={{ fontSize: 11, color: "#fca5a5", margin: 0 }}>⚠ {errorMsg}</p>
           )}
+
+          {/* Eye Guide — shows the sentence currently being read */}
+          {(isPlaying || isLoading) && eyeText && (() => {
+            const ec = eyeRole ? (ROLE_COLOR[eyeRole] ?? ROLE_COLOR.thesis) : ROLE_COLOR.thesis;
+            return (
+              <div style={{ borderRadius: 8, border: `1px solid ${ec.border}`, background: ec.bg, padding: "7px 10px", display: "flex", flexDirection: "column", gap: 3 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: ec.text, boxShadow: `0 0 6px ${ec.text}`, animation: "eyePulse 1.2s ease-in-out infinite" }} />
+                  <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.07em", color: ec.text, textTransform: "uppercase" }}>
+                    {eyeRole === "fullPage" ? "Full Page" : eyeRole ?? "Reading"}
+                  </span>
+                </div>
+                <p style={{ margin: 0, fontSize: 11, color: "#cbd5e1", lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const }}>
+                  {eyeText}
+                </p>
+              </div>
+            );
+          })()}
 
           {/* Segment list */}
           {segments.length > 0 && (
