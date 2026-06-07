@@ -828,6 +828,153 @@ export default function Whiteboard({
     ctx.restore();
   }
 
+  // ── History timeline ─────────────────────────────────────────────────────────
+  // Horizontal axis with events alternating above/below, colored dots, dashed leaders.
+  function drawTimeline(
+    ctx: CanvasRenderingContext2D,
+    nodes: Array<{ id: string; label: string; nx?: number; ny?: number }>,
+    _arrows: Array<{ from: string; to: string; label?: string }>,
+    p: number
+  ) {
+    if (!nodes.length) return;
+    const TL_Y  = CANVAS_H / 2 + 10;
+    const TL_X1 = PADDING_X + 30;
+    const TL_X2 = CANVAS_W - PADDING_X - 30;
+    const TL_W  = TL_X2 - TL_X1;
+    const alpha = easeOutCubic(p);
+
+    // Axis line reveals left→right
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = "#374151";
+    ctx.lineWidth   = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(TL_X1, TL_Y);
+    ctx.lineTo(TL_X1 + TL_W * Math.min(p * 1.3, 1), TL_Y);
+    ctx.stroke();
+    if (p > 0.75) {
+      ctx.fillStyle = "#374151";
+      ctx.beginPath();
+      ctx.moveTo(TL_X2 + 8, TL_Y);
+      ctx.lineTo(TL_X2 - 6, TL_Y - 5);
+      ctx.lineTo(TL_X2 - 6, TL_Y + 5);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+
+    const visibleNodes = Math.max(1, Math.ceil(nodes.length * Math.max(p, 0.15)));
+    nodes.slice(0, visibleNodes).forEach((n, i) => {
+      const x      = TL_X1 + (nodes.length > 1 ? (i / (nodes.length - 1)) * TL_W : TL_W / 2);
+      const above  = i % 2 === 0;
+      const labelCY = TL_Y + (above ? -58 : 58);
+      const na     = easeOutCubic(clamp(p * nodes.length - i, 0, 1));
+      const color  = MARKER[i % MARKER.length];
+
+      ctx.save();
+      ctx.globalAlpha = na;
+      // Tick
+      ctx.strokeStyle = color; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x, TL_Y - 7); ctx.lineTo(x, TL_Y + 7); ctx.stroke();
+      // Dot
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(x, TL_Y, 5, 0, Math.PI * 2); ctx.fill();
+      // Dashed leader
+      ctx.strokeStyle = color; ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x, above ? TL_Y - 8 : TL_Y + 8);
+      ctx.lineTo(x, above ? labelCY + 10 : labelCY - 10);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Label word-wrap
+      ctx.font = "bold 11px Georgia, serif";
+      const words = n.label.split(/\s+/);
+      const lines: string[] = [];
+      let cur = "";
+      for (const w of words) {
+        const test = cur ? `${cur} ${w}` : w;
+        if (ctx.measureText(test).width > 90 && cur) { lines.push(cur); cur = w; }
+        else cur = test;
+      }
+      if (cur) lines.push(cur);
+      ctx.fillStyle = color; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      lines.forEach((l, li) => ctx.fillText(l, x, labelCY + li * 14 - ((lines.length - 1) * 7)));
+      ctx.restore();
+    });
+  }
+
+  // ── Biology cycle (circular flow) ────────────────────────────────────────────
+  // Nodes placed in a ring; curved arrows connecting each step around the cycle.
+  function drawCycleDiagram(
+    ctx: CanvasRenderingContext2D,
+    nodes: Array<{ id: string; label: string; nx?: number; ny?: number }>,
+    arrows: Array<{ from: string; to: string; label?: string }>,
+    p: number
+  ) {
+    if (!nodes.length) return;
+    const CX = CANVAS_W / 2, CY = CANVAS_H / 2 + 8;
+    const RADIUS = 148, NW = 108, NH = 40;
+
+    const pos: Record<string, { cx: number; cy: number }> = {};
+    nodes.forEach((n, i) => {
+      if (n.nx != null && n.ny != null) {
+        pos[n.id] = { cx: n.nx * CANVAS_W, cy: n.ny * CANVAS_H };
+      } else {
+        const angle = (i / nodes.length) * Math.PI * 2 - Math.PI / 2;
+        pos[n.id] = { cx: CX + RADIUS * Math.cos(angle), cy: CY + RADIUS * Math.sin(angle) };
+      }
+    });
+
+    const visibleNodes = Math.max(1, Math.ceil(nodes.length * Math.max(p, 0.15)));
+    const arrowList = arrows.length > 0 ? arrows :
+      nodes.map((n, i) => ({ from: n.id, to: nodes[(i + 1) % nodes.length].id, label: undefined as string | undefined }));
+
+    arrowList.forEach((a, ai) => {
+      const from = pos[a.from], to = pos[a.to];
+      if (!from || !to) return;
+      const fromIdx = nodes.findIndex(n => n.id === a.from);
+      if (fromIdx + 1 > visibleNodes) return;
+      const ap    = easeOutCubic(clamp(p * nodes.length - ai, 0, 1));
+      const color = MARKER[ai % MARKER.length];
+      const midX  = (from.cx + to.cx) / 2, midY = (from.cy + to.cy) / 2;
+      const cpX   = CX + (midX - CX) * 1.5, cpY = CY + (midY - CY) * 1.5;
+      ctx.save();
+      ctx.globalAlpha = ap;
+      ctx.strokeStyle = color; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(from.cx, from.cy); ctx.quadraticCurveTo(cpX, cpY, to.cx, to.cy); ctx.stroke();
+      const angle = Math.atan2(to.cy - cpY, to.cx - cpX), hs = 10;
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.moveTo(to.cx, to.cy);
+      ctx.lineTo(to.cx - hs * Math.cos(angle - 0.38), to.cy - hs * Math.sin(angle - 0.38));
+      ctx.lineTo(to.cx - hs * Math.cos(angle + 0.38), to.cy - hs * Math.sin(angle + 0.38));
+      ctx.closePath(); ctx.fill();
+      if (a.label) {
+        ctx.font = "10px Georgia, serif"; ctx.fillStyle = color; ctx.textAlign = "center";
+        ctx.fillText(a.label, midX + (cpX - midX) * 0.4, midY + (cpY - midY) * 0.4 - 7);
+      }
+      ctx.restore();
+    });
+
+    nodes.slice(0, visibleNodes).forEach((n, i) => {
+      const { cx, cy } = pos[n.id];
+      const na    = easeOutCubic(clamp(p * nodes.length - i, 0, 1));
+      const color = MARKER[i % MARKER.length];
+      ctx.save(); ctx.globalAlpha = na;
+      drawRoundedRect(ctx, cx - NW / 2, cy - NH / 2, NW, NH, 8, `${color}1a`, color, 2);
+      ctx.font = "bold 12px Georgia, serif"; ctx.fillStyle = color;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      const words = n.label.split(/\s+/); let line = ""; const lines: string[] = [];
+      for (const w of words) {
+        const test = line ? `${line} ${w}` : w;
+        if (ctx.measureText(test).width > NW - 12 && line) { lines.push(line); line = w; } else line = test;
+      }
+      if (line) lines.push(line);
+      lines.forEach((l, li) => ctx.fillText(l, cx, cy + li * 15 - ((lines.length - 1) * 7.5)));
+      ctx.restore();
+    });
+  }
+
   // ── Anatomy / medicine sketch ────────────────────────────────────────────────
   // Central oval (main concept) with labeled arrows radiating to surrounding structures.
   // Uses nx/ny node positions if set; otherwise places nodes in a radial pattern.
@@ -976,6 +1123,10 @@ export default function Whiteboard({
 
     if (drawType === "anatomy") {
       drawAnatomySketch(ctx, stepNodes ?? [], stepArrows ?? [], diagP);
+    } else if (drawType === "cycle") {
+      drawCycleDiagram(ctx, stepNodes ?? [], stepArrows ?? [], diagP);
+    } else if (drawType === "timeline") {
+      drawTimeline(ctx, stepNodes ?? [], stepArrows ?? [], diagP);
     } else if (drawType === "flow") {
       drawFlowDiagram(ctx, stepNodes ?? [], stepArrows ?? [], diagP);
     } else if (drawType === "comparison") {

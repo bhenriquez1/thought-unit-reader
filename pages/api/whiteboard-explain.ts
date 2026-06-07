@@ -20,7 +20,7 @@ type Step = {
   title: string;
   content: string;
   type?: "text" | "draw" | "erase" | "image";
-  drawType?: "flow" | "anatomy" | "comparison" | "table" | "graph" | "equation" | "timeline";
+  drawType?: "flow" | "anatomy" | "comparison" | "table" | "graph" | "equation" | "timeline" | "cycle";
   nodes?: DiagramNode[];
   arrows?: DiagramArrow[];
   payload?: StepPayload;
@@ -29,49 +29,63 @@ type Step = {
 type Ok  = { steps: Step[]; narrationScript: string; aiDisabled?: boolean };
 type Err = { error: string; aiDisabled?: boolean };
 
-/* ─── Subject detection ──────────────────────────────────────────────────── */
+/* ─── Whiteboard mode derivation ────────────────────────────────────────────── */
 
-type Subject =
-  | "biology" | "chemistry" | "physics" | "mathematics"
-  | "dentistry" | "medicine" | "law" | "cs" | "history" | "general";
+type WhiteboardMode =
+  | "anatomyClinical"   // medicine, dentistry, anatomy, pharmacology
+  | "biologyPathway"    // biology, physiology, genetics, biochem pathways
+  | "chemistryReaction" // chemistry, molecular/ionic reactions
+  | "mathGraph"         // calculus, algebra, statistics, discrete math
+  | "physicsSystem"     // physics — forces, circuits, waves
+  | "historyTimeline"   // history, social science, political science
+  | "businessFramework" // business, finance, marketing, economics
+  | "textArgument"      // literature, philosophy, rhetoric, reading
+  | "genericTutor";     // fallback
 
-function detectSubjectHint(text: string): Subject {
+function deriveWhiteboardMode(text: string): WhiteboardMode {
   const t = text.toLowerCase();
-  if (/\b(cell|protein|dna|rna|gene|enzyme|atp|mitosis|meiosis|membrane|neuron|receptor|synapse|hormone|bacteria|virus|organ|tissue)\b/.test(t)) return "biology";
-  if (/\b(molar|tooth|teeth|periodon|pulp|enamel|dentin|gingiv|caries|occlus|endodon|orthodon|implant|crown|root canal)\b/.test(t)) return "dentistry";
-  if (/\b(diagnosis|symptom|treatment|pathology|clinical|patient|disease|disorder|syndrome|anatomy|physiology|pharmacology|drug|dose)\b/.test(t)) return "medicine";
-  if (/\b(molecule|atom|bond|reaction|element|compound|oxidation|reduction|equilibrium|acid|base|pH|catalyst|entropy|enthalpy|orbital)\b/.test(t)) return "chemistry";
-  if (/\b(force|energy|momentum|velocity|acceleration|mass|gravity|electric|magnetic|wave|frequency|quantum|photon|electron|circuit)\b/.test(t)) return "physics";
-  if (/\b(integral|derivative|matrix|vector|theorem|proof|equation|polynomial|function|limit|convergence|probability|statistics)\b/.test(t)) return "mathematics";
-  if (/\b(statute|law|court|constitution|jurisdiction|contract|tort|liability|plaintiff|defendant|precedent|holding|ruling)\b/.test(t)) return "law";
-  if (/\b(algorithm|complexity|function|class|object|api|database|network|protocol|compiler|runtime|memory|thread|stack)\b/.test(t)) return "cs";
-  if (/\b(century|war|empire|dynasty|revolution|treaty|civilization|colony|parliament|monarchy|republic|election|movement)\b/.test(t)) return "history";
-  return "general";
+  // Dentistry/clinical (test before medicine — more specific terms)
+  if (/\b(molar|tooth|teeth|periodon|pulp|enamel|dentin|gingiv|caries|occlus|endodon|orthodon|implant|crown|root canal|periodont)\b/.test(t)) return "anatomyClinical";
+  // Medicine/anatomy/pharmacology
+  if (/\b(diagnosis|symptom|treatment|pathology|clinical|patient|disease|disorder|syndrome|anatomy|histology|pharmacol|drug|dose|mechanism of action|receptor|signaling)\b/.test(t)) return "anatomyClinical";
+  // Biology/physiology/genetics
+  if (/\b(cell|protein|dna|rna|gene|enzyme|atp|mitosis|meiosis|membrane|neuron|synapse|hormone|bacteria|virus|pathway|krebs|glycolysis|metabolism|genetics|chromosome|ecosystem)\b/.test(t)) return "biologyPathway";
+  // Chemistry
+  if (/\b(molecule|atom|bond|reaction|element|compound|oxidation|reduction|equilibrium|acid|base|pH|catalyst|entropy|enthalpy|orbital|electron|mole|stoichiometry|titration)\b/.test(t)) return "chemistryReaction";
+  // Physics
+  if (/\b(force|momentum|velocity|acceleration|gravity|electric field|magnetic|photon|circuit|torque|friction|wave|frequency|quantum|thermodynamics|optics)\b/.test(t)) return "physicsSystem";
+  // Math (after physics since "energy" appears in both)
+  if (/\b(integral|derivative|limit|series|sequence|convergence|divergence|matrix|theorem|proof|polynomial|calculus|algebra|trigonometry|probability|distribution|statistics|regression)\b/.test(t)) return "mathGraph";
+  // History/social science
+  if (/\b(century|war|empire|dynasty|revolution|treaty|civilization|colony|parliament|monarchy|republic|election|movement|social|political)\b/.test(t)) return "historyTimeline";
+  // Business/finance
+  if (/\b(market|revenue|profit|cost|strategy|management|supply|demand|price|competition|stakeholder|budget|invest|finance|economics|gdp|inflation)\b/.test(t)) return "businessFramework";
+  // Literature/philosophy/reading
+  if (/\b(theme|argument|thesis|evidence|narrative|character|symbol|metaphor|analysis|claim|rhetoric|philosophy|genre|setting|plot)\b/.test(t)) return "textArgument";
+  return "genericTutor";
 }
 
-function subjectDrawingStyle(subject: Subject): string {
-  const base = "Draw like a medical professor at a teaching board — colored-marker style, thick curved arrows, labeled structures. Show mechanisms first. No text slides. Background feels like warm paper.";
-  switch (subject) {
-    case "biology":
-      return base + " Biology: use 'anatomy' drawType — central organelle/cell as oval, arrows radiating to labeled components. Show cause→effect chains with bold colored arrows. Use 'flow' for cycle steps (e.g. ATP synthesis stages). Set nx/ny coordinates for organic radial placement.";
-    case "dentistry":
-      return base + " Dental: use 'anatomy' drawType — central tooth/jaw oval, labeled arrows to enamel/dentin/pulp/root/PDL. Each arrow color represents a different tissue layer. Show clinical significance with arrows. Use 'flow' for procedure steps (prep→impression→delivery).";
-    case "medicine":
-      return base + " Medicine: use 'anatomy' drawType — central pathology/organ oval, arrows to mechanism nodes (etiology, pathophysiology, clinical sign, treatment). Use 'flow' for diagnosis algorithms. Each node one concept. Bold arrows show cause→consequence direction.";
-    case "chemistry":
-      return base + " Chemistry: use 'flow' for reaction steps (reactant→catalyst→product). Arrows show electron movement. For energy diagrams use 'graph' with reactants/TS/products as y-values. Label orbital shapes in node text.";
-    case "physics":
-      return base + " Physics: use 'anatomy' for force diagrams (central object, force arrows as nodes). Use 'graph' for wave/field plots. Use 'flow' for derivation chains (equation→operation→result).";
-    case "mathematics":
-      return base + " Math: use 'graph' drawType with ≥5 nodes labeled 'x=N, y=V' (or 'n=N, a=V'). Add 'L=VALUE' node for limits. Use 'flow' for proof/derivation steps.";
-    case "law":
-      return base + " Law: use 'flow' — rule→elements→analysis→conclusion. Use 'comparison' for two competing rules or arguments.";
-    case "cs":
-      return base + " CS: use 'anatomy' for system architecture (central component, arrows to subsystems). Use 'flow' for algorithm steps. Use 'table' for complexity/operation comparisons.";
-    case "history":
-      return base + " History: use 'flow' for cause→effect chains with labeled arrows. Use 'comparison' for two sides of a conflict or debate.";
+function modeDrawingStyle(mode: WhiteboardMode): string {
+  const base = "Teach visually. Use simple hand-drawn-style diagrams, thick colored arrows, labels, and minimal text. Current page Study Model only. No legacy/fallback content.";
+  switch (mode) {
+    case "anatomyClinical":
+      return base + " MODE: anatomyClinical. Draw body structures, teeth, tissues, or disease process. Use 'anatomy' drawType — central structure/organ as root oval, surround with labeled arrows to components (enamel, pulp, PDL, nerve, vessel) or disease process nodes (etiology→pathophysiology→clinical sign→treatment). Set nx/ny for organic radial placement. Use 'flow' for procedure or algorithm steps.";
+    case "biologyPathway":
+      return base + " MODE: biologyPathway. Draw pathways, cell processes, organ systems, or cause→effect chains. Use 'cycle' drawType for circular/repeating processes (Krebs, cell cycle, ATP synthesis). Use 'flow' for linear pathways (signal→receptor→response). Use 'anatomy' for organ/cell structure with labeled parts.";
+    case "chemistryReaction":
+      return base + " MODE: chemistryReaction. Draw reactions, bonds, and molecular transformations. Use 'flow' for reaction steps (reactant + reagent → product, label arrows with conditions: heat, catalyst, pH). Use 'graph' for energy diagrams (y=energy, x=reaction coordinate; plot reactants, TS, products). Use 'comparison' for reactants vs products or acid/base pairs.";
+    case "mathGraph":
+      return base + " MODE: mathGraph. Use 'graph' drawType with ≥5 nodes labeled 'x=N, y=V' (or 'n=N, a=V'). Include 'L=VALUE' node for limits. Use 'flow' for proof or derivation chains (equation → operation → simplified result). Use 'table' for definitions or properties.";
+    case "physicsSystem":
+      return base + " MODE: physicsSystem. Use 'anatomy' for force diagrams (central object as root, forces as surrounding nodes with magnitude labels). Use 'graph' for wave, field, or motion plots (y=quantity, x=time or position). Use 'flow' for derivation chains or circuit analysis steps.";
+    case "historyTimeline":
+      return base + " MODE: historyTimeline. Use 'timeline' drawType — nodes are events in chronological order, label = brief event + date. Arrow labels = 'causes', 'leads to', 'triggers'. Use 'comparison' for two-sides debates or before/after scenarios. Use 'flow' for cause→effect chains.";
+    case "businessFramework":
+      return base + " MODE: businessFramework. Use 'flow' for process chains or funnels (awareness→interest→decision→action). Use 'comparison' for cost/benefit, pros/cons, or two strategies. Use 'table' for frameworks (SWOT: S/W/O/T as alternating nodes). Use 'anatomy' for system maps with a central entity and stakeholder arrows.";
+    case "textArgument":
+      return base + " MODE: textArgument. Use 'anatomy' drawType — central thesis as root node, surrounding nodes are evidence/claims, outer nodes are implications. Use 'comparison' for two opposing interpretations or arguments. Use 'flow' for claim→evidence→warrant reasoning chains.";
     default:
-      return base + " Use 'anatomy' drawType with central concept oval and labeled arrows to components. Mechanisms first — show cause→effect. Add a comparison step if two things contrast.";
+      return base + " MODE: genericTutor. Use 'anatomy' for any concept with components, 'flow' for any process, 'comparison' for any contrast, 'graph' for any data or function.";
   }
 }
 
@@ -194,22 +208,18 @@ export default async function handler(
     }
 
     const allText   = [concept, context, pageText, studyModel?.pageThesis ?? ""].join(" ");
-    const subject   = detectSubjectHint(allText);
-    const drawStyle = subjectDrawingStyle(subject);
+    const mode      = deriveWhiteboardMode(allText);
+    const drawStyle = modeDrawingStyle(mode);
     const modelCtx  = buildModelContext(studyModel);
-
-    const mathGraphInstructions = subject === "mathematics"
-      ? ' For sequences/series/functions use drawType "graph" with ≥5 nodes whose labels are "x=N, y=V" (or "n=N, a=V") data points plus an optional "L=VALUE" node for the limit.'
-      : "";
 
     const system = [
       "You are a visual teaching engine — you draw to teach, not write to explain.",
-      "Avrrio style: colored-pencil educational board. Thick curved arrows, labeled anatomical structures, cause→effect. No generic text slides.",
+      "Avrrio style: colored-pencil educational board. Thick curved arrows, labeled structures, cause→effect. No generic text slides.",
       "Produce a whiteboard animation plan as strict JSON:",
       '{ "steps":[{',
       '  "title": string, "content": string,',
       '  "type": "text"|"draw"|"erase"|"image",',
-      '  "drawType"?: "flow"|"anatomy"|"comparison"|"table"|"graph"|"equation"|"timeline",',
+      '  "drawType"?: "flow"|"anatomy"|"comparison"|"table"|"graph"|"timeline"|"cycle",',
       '  "nodes"?: [{"id": string, "label": string, "nx"?: number, "ny"?: number}],',
       '  "arrows"?: [{"from": string, "to": string, "label"?: string}],',
       '  "payload"?: {"text"?: string, "prompt"?: string, "anchorId"?: string|null, "sourceField"?: string|null}',
@@ -219,12 +229,14 @@ export default async function handler(
       "- DRAW, do not write paragraphs. Use type 'draw' with drawType + nodes/arrows for every step.",
       "- Do NOT invent concepts — only visualize what is in the study model below.",
       "- Mechanisms first: step 1 shows the core cause→effect or structure→function relationship.",
-      "- Drawing styles: " + drawStyle,
-      "  anatomy: central concept as root node (first in array); surrounding nodes are components/effects. Set nx/ny (0.0–1.0 fractions of canvas) for organic radial placement — avoid straight horizontal lines.",
-      "  flow: horizontal or vertical process chain. arrows connect sequential steps.",
-      "  comparison: exactly 2 nodes (contrasted concepts). Use for misconception vs. reality.",
-      "  table: alternating term/definition nodes. Use for vocabulary or classification.",
-      "  graph: nodes are data points labeled 'x=N, y=V' (minimum 5 points). Include 'L=VALUE' node if there is a limit." + mathGraphInstructions,
+      "- " + drawStyle,
+      "  anatomy: root node first; set nx/ny (0.0–1.0 fractions) for organic radial layout — NO straight horizontal lines.",
+      "  flow: linear process chain — arrows connect sequential steps.",
+      "  cycle: circular repeating process — nodes placed in a ring, arrows connect each step to next, last to first.",
+      "  comparison: exactly 2 nodes (contrasted items).",
+      "  table: alternating term/definition pairs.",
+      "  graph: data points labeled 'x=N, y=V' (min 5). Add 'L=VALUE' for limits.",
+      "  timeline: chronological events — node label = event + date. Arrows = causal relationship.",
       "- Arrow labels: 1–3 words max (e.g. 'causes', 'leads to', 'inhibits').",
       "- Set anchorId/sourceField to matching ANCHOR ID from model context if available; else null.",
       "- narrationScript: one fluent paragraph the teacher speaks while drawing — conversational, not formal.",
@@ -276,7 +288,7 @@ export default async function handler(
     try {
       const j   = JSON.parse(rawContent || "{}");
       const arr = Array.isArray(j.steps) ? j.steps : [];
-      const VALID_DRAW_TYPES = ["flow", "anatomy", "comparison", "table", "graph", "equation", "timeline"];
+      const VALID_DRAW_TYPES = ["flow", "anatomy", "comparison", "table", "graph", "equation", "timeline", "cycle"];
       steps = arr
         .map((s: any) => ({
           title:    String(s?.title   ?? "").trim(),
@@ -308,7 +320,7 @@ export default async function handler(
       narrationScript = steps.map((s) => `${s.title}: ${s.content}`).join("\n");
     }
 
-    console.log("[WHITEBOARD_OPENAI_DIAGRAM]", { subject, stepCount: steps.length, hasNarration: !!narrationScript });
+    console.log("[WHITEBOARD_OPENAI_DIAGRAM]", { mode, stepCount: steps.length, hasNarration: !!narrationScript });
 
     return res.status(200).json({ steps, narrationScript });
 
