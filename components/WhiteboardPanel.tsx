@@ -87,9 +87,9 @@ export default function WhiteboardPanel({
 
   // ✨ UX niceties (animation, zoom, cues)
   const [isOpen, setIsOpen] = useState(true);
-  const [zoom, setZoom] = useState(0.95); // not “too zoomed” by default
+  const [zoom, setZoom] = useState(0.95); // not "too zoomed" by default
   const [justGenerated, setJustGenerated] = useState(false); // brief glow when new steps land
-  const [justDetected, setJustDetected] = useState(false);   // shows “Diagram detected” pill
+  const [justDetected, setJustDetected] = useState(false);   // shows "Diagram detected" pill
   const [pulseExplain, setPulseExplain] = useState(false);   // pulse the button briefly when auto
   const [showDetectedChip, setShowDetectedChip] = useState(false); // your original chip (auto-refresh)
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -273,6 +273,13 @@ export default function WhiteboardPanel({
           .catch((err) => console.warn("[WHITEBOARD_TTS_ERROR]", err));
       }
 
+      console.log("[WHITEBOARD_PLAN_CREATED]", {
+        page: currentPage ?? null,
+        stepCount: newSteps.length,
+        drawTypes: newSteps.map((s) => (s as any).drawType ?? "text"),
+        aiDisabled: data.aiDisabled ?? false,
+      });
+
       console.log("[WHITEBOARD_DIAGRAM_STEPS_READY]", {
         page: currentPage ?? null,
         stepCount: newSteps.length,
@@ -304,6 +311,14 @@ export default function WhiteboardPanel({
   /** Auto-trigger once on mount when studyModel is available, or when autoTrigger is set */
   useEffect(() => {
     const shouldTrigger = studyModel ? !!studyModel : (autoTrigger && !!effectiveConcept && !!effectiveContext);
+    if (studyModel) {
+      console.log("[WHITEBOARD_STUDY_MODEL_READY]", {
+        page: currentPage ?? null,
+        hasThesis: !!(studyModel as any).pageThesis,
+        hasKeyMechanism: !!(studyModel as any).studyNotes?.keyMechanism,
+        conceptBlockCount: (studyModel as any).conceptBlocks?.length ?? 0,
+      });
+    }
     if (!shouldTrigger) return;
     setJustDetected(true);
     setPulseExplain(true);
@@ -316,6 +331,15 @@ export default function WhiteboardPanel({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // mount-only — studyModel/pageText changes are handled by page navigation remount
+
+  /** Clear this panel's cache key from memCache on unmount (page changed → new key prop → remount) */
+  useEffect(() => {
+    return () => {
+      memCache.delete(cacheKey);
+      console.log("[WHITEBOARD_CLEAR_STALE]", { cacheKey, page: currentPage ?? null });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** Auto re-explain when page changes (debounced + heuristic) */
   useEffect(() => {
@@ -371,7 +395,7 @@ export default function WhiteboardPanel({
         >
           {/* Header / Controls */}
           <div className="flex items-center gap-2 flex-wrap relative">
-            {/* “Diagram detected” pill (auto-trigger cue) */}
+            {/* "Diagram detected" pill (auto-trigger cue) */}
             <AnimatePresence>
               {justDetected && (
                 <motion.div
@@ -403,7 +427,7 @@ export default function WhiteboardPanel({
                 transition={{ duration: 1.2, ease: "easeOut" }}
                 className="inline-block rounded"
               >
-                <Button onClick={handleExplainConcept} disabled={loading || !effectiveConcept}>
+                <Button onClick={handleExplainConcept} disabled={loading || (!effectiveConcept && !studyModel)}>
                   {loading ? "Generating..." : "🎓 Explain with Whiteboard"}
                 </Button>
               </motion.div>
@@ -511,7 +535,11 @@ export default function WhiteboardPanel({
             </motion.div>
           ) : (
             <div className="text-sm text-gray-300/90 border border-dashed border-gray-700 rounded-lg p-3">
-              {loading ? "Preparing whiteboard…" : "Click “Explain with Whiteboard” to generate."}
+              {loading
+                ? "Preparing whiteboard…"
+                : !studyModel && !effectiveConcept
+                ? "⏳ Whiteboard waiting for current page study model."
+                : "Click 'Explain with Whiteboard' to generate."}
             </div>
           )}
 
