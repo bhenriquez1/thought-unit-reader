@@ -24,6 +24,7 @@ type Step = {
   nodes?: DiagramNode[];
   arrows?: DiagramArrow[];
   payload?: StepPayload;
+  objects?: string[];
 };
 
 type Ok  = { steps: Step[]; narrationScript: string; aiDisabled?: boolean };
@@ -223,7 +224,8 @@ export default async function handler(
       '  "nodes"?: [{"id": string, "label": string, "nx"?: number, "ny"?: number}],',
       '  "arrows"?: [{"from": string, "to": string, "label"?: string}],',
       '  "payload"?: {"text"?: string, "prompt"?: string, "anchorId"?: string|null, "sourceField"?: string|null}',
-      '}], "narrationScript": string }',
+      '  "objects"?: string[] // one or more of: sketch, arrow, label, equation, graph, tooth, organ, pathway',
+      '}], "visualDrawingPlan": {"title": string, "narration": string}, "narrationScript": string }',
       "Rules:",
       "- 3–5 steps. Each step draws ONE teaching idea — mechanism, relationship, or comparison.",
       "- DRAW, do not write paragraphs. Use type 'draw' with drawType + nodes/arrows for every step.",
@@ -239,6 +241,7 @@ export default async function handler(
       "  timeline: chronological events — node label = event + date. Arrows = causal relationship.",
       "- Arrow labels: 1–3 words max (e.g. 'causes', 'leads to', 'inhibits').",
       "- Set anchorId/sourceField to matching ANCHOR ID from model context if available; else null.",
+      "- objects: list the visual object types used in this step (e.g. [\"sketch\",\"arrow\"] for anatomy, [\"equation\",\"graph\"] for math, [\"tooth\",\"label\"] for dental).",
       "- narrationScript: one fluent paragraph the teacher speaks while drawing — conversational, not formal.",
     ].join(" ");
 
@@ -298,6 +301,7 @@ export default async function handler(
           nodes:    Array.isArray(s?.nodes) ? s.nodes : undefined,
           arrows:   Array.isArray(s?.arrows) ? s.arrows : undefined,
           payload:  s?.payload ?? {},
+          objects:  Array.isArray(s?.objects) ? s.objects.map(String) : [],
         }))
         .filter((s: Step) => s.title || s.content)
         .slice(0, 6);
@@ -320,7 +324,7 @@ export default async function handler(
       narrationScript = steps.map((s) => `${s.title}: ${s.content}`).join("\n");
     }
 
-    console.log("[WHITEBOARD_OPENAI_DIAGRAM]", { mode, stepCount: steps.length, hasNarration: !!narrationScript });
+    console.log("[WHITEBOARD_OPENAI_DIAGRAM]", { mode, stepCount: steps.length, hasNarration: !!narrationScript, hasObjects: steps[0]?.objects?.length ?? 0 });
 
     return res.status(200).json({ steps, narrationScript });
 

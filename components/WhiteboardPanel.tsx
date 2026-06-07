@@ -102,14 +102,19 @@ export default function WhiteboardPanel({
 
   /** Build stable cache key */
   const cacheKey = useMemo(() => {
+    const sm = studyModel as any;
+    const smKey = sm
+      ? hashString([sm.pageThesis ?? "", sm.studyNotes?.keyMechanism ?? "", (sm.conceptBlocks?.length ?? 0).toString()].join("|"))
+      : "no-model";
     const base = JSON.stringify({
       lessonId: lessonId || lessonTitle || "lesson",
       page: currentPage || 0,
       cHash: hashString(effectiveConcept),
       xHash: hashString(effectiveContext),
+      smKey,
     });
     return `wb:${hashString(base)}`;
-  }, [lessonId, lessonTitle, currentPage, effectiveConcept, effectiveContext]);
+  }, [lessonId, lessonTitle, currentPage, effectiveConcept, effectiveContext, studyModel]);
 
   /** Convert a data: URL back to Blob */
   function dataUrlToBlob(dataUrl: string): Blob {
@@ -213,6 +218,7 @@ export default function WhiteboardPanel({
     lastCallTsRef.current = now;
 
     // cache first
+    console.log("[WHITEBOARD_CACHE_KEY]", { cacheKey, page: currentPage ?? null, hasModel: !!studyModel });
     if (tryCache()) return;
 
     console.log("[WHITEBOARD_OPENAI_SOURCE]", {

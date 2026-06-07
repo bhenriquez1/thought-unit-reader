@@ -80,6 +80,11 @@ function buildSpeechText(
 
 function naturalizeSpeech(text: string): string {
   let out = text;
+  // OCR drop-cap artifacts: standalone capital + space + rest of word → merge
+  out = out.replace(/(?<![A-Za-z])([A-HJ-Z]) ([a-z]{2,})(?![a-z])/g, (_, letter, rest) => letter + rest);
+  // Ligature normalization
+  out = out.replace(/ﬁ/g, "fi").replace(/ﬂ/g, "fl").replace(/ﬀ/g, "ff").replace(/ﬃ/g, "ffi").replace(/ﬄ/g, "ffl");
+  out = out.replace(/­/g, ""); // soft hyphen
   out = out.replace(/\s*;\s*/g, ", ");
   out = out.replace(/\s*:\s*/g, " — ");
   out = out.replace(/\(\s*/g, ", ");
@@ -90,6 +95,7 @@ function naturalizeSpeech(text: string): string {
   out = out.replace(/\bi\.e\.\s*/gi, "that is, ");
   out = out.replace(/\bvs\.\s*/gi, "versus ");
   out = out.replace(/\bFig\.\s*(\d)/gi, "Figure $1");
+  out = out.replace(/\bet\s+al\.\s*/gi, "and colleagues ");
   out = out.replace(/[ \t]{2,}/g, " ").trim();
   return out;
 }
@@ -271,9 +277,16 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
       return;
     }
     providerRef.current = "browser";
-    const utt = new SpeechSynthesisUtterance(text);
-    utt.rate  = speed;
-    utt.onstart = () => { console.log("[SPEECH_AUDIO_PLAY]", { source: "browser", charCount: text.length }); setPlayState("playing"); };
+    // Normalize for browser TTS: replace period-space with comma-space to shorten
+    // inter-sentence pauses (browser SpeechSynthesis adds ~800ms at each period).
+    const normalized = text
+      .replace(/\.\s+/g, ", ")
+      .replace(/[!?]\s+/g, ", ")
+      .replace(/,\s*,/g, ",")
+      .trim();
+    const utt = new SpeechSynthesisUtterance(normalized);
+    utt.rate  = Math.min(speed * 1.05, 1.8); // slight boost since pauses are reduced
+    utt.onstart = () => { console.log("[SPEECH_AUDIO_PLAY]", { source: "browser", charCount: normalized.length }); setPlayState("playing"); };
     utt.onend   = () => { console.log("[SPEECH_AUDIO_END]", { source: "browser" }); setPlayState("idle"); onDone?.(); };
     utt.onerror = (e) => {
       // "canceled" fires when speechSynthesis.cancel() is called intentionally — not an error
