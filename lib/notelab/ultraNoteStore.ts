@@ -77,9 +77,63 @@ export interface UltraNote {
   highlightAnchors?: Array<{ text: string; anchorType: string; reason: string }>;
 }
 
-const STORAGE_KEY = "ultraNotes_v1";
+const STORAGE_KEY     = "ultraNotes_v1";
+const STORAGE_IDB_KEY = "ultraNotes_in_idb";
+const IDB_NAME        = "avrrio_notes_v1";
+const IDB_STORE       = "notes";
 
-function loadAll(): UltraNote[] {
+// ── IndexedDB helpers ─────────────────────────────────────────────────────────
+
+function openNotesIDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function saveNotesToIDB(notes: UltraNote[]): Promise<void> {
+  const db = await openNotesIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put(JSON.stringify(notes), "all");
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror    = () => { db.close(); reject(tx.error); };
+  });
+}
+
+async function loadNotesFromIDB(): Promise<UltraNote[]> {
+  try {
+    const db = await openNotesIDB();
+    return new Promise((resolve) => {
+      const req = db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get("all");
+      req.onsuccess = () => {
+        db.close();
+        try { resolve(JSON.parse(req.result ?? "[]")); } catch { resolve([]); }
+      };
+      req.onerror = () => { db.close(); resolve([]); };
+    });
+  } catch { return []; }
+}
+
+// ── Strip heavy fields that can be re-generated, to keep payloads compact ─────
+
+function compactNote(note: UltraNote): UltraNote {
+  return {
+    ...note,
+    relatedVideoQueries: undefined,               // can be re-generated; saves ~400B/note
+    highlightAnchors:    note.highlightAnchors    // keep type+reason only, not full text spans
+      ?.map(a => ({ text: a.text.slice(0, 40), anchorType: a.anchorType, reason: a.reason }))
+      .slice(0, 6),
+    miniTest:            note.miniTest?.slice(0, 4),
+    externalStudyLinks:  note.externalStudyLinks?.slice(0, 3),
+  };
+}
+
+// ── Core load/save ────────────────────────────────────────────────────────────
+
+function loadFromLS(): UltraNote[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -91,48 +145,59 @@ function loadAll(): UltraNote[] {
   }
 }
 
-function saveAll(notes: UltraNote[]): void {
+async function saveAll(notes: UltraNote[]): Promise<void> {
   if (typeof window === "undefined") throw new Error("saveAll called outside browser");
+  const compact    = notes.map(compactNote);
+  const serialized = JSON.stringify(compact);
+  console.log("[NOTELAB_PAYLOAD_SIZE]", { count: compact.length, bytes: serialized.length, kb: Math.round(serialized.length / 1024) });
   try {
-    const serialized = JSON.stringify(notes);
     localStorage.setItem(STORAGE_KEY, serialized);
-    const verify = localStorage.getItem(STORAGE_KEY);
-    console.log("[NOTE_LS_COUNT]", {
-      key: STORAGE_KEY,
-      writtenCount: notes.length,
-      verifiedBytes: verify?.length ?? 0,
-      verifiedCount: verify ? (JSON.parse(verify) as UltraNote[]).length : 0,
-    });
+    localStorage.removeItem(STORAGE_IDB_KEY);
     window.dispatchEvent(new Event("note-lab-updated"));
-  } catch (err) {
-    console.error("[NOTELAB_SAVE_ERROR]", { stage: "localStorage.setItem", error: String(err) });
-    throw err;
+  } catch (lsErr) {
+    console.error("[NOTELAB_SAVE_LOCALSTORAGE_FAIL]", { bytes: serialized.length, error: String(lsErr) });
+    try {
+      await saveNotesToIDB(compact);
+      localStorage.setItem(STORAGE_IDB_KEY, "1");
+      console.log("[NOTELAB_SAVE_INDEXEDDB_SUCCESS]", { count: compact.length });
+      window.dispatchEvent(new Event("note-lab-updated"));
+    } catch (idbErr) {
+      console.error("[NOTELAB_SAVE_ERROR]", { stage: "indexedDB", error: String(idbErr) });
+      throw lsErr;
+    }
   }
 }
 
 export function getAllUltraNotes(): UltraNote[] {
-  return loadAll();
+  return loadFromLS();
+}
+
+export async function getAllUltraNotesWithFallback(): Promise<UltraNote[]> {
+  const ls = loadFromLS();
+  if (ls.length > 0) return ls;
+  if (typeof window !== "undefined" && localStorage.getItem(STORAGE_IDB_KEY) === "1") {
+    return loadNotesFromIDB();
+  }
+  return [];
 }
 
 export function getNotesByBook(bookId: string): UltraNote[] {
-  return loadAll().filter((n) => n.bookId === bookId);
+  return loadFromLS().filter((n) => n.bookId === bookId);
 }
 
-export function saveUltraNote(note: UltraNote): void {
-  const notes = loadAll();
-  // Replace if same book + page already has a note
+export async function saveUltraNote(note: UltraNote): Promise<void> {
+  const notes = loadFromLS();
   const idx = notes.findIndex((n) => n.bookId === note.bookId && n.pageNumber === note.pageNumber);
   if (idx >= 0) {
     notes[idx] = note;
   } else {
     notes.unshift(note);
   }
-  // Keep latest 200 notes
-  saveAll(notes.slice(0, 200));
+  await saveAll(notes.slice(0, 200));
 }
 
-export function deleteUltraNote(id: string): void {
-  saveAll(loadAll().filter((n) => n.id !== id));
+export async function deleteUltraNote(id: string): Promise<void> {
+  await saveAll(loadFromLS().filter((n) => n.id !== id));
 }
 
 export function buildUltraNote(

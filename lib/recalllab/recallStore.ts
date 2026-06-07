@@ -33,9 +33,65 @@ export interface RecallSet {
   sourceNoteId?: string;
 }
 
-const STORAGE_KEY = "recallSets_v1";
+const STORAGE_KEY     = "recallSets_v1";
+const STORAGE_IDB_KEY = "recallSets_in_idb";
+const IDB_NAME        = "avrrio_recall_v1";
+const IDB_STORE       = "sets";
 
-function loadAll(): RecallSet[] {
+// ── IndexedDB helpers ─────────────────────────────────────────────────────────
+
+function openRecallIDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function saveSetsToIDB(sets: RecallSet[]): Promise<void> {
+  const db = await openRecallIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put(JSON.stringify(sets), "all");
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror    = () => { db.close(); reject(tx.error); };
+  });
+}
+
+async function loadSetsFromIDB(): Promise<RecallSet[]> {
+  try {
+    const db = await openRecallIDB();
+    return new Promise((resolve) => {
+      const req = db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get("all");
+      req.onsuccess = () => {
+        db.close();
+        try { resolve(JSON.parse(req.result ?? "[]")); } catch { resolve([]); }
+      };
+      req.onerror = () => { db.close(); resolve([]); };
+    });
+  } catch { return []; }
+}
+
+// ── Compact card payloads before storage ──────────────────────────────────────
+
+function compactSet(set: RecallSet): RecallSet {
+  return {
+    ...set,
+    cards: set.cards
+      .slice(0, 25)
+      .map(c => ({
+        ...c,
+        front: c.front.slice(0, 200),
+        back:  c.back.slice(0, 250),
+        hint:  c.hint?.slice(0, 100),
+      })),
+  };
+}
+
+// ── Core load/save ────────────────────────────────────────────────────────────
+
+function loadFromLS(): RecallSet[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -47,51 +103,63 @@ function loadAll(): RecallSet[] {
   }
 }
 
-function saveAll(sets: RecallSet[]): void {
+async function saveAll(sets: RecallSet[]): Promise<void> {
   if (typeof window === "undefined") throw new Error("saveAll called outside browser");
+  const compact    = sets.map(compactSet);
+  const serialized = JSON.stringify(compact);
+  console.log("[RECALLLAB_PAYLOAD_SIZE]", { count: compact.length, bytes: serialized.length, kb: Math.round(serialized.length / 1024) });
   try {
-    const serialized = JSON.stringify(sets);
     localStorage.setItem(STORAGE_KEY, serialized);
-    const verify = localStorage.getItem(STORAGE_KEY);
-    console.log("[RECALL_LS_COUNT]", {
-      key: STORAGE_KEY,
-      writtenCount: sets.length,
-      verifiedBytes: verify?.length ?? 0,
-      verifiedCount: verify ? (JSON.parse(verify) as RecallSet[]).length : 0,
-    });
+    localStorage.removeItem(STORAGE_IDB_KEY);
     window.dispatchEvent(new Event("recall-lab-updated"));
-    console.log("[RECALL_EVENT_DISPATCHED]", { setCount: sets.length });
-  } catch (err) {
-    console.error("[RECALLLAB_SAVE_ERROR]", { stage: "localStorage.setItem", error: String(err) });
-    throw err;
+  } catch (lsErr) {
+    console.error("[RECALLLAB_SAVE_LOCALSTORAGE_FAIL]", { bytes: serialized.length, error: String(lsErr) });
+    try {
+      await saveSetsToIDB(compact);
+      localStorage.setItem(STORAGE_IDB_KEY, "1");
+      console.log("[RECALLLAB_SAVE_INDEXEDDB_SUCCESS]", { count: compact.length });
+      window.dispatchEvent(new Event("recall-lab-updated"));
+    } catch (idbErr) {
+      console.error("[RECALLLAB_SAVE_ERROR]", { stage: "indexedDB", error: String(idbErr) });
+      throw lsErr;
+    }
   }
 }
 
 export function getAllRecallSets(): RecallSet[] {
-  return loadAll();
+  return loadFromLS();
+}
+
+export async function getAllRecallSetsWithFallback(): Promise<RecallSet[]> {
+  const ls = loadFromLS();
+  if (ls.length > 0) return ls;
+  if (typeof window !== "undefined" && localStorage.getItem(STORAGE_IDB_KEY) === "1") {
+    return loadSetsFromIDB();
+  }
+  return [];
 }
 
 export function getRecallSetsByBook(bookId: string): RecallSet[] {
-  return loadAll().filter((s) => s.bookId === bookId);
+  return loadFromLS().filter((s) => s.bookId === bookId);
 }
 
-export function saveRecallSet(set: RecallSet): void {
-  const sets = loadAll();
+export async function saveRecallSet(set: RecallSet): Promise<void> {
+  const sets = loadFromLS();
   const idx = sets.findIndex((s) => s.bookId === set.bookId && s.pageNumber === set.pageNumber);
   if (idx >= 0) {
     sets[idx] = set;
   } else {
     sets.unshift(set);
   }
-  saveAll(sets.slice(0, 300));
+  await saveAll(sets.slice(0, 300));
 }
 
-export function deleteRecallSet(id: string): void {
-  saveAll(loadAll().filter((s) => s.id !== id));
+export async function deleteRecallSet(id: string): Promise<void> {
+  await saveAll(loadFromLS().filter((s) => s.id !== id));
 }
 
-export function updateCardDifficulty(setId: string, cardId: string, difficulty: CardDifficulty): void {
-  const sets = loadAll();
+export async function updateCardDifficulty(setId: string, cardId: string, difficulty: CardDifficulty): Promise<void> {
+  const sets = loadFromLS();
   const set = sets.find((s) => s.id === setId);
   if (!set) return;
   const card = set.cards.find((c) => c.id === cardId);
@@ -99,7 +167,7 @@ export function updateCardDifficulty(setId: string, cardId: string, difficulty: 
   card.difficulty = difficulty;
   card.reviewCount = (card.reviewCount ?? 0) + 1;
   card.isMissed = difficulty === "hard";
-  saveAll(sets);
+  await saveAll(sets);
 }
 
 function card(id: string, type: CardType, front: string, back: string, hint?: string): RecallCard {

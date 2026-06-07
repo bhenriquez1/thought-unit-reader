@@ -3624,7 +3624,7 @@ function GenerateNoteButton({
   const [saveError, setSaveError] = useState<string | null>(null);
   const synthReady = !!studyModel;
 
-  function handleGenerate() {
+  async function handleGenerate() {
     console.log("[NOTELAB_NEW_BUTTON_CLICKED]", {
       page: pageNumber,
       hasStudyModel: !!studyModel,
@@ -3664,7 +3664,7 @@ function GenerateNoteButton({
         storageKey:   "ultraNotes_v1",
       });
 
-      saveUltraNote(note);
+      await saveUltraNote(note);
 
       console.log("[NOTELAB_NOTE_CREATED]", {
         id:           note.id,
@@ -3776,7 +3776,7 @@ function GenerateStudySetButton({
 
   const synthReady = !!studyModel;
 
-  function handleGenerate() {
+  async function handleGenerate() {
     console.log("[RECALLLAB_NEW_BUTTON_CLICKED]", {
       page: pageNumber,
       hasStudyModel: !!studyModel,
@@ -3821,7 +3821,7 @@ function GenerateStudySetButton({
         storageKey: "recallSets_v1",
       });
 
-      saveRecallSet(set);
+      await saveRecallSet(set);
 
       console.log("[RECALLLAB_CARDS_CREATED]", {
         id:        set.id,
