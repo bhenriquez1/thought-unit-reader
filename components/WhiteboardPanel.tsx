@@ -521,8 +521,8 @@ export default function WhiteboardPanel({
             >
               {/* The scale wrapper keeps your renderer untouched */}
               <div
-                style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}
-                className="origin-top-left inline-block"
+                style={{ transform: `scale(${zoom})`, transformOrigin: "top left", width: 900 }}
+                className="origin-top-left"
               >
                 <Whiteboard
                   steps={steps}

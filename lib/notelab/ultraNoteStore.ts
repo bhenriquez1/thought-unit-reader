@@ -84,27 +84,37 @@ const IDB_STORE_NAME = "notes";
 const IDB_FLAG_KEY = "ultraNotes_in_idb";
 
 function compact(note: UltraNote): UltraNote {
+  const trim = (s: string | undefined, n: number) => s?.slice(0, n);
   return {
-    ...note,
-    relatedVideoQueries: undefined,
-    highlightAnchors: note.highlightAnchors?.slice(0, 5).map((a) => ({
-      text: a.text.slice(0, 50),
-      anchorType: a.anchorType,
-      reason: a.reason.slice(0, 60),
+    id:          note.id,
+    bookId:      note.bookId,
+    pageNumber:  note.pageNumber,
+    topic:       note.topic.slice(0, 120),
+    coreIdea:    note.coreIdea.slice(0, 300),
+    subject:     note.subject,
+    createdAt:   note.createdAt,
+    concepts:    note.concepts.slice(0, 5).map((c) => ({
+      ordinal:       c.ordinal,
+      title:         c.title.slice(0, 80),
+      pattern:       c.pattern.slice(0, 150),
+      surgicalReason: c.surgicalReason.slice(0, 150),
+      trap:          c.trap.slice(0, 150),
+      rule:          c.rule.slice(0, 150),
     })),
-    miniTest: note.miniTest?.slice(0, 4),
-    externalStudyLinks: note.externalStudyLinks?.slice(0, 3),
-    concepts: note.concepts.slice(0, 8).map((c) => ({
-      ...c,
-      pattern: c.pattern.slice(0, 300),
-      surgicalReason: c.surgicalReason.slice(0, 200),
-      trap: c.trap.slice(0, 200),
-      rule: c.rule.slice(0, 200),
+    memoryShortcuts: [],
+    sections:    note.sections?.slice(0, 5).map((s) => ({
+      label:   s.label.slice(0, 60),
+      content: s.content.slice(0, 300),
     })),
-    sections: note.sections?.slice(0, 8).map((s) => ({
-      label: s.label,
-      content: s.content.slice(0, 500),
-    })),
+    professorNotes: note.professorNotes ? {
+      whyItMatters:    trim(note.professorNotes.whyItMatters,    200),
+      keyMechanism:    trim(note.professorNotes.keyMechanism,    200),
+      commonConfusion: trim(note.professorNotes.commonConfusion, 200),
+      memoryAnchor:    trim(note.professorNotes.memoryAnchor,    200),
+      reasoningFlow:   trim(note.professorNotes.reasoningFlow,   200),
+      examSignal:      trim(note.professorNotes.examSignal,      200),
+    } : undefined,
+    pageThesis: note.pageThesis?.slice(0, 200),
   };
 }
 

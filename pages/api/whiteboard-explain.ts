@@ -198,6 +198,9 @@ export default async function handler(
       return res.status(400).json({ error: "Missing concept/studyModel" });
     }
 
+    if (!process.env.OPENAI_API_KEY) {
+      console.error("[OPENAI_API_KEY_MISSING] Set OPENAI_API_KEY in .env.local");
+    }
     const key = process.env.OPENAI_API_KEY?.trim();
     if (!key) {
       const fb = buildFallbackSteps(concept, context, studyModel);

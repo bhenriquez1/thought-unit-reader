@@ -108,9 +108,15 @@ async function saveAll(sets: RecallSet[]): Promise<void> {
   if (typeof window === "undefined") return;
   const compacted = sets.map(compact);
   const serialized = JSON.stringify(compacted);
-  console.log("[RECALL_SAVE_KEY]", { key: STORAGE_KEY, count: compacted.length, bytes: serialized.length });
+  let toSave = serialized;
+  if (serialized.length > 200000) {
+    const trimmed = compacted.map(s => ({ ...s, cards: s.cards.slice(0, 15).map(c => ({ ...c, front: c.front.slice(0, 120), back: c.back.slice(0, 150) })) }));
+    toSave = JSON.stringify(trimmed);
+    console.warn("[RECALL_TRIM_OVERSIZED]", { originalBytes: serialized.length, trimmedBytes: toSave.length });
+  }
+  console.log("[RECALL_SAVE_KEY]", { key: STORAGE_KEY, count: compacted.length, bytes: toSave.length });
   try {
-    localStorage.setItem(STORAGE_KEY, serialized);
+    localStorage.setItem(STORAGE_KEY, toSave);
     try { localStorage.removeItem(IDB_FLAG_KEY); } catch {}
     console.log("[RECALL_SAVE_SUCCESS]", { key: STORAGE_KEY, count: compacted.length });
     window.dispatchEvent(new Event("recall-lab-updated"));

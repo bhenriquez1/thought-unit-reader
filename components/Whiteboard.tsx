@@ -773,12 +773,7 @@ export default function Whiteboard({
     <div className="flex flex-col items-center gap-4" style={{ width: "100%" }}>
       <div
         className="relative"
-        style={{
-          width: "100%",
-          maxWidth: CANVAS_W,
-          aspectRatio: `${CANVAS_W} / ${CANVAS_H}`,
-          overflow: "hidden",
-        }}
+        style={{ width: CANVAS_W, height: CANVAS_H, overflow: "hidden" }}
       >
         {/* Main whiteboard canvas */}
         <canvas
@@ -786,14 +781,7 @@ export default function Whiteboard({
           width={CANVAS_W}
           height={CANVAS_H}
           className="border rounded bg-white shadow-sm"
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            zIndex: 1,
-          }}
+          style={{ position: "absolute", top: 0, left: 0, zIndex: 1 }}
         />
 
         {/* Interactive drawing canvas overlay */}
@@ -807,8 +795,6 @@ export default function Whiteboard({
               position: "absolute",
               top: 0,
               left: 0,
-              width: "100%",
-              height: "100%",
               zIndex: 2,
               background: "transparent",
               pointerEvents: drawingMode ? "auto" : "none",

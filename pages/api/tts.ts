@@ -81,6 +81,9 @@ function preprocessForBrowserTTS(text: string): string {
 // ---------------------------------------------------------------------------
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (!process.env.OPENAI_API_KEY) {
+    console.error("[OPENAI_API_KEY_MISSING] Set OPENAI_API_KEY in .env.local");
+  }
   // Quick health check
   if (req.method === "HEAD") return res.status(200).end();
 
