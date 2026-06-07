@@ -3682,9 +3682,6 @@ export default function ThoughtUnitReader() {
 
         <div className="flex-1" />
 
-        <div className="inline-flex items-center gap-2 rounded-lg border border-amber-300/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-100">
-          🎨 Whiteboard is under construction
-        </div>
 
         <div className="flex items-center gap-2 rounded-xl border border-white/20 bg-black/20 px-2 py-1">
           <span className="text-[11px] text-slate-300">Reading</span>
