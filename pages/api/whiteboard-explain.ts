@@ -50,28 +50,28 @@ function detectSubjectHint(text: string): Subject {
 }
 
 function subjectDrawingStyle(subject: Subject): string {
-  const base = "Draw like a teacher at a whiteboard — simple lines, colored arrows, labeled boxes. Mechanisms first. No text slides.";
+  const base = "Draw like a medical professor at a teaching board — colored-marker style, thick curved arrows, labeled structures. Show mechanisms first. No text slides. Background feels like warm paper.";
   switch (subject) {
     case "biology":
-      return base + " Biology: draw cell/organ diagrams with labeled arrows showing cause→effect pathways. Show molecule → reaction → product chains. Use flow diagrams for cycles (e.g. ATP synthesis, cell cycle). Colored arrows show direction of process.";
+      return base + " Biology: use 'anatomy' drawType — central organelle/cell as oval, arrows radiating to labeled components. Show cause→effect chains with bold colored arrows. Use 'flow' for cycle steps (e.g. ATP synthesis stages). Set nx/ny coordinates for organic radial placement.";
     case "dentistry":
-      return base + " Dental: draw tooth cross-section diagrams (enamel/dentin/pulp/root layers) with labels and arrows. Show retention/support relationships with directional arrows. Draw procedure steps as numbered flow steps. Show before→after for clinical scenarios.";
+      return base + " Dental: use 'anatomy' drawType — central tooth/jaw oval, labeled arrows to enamel/dentin/pulp/root/PDL. Each arrow color represents a different tissue layer. Show clinical significance with arrows. Use 'flow' for procedure steps (prep→impression→delivery).";
     case "medicine":
-      return base + " Medicine: draw symptom→mechanism→treatment flow trees. Show pathophysiology chains (pathogen → tissue damage → clinical sign). Draw anatomy cross-sections with labeled structures and arrow pointing to affected area. Use flow diagrams for diagnosis algorithms.";
+      return base + " Medicine: use 'anatomy' drawType — central pathology/organ oval, arrows to mechanism nodes (etiology, pathophysiology, clinical sign, treatment). Use 'flow' for diagnosis algorithms. Each node one concept. Bold arrows show cause→consequence direction.";
     case "chemistry":
-      return base + " Chemistry: draw reaction arrows showing electron flow, structural formula transformations, energy diagrams (reactants → transition state → products). Show orbital shapes where relevant.";
+      return base + " Chemistry: use 'flow' for reaction steps (reactant→catalyst→product). Arrows show electron movement. For energy diagrams use 'graph' with reactants/TS/products as y-values. Label orbital shapes in node text.";
     case "physics":
-      return base + " Physics: draw free-body diagrams with labeled force arrows, circuit schematics with component labels, wave forms with amplitude/period labeled, field lines with direction arrows.";
+      return base + " Physics: use 'anatomy' for force diagrams (central object, force arrows as nodes). Use 'graph' for wave/field plots. Use 'flow' for derivation chains (equation→operation→result).";
     case "mathematics":
-      return base + " Math: draw coordinate axes with plotted sequence/function points. Show convergence by plotting terms approaching a limit line. Draw geometric proofs with labeled vertices. For each step of a derivation, show the transformation as a flow: equation → operation → result.";
+      return base + " Math: use 'graph' drawType with ≥5 nodes labeled 'x=N, y=V' (or 'n=N, a=V'). Add 'L=VALUE' node for limits. Use 'flow' for proof/derivation steps.";
     case "law":
-      return base + " Law: draw rule→elements→analysis→conclusion flowcharts. Show how facts satisfy each element. Use comparison columns for competing arguments.";
+      return base + " Law: use 'flow' — rule→elements→analysis→conclusion. Use 'comparison' for two competing rules or arguments.";
     case "cs":
-      return base + " CS: draw data structure diagrams (nodes, pointers, stacks), algorithm flowcharts with decision diamonds, or system architecture boxes with labeled arrows.";
+      return base + " CS: use 'anatomy' for system architecture (central component, arrows to subsystems). Use 'flow' for algorithm steps. Use 'table' for complexity/operation comparisons.";
     case "history":
-      return base + " History: draw cause→effect chains with labeled arrows, timelines with key events, political/social hierarchy trees.";
+      return base + " History: use 'flow' for cause→effect chains with labeled arrows. Use 'comparison' for two sides of a conflict or debate.";
     default:
-      return base + " Use labeled boxes connected by arrows. Mechanisms first — show cause→effect. Add a comparison step if two things are contrasted.";
+      return base + " Use 'anatomy' drawType with central concept oval and labeled arrows to components. Mechanisms first — show cause→effect. Add a comparison step if two things contrast.";
   }
 }
 
@@ -203,7 +203,8 @@ export default async function handler(
       : "";
 
     const system = [
-      "You are a visual teaching engine in the style of Armando Hasudungan — you draw to teach, not write to explain.",
+      "You are a visual teaching engine — you draw to teach, not write to explain.",
+      "Avrrio style: colored-pencil educational board. Thick curved arrows, labeled anatomical structures, cause→effect. No generic text slides.",
       "Produce a whiteboard animation plan as strict JSON:",
       '{ "steps":[{',
       '  "title": string, "content": string,',
@@ -215,14 +216,16 @@ export default async function handler(
       '}], "narrationScript": string }',
       "Rules:",
       "- 3–5 steps. Each step draws ONE teaching idea — mechanism, relationship, or comparison.",
-      "- DRAW, do not write paragraphs. Use type 'draw' with drawType + nodes/arrows for every step that teaches a process or structure.",
+      "- DRAW, do not write paragraphs. Use type 'draw' with drawType + nodes/arrows for every step.",
       "- Do NOT invent concepts — only visualize what is in the study model below.",
-      "- Mechanisms first: step 1 should always show the core cause→effect chain.",
+      "- Mechanisms first: step 1 shows the core cause→effect or structure→function relationship.",
       "- Drawing styles: " + drawStyle,
-      "  flow/anatomy: nodes=process steps or anatomical parts, arrows=direction of process/signal.",
-      "  comparison: exactly 2 nodes (what is contrasted). Use for misconception vs. reality.",
+      "  anatomy: central concept as root node (first in array); surrounding nodes are components/effects. Set nx/ny (0.0–1.0 fractions of canvas) for organic radial placement — avoid straight horizontal lines.",
+      "  flow: horizontal or vertical process chain. arrows connect sequential steps.",
+      "  comparison: exactly 2 nodes (contrasted concepts). Use for misconception vs. reality.",
       "  table: alternating term/definition nodes. Use for vocabulary or classification.",
       "  graph: nodes are data points labeled 'x=N, y=V' (minimum 5 points). Include 'L=VALUE' node if there is a limit." + mathGraphInstructions,
+      "- Arrow labels: 1–3 words max (e.g. 'causes', 'leads to', 'inhibits').",
       "- Set anchorId/sourceField to matching ANCHOR ID from model context if available; else null.",
       "- narrationScript: one fluent paragraph the teacher speaks while drawing — conversational, not formal.",
     ].join(" ");

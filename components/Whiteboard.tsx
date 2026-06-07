@@ -62,9 +62,21 @@ const TITLE_Y = 40;
 const DESC_Y = 80;
 const DESC_LINE_H = 26;
 
-const TITLE_FADE_MS = 450; // fade in title at the start of each step
-const UNDERLINE_MS  = 600; // scribble underline draw time
-const MIN_STEP_MS   = 1200; // minimum step length for animation
+const TITLE_FADE_MS = 450;
+const UNDERLINE_MS  = 600;
+const MIN_STEP_MS   = 1200;
+
+// Colored-pencil palette — medical/dental teaching board
+const MARKER = [
+  "#1d4ed8", // deep blue  — primary concept
+  "#b91c1c", // deep red   — danger / trap
+  "#15803d", // deep green — result / solution
+  "#b45309", // amber      — example / detail
+  "#7c3aed", // purple     — secondary concept
+  "#0369a1", // sky blue   — related
+];
+// Paper-like warm background
+const PAPER_BG = "#fefce8";
 
 /* ------------------------------------------------------------------ */
 /* Component                                                          */
@@ -397,26 +409,75 @@ export default function Whiteboard({
   ) {
     ctx.save();
     ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 2.2;
+    // Slight curve — more hand-drawn feel
+    const mx = (x1 + x2) / 2;
+    const my = (y1 + y2) / 2 - 6;
     ctx.beginPath();
     ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
+    ctx.quadraticCurveTo(mx, my, x2, y2);
     ctx.stroke();
-    // arrowhead
-    const angle = Math.atan2(y2 - y1, x2 - x1);
-    const hs = 9;
+    // Bold arrowhead
+    const angle = Math.atan2(y2 - my, x2 - mx);
+    const hs = 11;
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.moveTo(x2, y2);
-    ctx.lineTo(x2 - hs * Math.cos(angle - 0.35), y2 - hs * Math.sin(angle - 0.35));
-    ctx.lineTo(x2 - hs * Math.cos(angle + 0.35), y2 - hs * Math.sin(angle + 0.35));
+    ctx.lineTo(x2 - hs * Math.cos(angle - 0.38), y2 - hs * Math.sin(angle - 0.38));
+    ctx.lineTo(x2 - hs * Math.cos(angle + 0.38), y2 - hs * Math.sin(angle + 0.38));
     ctx.closePath();
     ctx.fill();
     if (label) {
-      ctx.font = "11px Arial";
+      ctx.font = "bold 11px Georgia, serif";
       ctx.fillStyle = color;
       ctx.textAlign = "center";
-      ctx.fillText(label, (x1 + x2) / 2, (y1 + y2) / 2 - 6);
+      ctx.fillText(label, (x1 + x2) / 2, (y1 + y2) / 2 - 10);
+    }
+    ctx.restore();
+  }
+
+  // Radial anatomy-style arrow from a center point outward to a labeled structure
+  function drawLabeledArrow(
+    ctx: CanvasRenderingContext2D,
+    cx: number, cy: number,
+    tx: number, ty: number,
+    label: string, color: string, p: number
+  ) {
+    const alpha = easeOutCubic(p);
+    // Interpolate tip position based on reveal progress
+    const ex = cx + (tx - cx) * p;
+    const ey = cy + (ty - cy) * p;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // Arrow shaft
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    // Arrowhead at tip
+    if (p > 0.7) {
+      const angle = Math.atan2(ty - cy, tx - cx);
+      const hs = 10;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(ex, ey);
+      ctx.lineTo(ex - hs * Math.cos(angle - 0.4), ey - hs * Math.sin(angle - 0.4));
+      ctx.lineTo(ex - hs * Math.cos(angle + 0.4), ey - hs * Math.sin(angle + 0.4));
+      ctx.closePath();
+      ctx.fill();
+    }
+    // Label — offset outward past the tip
+    if (p > 0.85) {
+      const lx = tx + (tx - cx) / Math.hypot(tx - cx, ty - cy) * 10;
+      const ly = ty + (ty - cy) / Math.hypot(tx - cx, ty - cy) * 10;
+      ctx.font = "bold 12px Georgia, serif";
+      ctx.fillStyle = color;
+      ctx.textAlign = lx < CANVAS_W / 2 ? "right" : "left";
+      ctx.textBaseline = "middle";
+      const lines = label.split(/\s*\/\s*|\s*\n\s*/);
+      lines.forEach((line, i) => ctx.fillText(line, lx, ly + i * 14 - ((lines.length - 1) * 7)));
     }
     ctx.restore();
   }
@@ -480,14 +541,31 @@ export default function Whiteboard({
       drawArrow(ctx, from.cx + NW / 2, from.cy, to.cx - NW / 2, to.cy, "#64748b", a.label);
     });
 
-    // Draw boxes
-    nodes.slice(0, visibleNodes).forEach((n) => {
+    // Draw boxes — colored-marker style, one color per node
+    nodes.slice(0, visibleNodes).forEach((n, idx) => {
       const { cx, cy } = pos[n.id];
       const alpha = clamp(p * nodes.length - nodes.findIndex((nn) => nn.id === n.id), 0, 1);
+      const strokeColor = MARKER[idx % MARKER.length];
+      // Light tint fill from stroke color
       ctx.save();
       ctx.globalAlpha = easeOutCubic(alpha);
-      drawRoundedRect(ctx, cx - NW / 2, cy - NH / 2, NW, NH, 8, "#dbeafe", "#3b82f6", 1.8);
-      drawNodeLabel(ctx, n.label, cx, cy, NW);
+      drawRoundedRect(ctx, cx - NW / 2, cy - NH / 2, NW, NH, 8, `${strokeColor}18`, strokeColor, 2.2);
+      ctx.font = "bold 13px Georgia, serif";
+      ctx.fillStyle = strokeColor;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const words = n.label.split(/\s+/);
+      let line = "";
+      const lines: string[] = [];
+      for (const w of words) {
+        const test = line ? `${line} ${w}` : w;
+        if (ctx.measureText(test).width > NW - 12 && line) { lines.push(line); line = w; }
+        else line = test;
+      }
+      if (line) lines.push(line);
+      const lineH = 16;
+      const startY = cy - ((lines.length - 1) * lineH) / 2;
+      lines.forEach((l, i) => ctx.fillText(l, cx, startY + i * lineH));
       ctx.restore();
     });
   }
@@ -750,6 +828,118 @@ export default function Whiteboard({
     ctx.restore();
   }
 
+  // ── Anatomy / medicine sketch ────────────────────────────────────────────────
+  // Central oval (main concept) with labeled arrows radiating to surrounding structures.
+  // Uses nx/ny node positions if set; otherwise places nodes in a radial pattern.
+  function drawAnatomySketch(
+    ctx: CanvasRenderingContext2D,
+    nodes: Array<{ id: string; label: string; nx?: number; ny?: number }>,
+    arrows: Array<{ from: string; to: string; label?: string }>,
+    p: number
+  ) {
+    if (!nodes.length) return;
+
+    const CX = CANVAS_W / 2;
+    const CY = CANVAS_H / 2 + 10;
+
+    // Identify the "root" node — first node, or the one that arrows mostly originate from
+    const rootId = arrows.length > 0
+      ? (arrows.reduce((acc, a) => { acc[a.from] = (acc[a.from] ?? 0) + 1; return acc; }, {} as Record<string, number>))
+        ? Object.entries(
+            arrows.reduce((acc, a) => { acc[a.from] = (acc[a.from] ?? 0) + 1; return acc; }, {} as Record<string, number>)
+          ).sort((a, b) => b[1] - a[1])[0]?.[0] ?? nodes[0].id
+        : nodes[0].id
+      : nodes[0].id;
+
+    const rootNode   = nodes.find(n => n.id === rootId) ?? nodes[0];
+    const otherNodes = nodes.filter(n => n.id !== rootNode.id);
+
+    // Positions — use nx/ny if set, else radial
+    const pos: Record<string, { cx: number; cy: number }> = {};
+    pos[rootNode.id] = { cx: CX, cy: CY };
+
+    const RADIUS = 155;
+    otherNodes.forEach((n, i) => {
+      if (n.nx != null && n.ny != null) {
+        pos[n.id] = { cx: n.nx * CANVAS_W, cy: n.ny * CANVAS_H };
+      } else {
+        const angle = (i / Math.max(otherNodes.length, 1)) * Math.PI * 2 - Math.PI / 2;
+        pos[n.id] = { cx: CX + RADIUS * Math.cos(angle), cy: CY + RADIUS * Math.sin(angle) };
+      }
+    });
+
+    // Draw arrows first
+    const arrowReveal = Math.max(p, 0);
+    arrows.forEach((a, ai) => {
+      const from = pos[a.from];
+      const to   = pos[a.to];
+      if (!from || !to) return;
+      const ap = clamp(arrowReveal * arrows.length - ai, 0, 1);
+      drawLabeledArrow(ctx, from.cx, from.cy, to.cx, to.cy, a.label ?? "", MARKER[ai % MARKER.length], ap);
+    });
+
+    // Draw root node as oval
+    const rootAlpha = easeOutCubic(Math.min(1, p * 2));
+    ctx.save();
+    ctx.globalAlpha = rootAlpha;
+    ctx.strokeStyle = MARKER[0];
+    ctx.lineWidth   = 2.5;
+    ctx.fillStyle   = `${MARKER[0]}1a`;
+    const RW = 110, RH = 44;
+    ctx.beginPath();
+    ctx.ellipse(CX, CY, RW / 2, RH / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.font        = "bold 13px Georgia, serif";
+    ctx.fillStyle   = MARKER[0];
+    ctx.textAlign   = "center";
+    ctx.textBaseline = "middle";
+    // Word-wrap root label
+    const rWords = rootNode.label.split(/\s+/);
+    let rLine = "";
+    const rLines: string[] = [];
+    for (const w of rWords) {
+      const test = rLine ? `${rLine} ${w}` : w;
+      if (ctx.measureText(test).width > RW - 12 && rLine) { rLines.push(rLine); rLine = w; }
+      else rLine = test;
+    }
+    if (rLine) rLines.push(rLine);
+    rLines.forEach((l, i) => ctx.fillText(l, CX, CY + i * 15 - ((rLines.length - 1) * 7.5)));
+    ctx.restore();
+
+    // Draw surrounding nodes as light labeled circles
+    otherNodes.forEach((n, i) => {
+      const { cx, cy } = pos[n.id];
+      const ni = i + 1;
+      const na = easeOutCubic(clamp(p * (nodes.length) - ni, 0, 1));
+      const color = MARKER[(ni) % MARKER.length];
+      ctx.save();
+      ctx.globalAlpha = na;
+      ctx.fillStyle   = `${color}22`;
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = 1.8;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 28, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.font        = "bold 11px Georgia, serif";
+      ctx.fillStyle   = color;
+      ctx.textAlign   = "center";
+      ctx.textBaseline = "middle";
+      const nWords = n.label.split(/\s+/);
+      let nLine = "";
+      const nLines: string[] = [];
+      for (const w of nWords) {
+        const test = nLine ? `${nLine} ${w}` : w;
+        if (ctx.measureText(test).width > 44 && nLine) { nLines.push(nLine); nLine = w; }
+        else nLine = test;
+      }
+      if (nLine) nLines.push(nLine);
+      nLines.forEach((l, li) => ctx.fillText(l, cx, cy + li * 13 - ((nLines.length - 1) * 6.5)));
+      ctx.restore();
+    });
+  }
+
   // Baseline draw (called every frame)
   const drawStep = (ctx: CanvasRenderingContext2D, progressWithinStep: number) => {
     const canvas = ctx.canvas;
@@ -758,14 +948,14 @@ export default function Whiteboard({
     const stepNodes = (step as any).nodes as Array<{ id: string; label: string; nx?: number; ny?: number }> | undefined;
     const stepArrows = (step as any).arrows as Array<{ from: string; to: string; label?: string }> | undefined;
 
-    // bg
+    // bg — warm paper for diagram steps, clean white for text-only
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = drawType ? "#f8fafc" : "#ffffff";
+    ctx.fillStyle = drawType ? PAPER_BG : "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Title fade-in
     const title = step.title || `Step ${currentStepIndex + 1}`;
-    ctx.font = "bold 22px Arial";
+    ctx.font = "bold 22px Georgia, serif";
     const titleWidth = Math.min(CANVAS_W - 2 * PADDING_X, ctx.measureText(title).width);
 
     const stepMs = stepWindowMs();
@@ -784,7 +974,9 @@ export default function Whiteboard({
     const diagMs = Math.max(MIN_STEP_MS * 0.8, stepMs * 0.85);
     const diagP = isPlaying ? clamp((progressWithinStep * stepMs - 300) / diagMs, 0, 1) : 1;
 
-    if (drawType === "flow" || drawType === "anatomy") {
+    if (drawType === "anatomy") {
+      drawAnatomySketch(ctx, stepNodes ?? [], stepArrows ?? [], diagP);
+    } else if (drawType === "flow") {
       drawFlowDiagram(ctx, stepNodes ?? [], stepArrows ?? [], diagP);
     } else if (drawType === "comparison") {
       drawComparisonDiagram(ctx, stepNodes ?? [], step.description ?? "", diagP);
@@ -795,7 +987,7 @@ export default function Whiteboard({
     } else {
       // Text-based rendering (original behaviour)
       const desc = step.description || "";
-      ctx.font = "18px Arial";
+      ctx.font = "18px Georgia, serif";
       ctx.fillStyle = "#1f2937";
       const words = desc.trim().length ? desc.trim().split(/\s+/) : [];
       const revealMs = Math.max(MIN_STEP_MS * 0.8, stepMs * 0.9);
