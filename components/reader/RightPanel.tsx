@@ -3623,49 +3623,53 @@ function GenerateNoteButton({
     console.log("[NOTELAB_NEW_BUTTON_CLICKED]", {
       page: pageNumber,
       hasStudyModel: !!studyModel,
+      bookId,
       conceptBlockCount: studyModel?.conceptBlocks?.length ?? 0,
       hasThesis: !!studyModel?.pageThesis,
-      miniTestItemCount: studyModel?.miniTestItems?.length ?? 0,
     });
 
     if (!studyModel) {
-      console.warn("[NOTELAB_SAVE_FAILED]", { reason: "studyModel null at click time" });
+      console.warn("[NOTELAB_SAVE_ERROR]", { reason: "studyModel null at click time" });
       return;
     }
-
-    console.log("[NOTELAB_STUDY_MODEL_FOUND]", {
-      source:            "finalStudyModel",
-      page:              pageNumber,
-      bookId,
-      hasThesis:         !!studyModel.pageThesis,
-      studyNotesCount:   Object.values(studyModel.studyNotes).filter(Boolean).length,
-      conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
-      visualAnchorCount: studyModel.visualAnchors?.length ?? 0,
-    });
 
     setSaving(true);
     try {
       const topic = (view.title || `Page ${pageNumber}`).replace(/^ULTRA\s*[–—-]\s*/i, "").trim();
-      const note = buildNoteFromStudyModel(studyModel, { bookId, pageNumber, topic, bookTitle });
-      saveUltraNote(note);
 
-      const persisted = getAllUltraNotes().find((n) => n.id === note.id);
-      if (!persisted) {
-        console.error("[NOTELAB_SAVE_FAILED]", { reason: "note not found in storage after save", id: note.id, storageKey: "ultraNotes_v1" });
-        setSaveError("Save failed — not persisted");
-        setTimeout(() => setSaveError(null), 3000);
-        return;
-      }
+      console.log("[NOTELAB_SAVE_START]", {
+        page: pageNumber,
+        bookId,
+        topic,
+        hasThesis:         !!studyModel.pageThesis,
+        conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
+        studyNotesCount:   Object.values(studyModel.studyNotes).filter(Boolean).length,
+      });
+
+      const note = buildNoteFromStudyModel(studyModel, { bookId, pageNumber, topic, bookTitle });
+
+      console.log("[NOTELAB_SAVE_PAYLOAD]", {
+        id:           note.id,
+        bookId:       note.bookId,
+        pageNumber:   note.pageNumber,
+        topic:        note.topic,
+        sectionCount: note.sections?.length ?? 0,
+        conceptCount: note.concepts?.length ?? 0,
+        hasCoreIdea:  !!note.coreIdea,
+        storageKey:   "ultraNotes_v1",
+      });
+
+      saveUltraNote(note);
 
       console.log("[NOTELAB_NOTE_CREATED]", {
         id:           note.id,
         page:         note.pageNumber,
         topic:        note.topic,
         sectionCount: note.sections?.length ?? 0,
-        conceptCount: (note as any).concepts?.length ?? 0,
         bookId,
-        storageKey:   "ultraNotes_v1",
       });
+
+      console.log("[NOTELAB_SAVE_SUCCESS]", { id: note.id, page: pageNumber, bookId });
 
       setSaved(true);
       setSaveError(null);
@@ -3673,9 +3677,9 @@ function GenerateNoteButton({
       setTimeout(() => setSaved(false), 2200);
     } catch (err: any) {
       const msg = err?.message ?? String(err);
-      console.error("[NOTELAB_SAVE_FAILED]", { reason: msg });
+      console.error("[NOTELAB_SAVE_ERROR]", { reason: msg, page: pageNumber, bookId });
       setSaveError(msg.slice(0, 80));
-      setTimeout(() => setSaveError(null), 3000);
+      setTimeout(() => setSaveError(null), 4000);
     } finally {
       setSaving(false);
     }
@@ -3771,47 +3775,49 @@ function GenerateStudySetButton({
     console.log("[RECALLLAB_NEW_BUTTON_CLICKED]", {
       page: pageNumber,
       hasStudyModel: !!studyModel,
+      bookId,
       hasThesis: !!studyModel?.pageThesis,
       conceptBlockCount: studyModel?.conceptBlocks?.length ?? 0,
-      miniTestItemCount: studyModel?.miniTestItems?.length ?? 0,
     });
 
     if (!studyModel) {
-      console.warn("[RECALLLAB_SAVE_FAILED]", { reason: "studyModel null at click time" });
+      console.warn("[RECALLLAB_SAVE_ERROR]", { reason: "studyModel null at click time" });
       return;
     }
 
-    console.log("[RECALLLAB_STUDY_MODEL_FOUND]", {
-      source:            "finalStudyModel",
-      page:              pageNumber,
-      bookId,
-      hasThesis:         !!studyModel.pageThesis,
-      studyNotesCount:   Object.values(studyModel.studyNotes).filter(Boolean).length,
-      conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
-      miniTestItemCount: studyModel.miniTestItems?.length ?? 0,
-    });
-
     setSaving(true);
     try {
+      console.log("[RECALLLAB_SAVE_START]", {
+        page:              pageNumber,
+        bookId,
+        hasThesis:         !!studyModel.pageThesis,
+        conceptBlockCount: studyModel.conceptBlocks?.length ?? 0,
+        miniTestItemCount: studyModel.miniTestItems?.length ?? 0,
+      });
+
       const set = buildRecallSetFromView(view, bookId, pageNumber, {
         bookTitle,
         sourceLabel: "right-panel",
         studyModel,
       });
-      saveRecallSet(set);
-
-      const persisted = getAllRecallSets().find((s) => s.id === set.id);
-      if (!persisted) {
-        console.error("[RECALLLAB_SAVE_FAILED]", { reason: "set not found in storage after save", id: set.id, storageKey: "recallSets_v1" });
-        setSaveError("Save failed — not persisted");
-        setTimeout(() => setSaveError(null), 3000);
-        return;
-      }
 
       const cardTypes = set.cards.reduce<Record<string, number>>((acc, c) => {
         acc[c.type] = (acc[c.type] ?? 0) + 1;
         return acc;
       }, {});
+
+      console.log("[RECALLLAB_SAVE_PAYLOAD]", {
+        id:        set.id,
+        bookId:    set.bookId,
+        page:      set.pageNumber,
+        topic:     set.topic,
+        cardCount: set.cards.length,
+        cardTypes,
+        storageKey: "recallSets_v1",
+      });
+
+      saveRecallSet(set);
+
       console.log("[RECALLLAB_CARDS_CREATED]", {
         id:        set.id,
         page:      set.pageNumber,
@@ -3819,8 +3825,9 @@ function GenerateStudySetButton({
         cardTypes,
         topic:     set.topic,
         bookId,
-        storageKey: "recallSets_v1",
       });
+
+      console.log("[RECALLLAB_SAVE_SUCCESS]", { id: set.id, page: pageNumber, bookId });
 
       setSaved(true);
       setSaveError(null);
@@ -3828,9 +3835,9 @@ function GenerateStudySetButton({
       setTimeout(() => setSaved(false), 2200);
     } catch (err: any) {
       const msg = err?.message ?? String(err);
-      console.error("[RECALLLAB_SAVE_FAILED]", { reason: msg });
+      console.error("[RECALLLAB_SAVE_ERROR]", { reason: msg, page: pageNumber, bookId });
       setSaveError(msg.slice(0, 80));
-      setTimeout(() => setSaveError(null), 3000);
+      setTimeout(() => setSaveError(null), 4000);
     } finally {
       setSaving(false);
     }
