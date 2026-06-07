@@ -1045,23 +1045,11 @@ export default function Whiteboard({
   /* Render                                                              */
   /* ------------------------------------------------------------------ */
 
-  // Show empty state if no steps provided
-  if (steps.length === 0) {
-    console.log("[WHITEBOARD_LEGACY_DISABLED]", { reason: "no-steps", enableDrawing });
-    return (
-      <div className="flex flex-col items-center justify-center h-full min-h-[200px] gap-3 text-slate-400 select-none">
-        <span className="text-4xl">🖊️</span>
-        <p className="text-[13px] font-medium text-slate-500">Whiteboard ready — generate from current page.</p>
-        <p className="text-[11px] text-slate-400">Right Panel synthesis will populate the canvas automatically.</p>
-      </div>
-    );
-  }
-
-  console.log("[WHITEBOARD_SOURCE]", { stepCount: steps.length, concept: concept?.slice(0, 60) ?? null, enableDrawing });
+  console.log("[WHITEBOARD_LAYOUT]", { stepCount: steps.length, canvasW: CANVAS_W, canvasH: CANVAS_H, enableDrawing });
 
   return (
-    <div className="flex flex-col items-center gap-4">
-      <div className="relative" style={{ width: CANVAS_W, height: CANVAS_H }}>
+    <div className="flex flex-col items-center gap-4 w-full">
+      <div className="relative" style={{ width: CANVAS_W, height: CANVAS_H, maxWidth: "100%", overflow: "hidden" }}>
         {/* Main whiteboard canvas */}
         <canvas
           ref={canvasRef}
@@ -1070,7 +1058,7 @@ export default function Whiteboard({
           className="border rounded bg-white shadow-sm"
           style={{ position: 'absolute', zIndex: 1 }}
         />
-
+        
         {/* Interactive drawing canvas overlay */}
         {enableDrawing && (
           <canvas
@@ -1078,8 +1066,8 @@ export default function Whiteboard({
             width={CANVAS_W}
             height={CANVAS_H}
             className="border rounded shadow-sm"
-            style={{
-              position: 'absolute',
+            style={{ 
+              position: 'absolute', 
               zIndex: 2,
               background: 'transparent',
               pointerEvents: drawingMode ? 'auto' : 'none'
@@ -1087,8 +1075,8 @@ export default function Whiteboard({
           />
         )}
 
-        {/* Sticky notes overlay — hidden to prevent canvas cropping */}
-        {false && <div className="absolute right-3 top-3 w-80 max-w-[90vw] bg-white/95 text-gray-900 rounded shadow border border-gray-200 p-3 space-y-2">
+        {/* Sticky notes overlay UI (per-step) */}
+        <div className="absolute right-3 top-3 w-80 max-w-[90vw] bg-white/95 text-gray-900 rounded shadow border border-gray-200 p-3 space-y-2">
           {/* Status row */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -1161,7 +1149,7 @@ export default function Whiteboard({
               </div>
             </div>
           )}
-        </div>}
+        </div>
       </div>
 
       {/* Optional native audio (hidden UI; we drive via buttons) */}
@@ -1301,33 +1289,84 @@ export default function Whiteboard({
         </div>
       )}
 
-      {/* Step counter (compact, no old transport/export buttons) */}
-      <div className="flex items-center justify-between w-full max-w-4xl px-1">
-        <span className="text-xs text-slate-500 opacity-70">
+      {/* Transport */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={prevStep}
+          className="bg-gray-700 hover:bg-gray-800 text-white px-3 py-2 rounded disabled:opacity-50"
+          disabled={currentStepIndex <= 0}
+        >
+          ◀ Prev
+        </button>
+
+        {!isPlaying ? (
+          <button
+            onClick={currentStepIndex === 0 ? play : resume}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
+          >
+            ▶️ {currentStepIndex === 0 ? "Play" : "Resume"}
+          </button>
+        ) : (
+          <button
+            onClick={pause}
+            className="bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded"
+          >
+            ⏸️ Pause
+          </button>
+        )}
+
+        <button
+          onClick={stop}
+          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+        >
+          ⏹️ Stop
+        </button>
+
+        <button
+          onClick={nextStep}
+          className="bg-gray-700 hover:bg-gray-800 text-white px-3 py-2 rounded disabled:opacity-50"
+          disabled={currentStepIndex >= steps.length - 1}
+        >
+          Next ▶
+        </button>
+
+        {/* Speed (hidden if parent controls it) */}
+        {typeof playbackSpeed !== "number" && (
+          <>
+            <label className="ml-2 text-sm opacity-80">Speed</label>
+            <select
+              value={localSpeed}
+              onChange={(e) => onLocalSpeedChange(Number(e.target.value))}
+              className="bg-gray-800 text-white px-2 py-1 rounded"
+            >
+              <option value={0.75}>0.75×</option>
+              <option value={1}>1.0×</option>
+              <option value={1.25}>1.25×</option>
+              <option value={1.5}>1.5×</option>
+              <option value={2}>2.0×</option>
+            </select>
+          </>
+        )}
+
+        <span className="text-sm opacity-80">
           Step {Math.min(currentStepIndex + 1, steps.length)} / {steps.length}
         </span>
-        <div className="flex gap-1">
-          <button
-            onClick={prevStep}
-            disabled={currentStepIndex <= 0}
-            className="px-2.5 py-1 rounded text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 disabled:opacity-30 transition-colors"
-          >
-            ◀
-          </button>
-          <button
-            onClick={isPlaying ? pause : (currentStepIndex === 0 ? play : resume)}
-            className="px-3 py-1 rounded text-xs bg-blue-600 hover:bg-blue-700 text-white transition-colors"
-          >
-            {isPlaying ? "⏸" : "▶"}
-          </button>
-          <button
-            onClick={nextStep}
-            disabled={currentStepIndex >= steps.length - 1}
-            className="px-2.5 py-1 rounded text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 disabled:opacity-30 transition-colors"
-          >
-            ▶
-          </button>
-        </div>
+      </div>
+
+      {/* Exports */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={exportMarkdown}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded"
+        >
+          📄 Export Markdown
+        </button>
+        <button
+          onClick={exportPDF}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded"
+        >
+          🧾 Export PDF
+        </button>
       </div>
     </div>
   );

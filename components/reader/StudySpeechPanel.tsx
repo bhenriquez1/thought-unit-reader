@@ -16,72 +16,24 @@ import {
 } from "@/lib/speech/studySpeechEngine";
 import { normalizeFormulasForSpeech } from "@/lib/speech/formulaNormalization";
 
-// ── Natural speech helpers ────────────────────────────────────────────────────
-
-// Abbreviations that should never be treated as sentence-ending dots
-const ABBREV_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Mrs|Ms|Prof|et\s+al|etc|approx|dept|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec|St|Avg|avg|max|min|approx)\.\s*$/i;
+// ── Sentence splitter ────────────────────────────────────────────────────────
+const ABBREV_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Mrs|Ms|Prof|et\s+al|etc|approx|dept|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec|St|Avg|avg|max|min)\.\s*$/i;
 
 function splitIntoSentences(text: string): string[] {
   if (!text.trim()) return [];
-  // Pass 1: split on sentence-ending punctuation followed by whitespace
   const raw = text.split(/(?<=[.!?])\s+/);
-  // Pass 2: merge fragments that start lowercase (continuation of previous sentence)
-  // or whose previous token ended with a known abbreviation
   const merged: string[] = [];
   for (const fragment of raw) {
     const trimmed = fragment.trim();
     if (!trimmed) continue;
     const prev = merged[merged.length - 1];
-    if (
-      prev &&
-      (ABBREV_RE.test(prev) || /^[a-z"'‘’]/.test(trimmed))
-    ) {
+    if (prev && (ABBREV_RE.test(prev) || /^[a-z"''']/.test(trimmed))) {
       merged[merged.length - 1] = prev + " " + trimmed;
     } else {
       merged.push(trimmed);
     }
   }
   return merged.filter(s => s.length >= 15);
-}
-
-function naturalizeSpeech(text: string): string {
-  console.log("[SPEECH_NATURALIZE_INPUT]", { charCount: text.length, preview: text.slice(0, 60) });
-
-  let out = text
-    // OCR: ellipsis / suspension dots → natural pause
-    .replace(/\.{2,}/g, ", ")
-    // OCR: hard hyphen at line break (broken word like "con-\ntext") → rejoin
-    .replace(/-\s*\n\s*/g, "")
-    // OCR: bare line breaks (not paragraph breaks) → space
-    .replace(/([^\n])\n([^\n])/g, "$1 $2")
-    // OCR: multiple spaces / tabs → single space
-    .replace(/[ \t]{2,}/g, " ")
-    // Semicolons → brief pause (comma)
-    .replace(/;\s*/g, ", ")
-    // Colon introducing explanation → em-dash pause
-    .replace(/:\s+/g, " — ")
-    // Parenthetical aside → commas
-    .replace(/\s*\(([^)]{1,80})\)\s*/g, ", $1, ")
-    // Expand common abbreviations to spoken forms
-    .replace(/\betc\.\b/gi, "and so on")
-    .replace(/\be\.g\.\b/gi, "for example")
-    .replace(/\bi\.e\.\b/gi, "that is")
-    .replace(/\bvs\.\b/gi, "versus")
-    .replace(/\bapprox\.\b/gi, "approximately")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-
-  // Split very long runs (>300 chars with no sentence boundary) at a comma
-  if (out.length > 300 && !/[.!?]/.test(out)) {
-    const commaIdx = out.indexOf(", ", 150);
-    if (commaIdx > 0) {
-      console.log("[SPEECH_PAUSE_CLEANUP]", { action: "split-long-run", at: commaIdx, totalChars: out.length });
-      out = out.slice(0, commaIdx + 1) + " " + out.slice(commaIdx + 2);
-    }
-  }
-
-  console.log("[SPEECH_NATURALIZE_OUTPUT]", { charCount: out.length, preview: out.slice(0, 60) });
-  return out;
 }
 
 // ── Role colour map ──────────────────────────────────────────────────────────
@@ -123,6 +75,23 @@ function buildSpeechText(
   return text.slice(0, 4000);
 }
 
+// ── Naturalize speech for flowing, natural TTS ───────────────────────────────
+
+function naturalizeSpeech(text: string): string {
+  let out = text;
+  out = out.replace(/\s*;\s*/g, ", ");
+  out = out.replace(/\s*:\s*/g, " — ");
+  out = out.replace(/\(\s*/g, ", ");
+  out = out.replace(/\s*\)/g, ",");
+  out = out.replace(/&/g, "and");
+  out = out.replace(/\betc\.\s*/gi, "and so on. ");
+  out = out.replace(/\be\.g\.\s*/gi, "for example, ");
+  out = out.replace(/\bi\.e\.\s*/gi, "that is, ");
+  out = out.replace(/\bvs\.\s*/gi, "versus ");
+  out = out.replace(/\bFig\.\s*(\d)/gi, "Figure $1");
+  out = out.replace(/[ \t]{2,}/g, " ").trim();
+  return out;
+}
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -169,8 +138,29 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   const [fpSentences, setFpSentences] = useState<string[]>([]);
   useEffect(() => {
     if (mode === "fullPage" && activePageText) {
-      const sents = splitIntoSentences(activePageText);
-      console.log("[SPEECH_FULL_PAGE_SOURCE]", { charCount: activePageText.length, sentenceCount: sents.length, preview: sents[0]?.slice(0, 60) ?? null });
+      console.log("[SPEECH_FULL_PAGE_SOURCE]", { charCount: activePageText.length, preview: activePageText.slice(0, 80) });
+      // Two-pass split:
+      // 1. Split on sentence-ending punctuation followed by whitespace.
+      // 2. Merge continuations that start with lowercase (e.g. after abbreviations
+      //    like "Fig.", "No.", "e.g.") so medical/chemistry text is not over-split.
+      const ABBREV_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Ms|Prof|et\s+al|etc|approx|dept|dept|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.\s*$/i;
+      const raw = activePageText.split(/(?<=[.!?…])\s+/);
+      const merged: string[] = [];
+      for (const chunk of raw) {
+        const t = chunk.trim();
+        if (!t) continue;
+        if (
+          merged.length > 0 &&
+          /^[a-z"'(0-9]/.test(t) &&
+          !ABBREV_RE.test(merged[merged.length - 1])
+        ) {
+          merged[merged.length - 1] += " " + t;
+        } else {
+          merged.push(t);
+        }
+      }
+      const sents = merged.filter((s) => s.length >= 20);
+      console.log("[SPEECH_FULL_PAGE_SENTENCES]", { count: sents.length, first: sents[0]?.slice(0, 60) });
       setFpSentences(sents);
     } else {
       setFpSentences([]);
@@ -284,7 +274,6 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   async function playFullPageSequential(sentences: string[], fromIdx: number) {
     abortRef.current = false;
     setPlayState("loading");
-    console.log("[SPEECH_FULL_PAGE_START]", { fromIdx, totalSentences: sentences.length });
 
     for (let i = fromIdx; i < sentences.length; i++) {
       if (abortRef.current) break;
@@ -341,12 +330,18 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
         onEvidenceFocus?.(seg.evidenceRefId);
       }
 
-      console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: seg.text.length, voice, evidenceRefId: seg.evidenceRefId });
+      const { text: hNorm, hasMath: hMath, hasScience: hSci, transformations: hTx } = normalizeFormulasForSpeech(seg.text);
+      if (hTx > 0) console.log("[SPEECH_FORMULA_NORMALIZATION]", { segIdx: i, transformations: hTx, hasMath: hMath, hasScience: hSci });
+      if (hMath)   console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
+      if (hSci)    console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
+      const hText = naturalizeSpeech(formulaToSpeech(hNorm)).slice(0, 500);
+      console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: hText.length, preview: hText.slice(0, 60) });
+      console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: hText.length, voice, evidenceRefId: seg.evidenceRefId });
       try {
-        const result = await fetchAndPlayAudio(seg.text);
+        const result = await fetchAndPlayAudio(hText);
         if (abortRef.current) break; // user stopped during fetch
         if (result === "browser") {
-          await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve));
+          await new Promise<void>((resolve) => playBrowserSpeech(hText, resolve));
         }
         // Small pause between segments
         if (!abortRef.current && i < segs.length - 1) {
@@ -357,7 +352,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
         const message = err instanceof Error ? err.message : String(err);
         console.warn("[OPENAI_SPEECH_ERROR]", { error: message, segIdx: i });
         console.log("[SPEECH_FALLBACK_USED]", { provider: "browser", reason: "openai-error" });
-        await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve));
+        await new Promise<void>((resolve) => playBrowserSpeech(hText, resolve));
       }
     }
 
@@ -375,11 +370,25 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
     abortRef.current = false;
     setErrorMsg(null);
 
-    // Full Page mode: sentence-by-sentence through activePageText (always starts from page beginning)
+    // Full Page mode: sentence-by-sentence through activePageText
     if (mode === "fullPage") {
-      const sents = fpSentences.length > 0 ? fpSentences : splitIntoSentences(activePageText);
+      // Use pre-computed fpSentences (two-pass splitter); fall back to simple split.
+      const sents = fpSentences.length > 0 ? fpSentences : (() => {
+        const ABBREV_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Ms|Prof|et\s+al|etc)\.\s*$/i;
+        const raw = activePageText.split(/(?<=[.!?…])\s+/);
+        const merged: string[] = [];
+        for (const chunk of raw) {
+          const t = chunk.trim();
+          if (!t) continue;
+          if (merged.length > 0 && /^[a-z"'(0-9]/.test(t) && !ABBREV_RE.test(merged[merged.length - 1])) {
+            merged[merged.length - 1] += " " + t;
+          } else { merged.push(t); }
+        }
+        return merged.filter((s) => s.length >= 20);
+      })();
       if (!sents.length) { setErrorMsg("No page text available."); return; }
-      console.log("[SPEECH_SOURCE]", { mode: "fullPage", source: "activePageText", sentenceCount: sents.length, charCount: activePageText.length, startSentence: sents[0]?.slice(0, 60) ?? null });
+      console.log("[SPEECH_FULL_PAGE_START]", { sentenceCount: sents.length, fromIdx, firstSentence: sents[0]?.slice(0, 80) });
+      console.log("[SPEECH_SOURCE]", { mode: "fullPage", source: "activePageText", sentenceCount: sents.length, charCount: activePageText.length });
       playFullPageSequential(sents, fromIdx);
       return;
     }
@@ -431,10 +440,16 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
       console.log("[SPEECH_SEGMENT_START]", {
         segIdx: i, mode, role: seg.role, charCount: seg.text.length,
       });
-      console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: seg.text.length, voice });
+      const { text: segNorm, hasMath: segMath, hasScience: segSci, transformations: segTx } = normalizeFormulasForSpeech(seg.text);
+      if (segTx > 0)  console.log("[SPEECH_FORMULA_NORMALIZATION]", { segIdx: i, transformations: segTx, hasMath: segMath, hasScience: segSci });
+      if (segMath)    console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: seg.text.slice(0, 60) });
+      if (segSci)     console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: seg.text.slice(0, 60) });
+      const segText = naturalizeSpeech(formulaToSpeech(segNorm)).slice(0, 500);
+      console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: segText.length, mode, preview: segText.slice(0, 60) });
+      console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: segText.length, voice });
 
       try {
-        const result = await fetchAndPlayAudio(formulaToSpeech(seg.text).slice(0, 500));
+        const result = await fetchAndPlayAudio(segText);
         if (abortRef.current) break;
         if (result === "browser") {
           await new Promise<void>((resolve) => playBrowserSpeech(seg.text, resolve));
@@ -532,6 +547,16 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
             <button type="button" onClick={stop}
               style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", color: "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
             >■ Stop</button>
+            <button type="button"
+              onClick={() => { const prev = Math.max(0, segIdx - 1); setSegIdx(prev); stop(); setTimeout(() => play(prev), 80); }}
+              disabled={segIdx <= 0}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", color: "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer", opacity: segIdx <= 0 ? 0.4 : 1 }}
+            >◀</button>
+            <button type="button"
+              onClick={() => { const next = segIdx + 1; if (mode === "fullPage" ? next < fpSentences.length : next < segments.length) { setSegIdx(next); stop(); setTimeout(() => play(next), 80); } }}
+              disabled={mode === "fullPage" ? segIdx >= fpSentences.length - 1 : segIdx >= segments.length - 1}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", color: "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer", opacity: (mode === "fullPage" ? segIdx >= fpSentences.length - 1 : segIdx >= segments.length - 1) ? 0.4 : 1 }}
+            >▶</button>
 
             {/* Speed */}
             <div style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: "auto" }}>
