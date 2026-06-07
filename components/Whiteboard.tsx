@@ -590,6 +590,166 @@ export default function Whiteboard({
     });
   }
 
+  function drawAxisDiagram(
+    ctx: CanvasRenderingContext2D,
+    nodes: Array<{ id: string; label: string; nx?: number; ny?: number }>,
+    _arrows: Array<{ from: string; to: string; label?: string }>,
+    p: number
+  ) {
+    const AXIS_X  = PADDING_X + 50;
+    const AXIS_Y  = CANVAS_H - 55;
+    const AXIS_W  = CANVAS_W - AXIS_X - PADDING_X - 20;
+    const AXIS_H  = AXIS_Y - 95;
+    const alpha   = easeOutCubic(p);
+
+    // Parse nodes into data points and optional limit
+    const dataPoints: Array<{ xv: number; yv: number }> = [];
+    let limitValue: number | null = null;
+    let limitLabel = "";
+
+    for (const n of nodes) {
+      const lb = (n.label || "").trim();
+      // Limit node: "L=2" or "L=∞"
+      const limitM = lb.match(/^L\s*=\s*(.+)$/i);
+      if (limitM) {
+        const lv = parseFloat(limitM[1]);
+        if (!isNaN(lv)) limitValue = lv;
+        limitLabel = limitM[1].trim();
+        continue;
+      }
+      // Data point: "x=1, y=0.5" or "n=2, a=0.25" or "1, 0.5"
+      const ptM = lb.match(/[xn]\s*=\s*([\d.+-]+)[,\s]+[ya]\s*=\s*([\d.+-]+)/i)
+               ?? lb.match(/([\d.+-]+)\s*,\s*([\d.+-]+)/);
+      if (ptM) {
+        const xv = parseFloat(ptM[1]);
+        const yv = parseFloat(ptM[2]);
+        if (!isNaN(xv) && !isNaN(yv)) dataPoints.push({ xv, yv });
+      }
+    }
+
+    // Draw axes
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = "#374151";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(AXIS_X, AXIS_Y - AXIS_H);
+    ctx.lineTo(AXIS_X, AXIS_Y);
+    ctx.lineTo(AXIS_X + AXIS_W, AXIS_Y);
+    ctx.stroke();
+    // Arrow heads
+    ctx.fillStyle = "#374151";
+    ctx.beginPath(); // Y arrow
+    ctx.moveTo(AXIS_X, AXIS_Y - AXIS_H - 6);
+    ctx.lineTo(AXIS_X - 4, AXIS_Y - AXIS_H + 8);
+    ctx.lineTo(AXIS_X + 4, AXIS_Y - AXIS_H + 8);
+    ctx.fill();
+    ctx.beginPath(); // X arrow
+    ctx.moveTo(AXIS_X + AXIS_W + 6, AXIS_Y);
+    ctx.lineTo(AXIS_X + AXIS_W - 8, AXIS_Y - 4);
+    ctx.lineTo(AXIS_X + AXIS_W - 8, AXIS_Y + 4);
+    ctx.fill();
+    ctx.restore();
+
+    if (dataPoints.length === 0) {
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.6;
+      ctx.font = "13px Arial";
+      ctx.fillStyle = "#6b7280";
+      ctx.textAlign = "center";
+      ctx.fillText("(no data points parsed)", CANVAS_W / 2, CANVAS_H / 2);
+      ctx.restore();
+      return;
+    }
+
+    const sorted   = [...dataPoints].sort((a, b) => a.xv - b.xv);
+    const xMin     = sorted[0].xv;
+    const xMax     = sorted[sorted.length - 1].xv;
+    const allY     = sorted.map((d) => d.yv);
+    if (limitValue !== null) allY.push(limitValue);
+    const yMin     = Math.min(0, ...allY);
+    const yMax     = Math.max(...allY);
+    const xRange   = Math.max(xMax - xMin, 1);
+    const yRange   = Math.max(yMax - yMin, 1);
+
+    const toX = (xv: number) => AXIS_X + ((xv - xMin) / xRange) * AXIS_W;
+    const toY = (yv: number) => AXIS_Y - ((yv - yMin) / yRange) * AXIS_H;
+
+    // Dashed limit line
+    if (limitValue !== null) {
+      const ly = toY(limitValue);
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.65;
+      ctx.strokeStyle = "#ef4444";
+      ctx.lineWidth   = 1.5;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(AXIS_X, ly);
+      ctx.lineTo(AXIS_X + AXIS_W, ly);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font      = "bold 12px Arial";
+      ctx.fillStyle = "#ef4444";
+      ctx.textAlign = "right";
+      ctx.fillText(`L = ${limitLabel}`, AXIS_X + AXIS_W, ly - 5);
+      ctx.restore();
+    }
+
+    // Curve through points (bezier)
+    const visCount  = Math.max(1, Math.ceil(sorted.length * Math.max(p, 0.1)));
+    const visible   = sorted.slice(0, visCount);
+    if (visible.length >= 2) {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = "#3b82f6";
+      ctx.lineWidth   = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(toX(visible[0].xv), toY(visible[0].yv));
+      for (let i = 1; i < visible.length; i++) {
+        const prev = visible[i - 1];
+        const curr = visible[i];
+        const cpx  = (toX(prev.xv) + toX(curr.xv)) / 2;
+        ctx.bezierCurveTo(cpx, toY(prev.yv), cpx, toY(curr.yv), toX(curr.xv), toY(curr.yv));
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Dots + labels
+    visible.forEach((pt, i) => {
+      const cx       = toX(pt.xv);
+      const cy       = toY(pt.yv);
+      const dotAlpha = clamp(p * sorted.length - i, 0, 1);
+      ctx.save();
+      ctx.globalAlpha = easeOutCubic(dotAlpha);
+      ctx.fillStyle   = "#3b82f6";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+      ctx.fill();
+      if (sorted.length <= 10 || i % 2 === 0) {
+        ctx.font      = "11px Arial";
+        ctx.fillStyle = "#1f2937";
+        ctx.textAlign = "center";
+        ctx.fillText(`(${pt.xv},${Math.round(pt.yv * 100) / 100})`, cx, cy - 10);
+      }
+      ctx.restore();
+    });
+
+    // X-axis tick labels
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.7;
+    ctx.font        = "11px Arial";
+    ctx.fillStyle   = "#6b7280";
+    ctx.textAlign   = "center";
+    const tickCount = Math.min(sorted.length, 6);
+    for (let t = 0; t <= tickCount; t++) {
+      const xv = xMin + (t / tickCount) * xRange;
+      const cx = toX(xv);
+      ctx.fillText(String(Math.round(xv * 10) / 10), cx, AXIS_Y + 16);
+    }
+    ctx.restore();
+  }
+
   // Baseline draw (called every frame)
   const drawStep = (ctx: CanvasRenderingContext2D, progressWithinStep: number) => {
     const canvas = ctx.canvas;
@@ -630,6 +790,8 @@ export default function Whiteboard({
       drawComparisonDiagram(ctx, stepNodes ?? [], step.description ?? "", diagP);
     } else if (drawType === "table") {
       drawTableDiagram(ctx, stepNodes ?? [], diagP);
+    } else if (drawType === "graph") {
+      drawAxisDiagram(ctx, stepNodes ?? [], stepArrows ?? [], diagP);
     } else {
       // Text-based rendering (original behaviour)
       const desc = step.description || "";

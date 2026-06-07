@@ -61,6 +61,18 @@ const CALLOUT_LABEL_RE =
   /\b(?:KEY\s+CONCEPTS?|LEARNING\s+OBJECTIVES?|DID\s+YOU\s+KNOW|QUICK\s+CHECK|KEY\s+TERMS?|IMPORTANT\s+TERMS?)\b\s*/g;
 
 /**
+ * Merge PDF drop-cap OCR artifacts where a lone capital letter appears as its own
+ * text span, separated from the rest of the word.
+ * Example: "T he cell cycle" → "The cell cycle", "C ellular respiration" → "Cellular respiration"
+ * Excludes capital "I" (pronoun) to avoid merging "I love" → "Ilove".
+ */
+export function normalizeDropCaps(text: string): string {
+  if (!text) return text;
+  // Single capital (not I) + space + 2+ lowercase chars that together form a word
+  return text.replace(/(?<![A-Za-z])([A-HJ-Z]) ([a-z]{2,})(?![a-z])/g, (_, letter, rest) => letter + rest);
+}
+
+/**
  * Clean a single active page's raw text for synthesis or anchor grounding.
  * Strips page numbers, UNIT/chapter/title running headers, and copyright/footer debris.
  * Keeps body paragraphs, section headings, and equation/math lines.
@@ -77,6 +89,9 @@ export function cleanActivePageText(raw: string | undefined | null, tag?: string
     .replace(/\u00A0/g, " ")  // non-breaking space
     .replace(/[ \t]+/g, " ")
     .trim();
+
+  // Merge PDF drop-cap OCR artifacts before any other processing
+  t = normalizeDropCaps(t);
 
   // Remove copyright/footer debris first (it can sit mid-string after joining).
   t = t.replace(FOOTER_DEBRIS_RE, " ");
