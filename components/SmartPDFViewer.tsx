@@ -1010,7 +1010,18 @@ export default function SmartPDFViewer({
                 }}
                 onGetTextSuccess={(textContent: any) => {
                   if (!onPageTextExtracted) return;
-                  const text = (textContent?.items ?? [])
+                  // Sort items top-to-bottom then left-to-right using PDF.js transform coords.
+                  // transform[5] = Y (PDF bottom-up, so higher = higher on page → sort desc).
+                  // transform[4] = X (left-to-right → sort asc within same row).
+                  const items: any[] = [...(textContent?.items ?? [])];
+                  items.sort((a, b) => {
+                    const ay = a.transform?.[5] ?? 0;
+                    const by = b.transform?.[5] ?? 0;
+                    const yDiff = by - ay; // desc (top of page first)
+                    if (Math.abs(yDiff) > 4) return yDiff;
+                    return (a.transform?.[4] ?? 0) - (b.transform?.[4] ?? 0); // asc X
+                  });
+                  const text = items
                     .map((item: any) => item.str ?? "")
                     .join(" ")
                     .replace(/\s+/g, " ")

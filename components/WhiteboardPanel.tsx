@@ -49,6 +49,11 @@ type Props = {
 
   /** When provided, skip API and display these steps directly (finalStudyModel-driven path) */
   prebuiltSteps?: WhiteboardStep[];
+
+  /** Full study model — passed to OpenAI for richer diagram generation */
+  studyModel?: Record<string, unknown> | null;
+  /** Raw page text top-to-bottom — passed to OpenAI for context */
+  pageText?: string;
 };
 
 /** In-memory LRU-ish cache (oldest evicted on overflow) */
@@ -71,6 +76,8 @@ export default function WhiteboardPanel({
   containsDiagramOrFormula = defaultDiagramHeuristic,
   cacheSize = 20,
   prebuiltSteps,
+  studyModel,
+  pageText,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [steps, setSteps] = useState<WhiteboardStep[]>([]);
@@ -196,19 +203,9 @@ export default function WhiteboardPanel({
     return tryLocalRestore();
   };
 
-  /** Sync prebuiltSteps → state when provided (finalStudyModel-driven, no API call) */
-  useEffect(() => {
-    if (!prebuiltSteps || prebuiltSteps.length === 0) return;
-    setSteps(prebuiltSteps);
-    setNarrationScript(prebuiltSteps.map((s) => s.description ?? "").join(" "));
-    setAudioBlob(null);
-    setLoading(false);
-  }, [prebuiltSteps]);
-
-  /** Core generate call (with cache + state wiring) */
+  /** Core generate call — calls /api/whiteboard-explain with full studyModel + pageText context */
   const runGenerate = useCallback(async () => {
-    if (prebuiltSteps && prebuiltSteps.length > 0) return; // prebuilt takes precedence
-    if (!effectiveConcept || !effectiveContext) return;
+    if (!effectiveConcept && !studyModel) return;
 
     // rate-limit: 1 call / 3s
     const now = Date.now();
@@ -218,34 +215,60 @@ export default function WhiteboardPanel({
     // cache first
     if (tryCache()) return;
 
+    console.log("[WHITEBOARD_OPENAI_SOURCE]", {
+      page: currentPage ?? null,
+      hasConcept: !!effectiveConcept,
+      hasStudyModel: !!studyModel,
+      hasPageText: !!(pageText && pageText.length > 50),
+      pageTextChars: pageText?.length ?? 0,
+    });
+
     setLoading(true);
     try {
-      const { generateWhiteboardExplanationWithAudio } = await import(
-        "@/lib/WhiteboardExplanationService"
-      );
-      const result = await generateWhiteboardExplanationWithAudio(effectiveConcept, effectiveContext);
-      setSteps(result.steps);
-      setNarrationScript(result.narrationScript);
-      setAudioBlob(result.audioBlob ?? null);
+      const resp = await fetch("/api/whiteboard-explain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          concept:    effectiveConcept || null,
+          context:    effectiveContext || null,
+          studyModel: studyModel ?? null,
+          pageText:   (pageText ?? "").slice(0, 1500),
+        }),
+      });
+      const data = await resp.json();
+      const newSteps: WhiteboardStep[] = (data.steps ?? []).map((s: any) => ({
+        title:       String(s?.title ?? "").trim(),
+        description: String(s?.content ?? s?.description ?? "").trim(),
+        type:        s?.type ?? "text",
+        payload:     s?.payload ?? {},
+      }));
+      const narration: string = data.narrationScript ?? newSteps.map((s) => `${s.title}: ${s.description}`).join(" ");
+
+      setSteps(newSteps);
+      setNarrationScript(narration);
+      setAudioBlob(null);
+
+      console.log("[WHITEBOARD_DIAGRAM_STEPS_READY]", {
+        page: currentPage ?? null,
+        stepCount: newSteps.length,
+        aiDisabled: data.aiDisabled ?? false,
+        firstStep: newSteps[0]?.title ?? null,
+      });
 
       // glow + scroll
       setJustGenerated(true);
       setTimeout(() => setJustGenerated(false), 1400);
       requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" }));
 
-      writeCache(cacheKey, {
-        steps: result.steps,
-        narrationScript: result.narrationScript,
-        audioBlob: result.audioBlob ?? null,
-      });
+      writeCache(cacheKey, { steps: newSteps, narrationScript: narration, audioBlob: null });
     } catch (err) {
-      console.error("Error generating explanation:", err);
+      console.error("[WHITEBOARD_GENERATE_ERROR]", err);
       setAudioBlob(null);
       setSteps([]);
     } finally {
       setLoading(false);
     }
-  }, [cacheKey, effectiveConcept, effectiveContext]);
+  }, [cacheKey, effectiveConcept, effectiveContext, studyModel, pageText, currentPage]);
 
   /** Manual trigger button */
   const handleExplainConcept = async () => {
@@ -253,22 +276,21 @@ export default function WhiteboardPanel({
     await runGenerate();
   };
 
-  /** Auto-trigger once on mount if requested */
+  /** Auto-trigger once on mount when studyModel is available, or when autoTrigger is set */
   useEffect(() => {
-    if (autoTrigger && effectiveConcept && effectiveContext) {
-      // show detected pill + pulse the button briefly
-      setJustDetected(true);
-      setPulseExplain(true);
-      const t1 = setTimeout(() => setJustDetected(false), 2500);
-      const t2 = setTimeout(() => setPulseExplain(false), 1400);
-      runGenerate();
-      return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
-      };
-    }
+    const shouldTrigger = studyModel ? !!studyModel : (autoTrigger && !!effectiveConcept && !!effectiveContext);
+    if (!shouldTrigger) return;
+    setJustDetected(true);
+    setPulseExplain(true);
+    const t1 = setTimeout(() => setJustDetected(false), 2500);
+    const t2 = setTimeout(() => setPulseExplain(false), 1400);
+    runGenerate();
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoTrigger, effectiveConcept, effectiveContext]);
+  }, []); // mount-only — studyModel/pageText changes are handled by page navigation remount
 
   /** Auto re-explain when page changes (debounced + heuristic) */
   useEffect(() => {
