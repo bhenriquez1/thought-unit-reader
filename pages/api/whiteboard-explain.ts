@@ -269,6 +269,8 @@ export default async function handler(
       narrationScript = steps.map((s) => `${s.title}: ${s.content}`).join("\n");
     }
 
+    console.log("[WHITEBOARD_OPENAI_DIAGRAM]", { subject, stepCount: steps.length, hasNarration: !!narrationScript });
+
     return res.status(200).json({ steps, narrationScript });
 
   } catch {

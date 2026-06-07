@@ -1,15 +1,15 @@
 // components/reader/PodcastLab.tsx
-// Advanced study discussion panel — aggregates finalStudyModel, visualAnchors,
-// NoteLab, RecallLab, and page text into a structured podcast.
-// Each mode renders in its own studio environment.
+"use client";
 
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 import type { PodcastMode, PodcastScript, PodcastSegment } from "@/lib/podcast/podcastTypes";
-import { PODCAST_MODES, SEGMENT_COLORS, SEGMENT_LABELS, MODE_THEMES } from "@/lib/podcast/podcastTypes";
+import { PODCAST_MODES, SEGMENT_COLORS, SEGMENT_LABELS } from "@/lib/podcast/podcastTypes";
 import { getAllUltraNotes } from "@/lib/notelab/ultraNoteStore";
 import { getAllRecallSets } from "@/lib/recalllab/recallStore";
 import { formulaToSpeech } from "@/lib/speech/studySpeechEngine";
+import { normalizeFormulasForSpeech } from "@/lib/speech/formulaNormalization";
+import { detectSubjectType } from "@/lib/podcast/podcastEngine";
 
 interface Props {
   studyModel: CurrentPageStudyModel | null;
@@ -21,90 +21,76 @@ interface Props {
 
 type PlayState = "idle" | "loading" | "playing" | "paused";
 
-// ── Studio configs per mode ────────────────────────────────────────────────
-
-const STUDIO_CONFIG: Record<PodcastMode, {
-  bg: string;
-  textClass: string;
-  accentClass: string;
-  hostLabel: string;
-  guestLabel: string;
+// Per-mode visual config — all modes use dark background
+const MODE_CONFIG: Record<PodcastMode, {
+  accent: string;          // tailwind bg class for active elements
+  accentText: string;      // hex color for accents
+  badge: string;           // mode badge label
   headerTitle: string;
-  headerSubtitle: string;
-  isDark: boolean;
+  headerSub: string;
+  showHighYield: boolean;
+  showClinical: boolean;
+  showQuiz: boolean;
 }> = {
   page_review: {
-    bg: "from-slate-50 via-blue-50 to-indigo-50",
-    textClass: "text-slate-800",
-    accentClass: "bg-blue-600",
-    hostLabel: MODE_THEMES.page_review.hostName,
-    guestLabel: MODE_THEMES.page_review.guestName,
-    headerTitle: "Page Review Studio",
-    headerSubtitle: "Whiteboard-first concept walk-through",
-    isDark: false,
+    accent: "bg-blue-600",
+    accentText: "#3b82f6",
+    badge: "PROFESSOR",
+    headerTitle: "Page Review",
+    headerSub: "Professor-style concept walkthrough",
+    showHighYield: false, showClinical: false, showQuiz: false,
   },
   exam_cram: {
-    bg: "from-gray-950 via-gray-900 to-red-950",
-    textClass: "text-white",
-    accentClass: "bg-red-600",
-    hostLabel: MODE_THEMES.exam_cram.hostName,
-    guestLabel: MODE_THEMES.exam_cram.guestName,
-    headerTitle: "DAT Review Studio",
-    headerSubtitle: "High-yield exam prep · dense review",
-    isDark: true,
+    accent: "bg-red-600",
+    accentText: "#dc2626",
+    badge: "EXAM CRAM",
+    headerTitle: "Exam Cram",
+    headerSub: "High-yield rapid review · dense facts only",
+    showHighYield: true, showClinical: false, showQuiz: false,
   },
   quiz_podcast: {
-    bg: "from-indigo-950 via-purple-900 to-pink-950",
-    textClass: "text-white",
-    accentClass: "bg-yellow-400",
-    hostLabel: MODE_THEMES.quiz_podcast.hostName,
-    guestLabel: MODE_THEMES.quiz_podcast.guestName,
-    headerTitle: "Recall Challenge Studio",
-    headerSubtitle: "Game show study session",
-    isDark: true,
+    accent: "bg-yellow-400",
+    accentText: "#facc15",
+    badge: "QUIZ SHOW",
+    headerTitle: "Recall Challenge",
+    headerSub: "Game-show quiz session",
+    showHighYield: false, showClinical: false, showQuiz: true,
   },
   debate: {
-    bg: "from-slate-950 via-slate-900 to-slate-800",
-    textClass: "text-white",
-    accentClass: "bg-green-500",
-    hostLabel: MODE_THEMES.debate.hostName,
-    guestLabel: MODE_THEMES.debate.guestName,
-    headerTitle: "Avrrio Rounds Studio",
-    headerSubtitle: "Evidence-backed debate",
-    isDark: true,
+    accent: "bg-emerald-500",
+    accentText: "#10b981",
+    badge: "DISCUSSION",
+    headerTitle: "Avrrio Rounds",
+    headerSub: "Classroom debate · evidence-backed",
+    showHighYield: false, showClinical: false, showQuiz: false,
   },
   clinical: {
-    bg: "from-teal-950 via-teal-900 to-cyan-950",
-    textClass: "text-white",
-    accentClass: "bg-cyan-400",
-    hostLabel: MODE_THEMES.clinical.hostName,
-    guestLabel: MODE_THEMES.clinical.guestName,
-    headerTitle: "Clinical Conference Room",
-    headerSubtitle: "Symptom → Mechanism → Diagnosis → Treatment",
-    isDark: true,
+    accent: "bg-cyan-400",
+    accentText: "#22d3ee",
+    badge: "CASE",
+    headerTitle: "Clinical Conference",
+    headerSub: "Applied scenario · case-based",
+    showHighYield: false, showClinical: true, showQuiz: false,
   },
 };
 
-// Clinical breadcrumb step derived from segment type
-function clinicalStep(seg: PodcastSegment): number {
-  if (seg.type === "intro" || seg.type === "page_reading") return 0;
-  if (seg.type === "highlight_evidence") return 1;
-  if (seg.type === "right_panel_note") return 2;
-  if (seg.type === "notelab_expansion") return 3;
-  return -1;
+function fmtTime(s: number) {
+  return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 }
 
-const CLINICAL_STEPS = ["Symptom", "Mechanism", "Diagnosis", "Treatment"];
+function speakerColorClass(speaker: string): string {
+  if (speaker === "host")    return "text-blue-300";
+  if (speaker === "guest")   return "text-emerald-300";
+  return "text-slate-400";
+}
 
-function speakerColor(speaker: string, isDark: boolean): string {
-  if (isDark) {
-    if (speaker === "host")  return "text-blue-300";
-    if (speaker === "guest") return "text-emerald-300";
-    return "text-slate-400";
+// Apply formula normalization + formulaToSpeech to segment text
+function prepareSegmentForTTS(text: string): string {
+  const { text: normalized, transformations, hasMath, hasScience } = normalizeFormulasForSpeech(text);
+  if (transformations > 0) {
+    console.log("[PODCAST_FORMULA_NORMALIZATION]", { transformations, hasMath, hasScience, preview: text.slice(0, 60) });
   }
-  if (speaker === "host")  return "text-blue-700";
-  if (speaker === "guest") return "text-emerald-700";
-  return "text-slate-500";
+  return formulaToSpeech(normalized).slice(0, 500);
 }
 
 export default function PodcastLab({
@@ -114,28 +100,28 @@ export default function PodcastLab({
   activePageText = "",
   onEvidenceFocus,
 }: Props) {
-  const [mode, setMode]             = useState<PodcastMode>("page_review");
-  const [script, setScript]         = useState<PodcastScript | null>(null);
-  const [generating, setGenerating] = useState(false);
-  const [genError, setGenError]     = useState<string | null>(null);
-  const [playState, setPlayState]   = useState<PlayState>("idle");
-  const [segIdx, setSegIdx]         = useState(0);
+  const [mode, setMode]               = useState<PodcastMode>("page_review");
+  const [script, setScript]           = useState<PodcastScript | null>(null);
+  const [generating, setGenerating]   = useState(false);
+  const [genError, setGenError]       = useState<string | null>(null);
+  const [playState, setPlayState]     = useState<PlayState>("idle");
+  const [segIdx, setSegIdx]           = useState(0);
   const [quizCountdown, setQuizCountdown] = useState<number | null>(null);
   const [showTranscript, setShowTranscript] = useState(false);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
-  const [elapsed, setElapsed] = useState(0);          // seconds elapsed in current segment
-  const [segDuration, setSegDuration] = useState(0);  // estimated duration of current segment
+  const [playbackSpeed, setPlaybackSpeed]   = useState(1.0);
+  const [elapsed, setElapsed]               = useState(0);
+  const [segDuration, setSegDuration]       = useState(0);
 
-  const abortRef     = useRef(false);
-  const audioRef     = useRef<HTMLAudioElement | null>(null);
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const audioCacheRef = useRef<Map<string, Blob>>(new Map());
+  const abortRef        = useRef(false);
+  const audioRef        = useRef<HTMLAudioElement | null>(null);
+  const countdownRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioCacheRef   = useRef<Map<string, Blob>>(new Map());
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [audioReady, setAudioReady] = useState(false);
 
-  const cfg = STUDIO_CONFIG[mode];
+  const cfg = MODE_CONFIG[mode];
+  const subject = useMemo(() => detectSubjectType(activePageText, studyModel ?? undefined), [activePageText, studyModel]);
 
-  // Wipe script and audio cache when page or mode changes
   useEffect(() => {
     setScript(null);
     setGenError(null);
@@ -150,19 +136,9 @@ export default function PodcastLab({
   }, [pageNumber, bookId, mode]);
 
   useEffect(() => () => {
-    if (countdownRef.current) clearInterval(countdownRef.current);
+    if (countdownRef.current)    clearInterval(countdownRef.current);
     if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
   }, []);
-
-  // Source counts (stable — called at render, not inside effects)
-  const noteLabCount = studyModel
-    ? getAllUltraNotes().filter((n) => n.bookId === bookId && n.pageNumber === pageNumber).length
-    : 0;
-  const recallCardCount = studyModel
-    ? getAllRecallSets()
-        .filter((r) => r.bookId === bookId && r.pageNumber === pageNumber)
-        .reduce((s, r) => s + r.cards.length, 0)
-    : 0;
 
   // ── Script generation ──────────────────────────────────────────────────
   const generateScript = useCallback(async () => {
@@ -174,16 +150,10 @@ export default function PodcastLab({
     setSegIdx(0);
 
     const noteLab   = getAllUltraNotes().filter((n) => n.bookId === bookId && n.pageNumber === pageNumber);
-    const recallLab = getAllRecallSets().filter((r) => r.bookId === bookId && r.pageNumber === pageNumber);
+    const recallLab = getAllRecallSets().filter((r)  => r.bookId === bookId && r.pageNumber === pageNumber);
 
-    console.log("[PODCAST_SOURCE]", {
-      page: pageNumber, bookId, mode,
-      visualAnchors: studyModel.visualAnchors.length,
-      noteLab: noteLab.length, recallLab: recallLab.length,
-      pageTextChars: activePageText.length,
-    });
-    console.log("[PODCAST_MODE_STYLE]", { mode, title: STUDIO_CONFIG[mode].headerTitle, subtitle: STUDIO_CONFIG[mode].headerSubtitle });
-    console.log("[PODCAST_ADAPTIVE_MODE]", { mode, pageTextPreview: activePageText.slice(0, 80) });
+    console.log("[PODCAST_SOURCE]",    { page: pageNumber, bookId, mode, visualAnchors: studyModel.visualAnchors.length, noteLab: noteLab.length, recallLab: recallLab.length });
+    console.log("[PODCAST_MODE_STYLE]", { mode, title: cfg.headerTitle, sub: cfg.headerSub, subject });
 
     try {
       const res = await fetch("/api/podcast-script", {
@@ -192,7 +162,7 @@ export default function PodcastLab({
         body: JSON.stringify({
           context: {
             pageNumber, bookId,
-            pageText: activePageText.slice(0, 800),
+            pageText:   activePageText.slice(0, 800),
             studyModel: {
               pageThesis:    studyModel.pageThesis,
               studyNotes:    studyModel.studyNotes,
@@ -204,26 +174,23 @@ export default function PodcastLab({
           mode,
         }),
       });
-
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const data: PodcastScript = await res.json();
       setScript(data);
-      console.log("[PODCAST_SCRIPT_CREATED]", {
-        page: pageNumber, mode, segments: data.totalSegments, estimatedMinutes: data.estimatedMinutes,
-      });
-      prebufferAllSegments(data.segments, mode);
+      console.log("[PODCAST_SCRIPT_CREATED]", { page: pageNumber, mode, segments: data.totalSegments });
+      prebufferSegments(data.segments);
     } catch (err: any) {
       setGenError(err?.message ?? "Failed to generate script");
     } finally {
       setGenerating(false);
     }
-  }, [studyModel, pageNumber, bookId, mode, activePageText]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [studyModel, pageNumber, bookId, mode, activePageText, cfg, subject]);
 
-  // ── Audio blob fetch (single segment, no playback) ────────────────────
-  const fetchAudioBlob = useCallback(async (text: string, voice: string): Promise<Blob | null> => {
+  // ── Pre-buffer ────────────────────────────────────────────────────────
+  const fetchBlob = useCallback(async (text: string, voice: string): Promise<Blob | null> => {
     try {
       const res  = await fetch("/api/tts", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ script: text, voice }),
       });
@@ -236,35 +203,24 @@ export default function PodcastLab({
     return null;
   }, []);
 
-  // ── Pre-buffer: generate all segment audio in parallel after script ready ──
-  const prebufferAllSegments = useCallback(async (seg: PodcastSegment[], modeId: PodcastMode) => {
-    const modeInfo = PODCAST_MODES.find((m) => m.id === modeId)!;
+  const prebufferSegments = useCallback(async (segs: PodcastSegment[]) => {
     setAudioReady(false);
-    console.log("[PODCAST_AUDIO_CLIP_CREATED]", { event: "prebuffer-start", segments: seg.length, mode: modeId });
-
-    await Promise.all(
-      seg.map(async (s, i) => {
-        const voice = s.speaker === "guest" ? modeInfo.guestVoice : modeInfo.hostVoice;
-        const blob  = await fetchAudioBlob(formulaToSpeech(s.text).slice(0, 500), voice);
-        if (blob) {
-          audioCacheRef.current.set(s.id, blob);
-          console.log("[PODCAST_AUDIO_CLIP_CREATED]", { event: "cached", segIdx: i, segId: s.id, speaker: s.speaker });
-        }
-      })
-    );
-
+    const modeInfo = PODCAST_MODES.find((m) => m.id === mode)!;
+    await Promise.all(segs.map(async (s) => {
+      const voice = s.speaker === "guest" ? modeInfo.guestVoice : modeInfo.hostVoice;
+      const blob  = await fetchBlob(prepareSegmentForTTS(s.text), voice);
+      if (blob) audioCacheRef.current.set(s.id, blob);
+    }));
     setAudioReady(true);
-    console.log("[PODCAST_AUDIO_CLIP_CREATED]", { event: "prebuffer-done", cachedCount: audioCacheRef.current.size, totalSegments: seg.length });
-    console.log("[PODCAST_AUDIO_PLAYER_READY]", { mode: modeId, segments: seg.length, cachedCount: audioCacheRef.current.size });
-  }, [fetchAudioBlob]);
+    console.log("[PODCAST_AUDIO_PLAYER_READY]", { mode, segments: segs.length, cached: audioCacheRef.current.size });
+  }, [mode, fetchBlob]);
 
-  // ── TTS playback ───────────────────────────────────────────────────────
+  // ── Stop ──────────────────────────────────────────────────────────────
   const stop = useCallback(() => {
     abortRef.current = true;
-    audioRef.current?.pause();
-    audioRef.current = null;
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     if (typeof window !== "undefined") window.speechSynthesis?.cancel();
-    if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+    if (countdownRef.current)    { clearInterval(countdownRef.current);    countdownRef.current    = null; }
     if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
     setQuizCountdown(null);
     setElapsed(0);
@@ -273,30 +229,27 @@ export default function PodcastLab({
     onEvidenceFocus?.(null);
   }, [onEvidenceFocus]);
 
+  // ── Play a single blob ────────────────────────────────────────────────
   const playBlob = useCallback(async (blob: Blob): Promise<void> => {
     const url   = URL.createObjectURL(blob);
     const audio = new Audio(url);
+    audio.playbackRate = playbackSpeed;
     audioRef.current = audio;
     await new Promise<void>((resolve) => {
       audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
       audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
       audio.play().catch(() => resolve());
     });
-  }, []);
+  }, [playbackSpeed]);
 
-  const fetchAndPlayAudio = useCallback(async (text: string, voice: string, segmentId?: string): Promise<void> => {
-    // Use pre-buffered audio if available (zero latency path)
-    if (segmentId && audioCacheRef.current.has(segmentId)) {
-      const cached = audioCacheRef.current.get(segmentId)!;
-      console.log("[PODCAST_TURN_SEQUENCE]", { event: "play-cached", segmentId, fetchMode: "cached" });
-      if (!abortRef.current) await playBlob(cached);
+  const fetchAndPlay = useCallback(async (text: string, voice: string, segId?: string): Promise<void> => {
+    if (segId && audioCacheRef.current.has(segId)) {
+      if (!abortRef.current) await playBlob(audioCacheRef.current.get(segId)!);
       return;
     }
-
-    // Live fetch fallback (first play before pre-buffer completes)
     try {
-      const res = await fetch("/api/tts", {
-        method:  "POST",
+      const res  = await fetch("/api/tts", {
+        method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ script: text, voice }),
       });
@@ -305,23 +258,22 @@ export default function PodcastLab({
 
       if (data.useBrowserSpeech && typeof window !== "undefined" && "speechSynthesis" in window) {
         await new Promise<void>((resolve) => {
-          const utt = new SpeechSynthesisUtterance(data.script || text);
-          utt.rate  = 0.92;
-          utt.onend = () => resolve();
+          const utt  = new SpeechSynthesisUtterance(data.script || text);
+          utt.rate   = playbackSpeed;
+          utt.onend  = () => resolve();
+          utt.onerror = () => resolve(); // ← resolve on cancel so stop doesn't hang
           window.speechSynthesis.speak(utt);
         });
         return;
       }
 
-      if (data.audioBase64) {
+      if (data.audioBase64 && !abortRef.current) {
         const bytes = Uint8Array.from(atob(data.audioBase64), (c) => c.charCodeAt(0));
         const blob  = new Blob([bytes], { type: data.mimeType ?? "audio/mpeg" });
-        if (!abortRef.current) await playBlob(blob);
+        await playBlob(blob);
       }
-    } catch {
-      // silent — continue to next segment
-    }
-  }, [playBlob]);
+    } catch { /* silent */ }
+  }, [playBlob, playbackSpeed]);
 
   const runCountdown = useCallback((seconds: number): Promise<void> =>
     new Promise<void>((resolve) => {
@@ -340,11 +292,11 @@ export default function PodcastLab({
       }, 1000);
     }), []);
 
+  // ── Playback loop ─────────────────────────────────────────────────────
   const playFrom = useCallback(async (startIdx: number) => {
     if (!script) return;
     abortRef.current = false;
     setPlayState("playing");
-
     const modeInfo = PODCAST_MODES.find((m) => m.id === mode)!;
 
     for (let i = startIdx; i < script.segments.length; i++) {
@@ -352,38 +304,23 @@ export default function PodcastLab({
       const seg = script.segments[i];
       setSegIdx(i);
 
-      // Estimate segment duration from word count (avg 140 wpm)
       const wordCount = seg.text.trim().split(/\s+/).length;
       const estDuration = Math.round((wordCount / 140) * 60);
       setSegDuration(estDuration);
       setElapsed(0);
       if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
-      elapsedTimerRef.current = setInterval(() => {
-        setElapsed(prev => prev + 1);
-      }, 1000);
+      elapsedTimerRef.current = setInterval(() => setElapsed((p) => p + 1), 1000);
 
-      if (seg.anchorId) {
-        onEvidenceFocus?.(seg.anchorId);
-        console.log("[PODCAST_SEGMENT_START]", {
-          segIdx: i, type: seg.type, speaker: seg.speaker,
-          anchorId: seg.anchorId, sourceField: seg.sourceField ?? null, chars: seg.text.length,
-        });
-      } else {
-        console.log("[PODCAST_SEGMENT_START]", {
-          segIdx: i, type: seg.type, speaker: seg.speaker, chars: seg.text.length,
-        });
-      }
+      if (seg.anchorId) onEvidenceFocus?.(seg.anchorId);
+      console.log("[PODCAST_SEGMENT_START]", { segIdx: i, type: seg.type, speaker: seg.speaker, chars: seg.text.length });
 
-      // Quiz countdown before quiz segments
       if (mode === "quiz_podcast" && seg.type === "recall_quiz" && !abortRef.current) {
         await runCountdown(5);
       }
-
       if (abortRef.current) break;
 
       const voice = seg.speaker === "guest" ? modeInfo.guestVoice : modeInfo.hostVoice;
-      if (audioRef.current) audioRef.current.playbackRate = playbackSpeed;
-      await fetchAndPlayAudio(formulaToSpeech(seg.text).slice(0, 500), voice, seg.id);
+      await fetchAndPlay(prepareSegmentForTTS(seg.text), voice, seg.id);
 
       if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
       if (abortRef.current) break;
@@ -395,11 +332,11 @@ export default function PodcastLab({
       setSegDuration(0);
       onEvidenceFocus?.(null);
     }
-  }, [script, mode, playbackSpeed, onEvidenceFocus, fetchAndPlayAudio, runCountdown]);
+  }, [script, mode, onEvidenceFocus, fetchAndPlay, runCountdown]);
 
   const handlePlay = useCallback(() => {
-    if (playState === "playing") { stop(); }
-    else { playFrom(playState === "paused" ? segIdx : 0); }
+    if (playState === "playing") stop();
+    else playFrom(playState === "paused" ? segIdx : 0);
   }, [playState, segIdx, playFrom, stop]);
 
   const handleSegmentClick = useCallback((idx: number) => {
@@ -407,45 +344,39 @@ export default function PodcastLab({
     setTimeout(() => playFrom(idx), 80);
   }, [stop, playFrom]);
 
+  // ── Derived ───────────────────────────────────────────────────────────
+  const currentSeg = script?.segments[segIdx];
+  const noteLabCount   = studyModel ? getAllUltraNotes().filter((n) => n.bookId === bookId && n.pageNumber === pageNumber).length : 0;
+  const recallCount    = studyModel ? getAllRecallSets().filter((r) => r.bookId === bookId && r.pageNumber === pageNumber).reduce((s, r) => s + r.cards.length, 0) : 0;
+  const progressFrac   = script ? Math.min(1, (segIdx + elapsed / Math.max(segDuration, 1)) / script.totalSegments) : 0;
+
   // ── Render ─────────────────────────────────────────────────────────────
-
-  const currentSeg: PodcastSegment | undefined = script?.segments[segIdx];
-  const clinicalStepIdx = currentSeg ? clinicalStep(currentSeg) : -1;
-
-  const borderClass = cfg.isDark ? "border-white/10" : "border-slate-200";
-  const mutedText   = cfg.isDark ? "text-white/40"  : "text-slate-400";
-  const bodyText    = cfg.isDark ? "text-white/90"  : "text-slate-800";
-
-  // Progress bar: fraction through the script by segment count
-  const progressFraction = script ? (segIdx + (elapsed / Math.max(segDuration, 1))) / script.totalSegments : 0;
-  const clampedProgress = Math.min(1, Math.max(0, progressFraction));
-
-  // Format seconds as m:ss
-  const formatTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-
   return (
-    <div className={`h-full flex flex-col bg-gradient-to-b ${cfg.bg} ${cfg.textClass} overflow-hidden`}>
+    <div className="h-full flex flex-col bg-[#060d18] text-white overflow-hidden">
 
-      {/* Studio header */}
-      <div className={`flex items-center justify-between px-4 py-3 border-b ${borderClass} shrink-0`}>
-        <div className="flex items-center gap-2">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/8 shrink-0">
+        <div className="flex items-center gap-2.5">
           <span className="text-lg">🎙️</span>
           <div>
-            <div className={`text-[11px] font-bold uppercase tracking-widest ${mutedText}`}>PodcastLab</div>
-            <div className={`text-[13px] font-semibold ${bodyText}`}>{cfg.headerTitle}</div>
-            <div className={`text-[10px] ${mutedText} mt-0.5`}>{cfg.headerSubtitle}</div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black uppercase tracking-widest text-white/30">PodcastLab</span>
+              <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded ${cfg.accent} text-white`}>
+                {cfg.badge}
+              </span>
+            </div>
+            <div className="text-[13px] font-semibold text-white/90">{cfg.headerTitle}</div>
+            <div className="text-[10px] text-white/35 mt-0.5">{cfg.headerSub}</div>
           </div>
         </div>
         {script && (
-          <div className={`text-[10px] ${mutedText}`}>
-            ~{script.estimatedMinutes} min · {script.totalSegments} segments
-          </div>
+          <div className="text-[10px] text-white/25">{script.totalSegments} seg · ~{script.estimatedMinutes} min</div>
         )}
       </div>
 
       {/* Mode selector */}
-      <div className={`px-3 pt-3 pb-2 border-b ${borderClass} shrink-0`}>
-        <div className={`text-[9px] font-bold uppercase tracking-widest ${mutedText} mb-2`}>Mode</div>
+      <div className="px-3 pt-3 pb-2 border-b border-white/6 shrink-0">
+        <div className="text-[9px] font-bold uppercase tracking-widest text-white/25 mb-2">Mode</div>
         <div className="flex flex-wrap gap-1.5">
           {PODCAST_MODES.map((m) => (
             <button
@@ -454,10 +385,8 @@ export default function PodcastLab({
               title={m.description}
               className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all border ${
                 mode === m.id
-                  ? `${cfg.accentClass} border-transparent text-white`
-                  : cfg.isDark
-                    ? "bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:text-white/90"
-                    : "bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+                  ? `${MODE_CONFIG[m.id].accent} border-transparent text-white`
+                  : "bg-white/5 border-white/8 text-white/55 hover:bg-white/10 hover:text-white/85"
               }`}
             >
               {m.icon} {m.label}
@@ -466,64 +395,24 @@ export default function PodcastLab({
         </div>
       </div>
 
-      {/* Clinical breadcrumb */}
-      {mode === "clinical" && playState === "playing" && (
-        <div className="px-3 pt-2 pb-1 shrink-0">
-          <div className="flex items-center gap-1 text-[10px]">
-            {CLINICAL_STEPS.map((step, i) => (
-              <React.Fragment key={step}>
-                <span className={`px-2 py-0.5 rounded font-semibold transition-all ${
-                  clinicalStepIdx === i ? "bg-cyan-400 text-teal-950" : "text-white/30"
-                }`}>
-                  {step}
-                </span>
-                {i < CLINICAL_STEPS.length - 1 && <span className="text-white/20">→</span>}
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Source info */}
       {studyModel && (
         <div className="px-3 py-2 shrink-0">
           <div className="flex flex-wrap gap-1.5 text-[10px]">
-            <span className={`px-2 py-0.5 rounded border ${
-              cfg.isDark
-                ? "bg-emerald-900/40 text-emerald-300/80 border-emerald-600/20"
-                : "bg-emerald-50 text-emerald-700 border-emerald-200"
-            }`}>
-              ✓ Right Panel ({studyModel.visualAnchors.length} anchors)
-            </span>
-            {noteLabCount > 0 && (
-              <span className={`px-2 py-0.5 rounded border ${
-                cfg.isDark
-                  ? "bg-green-900/40 text-green-300/80 border-green-600/20"
-                  : "bg-green-50 text-green-700 border-green-200"
-              }`}>
-                ✓ NoteLab ({noteLabCount})
-              </span>
-            )}
-            {recallCardCount > 0 && (
-              <span className={`px-2 py-0.5 rounded border ${
-                cfg.isDark
-                  ? "bg-purple-900/40 text-purple-300/80 border-purple-600/20"
-                  : "bg-purple-50 text-purple-700 border-purple-200"
-              }`}>
-                ✓ RecallLab ({recallCardCount} cards)
-              </span>
-            )}
+            <span className="px-2 py-0.5 rounded bg-emerald-900/40 text-emerald-300/80 border border-emerald-700/20">✓ Right Panel ({studyModel.visualAnchors.length})</span>
+            {noteLabCount > 0 && <span className="px-2 py-0.5 rounded bg-green-900/40 text-green-300/80 border border-green-700/20">✓ NoteLab ({noteLabCount})</span>}
+            {recallCount  > 0 && <span className="px-2 py-0.5 rounded bg-purple-900/40 text-purple-300/80 border border-purple-700/20">✓ RecallLab ({recallCount})</span>}
           </div>
         </div>
       )}
 
-      {/* Generate button */}
+      {/* Generate */}
       {!script && (
         <div className="px-3 pb-3 shrink-0">
           <button
             onClick={generateScript}
             disabled={!studyModel || generating}
-            className={`w-full py-2.5 rounded-xl text-[13px] font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed text-white shadow ${cfg.accentClass} hover:opacity-90`}
+            className={`w-full py-2.5 rounded-xl text-[13px] font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed text-white shadow ${cfg.accent} hover:opacity-90`}
           >
             {generating ? "Generating podcast…" : !studyModel ? "Waiting for Right Panel…" : "🎙️ Generate Podcast"}
           </button>
@@ -531,7 +420,7 @@ export default function PodcastLab({
         </div>
       )}
 
-      {/* Scrollable area */}
+      {/* Scrollable */}
       <div className="flex-1 overflow-y-auto flex flex-col">
 
         {/* Quiz countdown */}
@@ -542,155 +431,85 @@ export default function PodcastLab({
           </div>
         )}
 
-        {/* ── Audio Player ──────────────────────────────────────────────── */}
+        {/* Audio player */}
         {script && (
-          <div className={`mx-3 mt-3 rounded-2xl border ${borderClass} ${cfg.isDark ? "bg-white/5" : "bg-white/70"} p-4 shrink-0`}>
-
-            {/* Now playing info */}
+          <div className="mx-3 mt-3 rounded-2xl border border-white/8 bg-white/4 p-4 shrink-0">
+            {/* Now playing */}
             <div className="mb-3 text-center">
-              <div className={`text-[11px] font-bold uppercase tracking-widest ${mutedText} mb-0.5`}>
-                {cfg.headerTitle}
-              </div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-white/35 mb-0.5">{cfg.headerTitle}</div>
               {currentSeg && (
-                <div className={`text-[13px] font-semibold leading-tight ${bodyText}`}>
-                  {currentSeg.speaker === "host" ? cfg.hostLabel
-                    : currentSeg.speaker === "guest" ? cfg.guestLabel : "Narrator"}
-                  {" · "}
-                  <span className={`font-normal ${mutedText}`}>{SEGMENT_LABELS[currentSeg.type]}</span>
-                  {mode === "exam_cram" && (currentSeg.type === "right_panel_note" || currentSeg.type === "highlight_evidence") && (
-                    <span className="ml-1.5 px-1.5 py-0.5 rounded text-[8px] font-black bg-red-600 text-white tracking-widest align-middle">HIGH YIELD</span>
+                <div className="text-[13px] font-semibold leading-tight">
+                  <span className={speakerColorClass(currentSeg.speaker)}>
+                    {currentSeg.speaker === "host" ? "Host" : currentSeg.speaker === "guest" ? "Guest" : "Narrator"}
+                  </span>
+                  <span className="text-white/35 font-normal ml-1.5">· {SEGMENT_LABELS[currentSeg.type]}</span>
+                  {cfg.showHighYield && (currentSeg.type === "right_panel_note" || currentSeg.type === "highlight_evidence") && (
+                    <span className="ml-2 px-1.5 py-0.5 rounded text-[8px] font-black bg-red-600 text-white tracking-widest align-middle">HIGH YIELD</span>
                   )}
                 </div>
               )}
               {!currentSeg && (
-                <div className={`text-[13px] ${bodyText}`}>
-                  {script.totalSegments} segments · ~{script.estimatedMinutes} min
-                </div>
+                <div className="text-[13px] text-white/60">{script.totalSegments} segments · ~{script.estimatedMinutes} min</div>
               )}
             </div>
 
             {/* Progress bar */}
             <div
-              className={`relative h-1.5 rounded-full mb-2 overflow-hidden ${cfg.isDark ? "bg-white/10" : "bg-slate-200"}`}
+              className="relative h-1.5 rounded-full mb-2 overflow-hidden bg-white/10 cursor-pointer"
               onClick={(e) => {
                 if (!script) return;
                 const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                const fraction = (e.clientX - rect.left) / rect.width;
-                const targetIdx = Math.floor(fraction * script.totalSegments);
-                handleSegmentClick(Math.max(0, Math.min(script.totalSegments - 1, targetIdx)));
+                const frac = (e.clientX - rect.left) / rect.width;
+                handleSegmentClick(Math.max(0, Math.min(script.totalSegments - 1, Math.floor(frac * script.totalSegments))));
               }}
-              style={{ cursor: "pointer" }}
             >
-              <div
-                className={`h-full rounded-full transition-all duration-300 ${cfg.accentClass}`}
-                style={{ width: `${clampedProgress * 100}%` }}
-              />
+              <div className={`h-full rounded-full transition-all duration-300 ${cfg.accent}`} style={{ width: `${progressFrac * 100}%` }} />
             </div>
 
-            {/* Time / segment counter */}
-            <div className={`flex justify-between text-[9px] ${mutedText} mb-4`}>
-              <span>{playState === "playing" ? formatTime(elapsed) : "0:00"}</span>
+            {/* Time */}
+            <div className="flex justify-between text-[9px] text-white/30 mb-4">
+              <span>{playState === "playing" ? fmtTime(elapsed) : "0:00"}</span>
               <span>{segIdx + 1} / {script.totalSegments}</span>
-              <span>~{formatTime(script.estimatedMinutes * 60)}</span>
+              <span>~{fmtTime(script.estimatedMinutes * 60)}</span>
             </div>
 
-            {/* Controls row */}
+            {/* Controls */}
             <div className="flex items-center justify-center gap-4 mb-3">
-              {/* Prev segment */}
-              <button
-                onClick={() => handleSegmentClick(Math.max(0, segIdx - 1))}
-                disabled={segIdx === 0}
-                title="Previous segment"
-                className={`w-9 h-9 rounded-full flex items-center justify-center transition-all disabled:opacity-30 ${
-                  cfg.isDark ? "bg-white/10 hover:bg-white/20 text-white" : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-                }`}
-              >
-                ⏮
-              </button>
-
-              {/* Rewind 10s (jump back 1 segment as proxy) */}
-              <button
-                onClick={() => handleSegmentClick(Math.max(0, segIdx - 1))}
-                title="Skip back"
-                className={`w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold transition-all ${
-                  cfg.isDark ? "bg-white/10 hover:bg-white/20 text-white" : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-                }`}
-              >
-                ⟨10
-              </button>
-
-              {/* Large Play / Pause */}
-              <button
-                onClick={handlePlay}
-                className={`w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold shadow-lg transition-all text-white ${
-                  playState === "playing" ? "bg-red-600 hover:bg-red-500" : `${cfg.accentClass} hover:opacity-90`
-                }`}
-              >
+              <button onClick={() => handleSegmentClick(Math.max(0, segIdx - 1))} disabled={segIdx === 0}
+                className="w-9 h-9 rounded-full flex items-center justify-center bg-white/8 hover:bg-white/15 text-white/70 disabled:opacity-30 transition-all" title="Previous">⏮</button>
+              <button onClick={() => handleSegmentClick(Math.max(0, segIdx - 1))}
+                className="w-9 h-9 rounded-full flex items-center justify-center bg-white/8 hover:bg-white/15 text-white/70 text-[11px] font-bold transition-all" title="Skip back">⟨10</button>
+              <button onClick={handlePlay}
+                className={`w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold shadow-lg transition-all text-white ${playState === "playing" ? "bg-red-600 hover:bg-red-500" : `${cfg.accent} hover:opacity-90`}`}>
                 {playState === "playing" ? "⏸" : "▶"}
               </button>
-
-              {/* Forward 10s (jump forward 1 segment as proxy) */}
-              <button
-                onClick={() => handleSegmentClick(Math.min((script?.totalSegments ?? 1) - 1, segIdx + 1))}
-                title="Skip forward"
-                className={`w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold transition-all ${
-                  cfg.isDark ? "bg-white/10 hover:bg-white/20 text-white" : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-                }`}
-              >
-                10⟩
-              </button>
-
-              {/* Next segment */}
-              <button
-                onClick={() => handleSegmentClick(Math.min((script?.totalSegments ?? 1) - 1, segIdx + 1))}
-                disabled={!script || segIdx >= script.totalSegments - 1}
-                title="Next segment"
-                className={`w-9 h-9 rounded-full flex items-center justify-center transition-all disabled:opacity-30 ${
-                  cfg.isDark ? "bg-white/10 hover:bg-white/20 text-white" : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-                }`}
-              >
-                ⏭
-              </button>
+              <button onClick={() => handleSegmentClick(Math.min(script.totalSegments - 1, segIdx + 1))}
+                className="w-9 h-9 rounded-full flex items-center justify-center bg-white/8 hover:bg-white/15 text-white/70 text-[11px] font-bold transition-all" title="Skip forward">10⟩</button>
+              <button onClick={() => handleSegmentClick(Math.min(script.totalSegments - 1, segIdx + 1))} disabled={segIdx >= script.totalSegments - 1}
+                className="w-9 h-9 rounded-full flex items-center justify-center bg-white/8 hover:bg-white/15 text-white/70 disabled:opacity-30 transition-all" title="Next">⏭</button>
             </div>
 
-            {/* Speed + secondary controls */}
+            {/* Speed + secondary */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1">
+              <div className="flex gap-1">
                 {[0.75, 1, 1.25, 1.5].map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => {
-                      setPlaybackSpeed(s);
-                      if (audioRef.current) audioRef.current.playbackRate = s;
-                    }}
+                  <button key={s}
+                    onClick={() => { setPlaybackSpeed(s); if (audioRef.current) audioRef.current.playbackRate = s; }}
                     className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-all ${
-                      playbackSpeed === s
-                        ? `${cfg.accentClass} text-white`
-                        : cfg.isDark
-                          ? "bg-white/10 text-white/60 hover:bg-white/20"
-                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    }`}
-                  >
+                      playbackSpeed === s ? `${cfg.accent} text-white` : "bg-white/8 text-white/50 hover:bg-white/15"
+                    }`}>
                     {s}×
                   </button>
                 ))}
               </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowTranscript((v) => !v)}
+              <div className="flex gap-2 items-center">
+                <button onClick={() => setShowTranscript((v) => !v)}
                   className={`px-2.5 py-1 rounded text-[10px] font-medium transition-all ${
-                    showTranscript
-                      ? `${cfg.accentClass} text-white`
-                      : cfg.isDark ? "bg-white/10 text-white/60 hover:bg-white/20" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
+                    showTranscript ? `${cfg.accent} text-white` : "bg-white/8 text-white/50 hover:bg-white/15"
+                  }`}>
                   ≡ Transcript
                 </button>
-                <button
-                  onClick={() => { setScript(null); setGenError(null); }}
-                  className={`text-[10px] ${mutedText} hover:opacity-80 transition-colors`}
-                >
+                <button onClick={() => { setScript(null); setGenError(null); }} className="text-[10px] text-white/25 hover:text-white/50 transition-colors">
                   Regenerate
                 </button>
               </div>
@@ -698,51 +517,31 @@ export default function PodcastLab({
           </div>
         )}
 
-        {/* ── Transcript / Segment list ───────────────────────────────── */}
+        {/* Transcript */}
         {script && showTranscript && (
-          <div className="px-3 py-2 space-y-1.5 mt-1">
+          <div className="px-3 py-2 mt-1 space-y-1.5">
             {script.segments.map((seg, idx) => {
-              const isActive       = playState === "playing" && idx === segIdx;
-              const isHighYield    = mode === "exam_cram" && (seg.type === "right_panel_note" || seg.type === "highlight_evidence");
-              const isDebateAnchor = mode === "debate" && !!seg.anchorId && isActive;
+              const isActive = playState === "playing" && idx === segIdx;
+              const isHY     = cfg.showHighYield && (seg.type === "right_panel_note" || seg.type === "highlight_evidence");
               return (
-                <button
-                  key={seg.id}
-                  onClick={() => handleSegmentClick(idx)}
+                <button key={seg.id} onClick={() => handleSegmentClick(idx)}
                   className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all ${
-                    isActive
-                      ? cfg.isDark ? "bg-blue-900/40 border-blue-500/50 shadow-sm" : "bg-blue-100 border-blue-400"
-                      : cfg.isDark ? "bg-white/4 border-white/8 hover:bg-white/8" : "bg-white/60 border-slate-200 hover:bg-white/90"
-                  } ${SEGMENT_COLORS[seg.type]} ${isDebateAnchor ? "ring-2 ring-green-500/60" : ""}`}
-                >
+                    isActive ? "bg-blue-900/40 border-blue-500/40" : "bg-white/3 border-white/6 hover:bg-white/7"
+                  } ${SEGMENT_COLORS[seg.type]}`}>
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className={`text-[9px] font-bold uppercase tracking-widest ${speakerColor(seg.speaker, cfg.isDark)}`}>
-                      {seg.speaker === "host" ? cfg.hostLabel
-                        : seg.speaker === "guest" ? cfg.guestLabel : "NARRATOR"}
+                    <span className={`text-[9px] font-bold uppercase tracking-widest ${speakerColorClass(seg.speaker)}`}>
+                      {seg.speaker === "host" ? "HOST" : seg.speaker === "guest" ? "GUEST" : "NARRATOR"}
                     </span>
-                    <span className={`text-[9px] uppercase tracking-wide ${mutedText}`}>
-                      {SEGMENT_LABELS[seg.type]}
-                    </span>
-                    {isHighYield && (
-                      <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-red-600 text-white tracking-widest">HIGH YIELD</span>
-                    )}
-                    {seg.anchorId && (
-                      <span className="ml-auto text-[9px] text-amber-400/60">⚓ {seg.anchorId}</span>
-                    )}
-                    {seg.recallCardId && !seg.anchorId && (
-                      <span className="ml-auto text-[9px] text-purple-400/60">📋 Quiz</span>
-                    )}
+                    <span className="text-[9px] text-white/25 uppercase">{SEGMENT_LABELS[seg.type]}</span>
+                    {isHY && <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-red-600 text-white">HIGH YIELD</span>}
+                    {seg.anchorId && <span className="ml-auto text-[9px] text-amber-400/50">⚓ {seg.anchorId}</span>}
                   </div>
-                  <p className={`text-[12px] leading-relaxed ${isActive ? bodyText : mutedText} line-clamp-3`}>
-                    {seg.text}
-                  </p>
+                  <p className={`text-[12px] leading-relaxed line-clamp-3 ${isActive ? "text-white/95" : "text-white/55"}`}>{seg.text}</p>
                 </button>
               );
             })}
           </div>
         )}
-
-        {/* Spacer so content doesn't crowd the bottom */}
         <div className="flex-1" />
       </div>
 
@@ -750,9 +549,7 @@ export default function PodcastLab({
       {!script && !generating && !studyModel && (
         <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
           <span className="text-3xl">🎙️</span>
-          <p className={`text-[12px] ${mutedText} leading-relaxed`}>
-            Open a page in the Reader to activate PodcastLab. The Right Panel must synthesize first.
-          </p>
+          <p className="text-[12px] text-white/35 leading-relaxed">Open a page in the Reader to activate PodcastLab. The Right Panel must synthesize first.</p>
         </div>
       )}
     </div>

@@ -1,7 +1,6 @@
 // lib/podcast/podcastEngine.ts
 // Builds the LLM prompt for podcast script generation and parses the response.
-// Also provides a local fallback that generates a deterministic script
-// when no OpenAI key is available.
+// Subject-adaptive: detects the book domain and adjusts personas/style.
 
 import type { CurrentPageStudyModel, VisualAnchor } from "@/lib/insights/currentPageStudyModel";
 import type { UltraNote } from "@/lib/notelab/ultraNoteStore";
@@ -18,204 +17,161 @@ export interface PodcastBuildContext {
 }
 
 // ---------------------------------------------------------------------------
-// Subject type detection — inferred from page text and study model.
+// Subject detection — infers domain from page text + studyModel
 // ---------------------------------------------------------------------------
 
-type SubjectType =
-  | "biology" | "anatomy" | "physiology" | "chemistry" | "organic_chemistry"
-  | "physics" | "calculus" | "statistics" | "medicine" | "dentistry"
-  | "history" | "psychology" | "business" | "law" | "computer_science" | "general";
+export type SubjectType =
+  | "medical" | "dental" | "anatomy" | "physiology" | "pharmacology" | "pathology"
+  | "chemistry" | "biology" | "physics" | "math" | "engineering"
+  | "history" | "business" | "psychology" | "law" | "literature" | "general";
 
-export function detectSubjectType(pageText: string, studyModel: CurrentPageStudyModel): SubjectType {
-  const combined = (pageText + " " + studyModel.pageThesis + " " + Object.values(studyModel.studyNotes).filter(Boolean).join(" ")).toLowerCase();
+export function detectSubjectType(
+  pageText: string,
+  studyModel?: Pick<CurrentPageStudyModel, "pageThesis" | "studyNotes">,
+): SubjectType {
+  const corpus = [
+    pageText,
+    studyModel?.pageThesis ?? "",
+    studyModel?.studyNotes?.keyMechanism ?? "",
+    studyModel?.studyNotes?.whyThisMatters ?? "",
+  ].join(" ").toLowerCase();
 
-  if (/\b(diagnosis|pathophysiology|treatment|symptom|prognosis|contraindication|dosage|pharmacology|medication|clinical|patient|disease|syndrome|etiology|complication|differential)\b/.test(combined)) return "medicine";
-  if (/\b(tooth|dental|caries|pulp|enamel|dentin|occlusion|periodontal|extraction|crown|root canal|dat exam|dat prep)\b/.test(combined)) return "dentistry";
-  if (/\b(derivative|integral|limit|convergence|epsilon|delta|calculus|differentiation|antiderivative|riemann|theorem|proof|diverge|series|sequence)\b/.test(combined)) return "calculus";
-  if (/\b(p-value|hypothesis|regression|variance|standard deviation|t-test|anova|chi-square|confidence interval|sample size|correlation|probability distribution|null hypothesis)\b/.test(combined)) return "statistics";
-  if (/\b(newton|force|momentum|velocity|acceleration|quantum|thermodynamics|entropy|electromagnetic|wavelength|frequency|kinetic energy|potential energy|coulomb|ohm|ampere|voltage)\b/.test(combined)) return "physics";
-  if (/\b(reaction|reagent|organic|carbonyl|ester|aldehyde|ketone|alkene|alkyne|benzene|aromatic|stereochemistry|nucleophile|electrophile|mechanism|sn1|sn2|e1|e2)\b/.test(combined)) return "organic_chemistry";
-  if (/\b(molecule|atom|element|compound|bond|ion|acid|base|oxidation|reduction|mole|stoichiometry|periodic table|electron|proton|neutron|ph|buffer|equilibrium|entropy|enthalpy)\b/.test(combined)) return "chemistry";
-  if (/\b(cell|dna|rna|protein|enzyme|receptor|membrane|mitosis|meiosis|evolution|genetics|chromosome|atp|metabolism|photosynthesis|ecosystem|organism|species)\b/.test(combined)) return "biology";
-  if (/\b(muscle|nerve|bone|organ|tissue|skeleton|artery|vein|neuron|brain|spinal|anatomical|dissect|cadaver|innervate|ligament|tendon)\b/.test(combined)) return "anatomy";
-  if (/\b(homeostasis|hormone|gland|feedback|endocrine|nervous system|digestion|cardiovascular|respiratory|renal|immune|lymphatic|reflex|blood pressure|cardiac output)\b/.test(combined)) return "physiology";
-  if (/\b(algorithm|data structure|recursion|complexity|programming|function|variable|class|object|binary|loop|array|sort|graph|tree|compiler|database|api)\b/.test(combined)) return "computer_science";
-  if (/\b(historical|century|war|civilization|empire|revolution|democracy|colonialism|treaty|ideology|economy|trade route|industrialization)\b/.test(combined)) return "history";
-  if (/\b(behavior|cognition|perception|memory|motivation|personality|disorder|therapy|neuroscience|stimulus|response|conditioning|social|emotion)\b/.test(combined)) return "psychology";
-  if (/\b(market|supply|demand|revenue|profit|cost|management|strategy|accounting|finance|economics|investment|entrepreneur|organization|leadership)\b/.test(combined)) return "business";
-  if (/\b(statute|regulation|contract|liability|tort|constitutional|precedent|plaintiff|defendant|jurisdiction|counsel|amendment|legal|court)\b/.test(combined)) return "law";
-
+  if (/\b(diagnosis|patient|symptom|treatment|prognosis|clinical|hospital|medication|drug|dose|contraindication|side effect|pathogen|infection|surgery|cardiac|pulmonary|renal|hepatic|neurolog|oncolog|pediatr|obstetric|gynecolog|pharmacok)\b/.test(corpus)) return "medical";
+  if (/\b(tooth|teeth|dental|caries|periodontal|endodontic|pulp|dentin|enamel|alveolar|mandible|maxilla|occlusion|orthodontic|crown|restoration|extraction|oral mucosa|salivary|TMJ)\b/.test(corpus)) return "dental";
+  if (/\b(muscle|bone|joint|ligament|tendon|nerve|artery|vein|organ|skeleton|anatomy|cadaver|dissection|kinesiology|biomechanics|musculoskeletal)\b/.test(corpus)) return "anatomy";
+  if (/\b(homeostasis|hormone|feedback|receptor|signal transduction|metabolism|respiration|cardiovascular|renal|endocrine|nervous system|action potential|membrane potential|osmosis|diffusion|enzyme kinetics)\b/.test(corpus)) return "physiology";
+  if (/\b(drug|pharmacokinetics|pharmacodynamics|receptor|agonist|antagonist|toxicity|therapeutic index|bioavailability|half.life|mechanism of action|adverse effect)\b/.test(corpus)) return "pharmacology";
+  if (/\b(disease|lesion|biopsy|necrosis|inflammation|neoplasm|tumor|carcinoma|histology|pathophysiology|etiology|prognosis|complication)\b/.test(corpus)) return "pathology";
+  if (/\b(molecule|compound|reaction|reagent|bond|orbital|stoichiometry|titration|mole|equilibrium|catalyst|oxidation|reduction|entropy|enthalpy|polymer|organic|inorganic|acid|base|buffer)\b/.test(corpus)) return "chemistry";
+  if (/\b(cell|organism|evolution|genetics|dna|rna|protein|chromosome|mutation|natural selection|ecosystem|photosynthesis|mitosis|meiosis|phylogeny|taxonomy|microbiome)\b/.test(corpus)) return "biology";
+  if (/\b(force|energy|momentum|velocity|acceleration|gravity|friction|torque|quantum|wave|frequency|wavelength|electromagnetic|electric|magnetic|thermodynamics|entropy|heat|pressure|fluid)\b/.test(corpus)) return "physics";
+  if (/\b(theorem|proof|equation|polynomial|matrix|vector|integral|derivative|limit|function|variable|coefficient|algebra|geometry|calculus|trigonometry|logarithm|probability|statistics)\b/.test(corpus)) return "math";
+  if (/\b(circuit|voltage|current|resistor|capacitor|inductor|amplifier|transistor|semiconductor|algorithm|data structure|compiler|network|protocol|software|hardware|system design|thermodynamics|mechanics|statics|dynamics|material|stress|strain)\b/.test(corpus)) return "engineering";
+  if (/\b(historical|war|empire|revolution|civilization|politics|government|constitution|democracy|monarch|colony|trade|migration|culture|religion|philosophy|feudal|renaissance|enlightenment)\b/.test(corpus)) return "history";
+  if (/\b(market|supply|demand|revenue|profit|investment|finance|accounting|economics|strategy|management|consumer|competition|brand|pricing|GDP|inflation|interest rate)\b/.test(corpus)) return "business";
+  if (/\b(behavior|cognition|emotion|memory|perception|personality|disorder|therapy|DSM|anxiety|depression|neuroscience|learning|conditioning|social|developmental)\b/.test(corpus)) return "psychology";
+  if (/\b(statute|regulation|jurisdiction|plaintiff|defendant|tort|contract|criminal|civil|liability|precedent|common law|constitutional|rights)\b/.test(corpus)) return "law";
   return "general";
 }
 
-// Subject-aware speaker names
-function speakerNames(subject: SubjectType): { host: string; guest: string } {
-  switch (subject) {
-    case "medicine":
-    case "physiology": return { host: "Dr. Rivera", guest: "Resident" };
-    case "dentistry":  return { host: "Dr. Chen", guest: "Student" };
-    case "calculus":
-    case "statistics":
-    case "physics":    return { host: "Professor", guest: "Student" };
-    case "biology":
-    case "anatomy":
-    case "chemistry":
-    case "organic_chemistry": return { host: "Instructor", guest: "Student" };
-    case "history":    return { host: "Historian A", guest: "Historian B" };
-    case "psychology": return { host: "Dr. Patel", guest: "Student" };
-    case "business":   return { host: "Professor", guest: "Analyst" };
-    case "law":        return { host: "Professor", guest: "Law Student" };
-    default:           return { host: "Host", guest: "Guest" };
+// ---------------------------------------------------------------------------
+// Subject-aware personas and mode instructions
+// ---------------------------------------------------------------------------
+
+function getPersonas(subject: SubjectType, mode: PodcastMode): { host: string; guest: string } {
+  const isClinical = ["medical","dental","anatomy","physiology","pharmacology","pathology"].includes(subject);
+  const isScience  = ["chemistry","biology","physics","engineering"].includes(subject);
+
+  if (mode === "debate") {
+    if (isClinical) return { host: "Dr. Rivera (attending)", guest: "Dr. Chen (resident)" };
+    if (subject === "math")    return { host: "Prof. Martinez", guest: "Student Alex" };
+    if (subject === "physics") return { host: "Prof. Khan", guest: "Student Sam" };
+    if (isScience)  return { host: "Prof. Lee", guest: "Student Jordan" };
+    if (subject === "history") return { host: "Prof. Williams", guest: "Student Riley" };
+    if (subject === "business") return { host: "Prof. Thompson", guest: "Student Casey" };
+    return { host: "Instructor", guest: "Student" };
   }
+
+  if (mode === "clinical") {
+    if (isClinical) return { host: "Attending", guest: "Resident" };
+    if (subject === "math")     return { host: "Professor", guest: "Problem solver" };
+    if (subject === "physics")  return { host: "Engineer", guest: "Analyst" };
+    if (subject === "chemistry") return { host: "Lab instructor", guest: "Lab student" };
+    if (subject === "biology")  return { host: "Researcher", guest: "Lab student" };
+    if (subject === "history")  return { host: "Historian", guest: "Analyst" };
+    if (subject === "business") return { host: "Case leader", guest: "Analyst" };
+    return { host: "Instructor", guest: "Learner" };
+  }
+
+  return { host: "Host", guest: "Guest" };
 }
 
-// ---------------------------------------------------------------------------
-// Prompt builder — called by /api/podcast-script (server-side).
-// ---------------------------------------------------------------------------
-
 function modeInstructions(mode: PodcastMode, hasGuest: boolean, subject: SubjectType): string {
-  const { host, guest } = speakerNames(subject);
-  const guestNote = hasGuest
-    ? `Use "${host}" for the main speaker and "${guest}" for a curious co-host who asks follow-up questions.`
-    : `Use only "${host}" as the speaker.`;
+  const gNote = hasGuest
+    ? `Use "host" and "guest" speakers alternating throughout.`
+    : `Use only "host" as the speaker.`;
 
-  // Subject-specific context for each mode
-  const subjectContext: Partial<Record<SubjectType, string>> = {
-    medicine: "Use clinical reasoning. Frame explanation as: finding → mechanism → consequence → what not to miss.",
-    dentistry: "Frame as DAT exam prep. Connect concepts to clinical dentistry and board exam relevance.",
-    calculus: "Frame as a math lecture. Use precise condition → theorem → proof structure. Include worked examples.",
-    statistics: "Frame around data interpretation. Connect to research design and significance testing.",
-    physics: "Frame around physical laws. Use F=ma style notation expanded verbally. Include real-world applications.",
-    organic_chemistry: "Frame around reaction mechanisms. Use nucleophile/electrophile language. Explain why bonds form or break.",
-    chemistry: "Frame around atomic and molecular principles. Connect structure to function.",
-    biology: "Frame around evolutionary purpose and molecular mechanisms. Explain why, not just what.",
-    anatomy: "Frame around clinical relevance. Connect structure to function to pathology.",
-    physiology: "Frame around homeostatic mechanisms and feedback loops.",
-    history: "Frame as historical analysis. Argue causation, not just chronology.",
-    psychology: "Frame around evidence-based psychological mechanisms and real-world behavioral examples.",
-    business: "Frame around strategic decision-making and real-world case applications.",
-    law: "Frame around legal reasoning: rule → application → exception → exam trap.",
-    computer_science: "Frame around algorithmic thinking and computational complexity.",
-  };
-  const subjectNote = subjectContext[subject] ?? "Adapt to the subject matter on this page.";
+  const isClinical = ["medical","dental","anatomy","physiology","pharmacology","pathology"].includes(subject);
+  const isScience  = ["chemistry","biology","physics","engineering"].includes(subject);
+  const isMath     = subject === "math";
 
   switch (mode) {
     case "page_review":
-      return `MODE: Page Review (Professor Walkthrough). ${guestNote}
-${subjectNote}
-Generate 8–10 segments structured as a professor's 2-minute explanation:
-1. Open with what the page fundamentally teaches (not a list — a thesis statement)
-2. Walk through the mechanism: what causes what, and why it matters
-3. Give a concrete real-world or clinical example
-4. Flag the most common student misconception
-5. End with a memory anchor or takeaway
-Voice: educational, flowing, like a professor talking to a student — not reading bullet points.
-Each segment should be 2–4 natural spoken sentences. No headers, no bullets.`;
+      return `MODE: Page Review — professor-style walkthrough. ${gNote}
+Generate 8–10 segments: start with a short intro that frames what this page covers, then walk through each study note conversationally as if explaining to a student who just read the page. Use "let me walk you through" and "here's what this means" language. Include highlight evidence moments. End with a summary and what to review next.`;
 
     case "exam_cram":
-      return `MODE: Exam Cram (High-Yield Review). ${guestNote}
-${subjectNote}
-Generate 10–12 high-yield segments:
-1. State the exam-critical idea first — what would appear on a board exam
-2. For each Right Panel study note: compress to one HIGH YIELD statement
-3. Insert 2–3 recall quiz breaks: ask the question, pause, reveal answer
-4. Flag the trap — what students get wrong and why the correct answer is what it is
-5. End with "This WILL appear on the exam because…"
-Voice: urgent, focused, like a board-review coach. Short, punchy sentences.
-Each segment: 1–2 sentences maximum. No fluff.`;
-
-    case "clinical":
-      // Subject-adaptive: clinical framing varies by subject
-      if (subject === "medicine" || subject === "physiology" || subject === "anatomy") {
-        return `MODE: Clinical Conference. Use BOTH "${host}" and "${guest}" speakers alternating.
-Present as a real patient case discussion:
-Segment 1 (${guest}): Present the patient — symptoms, vitals, labs, relevant history
-Segment 2 (${host}): What's the differential diagnosis? Walk through most likely → less likely
-Segment 3 (${host}): Key mechanism — the pathophysiology that explains this presentation
-Segment 4 (${host}): Diagnosis and treatment rationale — why this treatment for this mechanism
-Segment 5 (${guest}): Ask "What would we miss if we didn't know this?" — common pitfall
-Segment 6 (${host}): Exam pearl — what a board question on this would test
-Generate 8–10 total segments. Real patient voices, not textbook narration.`;
-      }
-      if (subject === "dentistry") {
-        return `MODE: Dental Clinical Case. Use BOTH "${host}" and "${guest}" speakers alternating.
-Present as a dental patient case:
-Segment 1 (${guest}): Present the case — chief complaint, relevant findings, radiograph description
-Segment 2 (${host}): Differential diagnosis from DAT perspective
-Segment 3 (${host}): Mechanism — what's happening at the tissue/molecular level
-Segment 4 (${host}): Treatment plan and rationale
-Segment 5 (${guest}): "What would the DAT ask about this?" — exam angle
-Generate 8–10 total segments.`;
-      }
-      if (subject === "organic_chemistry" || subject === "chemistry") {
-        return `MODE: Real-World Application. ${guestNote}
-${subjectNote}
-Generate 8–10 segments connecting each concept to a real application:
-• Drug metabolism, industrial synthesis, environmental chemistry, or materials science
-• For each mechanism, explain what happens in the real world when this reaction occurs
-• Include a "practitioner perspective" segment: how a chemist would use this knowledge`;
-      }
-      return `MODE: Real-World Application. ${guestNote}
-${subjectNote}
-Generate 8–10 segments connecting this page's concepts to concrete real-world scenarios:
-• Start with the core concept as it appears in practice
-• For each Right Panel note, give a specific real-world scenario where it applies
-• If there's a common confusion, address it from an applied/analytical angle
-• End with an external verification citing a trusted source by name`;
-
-    case "debate":
-      if (subject === "history") {
-        return `MODE: Historical Debate. Use BOTH "${host}" and "${guest}" speakers alternating.
-Structure:
-${host}: "The primary cause of [topic] was [factor A]. Here's the evidence…"
-${guest}: "I'd argue [factor B] played a larger role. Consider that…"
-${host}: "The page specifically addresses this: [cite highlight evidence]"
-${guest}: "But that interpretation misses [counterpoint]…"
-${host}: "So the synthesis is: both factors interacted because…"
-Generate 12–15 segments. Each speaker makes a genuine argument — not a softball exchange.
-The debate should reach a real conclusion, not just state opposing views.`;
-      }
-      return `MODE: Evidence Debate. Use BOTH "${host}" and "${guest}" speakers alternating.
-Structure:
-${host}: Presents the central concept clearly
-${guest}: Challenges with "But why does that happen?" or "Isn't that the same as X?"
-${host}: Responds with highlight evidence from the page (cite directly)
-${guest}: Digs deeper — "What would happen if [condition changed]?"
-${host}: Connects to the bigger picture — why this principle matters beyond this page
-Together: arrive at a memorable conclusion the student can recall on an exam
-Generate 12–15 segments. Each exchange must advance understanding — no agreement theater.
-Include one recall quiz segment near the end.`;
+      return `MODE: Exam Cram — high-yield rapid review. ${gNote}
+Generate 10–12 segments. Be DENSE and FAST. Open with the thesis as a one-liner. Then drill: mechanism → common confusion → exam signal → memory anchor. Insert 2–3 quiz questions drawn from RecallLab cards ("Quick question — ..."). Label highest-priority facts. End with "Exam tip: ..." and a rapid fire list of must-know facts. No filler, no transitions longer than one sentence.`;
 
     case "quiz_podcast":
-      if (subject === "dentistry" || subject === "medicine") {
-        return `MODE: Board Exam Quiz Show. ${guestNote}
-${subjectNote}
-Generate 10–12 segments alternating:
-1. Explain a high-yield concept (1–2 sentences)
-2. Ask a board-style question: "Which of the following is most likely…" or "What is the mechanism of…"
-3. After a dramatic pause: reveal the answer and explain WHY the correct answer is correct AND why the wrong answers are wrong
-Repeat for each key concept.
-End with: "The hardest question on this page would be…" and walk through it slowly.
-Voice: quiz show energy — build suspense before revealing answers.`;
+      return `MODE: Recall Challenge — game-show quiz. ${gNote}
+Generate 10–12 segments. Style: upbeat game-show host. Pattern: explain a concept (2 sentences) → ask a quiz question starting with "Okay, question!" → dramatic pause line ("Think about it...") → reveal the answer → brief explanation → next concept. Draw questions from RecallLab cards. End with "Final score recap" summarizing what was covered.`;
+
+    case "debate": {
+      const personas = getPersonas(subject, "debate");
+      if (isClinical) {
+        return `MODE: Avrrio Rounds — attending with residents. Use "host" for ${personas.host} and "guest" for ${personas.guest}.
+Generate 12–15 segments: attending presents the mechanism/diagnosis/treatment approach; resident asks a clarifying question ("What about...?"); attending answers with evidence from the study notes and highlights; resident then connects to a related concept or asks about a common confusion; they arrive at a clinical conclusion together. Include a self-quiz segment near the end.`;
       }
-      return `MODE: Quiz Podcast. ${guestNote}
-${subjectNote}
-Generate 10–12 segments alternating:
-1. Explain a concept (1–2 sentences)
-2. Ask a question testing understanding — not recall, but reasoning
-3. Reveal the answer with explanation: why correct + what the wrong answer would assume
-Repeat for each key concept.
-End with the hardest question on this page and a full walkthrough.
-Voice: engaging, like a game show — build curiosity before revealing answers.`;
+      if (isMath) {
+        return `MODE: Avrrio Rounds — professor with students solving together. Use "host" for ${personas.host} and "guest" for ${personas.guest}.
+Generate 12–15 segments: professor introduces the concept/theorem/formula; student asks "But why does that work?"; professor demonstrates with a step-by-step example; student connects it to a previous concept or asks about a common mistake; they work through the logic together. Include a "Try this" problem near the end.`;
+      }
+      if (isScience) {
+        return `MODE: Avrrio Rounds — professor with students debating mechanism. Use "host" for ${personas.host} and "guest" for ${personas.guest}.
+Generate 12–15 segments: professor presents the core mechanism or reaction; student challenges with "Isn't that different from...?" or "What if...?"; professor responds with evidence from the highlights; student connects to the broader concept; both arrive at the key insight. Include a mechanism quiz near the end.`;
+      }
+      return `MODE: Avrrio Rounds — instructor with students debating interpretation. Use "host" for ${personas.host} and "guest" for ${personas.guest}.
+Generate 12–15 segments: instructor presents the concept; student challenges or asks "But what caused...?"; instructor answers with evidence; student connects to a bigger picture; together they arrive at the key insight. Include a recall quiz near the end.`;
+    }
+
+    case "clinical": {
+      if (isClinical) {
+        return `MODE: Clinical Conference — patient case discussion. ${gNote}
+Generate 8–10 segments: present a realistic patient or clinical scenario that directly involves the page concept; walk through Symptom → Mechanism → Diagnosis → Treatment using the study notes as evidence; reference specific highlight anchors as "the textbook states..."; address the common confusion from a diagnostic angle; end with "clinical pearl" — a one-liner that captures the key takeaway.`;
+      }
+      if (isMath) {
+        return `MODE: Applied Scenario — math problem walk-through. ${gNote}
+Generate 8–10 segments: present a real-world problem that uses the page concept; walk through setup → approach → step-by-step solution → interpretation; reference the key formula or theorem; address the common mistake; end with "the key insight is..." summarizing the principle.`;
+      }
+      if (subject === "physics" || subject === "engineering") {
+        return `MODE: Applied Scenario — real-world physics/engineering scenario. ${gNote}
+Generate 8–10 segments: present a concrete engineering or physics scenario (bridge, circuit, rocket, etc.) that requires the page concept; walk through the problem → principle → application → result; address the common confusion; end with "the practical takeaway is..." one-liner.`;
+      }
+      if (subject === "chemistry") {
+        return `MODE: Lab/Reaction Scenario — applied chemistry case. ${gNote}
+Generate 8–10 segments: present a lab or industrial scenario involving the reaction/mechanism on this page; walk through reactants → mechanism → products → real-world use; address the common confusion; end with a "remember this reaction by..." memory anchor.`;
+      }
+      if (subject === "biology") {
+        return `MODE: Applied Scenario — organism or pathway scenario. ${gNote}
+Generate 8–10 segments: present a biological scenario (organism behavior, disease, ecosystem, pathway) involving the page concept; walk through the mechanism, adaptive significance, and clinical/ecological relevance; address the common confusion; end with a key summary.`;
+      }
+      if (subject === "history") {
+        return `MODE: Historical Case — event analysis scenario. ${gNote}
+Generate 8–10 segments: present a historical case study that illustrates the page concept; walk through causes → events → consequences → significance; address a common historical misconception; end with "the lasting lesson is..." one-liner.`;
+      }
+      if (subject === "business") {
+        return `MODE: Business Case — company or market scenario. ${gNote}
+Generate 8–10 segments: present a real or hypothetical business scenario applying the page concept; walk through the problem → strategy → execution → outcome; address a common business misconception; end with "the strategic insight is..." one-liner.`;
+      }
+      return `MODE: Applied Scenario — real-world application of this concept. ${gNote}
+Generate 8–10 segments: present a scenario that applies the page concept; walk through context → concept application → outcome; address the common confusion; end with a practical summary.`;
+    }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Prompt builder
+// ---------------------------------------------------------------------------
 
 export function buildPodcastPrompt(ctx: PodcastBuildContext, mode: PodcastMode): string {
   const { studyModel, pageText, noteLab, recallLab, pageNumber, bookId } = ctx;
   const sn = studyModel.studyNotes;
-  const subject = detectSubjectType(pageText, studyModel);
   const hasGuest = mode === "debate" || mode === "clinical" || mode === "quiz_podcast";
-  console.log("[PODCAST_SUBJECT_DETECTED]", { subject, mode, page: pageNumber });
+
+  const subject = detectSubjectType(pageText, studyModel);
+  console.log("[PODCAST_SUBJECT_DETECTED]", { page: pageNumber, bookId, mode, subject });
 
   const pageSnippet = pageText.slice(0, 700).trim();
   const anchors = studyModel.visualAnchors.slice(0, 5);
@@ -227,9 +183,12 @@ export function buildPodcastPrompt(ctx: PodcastBuildContext, mode: PodcastMode):
     .flatMap((r) => r.cards.slice(0, 3))
     .slice(0, 6);
 
+  const personas = (mode === "debate" || mode === "clinical") ? getPersonas(subject, mode) : null;
+
   const lines: string[] = [
     `=== PAGE ${pageNumber} CONTEXT ===`,
     `PAGE TEXT (excerpt):\n"${pageSnippet}"`,
+    `SUBJECT DOMAIN: ${subject}`,
     "",
     `=== RIGHT PANEL finalStudyModel ===`,
     `Thesis: ${studyModel.pageThesis}`,
@@ -239,6 +198,10 @@ export function buildPodcastPrompt(ctx: PodcastBuildContext, mode: PodcastMode):
     `Memory Anchor: ${sn.quickMemory ?? "—"}`,
     `Exam Signal: ${sn.examSignal ?? "—"}`,
   ];
+
+  if (personas) {
+    lines.push(`HOST PERSONA: ${personas.host}`, `GUEST PERSONA: ${personas.guest}`);
+  }
 
   if (concepts.length > 0) {
     lines.push("", "CONCEPT BLOCKS:");
@@ -281,13 +244,14 @@ export function buildPodcastPrompt(ctx: PodcastBuildContext, mode: PodcastMode):
     "recallCardId must exactly match one of the RecallLab card ids listed above when quizzing.",
     "text should be 1–3 natural spoken sentences per segment — not bullet points, not headers.",
     "Do not include markdown formatting in text fields.",
+    "IMPORTANT: text must be pronunciable — spell out any formulas, abbreviations, or symbols in spoken form.",
   );
 
   return lines.join("\n");
 }
 
 // ---------------------------------------------------------------------------
-// Response parser — validates and normalises raw LLM JSON output.
+// Response parser
 // ---------------------------------------------------------------------------
 
 export function parsePodcastResponse(
@@ -298,12 +262,7 @@ export function parsePodcastResponse(
   const segments: PodcastSegment[] = [];
   let rawSegments: unknown[] = [];
 
-  if (
-    raw &&
-    typeof raw === "object" &&
-    "segments" in raw &&
-    Array.isArray((raw as any).segments)
-  ) {
+  if (raw && typeof raw === "object" && "segments" in raw && Array.isArray((raw as any).segments)) {
     rawSegments = (raw as any).segments;
   } else if (Array.isArray(raw)) {
     rawSegments = raw;
@@ -320,37 +279,35 @@ export function parsePodcastResponse(
     if (!s || typeof s !== "object") continue;
     const text = String(s.text ?? "").trim();
     if (!text) continue;
-    const type = VALID_TYPES.has(s.type) ? s.type : "page_reading";
-    const speaker = VALID_SPEAKERS.has(s.speaker) ? s.speaker : "host";
     segments.push({
-      id: String(s.id ?? `seg-${i}`),
-      type,
-      speaker,
+      id:           String(s.id ?? `seg-${i}`),
+      type:         VALID_TYPES.has(s.type)    ? s.type    : "page_reading",
+      speaker:      VALID_SPEAKERS.has(s.speaker) ? s.speaker : "host",
       text,
-      sourceField:    s.sourceField   ? String(s.sourceField)   : undefined,
-      anchorId:       s.anchorId      ? String(s.anchorId)      : undefined,
-      recallCardId:   s.recallCardId  ? String(s.recallCardId)  : undefined,
-      noteLabel:      s.noteLabel     ? String(s.noteLabel)     : undefined,
-      externalTopic:  s.externalTopic ? String(s.externalTopic) : undefined,
+      sourceField:   s.sourceField   ? String(s.sourceField)   : undefined,
+      anchorId:      s.anchorId      ? String(s.anchorId)      : undefined,
+      recallCardId:  s.recallCardId  ? String(s.recallCardId)  : undefined,
+      noteLabel:     s.noteLabel     ? String(s.noteLabel)     : undefined,
+      externalTopic: s.externalTopic ? String(s.externalTopic) : undefined,
     });
   }
 
   const wordCount = segments.reduce((n, s) => n + s.text.split(/\s+/).length, 0);
-  const estimatedMinutes = Math.max(1, Math.round(wordCount / 150));
-
   return {
     mode,
     pageNumber: ctx.pageNumber,
     bookId:     ctx.bookId,
     segments,
     totalSegments: segments.length,
-    estimatedMinutes,
+    estimatedMinutes: Math.max(1, Math.round(wordCount / 150)),
   };
 }
 
 // ---------------------------------------------------------------------------
-// Local fallback — no LLM required; deterministic script from studyModel.
+// Local fallback
 // ---------------------------------------------------------------------------
+
+type PodcastSpeaker = "host" | "guest" | "narrator";
 
 function seg(
   idx: number,
@@ -362,12 +319,7 @@ function seg(
   return { id: `local-${idx}`, type, speaker, text, ...extra };
 }
 
-type PodcastSpeaker = "host" | "guest" | "narrator";
-
-export function buildLocalPodcastScript(
-  ctx: PodcastBuildContext,
-  mode: PodcastMode,
-): PodcastScript {
+export function buildLocalPodcastScript(ctx: PodcastBuildContext, mode: PodcastMode): PodcastScript {
   const { studyModel, recallLab, noteLab, pageNumber, bookId } = ctx;
   const sn = studyModel.studyNotes;
   const segments: PodcastSegment[] = [];
@@ -377,80 +329,30 @@ export function buildLocalPodcastScript(
   const recallCards = recallLab.flatMap((r) => r.cards).slice(0, 3);
   const noteSection = noteLab.flatMap((n) => n.sections ?? []).slice(0, 2);
 
-  // Intro
   segments.push(seg(i++, "intro", "host",
     `Welcome to page ${pageNumber}. Today we're covering: ${studyModel.pageThesis}.`));
 
-  // Thesis
-  if (sn.whyThisMatters) {
-    segments.push(seg(i++, "right_panel_note", "host",
-      `Why does this matter? ${sn.whyThisMatters}`, { sourceField: "whyThisMatters" }));
-  }
-
-  // Mechanism
-  if (sn.keyMechanism) {
-    segments.push(seg(i++, "right_panel_note", "host",
-      `Here's the key mechanism: ${sn.keyMechanism}`, { sourceField: "keyMechanism" }));
-  }
-
-  // Highlight evidence
-  if (firstAnchor) {
-    segments.push(seg(i++, "highlight_evidence", "host",
-      `The page states directly: "${firstAnchor.exactText}"`,
-      { anchorId: firstAnchor.id, sourceField: firstAnchor.sourceField }));
-  }
-
-  // Common confusion
-  if (sn.commonConfusion) {
-    segments.push(seg(i++, "right_panel_note", "host",
-      `Common confusion alert: ${sn.commonConfusion}`, { sourceField: "commonConfusion" }));
-  }
-
-  // NoteLab expansion
-  if (noteSection.length > 0) {
-    segments.push(seg(i++, "notelab_expansion", "host",
-      `From your saved notes — ${noteSection[0].label}: ${noteSection[0].content.slice(0, 180)}`,
-      { noteLabel: noteSection[0].label }));
-  }
-
-  // Recall quiz break (if cards exist and mode calls for it)
+  if (sn.whyThisMatters)
+    segments.push(seg(i++, "right_panel_note", "host", `Why this matters: ${sn.whyThisMatters}`, { sourceField: "whyThisMatters" }));
+  if (sn.keyMechanism)
+    segments.push(seg(i++, "right_panel_note", "host", `Key mechanism: ${sn.keyMechanism}`, { sourceField: "keyMechanism" }));
+  if (firstAnchor)
+    segments.push(seg(i++, "highlight_evidence", "host", `The page states: "${firstAnchor.exactText}"`, { anchorId: firstAnchor.id }));
+  if (sn.commonConfusion)
+    segments.push(seg(i++, "right_panel_note", "host", `Common confusion: ${sn.commonConfusion}`, { sourceField: "commonConfusion" }));
+  if (noteSection.length > 0)
+    segments.push(seg(i++, "notelab_expansion", "host", `From your saved notes — ${noteSection[0].label}: ${noteSection[0].content.slice(0, 180)}`, { noteLabel: noteSection[0].label }));
   if (recallCards.length > 0 && (mode === "exam_cram" || mode === "quiz_podcast")) {
-    const c = recallCards[0];
-    segments.push(seg(i++, "recall_quiz", "host",
-      `Quiz break: ${c.front}`, { recallCardId: c.id }));
-    segments.push(seg(i++, "recall_quiz", "host",
-      `The answer: ${c.back}`, { recallCardId: c.id }));
+    segments.push(seg(i++, "recall_quiz", "host", `Quick question: ${recallCards[0].front}`, { recallCardId: recallCards[0].id }));
+    segments.push(seg(i++, "recall_quiz", "host", `Answer: ${recallCards[0].back}`, { recallCardId: recallCards[0].id }));
   }
+  if (sn.quickMemory)
+    segments.push(seg(i++, "right_panel_note", "host", `Memory anchor: ${sn.quickMemory}`, { sourceField: "quickMemory" }));
 
-  // Memory anchor
-  if (sn.quickMemory) {
-    segments.push(seg(i++, "right_panel_note", "host",
-      `Memory anchor: ${sn.quickMemory}`, { sourceField: "quickMemory" }));
-  }
-
-  // Outro
   segments.push(seg(i++, "outro", "host",
-    `That's page ${pageNumber}. Review your highlights, check your NoteLab notes, and run the Recall cards before moving on.`));
+    `That's page ${pageNumber}. Review your highlights, check NoteLab, and run RecallLab before moving on.`));
 
   const wordCount = segments.reduce((n, s) => n + s.text.split(/\s+/).length, 0);
-
-  console.log("[PODCAST_SCRIPT_CREATED]", {
-    page:      pageNumber,
-    mode,
-    source:    "local-fallback",
-    segments:  segments.length,
-    wordCount,
-    hasAnchors: !!firstAnchor,
-    hasRecall:  recallCards.length > 0,
-    hasNoteLab: noteSection.length > 0,
-  });
-
-  return {
-    mode,
-    pageNumber,
-    bookId,
-    segments,
-    totalSegments: segments.length,
-    estimatedMinutes: Math.max(1, Math.round(wordCount / 150)),
-  };
+  console.log("[PODCAST_SCRIPT_CREATED]", { page: pageNumber, mode, source: "local-fallback", segments: segments.length });
+  return { mode, pageNumber, bookId, segments, totalSegments: segments.length, estimatedMinutes: Math.max(1, Math.round(wordCount / 150)) };
 }
