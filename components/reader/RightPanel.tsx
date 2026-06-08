@@ -3691,7 +3691,7 @@ function GenerateNoteButton({
 
       console.log("[NOTE_READ_KEY]", { storageKey: "ultraNotes_v1", noteId: note.id });
       console.log("[NOTE_SAVE_SUCCESS]", { id: note.id, page: pageNumber, bookId, topic: note.topic });
-      console.log("[NOTE_READ_AFTER_SAVE_SUCCESS]", { noteId: note.id, found: true });
+      console.log("[NOTELAB_READ_AFTER_SAVE_SUCCESS]", { noteId: note.id, found: true });
 
       setSaved(true);
       setSaveError(null);

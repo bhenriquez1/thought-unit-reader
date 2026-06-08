@@ -153,7 +153,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   // Abort flag for sequential highlights playback
   const abortRef   = useRef(false);
 
-  // Reset on page navigation — stop audio and clear eye guide.
+  // Reset position on page navigation — stops audio and clears eye guide
   useEffect(() => {
     setSegIdx(0);
     setEyeText(null);
@@ -163,7 +163,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageNumber]);
 
-  // Reset eye guide when mode changes.
+  // Reset position on mode switch — prevents stale segIdx carrying across modes
   useEffect(() => {
     setSegIdx(0);
     setEyeText(null);
@@ -675,7 +675,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
           {/* Controls row */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             {!isPlaying && !isLoading ? (
-              <button type="button" disabled={!hasContent} onClick={() => play(segIdx)}
+              <button type="button" disabled={!hasContent} onClick={() => play(0)}
                 style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.4)", background: hasContent ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.03)", color: hasContent ? "#a5b4fc" : "#475569", fontSize: 12, fontWeight: 700, cursor: hasContent ? "pointer" : "not-allowed" }}
               >▶ Play</button>
             ) : isLoading ? (

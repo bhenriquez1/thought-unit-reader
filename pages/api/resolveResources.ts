@@ -241,6 +241,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: "pageThesis required" });
   }
 
+  console.log("[RELATED_SEARCH_QUERY]", {
+    thesis:       pageThesis.slice(0, 100),
+    mechanism:    keyMechanism?.slice(0, 60) ?? null,
+    conceptCount: conceptTitles.length,
+  });
+
   const topicLines = [
     `PAGE THESIS: ${pageThesis}`,
     keyMechanism ? `KEY MECHANISM: ${keyMechanism}` : null,
@@ -295,7 +301,11 @@ Score each 0–100. Best match on the exact mechanism scores highest regardless 
     const articleChecks = await Promise.all(
       data.articles.map(async (a) => {
         const ok = await isUrlReachable(a.url);
-        console.log("[RESOURCES:url-check]", { url: a.url, ok });
+        if (ok) {
+          console.log("[RELATED_URL_VALIDATED]", { url: a.url, source: a.source });
+        } else {
+          console.log("[RELATED_URL_REJECTED]", { url: a.url, source: a.source, reason: "HEAD check failed" });
+        }
         return ok ? a : null;
       })
     );
@@ -389,6 +399,13 @@ Score each 0–100. Best match on the exact mechanism scores highest regardless 
         console.warn("[COHERE_RERANK_SKIP]", String(cohereErr));
       }
     }
+
+    console.log("[RELATED_COHERE_RANKED]", {
+      articleCount:    articles.length,
+      videoCount:      videos.length,
+      topArticleUrl:   articles[0]?.url ?? null,
+      topVideoChannel: videos[0]?.channel ?? null,
+    });
 
     console.log("[RESOURCES:done]", {
       articlesValidated: articles.length,

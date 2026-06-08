@@ -84,13 +84,15 @@ const IDB_STORE_NAME = "notes";
 const IDB_FLAG_KEY = "ultraNotes_in_idb";
 
 function compact(note: UltraNote): UltraNote {
-  const trim = (s: string | undefined, n: number): string | undefined => s?.slice(0, n);
+  const trim = (s: string | undefined, n: number): string | undefined =>
+    s ? s.slice(0, n) : undefined;
   return {
     id:          note.id,
     bookId:      note.bookId,
     pageNumber:  note.pageNumber,
     topic:       note.topic.slice(0, 120),
     coreIdea:    note.coreIdea.slice(0, 300),
+    pageThesis:  trim(note.pageThesis, 200),
     subject:     note.subject,
     createdAt:   note.createdAt,
     memoryShortcuts: [],
@@ -114,7 +116,8 @@ function compact(note: UltraNote): UltraNote {
       reasoningFlow:   trim(note.professorNotes.reasoningFlow,   200),
       examSignal:      trim(note.professorNotes.examSignal,      200),
     } : undefined,
-    pageThesis: note.pageThesis?.slice(0, 200),
+    // STRIPPED: relatedVideoQueries, highlightAnchors, miniTest,
+    //           externalStudyLinks, crossLinks, bookTitle
   };
 }
 
@@ -190,6 +193,14 @@ async function saveAll(notes: UltraNote[]): Promise<void> {
     hasMiniTest:   !!(compacted[0] as any)?.miniTest,             // should be absent
     hasExtLinks:   !!(compacted[0] as any)?.externalStudyLinks,   // should be absent
   });
+  console.log("[NOTELAB_SAVE_COMPACTED]", {
+    key:       STORAGE_KEY,
+    noteCount: compacted.length,
+    bytes:     serialized.length,
+    kb:        (serialized.length / 1024).toFixed(1),
+    hasRelVideo:  !!(compacted[0] as any)?.relatedVideoQueries,  // must be absent
+    hasHighlight: !!(compacted[0] as any)?.highlightAnchors,     // must be absent
+  });
   console.log("[NOTE_SAVE_KEY]", { key: STORAGE_KEY, count: compacted.length, bytes: serialized.length });
   try {
     localStorage.setItem(STORAGE_KEY, serialized);
@@ -201,7 +212,7 @@ async function saveAll(notes: UltraNote[]): Promise<void> {
     try {
       await saveNotesToIDB(compacted);
       try { localStorage.setItem(IDB_FLAG_KEY, "1"); } catch {}
-      console.log("[NOTE_IDB_SUCCESS]", { count: compacted.length });
+      console.log("[NOTELAB_INDEXEDDB_FALLBACK]", { count: compacted.length, reason: String(lsErr) });
       window.dispatchEvent(new Event("note-lab-updated"));
     } catch (idbErr) {
       console.error("[NOTE_ALL_STORAGE_FAIL]", { ls: String(lsErr), idb: String(idbErr) });

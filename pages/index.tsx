@@ -3800,13 +3800,13 @@ export default function ThoughtUnitReader() {
             </div>
           </button>
 
-          {/* Study Speech floating panel */}
+          {/* Study Speech panel — anchored to bottom of right panel column, not over PDF */}
           {showSpeechPanel && currentPageStudyModel && (
             <div
               style={{
                 position: "fixed",
                 bottom: 88,
-                left: 16,
+                right: 16,
                 width: 340,
                 maxHeight: "calc(100vh - 120px)",
                 overflowY: "auto",
@@ -3836,7 +3836,7 @@ export default function ThoughtUnitReader() {
               style={{
                 position: "fixed",
                 bottom: 88,
-                left: 16,
+                right: 16,
                 width: 300,
                 zIndex: 55,
                 borderRadius: 16,

@@ -124,6 +124,7 @@ async function saveAll(sets: RecallSet[]): Promise<void> {
     cards0:     compacted[0]?.cards?.length ?? 0,
     willQuota:  toSave.length > 2_000_000,
   });
+  console.log("[RECALL_SAVE_COMPACTED]", { key: STORAGE_KEY, setCount: compacted.length, bytes: toSave.length, kb: (toSave.length / 1024).toFixed(1), cards0: compacted[0]?.cards?.length ?? 0 });
   console.log("[RECALL_SAVE_KEY]", { key: STORAGE_KEY, count: compacted.length, bytes: toSave.length });
   try {
     localStorage.setItem(STORAGE_KEY, toSave);
@@ -135,7 +136,7 @@ async function saveAll(sets: RecallSet[]): Promise<void> {
     try {
       await saveToIDB(compacted);
       try { localStorage.setItem(IDB_FLAG_KEY, "1"); } catch {}
-      console.log("[RECALL_IDB_SUCCESS]", { count: compacted.length });
+      console.log("[RECALL_INDEXEDDB_FALLBACK]", { count: compacted.length, reason: String(lsErr) });
       window.dispatchEvent(new Event("recall-lab-updated"));
     } catch (idbErr) {
       console.error("[RECALL_ALL_STORAGE_FAIL]", { ls: String(lsErr), idb: String(idbErr) });
