@@ -43,6 +43,11 @@ interface WhiteboardProps {
   enableDrawing?: boolean;
   concept?: string;
   context?: string;
+
+  /** Called when the active step changes — fires with the step's evidenceRefId (or null) */
+  onAnchorStep?: (anchorId: string | null) => void;
+  /** When set, Whiteboard jumps to the step whose evidenceRefId matches */
+  activeAnchorId?: string | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -78,6 +83,8 @@ export default function Whiteboard({
   enableDrawing = true,
   concept = "",
   context = "",
+  onAnchorStep,
+  activeAnchorId,
 }: WhiteboardProps) {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -112,6 +119,29 @@ export default function Whiteboard({
 
   // Canvas animation loop
   const rafRef = useRef<number | null>(null);
+
+  // Tracks when a step change is driven by activeAnchorId (external) so we don't echo it back
+  const externalJumpRef = useRef(false);
+
+  // ── Whiteboard → PDF: notify parent when active step changes ──────────────
+  useEffect(() => {
+    if (externalJumpRef.current) { externalJumpRef.current = false; return; }
+    const anchorId = steps[currentStepIndex]?.evidenceRefId ?? null;
+    onAnchorStep?.(anchorId ?? null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStepIndex]);
+
+  // ── PDF → Whiteboard: jump to the step matching the focused PDF anchor ────
+  useEffect(() => {
+    if (!activeAnchorId) return;
+    const idx = steps.findIndex((s) => s.evidenceRefId === activeAnchorId);
+    if (idx >= 0 && idx !== currentStepIndex) {
+      externalJumpRef.current = true;
+      setCurrentStepIndex(idx);
+      console.log("[WHITEBOARD_ANCHOR_JUMP]", { activeAnchorId, idx, title: steps[idx]?.title });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeAnchorId]);
 
   // 🔶 Sticky-notes overlay (per step) — persisted via StickyNoteService
   const [stepNotes, setStepNotes] = useState<StepNote[]>([]);

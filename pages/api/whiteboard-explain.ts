@@ -188,11 +188,13 @@ export default async function handler(
       context?: string;
       studyModel?: any;
       pageText?: string;
+      currentPage?: number;
     };
     const concept    = (body.concept  ?? String(req.query.concept  || "")).trim();
     const context    = (body.context  ?? String(req.query.context  || "")).trim();
     const studyModel = body.studyModel ?? null;
     const pageText   = (body.pageText  ?? "").slice(0, 1200);
+    const currentPage: number | null = typeof body.currentPage === "number" ? body.currentPage : null;
 
     if (!concept && !studyModel?.pageThesis) {
       return res.status(400).json({ error: "Missing concept/studyModel" });

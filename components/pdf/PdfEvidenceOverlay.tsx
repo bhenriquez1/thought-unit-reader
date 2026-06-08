@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 
 export interface OverlayRect {
   id: string;
@@ -127,8 +127,51 @@ export default function PdfEvidenceOverlay({
     }
   }, [rects, focusedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── SVG connectors: dashed arrows linking consecutive mechanism highlights ──
+  // Collect first-line mechanism rects (no -L suffix), sorted top-to-bottom.
+  const mechanismChain = useMemo(() => {
+    return rects
+      .filter(r => r.semanticKind === "mechanism" && !r.id.match(/-L\d+$/) && shouldRender(r))
+      .sort((a, b) => a.top - b.top);
+  }, [rects]);
+
   return (
     <div className="pointer-events-none absolute inset-0 z-20" style={{ overflow: "visible" }}>
+      {/* SVG connector layer — arrows between consecutive mechanism steps */}
+      {mechanismChain.length >= 2 && (
+        <svg
+          aria-hidden
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}
+        >
+          <defs>
+            <marker id="mech-arrow" markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto">
+              <polygon points="0 0, 7 3, 0 6" fill="#86efac" opacity="0.75" />
+            </marker>
+          </defs>
+          {mechanismChain.slice(0, -1).map((rect, i) => {
+            const next = mechanismChain[i + 1];
+            const x1 = rect.left + rect.width / 2;
+            const y1 = rect.top + rect.height + 2;
+            const x2 = next.left + next.width / 2;
+            const y2 = next.top - 4;
+            // Cubic bezier: control points bend the arrow slightly for visual clarity
+            const cy = (y1 + y2) / 2;
+            const d = `M ${x1} ${y1} C ${x1} ${cy}, ${x2} ${cy}, ${x2} ${y2}`;
+            return (
+              <path
+                key={`mech-conn-${i}`}
+                d={d}
+                fill="none"
+                stroke="#86efac"
+                strokeWidth="1.5"
+                strokeDasharray="4 3"
+                opacity="0.65"
+                markerEnd="url(#mech-arrow)"
+              />
+            );
+          })}
+        </svg>
+      )}
       {rects.filter(shouldRender).map((rect) => {
         const focused = focusedId === rect.id;
         const cfg = getConfig(rect);

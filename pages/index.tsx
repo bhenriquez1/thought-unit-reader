@@ -4094,6 +4094,11 @@ export default function ThoughtUnitReader() {
                 pageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
                 lessonTitle={uploadedFile?.name ?? "Page Whiteboard"}
                 currentPage={currentPage}
+                onAnchorStep={(id) => {
+                  console.log("[WHITEBOARD_ANCHOR_STEP]", { anchorId: id });
+                  setFocusedEvidenceId(id);
+                }}
+                activeAnchorId={focusedEvidenceId}
               />
             </div>
           </div>

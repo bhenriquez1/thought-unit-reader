@@ -54,6 +54,11 @@ type Props = {
   studyModel?: Record<string, unknown> | null;
   /** Raw page text top-to-bottom — passed to OpenAI for context */
   pageText?: string;
+
+  /** Level 4 sync: called when the active Whiteboard step changes (fires with evidenceRefId or null) */
+  onAnchorStep?: (anchorId: string | null) => void;
+  /** Level 4 sync: when set, Whiteboard jumps to the step whose evidenceRefId matches */
+  activeAnchorId?: string | null;
 };
 
 /** In-memory LRU-ish cache (oldest evicted on overflow) */
@@ -78,6 +83,8 @@ export default function WhiteboardPanel({
   prebuiltSteps,
   studyModel,
   pageText,
+  onAnchorStep,
+  activeAnchorId,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [steps, setSteps] = useState<WhiteboardStep[]>([]);
@@ -559,6 +566,8 @@ export default function WhiteboardPanel({
                   /** 🔐 pass-through for persistence */
                   lessonId={lessonId}
                   userId={userId}
+                  onAnchorStep={onAnchorStep}
+                  activeAnchorId={activeAnchorId}
                 />
               </div>
             </motion.div>
