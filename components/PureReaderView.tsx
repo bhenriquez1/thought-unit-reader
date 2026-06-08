@@ -166,6 +166,11 @@ export default function PureReaderView({
       case "mechanism":    return "mechanism";
       case "trap":         return "trap";
       case "application":  return "application";
+      // VisualAnchorRole values (set as anchorType in pages/index.tsx grounding step)
+      case "coreIdea":        return "thesis";
+      case "confusionTrap":   return "trap";
+      case "exampleEvidence": return "application";
+      case "keyDetail":       return "definition";
       // Math-specific anchor types
       case "formula":      return "definition";    // formula = key term / rule (blue)
       case "example_step": return "application";   // worked step = evidence (purple)

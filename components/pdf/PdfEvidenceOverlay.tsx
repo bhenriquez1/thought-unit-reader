@@ -37,43 +37,43 @@ interface KindConfig {
 
 const KIND_CONFIG: Record<SemanticKind, KindConfig> = {
   thesis: {
-    label:      "CORE",
+    label:      "CORE IDEA",
     bgNormal:   "rgba(253,224,71,0.28)",
     bgFocused:  "rgba(253,224,71,0.55)",
     ringClass:  "ring-2 ring-yellow-300/80 shadow-[0_0_8px_rgba(253,224,71,0.55)]",
-    badgeBg:    "rgba(113,63,18,0.88)",
+    badgeBg:    "rgba(113,63,18,0.92)",
     badgeColor: "#fde047",
   },
   definition: {
-    label:      "DEF",
+    label:      "DEFINITION",
     bgNormal:   "rgba(147,197,253,0.35)",
     bgFocused:  "rgba(147,197,253,0.62)",
     ringClass:  "ring-2 ring-blue-300/80 shadow-[0_0_8px_rgba(147,197,253,0.55)]",
-    badgeBg:    "rgba(29,78,216,0.88)",
+    badgeBg:    "rgba(29,78,216,0.92)",
     badgeColor: "#bfdbfe",
   },
   mechanism: {
-    label:      "FCN",
+    label:      "MECHANISM",
     bgNormal:   "rgba(134,239,172,0.35)",
     bgFocused:  "rgba(134,239,172,0.62)",
     ringClass:  "ring-2 ring-green-300/80 shadow-[0_0_8px_rgba(134,239,172,0.55)]",
-    badgeBg:    "rgba(20,83,45,0.88)",
+    badgeBg:    "rgba(20,83,45,0.92)",
     badgeColor: "#86efac",
   },
   application: {
-    label:      "EX",
+    label:      "EXAMPLE",
     bgNormal:   "rgba(192,132,252,0.30)",
     bgFocused:  "rgba(192,132,252,0.58)",
     ringClass:  "ring-2 ring-purple-300/80 shadow-[0_0_8px_rgba(192,132,252,0.55)]",
-    badgeBg:    "rgba(88,28,135,0.88)",
+    badgeBg:    "rgba(88,28,135,0.92)",
     badgeColor: "#e9d5ff",
   },
   trap: {
-    label:      "TRAP",
+    label:      "CAUTION",
     bgNormal:   "rgba(252,165,165,0.35)",
     bgFocused:  "rgba(252,165,165,0.62)",
     ringClass:  "ring-2 ring-red-300/80 shadow-[0_0_8px_rgba(252,165,165,0.55)]",
-    badgeBg:    "rgba(127,29,29,0.88)",
+    badgeBg:    "rgba(127,29,29,0.92)",
     badgeColor: "#fca5a5",
   },
 };
@@ -132,6 +132,13 @@ export default function PdfEvidenceOverlay({
       {rects.filter(shouldRender).map((rect) => {
         const focused = focusedId === rect.id;
         const cfg = getConfig(rect);
+        // Only render a label on the first line of each highlight target.
+        // Continuation lines have IDs like "va-0-L1", "va-0-L2"; first lines are plain IDs.
+        const isFirstLine = !rect.id.match(/-L\d+$/);
+        // Left-margin placement: when text starts far enough from the left edge, place the
+        // label in the margin to the left of the highlight. Falls back to above-highlight
+        // when there's no left margin (e.g. narrow pages or flush-left text).
+        const hasLeftMargin = rect.left >= 50;
         return (
           <button
             key={rect.id}
@@ -150,26 +157,34 @@ export default function PdfEvidenceOverlay({
             }}
             aria-label={`${cfg.label || "Evidence"} highlight`}
           >
-            {/* Category label pill — appears above the first line of the highlight */}
-            {cfg.label && rect.height >= 6 && (
+            {/* Margin label — first line only, positioned in the left margin beside the highlight */}
+            {cfg.label && rect.height >= 6 && isFirstLine && (
               <span
                 style={{
                   position: "absolute",
-                  top: -11,
-                  left: 0,
-                  fontSize: 7,
-                  lineHeight: "10px",
+                  ...(hasLeftMargin ? {
+                    top: 1,
+                    left: -(rect.left - 4),
+                  } : {
+                    top: -13,
+                    left: 0,
+                  }),
+                  fontSize: 8,
+                  lineHeight: "11px",
                   fontFamily: "ui-monospace, SFMono-Regular, monospace",
-                  letterSpacing: "0.06em",
+                  letterSpacing: "0.05em",
                   fontWeight: 700,
-                  padding: "1px 4px",
-                  borderRadius: "2px",
+                  padding: "2px 5px",
+                  borderRadius: "3px",
                   pointerEvents: "none",
                   whiteSpace: "nowrap",
                   background: cfg.badgeBg,
                   color: cfg.badgeColor,
-                  opacity: focused ? 1 : 0.72,
+                  opacity: focused ? 1 : 0.82,
                   userSelect: "none",
+                  maxWidth: hasLeftMargin ? Math.max(52, rect.left - 8) : 96,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
                 }}
               >
                 {cfg.label}
