@@ -41,6 +41,7 @@ import PureNoteLabView from "@/components/PureNoteLabView";
 import FocusCycleCard from "@/components/FocusCycleCard";
 import StudySpeechPanel from "@/components/reader/StudySpeechPanel";
 import PodcastLab from "@/components/reader/PodcastLab";
+import StudyGuideLab from "@/components/studyguide/StudyGuideLab";
 import { RightPanel } from "@/components/reader/RightPanel";
 import type { ActivePageContext, RightPanelState as UnifiedRightPanelState, TocNode } from "@/lib/readerContracts";
 import { splitParagraphs } from "@/lib/textNormalize";
@@ -3497,6 +3498,20 @@ export default function ThoughtUnitReader() {
       );
     }
 
+    if (activeShellTab === "studyguide") {
+      return (
+        <StudyGuideLab
+          bookId={bookId}
+          bookTitle={uploadedFile?.name ?? undefined}
+          currentPage={currentPage}
+          onNavigateToPage={(page) => {
+            syncToPage(page);
+            trySwitchShellTab("reader", "reader");
+          }}
+        />
+      );
+    }
+
     // Fallback - should never reach here if all viewModes are handled
     return (
       <div className="h-full flex items-center justify-center bg-gray-900 text-white">
@@ -3603,6 +3618,17 @@ export default function ThoughtUnitReader() {
             }`}
           >
             🎙️ PodcastLab
+          </button>
+          <button
+            onClick={() => trySwitchShellTab("studyguide", "studyguide")}
+            data-testid="nav-studyguide"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              activeShellTab === "studyguide"
+                ? "bg-teal-500 text-white shadow-lg"
+                : "text-gray-300 hover:text-white hover:bg-gray-700"
+            }`}
+          >
+            🏗 Study Guide Lab
           </button>
           <button
             onClick={() => {

@@ -1,0 +1,690 @@
+"use client";
+// components/studyguide/StudyGuideLab.tsx
+// Study Guide Architect — builds a top-student notebook from multiple source PDFs + notes.
+// Philosophy: "What would a 25 DAT student keep if they had 2 months before the exam?"
+
+import React, { useState, useRef, useCallback, useEffect } from "react";
+import {
+  STUDY_GUIDE_MODE_LABELS,
+  STUDY_GUIDE_MODE_DESCRIPTIONS,
+  type StudyGuideMode,
+  type StudyGuideRecord,
+} from "@/lib/studyguide/types";
+import {
+  saveStudyGuide,
+  getAllStudyGuides,
+  deleteStudyGuide,
+  getStudyGuidesByBook,
+} from "@/lib/studyguide/studyGuideStore";
+import { saveUltraNote, buildUltraNote } from "@/lib/notelab/ultraNoteStore";
+import { saveRecallSet } from "@/lib/recalllab/recallStore";
+import type { RecallSet, RecallCard } from "@/lib/recalllab/recallStore";
+
+// ── Types ──────────────────────────────────────────────────────────────────
+
+interface SourceSlot {
+  id: string;
+  label: string;
+  placeholder: string;
+  text: string;
+  fileName?: string;
+  loading: boolean;
+  required?: boolean;
+}
+
+interface StudyGuideLabProps {
+  bookId: string;
+  bookTitle?: string;
+  currentPage?: number;
+  onNavigateToPage?: (page: number) => void;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function genId(): string {
+  return `sg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function exportToMarkdown(guide: StudyGuideRecord): string {
+  const lines: string[] = [
+    `# ${guide.chapterTitle}`,
+    `## ${guide.topic}`,
+    "",
+    "### Must Know",
+    ...guide.mustKnow.map(f => `- ${f}`),
+    "",
+    "### DAT High-Yield Facts",
+    ...guide.datFacts.map(f => `⭐ ${f}`),
+    "",
+    "### Mechanism Maps",
+    ...guide.mechanisms.flatMap(m => [
+      `**${m.title}**`,
+      ...m.steps.map((s, i) => (i === 0 ? s : `   ↓\n${s}`)),
+      "",
+    ]),
+    "### Common DAT Traps",
+    ...guide.traps.map(t => `- ⚠ ${t}`),
+    "",
+    "### Recall Questions",
+    ...guide.recallQuestions.map((q, i) => `${i + 1}. ${q}`),
+    "",
+    "### Memory Hooks",
+    ...guide.memoryHooks.map(h => `> ${h}`),
+  ];
+  return lines.join("\n");
+}
+
+// ── Section components ─────────────────────────────────────────────────────
+
+function Section({ title, color, children }: { title: string; color: string; children: React.ReactNode }) {
+  const colorMap: Record<string, string> = {
+    yellow: "border-yellow-500/40 bg-yellow-950/20",
+    green:  "border-green-500/40 bg-green-950/20",
+    orange: "border-orange-500/40 bg-orange-950/20",
+    red:    "border-red-500/40 bg-red-950/20",
+    blue:   "border-blue-500/40 bg-blue-950/20",
+    purple: "border-purple-500/40 bg-purple-950/20",
+  };
+  const titleMap: Record<string, string> = {
+    yellow: "text-yellow-300",
+    green:  "text-green-300",
+    orange: "text-orange-300",
+    red:    "text-red-300",
+    blue:   "text-blue-300",
+    purple: "text-purple-300",
+  };
+  return (
+    <div className={`rounded-xl border ${colorMap[color] ?? "border-slate-700 bg-slate-900"} p-4`}>
+      <div className={`text-[10px] font-bold uppercase tracking-[0.15em] mb-3 ${titleMap[color] ?? "text-slate-400"}`}>
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function MechanismMap({ title, steps }: { title: string; steps: string[] }) {
+  return (
+    <div className="mb-4 last:mb-0">
+      <div className="text-xs font-semibold text-slate-300 mb-2">{title}</div>
+      <div className="flex flex-col items-start gap-0">
+        {steps.map((step, i) => (
+          <React.Fragment key={i}>
+            <div className="px-3 py-1.5 rounded-lg bg-green-950/50 border border-green-700/40 text-green-200 text-sm min-w-[120px]">
+              {step}
+            </div>
+            {i < steps.length - 1 && (
+              <div className="text-green-500 text-base font-bold ml-4 leading-none py-0.5">↓</div>
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function UploadZone({
+  slot,
+  onTextChange,
+  onFileLoad,
+}: {
+  slot: SourceSlot;
+  onTextChange: (id: string, text: string) => void;
+  onFileLoad: (id: string, file: File) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-semibold text-slate-300 flex items-center gap-1">
+          {slot.required && <span className="text-orange-400">*</span>}
+          {slot.label}
+          {slot.fileName && (
+            <span className="ml-1 text-[10px] text-slate-500 font-normal">({slot.fileName})</span>
+          )}
+        </label>
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={slot.loading}
+          className="text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors disabled:opacity-50"
+        >
+          {slot.loading ? "Loading…" : "📄 Upload PDF"}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/pdf"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onFileLoad(slot.id, f);
+            e.target.value = "";
+          }}
+        />
+      </div>
+      <textarea
+        value={slot.text}
+        onChange={(e) => onTextChange(slot.id, e.target.value)}
+        placeholder={slot.placeholder}
+        rows={4}
+        className="w-full rounded-lg bg-slate-800 border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 text-sm text-slate-200 placeholder:text-slate-600 px-3 py-2 resize-none outline-none transition-colors"
+      />
+    </div>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────────────────────
+
+export default function StudyGuideLab({
+  bookId,
+  bookTitle,
+  currentPage,
+  onNavigateToPage,
+}: StudyGuideLabProps) {
+  const [sources, setSources] = useState<SourceSlot[]>([
+    { id: "textbook",  label: "Source 1 — Textbook / Lecture Notes", placeholder: "Paste textbook chapter text, or upload the PDF above…", text: "", loading: false, required: true },
+    { id: "blueprint", label: "Source 2 — Study Guide / DAT Blueprint", placeholder: "Paste your study guide or DAT blueprint outline…", text: "", loading: false },
+    { id: "professor", label: "Source 3 — Professor Notes / Study Guide", placeholder: "Paste professor notes or slides text…", text: "", loading: false },
+    { id: "personal",  label: "Source 4 — Your Own Notes (optional)", placeholder: "Any personal notes you want merged in…", text: "", loading: false },
+  ]);
+
+  const [chapterTitle, setChapterTitle] = useState("");
+  const [topic, setTopic]               = useState("");
+  const [mode, setMode]                 = useState<StudyGuideMode>("dat");
+  const [loading, setLoading]           = useState(false);
+  const [error, setError]               = useState<string | null>(null);
+  const [provider, setProvider]         = useState<string | null>(null);
+
+  const [currentGuide, setCurrentGuide] = useState<StudyGuideRecord | null>(null);
+  const [history, setHistory]           = useState<StudyGuideRecord[]>([]);
+  const [historyTab, setHistoryTab]     = useState<"build" | "history">("build");
+
+  const [noteSaved, setNoteSaved]       = useState(false);
+  const [recallSaved, setRecallSaved]   = useState(false);
+  const [saveError, setSaveError]       = useState<string | null>(null);
+
+  // Load history on mount
+  useEffect(() => {
+    getStudyGuidesByBook(bookId).then(setHistory).catch(() => {});
+  }, [bookId]);
+
+  // ── PDF extraction ─────────────────────────────────────────────────────
+
+  const handleFileLoad = useCallback(async (slotId: string, file: File) => {
+    setSources(prev => prev.map(s => s.id === slotId ? { ...s, loading: true, fileName: file.name } : s));
+    try {
+      // Dynamic import — avoids bundling pdfjs-dist in SSR
+      const { extractTextFromPdf } = await import("@/lib/pdfjs-handler");
+      const text = await extractTextFromPdf(file);
+      setSources(prev => prev.map(s => s.id === slotId ? { ...s, loading: false, text: text.slice(0, 12000) } : s));
+    } catch (e) {
+      setSources(prev => prev.map(s => s.id === slotId ? { ...s, loading: false } : s));
+      setError(`PDF extraction failed: ${String(e)}`);
+    }
+  }, []);
+
+  const handleTextChange = useCallback((slotId: string, text: string) => {
+    setSources(prev => prev.map(s => s.id === slotId ? { ...s, text } : s));
+  }, []);
+
+  // ── Generation ─────────────────────────────────────────────────────────
+
+  const handleGenerate = async () => {
+    const activeSources = sources.filter(s => s.text.trim().length > 0);
+    if (activeSources.length === 0) {
+      setError("Add at least one source document to generate a study guide.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setProvider(null);
+    setNoteSaved(false);
+    setRecallSaved(false);
+    setSaveError(null);
+
+    try {
+      const resp = await fetch("/api/study-guide-generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sources: activeSources.map(s => ({ label: s.label, text: s.text })),
+          chapterTitle,
+          topic,
+          mode,
+        }),
+      });
+
+      const data = await resp.json();
+      setProvider(data.provider ?? "unknown");
+
+      if (data.error && data.provider === "fallback") {
+        setError(data.error);
+      }
+
+      const record: StudyGuideRecord = {
+        id:            genId(),
+        bookId,
+        mode,
+        sourceLabels:  activeSources.map(s => s.label),
+        createdAt:     Date.now(),
+        ...data.guide,
+      };
+
+      setCurrentGuide(record);
+      await saveStudyGuide(record);
+      const updated = await getStudyGuidesByBook(bookId);
+      setHistory(updated);
+      setHistoryTab("build");
+
+      console.log("[STUDYGUIDE_GENERATED]", {
+        id: record.id, mode, provider: data.provider,
+        mustKnow: record.mustKnow.length, datFacts: record.datFacts.length,
+      });
+    } catch (e) {
+      setError(`Generation failed: ${String(e)}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Save to NoteLab ────────────────────────────────────────────────────
+
+  const handleSaveToNoteLab = async () => {
+    if (!currentGuide) return;
+    setSaveError(null);
+    try {
+      const concepts = currentGuide.mustKnow.slice(0, 3).map((text, i) => ({
+        ordinal:        i + 1,
+        title:          `Must Know ${i + 1}`,
+        pattern:        text,
+        surgicalReason: currentGuide.datFacts[i] ?? "",
+        trap:           currentGuide.traps[i] ?? "",
+        rule:           currentGuide.memoryHooks[i] ?? "",
+      }));
+
+      const note = buildUltraNote(
+        bookId,
+        currentPage ?? 0,
+        currentGuide.topic || currentGuide.chapterTitle,
+        currentGuide.mustKnow[0] ?? "See study guide",
+        concepts,
+        bookTitle,
+        undefined,
+        currentGuide.mustKnow[0] ?? undefined,
+        currentGuide.recallQuestions.slice(0, 4),
+      );
+      await saveUltraNote(note);
+      setNoteSaved(true);
+      console.log("[STUDYGUIDE_SAVED_TO_NOTELAB]", { guideId: currentGuide.id, noteId: note.id });
+    } catch (e) {
+      setSaveError(`NoteLab save failed: ${String(e)}`);
+    }
+  };
+
+  // ── Save to RecallLab ──────────────────────────────────────────────────
+
+  const handleSaveToRecallLab = async () => {
+    if (!currentGuide) return;
+    setSaveError(null);
+    try {
+      const cards: RecallCard[] = [
+        ...currentGuide.recallQuestions.map((q, i): RecallCard => ({
+          id: `sgrc-q${i}`,
+          type: "core",
+          front: q,
+          back: currentGuide.mustKnow[i] ?? currentGuide.datFacts[i] ?? "See study guide",
+          reviewCount: 0,
+          isMissed: false,
+          difficulty: "medium",
+        })),
+        ...currentGuide.datFacts.map((f, i): RecallCard => ({
+          id: `sgrc-f${i}`,
+          type: "cause-effect",
+          front: `DAT Fact: ${f.split("→")[0]?.trim() ?? f}`,
+          back: f,
+          reviewCount: 0,
+          isMissed: false,
+          difficulty: "hard",
+        })),
+        ...currentGuide.traps.map((t, i): RecallCard => ({
+          id: `sgrc-t${i}`,
+          type: "trap",
+          front: `Common trap: ${t}`,
+          back: `Avoid confusing: ${t}`,
+          reviewCount: 0,
+          isMissed: false,
+          difficulty: "hard",
+        })),
+      ];
+
+      const set: RecallSet = {
+        id:          `sg-rs-${currentGuide.id}`,
+        bookId,
+        bookTitle:   bookTitle ?? undefined,
+        sourceLabel: "right-panel",
+        pageNumber:  currentPage ?? 0,
+        subject:     "Biology",
+        topic:       currentGuide.topic || currentGuide.chapterTitle,
+        cards:       cards.slice(0, 30),
+        createdAt:   Date.now(),
+      };
+
+      await saveRecallSet(set);
+      setRecallSaved(true);
+      console.log("[STUDYGUIDE_SAVED_TO_RECALLLAB]", { guideId: currentGuide.id, cards: set.cards.length });
+    } catch (e) {
+      setSaveError(`RecallLab save failed: ${String(e)}`);
+    }
+  };
+
+  // ── Export Markdown ────────────────────────────────────────────────────
+
+  const handleExportMarkdown = () => {
+    if (!currentGuide) return;
+    const md = exportToMarkdown(currentGuide);
+    const blob = new Blob([md], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${currentGuide.topic || "study-guide"}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── Render ─────────────────────────────────────────────────────────────
+
+  const hasSources = sources.some(s => s.text.trim().length > 0);
+
+  return (
+    <div className="h-full flex flex-col bg-slate-950 text-white overflow-hidden">
+      {/* Header */}
+      <div className="flex-shrink-0 border-b border-slate-800 px-5 py-3.5 flex items-center justify-between bg-gradient-to-r from-slate-950 to-slate-900">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-teal-400">Study Guide Lab</div>
+          <div className="text-xs text-slate-500 mt-0.5">Build notes a top student would actually keep.</div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setHistoryTab("build")}
+            className={`text-xs px-3 py-1 rounded-lg transition-colors ${historyTab === "build" ? "bg-teal-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+          >
+            Build
+          </button>
+          <button
+            onClick={() => setHistoryTab("history")}
+            className={`text-xs px-3 py-1 rounded-lg transition-colors ${historyTab === "history" ? "bg-teal-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+          >
+            History ({history.length})
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {historyTab === "history" ? (
+          /* ── History panel ── */
+          <div className="p-4 flex flex-col gap-3">
+            {history.length === 0 ? (
+              <div className="text-sm text-slate-500 text-center py-8">No study guides generated yet.</div>
+            ) : (
+              history.map(g => (
+                <div
+                  key={g.id}
+                  className="rounded-xl border border-slate-700 bg-slate-900 p-4 hover:border-teal-700/50 transition-colors cursor-pointer group"
+                  onClick={() => { setCurrentGuide(g); setHistoryTab("build"); }}
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="text-sm font-semibold text-white">{g.topic || g.chapterTitle}</div>
+                      <div className="text-xs text-slate-500 mt-0.5">{g.chapterTitle}</div>
+                      <div className="flex gap-2 mt-1.5">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-900/60 text-teal-300">
+                          {STUDY_GUIDE_MODE_LABELS[g.mode]}
+                        </span>
+                        <span className="text-[10px] text-slate-600">
+                          {new Date(g.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteStudyGuide(g.id).then(() =>
+                          setHistory(prev => prev.filter(x => x.id !== g.id))
+                        );
+                      }}
+                      className="text-slate-700 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="mt-2 text-xs text-slate-500">
+                    {g.mustKnow.length} concepts · {g.datFacts.length} DAT facts · {g.recallQuestions.length} questions
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-0">
+            {/* ── Sources panel ── */}
+            <div className="border-b border-slate-800 p-4 flex flex-col gap-4">
+              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Source Documents</div>
+              {sources.map(slot => (
+                <UploadZone
+                  key={slot.id}
+                  slot={slot}
+                  onTextChange={handleTextChange}
+                  onFileLoad={handleFileLoad}
+                />
+              ))}
+            </div>
+
+            {/* ── Config panel ── */}
+            <div className="border-b border-slate-800 p-4 flex flex-col gap-3">
+              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Configuration</div>
+
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wide block mb-1">Chapter / Unit</label>
+                  <input
+                    type="text"
+                    value={chapterTitle}
+                    onChange={(e) => setChapterTitle(e.target.value)}
+                    placeholder="e.g. Chapter 2: The Chemical Context of Life"
+                    className="w-full rounded-lg bg-slate-800 border border-slate-600 focus:border-teal-500 focus:ring-1 focus:ring-teal-500/30 text-sm text-slate-200 px-3 py-2 outline-none transition-colors"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wide block mb-1">Topic</label>
+                  <input
+                    type="text"
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                    placeholder="e.g. Matter, Elements, and Compounds"
+                    className="w-full rounded-lg bg-slate-800 border border-slate-600 focus:border-teal-500 focus:ring-1 focus:ring-teal-500/30 text-sm text-slate-200 px-3 py-2 outline-none transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Mode selector */}
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wide block mb-2">Build Mode</label>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {(Object.keys(STUDY_GUIDE_MODE_LABELS) as StudyGuideMode[]).map(m => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setMode(m)}
+                      className={`text-left rounded-xl border px-3 py-2 transition-all ${
+                        mode === m
+                          ? "border-teal-500 bg-teal-950/40 text-teal-200"
+                          : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-slate-300"
+                      }`}
+                    >
+                      <div className="text-xs font-semibold">{STUDY_GUIDE_MODE_LABELS[m]}</div>
+                      <div className="text-[10px] mt-0.5 opacity-70 leading-tight">{STUDY_GUIDE_MODE_DESCRIPTIONS[m].slice(0, 55)}…</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Generate button */}
+              {error && (
+                <div className="text-xs text-red-400 bg-red-950/30 border border-red-800/40 rounded-lg px-3 py-2">
+                  {error}
+                </div>
+              )}
+              {provider === "fallback" && !error && (
+                <div className="text-xs text-orange-400 bg-orange-950/30 border border-orange-800/40 rounded-lg px-3 py-2">
+                  ⚠ AI unavailable — showing fallback output
+                </div>
+              )}
+
+              <button
+                onClick={handleGenerate}
+                disabled={loading || !hasSources}
+                className="w-full py-3 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-sm transition-colors shadow-lg shadow-teal-900/30"
+              >
+                {loading ? "Building Study Guide…" : `🎓 Build ${STUDY_GUIDE_MODE_LABELS[mode]}`}
+              </button>
+            </div>
+
+            {/* ── Output panel ── */}
+            {currentGuide && (
+              <div className="p-4 flex flex-col gap-4">
+                {/* Title */}
+                <div className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-3">
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wide">{STUDY_GUIDE_MODE_LABELS[currentGuide.mode]}</div>
+                  <div className="text-base font-bold text-white mt-0.5">{currentGuide.chapterTitle}</div>
+                  <div className="text-sm text-teal-300">{currentGuide.topic}</div>
+                  {provider && (
+                    <div className={`text-[10px] mt-1.5 ${provider === "fallback" ? "text-orange-400" : "text-slate-600"}`}>
+                      {provider === "fallback" ? "⚠ AI fallback" : `✓ ${provider}`}
+                    </div>
+                  )}
+                </div>
+
+                {/* Must Know */}
+                {currentGuide.mustKnow.length > 0 && (
+                  <Section title="Must Know" color="yellow">
+                    <ul className="flex flex-col gap-2">
+                      {currentGuide.mustKnow.map((item, i) => (
+                        <li key={i} className="flex gap-2 text-sm text-slate-200">
+                          <span className="text-yellow-400 flex-shrink-0 mt-0.5">•</span>
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </Section>
+                )}
+
+                {/* DAT High-Yield Facts */}
+                {currentGuide.datFacts.length > 0 && (
+                  <Section title="DAT High-Yield Facts" color="orange">
+                    <div className="flex flex-col gap-2">
+                      {currentGuide.datFacts.map((fact, i) => (
+                        <div key={i} className="flex gap-2 text-sm">
+                          <span className="text-orange-400 flex-shrink-0">⭐</span>
+                          <span className="text-orange-100 font-medium">{fact}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </Section>
+                )}
+
+                {/* Mechanism Maps */}
+                {currentGuide.mechanisms.length > 0 && (
+                  <Section title="Mechanism Maps" color="green">
+                    {currentGuide.mechanisms.map((m, i) => (
+                      <MechanismMap key={i} title={m.title} steps={m.steps} />
+                    ))}
+                  </Section>
+                )}
+
+                {/* Common Traps */}
+                {currentGuide.traps.length > 0 && (
+                  <Section title="Common DAT Traps" color="red">
+                    <div className="flex flex-col gap-2">
+                      {currentGuide.traps.map((trap, i) => (
+                        <div key={i} className="flex gap-2 text-sm items-baseline">
+                          <span className="text-red-400 flex-shrink-0">⚠</span>
+                          <span className="text-red-200">{trap}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </Section>
+                )}
+
+                {/* Recall Questions */}
+                {currentGuide.recallQuestions.length > 0 && (
+                  <Section title="Recall Questions" color="blue">
+                    <ol className="flex flex-col gap-2 list-decimal list-inside">
+                      {currentGuide.recallQuestions.map((q, i) => (
+                        <li key={i} className="text-sm text-blue-100">{q}</li>
+                      ))}
+                    </ol>
+                  </Section>
+                )}
+
+                {/* Memory Hooks */}
+                {currentGuide.memoryHooks.length > 0 && (
+                  <Section title="Memory Hooks" color="purple">
+                    <div className="flex flex-col gap-3">
+                      {currentGuide.memoryHooks.map((hook, i) => (
+                        <div key={i} className="text-sm text-purple-200 bg-purple-950/40 border border-purple-800/40 rounded-lg px-3 py-2 italic">
+                          {hook}
+                        </div>
+                      ))}
+                    </div>
+                  </Section>
+                )}
+
+                {/* Action buttons */}
+                <div className="flex flex-col gap-2 pt-2 border-t border-slate-800">
+                  {saveError && (
+                    <div className="text-xs text-red-400 bg-red-950/30 border border-red-800/40 rounded-lg px-3 py-2">
+                      {saveError}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSaveToNoteLab}
+                      disabled={noteSaved}
+                      className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${
+                        noteSaved
+                          ? "bg-green-900/40 border border-green-700/40 text-green-400"
+                          : "bg-green-950/40 border border-green-700/30 text-green-300 hover:bg-green-900/50"
+                      }`}
+                    >
+                      {noteSaved ? "✓ Saved to NoteLab" : "📝 Save to NoteLab"}
+                    </button>
+                    <button
+                      onClick={handleSaveToRecallLab}
+                      disabled={recallSaved}
+                      className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${
+                        recallSaved
+                          ? "bg-indigo-900/40 border border-indigo-700/40 text-indigo-400"
+                          : "bg-indigo-950/40 border border-indigo-700/30 text-indigo-300 hover:bg-indigo-900/50"
+                      }`}
+                    >
+                      {recallSaved ? "✓ Saved to Recall Lab" : "🎯 Save to Recall Lab"}
+                    </button>
+                    <button
+                      onClick={handleExportMarkdown}
+                      className="flex-1 py-2 rounded-lg text-xs font-bold bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-colors"
+                    >
+                      ⬇ Export .md
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
