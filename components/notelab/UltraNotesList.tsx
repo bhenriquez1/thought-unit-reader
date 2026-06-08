@@ -6,6 +6,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   getAllUltraNotes,
+  getAllUltraNotesAsync,
   deleteUltraNote,
   formatUltraNoteText,
   type UltraNote,
@@ -37,14 +38,14 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
   const [collapsedSubjects, setCollapsedSubjects] = useState<Set<NoteSubject>>(new Set());
   const [collapsedBooks, setCollapsedBooks] = useState<Set<string>>(new Set());
 
-  const reload = useCallback(() => {
-    const all = getAllUltraNotes();
+  const reload = useCallback(async () => {
+    const all = await getAllUltraNotesAsync();
     const filtered = bookId ? all.filter((n) => n.bookId === bookId) : all;
     console.log("[NOTELAB_RELOAD]", {
       totalInStorage: all.length,
       bookId: bookId ?? null,
       filteredCount: filtered.length,
-      bookIds: [...new Set(all.map(n => n.bookId))],
+      driver: localStorage.getItem("ultraNotes_in_idb") === "1" ? "indexeddb" : "localstorage",
     });
     setNotes(filtered);
   }, [bookId]);
@@ -55,9 +56,6 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
   useEffect(() => {
     const handler = () => {
       reload();
-      const current = getAllUltraNotes();
-      const count = bookId ? current.filter(n => n.bookId === bookId).length : current.length;
-      console.log("[NOTELAB_STATE_COUNT]", { count, bookId });
     };
     window.addEventListener("note-lab-updated", handler);
     return () => window.removeEventListener("note-lab-updated", handler);

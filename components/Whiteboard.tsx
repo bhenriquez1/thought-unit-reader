@@ -398,6 +398,155 @@ export default function Whiteboard({
       ctx.fillStyle = "#6b7280";
       ctx.fillText(`(Draw: ${(step as any).visualPrompt})`, PADDING_X, canvas.height - 24);
     }
+
+    // ── Diagram rendering (nodes + arrows) ───────────────────────────────
+    const nodes = (step as any).nodes as Array<{ id: string; label: string; nx?: number; ny?: number }> | undefined;
+    const arrows = (step as any).arrows as Array<{ from: string; to: string; label?: string }> | undefined;
+    const drawType = (step as any).drawType as string | undefined;
+
+    if (nodes && nodes.length > 0) {
+      const diagramAlpha = easeOutCubic(Math.min(1, Math.max(0, (progressWithinStep * stepWindowMs() - 400) / 600)));
+      if (diagramAlpha <= 0) return; // diagram not yet visible
+
+      // ── Layout: compute pixel positions ───────────────────────────────
+      const DIAGRAM_TOP  = DESC_Y + 60;
+      const DIAGRAM_W    = CANVAS_W - 2 * PADDING_X;
+      const DIAGRAM_H    = canvas.height - DIAGRAM_TOP - 30;
+      const NODE_W = 140;
+      const NODE_H = 38;
+
+      type NodePos = { id: string; x: number; y: number; label: string };
+      let positions: NodePos[];
+
+      if (nodes.every(n => n.nx != null && n.ny != null)) {
+        // AI provided fractional positions
+        positions = nodes.map(n => ({
+          id:    n.id,
+          label: n.label,
+          x:     PADDING_X + (n.nx ?? 0.5) * DIAGRAM_W,
+          y:     DIAGRAM_TOP + (n.ny ?? 0.5) * DIAGRAM_H,
+        }));
+      } else if (drawType === "cycle") {
+        // Circular layout
+        const cx = CANVAS_W / 2, cy = DIAGRAM_TOP + DIAGRAM_H / 2;
+        const r  = Math.min(DIAGRAM_W, DIAGRAM_H) / 2 - NODE_W / 2;
+        positions = nodes.map((n, i) => {
+          const angle = (2 * Math.PI * i / nodes.length) - Math.PI / 2;
+          return { id: n.id, label: n.label, x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+        });
+      } else if (drawType === "comparison") {
+        // Two columns
+        const half = Math.ceil(nodes.length / 2);
+        positions = nodes.map((n, i) => {
+          const col = i < half ? 0 : 1;
+          const row = col === 0 ? i : i - half;
+          const rows = col === 0 ? half : nodes.length - half;
+          return {
+            id: n.id, label: n.label,
+            x: PADDING_X + NODE_W / 2 + col * (DIAGRAM_W - NODE_W),
+            y: DIAGRAM_TOP + (row + 0.5) * (DIAGRAM_H / rows),
+          };
+        });
+      } else if (drawType === "anatomy") {
+        // Central root + satellites
+        const cx = CANVAS_W / 2, cy = DIAGRAM_TOP + DIAGRAM_H / 2;
+        const r  = Math.min(DIAGRAM_W, DIAGRAM_H) / 2 - NODE_W / 2;
+        positions = nodes.map((n, i) => {
+          if (i === 0) return { id: n.id, label: n.label, x: cx, y: cy };
+          const angle = (2 * Math.PI * (i - 1) / (nodes.length - 1)) - Math.PI / 2;
+          return { id: n.id, label: n.label, x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+        });
+      } else {
+        // Default: left-to-right flow
+        positions = nodes.map((n, i) => ({
+          id: n.id, label: n.label,
+          x: PADDING_X + NODE_W / 2 + (i / Math.max(nodes.length - 1, 1)) * (DIAGRAM_W - NODE_W),
+          y: DIAGRAM_TOP + DIAGRAM_H / 2,
+        }));
+      }
+
+      const posMap = new Map<string, NodePos>(positions.map(p => [p.id, p]));
+
+      ctx.save();
+      ctx.globalAlpha = diagramAlpha;
+
+      // Draw arrows first (behind nodes)
+      if (arrows && arrows.length > 0) {
+        ctx.strokeStyle = "#6366f1";
+        ctx.lineWidth   = 2;
+        ctx.fillStyle   = "#6366f1";
+        for (const arrow of arrows) {
+          const from = posMap.get(arrow.from);
+          const to   = posMap.get(arrow.to);
+          if (!from || !to) continue;
+          // Draw line
+          ctx.beginPath();
+          ctx.moveTo(from.x, from.y);
+          ctx.lineTo(to.x, to.y);
+          ctx.stroke();
+          // Arrowhead
+          const angle = Math.atan2(to.y - from.y, to.x - from.x);
+          const ax = to.x - 10 * Math.cos(angle);
+          const ay = to.y - 10 * Math.sin(angle);
+          ctx.beginPath();
+          ctx.moveTo(to.x, to.y);
+          ctx.lineTo(ax - 6 * Math.sin(angle), ay + 6 * Math.cos(angle));
+          ctx.lineTo(ax + 6 * Math.sin(angle), ay - 6 * Math.cos(angle));
+          ctx.closePath();
+          ctx.fill();
+          // Arrow label
+          if (arrow.label) {
+            const mx = (from.x + to.x) / 2;
+            const my = (from.y + to.y) / 2 - 10;
+            ctx.font = "italic 11px Arial";
+            ctx.fillStyle = "#818cf8";
+            ctx.textAlign = "center";
+            ctx.fillText(arrow.label, mx, my);
+            ctx.fillStyle = "#6366f1";
+          }
+        }
+      }
+
+      // Draw nodes
+      for (const pos of positions) {
+        const x = pos.x - NODE_W / 2;
+        const y = pos.y - NODE_H / 2;
+        // Shadow
+        ctx.shadowBlur   = 6;
+        ctx.shadowColor  = "rgba(99,102,241,0.25)";
+        // Box
+        ctx.fillStyle    = "#eef2ff";
+        ctx.strokeStyle  = "#6366f1";
+        ctx.lineWidth    = 1.5;
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(x, y, NODE_W, NODE_H, 8);
+        } else {
+          ctx.rect(x, y, NODE_W, NODE_H);
+        }
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        // Label text
+        ctx.font        = "13px Arial";
+        ctx.fillStyle   = "#1e1b4b";
+        ctx.textAlign   = "center";
+        ctx.textBaseline = "middle";
+        // Wrap long labels
+        const words = pos.label.split(" ");
+        if (ctx.measureText(pos.label).width < NODE_W - 12) {
+          ctx.fillText(pos.label, pos.x, pos.y, NODE_W - 12);
+        } else {
+          const half = Math.ceil(words.length / 2);
+          ctx.font = "11px Arial";
+          ctx.fillText(words.slice(0, half).join(" "), pos.x, pos.y - 7, NODE_W - 12);
+          ctx.fillText(words.slice(half).join(" "), pos.x, pos.y + 7, NODE_W - 12);
+        }
+      }
+
+      ctx.restore();
+    }
+    // ── End diagram rendering ────────────────────────────────────────────
   };
 
   // RAF loop (keeps animation smooth + synced)

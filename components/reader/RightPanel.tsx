@@ -1746,7 +1746,7 @@ function UltraView({
 
   // ── Specific resource recommendations — AI-resolved exact articles + channel-targeted videos ──
   type ResolvedArticle = { title: string; url: string; source: string; reason: string; score: number };
-  type ResolvedVideo   = { channel: string; channelHandle: string; videoTitle: string; searchUrl: string; reason: string; timestampSeconds: number | null; timestampLabel: string | null; score: number };
+  type ResolvedVideo   = { channel: string; channelHandle: string; videoTitle: string; searchUrl: string; isVerified?: boolean; reason: string; timestampSeconds: number | null; timestampLabel: string | null; score: number };
 
   const [resolvedResources, setResolvedResources] = useState<{ articles: ResolvedArticle[]; videos: ResolvedVideo[]; resolved: boolean }>({ articles: [], videos: [], resolved: false });
   const [cohereQueries, setCohereQueries] = useState<{ readings: string[]; videos: string[] }>({ readings: [], videos: [] });
@@ -2412,6 +2412,7 @@ function UltraView({
                     target="_blank"
                     rel="noopener noreferrer"
                     className="group flex flex-col gap-0.5"
+                    onClick={() => console.log("[RELATED_CLICK_TARGET]", { type: "article", title: a.title, url: a.url, source: a.source })}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <span className="text-[12px] font-medium text-violet-200 group-hover:text-violet-100 leading-snug">{a.title}</span>
@@ -2480,8 +2481,11 @@ function UltraView({
                         target="_blank"
                         rel="noopener noreferrer"
                         className="ml-auto inline-flex items-center gap-1 rounded bg-red-700 hover:bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors"
+                        onClick={() => console.log("[RELATED_CLICK_TARGET]", { type: "video", title: v.videoTitle, url: watchUrl, channel: v.channel, isVerified: v.isVerified ?? isDirectVideo, hasTimestamp })}
                       >
-                        ▶ Watch{hasTimestamp ? " at timestamp" : ""}
+                        {v.isVerified ?? isDirectVideo
+                          ? `▶ Watch${hasTimestamp ? " at timestamp" : ""}`
+                          : "🔍 Search YouTube"}
                       </a>
                     </div>
                   </div>

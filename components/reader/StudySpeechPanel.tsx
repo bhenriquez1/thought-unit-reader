@@ -120,6 +120,7 @@ function naturalizeSpeech(text: string): string {
 interface Props {
   studyModel: CurrentPageStudyModel;
   pageNumber: number;
+  bookId?: string;
   activePageText?: string;
   /** Called when a speech segment with evidenceRefId starts playing — drives PDF focus */
   onEvidenceFocus?: (id: string | null) => void;
@@ -129,7 +130,7 @@ interface Props {
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export default function StudySpeechPanel({ studyModel, pageNumber, activePageText = "", onEvidenceFocus, onSnippetFocus }: Props) {
+export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activePageText = "", onEvidenceFocus, onSnippetFocus }: Props) {
   const [open, setOpen]       = useState(false);
   const [mode, setMode]       = useState<StudySpeechMode>("study");
   const [voice, setVoice]     = useState<OAIVoice>("alloy");
@@ -153,17 +154,27 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   // Abort flag for sequential highlights playback
   const abortRef   = useRef(false);
 
-  // Reset position on page navigation — stops audio and clears eye guide
+  // Reset on book change — new book means new context entirely.
   useEffect(() => {
     setSegIdx(0);
     setEyeText(null);
     setEyeRole(null);
     stopAudio();
-    console.log("[EYE_GUIDE_RESET]", { page: pageNumber, reason: "page-navigation" });
+    console.log("[EYE_GUIDE_RESET]", { bookId, reason: "book-change" });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookId]);
+
+  // Reset on page navigation — stops audio and clears eye guide.
+  useEffect(() => {
+    setSegIdx(0);
+    setEyeText(null);
+    setEyeRole(null);
+    stopAudio();
+    console.log("[EYE_GUIDE_RESET]", { page: pageNumber, reason: "page-change" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageNumber]);
 
-  // Reset position on mode switch — prevents stale segIdx carrying across modes
+  // Reset on mode switch so playback always starts at the first segment of the new mode.
   useEffect(() => {
     setSegIdx(0);
     setEyeText(null);
@@ -416,6 +427,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
       setEyeRole("fullPage");
 
       console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: text.length, totalSentences: sentences.length });
+      console.log("[OPENAI_SPEECH_START]", { segIdx: i, charCount: text.length, voice, mode: "fullPage" });
       onSnippetFocus?.(raw); // drives PDF text-layer highlight in SmartPDFViewer (left panel)
 
       try {

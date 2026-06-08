@@ -92,6 +92,23 @@ async function loadFromIDB(): Promise<RecallSet[]> {
   }
 }
 
+async function loadAllAsync(): Promise<RecallSet[]> {
+  if (typeof window === "undefined") return [];
+  const inIDB = localStorage.getItem(IDB_FLAG_KEY) === "1";
+  console.log("[RECALL_STORAGE_DRIVER]", { driver: inIDB ? "indexeddb" : "localstorage" });
+  if (inIDB) {
+    return loadFromIDB();
+  }
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function loadAll(): RecallSet[] {
   if (typeof window === "undefined") return [];
   console.log("[RECALL_READ_KEY]", { key: STORAGE_KEY, idbFlagKey: IDB_FLAG_KEY });
@@ -130,12 +147,14 @@ async function saveAll(sets: RecallSet[]): Promise<void> {
     localStorage.setItem(STORAGE_KEY, toSave);
     try { localStorage.removeItem(IDB_FLAG_KEY); } catch {}
     console.log("[RECALL_SAVE_SUCCESS]", { key: STORAGE_KEY, count: compacted.length });
+    console.log("[RECALL_READ_AFTER_SAVE_SUCCESS]", { driver: "localstorage", count: compacted.length });
     window.dispatchEvent(new Event("recall-lab-updated"));
   } catch (lsErr) {
     console.warn("[RECALL_LS_QUOTA_FAIL]", String(lsErr));
     try {
       await saveToIDB(compacted);
       try { localStorage.setItem(IDB_FLAG_KEY, "1"); } catch {}
+      console.log("[RECALL_QUOTA_FALLBACK]", { count: compacted.length, reason: String(lsErr), driver: "indexeddb" });
       console.log("[RECALL_INDEXEDDB_FALLBACK]", { count: compacted.length, reason: String(lsErr) });
       window.dispatchEvent(new Event("recall-lab-updated"));
     } catch (idbErr) {
@@ -147,6 +166,10 @@ async function saveAll(sets: RecallSet[]): Promise<void> {
 
 export function getAllRecallSets(): RecallSet[] {
   return loadAll();
+}
+
+export async function getAllRecallSetsAsync(): Promise<RecallSet[]> {
+  return loadAllAsync();
 }
 
 export function getRecallSetsByBook(bookId: string): RecallSet[] {
@@ -165,7 +188,7 @@ export async function isRecallSetPersisted(id: string): Promise<boolean> {
 }
 
 export async function saveRecallSet(set: RecallSet): Promise<void> {
-  const sets = loadAll();
+  const sets = await loadAllAsync();
   const idx = sets.findIndex((s) => s.bookId === set.bookId && s.pageNumber === set.pageNumber);
   if (idx >= 0) {
     sets[idx] = set;

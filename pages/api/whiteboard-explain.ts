@@ -27,7 +27,7 @@ type Step = {
   objects?: string[];
 };
 
-type Ok  = { steps: Step[]; narrationScript: string; aiDisabled?: boolean };
+type Ok  = { steps: Step[]; narrationScript: string; aiDisabled?: boolean; provider?: string; mode?: string; stepCount?: number; drawingStepsCount?: number };
 type Err = { error: string; aiDisabled?: boolean };
 
 /* ─── Whiteboard mode derivation ────────────────────────────────────────────── */
@@ -208,6 +208,7 @@ export default async function handler(
         steps: fb,
         narrationScript: fb.map((s) => `${s.title}: ${s.content}`).join("\n"),
         aiDisabled: true,
+        provider: "fallback",
       });
     }
 
@@ -355,6 +356,7 @@ export default async function handler(
         steps: fb,
         narrationScript: fb.map((s) => `${s.title}: ${s.content}`).join("\n"),
         aiDisabled: true,
+        provider: "fallback",
       });
     }
 
@@ -362,9 +364,9 @@ export default async function handler(
       narrationScript = steps.map((s) => `${s.title}: ${s.content}`).join("\n");
     }
 
-    console.log("[WHITEBOARD_DIAGRAM_DONE]", { provider, mode, stepCount: steps.length, hasNarration: !!narrationScript, hasObjects: steps[0]?.objects?.length ?? 0 });
-
-    return res.status(200).json({ steps, narrationScript });
+    const drawingStepsCount = steps.filter(s => s.type === "draw" || (s.nodes && s.nodes.length > 0)).length;
+    console.log("[WHITEBOARD_DIAGRAM_DONE]", { provider, mode, stepCount: steps.length, drawingStepsCount });
+    return res.status(200).json({ steps, narrationScript, provider, mode, stepCount: steps.length, drawingStepsCount });
 
   } catch {
     const body    = (req.body || {}) as any;
@@ -376,6 +378,7 @@ export default async function handler(
       steps: fb,
       narrationScript: fb.map((s) => `${s.title}: ${s.content}`).join("\n"),
       aiDisabled: true,
+      provider: "fallback",
     });
   }
 }

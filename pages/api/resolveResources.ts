@@ -73,6 +73,7 @@ export interface ResolvedVideo {
   channelHandle:    string;
   videoTitle:       string;
   searchUrl:        string;   // channel-specific search or exact YouTube URL
+  isVerified:       boolean;  // true = YouTube API resolved an exact videoId; false = channel search URL
   reason:           string;
   timestampSeconds: number | null;
   timestampLabel:   string | null;
@@ -319,14 +320,15 @@ Score each 0–100. Best match on the exact mechanism scores highest regardless 
       data.videos.map(async (v) => {
         let searchUrl = buildVideoSearchUrl(v.channelHandle, v.searchQuery);
         let videoTitle = v.videoTitle;
+        let isVerified = false;
 
         if (youtubeApiKey) {
           const resolved = await resolveVideoViaYouTubeApi(v.channelHandle, v.searchQuery, youtubeApiKey);
           if (resolved) {
             videoTitle = resolved.title;
-            // Add timestamp deep-link if the AI provided a timestamp
             const tParam = v.timestampSeconds ? `&t=${Math.floor(v.timestampSeconds)}s` : "";
             searchUrl = `https://www.youtube.com/watch?v=${resolved.videoId}${tParam}`;
+            isVerified = true;
             console.log("[RESOURCES:video-resolved]", { channel: v.channel, videoId: resolved.videoId, timestamp: v.timestampLabel });
           } else {
             console.log("[RESOURCES:video-fallback]", { channel: v.channel, query: v.searchQuery });
@@ -338,6 +340,7 @@ Score each 0–100. Best match on the exact mechanism scores highest regardless 
           channelHandle:    v.channelHandle,
           videoTitle,
           searchUrl,
+          isVerified,
           reason:           v.reason,
           timestampSeconds: v.timestampSeconds,
           timestampLabel:   v.timestampLabel,

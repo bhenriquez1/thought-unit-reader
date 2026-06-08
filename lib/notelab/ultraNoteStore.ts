@@ -158,6 +158,23 @@ async function loadNotesFromIDB(): Promise<UltraNote[]> {
   }
 }
 
+async function loadAllAsync(): Promise<UltraNote[]> {
+  if (typeof window === "undefined") return [];
+  const inIDB = localStorage.getItem(IDB_FLAG_KEY) === "1";
+  console.log("[NOTELAB_STORAGE_DRIVER]", { driver: inIDB ? "indexeddb" : "localstorage" });
+  if (inIDB) {
+    return loadNotesFromIDB();
+  }
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function loadAll(): UltraNote[] {
   if (typeof window === "undefined") return [];
   console.log("[NOTELAB_READ_KEY]", { key: STORAGE_KEY, idbFlagKey: IDB_FLAG_KEY });
@@ -206,12 +223,14 @@ async function saveAll(notes: UltraNote[]): Promise<void> {
     localStorage.setItem(STORAGE_KEY, serialized);
     try { localStorage.removeItem(IDB_FLAG_KEY); } catch {}
     console.log("[NOTE_SAVE_SUCCESS]", { key: STORAGE_KEY, count: compacted.length });
+    console.log("[NOTELAB_READ_AFTER_SAVE_SUCCESS]", { driver: "localstorage", count: compacted.length });
     window.dispatchEvent(new Event("note-lab-updated"));
   } catch (lsErr) {
     console.warn("[NOTE_LS_QUOTA_FAIL]", String(lsErr));
     try {
       await saveNotesToIDB(compacted);
       try { localStorage.setItem(IDB_FLAG_KEY, "1"); } catch {}
+      console.log("[NOTELAB_QUOTA_FALLBACK]", { count: compacted.length, reason: String(lsErr), driver: "indexeddb" });
       console.log("[NOTELAB_INDEXEDDB_FALLBACK]", { count: compacted.length, reason: String(lsErr) });
       window.dispatchEvent(new Event("note-lab-updated"));
     } catch (idbErr) {
@@ -223,6 +242,10 @@ async function saveAll(notes: UltraNote[]): Promise<void> {
 
 export function getAllUltraNotes(): UltraNote[] {
   return loadAll();
+}
+
+export async function getAllUltraNotesAsync(): Promise<UltraNote[]> {
+  return loadAllAsync();
 }
 
 export function getNotesByBook(bookId: string): UltraNote[] {
@@ -241,7 +264,7 @@ export async function isUltraNotePersisted(id: string): Promise<boolean> {
 }
 
 export async function saveUltraNote(note: UltraNote): Promise<void> {
-  const notes = loadAll();
+  const notes = await loadAllAsync();
   const idx = notes.findIndex((n) => n.bookId === note.bookId && n.pageNumber === note.pageNumber);
   if (idx >= 0) {
     notes[idx] = note;

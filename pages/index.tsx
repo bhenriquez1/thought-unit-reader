@@ -3820,6 +3820,7 @@ export default function ThoughtUnitReader() {
               <StudySpeechPanel
                 studyModel={currentPageStudyModel}
                 pageNumber={currentPage}
+                bookId={bookId ?? undefined}
                 activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
                 onEvidenceFocus={(id) => {
                   if (id) console.log("[LEFT_PANEL_FOCUS_EVIDENCE]", { evidenceRefId: id, source: "speech", page: currentPage });

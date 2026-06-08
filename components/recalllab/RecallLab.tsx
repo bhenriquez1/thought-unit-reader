@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from "react";
 import {
   getAllRecallSets,
+  getAllRecallSetsAsync,
   deleteRecallSet,
   updateCardDifficulty,
   type RecallSet,
@@ -56,6 +57,11 @@ function loadSets(bookId?: string): RecallSet[] {
   return bookId ? all.filter((s) => s.bookId === bookId) : all;
 }
 
+async function loadSetsAsync(bookId?: string): Promise<RecallSet[]> {
+  const all = await getAllRecallSetsAsync();
+  return bookId ? all.filter((s) => s.bookId === bookId) : all;
+}
+
 export default function RecallLab({ onNavigateToPage, bookId, refreshKey, lastSetId }: RecallLabProps) {
   // Lazy init from localStorage — avoids empty-flash on first mount after card generation
   const [sets, setSets] = useState<RecallSet[]>(() => {
@@ -79,17 +85,19 @@ export default function RecallLab({ onNavigateToPage, bookId, refreshKey, lastSe
 
   // Reload when refreshKey changes (set was added while mounted)
   useEffect(() => {
-    const current = loadSets(bookId);
-    console.log("[RECALLLAB_REFRESHKEY]", { refreshKey, setsInStorage: current.length });
-    setSets(current);
+    void loadSetsAsync(bookId).then((current) => {
+      console.log("[RECALLLAB_REFRESHKEY]", { refreshKey, setsInStorage: current.length });
+      setSets(current);
+    });
   }, [refreshKey]);
 
   // Storage event listener — fires when saveRecallSet dispatches "recall-lab-updated"
   useEffect(() => {
     const handler = () => {
-      const current = loadSets(bookId);
-      setSets(current);
-      console.log("[RECALLLAB_STATE_COUNT]", { count: current.length });
+      void loadSetsAsync(bookId).then((current) => {
+        setSets(current);
+        console.log("[RECALLLAB_STATE_COUNT]", { count: current.length });
+      });
     };
     window.addEventListener("recall-lab-updated", handler);
     return () => window.removeEventListener("recall-lab-updated", handler);
@@ -98,16 +106,18 @@ export default function RecallLab({ onNavigateToPage, bookId, refreshKey, lastSe
   // When lastSetId changes (new set generated), auto-open it
   useEffect(() => {
     if (!lastSetId) return;
-    const current = loadSets(bookId);
-    setSets(current);
-    const found = current.find((s) => s.id === lastSetId);
-    console.log("[RECALLLAB_SELECTED_SET]", { lastSetId, found: !!found, totalSets: current.length });
-    if (found) setView({ kind: "session", set: found });
+    void loadSetsAsync(bookId).then((current) => {
+      setSets(current);
+      const found = current.find((s) => s.id === lastSetId);
+      console.log("[RECALLLAB_SELECTED_SET]", { lastSetId, found: !!found, totalSets: current.length });
+      if (found) setView({ kind: "session", set: found });
+    });
   }, [lastSetId]);
 
   async function handleDelete(id: string) {
     await deleteRecallSet(id);
-    setSets(loadSets(bookId));
+    const current = await loadSetsAsync(bookId);
+    setSets(current);
     if (view.kind === "session" && view.set.id === id) {
       setView({ kind: "dashboard" });
     }
@@ -118,7 +128,7 @@ export default function RecallLab({ onNavigateToPage, bookId, refreshKey, lastSe
     return (
       <RecallSession
         set={view.set}
-        onClose={() => { setView({ kind: "dashboard" }); setSets(loadSets(bookId)); }}
+        onClose={() => { setView({ kind: "dashboard" }); void loadSetsAsync(bookId).then(setSets); }}
         onNavigateToPage={onNavigateToPage}
       />
     );
