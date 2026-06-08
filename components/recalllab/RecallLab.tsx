@@ -59,7 +59,9 @@ function loadSets(bookId?: string): RecallSet[] {
 
 async function loadSetsAsync(bookId?: string): Promise<RecallSet[]> {
   const all = await getAllRecallSetsAsync();
-  return bookId ? all.filter((s) => s.bookId === bookId) : all;
+  const filtered = bookId ? all.filter((s) => s.bookId === bookId) : all;
+  console.log("[RECALL_RENDER_COUNT]", { total: all.length, filtered: filtered.length, bookId: bookId ?? "all" });
+  return filtered;
 }
 
 export default function RecallLab({ onNavigateToPage, bookId, refreshKey, lastSetId }: RecallLabProps) {

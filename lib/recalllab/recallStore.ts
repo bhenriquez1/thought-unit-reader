@@ -98,6 +98,7 @@ async function loadAllAsync(): Promise<RecallSet[]> {
   try {
     const idbSets = await loadFromIDB();
     if (idbSets.length > 0) {
+      console.log("[RECALL_INDEXEDDB_READ]", { count: idbSets.length });
       console.log("[RECALL_STORAGE_DRIVER]", { driver: "indexeddb", count: idbSets.length });
       return idbSets;
     }
@@ -164,6 +165,7 @@ async function saveAll(sets: RecallSet[]): Promise<void> {
   try {
     await saveToIDB(compacted);
     try { localStorage.setItem(IDB_FLAG_KEY, "1"); } catch {}
+    console.log("[RECALL_INDEXEDDB_WRITE]", { count: compacted.length });
     console.log("[RECALL_SAVE_SUCCESS]", { driver: "indexeddb", key: STORAGE_KEY, count: compacted.length });
     console.log("[RECALL_READ_AFTER_SAVE_SUCCESS]", { driver: "indexeddb", count: compacted.length });
     window.dispatchEvent(new Event("recall-lab-updated"));
