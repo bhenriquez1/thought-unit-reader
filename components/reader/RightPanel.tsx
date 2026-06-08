@@ -1749,15 +1749,19 @@ function UltraView({
   type ResolvedVideo   = { channel: string; channelHandle: string; videoTitle: string; searchUrl: string; reason: string; timestampSeconds: number | null; timestampLabel: string | null; score: number };
 
   const [resolvedResources, setResolvedResources] = useState<{ articles: ResolvedArticle[]; videos: ResolvedVideo[]; resolved: boolean }>({ articles: [], videos: [], resolved: false });
+  const [cohereQueries, setCohereQueries] = useState<{ readings: string[]; videos: string[] }>({ readings: [], videos: [] });
 
   useEffect(() => {
     setResolvedResources({ articles: [], videos: [], resolved: false });
+    setCohereQueries({ readings: [], videos: [] });
     const thesis = (view.pageThesis ?? view.coreIdea ?? "").trim();
     if (!thesis || !hasSynth) { setResolvedResources(r => ({ ...r, resolved: true })); return; }
     const controller = new AbortController();
     const conceptTitles = view.blocks.map(b => b.title).filter(Boolean).slice(0, 5);
     const anchorTexts   = view.blocks.map(b => b.anchorText).filter((t): t is string => !!t).slice(0, 4);
     console.log("[RESOURCES_INPUT]", { thesis: thesis.slice(0, 60), mechanism: synth?.keyMechanism?.slice(0, 50), concepts: conceptTitles.length });
+
+    // OpenAI: specific article URLs + channel-targeted videos
     fetch("/api/resolveResources", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1770,6 +1774,23 @@ function UltraView({
         setResolvedResources({ articles: data.articles ?? [], videos: data.videos ?? [], resolved: true });
       })
       .catch(() => setResolvedResources(r => ({ ...r, resolved: true })));
+
+    // Cohere: topic-based related reading + video search queries (in parallel)
+    fetch("/api/cohere-retrieval", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: thesis, domain, mode: "both", pageText: "" }),
+      signal: controller.signal,
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.provider === "cohere" || data.provider === "fallback") {
+          console.log("[COHERE_QUERIES_READY]", { readings: (data.relatedReadings ?? []).length, videos: (data.relatedVideos ?? []).length, provider: data.provider });
+          setCohereQueries({ readings: data.relatedReadings ?? [], videos: data.relatedVideos ?? [] });
+        }
+      })
+      .catch(() => {});
+
     return () => controller.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view.coreIdea, view.pageThesis, hasSynth]);
@@ -2470,6 +2491,48 @@ function UltraView({
             </ul>
           ) : (
             <p className="text-[12px] text-slate-500 italic">No video recommendations found for this page.</p>
+          )}
+        </PanelSection>
+      ) : null}
+
+      {/* ── Cohere: Related Search Topics (readings + videos) ── */}
+      {hasSynth && (cohereQueries.readings.length > 0 || cohereQueries.videos.length > 0) ? (
+        <PanelSection title="🔍 Related Study Topics">
+          {cohereQueries.readings.length > 0 && (
+            <div className="mb-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-violet-400/70 mb-1.5">Readings</p>
+              <div className="flex flex-wrap gap-1.5">
+                {cohereQueries.readings.map((q, i) => (
+                  <a
+                    key={i}
+                    href={`https://www.google.com/search?q=${encodeURIComponent(q)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-full border border-violet-500/30 bg-violet-900/20 px-2.5 py-1 text-[11px] text-violet-200 hover:bg-violet-800/40 transition-colors"
+                  >
+                    {q}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+          {cohereQueries.videos.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-red-400/70 mb-1.5">Videos</p>
+              <div className="flex flex-wrap gap-1.5">
+                {cohereQueries.videos.map((q, i) => (
+                  <a
+                    key={i}
+                    href={`https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-full border border-red-500/30 bg-red-900/20 px-2.5 py-1 text-[11px] text-red-200 hover:bg-red-800/40 transition-colors"
+                  >
+                    ▶ {q}
+                  </a>
+                ))}
+              </div>
+            </div>
           )}
         </PanelSection>
       ) : null}
