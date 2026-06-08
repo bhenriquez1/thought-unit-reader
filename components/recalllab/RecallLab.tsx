@@ -63,25 +63,31 @@ async function loadSetsAsync(bookId?: string): Promise<RecallSet[]> {
 }
 
 export default function RecallLab({ onNavigateToPage, bookId, refreshKey, lastSetId }: RecallLabProps) {
-  // Lazy init from localStorage — avoids empty-flash on first mount after card generation
-  const [sets, setSets] = useState<RecallSet[]>(() => {
-    const all = loadSets(bookId);
-    console.log("[RECALLLAB_MOUNT]", {
-      setsInStorage: all.length,
-      lastSetId: lastSetId ?? null,
-      setIds: all.slice(0, 5).map(s => s.id),
+  // Start empty — IDB load happens in useEffect below (avoids stale localStorage read)
+  const [sets, setSets] = useState<RecallSet[]>([]);
+  const [view, setView] = useState<View>({ kind: "dashboard" });
+  const [initialLoaded, setInitialLoaded] = useState(false);
+
+  // Mount: load from IDB (primary store) — this fires before any other effect
+  useEffect(() => {
+    void loadSetsAsync(bookId).then((current) => {
+      console.log("[RECALLLAB_MOUNT]", {
+        driver: "indexeddb-first",
+        setsInStorage: current.length,
+        lastSetId: lastSetId ?? null,
+        setIds: current.slice(0, 5).map(s => s.id),
+      });
+      setSets(current);
+      setInitialLoaded(true);
+      // If a lastSetId was provided on mount, open it now that IDB data is loaded
+      if (lastSetId) {
+        const found = current.find((s) => s.id === lastSetId);
+        console.log("[RECALLLAB_INIT_VIEW]", { lastSetId, found: !!found, totalSets: current.length });
+        if (found) setView({ kind: "session", set: found });
+      }
     });
-    return all;
-  });
-  const [view, setView] = useState<View>(() => {
-    if (lastSetId) {
-      const all = loadSets(bookId);
-      const found = all.find((s) => s.id === lastSetId);
-      console.log("[RECALLLAB_INIT_VIEW]", { lastSetId, found: !!found, totalSets: all.length });
-      if (found) return { kind: "session", set: found };
-    }
-    return { kind: "dashboard" };
-  });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Reload when refreshKey changes (set was added while mounted)
   useEffect(() => {

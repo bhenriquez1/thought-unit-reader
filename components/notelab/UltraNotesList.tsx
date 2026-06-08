@@ -189,6 +189,54 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
   );
 }
 
+// ── Color-coded block specs ────────────────────────────────────────────────
+// Matches the user's desired: Core Idea (blue), High Yield (gold), Mechanism (purple),
+// Common Trap (red), Recall Question (teal), Exam Pearl (orange)
+
+const BLOCK_STYLES = {
+  coreIdea:  { bg: "rgba(59,130,246,0.08)",  border: "rgba(59,130,246,0.22)",  label: "#60a5fa",  icon: "📘" },
+  highYield: { bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.22)",  label: "#fbbf24",  icon: "📗" },
+  mechanism: { bg: "rgba(139,92,246,0.08)",  border: "rgba(139,92,246,0.22)",  label: "#a78bfa",  icon: "🧠" },
+  trap:      { bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.22)",   label: "#f87171",  icon: "⚠️" },
+  recall:    { bg: "rgba(20,184,166,0.08)",  border: "rgba(20,184,166,0.22)",  label: "#2dd4bf",  icon: "🔁" },
+  examPearl: { bg: "rgba(251,146,60,0.08)",  border: "rgba(251,146,60,0.22)",  label: "#fb923c",  icon: "🎯" },
+  memory:    { bg: "rgba(99,102,241,0.08)",  border: "rgba(99,102,241,0.22)",  label: "#818cf8",  icon: "💡" },
+  concept:   { bg: "rgba(255,255,255,0.03)", border: "rgba(255,255,255,0.09)", label: "#e2e8f0",  icon: "🧩" },
+  datFact:   { bg: "rgba(34,197,94,0.07)",   border: "rgba(34,197,94,0.2)",    label: "#4ade80",  icon: "⭐" },
+} as const;
+
+function NoteBlock({ style, title, children }: { style: typeof BLOCK_STYLES[keyof typeof BLOCK_STYLES]; title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 14, padding: "12px 14px", borderRadius: 10, background: style.bg, border: `1px solid ${style.border}` }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", color: style.label, marginBottom: 7, display: "flex", alignItems: "center", gap: 6 }}>
+        <span>{style.icon}</span>
+        <span>{title}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function BlockText({ text }: { text: string }) {
+  return <div style={{ fontSize: 15, color: "rgba(255,255,255,0.92)", lineHeight: 1.65 }}>{text}</div>;
+}
+
+function exportNoteMarkdown(note: UltraNote): string {
+  const lines: string[] = [`# ${note.topic}`, `**Page ${note.pageNumber}**`, ""];
+  lines.push("## 📘 Core Idea", note.coreIdea, "");
+  const pn = note.professorNotes;
+  if (pn?.whyItMatters)    lines.push("## 📗 High Yield — Why This Matters", pn.whyItMatters, "");
+  if (pn?.keyMechanism)    lines.push("## 🧠 Mechanism", pn.keyMechanism, "");
+  if (pn?.reasoningFlow)   lines.push("### Reasoning Flow", pn.reasoningFlow, "");
+  if (pn?.commonConfusion) lines.push("## ⚠️ Common DAT Trap", pn.commonConfusion, "");
+  if (pn?.examSignal)      lines.push("## 🎯 Exam Pearl", pn.examSignal, "");
+  if (pn?.memoryAnchor)    lines.push("## 💡 Memory Hook", pn.memoryAnchor, "");
+  if (note.memoryShortcuts.length > 0) { lines.push("### Memory Shortcuts"); note.memoryShortcuts.forEach(s => lines.push(`- ${s}`)); lines.push(""); }
+  if (note.concepts.length > 0) { lines.push("## 🧩 Concept Blocks"); note.concepts.forEach(c => { lines.push(`### ${c.title}`); if (c.pattern) lines.push(`**Pattern:** ${c.pattern}`); if (c.surgicalReason) lines.push(`**Why:** ${c.surgicalReason}`); if (c.trap) lines.push(`**Trap:** ${c.trap}`); if (c.rule) lines.push(`**Rule:** ${c.rule}`); lines.push(""); }); }
+  if (note.miniTest && note.miniTest.length > 0) { lines.push("## 🔁 Recall Questions"); note.miniTest.forEach((q, i) => lines.push(`${i + 1}. ${q}`)); lines.push(""); }
+  return lines.join("\n");
+}
+
 function NoteCard({
   note,
   isExpanded,
@@ -217,159 +265,164 @@ function NoteCard({
     onCardsGenerated?.(set.id);
     setTimeout(() => setCardsSaved(false), 2200);
   }
+
+  function handleExportMd() {
+    const md = exportNoteMarkdown(note);
+    const blob = new Blob([md], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${note.topic.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const pn = note.professorNotes;
+
   return (
-    <div
-      style={{
-        borderRadius: 10,
-        border: "1px solid rgba(255,255,255,0.07)",
-        background: "rgba(11,20,40,0.7)",
-        overflow: "hidden",
-      }}
-    >
+    <div style={{ borderRadius: 12, border: "1px solid rgba(255,255,255,0.09)", background: "rgba(10,18,38,0.85)", overflow: "hidden" }}>
       {/* Header row */}
       <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "10px 14px",
-          cursor: "pointer",
-          userSelect: "none",
-        }}
+        style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: "pointer", userSelect: "none", background: "rgba(255,255,255,0.025)" }}
         onClick={onToggle}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#fcd34d", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#fcd34d", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             ⚡ {note.topic}
           </div>
-          <div style={{ fontSize: 10, color: "rgba(148,163,184,0.7)" }}>
-            Page {note.pageNumber} · {new Date(note.createdAt).toLocaleDateString()}
+          <div style={{ fontSize: 11, color: "rgba(148,163,184,0.7)" }}>
+            p.{note.pageNumber} · {new Date(note.createdAt).toLocaleDateString()} · {note.subject}
           </div>
         </div>
-        <span style={{ fontSize: 11, color: "rgba(148,163,184,0.5)", flexShrink: 0 }}>
-          {isExpanded ? "▲" : "▼"}
-        </span>
+        <span style={{ fontSize: 11, color: "rgba(148,163,184,0.45)", flexShrink: 0 }}>{isExpanded ? "▲" : "▼"}</span>
       </div>
 
       {/* Expanded body */}
       {isExpanded && (
-        <div style={{ padding: "0 14px 14px" }}>
-          {/* Core Idea */}
-          <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, background: "rgba(245,200,66,0.06)", border: "1px solid rgba(245,200,66,0.15)" }}>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#fbbf24", marginBottom: 4 }}>🧠 CORE IDEA</div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.9)", lineHeight: 1.6 }}>{note.coreIdea}</div>
-          </div>
+        <div style={{ padding: "12px 16px 16px" }}>
 
-          {/* Professor Notes — OpenAI synthesis teaching sections */}
-          {note.professorNotes && <ProfessorNotesSection notes={note.professorNotes} />}
+          {/* 1. Core Idea — blue */}
+          <NoteBlock style={BLOCK_STYLES.coreIdea} title="CORE IDEA">
+            <BlockText text={note.coreIdea} />
+          </NoteBlock>
 
-          {/* Concept blocks */}
-          {note.concepts.map((c) => (
-            <div key={c.ordinal} style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "white", marginBottom: 8 }}>🧩 {c.ordinal}️⃣ {c.title}</div>
-              {c.pattern && <NoteRow label="P — Pattern" text={c.pattern} color="#8fd3ff" />}
-              {c.surgicalReason && <NoteRow label="⚡ Surgical Reason" text={c.surgicalReason} color="#ffd580" />}
-              {c.trap && <NoteRow label="❗ Trap" text={c.trap} color="#ff9da1" />}
-              {c.rule && <NoteRow label="🔥 Rule" text={c.rule} color="#ffb86b" />}
-            </div>
-          ))}
+          {/* 2. High Yield — gold */}
+          {pn?.whyItMatters && (
+            <NoteBlock style={BLOCK_STYLES.highYield} title="HIGH YIELD — WHY THIS MATTERS">
+              <BlockText text={pn.whyItMatters} />
+            </NoteBlock>
+          )}
 
-          {/* Memory shortcuts */}
-          {note.memoryShortcuts.length > 0 && (
-            <div style={{ marginBottom: 10, padding: "8px 12px", borderRadius: 8, background: "rgba(96,165,250,0.05)", border: "1px solid rgba(96,165,250,0.12)" }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#93c5fd", marginBottom: 6 }}>🧠 MEMORY SHORTCUT</div>
+          {/* 3. Mechanism — purple */}
+          {(pn?.keyMechanism || pn?.reasoningFlow) && (
+            <NoteBlock style={BLOCK_STYLES.mechanism} title="MECHANISM">
+              {pn.keyMechanism && <BlockText text={pn.keyMechanism} />}
+              {pn.reasoningFlow && (
+                <div style={{ marginTop: pn.keyMechanism ? 8 : 0, fontFamily: "monospace", fontSize: 13, color: "#a78bfa", lineHeight: 1.7 }}>
+                  {pn.reasoningFlow}
+                </div>
+              )}
+            </NoteBlock>
+          )}
+
+          {/* 4. Common DAT Trap — red */}
+          {pn?.commonConfusion && (
+            <NoteBlock style={BLOCK_STYLES.trap} title="COMMON DAT TRAP">
+              <BlockText text={pn.commonConfusion} />
+            </NoteBlock>
+          )}
+
+          {/* 5. Exam Pearl — orange */}
+          {pn?.examSignal && (
+            <NoteBlock style={BLOCK_STYLES.examPearl} title="EXAM PEARL">
+              <BlockText text={pn.examSignal} />
+            </NoteBlock>
+          )}
+
+          {/* 6. Memory Hook — indigo */}
+          {(pn?.memoryAnchor || note.memoryShortcuts.length > 0) && (
+            <NoteBlock style={BLOCK_STYLES.memory} title="MEMORY HOOK">
+              {pn?.memoryAnchor && <BlockText text={pn.memoryAnchor} />}
               {note.memoryShortcuts.map((s, i) => (
-                <div key={i} style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", lineHeight: 1.6 }}>👉 {s}</div>
+                <div key={i} style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", lineHeight: 1.6, marginTop: pn?.memoryAnchor ? 6 : 0 }}>👉 {s}</div>
+              ))}
+            </NoteBlock>
+          )}
+
+          {/* 7. Concept blocks */}
+          {note.concepts.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", color: "rgba(148,163,184,0.6)", marginBottom: 8, paddingLeft: 2 }}>🧩 CONCEPT BLOCKS</div>
+              {note.concepts.map((c) => (
+                <div key={c.ordinal} style={{ marginBottom: 10, padding: "12px 14px", borderRadius: 10, background: BLOCK_STYLES.concept.bg, border: `1px solid ${BLOCK_STYLES.concept.border}` }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "white", marginBottom: 8 }}>{c.ordinal}. {c.title}</div>
+                  {c.pattern        && <ConceptRow label="Pattern"  text={c.pattern}        color="#8fd3ff" />}
+                  {c.surgicalReason && <ConceptRow label="Why"      text={c.surgicalReason} color="#ffd580" />}
+                  {c.trap           && <ConceptRow label="⚠ Trap"   text={c.trap}           color="#ff9da1" />}
+                  {c.rule           && <ConceptRow label="Rule"     text={c.rule}           color="#ffb86b" />}
+                </div>
               ))}
             </div>
           )}
 
-          {/* Mini Test — OpenAI synthesis questions */}
+          {/* 8. Recall Questions — teal */}
           {note.miniTest && note.miniTest.length > 0 && (
-            <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 8, background: "rgba(52,211,153,0.04)", border: "1px solid rgba(52,211,153,0.12)" }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#6ee7b7", marginBottom: 8 }}>📝 MINI TEST</div>
+            <NoteBlock style={BLOCK_STYLES.recall} title="RECALL QUESTIONS">
               {note.miniTest.map((q, i) => (
-                <div key={i} style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", lineHeight: 1.6, marginBottom: 4 }}>{i + 1}. {q}</div>
+                <div key={i} style={{ fontSize: 14, color: "rgba(255,255,255,0.85)", lineHeight: 1.65, marginBottom: 6, paddingLeft: 4 }}>
+                  <span style={{ color: "#2dd4bf", fontWeight: 700, marginRight: 6 }}>{i + 1}.</span>{q}
+                </div>
+              ))}
+            </NoteBlock>
+          )}
+
+          {/* External Study Links */}
+          {note.externalStudyLinks && note.externalStudyLinks.length > 0 && (
+            <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(139,92,246,0.05)", border: "1px solid rgba(139,92,246,0.14)" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", color: "#c4b5fd", marginBottom: 6 }}>📚 STUDY RESOURCES</div>
+              {note.externalStudyLinks.map((l, i) => {
+                const base = l.type === "textbook-search" ? "https://scholar.google.com/scholar?q=" : "https://www.google.com/search?q=";
+                const href = `${base}${encodeURIComponent(l.searchQuery)}`;
+                return (
+                  <a key={i} href={href} target="_blank" rel="noopener noreferrer"
+                    style={{ display: "flex", gap: 6, fontSize: 13, color: "#c4b5fd", lineHeight: 1.6, textDecoration: "underline", textDecorationStyle: "dotted", marginBottom: 3 }}>
+                    <span>{l.type === "textbook-search" ? "📖" : "🔗"}</span><span>{l.label}</span>
+                  </a>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Related Videos */}
+          {note.relatedVideoQueries && note.relatedVideoQueries.length > 0 && (
+            <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.14)" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", color: "#fca5a5", marginBottom: 6 }}>📺 RELATED VIDEOS</div>
+              {note.relatedVideoQueries.map((q, i) => (
+                <a key={i} href={`https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`} target="_blank" rel="noopener noreferrer"
+                  style={{ display: "flex", gap: 6, fontSize: 13, color: "#fca5a5", lineHeight: 1.6, textDecoration: "underline", textDecorationStyle: "dotted", marginBottom: 3 }}>
+                  <span>▶</span><span>{q}</span>
+                </a>
               ))}
             </div>
           )}
 
-          {/* External Study Links — clickable OpenAI-generated search queries */}
-          {note.externalStudyLinks && note.externalStudyLinks.length > 0 && (
-            <div style={{ marginBottom: 10, padding: "8px 12px", borderRadius: 8, background: "rgba(139,92,246,0.04)", border: "1px solid rgba(139,92,246,0.12)" }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#c4b5fd", marginBottom: 6 }}>📚 EXTERNAL STUDY LINKS</div>
-              {note.externalStudyLinks.map((l, i) => {
-                const base = l.type === "textbook-search"
-                  ? "https://scholar.google.com/scholar?q="
-                  : "https://www.google.com/search?q=";
-                const href = `${base}${encodeURIComponent(l.searchQuery)}`;
-                const icon = l.type === "textbook-search" ? "📖" : l.type === "reference" ? "🔗" : "📄";
-                return (
-                  <a key={i} href={href} target="_blank" rel="noopener noreferrer"
-                    style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: "#c4b5fd", lineHeight: 1.6, textDecoration: "underline", textDecorationStyle: "dotted", marginBottom: 2 }}>
-                    <span style={{ flexShrink: 0 }}>{icon}</span>
-                    <span>{l.label}</span>
-                  </a>
-                );
-              })}
-            </div>
-          )}
-          {/* Related Teaching Videos — OpenAI-generated YouTube search queries */}
-          {note.relatedVideoQueries && note.relatedVideoQueries.length > 0 && (
-            <div style={{ marginBottom: 10, padding: "8px 12px", borderRadius: 8, background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.12)" }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#fca5a5", marginBottom: 6 }}>📺 RELATED TEACHING VIDEOS</div>
-              {note.relatedVideoQueries.map((q, i) => {
-                const href = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
-                return (
-                  <a key={i} href={href} target="_blank" rel="noopener noreferrer"
-                    style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: "#fca5a5", lineHeight: 1.6, textDecoration: "underline", textDecorationStyle: "dotted", marginBottom: 2 }}>
-                    <span style={{ flexShrink: 0 }}>▶</span>
-                    <span>{q}</span>
-                  </a>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Generate Cards button */}
-          <button
-            type="button"
-            onClick={handleGenerateCards}
-            style={{
-              width: "100%",
-              padding: "8px 0",
-              borderRadius: 8,
-              border: cardsSaved ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(99,102,241,0.2)",
-              background: cardsSaved ? "rgba(99,102,241,0.12)" : "rgba(99,102,241,0.06)",
-              color: cardsSaved ? "#a5b4fc" : "#818cf8",
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: "0.06em",
-              cursor: "pointer",
-              marginBottom: 8,
-              transition: "all 0.18s",
-            }}
-          >
-            {cardsSaved ? "✓ Cards saved to Recall Lab" : "🎯 Generate Cards from Note"}
-          </button>
-
-          {/* Action buttons */}
-          <div style={{ display: "flex", gap: 8 }}>
+          {/* Action row */}
+          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+            <button type="button" onClick={handleGenerateCards} style={actionBtnStyle(cardsSaved ? "#10b981" : "#818cf8")}>
+              {cardsSaved ? "✓ Cards saved" : "🎯 → Recall Lab"}
+            </button>
+            <button type="button" onClick={handleExportMd} style={actionBtnStyle("#6b7280")}>
+              ⬇ .md
+            </button>
+            <button type="button" onClick={onCopy} style={actionBtnStyle(copiedId === note.id ? "#10b981" : "#6b7280")}>
+              {copiedId === note.id ? "✓ Copied" : "Copy"}
+            </button>
             {onNavigate && (
-              <button
-                type="button"
-                onClick={() => onNavigate(note.pageNumber)}
-                style={actionBtnStyle("#3b82f6")}
-              >
-                Go to page {note.pageNumber}
+              <button type="button" onClick={() => onNavigate(note.pageNumber)} style={actionBtnStyle("#3b82f6")}>
+                p.{note.pageNumber}
               </button>
             )}
-            <button type="button" onClick={onCopy} style={actionBtnStyle(copiedId === note.id ? "#10b981" : "#6b7280")}>
-              {copiedId === note.id ? "✓ Copied" : "Copy text"}
-            </button>
-            <button type="button" onClick={onDelete} style={actionBtnStyle("#ef4444")}>
-              Delete
-            </button>
+            <button type="button" onClick={onDelete} style={actionBtnStyle("#ef4444")}>✕</button>
           </div>
         </div>
       )}
@@ -377,34 +430,11 @@ function NoteCard({
   );
 }
 
-function ProfessorNotesSection({ notes }: { notes: NonNullable<import("@/lib/notelab/ultraNoteStore").UltraNote["professorNotes"]> }) {
-  const rows: Array<{ icon: string; label: string; text: string; color: string }> = [
-    { icon: "💡", label: "Why This Matters",  text: notes.whyItMatters    ?? "", color: "#fbbf24" },
-    { icon: "⚙️", label: "Key Mechanism",     text: notes.keyMechanism    ?? "", color: "#38bdf8" },
-    { icon: "⚠️", label: "Common Confusion",  text: notes.commonConfusion ?? "", color: "#f87171" },
-    { icon: "🧠", label: "Quick Memory",      text: notes.memoryAnchor    ?? "", color: "#a78bfa" },
-    { icon: "🔗", label: "Reasoning Flow",    text: notes.reasoningFlow   ?? "", color: "#6ee7b7" },
-    { icon: "🎓", label: "Exam Signal",       text: notes.examSignal      ?? "", color: "#fca5a5" },
-  ].filter((r) => r.text.length > 0);
-  if (!rows.length) return null;
+function ConceptRow({ label, text, color }: { label: string; text: string; color: string }) {
   return (
-    <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, background: "rgba(96,165,250,0.04)", border: "1px solid rgba(96,165,250,0.1)" }}>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#93c5fd", marginBottom: 8 }}>🧑‍🏫 PROFESSOR NOTES</div>
-      {rows.map((r) => (
-        <div key={r.label} style={{ marginBottom: 6 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: r.color, marginBottom: 2 }}>{r.icon} {r.label}</div>
-          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", lineHeight: 1.55 }}>{r.text}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function NoteRow({ label, text, color }: { label: string; text: string; color: string }) {
-  return (
-    <div style={{ marginBottom: 6 }}>
+    <div style={{ marginBottom: 7 }}>
       <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color, marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", lineHeight: 1.55 }}>{text}</div>
+      <div style={{ fontSize: 14, color: "rgba(255,255,255,0.85)", lineHeight: 1.6 }}>{text}</div>
     </div>
   );
 }
@@ -412,13 +442,14 @@ function NoteRow({ label, text, color }: { label: string; text: string; color: s
 function actionBtnStyle(color: string): React.CSSProperties {
   return {
     flex: 1,
-    padding: "6px 0",
-    borderRadius: 7,
+    padding: "7px 0",
+    borderRadius: 8,
     border: `1px solid ${color}44`,
     background: `${color}14`,
     color,
     fontSize: 11,
-    fontWeight: 600,
+    fontWeight: 700,
     cursor: "pointer",
+    transition: "all 0.15s",
   };
 }

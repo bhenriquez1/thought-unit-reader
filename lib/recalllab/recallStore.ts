@@ -225,11 +225,13 @@ export async function saveRecallSet(set: RecallSet): Promise<void> {
 }
 
 export async function deleteRecallSet(id: string): Promise<void> {
-  await saveAll(loadAll().filter((s) => s.id !== id));
+  const sets = await loadAllAsync(); // IDB-first — loadAll() would wipe IDB data
+  await saveAll(sets.filter((s) => s.id !== id));
+  console.log("[RECALL_DELETE]", { id, remaining: sets.length - 1 });
 }
 
 export async function updateCardDifficulty(setId: string, cardId: string, difficulty: CardDifficulty): Promise<void> {
-  const sets = loadAll();
+  const sets = await loadAllAsync(); // IDB-first — loadAll() would wipe IDB data
   const set = sets.find((s) => s.id === setId);
   if (!set) return;
   const card = set.cards.find((c) => c.id === cardId);
