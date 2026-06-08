@@ -17,6 +17,21 @@ import {
 import { normalizeFormulasForSpeech } from "@/lib/speech/formulaNormalization";
 import { normalizeDropCaps } from "@/lib/insights/cleanActivePageText";
 
+// ── Header / footer / caption detector ───────────────────────────────────────
+// Returns true for text blocks that should be skipped by the eye guide:
+// page numbers, running headers, footers, figure captions, section titles.
+function isHeaderOrFooter(text: string): boolean {
+  const t = text.trim();
+  if (t.length < 4) return true;
+  if (/^\d+$/.test(t)) return true;                                     // bare page number
+  if (/^(page|pg\.?)\s*\d+$/i.test(t)) return true;                   // "Page 12"
+  if (/^(figure|fig\.|table|appendix)\s*[\d.]+/i.test(t)) return true; // "Figure 2.3"
+  if (/^(chapter|unit|section|module)\s*[\d.]+/i.test(t)) return true; // "Chapter 4"
+  if (t === t.toUpperCase() && t.length < 80 && /[A-Z]/.test(t)) return true; // ALL CAPS heading
+  if (/copyright|all rights reserved|cengage|pearson|mcgraw|elsevier|wiley|isbn/i.test(t)) return true;
+  return false;
+}
+
 // ── Sentence splitter ────────────────────────────────────────────────────────
 const ABBREV_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Mrs|Ms|Prof|et\s+al|etc|approx|dept|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec|St|Avg|avg|max|min)\.\s*$/i;
 
@@ -138,12 +153,24 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   // Abort flag for sequential highlights playback
   const abortRef   = useRef(false);
 
-  // Stop audio only on page navigation — NOT on studyModel/mode changes.
+  // Reset on page navigation — stop audio and clear eye guide.
   useEffect(() => {
     setSegIdx(0);
+    setEyeText(null);
+    setEyeRole(null);
     stopAudio();
+    console.log("[EYE_GUIDE_RESET]", { page: pageNumber, reason: "page-navigation" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageNumber]);
+
+  // Reset eye guide when mode changes.
+  useEffect(() => {
+    setSegIdx(0);
+    setEyeText(null);
+    setEyeRole(null);
+    console.log("[EYE_GUIDE_RESET]", { page: pageNumber, mode, reason: "mode-change" });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   // Full Page mode: sentence count for progress display
   const [fpSentences, setFpSentences] = useState<string[]>([]);
@@ -185,11 +212,15 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
         }
       }
       const sents = withHeadings.filter((s) => s.length >= 10);
-      console.log("[SPEECH_FULL_PAGE_SENTENCES]", { count: sents.length, first: sents[0]?.slice(0, 80) });
-      console.log("[SPEECH_FULL_PAGE_START_ANCHOR]", {
-        expectedStart: activePageText.slice(0, 80),
-        actualStart: sents[0]?.slice(0, 80) ?? null,
+      const firstBody = sents.findIndex(s => !isHeaderOrFooter(s));
+      console.log("[EYE_GUIDE_SORTED_BLOCKS]", {
+        page: pageNumber,
+        total: sents.length,
+        firstBodyIdx: firstBody,
+        firstBody: firstBody >= 0 ? sents[firstBody].slice(0, 80) : null,
+        source: "activePageText-top-to-bottom",
       });
+      console.log("[SPEECH_FULL_PAGE_SENTENCES]", { count: sents.length, first: sents[0]?.slice(0, 80) });
       setFpSentences(sents);
     } else {
       setFpSentences([]);
@@ -313,9 +344,26 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
     abortRef.current = false;
     setPlayState("loading");
 
-    for (let i = fromIdx; i < sentences.length; i++) {
+    // Find first non-header/footer block to start from (eye guide start position)
+    let effectiveFromIdx = fromIdx;
+    if (fromIdx === 0) {
+      while (effectiveFromIdx < sentences.length && isHeaderOrFooter(sentences[effectiveFromIdx])) {
+        console.log("[EYE_GUIDE_SKIP_HEADER]", { idx: effectiveFromIdx, text: sentences[effectiveFromIdx].slice(0, 60) });
+        effectiveFromIdx++;
+      }
+      if (effectiveFromIdx > 0 && effectiveFromIdx < sentences.length) {
+        console.log("[EYE_GUIDE_START_BLOCK]", { idx: effectiveFromIdx, text: sentences[effectiveFromIdx].slice(0, 80), page: pageNumber });
+      }
+    }
+
+    for (let i = effectiveFromIdx; i < sentences.length; i++) {
       if (abortRef.current) break;
       const raw = sentences[i];
+      // Skip header/footer blocks mid-stream too
+      if (isHeaderOrFooter(raw)) {
+        console.log("[EYE_GUIDE_SKIP_HEADER]", { idx: i, text: raw.slice(0, 60) });
+        continue;
+      }
       const { text: fNorm, hasMath, hasScience, transformations } = normalizeFormulasForSpeech(raw);
       if (transformations > 0) console.log("[SPEECH_FORMULA_NORMALIZATION]", { segIdx: i, transformations, hasMath, hasScience });
       if (hasMath)    console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: raw.slice(0, 60) });
@@ -327,7 +375,7 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
       setEyeRole("fullPage");
 
       console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: text.length, totalSentences: sentences.length });
-      onSnippetFocus?.(raw);
+      onSnippetFocus?.(raw); // drives PDF text-layer highlight in SmartPDFViewer (left panel)
 
       try {
         const result = await fetchAndPlayAudio(text);

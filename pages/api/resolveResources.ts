@@ -327,12 +327,66 @@ Score each 0–100. Best match on the exact mechanism scores highest regardless 
         } satisfies ResolvedVideo;
       })
     );
-    const videos: ResolvedVideo[] = videoResults;
+    let videos: ResolvedVideo[] = videoResults;
+
+    // ── Cohere rerank: semantically re-sort articles and videos by relevance ──
+    const cohereKey = process.env.COHERE_API_KEY?.trim();
+    const thesis = body.pageThesis?.trim() ?? "";
+    if (cohereKey && thesis && (articles.length > 1 || videos.length > 1)) {
+      try {
+        const cohereCtrl = new AbortController();
+        const cohereTimeout = setTimeout(() => cohereCtrl.abort(), 8_000);
+
+        // Rerank articles
+        if (articles.length > 1) {
+          const artDocs = articles.map(a => `${a.title}. ${a.reason}. Source: ${a.source}`);
+          const artResp = await fetch("https://api.cohere.ai/v1/rerank", {
+            signal: cohereCtrl.signal,
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${cohereKey}` },
+            body: JSON.stringify({ model: "rerank-english-v3.0", query: thesis, documents: artDocs, top_n: artDocs.length }),
+          }).catch(() => null);
+          if (artResp?.ok) {
+            const artData = await artResp.json();
+            const ranked = artData?.results as Array<{ index: number; relevance_score: number }> | undefined;
+            if (ranked?.length) {
+              const reranked = ranked.map(r => ({ ...articles[r.index], score: Math.round(r.relevance_score * 100) }));
+              articles.splice(0, articles.length, ...reranked);
+              console.log("[COHERE_RERANK_ARTICLES]", { count: reranked.length, topScore: reranked[0]?.score });
+            }
+          }
+        }
+
+        // Rerank videos
+        if (videos.length > 1) {
+          const vidDocs = videos.map(v => `${v.videoTitle}. ${v.reason}. Channel: ${v.channel}`);
+          const vidResp = await fetch("https://api.cohere.ai/v1/rerank", {
+            signal: cohereCtrl.signal,
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${cohereKey}` },
+            body: JSON.stringify({ model: "rerank-english-v3.0", query: thesis, documents: vidDocs, top_n: vidDocs.length }),
+          }).catch(() => null);
+          if (vidResp?.ok) {
+            const vidData = await vidResp.json();
+            const ranked = vidData?.results as Array<{ index: number; relevance_score: number }> | undefined;
+            if (ranked?.length) {
+              videos = ranked.map(r => ({ ...videos[r.index], score: Math.round(r.relevance_score * 100) }));
+              console.log("[COHERE_RERANK_VIDEOS]", { count: videos.length, topScore: videos[0]?.score });
+            }
+          }
+        }
+
+        clearTimeout(cohereTimeout);
+      } catch (cohereErr) {
+        console.warn("[COHERE_RERANK_SKIP]", String(cohereErr));
+      }
+    }
 
     console.log("[RESOURCES:done]", {
       articlesValidated: articles.length,
       articlesRequested: data.articles.length,
       videos: videos.length,
+      cohereReranked: !!cohereKey,
     });
 
     return res.status(200).json({ articles, videos } satisfies ResourcesResponse);

@@ -84,7 +84,7 @@ const IDB_STORE_NAME = "notes";
 const IDB_FLAG_KEY = "ultraNotes_in_idb";
 
 function compact(note: UltraNote): UltraNote {
-  const trim = (s: string | undefined, n: number) => s?.slice(0, n);
+  const trim = (s: string | undefined, n: number): string | undefined => s?.slice(0, n);
   return {
     id:          note.id,
     bookId:      note.bookId,
@@ -93,16 +93,16 @@ function compact(note: UltraNote): UltraNote {
     coreIdea:    note.coreIdea.slice(0, 300),
     subject:     note.subject,
     createdAt:   note.createdAt,
-    concepts:    note.concepts.slice(0, 5).map((c) => ({
-      ordinal:       c.ordinal,
-      title:         c.title.slice(0, 80),
-      pattern:       c.pattern.slice(0, 150),
-      surgicalReason: c.surgicalReason.slice(0, 150),
-      trap:          c.trap.slice(0, 150),
-      rule:          c.rule.slice(0, 150),
-    })),
     memoryShortcuts: [],
-    sections:    note.sections?.slice(0, 5).map((s) => ({
+    concepts: note.concepts.slice(0, 5).map((c) => ({
+      ordinal:        c.ordinal,
+      title:          c.title.slice(0, 80),
+      pattern:        c.pattern.slice(0, 150),
+      surgicalReason: c.surgicalReason.slice(0, 150),
+      trap:           c.trap.slice(0, 150),
+      rule:           c.rule.slice(0, 150),
+    })),
+    sections: note.sections?.slice(0, 5).map((s) => ({
       label:   s.label.slice(0, 60),
       content: s.content.slice(0, 300),
     })),
