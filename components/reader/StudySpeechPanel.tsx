@@ -187,21 +187,35 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
   const [fpSentences, setFpSentences] = useState<string[]>([]);
   useEffect(() => {
     if (mode === "fullPage" && activePageText) {
-      // Source is the raw page text extracted top-to-bottom, left-to-right by SmartPDFViewer.
-      console.log("[SPEECH_FULL_PAGE_SOURCE]", {
-        page: pageNumber,
-        firstChars: activePageText.slice(0, 120),
-        source: "currentPageTextTopToBottom",
+      console.log("[SPEECH_RAW_TEXT]", {
+        page:     pageNumber,
+        chars:    activePageText.length,
+        first200: activePageText.slice(0, 200),
+        source:   "activePageText prop",
       });
-      // Two-pass split:
-      // 1. Split on sentence-ending punctuation followed by whitespace.
-      // 2. Merge continuations that start with lowercase (abbreviation guard).
-      // 3. Merge short heading-like chunks (< 30 chars, no terminal punct) forward
-      //    so "Concept 2.1." attaches to the sentence that follows it.
+
+      // ── Step 1: quick clean — strip pipes, drop-caps, filter headers ─────
       const ABBREV_RE = /\b(Fig|No|vol|pp|cf|e\.g|i\.e|vs|Dr|Mr|Ms|Prof|et\s+al|etc|approx|dept|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.\s*$/i;
-      const raw = normalizeDropCaps(activePageText).split(/(?<=[.!?…])\s+/);
+
+      // Remove pipe characters used as column/header separators in OCR
+      const pipeStripped = activePageText.replace(/\s*\|\s*/g, " ");
+
+      const rawLines = pipeStripped.split("\n").map(l => l.trim()).filter(Boolean);
+      const bodyLines: string[] = [];
+      let removedHeaders = 0;
+      for (const line of rawLines) {
+        if (isHeaderOrFooter(line)) {
+          console.log("[SPEECH_HEADER_REMOVED]", { page: pageNumber, text: line.slice(0, 80) });
+          removedHeaders++;
+        } else {
+          bodyLines.push(line);
+        }
+      }
+      const quickCleaned = normalizeDropCaps(bodyLines.join(" "));
+
+      const rawChunks = quickCleaned.split(/(?<=[.!?…])\s+/);
       const merged: string[] = [];
-      for (const chunk of raw) {
+      for (const chunk of rawChunks) {
         const t = chunk.trim();
         if (!t) continue;
         const isLowercaseContinuation = merged.length > 0 && /^[a-z"'(0-9]/.test(t) && !ABBREV_RE.test(merged[merged.length - 1]);
@@ -211,7 +225,6 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
           merged.push(t);
         }
       }
-      // Second pass: merge short heading-like chunks forward (e.g. "Concept 2.1." → prepend to next)
       const withHeadings: string[] = [];
       for (let i = 0; i < merged.length; i++) {
         const s = merged[i];
@@ -222,29 +235,41 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
           withHeadings.push(s);
         }
       }
-      const sents = withHeadings.filter((s) => s.length >= 10);
-      const firstBodyIdx = sents.findIndex(s => !isHeaderOrFooter(s));
+      const quickSents = withHeadings.filter((s) => s.length >= 10);
+      const firstBodyIdx = quickSents.findIndex(s => !isHeaderOrFooter(s));
 
-      // ── Diagnosis logs ────────────────────────────────────────────────────
-      console.log("[SPEECH_FULL_PAGE_STATE]", {
-        page:          pageNumber,
-        mode,
-        rawChars:      activePageText.length,
-        rawFirst80:    activePageText.slice(0, 80),
-        totalSentences: sents.length,
-        firstSentence: sents[0]?.slice(0, 80) ?? null,
+      console.log("[SPEECH_CLEANED_TEXT]", {
+        page:           pageNumber,
+        removedHeaders,
+        chars:          quickCleaned.length,
+        first200:       quickCleaned.slice(0, 200),
+      });
+      console.log("[SPEECH_SENTENCE_COUNT]", {
+        page:         pageNumber,
+        count:        quickSents.length,
         firstBodyIdx,
-        firstBodyText: firstBodyIdx >= 0 ? sents[firstBodyIdx].slice(0, 80) : null,
-        sentences1to4: sents.slice(0, 4).map(s => s.slice(0, 60)),
+        firstBody:    firstBodyIdx >= 0 ? quickSents[firstBodyIdx].slice(0, 80) : null,
+        first4:       quickSents.slice(0, 4).map(s => s.slice(0, 60)),
+      });
+      console.log("[SPEECH_FULL_PAGE_STATE]", {
+        page:           pageNumber,
+        mode,
+        rawChars:       activePageText.length,
+        rawFirst80:     activePageText.slice(0, 80),
+        totalSentences: quickSents.length,
+        firstSentence:  quickSents[0]?.slice(0, 80) ?? null,
+        firstBodyIdx,
+        firstBodyText:  firstBodyIdx >= 0 ? quickSents[firstBodyIdx].slice(0, 80) : null,
+        sentences1to4:  quickSents.slice(0, 4).map(s => s.slice(0, 60)),
       });
       console.log("[OCR_TEXT_PREVIEW]", {
-        page:    pageNumber,
+        page:     pageNumber,
         first500: activePageText.slice(0, 500),
-        source:  "activePageText prop from index.tsx pageTextByPage",
+        source:   "activePageText prop from index.tsx pageTextByPage",
       });
       console.log("[EYE_GUIDE_TEXT_BLOCKS]", {
         page:   pageNumber,
-        blocks: sents.slice(0, 8).map((s, i) => ({
+        blocks: quickSents.slice(0, 8).map((s, i) => ({
           idx:       i,
           isSkipped: isHeaderOrFooter(s),
           text:      s.slice(0, 80),
@@ -252,13 +277,74 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
       });
       console.log("[EYE_GUIDE_SORTED_BLOCKS]", {
         page:         pageNumber,
-        total:        sents.length,
+        total:        quickSents.length,
         firstBodyIdx,
-        firstBody:    firstBodyIdx >= 0 ? sents[firstBodyIdx].slice(0, 80) : null,
+        firstBody:    firstBodyIdx >= 0 ? quickSents[firstBodyIdx].slice(0, 80) : null,
         source:       "activePageText-top-to-bottom",
       });
-      console.log("[SPEECH_FULL_PAGE_SENTENCES]", { count: sents.length, first: sents[0]?.slice(0, 80) });
-      setFpSentences(sents);
+      console.log("[SPEECH_FULL_PAGE_SENTENCES]", { count: quickSents.length, first: quickSents[0]?.slice(0, 80) });
+
+      // Set immediately with quick-cleaned result so playback can start
+      setFpSentences(quickSents);
+
+      // ── Step 2: background OCR repair if corruption is detected ──────────
+      // Score = ratio of suspiciously short all-caps tokens (not common words)
+      const COMMON = new Set(["A", "I", "AN", "OF", "IN", "IS", "TO", "THE", "AND", "OR", "FOR", "ON", "AT", "BY", "BE"]);
+      const allTokens = quickCleaned.split(/\s+/);
+      const suspiciousTokens = allTokens.filter(tok => {
+        const t = tok.replace(/[^A-Za-z]/g, "");
+        return t.length >= 2 && t.length <= 4 && t === t.toUpperCase() && !COMMON.has(t);
+      });
+      const corruptionScore = allTokens.length > 0 ? suspiciousTokens.length / allTokens.length : 0;
+      console.log("[SPEECH_OCR_REPAIR]", {
+        page:             pageNumber,
+        corruptionScore:  Math.round(corruptionScore * 1000) / 1000,
+        suspiciousTokens: suspiciousTokens.slice(0, 10),
+        willRepair:       corruptionScore > 0.08,
+      });
+
+      if (corruptionScore > 0.08) {
+        const textToRepair = quickSents.join(" ").slice(0, 3000);
+        fetch("/api/speech-preprocess", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: textToRepair }),
+        })
+          .then(r => r.json())
+          .then((data: { cleaned: string; wasRepaired: boolean }) => {
+            if (!data.wasRepaired || !data.cleaned) return;
+            console.log("[SPEECH_OCR_REPAIR]", {
+              page:        pageNumber,
+              wasRepaired: true,
+              before:      textToRepair.slice(0, 100),
+              after:       data.cleaned.slice(0, 100),
+            });
+            // Re-split the AI-cleaned text into sentences
+            const reChunks = data.cleaned.split(/(?<=[.!?])\s+/);
+            const reMerged: string[] = [];
+            for (const chunk of reChunks) {
+              const t = chunk.trim();
+              if (!t) continue;
+              const isCont = reMerged.length > 0 && /^[a-z"'(0-9]/.test(t) && !ABBREV_RE.test(reMerged[reMerged.length - 1]);
+              if (isCont) reMerged[reMerged.length - 1] += " " + t;
+              else reMerged.push(t);
+            }
+            const repairedSents = reMerged.filter(s => s.length >= 10);
+            if (repairedSents.length > 0) {
+              console.log("[SPEECH_SENTENCE_COUNT]", {
+                page:        pageNumber,
+                source:      "ai-repaired",
+                count:       repairedSents.length,
+                firstRepaired: repairedSents[0]?.slice(0, 80) ?? null,
+              });
+              setFpSentences(repairedSents);
+            }
+          })
+          .catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err);
+            console.warn("[SPEECH_OCR_REPAIR]", { page: pageNumber, error: message });
+          });
+      }
     } else {
       setFpSentences([]);
     }
@@ -422,8 +508,9 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
       if (hasScience) console.log("[SPEECH_SCIENCE_DETECTED]", { segIdx: i, preview: raw.slice(0, 60) });
       const text = naturalizeSpeech(formulaToSpeech(fNorm)).slice(0, 500);
       console.log("[SPEECH_TTS_TEXT_READY]", { segIdx: i, charCount: text.length, preview: text.slice(0, 60) });
+      console.log("[SPEECH_FINAL_TTS_TEXT]", { segIdx: i, page: pageNumber, text: text.slice(0, 200) });
       setSegIdx(i);
-      setEyeText(raw.slice(0, 160));
+      setEyeText(text.slice(0, 160));
       setEyeRole("fullPage");
 
       console.log("[SPEECH_SEGMENT_START]", { segIdx: i, role: "fullPage", charCount: text.length, totalSentences: sentences.length });
