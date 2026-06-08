@@ -15,6 +15,11 @@ function isContaminatedAnchor(text: string): boolean {
   if (/\bUNIT\s+\d/i.test(text)) return true;
   if (/^(Section|Part)\s+\d/i.test(text)) return true;
 
+  // Review / checkpoint / learning-objective lines — not body content
+  if (/^(review\s+question|checkpoint|concept\s+check|self.?test|learning\s+ob|key\s+term|chapter\s+review|chapter\s+summary|study\s+guide|practice\s+test|practice\s+problem|exam\s+tip|learning\s+goal)/i.test(text)) return true;
+  // Numbered objective lines: "1. Describe the…" or "LO 2.3" — short, not prose
+  if (/^(LO|Obj\.?|Objective)\s*[\d.]+/i.test(text)) return true;
+
   const words = text.trim().split(/\s+/);
 
   // Span too long to be a clean thesis/definition (≤ 35 words enforced)

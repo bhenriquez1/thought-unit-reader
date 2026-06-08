@@ -482,26 +482,14 @@ export default function StudySpeechPanel({ studyModel, pageNumber, bookId, activ
       isHeaderAt2:  sentences[2] ? isHeaderOrFooter(sentences[2]) : null,
     });
 
-    // Find first non-header/footer block to start from (eye guide start position)
-    let effectiveFromIdx = fromIdx;
-    if (fromIdx === 0) {
-      while (effectiveFromIdx < sentences.length && isHeaderOrFooter(sentences[effectiveFromIdx])) {
-        console.log("[EYE_GUIDE_SKIP_HEADER]", { idx: effectiveFromIdx, text: sentences[effectiveFromIdx].slice(0, 60) });
-        effectiveFromIdx++;
-      }
-      if (effectiveFromIdx > 0 && effectiveFromIdx < sentences.length) {
-        console.log("[EYE_GUIDE_START_BLOCK]", { idx: effectiveFromIdx, text: sentences[effectiveFromIdx].slice(0, 80), page: pageNumber });
-      }
-    }
+    // Sentences are already pre-filtered in the fpSentences builder (isHeaderOrFooter per line).
+    // Start from fromIdx directly — no secondary skip loop that would push index to "sentence 4".
+    const effectiveFromIdx = fromIdx;
+    console.log("[EYE_GUIDE_START_BLOCK]", { idx: effectiveFromIdx, text: sentences[effectiveFromIdx]?.slice(0, 80) ?? null, page: pageNumber });
 
     for (let i = effectiveFromIdx; i < sentences.length; i++) {
       if (abortRef.current) break;
       const raw = sentences[i];
-      // Skip header/footer blocks mid-stream too
-      if (isHeaderOrFooter(raw)) {
-        console.log("[EYE_GUIDE_SKIP_HEADER]", { idx: i, text: raw.slice(0, 60) });
-        continue;
-      }
       const { text: fNorm, hasMath, hasScience, transformations } = normalizeFormulasForSpeech(raw);
       if (transformations > 0) console.log("[SPEECH_FORMULA_NORMALIZATION]", { segIdx: i, transformations, hasMath, hasScience });
       if (hasMath)    console.log("[SPEECH_MATH_DETECTED]",    { segIdx: i, preview: raw.slice(0, 60) });

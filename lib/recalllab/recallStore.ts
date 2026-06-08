@@ -94,16 +94,33 @@ async function loadFromIDB(): Promise<RecallSet[]> {
 
 async function loadAllAsync(): Promise<RecallSet[]> {
   if (typeof window === "undefined") return [];
-  const inIDB = localStorage.getItem(IDB_FLAG_KEY) === "1";
-  console.log("[RECALL_STORAGE_DRIVER]", { driver: inIDB ? "indexeddb" : "localstorage" });
-  if (inIDB) {
-    return loadFromIDB();
+  // IDB-first: always try IndexedDB as primary store
+  try {
+    const idbSets = await loadFromIDB();
+    if (idbSets.length > 0) {
+      console.log("[RECALL_STORAGE_DRIVER]", { driver: "indexeddb", count: idbSets.length });
+      return idbSets;
+    }
+  } catch (e) {
+    console.warn("[RECALL_IDB_LOAD_FAIL]", String(e));
   }
+  // IDB empty or unavailable — check localStorage for migration
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
+    if (!raw) {
+      console.log("[RECALL_STORAGE_DRIVER]", { driver: "empty" });
+      return [];
+    }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    const lsSets = Array.isArray(parsed) ? parsed : [];
+    if (lsSets.length > 0) {
+      console.log("[RECALL_STORAGE_DRIVER]", { driver: "localstorage-migration", count: lsSets.length });
+      // Silently migrate to IDB
+      saveToIDB(lsSets)
+        .then(() => { try { localStorage.setItem(IDB_FLAG_KEY, "1"); } catch {} })
+        .catch(() => {});
+    }
+    return lsSets;
   } catch {
     return [];
   }
@@ -143,23 +160,23 @@ async function saveAll(sets: RecallSet[]): Promise<void> {
   });
   console.log("[RECALL_SAVE_COMPACTED]", { key: STORAGE_KEY, setCount: compacted.length, bytes: toSave.length, kb: (toSave.length / 1024).toFixed(1), cards0: compacted[0]?.cards?.length ?? 0 });
   console.log("[RECALL_SAVE_KEY]", { key: STORAGE_KEY, count: compacted.length, bytes: toSave.length });
+  // IDB-first: IndexedDB is the primary store — no localStorage quota risk
   try {
-    localStorage.setItem(STORAGE_KEY, toSave);
-    try { localStorage.removeItem(IDB_FLAG_KEY); } catch {}
-    console.log("[RECALL_SAVE_SUCCESS]", { key: STORAGE_KEY, count: compacted.length });
-    console.log("[RECALL_READ_AFTER_SAVE_SUCCESS]", { driver: "localstorage", count: compacted.length });
+    await saveToIDB(compacted);
+    try { localStorage.setItem(IDB_FLAG_KEY, "1"); } catch {}
+    console.log("[RECALL_SAVE_SUCCESS]", { driver: "indexeddb", key: STORAGE_KEY, count: compacted.length });
+    console.log("[RECALL_READ_AFTER_SAVE_SUCCESS]", { driver: "indexeddb", count: compacted.length });
     window.dispatchEvent(new Event("recall-lab-updated"));
-  } catch (lsErr) {
-    console.warn("[RECALL_LS_QUOTA_FAIL]", String(lsErr));
+  } catch (idbErr) {
+    console.warn("[RECALL_IDB_FAIL]", String(idbErr), "→ fallback to localStorage");
     try {
-      await saveToIDB(compacted);
-      try { localStorage.setItem(IDB_FLAG_KEY, "1"); } catch {}
-      console.log("[RECALL_QUOTA_FALLBACK]", { count: compacted.length, reason: String(lsErr), driver: "indexeddb" });
-      console.log("[RECALL_INDEXEDDB_FALLBACK]", { count: compacted.length, reason: String(lsErr) });
+      localStorage.setItem(STORAGE_KEY, toSave);
+      try { localStorage.removeItem(IDB_FLAG_KEY); } catch {}
+      console.log("[RECALL_SAVE_SUCCESS]", { driver: "localstorage-fallback", key: STORAGE_KEY, count: compacted.length });
       window.dispatchEvent(new Event("recall-lab-updated"));
-    } catch (idbErr) {
-      console.error("[RECALL_ALL_STORAGE_FAIL]", { ls: String(lsErr), idb: String(idbErr) });
-      throw new Error(`Recall storage failed: ${String(lsErr)}`);
+    } catch (lsErr) {
+      console.error("[RECALL_ALL_STORAGE_FAIL]", { idb: String(idbErr), ls: String(lsErr) });
+      throw new Error(`Recall storage failed — IDB: ${String(idbErr)} / LS: ${String(lsErr)}`);
     }
   }
 }
@@ -196,6 +213,15 @@ export async function saveRecallSet(set: RecallSet): Promise<void> {
     sets.unshift(set);
   }
   await saveAll(sets.slice(0, 300));
+  // Read-back verification — surface exact error if data didn't persist
+  const saved = await loadAllAsync();
+  const ok = saved.some(s => s.id === set.id);
+  if (!ok) {
+    const driver = localStorage.getItem(IDB_FLAG_KEY) === "1" ? "idb" : "ls";
+    console.error("[RECALL_SAVE_VERIFY_FAIL]", { id: set.id, driver, savedCount: saved.length });
+    throw new Error(`Recall set was written but could not be read back (driver=${driver}). Storage may be full or corrupt.`);
+  }
+  console.log("[RECALL_SAVE_VERIFIED]", { id: set.id, driver: localStorage.getItem(IDB_FLAG_KEY) === "1" ? "idb" : "ls", savedCount: saved.length });
 }
 
 export async function deleteRecallSet(id: string): Promise<void> {

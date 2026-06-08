@@ -91,6 +91,7 @@ export default function WhiteboardPanel({
   const [narrationScript, setNarrationScript] = useState("");
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
+  const [wbProvider, setWbProvider] = useState<string>("unknown");
 
   // ✨ UX niceties (animation, zoom, cues)
   const [isOpen, setIsOpen] = useState(true);
@@ -263,6 +264,7 @@ export default function WhiteboardPanel({
       setSteps(newSteps);
       setNarrationScript(narration);
       setAudioBlob(null);
+      setWbProvider(data.provider ?? (data.aiDisabled ? "fallback" : "unknown"));
 
       // [DIAGNOSIS] Which provider generated these steps
       console.log("[WHITEBOARD_PROVIDER]", {
@@ -533,6 +535,13 @@ export default function WhiteboardPanel({
           {showDetectedChip && (
             <div className="text-xs bg-amber-500/20 text-amber-300 px-2 py-1 rounded inline-block">
               🧠 Diagram detected{typeof currentPage === "number" ? ` on p.${currentPage}` : ""} — refreshed
+            </div>
+          )}
+
+          {/* Provider badge — warns when AI unavailable and generic fallback is shown */}
+          {canRender && wbProvider === "fallback" && (
+            <div className="text-xs bg-red-900/60 text-red-300 border border-red-700/50 px-2 py-1 rounded inline-flex items-center gap-1">
+              ⚠ FALLBACK — AI unavailable, showing generic diagram
             </div>
           )}
 

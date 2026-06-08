@@ -160,16 +160,33 @@ async function loadNotesFromIDB(): Promise<UltraNote[]> {
 
 async function loadAllAsync(): Promise<UltraNote[]> {
   if (typeof window === "undefined") return [];
-  const inIDB = localStorage.getItem(IDB_FLAG_KEY) === "1";
-  console.log("[NOTELAB_STORAGE_DRIVER]", { driver: inIDB ? "indexeddb" : "localstorage" });
-  if (inIDB) {
-    return loadNotesFromIDB();
+  // IDB-first: always try IndexedDB as primary store
+  try {
+    const idbNotes = await loadNotesFromIDB();
+    if (idbNotes.length > 0) {
+      console.log("[NOTELAB_STORAGE_DRIVER]", { driver: "indexeddb", count: idbNotes.length });
+      return idbNotes;
+    }
+  } catch (e) {
+    console.warn("[NOTELAB_IDB_LOAD_FAIL]", String(e));
   }
+  // IDB empty or unavailable — check localStorage for migration
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
+    if (!raw) {
+      console.log("[NOTELAB_STORAGE_DRIVER]", { driver: "empty" });
+      return [];
+    }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    const lsNotes = Array.isArray(parsed) ? parsed : [];
+    if (lsNotes.length > 0) {
+      console.log("[NOTELAB_STORAGE_DRIVER]", { driver: "localstorage-migration", count: lsNotes.length });
+      // Silently migrate to IDB
+      saveNotesToIDB(lsNotes)
+        .then(() => { try { localStorage.setItem(IDB_FLAG_KEY, "1"); } catch {} })
+        .catch(() => {});
+    }
+    return lsNotes;
   } catch {
     return [];
   }
@@ -219,23 +236,23 @@ async function saveAll(notes: UltraNote[]): Promise<void> {
     hasHighlight: !!(compacted[0] as any)?.highlightAnchors,     // must be absent
   });
   console.log("[NOTE_SAVE_KEY]", { key: STORAGE_KEY, count: compacted.length, bytes: serialized.length });
+  // IDB-first: IndexedDB is the primary store — never hits localStorage quota
   try {
-    localStorage.setItem(STORAGE_KEY, serialized);
-    try { localStorage.removeItem(IDB_FLAG_KEY); } catch {}
-    console.log("[NOTE_SAVE_SUCCESS]", { key: STORAGE_KEY, count: compacted.length });
-    console.log("[NOTELAB_READ_AFTER_SAVE_SUCCESS]", { driver: "localstorage", count: compacted.length });
+    await saveNotesToIDB(compacted);
+    try { localStorage.setItem(IDB_FLAG_KEY, "1"); } catch {}
+    console.log("[NOTE_SAVE_SUCCESS]", { driver: "indexeddb", key: STORAGE_KEY, count: compacted.length });
+    console.log("[NOTELAB_READ_AFTER_SAVE_SUCCESS]", { driver: "indexeddb", count: compacted.length });
     window.dispatchEvent(new Event("note-lab-updated"));
-  } catch (lsErr) {
-    console.warn("[NOTE_LS_QUOTA_FAIL]", String(lsErr));
+  } catch (idbErr) {
+    console.warn("[NOTE_IDB_FAIL]", String(idbErr), "→ fallback to localStorage");
     try {
-      await saveNotesToIDB(compacted);
-      try { localStorage.setItem(IDB_FLAG_KEY, "1"); } catch {}
-      console.log("[NOTELAB_QUOTA_FALLBACK]", { count: compacted.length, reason: String(lsErr), driver: "indexeddb" });
-      console.log("[NOTELAB_INDEXEDDB_FALLBACK]", { count: compacted.length, reason: String(lsErr) });
+      localStorage.setItem(STORAGE_KEY, serialized);
+      try { localStorage.removeItem(IDB_FLAG_KEY); } catch {}
+      console.log("[NOTE_SAVE_SUCCESS]", { driver: "localstorage-fallback", key: STORAGE_KEY, count: compacted.length });
       window.dispatchEvent(new Event("note-lab-updated"));
-    } catch (idbErr) {
-      console.error("[NOTE_ALL_STORAGE_FAIL]", { ls: String(lsErr), idb: String(idbErr) });
-      throw new Error(`Note storage failed: ${String(lsErr)}`);
+    } catch (lsErr) {
+      console.error("[NOTE_ALL_STORAGE_FAIL]", { idb: String(idbErr), ls: String(lsErr) });
+      throw new Error(`Note storage failed — IDB: ${String(idbErr)} / LS: ${String(lsErr)}`);
     }
   }
 }
@@ -272,6 +289,15 @@ export async function saveUltraNote(note: UltraNote): Promise<void> {
     notes.unshift(note);
   }
   await saveAll(notes.slice(0, 200));
+  // Read-back verification — surface the exact error if data didn't persist
+  const saved = await loadAllAsync();
+  const ok = saved.some(n => n.id === note.id);
+  if (!ok) {
+    const driver = localStorage.getItem(IDB_FLAG_KEY) === "1" ? "idb" : "ls";
+    console.error("[NOTE_SAVE_VERIFY_FAIL]", { id: note.id, driver, savedCount: saved.length });
+    throw new Error(`Note was written but could not be read back (driver=${driver}). Storage may be full or corrupt.`);
+  }
+  console.log("[NOTE_SAVE_VERIFIED]", { id: note.id, driver: localStorage.getItem(IDB_FLAG_KEY) === "1" ? "idb" : "ls", savedCount: saved.length });
 }
 
 export async function deleteUltraNote(id: string): Promise<void> {
