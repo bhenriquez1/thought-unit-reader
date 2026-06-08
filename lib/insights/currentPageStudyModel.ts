@@ -22,7 +22,8 @@ export type VisualAnchorRole =
   | "mechanism"       // causal chain / how/why
   | "exampleEvidence" // worked example or application
   | "keyDetail"       // important supporting detail / formula
-  | "confusionTrap";  // common mistake or misconception
+  | "confusionTrap"   // common mistake or misconception
+  | "datFact";        // DAT / high-yield exam fact
 
 export type VisualAnchorSourceField =
   | "pageThesis"
@@ -49,16 +50,18 @@ export type VisualAnchor = {
 // Role priority — determines render order and budget arbitration.
 const ROLE_PRIORITY: Record<VisualAnchorRole, number> = {
   coreIdea:        1,
-  mechanism:       2,
-  definition:      3,
+  datFact:         2,
+  mechanism:       3,
   confusionTrap:   4,
   exampleEvidence: 5,
-  keyDetail:       6,
+  definition:      6,
+  keyDetail:       7,
 };
 
 function anchorTypeToSourceField(anchorType: string): VisualAnchorSourceField {
   switch (anchorType) {
     case "thesis":       return "pageThesis";
+    case "dat_fact":     return "pageThesis";
     case "mechanism":    return "keyMechanism";
     case "definition":   return "keyMechanism";
     case "formula":      return "keyMechanism";
@@ -73,6 +76,7 @@ function anchorTypeToSourceField(anchorType: string): VisualAnchorSourceField {
 function anchorTypeToVisualRole(anchorType: string): VisualAnchorRole {
   switch (anchorType) {
     case "thesis":       return "coreIdea";
+    case "dat_fact":     return "datFact";
     case "definition":   return "definition";
     case "mechanism":    return "mechanism";
     case "application":  return "exampleEvidence";

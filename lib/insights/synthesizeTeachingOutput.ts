@@ -33,7 +33,7 @@ export type PageType = z.infer<typeof PageTypeSchema>;
 
 export const SynthHighlightAnchorSchema = z.object({
   text: z.string(),         // exact source text span — must be copied verbatim, ≤ 30 words
-  anchorType: z.enum(["thesis", "definition", "mechanism", "trap", "application", "formula", "example_step", "conclusion"]),
+  anchorType: z.enum(["thesis", "definition", "mechanism", "trap", "application", "formula", "example_step", "conclusion", "dat_fact"]),
   reason: z.string(),       // ≤ 10 words: why a professor would underline this
   // Full concept span bounds: first 8-10 verbatim words of the concept span start,
   // and last 8-10 verbatim words of the concept span end.
@@ -318,26 +318,31 @@ STAGE 4 — SELECT FINAL HIGHLIGHTS (RECONSTRUCTION TEST):
   Default 2–4. Only exceed 4 if the page has multiple independent teaching sections.
   Quality over quantity. 2 sharp anchors beat 6 weak ones.
 
-══ 5-COLOR ROLE SYSTEM (one anchor per role, 2–4 total) ═════════════════════
+══ 6-COLOR ROLE SYSTEM (2–5 anchors total) ══════════════════════════════════
 
   anchorType "thesis"      🟡 Yellow — REQUIRED. The governing idea — what this page is fundamentally teaching.
                               Not a detail, not a list item — the one idea the whole page builds on.
-  anchorType "definition"  🔵 Blue   — Core concept definition — what the key term IS. The foundational meaning.
   anchorType "mechanism"   🟢 Green  — How or why it works. Cause → effect. The causal chain.
   anchorType "application" 🩷 Pink   — Real-world use, clinical relevance, experiment, or worked example.
   anchorType "trap"        🟣 Purple — Common confusion, misconception, contrast, or exam trap.
+  anchorType "dat_fact"    🟠 Orange — DAT / high-yield exam fact. A discrete numbered fact, statistic,
+                              ratio, or memorized item that a top student would star and memorize.
+                              Example: "O, C, H, and N make up about 96% of living matter."
+                              Example: "Iodine deficiency leads to goiter."
+  anchorType "definition"  🔵 Blue   — Core concept definition — what the key term IS (use sparingly).
 
 ROLE LOGIC (abstract — apply to every page, every book):
   🟡 thesis:      The shortest sentence that names what the page is fundamentally about.
      Good if: removing it would make the rest incomprehensible.
-  🔵 definition:  The sentence that pins down what the key term or concept actually IS.
-     Good if: a student who memorized it could correctly define the concept on an exam.
   🟢 mechanism:   The sentence that explains HOW or WHY — the causal logic or process.
      Good if: it shows the chain of reasoning, not just a fact.
   🩷 application: The sentence that shows the concept in a real, concrete, or clinical setting.
      Good if: it bridges abstract → tangible (example, case, experiment, clinical use).
   🟣 trap:        The sentence that names a contrast, exception, or common misconception.
      Good if: students who don't read carefully would get this wrong on an exam.
+  🟠 dat_fact:    A high-yield, discrete, memorizable fact — a statistic, ratio, named exception,
+     or clinically critical value. Good if: a DAT or MCAT coach would put a star next to it.
+     Use for: percentages, named syndromes, causation facts (X → Y), organ-specific numbers.
 
 ══ GOOD HIGHLIGHTS ══════════════════════════════════════════════════════════
 

@@ -7,7 +7,7 @@ export interface OverlayRect {
   width: number;
   height: number;
   level: "important" | "support" | "additional" | "trap";
-  semanticKind?: "thesis" | "definition" | "mechanism" | "trap" | "application";
+  semanticKind?: "thesis" | "definition" | "mechanism" | "trap" | "application" | "dat_fact";
 }
 
 // All study-model anchor kinds render on the PDF — left panel is driven by right panel only.
@@ -24,7 +24,7 @@ function shouldRender(rect: OverlayRect): boolean {
 //   🟪 application (purple)  — example / evidence / worked step / application
 //   🟥 trap        (red)     — exam trap / confusion / misconception
 
-type SemanticKind = "thesis" | "definition" | "mechanism" | "application" | "trap";
+type SemanticKind = "thesis" | "definition" | "mechanism" | "application" | "trap" | "dat_fact";
 
 interface KindConfig {
   label:       string;
@@ -75,6 +75,14 @@ const KIND_CONFIG: Record<SemanticKind, KindConfig> = {
     ringClass:  "ring-2 ring-red-300/80 shadow-[0_0_8px_rgba(252,165,165,0.55)]",
     badgeBg:    "rgba(127,29,29,0.92)",
     badgeColor: "#fca5a5",
+  },
+  dat_fact: {
+    label:      "DAT FACT",
+    bgNormal:   "rgba(251,146,60,0.28)",
+    bgFocused:  "rgba(251,146,60,0.55)",
+    ringClass:  "ring-2 ring-orange-300/80 shadow-[0_0_8px_rgba(251,146,60,0.55)]",
+    badgeBg:    "rgba(124,45,18,0.92)",
+    badgeColor: "#fed7aa",
   },
 };
 

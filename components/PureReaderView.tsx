@@ -171,6 +171,8 @@ export default function PureReaderView({
       case "confusionTrap":   return "trap";
       case "exampleEvidence": return "application";
       case "keyDetail":       return "definition";
+      case "datFact":         return "dat_fact";
+      case "dat_fact":        return "dat_fact";
       // Math-specific anchor types
       case "formula":      return "definition";    // formula = key term / rule (blue)
       case "example_step": return "application";   // worked step = evidence (purple)
@@ -328,6 +330,7 @@ export default function PureReaderView({
     { kind: "mechanism",   color: "#86efac", bg: "rgba(134,239,172,0.15)",  label: "Mechanism / Function", abbr: "FCN"  },
     { kind: "application", color: "#c084fc", bg: "rgba(192,132,252,0.15)",  label: "Example / Evidence",   abbr: "EX"   },
     { kind: "trap",        color: "#fca5a5", bg: "rgba(252,165,165,0.15)",  label: "Confusion / Trap",     abbr: "TRAP" },
+    { kind: "dat_fact",    color: "#fed7aa", bg: "rgba(251,146,60,0.15)",   label: "DAT / High-Yield Fact", abbr: "DAT"  },
   ];
 
   console.log("[SINGLE_LEGEND_RENDER]", {

@@ -713,8 +713,12 @@ export default function ThoughtUnitReader() {
       evidenceRefId: a.id,
     })) as (SynthHighlightAnchor & { evidenceRefId: string })[];
 
-    console.log("[HIGHLIGHT_GROUND_START]", { page: currentPage, inputCount: visualAnchors.length, ids: visualAnchors.map(a => a.id), source: "finalStudyModel.visualAnchors" });
-    const sanitized = sanitizeHighlightAnchors(rawForGrounding);
+    // Filter: only the 5 reasoning-anchor roles reach the PDF overlay.
+    // Drops "definition", "keyDetail" anchors — header-adjacent noise on exam content.
+    const OVERLAY_ROLES = new Set(["coreIdea", "mechanism", "exampleEvidence", "confusionTrap", "datFact"]);
+    const roleFiltered = rawForGrounding.filter(a => OVERLAY_ROLES.has(a.anchorType));
+    console.log("[HIGHLIGHT_GROUND_START]", { page: currentPage, inputCount: visualAnchors.length, roleFilteredCount: roleFiltered.length, ids: roleFiltered.map(a => (a as any).evidenceRefId), source: "finalStudyModel.visualAnchors" });
+    const sanitized = sanitizeHighlightAnchors(roleFiltered);
     const grounded  = groundHighlightAnchors(sanitized, pageText);
     console.log("[LEFT_PANEL_GROUND_RESULT]", {
       page:         currentPage,
