@@ -94,6 +94,7 @@ async function loadFromIDB(): Promise<RecallSet[]> {
 
 function loadAll(): RecallSet[] {
   if (typeof window === "undefined") return [];
+  console.log("[RECALL_READ_KEY]", { key: STORAGE_KEY, idbFlagKey: IDB_FLAG_KEY });
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
@@ -108,12 +109,21 @@ async function saveAll(sets: RecallSet[]): Promise<void> {
   if (typeof window === "undefined") return;
   const compacted = sets.map(compact);
   const serialized = JSON.stringify(compacted);
+  console.log("[RECALL_WRITE_KEY]", { key: STORAGE_KEY, idbFlagKey: IDB_FLAG_KEY });
   let toSave = serialized;
   if (serialized.length > 200000) {
     const trimmed = compacted.map(s => ({ ...s, cards: s.cards.slice(0, 15).map(c => ({ ...c, front: c.front.slice(0, 120), back: c.back.slice(0, 150) })) }));
     toSave = JSON.stringify(trimmed);
     console.warn("[RECALL_TRIM_OVERSIZED]", { originalBytes: serialized.length, trimmedBytes: toSave.length });
   }
+  console.log("[RECALL_PAYLOAD_SIZE]", {
+    writeKey:   STORAGE_KEY,
+    bytes:      toSave.length,
+    kb:         (toSave.length / 1024).toFixed(1),
+    setCount:   compacted.length,
+    cards0:     compacted[0]?.cards?.length ?? 0,
+    willQuota:  toSave.length > 2_000_000,
+  });
   console.log("[RECALL_SAVE_KEY]", { key: STORAGE_KEY, count: compacted.length, bytes: toSave.length });
   try {
     localStorage.setItem(STORAGE_KEY, toSave);

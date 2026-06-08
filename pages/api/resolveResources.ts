@@ -283,6 +283,14 @@ Score each 0–100. Best match on the exact mechanism scores highest regardless 
 
     const data = raw.data;
 
+    // [DIAGNOSIS] Log raw article URLs from OpenAI before any URL validation
+    console.log("[RELATED_SOURCE_URLS]", {
+      articleCount:   data.articles.length,
+      articleUrls:    data.articles.map(a => ({ url: a.url, source: a.source, score: a.score })),
+      videoCount:     data.videos.length,
+      videoQueries:   data.videos.map(v => ({ channel: v.channel, handle: v.channelHandle, q: v.searchQuery, score: v.score })),
+    });
+
     // Validate article URLs in parallel — omit any that are unreachable
     const articleChecks = await Promise.all(
       data.articles.map(async (a) => {

@@ -212,13 +212,39 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
         }
       }
       const sents = withHeadings.filter((s) => s.length >= 10);
-      const firstBody = sents.findIndex(s => !isHeaderOrFooter(s));
+      const firstBodyIdx = sents.findIndex(s => !isHeaderOrFooter(s));
+
+      // ── Diagnosis logs ────────────────────────────────────────────────────
+      console.log("[SPEECH_FULL_PAGE_STATE]", {
+        page:          pageNumber,
+        mode,
+        rawChars:      activePageText.length,
+        rawFirst80:    activePageText.slice(0, 80),
+        totalSentences: sents.length,
+        firstSentence: sents[0]?.slice(0, 80) ?? null,
+        firstBodyIdx,
+        firstBodyText: firstBodyIdx >= 0 ? sents[firstBodyIdx].slice(0, 80) : null,
+        sentences1to4: sents.slice(0, 4).map(s => s.slice(0, 60)),
+      });
+      console.log("[OCR_TEXT_PREVIEW]", {
+        page:    pageNumber,
+        first500: activePageText.slice(0, 500),
+        source:  "activePageText prop from index.tsx pageTextByPage",
+      });
+      console.log("[EYE_GUIDE_TEXT_BLOCKS]", {
+        page:   pageNumber,
+        blocks: sents.slice(0, 8).map((s, i) => ({
+          idx:       i,
+          isSkipped: isHeaderOrFooter(s),
+          text:      s.slice(0, 80),
+        })),
+      });
       console.log("[EYE_GUIDE_SORTED_BLOCKS]", {
-        page: pageNumber,
-        total: sents.length,
-        firstBodyIdx: firstBody,
-        firstBody: firstBody >= 0 ? sents[firstBody].slice(0, 80) : null,
-        source: "activePageText-top-to-bottom",
+        page:         pageNumber,
+        total:        sents.length,
+        firstBodyIdx,
+        firstBody:    firstBodyIdx >= 0 ? sents[firstBodyIdx].slice(0, 80) : null,
+        source:       "activePageText-top-to-bottom",
       });
       console.log("[SPEECH_FULL_PAGE_SENTENCES]", { count: sents.length, first: sents[0]?.slice(0, 80) });
       setFpSentences(sents);
@@ -343,6 +369,21 @@ export default function StudySpeechPanel({ studyModel, pageNumber, activePageTex
   async function playFullPageSequential(sentences: string[], fromIdx: number) {
     abortRef.current = false;
     setPlayState("loading");
+
+    // [DIAGNOSIS] State at play start — reveals stale segIdx and sentence zero issue
+    console.log("[EYE_GUIDE_START_INDEX]", {
+      page:         pageNumber,
+      mode,
+      fromIdx,
+      segIdx,                                          // current state — if >0, stale from prev page
+      totalSentences: sentences.length,
+      sentence0:    sentences[0]?.slice(0, 80) ?? null,
+      sentence1:    sentences[1]?.slice(0, 80) ?? null,
+      sentence3:    sentences[3]?.slice(0, 80) ?? null, // sentence "4" (0-indexed 3)
+      isHeaderAt0:  sentences[0] ? isHeaderOrFooter(sentences[0]) : null,
+      isHeaderAt1:  sentences[1] ? isHeaderOrFooter(sentences[1]) : null,
+      isHeaderAt2:  sentences[2] ? isHeaderOrFooter(sentences[2]) : null,
+    });
 
     // Find first non-header/footer block to start from (eye guide start position)
     let effectiveFromIdx = fromIdx;

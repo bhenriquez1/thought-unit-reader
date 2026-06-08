@@ -257,8 +257,27 @@ export default function WhiteboardPanel({
       setNarrationScript(narration);
       setAudioBlob(null);
 
+      // [DIAGNOSIS] Which provider generated these steps
+      console.log("[WHITEBOARD_PROVIDER]", {
+        page:          currentPage ?? null,
+        provider:      data.provider ?? "unknown",   // "gemini" or "openai" set by whiteboard-explain.ts
+        aiDisabled:    data.aiDisabled ?? false,
+        stepCount:     newSteps.length,
+        drawTypes:     newSteps.map((s: any) => s.drawType ?? "text"),
+        hasDrawSteps:  newSteps.some((s: any) => s.type === "draw"),
+        hasNodes:      newSteps.some((s: any) => Array.isArray(s.nodes) && s.nodes.length > 0),
+        legacyPath:    data.aiDisabled === true,     // true = fallback text steps used
+      });
+      if (data.aiDisabled) {
+        console.warn("[WHITEBOARD_LEGACY_PATH_USED]", {
+          page: currentPage ?? null,
+          reason: "aiDisabled=true — Gemini+OpenAI both failed or key missing; using buildFallbackSteps()",
+        });
+      }
+
       // Fetch OpenAI TTS for the narration so useAIVoice becomes true
       if (narration && !data.aiDisabled) {
+        console.log("[WHITEBOARD_TTS_PROVIDER]", { page: currentPage ?? null, fetching: "/api/tts", narrationChars: narration.length, provider: "openai-tts-via-api" });
         fetch("/api/tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -273,10 +292,14 @@ export default function WhiteboardPanel({
               for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
               const blob = new Blob([arr], { type: mime });
               setAudioBlob(blob);
-              console.log("[WHITEBOARD_TTS_READY]", { narrationChars: narration.length, mimeType: mime });
+              console.log("[WHITEBOARD_TTS_READY]", { narrationChars: narration.length, mimeType: mime, provider: "openai-tts" });
+            } else {
+              console.log("[WHITEBOARD_TTS_PROVIDER]", { result: tts?.useBrowserSpeech ? "browser-fallback" : "no-audio", reason: tts?.fallbackReason ?? "unknown" });
             }
           })
           .catch((err) => console.warn("[WHITEBOARD_TTS_ERROR]", err));
+      } else if (data.aiDisabled) {
+        console.log("[WHITEBOARD_TTS_PROVIDER]", { page: currentPage ?? null, result: "browser-speech-synthesis", reason: "aiDisabled — no API audio fetched" });
       }
 
       console.log("[WHITEBOARD_PLAN_CREATED]", {

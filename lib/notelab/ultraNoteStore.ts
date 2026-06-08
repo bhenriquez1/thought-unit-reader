@@ -157,6 +157,7 @@ async function loadNotesFromIDB(): Promise<UltraNote[]> {
 
 function loadAll(): UltraNote[] {
   if (typeof window === "undefined") return [];
+  console.log("[NOTELAB_READ_KEY]", { key: STORAGE_KEY, idbFlagKey: IDB_FLAG_KEY });
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
@@ -171,6 +172,24 @@ async function saveAll(notes: UltraNote[]): Promise<void> {
   if (typeof window === "undefined") return;
   const compacted = notes.map(compact);
   const serialized = JSON.stringify(compacted);
+
+  // [DIAGNOSIS] Exact payload written — catch quota overload and key mismatch
+  console.log("[NOTELAB_WRITE_KEY]", { key: STORAGE_KEY, idbFlagKey: IDB_FLAG_KEY });
+  console.log("[NOTELAB_PAYLOAD_SIZE]", {
+    writeKey:      STORAGE_KEY,
+    bytes:         serialized.length,
+    kb:            (serialized.length / 1024).toFixed(1),
+    noteCount:     compacted.length,
+    willQuota:     serialized.length > 2_000_000,   // warn if >2MB (typical LS limit ~5MB total)
+    fields0:       compacted[0] ? Object.keys(compacted[0]) : [],
+    concepts0:     compacted[0]?.concepts?.length ?? 0,
+    sections0:     compacted[0]?.sections?.length ?? 0,
+    hasProfNotes:  !!compacted[0]?.professorNotes,
+    hasRelVideo:   !!(compacted[0] as any)?.relatedVideoQueries,  // should be absent
+    hasHighlight:  !!(compacted[0] as any)?.highlightAnchors,     // should be absent
+    hasMiniTest:   !!(compacted[0] as any)?.miniTest,             // should be absent
+    hasExtLinks:   !!(compacted[0] as any)?.externalStudyLinks,   // should be absent
+  });
   console.log("[NOTE_SAVE_KEY]", { key: STORAGE_KEY, count: compacted.length, bytes: serialized.length });
   try {
     localStorage.setItem(STORAGE_KEY, serialized);
