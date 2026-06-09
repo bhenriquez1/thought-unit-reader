@@ -17,6 +17,7 @@ interface Props {
   bookId: string;
   activePageText?: string;
   onEvidenceFocus?: (id: string | null) => void;
+  initialScript?: PodcastScript | null;
 }
 
 type PlayState = "idle" | "loading" | "playing" | "paused";
@@ -99,6 +100,7 @@ export default function PodcastLab({
   bookId,
   activePageText = "",
   onEvidenceFocus,
+  initialScript,
 }: Props) {
   const [mode, setMode]               = useState<PodcastMode>("page_review");
   const [script, setScript]           = useState<PodcastScript | null>(null);
@@ -139,6 +141,15 @@ export default function PodcastLab({
     if (countdownRef.current)    clearInterval(countdownRef.current);
     if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
   }, []);
+
+  // Load initialScript when provided (e.g. from StudyGuideLab podcast handoff)
+  useEffect(() => {
+    if (initialScript) {
+      setScript(initialScript);
+      setPlayState("idle");
+      setSegIdx(0);
+    }
+  }, [initialScript]);
 
   // ── Script generation ──────────────────────────────────────────────────
   const generateScript = useCallback(async () => {

@@ -540,6 +540,7 @@ export default function ThoughtUnitReader() {
   const [noteLabRefreshKey, setNoteLabRefreshKey] = useState(0);
   const [recallLabRefreshKey, setRecallLabRefreshKey] = useState(0);
   const [lastRecallSetId, setLastRecallSetId] = useState<string | null>(null);
+  const [studyGuideScript, setStudyGuideScript] = useState<import("@/lib/podcast/podcastTypes").PodcastScript | null>(null);
   const [focusSnippet, setFocusSnippet] = useState<string | null>(null);
   const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
   const [guidedPath, setGuidedPath] = useState<RenderGuidedReadingPathResult | null>(null);
@@ -3494,6 +3495,7 @@ export default function ThoughtUnitReader() {
           bookId={bookId}
           activePageText={pageTextByPage.get(`${bookId}:${currentPage}`) ?? ""}
           onEvidenceFocus={(id) => setFocusedEvidenceId(id)}
+          initialScript={studyGuideScript}
         />
       );
     }
@@ -3508,6 +3510,9 @@ export default function ThoughtUnitReader() {
             syncToPage(page);
             trySwitchShellTab("reader", "reader");
           }}
+          onNoteSaved={() => setNoteLabRefreshKey(k => k + 1)}
+          onRecallSaved={(setId) => { setLastRecallSetId(setId); setRecallLabRefreshKey(k => k + 1); }}
+          onPodcastScript={(script) => setStudyGuideScript(script)}
         />
       );
     }

@@ -19,6 +19,7 @@ import {
 import { saveUltraNote, buildUltraNote } from "@/lib/notelab/ultraNoteStore";
 import { saveRecallSet } from "@/lib/recalllab/recallStore";
 import type { RecallSet, RecallCard } from "@/lib/recalllab/recallStore";
+import type { PodcastScript, PodcastSegment } from "@/lib/podcast/podcastTypes";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,9 @@ interface StudyGuideLabProps {
   bookTitle?: string;
   currentPage?: number;
   onNavigateToPage?: (page: number) => void;
+  onNoteSaved?: (noteId: string) => void;
+  onRecallSaved?: (setId: string) => void;
+  onPodcastScript?: (script: PodcastScript) => void;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -72,6 +76,61 @@ function exportToMarkdown(guide: StudyGuideRecord): string {
     ...guide.memoryHooks.map(h => `> ${h}`),
   ];
   return lines.join("\n");
+}
+
+// ── Podcast script builder ────────────────────────────────────────────────
+
+function buildPodcastScriptFromGuide(guide: StudyGuideRecord, pageNumber: number, bookId: string): PodcastScript {
+  const segments: PodcastSegment[] = [];
+  let id = 0;
+  const mk = () => `sg-seg-${id++}`;
+
+  // Intro
+  segments.push({
+    id: mk(), type: "intro", speaker: "host",
+    text: `Today we're reviewing ${guide.topic || guide.chapterTitle}. ${guide.mustKnow[0] ?? ""}`,
+  });
+
+  // Must Know — one segment each
+  guide.mustKnow.forEach((item, i) => {
+    segments.push({ id: mk(), type: "right_panel_note", speaker: i % 2 === 0 ? "host" : "guest", text: item });
+  });
+
+  // Mechanisms
+  guide.mechanisms.forEach(m => {
+    const text = `${m.title}: ${m.steps.join(" → ")}`;
+    segments.push({ id: mk(), type: "highlight_evidence", speaker: "host", text });
+  });
+
+  // Traps
+  guide.traps.forEach(t => {
+    segments.push({ id: mk(), type: "notelab_expansion", speaker: "guest", text: `Watch out: ${t}` });
+  });
+
+  // Recall questions
+  guide.recallQuestions.forEach(q => {
+    segments.push({ id: mk(), type: "recall_quiz", speaker: "host", text: q });
+  });
+
+  // Memory hooks
+  guide.memoryHooks.forEach(h => {
+    segments.push({ id: mk(), type: "notelab_expansion", speaker: "narrator", text: `Memory hook: ${h}` });
+  });
+
+  // Outro
+  segments.push({
+    id: mk(), type: "outro", speaker: "host",
+    text: `That wraps up ${guide.topic || guide.chapterTitle}. Review these recall questions and come back tomorrow.`,
+  });
+
+  return {
+    mode: "page_review",
+    pageNumber,
+    bookId,
+    segments,
+    totalSegments: segments.length,
+    estimatedMinutes: Math.max(1, Math.ceil(segments.length * 0.4)),
+  };
 }
 
 // ── Section components ─────────────────────────────────────────────────────
@@ -182,6 +241,9 @@ export default function StudyGuideLab({
   bookTitle,
   currentPage,
   onNavigateToPage,
+  onNoteSaved,
+  onRecallSaved,
+  onPodcastScript,
 }: StudyGuideLabProps) {
   const [sources, setSources] = useState<SourceSlot[]>([
     { id: "textbook",  label: "Source 1 — Textbook / Lecture Notes", placeholder: "Paste textbook chapter text, or upload the PDF above…", text: "", loading: false, required: true },
@@ -219,6 +281,12 @@ export default function StudyGuideLab({
       const { extractTextFromPdf } = await import("@/lib/pdfjs-handler");
       const text = await extractTextFromPdf(file);
       setSources(prev => prev.map(s => s.id === slotId ? { ...s, loading: false, text: text.slice(0, 12000) } : s));
+      // Auto-detect chapter title from first lines if not already set
+      if (!chapterTitle) {
+        const firstLines = text.slice(0, 400);
+        const chapterMatch = firstLines.match(/(?:chapter|unit|section)\s+\d+[:\s–—-]+([^\n]{5,80})/i);
+        if (chapterMatch) setChapterTitle(chapterMatch[0].trim().slice(0, 80));
+      }
     } catch (e) {
       setSources(prev => prev.map(s => s.id === slotId ? { ...s, loading: false } : s));
       setError(`PDF extraction failed: ${String(e)}`);
@@ -283,6 +351,89 @@ export default function StudyGuideLab({
         id: record.id, mode, provider: data.provider,
         mustKnow: record.mustKnow.length, datFacts: record.datFacts.length,
       });
+
+      // ── Auto-save to NoteLab ───────────────────────────────────────────
+      try {
+        const concepts = record.mustKnow.slice(0, 3).map((text, i) => ({
+          ordinal:        i + 1,
+          title:          `Must Know ${i + 1}`,
+          pattern:        text,
+          surgicalReason: record.datFacts[i] ?? "",
+          trap:           record.traps[i] ?? "",
+          rule:           record.memoryHooks[i] ?? "",
+        }));
+        const note = buildUltraNote(
+          bookId,
+          currentPage ?? 0,
+          record.topic || record.chapterTitle,
+          record.mustKnow[0] ?? "See study guide",
+          concepts,
+          bookTitle,
+          undefined,
+          record.mustKnow[0] ?? undefined,
+          record.recallQuestions.slice(0, 4),
+        );
+        await saveUltraNote(note);
+        setNoteSaved(true);
+        onNoteSaved?.(note.id);
+        console.log("[STUDYGUIDE_AUTO_SAVED_TO_NOTELAB]", { guideId: record.id, noteId: note.id });
+      } catch (e) {
+        setSaveError(`NoteLab auto-save failed: ${String(e)}`);
+      }
+
+      // ── Auto-save to RecallLab ────────────────────────────────────────
+      try {
+        const cards: RecallCard[] = [
+          ...record.recallQuestions.map((q, i): RecallCard => ({
+            id: `sgrc-q${i}`,
+            type: "core",
+            front: q,
+            back: record.mustKnow[i] ?? record.datFacts[i] ?? "See study guide",
+            reviewCount: 0,
+            isMissed: false,
+            difficulty: "medium",
+          })),
+          ...record.datFacts.map((f, i): RecallCard => ({
+            id: `sgrc-f${i}`,
+            type: "cause-effect",
+            front: `DAT Fact: ${f.split("→")[0]?.trim() ?? f}`,
+            back: f,
+            reviewCount: 0,
+            isMissed: false,
+            difficulty: "hard",
+          })),
+          ...record.traps.map((t, i): RecallCard => ({
+            id: `sgrc-t${i}`,
+            type: "trap",
+            front: `Common trap: ${t}`,
+            back: `Avoid confusing: ${t}`,
+            reviewCount: 0,
+            isMissed: false,
+            difficulty: "hard",
+          })),
+        ];
+        const set: RecallSet = {
+          id:          `sg-rs-${record.id}`,
+          bookId,
+          bookTitle:   bookTitle ?? undefined,
+          sourceLabel: "right-panel",
+          pageNumber:  currentPage ?? 0,
+          subject:     "Biology",
+          topic:       record.topic || record.chapterTitle,
+          cards:       cards.slice(0, 30),
+          createdAt:   Date.now(),
+        };
+        await saveRecallSet(set);
+        setRecallSaved(true);
+        onRecallSaved?.(set.id);
+        console.log("[STUDYGUIDE_AUTO_SAVED_TO_RECALLLAB]", { guideId: record.id, cards: set.cards.length });
+      } catch (e) {
+        setSaveError(`RecallLab auto-save failed: ${String(e)}`);
+      }
+
+      // ── Dispatch podcast script ───────────────────────────────────────
+      onPodcastScript?.(buildPodcastScriptFromGuide(record, currentPage ?? 0, bookId));
+
     } catch (e) {
       setError(`Generation failed: ${String(e)}`);
     } finally {
@@ -651,26 +802,26 @@ export default function StudyGuideLab({
                   )}
                   <div className="flex gap-2">
                     <button
-                      onClick={handleSaveToNoteLab}
+                      onClick={() => { setNoteSaved(false); handleSaveToNoteLab(); }}
                       disabled={noteSaved}
                       className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${
                         noteSaved
-                          ? "bg-green-900/40 border border-green-700/40 text-green-400"
+                          ? "bg-green-900/40 border border-green-700/40 text-green-400 cursor-default"
                           : "bg-green-950/40 border border-green-700/30 text-green-300 hover:bg-green-900/50"
                       }`}
                     >
-                      {noteSaved ? "✓ Saved to NoteLab" : "📝 Save to NoteLab"}
+                      {noteSaved ? "✓ Auto-saved to NoteLab" : "📝 Re-save to NoteLab"}
                     </button>
                     <button
-                      onClick={handleSaveToRecallLab}
+                      onClick={() => { setRecallSaved(false); handleSaveToRecallLab(); }}
                       disabled={recallSaved}
                       className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${
                         recallSaved
-                          ? "bg-indigo-900/40 border border-indigo-700/40 text-indigo-400"
+                          ? "bg-indigo-900/40 border border-indigo-700/40 text-indigo-400 cursor-default"
                           : "bg-indigo-950/40 border border-indigo-700/30 text-indigo-300 hover:bg-indigo-900/50"
                       }`}
                     >
-                      {recallSaved ? "✓ Saved to Recall Lab" : "🎯 Save to Recall Lab"}
+                      {recallSaved ? "✓ Auto-saved to Recall Lab" : "🎯 Re-save to Recall Lab"}
                     </button>
                     <button
                       onClick={handleExportMarkdown}
