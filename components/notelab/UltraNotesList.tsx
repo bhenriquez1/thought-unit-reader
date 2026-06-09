@@ -341,23 +341,30 @@ function NoteCard({
       {isExpanded && (
         <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
 
-          {/* Core Idea */}
-          {note.coreIdea && (
-            <NoteBlock accent="#fbbf24" bg="rgba(251,191,36,0.06)" icon="🧠" label="CORE IDEA">
-              <div style={{ fontSize: 14, color: "rgba(255,255,255,0.92)", lineHeight: 1.7 }}>{note.coreIdea}</div>
-            </NoteBlock>
+          {/* New-schema sections (Core Idea, Must Know, Mechanism, etc.) */}
+          {hasNewSchema(note.sections) ? (
+            <SectionsView sections={note.sections!} />
+          ) : (
+            <>
+              {/* Core Idea */}
+              {note.coreIdea && (
+                <NoteBlock accent="#fbbf24" bg="rgba(251,191,36,0.06)" icon="🧠" label="CORE IDEA">
+                  <div style={{ fontSize: 14, color: "rgba(255,255,255,0.92)", lineHeight: 1.7 }}>{note.coreIdea}</div>
+                </NoteBlock>
+              )}
+
+              {/* Professor Notes */}
+              {note.professorNotes && <ProfessorSection notes={note.professorNotes} />}
+
+              {/* Concept blocks — each collapsible */}
+              {note.concepts.length > 0 && note.concepts.map((c) => (
+                <ConceptBlock key={c.ordinal} concept={c} />
+              ))}
+            </>
           )}
 
-          {/* Professor Notes */}
-          {note.professorNotes && <ProfessorSection notes={note.professorNotes} />}
-
-          {/* Concept blocks — each collapsible */}
-          {note.concepts.length > 0 && note.concepts.map((c) => (
-            <ConceptBlock key={c.ordinal} concept={c} />
-          ))}
-
-          {/* Memory shortcuts */}
-          {note.memoryShortcuts.length > 0 && (
+          {/* Memory shortcuts + Mini Test — only for legacy notes (new schema embeds these in sections) */}
+          {!hasNewSchema(note.sections) && note.memoryShortcuts.length > 0 && (
             <NoteBlock accent="#a78bfa" bg="rgba(167,139,250,0.05)" icon="🧠" label="MEMORY HOOKS">
               {note.memoryShortcuts.map((s, i) => (
                 <div key={i} style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", lineHeight: 1.65, marginBottom: i < note.memoryShortcuts.length - 1 ? 6 : 0 }}>
@@ -367,8 +374,7 @@ function NoteCard({
             </NoteBlock>
           )}
 
-          {/* Mini Test */}
-          {note.miniTest && note.miniTest.length > 0 && (
+          {!hasNewSchema(note.sections) && note.miniTest && note.miniTest.length > 0 && (
             <NoteBlock accent="#6ee7b7" bg="rgba(52,211,153,0.05)" icon="📝" label="RECALL QUESTIONS">
               {note.miniTest.map((q, i) => (
                 <div key={i} style={{ fontSize: 13, color: "rgba(255,255,255,0.85)", lineHeight: 1.65, marginBottom: 4 }}>
@@ -430,10 +436,49 @@ function NoteCard({
   );
 }
 
+// ── SectionsView — renders new-schema sections (Core Idea, Must Know, etc.) ───
+
+const SECTION_STYLE: Record<string, { accent: string; bg: string; icon: string }> = {
+  "Core Idea":         { accent: "#fbbf24", bg: "rgba(251,191,36,0.06)",  icon: "🎯" },
+  "Must Know":         { accent: "#38bdf8", bg: "rgba(56,189,248,0.05)",  icon: "📌" },
+  "Mechanism":         { accent: "#34d399", bg: "rgba(52,211,153,0.05)",  icon: "⚙️" },
+  "DAT/Dental Trap":   { accent: "#f87171", bg: "rgba(248,113,113,0.06)", icon: "⚠️" },
+  "Memory Hook":       { accent: "#a78bfa", bg: "rgba(167,139,250,0.05)", icon: "🧠" },
+  "Recall Questions":  { accent: "#6ee7b7", bg: "rgba(110,231,183,0.05)", icon: "📝" },
+  "Source":            { accent: "#64748b", bg: "rgba(100,116,139,0.06)", icon: "📖" },
+};
+
+function SectionsView({ sections }: { sections: import("@/lib/notelab/ultraNoteStore").NoteSection[] }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {sections.map((sec) => {
+        const style = SECTION_STYLE[sec.label] ?? { accent: "#94a3b8", bg: "rgba(148,163,184,0.05)", icon: "•" };
+        return (
+          <div key={sec.label} style={{ borderRadius: 9, border: `1px solid ${style.accent}28`, background: style.bg, padding: "10px 13px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: style.accent, marginBottom: 7 }}>
+              {style.icon} {sec.label.toUpperCase()}
+            </div>
+            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.9)", lineHeight: 1.75, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              {sec.content}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const NEW_SCHEMA_LABELS = new Set(["Core Idea", "Must Know", "Mechanism", "DAT/Dental Trap", "Memory Hook", "Recall Questions", "Source"]);
+
+function hasNewSchema(sections?: import("@/lib/notelab/ultraNoteStore").NoteSection[]): boolean {
+  if (!sections?.length) return false;
+  return sections.some((s) => NEW_SCHEMA_LABELS.has(s.label));
+}
+
 // ── ConceptBlock — individually collapsible ───────────────────────────────
 
 function ConceptBlock({ concept }: { concept: import("@/lib/notelab/ultraNoteStore").UltraNoteConcept }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   return (
     <div style={{ borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}>
       <div

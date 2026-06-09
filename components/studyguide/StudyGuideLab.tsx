@@ -494,6 +494,15 @@ export default function StudyGuideLab({
       || (bookTitle?.replace(/\.pdf$/i, "").slice(0, 80) ?? "");
     const effectiveTopic = topic || fallback.topic;
 
+    if (studyModel) {
+      console.log("[STUDYLAB_READER_CONTEXT_USED]", {
+        page: currentPage ?? studyModel.page,
+        conceptBlocks: studyModel.conceptBlocks?.length ?? 0,
+        anchors: studyModel.visualAnchors?.length ?? 0,
+        hasMiniTest: (studyModel.miniTest?.length ?? 0) > 0,
+      });
+    }
+
     console.log("[STUDYGUIDE_GENERATE_START]", {
       hasSM: !!studyModel, page: currentPage, sourcesCount: finalSources.length,
       chapterTitle: effectiveChapterTitle, topic: effectiveTopic,
@@ -540,6 +549,19 @@ export default function StudyGuideLab({
       console.log("[STUDYGUIDE_GENERATED]", {
         id: record.id, mode, provider: data.provider,
         mustKnow: record.mustKnow.length, datFacts: record.datFacts.length,
+      });
+
+      const outputIsValid =
+        record.mustKnow.length > 0 &&
+        record.chapterTitle.length > 0;
+      console.log("[STUDYLAB_OUTPUT_SCHEMA_VALID]", {
+        valid: outputIsValid,
+        mustKnow: record.mustKnow.length,
+        mechanisms: record.mechanisms?.length ?? 0,
+        traps: record.traps?.length ?? 0,
+        recallQuestions: record.recallQuestions?.length ?? 0,
+        chapterTitle: record.chapterTitle,
+        topic: record.topic,
       });
 
       // ── Auto-save to NoteLab ───────────────────────────────────────────

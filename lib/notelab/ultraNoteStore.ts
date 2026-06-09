@@ -223,8 +223,31 @@ export async function isUltraNotePersisted(id: string): Promise<boolean> {
   }
 }
 
+function isValidReaderSource(note: UltraNote): boolean {
+  if (!note.bookId || note.bookId.trim().length < 3) return false;
+  const lower = note.bookId.toLowerCase().trim();
+  if (/^(dev|test|debug|app|demo|sample|mock|fake|placeholder|generic|untitled|default|temp|tmp)$/.test(lower)) return false;
+  if (note.pageNumber < 1) return false;
+  return true;
+}
+
 export async function saveUltraNote(note: UltraNote): Promise<void> {
+  if (!isValidReaderSource(note)) {
+    console.warn("[NOTELAB_INVALID_SOURCE_BLOCKED]", { bookId: note.bookId, pageNumber: note.pageNumber, topic: note.topic });
+    return;
+  }
+
+  console.log("[NOTELAB_SOURCE_USED]", { bookId: note.bookId, pageNumber: note.pageNumber, bookTitle: note.bookTitle ?? "(none)" });
+
   const c = compact(note);
+
+  // Validate schema: must have at minimum a coreIdea or sections
+  const hasContent = !!(c.coreIdea || (c.sections && c.sections.length > 0) || c.concepts.length > 0);
+  if (!hasContent) {
+    console.warn("[NOTELAB_SCHEMA_INVALID]", { id: c.id, reason: "no coreIdea, sections, or concepts" });
+    return;
+  }
+  console.log("[NOTELAB_SCHEMA_VALID]", { id: c.id, sectionCount: c.sections?.length ?? 0, conceptCount: c.concepts.length });
 
   // Remove stale entry for same book+page with a different id (e.g. from old Date.now() ids)
   try {
@@ -320,51 +343,62 @@ export function buildNoteFromStudyModel(
   const sn = model.studyNotes;
   const sections: NoteSection[] = [];
 
-  // 1. Page Thesis — governing idea for this page
+  // 1. Core Idea — 1-sentence governing idea
   if (model.pageThesis) {
-    sections.push({ label: "Page Thesis", content: model.pageThesis });
+    sections.push({ label: "Core Idea", content: model.pageThesis });
   }
 
-  // 2. Key Mechanisms — studyNotes.keyMechanism + per-concept mechanism fields
-  const mechanisms = [
+  // 2. Must Know — 3 bullets max (why it matters, key mechanism, first concept principle)
+  const mustKnowItems = [
+    sn.whyThisMatters,
+    sn.keyMechanism,
+    model.conceptBlocks[0]?.pattern ?? null,
+  ].filter((v): v is string => typeof v === "string" && v.length > 10).slice(0, 3);
+  if (mustKnowItems.length) {
+    sections.push({ label: "Must Know", content: mustKnowItems.map((b) => `• ${b}`).join("\n") });
+  }
+
+  // 3. Mechanism — numbered steps from keyMechanism + concept mechanisms
+  const mechanismParts = [
     sn.keyMechanism,
     ...model.conceptBlocks.map((b) => b.mechanism).filter(Boolean),
-  ].filter((v): v is string => !!v);
-  if (mechanisms.length) {
-    sections.push({ label: "Key Mechanisms", content: mechanisms.join("  ·  ") });
+  ].filter((v): v is string => typeof v === "string" && v.length > 10).slice(0, 5);
+  if (mechanismParts.length) {
+    sections.push({ label: "Mechanism", content: mechanismParts.map((m, i) => `${i + 1}. ${m}`).join("\n") });
   }
 
-  // 3. Definitions — one per concept block (title: pattern)
-  const defs = model.conceptBlocks
-    .filter((b) => b.pattern)
-    .map((b) => `${b.title}: ${b.pattern}`);
-  if (defs.length) {
-    sections.push({ label: "Definitions", content: defs.join("\n") });
-  }
-
-  // 4. Confusions & Traps — studyNotes.commonConfusion + per-concept traps
-  const traps = [
+  // 4. DAT/Dental Trap — 1–2 traps
+  const trapItems = [
     sn.commonConfusion,
     ...model.conceptBlocks.map((b) => b.trap).filter(Boolean),
-  ].filter((v): v is string => !!v);
-  if (traps.length) {
-    sections.push({ label: "Confusions & Traps", content: traps.join("  ·  ") });
+  ].filter((v): v is string => typeof v === "string" && v.length > 10).slice(0, 2);
+  if (trapItems.length) {
+    sections.push({ label: "DAT/Dental Trap", content: trapItems.map((t) => `⚠ ${t}`).join("\n") });
   }
 
-  // 5. Exam Signals — examSignal + concept rules
-  const signals = [
-    sn.examSignal,
-    ...model.conceptBlocks.map((b) => b.rule).filter(Boolean),
-  ].filter((v): v is string => !!v);
-  if (signals.length) {
-    sections.push({ label: "Exam Signals", content: signals.join("  ·  ") });
+  // 5. Memory Hook — 1 mnemonic
+  const memHook = sn.quickMemory
+    ?? model.conceptBlocks.find((b) => b.rule && b.rule.length > 10)?.rule
+    ?? null;
+  if (memHook) {
+    sections.push({ label: "Memory Hook", content: memHook });
   }
 
-  // 6. Summary — student-friendly synthesis from thesis + why it matters + quick memory
-  const summaryParts = [model.pageThesis, sn.whyThisMatters, sn.quickMemory].filter(Boolean);
-  if (summaryParts.length) {
-    sections.push({ label: "Summary", content: summaryParts.slice(0, 2).join(" ") });
+  // 6. Recall Questions — 3 questions from miniTest
+  const recallQs = (model.miniTest ?? [])
+    .filter((q): q is string => typeof q === "string" && q.length > 5)
+    .slice(0, 3);
+  if (recallQs.length) {
+    sections.push({ label: "Recall Questions", content: recallQs.map((q, i) => `${i + 1}. ${q}`).join("\n") });
   }
+
+  // 7. Source — book title, page, topic
+  const sourceParts = [
+    bookTitle ? `Book: ${bookTitle}` : null,
+    `Page: ${pageNumber}`,
+    topic ? `Topic: ${topic}` : null,
+  ].filter(Boolean) as string[];
+  sections.push({ label: "Source", content: sourceParts.join(" · ") });
 
   const concepts: UltraNoteConcept[] = model.conceptBlocks.map((b, i) => ({
     ordinal:        i + 1,
@@ -394,11 +428,10 @@ export function buildNoteFromStudyModel(
     sectionCount: sections.length,
     sectionLabels: sections.map((s) => s.label),
     conceptCount: concepts.length,
-    hasReasoningFlow: !!sn.reasoningFlow,
   });
 
   return {
-    id:               `note-${bookId}-p${pageNumber}-${Date.now()}`,
+    id:               `note-${bookId}-p${pageNumber}`,
     bookId,
     bookTitle:        bookTitle || undefined,
     pageNumber,
