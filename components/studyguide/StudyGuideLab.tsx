@@ -237,6 +237,84 @@ function UploadZone({
   );
 }
 
+// ── Detect chapter/topic from page text and study model ────────────────────
+//
+// Priority:
+//   1. Concept title   "Concept 2.1: Matter consists of…"
+//   2. Section title   "Elements and Compounds"
+//   3. Chapter title   "The Chemical Context of Life"
+//   4. First concept block title from study model
+//   5. Empty (user fills manually)
+//
+// Never use pageThesis — it is a summary sentence, not a heading.
+
+function detectTopicFromPage(
+  studyModel: CurrentPageStudyModel,
+  pageText?: string,
+): { chapterTitle: string; topic: string } {
+  let chapter = "";
+  let topic   = "";
+
+  if (pageText && pageText.length > 20) {
+    const lines = pageText
+      .split(/\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    // 1. Concept title — "Concept 2.1: …" or "CONCEPT 2.1 …"
+    const conceptRe = /^concept\s+\d+[\.\d]*[:\s–—-]+(.+)/i;
+    for (const line of lines.slice(0, 40)) {
+      const m = line.match(conceptRe);
+      if (m) {
+        topic = line.slice(0, 100).trim();
+        console.log("[CONCEPT_DETECTED]", { topic });
+        break;
+      }
+    }
+
+    // 2. Section heading — numbered "2.3 Elements and Compounds" or ALL-CAPS short line
+    if (!topic) {
+      const sectionRe = /^\d+[\.\d]+\s+([A-Z][^.!?]{5,60})$/;
+      const allCapsRe = /^[A-Z][A-Z\s,&/-]{4,55}$/;
+      for (const line of lines.slice(0, 50)) {
+        if (sectionRe.test(line) || allCapsRe.test(line)) {
+          topic = line.slice(0, 100).trim();
+          console.log("[SECTION_DETECTED]", { topic });
+          break;
+        }
+      }
+    }
+
+    // 3. Chapter heading — "Chapter N: …" or "CHAPTER N …"
+    if (!chapter) {
+      const chapterRe = /^chapter\s+\d+[:\s–—-]+(.+)/i;
+      for (const line of lines.slice(0, 30)) {
+        const m = line.match(chapterRe);
+        if (m) {
+          chapter = line.slice(0, 100).trim();
+          console.log("[CHAPTER_DETECTED]", { chapter });
+          break;
+        }
+      }
+    }
+  }
+
+  // 4. Fall back to first concept block title
+  if (!topic && studyModel.conceptBlocks?.length > 0) {
+    const titles = studyModel.conceptBlocks.map((b) => b.title).filter(Boolean);
+    if (titles.length === 1) {
+      topic = titles[0].slice(0, 100);
+    } else if (titles.length > 1) {
+      // Use the common prefix/theme if titles share words, else join the first two
+      topic = titles.slice(0, 2).join(" · ").slice(0, 100);
+    }
+    if (topic) console.log("[TOPIC_SELECTED]", { source: "concept-block-title", topic });
+  }
+
+  console.log("[TOPIC_SELECTED]", { chapter: chapter || "(empty)", topic: topic || "(empty)" });
+  return { chapterTitle: chapter, topic };
+}
+
 // ── Build structured source text from Right Panel study model ──────────────
 
 function buildStudyModelSourceText(sm: CurrentPageStudyModel, pageText?: string): string {
@@ -323,17 +401,26 @@ export default function StudyGuideLab({
         ? { ...s, text: sourceText, fileName: `Page ${currentPage ?? studyModel.page} — Live Reader Context` }
         : s
     ));
-    // Auto-fill chapter/topic from book title and page thesis
-    if (bookTitle && !chapterTitle) {
-      setChapterTitle(bookTitle.replace(/\.pdf$/i, "").slice(0, 80));
+
+    // Detect structured headings — never use pageThesis as a topic
+    const detected = detectTopicFromPage(studyModel, pageText);
+
+    // Chapter: prefer detected heading, fall back to book title, never force-overwrite user edits
+    if (!chapterTitle) {
+      const ch = detected.chapterTitle || bookTitle?.replace(/\.pdf$/i, "").slice(0, 80) || "";
+      if (ch) setChapterTitle(ch);
     }
-    if (!topic && studyModel.pageThesis) {
-      const firstSentence = studyModel.pageThesis.split(/[.!?]/)[0]?.trim() ?? "";
-      setTopic(firstSentence.slice(0, 80));
+    // Topic: prefer detected heading, fall back to first concept block title
+    if (!topic && detected.topic) {
+      setTopic(detected.topic);
     }
+
     console.log("[STUDYGUIDE_MODEL_LOADED]", {
-      page: studyModel.page, thesis: studyModel.pageThesis?.slice(0, 60),
-      conceptBlocks: studyModel.conceptBlocks?.length ?? 0, anchors: studyModel.visualAnchors?.length ?? 0,
+      page: studyModel.page,
+      detectedChapter: detected.chapterTitle || "(none)",
+      detectedTopic:   detected.topic        || "(none)",
+      conceptBlocks:   studyModel.conceptBlocks?.length ?? 0,
+      anchors:         studyModel.visualAnchors?.length ?? 0,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studyModel, pageText]);
@@ -400,9 +487,12 @@ export default function StudyGuideLab({
       return;
     }
 
-    // Auto-fill chapter/topic from study model if still empty
-    const effectiveChapterTitle = chapterTitle || (bookTitle?.replace(/\.pdf$/i, "").slice(0, 80) ?? "");
-    const effectiveTopic = topic || (studyModel?.pageThesis?.split(/[.!?]/)[0]?.trim().slice(0, 80) ?? "");
+    // Auto-fill chapter/topic from study model if still empty — never use pageThesis
+    const fallback = studyModel ? detectTopicFromPage(studyModel, pageText) : { chapterTitle: "", topic: "" };
+    const effectiveChapterTitle = chapterTitle
+      || fallback.chapterTitle
+      || (bookTitle?.replace(/\.pdf$/i, "").slice(0, 80) ?? "");
+    const effectiveTopic = topic || fallback.topic;
 
     console.log("[STUDYGUIDE_GENERATE_START]", {
       hasSM: !!studyModel, page: currentPage, sourcesCount: finalSources.length,
