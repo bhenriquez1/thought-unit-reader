@@ -20,6 +20,7 @@ import { saveUltraNote, buildUltraNote } from "@/lib/notelab/ultraNoteStore";
 import { saveRecallSet, stableRecallId } from "@/lib/recalllab/recallStore";
 import type { RecallSet, RecallCard } from "@/lib/recalllab/recallStore";
 import type { PodcastScript, PodcastSegment } from "@/lib/podcast/podcastTypes";
+import type { CurrentPageStudyModel } from "@/lib/insights/currentPageStudyModel";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,8 @@ interface StudyGuideLabProps {
   bookId: string;
   bookTitle?: string;
   currentPage?: number;
+  studyModel?: CurrentPageStudyModel | null;
+  pageText?: string;
   onNavigateToPage?: (page: number) => void;
   onNoteSaved?: (noteId: string) => void;
   onRecallSaved?: (setId: string) => void;
@@ -234,12 +237,51 @@ function UploadZone({
   );
 }
 
+// ── Build structured source text from Right Panel study model ──────────────
+
+function buildStudyModelSourceText(sm: CurrentPageStudyModel, pageText?: string): string {
+  const lines: string[] = [];
+  lines.push(`PAGE THESIS: ${sm.pageThesis}`);
+  if (sm.studyNotes.keyMechanism)    lines.push(`KEY MECHANISM: ${sm.studyNotes.keyMechanism}`);
+  if (sm.studyNotes.whyThisMatters)  lines.push(`WHY THIS MATTERS: ${sm.studyNotes.whyThisMatters}`);
+  if (sm.studyNotes.commonConfusion) lines.push(`COMMON CONFUSION: ${sm.studyNotes.commonConfusion}`);
+  if (sm.studyNotes.quickMemory)     lines.push(`MEMORY HOOK: ${sm.studyNotes.quickMemory}`);
+  if (sm.studyNotes.reasoningFlow)   lines.push(`REASONING FLOW: ${sm.studyNotes.reasoningFlow}`);
+  if (sm.studyNotes.examSignal)      lines.push(`EXAM SIGNAL: ${sm.studyNotes.examSignal}`);
+
+  if (sm.conceptBlocks?.length > 0) {
+    lines.push("\nCONCEPT BLOCKS:");
+    sm.conceptBlocks.forEach((cb, i) => {
+      lines.push(`  ${i + 1}. ${cb.title}: ${cb.pattern}`);
+      if (cb.mechanism) lines.push(`     Mechanism: ${cb.mechanism}`);
+      if (cb.trap)      lines.push(`     Trap: ${cb.trap}`);
+      if (cb.rule)      lines.push(`     Rule: ${cb.rule}`);
+    });
+  }
+
+  if (sm.visualAnchors?.length > 0) {
+    lines.push("\nHIGH-YIELD ANCHORS:");
+    sm.visualAnchors.slice(0, 6).forEach(a => {
+      lines.push(`  [${a.role?.toUpperCase() ?? "FACT"}] ${a.exactText}`);
+    });
+  }
+
+  if (pageText && pageText.length > 80) {
+    lines.push("\nRAW PAGE TEXT (first 2000 chars):");
+    lines.push(pageText.slice(0, 2000));
+  }
+
+  return lines.join("\n");
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 
 export default function StudyGuideLab({
   bookId,
   bookTitle,
   currentPage,
+  studyModel,
+  pageText,
   onNavigateToPage,
   onNoteSaved,
   onRecallSaved,
@@ -272,6 +314,30 @@ export default function StudyGuideLab({
     getStudyGuidesByBook(bookId).then(setHistory).catch(() => {});
   }, [bookId]);
 
+  // Auto-populate from live Reader study model whenever it changes
+  useEffect(() => {
+    if (!studyModel) return;
+    const sourceText = buildStudyModelSourceText(studyModel, pageText);
+    setSources(prev => prev.map(s =>
+      s.id === "textbook"
+        ? { ...s, text: sourceText, fileName: `Page ${currentPage ?? studyModel.page} — Live Reader Context` }
+        : s
+    ));
+    // Auto-fill chapter/topic from book title and page thesis
+    if (bookTitle && !chapterTitle) {
+      setChapterTitle(bookTitle.replace(/\.pdf$/i, "").slice(0, 80));
+    }
+    if (!topic && studyModel.pageThesis) {
+      const firstSentence = studyModel.pageThesis.split(/[.!?]/)[0]?.trim() ?? "";
+      setTopic(firstSentence.slice(0, 80));
+    }
+    console.log("[STUDYGUIDE_MODEL_LOADED]", {
+      page: studyModel.page, thesis: studyModel.pageThesis?.slice(0, 60),
+      conceptBlocks: studyModel.conceptBlocks?.length ?? 0, anchors: studyModel.visualAnchors?.length ?? 0,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studyModel, pageText]);
+
   // ── PDF extraction ─────────────────────────────────────────────────────
 
   const handleFileLoad = useCallback(async (slotId: string, file: File) => {
@@ -301,7 +367,11 @@ export default function StudyGuideLab({
 
   const handleGenerate = async () => {
     const activeSources = sources.filter(s => s.text.trim().length > 0);
-    if (activeSources.length === 0) {
+
+    // If the user has a live study model but no manual sources, we still have the
+    // textbook slot auto-populated from the model — so this check handles both cases.
+    const hasLiveModel = !!studyModel;
+    if (activeSources.length === 0 && !hasLiveModel) {
       setError("Add at least one source document to generate a study guide.");
       return;
     }
@@ -313,15 +383,42 @@ export default function StudyGuideLab({
     setRecallSaved(false);
     setSaveError(null);
 
+    // Build the ordered source list:
+    // 1. RIGHT PANEL STUDY MODEL always first (if present) — it is the grounding truth
+    // 2. Then any user-supplied text slots
+    const studyModelSource = studyModel
+      ? [{ label: "RIGHT PANEL STUDY MODEL", text: buildStudyModelSourceText(studyModel, pageText) }]
+      : [];
+    const userSources = activeSources
+      .filter(s => s.id !== "textbook" || !studyModel) // skip textbook slot if model already covers it
+      .map(s => ({ label: s.label, text: s.text }));
+
+    const finalSources = [...studyModelSource, ...userSources];
+    if (finalSources.length === 0) {
+      setError("No source material available. Open a book in the Reader first, or paste text above.");
+      setLoading(false);
+      return;
+    }
+
+    // Auto-fill chapter/topic from study model if still empty
+    const effectiveChapterTitle = chapterTitle || (bookTitle?.replace(/\.pdf$/i, "").slice(0, 80) ?? "");
+    const effectiveTopic = topic || (studyModel?.pageThesis?.split(/[.!?]/)[0]?.trim().slice(0, 80) ?? "");
+
+    console.log("[STUDYGUIDE_GENERATE_START]", {
+      hasSM: !!studyModel, page: currentPage, sourcesCount: finalSources.length,
+      chapterTitle: effectiveChapterTitle, topic: effectiveTopic,
+    });
+
     try {
       const resp = await fetch("/api/study-guide-generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sources: activeSources.map(s => ({ label: s.label, text: s.text })),
-          chapterTitle,
-          topic,
+          sources: finalSources,
+          chapterTitle: effectiveChapterTitle,
+          topic: effectiveTopic,
           mode,
+          hasStudyModel: !!studyModel,
         }),
       });
 
@@ -336,9 +433,12 @@ export default function StudyGuideLab({
         id:            genId(),
         bookId,
         mode,
-        sourceLabels:  activeSources.map(s => s.label),
+        sourceLabels:  finalSources.map(s => s.label),
         createdAt:     Date.now(),
         ...data.guide,
+        // Ensure chapter/topic fall back to our effective values if AI left them empty
+        chapterTitle:  data.guide?.chapterTitle || effectiveChapterTitle,
+        topic:         data.guide?.topic        || effectiveTopic,
       };
 
       setCurrentGuide(record);
@@ -620,17 +720,46 @@ export default function StudyGuideLab({
           </div>
         ) : (
           <div className="flex flex-col gap-0">
+            {/* ── Live Reader context banner ── */}
+            {studyModel && (
+              <div className="border-b border-teal-900/60 bg-teal-950/30 px-4 py-3 flex items-start gap-3">
+                <div className="text-teal-400 text-base flex-shrink-0">📖</div>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold text-teal-300 uppercase tracking-wider">Live Reader Context — Page {currentPage ?? studyModel.page}</div>
+                  <div className="text-xs text-teal-200/80 mt-0.5 leading-snug truncate">{studyModel.pageThesis}</div>
+                  {studyModel.conceptBlocks?.length > 0 && (
+                    <div className="text-[10px] text-teal-400/60 mt-1">
+                      {studyModel.conceptBlocks.length} concept block{studyModel.conceptBlocks.length !== 1 ? "s" : ""} · {studyModel.visualAnchors?.length ?? 0} high-yield anchors
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             {/* ── Sources panel ── */}
             <div className="border-b border-slate-800 p-4 flex flex-col gap-4">
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Source Documents</div>
-              {sources.map(slot => (
-                <UploadZone
-                  key={slot.id}
-                  slot={slot}
-                  onTextChange={handleTextChange}
-                  onFileLoad={handleFileLoad}
-                />
-              ))}
+              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                {studyModel ? "Additional Sources (optional)" : "Source Documents"}
+              </div>
+              {studyModel ? (
+                /* When live model is present, only show slots 2-4 (blueprint/professor/personal) */
+                sources.filter(s => s.id !== "textbook").map(slot => (
+                  <UploadZone
+                    key={slot.id}
+                    slot={slot}
+                    onTextChange={handleTextChange}
+                    onFileLoad={handleFileLoad}
+                  />
+                ))
+              ) : (
+                sources.map(slot => (
+                  <UploadZone
+                    key={slot.id}
+                    slot={slot}
+                    onTextChange={handleTextChange}
+                    onFileLoad={handleFileLoad}
+                  />
+                ))
+              )}
             </div>
 
             {/* ── Config panel ── */}
@@ -696,10 +825,14 @@ export default function StudyGuideLab({
 
               <button
                 onClick={handleGenerate}
-                disabled={loading || !hasSources}
+                disabled={loading || (!hasSources && !studyModel)}
                 className="w-full py-3 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-sm transition-colors shadow-lg shadow-teal-900/30"
               >
-                {loading ? "Building Study Guide…" : `🎓 Build ${STUDY_GUIDE_MODE_LABELS[mode]}`}
+                {loading
+                  ? "Building Study Guide…"
+                  : studyModel
+                    ? `📖 Build ${STUDY_GUIDE_MODE_LABELS[mode]} — Page ${currentPage ?? studyModel.page}`
+                    : `🎓 Build ${STUDY_GUIDE_MODE_LABELS[mode]}`}
               </button>
             </div>
 

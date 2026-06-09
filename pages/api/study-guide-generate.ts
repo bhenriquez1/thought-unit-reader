@@ -18,6 +18,7 @@ type RequestBody = {
   chapterTitle: string;
   topic: string;
   mode: StudyGuideMode;
+  hasStudyModel?: boolean;  // true when RIGHT PANEL STUDY MODEL source is present
 };
 
 type StudyGuideMechanism = { title: string; steps: string[] };
@@ -42,9 +43,12 @@ const MODE_PERSONA: Record<StudyGuideMode, string> = {
   highyield:  "You are a board exam coach. Every sentence chosen because it appears on standardized exams. Nothing decorative. Every fact must be testable.",
 };
 
-function buildSystemPrompt(mode: StudyGuideMode): string {
+function buildSystemPrompt(mode: StudyGuideMode, hasStudyModel?: boolean): string {
+  const groundingNote = hasStudyModel
+    ? `\nIMPORTANT: The source labeled "RIGHT PANEL STUDY MODEL" is the authoritative grounding document. It contains the page thesis, concept blocks, mechanisms, and high-yield anchors already extracted from the book. Your output MUST be grounded in those specific concepts — not generic biology. Every fact, mechanism, and trap you write must be traceable to that source material.\n`
+    : "";
   return `${MODE_PERSONA[mode]}
-
+${groundingNote}
 YOUR CORE PHILOSOPHY:
 Do NOT summarize everything. Ask yourself:
 "If this student had only 2 months before the DAT and a limited study window per day, what information is actually worth their time?"
@@ -123,7 +127,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  const { sources, chapterTitle, topic, mode } = req.body as RequestBody;
+  const { sources, chapterTitle, topic, mode, hasStudyModel } = req.body as RequestBody;
 
   if (!sources || !Array.isArray(sources) || sources.length === 0) {
     res.status(400).json({ error: "At least one source document is required." });
@@ -150,7 +154,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         temperature: 0.2,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: buildSystemPrompt(mode ?? "dat") },
+          { role: "system", content: buildSystemPrompt(mode ?? "dat", hasStudyModel) },
           { role: "user",   content: buildUserPrompt(sources, chapterTitle, topic, mode ?? "dat") },
         ],
       }),
