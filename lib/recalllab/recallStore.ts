@@ -1,5 +1,6 @@
 // lib/recalllab/recallStore.ts
-// localStorage-backed store for Recall Lab study sets and cards.
+// IndexedDB-first store for Recall Lab. Individual put/delete per set — no clear+put-all.
+// IDs are stable (deterministic from bookId+pageNumber) so IDB put is a true upsert.
 
 import { type NoteSubject, type UltraNote, inferSubject } from "@/lib/notelab/ultraNoteStore";
 import type { UltraPageView } from "@/lib/insights/buildUltraPageView";
@@ -33,11 +34,21 @@ export interface RecallSet {
   sourceNoteId?: string;
 }
 
-const STORAGE_KEY = "recallSets_v1";
-
-const IDB_DB_NAME = "avrrio_recall_v1";
+const STORAGE_KEY   = "recallSets_v1";
+const IDB_DB_NAME   = "avrrio_recall_v1";
 const IDB_STORE_NAME = "sets";
-const IDB_FLAG_KEY = "recallSets_in_idb";
+const IDB_FLAG_KEY  = "recallSets_in_idb";
+
+// ── Stable ID generation ────────────────────────────────────────────────────
+// Deterministic: same book + page always produces the same ID.
+// IDB keyPath:"id" turns put() into a true upsert — no clear() needed.
+
+export function stableRecallId(bookId: string, pageNumber: number, suffix = ""): string {
+  const safe = bookId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 60);
+  return `rs-${safe}-p${pageNumber}${suffix ? `-${suffix}` : ""}`;
+}
+
+// ── Compact ─────────────────────────────────────────────────────────────────
 
 function compact(set: RecallSet): RecallSet {
   return {
@@ -55,6 +66,8 @@ function compact(set: RecallSet): RecallSet {
   };
 }
 
+// ── IDB helpers ─────────────────────────────────────────────────────────────
+
 function openIDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(IDB_DB_NAME, 1);
@@ -66,7 +79,30 @@ function openIDB(): Promise<IDBDatabase> {
   });
 }
 
-async function saveToIDB(sets: RecallSet[]): Promise<void> {
+// Individual UPSERT — IDB handles overwrite via keyPath:"id" automatically
+async function putToIDB(set: RecallSet): Promise<void> {
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE_NAME, "readwrite");
+    tx.objectStore(IDB_STORE_NAME).put(set);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// Individual delete — only removes the one key
+async function deleteFromIDB(id: string): Promise<void> {
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE_NAME, "readwrite");
+    tx.objectStore(IDB_STORE_NAME).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// Bulk write — used for migration and Study Guide Lab bulk saves only
+async function bulkWriteToIDB(sets: RecallSet[]): Promise<void> {
   const db = await openIDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE_NAME, "readwrite");
@@ -92,32 +128,30 @@ async function loadFromIDB(): Promise<RecallSet[]> {
   }
 }
 
+// ── Load (IDB-first) ────────────────────────────────────────────────────────
+
 async function loadAllAsync(): Promise<RecallSet[]> {
   if (typeof window === "undefined") return [];
-  // IDB-first: always try IndexedDB as primary store
   try {
     const idbSets = await loadFromIDB();
     if (idbSets.length > 0) {
       console.log("[RECALL_INDEXEDDB_READ]", { count: idbSets.length });
-      console.log("[RECALL_STORAGE_DRIVER]", { driver: "indexeddb", count: idbSets.length });
+      console.log("[RECALL_STORAGE_DRIVER]", "indexeddb");
       return idbSets;
     }
   } catch (e) {
     console.warn("[RECALL_IDB_LOAD_FAIL]", String(e));
   }
-  // IDB empty or unavailable — check localStorage for migration
+
+  // IDB empty — try localStorage migration
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      console.log("[RECALL_STORAGE_DRIVER]", { driver: "empty" });
-      return [];
-    }
+    if (!raw) { console.log("[RECALL_STORAGE_DRIVER]", "empty"); return []; }
     const parsed = JSON.parse(raw);
-    const lsSets = Array.isArray(parsed) ? parsed : [];
+    const lsSets: RecallSet[] = Array.isArray(parsed) ? parsed : [];
     if (lsSets.length > 0) {
-      console.log("[RECALL_STORAGE_DRIVER]", { driver: "localstorage-migration", count: lsSets.length });
-      // Silently migrate to IDB
-      saveToIDB(lsSets)
+      console.log("[RECALL_STORAGE_DRIVER]", "localstorage-migration", { count: lsSets.length });
+      bulkWriteToIDB(lsSets)
         .then(() => { try { localStorage.setItem(IDB_FLAG_KEY, "1"); } catch {} })
         .catch(() => {});
     }
@@ -127,9 +161,8 @@ async function loadAllAsync(): Promise<RecallSet[]> {
   }
 }
 
-function loadAll(): RecallSet[] {
+function loadFromLS(): RecallSet[] {
   if (typeof window === "undefined") return [];
-  console.log("[RECALL_READ_KEY]", { key: STORAGE_KEY, idbFlagKey: IDB_FLAG_KEY });
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
@@ -140,51 +173,29 @@ function loadAll(): RecallSet[] {
   }
 }
 
-async function saveAll(sets: RecallSet[]): Promise<void> {
-  if (typeof window === "undefined") return;
-  const compacted = sets.map(compact);
-  const serialized = JSON.stringify(compacted);
-  console.log("[RECALL_WRITE_KEY]", { key: STORAGE_KEY, idbFlagKey: IDB_FLAG_KEY });
-  let toSave = serialized;
-  if (serialized.length > 200000) {
-    const trimmed = compacted.map(s => ({ ...s, cards: s.cards.slice(0, 15).map(c => ({ ...c, front: c.front.slice(0, 120), back: c.back.slice(0, 150) })) }));
-    toSave = JSON.stringify(trimmed);
-    console.warn("[RECALL_TRIM_OVERSIZED]", { originalBytes: serialized.length, trimmedBytes: toSave.length });
-  }
-  console.log("[RECALL_PAYLOAD_SIZE]", {
-    writeKey:   STORAGE_KEY,
-    bytes:      toSave.length,
-    kb:         (toSave.length / 1024).toFixed(1),
-    setCount:   compacted.length,
-    cards0:     compacted[0]?.cards?.length ?? 0,
-    willQuota:  toSave.length > 2_000_000,
-  });
-  console.log("[RECALL_SAVE_COMPACTED]", { key: STORAGE_KEY, setCount: compacted.length, bytes: toSave.length, kb: (toSave.length / 1024).toFixed(1), cards0: compacted[0]?.cards?.length ?? 0 });
-  console.log("[RECALL_SAVE_KEY]", { key: STORAGE_KEY, count: compacted.length, bytes: toSave.length });
-  // IDB-first: IndexedDB is the primary store — no localStorage quota risk
+// ── LS mirror helpers ───────────────────────────────────────────────────────
+// Keep localStorage as a cheap mirror for sync reads (RecallSession, etc.)
+
+function lsUpsert(set: RecallSet): void {
   try {
-    await saveToIDB(compacted);
-    try { localStorage.setItem(IDB_FLAG_KEY, "1"); } catch {}
-    console.log("[RECALL_INDEXEDDB_WRITE]", { count: compacted.length });
-    console.log("[RECALL_SAVE_SUCCESS]", { driver: "indexeddb", key: STORAGE_KEY, count: compacted.length });
-    console.log("[RECALL_READ_AFTER_SAVE_SUCCESS]", { driver: "indexeddb", count: compacted.length });
-    window.dispatchEvent(new Event("recall-lab-updated"));
-  } catch (idbErr) {
-    console.warn("[RECALL_IDB_FAIL]", String(idbErr), "→ fallback to localStorage");
-    try {
-      localStorage.setItem(STORAGE_KEY, toSave);
-      try { localStorage.removeItem(IDB_FLAG_KEY); } catch {}
-      console.log("[RECALL_SAVE_SUCCESS]", { driver: "localstorage-fallback", key: STORAGE_KEY, count: compacted.length });
-      window.dispatchEvent(new Event("recall-lab-updated"));
-    } catch (lsErr) {
-      console.error("[RECALL_ALL_STORAGE_FAIL]", { idb: String(idbErr), ls: String(lsErr) });
-      throw new Error(`Recall storage failed — IDB: ${String(idbErr)} / LS: ${String(lsErr)}`);
-    }
-  }
+    const all = loadFromLS();
+    const idx = all.findIndex(s => s.id === set.id);
+    if (idx >= 0) all[idx] = set; else all.unshift(set);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(all.slice(0, 300)));
+  } catch { /* quota — LS mirror is best-effort */ }
 }
 
+function lsRemove(id: string): void {
+  try {
+    const all = loadFromLS().filter(s => s.id !== id);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+  } catch { /* quota — LS mirror is best-effort */ }
+}
+
+// ── Public API ──────────────────────────────────────────────────────────────
+
 export function getAllRecallSets(): RecallSet[] {
-  return loadAll();
+  return loadFromLS();
 }
 
 export async function getAllRecallSetsAsync(): Promise<RecallSet[]> {
@@ -192,48 +203,73 @@ export async function getAllRecallSetsAsync(): Promise<RecallSet[]> {
 }
 
 export function getRecallSetsByBook(bookId: string): RecallSet[] {
-  return loadAll().filter((s) => s.bookId === bookId);
+  return loadFromLS().filter((s) => s.bookId === bookId);
 }
 
 export async function isRecallSetPersisted(id: string): Promise<boolean> {
-  const inLS = loadAll().find((s) => s.id === id);
-  if (inLS) return true;
-  try {
-    const sets = await loadFromIDB();
-    return sets.some((s) => s.id === id);
-  } catch {
-    return false;
-  }
+  const sets = await loadAllAsync();
+  return sets.some((s) => s.id === id);
 }
 
 export async function saveRecallSet(set: RecallSet): Promise<void> {
-  const sets = await loadAllAsync();
-  const idx = sets.findIndex((s) => s.bookId === set.bookId && s.pageNumber === set.pageNumber);
-  if (idx >= 0) {
-    sets[idx] = set;
-  } else {
-    sets.unshift(set);
+  const c = compact(set);
+  console.log("[RECALL_SAVE_KEY]", { id: c.id, bookId: c.bookId, page: c.pageNumber, cards: c.cards.length });
+
+  // Delete any legacy entry for same book+page with a different (old random) ID
+  const existing = await loadAllAsync();
+  const dupIdx = existing.findIndex(s => s.bookId === c.bookId && s.pageNumber === c.pageNumber && s.id !== c.id);
+  if (dupIdx >= 0) {
+    const oldId = existing[dupIdx].id;
+    console.log("[RECALL_DEDUPE_OLD_ID]", { oldId, newId: c.id });
+    try { await deleteFromIDB(oldId); } catch { /* non-fatal */ }
+    lsRemove(oldId);
   }
-  await saveAll(sets.slice(0, 300));
-  // Read-back verification — surface exact error if data didn't persist
-  const saved = await loadAllAsync();
-  const ok = saved.some(s => s.id === set.id);
-  if (!ok) {
-    const driver = localStorage.getItem(IDB_FLAG_KEY) === "1" ? "idb" : "ls";
-    console.error("[RECALL_SAVE_VERIFY_FAIL]", { id: set.id, driver, savedCount: saved.length });
-    throw new Error(`Recall set was written but could not be read back (driver=${driver}). Storage may be full or corrupt.`);
+
+  // Upsert: IDB primary, LS mirror
+  try {
+    await putToIDB(c);
+    try { localStorage.setItem(IDB_FLAG_KEY, "1"); } catch {}
+    console.log("[RECALL_INDEXEDDB_WRITE]", { id: c.id });
+    console.log("[RECALL_SAVE_SUCCESS]", { driver: "indexeddb", id: c.id });
+  } catch (idbErr) {
+    console.warn("[RECALL_IDB_PUT_FAIL]", String(idbErr), "→ LS fallback");
+    try {
+      lsUpsert(c);
+      try { localStorage.removeItem(IDB_FLAG_KEY); } catch {}
+      console.log("[RECALL_SAVE_SUCCESS]", { driver: "localStorage-fallback", id: c.id });
+    } catch (lsErr) {
+      console.error("[RECALL_ALL_STORAGE_FAIL]", { idb: String(idbErr), ls: String(lsErr) });
+      throw new Error(`Recall save failed — IDB: ${String(idbErr)}`);
+    }
   }
-  console.log("[RECALL_SAVE_VERIFIED]", { id: set.id, driver: localStorage.getItem(IDB_FLAG_KEY) === "1" ? "idb" : "ls", savedCount: saved.length });
+
+  // Read-back verification
+  const readback = await loadAllAsync();
+  const ok = readback.some(s => s.id === c.id);
+  console.log(ok ? "[RECALL_SAVE_VERIFIED]" : "[RECALL_SAVE_VERIFY_FAIL]", {
+    id: c.id, found: ok, totalInStore: readback.length,
+  });
+  if (!ok) throw new Error(`Recall set ${c.id} was not found in store after save.`);
+
+  lsUpsert(c); // keep LS mirror up-to-date
+  window.dispatchEvent(new Event("recall-lab-updated"));
+  console.log("[RECALL_RENDER_COUNT]", { total: readback.length });
 }
 
 export async function deleteRecallSet(id: string): Promise<void> {
-  const sets = await loadAllAsync(); // IDB-first — loadAll() would wipe IDB data
-  await saveAll(sets.filter((s) => s.id !== id));
-  console.log("[RECALL_DELETE]", { id, remaining: sets.length - 1 });
+  // IDB individual delete — no clear() needed
+  try {
+    await deleteFromIDB(id);
+    console.log("[RECALL_INDEXEDDB_WRITE]", { op: "delete", id });
+  } catch (idbErr) {
+    console.warn("[RECALL_IDB_DELETE_FAIL]", String(idbErr));
+  }
+  lsRemove(id);
+  window.dispatchEvent(new Event("recall-lab-updated"));
 }
 
 export async function updateCardDifficulty(setId: string, cardId: string, difficulty: CardDifficulty): Promise<void> {
-  const sets = await loadAllAsync(); // IDB-first — loadAll() would wipe IDB data
+  const sets = await loadAllAsync();
   const set = sets.find((s) => s.id === setId);
   if (!set) return;
   const card = set.cards.find((c) => c.id === cardId);
@@ -241,7 +277,28 @@ export async function updateCardDifficulty(setId: string, cardId: string, diffic
   card.difficulty = difficulty;
   card.reviewCount = (card.reviewCount ?? 0) + 1;
   card.isMissed = difficulty === "hard";
-  await saveAll(sets);
+  const c = compact(set);
+  try {
+    await putToIDB(c);
+  } catch {
+    lsUpsert(c);
+  }
+}
+
+// Bulk save — used only by Study Guide Lab and migration
+export async function bulkSaveRecallSets(sets: RecallSet[]): Promise<void> {
+  const compacted = sets.map(compact);
+  try {
+    await bulkWriteToIDB(compacted);
+    try { localStorage.setItem(IDB_FLAG_KEY, "1"); } catch {}
+    console.log("[RECALL_INDEXEDDB_WRITE]", { op: "bulk", count: compacted.length });
+  } catch (idbErr) {
+    console.warn("[RECALL_BULK_IDB_FAIL]", String(idbErr));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(compacted.slice(0, 300)));
+    } catch { /* quota */ }
+  }
+  window.dispatchEvent(new Event("recall-lab-updated"));
 }
 
 function card(id: string, type: CardType, front: string, back: string, hint?: string): RecallCard {
@@ -369,7 +426,7 @@ export function buildRecallSetFromView(
     }
   }
 
-  const id = `rs-${bookId}-p${pageNumber}-${Date.now()}`;
+  const id = stableRecallId(bookId, pageNumber);
   return {
     id,
     bookId,
@@ -426,7 +483,7 @@ export function buildRecallSetFromNote(note: UltraNote, opts?: BuildRecallSetOpt
     cards.push(card(`mem-${i}`, "memory", "Complete the memory shortcut:", s));
   });
 
-  const id = `rs-${note.bookId}-p${note.pageNumber}-note-${Date.now()}`;
+  const id = stableRecallId(note.bookId, note.pageNumber, "note");
   return {
     id,
     bookId: note.bookId,

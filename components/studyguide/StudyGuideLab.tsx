@@ -17,7 +17,7 @@ import {
   getStudyGuidesByBook,
 } from "@/lib/studyguide/studyGuideStore";
 import { saveUltraNote, buildUltraNote } from "@/lib/notelab/ultraNoteStore";
-import { saveRecallSet } from "@/lib/recalllab/recallStore";
+import { saveRecallSet, stableRecallId } from "@/lib/recalllab/recallStore";
 import type { RecallSet, RecallCard } from "@/lib/recalllab/recallStore";
 import type { PodcastScript, PodcastSegment } from "@/lib/podcast/podcastTypes";
 
@@ -413,7 +413,7 @@ export default function StudyGuideLab({
           })),
         ];
         const set: RecallSet = {
-          id:          `sg-rs-${record.id}`,
+          id: stableRecallId(bookId, currentPage ?? 0, "sg"),
           bookId,
           bookTitle:   bookTitle ?? undefined,
           sourceLabel: "right-panel",
@@ -512,7 +512,7 @@ export default function StudyGuideLab({
       ];
 
       const set: RecallSet = {
-        id:          `sg-rs-${currentGuide.id}`,
+        id: stableRecallId(bookId, currentPage ?? 0, "sg"),
         bookId,
         bookTitle:   bookTitle ?? undefined,
         sourceLabel: "right-panel",

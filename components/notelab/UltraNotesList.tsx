@@ -37,6 +37,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [collapsedSubjects, setCollapsedSubjects] = useState<Set<NoteSubject>>(new Set());
   const [collapsedBooks, setCollapsedBooks] = useState<Set<string>>(new Set());
+  const [confirmDeleteNote, setConfirmDeleteNote] = useState<UltraNote | null>(null);
 
   const reload = useCallback(async () => {
     const all = await getAllUltraNotesAsync();
@@ -61,9 +62,31 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
     return () => window.removeEventListener("note-lab-updated", handler);
   }, [reload, bookId]);
 
-  async function handleDelete(id: string) {
-    await deleteUltraNote(id);
-    reload();
+  function requestDelete(note: UltraNote) {
+    console.log("[NOTELAB_DELETE_CLICK]", {
+      id: note.id, title: note.topic, page: note.pageNumber,
+      bookTitle: note.bookTitle ?? note.bookId,
+      driver: localStorage.getItem("ultraNotes_in_idb") === "1" ? "indexeddb" : "localstorage",
+    });
+    setConfirmDeleteNote(note);
+  }
+
+  async function confirmDelete() {
+    const note = confirmDeleteNote;
+    if (!note) return;
+    console.log("[NOTELAB_DELETE_CONFIRMED]", { id: note.id, title: note.topic, page: note.pageNumber });
+    setConfirmDeleteNote(null);
+    try {
+      await deleteUltraNote(note.id);
+      console.log("[NOTELAB_DELETE_SUCCESS]", {
+        id: note.id, title: note.topic, page: note.pageNumber,
+        driver: localStorage.getItem("ultraNotes_in_idb") === "1" ? "indexeddb" : "localstorage",
+      });
+      if (expandedId === note.id) setExpandedId(null);
+      await reload();
+    } catch (err) {
+      console.error("[NOTELAB_DELETE_FAILED]", { id: note.id, error: String(err) });
+    }
   }
 
   async function handleCopy(note: UltraNote) {
@@ -119,7 +142,48 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
   const usedSubjects = SUBJECT_ORDER.filter((s) => bySubject.has(s));
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 12px" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 12px", position: "relative" }}>
+      {/* Delete confirmation modal */}
+      {confirmDeleteNote && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 9999,
+          background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <div style={{
+            background: "rgba(15,22,42,0.98)", border: "1px solid rgba(239,68,68,0.35)",
+            borderRadius: 16, padding: "28px 32px", maxWidth: 380, width: "90%",
+            boxShadow: "0 25px 50px rgba(0,0,0,0.6)",
+          }}>
+            <div style={{ fontSize: 28, textAlign: "center", marginBottom: 12 }}>🗑</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "rgba(255,255,255,0.95)", textAlign: "center", marginBottom: 6 }}>
+              Delete this note permanently?
+            </div>
+            <div style={{ fontSize: 12, color: "rgba(248,113,113,0.85)", textAlign: "center", marginBottom: 6, fontWeight: 600 }}>
+              ⚡ {confirmDeleteNote.topic}
+            </div>
+            <div style={{ fontSize: 11, color: "rgba(148,163,184,0.6)", textAlign: "center", marginBottom: 24 }}>
+              p.{confirmDeleteNote.pageNumber} · {confirmDeleteNote.bookTitle ?? confirmDeleteNote.bookId}
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteNote(null)}
+                style={{ flex: 1, padding: "10px 0", borderRadius: 9, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                style={{ flex: 1, padding: "10px 0", borderRadius: 9, border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.15)", color: "#f87171", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {usedSubjects.map((subject) => {
         const byBook = bySubject.get(subject)!;
         const isSubjectCollapsed = collapsedSubjects.has(subject);
@@ -171,7 +235,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
                             copiedId={copiedId}
                             onToggle={() => setExpandedId(isExpanded ? null : note.id)}
                             onCopy={() => handleCopy(note)}
-                            onDelete={() => handleDelete(note.id)}
+                            onDelete={() => requestDelete(note)}
                             onNavigate={onNavigateToPage}
                             onCardsGenerated={onCardsGenerated}
                           />
@@ -326,13 +390,16 @@ function NoteCard({
           <div style={{ fontSize: 15, fontWeight: 700, color: "#fcd34d", marginBottom: 3, lineHeight: 1.4, wordBreak: "break-word" }}>
             ⚡ {note.topic}
           </div>
-          <div style={{ fontSize: 11, color: "rgba(148,163,184,0.65)", display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <span>p.{note.pageNumber}</span>
-            <span>·</span>
-            <span>{new Date(note.createdAt).toLocaleDateString()}</span>
+          <div style={{ fontSize: 11, color: "rgba(148,163,184,0.55)", marginBottom: 3, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            📖 {note.bookTitle ?? note.bookId}
+          </div>
+          <div style={{ fontSize: 10, color: "rgba(148,163,184,0.45)", display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <span>Page {note.pageNumber}</span>
             <span>·</span>
             <span>{note.subject}</span>
-            {note.concepts.length > 0 && <><span>·</span><span style={{ color: "rgba(167,139,250,0.7)" }}>{note.concepts.length} concepts</span></>}
+            <span>·</span>
+            <span>{new Date(note.createdAt).toLocaleDateString()}</span>
+            {note.concepts.length > 0 && <><span>·</span><span style={{ color: "rgba(167,139,250,0.6)" }}>{note.concepts.length} concepts</span></>}
           </div>
         </div>
         <span style={{ fontSize: 11, color: "rgba(148,163,184,0.4)", flexShrink: 0 }}>{isExpanded ? "▲" : "▼"}</span>
