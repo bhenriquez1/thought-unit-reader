@@ -2,6 +2,23 @@
 
 export type StudyGuideMode = 'dat' | 'dental' | 'topstudent' | 'examcram' | 'visual' | 'highyield';
 
+export type ExamGoal = 'dat' | 'mcat' | 'dental-school' | 'medical-school' | 'nursing' | 'biology-exam' | 'custom';
+
+export const EXAM_GOAL_LABELS: Record<ExamGoal, string> = {
+  dat:             'DAT',
+  mcat:            'MCAT',
+  'dental-school': 'Dental School',
+  'medical-school':'Medical School',
+  nursing:         'Nursing',
+  'biology-exam':  'Biology Exam',
+  custom:          'Custom',
+};
+
+export const DAT_TARGET_SCORES = ['18', '20', '22', '25', '28+'] as const;
+export type DatTargetScore = typeof DAT_TARGET_SCORES[number];
+
+export type PriorityLevel = 'High' | 'Medium' | 'Low';
+
 export const STUDY_GUIDE_MODE_LABELS: Record<StudyGuideMode, string> = {
   dat:        'DAT Master Notes',
   dental:     'Dental School Notes',
@@ -28,18 +45,22 @@ export interface StudyGuideMechanism {
 export interface StudyGuideOutput {
   chapterTitle: string;
   topic: string;
+  priority: PriorityLevel;
   mustKnow: string[];
   datFacts: string[];
   mechanisms: StudyGuideMechanism[];
   traps: string[];
   recallQuestions: string[];
   memoryHooks: string[];
+  dailyTasks: string[];
 }
 
 export interface StudyGuideRecord extends StudyGuideOutput {
   id: string;
   bookId: string;
   mode: StudyGuideMode;
+  examGoal?: ExamGoal;
+  targetScore?: string;
   sourceLabels: string[];
   createdAt: number;
 }
