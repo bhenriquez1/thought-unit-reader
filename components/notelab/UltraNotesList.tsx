@@ -205,20 +205,47 @@ const BLOCK_STYLES = {
   datFact:   { bg: "rgba(34,197,94,0.07)",   border: "rgba(34,197,94,0.2)",    label: "#4ade80",  icon: "⭐" },
 } as const;
 
-function NoteBlock({ style, title, children }: { style: typeof BLOCK_STYLES[keyof typeof BLOCK_STYLES]; title: string; children: React.ReactNode }) {
+function NoteBlock({
+  style,
+  title,
+  children,
+  defaultCollapsed = false,
+}: {
+  style: typeof BLOCK_STYLES[keyof typeof BLOCK_STYLES];
+  title: string;
+  children: React.ReactNode;
+  defaultCollapsed?: boolean;
+}) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
   return (
-    <div style={{ marginBottom: 14, padding: "12px 14px", borderRadius: 10, background: style.bg, border: `1px solid ${style.border}` }}>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", color: style.label, marginBottom: 7, display: "flex", alignItems: "center", gap: 6 }}>
-        <span>{style.icon}</span>
-        <span>{title}</span>
+    <div style={{ marginBottom: 14, borderRadius: 11, background: style.bg, border: `1px solid ${style.border}`, overflow: "hidden" }}>
+      <div
+        style={{ display: "flex", alignItems: "center", gap: 7, padding: "11px 15px", cursor: "pointer", userSelect: "none" }}
+        onClick={() => setCollapsed(c => !c)}
+      >
+        <span style={{ fontSize: 14 }}>{style.icon}</span>
+        <span style={{ flex: 1, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: style.label }}>{title}</span>
+        <span style={{ fontSize: 10, color: style.label, opacity: 0.55 }}>{collapsed ? "▶" : "▼"}</span>
       </div>
-      {children}
+      {!collapsed && (
+        <div style={{ padding: "0 15px 14px" }}>
+          {children}
+        </div>
+      )}
     </div>
   );
 }
 
 function BlockText({ text }: { text: string }) {
-  return <div style={{ fontSize: 15, color: "rgba(255,255,255,0.92)", lineHeight: 1.65 }}>{text}</div>;
+  return (
+    <div style={{
+      fontSize: 15,
+      color: "rgba(255,255,255,0.92)",
+      lineHeight: 1.7,
+      wordBreak: "break-word",
+      whiteSpace: "pre-wrap",
+    }}>{text}</div>
+  );
 }
 
 function exportNoteMarkdown(note: UltraNote): string {
@@ -257,13 +284,22 @@ function NoteCard({
   onCardsGenerated?: (setId: string) => void;
 }) {
   const [cardsSaved, setCardsSaved] = useState(false);
+  const [cardsSaving, setCardsSaving] = useState(false);
 
-  function handleGenerateCards() {
-    const set = buildRecallSetFromNote(note, { sourceLabel: "notelab" });
-    saveRecallSet(set);
-    setCardsSaved(true);
-    onCardsGenerated?.(set.id);
-    setTimeout(() => setCardsSaved(false), 2200);
+  async function handleGenerateCards() {
+    if (cardsSaving) return;
+    setCardsSaving(true);
+    try {
+      const set = buildRecallSetFromNote(note, { sourceLabel: "notelab" });
+      await saveRecallSet(set);
+      setCardsSaved(true);
+      onCardsGenerated?.(set.id);
+      setTimeout(() => setCardsSaved(false), 2200);
+    } catch (err) {
+      console.error("[NOTELAB_GENERATE_CARDS_FAIL]", String(err));
+    } finally {
+      setCardsSaving(false);
+    }
   }
 
   function handleExportMd() {
@@ -280,26 +316,31 @@ function NoteCard({
   const pn = note.professorNotes;
 
   return (
-    <div style={{ borderRadius: 12, border: "1px solid rgba(255,255,255,0.09)", background: "rgba(10,18,38,0.85)", overflow: "hidden" }}>
+    <div style={{ borderRadius: 13, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(10,18,38,0.9)", overflow: "hidden" }}>
       {/* Header row */}
       <div
-        style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: "pointer", userSelect: "none", background: "rgba(255,255,255,0.025)" }}
+        style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", cursor: "pointer", userSelect: "none", background: "rgba(255,255,255,0.03)" }}
         onClick={onToggle}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#fcd34d", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#fcd34d", marginBottom: 3, lineHeight: 1.4, wordBreak: "break-word" }}>
             ⚡ {note.topic}
           </div>
-          <div style={{ fontSize: 11, color: "rgba(148,163,184,0.7)" }}>
-            p.{note.pageNumber} · {new Date(note.createdAt).toLocaleDateString()} · {note.subject}
+          <div style={{ fontSize: 11, color: "rgba(148,163,184,0.65)", display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <span>p.{note.pageNumber}</span>
+            <span>·</span>
+            <span>{new Date(note.createdAt).toLocaleDateString()}</span>
+            <span>·</span>
+            <span>{note.subject}</span>
+            {note.concepts.length > 0 && <><span>·</span><span style={{ color: "rgba(167,139,250,0.7)" }}>{note.concepts.length} concepts</span></>}
           </div>
         </div>
-        <span style={{ fontSize: 11, color: "rgba(148,163,184,0.45)", flexShrink: 0 }}>{isExpanded ? "▲" : "▼"}</span>
+        <span style={{ fontSize: 11, color: "rgba(148,163,184,0.4)", flexShrink: 0 }}>{isExpanded ? "▲" : "▼"}</span>
       </div>
 
       {/* Expanded body */}
       {isExpanded && (
-        <div style={{ padding: "12px 16px 16px" }}>
+        <div style={{ padding: "14px 16px 18px" }}>
 
           {/* 1. Core Idea — blue */}
           <NoteBlock style={BLOCK_STYLES.coreIdea} title="CORE IDEA">
@@ -351,18 +392,11 @@ function NoteCard({
 
           {/* 7. Concept blocks */}
           {note.concepts.length > 0 && (
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", color: "rgba(148,163,184,0.6)", marginBottom: 8, paddingLeft: 2 }}>🧩 CONCEPT BLOCKS</div>
+            <NoteBlock style={BLOCK_STYLES.concept} title={`CONCEPT BLOCKS (${note.concepts.length})`}>
               {note.concepts.map((c) => (
-                <div key={c.ordinal} style={{ marginBottom: 10, padding: "12px 14px", borderRadius: 10, background: BLOCK_STYLES.concept.bg, border: `1px solid ${BLOCK_STYLES.concept.border}` }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "white", marginBottom: 8 }}>{c.ordinal}. {c.title}</div>
-                  {c.pattern        && <ConceptRow label="Pattern"  text={c.pattern}        color="#8fd3ff" />}
-                  {c.surgicalReason && <ConceptRow label="Why"      text={c.surgicalReason} color="#ffd580" />}
-                  {c.trap           && <ConceptRow label="⚠ Trap"   text={c.trap}           color="#ff9da1" />}
-                  {c.rule           && <ConceptRow label="Rule"     text={c.rule}           color="#ffb86b" />}
-                </div>
+                <ConceptBlock key={c.ordinal} concept={c} />
               ))}
-            </div>
+            </NoteBlock>
           )}
 
           {/* 8. Recall Questions — teal */}
@@ -407,22 +441,33 @@ function NoteCard({
           )}
 
           {/* Action row */}
-          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-            <button type="button" onClick={handleGenerateCards} style={actionBtnStyle(cardsSaved ? "#10b981" : "#818cf8")}>
-              {cardsSaved ? "✓ Cards saved" : "🎯 → Recall Lab"}
+          <div style={{ display: "flex", gap: 7, marginTop: 8 }}>
+            <button
+              type="button"
+              onClick={handleGenerateCards}
+              disabled={cardsSaving}
+              style={actionBtnStyle(cardsSaved ? "#10b981" : "#818cf8", true)}
+            >
+              {cardsSaving ? "…" : cardsSaved ? "✓ In Recall Lab" : "🎯 → Recall Lab"}
             </button>
             <button type="button" onClick={handleExportMd} style={actionBtnStyle("#6b7280")}>
               ⬇ .md
             </button>
             <button type="button" onClick={onCopy} style={actionBtnStyle(copiedId === note.id ? "#10b981" : "#6b7280")}>
-              {copiedId === note.id ? "✓ Copied" : "Copy"}
+              {copiedId === note.id ? "✓" : "Copy"}
             </button>
             {onNavigate && (
               <button type="button" onClick={() => onNavigate(note.pageNumber)} style={actionBtnStyle("#3b82f6")}>
                 p.{note.pageNumber}
               </button>
             )}
-            <button type="button" onClick={onDelete} style={actionBtnStyle("#ef4444")}>✕</button>
+            <button
+              type="button"
+              onClick={onDelete}
+              style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+            >
+              🗑 Delete
+            </button>
           </div>
         </div>
       )}
@@ -432,17 +477,41 @@ function NoteCard({
 
 function ConceptRow({ label, text, color }: { label: string; text: string; color: string }) {
   return (
-    <div style={{ marginBottom: 7 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color, marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 14, color: "rgba(255,255,255,0.85)", lineHeight: 1.6 }}>{text}</div>
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color, marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 14, color: "rgba(255,255,255,0.88)", lineHeight: 1.65, wordBreak: "break-word", whiteSpace: "pre-wrap" }}>{text}</div>
     </div>
   );
 }
 
-function actionBtnStyle(color: string): React.CSSProperties {
+function ConceptBlock({ concept }: { concept: { ordinal: number; title: string; pattern?: string; surgicalReason?: string; trap?: string | null; rule?: string } }) {
+  const [collapsed, setCollapsed] = useState(false);
+  return (
+    <div style={{ marginBottom: 10, borderRadius: 9, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.09)", overflow: "hidden" }}>
+      <div
+        style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 13px", cursor: "pointer", userSelect: "none" }}
+        onClick={() => setCollapsed(c => !c)}
+      >
+        <span style={{ fontSize: 12, color: "#e2e8f0", fontWeight: 700 }}>{concept.ordinal}.</span>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.95)" }}>{concept.title}</span>
+        <span style={{ fontSize: 10, color: "rgba(148,163,184,0.4)" }}>{collapsed ? "▶" : "▼"}</span>
+      </div>
+      {!collapsed && (
+        <div style={{ padding: "0 13px 12px" }}>
+          {concept.pattern        && <ConceptRow label="PATTERN"  text={concept.pattern}        color="#8fd3ff" />}
+          {concept.surgicalReason && <ConceptRow label="WHY"      text={concept.surgicalReason} color="#ffd580" />}
+          {concept.trap           && <ConceptRow label="⚠ TRAP"   text={concept.trap}           color="#ff9da1" />}
+          {concept.rule           && <ConceptRow label="RULE"     text={concept.rule}           color="#ffb86b" />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function actionBtnStyle(color: string, flex = false): React.CSSProperties {
   return {
-    flex: 1,
-    padding: "7px 0",
+    ...(flex ? { flex: 1 } : {}),
+    padding: "8px 12px",
     borderRadius: 8,
     border: `1px solid ${color}44`,
     background: `${color}14`,
@@ -451,5 +520,6 @@ function actionBtnStyle(color: string): React.CSSProperties {
     fontWeight: 700,
     cursor: "pointer",
     transition: "all 0.15s",
+    whiteSpace: "nowrap" as const,
   };
 }
