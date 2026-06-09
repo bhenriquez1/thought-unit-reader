@@ -2827,15 +2827,17 @@ function MiniTestPanel({
 
     if (!missedCards.length) return;
 
+    // Use stable ID so repeated saves upsert rather than duplicate
+    const missedId = `rs-missed-${bookId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40)}-p${pageNumber}`;
     saveRecallSet({
-      id: `rs-missed-${bookId}-p${pageNumber}-${Date.now()}`,
+      id: missedId,
       bookId,
       pageNumber,
       subject: inferSubject(bookId),
       topic: `Mini Test Missed — Page ${pageNumber}`,
       cards: missedCards,
       createdAt: Date.now(),
-    });
+    }).catch((e) => console.error("[RECALL_MISSED_SAVE_FAIL]", String(e)));
     setSavedMissed(true);
     setTimeout(() => setSavedMissed(false), 2500);
   }

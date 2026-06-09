@@ -52,11 +52,6 @@ const SOURCE_LABEL: Record<string, { label: string; color: string }> = {
 
 type View = { kind: "dashboard" } | { kind: "session"; set: RecallSet };
 
-function loadSets(bookId?: string): RecallSet[] {
-  const all = getAllRecallSets();
-  return bookId ? all.filter((s) => s.bookId === bookId) : all;
-}
-
 async function loadSetsAsync(bookId?: string): Promise<RecallSet[]> {
   const all = await getAllRecallSetsAsync();
   const filtered = bookId ? all.filter((s) => s.bookId === bookId) : all;
@@ -64,68 +59,71 @@ async function loadSetsAsync(bookId?: string): Promise<RecallSet[]> {
   return filtered;
 }
 
+function loadSetsSync(bookId?: string): RecallSet[] {
+  const all = getAllRecallSets();
+  return bookId ? all.filter((s) => s.bookId === bookId) : all;
+}
+
 export default function RecallLab({ onNavigateToPage, bookId, refreshKey, lastSetId }: RecallLabProps) {
-  // Start empty — IDB load happens in useEffect below (avoids stale localStorage read)
-  const [sets, setSets] = useState<RecallSet[]>([]);
+  // Start from LS mirror for instant render; IDB async load fills in on mount
+  const [sets, setSets] = useState<RecallSet[]>(() => {
+    const sync = loadSetsSync(bookId);
+    console.log("[RECALLLAB_MOUNT]", { setsInStorage: sync.length, lastSetId: lastSetId ?? null });
+    return sync;
+  });
   const [view, setView] = useState<View>({ kind: "dashboard" });
   const [initialLoaded, setInitialLoaded] = useState(false);
 
-  // Mount: load from IDB (primary store) — this fires before any other effect
+  // On mount: load from IDB (authoritative)
   useEffect(() => {
-    void loadSetsAsync(bookId).then((current) => {
-      console.log("[RECALLLAB_MOUNT]", {
-        driver: "indexeddb-first",
-        setsInStorage: current.length,
-        lastSetId: lastSetId ?? null,
-        setIds: current.slice(0, 5).map(s => s.id),
-      });
-      setSets(current);
+    loadSetsAsync(bookId).then((all) => {
+      setSets(all);
       setInitialLoaded(true);
-      // If a lastSetId was provided on mount, open it now that IDB data is loaded
       if (lastSetId) {
-        const found = current.find((s) => s.id === lastSetId);
-        console.log("[RECALLLAB_INIT_VIEW]", { lastSetId, found: !!found, totalSets: current.length });
+        const found = all.find((s) => s.id === lastSetId);
+        console.log("[RECALLLAB_INIT_VIEW]", { lastSetId, found: !!found, totalSets: all.length });
         if (found) setView({ kind: "session", set: found });
       }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Reload when refreshKey changes (set was added while mounted)
+  // Reload from IDB when refreshKey changes
   useEffect(() => {
-    void loadSetsAsync(bookId).then((current) => {
-      console.log("[RECALLLAB_REFRESHKEY]", { refreshKey, setsInStorage: current.length });
-      setSets(current);
+    if (!initialLoaded) return;
+    loadSetsAsync(bookId).then((all) => {
+      setSets(all);
+      console.log("[RECALLLAB_REFRESHKEY]", { refreshKey, count: all.length });
     });
-  }, [refreshKey]);
+  }, [refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Storage event listener — fires when saveRecallSet dispatches "recall-lab-updated"
+  // IDB-aware recall-lab-updated event
   useEffect(() => {
     const handler = () => {
-      void loadSetsAsync(bookId).then((current) => {
-        setSets(current);
-        console.log("[RECALLLAB_STATE_COUNT]", { count: current.length });
+      loadSetsAsync(bookId).then((all) => {
+        setSets(all);
+        console.log("[RECALLLAB_STATE_COUNT]", { count: all.length });
       });
     };
     window.addEventListener("recall-lab-updated", handler);
     return () => window.removeEventListener("recall-lab-updated", handler);
-  }, []);
+  }, [bookId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // When lastSetId changes (new set generated), auto-open it
+  // When lastSetId changes, auto-open after IDB read
   useEffect(() => {
-    if (!lastSetId) return;
-    void loadSetsAsync(bookId).then((current) => {
-      setSets(current);
-      const found = current.find((s) => s.id === lastSetId);
-      console.log("[RECALLLAB_SELECTED_SET]", { lastSetId, found: !!found, totalSets: current.length });
+    if (!lastSetId || !initialLoaded) return;
+    loadSetsAsync(bookId).then((all) => {
+      setSets(all);
+      const found = all.find((s) => s.id === lastSetId);
+      console.log("[RECALLLAB_SELECTED_SET]", { lastSetId, found: !!found, totalSets: all.length });
       if (found) setView({ kind: "session", set: found });
     });
-  }, [lastSetId]);
+  }, [lastSetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleDelete(id: string) {
     await deleteRecallSet(id);
-    const current = await loadSetsAsync(bookId);
-    setSets(current);
+    const updated = await loadSetsAsync(bookId);
+    setSets(updated);
     if (view.kind === "session" && view.set.id === id) {
       setView({ kind: "dashboard" });
     }
@@ -136,7 +134,10 @@ export default function RecallLab({ onNavigateToPage, bookId, refreshKey, lastSe
     return (
       <RecallSession
         set={view.set}
-        onClose={() => { setView({ kind: "dashboard" }); void loadSetsAsync(bookId).then(setSets); }}
+        onClose={() => {
+          setView({ kind: "dashboard" });
+          loadSetsAsync(bookId).then(setSets);
+        }}
         onNavigateToPage={onNavigateToPage}
       />
     );

@@ -1233,31 +1233,27 @@ export default function ThoughtUnitReader() {
   const sendCurrentPageToRecallLab = useCallback(() => {
     const sm = currentPageStudyModel;
     if (!sm) return;
-    console.log("[RECALLLAB_SAVE_START]", { page: currentPage, bookId, source: "focus-cycle", destination: "RecallLab", storageKey: "recallSets_v1" });
-    try {
-      const minView = { title: `Page ${currentPage}` } as import("@/lib/insights/buildUltraPageView").UltraPageView;
-      const set = buildRecallSetFromView(minView, bookId, currentPage, {
-        bookTitle: uploadedFile?.name,
-        sourceLabel: "right-panel",
-        studyModel: sm,
-      });
-      saveRecallSet(set);
-      const persisted = getAllRecallSets().find((s) => s.id === set.id);
-      console.log("[RECALLLAB_SAVE_VERIFY]", { id: set.id, found: !!persisted, storageKey: "recallSets_v1" });
-      console.log("[RECALLLAB_SAVE_SUCCESS]", { id: set.id, page: currentPage, cardCount: set.cards?.length ?? 0, source: "focus-cycle", storageKey: "recallSets_v1", destination: "RecallLab" });
-      setSyllabusStudiedPages((prev) => {
-        const next = new Set(prev);
-        next.add(currentPage);
-        try { localStorage.setItem("syllabus_studiedPages", JSON.stringify([...next])); } catch { /* ignore */ }
-        return next;
-      });
-      console.log("[SYLLABUS_SAVE_STATUS]", { page: currentPage, event: "recalllab_saved", bookId, syllabusTocNodes: syllabusToc.length, totalStudied: syllabusStudiedPages.size + 1 });
-      setLastRecallSetId(set.id);
-      setSessionCardsCount((n) => n + 1);
-      setRecallLabRefreshKey((k) => k + 1);
-    } catch (err: any) {
-      console.error("[RECALLLAB_SAVE_ERROR]", { reason: err?.message ?? String(err), source: "focus-cycle" });
-    }
+    console.log("[RECALLLAB_SAVE_START]", { page: currentPage, bookId, source: "focus-cycle", destination: "RecallLab" });
+    const minView = { title: `Page ${currentPage}` } as import("@/lib/insights/buildUltraPageView").UltraPageView;
+    const set = buildRecallSetFromView(minView, bookId, currentPage, {
+      bookTitle: uploadedFile?.name,
+      sourceLabel: "right-panel",
+      studyModel: sm,
+    });
+    saveRecallSet(set).then(() => {
+      console.log("[RECALLLAB_SAVE_SUCCESS]", { id: set.id, page: currentPage, cards: set.cards?.length ?? 0 });
+    }).catch((e) => {
+      console.error("[RECALLLAB_SAVE_FAILED]", { id: set.id, error: String(e) });
+    });
+    setSyllabusStudiedPages((prev) => {
+      const next = new Set(prev);
+      next.add(currentPage);
+      try { localStorage.setItem("syllabus_studiedPages", JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+    setLastRecallSetId(set.id);
+    setSessionCardsCount((n) => n + 1);
+    setRecallLabRefreshKey((k) => k + 1);
   }, [currentPageStudyModel, currentPage, bookId, uploadedFile]);
 
   /* =========================================================================

@@ -6,7 +6,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   getAllUltraNotes,
-  getAllUltraNotesAsync,
   deleteUltraNote,
   formatUltraNoteText,
   type UltraNote,
@@ -37,55 +36,48 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [collapsedSubjects, setCollapsedSubjects] = useState<Set<NoteSubject>>(new Set());
   const [collapsedBooks, setCollapsedBooks] = useState<Set<string>>(new Set());
-  const [confirmDeleteNote, setConfirmDeleteNote] = useState<UltraNote | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<UltraNote | null>(null);
 
-  const reload = useCallback(async () => {
-    const all = await getAllUltraNotesAsync();
+  const reload = useCallback(() => {
+    const all = getAllUltraNotes();
     const filtered = bookId ? all.filter((n) => n.bookId === bookId) : all;
     console.log("[NOTELAB_RELOAD]", {
       totalInStorage: all.length,
       bookId: bookId ?? null,
       filteredCount: filtered.length,
-      driver: localStorage.getItem("ultraNotes_in_idb") === "1" ? "indexeddb" : "localstorage",
     });
     setNotes(filtered);
   }, [bookId]);
 
   useEffect(() => { reload(); }, [reload, refreshKey]);
 
-  // Reload when saveUltraNote dispatches "note-lab-updated" (mirrors RecallLab's recall-lab-updated pattern)
   useEffect(() => {
     const handler = () => {
       reload();
+      const current = getAllUltraNotes();
+      const count = bookId ? current.filter(n => n.bookId === bookId).length : current.length;
+      console.log("[NOTELAB_STATE_COUNT]", { count, bookId });
     };
     window.addEventListener("note-lab-updated", handler);
     return () => window.removeEventListener("note-lab-updated", handler);
   }, [reload, bookId]);
 
   function requestDelete(note: UltraNote) {
-    console.log("[NOTELAB_DELETE_CLICK]", {
-      id: note.id, title: note.topic, page: note.pageNumber,
-      bookTitle: note.bookTitle ?? note.bookId,
-      driver: localStorage.getItem("ultraNotes_in_idb") === "1" ? "indexeddb" : "localstorage",
-    });
-    setConfirmDeleteNote(note);
+    console.log("[NOTELAB_DELETE_CLICK]", { id: note.id, topic: note.topic, page: note.pageNumber });
+    setConfirmDelete(note);
   }
 
-  async function confirmDelete() {
-    const note = confirmDeleteNote;
-    if (!note) return;
-    console.log("[NOTELAB_DELETE_CONFIRMED]", { id: note.id, title: note.topic, page: note.pageNumber });
-    setConfirmDeleteNote(null);
+  async function confirmDeleteNote() {
+    if (!confirmDelete) return;
+    const { id, topic, pageNumber } = confirmDelete;
+    console.log("[NOTELAB_DELETE_CONFIRMED]", { id, topic, page: pageNumber });
+    setConfirmDelete(null);
     try {
-      await deleteUltraNote(note.id);
-      console.log("[NOTELAB_DELETE_SUCCESS]", {
-        id: note.id, title: note.topic, page: note.pageNumber,
-        driver: localStorage.getItem("ultraNotes_in_idb") === "1" ? "indexeddb" : "localstorage",
-      });
-      if (expandedId === note.id) setExpandedId(null);
-      await reload();
-    } catch (err) {
-      console.error("[NOTELAB_DELETE_FAILED]", { id: note.id, error: String(err) });
+      await deleteUltraNote(id);
+      reload();
+      console.log("[NOTELAB_DELETE_SUCCESS]", { id, topic, page: pageNumber });
+    } catch (e) {
+      console.error("[NOTELAB_DELETE_FAILED]", { id, error: String(e) });
     }
   }
 
@@ -118,7 +110,9 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
 
   if (notes.length === 0) {
     return (
-      <div style={{ padding: "32px 24px", textAlign: "center", color: "rgba(148,163,184,0.7)" }}>
+      <>
+        {confirmDelete && <DeleteModal note={confirmDelete} onConfirm={confirmDeleteNote} onCancel={() => setConfirmDelete(null)} />}
+        <div style={{ padding: "32px 24px", textAlign: "center", color: "rgba(148,163,184,0.7)" }}>
         <div style={{ fontSize: 36, marginBottom: 12 }}>📝</div>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>No notes yet</div>
         <div style={{ fontSize: 12, lineHeight: 1.6 }}>
@@ -126,6 +120,7 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
           <span style={{ color: "#fcd34d" }}>⚡ Generate Ultra Note</span> in the right panel.
         </div>
       </div>
+      </>
     );
   }
 
@@ -142,48 +137,9 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
   const usedSubjects = SUBJECT_ORDER.filter((s) => bySubject.has(s));
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 12px", position: "relative" }}>
-      {/* Delete confirmation modal */}
-      {confirmDeleteNote && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 9999,
-          background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          <div style={{
-            background: "rgba(15,22,42,0.98)", border: "1px solid rgba(239,68,68,0.35)",
-            borderRadius: 16, padding: "28px 32px", maxWidth: 380, width: "90%",
-            boxShadow: "0 25px 50px rgba(0,0,0,0.6)",
-          }}>
-            <div style={{ fontSize: 28, textAlign: "center", marginBottom: 12 }}>🗑</div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "rgba(255,255,255,0.95)", textAlign: "center", marginBottom: 6 }}>
-              Delete this note permanently?
-            </div>
-            <div style={{ fontSize: 12, color: "rgba(248,113,113,0.85)", textAlign: "center", marginBottom: 6, fontWeight: 600 }}>
-              ⚡ {confirmDeleteNote.topic}
-            </div>
-            <div style={{ fontSize: 11, color: "rgba(148,163,184,0.6)", textAlign: "center", marginBottom: 24 }}>
-              p.{confirmDeleteNote.pageNumber} · {confirmDeleteNote.bookTitle ?? confirmDeleteNote.bookId}
-            </div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                type="button"
-                onClick={() => setConfirmDeleteNote(null)}
-                style={{ flex: 1, padding: "10px 0", borderRadius: 9, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmDelete}
-                style={{ flex: 1, padding: "10px 0", borderRadius: 9, border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.15)", color: "#f87171", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+    <>
+      {confirmDelete && <DeleteModal note={confirmDelete} onConfirm={confirmDeleteNote} onCancel={() => setConfirmDelete(null)} />}
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 12px" }}>
       {usedSubjects.map((subject) => {
         const byBook = bySubject.get(subject)!;
         const isSubjectCollapsed = collapsedSubjects.has(subject);
@@ -250,82 +206,29 @@ export default function UltraNotesList({ bookId, onNavigateToPage, refreshKey, o
         );
       })}
     </div>
+    </>
   );
 }
 
-// ── Color-coded block specs ────────────────────────────────────────────────
-// Matches the user's desired: Core Idea (blue), High Yield (gold), Mechanism (purple),
-// Common Trap (red), Recall Question (teal), Exam Pearl (orange)
-
-const BLOCK_STYLES = {
-  coreIdea:  { bg: "rgba(59,130,246,0.08)",  border: "rgba(59,130,246,0.22)",  label: "#60a5fa",  icon: "📘" },
-  highYield: { bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.22)",  label: "#fbbf24",  icon: "📗" },
-  mechanism: { bg: "rgba(139,92,246,0.08)",  border: "rgba(139,92,246,0.22)",  label: "#a78bfa",  icon: "🧠" },
-  trap:      { bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.22)",   label: "#f87171",  icon: "⚠️" },
-  recall:    { bg: "rgba(20,184,166,0.08)",  border: "rgba(20,184,166,0.22)",  label: "#2dd4bf",  icon: "🔁" },
-  examPearl: { bg: "rgba(251,146,60,0.08)",  border: "rgba(251,146,60,0.22)",  label: "#fb923c",  icon: "🎯" },
-  memory:    { bg: "rgba(99,102,241,0.08)",  border: "rgba(99,102,241,0.22)",  label: "#818cf8",  icon: "💡" },
-  concept:   { bg: "rgba(255,255,255,0.03)", border: "rgba(255,255,255,0.09)", label: "#e2e8f0",  icon: "🧩" },
-  datFact:   { bg: "rgba(34,197,94,0.07)",   border: "rgba(34,197,94,0.2)",    label: "#4ade80",  icon: "⭐" },
-} as const;
-
-function NoteBlock({
-  style,
-  title,
-  children,
-  defaultCollapsed = false,
-}: {
-  style: typeof BLOCK_STYLES[keyof typeof BLOCK_STYLES];
-  title: string;
-  children: React.ReactNode;
-  defaultCollapsed?: boolean;
-}) {
-  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+function DeleteModal({ note, onConfirm, onCancel }: { note: UltraNote; onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div style={{ marginBottom: 14, borderRadius: 11, background: style.bg, border: `1px solid ${style.border}`, overflow: "hidden" }}>
-      <div
-        style={{ display: "flex", alignItems: "center", gap: 7, padding: "11px 15px", cursor: "pointer", userSelect: "none" }}
-        onClick={() => setCollapsed(c => !c)}
-      >
-        <span style={{ fontSize: 14 }}>{style.icon}</span>
-        <span style={{ flex: 1, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: style.label }}>{title}</span>
-        <span style={{ fontSize: 10, color: style.label, opacity: 0.55 }}>{collapsed ? "▶" : "▼"}</span>
-      </div>
-      {!collapsed && (
-        <div style={{ padding: "0 15px 14px" }}>
-          {children}
+    <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.6)" }}>
+      <div style={{ background: "#0f172a", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 14, padding: "24px 28px", maxWidth: 380, width: "90%", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
+        <div style={{ fontSize: 18, marginBottom: 10 }}>🗑️</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,0.9)", marginBottom: 6 }}>Delete this note?</div>
+        <div style={{ fontSize: 12, color: "rgba(148,163,184,0.8)", marginBottom: 4 }}>{note.topic}</div>
+        <div style={{ fontSize: 11, color: "rgba(148,163,184,0.5)", marginBottom: 20 }}>Page {note.pageNumber} · {new Date(note.createdAt).toLocaleDateString()}</div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button type="button" onClick={onCancel} style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            Cancel
+          </button>
+          <button type="button" onClick={onConfirm} style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            Delete permanently
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
-}
-
-function BlockText({ text }: { text: string }) {
-  return (
-    <div style={{
-      fontSize: 15,
-      color: "rgba(255,255,255,0.92)",
-      lineHeight: 1.7,
-      wordBreak: "break-word",
-      whiteSpace: "pre-wrap",
-    }}>{text}</div>
-  );
-}
-
-function exportNoteMarkdown(note: UltraNote): string {
-  const lines: string[] = [`# ${note.topic}`, `**Page ${note.pageNumber}**`, ""];
-  lines.push("## 📘 Core Idea", note.coreIdea, "");
-  const pn = note.professorNotes;
-  if (pn?.whyItMatters)    lines.push("## 📗 High Yield — Why This Matters", pn.whyItMatters, "");
-  if (pn?.keyMechanism)    lines.push("## 🧠 Mechanism", pn.keyMechanism, "");
-  if (pn?.reasoningFlow)   lines.push("### Reasoning Flow", pn.reasoningFlow, "");
-  if (pn?.commonConfusion) lines.push("## ⚠️ Common DAT Trap", pn.commonConfusion, "");
-  if (pn?.examSignal)      lines.push("## 🎯 Exam Pearl", pn.examSignal, "");
-  if (pn?.memoryAnchor)    lines.push("## 💡 Memory Hook", pn.memoryAnchor, "");
-  if (note.memoryShortcuts.length > 0) { lines.push("### Memory Shortcuts"); note.memoryShortcuts.forEach(s => lines.push(`- ${s}`)); lines.push(""); }
-  if (note.concepts.length > 0) { lines.push("## 🧩 Concept Blocks"); note.concepts.forEach(c => { lines.push(`### ${c.title}`); if (c.pattern) lines.push(`**Pattern:** ${c.pattern}`); if (c.surgicalReason) lines.push(`**Why:** ${c.surgicalReason}`); if (c.trap) lines.push(`**Trap:** ${c.trap}`); if (c.rule) lines.push(`**Rule:** ${c.rule}`); lines.push(""); }); }
-  if (note.miniTest && note.miniTest.length > 0) { lines.push("## 🔁 Recall Questions"); note.miniTest.forEach((q, i) => lines.push(`${i + 1}. ${q}`)); lines.push(""); }
-  return lines.join("\n");
 }
 
 function NoteCard({
@@ -359,181 +262,166 @@ function NoteCard({
       setCardsSaved(true);
       onCardsGenerated?.(set.id);
       setTimeout(() => setCardsSaved(false), 2200);
-    } catch (err) {
-      console.error("[NOTELAB_GENERATE_CARDS_FAIL]", String(err));
+    } catch (e) {
+      console.error("[NOTELAB_CARDS_SAVE_FAILED]", String(e));
     } finally {
       setCardsSaving(false);
     }
   }
-
-  function handleExportMd() {
-    const md = exportNoteMarkdown(note);
-    const blob = new Blob([md], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${note.topic.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  const pn = note.professorNotes;
-
   return (
-    <div style={{ borderRadius: 13, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(10,18,38,0.9)", overflow: "hidden" }}>
+    <div
+      style={{
+        borderRadius: 10,
+        border: "1px solid rgba(255,255,255,0.07)",
+        background: "rgba(11,20,40,0.7)",
+        overflow: "hidden",
+      }}
+    >
       {/* Header row */}
       <div
-        style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", cursor: "pointer", userSelect: "none", background: "rgba(255,255,255,0.03)" }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "10px 14px",
+          cursor: "pointer",
+          userSelect: "none",
+        }}
         onClick={onToggle}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "#fcd34d", marginBottom: 3, lineHeight: 1.4, wordBreak: "break-word" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#fcd34d", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             ⚡ {note.topic}
           </div>
-          <div style={{ fontSize: 11, color: "rgba(148,163,184,0.55)", marginBottom: 3, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            📖 {note.bookTitle ?? note.bookId}
-          </div>
-          <div style={{ fontSize: 10, color: "rgba(148,163,184,0.45)", display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <span>Page {note.pageNumber}</span>
-            <span>·</span>
-            <span>{note.subject}</span>
-            <span>·</span>
-            <span>{new Date(note.createdAt).toLocaleDateString()}</span>
-            {note.concepts.length > 0 && <><span>·</span><span style={{ color: "rgba(167,139,250,0.6)" }}>{note.concepts.length} concepts</span></>}
+          <div style={{ fontSize: 10, color: "rgba(148,163,184,0.7)" }}>
+            Page {note.pageNumber} · {new Date(note.createdAt).toLocaleDateString()}
           </div>
         </div>
-        <span style={{ fontSize: 11, color: "rgba(148,163,184,0.4)", flexShrink: 0 }}>{isExpanded ? "▲" : "▼"}</span>
+        <span style={{ fontSize: 11, color: "rgba(148,163,184,0.5)", flexShrink: 0 }}>
+          {isExpanded ? "▲" : "▼"}
+        </span>
       </div>
 
       {/* Expanded body */}
       {isExpanded && (
-        <div style={{ padding: "14px 16px 18px" }}>
+        <div style={{ padding: "0 14px 14px" }}>
+          {/* Core Idea */}
+          <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, background: "rgba(245,200,66,0.06)", border: "1px solid rgba(245,200,66,0.15)" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#fbbf24", marginBottom: 4 }}>🧠 CORE IDEA</div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.9)", lineHeight: 1.6 }}>{note.coreIdea}</div>
+          </div>
 
-          {/* 1. Core Idea — blue */}
-          <NoteBlock style={BLOCK_STYLES.coreIdea} title="CORE IDEA">
-            <BlockText text={note.coreIdea} />
-          </NoteBlock>
+          {/* Professor Notes — OpenAI synthesis teaching sections */}
+          {note.professorNotes && <ProfessorNotesSection notes={note.professorNotes} />}
 
-          {/* 2. High Yield — gold */}
-          {pn?.whyItMatters && (
-            <NoteBlock style={BLOCK_STYLES.highYield} title="HIGH YIELD — WHY THIS MATTERS">
-              <BlockText text={pn.whyItMatters} />
-            </NoteBlock>
-          )}
+          {/* Concept blocks */}
+          {note.concepts.map((c) => (
+            <div key={c.ordinal} style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "white", marginBottom: 8 }}>🧩 {c.ordinal}️⃣ {c.title}</div>
+              {c.pattern && <NoteRow label="P — Pattern" text={c.pattern} color="#8fd3ff" />}
+              {c.surgicalReason && <NoteRow label="⚡ Surgical Reason" text={c.surgicalReason} color="#ffd580" />}
+              {c.trap && <NoteRow label="❗ Trap" text={c.trap} color="#ff9da1" />}
+              {c.rule && <NoteRow label="🔥 Rule" text={c.rule} color="#ffb86b" />}
+            </div>
+          ))}
 
-          {/* 3. Mechanism — purple */}
-          {(pn?.keyMechanism || pn?.reasoningFlow) && (
-            <NoteBlock style={BLOCK_STYLES.mechanism} title="MECHANISM">
-              {pn.keyMechanism && <BlockText text={pn.keyMechanism} />}
-              {pn.reasoningFlow && (
-                <div style={{ marginTop: pn.keyMechanism ? 8 : 0, fontFamily: "monospace", fontSize: 13, color: "#a78bfa", lineHeight: 1.7 }}>
-                  {pn.reasoningFlow}
-                </div>
-              )}
-            </NoteBlock>
-          )}
-
-          {/* 4. Common DAT Trap — red */}
-          {pn?.commonConfusion && (
-            <NoteBlock style={BLOCK_STYLES.trap} title="COMMON DAT TRAP">
-              <BlockText text={pn.commonConfusion} />
-            </NoteBlock>
-          )}
-
-          {/* 5. Exam Pearl — orange */}
-          {pn?.examSignal && (
-            <NoteBlock style={BLOCK_STYLES.examPearl} title="EXAM PEARL">
-              <BlockText text={pn.examSignal} />
-            </NoteBlock>
-          )}
-
-          {/* 6. Memory Hook — indigo */}
-          {(pn?.memoryAnchor || note.memoryShortcuts.length > 0) && (
-            <NoteBlock style={BLOCK_STYLES.memory} title="MEMORY HOOK">
-              {pn?.memoryAnchor && <BlockText text={pn.memoryAnchor} />}
+          {/* Memory shortcuts */}
+          {note.memoryShortcuts.length > 0 && (
+            <div style={{ marginBottom: 10, padding: "8px 12px", borderRadius: 8, background: "rgba(96,165,250,0.05)", border: "1px solid rgba(96,165,250,0.12)" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#93c5fd", marginBottom: 6 }}>🧠 MEMORY SHORTCUT</div>
               {note.memoryShortcuts.map((s, i) => (
-                <div key={i} style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", lineHeight: 1.6, marginTop: pn?.memoryAnchor ? 6 : 0 }}>👉 {s}</div>
+                <div key={i} style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", lineHeight: 1.6 }}>👉 {s}</div>
               ))}
-            </NoteBlock>
+            </div>
           )}
 
-          {/* 7. Concept blocks */}
-          {note.concepts.length > 0 && (
-            <NoteBlock style={BLOCK_STYLES.concept} title={`CONCEPT BLOCKS (${note.concepts.length})`}>
-              {note.concepts.map((c) => (
-                <ConceptBlock key={c.ordinal} concept={c} />
-              ))}
-            </NoteBlock>
-          )}
-
-          {/* 8. Recall Questions — teal */}
+          {/* Mini Test — OpenAI synthesis questions */}
           {note.miniTest && note.miniTest.length > 0 && (
-            <NoteBlock style={BLOCK_STYLES.recall} title="RECALL QUESTIONS">
+            <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 8, background: "rgba(52,211,153,0.04)", border: "1px solid rgba(52,211,153,0.12)" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#6ee7b7", marginBottom: 8 }}>📝 MINI TEST</div>
               {note.miniTest.map((q, i) => (
-                <div key={i} style={{ fontSize: 14, color: "rgba(255,255,255,0.85)", lineHeight: 1.65, marginBottom: 6, paddingLeft: 4 }}>
-                  <span style={{ color: "#2dd4bf", fontWeight: 700, marginRight: 6 }}>{i + 1}.</span>{q}
-                </div>
+                <div key={i} style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", lineHeight: 1.6, marginBottom: 4 }}>{i + 1}. {q}</div>
               ))}
-            </NoteBlock>
+            </div>
           )}
 
-          {/* External Study Links */}
+          {/* External Study Links — clickable OpenAI-generated search queries */}
           {note.externalStudyLinks && note.externalStudyLinks.length > 0 && (
-            <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(139,92,246,0.05)", border: "1px solid rgba(139,92,246,0.14)" }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", color: "#c4b5fd", marginBottom: 6 }}>📚 STUDY RESOURCES</div>
+            <div style={{ marginBottom: 10, padding: "8px 12px", borderRadius: 8, background: "rgba(139,92,246,0.04)", border: "1px solid rgba(139,92,246,0.12)" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#c4b5fd", marginBottom: 6 }}>📚 EXTERNAL STUDY LINKS</div>
               {note.externalStudyLinks.map((l, i) => {
-                const base = l.type === "textbook-search" ? "https://scholar.google.com/scholar?q=" : "https://www.google.com/search?q=";
+                const base = l.type === "textbook-search"
+                  ? "https://scholar.google.com/scholar?q="
+                  : "https://www.google.com/search?q=";
                 const href = `${base}${encodeURIComponent(l.searchQuery)}`;
+                const icon = l.type === "textbook-search" ? "📖" : l.type === "reference" ? "🔗" : "📄";
                 return (
                   <a key={i} href={href} target="_blank" rel="noopener noreferrer"
-                    style={{ display: "flex", gap: 6, fontSize: 13, color: "#c4b5fd", lineHeight: 1.6, textDecoration: "underline", textDecorationStyle: "dotted", marginBottom: 3 }}>
-                    <span>{l.type === "textbook-search" ? "📖" : "🔗"}</span><span>{l.label}</span>
+                    style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: "#c4b5fd", lineHeight: 1.6, textDecoration: "underline", textDecorationStyle: "dotted", marginBottom: 2 }}>
+                    <span style={{ flexShrink: 0 }}>{icon}</span>
+                    <span>{l.label}</span>
+                  </a>
+                );
+              })}
+            </div>
+          )}
+          {/* Related Teaching Videos — OpenAI-generated YouTube search queries */}
+          {note.relatedVideoQueries && note.relatedVideoQueries.length > 0 && (
+            <div style={{ marginBottom: 10, padding: "8px 12px", borderRadius: 8, background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.12)" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#fca5a5", marginBottom: 6 }}>📺 RELATED TEACHING VIDEOS</div>
+              {note.relatedVideoQueries.map((q, i) => {
+                const href = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+                return (
+                  <a key={i} href={href} target="_blank" rel="noopener noreferrer"
+                    style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: "#fca5a5", lineHeight: 1.6, textDecoration: "underline", textDecorationStyle: "dotted", marginBottom: 2 }}>
+                    <span style={{ flexShrink: 0 }}>▶</span>
+                    <span>{q}</span>
                   </a>
                 );
               })}
             </div>
           )}
 
-          {/* Related Videos */}
-          {note.relatedVideoQueries && note.relatedVideoQueries.length > 0 && (
-            <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.14)" }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", color: "#fca5a5", marginBottom: 6 }}>📺 RELATED VIDEOS</div>
-              {note.relatedVideoQueries.map((q, i) => (
-                <a key={i} href={`https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`} target="_blank" rel="noopener noreferrer"
-                  style={{ display: "flex", gap: 6, fontSize: 13, color: "#fca5a5", lineHeight: 1.6, textDecoration: "underline", textDecorationStyle: "dotted", marginBottom: 3 }}>
-                  <span>▶</span><span>{q}</span>
-                </a>
-              ))}
-            </div>
-          )}
+          {/* Generate Cards button */}
+          <button
+            type="button"
+            onClick={handleGenerateCards}
+            disabled={cardsSaving}
+            style={{
+              width: "100%",
+              padding: "8px 0",
+              borderRadius: 8,
+              border: cardsSaved ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(99,102,241,0.2)",
+              background: cardsSaved ? "rgba(99,102,241,0.12)" : "rgba(99,102,241,0.06)",
+              color: cardsSaved ? "#a5b4fc" : "#818cf8",
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: "0.06em",
+              cursor: cardsSaving ? "wait" : "pointer",
+              marginBottom: 8,
+              transition: "all 0.18s",
+              opacity: cardsSaving ? 0.6 : 1,
+            }}
+          >
+            {cardsSaving ? "Saving…" : cardsSaved ? "✓ Cards saved to Recall Lab" : "🎯 Generate Cards from Note"}
+          </button>
 
-          {/* Action row */}
-          <div style={{ display: "flex", gap: 7, marginTop: 8 }}>
-            <button
-              type="button"
-              onClick={handleGenerateCards}
-              disabled={cardsSaving}
-              style={actionBtnStyle(cardsSaved ? "#10b981" : "#818cf8", true)}
-            >
-              {cardsSaving ? "…" : cardsSaved ? "✓ In Recall Lab" : "🎯 → Recall Lab"}
-            </button>
-            <button type="button" onClick={handleExportMd} style={actionBtnStyle("#6b7280")}>
-              ⬇ .md
-            </button>
-            <button type="button" onClick={onCopy} style={actionBtnStyle(copiedId === note.id ? "#10b981" : "#6b7280")}>
-              {copiedId === note.id ? "✓" : "Copy"}
-            </button>
+          {/* Action buttons */}
+          <div style={{ display: "flex", gap: 8 }}>
             {onNavigate && (
-              <button type="button" onClick={() => onNavigate(note.pageNumber)} style={actionBtnStyle("#3b82f6")}>
-                p.{note.pageNumber}
+              <button
+                type="button"
+                onClick={() => onNavigate(note.pageNumber)}
+                style={actionBtnStyle("#3b82f6")}
+              >
+                Go to page {note.pageNumber}
               </button>
             )}
-            <button
-              type="button"
-              onClick={onDelete}
-              style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.12)", color: "#f87171", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-            >
-              🗑 Delete
+            <button type="button" onClick={onCopy} style={actionBtnStyle(copiedId === note.id ? "#10b981" : "#6b7280")}>
+              {copiedId === note.id ? "✓ Copied" : "Copy text"}
+            </button>
+            <button type="button" onClick={onDelete} style={actionBtnStyle("#ef4444")}>
+              Delete
             </button>
           </div>
         </div>
@@ -542,51 +430,48 @@ function NoteCard({
   );
 }
 
-function ConceptRow({ label, text, color }: { label: string; text: string; color: string }) {
+function ProfessorNotesSection({ notes }: { notes: NonNullable<import("@/lib/notelab/ultraNoteStore").UltraNote["professorNotes"]> }) {
+  const rows: Array<{ icon: string; label: string; text: string; color: string }> = [
+    { icon: "💡", label: "Why This Matters",  text: notes.whyItMatters    ?? "", color: "#fbbf24" },
+    { icon: "⚙️", label: "Key Mechanism",     text: notes.keyMechanism    ?? "", color: "#38bdf8" },
+    { icon: "⚠️", label: "Common Confusion",  text: notes.commonConfusion ?? "", color: "#f87171" },
+    { icon: "🧠", label: "Quick Memory",      text: notes.memoryAnchor    ?? "", color: "#a78bfa" },
+    { icon: "🔗", label: "Reasoning Flow",    text: notes.reasoningFlow   ?? "", color: "#6ee7b7" },
+    { icon: "🎓", label: "Exam Signal",       text: notes.examSignal      ?? "", color: "#fca5a5" },
+  ].filter((r) => r.text.length > 0);
+  if (!rows.length) return null;
   return (
-    <div style={{ marginBottom: 8 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color, marginBottom: 3 }}>{label}</div>
-      <div style={{ fontSize: 14, color: "rgba(255,255,255,0.88)", lineHeight: 1.65, wordBreak: "break-word", whiteSpace: "pre-wrap" }}>{text}</div>
-    </div>
-  );
-}
-
-function ConceptBlock({ concept }: { concept: { ordinal: number; title: string; pattern?: string; surgicalReason?: string; trap?: string | null; rule?: string } }) {
-  const [collapsed, setCollapsed] = useState(false);
-  return (
-    <div style={{ marginBottom: 10, borderRadius: 9, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.09)", overflow: "hidden" }}>
-      <div
-        style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 13px", cursor: "pointer", userSelect: "none" }}
-        onClick={() => setCollapsed(c => !c)}
-      >
-        <span style={{ fontSize: 12, color: "#e2e8f0", fontWeight: 700 }}>{concept.ordinal}.</span>
-        <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.95)" }}>{concept.title}</span>
-        <span style={{ fontSize: 10, color: "rgba(148,163,184,0.4)" }}>{collapsed ? "▶" : "▼"}</span>
-      </div>
-      {!collapsed && (
-        <div style={{ padding: "0 13px 12px" }}>
-          {concept.pattern        && <ConceptRow label="PATTERN"  text={concept.pattern}        color="#8fd3ff" />}
-          {concept.surgicalReason && <ConceptRow label="WHY"      text={concept.surgicalReason} color="#ffd580" />}
-          {concept.trap           && <ConceptRow label="⚠ TRAP"   text={concept.trap}           color="#ff9da1" />}
-          {concept.rule           && <ConceptRow label="RULE"     text={concept.rule}           color="#ffb86b" />}
+    <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, background: "rgba(96,165,250,0.04)", border: "1px solid rgba(96,165,250,0.1)" }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "#93c5fd", marginBottom: 8 }}>🧑‍🏫 PROFESSOR NOTES</div>
+      {rows.map((r) => (
+        <div key={r.label} style={{ marginBottom: 6 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: r.color, marginBottom: 2 }}>{r.icon} {r.label}</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", lineHeight: 1.55 }}>{r.text}</div>
         </div>
-      )}
+      ))}
     </div>
   );
 }
 
-function actionBtnStyle(color: string, flex = false): React.CSSProperties {
+function NoteRow({ label, text, color }: { label: string; text: string; color: string }) {
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color, marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", lineHeight: 1.55 }}>{text}</div>
+    </div>
+  );
+}
+
+function actionBtnStyle(color: string): React.CSSProperties {
   return {
-    ...(flex ? { flex: 1 } : {}),
-    padding: "8px 12px",
-    borderRadius: 8,
+    flex: 1,
+    padding: "6px 0",
+    borderRadius: 7,
     border: `1px solid ${color}44`,
     background: `${color}14`,
     color,
     fontSize: 11,
-    fontWeight: 700,
+    fontWeight: 600,
     cursor: "pointer",
-    transition: "all 0.15s",
-    whiteSpace: "nowrap" as const,
   };
 }
