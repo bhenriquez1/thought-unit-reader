@@ -7,8 +7,11 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 import {
   STUDY_GUIDE_MODE_LABELS,
   STUDY_GUIDE_MODE_DESCRIPTIONS,
+  EXAM_GOAL_LABELS,
+  DAT_TARGET_SCORES,
   type StudyGuideMode,
   type StudyGuideRecord,
+  type ExamGoal,
 } from "@/lib/studyguide/types";
 import {
   saveStudyGuide,
@@ -56,6 +59,7 @@ function exportToMarkdown(guide: StudyGuideRecord): string {
   const lines: string[] = [
     `# ${guide.chapterTitle}`,
     `## ${guide.topic}`,
+    `Priority: ${guide.priority ?? "Medium"}${guide.examGoal ? ` · Exam Goal: ${EXAM_GOAL_LABELS[guide.examGoal]}${guide.targetScore ? ` (target ${guide.targetScore})` : ""}` : ""}`,
     "",
     "### Must Know",
     ...guide.mustKnow.map(f => `- ${f}`),
@@ -77,6 +81,9 @@ function exportToMarkdown(guide: StudyGuideRecord): string {
     "",
     "### Memory Hooks",
     ...guide.memoryHooks.map(h => `> ${h}`),
+    "",
+    "### Daily Study Tasks",
+    ...(guide.dailyTasks ?? []).map(t => `- [ ] ${t}`),
   ];
   return lines.join("\n");
 }
@@ -134,6 +141,35 @@ function buildPodcastScriptFromGuide(guide: StudyGuideRecord, pageNumber: number
     totalSegments: segments.length,
     estimatedMinutes: Math.max(1, Math.ceil(segments.length * 0.4)),
   };
+}
+
+// ── Collapsible panel — Reader/Panel-style expandable sections ─────────────
+
+function CollapsiblePanel({
+  title, subtitle, defaultOpen = false, children,
+}: {
+  title: string;
+  subtitle?: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-b border-slate-800">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-900/50 transition-colors"
+      >
+        <div className="min-w-0">
+          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{title}</div>
+          {subtitle && <div className="text-[11px] text-slate-600 mt-0.5 truncate">{subtitle}</div>}
+        </div>
+        <span className="text-slate-500 text-xs flex-shrink-0 ml-2">{open ? "▼" : "▶"}</span>
+      </button>
+      {open && <div className="px-4 pb-4 flex flex-col gap-3">{children}</div>}
+    </div>
+  );
 }
 
 // ── Section components ─────────────────────────────────────────────────────
@@ -375,6 +411,8 @@ export default function StudyGuideLab({
   const [chapterTitle, setChapterTitle] = useState("");
   const [topic, setTopic]               = useState("");
   const [mode, setMode]                 = useState<StudyGuideMode>("dat");
+  const [examGoal, setExamGoal]         = useState<ExamGoal | null>(null);
+  const [targetScore, setTargetScore]   = useState<string | null>(null);
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState<string | null>(null);
   const [provider, setProvider]         = useState<string | null>(null);
@@ -518,6 +556,8 @@ export default function StudyGuideLab({
           topic: effectiveTopic,
           mode,
           hasStudyModel: !!studyModel,
+          examGoal: examGoal ?? undefined,
+          targetScore: targetScore ?? undefined,
         }),
       });
 
@@ -532,6 +572,8 @@ export default function StudyGuideLab({
         id:            genId(),
         bookId,
         mode,
+        examGoal:      examGoal ?? undefined,
+        targetScore:   targetScore ?? undefined,
         sourceLabels:  finalSources.map(s => s.label),
         createdAt:     Date.now(),
         ...data.guide,
@@ -847,11 +889,12 @@ export default function StudyGuideLab({
                 </div>
               </div>
             )}
-            {/* ── Sources panel ── */}
-            <div className="border-b border-slate-800 p-4 flex flex-col gap-4">
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                {studyModel ? "Additional Sources (optional)" : "Source Documents"}
-              </div>
+            {/* ── Sources panel — collapsible, collapsed by default when live model present ── */}
+            <CollapsiblePanel
+              title={studyModel ? "Additional Sources (optional)" : "Source Documents"}
+              subtitle={hasSources ? `${sources.filter(s => s.text.trim().length > 0).length} source(s) added` : undefined}
+              defaultOpen={!studyModel}
+            >
               {studyModel ? (
                 /* When live model is present, only show slots 2-4 (blueprint/professor/personal) */
                 sources.filter(s => s.id !== "textbook").map(slot => (
@@ -872,12 +915,14 @@ export default function StudyGuideLab({
                   />
                 ))
               )}
-            </div>
+            </CollapsiblePanel>
 
-            {/* ── Config panel ── */}
-            <div className="border-b border-slate-800 p-4 flex flex-col gap-3">
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Configuration</div>
-
+            {/* ── Config panel — collapsible, collapsed by default ── */}
+            <CollapsiblePanel
+              title="Configuration"
+              subtitle={`${STUDY_GUIDE_MODE_LABELS[mode]}${examGoal ? ` · ${EXAM_GOAL_LABELS[examGoal]}${targetScore ? ` (${targetScore})` : ""}` : ""}`}
+              defaultOpen={false}
+            >
               <div className="flex gap-3">
                 <div className="flex-1">
                   <label className="text-[10px] text-slate-500 uppercase tracking-wide block mb-1">Chapter / Unit</label>
@@ -923,7 +968,53 @@ export default function StudyGuideLab({
                 </div>
               </div>
 
-              {/* Generate button */}
+              {/* Study Goal selector */}
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wide block mb-2">Study Goal (optional)</label>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {(Object.keys(EXAM_GOAL_LABELS) as ExamGoal[]).map(g => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setExamGoal(prev => prev === g ? null : g)}
+                      className={`text-xs font-semibold rounded-lg border px-3 py-1.5 transition-all ${
+                        examGoal === g
+                          ? "border-teal-500 bg-teal-950/40 text-teal-200"
+                          : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-slate-300"
+                      }`}
+                    >
+                      {EXAM_GOAL_LABELS[g]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Target score — DAT only */}
+              {examGoal === "dat" && (
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wide block mb-2">Target Score</label>
+                  <div className="flex gap-2">
+                    {DAT_TARGET_SCORES.map(score => (
+                      <button
+                        key={score}
+                        type="button"
+                        onClick={() => setTargetScore(prev => prev === score ? null : score)}
+                        className={`text-xs font-semibold rounded-lg border px-3 py-1.5 transition-all ${
+                          targetScore === score
+                            ? "border-teal-500 bg-teal-950/40 text-teal-200"
+                            : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-slate-300"
+                        }`}
+                      >
+                        {score}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CollapsiblePanel>
+
+            {/* ── Generate button — always visible ── */}
+            <div className="border-b border-slate-800 p-4 flex flex-col gap-3">
               {error && (
                 <div className="text-xs text-red-400 bg-red-950/30 border border-red-800/40 rounded-lg px-3 py-2">
                   {error}
@@ -953,9 +1044,27 @@ export default function StudyGuideLab({
               <div className="p-4 flex flex-col gap-4">
                 {/* Title */}
                 <div className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-3">
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wide">{STUDY_GUIDE_MODE_LABELS[currentGuide.mode]}</div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wide">{STUDY_GUIDE_MODE_LABELS[currentGuide.mode]}</div>
+                    {currentGuide.priority && (
+                      <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border ${
+                        currentGuide.priority === "High"
+                          ? "border-red-500/40 bg-red-950/40 text-red-300"
+                          : currentGuide.priority === "Medium"
+                            ? "border-yellow-500/40 bg-yellow-950/40 text-yellow-300"
+                            : "border-slate-600 bg-slate-800 text-slate-400"
+                      }`}>
+                        {currentGuide.priority} Priority
+                      </span>
+                    )}
+                  </div>
                   <div className="text-base font-bold text-white mt-0.5">{currentGuide.chapterTitle}</div>
                   <div className="text-sm text-teal-300">{currentGuide.topic}</div>
+                  {currentGuide.examGoal && (
+                    <div className="text-[10px] text-slate-500 mt-1">
+                      🎯 {EXAM_GOAL_LABELS[currentGuide.examGoal]}{currentGuide.targetScore ? ` · Target ${currentGuide.targetScore}` : ""}
+                    </div>
+                  )}
                   {provider && (
                     <div className={`text-[10px] mt-1.5 ${provider === "fallback" ? "text-orange-400" : "text-slate-600"}`}>
                       {provider === "fallback" ? "⚠ AI fallback" : `✓ ${provider}`}
@@ -1035,6 +1144,20 @@ export default function StudyGuideLab({
                         </div>
                       ))}
                     </div>
+                  </Section>
+                )}
+
+                {/* Daily Study Tasks */}
+                {currentGuide.dailyTasks?.length > 0 && (
+                  <Section title="Daily Study Tasks" color="green">
+                    <ul className="flex flex-col gap-2">
+                      {currentGuide.dailyTasks.map((task, i) => (
+                        <li key={i} className="flex gap-2 text-sm text-slate-200">
+                          <span className="text-green-400 flex-shrink-0 mt-0.5">☐</span>
+                          <span>{task}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </Section>
                 )}
 
