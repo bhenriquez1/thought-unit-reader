@@ -77,231 +77,189 @@ export interface UltraNote {
   highlightAnchors?: Array<{ text: string; anchorType: string; reason: string }>;
 }
 
-const STORAGE_KEY = "ultraNotes_v1";
-
-const IDB_DB_NAME = "avrrio_notes_v1";
+// ── Storage constants ─────────────────────────────────────────────────────
+// New DB name avoids inheriting a broken schema from any old version-1 database.
+const IDB_DB_NAME    = "avrrio_notes_v2";
 const IDB_STORE_NAME = "notes";
-const IDB_FLAG_KEY = "ultraNotes_in_idb";
+const LS_MIRROR_KEY  = "ultraNotes_mirror_v2";
+
+// ── Compact ───────────────────────────────────────────────────────────────
 
 function compact(note: UltraNote): UltraNote {
-  const trim = (s: string | undefined, n: number): string | undefined =>
-    s ? s.slice(0, n) : undefined;
   return {
-    id:          note.id,
-    bookId:      note.bookId,
-    pageNumber:  note.pageNumber,
-    topic:       note.topic.slice(0, 120),
-    coreIdea:    note.coreIdea.slice(0, 300),
-    pageThesis:  trim(note.pageThesis, 200),
-    subject:     note.subject,
-    createdAt:   note.createdAt,
-    memoryShortcuts: [],
-    concepts: note.concepts.slice(0, 5).map((c) => ({
-      ordinal:        c.ordinal,
-      title:          c.title.slice(0, 80),
-      pattern:        c.pattern.slice(0, 150),
-      surgicalReason: c.surgicalReason.slice(0, 150),
-      trap:           c.trap.slice(0, 150),
-      rule:           c.rule.slice(0, 150),
+    ...note,
+    relatedVideoQueries: undefined,
+    highlightAnchors: note.highlightAnchors?.slice(0, 5).map((a) => ({
+      text: a.text.slice(0, 50),
+      anchorType: a.anchorType,
+      reason: a.reason.slice(0, 60),
     })),
-    sections: note.sections?.slice(0, 5).map((s) => ({
-      label:   s.label.slice(0, 60),
-      content: s.content.slice(0, 300),
+    miniTest: note.miniTest?.slice(0, 4),
+    externalStudyLinks: note.externalStudyLinks?.slice(0, 3),
+    concepts: note.concepts.slice(0, 8).map((c) => ({
+      ...c,
+      pattern: c.pattern.slice(0, 300),
+      surgicalReason: c.surgicalReason.slice(0, 200),
+      trap: c.trap.slice(0, 200),
+      rule: c.rule.slice(0, 200),
     })),
-    professorNotes: note.professorNotes ? {
-      whyItMatters:    trim(note.professorNotes.whyItMatters,    200),
-      keyMechanism:    trim(note.professorNotes.keyMechanism,    200),
-      commonConfusion: trim(note.professorNotes.commonConfusion, 200),
-      memoryAnchor:    trim(note.professorNotes.memoryAnchor,    200),
-      reasoningFlow:   trim(note.professorNotes.reasoningFlow,   200),
-      examSignal:      trim(note.professorNotes.examSignal,      200),
-    } : undefined,
-    // STRIPPED: relatedVideoQueries, highlightAnchors, miniTest,
-    //           externalStudyLinks, crossLinks, bookTitle
+    sections: note.sections?.slice(0, 8).map((s) => ({
+      label: s.label,
+      content: s.content.slice(0, 500),
+    })),
   };
 }
 
+// ── IDB helpers ───────────────────────────────────────────────────────────
+
 function openNoteIDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") { reject(new Error("IDB unavailable")); return; }
     const req = indexedDB.open(IDB_DB_NAME, 1);
     req.onupgradeneeded = () => {
-      req.result.createObjectStore(IDB_STORE_NAME, { keyPath: "id" });
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE_NAME)) {
+        db.createObjectStore(IDB_STORE_NAME, { keyPath: "id" });
+      }
     };
     req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onerror   = () => reject(req.error);
+    req.onblocked = () => reject(new Error("IDB blocked"));
   });
 }
 
-async function saveNotesToIDB(notes: UltraNote[]): Promise<void> {
+async function idbPutNote(note: UltraNote): Promise<void> {
+  const db = await openNoteIDB();
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(IDB_STORE_NAME, "readwrite");
+    const req = tx.objectStore(IDB_STORE_NAME).put(note); // keyPath="id" — inline key
+    req.onerror   = () => reject(req.error);
+    tx.oncomplete = () => resolve();
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+
+async function idbDeleteNote(id: string): Promise<void> {
   const db = await openNoteIDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE_NAME, "readwrite");
-    const store = tx.objectStore(IDB_STORE_NAME);
-    store.clear();
-    for (const n of notes) store.put(n);
+    tx.objectStore(IDB_STORE_NAME).delete(id);
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.onerror    = () => reject(tx.error);
   });
 }
 
-async function loadNotesFromIDB(): Promise<UltraNote[]> {
-  try {
-    const db = await openNoteIDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE_NAME, "readonly");
-      const req = tx.objectStore(IDB_STORE_NAME).getAll();
-      req.onsuccess = () => resolve(req.result ?? []);
-      req.onerror = () => reject(req.error);
-    });
-  } catch {
-    return [];
-  }
+async function idbGetAllNotes(): Promise<UltraNote[]> {
+  const db = await openNoteIDB();
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(IDB_STORE_NAME, "readonly");
+    const req = tx.objectStore(IDB_STORE_NAME).getAll();
+    req.onsuccess = () => resolve((req.result as UltraNote[]) ?? []);
+    req.onerror   = () => reject(req.error);
+  });
 }
 
-async function loadAllAsync(): Promise<UltraNote[]> {
-  if (typeof window === "undefined") return [];
-  // IDB-first: always try IndexedDB as primary store
-  try {
-    const idbNotes = await loadNotesFromIDB();
-    if (idbNotes.length > 0) {
-      console.log("[NOTELAB_STORAGE_DRIVER]", { driver: "indexeddb", count: idbNotes.length });
-      return idbNotes;
-    }
-  } catch (e) {
-    console.warn("[NOTELAB_IDB_LOAD_FAIL]", String(e));
-  }
-  // IDB empty or unavailable — check localStorage for migration
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      console.log("[NOTELAB_STORAGE_DRIVER]", { driver: "empty" });
-      return [];
-    }
-    const parsed = JSON.parse(raw);
-    const lsNotes = Array.isArray(parsed) ? parsed : [];
-    if (lsNotes.length > 0) {
-      console.log("[NOTELAB_STORAGE_DRIVER]", { driver: "localstorage-migration", count: lsNotes.length });
-      // Silently migrate to IDB
-      saveNotesToIDB(lsNotes)
-        .then(() => { try { localStorage.setItem(IDB_FLAG_KEY, "1"); } catch {} })
-        .catch(() => {});
-    }
-    return lsNotes;
-  } catch {
-    return [];
-  }
-}
+// ── localStorage mirror (sync read, best-effort write) ───────────────────
 
-function loadAll(): UltraNote[] {
+function lsRead(): UltraNote[] {
   if (typeof window === "undefined") return [];
-  console.log("[NOTELAB_READ_KEY]", { key: STORAGE_KEY, idbFlagKey: IDB_FLAG_KEY });
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(LS_MIRROR_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
-async function saveAll(notes: UltraNote[]): Promise<void> {
+function lsWrite(notes: UltraNote[]): void {
   if (typeof window === "undefined") return;
-  const compacted = notes.map(compact);
-  const serialized = JSON.stringify(compacted);
-
-  // [DIAGNOSIS] Exact payload written — catch quota overload and key mismatch
-  console.log("[NOTELAB_WRITE_KEY]", { key: STORAGE_KEY, idbFlagKey: IDB_FLAG_KEY });
-  console.log("[NOTELAB_PAYLOAD_SIZE]", {
-    writeKey:      STORAGE_KEY,
-    bytes:         serialized.length,
-    kb:            (serialized.length / 1024).toFixed(1),
-    noteCount:     compacted.length,
-    willQuota:     serialized.length > 2_000_000,   // warn if >2MB (typical LS limit ~5MB total)
-    fields0:       compacted[0] ? Object.keys(compacted[0]) : [],
-    concepts0:     compacted[0]?.concepts?.length ?? 0,
-    sections0:     compacted[0]?.sections?.length ?? 0,
-    hasProfNotes:  !!compacted[0]?.professorNotes,
-    hasRelVideo:   !!(compacted[0] as any)?.relatedVideoQueries,  // should be absent
-    hasHighlight:  !!(compacted[0] as any)?.highlightAnchors,     // should be absent
-    hasMiniTest:   !!(compacted[0] as any)?.miniTest,             // should be absent
-    hasExtLinks:   !!(compacted[0] as any)?.externalStudyLinks,   // should be absent
-  });
-  console.log("[NOTELAB_SAVE_COMPACTED]", {
-    key:       STORAGE_KEY,
-    noteCount: compacted.length,
-    bytes:     serialized.length,
-    kb:        (serialized.length / 1024).toFixed(1),
-    hasRelVideo:  !!(compacted[0] as any)?.relatedVideoQueries,  // must be absent
-    hasHighlight: !!(compacted[0] as any)?.highlightAnchors,     // must be absent
-  });
-  console.log("[NOTE_SAVE_KEY]", { key: STORAGE_KEY, count: compacted.length, bytes: serialized.length });
-  // IDB-first: IndexedDB is the primary store — never hits localStorage quota
   try {
-    await saveNotesToIDB(compacted);
-    try { localStorage.setItem(IDB_FLAG_KEY, "1"); } catch {}
-    console.log("[NOTE_SAVE_SUCCESS]", { driver: "indexeddb", key: STORAGE_KEY, count: compacted.length });
-    console.log("[NOTELAB_READ_AFTER_SAVE_SUCCESS]", { driver: "indexeddb", count: compacted.length });
-    window.dispatchEvent(new Event("note-lab-updated"));
-  } catch (idbErr) {
-    console.warn("[NOTE_IDB_FAIL]", String(idbErr), "→ fallback to localStorage");
-    try {
-      localStorage.setItem(STORAGE_KEY, serialized);
-      try { localStorage.removeItem(IDB_FLAG_KEY); } catch {}
-      console.log("[NOTE_SAVE_SUCCESS]", { driver: "localstorage-fallback", key: STORAGE_KEY, count: compacted.length });
-      window.dispatchEvent(new Event("note-lab-updated"));
-    } catch (lsErr) {
-      console.error("[NOTE_ALL_STORAGE_FAIL]", { idb: String(idbErr), ls: String(lsErr) });
-      throw new Error(`Note storage failed — IDB: ${String(idbErr)} / LS: ${String(lsErr)}`);
-    }
+    localStorage.setItem(LS_MIRROR_KEY, JSON.stringify(notes.slice(0, 100).map(compact)));
+  } catch { /* quota — mirror is optional */ }
+}
+
+function lsUpsert(note: UltraNote): void {
+  const all = lsRead();
+  const idx = all.findIndex((n) => n.id === note.id);
+  if (idx >= 0) all[idx] = note; else all.unshift(note);
+  lsWrite(all);
+}
+
+function lsRemove(id: string): void {
+  lsWrite(lsRead().filter((n) => n.id !== id));
+}
+
+// ── Public API ────────────────────────────────────────────────────────────
+
+/** Async read from IDB (authoritative). Falls back to LS mirror on IDB error. */
+export async function getAllUltraNotesAsync(): Promise<UltraNote[]> {
+  try {
+    const notes = await idbGetAllNotes();
+    // Sort newest first
+    notes.sort((a, b) => b.createdAt - a.createdAt);
+    console.log("[NOTELAB_RENDER_COUNT]", { total: notes.length, driver: "indexeddb" });
+    return notes;
+  } catch (e) {
+    console.warn("[NOTELAB_IDB_READ_FAIL]", String(e), "— falling back to LS mirror");
+    return lsRead();
   }
 }
 
+/** Sync read from LS mirror — for legacy callers only. */
 export function getAllUltraNotes(): UltraNote[] {
-  return loadAll();
-}
-
-export async function getAllUltraNotesAsync(): Promise<UltraNote[]> {
-  return loadAllAsync();
+  return lsRead();
 }
 
 export function getNotesByBook(bookId: string): UltraNote[] {
-  return loadAll().filter((n) => n.bookId === bookId);
+  return lsRead().filter((n) => n.bookId === bookId);
 }
 
 export async function isUltraNotePersisted(id: string): Promise<boolean> {
-  const inLS = loadAll().find((n) => n.id === id);
-  if (inLS) return true;
   try {
-    const notes = await loadNotesFromIDB();
+    const notes = await idbGetAllNotes();
     return notes.some((n) => n.id === id);
   } catch {
-    return false;
+    return lsRead().some((n) => n.id === id);
   }
 }
 
 export async function saveUltraNote(note: UltraNote): Promise<void> {
-  const notes = await loadAllAsync();
-  const idx = notes.findIndex((n) => n.bookId === note.bookId && n.pageNumber === note.pageNumber);
-  if (idx >= 0) {
-    notes[idx] = note;
-  } else {
-    notes.unshift(note);
-  }
-  await saveAll(notes.slice(0, 200));
-  // Read-back verification — surface the exact error if data didn't persist
-  const saved = await loadAllAsync();
-  const ok = saved.some(n => n.id === note.id);
-  if (!ok) {
-    const driver = localStorage.getItem(IDB_FLAG_KEY) === "1" ? "idb" : "ls";
-    console.error("[NOTE_SAVE_VERIFY_FAIL]", { id: note.id, driver, savedCount: saved.length });
-    throw new Error(`Note was written but could not be read back (driver=${driver}). Storage may be full or corrupt.`);
-  }
-  console.log("[NOTE_SAVE_VERIFIED]", { id: note.id, driver: localStorage.getItem(IDB_FLAG_KEY) === "1" ? "idb" : "ls", savedCount: saved.length });
+  const c = compact(note);
+
+  // Remove stale entry for same book+page with a different id (e.g. from old Date.now() ids)
+  try {
+    const existing = await idbGetAllNotes();
+    const stale = existing.filter(
+      (n) => n.bookId === c.bookId && n.pageNumber === c.pageNumber && n.id !== c.id
+    );
+    for (const n of stale) {
+      await idbDeleteNote(n.id);
+      lsRemove(n.id);
+    }
+  } catch { /* non-fatal */ }
+
+  // Primary: IDB
+  await idbPutNote(c);
+  // Mirror: LS
+  lsUpsert(c);
+
+  console.log("[NOTE_SAVE_SUCCESS]", { id: c.id, page: c.pageNumber, bookId: c.bookId });
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("note-lab-updated"));
 }
 
 export async function deleteUltraNote(id: string): Promise<void> {
-  await saveAll(loadAll().filter((n) => n.id !== id));
+  console.log("[NOTELAB_IDB_DELETE]", { id });
+  try {
+    await idbDeleteNote(id);
+  } catch (e) {
+    console.error("[NOTELAB_IDB_DELETE_FAIL]", { id, error: String(e) });
+    throw e; // re-throw so UI can show error
+  }
+
+  console.log("[NOTELAB_LOCAL_DELETE]", { id });
+  lsRemove(id);
+
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("note-lab-updated"));
 }
 
 export function buildUltraNote(
