@@ -27,7 +27,7 @@ type Step = {
   objects?: string[];
 };
 
-type Ok  = { steps: Step[]; narrationScript: string; aiDisabled?: boolean; provider?: string; mode?: string; stepCount?: number; drawingStepsCount?: number };
+type Ok  = { steps: Step[]; narrationScript: string; aiDisabled?: boolean };
 type Err = { error: string; aiDisabled?: boolean };
 
 /* ─── Whiteboard mode derivation ────────────────────────────────────────────── */
@@ -188,21 +188,16 @@ export default async function handler(
       context?: string;
       studyModel?: any;
       pageText?: string;
-      currentPage?: number;
     };
     const concept    = (body.concept  ?? String(req.query.concept  || "")).trim();
     const context    = (body.context  ?? String(req.query.context  || "")).trim();
     const studyModel = body.studyModel ?? null;
     const pageText   = (body.pageText  ?? "").slice(0, 1200);
-    const currentPage: number | null = typeof body.currentPage === "number" ? body.currentPage : null;
 
     if (!concept && !studyModel?.pageThesis) {
       return res.status(400).json({ error: "Missing concept/studyModel" });
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      console.error("[OPENAI_API_KEY_MISSING] Set OPENAI_API_KEY in .env.local");
-    }
     const key = process.env.OPENAI_API_KEY?.trim();
     if (!key) {
       const fb = buildFallbackSteps(concept, context, studyModel);
@@ -210,7 +205,6 @@ export default async function handler(
         steps: fb,
         narrationScript: fb.map((s) => `${s.title}: ${s.content}`).join("\n"),
         aiDisabled: true,
-        provider: "fallback",
       });
     }
 
@@ -258,73 +252,38 @@ export default async function handler(
       context   ? `CONTEXT: ${context}` : "",
     ].filter(Boolean).join("\n\n");
 
-    // ── Gemini primary (visual planning) → OpenAI fallback ──────────────────
-    const geminiKey = process.env.GEMINI_API_KEY?.trim();
-    let rawContent = "";
-    let provider = "openai";
+    const ctrl = new AbortController();
+    const to   = setTimeout(() => ctrl.abort(), 30_000);
 
-    if (geminiKey) {
-      try {
-        const gCtrl = new AbortController();
-        const gTo   = setTimeout(() => gCtrl.abort(), 28_000);
-        const gResp = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
-          {
-            signal: gCtrl.signal,
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: `${system}\n\n${user}` }] }],
-              generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
-            }),
-          },
-        ).finally(() => clearTimeout(gTo));
-        if (gResp.ok) {
-          const gData = await gResp.json();
-          const gText = gData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
-          if (gText.includes('"steps"')) {
-            rawContent = gText;
-            provider = "gemini";
-            console.log("[WHITEBOARD_GEMINI_OK]", { page: currentPage ?? null, chars: gText.length });
-          }
-        } else {
-          console.warn("[WHITEBOARD_GEMINI_FAIL]", { status: gResp.status });
-        }
-      } catch (gErr) {
-        console.warn("[WHITEBOARD_GEMINI_ERROR]", String(gErr));
-      }
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      signal: ctrl.signal,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization:  `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model:           "gpt-4o-mini",
+        temperature:     0.2,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: system },
+          { role: "user",   content: user },
+        ],
+      }),
+    }).finally(() => clearTimeout(to));
+
+    if (!resp.ok) {
+      const fb = buildFallbackSteps(concept, context, studyModel);
+      return res.status(200).json({
+        steps: fb,
+        narrationScript: fb.map((s) => `${s.title}: ${s.content}`).join("\n"),
+        aiDisabled: true,
+      });
     }
 
-    if (!rawContent) {
-      // OpenAI fallback
-      const ctrl = new AbortController();
-      const to   = setTimeout(() => ctrl.abort(), 30_000);
-      const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-        signal: ctrl.signal,
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-        body: JSON.stringify({
-          model:           "gpt-4o-mini",
-          temperature:     0.2,
-          response_format: { type: "json_object" },
-          messages: [
-            { role: "system", content: system },
-            { role: "user",   content: user },
-          ],
-        }),
-      }).finally(() => clearTimeout(to));
-      if (!resp.ok) {
-        const fb = buildFallbackSteps(concept, context, studyModel);
-        return res.status(200).json({
-          steps: fb,
-          narrationScript: fb.map((s) => `${s.title}: ${s.content}`).join("\n"),
-          aiDisabled: true,
-        });
-      }
-      const data = await resp.json();
-      rawContent = data?.choices?.[0]?.message?.content?.trim() ?? "";
-      provider = "openai";
-    }
+    const data       = await resp.json();
+    const rawContent = data?.choices?.[0]?.message?.content?.trim() ?? "";
 
     let steps: Step[] | null = null;
     let narrationScript = "";
@@ -358,7 +317,6 @@ export default async function handler(
         steps: fb,
         narrationScript: fb.map((s) => `${s.title}: ${s.content}`).join("\n"),
         aiDisabled: true,
-        provider: "fallback",
       });
     }
 
@@ -366,9 +324,9 @@ export default async function handler(
       narrationScript = steps.map((s) => `${s.title}: ${s.content}`).join("\n");
     }
 
-    const drawingStepsCount = steps.filter(s => s.type === "draw" || (s.nodes && s.nodes.length > 0)).length;
-    console.log("[WHITEBOARD_DIAGRAM_DONE]", { provider, mode, stepCount: steps.length, drawingStepsCount });
-    return res.status(200).json({ steps, narrationScript, provider, mode, stepCount: steps.length, drawingStepsCount });
+    console.log("[WHITEBOARD_OPENAI_DIAGRAM]", { mode, stepCount: steps.length, hasNarration: !!narrationScript, hasObjects: steps[0]?.objects?.length ?? 0 });
+
+    return res.status(200).json({ steps, narrationScript });
 
   } catch {
     const body    = (req.body || {}) as any;
@@ -380,7 +338,6 @@ export default async function handler(
       steps: fb,
       narrationScript: fb.map((s) => `${s.title}: ${s.content}`).join("\n"),
       aiDisabled: true,
-      provider: "fallback",
     });
   }
 }
