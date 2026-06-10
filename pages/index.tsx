@@ -622,6 +622,11 @@ export default function ThoughtUnitReader() {
     const pageType   = currentPageStudyModel.pageType ?? null;
     const visualAnchors = currentPageStudyModel.visualAnchors ?? [];
 
+    console.log("[LEFT_PANEL_VISUAL_ANCHORS_COUNT]", { page: currentPage, count: visualAnchors.length, roles: visualAnchors.map(a => a.role) });
+    visualAnchors.forEach((a) => {
+      console.log("[LEFT_PANEL_ANCHOR_EXACT_TEXT]", { page: currentPage, id: a.id, role: a.role, sourceField: a.sourceField, exactText: a.exactText.slice(0, 100) });
+    });
+
     const pageRole = currentPageRoleRef.current;
 
     // ── Page classification ────────────────────────────────────────────────
@@ -715,9 +720,9 @@ export default function ThoughtUnitReader() {
       evidenceRefId: a.id,
     })) as (SynthHighlightAnchor & { evidenceRefId: string })[];
 
-    // Filter: only the 5 reasoning-anchor roles reach the PDF overlay.
-    // Drops "definition", "keyDetail" anchors — header-adjacent noise on exam content.
-    const OVERLAY_ROLES = new Set(["coreIdea", "mechanism", "exampleEvidence", "confusionTrap", "datFact"]);
+    // Filter: all VisualAnchorRole values reach the PDF overlay — including
+    // "definition" and "keyDetail", which prove definitions/details on the page.
+    const OVERLAY_ROLES = new Set(["coreIdea", "definition", "mechanism", "exampleEvidence", "keyDetail", "confusionTrap", "datFact"]);
     const roleFiltered = rawForGrounding.filter(a => OVERLAY_ROLES.has(a.anchorType));
     console.log("[HIGHLIGHT_GROUND_START]", { page: currentPage, inputCount: visualAnchors.length, roleFilteredCount: roleFiltered.length, ids: roleFiltered.map(a => (a as any).evidenceRefId), source: "finalStudyModel.visualAnchors" });
     const sanitized = sanitizeHighlightAnchors(roleFiltered);
@@ -774,6 +779,14 @@ export default function ThoughtUnitReader() {
       legacyHighlightNeighborhoods: "removed",
       legacyPriorityHighlights:   "not-passed-to-render",
       finalAnchors:               groundedAnchors.length,
+    });
+    console.log("[LEFT_PANEL_LEGACY_DISABLED]", {
+      page: currentPage,
+      note: "priorityHighlights may remain for Right Panel context only — never fed to PDF overlay",
+    });
+    console.log("[LEFT_PANEL_FALLBACK_DISABLED]", {
+      page: currentPage,
+      note: "no /api/score-anchors, universalSpecificityScore, or localStorage fallback — visualAnchors only",
     });
   }, [currentPageStudyModel, currentPage, pageTextByPage]);
 
@@ -939,6 +952,14 @@ export default function ThoughtUnitReader() {
   const [bookId, setBookId] = useState<string>("default-book");
   const bookIdRef = useRef("default-book");
   useEffect(() => { bookIdRef.current = bookId; }, [bookId]);
+
+  // Clear stale left-panel highlight state on page or book identity change so the
+  // overlay never shows highlights computed for a different page/book.
+  useEffect(() => {
+    setCurrentPageStudyModel(null);
+    setFinalHighlightAnchors([]);
+    console.log("[LEFT_PANEL_STALE_CLEARED]", { reason: "page-or-book-changed", bookId, page: currentPage });
+  }, [bookId, currentPage]);
   const [rightPanelState, setRightPanelState] = useState<RightPanelState>({
     ...DEFAULT_RIGHT_PANEL_STATE,
     workspaceMode: "reader",
@@ -3277,6 +3298,12 @@ export default function ThoughtUnitReader() {
                   window.setTimeout(() => setFocusSnippet(snippet), 0);
                 }}
                 onStudyModelReady={(model, key) => {
+                    console.log("[LEFT_PANEL_RIGHT_MODEL_RECEIVED]", {
+                      key,
+                      page: model.page,
+                      visualAnchorCount: model.visualAnchors.length,
+                      roles: model.visualAnchors.map(a => a.role),
+                    });
                     const current = pageTruthKeyRef.current;
                     if (key !== current) {
                       console.warn("[WIRE] rejected stale studyModel", { from: key, current });

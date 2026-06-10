@@ -70,10 +70,20 @@ function extractNumbers(text: string): string[] {
 
 const CAUSAL_RE = /\b(causes?|caused by|leads? to|results? in|due to|because|therefore|thus|hence|produces?|triggers?|inhibits?|activates?|stimulates?|converts?|prevents?|depends? on|is responsible for|mediates?|underlies?|increases?|decreases?|promotes?|requires?)\b/i;
 
+// VisualAnchorRole keys are the current contract; the legacy AI anchorType keys
+// (thesis/definition/application/trap) are kept as aliases for back-compat.
 const ROLE_KEYWORDS: Record<string, RegExp> = {
+  // Current VisualAnchorRole names
+  coreIdea:        /\b(fundamental|primary|key|main|central|governing|principle|about|defines?|characterizes?)\b/i,
+  keyDetail:       /\b(defined?|definition|means?|refers? to|known as|called|is the|are the|term|detail|specific|value|amount|formula)\b/i,
+  mechanism:       /\b(causes?|leads? to|results? in|how|why|because|due to|process|pathway|step|mechanism)\b/i,
+  exampleEvidence: /\b(example|clinical|used|used in|seen in|applied|real.world|case|patient|practice|treatment)\b/i,
+  confusionTrap:   /\b(however|unlike|not\b|except|contrast|confusion|mistake|caution|but\b|differ|whereas|warning|common error)\b/i,
+  datFact:         /\b(exam|high.yield|test|board|key fact|important fact|remember|must know)\b/i,
+  definition:      /\b(defined?|definition|means?|refers? to|known as|called|is the|are the|term)\b/i,
+
+  // Legacy AI anchorType aliases — grounding may still receive these from older callers.
   thesis:      /\b(fundamental|primary|key|main|central|governing|principle|about|defines?|characterizes?)\b/i,
-  definition:  /\b(defined?|definition|means?|refers? to|known as|called|is the|are the|term)\b/i,
-  mechanism:   /\b(causes?|leads? to|results? in|how|why|because|due to|process|pathway|step|mechanism)\b/i,
   application: /\b(example|clinical|used|used in|seen in|applied|real.world|case|patient|practice|treatment)\b/i,
   trap:        /\b(however|unlike|not\b|except|contrast|confusion|mistake|caution|but\b|differ|whereas|warning|common error)\b/i,
 };
@@ -177,11 +187,14 @@ export function groundHighlightAnchors(
     const normedAnchor = normText(anchor.text);
     const anchorIsHeader = isLikelyHeaderLine(anchor.text);
 
+    console.log("[LEFT_PANEL_GROUND_ATTEMPT]", { text: anchor.text.slice(0, 80), role: anchor.anchorType });
+
     // ── Stage 1: Exact substring match (case-sensitive) ──────────────────
     // Skip exact/normalized echo when the anchor text itself is a header artifact —
     // force semantic recovery to a clean body sentence instead.
     if (!anchorIsHeader && cleanedPage.includes(anchor.text)) {
       console.log("[ANCHOR_SELECTED_BODY]", { text: anchor.text.slice(0, 70), kind: anchor.anchorType, score: 1.0, method: "exact" });
+      console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: anchor.text.slice(0, 80), role: anchor.anchorType, method: "exact" });
       grounded.push({ ...anchor, groundedText: anchor.text, groundMethod: "exact", confidence: 1.0 });
       continue;
     }
@@ -189,6 +202,7 @@ export function groundHighlightAnchors(
     // ── Stage 2: Normalized match (ligatures, smart quotes, dashes, whitespace)
     if (!anchorIsHeader && normedAnchor.length >= 10 && normedPage.includes(normedAnchor)) {
       console.log("[ANCHOR_SELECTED_BODY]", { text: anchor.text.slice(0, 70), kind: anchor.anchorType, score: 0.95, method: "normalized" });
+      console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: anchor.text.slice(0, 80), role: anchor.anchorType, method: "normalized" });
       // Keep anchor.text — SmartPDFViewer's normForMatch will find it via normalized comparison
       grounded.push({ ...anchor, groundedText: anchor.text, groundMethod: "normalized", confidence: 0.95 });
       continue;
@@ -234,6 +248,7 @@ export function groundHighlightAnchors(
         method: "recovered",
         from:   anchor.text.slice(0, 50),
       });
+      console.log("[LEFT_PANEL_GROUND_SUCCESS]", { text: bestSentence.slice(0, 80), role: anchor.anchorType, method: "recovered", from: anchor.text.slice(0, 50) });
       grounded.push({
         ...anchor,
         text:         bestSentence, // replace semantic text with grounded text
@@ -247,6 +262,7 @@ export function groundHighlightAnchors(
         bestScore:     Math.round(bestScore * 100) / 100,
         bestCandidate: bestSentence?.slice(0, 70) ?? "(none)",
       });
+      console.log("[LEFT_PANEL_GROUND_FAILED]", { text: anchor.text.slice(0, 80), role: anchor.anchorType, bestScore: Math.round(bestScore * 100) / 100 });
       // Drop — no highlight is better than a wrong highlight
     }
   }

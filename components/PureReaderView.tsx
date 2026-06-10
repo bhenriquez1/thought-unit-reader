@@ -217,7 +217,8 @@ export default function PureReaderView({
       specScore:     aiHighlightAnchors.length - i, // preserve arrival order — highest first
     }));
 
-    // Normalizer shared by span guard + text validation
+    // Span-guard normalizer — keeps punctuation so spanStart/spanEnd substrings line up
+    // with the page text exactly.
     const norm = (s: string) =>
       s.toLowerCase()
         .replace(/ﬁ/g, 'fi').replace(/ﬂ/g, 'fl')
@@ -225,6 +226,20 @@ export default function PureReaderView({
         .replace(/['']/g, "'").replace(/[""]/g, '"')
         .replace(/[–—]/g, '-').replace(/\s+/g, ' ').trim();
     const normedPage = pageText ? norm(pageText) : "";
+
+    // Validation normalizer — same pipeline as SmartPDFViewer's normForConcat (strips
+    // punctuation), so PureReaderView never rejects an anchor that SmartPDFViewer
+    // could still locate and highlight.
+    const normForValidation = (s: string) =>
+      s.toLowerCase()
+        .replace(/­/g, '')
+        .replace(/ﬁ/g, 'fi').replace(/ﬂ/g, 'fl')
+        .replace(/ﬀ/g, 'ff').replace(/ﬃ/g, 'ffi').replace(/ﬄ/g, 'ffl')
+        .replace(/['']/g, "'").replace(/[""]/g, '"')
+        .replace(/[–—]/g, '-')
+        .replace(/[^\w\s]/g, ' ')
+        .replace(/\s+/g, ' ').trim();
+    const normedPageForValidation = pageText ? normForValidation(pageText) : "";
 
     // Span guard: if spanStart..spanEnd covers > 250 chars in the page text, clear the span
     // so the highlight renders from anchor.text only (prevents formula-heavy pages turning fully pink).
@@ -262,9 +277,9 @@ export default function PureReaderView({
       };
     });
 
-    const validated = (normedPage.length > 0)
+    const validated = (normedPageForValidation.length > 0)
       ? aiTargets.filter((t) => {
-          const found = normedPage.includes(norm(t.text));
+          const found = normedPageForValidation.includes(normForValidation(t.text));
           if (!found) {
             console.warn("[ANCHOR_REJECTED_GENERIC] not found in page text:", t.text.slice(0, 60));
           } else {
@@ -278,6 +293,12 @@ export default function PureReaderView({
       total: aiTargets.length,
       valid: validated.length,
       rejected: aiTargets.length - validated.length,
+      kinds: validated.map((t) => t.kind),
+    });
+    console.log("[LEFT_PANEL_RENDER_TARGETS_COUNT]", {
+      page: currentPage,
+      count: validated.length,
+      ids: validated.map((t) => t.evidenceRefId),
       kinds: validated.map((t) => t.kind),
     });
     return validated;

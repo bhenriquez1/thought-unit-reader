@@ -187,6 +187,98 @@ function buildAnchorCandidates(
   return candidates;
 }
 
+type ContractAnchorSeed = {
+  text:        string;
+  role:        VisualAnchorRole;
+  sourceField: VisualAnchorSourceField;
+  reason:      string;
+  anchorType:  string;
+  spanStart?:  string | null;
+  spanEnd?:    string | null;
+};
+
+// Build the full proof-contract anchor pool — every right-panel field that makes a
+// claim gets a corresponding left-panel highlight candidate. visualAnchors must NOT
+// rely solely on synth.highlightAnchors; it is the union of all reasoning fields below.
+function buildContractAnchorSeeds(
+  synth: Record<string, unknown>,
+  cleanThesis: string,
+  conceptBlocks: CurrentPageStudyModel["conceptBlocks"],
+  aiCandidates: AnchorCandidate[],
+): ContractAnchorSeed[] {
+  const seeds: ContractAnchorSeed[] = [];
+  const clean = (s: string | null | undefined) => (s ? (cleanThesisLine(s) ?? s).trim() : "");
+
+  // 1. AI highlightAnchors — verbatim spans the model selected.
+  for (const a of aiCandidates) {
+    seeds.push({
+      text:        a.text,
+      role:        anchorTypeToVisualRole(a.anchorType),
+      sourceField: anchorTypeToSourceField(a.anchorType),
+      reason:      a.reason,
+      anchorType:  a.anchorType,
+      spanStart:   a.spanStart,
+      spanEnd:     a.spanEnd,
+    });
+  }
+
+  // 2. pageThesis — the governing idea of the page.
+  if (cleanThesis.length >= 12) {
+    seeds.push({ text: cleanThesis, role: "coreIdea", sourceField: "pageThesis", reason: "Page thesis", anchorType: "thesis" });
+  }
+
+  // 3. whyThisMatters — application / significance of the idea.
+  const whyThisMatters = clean(synth.whyItMatters as string | null);
+  if (whyThisMatters.length >= 12) {
+    seeds.push({ text: whyThisMatters, role: "exampleEvidence", sourceField: "whyThisMatters", reason: "Why this matters", anchorType: "application" });
+  }
+
+  // 4. keyMechanism — the causal chain / how-why.
+  const keyMechanism = clean(synth.keyMechanism as string | null);
+  if (keyMechanism.length >= 12) {
+    seeds.push({ text: keyMechanism, role: "mechanism", sourceField: "keyMechanism", reason: "Key mechanism", anchorType: "mechanism" });
+  }
+
+  // 5. commonConfusion — common mistake / misconception.
+  const commonConfusion = clean(synth.commonConfusion as string | null);
+  if (commonConfusion.length >= 12) {
+    seeds.push({ text: commonConfusion, role: "confusionTrap", sourceField: "commonConfusion", reason: "Common confusion", anchorType: "trap" });
+  }
+
+  // 6. quickMemory — high-yield memory anchor.
+  const quickMemory = clean(synth.memoryAnchor as string | null);
+  if (quickMemory.length >= 12) {
+    seeds.push({ text: quickMemory, role: "keyDetail", sourceField: "quickMemory", reason: "Quick memory anchor", anchorType: "memory" });
+  }
+
+  // 7. conceptBlocks — mechanism / trap / pattern per concept.
+  for (const block of conceptBlocks) {
+    const mechanism = clean(block.mechanism);
+    if (mechanism.length >= 12) {
+      seeds.push({ text: mechanism, role: "mechanism", sourceField: "conceptBlock", reason: `Mechanism — ${block.title}`, anchorType: "mechanism" });
+    }
+    const trap = clean(block.trap);
+    if (trap.length >= 12) {
+      seeds.push({ text: trap, role: "confusionTrap", sourceField: "conceptBlock", reason: `Common trap — ${block.title}`, anchorType: "trap" });
+    }
+    const pattern = clean(block.pattern);
+    if (pattern.length >= 12) {
+      seeds.push({ text: pattern, role: "definition", sourceField: "conceptBlock", reason: `Concept — ${block.title}`, anchorType: "definition" });
+    }
+  }
+
+  // 8. conceptMap — reasoning flow / causal chain diagram.
+  const reasoningFlow = (synth.reasoningFlow as string | null) ?? "";
+  if (reasoningFlow.includes("→")) {
+    const t = clean(reasoningFlow);
+    if (t.length >= 12) {
+      seeds.push({ text: t, role: "mechanism", sourceField: "conceptMap", reason: "Concept map / reasoning flow", anchorType: "mechanism" });
+    }
+  }
+
+  return seeds;
+}
+
 export function buildStudyModel(
   view: {
     title?: string;
@@ -222,27 +314,37 @@ export function buildStudyModel(
   const highlightAnchors = buildAnchorCandidates(synth, cleanThesis);
 
   // Build visualAnchors — the final left-panel highlight contract.
-  // Sourced exclusively from AI anchor output; sorted by role priority.
-  // Left panel uses ONLY this — no score-anchors, no universalSpecificityScore, no fallbacks.
+  // The full proof contract: pageThesis, whyThisMatters, keyMechanism, commonConfusion,
+  // quickMemory, conceptBlocks, conceptMap, AND synth.highlightAnchors — not just the
+  // raw AI anchors. Sorted by role priority. Left panel uses ONLY this — no
+  // score-anchors, no universalSpecificityScore, no fallbacks.
   // IDs assigned post-sort with per-field counters so they are stable across re-renders
   // and map 1-to-1 to the Right Panel sourceField that owns each anchor.
+  const contractSeeds = buildContractAnchorSeeds(synth, cleanThesis, conceptBlocks, highlightAnchors);
+
+  const seenAnchorKeys = new Set<string>();
+  const dedupedSeeds = contractSeeds.filter((s) => {
+    if (s.text.length < 12 || isLikelyHeaderLine(s.text)) return false;
+    const key = s.text.toLowerCase().replace(/\s+/g, " ").slice(0, 50);
+    if (seenAnchorKeys.has(key)) return false;
+    seenAnchorKeys.add(key);
+    return true;
+  });
+
   const fieldCounters = new Map<string, number>();
-  const visualAnchors: VisualAnchor[] = highlightAnchors
-    .map((a) => {
-      const role = anchorTypeToVisualRole(a.anchorType);
-      const sourceField = anchorTypeToSourceField(a.anchorType);
-      return {
-        id:          "" as string, // assigned after sort
-        sourceField,
-        exactText:   a.text,
-        role,
-        reason:      a.reason,
-        priority:    ROLE_PRIORITY[role] ?? 6,
-        spanStart:   (a as any).spanStart ?? undefined,
-        spanEnd:     (a as any).spanEnd   ?? undefined,
-      };
-    })
+  const visualAnchors: VisualAnchor[] = dedupedSeeds
+    .map((s) => ({
+      id:          "" as string, // assigned after sort
+      sourceField: s.sourceField,
+      exactText:   s.text,
+      role:        s.role,
+      reason:      s.reason,
+      priority:    ROLE_PRIORITY[s.role] ?? 6,
+      spanStart:   s.spanStart ?? undefined,
+      spanEnd:     s.spanEnd   ?? undefined,
+    }))
     .sort((a, b) => a.priority - b.priority)
+    .slice(0, 12)
     .map((anchor) => {
       const n = (fieldCounters.get(anchor.sourceField) ?? 0) + 1;
       fieldCounters.set(anchor.sourceField, n);
