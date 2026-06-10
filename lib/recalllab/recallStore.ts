@@ -269,18 +269,45 @@ export async function deleteRecallSet(id: string): Promise<void> {
 // ── Update card difficulty ─────────────────────────────────────────────────
 
 export async function updateCardDifficulty(setId: string, cardId: string, difficulty: CardDifficulty): Promise<void> {
+  // Read from IDB (authoritative); fall back to the LS mirror if IDB is unavailable
+  // so a rating made while IDB is down still has a set object to mutate.
+  let set: RecallSet | undefined;
   try {
-    const set = await idbGet(setId);
-    if (!set) return;
-    const card = set.cards.find((c) => c.id === cardId);
-    if (!card) return;
-    card.difficulty   = difficulty;
-    card.reviewCount  = (card.reviewCount ?? 0) + 1;
-    card.isMissed     = difficulty === "hard";
-    await idbPut(set);
-    lsUpsert(set);
+    set = await idbGet(setId);
   } catch (e) {
-    console.error("[RECALL_UPDATE_CARD_FAIL]", String(e));
+    console.warn("[RECALL_UPDATE_IDB_GET_FAIL]", String(e), "— falling back to localStorage mirror");
+  }
+  if (!set) {
+    set = lsRead().find((s) => s.id === setId);
+  }
+  if (!set) {
+    console.error("[RECALL_UPDATE_CARD_FAIL]", { reason: "set-not-found", setId, cardId });
+    return;
+  }
+
+  const card = set.cards.find((c) => c.id === cardId);
+  if (!card) {
+    console.error("[RECALL_UPDATE_CARD_FAIL]", { reason: "card-not-found", setId, cardId });
+    return;
+  }
+
+  card.difficulty  = difficulty;
+  card.reviewCount = (card.reviewCount ?? 0) + 1;
+  card.isMissed    = difficulty === "hard";
+
+  // Best-effort IDB write — failure here must not lose the rating.
+  try {
+    await idbPut(set);
+    console.log("[RECALL_UPDATE_CARD_SUCCESS]", { setId, cardId, difficulty, driver: "indexeddb" });
+  } catch (e) {
+    console.error("[RECALL_UPDATE_CARD_IDB_FAIL]", { setId, cardId, error: String(e) }, "— falling back to localStorage mirror");
+  }
+
+  // Always mirror to localStorage so the rating survives reload even if IDB failed.
+  lsUpsert(set);
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("recall-lab-updated"));
   }
 }
 
