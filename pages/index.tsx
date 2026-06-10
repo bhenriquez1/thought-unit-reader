@@ -1225,14 +1225,14 @@ export default function ThoughtUnitReader() {
   }, [activeShellTab, currentPage]);
 
   // Programmatically save current page to NoteLab (used by Focus Cycle session summary)
-  const sendCurrentPageToNoteLab = useCallback(() => {
+  const sendCurrentPageToNoteLab = useCallback(async () => {
     const sm = currentPageStudyModel;
     if (!sm) return;
     const topic = `Page ${currentPage}`;
     console.log("[NOTELAB_SAVE_START]", { page: currentPage, bookId, topic, source: "focus-cycle", hasThesis: !!sm.pageThesis, destination: "NoteLab" });
     try {
       const note = buildNoteFromStudyModel(sm, { bookId, pageNumber: currentPage, topic, bookTitle: uploadedFile?.name });
-      saveUltraNote(note);
+      await saveUltraNote(note);
       const persisted = getAllUltraNotes().find((n) => n.id === note.id);
       console.log("[NOTELAB_SAVE_VERIFY]", { id: note.id, found: !!persisted, storageKey: "ultraNotes_v1" });
       console.log("[NOTELAB_SAVE_SUCCESS]", { id: note.id, page: note.pageNumber, sectionCount: note.sections?.length ?? 0, source: "focus-cycle", storageKey: "ultraNotes_v1", destination: "NoteLab" });
@@ -1251,7 +1251,7 @@ export default function ThoughtUnitReader() {
   }, [currentPageStudyModel, currentPage, bookId, uploadedFile]);
 
   // Programmatically save current page to Recall Lab (used by Focus Cycle session summary)
-  const sendCurrentPageToRecallLab = useCallback(() => {
+  const sendCurrentPageToRecallLab = useCallback(async () => {
     const sm = currentPageStudyModel;
     if (!sm) return;
     console.log("[RECALLLAB_SAVE_START]", { page: currentPage, bookId, source: "focus-cycle", destination: "RecallLab" });
@@ -1261,11 +1261,12 @@ export default function ThoughtUnitReader() {
       sourceLabel: "right-panel",
       studyModel: sm,
     });
-    saveRecallSet(set).then(() => {
+    try {
+      await saveRecallSet(set);
       console.log("[RECALLLAB_SAVE_SUCCESS]", { id: set.id, page: currentPage, cards: set.cards?.length ?? 0 });
-    }).catch((e) => {
+    } catch (e) {
       console.error("[RECALLLAB_SAVE_FAILED]", { id: set.id, error: String(e) });
-    });
+    }
     setSyllabusStudiedPages((prev) => {
       const next = new Set(prev);
       next.add(currentPage);
